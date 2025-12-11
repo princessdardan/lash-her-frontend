@@ -49,14 +49,16 @@ export default function GlobalError({ error, reset }: IGlobalError) {
             logoText: {
               id: 1,
               href: "/",
-              label: "Summarize AI",
+              label: "Lash Her by Nataliea",
             },
-            ctaButton: {
-              id: 1,
-              label: "Get Help",
-              href: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-              isExternal: true,
-            },
+            ctaButton: [
+              {
+                id: 1,
+                label: "Book Now",
+                href: "https://www.fresha.com/a/lash-her-by-nataliea-toronto-646-oakwood-avenue-tvrir5sx",
+                isExternal: true,
+              },
+            ],
           }}
         />
         <div className={styles.container}>
