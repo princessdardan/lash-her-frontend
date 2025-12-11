@@ -1,6 +1,0 @@
-{
-  "version": 3,
-  "sources": [],
-  "sections": [
-    {"offset": {"line": 26, "column": 0}, "map": {"version":3,"sources":["file:///Users/dardan/Documents/lash-her/frontend/src/app/gallery/page.tsx"],"sourcesContent":["\nexport default async function GalleryPage() {\n    return (\n        <main>\n            Gallery Page\n        </main>\n    );\n}"],"names":[],"mappings":";;;;;;AACe,eAAe;IAC1B,qBACI,0PAAC;kBAAK;;;;;;AAId"}}]
-}
