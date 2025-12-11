@@ -1,0 +1,6 @@
+{
+  "/(site)/gallery/page": "app/(site)/gallery/page.js",
+  "/(site)/homepage/page": "app/(site)/homepage/page.js",
+  "/(site)/lash-designer-academy/page": "app/(site)/lash-designer-academy/page.js",
+  "/page": "app/page.js"
+}

@@ -1,0 +1,12 @@
+[00:00:00.736] Server  LOG      ✓ Ready in 552ms
+[00:00:30.912] Server  DIR     {} {}
+[00:00:31.244] Browser DIR     {"__component":"layout.hero-section","description":null,"heading":"Lash Designer Academy","id":41,"image":{"alternativeText":null,"documentId":"oku0c8zng5s9e7y9ch2gj8s1","id":11,"url":"/uploads/certificate_example_5123548445.PNG"},"link":[],"onHomepage":false,"subHeading":"Online & Live Training with Lash Her by Nataliea"} {"depth":null}
+[00:00:31.389] Browser WARN    Image with src "http://localhost:1337/uploads/certificate_example_5123548445.PNG" was detected as the Largest Contentful Paint (LCP). Please add the `loading="eager"` property if this image is above the fold.
+Read more: https://nextjs.org/docs/app/api-reference/components/image#loading
+[00:02:58.721] Server  DIR     {} {}
+[00:02:58.938] Browser DIR     {"__component":"layout.hero-section","description":"Custom lash sets. Elite trainings. Real results.\nWhether you want the perfect lashes or a new career, everything here is tailored to you.","heading":"Experience Luxury with Lash Her By Nataliea","id":38,"image":{"alternativeText":null,"documentId":"or6d8arycwbmphqteg2bxmaq","id":32,"url":"/uploads/nat_working_extended_888554c637.jpeg"},"link":[],"onHomepage":false,"subHeading":"Personalized lash artistry from soft and natural to bold and dramatic"} {"depth":null}
+[00:02:59.087] Browser WARN    Image with src "http://localhost:1337/uploads/nat_working_extended_888554c637.jpeg" was detected as the Largest Contentful Paint (LCP). Please add the `loading="eager"` property if this image is above the fold.
+Read more: https://nextjs.org/docs/app/api-reference/components/image#loading
+[00:03:27.368] Server  LOG     Sections data: {}
+[00:03:27.369] Server  DIR     {} {}
+[00:03:27.508] Browser DIR     {"__component":"layout.hero-section","description":null,"heading":"Elevate Your Beauty with Bespoke Lash Artistry","id":37,"image":{"alternativeText":null,"documentId":"l8unp4c9h3uetwq9njb4be5u","id":20,"url":"/uploads/lash_planning_32fbdbceb6.PNG"},"link":[{"href":"/booking","id":91,"isExternal":false,"label":"Book Your Lashes"},{"href":"/training","id":92,"isExternal":false,"label":"Explore Training"}],"onHomepage":true,"subHeading":"Experience personalized luxury lash design tailored exclusively to you. Premium services, expert training, and curated products for you."} {"depth":null}
