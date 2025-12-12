@@ -13,7 +13,7 @@ export function Schedule({ data }: { data: IScheduleProps }) {
 
     const { heading, subHeading, hours } = data;
     return (
-        <div className="w-full max-w-lg mx-auto px-8 pb-6">
+        <div className="w-full max-w-xl md:max-w-lg mx-auto px-8 pb-6">
             <div className="rounded-lg bg-white border border-brand-red p-6 shadow-sm transition-shadow hover:shadow-md relative flex flex-col">
                 <h2 className="text-2xl font-bold text-brand-red mb-4 font-serif">{heading}</h2>
                 <p className="text-center text-brand-red mb-4">{subHeading}</p>

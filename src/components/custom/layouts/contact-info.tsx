@@ -14,7 +14,7 @@ export function ContactInfo({ data }: { data: IContactInfoProps }) {
 
     const { heading, subHeading, contact } = data;
     return (
-        <div className="w-full max-w-lg mx-auto px-8 py-6">
+        <div className="w-full max-w-xl md:max-w-lg mx-auto px-8 py-6">
             <div className="rounded-lg bg-white border border-brand-red text-black p-6 my-4 shadow-sm transition-shadow hover:shadow-md relative flex flex-col">
                 <h2 className="text-2xl text-brand-red font-bold font-serif">{heading}</h2>
                 <p className="text-md text-black mb-2">{subHeading}</p>
