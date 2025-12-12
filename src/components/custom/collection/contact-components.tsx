@@ -274,7 +274,6 @@ export function ContactFormLabels({ data }: { data: IContactFormLabelsProps }) {
                         </FieldLabel>
                         <Select
                         value={formData.interest}
-                        className={styles.input}
                         onValueChange={(value: string) =>
                             setFormData((prev) => ({ ...prev, interest: value }))
                         }
