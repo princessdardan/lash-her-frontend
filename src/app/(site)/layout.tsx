@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { unstable_cache } from "next/cache";
 import { loaders } from "@/data/loaders";
 import { validateApiResponse } from "@/lib/error-handler";
 import { Header } from "@/components/custom/layouts/header";
@@ -13,16 +14,33 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
+// Cache global data for 1 hour (header, footer, social links)
+const getGlobalDataCached = unstable_cache(
+  async () => {
+    const globalDataResponse = await loaders.getGlobalData();
+    return validateApiResponse(globalDataResponse, "global page");
+  },
+  ['global-data'],
+  { revalidate: 3600, tags: ['global'] }
+);
+
+// Cache main menu data for 1 hour (navigation items)
+const getMainMenuDataCached = unstable_cache(
+  async () => {
+    const mainMenuDataResponse = await loaders.getMainMenuData();
+    return validateApiResponse(mainMenuDataResponse, "main menu");
+  },
+  ['main-menu-data'],
+  { revalidate: 3600, tags: ['menu'] }
+);
+
 export default async function SiteLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const globalDataResponse = await loaders.getGlobalData();
-  const globalData = validateApiResponse(globalDataResponse, "global page");
-  
-  const mainMenuDataResponse = await loaders.getMainMenuData();
-  const mainMenuData = validateApiResponse(mainMenuDataResponse, "main menu");
+  const globalData = await getGlobalDataCached();
+  const mainMenuData = await getMainMenuDataCached();
   
   return (
     <>

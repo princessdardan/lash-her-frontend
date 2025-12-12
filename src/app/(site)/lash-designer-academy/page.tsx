@@ -5,6 +5,9 @@ import { HeroSection, IHeroSectionProps } from "@/components/custom/layouts/hero
 import { IInfoSectionProps, InfoSection } from "@/components/custom/layouts/info-section";
 import { ContactFormLabels, IContactFormLabelsProps} from "@/components/custom/collection/contact-components";
 
+// Revalidate every 30 minutes (1800 seconds)
+export const revalidate = 1800;
+
 export const metadata: Metadata = {
   title: "Lash Designer Academy | Lash Her",
   description: "Professional lash design certification and comprehensive training programs. Become a certified lash designer with expert instruction.",

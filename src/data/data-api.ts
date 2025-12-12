@@ -23,7 +23,7 @@ type ApiOptions<P = Record<string, unknown>> = {
 async function apiWithTimeout(
   input: RequestInfo,
   init: RequestInit = {},
-  timeoutMs = 8000 // 8 seconds default - good balance between patience and UX
+  timeoutMs = 5000 // 5 seconds default - better UX, fails faster if backend is slow
 ): Promise<Response> {
   // Create controller to manage request cancellation
   const controller = new AbortController();
@@ -48,7 +48,7 @@ export async function apiRequest<T = unknown, P = Record<string, unknown>>(
   url: string,
   options: ApiOptions<P>
 ): Promise<TStrapiResponse<T>> {
-  const { method, payload, timeoutMs = 8000, authToken } = options;
+  const { method, payload, timeoutMs = 5000, authToken } = options;
 
   // Set up base headers for JSON communication
   const headers: Record<string, string> = {

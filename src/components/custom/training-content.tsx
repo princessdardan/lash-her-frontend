@@ -1,15 +1,14 @@
-import { loaders }  from "@/data/loaders";
 import {
   CtaFeaturesSection,
   type CtaFeaturesSectionProps,
 } from "@/components/custom/layouts/cta-features-section";
-import { validateApiResponse } from "@/lib/error-handler";
 import { IImageWithTextProps, ImageWithText } from "@/components/custom/layouts/image-with-text";
 
-// Revalidate every 30 minutes (1800 seconds)
-export const revalidate = 1800;
-
 export type TTrainingPageBlocks = CtaFeaturesSectionProps | IImageWithTextProps;
+
+interface TrainingContentProps {
+  blocks: TTrainingPageBlocks[];
+}
 
 function blockRenderer(block: TTrainingPageBlocks, index: number)  {
     switch (block.__component) {
@@ -22,12 +21,10 @@ function blockRenderer(block: TTrainingPageBlocks, index: number)  {
     }
 }
 
-export default async function TrainingPage() {
-    const trainingPageData = await loaders.getTrainingsPageData();
-    const data = validateApiResponse(trainingPageData, "training");
-    const { blocks } = data;
-        
+export function TrainingContent({ blocks }: TrainingContentProps) {
     return (
-        <main>{blocks.map((block, index) => blockRenderer(block, index))}</main>
+        <>
+            {blocks.map((block, index) => blockRenderer(block, index))}
+        </>
     );
 }

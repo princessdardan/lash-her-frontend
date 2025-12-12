@@ -4,6 +4,9 @@ import { HeroSection, IHeroSectionProps } from "@/components/custom/layouts/hero
 import { loaders } from "@/data/loaders";
 import { validateApiResponse } from "@/lib/error-handler";
 
+// Revalidate every 30 minutes (1800 seconds)
+export const revalidate = 1800;
+
 export const metadata: Metadata = {
   title: "Gallery | Lash Her",
   description: "Explore our stunning gallery of lash artistry work. View before and after transformations and bespoke lash designs by Nataliea.",
