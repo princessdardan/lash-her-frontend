@@ -39,7 +39,7 @@ export function ImageWithText({ data }: { data: IImageWithTextProps }) {
         <div className={`w-full ${orientation === 'VERTICAL' ? 'py-2 flex justify-center' : 'py-6 lg:w-1/2'}`}>
             <StrapiImage
                 src={image.url}
-                alt={image.alternativeText || "Image"}
+                alt={image.alternativeText || heading || "Section image"}
                 className={`object-cover rounded-lg shadow-lg ${
                     orientation === 'VERTICAL' ? 'w-full aspect-square max-w-md' : 'w-full h-auto max-h-96'
                 }`}

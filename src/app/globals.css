@@ -175,6 +175,16 @@
   body {
     @apply bg-background text-foreground font-sans;
   }
+  
+  /* Enhanced focus indicators for accessibility */
+  a:focus-visible,
+  button:focus-visible,
+  [role="button"]:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-red;
+  }
 }
 
 @layer utilities {
@@ -320,7 +330,7 @@
   }
 
   .section-subheading-white {
-    @apply font-semibold text-white text-lg md:text-xl lg:text-2xl;
+    @apply font-semibold text-brand-dark-red text-lg md:text-xl lg:text-2xl;
   }
 
   .section-subheading-light {

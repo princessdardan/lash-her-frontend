@@ -31,11 +31,11 @@ export interface CtaFeaturesSectionProps {
 function getIcon(name: string) {
   switch (name) {
     case "VIDEO_ICON":
-      return <VideoIcon className="w-4 h-4 text-white" />;
+      return <VideoIcon className="w-4 h-4 text-white" aria-hidden="true" />;
     case "USERS_ICON":
-      return <UsersIcon className="w-4 h-4 text-white" />;
+      return <UsersIcon className="w-4 h-4 text-white" aria-hidden="true" />;
     case "AWARD_ICON":
-      return <AwardIcon className="w-4 h-4 text-white" />;
+      return <AwardIcon className="w-4 h-4 text-white" aria-hidden="true" />;
     default:
       return null;
   }
@@ -102,7 +102,7 @@ export async function CtaFeaturesSection({data}: { data: CtaFeaturesSectionProps
                   }
                   className="mt-auto mb-2"
                 >
-                  <Button className={`w-full text-white font-extrabold border border-brand-dark-grey ${item.mostPopular ? "bg-brand-red hover:bg-brand-red/80" : "bg-brand-red/80 hover:bg-brand-red/60"}`}>
+                  <Button className={`w-full text-white font-extrabold border border-brand-dark-grey ${item.mostPopular ? "bg-brand-red hover:bg-brand-red/80" : "bg-brand-red hover:bg-brand-red/90"}`}>
                     {item.link.label}
                   </Button>
                 </Link>

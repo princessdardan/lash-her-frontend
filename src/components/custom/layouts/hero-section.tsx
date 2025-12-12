@@ -28,7 +28,7 @@ export function HeroSection({ data }: { data: IHeroSectionProps }) {
     return (
       <section className="relative h-[50vh] md:h-[60vh] overflow-hidden">
         <StrapiImage
-          alt={image.alternativeText ?? "no alternative text"}
+          alt={image.alternativeText || heading || "Hero banner image"}
           className="absolute inset-0 object-cover w-full h-full"
           src={image.url}
           height={2160}
@@ -55,7 +55,7 @@ export function HeroSection({ data }: { data: IHeroSectionProps }) {
   return (
     <section className="relative h-screen overflow-hidden">
       <StrapiImage
-        alt={image.alternativeText ?? "no alternative text"}
+        alt={image.alternativeText || heading || "Hero banner image"}
         className="absolute inset-0 object-cover w-full h-full aspect/16:9"
         src={image.url}
         height={2160}

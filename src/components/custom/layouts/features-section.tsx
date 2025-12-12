@@ -15,11 +15,11 @@ export interface IFeaturesSectionProps {
 function getIcon(name: string) {
   switch (name) {
     case "EYE_ICON":
-      return <EyeClosedIcon className="w-4 h-4 text-white" />;
+      return <EyeClosedIcon className="w-4 h-4 text-white" aria-hidden="true" />;
     case "SPARKLES_ICON":
-      return <SparklesIcon className="w-4 h-4 text-white" />;
+      return <SparklesIcon className="w-4 h-4 text-white" aria-hidden="true" />;
     case "STAR_ICON":
-      return <StarIcon className="w-4 h-4 text-white" />;
+      return <StarIcon className="w-4 h-4 text-white" aria-hidden="true" />;
     default:
       return null;
   }

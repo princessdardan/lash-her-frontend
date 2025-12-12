@@ -61,7 +61,7 @@ function HeaderContent({ data, menuItems }: IHeaderProps) {
       </div>
       
       {/* Desktop navigation - hidden on mobile */}
-      <div className="hidden md:flex items-center gap-4 mt-4">
+      <nav className="hidden md:flex items-center gap-4 mt-4" aria-label="Main navigation">
         <NavigationMenu>
           <NavigationMenuList>
             {menuItems && menuItems.length > 0 && (
@@ -69,7 +69,7 @@ function HeaderContent({ data, menuItems }: IHeaderProps) {
             )}
           </NavigationMenuList>
         </NavigationMenu>
-      </div>
+      </nav>
     </>
   );
 }

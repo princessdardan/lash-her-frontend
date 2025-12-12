@@ -50,14 +50,14 @@ export function MobileNavigation({ ctaButton, menuItems = [] }: MobileNavigation
       <SheetTrigger asChild>
         <button
           className={cn(
-            "p-2 rounded-md transition-colors",
+            "p-2 rounded-md transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center",
             isHeaderActive
               ? "text-brand-red hover:bg-brand-red/10"
               : "text-brand-pink hover:bg-brand-pink/10"
           )}
           aria-label="Toggle menu"
         >
-          <Menu className="h-6 w-6" />
+          <Menu className="h-6 w-6" aria-hidden="true" />
         </button>
       </SheetTrigger>
       <SheetContent side="left" className="w-[300px] sm:w-[400px] flex flex-col h-full">
@@ -66,7 +66,7 @@ export function MobileNavigation({ ctaButton, menuItems = [] }: MobileNavigation
             <Link href="/" onClick={() => setOpen(false)}><LashHerLogo className="mx-auto w-46 h-46"/></Link>
           </SheetTitle>
         </SheetHeader>
-        <nav className="flex flex-col gap-2 flex-1 overflow-y-auto py-4">
+        <nav className="flex flex-col gap-2 flex-1 overflow-y-auto py-4" aria-label="Mobile navigation">
           {menuItems.map((item) => {
             // Render simple menu link
             if (isMenuLink(item)) {
@@ -104,6 +104,8 @@ export function MobileNavigation({ ctaButton, menuItems = [] }: MobileNavigation
                   <div className="flex items-center">
                     <button
                       onClick={() => toggleExpanded(item.id)}
+                      aria-expanded={isExpanded}
+                      aria-controls={`mobile-submenu-${item.id}`}
                       className={cn(
                         "text-lg font-light transition-colors py-2 px-4 rounded-md flex-1 text-left",
                         isSubLinkActive
@@ -115,6 +117,8 @@ export function MobileNavigation({ ctaButton, menuItems = [] }: MobileNavigation
                     </button>
                     <button
                       onClick={() => toggleExpanded(item.id)}
+                      aria-expanded={isExpanded}
+                      aria-controls={`mobile-submenu-${item.id}`}
                       className="p-2 text-brand-black hover:text-brand-red transition-colors"
                       aria-label={`Toggle ${item.title} submenu`}
                     >
@@ -123,13 +127,14 @@ export function MobileNavigation({ ctaButton, menuItems = [] }: MobileNavigation
                           "h-5 w-5 transition-transform",
                           isExpanded && "rotate-180"
                         )}
+                        aria-hidden="true"
                       />
                     </button>
                   </div>
 
                   {/* Dropdown Content */}
                   {isExpanded && (
-                    <div className="ml-4 mt-1 flex flex-col gap-1">
+                    <div id={`mobile-submenu-${item.id}`} className="ml-4 mt-1 flex flex-col gap-1" role="region" aria-label={`${item.title} submenu`}>
                       {sections.map((section) => (
                         <div key={section.id} className="mb-2 last:mb-0">
                           {section.heading && (

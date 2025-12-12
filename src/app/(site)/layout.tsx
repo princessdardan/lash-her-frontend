@@ -26,8 +26,16 @@ export default async function SiteLayout({
   
   return (
     <>
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-4 focus:bg-brand-red focus:text-white focus:top-0 focus:left-0"
+      >
+        Skip to main content
+      </a>
       <Header data={globalData?.header} menuItems={mainMenuData?.MainMenuItems} />
-      {children}
+      <main id="main-content">
+        {children}
+      </main>
       <Footer data={globalData?.footer} />
     </>
   );

@@ -13,6 +13,11 @@ interface IStrapiVideoProps {
     poster?: string;
     preload?: "none" | "metadata" | "auto";
     playsInline?: boolean;
+    captionTrack?: {
+        src: string;
+        label: string;
+        srcLang: string;
+    };
 }
 
 export function getStrapiVideo(url: string | null) {
@@ -36,6 +41,7 @@ export function StrapiVideo({
     poster,
     preload,
     playsInline,
+    captionTrack,
 }: Readonly<IStrapiVideoProps>) {
     const videoUrl = getStrapiVideo(src);
     if (!videoUrl) return null;
@@ -53,6 +59,16 @@ export function StrapiVideo({
             poster={poster}
             preload={preload}
             playsInline={playsInline}
-        />
+        >
+            {captionTrack && (
+                <track
+                    kind="captions"
+                    src={captionTrack.src}
+                    srcLang={captionTrack.srcLang}
+                    label={captionTrack.label}
+                    default
+                />
+            )}
+        </video>
     );
 }

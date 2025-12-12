@@ -32,13 +32,13 @@ function CoverflowItem({ img, index }: { img: TImage; index: number }) {
     return (
         <motion.li {...props} style={{ ...props.style, zIndex }}>
             <motion.div
-                className="w-[400px] h-[600px] md:w-[480px] md:h-[720px] rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.3)]"
+                className="w-[400px] h-[600px] md:w-[480px] md:h-[720px] rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.3)] cursor-grab active:cursor-grabbing"
                 style={{ transformPerspective: 500, x, rotateY, scale, willChange: 'transform, opacity' }}
             >
                 <StrapiImage
                     src={img.url}
-                    alt={img.alternativeText || `Gallery image ${index + 1}`}
-                    className="w-full h-full object-cover rounded-lg shadow-lg"
+                    alt={img.alternativeText || `Gallery image showcasing lash artistry ${index + 1}`}
+                    className="w-full h-full object-cover rounded-lg shadow-lg pointer-events-none select-none"
                     width={480}
                     height={720}
                 />
