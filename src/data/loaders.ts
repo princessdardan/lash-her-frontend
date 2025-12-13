@@ -188,7 +188,7 @@ async function getMetaData(): Promise<TStrapiResponse<TMetaData>> {
   return api.get<TMetaData>(url.href);
 }
 
-type TrainingProgramType = "beginner-private-training" | "advanced-private-training" | "lash-designer-academy";
+type TrainingProgramType = "beginner-private-training" | "advanced-private-training" | "lash-designer-academy" | "beginner-group-training";
 
 async function getTrainingProgramData(programType: TrainingProgramType): Promise<TStrapiResponse<TTrainingProgram>> {
   const query = qs.stringify({
