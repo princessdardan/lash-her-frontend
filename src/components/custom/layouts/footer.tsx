@@ -16,7 +16,7 @@ export function Footer({ data }: IFooterProps) {
   if (!data) return null;
   const { logoText, socialLink, text } = data;
   return (
-    <footer className="bg-brand-dark-red text-brand-more-pink py-8" role="contentinfo">
+    <footer className="bg-brand-dark-red text-brand-more-pink pt-8 pb-4" role="contentinfo">
       <div className="content-container md:px-6 flex flex-col md:flex-row items-center justify-between">
         <Logo data={logoText} />
         <p className="mt-4 md:mt-0 text-sm text-brand-more-pink">{text}</p>
@@ -37,6 +37,12 @@ export function Footer({ data }: IFooterProps) {
           </div>
         </nav>
       </div>
+      <p className="text-brand-more-pink font-sans text-sm text-center mt-2">
+        Designed by{" "}
+        <Link href="https://dardandemiri.com" className="hover:text-brand-more-pink transition-colors" target="_blank" rel="noopener noreferrer">
+          Dardan Demiri
+        </Link>
+      </p>
     </footer>
   );
 }

@@ -50,7 +50,7 @@ export function MobileNavigation({ ctaButton, menuItems = [] }: MobileNavigation
       <SheetTrigger asChild>
         <button
           className={cn(
-            "p-2 rounded-md transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center",
+            "p-2 rounded-md transition-colors min-w-11 min-h-11 flex items-center justify-center",
             isHeaderActive
               ? "text-brand-red hover:bg-brand-red/10"
               : "text-brand-pink hover:bg-brand-pink/10"

@@ -283,8 +283,9 @@ export function ContactFormLabels({ data }: { data: IContactFormLabelsProps }) {
                             <SelectValue placeholder="Select training interest" />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="Two-Week Mentorship Course">Two-Week Mentorship Course</SelectItem>
+                            <SelectItem value="Lash Designer Academy">Lash Designer Academy</SelectItem>
                             <SelectItem value="Beginner Private Training">Beginner Private Training</SelectItem>
+                            <SelectItem value="Beginner Group Training">Beginner Group Training</SelectItem>
                             <SelectItem value="Advanced Private Training">Advanced Private Training</SelectItem>
                             <SelectItem value="Not Sure Yet">Not Sure Yet</SelectItem>
                         </SelectContent>

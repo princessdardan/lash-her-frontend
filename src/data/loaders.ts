@@ -1,5 +1,5 @@
 import qs from "qs";
-import type { TStrapiResponse, THomePage, TGlobal, TMetaData, TTrainingPage, TContactPage, TGalleryPage, TTrainingProgram, TMainMenu, TTrainingProgramCollection } from "@/types";
+import type { TStrapiResponse, THomePage, TGlobal, TMetaData, TTrainingPage, TContactPage, TGalleryPage, TMainMenu, TTrainingProgramCollection } from "@/types";
 
 import { api } from "@/data/data-api";
 import { getStrapiURL } from "@/lib/utils";
@@ -260,39 +260,6 @@ async function getAllTrainingPrograms(): Promise<TStrapiResponse<TTrainingProgra
   return api.get<TTrainingProgramCollection[]>(url.href);
 }
 
-type TrainingProgramType = "beginner-private-training" | "advanced-private-training" | "lash-designer-academy" | "beginner-group-training";
-
-async function getTrainingProgramData(programType: TrainingProgramType): Promise<TStrapiResponse<TTrainingProgram>> {
-  const query = qs.stringify({
-    populate: {
-      blocks: {
-        on: {
-          "layout.hero-section": {
-            populate: {
-              image: {
-                fields: ["url", "alternativeText"],
-              },
-              link: {
-                populate: true,
-              },
-            },
-          },
-          "layout.info-section": {
-            populate: true,
-          },
-          "layout.contact-form": {
-            populate: true,
-          },
-        },
-      },
-    },
-  });
-
-  const url = new URL(`/api/${programType}`, baseUrl);
-  url.search = query;
-  return api.get<TTrainingProgram>(url.href);
-}
-
 export const loaders = {
   getHomePageData,
   getGlobalData,
@@ -301,7 +268,6 @@ export const loaders = {
   getTrainingsPageData,
   getContactPageData,
   getGalleryPageData,
-  getTrainingProgramData,
   getTrainingProgramBySlug,
   getAllTrainingPrograms,
 };

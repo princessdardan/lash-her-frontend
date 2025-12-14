@@ -1,7 +1,7 @@
 import { TContactPageBlocks } from "@/app/(site)/contact/page";
 import { TGalleryPageBlocks } from "@/app/(site)/gallery/page";
-import { TrainingProgramBlocks } from "@/app/(site)/lash-designer-academy/page";
 import { TBlocks } from "@/app/(site)/homepage/page";
+import { TrainingProgramBlocks } from "@/app/(site)/training-programs/[slug]/page";
 import { TTrainingPageBlocks } from "@/app/(site)/training/page";
 import { IMainMenuItems } from "@/app/main-menu";
 
@@ -297,17 +297,6 @@ export type TTrainingPage = {
   updatedAt: string;
   publishedAt: string;
   blocks: TTrainingPageBlocks[];
-};
-
-export type TTrainingProgram = {
-  id: number;
-  documentId: string;
-  title: string;
-  description: string;
-  createdAt: string;
-  updatedAt: string;
-  publishedAt: string;
-  blocks: TrainingProgramBlocks[];
 };
 
 export type TGlobal = {
