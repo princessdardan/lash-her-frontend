@@ -23,8 +23,9 @@ function blockRenderer(block: TrainingProgramBlocks, index: number) {
   }
 }
 
-export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
-  const { data } = await loaders.getTrainingProgramBySlug(params.slug);
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const { data } = await loaders.getTrainingProgramBySlug(slug);
   
   return {
     title: data?.title ? `${data.title} | Lash Her` : "Training | Lash Her",
@@ -42,8 +43,9 @@ export async function generateStaticParams() {
   ];
 }
 
-export default async function TrainingProgramPage({ params }: { params: { slug: string }}) {
-    const TrainingProgramPageData = await loaders.getTrainingProgramBySlug(params.slug);
+export default async function TrainingProgramPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const TrainingProgramPageData = await loaders.getTrainingProgramBySlug(slug);
     const data = validateApiResponse(TrainingProgramPageData, "Training Program page");
   
   if (!data) {
