@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { loaders } from "@/data/loaders";
 import { Cardo, Cormorant_Garamond, Luxurious_Script, Montserrat, Playfair_Display, Poppins } from "next/font/google";
 import "./globals.css";
+import { Analytics } from "@vercel/analytics/next";
 
 
 const luxuriousScript = Luxurious_Script({
@@ -64,6 +65,7 @@ export default async function RootLayout({
         className={`${montserrat.variable} ${cardo.variable} ${cormorantGaramond.variable} ${luxuriousScript.variable} ${poppins.variable} ${playfairDisplay.variable} antialiased`}
       >
         {children}
+        <Analytics />
       </body>
     </html>
   );
