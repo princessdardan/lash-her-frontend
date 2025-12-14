@@ -146,7 +146,7 @@ export function ContactFormLabels({ data }: { data: IContactFormLabelsProps }) {
     return (
       <section className="bg-brand-pink">
         <div className="w-full bg-brand-pink max-w-4xl mx-auto px-4 py-6">
-          <div className="rounded-lg border bg-white text-black border-gray-700 my-4 p-6 shadow-sm transition-shadow hover:shadow-md relative flex flex-col">
+          <div className="rounded-lg border bg-white text-black border-brand-red my-4 p-6 shadow-sm transition-shadow hover:shadow-md relative flex flex-col">
             <div className="mb-8">
                 <h2 className="text-xl mb-2 font-heading">{data.heading}</h2>
                 <p className="text-muted-foreground">{data.subHeading}</p>

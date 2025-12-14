@@ -66,18 +66,18 @@ export function BlockRenderer({ content }: BlockRendererProps) {
       {content.map((block, index) => {
         switch (block.type) {
           case "paragraph":
-            return <p className="mb-4 mx-auto text-center text-md font-normal px-2 max-w-3xl" key={index}>{renderInlineNodes(block.children)}</p>;
+            return <p className="mb-4 mx-auto indent-3.5 text-base font-normal px-2 max-w-3xl" key={index}>{renderInlineNodes(block.children)}</p>;
 
           case "heading": {
             const HeadingTag = `h${block.level}` as "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
             
             const headingStyles = {
-              1: "text-4xl font-bold text-gray-900 mb-4",
-              2: "text-3xl font-semibold text-gray-800 mb-3",
+              1: "text-4xl text-center font-bold text-brand-red mb-4",
+              2: "text-3xl text-center font-semibold text-brand-red mb-3",
               3: "text-2xl text-center font-semibold text-brand-red font-serif mb-3",
-              4: "text-xl font-medium text-gray-700 mb-2",
-              5: "text-lg font-medium text-gray-700 mb-1",
-              6: "text-base font-medium text-gray-600 mb-1",
+              4: "text-xl text-center font-medium text-brand-red mb-2",
+              5: "text-lg text-center font-medium text-brand-red mb-1",
+              6: "text-base text-center font-medium text-brand-red mb-1",
             };
             
             return (

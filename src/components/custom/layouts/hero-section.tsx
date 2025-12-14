@@ -46,6 +46,16 @@ export function HeroSection({ data }: { data: IHeroSectionProps }) {
           {description && (
             <p className="hero-description">{description}</p>
           )}
+          {link && link.length > 0 && (
+            <div className="flex flex-col md:flex-row gap-4 mt-8">
+              {link.map((btn) => (
+                  <Link key={btn.id} href={btn.href}>
+                      <Button className= "inline-flex border-[1.5px] border-brand-red italic items-center text-lift-subtle text-brand-red font-serif text-xl justify-center px-10 py-8 font-bold bg-brand-pink hover:bg-brand-pink/90" variant="secondary" >
+                          {btn.label}
+                      </Button>
+                  </Link>
+              ))}
+            </div>)}
         </div>
       </section>
     );
@@ -63,7 +73,8 @@ export function HeroSection({ data }: { data: IHeroSectionProps }) {
       />
       <div className="relative px-8 py-4 z-10 flex flex-col items-center justify-center h-full bg-black/50 text-center">
         <h1 className="hero-heading-home">{heading}</h1>
-        <p className="hero-subheading">{subHeading}</p>
+        {subHeading && <p className="hero-subheading">{subHeading}</p>}
+        {description && <p className="hero-description">{description}</p>}
         <div className="flex flex-col md:flex-row gap-4 mt-8">
             {link.map((btn) => (
                 <Link key={btn.id} href={btn.href}>

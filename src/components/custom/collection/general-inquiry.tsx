@@ -115,7 +115,7 @@ export function GeneralInquiryForm({data}: { data: IGeneralInquiryProps }) {
 
     return (
       <div className="w-full max-w-4xl mx-auto px-4 py-6">
-        <div className="rounded-lg border bg-white border-gray-700 my-4 p-6 shadow-sm transition-shadow hover:shadow-md relative flex flex-col">
+        <div className="rounded-lg border bg-white border-brand-red my-4 p-6 shadow-sm transition-shadow hover:shadow-md relative flex flex-col">
           <div className="mb-8">
             <h2 className="text-2xl font-bold text-brand-red font-serif mb-2">{data.heading}</h2>
             <p className="text-black max-w-xl">{data.subHeading}</p>

@@ -1,5 +1,5 @@
 import qs from "qs";
-import type { TStrapiResponse, THomePage, TGlobal, TMetaData, TTrainingPage, TContactPage, TGalleryPage, TTrainingProgram, TMainMenu } from "@/types";
+import type { TStrapiResponse, THomePage, TGlobal, TMetaData, TTrainingPage, TContactPage, TGalleryPage, TTrainingProgram, TMainMenu, TTrainingProgramCollection } from "@/types";
 
 import { api } from "@/data/data-api";
 import { getStrapiURL } from "@/lib/utils";
@@ -188,6 +188,78 @@ async function getMetaData(): Promise<TStrapiResponse<TMetaData>> {
   return api.get<TMetaData>(url.href);
 }
 
+async function getTrainingProgramBySlug(slug: string): Promise<TStrapiResponse<TTrainingProgramCollection>> {
+  const query = qs.stringify({
+    filters: {
+      slug: {
+        $eq: slug,
+      },
+    },
+    populate: {
+      blocks: {
+        on: {
+          "layout.hero-section": {
+            populate: {
+              image: {
+                fields: ["url", "alternativeText"],
+              },
+              link: {
+                populate: true,
+              },
+            },
+          },
+          "layout.info-section": {
+            populate: true,
+          },
+          "layout.contact-form": {
+            populate: true,
+          },
+        },
+      },
+    },
+  });
+
+  const url = new URL("/api/training-programs", baseUrl);
+  url.search = query;
+  const response = await api.get<TTrainingProgramCollection[]>(url.href);
+  
+  return {
+    ...response,
+    data: response.data?.[0],
+  };
+}
+
+async function getAllTrainingPrograms(): Promise<TStrapiResponse<TTrainingProgramCollection[]>> {
+  const query = qs.stringify({
+    populate: {
+      blocks: {
+        on: {
+          "layout.hero-section": {
+            populate: {
+              image: {
+                fields: ["url", "alternativeText"],
+              },
+              link: {
+                populate: true,
+              },
+            },
+          },
+          "layout.info-section": {
+            populate: true,
+          },
+          "layout.contact-form": {
+            populate: true,
+          },
+        },
+      },
+    },
+  });
+
+  const url = new URL("/api/training-programs", baseUrl);
+  url.search = query;
+  return api.get<TTrainingProgramCollection[]>(url.href);
+}
+
 type TrainingProgramType = "beginner-private-training" | "advanced-private-training" | "lash-designer-academy" | "beginner-group-training";
 
 async function getTrainingProgramData(programType: TrainingProgramType): Promise<TStrapiResponse<TTrainingProgram>> {
@@ -230,4 +302,6 @@ export const loaders = {
   getContactPageData,
   getGalleryPageData,
   getTrainingProgramData,
+  getTrainingProgramBySlug,
+  getAllTrainingPrograms,
 };

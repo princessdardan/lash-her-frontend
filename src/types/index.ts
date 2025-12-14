@@ -234,6 +234,29 @@ export type THomePage = {
   blocks: TBlocks[]; // we will change this soon
 };
 
+export type TTrainingProgramCollection = {
+  id: number;
+  documentId: string;
+  title: string;
+  slug: string;
+  description: string;
+  blocks: TrainingProgramBlocks[];
+  createdAt: string;
+  updatedAt: string;
+  publishedAt: string;
+};
+
+export type TTrainingProgramsPage = {
+  id: number;
+  documentId: string;
+  title: string;
+  description: string;
+  training_programs: TTrainingProgramCollection[];
+  createdAt: string;
+  updatedAt: string;
+  publishedAt: string;
+};
+
 export type THeader = {
   logoText: TLink;
   ctaButton: TLink[];
