@@ -110,43 +110,39 @@ export function LandingAnimation() {
       {/* Overlay Content */}
       <div className="relative flex h-full bg-grey flex-col items-center justify-center gap-4 mt-24 px-4 z-50">
         {/* Logo or Title */}
-        <motion.div
-          initial={{ opacity: 0, y: -30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1, delay: 4.0 }}
-          className="text-center p-2 rounded-xl backdrop-blur-xs">
+        <div className="text-center p-2 rounded-xl backdrop-blur-xs animate-fade-in-overlay">
           <motion.h1
-            initial={{ opacity: 0, y: -30 }}
+            initial={false}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1, delay: 4.0 }}
-            className="text-6xl font-bold text-brand-dark-red font-stretch-90% text-lift-dynamic font-serif drop-shadow-2xl md:text-7xl"
+            transition={{ duration: 1, delay: 1.5 }}
+            className="immediate-visible text-6xl font-bold text-brand-dark-red font-stretch-90% text-lift-dynamic font-serif drop-shadow-2xl md:text-7xl"
           >
             Lash Her
           </motion.h1>
           <motion.h2
-            initial={{ opacity: 0, y: -30 }}
+            initial={false}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1, delay: 4.2 }}
-            className="-mt-2 text-3xl font-stretch-150% text-black text-lift-subtle-dynamic font-script font-light text-lift-dynamic drop-shadow-2xl md:text-4xl"
+            transition={{ duration: 1, delay: 1.7 }}
+            className="immediate-visible -mt-2 text-3xl font-stretch-150% text-black text-lift-subtle-dynamic font-script font-light text-lift-dynamic drop-shadow-2xl md:text-4xl"
           >
             By Nataliea
           </motion.h2>
           <motion.p
-            initial={{ opacity: 0, y: -30 }}
+            initial={false}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1, delay: 4.4 }}
-            className="mt-4 text-xl font-stretch-75% text-brand-more-pink font-light text-lift-dynamic drop-shadow-2xl md:text-2xl"
+            transition={{ duration: 1, delay: 2.0 }}
+            className="immediate-visible mt-4 text-xl font-stretch-75% text-brand-more-pink font-light text-lift-dynamic drop-shadow-2xl md:text-2xl"
           >
             Elevate Your Beauty
           </motion.p>
-        </motion.div>
+        </div>
 
         {/* Enter Button */}
         <motion.div
           ref={buttonRef}
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1, delay: 4.6 }}
+          transition={{ duration: 1, delay: 2.5 }}
           className="relative"
           onMouseEnter={() => setIsHoveringButton(true)}
           onMouseLeave={() => setIsHoveringButton(false)}

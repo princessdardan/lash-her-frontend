@@ -199,6 +199,32 @@
       -webkit-mask-image: linear-gradient(to right, transparent 10%, black 25%, black 75%, transparent 90%);
     }
   }
+
+  /* Performance optimized animations for landing page */
+  .immediate-visible {
+    opacity: 1 !important;
+    animation: fadeInQuick 0.3s ease-in;
+  }
+
+  @keyframes fadeInQuick {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes fadeInOverlay {
+    from {
+      opacity: 0;
+      transform: translateY(-30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-fade-in-overlay {
+    animation: fadeInOverlay 1s ease-out 1.5s both;
+  }
 }
 
 @layer components {

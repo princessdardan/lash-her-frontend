@@ -67,6 +67,15 @@ export default async function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <link
+          rel="preload"
+          href="https://xm0ufgpuvv6lszhy.public.blob.vercel-storage.com/landing-1-1oi45eVlDp1KCMZrJ5UxWdqcDuC8VJ.avif"
+          as="image"
+          type="image/avif"
+          fetchPriority="high"
+        />
+      </head>
       <body
         className={`${montserrat.variable} ${cardo.variable} ${cormorantGaramond.variable} ${luxuriousScript.variable} ${poppins.variable} ${playfairDisplay.variable} antialiased`}
       >
