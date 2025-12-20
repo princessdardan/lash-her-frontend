@@ -70,7 +70,7 @@ export default async function RootLayout({
       <head>
         <link
           rel="preload"
-          href="https://xm0ufgpuvv6lszhy.public.blob.vercel-storage.com/landing-1-1oi45eVlDp1KCMZrJ5UxWdqcDuC8VJ.avif"
+          href="https://xm0ufgpuvv6lszhy.public.blob.vercel-storage.com/landing-1.avif"
           as="image"
           type="image/avif"
           fetchPriority="high"
