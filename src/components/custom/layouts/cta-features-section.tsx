@@ -1,7 +1,7 @@
 
 import { BlockRenderer } from "@/components/ui/block-renderer";
 import { BlocksContent, TLink } from "@/types";
-import { AwardIcon, UsersIcon, VideoIcon } from "lucide-react";
+import { AwardIcon, UserIcon, UsersIcon, VideoIcon } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
@@ -10,7 +10,7 @@ export interface CtaFeature {
   __component: string;
   heading: string;
   subHeading: string;
-  features: BlocksContent; // ← This is the rich text blocks field
+  features: BlocksContent;
   tier: string;
   location: string;
   icon: string;
@@ -32,6 +32,8 @@ function getIcon(name: string) {
   switch (name) {
     case "VIDEO_ICON":
       return <VideoIcon className="w-4 h-4 text-white" aria-hidden="true" />;
+    case "USER_ICON":
+      return <UserIcon className="w-4 h-4 text-white" aria-hidden="true" />;
     case "USERS_ICON":
       return <UsersIcon className="w-4 h-4 text-white" aria-hidden="true" />;
     case "AWARD_ICON":
@@ -56,7 +58,12 @@ export async function CtaFeaturesSection({data}: { data: CtaFeaturesSectionProps
         </div>
 
         {/* Features Grid */}
-        <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3 max-w-6xl mx-auto">
+        <div className={`grid gap-8 max-w-6xl mx-auto ${
+          data.features.length === 1 ? 'grid-cols-1 max-w-md' :
+          data.features.length === 2 ? 'md:grid-cols-2 max-w-4xl' :
+          data.features.length === 4 ? 'md:grid-cols-2 lg:grid-cols-4' :
+          'md:grid-cols-2 lg:grid-cols-3'
+        }`}>
           {data.features.map((item: CtaFeature) => (
             <div
               key={item.id}
@@ -110,7 +117,7 @@ export async function CtaFeaturesSection({data}: { data: CtaFeaturesSectionProps
             </div>
           ))}
         </div>
-      </div>
+      </div>  
     </section>
   );
 }
