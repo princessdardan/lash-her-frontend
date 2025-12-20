@@ -17,6 +17,11 @@ const nextConfig: NextConfig = {
         hostname: "cheerful-prosperity-b55f073006.media.strapiapp.com",
         pathname: "/**",
       },
+      {
+        protocol: "https",
+        hostname: "*.public.blob.vercel-storage.com",
+        pathname: "/**",
+      },
     ],
   },
 };

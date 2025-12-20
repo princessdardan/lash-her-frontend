@@ -5,32 +5,11 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import Image from "next/image";
+import blobUrls from "@/config/blob-urls.json";
 
-const images = [
-    "/images/landing-1.jpg",
-    "/images/landing-2.jpg",
-    "/images/landing-4.jpg",
-    "/images/landing-5.jpg",
-    "/images/landing-6.jpg",
-    "/images/landing-7.jpg",
-    "/images/landing-8.jpg",
-    "/images/landing-9.jpg",
-    "/images/landing-10.jpg",
-    "/images/landing-11.jpg",
-    "/images/landing-12.jpg",
-    "/images/landing-13.jpg",
-    "/images/landing-14.jpg",
-    "/images/landing-15.jpg",
-    "/images/landing-16.jpg",
-    "/images/landing-17.jpg",
-    "/images/landing-18.jpg",
-    "/images/landing-19.jpg",
-    "/images/landing-20.jpg",
-    "/images/landing-21.jpg",
-    "/images/landing-22.jpg",
-    "/images/landing-23.jpg",
-    "/images/landing-24.jpg",
-];
+// Use blob URLs from Vercel Blob Storage for optimal performance
+const images = blobUrls.landingFrames;
+const logoUrl = blobUrls.logo;
 
 export function LandingAnimation() {
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -117,6 +96,7 @@ export function LandingAnimation() {
                   className="object-cover"
                   priority={index < 8}
                   onLoad={handleImageLoad}
+                  unoptimized
                 />
               </motion.div>
             );
@@ -189,11 +169,12 @@ export function LandingAnimation() {
               style={{ zIndex: 10000 }}
             >
               <Image
-                src="/images/lash-her-gold.png"
+                src={logoUrl}
                 alt="Lash Her Logo"
                 width={240}
                 height={240}
                 className="object-fill md:object-cover scale-150"
+                unoptimized
               />
             </motion.div>
           )}
