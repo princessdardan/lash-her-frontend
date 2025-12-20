@@ -40,16 +40,19 @@ export function LandingAnimation() {
   const buttonRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
+  // Start animation when first 8 priority images are loaded
+  const PRIORITY_IMAGE_COUNT = 8;
+
   useEffect(() => {
-    // Start animation only when all images are loaded
-    if (imagesLoaded === images.length) {
+    // Start animation when priority images are loaded
+    if (imagesLoaded >= PRIORITY_IMAGE_COUNT && !isReady) {
       const readyTimer = setTimeout(() => {
         setIsReady(true);
       }, 450);
 
       return () => clearTimeout(readyTimer);
     }
-  }, [imagesLoaded]);
+  }, [imagesLoaded, isReady]);
 
   const handleImageLoad = () => {
     setImagesLoaded((prev) => prev + 1);
