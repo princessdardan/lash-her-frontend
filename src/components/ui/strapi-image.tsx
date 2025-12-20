@@ -24,6 +24,7 @@ export function StrapiImage({
   src,
   alt,
   className,
+  priority,
   ...rest
 }: Readonly<IStrapiMediaProps>) {
   const imageUrl = getStrapiMedia(src);
@@ -33,6 +34,7 @@ export function StrapiImage({
       src={imageUrl}
       alt={alt ?? "No alternative text provided"}
       className={className}
+      priority={priority}
       {...rest}
     />
   );

@@ -33,6 +33,7 @@ export function HeroSection({ data }: { data: IHeroSectionProps }) {
           src={image.url}
           height={2160}
           width={3840}
+          priority={true}
         />
         <div className="relative px-8 py-4 z-10 flex flex-col items-center justify-center h-full bg-black/60 text-center">
           <h1 className="hero-heading">
@@ -70,6 +71,7 @@ export function HeroSection({ data }: { data: IHeroSectionProps }) {
         src={image.url}
         height={2160}
         width={3840}
+        priority={true}
       />
       <div className="relative px-8 py-4 z-10 flex flex-col items-center justify-center h-full bg-black/50 text-center">
         <h1 className="hero-heading-home">{heading}</h1>

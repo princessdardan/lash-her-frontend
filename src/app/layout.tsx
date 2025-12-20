@@ -9,40 +9,46 @@ const luxuriousScript = Luxurious_Script({
   variable: "--font-luxurious-script",
   subsets: ["latin"],
   weight: "400",
+  display: 'swap',
 });
 
 const cormorantGaramond = Cormorant_Garamond({
   variable: "--font-cormorant-garamond",
   subsets: ["latin"],
   weight: ["300", "400", "500", "600", "700"],
-  style: "normal"
+  style: "normal",
+  display: 'swap',
 });
 
 const playfairDisplay = Playfair_Display({
   variable: "--font-playfair-display",
   subsets: ["latin"],
   weight: ["400", "700"],
-  style: "normal"
+  style: "normal",
+  display: 'swap',
 });
 
 const cardo = Cardo({
   variable: "--font-cardo",
   subsets: ["latin"],
   weight: ["400", "700"],
-  style: "normal"
+  style: "normal",
+  display: 'swap',
 });
 
 const poppins = Poppins({
   variable: "--font-poppins",
   subsets: ["latin"],
   weight: ["300", "400", "500", "600", "700"],
+  display: 'swap',
 });
 
 const montserrat = Montserrat({
   variable: "--font-montserrat",
   subsets: ["latin"],
   weight: ["100", "200", "300", "400", "500", "600", "700", "800", "900"],
-  style: ["normal", "italic"], 
+  style: ["normal", "italic"],
+  display: 'swap',
 });
 
 export async function generateMetadata(): Promise<Metadata> {

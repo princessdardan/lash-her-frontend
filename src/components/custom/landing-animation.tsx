@@ -13,32 +13,31 @@ const logoUrl = blobUrls.logo;
 
 export function LandingAnimation() {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [isReady, setIsReady] = useState(false);
-  const [imagesLoaded, setImagesLoaded] = useState(0);
+  const [renderedFrames, setRenderedFrames] = useState<Set<number>>(new Set([0]));
+  const [firstFrameLoaded, setFirstFrameLoaded] = useState(false);
   const [isHoveringButton, setIsHoveringButton] = useState(false);
   const buttonRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  // Start animation when first 8 priority images are loaded
-  const PRIORITY_IMAGE_COUNT = 8;
-
-  useEffect(() => {
-    // Start animation when priority images are loaded
-    if (imagesLoaded >= PRIORITY_IMAGE_COUNT && !isReady) {
-      const readyTimer = setTimeout(() => {
-        setIsReady(true);
-      }, 450);
-
-      return () => clearTimeout(readyTimer);
-    }
-  }, [imagesLoaded, isReady]);
-
-  const handleImageLoad = () => {
-    setImagesLoaded((prev) => prev + 1);
+  const handleFirstFrameLoad = () => {
+    setFirstFrameLoaded(true);
   };
 
+  // Preload frames 1-2 ahead of current index for smooth animation
   useEffect(() => {
-    if (!isReady) return;
+    if (!firstFrameLoaded) return;
+
+    const framesToPreload = [currentIndex + 1, currentIndex + 2];
+
+    framesToPreload.forEach(frameIndex => {
+      if (frameIndex < images.length && !renderedFrames.has(frameIndex)) {
+        setRenderedFrames(prev => new Set([...prev, frameIndex]));
+      }
+    });
+  }, [currentIndex, renderedFrames, firstFrameLoaded]);
+
+  useEffect(() => {
+    if (!firstFrameLoaded) return;
 
     const interval = setInterval(() => {
       setCurrentIndex((prev) => {
@@ -52,7 +51,7 @@ export function LandingAnimation() {
     }, 240); // Change every 240ms for smoother video-like speed with more frames
 
     return () => clearInterval(interval);
-  }, [isReady]);
+  }, [firstFrameLoaded]);
 
   const handleEnter = () => {
     router.push("/homepage");
@@ -64,16 +63,19 @@ export function LandingAnimation() {
       <div className="absolute inset-0">
         <AnimatePresence mode="sync">
           {images.map((image, index) => {
+            // Only render frames that should be rendered (progressive loading)
+            if (!renderedFrames.has(index)) return null;
+
             const isVisible = index <= currentIndex;
             const isCurrent = index === currentIndex;
-            
+
             return (
               <motion.div
                 key={index}
-                initial={{ 
+                initial={{
                   z: -100
                 }}
-                animate={isVisible ? { 
+                animate={isVisible ? {
                   z: isCurrent ? 0 : -50,
                 } : {
                   z: -100
@@ -94,9 +96,10 @@ export function LandingAnimation() {
                   alt={`Frame ${index + 1}`}
                   fill
                   className="object-cover"
-                  priority={index < 8}
-                  onLoad={handleImageLoad}
+                  priority={index === 0}
+                  onLoad={index === 0 ? handleFirstFrameLoad : undefined}
                   unoptimized
+                  {...(index === 0 && { fetchPriority: 'high' as const })}
                 />
               </motion.div>
             );
