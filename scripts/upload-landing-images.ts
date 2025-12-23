@@ -16,6 +16,7 @@ import { config } from 'dotenv';
 import { put } from '@vercel/blob';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 
 // Load environment variables from .env.local
 config({ path: path.join(process.cwd(), '.env.local') });
@@ -37,11 +38,14 @@ interface UploadResult {
   pathname: string;
   contentType: string;
   size: number;
+  hash: string;
+  skipped: boolean;
 }
 
 interface BlobUrlMapping {
   landingFrames: string[];
   logo: string;
+  fileHashes: Record<string, string>;
   uploadedAt: string;
   metadata: {
     totalFiles: number;
@@ -51,10 +55,55 @@ interface BlobUrlMapping {
 }
 
 /**
+ * Calculate SHA-256 hash of a file
+ */
+function calculateFileHash(filePath: string): string {
+  const fileBuffer = fs.readFileSync(filePath);
+  const hashSum = crypto.createHash('sha256');
+  hashSum.update(fileBuffer);
+  return hashSum.digest('hex');
+}
+
+/**
+ * Load existing blob URL mapping
+ */
+function loadExistingMapping(): BlobUrlMapping | null {
+  try {
+    if (fs.existsSync(OUTPUT_FILE)) {
+      const content = fs.readFileSync(OUTPUT_FILE, 'utf-8');
+      return JSON.parse(content);
+    }
+  } catch (error) {
+    console.warn('Could not load existing mapping:', error);
+  }
+  return null;
+}
+
+/**
+ * Get existing URL for a filename from mapping
+ */
+function getExistingUrl(filename: string, mapping: BlobUrlMapping | null): string | null {
+  if (!mapping) return null;
+
+  if (filename === LOGO_FILE) {
+    return mapping.logo;
+  }
+
+  const frameMatch = filename.match(/landing-(\d+)\.avif/);
+  if (frameMatch) {
+    const frameIndex = parseInt(frameMatch[1]) - 1;
+    return mapping.landingFrames[frameIndex] || null;
+  }
+
+  return null;
+}
+
+/**
  * Upload a single file with retry logic
  */
 async function uploadFileWithRetry(
   filename: string,
+  existingMapping: BlobUrlMapping | null,
   retries = MAX_RETRIES
 ): Promise<UploadResult> {
   const filePath = path.join(IMAGES_DIR, filename);
@@ -65,6 +114,33 @@ async function uploadFileWithRetry(
 
   const fileBuffer = fs.readFileSync(filePath);
   const fileSize = fs.statSync(filePath).size;
+  const currentHash = calculateFileHash(filePath);
+
+  // Check if file hash matches existing
+  const existingHash = existingMapping?.fileHashes?.[filename];
+  const existingUrl = getExistingUrl(filename, existingMapping);
+
+  if (existingHash === currentHash && existingUrl) {
+    console.log(`⏭️  Checking ${filename} (hash matches)...`);
+
+    // Verify URL still works
+    const urlValid = await verifyUpload(existingUrl);
+
+    if (urlValid) {
+      console.log(`✓ Skipped ${filename} (unchanged, URL verified)`);
+      return {
+        filename,
+        url: existingUrl,
+        pathname: new URL(existingUrl).pathname,
+        contentType: filename.endsWith('.avif') ? 'image/avif' : 'image/png',
+        size: fileSize,
+        hash: currentHash,
+        skipped: true,
+      };
+    }
+
+    console.log(`⚠️  URL invalid for ${filename}, re-uploading...`);
+  }
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -86,6 +162,8 @@ async function uploadFileWithRetry(
         pathname: blob.pathname,
         contentType: blob.contentType || '',
         size: fileSize,
+        hash: currentHash,
+        skipped: false,
       };
 
     } catch (error) {
@@ -121,7 +199,7 @@ async function verifyUpload(url: string): Promise<boolean> {
  */
 async function uploadAllImages(): Promise<void> {
   console.log('\n🚀 Starting Vercel Blob migration for landing page images\n');
-  console.log(`Total files to upload: ${ALL_FILES.length}`);
+  console.log(`Total files to process: ${ALL_FILES.length}`);
   console.log(`Source directory: ${IMAGES_DIR}\n`);
 
   // Verify BLOB_READ_WRITE_TOKEN is set
@@ -129,16 +207,30 @@ async function uploadAllImages(): Promise<void> {
     throw new Error('BLOB_READ_WRITE_TOKEN environment variable is not set');
   }
 
+  // Load existing mapping
+  const existingMapping = loadExistingMapping();
+  if (existingMapping) {
+    console.log('📋 Found existing mapping, will skip unchanged files\n');
+  }
+
   const results: UploadResult[] = [];
   const failed: string[] = [];
   let totalSize = 0;
+  let uploadedCount = 0;
+  let skippedCount = 0;
 
   // Upload all files
   for (const filename of ALL_FILES) {
     try {
-      const result = await uploadFileWithRetry(filename);
+      const result = await uploadFileWithRetry(filename, existingMapping);
       results.push(result);
       totalSize += result.size;
+
+      if (result.skipped) {
+        skippedCount++;
+      } else {
+        uploadedCount++;
+      }
     } catch (error) {
       console.error(`Failed to upload ${filename}:`, error);
       failed.push(filename);
@@ -146,9 +238,11 @@ async function uploadAllImages(): Promise<void> {
   }
 
   console.log('\n📊 Upload Summary:');
-  console.log(`✓ Successful: ${results.length}/${ALL_FILES.length}`);
-  console.log(`✗ Failed: ${failed.length}`);
-  console.log(`Total size: ${(totalSize / 1024 / 1024).toFixed(2)} MB\n`);
+  console.log(`✓ Uploaded: ${uploadedCount} files`);
+  console.log(`⏭️  Skipped: ${skippedCount} files (unchanged)`);
+  console.log(`✗ Failed: ${failed.length} files`);
+  console.log(`Total size: ${(totalSize / 1024 / 1024).toFixed(2)} MB`);
+  console.log(`💰 Advanced Operations Saved: ${skippedCount}\n`);
 
   if (failed.length > 0) {
     throw new Error(`Upload incomplete. Failed files: ${failed.join(', ')}`);
@@ -180,6 +274,12 @@ async function uploadAllImages(): Promise<void> {
     throw new Error('Logo file upload not found in results');
   }
 
+  // Build file hashes map
+  const fileHashes: Record<string, string> = {};
+  results.forEach(r => {
+    fileHashes[r.filename] = r.hash;
+  });
+
   const mapping: BlobUrlMapping = {
     landingFrames: landingFrameResults
       .sort((a, b) => {
@@ -189,6 +289,7 @@ async function uploadAllImages(): Promise<void> {
       })
       .map(r => r.url),
     logo: logoResult.url,
+    fileHashes,
     uploadedAt: new Date().toISOString(),
     metadata: {
       totalFiles: results.length,

@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "migrate:blob": "tsx scripts/upload-landing-images.ts"
+    "migrate:blob": "tsx scripts/upload-landing-images.ts",
+    "optimize:test": "tsx scripts/optimize-avif.ts",
+    "optimize:apply": "tsx scripts/apply-optimization.ts",
+    "optimize:cleanup": "rm -rf .optimization-test-output"
   },
   "dependencies": {
     "@icons-pack/react-simple-icons": "^13.8.0",
