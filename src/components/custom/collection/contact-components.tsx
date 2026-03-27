@@ -27,6 +27,7 @@ import {
   type FieldValidationConfig,
   type ValidationErrors,
 } from "@/lib/form-validation";
+import { submitTrainingContact, type FormActionResult } from "@/app/actions/form";
 
 
 export type { TContactFormLabels as IContactFormLabelsProps } from "@/types";
@@ -124,7 +125,7 @@ export function ContactFormLabels({ data }: { data: TContactFormLabels }) {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     const { errors, isValid } = validateForm(formData, CONTACT_VALIDATION_CONFIG);
@@ -135,25 +136,48 @@ export function ContactFormLabels({ data }: { data: TContactFormLabels }) {
     setIsSubmitting(true);
     setSubmitStatus({ type: null, message: "" });
 
-    // TODO: Phase 4 — replace with Server Action writing to Sanity + Resend email
-    console.warn("Form submission disabled — pending Phase 4 implementation");
-    setSubmitStatus({
-      type: "success",
-      message: "Thank you! Your submission has been received.",
+    const result: FormActionResult = await submitTrainingContact({
+      name: formData.name,
+      email: formData.email,
+      phone: formData.phone,
+      location: formData.location,
+      instagram: formData.instagram,
+      experience: formData.experience,
+      interest: formData.interest,
+      clients: formData.clients ? parseInt(formData.clients, 10) : undefined,
+      info: formData.info || undefined,
     });
-    setFormData({
-      name: "",
-      email: "",
-      phone: "",
-      location: "",
-      instagram: "",
-      experience: "",
-      interest: "",
-      clients: "",
-      info: "",
-    });
-    setFieldErrors({});
-    setTouchedFields(new Set());
+
+    if (result.success) {
+      setSubmitStatus({
+        type: "success",
+        message: "Thank you! Your submission has been received.",
+      });
+      setFormData({
+        name: "",
+        email: "",
+        phone: "",
+        location: "",
+        instagram: "",
+        experience: "",
+        interest: "",
+        clients: "",
+        info: "",
+      });
+      setFieldErrors({});
+      setTouchedFields(new Set());
+    } else {
+      // D-03: Hydrate field-level errors from server-side validation
+      if (result.fieldErrors) {
+        setFieldErrors(result.fieldErrors);
+        setTouchedFields(new Set(Object.keys(result.fieldErrors)));
+      }
+      setSubmitStatus({
+        type: "error",
+        message: result.error ?? "Something went wrong, please try again.",
+      });
+    }
+
     setIsSubmitting(false);
   };
 
@@ -383,7 +407,7 @@ export function ContactFormLabels({ data }: { data: TContactFormLabels }) {
 
                 {/* Submit Button */}
                 <Button type="submit" disabled={isSubmitting} className="btn-primary-red">
-                {isSubmitting ? "Submitting..." : "Submit"}
+                {isSubmitting ? "Submitting..." : "Send Application"}
                 </Button>
             </form>
           </div>

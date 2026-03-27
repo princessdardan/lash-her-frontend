@@ -15,6 +15,7 @@ import {
   type FieldValidationConfig,
   type ValidationErrors,
 } from "@/lib/form-validation";
+import { submitGeneralInquiry, type FormActionResult } from "@/app/actions/form";
 
 export type { TGeneralInquiryLabels as IGeneralInquiryProps } from "@/types";
 
@@ -87,7 +88,7 @@ export function GeneralInquiryForm({data}: { data: TGeneralInquiryLabels }) {
         }));
       };
 
-      const handleSubmit = (e: React.FormEvent) => {
+      const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
         // Validate all fields
@@ -98,22 +99,41 @@ export function GeneralInquiryForm({data}: { data: TGeneralInquiryLabels }) {
 
         setIsSubmitting(true);
         setSubmitStatus({ type: null, message: "" });
-    
-        // TODO: Phase 4 — replace with Server Action writing to Sanity + Resend email
-        console.warn("Form submission disabled — pending Phase 4 implementation");
-        setSubmitStatus({
-          type: "success",
-          message: "Thank you! Your submission has been received.",
+
+        const result: FormActionResult = await submitGeneralInquiry({
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone || undefined,
+          instagram: formData.instagram || undefined,
+          message: formData.message,
         });
-        setFormData({
-          name: "",
-          email: "",
-          phone: "",
-          instagram: "",
-          message: "",
-        });
-        setFieldErrors({});
-        setTouchedFields(new Set());
+
+        if (result.success) {
+          setSubmitStatus({
+            type: "success",
+            message: "Thank you! Your submission has been received.",
+          });
+          setFormData({
+            name: "",
+            email: "",
+            phone: "",
+            instagram: "",
+            message: "",
+          });
+          setFieldErrors({});
+          setTouchedFields(new Set());
+        } else {
+          // D-03: Hydrate field-level errors from server-side validation
+          if (result.fieldErrors) {
+            setFieldErrors(result.fieldErrors);
+            setTouchedFields(new Set(Object.keys(result.fieldErrors)));
+          }
+          setSubmitStatus({
+            type: "error",
+            message: result.error ?? "Something went wrong, please try again.",
+          });
+        }
+
         setIsSubmitting(false);
       };
 
@@ -239,7 +259,7 @@ export function GeneralInquiryForm({data}: { data: TGeneralInquiryLabels }) {
 
             {/* Submit Button */}
             <Button type="submit" disabled={isSubmitting} className="btn-primary-red">
-              {isSubmitting ? "Submitting..." : "Submit"}
+              {isSubmitting ? "Submitting..." : "Send Inquiry"}
             </Button>
           </form>
       </div>
