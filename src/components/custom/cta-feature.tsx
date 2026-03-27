@@ -1,5 +1,6 @@
 import { AwardIcon, UsersIcon, VideoIcon } from "lucide-react";
 import type { TCtaFeature } from "@/types";
+import { PortableTextRenderer } from "@/components/ui/portable-text-renderer";
 
 function getIcon(name: string) {
   switch (name) {
@@ -28,13 +29,9 @@ export function CtaFeature({
       <h3 className="text-3xl font-bold font-heading">{heading}</h3>
       <p className="text-gray-600">{subHeading}</p>
 
-      {/* Portable Text renderer — Phase 3 */}
+      {/* Portable Text content */}
       <div className="mt-4">
-        {features?.map((block) => (
-          <p key={block._key}>
-            {block.children?.map((child) => child.text).join("")}
-          </p>
-        ))}
+        <PortableTextRenderer content={features} />
       </div>
 
       <div className="mt-4">

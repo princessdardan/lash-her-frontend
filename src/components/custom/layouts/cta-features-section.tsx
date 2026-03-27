@@ -1,0 +1,103 @@
+
+import type { TCtaFeaturesSection, TCtaFeature } from "@/types";
+import { AwardIcon, UserIcon, UsersIcon, VideoIcon } from "lucide-react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { PortableTextRenderer } from "@/components/ui/portable-text-renderer";
+
+export type { TCtaFeaturesSection as CtaFeaturesSectionProps } from "@/types";
+export type { TCtaFeature as CtaFeature } from "@/types";
+
+function getIcon(name: string) {
+  switch (name) {
+    case "VIDEO_ICON":
+      return <VideoIcon className="w-4 h-4 text-white" aria-hidden="true" />;
+    case "USER_ICON":
+      return <UserIcon className="w-4 h-4 text-white" aria-hidden="true" />;
+    case "USERS_ICON":
+      return <UsersIcon className="w-4 h-4 text-white" aria-hidden="true" />;
+    case "AWARD_ICON":
+      return <AwardIcon className="w-4 h-4 text-white" aria-hidden="true" />;
+    default:
+      return null;
+  }
+}
+
+export async function CtaFeaturesSection({data}: { data: TCtaFeaturesSection }) {
+  if (!data) return null;
+  return (
+    <section className= "section-container-pink">
+      <div className="content-container">
+        {/* Section Header */}
+        <div className="text-container">
+          <h2 className="section-heading-red ">{data.heading}</h2>
+          <p className="section-subheading-white">{data.subHeading}</p>
+          {data.description && (
+            <p className="section-description">{data.description}</p>
+          )}
+        </div>
+
+        {/* Features Grid */}
+        <div className={`grid gap-8 max-w-6xl mx-auto ${
+          data.features.length === 1 ? 'grid-cols-1 max-w-md' :
+          data.features.length === 2 ? 'md:grid-cols-2 max-w-4xl' :
+          data.features.length === 4 ? 'md:grid-cols-2 lg:grid-cols-4' :
+          'md:grid-cols-2 lg:grid-cols-3'
+        }`}>
+          {data.features.map((item: TCtaFeature, index: number) => (
+            <div
+              key={item._key || index}
+              className={`rounded-lg border bg-white text-black border-brand-red my-4 p-6 shadow-sm transition-shadow hover:shadow-md relative flex flex-col ${
+                item.mostPopular ? "border-brand-red border-2" : ""
+              }`}
+            >
+              {/* Most Popular Badge */}
+              {item.mostPopular && (
+                <div className="absolute top-0 right-0 bg-brand-red text-white text-xs px-3 py-1 rounded-bl-md rounded-tr-md">
+                  Most Popular
+                </div>
+              )}
+
+              {/* Feature Header */}
+              <div className="my-4">
+                <div className="flex items-start mb-4">
+                  <div className={`rounded-full bg-brand-red/80 p-2 inline-flex items-center justify-center ${
+                    item.mostPopular ? "bg-brand-red" : ""
+                  }`}>
+                    {getIcon(item.icon)}
+                  </div>
+                </div>
+                <h3 className="text-2xl font-bold font-serif">{item.heading}</h3>
+                <p className="text-sm text-brand-red font-extrabold">{item.subHeading}</p>
+                <div className="text-sm font-medium py-1 mb-2 text-black">
+                  {item.location}
+                </div>
+              </div>
+              <div className="text-sm text-brand-red font-extrabold">{item.tier}</div>
+              {/* Rich Text Content */}
+              <div className="flex my-4 font-medium">
+                <PortableTextRenderer content={item.features} />
+              </div>
+
+              {/* CTA Link */}
+              {item.link && (
+                <Link
+                  href={item.link.href}
+                  target={item.link.isExternal ? "_blank" : undefined}
+                  rel={
+                    item.link.isExternal ? "noopener noreferrer" : undefined
+                  }
+                  className="mt-auto mb-2"
+                >
+                  <Button className="btn-primary-red">
+                    {item.link.label}
+                  </Button>
+                </Link>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
