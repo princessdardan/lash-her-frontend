@@ -157,7 +157,7 @@ export function MobileNavigation({ ctaButton, menuItems = [] }: MobileNavigation
                                       : "text-gray-700 hover:bg-brand-pink/5 hover:text-brand-red"
                                   )}
                                 >
-                                  {link.title}
+                                  {link.name}
                                 </Link>
                               );
                             })}
