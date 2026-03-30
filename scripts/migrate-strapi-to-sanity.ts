@@ -1114,7 +1114,7 @@ async function migrateMainMenu(): Promise<void> {
               links: linkItems.map((l) => ({
                 _type: "menuLink",
                 _key: nanoid(12),
-                name: l.name ?? l.label ?? "",
+                name: l.name ?? l.title ?? l.label ?? "",
                 url: l.url ?? l.href ?? "",
                 description: l.description ?? "",
               })),
