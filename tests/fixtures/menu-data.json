@@ -1,0 +1,33 @@
+{
+  "data": {
+    "id": 1,
+    "documentId": "main-menu-1",
+    "MainMenuItems": [
+      {
+        "id": 1,
+        "__component": "menu.menu-link",
+        "title": "Home",
+        "url": "/"
+      },
+      {
+        "id": 2,
+        "__component": "menu.menu-link",
+        "title": "Contact",
+        "url": "/contact"
+      },
+      {
+        "id": 3,
+        "__component": "menu.menu-link",
+        "title": "Gallery",
+        "url": "/gallery"
+      },
+      {
+        "id": 4,
+        "__component": "menu.menu-link",
+        "title": "Training",
+        "url": "/training"
+      }
+    ]
+  },
+  "meta": {}
+}

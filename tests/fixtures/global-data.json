@@ -1,0 +1,27 @@
+{
+  "data": {
+    "id": 1,
+    "documentId": "global-1",
+    "header": {
+      "id": 1,
+      "logoText": {
+        "id": 1,
+        "label": "Lash Her by Nataliea",
+        "dark": false
+      },
+      "ctaButton": [
+        {
+          "id": 1,
+          "label": "Book Now",
+          "href": "/contact"
+        }
+      ]
+    },
+    "footer": {
+      "id": 1,
+      "text": "© 2026 Lash Her by Nataliea. All rights reserved.",
+      "socialLinks": []
+    }
+  },
+  "meta": {}
+}

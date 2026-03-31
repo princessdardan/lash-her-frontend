@@ -275,6 +275,7 @@ export interface TGlobalSettings {
 export interface TMetaData {
   title: string;
   description: string;
+  ogImageUrl: string | null;
 }
 
 // === Form Submission Types (used by Phase 4) ===

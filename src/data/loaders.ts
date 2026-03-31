@@ -129,7 +129,8 @@ async function getMainMenuData(): Promise<TMainMenu | null> {
 async function getMetaData(): Promise<TMetaData | null> {
   const query = groq`*[_type == "globalSettings"][0]{
     title,
-    description
+    description,
+    "ogImageUrl": ogImage.asset->url
   }`;
   return client.fetch<TMetaData | null>(query, {}, { next: { tags: ['global'] } });
 }
