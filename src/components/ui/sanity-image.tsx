@@ -1,9 +1,9 @@
 import Image from "next/image";
-import imageUrlBuilder from "@sanity/image-url";
+import { createImageUrlBuilder } from "@sanity/image-url";
 import { client } from "@/sanity/lib/client";
 import type { TSanityImage } from "@/types";
 
-const builder = imageUrlBuilder(client);
+const builder = createImageUrlBuilder(client);
 
 interface ISanityImageProps {
   image: TSanityImage;

@@ -28,7 +28,7 @@ console.log("Injected MOTION_DEV_TOKEN into package.json");
 
 // Install with no lockfile generation
 try {
-  execSync("npm install --no-package-lock --legacy-peer-deps", { stdio: "inherit" });
+  execSync("npm install --no-package-lock", { stdio: "inherit" });
 } catch (err) {
   console.error("\n--- npm install failed (exit code: %d) ---", err.status);
   // Log motion specifiers (masked) for debugging
