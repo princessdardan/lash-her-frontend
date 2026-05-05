@@ -176,11 +176,13 @@ export function BookingFlow({ settings, initialBookingType }: BookingFlowProps) 
               {slots.map((slot) => {
                 const date = new Date(slot.start);
                 const formatted = new Intl.DateTimeFormat("en-US", {
+                  timeZone: settings.timezone,
                   weekday: "short",
                   month: "short",
                   day: "numeric",
                   hour: "numeric",
                   minute: "2-digit",
+                  timeZoneName: "short",
                 }).format(date);
                 return (
                   <SelectItem key={slot.start} value={slot.start}>
@@ -190,6 +192,7 @@ export function BookingFlow({ settings, initialBookingType }: BookingFlowProps) 
               })}
             </SelectContent>
           </Select>
+          <FieldDescription>All times are shown in {settings.timezone}.</FieldDescription>
         </Field>
       )}
 
