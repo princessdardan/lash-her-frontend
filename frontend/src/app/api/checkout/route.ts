@@ -22,7 +22,6 @@ interface CheckoutRequestBody {
 
 interface CheckoutResponseBody {
   checkoutToken: string;
-  orderId: string;
 }
 
 interface CheckoutErrorBody {
@@ -69,7 +68,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       invoiceNumber: invoice.invoiceNumber,
     });
 
-    const pendingOrder = await createPendingOrder({
+    await createPendingOrder({
       customerName: checkoutRequest.customer.name,
       customerEmail: checkoutRequest.customer.email,
       checkoutToken: helcimPaySession.checkoutToken,
@@ -81,7 +80,6 @@ export async function POST(req: NextRequest): Promise<Response> {
 
     return NextResponse.json<CheckoutResponseBody>({
       checkoutToken: helcimPaySession.checkoutToken,
-      orderId: pendingOrder.orderId,
     });
   } catch (error) {
     console.error("[checkout] Unable to initialize checkout", {
