@@ -1,6 +1,7 @@
 import "server-only";
 
-import { calendar_v3, google } from "googleapis";
+import { google } from "googleapis";
+import type { calendar_v3 } from "googleapis";
 
 import { getBookingEnv } from "@/sanity/env";
 import { getGoogleRefreshToken } from "./operational-store";
@@ -102,10 +103,17 @@ function toCalendarEventWindow(
     return null;
   }
 
+  const start = new Date(startValue);
+  const end = new Date(endValue);
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return null;
+  }
+
   return {
     id: event.id,
     title: event.summary ?? "",
-    start: new Date(startValue),
-    end: new Date(endValue),
+    start,
+    end,
   };
 }

@@ -6,6 +6,11 @@ import { getBookingEnv } from "@/sanity/env";
 
 const TOKEN_KEY = "booking:google-refresh-token";
 const CALENDAR_LOCK_KEY = "booking:calendar-lock";
+const RELEASE_CALENDAR_LOCK_SCRIPT = `#!lua flags=allow-key-locking
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+  return redis.call("DEL", KEYS[1])
+end
+return 0`;
 
 let redisClient: Redis | null = null;
 
@@ -44,13 +49,7 @@ export async function acquireCalendarLock(
 }
 
 export async function releaseCalendarLock(lockId: string): Promise<void> {
-  const currentLockId = await getRedis().get<string>(CALENDAR_LOCK_KEY);
-
-  if (currentLockId !== lockId) {
-    return;
-  }
-
-  await getRedis().del(CALENDAR_LOCK_KEY);
+  await getRedis().eval(RELEASE_CALENDAR_LOCK_SCRIPT, [CALENDAR_LOCK_KEY], [lockId]);
 }
 
 export async function claimIdempotencyKey(
