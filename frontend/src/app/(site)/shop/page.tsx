@@ -15,7 +15,7 @@ export default async function ShopPage(): Promise<ReactElement> {
             Shop
           </h1>
           <p className="section-description text-center text-lg">
-            Discover our curated selection of premium lash products and training materials. 
+            Discover our curated selection of premium lash products and training materials.
             Elevate your artistry with the same tools we use in our studio.
           </p>
         </div>

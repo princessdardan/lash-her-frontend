@@ -3,7 +3,7 @@
 import { useState, type ReactElement } from "react";
 import { Button } from "@/components/ui/button";
 import { formatCad } from "@/lib/commerce/money";
-import { buildValidatedCart, type CartInputItem } from "@/lib/commerce/cart";
+import { buildValidatedCart, type CartInputItem, type ValidatedCart } from "@/lib/commerce/cart";
 import type { TSellableProduct } from "@/types";
 import { ProductCard } from "./product-card";
 
@@ -39,8 +39,8 @@ export function CartPanel({ products }: CartPanelProps): ReactElement {
     setItems([]);
   };
 
-  let cart;
-  let cartError = null;
+  let cart: ValidatedCart | null = null;
+  let cartError: string | null = null;
   try {
     if (items.length > 0) {
       const catalogProducts = products.map(p => ({
@@ -72,7 +72,7 @@ export function CartPanel({ products }: CartPanelProps): ReactElement {
       <div className="lg:col-span-1">
         <div className="card-white sticky top-24">
           <h2 className="card-heading-red text-2xl mb-4">Your Cart</h2>
-          
+
           <div aria-live="polite" className="sr-only">
             {totalItems} items in cart
           </div>
@@ -109,7 +109,7 @@ export function CartPanel({ products }: CartPanelProps): ReactElement {
                       </li>
                     ))}
                   </ul>
-                  
+
                   <div className="border-t border-brand-red pt-4 mt-2">
                     <div className="flex justify-between items-center mb-6">
                       <span className="font-bold text-xl text-black">Total</span>
@@ -146,14 +146,14 @@ export function CartPanel({ products }: CartPanelProps): ReactElement {
                     </div>
 
                     <div className="flex flex-col gap-2">
-                      <Button 
-                        disabled={true} 
+                      <Button
+                        disabled
                         className="btn-primary-red"
                       >
                         Checkout (Coming Soon)
                       </Button>
-                      <Button 
-                        variant="ghost" 
+                      <Button
+                        variant="ghost"
                         onClick={handleClear}
                         className="text-brand-dark-grey hover:text-brand-red"
                       >
