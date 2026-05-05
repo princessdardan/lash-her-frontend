@@ -9,6 +9,8 @@ import { mainMenu } from "./documents/main-menu";
 
 // Documents — Collections
 import { trainingProgram } from "./documents/training-program";
+import { sellableProduct } from "./documents/sellable-product";
+import { checkoutOrder } from "./documents/checkout-order";
 import { contactForm } from "./documents/contact-form";
 import { generalInquiry } from "./documents/general-inquiry";
 
@@ -51,6 +53,8 @@ export const schemaTypes = [
   globalSettings,
   mainMenu,
   trainingProgram,
+  sellableProduct,
+  checkoutOrder,
   contactForm,
   generalInquiry,
   // Layout blocks

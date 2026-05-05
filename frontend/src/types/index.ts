@@ -254,6 +254,54 @@ export interface TTrainingProgramsPage {
   trainingPrograms: TTrainingProgram[];
 }
 
+export type TSellableProductKind = "product" | "service" | "training" | "deposit";
+
+export type TCheckoutOrderStatus =
+  | "pending"
+  | "paid"
+  | "verification_failed"
+  | "cancelled"
+  | "refunded";
+
+export interface TSellableProduct {
+  _id: string;
+  title: string;
+  description?: string;
+  slug: string;
+  sku: string;
+  kind: TSellableProductKind;
+  price: number;
+  currency: "CAD";
+  isAvailable: boolean;
+  image?: TSanityImage;
+}
+
+export interface TCheckoutOrderLineItem {
+  _key?: string;
+  sku: string;
+  description: string;
+  quantity: number;
+  price: number;
+  total: number;
+}
+
+export interface TCheckoutOrder {
+  _id: string;
+  orderId: string;
+  status: TCheckoutOrderStatus;
+  checkoutToken?: string;
+  secretToken?: string;
+  helcimInvoiceId?: string;
+  helcimInvoiceNumber?: string;
+  helcimTransactionId?: string;
+  customerName: string;
+  customerEmail: string;
+  amount: number;
+  currency: "CAD";
+  lineItems: TCheckoutOrderLineItem[];
+  _createdAt: string;
+}
+
 export interface THeader {
   logoText: TLink;
   ctaButton: TLink[];
