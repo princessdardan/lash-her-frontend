@@ -15,6 +15,7 @@ export const sellableProduct = defineType({
       name: "description",
       title: "Description",
       type: "text",
+      validation: (Rule) => Rule.required(),
     }),
     defineField({
       name: "slug",
@@ -44,6 +45,7 @@ export const sellableProduct = defineType({
         ],
         layout: "radio",
       },
+      initialValue: "service",
       validation: (Rule) => Rule.required(),
     }),
     defineField({
@@ -62,7 +64,7 @@ export const sellableProduct = defineType({
     }),
     defineField({
       name: "isAvailable",
-      title: "Available for Checkout",
+      title: "Available for checkout",
       type: "boolean",
       initialValue: true,
       validation: (Rule) => Rule.required(),
@@ -77,7 +79,7 @@ export const sellableProduct = defineType({
       fields: [
         defineField({
           name: "alt",
-          title: "Alt Text",
+          title: "Alt text",
           type: "string",
         }),
       ],

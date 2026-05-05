@@ -266,7 +266,7 @@ export type TCheckoutOrderStatus =
 export interface TSellableProduct {
   _id: string;
   title: string;
-  description?: string;
+  description: string;
   slug: string;
   sku: string;
   kind: TSellableProductKind;
@@ -277,7 +277,6 @@ export interface TSellableProduct {
 }
 
 export interface TCheckoutOrderLineItem {
-  _key?: string;
   sku: string;
   description: string;
   quantity: number;
@@ -286,12 +285,9 @@ export interface TCheckoutOrderLineItem {
 }
 
 export interface TCheckoutOrder {
-  _id: string;
   orderId: string;
   status: TCheckoutOrderStatus;
-  checkoutToken?: string;
-  secretToken?: string;
-  helcimInvoiceId?: string;
+  helcimInvoiceId?: number;
   helcimInvoiceNumber?: string;
   helcimTransactionId?: string;
   customerName: string;
@@ -299,7 +295,6 @@ export interface TCheckoutOrder {
   amount: number;
   currency: "CAD";
   lineItems: TCheckoutOrderLineItem[];
-  _createdAt: string;
 }
 
 export interface THeader {
