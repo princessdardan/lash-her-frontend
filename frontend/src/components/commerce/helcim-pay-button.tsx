@@ -24,6 +24,28 @@ interface HelcimPayButtonProps {
   onPaid: () => void;
 }
 
+function isHelcimPayloadValue(value: unknown): value is HelcimPayloadValue {
+  return (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  );
+}
+
+function parsePayloadData(value: unknown): Record<string, HelcimPayloadValue> | undefined {
+  if (!value || typeof value !== "object") return undefined;
+
+  const record = value as Record<string, unknown>;
+  const entries = Object.entries(record);
+
+  if (entries.some(([, entryValue]) => !isHelcimPayloadValue(entryValue))) {
+    return undefined;
+  }
+
+  return Object.fromEntries(entries) as Record<string, HelcimPayloadValue>;
+}
+
 export function HelcimPayButton({
   disabled = false,
   items,
@@ -40,7 +62,7 @@ export function HelcimPayButton({
     if (!checkoutToken) return;
 
     const handleMessage = async (event: MessageEvent) => {
-      if (event.origin !== "https://secure.helcim.app" && event.origin !== "") {
+      if (event.origin !== "https://secure.helcim.app") {
         return;
       }
 
@@ -86,18 +108,19 @@ export function HelcimPayButton({
         }
 
         const msgObj = eventMessage as Record<string, unknown>;
-        
+
         let payloadData: Record<string, HelcimPayloadValue> | undefined;
         let payloadHash: string | undefined;
 
         if (msgObj.data && typeof msgObj.data === "object" && "hash" in msgObj.data) {
           const innerData = msgObj.data as Record<string, unknown>;
-          if (innerData.data && typeof innerData.data === "object") {
-            payloadData = innerData.data as Record<string, HelcimPayloadValue>;
+          const innerPayloadData = parsePayloadData(innerData.data);
+          if (innerPayloadData) {
+            payloadData = innerPayloadData;
             payloadHash = typeof innerData.hash === "string" ? innerData.hash : undefined;
           }
         } else if (msgObj.data && typeof msgObj.data === "object" && typeof msgObj.hash === "string") {
-          payloadData = msgObj.data as Record<string, HelcimPayloadValue>;
+          payloadData = parsePayloadData(msgObj.data);
           payloadHash = msgObj.hash;
         }
 
@@ -125,13 +148,13 @@ export function HelcimPayButton({
           }
 
           const result = await res.json() as { orderId?: string };
-          
+
           if (window.removeHelcimPayIframe) {
             window.removeHelcimPayIframe();
           }
-          
+
           onPaid();
-          
+
           if (result.orderId) {
             router.push(`/shop/confirmation?order=${encodeURIComponent(result.orderId)}`);
           } else {
@@ -166,7 +189,7 @@ export function HelcimPayButton({
       }
 
       const data = await res.json() as { checkoutToken?: string };
-      
+
       if (!data.checkoutToken) {
         setError("Unable to start checkout. Please review your cart and try again.");
         setIsLoading(false);
@@ -174,7 +197,7 @@ export function HelcimPayButton({
       }
 
       setCheckoutToken(data.checkoutToken);
-      
+
       if (window.appendHelcimPayIframe) {
         window.appendHelcimPayIframe(data.checkoutToken, true);
       } else {
@@ -194,13 +217,13 @@ export function HelcimPayButton({
         strategy="afterInteractive"
         onLoad={() => setIsScriptReady(true)}
       />
-      
+
       {error ? (
         <div className="text-brand-red text-sm font-medium p-3 bg-red-50 rounded-md" role="alert">
           {error}
         </div>
       ) : null}
-      
+
       <Button
         onClick={handleCheckout}
         disabled={disabled || !isScriptReady || isLoading}

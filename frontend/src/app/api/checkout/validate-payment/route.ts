@@ -19,7 +19,7 @@ function isValidBody(body: unknown): body is ValidatePaymentBody {
   if (typeof b.checkoutToken !== "string") return false;
   if (typeof b.hash !== "string") return false;
   if (!b.data || typeof b.data !== "object") return false;
-  
+
   for (const value of Object.values(b.data)) {
     if (
       value !== null &&
@@ -30,7 +30,7 @@ function isValidBody(body: unknown): body is ValidatePaymentBody {
       return false;
     }
   }
-  
+
   return true;
 }
 
