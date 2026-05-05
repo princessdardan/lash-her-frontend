@@ -7,8 +7,8 @@ import type {
 
 export interface BookingValidationSuccess {
   success: true;
+  data: BookingRequestInput;
   bookingTypeConfig: BookingTypeConfig;
-  selectedStart: Date;
 }
 
 export interface BookingValidationFailure {
@@ -41,8 +41,8 @@ export function findBookingTypeConfig(
 }
 
 export function validateBookingRequest(
-  settings: BookingSettings,
   input: BookingRequestInput,
+  settings: BookingSettings,
 ): BookingValidationResult {
   const fieldErrors: Record<string, string> = {};
   const bookingTypeConfig = validateBookingType(settings, input, fieldErrors);
@@ -62,11 +62,15 @@ export function validateBookingRequest(
     validateRequiredAnswers(bookingTypeConfig, input, fieldErrors);
   }
 
-  if (Object.keys(fieldErrors).length > 0 || bookingTypeConfig === null || selectedStart === null) {
+  if (
+    Object.keys(fieldErrors).length > 0 ||
+    bookingTypeConfig === null ||
+    selectedStart === null
+  ) {
     return { success: false, fieldErrors };
   }
 
-  return { success: true, bookingTypeConfig, selectedStart };
+  return { success: true, data: input, bookingTypeConfig };
 }
 
 function validateBookingType(

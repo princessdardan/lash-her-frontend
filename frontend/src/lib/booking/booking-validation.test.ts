@@ -54,10 +54,13 @@ test("findBookingTypeConfig returns the requested booking type config", () => {
 });
 
 test("validateBookingRequest rejects missing required dynamic answers", () => {
-  const result = validateBookingRequest(settings, {
-    ...validRequest,
-    answers: [],
-  });
+  const result = validateBookingRequest(
+    {
+      ...validRequest,
+      answers: [],
+    },
+    settings,
+  );
 
   assert.equal(result.success, false);
 

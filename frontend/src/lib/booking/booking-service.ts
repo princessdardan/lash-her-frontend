@@ -61,7 +61,7 @@ export async function createBooking(
       };
     }
 
-    const validation = validateBookingRequest(settings, input);
+    const validation = validateBookingRequest(input, settings);
 
     if (!validation.success) {
       return {
@@ -101,7 +101,7 @@ export async function createBooking(
       const horizonEnd = new Date(
         now.getTime() + settings.bookingHorizonDays * DAY_MS,
       );
-      const selectedStart = validation.selectedStart;
+      const selectedStart = new Date(validation.data.start);
       const selectedEnd = new Date(
         selectedStart.getTime() +
           validation.bookingTypeConfig.durationMinutes * MINUTE_MS,
@@ -138,10 +138,10 @@ export async function createBooking(
 
       const answers = buildAnswersWithLabels(
         validation.bookingTypeConfig,
-        input.answers,
+        validation.data.answers,
       );
       const eventId = await insertGoogleCalendarBooking({
-        input,
+        input: validation.data,
         bookingTypeConfig: validation.bookingTypeConfig,
         answers,
         selectedStart,
@@ -150,17 +150,17 @@ export async function createBooking(
         calendarId: settings.calendarId,
       });
 
-      if (input.marketingOptIn) {
+      if (validation.data.marketingOptIn) {
         await createMarketingOptIn({
-          input,
+          input: validation.data,
           answers,
         });
       }
 
       try {
         await sendBookingConfirmationEmail({
-          name: input.name,
-          email: input.email,
+          name: validation.data.name,
+          email: validation.data.email,
           bookingTypeLabel: validation.bookingTypeConfig.label,
           start: selectedStart,
           timezone: settings.timezone,
