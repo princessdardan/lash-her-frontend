@@ -19,6 +19,14 @@ export function getWebhookSecret(): string {
   );
 }
 
+/** Lazy — only asserts when server-side Helcim requests need it. */
+export function getHelcimApiToken(): string {
+  return assertValue(
+    process.env.HELCIM_API_TOKEN,
+    "Missing env var: HELCIM_API_TOKEN"
+  );
+}
+
 function assertValue<T>(v: T | undefined, errorMessage: string): T {
   if (v === undefined) {
     throw new Error(errorMessage);
