@@ -6,24 +6,24 @@ import type { BookingTypeConfig, CalendarEventWindow } from "./types";
 
 const bookingType: BookingTypeConfig = {
   type: "training-call",
-  label: "Training Call",
-  description: "A consultation for training applicants.",
+  label: "Training sign-up call",
+  description: "Discuss training options.",
   durationMinutes: 30,
   slotIntervalMinutes: 15,
-  bufferBeforeMinutes: 15,
-  bufferAfterMinutes: 15,
+  bufferBeforeMinutes: 0,
+  bufferAfterMinutes: 0,
   questions: [],
 };
 
 const availabilityWindow: CalendarEventWindow = {
   id: "availability-1",
-  title: "Available",
+  title: "Available for booking",
   start: new Date("2026-05-10T14:00:00.000Z"),
   end: new Date("2026-05-10T16:00:00.000Z"),
 };
 
-const now = new Date("2026-05-09T13:00:00.000Z");
-const horizonEnd = new Date("2026-05-17T00:00:00.000Z");
+const now = new Date("2026-05-09T12:00:00.000Z");
+const horizonEnd = new Date("2026-05-20T12:00:00.000Z");
 
 test("buildBookingSlots returns interval starts inside the availability window", () => {
   const slots = buildBookingSlots({
@@ -76,7 +76,11 @@ test("buildBookingSlots subtracts busy events with before and after buffers", ()
   };
 
   const slots = buildBookingSlots({
-    bookingType,
+    bookingType: {
+      ...bookingType,
+      bufferBeforeMinutes: 15,
+      bufferAfterMinutes: 15,
+    },
     availabilityWindows: [availabilityWindow],
     busyEvents: [busyEvent],
     now,
@@ -98,7 +102,7 @@ test("isSlotAvailable returns true for an open slot with no busy events", () => 
   assert.equal(
     isSlotAvailable({
       bookingType,
-      start: new Date("2026-05-10T15:15:00.000Z"),
+      requestedStart: new Date("2026-05-10T15:15:00.000Z"),
       availabilityWindows: [availabilityWindow],
       busyEvents: [],
       now,

@@ -9,14 +9,8 @@ export interface BuildBookingSlotsInput {
   horizonEnd: Date;
 }
 
-export interface IsSlotAvailableInput {
-  bookingType: BookingTypeConfig;
-  start: Date;
-  availabilityWindows: CalendarEventWindow[];
-  busyEvents: CalendarEventWindow[];
-  now: Date;
-  minimumLeadTimeHours: number;
-  horizonEnd: Date;
+export interface IsSlotAvailableInput extends BuildBookingSlotsInput {
+  requestedStart: Date;
 }
 
 interface TimeWindow {
@@ -47,7 +41,7 @@ export function buildBookingSlots(input: BuildBookingSlotsInput): BookingSlot[] 
       if (
         isSlotAvailable({
           bookingType,
-          start,
+          requestedStart: start,
           availabilityWindows: [window],
           busyEvents: input.busyEvents,
           now: input.now,
@@ -67,7 +61,7 @@ export function buildBookingSlots(input: BuildBookingSlotsInput): BookingSlot[] 
 }
 
 export function isSlotAvailable(input: IsSlotAvailableInput): boolean {
-  const slotWindow = getSlotWindow(input.bookingType, input.start);
+  const slotWindow = getSlotWindow(input.bookingType, input.requestedStart);
   const leadTimeMs = input.minimumLeadTimeHours * HOUR_MS;
   const earliestStartMs = input.now.getTime() + leadTimeMs;
 
