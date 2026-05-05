@@ -9,6 +9,7 @@ import type {
   TGlobalSettings,
   TMainMenu,
   TMetaData,
+  TSellableProduct,
 } from "@/types";
 
 async function getHomePageData(): Promise<THomePage | null> {
@@ -200,6 +201,38 @@ async function getAllTrainingProgramSlugs(): Promise<Array<{ slug: string }>> {
   return client.fetch<Array<{ slug: string }>>(query, {}, { next: { tags: ['trainingProgram'] } });
 }
 
+async function getSellableProducts(): Promise<TSellableProduct[]> {
+  const query = groq`*[_type == "sellableProduct" && isAvailable == true] | order(title asc) {
+    _id,
+    title,
+    description,
+    "slug": slug.current,
+    sku,
+    kind,
+    price,
+    currency,
+    isAvailable,
+    image{ asset, hotspot, crop, alt }
+  }`;
+  return client.fetch<TSellableProduct[]>(query, {}, { next: { tags: ['sellableProduct'] } });
+}
+
+async function getSellableProductsByIds(ids: string[]): Promise<TSellableProduct[]> {
+  const query = groq`*[_type == "sellableProduct" && _id in $ids] {
+    _id,
+    title,
+    description,
+    "slug": slug.current,
+    sku,
+    kind,
+    price,
+    currency,
+    isAvailable,
+    image{ asset, hotspot, crop, alt }
+  }`;
+  return client.fetch<TSellableProduct[]>(query, { ids }, { next: { tags: ['sellableProduct'] } });
+}
+
 export const loaders = {
   getHomePageData,
   getContactPageData,
@@ -211,4 +244,6 @@ export const loaders = {
   getTrainingProgramBySlug,
   getAllTrainingPrograms,
   getAllTrainingProgramSlugs,
+  getSellableProducts,
+  getSellableProductsByIds,
 };
