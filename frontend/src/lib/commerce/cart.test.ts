@@ -1,31 +1,36 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { buildValidatedCart, type CommerceProduct } from "./cart";
+import { buildValidatedCart, type CatalogProduct } from "./cart";
 
-const product: CommerceProduct = {
-  available: true,
-  description: "Classic lash refill",
+const product: CatalogProduct = {
   id: "product-1",
+  sku: "LASH-CLASSIC",
+  title: "Classic Lash Set",
   price: 125,
-  sku: "LASH-REFILL",
+  currency: "CAD",
+  isAvailable: true,
 };
 
 describe("commerce cart validation", () => {
   it("builds a validated CAD cart from selected products", () => {
     assert.deepEqual(buildValidatedCart([{ productId: "product-1", quantity: 2 }], [product]), {
-      amount: 250,
       currency: "CAD",
-      items: [
+      amount: 250,
+      lineItems: [
         {
-          description: "Classic lash refill",
-          price: 125,
+          sku: "LASH-CLASSIC",
+          description: "Classic Lash Set",
           quantity: 2,
-          sku: "LASH-REFILL",
+          price: 125,
           total: 250,
         },
       ],
     });
+  });
+
+  it("rejects empty carts", () => {
+    assert.throws(() => buildValidatedCart([], [product]), /Cart must contain at least one item/);
   });
 
   it("rejects products that are no longer available", () => {
@@ -37,7 +42,7 @@ describe("commerce cart validation", () => {
     assert.throws(
       () =>
         buildValidatedCart([{ productId: "product-1", quantity: 1 }], [
-          { ...product, available: false },
+          { ...product, isAvailable: false },
         ]),
       /Product is no longer available/,
     );

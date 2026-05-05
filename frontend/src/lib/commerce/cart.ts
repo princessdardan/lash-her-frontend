@@ -1,66 +1,74 @@
 import { addCad, multiplyCad, parseCad } from "./money";
 
-export interface CommerceProduct {
-  available: boolean;
-  description: string;
+export type CommerceCurrency = "CAD";
+
+export interface CatalogProduct {
   id: string;
-  price: number | string;
   sku: string;
+  title: string;
+  price: number | string;
+  currency: CommerceCurrency;
+  isAvailable: boolean;
 }
 
-export interface CartSelection {
+export interface CartInputItem {
   productId: string;
   quantity: number;
 }
 
-export interface ValidatedCartItem {
-  description: string;
-  price: number;
-  quantity: number;
+export interface ValidatedCartLineItem {
   sku: string;
+  description: string;
+  quantity: number;
+  price: number;
   total: number;
 }
 
 export interface ValidatedCart {
+  currency: CommerceCurrency;
   amount: number;
-  currency: "CAD";
-  items: ValidatedCartItem[];
+  lineItems: ValidatedCartLineItem[];
 }
 
 const MIN_QUANTITY = 1;
 const MAX_QUANTITY = 10;
-const UNAVAILABLE_PRODUCT_ERROR = "Product is no longer available";
+const CART_EMPTY_ERROR = "Cart must contain at least one item";
 const QUANTITY_ERROR = "Quantity must be between 1 and 10";
+const UNAVAILABLE_PRODUCT_ERROR = "Product is no longer available";
 
 export function buildValidatedCart(
-  selections: ReadonlyArray<CartSelection>,
-  products: ReadonlyArray<CommerceProduct>,
+  items: CartInputItem[],
+  products: CatalogProduct[],
 ): ValidatedCart {
+  if (items.length === 0) {
+    throw new Error(CART_EMPTY_ERROR);
+  }
+
   const productsById = new Map(products.map((product) => [product.id, product]));
-  const items = selections.map((selection) => {
-    assertValidQuantity(selection.quantity);
+  const lineItems = items.map((item) => {
+    assertValidQuantity(item.quantity);
 
-    const product = productsById.get(selection.productId);
+    const product = productsById.get(item.productId);
 
-    if (!product?.available) {
+    if (!product?.isAvailable) {
       throw new Error(UNAVAILABLE_PRODUCT_ERROR);
     }
 
     const price = parseCad(product.price);
 
     return {
-      description: product.description,
-      price,
-      quantity: selection.quantity,
       sku: product.sku,
-      total: multiplyCad(price, selection.quantity),
+      description: product.title,
+      quantity: item.quantity,
+      price,
+      total: multiplyCad(price, item.quantity),
     };
   });
 
   return {
-    amount: addCad(items.map((item) => item.total)),
     currency: "CAD",
-    items,
+    amount: addCad(lineItems.map((lineItem) => lineItem.total)),
+    lineItems,
   };
 }
 
