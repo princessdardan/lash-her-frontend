@@ -1,15 +1,19 @@
 import type { calendar_v3 } from "googleapis";
 
 interface BookingEventAnswerInput {
-  question: string;
+  questionLabel: string;
   answer: string;
+}
+
+interface BookingEventCustomerInput {
+  name: string;
+  email: string;
+  phone: string;
 }
 
 export interface BookingEventPayloadInput {
   bookingTypeLabel: string;
-  customerName: string;
-  customerEmail: string;
-  customerPhone: string;
+  customer: BookingEventCustomerInput;
   answers: BookingEventAnswerInput[];
   start: Date;
   end: Date;
@@ -20,12 +24,12 @@ export function buildBookingEventPayload(
   input: BookingEventPayloadInput,
 ): calendar_v3.Schema$Event {
   const answersText = input.answers
-    .map((answer) => `${answer.question}: ${answer.answer}`)
+    .map((answer) => `${answer.questionLabel}: ${answer.answer}`)
     .join("\n");
   const descriptionParts = [
-    `Customer: ${input.customerName}`,
-    `Email: ${input.customerEmail}`,
-    `Phone: ${input.customerPhone}`,
+    `Customer: ${input.customer.name}`,
+    `Email: ${input.customer.email}`,
+    `Phone: ${input.customer.phone}`,
     "",
     "Answers:",
     answersText.length > 0 ? answersText : "No answers provided",
@@ -34,7 +38,7 @@ export function buildBookingEventPayload(
   ];
 
   return {
-    summary: `Lash Her booking: ${input.bookingTypeLabel} — ${input.customerName}`,
+    summary: `Lash Her booking: ${input.bookingTypeLabel} — ${input.customer.name}`,
     description: descriptionParts.join("\n"),
     start: {
       dateTime: input.start.toISOString(),
@@ -46,16 +50,12 @@ export function buildBookingEventPayload(
     },
     attendees: [
       {
-        email: input.customerEmail,
-        displayName: input.customerName,
+        email: input.customer.email,
+        displayName: input.customer.name,
       },
     ],
     reminders: {
-      useDefault: false,
-      overrides: [
-        { method: "email", minutes: 24 * 60 },
-        { method: "popup", minutes: 30 },
-      ],
+      useDefault: true,
     },
   };
 }

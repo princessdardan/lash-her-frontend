@@ -6,12 +6,14 @@ import { buildBookingEventPayload } from "./google-calendar-event-payload";
 test("buildBookingEventPayload creates the booking event without conference data", () => {
   const event = buildBookingEventPayload({
     bookingTypeLabel: "Training sign-up call",
-    customerName: "Jane Client",
-    customerEmail: "jane@example.com",
-    customerPhone: "(555) 123-4567",
+    customer: {
+      name: "Jane Client",
+      email: "jane@example.com",
+      phone: "555-555-5555",
+    },
     answers: [
       {
-        question: "Goal",
+        questionLabel: "Goal",
         answer: "Training details",
       },
     ],
@@ -25,6 +27,15 @@ test("buildBookingEventPayload creates the booking event without conference data
     { email: "jane@example.com", displayName: "Jane Client" },
   ]);
   assert.equal(Object.hasOwn(event, "conferenceData"), false);
-  assert.match(event.description ?? "", /\(555\) 123-4567/);
+  assert.match(event.description ?? "", /555-555-5555/);
   assert.match(event.description ?? "", /Goal: Training details/);
+  assert.deepEqual(event.start, {
+    dateTime: "2026-05-10T14:00:00.000Z",
+    timeZone: "America/New_York",
+  });
+  assert.deepEqual(event.end, {
+    dateTime: "2026-05-10T14:30:00.000Z",
+    timeZone: "America/New_York",
+  });
+  assert.deepEqual(event.reminders, { useDefault: true });
 });
