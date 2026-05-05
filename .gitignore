@@ -9,6 +9,9 @@ package-lock.json
 # claude worktrees
 .claude/worktrees/
 
+# local git worktrees
+.worktrees/
+
 .claude/skills/ui-ux-pro-max/data/charts.csv
 .claude/skills/ui-ux-pro-max/data/colors.csv
 .claude/skills/ui-ux-pro-max/data/icons.csv
