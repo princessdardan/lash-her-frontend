@@ -24,7 +24,10 @@ export async function GET(req: NextRequest): Promise<Response> {
     const { tokens } = await oauthClient.getToken(code);
 
     if (typeof tokens.refresh_token !== "string") {
-      return new Response("Missing refresh token", { status: 400 });
+      return new Response(
+        "Google did not return a refresh token. Retry setup and approve offline access.",
+        { status: 400 },
+      );
     }
 
     await saveGoogleRefreshToken(tokens.refresh_token);
