@@ -5,6 +5,7 @@ import {
   markOrderVerificationFailed,
 } from "@/lib/commerce/order-store";
 import { validateHelcimResponseHash } from "@/lib/commerce/helcim-hash";
+import { persistVerifiedPayment } from "@/lib/commerce/verified-payment";
 import type { HelcimPayloadValue } from "@/lib/commerce/helcim-types";
 
 interface ValidatePaymentBody {
@@ -76,7 +77,18 @@ export async function POST(req: NextRequest): Promise<Response> {
       );
     }
 
-    await markOrderPaid(order.orderId, String(transactionId));
+    const persisted = await persistVerifiedPayment({
+      markPaid: markOrderPaid,
+      orderId: order.orderId,
+      transactionId: String(transactionId),
+    });
+
+    if (!persisted) {
+      return NextResponse.json(
+        { error: "Payment verified but order could not be recorded" },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ orderId: order.orderId });
   } catch {
