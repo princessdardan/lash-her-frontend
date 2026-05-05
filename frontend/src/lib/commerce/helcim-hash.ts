@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 
-import type { HelcimPaySuccessPayload, HelcimPayloadValue } from "./helcim-types";
+import type { HelcimPayloadValue } from "./helcim-types";
 
 const SHA256_HEX_LENGTH = 64;
 const HEX_PATTERN = /^[0-9a-f]+$/i;
@@ -13,16 +13,17 @@ export function createHelcimResponseHash(
 }
 
 export function validateHelcimResponseHash(
-  payload: HelcimPaySuccessPayload,
+  data: Record<string, HelcimPayloadValue>,
   secretToken: string,
+  hash: string,
 ): boolean {
-  if (!isSha256Hex(payload.hash)) {
+  if (!isSha256Hex(hash)) {
     return false;
   }
 
-  const expectedHash = createHelcimResponseHash(payload.data, secretToken);
+  const expectedHash = createHelcimResponseHash(data, secretToken);
   const expectedBuffer = Buffer.from(expectedHash, "hex");
-  const receivedBuffer = Buffer.from(payload.hash, "hex");
+  const receivedBuffer = Buffer.from(hash, "hex");
 
   if (expectedBuffer.length !== receivedBuffer.length) {
     return false;

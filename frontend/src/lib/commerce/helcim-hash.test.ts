@@ -24,17 +24,14 @@ describe("HelcimPay response hash validation", () => {
       .digest("hex");
 
     assert.equal(createHelcimResponseHash(payload.data, secretToken), expectedHash);
-    assert.equal(
-      validateHelcimResponseHash({ ...payload, hash: expectedHash }, secretToken),
-      true,
-    );
+    assert.equal(validateHelcimResponseHash(payload.data, secretToken, expectedHash), true);
   });
 
   it("rejects mismatched response hashes", () => {
-    assert.equal(validateHelcimResponseHash({ ...payload, hash: "f".repeat(64) }, secretToken), false);
+    assert.equal(validateHelcimResponseHash(payload.data, secretToken, "f".repeat(64)), false);
   });
 
   it("rejects invalid response hash values without throwing", () => {
-    assert.equal(validateHelcimResponseHash({ ...payload, hash: "not-hex" }, secretToken), false);
+    assert.equal(validateHelcimResponseHash(payload.data, secretToken, "not-hex"), false);
   });
 });

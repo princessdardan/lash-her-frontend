@@ -21,10 +21,10 @@ export interface HelcimInvoiceResponse {
 }
 
 export interface HelcimPayInitializeRequest {
+  paymentType: "purchase";
   amount: number;
   currency: "CAD";
-  invoiceId?: number;
-  [key: string]: HelcimPayloadValue | undefined;
+  invoiceNumber: string;
 }
 
 export interface HelcimPayInitializeResponse {
