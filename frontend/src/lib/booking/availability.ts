@@ -57,7 +57,7 @@ export function buildBookingSlots(input: BuildBookingSlotsInput): BookingSlot[] 
     }
   }
 
-  return slots.sort((first, second) => first.start.localeCompare(second.start));
+  return dedupeAndSortSlots(slots);
 }
 
 export function isSlotAvailable(input: IsSlotAvailableInput): boolean {
@@ -120,4 +120,28 @@ function fitsInsideAvailabilityWindow(
 
 function windowsOverlap(first: TimeWindow, second: TimeWindow): boolean {
   return first.startMs < second.endMs && second.startMs < first.endMs;
+}
+
+function dedupeAndSortSlots(slots: BookingSlot[]): BookingSlot[] {
+  const slotsByKey = new Map<string, BookingSlot>();
+
+  for (const slot of slots) {
+    slotsByKey.set(getSlotKey(slot), slot);
+  }
+
+  return Array.from(slotsByKey.values()).sort(compareSlots);
+}
+
+function getSlotKey(slot: BookingSlot): string {
+  return `${slot.start}:${slot.end}`;
+}
+
+function compareSlots(first: BookingSlot, second: BookingSlot): number {
+  const startComparison = first.start.localeCompare(second.start);
+
+  if (startComparison !== 0) {
+    return startComparison;
+  }
+
+  return first.end.localeCompare(second.end);
 }

@@ -98,6 +98,53 @@ test("buildBookingSlots subtracts busy events with before and after buffers", ()
   );
 });
 
+test("buildBookingSlots deduplicates slots from overlapping availability windows", () => {
+  const overlappingAvailabilityWindow: CalendarEventWindow = {
+    id: "availability-2",
+    title: "Available for booking",
+    start: new Date("2026-05-10T14:30:00.000Z"),
+    end: new Date("2026-05-10T15:30:00.000Z"),
+  };
+
+  const slots = buildBookingSlots({
+    bookingType,
+    availabilityWindows: [
+      {
+        ...availabilityWindow,
+        end: new Date("2026-05-10T15:00:00.000Z"),
+      },
+      overlappingAvailabilityWindow,
+    ],
+    busyEvents: [],
+    now,
+    minimumLeadTimeHours: 24,
+    horizonEnd,
+  });
+
+  assert.deepEqual(slots, [
+    {
+      start: "2026-05-10T14:00:00.000Z",
+      end: "2026-05-10T14:30:00.000Z",
+    },
+    {
+      start: "2026-05-10T14:15:00.000Z",
+      end: "2026-05-10T14:45:00.000Z",
+    },
+    {
+      start: "2026-05-10T14:30:00.000Z",
+      end: "2026-05-10T15:00:00.000Z",
+    },
+    {
+      start: "2026-05-10T14:45:00.000Z",
+      end: "2026-05-10T15:15:00.000Z",
+    },
+    {
+      start: "2026-05-10T15:00:00.000Z",
+      end: "2026-05-10T15:30:00.000Z",
+    },
+  ]);
+});
+
 test("isSlotAvailable returns true for an open slot with no busy events", () => {
   assert.equal(
     isSlotAvailable({
