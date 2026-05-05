@@ -15,7 +15,8 @@ interface BookingFlowProps {
 }
 
 export function BookingFlow({ settings, initialBookingType }: BookingFlowProps) {
-  const [bookingType, setBookingType] = useState<BookingType | "">(initialBookingType || "");
+  const defaultType = initialBookingType ?? settings.bookingTypes[0]?.type ?? "training-call";
+  const [bookingType, setBookingType] = useState<BookingType | "">(defaultType);
   const [slots, setSlots] = useState<BookingSlot[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<string>("");
   const [name, setName] = useState("");
@@ -24,7 +25,7 @@ export function BookingFlow({ settings, initialBookingType }: BookingFlowProps) 
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [marketingOptIn, setMarketingOptIn] = useState(false);
   
-  const [isLoadingSlots, setIsLoadingSlots] = useState(!!initialBookingType);
+  const [isLoadingSlots, setIsLoadingSlots] = useState(!!defaultType);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<"idle" | "success" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
