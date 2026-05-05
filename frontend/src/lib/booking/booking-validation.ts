@@ -70,7 +70,27 @@ export function validateBookingRequest(
     return { success: false, fieldErrors };
   }
 
-  return { success: true, data: input, bookingTypeConfig };
+  return {
+    success: true,
+    data: normalizeBookingRequest(input),
+    bookingTypeConfig,
+  };
+}
+
+function normalizeBookingRequest(input: BookingRequestInput): BookingRequestInput {
+  return {
+    bookingType: input.bookingType,
+    start: input.start.trim(),
+    name: input.name.trim(),
+    email: input.email.trim(),
+    phone: input.phone.trim(),
+    answers: input.answers.map((answer) => ({
+      questionId: answer.questionId,
+      answer: answer.answer.trim(),
+    })),
+    marketingOptIn: input.marketingOptIn,
+    idempotencyKey: input.idempotencyKey.trim(),
+  };
 }
 
 function validateBookingType(
@@ -124,12 +144,14 @@ function validateStart(
   start: string,
   fieldErrors: Record<string, string>,
 ): Date | null {
-  if (start.trim().length === 0) {
+  const trimmedStart = start.trim();
+
+  if (trimmedStart.length === 0) {
     fieldErrors.start = "Please select a booking time";
     return null;
   }
 
-  const selectedStart = new Date(start);
+  const selectedStart = new Date(trimmedStart);
 
   if (Number.isNaN(selectedStart.getTime())) {
     fieldErrors.start = "Please select a valid booking time";

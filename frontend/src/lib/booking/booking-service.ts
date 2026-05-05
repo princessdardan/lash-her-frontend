@@ -71,18 +71,6 @@ export async function createBooking(
       };
     }
 
-    const idempotencyClaimed = await claimIdempotencyKey(
-      input.idempotencyKey,
-      IDEMPOTENCY_TTL_SECONDS,
-    );
-
-    if (!idempotencyClaimed) {
-      return {
-        success: false,
-        error: "This booking request is already being processed.",
-      };
-    }
-
     const lockId = nanoid();
     const lockAcquired = await acquireCalendarLock(
       lockId,
@@ -97,6 +85,18 @@ export async function createBooking(
     }
 
     try {
+      const idempotencyClaimed = await claimIdempotencyKey(
+        validation.data.idempotencyKey,
+        IDEMPOTENCY_TTL_SECONDS,
+      );
+
+      if (!idempotencyClaimed) {
+        return {
+          success: false,
+          error: "This booking request is already being processed.",
+        };
+      }
+
       const now = new Date();
       const horizonEnd = new Date(
         now.getTime() + settings.bookingHorizonDays * DAY_MS,
@@ -151,10 +151,17 @@ export async function createBooking(
       });
 
       if (validation.data.marketingOptIn) {
-        await createMarketingOptIn({
-          input: validation.data,
-          answers,
-        });
+        try {
+          await createMarketingOptIn({
+            input: validation.data,
+            answers,
+          });
+        } catch (error) {
+          console.error(
+            "[createBooking] Marketing opt-in write failed:",
+            getErrorMessage(error),
+          );
+        }
       }
 
       try {

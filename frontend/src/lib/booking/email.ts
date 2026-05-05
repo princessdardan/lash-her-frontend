@@ -13,7 +13,7 @@ export interface SendBookingConfirmationInput {
 export async function sendBookingConfirmationEmail(
   input: SendBookingConfirmationInput,
 ): Promise<void> {
-  const resend = new Resend(process.env.RESEND_API_KEY);
+  const resend = new Resend(getRequiredEnv("RESEND_API_KEY"));
   const fromEmail = getRequiredEnv("FROM_EMAIL");
   const formattedStart = new Intl.DateTimeFormat("en-CA", {
     dateStyle: "full",

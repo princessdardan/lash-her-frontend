@@ -70,3 +70,33 @@ test("validateBookingRequest rejects missing required dynamic answers", () => {
     });
   }
 });
+
+test("validateBookingRequest returns normalized success data", () => {
+  const result = validateBookingRequest(
+    {
+      ...validRequest,
+      start: "  2026-05-12T14:00:00.000Z  ",
+      name: "  Natalie Smith  ",
+      email: "  natalie@example.com  ",
+      phone: "  555-555-5555  ",
+      answers: [{ questionId: "goal", answer: "  Build confidence.  " }],
+      idempotencyKey: "  booking-request-1  ",
+    },
+    settings,
+  );
+
+  assert.equal(result.success, true);
+
+  if (result.success) {
+    assert.deepEqual(result.data, {
+      ...validRequest,
+      start: "2026-05-12T14:00:00.000Z",
+      name: "Natalie Smith",
+      email: "natalie@example.com",
+      phone: "555-555-5555",
+      answers: [{ questionId: "goal", answer: "Build confidence." }],
+      idempotencyKey: "booking-request-1",
+    });
+    assert.equal(result.bookingTypeConfig.label, "Training sign-up call");
+  }
+});
