@@ -1,6 +1,11 @@
 import { EnvelopeIcon } from "@sanity/icons";
 import { defineArrayMember, defineField, defineType } from "sanity";
 
+const BOOKING_TYPE_OPTIONS = [
+  { title: "Training sign-up call", value: "training-call" },
+  { title: "In-person appointment", value: "in-person-appointment" },
+];
+
 export const bookingMarketingOptIn = defineType({
   name: "bookingMarketingOptIn",
   title: "Booking Marketing Opt-in",
@@ -17,17 +22,19 @@ export const bookingMarketingOptIn = defineType({
       name: "email",
       title: "Email",
       type: "string",
-      validation: (Rule) => Rule.required(),
+      validation: (Rule) => Rule.required().email(),
     }),
     defineField({
       name: "phone",
       title: "Phone",
       type: "string",
+      validation: (Rule) => Rule.required(),
     }),
     defineField({
       name: "bookingType",
       title: "Booking Type",
       type: "string",
+      options: { list: BOOKING_TYPE_OPTIONS, layout: "radio" },
       validation: (Rule) => Rule.required(),
     }),
     defineField({
@@ -36,7 +43,7 @@ export const bookingMarketingOptIn = defineType({
       type: "array",
       of: [
         defineArrayMember({
-          name: "answer",
+          name: "bookingAnswer",
           title: "Answer",
           type: "object",
           fields: [
