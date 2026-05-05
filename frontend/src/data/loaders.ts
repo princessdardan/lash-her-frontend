@@ -218,7 +218,7 @@ async function getBookingSettings(): Promise<BookingSettings | null> {
       slotIntervalMinutes,
       bufferBeforeMinutes,
       bufferAfterMinutes,
-      questions[]{ _key, id, label, inputType, required, options }
+      "questions": coalesce(questions[]{ _key, id, label, inputType, required, options }, [])
     }
   }`;
   return client.fetch<BookingSettings | null>(query, {}, { next: { tags: ["bookingSettings"] } });
