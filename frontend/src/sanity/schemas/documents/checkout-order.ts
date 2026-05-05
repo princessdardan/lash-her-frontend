@@ -36,8 +36,8 @@ export const checkoutOrder = defineType({
       readOnly: true,
     }),
     defineField({
-      name: "secretToken",
-      title: "Secret Token",
+      name: "secretTokenCiphertext",
+      title: "Secret token ciphertext",
       type: "string",
       readOnly: true,
     }),

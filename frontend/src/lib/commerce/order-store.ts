@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 import { writeClient } from "@/sanity/lib/write-client";
 
 import type { ValidatedCart } from "./cart";
+import { decryptCheckoutSecret, encryptCheckoutSecret } from "./checkout-secret";
 
 export interface CreatePendingOrderInput {
   customerName: string;
@@ -27,7 +28,7 @@ interface CheckoutOrderDocument {
   orderId: string;
   status: "pending";
   checkoutToken: string;
-  secretToken: string;
+  secretTokenCiphertext: string;
   helcimInvoiceId: number;
   helcimInvoiceNumber: string;
   customerName: string;
@@ -41,7 +42,7 @@ const PENDING_ORDER_BY_CHECKOUT_TOKEN_QUERY = `*[
   _type == "checkoutOrder" &&
   status == "pending" &&
   checkoutToken == $checkoutToken
-][0]{_id, orderId, secretToken}`;
+][0]{_id, orderId, secretTokenCiphertext}`;
 
 const ORDER_BY_ORDER_ID_QUERY = `*[_type == "checkoutOrder" && orderId == $orderId]`;
 
@@ -49,12 +50,13 @@ export async function createPendingOrder(
   input: CreatePendingOrderInput,
 ): Promise<PendingOrderRecord> {
   const orderId = `lh-${nanoid(12)}`;
+  const secretTokenCiphertext = encryptCheckoutSecret(input.secretToken);
   const document: CheckoutOrderDocument = {
     _type: "checkoutOrder",
     orderId,
     status: "pending",
     checkoutToken: input.checkoutToken,
-    secretToken: input.secretToken,
+    secretTokenCiphertext,
     helcimInvoiceId: input.helcimInvoiceId,
     helcimInvoiceNumber: input.helcimInvoiceNumber,
     customerName: input.customerName,
@@ -92,10 +94,27 @@ export async function markOrderVerificationFailed(orderId: string): Promise<void
     .commit();
 }
 
+interface PendingOrderCiphertextRecord {
+  _id: string;
+  orderId: string;
+  secretTokenCiphertext: string;
+}
+
 export async function getPendingOrderByCheckoutToken(
   checkoutToken: string,
 ): Promise<PendingOrderRecord | null> {
-  return writeClient.fetch<PendingOrderRecord | null>(PENDING_ORDER_BY_CHECKOUT_TOKEN_QUERY, {
-    checkoutToken,
-  });
+  const pendingOrder = await writeClient.fetch<PendingOrderCiphertextRecord | null>(
+    PENDING_ORDER_BY_CHECKOUT_TOKEN_QUERY,
+    { checkoutToken },
+  );
+
+  if (pendingOrder === null) {
+    return null;
+  }
+
+  return {
+    _id: pendingOrder._id,
+    orderId: pendingOrder.orderId,
+    secretToken: decryptCheckoutSecret(pendingOrder.secretTokenCiphertext),
+  };
 }

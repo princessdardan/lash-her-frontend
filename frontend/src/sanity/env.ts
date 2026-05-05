@@ -27,6 +27,23 @@ export function getHelcimApiToken(): string {
   );
 }
 
+/** Lazy — only asserts when checkout validation needs persisted Helcim secrets. */
+export function getCheckoutSecretEncryptionKey(): Buffer {
+  const encodedKey = assertValue(
+    process.env.CHECKOUT_SECRET_ENCRYPTION_KEY,
+    "Missing env var: CHECKOUT_SECRET_ENCRYPTION_KEY"
+  );
+  const key = Buffer.from(encodedKey, "base64");
+
+  if (key.length !== 32 || key.toString("base64") !== encodedKey) {
+    throw new Error(
+      "Malformed env var: CHECKOUT_SECRET_ENCRYPTION_KEY must be base64-encoded 32 bytes"
+    );
+  }
+
+  return key;
+}
+
 function assertValue<T>(v: T | undefined, errorMessage: string): T {
   if (v === undefined) {
     throw new Error(errorMessage);
