@@ -6,6 +6,7 @@ import { formatCad } from "@/lib/commerce/money";
 import { buildValidatedCart, type CartInputItem, type ValidatedCart } from "@/lib/commerce/cart";
 import type { TSellableProduct } from "@/types";
 import { ProductCard } from "./product-card";
+import { HelcimPayButton } from "./helcim-pay-button";
 
 interface CartPanelProps {
   products: TSellableProduct[];
@@ -146,12 +147,12 @@ export function CartPanel({ products }: CartPanelProps): ReactElement {
                     </div>
 
                     <div className="flex flex-col gap-2">
-                      <Button
-                        disabled
-                        className="btn-primary-red"
-                      >
-                        Checkout (Coming Soon)
-                      </Button>
+                      <HelcimPayButton
+                        disabled={!cart || !customerName || !customerEmail}
+                        items={items}
+                        customer={{ name: customerName, email: customerEmail }}
+                        onPaid={handleClear}
+                      />
                       <Button
                         variant="ghost"
                         onClick={handleClear}
