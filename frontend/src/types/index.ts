@@ -20,6 +20,18 @@ export interface TPortableTextBlock {
 
 // === Shared Component Types ===
 
+export type {
+  BookingAnswerInput,
+  BookingQuestion,
+  BookingQuestionInputType,
+  BookingRequestInput,
+  BookingSettings,
+  BookingSlot,
+  BookingType,
+  BookingTypeConfig,
+  CalendarEventWindow,
+} from "@/lib/booking/types";
+
 export interface TLink {
   _key?: string;
   href: string;

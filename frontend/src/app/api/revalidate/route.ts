@@ -12,6 +12,7 @@ const TYPE_TAG_MAP: Record<string, string> = {
   trainingProgram: "trainingProgram",
   globalSettings: "global",
   mainMenu: "menu",
+  bookingSettings: "bookingSettings",
 };
 
 export async function POST(req: NextRequest): Promise<Response> {

@@ -1,5 +1,6 @@
 import { client } from "@/sanity/lib/client";
 import { groq } from "next-sanity";
+import type { BookingSettings } from "@/lib/booking/types";
 import type {
   THomePage,
   TContactPage,
@@ -200,6 +201,29 @@ async function getAllTrainingProgramSlugs(): Promise<Array<{ slug: string }>> {
   return client.fetch<Array<{ slug: string }>>(query, {}, { next: { tags: ['trainingProgram'] } });
 }
 
+async function getBookingSettings(): Promise<BookingSettings | null> {
+  const query = groq`*[_type == "bookingSettings"][0]{
+    calendarId,
+    availabilityMarkerTitle,
+    bookingHorizonDays,
+    minimumLeadTimeHours,
+    timezone,
+    marketingOptInLabel,
+    bookingTypes[]{
+      _key,
+      type,
+      label,
+      description,
+      durationMinutes,
+      slotIntervalMinutes,
+      bufferBeforeMinutes,
+      bufferAfterMinutes,
+      questions[]{ _key, id, label, inputType, required, options }
+    }
+  }`;
+  return client.fetch<BookingSettings | null>(query, {}, { next: { tags: ["bookingSettings"] } });
+}
+
 export const loaders = {
   getHomePageData,
   getContactPageData,
@@ -211,4 +235,5 @@ export const loaders = {
   getTrainingProgramBySlug,
   getAllTrainingPrograms,
   getAllTrainingProgramSlugs,
+  getBookingSettings,
 };
