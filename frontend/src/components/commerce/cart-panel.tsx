@@ -1,6 +1,6 @@
 "use client";
 
-import * as React from "react";
+import { useState, type ReactElement } from "react";
 import { Button } from "@/components/ui/button";
 import { formatCad } from "@/lib/commerce/money";
 import { buildValidatedCart, type CartInputItem } from "@/lib/commerce/cart";
@@ -11,10 +11,10 @@ interface CartPanelProps {
   products: TSellableProduct[];
 }
 
-export function CartPanel({ products }: CartPanelProps) {
-  const [items, setItems] = React.useState<CartInputItem[]>([]);
-  const [customerName, setCustomerName] = React.useState("");
-  const [customerEmail, setCustomerEmail] = React.useState("");
+export function CartPanel({ products }: CartPanelProps): ReactElement {
+  const [items, setItems] = useState<CartInputItem[]>([]);
+  const [customerName, setCustomerName] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
 
   const handleAdd = (product: TSellableProduct) => {
     setItems((prev) => {

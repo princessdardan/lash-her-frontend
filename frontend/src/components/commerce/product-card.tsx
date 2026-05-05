@@ -1,6 +1,6 @@
 "use client";
 
-import * as React from "react";
+import type { ReactElement } from "react";
 import { Button } from "@/components/ui/button";
 import { SanityImage } from "@/components/ui/sanity-image";
 import { formatCad } from "@/lib/commerce/money";
@@ -11,7 +11,7 @@ interface ProductCardProps {
   onAdd: (product: TSellableProduct) => void;
 }
 
-export function ProductCard({ product, onAdd }: ProductCardProps) {
+export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement {
   return (
     <div className="card-white flex flex-col h-full">
       {product.image && (

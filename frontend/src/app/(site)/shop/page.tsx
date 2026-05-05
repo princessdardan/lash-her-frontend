@@ -1,10 +1,10 @@
-import * as React from "react";
+import type { ReactElement } from "react";
 import { loaders } from "@/data/loaders";
 import { CartPanel } from "@/components/commerce/cart-panel";
 
 export const revalidate = 300;
 
-export default async function ShopPage() {
+export default async function ShopPage(): Promise<ReactElement> {
   const products = await loaders.getSellableProducts();
 
   return (
