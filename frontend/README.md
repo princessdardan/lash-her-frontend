@@ -46,6 +46,9 @@ The Google Calendar booking system requires these server-side environment variab
 - `UPSTASH_REDIS_REST_URL`
 - `UPSTASH_REDIS_REST_TOKEN`
 - `RESEND_API_KEY`
+- `FROM_EMAIL`
 - `SANITY_FORM_TOKEN`
 
 Connect Nataliea's calendar by visiting `/api/booking/oauth/start?secret=<BOOKING_ADMIN_SETUP_SECRET>` in production and approving Google Calendar access. The connected calendar is configured in the Sanity `bookingSettings` singleton.
+
+Add a live-site entry point through the CMS menu or page CTAs with `/booking`, `/booking?type=training-call`, or `/booking?type=in-person-appointment` so visitors can reach the flow from the public site.
