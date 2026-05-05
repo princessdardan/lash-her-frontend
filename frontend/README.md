@@ -34,3 +34,18 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Booking setup
+
+The Google Calendar booking system requires these server-side environment variables:
+
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `GOOGLE_REDIRECT_URI`
+- `BOOKING_ADMIN_SETUP_SECRET`
+- `UPSTASH_REDIS_REST_URL`
+- `UPSTASH_REDIS_REST_TOKEN`
+- `RESEND_API_KEY`
+- `SANITY_FORM_TOKEN`
+
+Connect Nataliea's calendar by visiting `/api/booking/oauth/start?secret=<BOOKING_ADMIN_SETUP_SECRET>` in production and approving Google Calendar access. The connected calendar is configured in the Sanity `bookingSettings` singleton.
