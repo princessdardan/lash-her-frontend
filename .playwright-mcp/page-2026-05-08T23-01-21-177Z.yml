@@ -1,0 +1,52 @@
+- generic [active] [ref=e1]:
+  - link "Skip to main content" [ref=e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - navigation "Main navigation" [ref=e5]:
+        - navigation "Main" [ref=e6]:
+          - list [ref=e8]:
+            - listitem [ref=e9]:
+              - link "Home" [ref=e10] [cursor=pointer]:
+                - /url: /homepage
+            - listitem [ref=e11]:
+              - button "Training" [ref=e12]:
+                - text: Training
+                - img [ref=e13]
+            - listitem [ref=e15]:
+              - link "Gallery" [ref=e16] [cursor=pointer]:
+                - /url: /gallery
+            - listitem [ref=e17]:
+              - link "Contact" [ref=e18] [cursor=pointer]:
+                - /url: /contact
+      - link "Book Now" [ref=e20] [cursor=pointer]:
+        - /url: https://www.fresha.com/a/lash-her-by-nataliea-toronto-646-oakwood-avenue-tvrir5sx/all-offer?menu=true&share=true&pId=1106337
+        - button "Book Now" [ref=e21]
+      - link "Lash Her by Nataliea" [ref=e22] [cursor=pointer]:
+        - /url: /
+        - img [ref=e23]
+        - generic [ref=e43]: Lash Her by Nataliea
+  - main [ref=e44]:
+    - paragraph [ref=e48]: Loading...
+  - contentinfo [ref=e49]:
+    - generic [ref=e50]:
+      - link "Lash Her by Nataliea" [ref=e52] [cursor=pointer]:
+        - /url: /
+        - img [ref=e53]
+        - generic [ref=e73]: Lash Her by Nataliea
+      - paragraph [ref=e74]: Elevating beauty through bespoke lash artistry and professional education.
+      - navigation "Social media links" [ref=e75]:
+        - generic [ref=e76]:
+          - link "Visit us at Instagram" [ref=e77] [cursor=pointer]:
+            - /url: https://www.instagram.com/lav_lashher/
+            - img [ref=e78]
+            - generic [ref=e80]: Visit us at Instagram
+          - link "Visit us at Fresha":
+            - /url: https://www.fresha.com/a/lash-her-by-nataliea-toronto-646-oakwood-avenue-tvrir5sx/all-offer?menu=true&share=true&pId=1106337
+            - generic [ref=e81] [cursor=pointer]: Visit us at Fresha
+    - generic [ref=e83]:
+      - paragraph [ref=e84]: © 2026 Lash Her by Nataliea. All rights reserved.
+      - paragraph [ref=e85]:
+        - text: Designed by
+        - link "Dardan Demiri" [ref=e86] [cursor=pointer]:
+          - /url: https://dardandemiri.com

@@ -1,0 +1,157 @@
+- generic [ref=e1]:
+  - link "Skip to main content" [ref=e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - button "Toggle menu" [active] [ref=e6]:
+        - img [ref=e7]
+      - link "Lash Her by Nataliea" [ref=e8] [cursor=pointer]:
+        - /url: /
+        - img [ref=e9]
+        - generic [ref=e29]: Lash Her by Nataliea
+  - main [ref=e30]:
+    - generic [ref=e73]:
+      - img "Lash Her" [ref=e74]
+      - generic [ref=e76]:
+        - heading "Lash Her" [level=1] [ref=e77]
+        - paragraph [ref=e78]: Lashes - Training - Wholesale
+        - paragraph [ref=e79]: Learn lash designing at a new level of luxury
+        - generic [ref=e80]:
+          - link "Book Your Lashes" [ref=e81] [cursor=pointer]:
+            - /url: https://www.fresha.com/a/lash-her-by-nataliea-toronto-646-oakwood-avenue-tvrir5sx/all-offer?menu=true&share=true&pId=1106337
+            - button "Book Your Lashes" [ref=e82]
+          - link "Explore Training" [ref=e83] [cursor=pointer]:
+            - /url: /training
+            - button "Explore Training" [ref=e84]
+    - generic [ref=e87]:
+      - generic [ref=e88]:
+        - heading "Education & Training" [level=2] [ref=e89]
+        - paragraph [ref=e90]: Become a Certified Lash Artist
+        - paragraph [ref=e91]: Transform your passion into a profitable career with our comprehensive training programs. Expert instruction, personalized mentorship, and ongoing support.
+      - generic [ref=e92]:
+        - generic [ref=e93]:
+          - generic [ref=e94]: Most Popular
+          - generic [ref=e95]:
+            - img [ref=e98]
+            - heading "Lash Designing 1:1 Training" [level=3] [ref=e101]
+            - paragraph [ref=e102]: In-person
+            - generic [ref=e104]: In-Person
+          - generic [ref=e105]: Premium Investment
+          - generic [ref=e106]:
+            - paragraph
+            - list [ref=e107]:
+              - listitem [ref=e108]: Learn about lash health
+              - listitem [ref=e109]: How to lash design
+              - listitem [ref=e110]: Personal mentorship
+              - listitem [ref=e111]: Certificate upon completion
+          - link "Apply Now" [ref=e112] [cursor=pointer]:
+            - /url: training-programs/lash-her-academy
+            - button "Apply Now" [ref=e113]
+        - generic [ref=e114]:
+          - generic [ref=e115]:
+            - img [ref=e118]
+            - heading "Beginner Private Training (2 week training)" [level=3] [ref=e121]
+            - paragraph
+            - generic [ref=e123]: In-Person
+          - generic [ref=e124]: Custom Package
+          - list [ref=e126]:
+            - listitem [ref=e127]: One-on-one instruction
+            - listitem [ref=e128]: Fundamentals of lash application
+            - listitem [ref=e129]: Safety & sanitation protocols
+            - listitem [ref=e130]: Client consultation techniques
+            - listitem [ref=e131]: Starter kit included
+            - listitem [ref=e132]: Lifetime support access
+          - link "Apply Now" [ref=e133] [cursor=pointer]:
+            - /url: training-programs/beginner-private-training
+            - button "Apply Now" [ref=e134]
+    - generic [ref=e136]:
+      - generic [ref=e137]:
+        - heading "Get In Touch" [level=2] [ref=e138]
+        - paragraph [ref=e139]: Start Your Journey Today
+        - paragraph [ref=e140]: Whether you're interested in our services, training programs, or products, our team is here to help. Submit your information and our sales representative will contact you.
+      - generic [ref=e141]:
+        - generic [ref=e142]:
+          - generic [ref=e144]:
+            - heading "Contact Information" [level=2] [ref=e145]
+            - paragraph [ref=e146]: Reach out to us directly
+            - generic [ref=e148]:
+              - generic [ref=e149]:
+                - img [ref=e150]
+                - generic [ref=e152]:
+                  - heading "Phone Number" [level=3] [ref=e153]
+                  - link "Upon Request" [ref=e154] [cursor=pointer]:
+                    - /url: tel:UponRequest
+              - generic [ref=e156]:
+                - img [ref=e157]
+                - generic [ref=e160]:
+                  - heading "Email" [level=3] [ref=e161]
+                  - link "lashher@outlook.com" [ref=e162] [cursor=pointer]:
+                    - /url: mailto:lashher@outlook.com
+              - generic [ref=e164]:
+                - img [ref=e165]
+                - generic [ref=e168]:
+                  - heading "Location" [level=3] [ref=e169]
+                  - generic [ref=e170]: 646 Oakwood Ave., Toronto
+          - generic [ref=e172]:
+            - heading "Business Hours" [level=2] [ref=e173]
+            - paragraph
+            - generic [ref=e174]:
+              - generic [ref=e175]:
+                - generic [ref=e176]: Monday - Friday
+                - generic [ref=e177]: 9am - 7pm
+              - generic [ref=e178]:
+                - generic [ref=e179]: Saturday
+                - generic [ref=e180]: 10am - 5pm
+              - generic [ref=e181]:
+                - generic [ref=e182]: Sunday
+                - generic [ref=e183]: By Appointment
+        - generic [ref=e186]:
+          - generic [ref=e187]:
+            - heading "Reach Out To The Lash Her Team" [level=2] [ref=e188]
+            - paragraph [ref=e189]: Have a question about our services, general inquiry, or would like more information? Ask us and we'll get back to you asap!
+          - generic [ref=e190]:
+            - generic [ref=e191]:
+              - group [ref=e192]:
+                - generic [ref=e193]: Full Name*
+                - textbox "Full Name*" [ref=e194]:
+                  - /placeholder: Enter your full name
+              - group [ref=e195]:
+                - generic [ref=e196]: Email Address*
+                - textbox "Email Address*" [ref=e197]:
+                  - /placeholder: your.email@example.com
+              - group [ref=e198]:
+                - generic [ref=e199]: Phone Number
+                - textbox "Phone Number" [ref=e200]:
+                  - /placeholder: (123) 456-7890
+              - group [ref=e201]:
+                - generic [ref=e202]: Instagram Handle
+                - textbox "Instagram Handle" [ref=e203]:
+                  - /placeholder: "@your_username"
+            - group [ref=e204]:
+              - generic [ref=e205]: Message*
+              - textbox "Message*" [ref=e206]:
+                - /placeholder: What are you inquiring about?
+            - status
+            - button "Send Inquiry" [ref=e207]
+  - contentinfo [ref=e35]:
+    - generic [ref=e36]:
+      - link "Lash Her by Nataliea" [ref=e38] [cursor=pointer]:
+        - /url: /
+        - img [ref=e39]
+        - generic [ref=e59]: Lash Her by Nataliea
+      - paragraph [ref=e60]: Elevating beauty through bespoke lash artistry and professional education.
+      - navigation "Social media links" [ref=e61]:
+        - generic [ref=e62]:
+          - link "Visit us at Instagram" [ref=e63] [cursor=pointer]:
+            - /url: https://www.instagram.com/lav_lashher/
+            - img [ref=e64]
+            - generic [ref=e66]: Visit us at Instagram
+          - link "Visit us at Fresha":
+            - /url: https://www.fresha.com/a/lash-her-by-nataliea-toronto-646-oakwood-avenue-tvrir5sx/all-offer?menu=true&share=true&pId=1106337
+            - generic [ref=e67] [cursor=pointer]: Visit us at Fresha
+    - generic [ref=e69]:
+      - paragraph [ref=e70]: © 2026 Lash Her by Nataliea. All rights reserved.
+      - paragraph [ref=e71]:
+        - text: Designed by
+        - link "Dardan Demiri" [ref=e72] [cursor=pointer]:
+          - /url: https://dardandemiri.com

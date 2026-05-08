@@ -1,0 +1,35 @@
+- generic [active] [ref=e1]:
+  - link "Skip to main content" [ref=e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - button "Toggle menu" [ref=e6]:
+        - img [ref=e7]
+      - link "Lash Her by Nataliea" [ref=e8] [cursor=pointer]:
+        - /url: /
+        - img [ref=e9]
+        - generic [ref=e29]: Lash Her by Nataliea
+  - main [ref=e30]:
+    - paragraph [ref=e34]: Loading...
+  - contentinfo [ref=e35]:
+    - generic [ref=e36]:
+      - link "Lash Her by Nataliea" [ref=e38] [cursor=pointer]:
+        - /url: /
+        - img [ref=e39]
+        - generic [ref=e59]: Lash Her by Nataliea
+      - paragraph [ref=e60]: Elevating beauty through bespoke lash artistry and professional education.
+      - navigation "Social media links" [ref=e61]:
+        - generic [ref=e62]:
+          - link "Visit us at Instagram" [ref=e63] [cursor=pointer]:
+            - /url: https://www.instagram.com/lav_lashher/
+            - img [ref=e64]
+            - generic [ref=e66]: Visit us at Instagram
+          - link "Visit us at Fresha":
+            - /url: https://www.fresha.com/a/lash-her-by-nataliea-toronto-646-oakwood-avenue-tvrir5sx/all-offer?menu=true&share=true&pId=1106337
+            - generic [ref=e67] [cursor=pointer]: Visit us at Fresha
+    - generic [ref=e69]:
+      - paragraph [ref=e70]: © 2026 Lash Her by Nataliea. All rights reserved.
+      - paragraph [ref=e71]:
+        - text: Designed by
+        - link "Dardan Demiri" [ref=e72] [cursor=pointer]:
+          - /url: https://dardandemiri.com

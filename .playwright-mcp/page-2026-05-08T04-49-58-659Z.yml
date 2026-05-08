@@ -1,0 +1,59 @@
+- generic [active] [ref=e1]:
+  - link "Skip to main content" [ref=e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - link "Book Now" [ref=e6] [cursor=pointer]:
+        - /url: https://www.fresha.com/a/lash-her-by-nataliea-toronto-646-oakwood-avenue-tvrir5sx/all-offer?menu=true&share=true&pId=1106337
+        - button "Book Now" [ref=e7]
+      - link "Lash Her by Nataliea Lash Her by Nataliea" [ref=e8] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e9]: Lash Her by Nataliea
+        - generic [ref=e10]:
+          - generic [ref=e11]: Lash Her
+          - generic [ref=e12]: by Nataliea
+    - navigation "Main navigation" [ref=e13]:
+      - navigation "Main" [ref=e14]:
+        - list [ref=e16]:
+          - listitem [ref=e17]:
+            - link "Home" [ref=e18] [cursor=pointer]:
+              - /url: /homepage
+          - listitem [ref=e19]:
+            - button "Training" [ref=e20]:
+              - text: Training
+              - img [ref=e21]
+          - listitem [ref=e23]:
+            - link "Gallery" [ref=e24] [cursor=pointer]:
+              - /url: /gallery
+          - listitem [ref=e25]:
+            - link "Contact" [ref=e26] [cursor=pointer]:
+              - /url: /contact
+  - main [ref=e27]:
+    - paragraph [ref=e31]: Loading...
+  - contentinfo [ref=e32]:
+    - generic [ref=e33]:
+      - link "Lash Her by Nataliea Lash Her by Nataliea" [ref=e35] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e36]: Lash Her by Nataliea
+        - generic [ref=e37]:
+          - generic [ref=e38]: Lash Her
+          - generic [ref=e39]: by Nataliea
+      - paragraph [ref=e40]: Elevating beauty through bespoke lash artistry and professional education.
+      - navigation "Social media links" [ref=e41]:
+        - generic [ref=e42]:
+          - link "Visit us at Instagram" [ref=e43] [cursor=pointer]:
+            - /url: https://www.instagram.com/lav_lashher/
+            - img [ref=e44]
+            - generic [ref=e46]: Visit us at Instagram
+          - link "Visit us at Fresha":
+            - /url: https://www.fresha.com/a/lash-her-by-nataliea-toronto-646-oakwood-avenue-tvrir5sx/all-offer?menu=true&share=true&pId=1106337
+            - generic [ref=e47] [cursor=pointer]: Visit us at Fresha
+    - generic [ref=e49]:
+      - paragraph [ref=e50]: © 2026 Lash Her by Nataliea. All rights reserved.
+      - paragraph [ref=e51]:
+        - text: Designed by
+        - link "Dardan Demiri" [ref=e52] [cursor=pointer]:
+          - /url: https://dardandemiri.com
+  - button "Open Next.js Dev Tools" [ref=e58] [cursor=pointer]:
+    - img [ref=e59]
+  - alert [ref=e62]
