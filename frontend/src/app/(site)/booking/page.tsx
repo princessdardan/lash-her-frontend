@@ -33,11 +33,11 @@ export default async function BookingPage({
             Select a service and time below to schedule your session.
           </p>
         </div>
-        
+
         <div className="bg-card border border-border/50 rounded-xl p-6 md:p-10 shadow-sm">
-          <BookingFlow 
-            settings={settings} 
-            initialBookingType={normalizeType(params.type)} 
+          <BookingFlow
+            settings={settings}
+            initialBookingType={normalizeType(params.type)}
           />
         </div>
       </div>

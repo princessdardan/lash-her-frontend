@@ -24,7 +24,7 @@ export function BookingFlow({ settings, initialBookingType }: BookingFlowProps) 
   const [phone, setPhone] = useState("");
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [marketingOptIn, setMarketingOptIn] = useState(false);
-  
+
   const [isLoadingSlots, setIsLoadingSlots] = useState(!!defaultType);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<"idle" | "success" | "error">("idle");
@@ -135,8 +135,8 @@ export function BookingFlow({ settings, initialBookingType }: BookingFlowProps) 
 
       <Field>
         <FieldLabel htmlFor="bookingType">Service Type</FieldLabel>
-        <Select 
-          value={bookingType} 
+        <Select
+          value={bookingType}
           onValueChange={(val) => {
             setBookingType(val as BookingType);
             if (!val) {
