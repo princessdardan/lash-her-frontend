@@ -19,6 +19,24 @@ export function getWebhookSecret(): string {
   );
 }
 
+export function getBookingEnv(): {
+  googleClientId: string;
+  googleClientSecret: string;
+  googleRedirectUri: string;
+  bookingAdminSetupSecret: string;
+  upstashRedisRestUrl: string;
+  upstashRedisRestToken: string;
+} {
+  return {
+    googleClientId: assertValue(process.env.GOOGLE_CLIENT_ID, "Missing env var: GOOGLE_CLIENT_ID"),
+    googleClientSecret: assertValue(process.env.GOOGLE_CLIENT_SECRET, "Missing env var: GOOGLE_CLIENT_SECRET"),
+    googleRedirectUri: assertValue(process.env.GOOGLE_REDIRECT_URI, "Missing env var: GOOGLE_REDIRECT_URI"),
+    bookingAdminSetupSecret: assertValue(process.env.BOOKING_ADMIN_SETUP_SECRET, "Missing env var: BOOKING_ADMIN_SETUP_SECRET"),
+    upstashRedisRestUrl: assertValue(process.env.UPSTASH_REDIS_REST_URL, "Missing env var: UPSTASH_REDIS_REST_URL"),
+    upstashRedisRestToken: assertValue(process.env.UPSTASH_REDIS_REST_TOKEN, "Missing env var: UPSTASH_REDIS_REST_TOKEN"),
+  };
+}
+
 function assertValue<T>(v: T | undefined, errorMessage: string): T {
   if (v === undefined) {
     throw new Error(errorMessage);

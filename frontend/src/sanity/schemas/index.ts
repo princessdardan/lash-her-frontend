@@ -6,6 +6,8 @@ import { trainingPage } from "./documents/training-page";
 import { trainingProgramsPage } from "./documents/training-programs-page";
 import { globalSettings } from "./documents/global-settings";
 import { mainMenu } from "./documents/main-menu";
+import { bookingSettings } from "./documents/booking-settings";
+import { bookingMarketingOptIn } from "./documents/booking-marketing-opt-in";
 
 // Documents — Collections
 import { trainingProgram } from "./documents/training-program";
@@ -50,6 +52,8 @@ export const schemaTypes = [
   trainingProgramsPage,
   globalSettings,
   mainMenu,
+  bookingSettings,
+  bookingMarketingOptIn,
   trainingProgram,
   contactForm,
   generalInquiry,

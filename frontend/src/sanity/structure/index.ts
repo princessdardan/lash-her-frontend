@@ -44,6 +44,21 @@ export const structure: StructureResolver = (S) =>
             ])
         ),
       S.divider(),
+      // ---- BOOKING ----
+      S.listItem()
+        .title("Booking")
+        .child(
+          S.list()
+            .title("Booking")
+            .items([
+              S.listItem()
+                .title("Booking Settings")
+                .id("bookingSettings")
+                .child(S.document().schemaType("bookingSettings").documentId("bookingSettings")),
+              S.documentTypeListItem("bookingMarketingOptIn").title("Marketing Opt-ins"),
+            ])
+        ),
+      S.divider(),
       // ---- CONTENT ----
       S.listItem()
         .title("Content")
