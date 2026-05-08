@@ -21,6 +21,10 @@ export interface PendingOrderRecord {
   _id: string;
   orderId: string;
   secretToken: string;
+  helcimInvoiceId: number;
+  helcimInvoiceNumber: string;
+  amount: number;
+  currency: ValidatedCart["currency"];
 }
 
 interface CheckoutOrderDocument {
@@ -42,7 +46,15 @@ const PENDING_ORDER_BY_CHECKOUT_TOKEN_QUERY = `*[
   _type == "checkoutOrder" &&
   status == "pending" &&
   checkoutToken == $checkoutToken
-][0]{_id, orderId, secretTokenCiphertext}`;
+][0]{
+  _id,
+  orderId,
+  secretTokenCiphertext,
+  helcimInvoiceId,
+  helcimInvoiceNumber,
+  amount,
+  currency
+}`;
 
 const ORDER_BY_ORDER_ID_QUERY = `*[_type == "checkoutOrder" && orderId == $orderId]`;
 
@@ -74,6 +86,10 @@ export async function createPendingOrder(
     _id: createdOrder._id,
     orderId,
     secretToken: input.secretToken,
+    helcimInvoiceId: input.helcimInvoiceId,
+    helcimInvoiceNumber: input.helcimInvoiceNumber,
+    amount: input.cart.amount,
+    currency: input.cart.currency,
   };
 }
 
@@ -98,6 +114,10 @@ interface PendingOrderCiphertextRecord {
   _id: string;
   orderId: string;
   secretTokenCiphertext: string;
+  helcimInvoiceId: number;
+  helcimInvoiceNumber: string;
+  amount: number;
+  currency: ValidatedCart["currency"];
 }
 
 export async function getPendingOrderByCheckoutToken(
@@ -116,5 +136,9 @@ export async function getPendingOrderByCheckoutToken(
     _id: pendingOrder._id,
     orderId: pendingOrder.orderId,
     secretToken: decryptCheckoutSecret(pendingOrder.secretTokenCiphertext),
+    helcimInvoiceId: pendingOrder.helcimInvoiceId,
+    helcimInvoiceNumber: pendingOrder.helcimInvoiceNumber,
+    amount: pendingOrder.amount,
+    currency: pendingOrder.currency,
   };
 }
