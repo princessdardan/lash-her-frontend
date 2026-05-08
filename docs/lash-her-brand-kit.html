@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lash Her by Nataliea — Brand Kit</title>
+  <meta name="description" content="Comprehensive brand kit and design system for Lash Her by Nataliea." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #663976;
+      --shadow: #1C1318;
+      --light: #D4B483;
+      --accent: #3D0B16;
+      --neutral: #E8E2E9;
+      --neutral-2: #F5F1F5;
+      --white: #FFFFFF;
+      --ink-muted: #746A72;
+      --line: rgba(28, 19, 24, 0.14);
+      --primary-soft: rgba(102, 57, 118, 0.12);
+      --light-soft: rgba(212, 180, 131, 0.22);
+      --accent-soft: rgba(61, 11, 22, 0.12);
+      --shadow-soft: rgba(28, 19, 24, 0.82);
+      --font-display: 'Bebas Neue', Impact, sans-serif;
+      --font-smallcaps: 'Bebas Neue', Impact, sans-serif;
+      --font-body: 'Inter', Arial, sans-serif;
+      --radius-sm: 10px;
+      --radius-md: 18px;
+      --radius-card: 24px;
+      --radius-lg: 28px;
+      --shadow-card: 0 24px 70px rgba(28, 19, 24, 0.10);
+      --max: 1180px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--white);
+      color: var(--shadow);
+      font-family: var(--font-body);
+      line-height: 1.6;
+      font-size: 16px;
+    }
+    a { color: inherit; }
+    .page { max-width: var(--max); margin: 0 auto; padding: 42px 24px 80px; }
+    .hero {
+      position: relative;
+      overflow: hidden;
+      border-radius: var(--radius-lg);
+      min-height: 520px;
+      background:
+        radial-gradient(circle at 78% 20%, rgba(212, 180, 131, .34), transparent 28%),
+        linear-gradient(135deg, rgba(28, 19, 24, .94), rgba(61, 11, 22, .90) 48%, rgba(102, 57, 118, .86));
+      color: var(--neutral-2);
+      padding: clamp(36px, 6vw, 72px);
+      box-shadow: var(--shadow-card);
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      width: 420px;
+      height: 420px;
+      right: -130px;
+      bottom: -160px;
+      border: 1px solid rgba(212, 180, 131, .45);
+      border-radius: 50%;
+    }
+    .eyebrow {
+      font-family: var(--font-smallcaps);
+      letter-spacing: .32em;
+      text-transform: uppercase;
+      font-size: 0.86rem;
+      color: var(--light);
+      margin: 0 0 24px;
+    }
+    h1, h2, h3, h4 { margin: 0; line-height: .92; font-family: var(--font-display); font-weight: 400; letter-spacing: .01em; text-transform: uppercase; }
+    h1 { font-size: clamp(4rem, 12vw, 9.2rem); max-width: 880px; }
+    h2 { font-size: clamp(2.7rem, 6vw, 5.4rem); }
+    h3 { font-size: clamp(1.9rem, 3vw, 3rem); }
+    h4 { font-size: 1.6rem; }
+    p { margin: 0; color: rgba(28, 19, 24, .78); }
+    .hero p { color: rgba(245, 241, 245, .82); font-size: clamp(1.1rem, 2vw, 1.35rem); max-width: 680px; margin-top: 28px; }
+    .hero-meta { display:flex; flex-wrap:wrap; gap:14px; margin-top:44px; position:relative; z-index:1; }
+    .pill { border: 1px solid rgba(212, 180, 131, .38); border-radius: 999px; padding: 10px 15px; color: var(--light); font-size: .86rem; letter-spacing: .08em; text-transform: uppercase; }
+    .section { margin-top: 34px; padding: clamp(28px, 5vw, 56px); background: rgba(255,255,255,.42); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: 0 18px 50px rgba(28,19,24,.04); }
+    .lead { font-size: clamp(1.1rem, 1.6vw, 1.32rem); max-width: 840px; margin-top: 18px; }
+    .grid { display:grid; gap: 18px; }
+    .grid.two { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .grid.three { grid-template-columns: repeat(3, minmax(0,1fr)); }
+    .grid.four { grid-template-columns: repeat(4, minmax(0,1fr)); }
+    .card { background: rgba(255,255,255,.62); border:1px solid var(--line); border-radius: var(--radius-md); padding: 24px; }
+    .dark .card { background: rgba(255,255,255,.045); border-color: rgba(232,226,233,.12); }
+    .card h4 { margin-bottom: 12px; }
+    .card ul { margin: 12px 0 0; padding-left: 20px; }
+    .card li { margin: 7px 0; }
+    .palette { margin-top: 28px; display:grid; grid-template-columns: repeat(5, minmax(150px,1fr)); gap:16px; }
+    .swatch { min-height: 245px; border-radius: 0; padding: 24px; display:flex; flex-direction:column; justify-content:space-between; border:1px solid rgba(28,19,24,.12); }
+    .swatch .role { font-family: var(--font-smallcaps); text-transform: uppercase; letter-spacing:.32em; font-size:.78rem; opacity:.72; }
+    .swatch .name { font-family: var(--font-display); font-style: italic; font-size: 2rem; line-height:1; margin-bottom:8px; }
+    .swatch .hex, .swatch .rgb, .swatch .cmyk { font-size:.84rem; letter-spacing:.03em; }
+    .swatch.primary { background: var(--primary); color: var(--neutral); }
+    .swatch.shadow { background: var(--shadow); color: var(--neutral); }
+    .swatch.light { background: var(--light); color: var(--shadow); }
+    .swatch.accent { background: var(--accent); color: var(--light); }
+    .swatch.neutral { background: var(--neutral); color: var(--shadow); }
+    .type-sample { padding: 30px; border-radius: var(--radius-md); background: var(--neutral-2); border:1px solid var(--line); }
+    .display-sample { font-family: var(--font-display); font-size: clamp(3.2rem, 7vw, 6.8rem); line-height: .9; letter-spacing:.01em; text-transform: uppercase; }
+    .smallcaps-sample { font-family: var(--font-smallcaps); text-transform: uppercase; letter-spacing:.30em; font-size: 1.1rem; margin-bottom: 18px; color: var(--primary); }
+    .body-sample { font-family: var(--font-body); max-width: 720px; font-size: 1.02rem; color: rgba(28,19,24,.72); }
+    .token-table { width: 100%; border-collapse: collapse; margin-top: 22px; overflow:hidden; border-radius: var(--radius-md); }
+    .token-table th, .token-table td { padding: 14px 16px; border-bottom: 1px solid var(--line); text-align:left; vertical-align:top; }
+    .token-table th { font-size:.78rem; letter-spacing:.14em; text-transform:uppercase; color: var(--primary); }
+    .section.dark { background: var(--shadow); color: var(--neutral-2); border-color: rgba(232,226,233,.12); }
+    .section.dark p, .section.dark li, .section.dark td { color: rgba(232,226,233,.78); }
+    .section.dark .eyebrow { color: var(--light); }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    pre { white-space: pre-wrap; background: #120C10; color: #E8E2E9; border-radius: var(--radius-md); padding: 22px; overflow:auto; font-size:.9rem; line-height:1.6; }
+    .component-row { display:flex; flex-wrap:wrap; align-items:center; gap: 14px; margin-top:18px; }
+    .btn { appearance:none; border:0; border-radius:999px; padding: 14px 22px; font-weight:600; letter-spacing:.02em; font-family:var(--font-body); }
+    .btn.primary { background: var(--primary); color: var(--white); }
+    .btn.dark { background: var(--shadow); color: var(--neutral); }
+    .btn.luxury { background: var(--light); color: var(--shadow); }
+    .btn.accent { background: var(--accent); color: var(--white); }
+    .btn.outline { background: transparent; color: var(--shadow); border:1px solid var(--line); }
+    .btn.ghost { background: transparent; color: var(--accent); border:1px solid rgba(61,11,22,.32); }
+    .mini-hero { background: linear-gradient(135deg, var(--shadow), var(--accent)); color: var(--neutral-2); border-radius: var(--radius-lg); padding: 42px; }
+    .mini-hero h3 { font-size: clamp(2.6rem, 5vw, 5rem); max-width:720px; }
+    .mini-hero p { color: rgba(232,226,233,.8); margin: 18px 0 26px; max-width:620px; }
+    .service-card { min-height:280px; display:flex; flex-direction:column; justify-content:flex-end; background: linear-gradient(180deg, rgba(102,57,118,.06), rgba(255,255,255,.70)); }
+    .service-card .tag { color:var(--primary); text-transform:uppercase; letter-spacing:.18em; font-size:.78rem; font-weight:700; margin-bottom:10px; }
+    .note { margin-top:16px; padding: 16px 18px; border-left: 3px solid var(--light); background: var(--light-soft); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+    .do-dont { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:18px; margin-top:22px; }
+    .do { border-top: 6px solid var(--primary); }
+    .dont { border-top: 6px solid var(--accent); }
+    .footer { margin-top: 34px; color: var(--ink-muted); font-size:.9rem; }
+    @media (max-width: 900px) {
+      .grid.two, .grid.three, .grid.four, .palette, .do-dont { grid-template-columns:1fr; }
+      .hero { min-height: auto; }
+    }
+    @media print {
+      body { background: #fff; }
+      .page { padding: 0; max-width: none; }
+      .section, .hero { break-inside: avoid; box-shadow:none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <p class="eyebrow">Brand Kit / Source of Truth</p>
+      <h1>Lash Her by Nataliea</h1>
+      <p>A luxury lash artistry and training brand system built around bespoke beauty, precise education, a richer editorial palette, and the implemented Bebas Neue / Inter interface system.</p>
+      <div class="hero-meta">
+        <span class="pill">Toronto Lash Artistry</span>
+        <span class="pill">Professional Education</span>
+        <span class="pill">Bespoke Luxury</span>
+      </div>
+    </section>
+
+    <section class="section">
+      <p class="eyebrow">01 / Brand Position</p>
+      <h2>Quiet luxury, high precision, personal transformation.</h2>
+      <p class="lead">Lash Her should feel intimate, refined, and expert-led. The current website now implements a white-first editorial system with exact dark image overlays, a fixed glass navigation state, Bebas Neue display typography, bold Inter support copy, structured service cards, and calmer conversion moments. This brand kit is synchronized to that live direction across web, booking flows, training material, social graphics, and print collateral.</p>
+      <div class="grid three" style="margin-top:26px;">
+        <article class="card"><h4>Brand essence</h4><p>Luxury lash artistry with a personal, mentorship-driven tone. The brand should feel calm, confident, feminine, and exacting.</p></article>
+        <article class="card"><h4>Primary audience</h4><p>Clients seeking premium lash work in Toronto and students seeking serious, hands-on lash education.</p></article>
+        <article class="card"><h4>Design principle</h4><p>Use restraint first. Let compressed editorial typography, whitespace, photography, thin rules, and a few high-contrast accents create the sense of value.</p></article>
+      </div>
+    </section>
+
+    <section class="section dark">
+      <p class="eyebrow">02 / Colour System</p>
+      <h2>New palette</h2>
+      <p class="lead">Use the attached colour direction as the new foundation. The system should shift away from generic beauty-site pinks and toward a richer editorial combination: mulberry, espresso, champagne, cherry, and silk.</p>
+      <div class="palette">
+        <div class="swatch primary"><div class="role">Primary</div><div><div class="name">Royal Mulberry</div><div class="hex">HEX #663976</div><div class="rgb">RGB 102 · 57 · 118</div><div class="cmyk">CMYK 54 · 78 · 0 · 29</div></div></div>
+        <div class="swatch shadow"><div class="role">The Shadow</div><div><div class="name">Midnight Espresso</div><div class="hex">HEX #1C1318</div><div class="rgb">RGB 28 · 19 · 24</div><div class="cmyk">CMYK 69 · 79 · 69 · 84</div></div></div>
+        <div class="swatch light"><div class="role">The Light</div><div><div class="name">Antique Champagne</div><div class="hex">HEX #D4B483</div><div class="rgb">RGB 212 · 180 · 131</div><div class="cmyk">CMYK 12 · 24 · 50 · 8</div></div></div>
+        <div class="swatch accent"><div class="role">The Accent</div><div><div class="name">Black Cherry</div><div class="hex">HEX #3D0B16</div><div class="rgb">RGB 61 · 11 · 22</div><div class="cmyk">CMYK 41 · 92 · 70 · 60</div></div></div>
+        <div class="swatch neutral"><div class="role">The Neutral</div><div><div class="name">Dusty Silk</div><div class="hex">HEX #E8E2E9</div><div class="rgb">RGB 232 · 226 · 233</div><div class="cmyk">CMYK 3 · 5 · 0 · 2</div></div></div>
+      </div>
+      <table class="token-table">
+        <thead><tr><th>Colour</th><th>Best use</th><th>Avoid</th></tr></thead>
+        <tbody>
+          <tr><td>Royal Mulberry</td><td>Primary buttons, active states, icons, section labels, selected navigation, form focus rings.</td><td>Large body copy; it reduces readability when overused.</td></tr>
+          <tr><td>Midnight Espresso</td><td>Primary text, dark hero backgrounds, footer, premium service cards, photography overlays.</td><td>Flat full-page backgrounds without texture or contrast relief.</td></tr>
+          <tr><td>Antique Champagne</td><td>Luxury highlights, small dividers, badges, premium labels, soft gradients, pull quotes.</td><td>Long text on white; contrast can become weak.</td></tr>
+          <tr><td>Black Cherry</td><td>Accent CTAs, urgent conversion points, hover states, training application emphasis.</td><td>Default backgrounds on every section; it should feel special.</td></tr>
+          <tr><td>Dusty Silk</td><td>Soft section pauses, cards, forms, booking panels, mobile active states, calm negative space.</td><td>Unbordered cards on the same colour without depth.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section">
+      <p class="eyebrow">03 / Typography</p>
+      <h2>Condensed, editorial, readable.</h2>
+      <p class="lead">Use only open-license or Google-hosted fonts. The implemented site now uses Bebas Neue for display, heading, smallcaps, and serif utility roles, with Inter for readable body and interface text. The prior serif-led direction is retired from the live frontend.</p>
+      <div class="grid two" style="margin-top:28px;">
+        <div class="type-sample">
+          <div class="smallcaps-sample">Bespoke Lash Artistry</div>
+          <div class="display-sample">Elevating beauty through detail.</div>
+        </div>
+        <div class="card">
+          <h4>Font roles</h4>
+          <ul>
+            <li><strong>Bebas Neue:</strong> hero headlines, section titles, card titles, labels, nav accents, logo text, gallery headings, and status pages.</li>
+            <li><strong>Inter:</strong> paragraph copy, buttons, forms, captions, pricing, booking instructions, training details, validation messages, and email-friendly UI text.</li>
+            <li><strong>Weight contrast:</strong> use regular-weight Bebas Neue for display scale, then lean on Inter 700 for hero support copy, navigation CTAs, form labels, helper text, and portable text emphasis.</li>
+            <li><strong>Legacy note:</strong> avoid reintroducing the previous script or serif-led font stack unless a future redesign explicitly chooses it.</li>
+          </ul>
+        </div>
+      </div>
+      <table class="token-table">
+        <thead><tr><th>Style</th><th>Font</th><th>Desktop</th><th>Mobile</th><th>Usage</th></tr></thead>
+        <tbody>
+          <tr><td>Hero</td><td>Bebas Neue 400</td><td>96–128px / .92</td><td>50–72px / .92</td><td>Homepage hero, internal page heroes, campaign moments.</td></tr>
+          <tr><td>H1</td><td>Bebas Neue 400</td><td>72–96px / .92</td><td>50–60px / .95</td><td>Page titles and error states.</td></tr>
+          <tr><td>H2</td><td>Bebas Neue 400</td><td>50–60px / 1.0</td><td>38–50px / 1.05</td><td>Section titles and form headings.</td></tr>
+          <tr><td>Eyebrow</td><td>Bebas Neue 400</td><td>12–14px / 1.4 / .28em tracking</td><td>11–13px</td><td>Labels, taxonomy, nav menu section headings, badges.</td></tr>
+          <tr><td>Body</td><td>Inter 400–700</td><td>16–18px / 1.65</td><td>16px / 1.6</td><td>Reading copy, hero support copy, descriptions, forms, helper text.</td></tr>
+          <tr><td>Button</td><td>Inter 700</td><td>14–16px / 1</td><td>14–16px</td><td>Booking, application, mobile nav, and form CTAs.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section">
+      <p class="eyebrow">04 / Logo & Identity Use</p>
+      <h2>Let the name behave like a signature.</h2>
+      <div class="grid three" style="margin-top:28px;">
+        <article class="card"><h4>Primary wordmark</h4><p>Use “Lash Her” as a condensed editorial wordmark in Bebas Neue with a slight italic feel when needed. Keep “by Nataliea” smaller, letter-spaced, uppercase, and secondary. The brand should feel personal without becoming casual.</p></article>
+        <article class="card"><h4>Monogram</h4><p>Use LH as a simple ligature or stacked monogram for favicon, social profile, wax seal graphic, certificate mark, and booking confirmation assets.</p></article>
+        <article class="card"><h4>Clear space</h4><p>Minimum clear space should equal the height of the “L” in the wordmark. Never place the logo over busy lash photography without a dark overlay.</p></article>
+      </div>
+      <div class="note"><strong>Preferred lockup:</strong> Lash Her in Bebas Neue with generous tracking and “by Nataliea” in smaller Bebas Neue uppercase with 0.32em tracking. Use Midnight Espresso on white or Dusty Silk, Dusty Silk on Midnight Espresso, or Antique Champagne on Black Cherry.</div>
+    </section>
+
+    <section class="section dark">
+      <p class="eyebrow">05 / Voice & Copy</p>
+      <h2>Expert, warm, direct.</h2>
+      <div class="grid two" style="margin-top:28px;">
+        <article class="card"><h4>Voice traits</h4><ul><li>Precise, not clinical.</li><li>Luxurious, not vague.</li><li>Encouraging, not overexcited.</li><li>Personal, not overly familiar.</li><li>Confident, not pushy.</li></ul></article>
+        <article class="card"><h4>Message pillars</h4><ul><li>Bespoke lash design tailored to each client.</li><li>Safe, professional, detail-driven technique.</li><li>Training that pairs technique with business support.</li><li>A premium Toronto beauty experience.</li></ul></article>
+      </div>
+      <table class="token-table">
+        <thead><tr><th>Instead of</th><th>Use</th><th>Reason</th></tr></thead>
+        <tbody>
+          <tr><td>“Get pretty lashes fast.”</td><td>“Personalized lash design shaped around your features, lifestyle, and desired finish.”</td><td>More premium and consultative.</td></tr>
+          <tr><td>“Best lash course.”</td><td>“Private lash training with hands-on mentorship, safety protocols, and business-building guidance.”</td><td>Specific value proposition.</td></tr>
+          <tr><td>“Book now!”</td><td>“Reserve your lash appointment.”</td><td>Calmer conversion language.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section">
+      <p class="eyebrow">06 / Photography & Art Direction</p>
+      <h2>Close detail, soft contrast, editorial restraint.</h2>
+      <div class="grid three" style="margin-top:28px;">
+        <article class="card"><h4>Client imagery</h4><p>Use close crops of eyes, lash texture, clean skin, soft shadows, and minimal backgrounds. Prioritize real client results over generic beauty stock.</p></article>
+        <article class="card"><h4>Training imagery</h4><p>Show hands, tools, student practice, clean workstations, certificates, and instructor guidance. Keep images warm and precise.</p></article>
+        <article class="card"><h4>Treatment</h4><p>Use warm highlights, low saturation, soft grain, espresso overlays, and dark multiply overlays on hero images. Avoid heavy pink filters, harsh ring-light glare, and cluttered treatment-room backgrounds.</p></article>
+      </div>
+    </section>
+
+    <section class="section">
+      <p class="eyebrow">07 / UI Components</p>
+      <h2>Conversion elements should feel structured, calm, and editorial.</h2>
+      <div class="mini-hero" style="margin-top:26px;">
+        <p class="eyebrow">Hero Example</p>
+        <h3>Elevate your beauty with bespoke lash artistry.</h3>
+        <p>Premium lash services and private training designed with intention, precision, and care.</p>
+        <div class="component-row"><button class="btn luxury" type="button">Reserve Appointment</button><button class="btn ghost" type="button" style="color:#E8E2E9;border-color:rgba(232,226,233,.42);">Explore Training</button></div>
+      </div>
+      <div class="component-row"><button class="btn primary" type="button">Primary CTA</button><button class="btn dark" type="button">Dark CTA</button><button class="btn luxury" type="button">Luxury CTA</button><button class="btn accent" type="button">Accent CTA</button><button class="btn outline" type="button">Outline CTA</button><button class="btn ghost" type="button">Secondary CTA</button></div>
+      <div class="grid three" style="margin-top:20px;">
+        <article class="card service-card"><div class="tag">Signature Service</div><h4>Classic Lash Set</h4><p>Use service cards with generous vertical space, one clear CTA, and restrained labels.</p></article>
+        <article class="card service-card"><div class="tag">Education</div><h4>Beginner Private Training</h4><p>Training cards should emphasize format, outcome, support, and certification.</p></article>
+        <article class="card service-card"><div class="tag">Advanced</div><h4>Volume Technique</h4><p>Premium offers can use Antique Champagne labels and Black Cherry hover states.</p></article>
+      </div>
+      <div class="grid three" style="margin-top:20px;">
+        <article class="card"><h4>Section shells</h4><p>Use white as the default section surface, Dusty Silk for soft pauses, and Midnight Espresso for high-contrast footer or contact panels.</p></article>
+        <article class="card"><h4>Editorial cards</h4><p>Use 24px radii, thin lines, white fills, soft shadows, and optional Antique Champagne borders for highlighted training cards.</p></article>
+        <article class="card"><h4>Gallery motion</h4><p>The live gallery uses a Motion Plus coverflow with large rounded image cards, subtle perspective, drag affordance, and understated dot pagination.</p></article>
+      </div>
+      <div class="grid three" style="margin-top:20px;">
+        <article class="card"><h4>Button variants</h4><p>Use <code>primary</code>, <code>dark</code>, <code>luxury</code>, <code>accent</code>, <code>outline</code>, and <code>ghost</code> as the canonical CTA variants. Homepage hero primary CTAs use <code>luxury</code>; internal heroes and nav use <code>primary</code>; non-featured course cards can use <code>outline</code>.</p></article>
+        <article class="card"><h4>Form primitives</h4><p>Inputs, textareas, and selects use 18px radii, white surfaces, thin brand lines, soft shadows, bold Inter text, muted placeholders, and Royal Mulberry focus rings.</p></article>
+        <article class="card"><h4>Drawer surfaces</h4><p>Mobile navigation uses a right-side white sheet with a shadow overlay, brand-line borders, text logo lockup, active Dusty Silk rows, and a full-width primary footer CTA.</p></article>
+      </div>
+    </section>
+
+    <section class="section">
+      <p class="eyebrow">08 / Layout Rules</p>
+      <h2>Use whitespace as a luxury signal.</h2>
+      <div class="grid two" style="margin-top:28px;">
+        <article class="card"><h4>Spacing</h4><ul><li>Use 24px as the base spacing unit for cards and section interiors.</li><li>Use section shells with 44px mobile, 64px tablet, and 96px desktop vertical rhythm.</li><li>Keep content constrained to 1180px with 24–32px side gutters.</li></ul></article>
+        <article class="card"><h4>Shape and depth</h4><ul><li>Use the Tailwind radius base of 18px for default UI surfaces.</li><li>Use 18px radii for fields, dropdown menus, and navigation viewports.</li><li>Use 24px radii for editorial cards and gallery images.</li><li>Use 28px radii for soft and dark panels; prefer thin borders over heavy shadows.</li></ul></article>
+        <article class="card"><h4>Navigation</h4><ul><li>Header is fixed at the top with a centered logo, desktop nav pinned left, and CMS-driven CTAs pinned right.</li><li>The first CMS-driven CTA is the only primary filled nav button; do not hardcode “Book Now” as a rule.</li><li>At rest, the header is transparent over hero imagery. After 50px scroll, it becomes <code>bg-lh-primary/30</code> with backdrop blur, brand line, and soft shadow.</li><li>Mobile uses a left hamburger that opens a right-side sheet with expandable menu sections.</li></ul></article>
+        <article class="card"><h4>Forms</h4><ul><li>Use white fields inside Dusty Silk soft panels.</li><li>Use Royal Mulberry focus rings and Black Cherry error states.</li><li>Use bold Inter labels and concise helper text; success states stay quiet and neutral.</li></ul></article>
+      </div>
+    </section>
+
+    <section class="section">
+      <p class="eyebrow">09 / Motion & Interaction</p>
+      <h2>Motion should reveal, not perform.</h2>
+      <div class="grid three" style="margin-top:28px;">
+        <article class="card"><h4>Block reveal</h4><p>Most CMS layout blocks use a scroll reveal wrapper with reduced-motion support. Hero sections skip this entrance treatment so the first impression loads immediately.</p></article>
+        <article class="card"><h4>Header transition</h4><p>The fixed header uses a 300ms transition between transparent and Mulberry glass states. Avoid hiding the header on scroll; the current pattern keeps navigation available.</p></article>
+        <article class="card"><h4>Utility motion</h4><p>Use <code>.mask-gradient</code> for horizontal fade masks and <code>.animate-fade-in-overlay</code> for slow overlay entrances. Keep motion subtle and accessibility-aware.</p></article>
+      </div>
+    </section>
+
+    <section class="section dark">
+      <p class="eyebrow">10 / Social & Marketing Templates</p>
+      <h2>Reusable patterns</h2>
+      <div class="grid four" style="margin-top:28px;">
+        <article class="card"><h4>Before / After</h4><p>Dusty Silk background, thin Champagne divider, Bebas Neue title, Inter caption, small LH monogram.</p></article>
+        <article class="card"><h4>Training Promo</h4><p>Midnight Espresso background, large condensed headline, Champagne badge, Black Cherry CTA strip.</p></article>
+        <article class="card"><h4>Client Review</h4><p>Royal Mulberry panel, oversized quotation mark, Bebas Neue quote headline, Inter attribution.</p></article>
+        <article class="card"><h4>Policy Notice</h4><p>Neutral background, clear Inter text, smallcaps heading, single Mulberry action link.</p></article>
+      </div>
+    </section>
+
+    <section class="section">
+      <p class="eyebrow">11 / Do & Don’t</p>
+      <h2>Execution standards</h2>
+      <div class="do-dont">
+        <article class="card do"><h4>Do</h4><ul><li>Use oversized editorial headlines.</li><li>Keep body copy readable and practical.</li><li>Use Antique Champagne as a premium accent.</li><li>Use authentic lash photography.</li><li>Make booking CTAs obvious but calm.</li></ul></article>
+        <article class="card dont"><h4>Don’t</h4><ul><li>Use neon pink, rose-gold gradients, or glitter effects.</li><li>Overcrowd pages with badges and decorative icons.</li><li>Use script fonts for long text.</li><li>Use low-contrast champagne text on white.</li><li>Make every section dark; contrast loses meaning.</li></ul></article>
+      </div>
+    </section>
+
+    <section class="section">
+      <p class="eyebrow">12 / CSS Tokens</p>
+      <h2>Implementation starter</h2>
+      <pre>/* Implemented in frontend/src/app/globals.css */
+@theme inline {
+  --color-lh-white: var(--lh-white);
+  --color-lh-primary: var(--lh-primary);
+  --color-lh-shadow: var(--lh-shadow);
+  --color-lh-light: var(--lh-light);
+  --color-lh-accent: var(--lh-accent);
+  --color-lh-neutral: var(--lh-neutral);
+  --color-lh-neutral-2: var(--lh-neutral-2);
+  --color-lh-muted: var(--lh-muted);
+  --color-lh-line: var(--lh-line);
+  --color-lh-primary-soft: var(--lh-primary-soft);
+  --color-lh-light-soft: var(--lh-light-soft);
+  --color-lh-accent-soft: var(--lh-accent-soft);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-display: var(--font-bebas-neue);
+  --font-smallcaps: var(--font-bebas-neue);
+  --font-body: var(--font-inter);
+  --font-sans: var(--font-inter);
+  --font-serif: var(--font-bebas-neue);
+  --font-heading: var(--font-bebas-neue);
+  --font-size-xs: 0.875rem;
+  --font-size-sm: 1rem;
+  --font-size-base: 1.125rem;
+  --font-size-lg: 1.25rem;
+  --font-size-xl: 1.375rem;
+  --font-size-2xl: 1.625rem;
+  --font-size-3xl: 2rem;
+  --font-size-4xl: 2.375rem;
+  --font-size-5xl: 3.125rem;
+  --font-size-6xl: 3.75rem;
+  --font-size-7xl: 4.5rem;
+  --font-size-8xl: 6rem;
+  --font-size-9xl: 8rem;
+  --font-weight-black: 900;
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --lh-white: #FFFFFF;
+  --lh-primary: #663976;
+  --lh-shadow: #1C1318;
+  --lh-light: #D4B483;
+  --lh-accent: #3D0B16;
+  --lh-neutral: #E8E2E9;
+  --lh-neutral-2: #F5F1F5;
+  --lh-muted: #746A72;
+  --lh-line: rgba(28, 19, 24, 0.14);
+  --lh-primary-soft: rgba(102, 57, 118, 0.12);
+  --lh-light-soft: rgba(212, 180, 131, 0.22);
+  --lh-accent-soft: rgba(61, 11, 22, 0.12);
+  --lh-shadow-soft: rgba(28, 19, 24, 0.82);
+  --background: #FFFFFF;
+  --foreground: #1C1318;
+  --radius: 18px;
+  --card: #FFFFFF;
+  --card-foreground: #1C1318;
+  --popover: #FFFFFF;
+  --popover-foreground: #1C1318;
+  --primary: #663976;
+  --primary-foreground: #FFFFFF;
+  --secondary: #E8E2E9;
+  --secondary-foreground: #1C1318;
+  --muted: #F5F1F5;
+  --muted-foreground: #746A72;
+  --accent: #D4B483;
+  --accent-foreground: #1C1318;
+  --destructive: #3D0B16;
+  --border: rgba(28, 19, 24, 0.14);
+  --input: rgba(28, 19, 24, 0.18);
+  --ring: #663976;
+}
+
+.dark {
+  --background: #1C1318;
+  --foreground: #F5F1F5;
+  --card: #1C1318;
+  --card-foreground: #F5F1F5;
+  --popover: #1C1318;
+  --popover-foreground: #F5F1F5;
+  --primary: #D4B483;
+  --primary-foreground: #1C1318;
+  --secondary: rgba(232, 226, 233, 0.12);
+  --secondary-foreground: #F5F1F5;
+  --muted: rgba(232, 226, 233, 0.10);
+  --muted-foreground: rgba(232, 226, 233, 0.72);
+  --accent: #D4B483;
+  --accent-foreground: #1C1318;
+  --destructive: #D4B483;
+  --border: rgba(232, 226, 233, 0.16);
+  --input: rgba(232, 226, 233, 0.18);
+  --ring: #D4B483;
+}</pre>
+      <div class="grid two" style="margin-top:22px;">
+        <article class="card"><h4>Global classes</h4><p>Use <code>.section-shell</code>, <code>.section-shell-soft</code>, <code>.section-shell-dark</code>, <code>.content-container</code>, <code>.display-heading</code>, <code>.section-heading</code>, <code>.body-lead</code>, and <code>.editorial-card</code> before inventing page-local styling.</p></article>
+        <article class="card"><h4>Control classes</h4><p>Use <code>.form-input</code>, <code>.form-textarea</code>, <code>.soft-panel</code>, <code>.dark-panel</code>, <code>.accent-rule</code>, and <code>.icon-badge</code> for form and card composition.</p></article>
+      </div>
+      <div class="note"><strong>Implementation note:</strong> Tailwind v4 theme values are CSS-first via <code>@theme inline</code>, and Next font variables are loaded through <code>next/font/google</code> on the root layout body. Keep token names aligned with <code>frontend/src/app/globals.css</code>.</div>
+    </section>
+
+    <section class="section">
+      <p class="eyebrow">13 / Recommended Website Direction</p>
+      <h2>How the new system fits the current site</h2>
+      <div class="grid two" style="margin-top:28px;">
+        <article class="card"><h4>Homepage</h4><p>Use a full-bleed photographic hero with <code>from-lh-shadow/80 via-lh-accent/70 to-lh-primary/60</code>, oversized Bebas Neue heading, bold Inter support copy, and Antique Champagne <code>luxury</code> CTA.</p></article>
+        <article class="card"><h4>Training section</h4><p>Use editorial-card course tiles with Royal Mulberry hierarchy, Antique Champagne “Most Popular” treatment, icon badges, accent rules, and one clear application CTA per card.</p></article>
+        <article class="card"><h4>Gallery</h4><p>Use the implemented coverflow direction: large vertical crops, 24px image radii, soft shadow, drag affordance, subtle perspective, and quiet dot pagination.</p></article>
+        <article class="card"><h4>Contact and booking</h4><p>Use section-shell layouts, Dusty Silk soft panels, white 18px form fields, Royal Mulberry focus states, Black Cherry errors, and a dark contact card for location, hours, email, and booking links.</p></article>
+      </div>
+    </section>
+
+    <p class="footer">Prepared as the brand source-of-truth for Lash Her by Nataliea. Font recommendations use Google Fonts / open-license families currently implemented in the frontend: Bebas Neue and Inter.</p>
+  </main>
+</body>
+</html>
