@@ -4,8 +4,7 @@ import {
   markOrderPaid,
   markOrderVerificationFailed,
 } from "@/lib/commerce/order-store";
-import { validateHelcimResponseHash } from "@/lib/commerce/helcim-hash";
-import { persistVerifiedPayment } from "@/lib/commerce/verified-payment";
+import { persistVerifiedPayment, verifyHelcimPayment } from "@/lib/commerce/verified-payment";
 import type { HelcimPayloadValue } from "@/lib/commerce/helcim-types";
 
 interface ValidatePaymentBody {
@@ -57,9 +56,14 @@ export async function POST(req: NextRequest): Promise<Response> {
       );
     }
 
-    const isValid = validateHelcimResponseHash(data, order.secretToken, hash);
+    const payment = verifyHelcimPayment({
+      data,
+      hash,
+      order,
+      secretToken: order.secretToken,
+    });
 
-    if (!isValid) {
+    if (!payment.ok) {
       await markOrderVerificationFailed(order.orderId);
       return NextResponse.json(
         { error: "Payment could not be verified" },
@@ -67,20 +71,10 @@ export async function POST(req: NextRequest): Promise<Response> {
       );
     }
 
-    const transactionId = data.transactionId ?? data.id;
-
-    if (typeof transactionId !== "string" && typeof transactionId !== "number") {
-      await markOrderVerificationFailed(order.orderId);
-      return NextResponse.json(
-        { error: "Payment response missing transaction ID" },
-        { status: 400 }
-      );
-    }
-
     const persisted = await persistVerifiedPayment({
       markPaid: markOrderPaid,
       orderId: order.orderId,
-      transactionId: String(transactionId),
+      transactionId: payment.transactionId,
     });
 
     if (!persisted) {
@@ -91,7 +85,10 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
 
     return NextResponse.json({ orderId: order.orderId });
-  } catch {
+  } catch (error) {
+    console.error("[checkout] Payment validation failed", {
+      error: error instanceof Error ? error.message : "Unknown validation error",
+    });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
