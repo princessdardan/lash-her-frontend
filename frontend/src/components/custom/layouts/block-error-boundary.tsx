@@ -15,7 +15,7 @@ function BlockErrorFallback({
   if (process.env.NODE_ENV === "development") {
     return (
       <div className="border-2 border-red-500 bg-red-50 p-4 rounded-md my-4">
-        <h3 className="text-red-700 font-semibold">
+        <h3 className="text-red-700 font-bold">
           Error rendering block: {componentName}
         </h3>
         {error && (

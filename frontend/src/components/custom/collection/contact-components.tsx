@@ -182,16 +182,15 @@ export function ContactFormLabels({ data }: { data: TContactFormLabels }) {
   };
 
     return (
-      <section id="training-contact" className="bg-brand-pink scroll-mt-40">
+      <div id="training-contact" className="w-full max-w-4xl mx-auto scroll-mt-40">
         <Suspense fallback={null}>
           <ScrollToForm formId="training-contact" />
         </Suspense>
-        <div className="w-full bg-brand-pink max-w-4xl mx-auto px-4 py-6">
-          <div className="rounded-lg border bg-white text-black border-brand-red my-4 p-6 shadow-sm transition-shadow hover:shadow-md relative flex flex-col">
-            <div className="mb-8">
-                <h2 className="text-xl mb-2 font-heading">{data.heading}</h2>
-                <p className="text-muted-foreground">{data.subHeading}</p>
-            </div>
+        <div className="soft-panel relative flex flex-col">
+          <div className="mb-10">
+              <h2 className="section-heading text-lh-primary mb-3">{data.heading}</h2>
+              <p className="body-lead text-lh-shadow">{data.subHeading}</p>
+          </div>
 
             <form onSubmit={handleSubmit} className="space-y-6">
                 <FieldGroup className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -394,10 +393,10 @@ export function ContactFormLabels({ data }: { data: TContactFormLabels }) {
                 <div aria-live="polite" role="status">
                   {submitStatus.type && (
                     <div
-                      className={`p-4 rounded-md ${
+                      className={`p-4 rounded-md border ${
                         submitStatus.type === "success"
-                          ? "bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-400"
-                          : "bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-400"
+                          ? "bg-lh-neutral-2 text-lh-shadow border-lh-line"
+                          : "bg-lh-white text-lh-accent border-lh-accent-soft"
                       }`}
                     >
                       {submitStatus.message}
@@ -406,13 +405,12 @@ export function ContactFormLabels({ data }: { data: TContactFormLabels }) {
                 </div>
 
                 {/* Submit Button */}
-                <Button type="submit" disabled={isSubmitting} className="btn-primary-red">
+                <Button type="submit" disabled={isSubmitting} className="w-full rounded-full bg-lh-primary px-6 py-3 font-body font-bold text-lh-white transition-colors hover:bg-lh-accent">
                 {isSubmitting ? "Submitting..." : "Send Application"}
                 </Button>
             </form>
-          </div>
         </div>
-      </section>
+      </div>
   );
 }
 
@@ -431,14 +429,14 @@ export interface IContactPageLayoutProps {
 
 export function ContactPageLayout({data}:{data: IContactPageLayoutProps}) {
   return (
-    <section className="section-container-pink">
+    <section className="section-shell">
         <div className="content-container">
             <div className="text-container">
-              <h2 className="section-heading-red">{data.title}</h2>
-              <h3 className="section-subheading-white">{data.subTitle}</h3>
+              <h2 className="section-heading">{data.title}</h2>
+              <h3 className="section-subheading">{data.subTitle}</h3>
               <p className="section-description">{data.description}</p>
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-[5fr_8fr]">
+            <div className="grid grid-cols-1 lg:grid-cols-[5fr_8fr] gap-12 lg:gap-24">
                 {/* Left Column - Schedule and Contact Info */}
                 <div>
                     {data.contactInfoData && <ContactInfo data={data.contactInfoData} />}

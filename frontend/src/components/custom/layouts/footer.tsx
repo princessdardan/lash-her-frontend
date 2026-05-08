@@ -4,7 +4,7 @@ import { Logo } from "@/components/ui/logo";
 import { SiInstagram } from "@icons-pack/react-simple-icons";
 
 function selectSocialIcon(url: string) {
-  if (url.includes("instagram")) return <SiInstagram className="h-6 w-6 text-brand-pink" aria-hidden="true" />;
+  if (url.includes("instagram")) return <SiInstagram className="h-5 w-5 text-lh-neutral" aria-hidden="true" />;
   return null;
 }
 
@@ -16,16 +16,18 @@ export function Footer({ data }: IFooterProps) {
   if (!data) return null;
   const { logoText, socialLink, text } = data;
   return (
-    <footer className="bg-brand-dark-red text-brand-more-pink pt-8 pb-4" role="contentinfo">
-      <div className="content-container md:px-6 flex flex-col md:flex-row items-center justify-between">
-        <Logo data={logoText} />
-        <p className="mt-4 md:mt-0 text-sm text-brand-more-pink">{text}</p>
-        <nav aria-label="Social media links">
-          <div className="flex items-center space-x-4">
+    <footer className="bg-lh-shadow text-lh-neutral pt-16 pb-8" role="contentinfo">
+      <div className="content-container md:px-6 flex flex-col md:flex-row items-center justify-between gap-8">
+        <div className="flex-shrink-0">
+          <Logo data={logoText} />
+        </div>
+        <p className="text-sm text-lh-neutral/80 max-w-md text-center md:text-left">{text}</p>
+        <nav aria-label="Social media links" className="flex-shrink-0">
+          <div className="flex items-center space-x-6">
             {socialLink.map((link, index) => {
               return (
                 <Link
-                  className="text-brand-more-pink hover:text-brand-red transition-colors"
+                  className="text-lh-neutral hover:text-lh-light transition-colors"
                   href={link.href}
                   key={link._key || index}
                 >
@@ -37,12 +39,19 @@ export function Footer({ data }: IFooterProps) {
           </div>
         </nav>
       </div>
-      <p className="text-brand-more-pink font-sans text-sm text-center mt-2">
-        Designed by{" "}
-        <Link href="https://dardandemiri.com" className="hover:text-white transition-colors" target="_blank" rel="noopener noreferrer">
-          Dardan Demiri
-        </Link>
-      </p>
+      <div className="content-container md:px-6 mt-12">
+        <div className="border-t border-lh-light/20 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
+          <p className="text-lh-neutral/60 font-sans text-xs">
+            &copy; {new Date().getFullYear()} Lash Her by Nataliea. All rights reserved.
+          </p>
+          <p className="text-lh-neutral/60 font-sans text-xs">
+            Designed by{" "}
+            <Link href="https://dardandemiri.com" className="hover:text-lh-light transition-colors" target="_blank" rel="noopener noreferrer">
+              Dardan Demiri
+            </Link>
+          </p>
+        </div>
+      </div>
     </footer>
   );
 }

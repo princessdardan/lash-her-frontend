@@ -11,13 +11,13 @@ export type { TCtaFeature as CtaFeature } from "@/types";
 function getIcon(name: string) {
   switch (name) {
     case "VIDEO_ICON":
-      return <VideoIcon className="w-4 h-4 text-white" aria-hidden="true" />;
+      return <VideoIcon className="w-4 h-4 text-current" aria-hidden="true" />;
     case "USER_ICON":
-      return <UserIcon className="w-4 h-4 text-white" aria-hidden="true" />;
+      return <UserIcon className="w-4 h-4 text-current" aria-hidden="true" />;
     case "USERS_ICON":
-      return <UsersIcon className="w-4 h-4 text-white" aria-hidden="true" />;
+      return <UsersIcon className="w-4 h-4 text-current" aria-hidden="true" />;
     case "AWARD_ICON":
-      return <AwardIcon className="w-4 h-4 text-white" aria-hidden="true" />;
+      return <AwardIcon className="w-4 h-4 text-current" aria-hidden="true" />;
     default:
       return null;
   }
@@ -26,19 +26,19 @@ function getIcon(name: string) {
 export async function CtaFeaturesSection({data}: { data: TCtaFeaturesSection }) {
   if (!data) return null;
   return (
-    <section className= "section-container-pink">
+    <section className= "section-shell">
       <div className="content-container">
         {/* Section Header */}
-        <div className="text-container">
-          <h2 className="section-heading-red ">{data.heading}</h2>
-          <p className="section-subheading-white">{data.subHeading}</p>
+        <div className="text-container text-center mb-16">
+          <h2 className="section-heading">{data.heading}</h2>
+          <p className="font-heading text-lh-primary text-xl md:text-2xl lg:text-3xl mt-4">{data.subHeading}</p>
           {data.description && (
-            <p className="section-description">{data.description}</p>
+            <p className="mx-auto mt-6 max-w-2xl text-lh-shadow/80 leading-relaxed">{data.description}</p>
           )}
         </div>
 
         {/* Features Grid */}
-        <div className={`grid gap-8 max-w-6xl mx-auto ${
+        <div className={`grid items-stretch gap-8 max-w-6xl mx-auto ${
           data.features.length === 1 ? 'grid-cols-1 max-w-md' :
           data.features.length === 2 ? 'md:grid-cols-2 max-w-4xl' :
           data.features.length === 4 ? 'md:grid-cols-2 lg:grid-cols-4' :
@@ -47,35 +47,37 @@ export async function CtaFeaturesSection({data}: { data: TCtaFeaturesSection }) 
           {data.features.map((item: TCtaFeature, index: number) => (
             <div
               key={item._key || index}
-              className={`rounded-lg border bg-white text-black border-brand-red my-4 p-6 shadow-sm transition-shadow hover:shadow-md relative flex flex-col ${
-                item.mostPopular ? "border-brand-red border-2" : ""
+              className={`editorial-card relative flex h-full min-h-[480px] w-full flex-col self-stretch p-8 ${
+                item.mostPopular ? "border-lh-light border-2 shadow-md" : ""
               }`}
             >
               {/* Most Popular Badge */}
               {item.mostPopular && (
-                <div className="absolute top-0 right-0 bg-brand-red text-white text-xs px-3 py-1 rounded-bl-md rounded-tr-md">
+                <div className="absolute top-0 right-0 bg-lh-light text-lh-shadow text-xs px-4 py-1.5 rounded-bl-[18px] rounded-tr-[16px] font-heading tracking-widest uppercase font-bold">
                   Most Popular
                 </div>
               )}
 
               {/* Feature Header */}
-              <div className="my-4">
-                <div className="flex items-start mb-4">
-                  <div className={`rounded-full bg-brand-red/80 p-2 inline-flex items-center justify-center ${
-                    item.mostPopular ? "bg-brand-red" : ""
+              <div className="mb-6">
+                <div className="flex items-start mb-6">
+                  <div className={`rounded-full bg-lh-primary-soft p-3 inline-flex items-center justify-center text-lh-primary ${
+                    item.mostPopular ? "bg-lh-primary text-lh-white" : ""
                   }`}>
                     {getIcon(item.icon)}
                   </div>
                 </div>
-                <h3 className="text-2xl font-bold font-serif">{item.heading}</h3>
-                <p className="text-sm text-brand-red font-extrabold">{item.subHeading}</p>
-                <div className="text-sm font-medium py-1 mb-2 text-black">
+                <h3 className="text-3xl font-heading text-lh-shadow mb-2">{item.heading}</h3>
+                <p className="text-sm text-lh-primary font-heading tracking-widest uppercase mb-4">{item.subHeading}</p>
+                <div className="w-12 h-[1px] bg-lh-light mb-4" />
+                <div className="text-sm font-bold text-lh-shadow/70">
                   {item.location}
                 </div>
               </div>
-              <div className="text-sm text-brand-red font-extrabold">{item.tier}</div>
+              <div className="text-sm text-lh-primary font-heading tracking-widest uppercase mb-6">{item.tier}</div>
+              
               {/* Rich Text Content */}
-              <div className="flex my-4 font-medium">
+              <div className="flex-grow mb-8 text-lh-shadow/80 leading-relaxed">
                 <PortableTextRenderer content={item.features} />
               </div>
 
@@ -87,9 +89,9 @@ export async function CtaFeaturesSection({data}: { data: TCtaFeaturesSection }) 
                   rel={
                     item.link.isExternal ? "noopener noreferrer" : undefined
                   }
-                  className="mt-auto mb-2"
+                  className="mt-auto"
                 >
-                  <Button className="btn-primary-red">
+                  <Button variant={item.mostPopular ? "primary" : "outline"} className="w-full">
                     {item.link.label}
                   </Button>
                 </Link>

@@ -67,7 +67,7 @@ function getBlockKey(block: BaseBlock, index: number): string {
  */
 function BlockSkeleton() {
   return (
-    <div className="animate-pulse bg-gray-200 h-64 w-full rounded-md my-4" />
+    <div className="animate-pulse bg-lh-neutral h-64 w-full rounded-[18px] my-4" />
   );
 }
 

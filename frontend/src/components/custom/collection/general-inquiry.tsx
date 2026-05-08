@@ -7,8 +7,8 @@ import { Field, FieldGroup, FieldLabel, FieldError } from "../../ui/field";
 import { Textarea } from "../../ui/textarea";
 import { Input } from "../../ui/input";
 import { ScrollToForm } from "@/components/ui/scroll-to-form";
-import { ContactInfo, IContactInfoProps } from "../layouts/contact-info";
-import { IScheduleProps, Schedule } from "../layouts/schedule";
+import { ContactInfo } from "../layouts/contact-info";
+import { Schedule } from "../layouts/schedule";
 import {
   validateField,
   validateForm,
@@ -138,14 +138,14 @@ export function GeneralInquiryForm({data}: { data: TGeneralInquiryLabels }) {
       };
 
     return (
-      <div id="general-inquiry" className="w-full max-w-4xl mx-auto px-4 py-6 scroll-mt-40">
+      <div id="general-inquiry" className="w-full max-w-4xl mx-auto scroll-mt-40">
         <Suspense fallback={null}>
           <ScrollToForm formId="general-inquiry" />
         </Suspense>
-        <div className="rounded-lg border bg-white border-brand-red my-4 p-6 shadow-sm transition-shadow hover:shadow-md relative flex flex-col">
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold text-brand-red font-serif mb-2">{data.heading}</h2>
-            <p className="text-black max-w-xl">{data.subHeading}</p>
+        <div className="soft-panel relative flex flex-col">
+          <div className="mb-10">
+            <h2 className="section-heading text-lh-primary mb-3">{data.heading}</h2>
+            <p className="body-lead text-lh-shadow max-w-xl">{data.subHeading}</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -246,10 +246,10 @@ export function GeneralInquiryForm({data}: { data: TGeneralInquiryLabels }) {
             <div aria-live="polite" role="status">
               {submitStatus.type && (
                 <div
-                  className={`p-4 rounded-md ${
+                  className={`p-4 rounded-md border ${
                     submitStatus.type === "success"
-                      ? "bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-400"
-                      : "bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-400"
+                      ? "bg-lh-neutral-2 text-lh-shadow border-lh-line"
+                      : "bg-lh-white text-lh-accent border-lh-accent-soft"
                   }`}
                 >
                   {submitStatus.message}
@@ -258,7 +258,7 @@ export function GeneralInquiryForm({data}: { data: TGeneralInquiryLabels }) {
             </div>
 
             {/* Submit Button */}
-            <Button type="submit" disabled={isSubmitting} className="btn-primary-red">
+            <Button type="submit" disabled={isSubmitting} className="w-full rounded-full bg-lh-primary px-6 py-3 font-body font-bold text-lh-white transition-colors hover:bg-lh-accent">
               {isSubmitting ? "Submitting..." : "Send Inquiry"}
             </Button>
           </form>
@@ -279,14 +279,14 @@ export interface IGeneralInquiryLayoutProps {
 
 export function GeneralInquiryLayout({data}:{data: IGeneralInquiryLayoutProps}) {
   return (
-    <section className="px-8 py-4 mx-auto md:px-6 lg:py-12 bg-brand-pink">
+    <section className="section-shell">
         <div className="content-container">
             <div className="text-container">
-            <h2 className="section-heading-red ">{data.title}</h2>
-            <p className="section-subheading-white">{data.subTitle}</p>
+            <h2 className="section-heading">{data.title}</h2>
+            <p className="section-subheading">{data.subTitle}</p>
             <p className="section-description">{data.description}</p>
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-[5fr_8fr]">
+            <div className="grid grid-cols-1 lg:grid-cols-[5fr_8fr] gap-12 lg:gap-24">
                 {/* Left Column - Schedule and Contact Info */}
                 <div>
                     {data.contactInfoData && <ContactInfo data={data.contactInfoData} />}
