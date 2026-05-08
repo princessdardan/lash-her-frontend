@@ -93,14 +93,9 @@ export function Logo({ data }: { data: ILogoProps }) {
   
   return (
     <Link className={styles.link} href="/">
-      <LashHerLogo className={cn(styles.icon, isActive ? "text-brand-red" : "text-brand-pink")} />
+      <LashHerLogo className={cn(styles.icon, isActive ? "text-brand-red" : "text-white")} />
       <span className="sr-only">{data?.label || "Lash Her - Homepage"}</span>
-      <span
-        className={`${styles.text.base} ${
-          data?.dark ? styles.text.dark : styles.text.light
-        }`}
-      > 
-      </span>
+      <span className={cn(styles.text.base, data?.dark ? styles.text.dark : styles.text.light)}></span>
     </Link>
   );
 }
