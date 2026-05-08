@@ -11,6 +11,8 @@ import { bookingMarketingOptIn } from "./documents/booking-marketing-opt-in";
 
 // Documents — Collections
 import { trainingProgram } from "./documents/training-program";
+import { sellableProduct } from "./documents/sellable-product";
+import { checkoutOrder } from "./documents/checkout-order";
 import { contactForm } from "./documents/contact-form";
 import { generalInquiry } from "./documents/general-inquiry";
 
@@ -55,6 +57,8 @@ export const schemaTypes = [
   bookingSettings,
   bookingMarketingOptIn,
   trainingProgram,
+  sellableProduct,
+  checkoutOrder,
   contactForm,
   generalInquiry,
   // Layout blocks
