@@ -14,10 +14,10 @@ function MenuLink({ data, isHeaderActive }: { data: TMenuDirectLink; isHeaderAct
         <Link
             href={url}
             className={cn(
-                "text-md font-normal transition-colors px-4 py-2 block no-underline",
+                "text-lg font-heading tracking-wide transition-colors px-4 py-2 block no-underline",
                 isHeaderActive
-                    ? "text-brand-red hover:text-brand-red/70"
-                    : "text-brand-pink hover:text-brand-red"
+                    ? "text-lh-shadow hover:text-lh-primary"
+                    : "text-white hover:text-lh-light"
             )}
         >
             {title}
@@ -34,34 +34,34 @@ function Dropdown({ data, isHeaderActive }: { data: TMenuDropdown; isHeaderActiv
         <>
             <NavigationMenuTrigger
                 className={cn(
-                    "text-md font-normal transition-colors bg-transparent! data-[state=open]:bg-transparent!",
+                    "text-lg font-heading tracking-wide transition-colors bg-transparent! data-[state=open]:bg-transparent!",
                     isHeaderActive
-                        ? "text-brand-red hover:text-brand-red/70 data-[state=open]:text-brand-red"
-                        : "text-brand-pink hover:text-brand-red data-[state=open]:text-brand-pink"
+                        ? "text-lh-shadow hover:text-lh-primary data-[state=open]:text-lh-primary"
+                        : "text-white hover:text-lh-light data-[state=open]:text-white"
                 )}
             >
                 {title}
             </NavigationMenuTrigger>
             <NavigationMenuContent>
-                <div className="min-w-[280px] rounded-md bg-white p-4">
+                <div className="min-w-[280px] rounded-[18px] bg-lh-white p-6 shadow-lg border border-lh-line">
                     {sections.map((section: TMenuDropdownSection, index: number) => (
-                        <div key={section._key || index} className="mb-2 last:mb-0">
+                        <div key={section._key || index} className="mb-6 last:mb-0">
                             {section.heading && (
-                                <h3 className="px-2 py-2 text-xs font-semibold text-black uppercase tracking-wider">
+                                <h3 className="px-3 py-2 text-[11px] font-heading text-lh-light uppercase tracking-[0.28em]">
                                     {section.heading}
                                 </h3>
                             )}
                             {section.links && section.links.length > 0 && (
-                                <ul className="flex flex-col gap-1">
+                                <ul className="flex flex-col gap-1 mt-1">
                                     {section.links.map((link: TMenuLink, linkIndex: number) => (
                                         <li key={link._key || linkIndex}>
                                             <NavigationMenuLink asChild>
                                                 <Link
                                                     href={link.url}
-                                                    className="flex items-start gap-3 px-4 py-2.5 rounded-md transition-colors text-brand-red hover:bg-brand-pink/5 hover:text-brand-red/70 no-underline"
+                                                    className="flex items-start gap-3 px-3 py-2 rounded-md transition-colors text-lh-shadow hover:bg-lh-neutral hover:text-lh-primary no-underline"
                                                 >
                                                     <div className="flex-1 min-w-0">
-                                                        <div className="text-md font-normal">
+                                                        <div className="text-lg font-heading">
                                                             {link.name}
                                                         </div>
                                                     </div>

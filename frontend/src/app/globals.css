@@ -1,26 +1,31 @@
 @import "tailwindcss";
-@plugin "@tailwindcss/typography";
 @import "tw-animate-css";
+
+@plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --color-brand-gold: var(--brand-gold);
-  --color-brand-cream: var(--brand-cream);
-  --color-brand-grey: var(--brand-grey);
-  --color-brand-dark-grey: var(--brand-dark-grey);
-  --color-brand-hot-pink: var(--brand-hot-pink);
-  --color-brand-pink: var(--brand-pink);
-  --color-brand-more-pink: var(--brand-more-pink);
-  --color-brand-red: var(--brand-red);
-  --color-brand-dark-red: var(--brand-dark-red);
+  --color-lh-white: var(--lh-white);
+  --color-lh-primary: var(--lh-primary);
+  --color-lh-shadow: var(--lh-shadow);
+  --color-lh-light: var(--lh-light);
+  --color-lh-accent: var(--lh-accent);
+  --color-lh-neutral: var(--lh-neutral);
+  --color-lh-neutral-2: var(--lh-neutral-2);
+  --color-lh-muted: var(--lh-muted);
+  --color-lh-line: var(--lh-line);
+  --color-lh-primary-soft: var(--lh-primary-soft);
+  --color-lh-light-soft: var(--lh-light-soft);
+  --color-lh-accent-soft: var(--lh-accent-soft);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-script-font: var(--brand-script-font);
-  --font-sans: var(--font-montserrat);
-  --font-serif: var(--font-cardo);
-  --font-heading: var(--font-playfair-display);
-  --font-script: var(--font-luxurious-script);
+  --font-display: var(--font-bebas-neue);
+  --font-smallcaps: var(--font-bebas-neue);
+  --font-body: var(--font-inter);
+  --font-sans: var(--font-inter);
+  --font-serif: var(--font-bebas-neue);
+  --font-heading: var(--font-bebas-neue);
   --font-size-xs: 0.875rem;     /* 14px */
   --font-size-sm: 1rem;         /* 16px */
   --font-size-base: 1.125rem;   /* 18px */
@@ -72,98 +77,79 @@
 }
 
 :root {
-  --radius: 0.625rem;
-  --chrome-red: #b14644;        /* main lipstick/chrome red */
-  --chrome-deep: #150806;       /* deepest inner shadows */
-  --chrome-highlight: #fff7f7;  /* bright inner highlight */
-  --chrome-glow: #ff7c7c;       /* outer red/pink glow */
-  --brand-cream: oklch(0.9636 0.0328 107);
-  --brand-grey: oklch(92.191% 0.0001 271.152);
-  --brand-dark-grey: oklch(80.152% 0.00009 271.152);
-  --brand-gold: oklch(84.958% 0.14623 90.498);
-  --brand-hot-pink: oklch(71.093% 0.20302 357.639);
-  --brand-pink: oklch(96.485% 0.01293 352.656);
-  --brand-more-pink: oklch(89.276% 0.05247 353.762);
-  --brand-red: oklch(54.739% 0.21883 14.447);
-  --brand-dark-red: oklch(48% 0.21883 14.447);
-  --brand-script-font: 'Playfair_Display', serif;
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --lh-white: #FFFFFF;
+  --lh-primary: #663976;
+  --lh-shadow: #1C1318;
+  --lh-light: #D4B483;
+  --lh-accent: #3D0B16;
+  --lh-neutral: #E8E2E9;
+  --lh-neutral-2: #F5F1F5;
+  --lh-muted: #746A72;
+  --lh-line: rgba(28, 19, 24, 0.14);
+  --lh-primary-soft: rgba(102, 57, 118, 0.12);
+  --lh-light-soft: rgba(212, 180, 131, 0.22);
+  --lh-accent-soft: rgba(61, 11, 22, 0.12);
+  --lh-shadow-soft: rgba(28, 19, 24, 0.82);
+  --background: #FFFFFF;
+  --foreground: #1C1318;
+  --radius: 18px;
+  --card: #FFFFFF;
+  --card-foreground: #1C1318;
+  --popover: #FFFFFF;
+  --popover-foreground: #1C1318;
+  --primary: #663976;
+  --primary-foreground: #FFFFFF;
+  --secondary: #E8E2E9;
+  --secondary-foreground: #1C1318;
+  --muted: #F5F1F5;
+  --muted-foreground: #746A72;
+  --accent: #D4B483;
+  --accent-foreground: #1C1318;
+  --destructive: #3D0B16;
+  --border: rgba(28, 19, 24, 0.14);
+  --input: rgba(28, 19, 24, 0.18);
+  --ring: #663976;
+  --chart-1: #663976;
+  --chart-2: #1C1318;
+  --chart-3: #D4B483;
+  --chart-4: #3D0B16;
+  --chart-5: #E8E2E9;
+  --sidebar: #FFFFFF;
+  --sidebar-foreground: #1C1318;
+  --sidebar-primary: #663976;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #F5F1F5;
+  --sidebar-accent-foreground: #1C1318;
+  --sidebar-border: rgba(28, 19, 24, 0.14);
+  --sidebar-ring: #663976;
 }
 .dark {
-  --chrome-red: #b14644;        /* main lipstick/chrome red */
-  --chrome-deep: #150806;       /* deepest inner shadows */
-  --chrome-highlight: #fff7f7;  /* bright inner highlight */
-  --chrome-glow: #ff7c7c;       /* outer red/pink glow */
-  --brand-cream: oklch(0.80 0.0328 107);
-  --brand-grey: oklch(70% 0.0001 271.152);
-  --brand-dark-grey: oklch(80.152% 0.00009 271.152);
-  --brand-gold: oklch(84.958% 0.14623 90.498);
-  --brand-pink: oklch(96.485% 0.01293 352.656);
-  --brand-more-pink: oklch(89.276% 0.05247 353.762);
-  --brand-hot-pink: oklch(71.093% 0.20302 357.639);
-  --brand-red: oklch(54.739% 0.21883 14.447);
-  --brand-dark-red: oklch(48% 0.21883 14.447);
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: #1C1318;
+  --foreground: #F5F1F5;
+  --card: #1C1318;
+  --card-foreground: #F5F1F5;
+  --popover: #1C1318;
+  --popover-foreground: #F5F1F5;
+  --primary: #D4B483;
+  --primary-foreground: #1C1318;
+  --secondary: rgba(232, 226, 233, 0.12);
+  --secondary-foreground: #F5F1F5;
+  --muted: rgba(232, 226, 233, 0.10);
+  --muted-foreground: rgba(232, 226, 233, 0.72);
+  --accent: #D4B483;
+  --accent-foreground: #1C1318;
+  --destructive: #D4B483;
+  --border: rgba(232, 226, 233, 0.16);
+  --input: rgba(232, 226, 233, 0.18);
+  --ring: #D4B483;
+  --sidebar: #1C1318;
+  --sidebar-foreground: #F5F1F5;
+  --sidebar-primary: #D4B483;
+  --sidebar-primary-foreground: #1C1318;
+  --sidebar-accent: rgba(232, 226, 233, 0.10);
+  --sidebar-accent-foreground: #F5F1F5;
+  --sidebar-border: rgba(232, 226, 233, 0.16);
+  --sidebar-ring: #D4B483;
 }
 
 @layer base {
@@ -171,7 +157,7 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground font-sans;
+    @apply bg-background text-foreground font-body;
   }
   
   /* Enhanced focus indicators for accessibility */
@@ -181,7 +167,7 @@
   input:focus-visible,
   textarea:focus-visible,
   select:focus-visible {
-    @apply outline-2 outline-offset-2 outline-brand-red;
+    @apply outline-2 outline-offset-2 outline-lh-primary;
   }
 }
 
@@ -215,157 +201,65 @@
 }
 
 @layer components {
-  /* ✨ Text Lift Effect - 3D raised text */
-  .text-lift {
-    text-shadow:
-      0 1px 0 #f3f3f3,
-      0 3px 0 #b8b8b8,
-      0 5px 0 #888888,
-      0 1px 3px rgba(0,0,0,.3),
-      0 5px 10px rgba(0,0,0,.25),
-      0 10px 10px rgba(0,0,0,.2);
-  }
-
-  /* ✨ Text Lift Subtle - Softer 3D effect */
-  .text-lift-subtle {
-    text-shadow:
-      0 1px 0 #ffffff,
-      0 2px 0 #f1f1f1,
-      0 3px 0 #f6f6f6,
-      0 4px 5px rgba(0,0,0,.1),
-      0 5px 10px rgba(0,0,0,.15);
-  }
-
-  /* ✨ Text Lift Red - 3D raised text with brand red */
-  .text-lift-red {
-    text-shadow:
-      0 1px 0 #d65654,
-      0 3px 0 #a83937,
-      0 5px 0 #762423,
-      0 1px 3px rgba(0,0,0,.3),
-      0 5px 10px rgba(0,0,0,.25),
-      0 10px 10px rgba(0,0,0,.2);
-  }
-
-  /* ✨ Text Lift Subtle Red - Softer 3D effect with brand red */
-  .text-lift-subtle-red {
-    text-shadow:
-      0 1px 0 #d65654,
-      0 2px 0 #c54a48,
-      0 3px 0 #b14644,
-      0 4px 5px rgba(0,0,0,.1),
-      0 5px 10px rgba(177,70,68,.15);
-  }
-
-  /* ✨ Text Lift Dynamic - Uses current text color for 3D effect */
-  .text-lift-dynamic {
-    text-shadow:
-      0 0 0 color-mix(in oklch, currentColor, white 20%),
-      0 0 0 currentColor,
-      0 0 0 color-mix(in oklch, currentColor, black 20%),
-      0 0 8px color-mix(in oklch, currentColor, transparent 80%),
-      0 4px 8px rgba(0,0,0,.15),
-      0 8px 16px rgba(0,0,0,.1);
-  }
-
-  /* ✨ Text Lift Subtle Dynamic - Softer 3D effect with current color */
-  .text-lift-subtle-dynamic {
-    text-shadow:
-      0 0 0 color-mix(in oklch, currentColor, white 15%),
-      0 0 0 color-mix(in oklch, currentColor, white 5%),
-      0 0 0 currentColor,
-      0 1px 2px rgba(0,0,0,.08),
-      0 2px 4px color-mix(in oklch, currentColor, transparent 90%),
-      0 4px 8px rgba(0,0,0,.1);
-  }
-
-  /* ✨ Text Lift Brand - Lift effect with brand colors */
-  .text-lift-brand {
-    text-shadow:
-      0 1px 0 color-mix(in oklch, var(--brand-pink), var(--brand-red) 20%),
-      0 3px 0 var(--brand-red),
-      0 5px 0 color-mix(in oklch, var(--brand-red), black 20%),
-      0 0 5px color-mix(in oklch, var(--brand-hot-pink), transparent 50%),
-      0 5px 10px rgba(0,0,0,.25);
-  }
-
 /* ============================================
-   🎨 REUSABLE COMPONENT CLASSES
+   REUSABLE EDITORIAL COMPONENT CLASSES
    ============================================ */
 
   /* Section Containers */
   .section-container {
-    @apply px-8 py-4 mx-auto md:px-6 lg:pt-12;
+    @apply mx-auto px-6 py-11 md:px-8 lg:py-16;
   }
 
-  .section-container-pink {
-    @apply px-8 py-4 mx-auto md:px-6 lg:pt-12 bg-brand-pink;
+  .section-shell {
+    @apply bg-lh-white py-11 md:py-16 lg:py-24;
   }
 
-  .section-container-cream {
-    @apply px-8 py-4 mx-auto md:px-6 lg:py-12 bg-brand-cream;
+  .section-shell-soft {
+    @apply bg-lh-neutral py-11 md:py-16 lg:py-24;
+  }
+
+  .section-shell-dark {
+    @apply bg-lh-shadow text-lh-neutral-2 py-11 md:py-16 lg:py-24;
   }
 
   /* Section Headings - Large page titles */
-  .section-heading-red {
-    @apply mb-4 text-2xl md:text-3xl lg:text-4xl text-brand-red tracking-tighter font-extrabold font-serif;
+  .eyebrow-label {
+    @apply font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-primary;
   }
 
-  .section-heading-red-center {
-    @apply mb-4 text-2xl md:text-3xl lg:text-4xl text-brand-red font-extrabold font-serif text-center;
+  .display-heading {
+    @apply font-display text-5xl font-normal leading-[0.92] tracking-normal text-lh-shadow md:text-7xl lg:text-8xl;
+  }
+
+  .section-heading {
+    @apply font-display text-4xl font-normal leading-tight tracking-normal text-lh-shadow md:text-5xl lg:text-6xl;
+  }
+
+  .body-lead {
+    @apply max-w-3xl font-body text-base font-bold leading-8 text-lh-muted md:text-lg;
   }
 
   /* Section Subheadings */
   .section-subheading {
-    @apply font-semibold text-black text-lg md:text-xl lg:text-2xl;
+    @apply font-heading text-lg font-normal text-lh-shadow md:text-xl lg:text-2xl;
   }
 
   .section-subheading-white {
-    @apply font-semibold text-brand-dark-red text-lg md:text-xl lg:text-2xl;
+    @apply font-heading text-lg font-normal text-lh-neutral-2 md:text-xl lg:text-2xl;
   }
 
   .section-subheading-light {
-    @apply font-light text-black text-lg md:text-xl lg:text-2xl;
+    @apply font-heading text-lg font-normal text-lh-muted md:text-xl lg:text-2xl;
   }
 
   .section-description {
-    @apply mx-auto mt-4 max-w-2xl text-black;
-  }
-
-  .section-richtext {
-    @apply rounded-lg border max-w-4xl mx-auto bg-white border-gray-700 my-4 p-6 shadow-sm transition-shadow hover:shadow-md relative flex flex-col;
-  }
-
-  /* Card Headings - Medium sized titles */
-  .card-heading-red {
-    @apply text-2xl font-bold text-brand-red font-serif mb-4;
-  }
-
-  .card-heading-large {
-    @apply text-3xl font-bold text-brand-red font-serif mb-3;
-  }
-
-  /* Hero Headings */
-  .hero-heading {
-    @apply relative py-4 max-w-2xl overflow-hidden text-3xl md:text-5xl lg:text-6xl text-brand-more-pink font-serif tracking-tight;
-  }
-
-  .hero-description {
-    @apply mt-4 font-light text-white max-w-2xl text-sm lg:text-lg;
-  }
-
-  .hero-heading-home {
-    @apply relative py-4 max-w-3xl overflow-hidden text-2xl md:text-4xl lg:text-6xl text-brand-more-pink font-serif tracking-tight;
-  }
-
-  .hero-subheading {
-    @apply mt-4 font-light text-white max-w-3xl text-base md:text-lg lg:text-xl;
+    @apply mx-auto mt-4 max-w-2xl font-body font-bold leading-7 text-lh-muted;
   }
 
   /* Div Containers */
 
   .content-container {
-    @apply container mx-auto px-4;
+    @apply mx-auto w-full max-w-[1180px] px-6 md:px-8;
   }
 
   .text-container {
@@ -374,82 +268,37 @@
 
   /* Card Styles */
 
-  .card-white {
-    @apply rounded-lg bg-white border border-brand-red p-6 shadow-sm transition-shadow hover:shadow-md;
+  .editorial-card {
+    @apply relative flex h-full w-full flex-col rounded-[24px] border border-lh-line bg-lh-white p-6 text-lh-shadow shadow-[0_18px_50px_rgba(28,19,24,0.05)] transition-colors duration-300;
   }
 
-  .card-feature {
-    @apply rounded-lg bg-white text-brand-red my-4 p-6 shadow-sm transition-shadow hover:shadow-md flex flex-col items-center text-center;
+  .soft-panel {
+    @apply rounded-[28px] border border-lh-line bg-lh-neutral p-6 text-lh-shadow md:p-8;
   }
 
-  .card-heading {
-    @apply mb-4 text-3xl font-bold font-heading;
+  .dark-panel {
+    @apply rounded-[28px] border border-lh-neutral-2/15 bg-lh-shadow p-6 text-lh-neutral-2 md:p-8;
   }
-  .card-subheading-black {
-    @apply max-w-lg mt-auto text-black;
+
+  .accent-rule {
+    @apply h-px w-full bg-lh-light;
   }
 
   /* Form Inputs */
   .form-input {
-    @apply flex h-9 w-full rounded-md border border-input bg-brand-pink px-3 py-1 text-base shadow-sm transition-colors;
-    @apply placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring;
+    @apply flex h-11 w-full rounded-[18px] border border-lh-line bg-lh-white px-4 py-2 font-body font-bold text-base text-lh-shadow shadow-sm transition-colors;
+    @apply placeholder:text-lh-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lh-primary;
     @apply disabled:cursor-not-allowed disabled:opacity-50 md:text-sm;
   }
 
   .form-textarea {
-    @apply flex min-h-20 bg-brand-pink w-full rounded-md border border-input px-3 py-2 text-base shadow-sm;
-    @apply placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring;
+    @apply flex min-h-28 w-full rounded-[18px] border border-lh-line bg-lh-white px-4 py-3 font-body font-bold text-base text-lh-shadow shadow-sm;
+    @apply placeholder:text-lh-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lh-primary;
     @apply disabled:cursor-not-allowed disabled:opacity-50 md:text-sm;
   }
 
   /* Icon Containers */
   .icon-badge {
-    @apply rounded-full bg-brand-red/80 p-3 inline-flex items-center justify-center mb-4;
-  }
-
-  /* Text Styles */
-  .text-brand-light {
-    @apply font-light text-black;
-  }
-
-  .text-description {
-    @apply mx-auto mt-4 max-w-2xl text-black;
-  }
-
-  /* CTA Buttons */
-  .btn-hero {
-    @apply inline-flex border-[1.5px] border-brand-red italic items-center text-brand-red font-serif text-xl justify-center px-10 py-8 font-bold bg-brand-pink hover:bg-brand-pink/90;
-    text-shadow:
-      0 1px 0 #ffffff,
-      0 2px 0 #f1f1f1,
-      0 3px 0 #f6f6f6,
-      0 4px 5px rgba(0,0,0,.1),
-      0 5px 10px rgba(0,0,0,.15);
-  }
-
-  .btn-primary-red {
-    @apply w-full text-white font-extrabold border border-brand-dark-grey bg-brand-red hover:bg-brand-red/80;
-  }
-
-  .btn-secondary-red {
-    @apply w-full text-white font-extrabold border border-brand-dark-grey bg-brand-red/80 hover:bg-brand-red/60;
-  }
-
-  /* Schedule & Contact Info Styles */
-  .schedule-time-row {
-    @apply flex justify-between py-2;
-  }
-
-  .schedule-day {
-    @apply font-bold text-xl font-serif text-brand-red;
-  }
-
-  .schedule-time {
-    @apply font-sans font-light text-black;
-  }
-
-  /* Contact Info Styles */
-  .contact-label {
-    @apply font-bold text-brand-red text-xl font-serif;
+    @apply mb-4 inline-flex items-center justify-center rounded-full bg-lh-primary-soft p-3 text-lh-primary;
   }
 }

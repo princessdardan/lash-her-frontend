@@ -1,39 +1,23 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { loaders } from "@/data/loaders";
-import { Cardo, Luxurious_Script, Montserrat, Playfair_Display } from "next/font/google";
+import { Bebas_Neue, Inter } from "next/font/google";
 import "./globals.css";
 import { Analytics } from "@vercel/analytics/next";
-import { SpeedInsights } from "@vercel/speed-insights/next"
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
-const luxuriousScript = Luxurious_Script({
-  variable: "--font-luxurious-script",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
-  weight: "400",
-  display: 'swap',
+  weight: ["100", "200" ,"300", "400", "500", "600", "700", "800", "900"],
+  display: "swap",
 });
 
-const playfairDisplay = Playfair_Display({
-  variable: "--font-playfair-display",
+const bebasNeue = Bebas_Neue({
+  variable: "--font-bebas-neue",
   subsets: ["latin"],
-  weight: ["400", "700"],
-  style: "normal",
-  display: 'swap',
-});
-
-const cardo = Cardo({
-  variable: "--font-cardo",
-  subsets: ["latin"],
-  weight: ["400", "700"],
-  style: "normal",
-  display: 'swap',
-});
-
-const montserrat = Montserrat({
-  variable: "--font-montserrat",
-  subsets: ["latin"],
-  weight: ["100", "200", "300", "400", "500", "600", "700", "800", "900"],
-  style: ["normal", "italic"],
-  display: 'swap',
+  weight: ["400"],
+  display: "swap",
 });
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -75,12 +59,12 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function RootLayout({
   children,
 }: Readonly<{
-  children: React.ReactNode,
+  children: ReactNode;
 }>) {
   return (
     <html lang="en">
       <body
-        className={`${montserrat.variable} ${cardo.variable} ${luxuriousScript.variable} ${playfairDisplay.variable} antialiased`}
+        className={`${bebasNeue.variable} ${inter.variable} antialiased`}
       >
         {children}
         <SpeedInsights />

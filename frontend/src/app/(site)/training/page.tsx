@@ -25,7 +25,7 @@ export default async function TrainingPage() {
     <>
       {!hasHeroSection && (
         <div className="container mx-auto px-4 py-8">
-          <h1 className="text-4xl font-bold text-center">Training Programs</h1>
+          <h1 className="text-4xl font-heading text-center">Training Programs</h1>
         </div>
       )}
       <BlockRenderer blocks={blocks} />
