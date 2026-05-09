@@ -3,33 +3,34 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, RefreshCw, AlertTriangle } from "lucide-react";
 import { FallbackHeader } from "@/components/custom/layouts/fallback-header";
+import { Button } from "@/components/ui/button";
 
 const styles = {
   container:
-    "min-h-screen bg-gradient-to-br from-red-50 to-orange-50 flex items-center justify-center p-4",
+    "min-h-screen bg-background flex items-center justify-center p-4",
   content: "max-w-2xl mx-auto text-center space-y-8",
   textSection: "space-y-4",
-  headingError: "text-8xl font-bold text-red-600 select-none",
+  headingError: "text-8xl font-heading text-lh-accent select-none",
   headingContainer: "relative",
-  pageTitle: "text-4xl font-bold text-gray-900 mb-4",
-  description: "text-lg text-gray-600 max-w-md mx-auto leading-relaxed",
+  pageTitle: "text-4xl font-heading text-foreground mb-4",
+  description: "text-lg text-lh-muted max-w-md mx-auto leading-relaxed font-body",
   illustrationContainer: "flex justify-center py-8",
   illustration: "relative animate-pulse",
   errorCircle:
-    "w-32 h-32 bg-red-100 rounded-full flex items-center justify-center transition-all duration-300 hover:bg-red-200",
-  errorIcon: "w-16 h-16 text-red-500",
+    "w-32 h-32 bg-lh-neutral rounded-full flex items-center justify-center transition-all duration-300",
+  errorIcon: "w-16 h-16 text-lh-accent",
   warningBadge:
-    "absolute -top-2 -right-2 w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center animate-bounce",
-  warningSymbol: "text-orange-500 text-xl font-bold",
+    "absolute -top-2 -right-2 w-8 h-8 bg-lh-accent/10 rounded-full flex items-center justify-center animate-bounce",
+  warningSymbol: "text-lh-accent text-xl font-bold",
   buttonContainer:
     "flex flex-col sm:flex-row gap-4 justify-center items-center",
-  button: "min-w-[160px] bg-red-600 hover:bg-red-700 text-white",
+  button: "min-w-[160px]",
   buttonContent: "flex items-center gap-2",
   buttonIcon: "w-4 h-4",
-  outlineButton: "min-w-[160px] border-red-600 text-red-600 hover:bg-red-50",
+  outlineButton: "min-w-[160px]",
   errorDetails:
-    "mt-8 p-4 bg-red-50 border border-red-200 rounded-lg text-left text-sm text-red-800",
-  errorTitle: "font-semibold mb-2",
+    "mt-8 p-4 bg-lh-neutral border border-lh-line rounded-lg text-left text-sm text-foreground",
+  errorTitle: "font-bold mb-2",
 };
 
 interface IGlobalError {
@@ -87,26 +88,27 @@ export default function GlobalError({ error, reset }: IGlobalError) {
 
             {/* Action Buttons */}
             <div className={styles.buttonContainer}>
-              <button
+              <Button
+                variant="accent"
+                size="lg"
                 onClick={reset}
-                className={`${styles.button} px-6 py-3 rounded-lg font-medium transition-colors`}
+                className={styles.button}
               >
-                <div className={styles.buttonContent}>
+                <span className={styles.buttonContent}>
                   <RefreshCw className={styles.buttonIcon} />
                   Try Again
-                </div>
-              </button>
+                </span>
+              </Button>
 
               {!isHomePage && (
-                <Link
-                  href="/"
-                  className={`${styles.outlineButton} px-6 py-3 rounded-lg font-medium border-2 transition-colors inline-flex`}
-                >
-                  <div className={styles.buttonContent}>
-                    <Home className={styles.buttonIcon} />
-                    Go Home
-                  </div>
-                </Link>
+                <Button asChild variant="ghost" size="lg" className={styles.outlineButton}>
+                  <Link href="/">
+                    <span className={styles.buttonContent}>
+                      <Home className={styles.buttonIcon} />
+                      Go Home
+                    </span>
+                  </Link>
+                </Button>
               )}
             </div>
 
@@ -119,7 +121,7 @@ export default function GlobalError({ error, reset }: IGlobalError) {
                 {error.digest && <div>Digest: {error.digest}</div>}
                 {error.stack && (
                   <details className="mt-2">
-                    <summary className="cursor-pointer font-medium">
+                    <summary className="cursor-pointer font-bold">
                       Stack Trace
                     </summary>
                     <pre className="mt-2 text-xs overflow-auto">

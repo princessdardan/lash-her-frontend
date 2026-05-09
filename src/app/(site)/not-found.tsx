@@ -6,27 +6,27 @@ import { Home, Search, ArrowLeft } from "lucide-react";
 
 const styles = {
   container:
-    "min-h-[calc(100vh-200px)] mx-auto container my-8 bg-gradient-to-br rounded-lg shadow-md bg-secondary flex items-center justify-center p-4",
+    "min-h-[calc(100vh-200px)] mx-auto container my-8 flex items-center justify-center p-4 bg-background",
   content: "max-w-2xl mx-auto text-center space-y-8",
   textSection: "space-y-4",
-  heading404: "text-9xl font-bold text-primary select-none",
+  heading404: "text-9xl font-heading text-lh-primary select-none",
   headingContainer: "relative",
-  pageTitle: "text-4xl font-bold text-slate-800 mb-4",
-  description: "text-lg text-slate-600 max-w-md mx-auto leading-relaxed",
+  pageTitle: "text-4xl font-heading text-foreground mb-4",
+  description: "text-lg text-lh-muted max-w-md mx-auto leading-relaxed font-body",
   illustrationContainer: "flex justify-center py-8",
   illustration: "relative animate-pulse",
   searchCircle:
-    "w-32 h-32 bg-slate-200 rounded-full flex items-center justify-center transition-all duration-300 hover:bg-slate-300",
-  searchIcon: "w-16 h-16 text-slate-400",
+    "w-32 h-32 bg-lh-neutral rounded-full flex items-center justify-center transition-all duration-300",
+  searchIcon: "w-16 h-16 text-lh-muted",
   errorBadge:
-    "absolute -top-2 -right-2 w-8 h-8 bg-red-100 rounded-full flex items-center justify-center animate-bounce",
-  errorSymbol: "text-red-500 text-xl font-bold",
+    "absolute -top-2 -right-2 w-8 h-8 bg-lh-accent/10 rounded-full flex items-center justify-center animate-bounce",
+  errorSymbol: "text-lh-accent text-xl font-bold",
   buttonContainer:
     "flex flex-col sm:flex-row gap-4 justify-center items-center",
   button: "min-w-[160px]",
   buttonContent: "flex items-center gap-2",
   buttonIcon: "w-4 h-4",
-  outlineButton: "min-w-[160px] bg-transparent",
+  outlineButton: "min-w-[160px]",
 };
 
 export default function NotFound() {
@@ -59,7 +59,7 @@ export default function NotFound() {
 
         {/* Action Buttons */}
         <div className={styles.buttonContainer}>
-          <Button asChild size="lg" className={styles.button}>
+          <Button asChild variant="primary" size="lg" className={styles.button}>
             <Link href="/" className={styles.buttonContent}>
               <Home className={styles.buttonIcon} />
               Go Home
@@ -67,7 +67,7 @@ export default function NotFound() {
           </Button>
 
           <Button
-            variant="outline"
+            variant="ghost"
             size="lg"
             className={styles.outlineButton}
             onClick={() => window.history.back()}

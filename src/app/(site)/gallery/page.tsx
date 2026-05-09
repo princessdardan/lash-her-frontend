@@ -16,9 +16,5 @@ export default async function GalleryPage() {
   const data = await loaders.getGalleryPageData();
   if (!data) notFound();
 
-  return (
-    <div className="mt-28 md:mt-38">
-      <BlockRenderer blocks={data.blocks} />
-    </div>
-  );
+  return <BlockRenderer blocks={data.blocks} />;
 }
