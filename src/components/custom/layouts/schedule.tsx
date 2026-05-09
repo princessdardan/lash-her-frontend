@@ -8,14 +8,14 @@ export function Schedule({ data }: { data: TSchedule }) {
     const { heading, subHeading, hours } = data;
     return (
         <div className="w-full max-w-lg md:max-w-xl mx-auto px-4 pb-6">
-            <div className="rounded-lg bg-white border border-brand-red p-6 shadow-sm transition-shadow hover:shadow-md relative flex flex-col">
-                <h2 className="text-2xl font-bold text-brand-red mb-4 font-serif">{heading}</h2>
-                <p className="text-center text-brand-red mb-4">{subHeading}</p>
-                <div>
+            <div className="soft-panel relative flex flex-col p-8 md:p-10">
+                <h2 className="text-3xl font-heading text-lh-shadow mb-2">{heading}</h2>
+                <p className="text-lh-primary font-heading tracking-widest uppercase mb-8">{subHeading}</p>
+                <div className="space-y-4">
                     {hours.map((item: THours, index: number) => (
-                        <div key={item._key || index} className="flex justify-between py-2">
-                            <div className="font-bold text-xl font-serif text-brand-red">{item.days}</div>
-                            <div className="font-sans font-light text-black">{item.times}</div>
+                        <div key={item._key || index} className="flex justify-between items-center py-3 border-b border-lh-line last:border-0">
+                            <div className="font-heading text-xl text-lh-shadow">{item.days}</div>
+                            <div className="font-body text-lh-shadow/80">{item.times}</div>
                         </div>
                     ))}
                 </div>

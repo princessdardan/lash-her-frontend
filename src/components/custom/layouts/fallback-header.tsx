@@ -10,7 +10,7 @@ interface IFallbackHeaderProps {
 
 const styles = {
   header:
-    "flex items-center justify-between px-4 py-8 bg-black text-white shadow-md dark:bg-gray-800",
+    "flex items-center justify-between px-4 py-8 bg-lh-white text-lh-shadow border-b border-lh-line shadow-sm",
   actions: "flex items-center gap-4",
 };
 
@@ -24,7 +24,7 @@ export function FallbackHeader({ header }: IFallbackHeaderProps) {
       <div className={styles.actions}>
         {ctaButton.map((button, index) => (
           <Link key={index} href={button.href}>
-            <Button>{button.label}</Button>
+            <Button variant={index === 0 ? "primary" : "outline"}>{button.label}</Button>
           </Link>
         ))}
       </div>

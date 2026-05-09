@@ -10,23 +10,32 @@ import { MobileNavigation } from "@/components/ui/mobile-navigation";
 import { Button } from "@/components/ui/button";
 import { HeaderWrapper, useHeaderContext } from "@/components/custom/layouts/header-wrapper";
 import { NavigationMenu, NavigationMenuList } from "@/components/ui/navigation-menu";
-
+import { cn } from "@/lib/utils";
 
 interface IHeaderProps {
   data?: THeader | null;
   menuItems?: IMainMenuItems[];
 }
 
-function HeaderButton({ href, label }: { href: string; label: string }) {
+function HeaderButton({ href, label, isPrimary }: { href: string; label: string; isPrimary?: boolean }) {
   const { isActive } = useHeaderContext();
   
+  if (isPrimary) {
+    return (
+      <Link href={href}>
+        <Button variant="primary" className="font-sans font-bold text-sm px-6 py-2 transition-colors duration-300">
+          {label}
+        </Button>
+      </Link>
+    );
+  }
+
   return (
     <Link href={href}>
-      <Button className={`font-sans font-light text-2xl text-md italic px-4 py-3 transition-colors duration-300 ${
-        isActive 
-          ? "bg-brand-red text-white hover:bg-brand-red/90" 
-          : "bg-brand-pink text-brand-red hover:bg-brand-red/90"
-      }`}>
+      <Button variant="ghost" className={cn(
+        "font-sans font-bold text-sm px-4 py-2 transition-colors duration-300 border-transparent",
+        isActive ? "text-lh-shadow hover:text-lh-primary hover:bg-lh-neutral" : "text-lh-white hover:text-lh-light hover:bg-white/10"
+      )}>
         {label}
       </Button>
     </Link>
@@ -48,28 +57,28 @@ function HeaderContent({ data, menuItems }: IHeaderProps) {
         <div className="absolute left-4 md:hidden">
           <MobileNavigation ctaButton={primaryCta} menuItems={menuItems} />
         </div>
+
+        {/* Desktop navigation - left */}
+        <nav className="hidden md:flex absolute left-4 items-center gap-4" aria-label="Main navigation">
+          <NavigationMenu>
+            <NavigationMenuList>
+              {menuItems && menuItems.length > 0 && (
+                <MainMenu data={menuItems} isHeaderActive={isActive} />
+              )}
+            </NavigationMenuList>
+          </NavigationMenu>
+        </nav>
         
-        {/* Desktop CTA buttons - top right, hidden on mobile */}
+        {/* Desktop CTA buttons - right, hidden on mobile */}
         <div className="hidden md:flex absolute right-4 gap-2">
           {ctaButton.map((button, index) => (
-            <HeaderButton key={index} href={button.href} label={button.label} />
+            <HeaderButton key={index} href={button.href} label={button.label} isPrimary={index === 0} />
           ))}
         </div>
         
         {/* Logo - centered */}
         <Logo data={logoText} />
       </div>
-      
-      {/* Desktop navigation - hidden on mobile */}
-      <nav className="hidden md:flex items-center gap-4 mt-4" aria-label="Main navigation">
-        <NavigationMenu>
-          <NavigationMenuList>
-            {menuItems && menuItems.length > 0 && (
-              <MainMenu data={menuItems} isHeaderActive={isActive} />
-            )}
-          </NavigationMenuList>
-        </NavigationMenu>
-      </nav>
     </>
   );
 }

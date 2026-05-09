@@ -9,35 +9,37 @@ export function ContactInfo({ data }: { data: TContactInfo }) {
     const { heading, subHeading, contact } = data;
     return (
         <div className="w-full max-w-lg md:max-w-xl mx-auto px-4 py-6">
-            <div className="rounded-lg bg-white border border-brand-red text-black p-6 my-4 shadow-sm transition-shadow hover:shadow-md relative flex flex-col">
-                <h2 className="text-2xl text-brand-red font-bold font-serif">{heading}</h2>
-                <p className="text-md text-black mb-2">{subHeading}</p>
-                <div className="py-4">
+            <div className="dark-panel relative flex flex-col p-8 md:p-10">
+                <h2 className="text-3xl text-lh-neutral-2 font-heading mb-2">{heading}</h2>
+                <p className="text-lh-light font-heading tracking-widest uppercase mb-8">{subHeading}</p>
+                <div className="space-y-8">
                     {contact.map((item: TContact, index: number) => (
-                        <div key={item._key || index} className="mb-4 space-y-3">
-                            <div className="flex items-start gap-3">
-                                <PhoneIcon className="w-5 h-5 mt-0.5 pt-1 text-black shrink-0" aria-hidden="true" />
+                        <div key={item._key || index} className="space-y-6">
+                            <div className="flex items-start gap-4">
+                                <PhoneIcon className="w-5 h-5 mt-1 text-lh-light shrink-0" aria-hidden="true" />
                                 <div>
-                                    <h3 className="font-bold text-brand-red text-xl font-serif">Phone Number</h3>
-                                    <a href={`tel:${item.phone.replace(/\s+/g, '')}`} className="text-black hover:text-brand-red transition-colors">
+                                    <h3 className="font-heading text-xl text-lh-neutral-2 mb-1">Phone Number</h3>
+                                    <a href={`tel:${item.phone.replace(/\s+/g, '')}`} className="text-lh-neutral-2/80 hover:text-lh-light transition-colors font-body">
                                       {item.phone}
                                     </a>
                                 </div>
                             </div>
-                            <div className="flex items-start gap-3">
-                                <MailIcon className="w-5 h-5 mt-0.5 pt-1 text-black shrink-0" aria-hidden="true" />
+                            <div className="w-full h-[1px] bg-lh-light/20" />
+                            <div className="flex items-start gap-4">
+                                <MailIcon className="w-5 h-5 mt-1 text-lh-light shrink-0" aria-hidden="true" />
                                 <div>
-                                    <h3 className="font-bold text-brand-red text-xl font-serif">Email</h3>
-                                    <a href={`mailto:${item.email}`} className="text-black hover:text-brand-red transition-colors">
+                                    <h3 className="font-heading text-xl text-lh-neutral-2 mb-1">Email</h3>
+                                    <a href={`mailto:${item.email}`} className="text-lh-neutral-2/80 hover:text-lh-light transition-colors font-body">
                                       {item.email}
                                     </a>
                                 </div>
                             </div>
-                            <div className="flex items-start gap-3">
-                                <MapPinIcon className="w-5 h-5 mt-0.5 pt-1 text-black shrink-0" aria-hidden="true" />
+                            <div className="w-full h-[1px] bg-lh-light/20" />
+                            <div className="flex items-start gap-4">
+                                <MapPinIcon className="w-5 h-5 mt-1 text-lh-light shrink-0" aria-hidden="true" />
                                 <div>
-                                    <h3 className="font-bold text-brand-red text-xl font-serif">Location</h3>
-                                    <address className="text-black not-italic">{item.location}</address>
+                                    <h3 className="font-heading text-xl text-lh-neutral-2 mb-1">Location</h3>
+                                    <address className="text-lh-neutral-2/80 not-italic font-body">{item.location}</address>
                                 </div>
                             </div>
                         </div>
