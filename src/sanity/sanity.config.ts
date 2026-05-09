@@ -14,6 +14,7 @@ const singletonTypes = new Set([
   "trainingProgramsPage",
   "globalSettings",
   "mainMenu",
+  "bookingSettings",
 ]);
 
 const singletonActions = new Set(["publish", "discardChanges", "restore"]);

@@ -1,0 +1,61 @@
+import type { calendar_v3 } from "googleapis";
+
+interface BookingEventAnswerInput {
+  questionLabel: string;
+  answer: string;
+}
+
+interface BookingEventCustomerInput {
+  name: string;
+  email: string;
+  phone: string;
+}
+
+export interface BookingEventPayloadInput {
+  bookingTypeLabel: string;
+  customer: BookingEventCustomerInput;
+  answers: BookingEventAnswerInput[];
+  start: Date;
+  end: Date;
+  timezone: string;
+}
+
+export function buildBookingEventPayload(
+  input: BookingEventPayloadInput,
+): calendar_v3.Schema$Event {
+  const answersText = input.answers
+    .map((answer) => `${answer.questionLabel}: ${answer.answer}`)
+    .join("\n");
+  const descriptionParts = [
+    `Customer: ${input.customer.name}`,
+    `Email: ${input.customer.email}`,
+    `Phone: ${input.customer.phone}`,
+    "",
+    "Answers:",
+    answersText.length > 0 ? answersText : "No answers provided",
+    "",
+    "Changes: Please contact Lash Her to request booking changes.",
+  ];
+
+  return {
+    summary: `Lash Her booking: ${input.bookingTypeLabel} — ${input.customer.name}`,
+    description: descriptionParts.join("\n"),
+    start: {
+      dateTime: input.start.toISOString(),
+      timeZone: input.timezone,
+    },
+    end: {
+      dateTime: input.end.toISOString(),
+      timeZone: input.timezone,
+    },
+    attendees: [
+      {
+        email: input.customer.email,
+        displayName: input.customer.name,
+      },
+    ],
+    reminders: {
+      useDefault: true,
+    },
+  };
+}

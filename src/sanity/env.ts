@@ -19,6 +19,49 @@ export function getWebhookSecret(): string {
   );
 }
 
+export function getBookingEnv(): {
+  googleClientId: string;
+  googleClientSecret: string;
+  googleRedirectUri: string;
+  bookingAdminSetupSecret: string;
+  upstashRedisRestUrl: string;
+  upstashRedisRestToken: string;
+} {
+  return {
+    googleClientId: assertValue(process.env.GOOGLE_CLIENT_ID, "Missing env var: GOOGLE_CLIENT_ID"),
+    googleClientSecret: assertValue(process.env.GOOGLE_CLIENT_SECRET, "Missing env var: GOOGLE_CLIENT_SECRET"),
+    googleRedirectUri: assertValue(process.env.GOOGLE_REDIRECT_URI, "Missing env var: GOOGLE_REDIRECT_URI"),
+    bookingAdminSetupSecret: assertValue(process.env.BOOKING_ADMIN_SETUP_SECRET, "Missing env var: BOOKING_ADMIN_SETUP_SECRET"),
+    upstashRedisRestUrl: assertValue(process.env.UPSTASH_REDIS_REST_URL, "Missing env var: UPSTASH_REDIS_REST_URL"),
+    upstashRedisRestToken: assertValue(process.env.UPSTASH_REDIS_REST_TOKEN, "Missing env var: UPSTASH_REDIS_REST_TOKEN"),
+  };
+}
+
+/** Lazy — only asserts when server-side Helcim requests need it. */
+export function getHelcimApiToken(): string {
+  return assertValue(
+    process.env.HELCIM_API_TOKEN,
+    "Missing env var: HELCIM_API_TOKEN"
+  );
+}
+
+/** Lazy — only asserts when checkout validation needs persisted Helcim secrets. */
+export function getCheckoutSecretEncryptionKey(): Buffer {
+  const encodedKey = assertValue(
+    process.env.CHECKOUT_SECRET_ENCRYPTION_KEY,
+    "Missing env var: CHECKOUT_SECRET_ENCRYPTION_KEY"
+  );
+  const key = Buffer.from(encodedKey, "base64");
+
+  if (key.length !== 32 || key.toString("base64") !== encodedKey) {
+    throw new Error(
+      "Malformed env var: CHECKOUT_SECRET_ENCRYPTION_KEY must be base64-encoded 32 bytes"
+    );
+  }
+
+  return key;
+}
+
 function assertValue<T>(v: T | undefined, errorMessage: string): T {
   if (v === undefined) {
     throw new Error(errorMessage);

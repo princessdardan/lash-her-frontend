@@ -20,6 +20,18 @@ export interface TPortableTextBlock {
 
 // === Shared Component Types ===
 
+export type {
+  BookingAnswerInput,
+  BookingQuestion,
+  BookingQuestionInputType,
+  BookingRequestInput,
+  BookingSettings,
+  BookingSlot,
+  BookingType,
+  BookingTypeConfig,
+  CalendarEventWindow,
+} from "@/lib/booking/types";
+
 export interface TLink {
   _key?: string;
   href: string;
@@ -252,6 +264,49 @@ export interface TTrainingProgramsPage {
   title: string;
   description: string;
   trainingPrograms: TTrainingProgram[];
+}
+
+export type TSellableProductKind = "product" | "service" | "training" | "deposit";
+
+export type TCheckoutOrderStatus =
+  | "pending"
+  | "paid"
+  | "verification_failed"
+  | "cancelled"
+  | "refunded";
+
+export interface TSellableProduct {
+  _id: string;
+  title: string;
+  description: string;
+  slug: string;
+  sku: string;
+  kind: TSellableProductKind;
+  price: number;
+  currency: "CAD";
+  isAvailable: boolean;
+  image?: TSanityImage;
+}
+
+export interface TCheckoutOrderLineItem {
+  sku: string;
+  description: string;
+  quantity: number;
+  price: number;
+  total: number;
+}
+
+export interface TCheckoutOrder {
+  orderId: string;
+  status: TCheckoutOrderStatus;
+  helcimInvoiceId?: number;
+  helcimInvoiceNumber?: string;
+  helcimTransactionId?: string;
+  customerName: string;
+  customerEmail: string;
+  amount: number;
+  currency: "CAD";
+  lineItems: TCheckoutOrderLineItem[];
 }
 
 export interface THeader {
