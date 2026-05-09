@@ -5,15 +5,15 @@ import type { TPortableTextBlock } from "@/types";
 const components: PortableTextComponents = {
   block: {
     normal: ({ children }) => (
-      <p className="mb-4 text-base font-normal leading-relaxed">{children}</p>
+      <p className="mb-4 text-base font-bold leading-relaxed">{children}</p>
     ),
     h2: ({ children }) => (
-      <h2 className="text-2xl font-bold font-serif text-brand-red mb-3 mt-6">
+      <h2 className="text-3xl md:text-4xl font-normal font-heading text-lh-shadow mb-4 mt-8 tracking-[-0.02em]">
         {children}
       </h2>
     ),
     h3: ({ children }) => (
-      <h3 className="text-lg font-bold font-serif text-brand-red mb-2 mt-4">
+      <h3 className="text-2xl md:text-3xl font-normal font-heading text-lh-shadow mb-3 mt-6 tracking-[-0.01em]">
         {children}
       </h3>
     ),
@@ -28,7 +28,7 @@ const components: PortableTextComponents = {
           href={value?.href}
           target={target}
           rel={target ? "noopener noreferrer" : undefined}
-          className="text-brand-red underline underline-offset-4 hover:text-brand-dark-red focus-visible:outline-brand-red"
+          className="text-lh-primary underline underline-offset-4 hover:text-lh-accent focus-visible:outline-lh-primary"
         >
           {children}
         </a>
@@ -47,10 +47,10 @@ const components: PortableTextComponents = {
   },
   listItem: {
     bullet: ({ children }) => (
-      <li className="marker:text-brand-red">{children}</li>
+      <li className="marker:text-lh-primary">{children}</li>
     ),
     number: ({ children }) => (
-      <li className="marker:text-brand-red">{children}</li>
+      <li className="marker:text-lh-primary">{children}</li>
     ),
   },
 };

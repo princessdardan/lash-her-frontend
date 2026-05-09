@@ -16,7 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { LashHerLogo } from "./logo";
-import type { TMainMenuItem, TMenuDirectLink, TMenuDropdown, TMenuDropdownSection } from "@/types";
+import type { TMainMenuItem, TMenuDirectLink, TMenuDropdown } from "@/types";
 
 // Type guards
 function isMenuLink(item: TMainMenuItem): item is TMenuDirectLink {
@@ -51,9 +51,9 @@ export function MobileNavigation({ ctaButton, menuItems = [] }: MobileNavigation
         <button
           className={cn(
             "p-2 rounded-md transition-colors min-w-11 min-h-11 flex items-center justify-center",
-            isHeaderActive
-              ? "text-brand-red hover:bg-brand-red/10"
-              : "text-brand-pink hover:bg-brand-pink/10"
+              isHeaderActive
+              ? "text-lh-shadow hover:bg-lh-neutral"
+              : "text-lh-white hover:bg-white/10"
           )}
           aria-label="Toggle menu"
         >
@@ -63,7 +63,9 @@ export function MobileNavigation({ ctaButton, menuItems = [] }: MobileNavigation
       <SheetContent side="right" className="w-[300px] sm:w-[400px] flex flex-col h-full">
         <SheetHeader>
           <SheetTitle className="text-brand-red">
-            <Link href="/" onClick={() => setOpen(false)}><LashHerLogo className="mx-auto w-46 h-46"/></Link>
+            <Link href="/" onClick={() => setOpen(false)}>
+              <LashHerLogo className="mx-auto w-46 h-46" />
+            </Link>
           </SheetTitle>
         </SheetHeader>
         <nav className="flex flex-col gap-2 flex-1 overflow-y-auto py-4" aria-label="Mobile navigation">
@@ -77,10 +79,10 @@ export function MobileNavigation({ ctaButton, menuItems = [] }: MobileNavigation
                   href={item.url}
                   onClick={() => setOpen(false)}
                   className={cn(
-                    "text-lg font-light transition-colors py-2 px-4 rounded-md",
+                    "text-xl font-heading tracking-wide transition-colors py-3 px-4 rounded-md",
                     isActive
-                      ? "font-semibold bg-brand-red/10 text-brand-red"
-                      : "text-brand-black hover:bg-brand-pink hover:text-brand-red"
+                      ? "bg-lh-neutral text-lh-primary"
+                      : "text-lh-shadow hover:bg-lh-neutral hover:text-lh-primary"
                   )}
                 >
                   {item.title}
@@ -107,10 +109,10 @@ export function MobileNavigation({ ctaButton, menuItems = [] }: MobileNavigation
                       aria-expanded={isExpanded}
                       aria-controls={`mobile-submenu-${item._key}`}
                       className={cn(
-                        "text-lg font-light transition-colors py-2 px-4 rounded-md flex-1 text-left",
+                        "text-xl font-heading tracking-wide transition-colors py-3 px-4 rounded-md flex-1 text-left",
                         isSubLinkActive
-                          ? "font-semibold bg-brand-red/10 text-brand-red"
-                          : "text-brand-black hover:bg-brand-pink hover:text-brand-red"
+                          ? "bg-lh-neutral text-lh-primary"
+                          : "text-lh-shadow hover:bg-lh-neutral hover:text-lh-primary"
                       )}
                     >
                       {item.title}
@@ -119,7 +121,7 @@ export function MobileNavigation({ ctaButton, menuItems = [] }: MobileNavigation
                       onClick={() => toggleExpanded(item._key)}
                       aria-expanded={isExpanded}
                       aria-controls={`mobile-submenu-${item._key}`}
-                      className="p-2 text-brand-black hover:text-brand-red transition-colors"
+                      className="p-2 text-lh-shadow hover:text-lh-primary transition-colors"
                       aria-label={`Toggle ${item.title} submenu`}
                     >
                       <ChevronDown
@@ -138,7 +140,7 @@ export function MobileNavigation({ ctaButton, menuItems = [] }: MobileNavigation
                       {sections.map((section, index) => (
                         <div key={section._key || index} className="mb-2 last:mb-0">
                           {section.heading && (
-                            <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                            <div className="px-4 py-2 text-[11px] font-heading text-lh-light uppercase tracking-[0.28em]">
                               {section.heading}
                             </div>
                           )}
@@ -151,10 +153,10 @@ export function MobileNavigation({ ctaButton, menuItems = [] }: MobileNavigation
                                   href={link.url}
                                   onClick={() => setOpen(false)}
                                   className={cn(
-                                    "text-base font-light transition-colors py-2 px-4 rounded-md block",
+                                    "text-lg font-heading transition-colors py-2.5 px-4 rounded-md block",
                                     isLinkActive
-                                      ? "font-semibold bg-brand-red/10 text-brand-red"
-                                      : "text-gray-700 hover:bg-brand-pink/5 hover:text-brand-red"
+                                      ? "bg-lh-neutral text-lh-primary"
+                                      : "text-lh-shadow hover:bg-lh-neutral hover:text-lh-primary"
                                   )}
                                 >
                                   {link.name}
@@ -173,9 +175,9 @@ export function MobileNavigation({ ctaButton, menuItems = [] }: MobileNavigation
             return null;
           })}
         </nav>
-        <SheetFooter className="mt-0 pt-4 pb-4 border-t border-gray-200">
+        <SheetFooter className="mt-0 pt-4 pb-4 border-t border-lh-line">
           <Link href={ctaButton.href} className="w-full" onClick={() => setOpen(false)}>
-            <Button className="w-full font-sans font-light text-lg italic px-4 py-6 bg-brand-red text-white hover:bg-brand-red/90">
+            <Button variant="primary" className="w-full font-sans font-bold text-base px-4 py-6">
               {ctaButton.label}
             </Button>
           </Link>

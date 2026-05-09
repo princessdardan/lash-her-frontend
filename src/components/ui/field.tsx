@@ -31,7 +31,7 @@ function FieldLegend({
       data-slot="field-legend"
       data-variant={variant}
       className={cn(
-        "mb-3 font-medium",
+        "mb-3 font-bold",
         "data-[variant=legend]:text-base",
         "data-[variant=label]:text-sm",
         className
@@ -55,7 +55,7 @@ function FieldGroup({ className, ...props }: React.ComponentProps<"div">) {
 }
 
 const fieldVariants = cva(
-  "group/field flex w-full gap-3 data-[invalid=true]:text-destructive",
+  "group/field flex w-full gap-3 data-[invalid=true]:text-lh-accent",
   {
     variants: {
       orientation: {
@@ -130,7 +130,7 @@ function FieldTitle({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="field-label"
       className={cn(
-        "flex w-fit items-center gap-2 text-sm leading-snug font-medium group-data-[disabled=true]/field:opacity-50",
+        "flex w-fit items-center gap-2 text-sm leading-snug font-bold group-data-[disabled=true]/field:opacity-50",
         className
       )}
       {...props}
@@ -143,9 +143,9 @@ function FieldDescription({ className, ...props }: React.ComponentProps<"p">) {
     <p
       data-slot="field-description"
       className={cn(
-        "text-muted-foreground text-sm leading-normal font-normal group-has-[[data-orientation=horizontal]]/field:text-balance",
+        "text-lh-muted text-sm leading-normal font-bold group-has-[[data-orientation=horizontal]]/field:text-balance",
         "last:mt-0 nth-last-2:-mt-1 [[data-variant=legend]+&]:-mt-1.5",
-        "[&>a:hover]:text-primary [&>a]:underline [&>a]:underline-offset-4",
+        "[&>a:hover]:text-lh-primary [&>a]:underline [&>a]:underline-offset-4",
         className
       )}
       {...props}
@@ -173,7 +173,7 @@ function FieldSeparator({
       <Separator className="absolute inset-0 top-1/2" />
       {children && (
         <span
-          className="bg-background text-muted-foreground relative mx-auto block w-fit px-2"
+          className="bg-lh-white text-lh-muted relative mx-auto block w-fit px-2"
           data-slot="field-separator-content"
         >
           {children}
@@ -226,7 +226,7 @@ function FieldError({
     <div
       role="alert"
       data-slot="field-error"
-      className={cn("text-destructive text-sm font-normal", className)}
+      className={cn("text-lh-accent text-sm font-bold", className)}
       {...props}
     >
       {content}
