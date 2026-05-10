@@ -75,10 +75,10 @@ function isValidationRequestBody(value: unknown): value is ValidationRequestBody
 }
 
 test.describe("Helcim checkout", () => {
-  test("shows the shop page", async ({ page }) => {
-    await page.goto("/shop");
+  test("shows the products page", async ({ page }) => {
+    await page.goto("/products");
 
-    await expect(page.getByRole("heading", { name: "Shop" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Products" })).toBeVisible();
     await expect(page.getByText(/discover our curated selection/i)).toBeVisible();
     await expect(page.getByRole("heading", { name: "Your Cart" })).toBeVisible();
     await expect(page.getByRole("button", { name: /add to cart/i }).first()).toBeVisible();
@@ -95,7 +95,7 @@ test.describe("Helcim checkout", () => {
       });
     });
 
-    await page.goto("/shop");
+    await page.goto("/products");
 
     const productTitle = await addFirstProductToCart(page);
     await fillCheckoutCustomer(page);
@@ -137,14 +137,14 @@ test.describe("Helcim checkout", () => {
       });
     });
 
-    await page.goto("/shop");
+    await page.goto("/products");
 
     await addFirstProductToCart(page);
     await fillCheckoutCustomer(page);
     await expect(page.getByRole("button", { name: "Checkout" })).toBeEnabled();
     await page.getByRole("button", { name: "Checkout" }).click();
 
-    await expect(page).toHaveURL(`/shop/confirmation?order=${ORDER_ID}`);
+    await expect(page).toHaveURL(`/products/confirmation?order=${ORDER_ID}`);
     await expect(page.getByRole("heading", { name: /payment received/i })).toBeVisible();
     await expect(page.getByText(ORDER_ID)).toBeVisible();
   });

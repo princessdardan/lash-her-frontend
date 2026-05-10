@@ -37,7 +37,7 @@ export default async function ConfirmationPage({
 
         <div className="mt-10">
           <Link
-            href="/shop"
+            href="/products"
             className="btn-primary-red inline-block"
           >
             Continue Shopping

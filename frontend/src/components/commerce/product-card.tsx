@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactElement } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { SanityImage } from "@/components/ui/sanity-image";
 import { formatCad } from "@/lib/commerce/money";
@@ -12,23 +13,33 @@ interface ProductCardProps {
 }
 
 export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement {
+  const productHref = `/products/${product.slug}`;
+
   return (
     <div className="card-white flex flex-col h-full">
       {product.image && (
-        <div className="relative w-full aspect-square mb-4 overflow-hidden rounded-md bg-brand-cream">
+        <Link
+          href={productHref}
+          className="relative w-full aspect-square mb-4 overflow-hidden rounded-md bg-brand-cream block"
+          aria-label={`View ${product.title}`}
+        >
           <SanityImage
             image={product.image}
             alt={product.title}
             fill
             className="object-cover"
           />
-        </div>
+        </Link>
       )}
       <div className="flex-1 flex flex-col">
         <div className="text-xs font-bold uppercase tracking-wider text-brand-red mb-1">
           {product.kind}
         </div>
-        <h3 className="card-heading-red text-xl mb-2">{product.title}</h3>
+        <h3 className="card-heading-red text-xl mb-2">
+          <Link href={productHref} className="hover:underline">
+            {product.title}
+          </Link>
+        </h3>
         <p className="text-sm text-black font-light mb-4 flex-1">
           {product.description}
         </p>

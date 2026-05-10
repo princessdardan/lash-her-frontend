@@ -156,9 +156,9 @@ export function HelcimPayButton({
           onPaid();
 
           if (result.orderId) {
-            router.push(`/shop/confirmation?order=${encodeURIComponent(result.orderId)}`);
+            router.push(`/products/confirmation?order=${encodeURIComponent(result.orderId)}`);
           } else {
-            router.push("/shop/confirmation");
+            router.push("/products/confirmation");
           }
         } catch {
           setError("Payment could not be verified. Please contact Lash Her before retrying.");

@@ -4,7 +4,7 @@ import { CartPanel } from "@/components/commerce/cart-panel";
 
 export const revalidate = 300;
 
-export default async function ShopPage(): Promise<ReactElement> {
+export default async function ProductsPage(): Promise<ReactElement> {
   const products = await loaders.getSellableProducts();
 
   return (
@@ -12,7 +12,7 @@ export default async function ShopPage(): Promise<ReactElement> {
       <div className="content-container">
         <div className="text-container max-w-3xl mx-auto mb-16">
           <h1 className="section-heading-red-center text-4xl md:text-5xl lg:text-6xl mb-6">
-            Shop
+            Products
           </h1>
           <p className="section-description text-center text-lg">
             Discover our curated selection of premium lash products and training materials.

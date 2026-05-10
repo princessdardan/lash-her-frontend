@@ -257,6 +257,29 @@ async function getSellableProductsByIds(ids: string[]): Promise<TSellableProduct
   return client.fetch<TSellableProduct[]>(query, { ids }, { next: { tags: ['sellableProduct'] } });
 }
 
+async function getSellableProductBySlug(slug: string): Promise<TSellableProduct | null> {
+  const query = groq`*[_type == "sellableProduct" && slug.current == $slug][0]{
+    _id,
+    title,
+    description,
+    "slug": slug.current,
+    sku,
+    kind,
+    price,
+    currency,
+    isAvailable,
+    image{ asset, hotspot, crop, alt }
+  }`;
+  return client.fetch<TSellableProduct | null>(query, { slug }, { next: { tags: ['sellableProduct'] } });
+}
+
+async function getAllSellableProductSlugs(): Promise<Array<{ slug: string }>> {
+  const query = groq`*[_type == "sellableProduct"]{
+    "slug": slug.current
+  }`;
+  return client.fetch<Array<{ slug: string }>>(query, {}, { next: { tags: ['sellableProduct'] } });
+}
+
 export const loaders = {
   getHomePageData,
   getContactPageData,
@@ -271,4 +294,6 @@ export const loaders = {
   getBookingSettings,
   getSellableProducts,
   getSellableProductsByIds,
+  getSellableProductBySlug,
+  getAllSellableProductSlugs,
 };
