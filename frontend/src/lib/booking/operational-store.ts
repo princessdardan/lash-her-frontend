@@ -21,8 +21,8 @@ function getRedis(): Redis {
 
   const env = getBookingEnv();
   redisClient = new Redis({
-    url: env.upstashRedisRestUrl,
-    token: env.upstashRedisRestToken,
+    url: env.kvRestApiUrl,
+    token: env.kvRestApiToken,
   });
 
   return redisClient;

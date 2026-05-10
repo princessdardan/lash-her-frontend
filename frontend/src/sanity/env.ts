@@ -24,22 +24,16 @@ export function getBookingEnv(): {
   googleClientSecret: string;
   googleRedirectUri: string;
   bookingAdminSetupSecret: string;
-  upstashRedisRestUrl: string;
-  upstashRedisRestToken: string;
+  kvRestApiUrl: string;
+  kvRestApiToken: string;
 } {
   return {
     googleClientId: assertValue(process.env.GOOGLE_CLIENT_ID, "Missing env var: GOOGLE_CLIENT_ID"),
     googleClientSecret: assertValue(process.env.GOOGLE_CLIENT_SECRET, "Missing env var: GOOGLE_CLIENT_SECRET"),
     googleRedirectUri: assertValue(process.env.GOOGLE_REDIRECT_URI, "Missing env var: GOOGLE_REDIRECT_URI"),
     bookingAdminSetupSecret: assertValue(process.env.BOOKING_ADMIN_SETUP_SECRET, "Missing env var: BOOKING_ADMIN_SETUP_SECRET"),
-    upstashRedisRestUrl: assertValue(
-      process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL,
-      "Missing env var: UPSTASH_REDIS_REST_URL or KV_REST_API_URL"
-    ),
-    upstashRedisRestToken: assertValue(
-      process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN,
-      "Missing env var: UPSTASH_REDIS_REST_TOKEN or KV_REST_API_TOKEN"
-    ),
+    kvRestApiUrl: assertValue(process.env.KV_REST_API_URL, "Missing env var: KV_REST_API_URL"),
+    kvRestApiToken: assertValue(process.env.KV_REST_API_TOKEN, "Missing env var: KV_REST_API_TOKEN"),
   };
 }
 
