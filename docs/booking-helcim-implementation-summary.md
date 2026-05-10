@@ -1,0 +1,194 @@
+# Booking and Helcim Implementation Summary
+
+Date: 2026-05-08
+Primary implementation worktree: `/Users/dardan/Documents/lash-her/.worktrees/booking-helcim-integration`
+Integration branch: `integration/booking-helcim`
+
+## Purpose
+
+This document summarizes the booking and HelcimPay work that has been implemented so future agents can build on it without rediscovering the architecture. It is a handoff summary, not proof that the branch is production-ready.
+
+The implementation combines two originally separate efforts:
+
+- A scheduling-only Google Calendar booking system.
+- A Sanity-backed shop and HelcimPay.js checkout flow.
+
+The two features are intentionally separate. Booking does not take payments. Checkout does not create Google Calendar bookings.
+
+## Source Plans
+
+- `docs/superpowers/specs/2026-05-05-booking-system-design.md`
+- `docs/superpowers/plans/2026-05-05-helcimpay-implementation.md`
+- Integration context in the worktree: `docs/superpowers/plans/2026-05-08-booking-helcimpay-integration.md`
+
+## Implemented Booking System
+
+The booking implementation adds a public scheduling flow at `/booking`, with optional preselection through query params such as `/booking?type=training-call` and `/booking?type=in-person-appointment`.
+
+Implemented surfaces:
+
+- `frontend/src/app/(site)/booking/page.tsx`
+- `frontend/src/components/booking/booking-flow.tsx`
+- `frontend/src/components/booking/booking-entry-link.tsx`
+- `frontend/src/app/api/booking/availability/route.ts`
+- `frontend/src/app/api/booking/create/route.ts`
+- `frontend/src/app/api/booking/oauth/start/route.ts`
+- `frontend/src/app/api/booking/oauth/callback/route.ts`
+- `frontend/src/lib/booking/*`
+- `frontend/src/sanity/schemas/documents/booking-settings.ts`
+- `frontend/src/sanity/schemas/documents/booking-marketing-opt-in.ts`
+- `frontend/tests/booking.spec.ts`
+
+Core behavior:
+
+- Sanity `bookingSettings` stores calendar ID, marker title, booking horizon, minimum lead time, timezone, booking types, durations, intervals, buffers, type-specific questions, and marketing opt-in copy.
+- Google Calendar is the source of truth for availability and confirmed bookings.
+- Availability is represented by Google Calendar events whose title matches the configured marker, defaulting to `Available for booking`.
+- All non-marker events on the same calendar are treated as busy conflicts, including Fresha/manual/site-created events.
+- Slot generation enforces minimum lead time, booking horizon, duration, interval, and before/after buffers.
+- Booking creation revalidates the selected slot server-side before inserting a Google Calendar event.
+- A whole-calendar lock and idempotency key are stored in Upstash Redis through `frontend/src/lib/booking/operational-store.ts`.
+- Google OAuth setup is protected by `BOOKING_ADMIN_SETUP_SECRET` and stores the refresh token server-side in Redis.
+- The Google Calendar event includes the customer as an attendee and uses `sendUpdates: "all"`.
+- Resend confirmation email is sent after Calendar insertion. If the email fails, booking remains confirmed and the failure is logged.
+- If marketing opt-in is checked, Sanity stores a `bookingMarketingOptIn` document containing name, email, phone, booking type, and answers.
+
+Important intentional non-goals from the booking design remain unimplemented:
+
+- No booking payments.
+- No Google Meet links.
+- No self-serve cancellation or rescheduling.
+- No approval workflow.
+- No multiple staff calendars.
+- No persisted booking history in Sanity.
+
+## Implemented Helcim Checkout
+
+The checkout implementation adds a public shop at `/shop` and a confirmation page at `/shop/confirmation`.
+
+Implemented surfaces:
+
+- `frontend/src/app/(site)/shop/page.tsx`
+- `frontend/src/app/(site)/shop/confirmation/page.tsx`
+- `frontend/src/components/commerce/product-card.tsx`
+- `frontend/src/components/commerce/cart-panel.tsx`
+- `frontend/src/components/commerce/helcim-pay-button.tsx`
+- `frontend/src/app/api/checkout/route.ts`
+- `frontend/src/app/api/checkout/validate-payment/route.ts`
+- `frontend/src/lib/commerce/*`
+- `frontend/src/sanity/schemas/documents/sellable-product.ts`
+- `frontend/src/sanity/schemas/documents/checkout-order.ts`
+- `frontend/tests/checkout.spec.ts`
+
+Core behavior:
+
+- Sanity `sellableProduct` is the catalog source for products, services, training items, and deposits.
+- Supported currency is CAD.
+- Cart validation enforces whole-number quantities from 1 to 10.
+- Server-side checkout reloads Sanity products by ID and rebuilds invoice line items from current catalog data.
+- The checkout API creates a Helcim invoice first, initializes a HelcimPay.js session, then stores a pending Sanity `checkoutOrder` reconciliation record.
+- Helcim API credentials stay server-side through `getHelcimApiToken()`.
+- Browser receives only the HelcimPay.js `checkoutToken`.
+- HelcimPay.js is loaded from `https://secure.helcim.app/helcim-pay/services/start.js`.
+- The client listens for `helcim-pay-js-${checkoutToken}` messages from `https://secure.helcim.app`.
+- Successful Helcim iframe payloads are forwarded to `/api/checkout/validate-payment`.
+- Validation checks the response hash, approved status, transaction ID, amount, currency, and invoice identity.
+- Pending order secret tokens are encrypted before being stored in Sanity using `CHECKOUT_SECRET_ENCRYPTION_KEY`.
+- Validated payments mark the `checkoutOrder` as `paid`; failed verification marks it as `verification_failed`.
+
+Intentional first-release non-goals remain unimplemented:
+
+- No taxes, discounts, shipping, ACH-specific flow, Fee Saver, partial payments, refunds, saved payment methods, or customer pre-linking.
+
+## Shared Integration Surfaces
+
+The integration branch merges booking and checkout additions into shared files:
+
+- `frontend/package.json` adds `test:unit` and dependencies for `googleapis`, `@upstash/redis`, and `tsx`.
+- `frontend/src/data/loaders.ts` includes `getBookingSettings`, `getSellableProducts`, and `getSellableProductsByIds`.
+- `frontend/src/sanity/env.ts` includes booking env helpers, Helcim token helper, and checkout secret encryption key helper.
+- `frontend/src/app/api/revalidate/route.ts` includes cache tags for `bookingSettings` and `sellableProduct`.
+- `frontend/src/sanity/schemas/index.ts` registers booking and checkout schemas.
+- `frontend/src/sanity/structure/index.ts` exposes Booking, Sellable Products, and Checkout Orders in Studio.
+- `frontend/src/types/index.ts` exports booking types and commerce document types.
+
+## Required Environment Variables
+
+Booking:
+
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `GOOGLE_REDIRECT_URI`
+- `BOOKING_ADMIN_SETUP_SECRET`
+- `KV_REST_API_URL`
+- `KV_REST_API_TOKEN`
+- `RESEND_API_KEY`
+- `FROM_EMAIL`
+- `SANITY_FORM_TOKEN`
+
+Checkout:
+
+- `HELCIM_API_TOKEN`
+- `CHECKOUT_SECRET_ENCRYPTION_KEY`
+
+`CHECKOUT_SECRET_ENCRYPTION_KEY` must be a base64-encoded 32-byte key. Agents should update `frontend/.env.local.example` and README docs before shipping if those variables are still missing there.
+
+## Known Gaps and Follow-Up Risks
+
+- The requested worktree was referred to as `booking-helcim-itegration`, but the actual path is `.worktrees/booking-helcim-integration`.
+- `frontend/.env.local.example` did not list `HELCIM_API_TOKEN` or `CHECKOUT_SECRET_ENCRYPTION_KEY` during audit.
+- The checkout confirmation page says an order confirmation email will be sent, but no checkout-specific email sender was found.
+- Playwright tests mock booking and checkout API calls, but the pages still depend on Sanity server-rendered data. E2E coverage is therefore not fully self-contained without seeded Sanity content.
+- There are helper unit tests and browser tests, but no direct route-handler unit tests for `/api/checkout`, `/api/checkout/validate-payment`, or `/api/booking/*`.
+- The branch includes broader UI/style/docs/artifact changes beyond the booking and Helcim feature files. Review the diff carefully before merging.
+- `git diff --check main...HEAD` reported trailing whitespace at `frontend/src/components/custom/layouts/cta-features-section.tsx:78` during audit.
+- Local validation could not be completed before this summary because dependencies were not installed in the integration worktree; `npm run test:unit` failed with `tsx: command not found` and `npm run lint` failed with `eslint: command not found`.
+
+## Verification Status From Audit
+
+Completed during audit:
+
+- Read the booking design and Helcim implementation plan.
+- Located the integration worktree with `git worktree list`.
+- Searched relevant implementation surfaces with `rg` and AST-aware search.
+- Read key route, library, schema, UI, loader, and test files.
+- Checked external docs for HelcimPay.js validation and Google Calendar event insertion expectations.
+
+Not completed during audit:
+
+- Unit tests.
+- Lint.
+- Build.
+- Playwright E2E.
+
+Before merging or building on this branch, install dependencies in `frontend` and run:
+
+```bash
+npm run test:unit
+npm run lint
+npm run build
+npx playwright test tests/booking.spec.ts --project=chromium
+npx playwright test tests/checkout.spec.ts --project=chromium
+```
+
+## Agent Guidance
+
+When extending booking:
+
+- Keep Google Calendar as the only confirmed booking record.
+- Do not add Sanity booking-history persistence unless the product decision changes.
+- Revalidate selected slots server-side immediately before inserting a Calendar event.
+- Preserve the whole-calendar Redis lock unless replacing it with a stronger concurrency strategy.
+
+When extending checkout:
+
+- Never expose Helcim API credentials or `secretToken` to the browser.
+- Build line-item snapshots from validated Sanity catalog data, not client-supplied prices.
+- Keep `checkoutOrder` as a reconciliation record, not a full ecommerce order-management system.
+- Validate Helcim hash and payment semantics before marking an order paid.
+
+When merging:
+
+- Protect current main-workspace WIP before applying the integration branch.
+- Review shared files additively: `loaders.ts`, `env.ts`, schema registry, Studio structure, revalidation tags, and shared types.
+- Do not claim validation passed unless the command was run and exited 0.
