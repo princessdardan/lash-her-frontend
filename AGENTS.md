@@ -19,6 +19,13 @@ lash-her/
 └── CLAUDE.md                         # repo guidance loaded by agents
 ```
 
+## CANONICAL GIT REPOSITORY
+
+- Canonical GitHub remote: `https://github.com/princessdardan/lash-her-frontend.git`.
+- The `staging` branch for `staging.lashher.com` must be pushed to `lash-her-frontend`, not `lash-her`.
+- Before any branch creation, PR, or push, run `git remote -v` and verify the target remote URL.
+- Prefer the configured `frontend` remote or the package command `npm run git:push-staging` from `frontend/`; do not assume `origin` is correct in local checkouts.
+
 ## WHERE TO LOOK
 
 | Task | Location | Notes |

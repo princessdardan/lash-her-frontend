@@ -2,6 +2,20 @@
 
 This document describes how to use one Sanity project with separate Lash Her `production` and `staging` datasets to test Studio/schema/content changes, then safely promote completed work to production.
 
+## Canonical Git and Vercel Branch Target
+
+The Vercel staging subdomain must target the `staging` branch in the frontend repository:
+
+```text
+https://github.com/princessdardan/lash-her-frontend
+```
+
+Do not create or push deployment branches to `https://github.com/princessdardan/lash-her`. In local checkouts, verify remotes with `git remote -v` before pushing. This workspace may contain a legacy or planning remote named `origin`; use the `frontend` remote or run from `frontend`:
+
+```bash
+npm run git:push-staging
+```
+
 ## Architecture Decision
 
 Lash Her will use a single Sanity project, `3auncj84`, with two named datasets:

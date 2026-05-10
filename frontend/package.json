@@ -13,7 +13,9 @@
     "test:headed": "playwright test --headed",
     "test:debug": "playwright test --debug",
     "test:report": "playwright show-report",
-    "migrate": "tsx scripts/migrate-strapi-to-sanity.ts"
+    "migrate": "tsx scripts/migrate-strapi-to-sanity.ts",
+    "git:verify-remote": "node scripts/verify-git-remote.mjs frontend",
+    "git:push-staging": "npm run git:verify-remote && git push frontend staging"
   },
   "dependencies": {
     "@icons-pack/react-simple-icons": "^13.11.1",
