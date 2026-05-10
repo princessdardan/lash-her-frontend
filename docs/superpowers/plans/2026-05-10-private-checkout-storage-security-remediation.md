@@ -161,11 +161,11 @@ Run from `frontend` with the correct project ID:
 
 ```bash
 npx sanity datasets visibility get production --project-id 3auncj84
-npx sanity datasets visibility get staging --project-id 3auncj84
+npx sanity datasets visibility get staging-2026-05-10 --project-id 3auncj84
 ```
 
 Expected:
-- If production/staging are public-only, this remediation remains mandatory.
+- If production/`staging-2026-05-10` are public-only, this remediation remains mandatory.
 - If a private dataset is available later, still prefer private database for transaction history unless product ownership explicitly chooses Sanity ACLs for order records.
 
 - [ ] **Step 3: Human approval checkpoint**
@@ -217,7 +217,7 @@ CHECKOUT_SECRET_ENCRYPTION_KEY=<base64-encoded-32-byte-key>
 HELCIM_API_TOKEN=<server-only-helcim-token>
 HELCIM_WEBHOOK_VERIFIER_TOKEN=<server-only-webhook-verifier-token-if-webhooks-in-scope>
 NEXT_PUBLIC_SANITY_PROJECT_ID=3auncj84
-NEXT_PUBLIC_SANITY_DATASET=<staging-or-production>
+NEXT_PUBLIC_SANITY_DATASET=<staging-2026-05-10-or-production>
 NEXT_PUBLIC_SANITY_API_VERSION=2026-03-24
 ```
 

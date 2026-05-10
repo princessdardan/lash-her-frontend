@@ -15,7 +15,7 @@ Do not create or push deployment branches to `https://github.com/princessdardan/
 npm run git:push-staging
 ```
 
-This document describes how to use the Lash Her staging Sanity Studio and staging dataset to test Studio/schema/content changes, then safely promote completed work to production.
+This document describes how to use the Lash Her staging Sanity Studio and the `staging-2026-05-10` dataset to test Studio/schema/content changes, then safely promote completed work to production.
 
 The implementation worktree for this effort is:
 
@@ -43,7 +43,7 @@ cd /Users/dardan/Documents/lash-her-booking-helcim-integration/frontend
 - `frontend/sanity.cli.ts` currently hardcodes the CLI dataset to `production`.
 - The implementation worktree already contains booking/Helcim schema additions, including `bookingSettings` as a singleton.
 
-Important distinction: the Sanity Studio does not contain the content. The Studio is the editing application and schema code. Content lives in a Sanity Content Lake dataset. Copying production into staging means copying the production dataset into a staging dataset; deploying Studio/schema code is a separate step.
+Important distinction: the Sanity Studio does not contain the content. The Studio is the editing application and schema code. Content lives in a Sanity Content Lake dataset. Copying production into staging means copying the production dataset into `staging-2026-05-10`; deploying Studio/schema code is a separate step.
 
 ## Recommended Environment Names
 
@@ -51,10 +51,9 @@ Use these names unless the Sanity project already has different conventions:
 
 - Sanity project: `3auncj84`
 - Production dataset: `production`
-- Stable staging dataset alias: `staging`
-- Timestamped staging dataset clone: `staging-YYYY-MM-DD`, for example `staging-2026-05-10`
+- Staging dataset: `staging-2026-05-10`
 
-Using a stable alias named `staging` gives the app and Studio a permanent dataset name while allowing safe refreshes from production by cloning into a new timestamped dataset and relinking the alias.
+`staging-2026-05-10` is the actual staging dataset name. Do not use `staging` as a dataset alias or placeholder unless a future workflow explicitly creates that alias.
 
 ## Required Access and Secrets
 
@@ -90,17 +89,17 @@ cd /Users/dardan/Documents/lash-her-booking-helcim-integration/frontend
 npx sanity dataset list --project-id 3auncj84
 ```
 
-Confirm whether `staging` is a dataset or a dataset alias:
+Confirm that `staging-2026-05-10` exists as a normal dataset:
 
 ```bash
-npx sanity dataset alias list --project-id 3auncj84
+npx sanity dataset list --project-id 3auncj84
 ```
 
 Check dataset visibility:
 
 ```bash
 npx sanity dataset visibility get production --project-id 3auncj84
-npx sanity dataset visibility get staging --project-id 3auncj84
+npx sanity dataset visibility get staging-2026-05-10 --project-id 3auncj84
 ```
 
 Recommended staging visibility is usually `private` unless there is a specific reason for public read access.
@@ -136,21 +135,7 @@ Then attach to the job when needed:
 npx sanity dataset copy --attach <jobId> --project-id 3auncj84
 ```
 
-After the copy completes, point the stable staging alias to the new clone.
-
-If the alias does not exist yet:
-
-```bash
-npx sanity dataset alias create staging staging-2026-05-10 --project-id 3auncj84
-```
-
-If the alias already exists:
-
-```bash
-npx sanity dataset alias link staging staging-2026-05-10 \
-  --project-id 3auncj84 \
-  --force
-```
+After the copy completes, use `staging-2026-05-10` directly in app, Studio, and CLI environment variables.
 
 ### Fallback: Export and Import
 
@@ -172,7 +157,7 @@ npx sanity dataset create staging-2026-05-10 \
   --visibility private
 ```
 
-Import the production export into staging:
+Import the production export into `staging-2026-05-10`:
 
 ```bash
 npx sanity dataset import ./production-export.tar.gz staging-2026-05-10 \
@@ -180,19 +165,13 @@ npx sanity dataset import ./production-export.tar.gz staging-2026-05-10 \
   --replace
 ```
 
-Point the stable alias at the imported dataset:
-
-```bash
-npx sanity dataset alias link staging staging-2026-05-10 \
-  --project-id 3auncj84 \
-  --force
-```
+Use `staging-2026-05-10` directly in app, Studio, and CLI environment variables.
 
 ## Phase 3: Deploy the Current Schema to Staging
 
 Because this repo defines schemas in code, production schemas should be treated as source-controlled code, not as content to pull from the Studio.
 
-Deploy the worktree schema to the staging dataset:
+Deploy the worktree schema to `staging-2026-05-10`:
 
 ```bash
 cd /Users/dardan/Documents/lash-her-booking-helcim-integration/frontend
@@ -221,7 +200,7 @@ NEXT_PUBLIC_SANITY_API_VERSION=2026-03-24 \
 npx sanity deploy --url <staging-studio-host> --schema-required
 ```
 
-If using the embedded Next.js Studio, deploy the staging Next/Vercel environment with `NEXT_PUBLIC_SANITY_DATASET=staging`.
+If using the embedded Next.js Studio, deploy the staging Next/Vercel environment with `NEXT_PUBLIC_SANITY_DATASET=staging-2026-05-10`.
 
 ## Phase 4: Configure Staging App and Studio
 
@@ -229,7 +208,7 @@ For the staging deployment, configure these public Sanity variables:
 
 ```env
 NEXT_PUBLIC_SANITY_PROJECT_ID=3auncj84
-NEXT_PUBLIC_SANITY_DATASET=staging
+NEXT_PUBLIC_SANITY_DATASET=staging-2026-05-10
 NEXT_PUBLIC_SANITY_API_VERSION=2026-03-24
 ```
 
@@ -280,11 +259,11 @@ npm test
 Then manually verify the actual staging surfaces:
 
 - Open the staging app `/studio`.
-- Confirm the Studio targets the staging dataset, not production.
-- Confirm production content appears in staging after the refresh.
+- Confirm the Studio targets `staging-2026-05-10`, not production.
+- Confirm production content appears in `staging-2026-05-10` after the refresh.
 - Confirm new schema types and singleton entries appear as expected.
 - For booking work, confirm `bookingSettings` is visible and behaves as a singleton.
-- Create or update test documents in staging only.
+- Create or update test documents in `staging-2026-05-10` only.
 - Verify the public staging app reads the staged content correctly.
 - Verify forms, booking flows, webhook revalidation, and checkout paths using staging-only credentials.
 
@@ -342,7 +321,7 @@ This is often the safest option for singleton configuration like `bookingSetting
 
 ### Option C: Targeted Migration Script
 
-For structural changes or required default content, write a migration that patches known documents by ID/type. Run it against staging first, then production.
+For structural changes or required default content, write a migration that patches known documents by ID/type. Run it against `staging-2026-05-10` first, then production.
 
 Use this pattern for changes such as:
 
@@ -358,7 +337,7 @@ Use only when the changed document set is known and safe to replace.
 Example:
 
 ```bash
-npx sanity dataset export staging ./booking-content.tar.gz \
+npx sanity dataset export staging-2026-05-10 ./booking-content.tar.gz \
   --project-id 3auncj84 \
   --types bookingSettings,sellableProduct
 
@@ -378,7 +357,7 @@ This replaces broad production content with staging content and can overwrite pr
 Only use this if production is intentionally frozen and everyone agrees staging is the complete source of truth:
 
 ```bash
-npx sanity dataset export staging ./staging-export.tar.gz \
+npx sanity dataset export staging-2026-05-10 ./staging-export.tar.gz \
   --project-id 3auncj84 \
   --overwrite
 
@@ -435,16 +414,16 @@ Even after this change, prefer explicit environment variables in release command
 Before staging refresh:
 
 - [ ] Confirm production dataset is `production`.
-- [ ] Confirm staging alias/dataset strategy.
+- [ ] Confirm staging dataset is `staging-2026-05-10`.
 - [ ] Confirm Sanity permissions and token availability.
 - [ ] Confirm staging secrets are separate from production secrets.
 
 After staging refresh:
 
-- [ ] Confirm `staging` points to the fresh production copy.
-- [ ] Confirm staging Studio targets `staging`.
-- [ ] Confirm production content appears in staging.
-- [ ] Deploy current worktree schema to staging.
+- [ ] Confirm `staging-2026-05-10` contains the fresh production copy.
+- [ ] Confirm staging Studio targets `staging-2026-05-10`.
+- [ ] Confirm production content appears in `staging-2026-05-10`.
+- [ ] Deploy current worktree schema to `staging-2026-05-10`.
 
 Before production release:
 
