@@ -12,7 +12,7 @@
 
 ## First-release scope locked by this plan
 
-- Operational store: Upstash Redis, configured with `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`.
+- Operational store: Upstash Redis, configured with `KV_REST_API_URL` and `KV_REST_API_TOKEN`.
 - Google auth: personal Gmail OAuth using `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, and a protected setup route gated by `BOOKING_ADMIN_SETUP_SECRET`.
 - Calendar scope: use `https://www.googleapis.com/auth/calendar.events` for event read/write and guest invite creation.
 - Shared calendar: one configured calendar ID from Sanity, with the marker title defaulting to `Available for booking`.
@@ -519,16 +519,16 @@ export function getBookingEnv(): {
   googleClientSecret: string;
   googleRedirectUri: string;
   bookingAdminSetupSecret: string;
-  upstashRedisRestUrl: string;
-  upstashRedisRestToken: string;
+  kvRestApiUrl: string;
+  kvRestApiToken: string;
 } {
   return {
     googleClientId: assertValue(process.env.GOOGLE_CLIENT_ID, "Missing env var: GOOGLE_CLIENT_ID"),
     googleClientSecret: assertValue(process.env.GOOGLE_CLIENT_SECRET, "Missing env var: GOOGLE_CLIENT_SECRET"),
     googleRedirectUri: assertValue(process.env.GOOGLE_REDIRECT_URI, "Missing env var: GOOGLE_REDIRECT_URI"),
     bookingAdminSetupSecret: assertValue(process.env.BOOKING_ADMIN_SETUP_SECRET, "Missing env var: BOOKING_ADMIN_SETUP_SECRET"),
-    upstashRedisRestUrl: assertValue(process.env.UPSTASH_REDIS_REST_URL, "Missing env var: UPSTASH_REDIS_REST_URL"),
-    upstashRedisRestToken: assertValue(process.env.UPSTASH_REDIS_REST_TOKEN, "Missing env var: UPSTASH_REDIS_REST_TOKEN"),
+    kvRestApiUrl: assertValue(process.env.KV_REST_API_URL, "Missing env var: KV_REST_API_URL"),
+    kvRestApiToken: assertValue(process.env.KV_REST_API_TOKEN, "Missing env var: KV_REST_API_TOKEN"),
   };
 }
 ```
@@ -804,7 +804,7 @@ const CALENDAR_LOCK_KEY = "booking:calendar-lock";
 
 function getRedis(): Redis {
   const env = getBookingEnv();
-  return new Redis({ url: env.upstashRedisRestUrl, token: env.upstashRedisRestToken });
+  return new Redis({ url: env.kvRestApiUrl, token: env.kvRestApiToken });
 }
 
 export async function getGoogleRefreshToken(): Promise<string | null> {
@@ -1682,8 +1682,8 @@ The Google Calendar booking system requires these server-side environment variab
 - `GOOGLE_CLIENT_SECRET`
 - `GOOGLE_REDIRECT_URI`
 - `BOOKING_ADMIN_SETUP_SECRET`
-- `UPSTASH_REDIS_REST_URL`
-- `UPSTASH_REDIS_REST_TOKEN`
+- `KV_REST_API_URL`
+- `KV_REST_API_TOKEN`
 - `RESEND_API_KEY`
 - `SANITY_FORM_TOKEN`
 

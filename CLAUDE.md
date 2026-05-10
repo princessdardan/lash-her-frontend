@@ -76,7 +76,6 @@ Two forms (General Inquiry, Training Contact):
 - `SANITY_WRITE_TOKEN` — server-side mutations
 - `RESEND_API_KEY`, `FROM_EMAIL`, `ADMIN_EMAIL` — email delivery
 - `BLOB_READ_WRITE_TOKEN` — Vercel Blob (image migration scripts)
-- `MOTION_DEV_TOKEN` — injected at build time by `vercel-install.mjs`
 
 ## Testing
 

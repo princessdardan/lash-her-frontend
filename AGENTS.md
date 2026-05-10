@@ -40,7 +40,7 @@ lash-her/
 | Forms | `frontend/src/app/actions/form.ts`, `frontend/src/lib/form-validation.ts`, `frontend/src/lib/email.ts` | Validate twice, write to Sanity, email non-blocking. |
 | Revalidation | `frontend/src/app/api/revalidate/route.ts` | Sanity webhook HMAC + Next 16 tag expiry. |
 | E2E tests | `frontend/tests` | Playwright only; no Jest/Vitest. |
-| Deployment install | `frontend/vercel.json`, `frontend/scripts/vercel-install.mjs` | Injects `MOTION_DEV_TOKEN` into private Motion deps. |
+| Deployment install | Vercel default install | No private Motion registry token is required. |
 
 ## CODE MAP
 
@@ -93,6 +93,6 @@ npx playwright test tests/homepage.spec.ts --project=chromium
 
 ## NOTES
 
-- No checked-in lockfile was found; Vercel install runs `npm install --no-package-lock` after token injection.
+- No checked-in lockfile was found; Vercel uses the default npm install behavior.
 - `frontend/README.md` is still create-next-app boilerplate; prefer this file and `CLAUDE.md` for repo-specific guidance.
 - `backend/` is mentioned in memory as legacy Strapi, but no backend directory exists in this checkout.

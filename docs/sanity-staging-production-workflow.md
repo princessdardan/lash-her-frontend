@@ -1,6 +1,5 @@
 # Sanity Staging and Production Workflow
 
-This document describes how to use one Sanity project with separate Lash Her `production` and `staging` datasets to test Studio/schema/content changes, then safely promote completed work to production.
 
 ## Canonical Git and Vercel Branch Target
 
@@ -16,16 +15,7 @@ Do not create or push deployment branches to `https://github.com/princessdardan/
 npm run git:push-staging
 ```
 
-## Architecture Decision
-
-Lash Her will use a single Sanity project, `3auncj84`, with two named datasets:
-
-- Production content lives in the `production` dataset.
-- Staging content lives in the `staging` dataset.
-- Refreshing staging means replacing the contents of the existing `staging` dataset with a fresh copy of `production` content.
-- Promotion to production means promoting code/schema through Git and deployment, plus targeted production content edits or migrations when needed.
-
-This gives us isolated content and schema deployment targets while keeping project-level Sanity settings shared. It is not the same as hard project isolation: members, project-level tokens, CORS origins, webhooks, quotas, and project administration remain shared under `3auncj84`.
+This document describes how to use the Lash Her staging Sanity Studio and staging dataset to test Studio/schema/content changes, then safely promote completed work to production.
 
 The implementation worktree for this effort is:
 
@@ -49,7 +39,6 @@ cd /Users/dardan/Documents/lash-her-booking-helcim-integration/frontend
   - `NEXT_PUBLIC_SANITY_PROJECT_ID`
   - `NEXT_PUBLIC_SANITY_DATASET`
   - `NEXT_PUBLIC_SANITY_API_VERSION`
-- Staging and production use the same `NEXT_PUBLIC_SANITY_PROJECT_ID` and switch environments by changing `NEXT_PUBLIC_SANITY_DATASET`.
 - The Sanity project ID found in `frontend/sanity.cli.ts` is `3auncj84`.
 - `frontend/sanity.cli.ts` currently hardcodes the CLI dataset to `production`.
 - The implementation worktree already contains booking/Helcim schema additions, including `bookingSettings` as a singleton.
@@ -58,13 +47,14 @@ Important distinction: the Sanity Studio does not contain the content. The Studi
 
 ## Recommended Environment Names
 
-Use these names unless project `3auncj84` already has different dataset conventions:
+Use these names unless the Sanity project already has different conventions:
 
-- Shared Sanity project: `3auncj84`
+- Sanity project: `3auncj84`
 - Production dataset: `production`
-- Staging dataset: `staging`
+- Stable staging dataset alias: `staging`
+- Timestamped staging dataset clone: `staging-YYYY-MM-DD`, for example `staging-2026-05-10`
 
-The app and Studio should always target the dataset name for their environment: `production` for production and `staging` for staging.
+Using a stable alias named `staging` gives the app and Studio a permanent dataset name while allowing safe refreshes from production by cloning into a new timestamped dataset and relinking the alias.
 
 ## Required Access and Secrets
 
@@ -72,8 +62,8 @@ Before proceeding, confirm you have:
 
 - Sanity CLI access to project `3auncj84` with permission to manage datasets and deploy schemas.
 - A Sanity token for CI/unattended commands, exposed only as `SANITY_AUTH_TOKEN` when needed.
-- Separate staging and production values for dataset-specific/runtime settings:
-  - `NEXT_PUBLIC_SANITY_PROJECT_ID` (same value, `3auncj84`, for both staging and production)
+- Separate staging and production values for:
+  - `NEXT_PUBLIC_SANITY_PROJECT_ID`
   - `NEXT_PUBLIC_SANITY_DATASET`
   - `NEXT_PUBLIC_SANITY_API_VERSION`
   - `SANITY_WRITE_TOKEN`
@@ -90,8 +80,6 @@ Before proceeding, confirm you have:
 
 Do not put private tokens in `NEXT_PUBLIC_*` variables. `NEXT_PUBLIC_*` values are browser-visible.
 
-Because staging and production share one Sanity project, keep staging-only app secrets separate in the hosting environment even when the Sanity project ID is the same.
-
 ## Phase 1: Confirm Current Sanity State
 
 From the implementation worktree frontend directory:
@@ -99,51 +87,106 @@ From the implementation worktree frontend directory:
 ```bash
 cd /Users/dardan/Documents/lash-her-booking-helcim-integration/frontend
 
-npx sanity datasets list --project-id 3auncj84
+npx sanity dataset list --project-id 3auncj84
 ```
 
-Confirm the `staging` dataset exists. It is a normal dataset, not the alias target used by this workflow.
+Confirm whether `staging` is a dataset or a dataset alias:
+
+```bash
+npx sanity dataset alias list --project-id 3auncj84
+```
 
 Check dataset visibility:
 
 ```bash
-npx sanity datasets visibility get production --project-id 3auncj84
-npx sanity datasets visibility get staging --project-id 3auncj84
+npx sanity dataset visibility get production --project-id 3auncj84
+npx sanity dataset visibility get staging --project-id 3auncj84
 ```
 
 Recommended staging visibility is usually `private` unless there is a specific reason for public read access.
 
 ## Phase 2: Refresh Staging Content From Production
 
-Because `staging` is an existing dataset name, refresh it with export/import. Sanity Cloud Clone creates a new target dataset and is better suited to alias-based workflows; do not rely on it to overwrite the existing `staging` dataset directly.
+### Preferred: Cloud Clone
 
-First, export the current staging dataset as a rollback backup:
+If Sanity Cloud Clone is available for the project, use it. It is faster and more reliable than local export/import for larger datasets and assets.
+
+Create a fresh staging clone:
 
 ```bash
-npx sanity datasets export staging ./staging-backup-before-refresh.tar.gz \
+npx sanity dataset copy production staging-2026-05-10 \
   --project-id 3auncj84 \
-  --overwrite
+  --skip-history \
+  --skip-content-releases
 ```
 
-Then export production. Tarballs are preferred because they include assets by default and preserve asset references.
+If the copy is long-running, run detached:
+
+```bash
+npx sanity dataset copy production staging-2026-05-10 \
+  --project-id 3auncj84 \
+  --skip-history \
+  --skip-content-releases \
+  --detach
+```
+
+Then attach to the job when needed:
+
+```bash
+npx sanity dataset copy --attach <jobId> --project-id 3auncj84
+```
+
+After the copy completes, point the stable staging alias to the new clone.
+
+If the alias does not exist yet:
+
+```bash
+npx sanity dataset alias create staging staging-2026-05-10 --project-id 3auncj84
+```
+
+If the alias already exists:
+
+```bash
+npx sanity dataset alias link staging staging-2026-05-10 \
+  --project-id 3auncj84 \
+  --force
+```
+
+### Fallback: Export and Import
+
+If Cloud Clone is unavailable, use a full tarball export/import. Tarballs are preferred because they include assets by default and preserve asset references.
 
 Export production:
 
 ```bash
-npx sanity datasets export production ./production-export.tar.gz \
+npx sanity dataset export production ./production-export.tar.gz \
   --project-id 3auncj84 \
   --overwrite
 ```
 
-Import the production export into the existing `staging` dataset:
+Create the timestamped staging dataset:
 
 ```bash
-npx sanity datasets import ./production-export.tar.gz staging \
+npx sanity dataset create staging-2026-05-10 \
+  --project-id 3auncj84 \
+  --visibility private
+```
+
+Import the production export into staging:
+
+```bash
+npx sanity dataset import ./production-export.tar.gz staging-2026-05-10 \
   --project-id 3auncj84 \
   --replace
 ```
 
-The `--replace` flag intentionally replaces documents with matching IDs in `staging` so staging mirrors the exported production content. Treat any staging-only content as disposable before running this refresh.
+Point the stable alias at the imported dataset:
+
+```bash
+npx sanity dataset alias link staging staging-2026-05-10 \
+  --project-id 3auncj84 \
+  --force
+```
 
 ## Phase 3: Deploy the Current Schema to Staging
 
@@ -155,25 +198,25 @@ Deploy the worktree schema to the staging dataset:
 cd /Users/dardan/Documents/lash-her-booking-helcim-integration/frontend
 
 NEXT_PUBLIC_SANITY_PROJECT_ID=3auncj84 \
-NEXT_PUBLIC_SANITY_DATASET=staging \
+NEXT_PUBLIC_SANITY_DATASET=staging-2026-05-10 \
 NEXT_PUBLIC_SANITY_API_VERSION=2026-03-24 \
-npx sanity schemas deploy --workspace default
+npx sanity schema deploy --workspace default
 ```
 
 Verify the deployed schema list:
 
 ```bash
 NEXT_PUBLIC_SANITY_PROJECT_ID=3auncj84 \
-NEXT_PUBLIC_SANITY_DATASET=staging \
+NEXT_PUBLIC_SANITY_DATASET=staging-2026-05-10 \
 NEXT_PUBLIC_SANITY_API_VERSION=2026-03-24 \
-npx sanity schemas list
+npx sanity schema list
 ```
 
 If using Sanity-hosted Studio for staging, deploy that Studio build to the staging host:
 
 ```bash
 NEXT_PUBLIC_SANITY_PROJECT_ID=3auncj84 \
-NEXT_PUBLIC_SANITY_DATASET=staging \
+NEXT_PUBLIC_SANITY_DATASET=staging-2026-05-10 \
 NEXT_PUBLIC_SANITY_API_VERSION=2026-03-24 \
 npx sanity deploy --url <staging-studio-host> --schema-required
 ```
@@ -261,7 +304,7 @@ cd /Users/dardan/Documents/lash-her-booking-helcim-integration/frontend
 NEXT_PUBLIC_SANITY_PROJECT_ID=3auncj84 \
 NEXT_PUBLIC_SANITY_DATASET=production \
 NEXT_PUBLIC_SANITY_API_VERSION=2026-03-24 \
-npx sanity schemas deploy --workspace default
+npx sanity schema deploy --workspace default
 ```
 
 If using Sanity-hosted production Studio:
@@ -315,11 +358,11 @@ Use only when the changed document set is known and safe to replace.
 Example:
 
 ```bash
-npx sanity datasets export staging ./booking-content.tar.gz \
+npx sanity dataset export staging ./booking-content.tar.gz \
   --project-id 3auncj84 \
   --types bookingSettings,sellableProduct
 
-npx sanity datasets import ./booking-content.tar.gz production \
+npx sanity dataset import ./booking-content.tar.gz production \
   --project-id 3auncj84 \
   --replace
 ```
@@ -335,11 +378,11 @@ This replaces broad production content with staging content and can overwrite pr
 Only use this if production is intentionally frozen and everyone agrees staging is the complete source of truth:
 
 ```bash
-npx sanity datasets export staging ./staging-export.tar.gz \
+npx sanity dataset export staging ./staging-export.tar.gz \
   --project-id 3auncj84 \
   --overwrite
 
-npx sanity datasets import ./staging-export.tar.gz production \
+npx sanity dataset import ./staging-export.tar.gz production \
   --project-id 3auncj84 \
   --replace
 ```
@@ -378,8 +421,6 @@ Even after this change, prefer explicit environment variables in release command
 
 - Treat production-to-staging copy as a refresh operation.
 - Treat staging-to-production as code promotion plus targeted content migration.
-- Treat `production` and `staging` as separate datasets inside the same Sanity project, not as separate Sanity projects.
-- Remember that project-level Sanity settings are shared across both datasets.
 - Never expose Sanity write tokens, form tokens, deploy tokens, Helcim tokens, Google secrets, Upstash tokens, or encryption keys in browser-visible variables.
 - Do not run the legacy `npm run migrate` script casually; it is a Strapi-to-Sanity migration path, not a staging refresh tool.
 - Before any production content import, export production as a backup tarball.
@@ -394,13 +435,13 @@ Even after this change, prefer explicit environment variables in release command
 Before staging refresh:
 
 - [ ] Confirm production dataset is `production`.
-- [ ] Confirm staging dataset is named `staging` inside project `3auncj84`.
+- [ ] Confirm staging alias/dataset strategy.
 - [ ] Confirm Sanity permissions and token availability.
-- [ ] Confirm staging app secrets are separate from production app secrets even though both use project `3auncj84`.
+- [ ] Confirm staging secrets are separate from production secrets.
 
 After staging refresh:
 
-- [ ] Confirm `staging` contains the fresh production copy.
+- [ ] Confirm `staging` points to the fresh production copy.
 - [ ] Confirm staging Studio targets `staging`.
 - [ ] Confirm production content appears in staging.
 - [ ] Deploy current worktree schema to staging.

@@ -43,8 +43,8 @@ The Google Calendar booking system requires these server-side environment variab
 - `GOOGLE_CLIENT_SECRET`
 - `GOOGLE_REDIRECT_URI`
 - `BOOKING_ADMIN_SETUP_SECRET`
-- `UPSTASH_REDIS_REST_URL`
-- `UPSTASH_REDIS_REST_TOKEN`
+- `KV_REST_API_URL`
+- `KV_REST_API_TOKEN`
 - `RESEND_API_KEY`
 - `FROM_EMAIL`
 - `SANITY_FORM_TOKEN`

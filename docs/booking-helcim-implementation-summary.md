@@ -64,12 +64,13 @@ Important intentional non-goals from the booking design remain unimplemented:
 
 ## Implemented Helcim Checkout
 
-The checkout implementation adds a public shop at `/shop` and a confirmation page at `/shop/confirmation`.
+The checkout implementation exposes the public product catalog at `/products`, product detail pages at `/products/[slug]`, and a confirmation page at `/products/confirmation`.
 
 Implemented surfaces:
 
-- `frontend/src/app/(site)/shop/page.tsx`
-- `frontend/src/app/(site)/shop/confirmation/page.tsx`
+- `frontend/src/app/(site)/products/page.tsx`
+- `frontend/src/app/(site)/products/[slug]/page.tsx`
+- `frontend/src/app/(site)/products/confirmation/page.tsx`
 - `frontend/src/components/commerce/product-card.tsx`
 - `frontend/src/components/commerce/cart-panel.tsx`
 - `frontend/src/components/commerce/helcim-pay-button.tsx`
