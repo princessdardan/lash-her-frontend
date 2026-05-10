@@ -2,6 +2,11 @@ import { test, expect } from '@playwright/test';
 import { getPerformanceMetrics, waitForNetworkIdle } from './utils/test-helpers';
 import { setupApiMocks } from './utils/api-mocks';
 
+type ChromiumPerformanceMemory = {
+  usedJSHeapSize: number;
+  jsHeapSizeLimit: number;
+};
+
 test.describe('Performance Tests', () => {
   test.beforeEach(async ({ page }) => {
     await setupApiMocks(page);
@@ -195,12 +200,18 @@ test.describe('Performance Tests', () => {
 
     // Get JavaScript heap size
     const metrics = await page.evaluate(() => {
-      return (performance as any).memory
-        ? {
-            usedJSHeapSize: (performance as any).memory.usedJSHeapSize,
-            jsHeapSizeLimit: (performance as any).memory.jsHeapSizeLimit,
-          }
-        : null;
+      const performanceWithMemory = performance as Performance & {
+        memory?: ChromiumPerformanceMemory;
+      };
+
+      if (!performanceWithMemory.memory) {
+        return null;
+      }
+
+      return {
+        usedJSHeapSize: performanceWithMemory.memory.usedJSHeapSize,
+        jsHeapSizeLimit: performanceWithMemory.memory.jsHeapSizeLimit,
+      };
     });
 
     if (metrics) {

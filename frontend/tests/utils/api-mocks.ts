@@ -87,7 +87,7 @@ export async function setupApiMocks(page: Page) {
  * Setup API mocks with custom menu data
  * Useful for testing specific menu configurations
  */
-export async function setupApiMocksWithCustomMenu(page: Page, customMenuData: any) {
+export async function setupApiMocksWithCustomMenu(page: Page, customMenuData: typeof menuData) {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:1337';
 
   await page.route(`${apiUrl}/api/main-menu*`, async (route) => {
