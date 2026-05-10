@@ -37,8 +37,6 @@
     "googleapis": "^144.0.0",
     "lucide-react": "^0.577.0",
     "motion": "^12.36.0",
-    "motion-plus": "https://api.motion.dev/registry.tgz?package=motion-plus&version=2.0.2&token=__MOTION_DEV_TOKEN__",
-    "motion-studio": "https://api.motion.dev/registry.tgz?package=motion-studio&version=3.0.2&token=__MOTION_DEV_TOKEN__",
     "next": "^16.1.6",
     "next-sanity": "^11.6.12",
     "react": "^18.3.1",
