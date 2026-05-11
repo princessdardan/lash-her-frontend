@@ -70,18 +70,6 @@ export const structure: StructureResolver = (S) =>
               S.documentTypeListItem("sellableProduct").title("Sellable Products"),
             ])
         ),
-      S.divider(),
-      // ---- ORDERS ----
-      S.listItem()
-        .title("Orders")
-        .child(
-          S.list()
-            .title("Orders")
-            .items([
-              S.documentTypeListItem("checkoutOrder").title("Checkout Orders"),
-            ])
-        ),
-      S.divider(),
       // ---- SUBMISSIONS ----
       S.listItem()
         .title("Submissions")

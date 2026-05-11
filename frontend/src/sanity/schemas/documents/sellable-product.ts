@@ -1,4 +1,4 @@
-import { defineField, defineType } from "sanity";
+import { defineField, defineType, defineArrayMember } from "sanity";
 
 export const sellableProduct = defineType({
   name: "sellableProduct",
@@ -16,6 +16,11 @@ export const sellableProduct = defineType({
       title: "Description",
       type: "text",
       validation: (Rule) => Rule.required(),
+    }),
+    defineField({
+      name: "shortDescription",
+      title: "Short Description",
+      type: "text",
     }),
     defineField({
       name: "slug",
@@ -70,6 +75,24 @@ export const sellableProduct = defineType({
       validation: (Rule) => Rule.required(),
     }),
     defineField({
+      name: "availabilityLabel",
+      title: "Availability Label",
+      type: "string",
+      description: "e.g., 'In Stock', 'Out of Stock', 'Pre-order'",
+    }),
+    defineField({
+      name: "fulfillmentNote",
+      title: "Fulfillment Note",
+      type: "text",
+      description: "e.g., 'Available for pickup only'",
+    }),
+    defineField({
+      name: "displayOrder",
+      title: "Display Order",
+      type: "number",
+      initialValue: 0,
+    }),
+    defineField({
       name: "image",
       title: "Image",
       type: "image",
@@ -84,6 +107,53 @@ export const sellableProduct = defineType({
         }),
       ],
     }),
+    defineField({
+      name: "gallery",
+      title: "Gallery Images",
+      type: "array",
+      of: [
+        defineArrayMember({
+          type: "image",
+          options: { hotspot: true },
+          fields: [
+            defineField({ name: "alt", title: "Alt text", type: "string" }),
+          ],
+        }),
+      ],
+    }),
+    defineField({
+      name: "detailSections",
+      title: "Detail Sections",
+      type: "array",
+      of: [
+        defineArrayMember({
+          type: "object",
+          fields: [
+            defineField({ name: "heading", title: "Heading", type: "string" }),
+            defineField({ name: "content", title: "Content", type: "text" }),
+          ],
+        }),
+      ],
+    }),
+    defineField({
+      name: "seo",
+      title: "SEO",
+      type: "object",
+      group: "seo",
+      fields: [
+        defineField({ name: "title", title: "SEO Title", type: "string" }),
+        defineField({ name: "description", title: "SEO Description", type: "text" }),
+        defineField({
+          name: "image",
+          title: "SEO Image",
+          type: "image",
+          options: { hotspot: true },
+        }),
+      ],
+    }),
+  ],
+  groups: [
+    { name: "seo", title: "SEO" },
   ],
   preview: {
     select: {
