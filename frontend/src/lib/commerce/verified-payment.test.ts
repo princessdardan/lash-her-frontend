@@ -132,7 +132,7 @@ test("persistVerifiedPayment logs reconciliation details when persistence fails"
       logs.push({ message, ...context });
     },
     markPaid: async () => {
-      throw new Error("Sanity write failed");
+      throw new Error("Private order write failed");
     },
     orderId: "lh-order",
     transactionId: "txn_123",
@@ -141,7 +141,7 @@ test("persistVerifiedPayment logs reconciliation details when persistence fails"
   assert.equal(result, false);
   assert.deepEqual(logs, [
     {
-      error: "Sanity write failed",
+      error: "Private order write failed",
       message: "[checkout] Verified payment could not be persisted",
       orderId: "lh-order",
       transactionId: "txn_123",

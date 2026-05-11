@@ -7,7 +7,7 @@ import { checkBrokenImages } from './utils/test-helpers';
  * No Strapi API mocks — the site now reads from Sanity CDN directly.
  */
 
-const FALLBACK_SLUG = 'classic-lash-training';
+const FALLBACK_SLUG = 'lash-designing-1-1-training';
 
 /**
  * Discover a training program detail URL from /training, or fall back to a known slug.
@@ -29,7 +29,7 @@ async function getProgramUrl(page: import('@playwright/test').Page): Promise<str
 }
 
 test.describe('Training Program Detail Page — Rich Text Rendering (MIG-03)', () => {
-  test('should load a training program detail page without JS errors', async ({ page }) => {
+  test('should load a training program detail page without JS errors and not be a 404', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => {
       errors.push(error.message);
@@ -40,7 +40,50 @@ test.describe('Training Program Detail Page — Rich Text Rendering (MIG-03)', (
     await page.waitForLoadState('networkidle');
 
     await expect(page.locator('main')).toBeVisible();
+    await expect(page.getByRole('heading', { name: /page not found/i })).toHaveCount(0);
     expect(errors).toHaveLength(0);
+  });
+
+  test('should render structured detail fields if present', async ({ page }) => {
+    const url = await getProgramUrl(page);
+    await page.goto(url);
+    await page.waitForLoadState('networkidle');
+
+    const main = page.locator('main');
+    await expect(main).toBeVisible();
+
+    const hasStructuredDetails = await page.locator('[data-structured-details="true"]').count() > 0;
+
+    if (hasStructuredDetails) {
+      const heading = page.locator('h2.section-heading');
+      if (await heading.count() > 0) {
+        await expect(heading.first()).toBeVisible();
+      }
+
+      const factList = page.locator('ul.fact-list');
+      if (await factList.count() > 0) {
+        await expect(factList).toBeVisible();
+      }
+
+      const cta = page.locator('a.primary-cta');
+      if (await cta.count() > 0) {
+        await expect(cta).toBeVisible();
+      }
+
+      const tabs = page.locator('button[role="tab"]');
+      if (await tabs.count() > 1) {
+        const firstTab = tabs.nth(0);
+        const secondTab = tabs.nth(1);
+
+        await expect(firstTab).toHaveAttribute('aria-selected', 'true');
+        await expect(secondTab).toHaveAttribute('aria-selected', 'false');
+
+        await secondTab.click();
+
+        await expect(firstTab).toHaveAttribute('aria-selected', 'false');
+        await expect(secondTab).toHaveAttribute('aria-selected', 'true');
+      }
+    }
   });
 
   test('should render at least one paragraph of text inside main (Portable Text body)', async ({ page }) => {
