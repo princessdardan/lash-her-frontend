@@ -1,5 +1,7 @@
 # HelcimPay.js Checkout Implementation Plan
 
+> **SUPERSEDED CHECKOUT STORAGE WARNING:** This historical plan is superseded by the [2026-05-10 Private Checkout Storage Security Remediation Plan](./2026-05-10-private-checkout-storage-security-remediation.md). Do not follow the Sanity `checkoutOrder` storage steps below. Checkout transaction history, customer PII, checkout tokens, Helcim invoice identifiers, Helcim transaction identifiers, payment reconciliation records, and encrypted Helcim secret tokens must be stored in a private PostgreSQL database, not public Sanity documents or Studio Orders.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a custom Lash Her storefront checkout where Sanity/app catalog data drives sellable items and Helcim handles invoice creation plus HelcimPay.js payment processing.

@@ -13,6 +13,8 @@ The implementation combines two originally separate efforts:
 - A scheduling-only Google Calendar booking system.
 - A Sanity-backed shop and HelcimPay.js checkout flow.
 
+**Note:** The 2026-05-10 security remediation supersedes the original Sanity-based order storage. Checkout orders must be moved to a private PostgreSQL database to protect customer PII and transaction history.
+
 The two features are intentionally separate. Booking does not take payments. Checkout does not create Google Calendar bookings.
 
 ## Source Plans
@@ -78,7 +80,8 @@ Implemented surfaces:
 - `frontend/src/app/api/checkout/validate-payment/route.ts`
 - `frontend/src/lib/commerce/*`
 - `frontend/src/sanity/schemas/documents/sellable-product.ts`
-- `frontend/src/sanity/schemas/documents/checkout-order.ts`
+- `frontend/src/lib/private-db/*`
+- `frontend/src/app/api/webhooks/helcim/route.ts`
 - `frontend/tests/checkout.spec.ts`
 
 Core behavior:
@@ -87,15 +90,15 @@ Core behavior:
 - Supported currency is CAD.
 - Cart validation enforces whole-number quantities from 1 to 10.
 - Server-side checkout reloads Sanity products by ID and rebuilds invoice line items from current catalog data.
-- The checkout API creates a Helcim invoice first, initializes a HelcimPay.js session, then stores a pending Sanity `checkoutOrder` reconciliation record.
+- The checkout API creates a Helcim invoice first, initializes a HelcimPay.js session, then stores a pending private checkout reconciliation record in a server-side PostgreSQL database after remediation.
 - Helcim API credentials stay server-side through `getHelcimApiToken()`.
 - Browser receives only the HelcimPay.js `checkoutToken`.
 - HelcimPay.js is loaded from `https://secure.helcim.app/helcim-pay/services/start.js`.
 - The client listens for `helcim-pay-js-${checkoutToken}` messages from `https://secure.helcim.app`.
 - Successful Helcim iframe payloads are forwarded to `/api/checkout/validate-payment`.
 - Validation checks the response hash, approved status, transaction ID, amount, currency, and invoice identity.
-- Pending order secret tokens are encrypted before being stored in Sanity using `CHECKOUT_SECRET_ENCRYPTION_KEY`.
-- Validated payments mark the `checkoutOrder` as `paid`; failed verification marks it as `verification_failed`.
+- Pending order secret tokens are encrypted before being stored in the private database using `CHECKOUT_SECRET_ENCRYPTION_KEY`.
+- Validated payments mark the private checkout record as `paid`; failed verification marks it as `verification_failed`.
 
 Intentional first-release non-goals remain unimplemented:
 
@@ -109,8 +112,8 @@ The integration branch merges booking and checkout additions into shared files:
 - `frontend/src/data/loaders.ts` includes `getBookingSettings`, `getSellableProducts`, and `getSellableProductsByIds`.
 - `frontend/src/sanity/env.ts` includes booking env helpers, Helcim token helper, and checkout secret encryption key helper.
 - `frontend/src/app/api/revalidate/route.ts` includes cache tags for `bookingSettings` and `sellableProduct`.
-- `frontend/src/sanity/schemas/index.ts` registers booking and checkout schemas.
-- `frontend/src/sanity/structure/index.ts` exposes Booking, Sellable Products, and Checkout Orders in Studio.
+- `frontend/src/sanity/schemas/index.ts` registers booking and catalog schemas.
+- `frontend/src/sanity/structure/index.ts` should expose Booking and Sellable Products in Studio. Checkout Orders belong in private storage and must not be exposed in Studio after remediation.
 - `frontend/src/types/index.ts` exports booking types and commerce document types.
 
 ## Required Environment Variables
@@ -129,15 +132,17 @@ Booking:
 
 Checkout:
 
+- `CHECKOUT_DATABASE_URL`
 - `HELCIM_API_TOKEN`
 - `CHECKOUT_SECRET_ENCRYPTION_KEY`
+- `HELCIM_WEBHOOK_VERIFIER_TOKEN` if Helcim webhooks are enabled.
 
-`CHECKOUT_SECRET_ENCRYPTION_KEY` must be a base64-encoded 32-byte key. Agents should update `frontend/.env.local.example` and README docs before shipping if those variables are still missing there.
+`CHECKOUT_SECRET_ENCRYPTION_KEY` must be a base64-encoded 32-byte key. `CHECKOUT_DATABASE_URL`, Helcim tokens, and encryption keys must remain server-only and must never use `NEXT_PUBLIC_*` names.
 
 ## Known Gaps and Follow-Up Risks
 
 - The requested worktree was referred to as `booking-helcim-itegration`, but the actual path is `.worktrees/booking-helcim-integration`.
-- `frontend/.env.local.example` did not list `HELCIM_API_TOKEN` or `CHECKOUT_SECRET_ENCRYPTION_KEY` during audit.
+- Staging and production Neon connection strings still need to be configured in deployment environments before private checkout storage can be smoke-tested against a real database.
 - The checkout confirmation page says an order confirmation email will be sent, but no checkout-specific email sender was found.
 - Playwright tests mock booking and checkout API calls, but the pages still depend on Sanity server-rendered data. E2E coverage is therefore not fully self-contained without seeded Sanity content.
 - There are helper unit tests and browser tests, but no direct route-handler unit tests for `/api/checkout`, `/api/checkout/validate-payment`, or `/api/booking/*`.
@@ -185,7 +190,8 @@ When extending checkout:
 
 - Never expose Helcim API credentials or `secretToken` to the browser.
 - Build line-item snapshots from validated Sanity catalog data, not client-supplied prices.
-- Keep `checkoutOrder` as a reconciliation record, not a full ecommerce order-management system.
+- Keep `checkoutOrder` as a private database reconciliation record, not a full ecommerce order-management system.
+- Do not store transaction history or customer PII in public Sanity datasets.
 - Validate Helcim hash and payment semantics before marking an order paid.
 
 When merging:

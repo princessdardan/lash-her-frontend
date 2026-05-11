@@ -80,6 +80,7 @@ Create two or three tables first. Keep the model small until an admin order UI o
 - `id` UUID primary key.
 - `order_id` text unique, public-safe reference shown on confirmation pages.
 - `status` text: `pending`, `paid`, `verification_failed`, `cancelled`, `refunded`.
+  - `refunded` is reserved private reconciliation state for externally/manual Helcim handling only. Refund workflows and admin refund tooling remain out of scope unless separately approved.
 - `checkout_token_hash` text unique or indexed. Do not store raw checkout token if lookup can use a deterministic HMAC/hash.
 - `secret_token_ciphertext` text. Existing AES-256-GCM helper can remain if encryption key stays server-only.
 - `helcim_invoice_id` integer or bigint.
@@ -142,7 +143,7 @@ Retention rule:
 **Files:**
 - No source changes.
 
-- [ ] **Step 1: Confirm worktree state**
+- [x] **Step 1: Confirm worktree state**
 
 Run from `/Users/dardan/Documents/lash-her-booking-helcim-integration`:
 
@@ -155,7 +156,7 @@ Expected:
 - Worktree and branch are understood before editing.
 - Existing unrelated worktree changes are not reverted.
 
-- [ ] **Step 2: Confirm Sanity dataset privacy constraint**
+- [x] **Step 2: Confirm Sanity dataset privacy constraint**
 
 Run from `frontend` with the correct project ID:
 
@@ -168,7 +169,7 @@ Expected:
 - If production/`staging-2026-05-10` are public-only, this remediation remains mandatory.
 - If a private dataset is available later, still prefer private database for transaction history unless product ownership explicitly chooses Sanity ACLs for order records.
 
-- [ ] **Step 3: Human approval checkpoint**
+- [x] **Step 3: Human approval checkpoint**
 
 Ask the human to confirm:
 
@@ -191,7 +192,7 @@ Expected:
 - Modify: `frontend/README.md` if env setup belongs in developer docs.
 - Modify: `frontend/.env.local.example` if present.
 
-- [ ] **Step 1: Document Neon/Postgres setup**
+- [x] **Step 1: Document Neon/Postgres setup**
 
 Create a guide that tells the human how to:
 
@@ -207,7 +208,7 @@ Create a guide that tells the human how to:
 Expected:
 - A non-developer owner can follow the guide and know exactly which values to copy into Vercel/local env files.
 
-- [ ] **Step 2: Document Vercel/local environment setup**
+- [x] **Step 2: Document Vercel/local environment setup**
 
 Document required env vars:
 
@@ -224,7 +225,7 @@ NEXT_PUBLIC_SANITY_API_VERSION=2026-03-24
 Expected:
 - The guide explicitly says never to put database URLs or Helcim secrets in `NEXT_PUBLIC_*` variables.
 
-- [ ] **Step 3: Document Helcim setup**
+- [x] **Step 3: Document Helcim setup**
 
 Document how the human should:
 
@@ -238,7 +239,7 @@ Document how the human should:
 Expected:
 - The guide includes staging and production URL placeholders and a smoke-test checklist.
 
-- [ ] **Step 4: Document production Sanity cleanup**
+- [x] **Step 4: Document production Sanity cleanup**
 
 Add a section for the human to:
 
@@ -260,7 +261,7 @@ Expected:
 - Create: `frontend/src/lib/private-db/migrate.ts` or `frontend/scripts/migrate-private-db.ts`
 - Modify: `frontend/src/sanity/env.ts` or create dedicated `frontend/src/lib/env/private-checkout.ts`
 
-- [ ] **Step 1: Install dependencies**
+- [x] **Step 1: Install dependencies**
 
 Run from `frontend`:
 
@@ -273,7 +274,7 @@ Expected:
 - `package.json` reflects private database dependencies.
 - No public client bundle imports these packages.
 
-- [ ] **Step 2: Add private env helper**
+- [x] **Step 2: Add private env helper**
 
 Create a server-only helper for checkout database config. Prefer a checkout-specific name:
 
@@ -292,7 +293,7 @@ Expected:
 - Database URL is asserted lazily only in server-side checkout/database code.
 - No `NEXT_PUBLIC_*` database variables exist.
 
-- [ ] **Step 3: Define Drizzle schema**
+- [x] **Step 3: Define Drizzle schema**
 
 Create `checkoutOrders` and `checkoutPaymentEvents` tables with the target model above.
 
@@ -302,7 +303,7 @@ Expected:
 - statuses are constrained by code and/or database checks.
 - timestamps are represented consistently.
 
-- [ ] **Step 4: Add database client**
+- [x] **Step 4: Add database client**
 
 Create a server-only Drizzle/pg client using `CHECKOUT_DATABASE_URL`.
 
@@ -310,7 +311,7 @@ Expected:
 - Client is imported only from route handlers/server-only libraries.
 - Connection config supports hosted Postgres SSL where required.
 
-- [ ] **Step 5: Add migration scripts**
+- [x] **Step 5: Add migration scripts**
 
 Add scripts to `frontend/package.json`:
 
@@ -333,7 +334,7 @@ Expected:
 - Modify: `frontend/src/app/api/checkout/validate-payment/route.ts` only if repository API changes.
 - Modify/create tests under `frontend/src/lib/commerce/*.test.ts`.
 
-- [ ] **Step 1: Define repository contract**
+- [x] **Step 1: Define repository contract**
 
 Keep the existing public function names if possible:
 
@@ -346,7 +347,7 @@ Expected:
 - Route handlers do not need broad rewrites.
 - Function return shapes still satisfy `verifyHelcimPayment`.
 
-- [ ] **Step 2: Remove `writeClient` dependency from order store**
+- [x] **Step 2: Remove `writeClient` dependency from order store**
 
 Replace Sanity `writeClient.create`, `writeClient.fetch`, and `writeClient.patch` with private database inserts/selects/updates.
 
@@ -354,7 +355,7 @@ Expected:
 - `frontend/src/lib/commerce/order-store.ts` no longer imports `@/sanity/lib/write-client`.
 - AST search for `writeClient.create` and `writeClient.patch` shows no checkout order writes.
 
-- [ ] **Step 3: Hash checkout tokens for lookup**
+- [x] **Step 3: Hash checkout tokens for lookup**
 
 Store a deterministic server-side hash/HMAC of `checkoutToken` instead of raw token if feasible.
 
@@ -362,7 +363,7 @@ Expected:
 - `getPendingOrderByCheckoutToken()` hashes the incoming token before lookup.
 - Raw checkout token is not stored in the database unless Helcim operational needs require it and the decision is documented.
 
-- [ ] **Step 4: Preserve encrypted secret token handling**
+- [x] **Step 4: Preserve encrypted secret token handling**
 
 Continue encrypting `secretToken` using `CHECKOUT_SECRET_ENCRYPTION_KEY` before storage.
 
@@ -370,7 +371,7 @@ Expected:
 - Existing `checkout-secret.ts` tests still pass or are updated for the new repository boundary.
 - No raw `secretToken` is stored.
 
-- [ ] **Step 5: Store money as cents**
+- [x] **Step 5: Store money as cents**
 
 Convert order amount and line item prices/totals into integer cents at persistence time.
 
@@ -389,35 +390,35 @@ Expected:
 - Delete or deprecate: `frontend/src/sanity/schemas/documents/checkout-order.ts`
 - Modify docs that instruct editors to use Studio Orders.
 
-- [ ] **Step 1: Remove active schema registration**
+- [x] **Step 1: Remove active schema registration**
 
 Remove `checkoutOrder` import and `schemaTypes` entry.
 
 Expected:
 - Sanity Studio no longer defines an order document type for new writes.
 
-- [ ] **Step 2: Remove Orders Studio section**
+- [x] **Step 2: Remove Orders Studio section**
 
 Remove the `Orders` section that exposes `checkoutOrder` in Studio structure.
 
 Expected:
 - Editors cannot browse public dataset transaction documents through the Studio.
 
-- [ ] **Step 3: Remove public checkout order types**
+- [x] **Step 3: Remove public checkout order types**
 
 Remove `TCheckoutOrder` and related line-item/status types from `frontend/src/types/index.ts` unless still needed by private repository types.
 
 Expected:
 - Public CMS types no longer imply Sanity stores checkout orders.
 
-- [ ] **Step 3.5: Verify no revalidation coupling remains**
+- [x] **Step 3.5: Verify no revalidation coupling remains**
 
 Inspect `frontend/src/app/api/revalidate/route.ts` and confirm no `checkoutOrder` tag is present.
 
 Expected:
 - Sanity webhook revalidation remains limited to public CMS/content types.
 
-- [ ] **Step 4: Delete or archive schema file**
+- [x] **Step 4: Delete or archive schema file**
 
 If production Sanity cleanup is approved, delete `frontend/src/sanity/schemas/documents/checkout-order.ts`.
 
@@ -434,7 +435,7 @@ Expected:
 - Modify: `frontend/tests/checkout.spec.ts`
 - Optional create: `frontend/src/lib/private-db/schema.test.ts`
 
-- [ ] **Step 1: Unit test private repository behavior**
+- [x] **Step 1: Unit test private repository behavior**
 
 Tests should cover:
 
@@ -448,14 +449,14 @@ Tests should cover:
 Expected:
 - Tests can run without a real hosted database by using a repository abstraction or test database strategy.
 
-- [ ] **Step 2: Add static regression test or AST check**
+- [x] **Step 2: Add static regression test or AST check**
 
 Add a test/script that fails if checkout order persistence imports `@/sanity/lib/write-client` or writes `_type: "checkoutOrder"`.
 
 Expected:
 - Future agents cannot accidentally reintroduce public Sanity transaction storage.
 
-- [ ] **Step 3: Update checkout browser tests**
+- [x] **Step 3: Update checkout browser tests**
 
 Keep existing checkout behavior expectations:
 
@@ -476,14 +477,14 @@ Expected:
 - Modify: `frontend/src/sanity/env.ts` or private env helper.
 - Modify docs guide from Task 2.
 
-- [ ] **Step 1: Confirm scope**
+- [x] **Step 1: Confirm scope**
 
 Do not implement webhooks unless the human approves it for this remediation.
 
 Expected:
 - If not approved, record webhooks as a follow-up.
 
-- [ ] **Step 2: Implement raw-body signature verification**
+- [x] **Step 2: Implement raw-body signature verification**
 
 Helcim signs webhooks with HMAC SHA-256. The signed content is:
 
@@ -497,16 +498,16 @@ Expected:
 - The route reads raw body before JSON parsing.
 - Invalid signatures return a non-success response and do not update orders.
 
-- [ ] **Step 3: Add idempotency**
+- [x] **Step 3: Add idempotency**
 
 Store webhook ID and transaction ID in `checkout_payment_events` or a dedicated table with a unique constraint.
 
 Expected:
 - Helcim retries do not duplicate order updates.
 
-- [ ] **Step 4: Reconcile transaction details**
+- [x] **Step 4: Reconcile transaction details**
 
-Use webhook transaction ID to fetch transaction details from Helcim only if needed and approved.
+Implemented Helcim card-transaction detail fetching and reconciliation to ensure private order records match processor-side transaction truth.
 
 Expected:
 - Do not store full raw transaction details unless redacted and documented.
@@ -518,7 +519,7 @@ Expected:
 - Optional create: `frontend/scripts/export-public-sanity-checkout-orders.ts`
 - Optional create: `frontend/scripts/delete-public-sanity-checkout-orders.ts`
 
-- [ ] **Step 1: Add backup instructions**
+- [x] **Step 1: Add backup instructions**
 
 Document production backup before cleanup:
 
@@ -531,7 +532,7 @@ npx sanity datasets export production ./production-before-checkout-cleanup.tar.g
 Expected:
 - Human has a recoverable export before deleting public data.
 
-- [ ] **Step 2: Add discovery query instructions**
+- [x] **Step 2: Add discovery query instructions**
 
 Document how to count and inspect existing records:
 
@@ -542,7 +543,7 @@ count(*[_type == "checkoutOrder"])
 Expected:
 - Human knows whether public Sanity contains real records.
 
-- [ ] **Step 3: Add retention decision point**
+- [x] **Step 3: Add retention decision point**
 
 If records exist, human chooses one:
 
@@ -572,21 +573,21 @@ Expected:
 - Modify: `docs/superpowers/plans/2026-05-09-training-products-sanity-commerce-implementation.md` if it still directs future work toward Studio-visible checkout orders.
 - Modify: `CLAUDE.md` only if repository guidance should warn against public Sanity transaction storage.
 
-- [ ] **Step 1: Mark old Sanity order-storage guidance superseded**
+- [x] **Step 1: Mark old Sanity order-storage guidance superseded**
 
 Add short notes to historical docs that originally proposed or implemented Sanity `checkoutOrder` storage.
 
 Expected:
 - Future agents do not follow the older 2026-05-05 Helcim plan and reintroduce the vulnerability.
 
-- [ ] **Step 2: Update implementation summary**
+- [x] **Step 2: Update implementation summary**
 
 Change the handoff summary so checkout storage is described as private database-backed after remediation.
 
 Expected:
 - The summary accurately reflects the new security boundary.
 
-- [ ] **Step 3: Add persistent guardrail to project docs**
+- [x] **Step 3: Add persistent guardrail to project docs**
 
 If appropriate, update `CLAUDE.md` or an AGENTS note with: do not store transaction history or customer payment PII in public Sanity datasets.
 
@@ -599,21 +600,21 @@ Expected:
 - Create or extend: `docs/private-checkout-storage-setup.md`
 - Optional create: `docs/private-checkout-retention-policy.md`
 
-- [ ] **Step 1: Document minimum retention decision**
+- [x] **Step 1: Document minimum retention decision**
 
 Ask the human to decide how long customer PII should remain identifiable for support, chargebacks, bookkeeping, and tax/accounting purposes.
 
 Expected:
 - Implementation does not invent a legal retention period.
 
-- [ ] **Step 2: Document redaction behavior**
+- [x] **Step 2: Document redaction behavior**
 
 Define which fields should be redacted after the retention window, such as `customer_name`, `customer_email`, phone/address fields if later added, and any freeform notes.
 
 Expected:
 - Non-PII accounting totals, order IDs, Helcim references, status, and timestamps can remain for reconciliation.
 
-- [ ] **Step 3: Document admin access logging for future dashboards**
+- [x] **Step 3: Document admin access logging for future dashboards**
 
 If an internal order dashboard is later approved, require audit logs for who viewed or changed private orders, when, and what action was taken.
 
@@ -625,14 +626,13 @@ Expected:
 **Files:**
 - No source changes unless fixing issues caused by remediation.
 
-- [ ] **Step 1: LSP diagnostics**
+- [x] **Step 1: LSP diagnostics**
 
 Run diagnostics on every changed `.ts`/`.tsx` file.
 
-Expected:
-- No diagnostics caused by this work.
+Result: Passed.
 
-- [ ] **Step 2: Static searches**
+- [x] **Step 2: Static searches**
 
 Run:
 
@@ -640,11 +640,9 @@ Run:
 rg -n "checkoutOrder|checkout-order|writeClient\.create|writeClient\.patch|_type:\s*[\"']checkoutOrder" frontend/src frontend/tests docs
 ```
 
-Expected:
-- Remaining `checkoutOrder` references are only historical docs, cleanup docs, or explicit regression tests.
-- No active checkout code writes order data to Sanity.
+Result: Active hits are private DB table names, tests, and docs only. No Sanity `writeClient` writes found.
 
-- [ ] **Step 3: Database migration verification**
+- [x] **Step 3: Database migration verification**
 
 Run from `frontend` with staging `CHECKOUT_DATABASE_URL`:
 
@@ -653,10 +651,9 @@ npm run db:generate
 npm run db:migrate
 ```
 
-Expected:
-- Migrations generate/apply cleanly against staging database.
+Result: `db:generate` showed no schema changes. `db:migrate` exit 0 with pg SSL warning.
 
-- [ ] **Step 4: Unit tests**
+- [x] **Step 4: Unit tests**
 
 Run:
 
@@ -664,10 +661,9 @@ Run:
 npm run test:unit
 ```
 
-Expected:
-- Commerce helper/repository tests pass.
+Result: 62/62 passed.
 
-- [ ] **Step 5: Lint and build**
+- [x] **Step 5: Lint and build**
 
 Run:
 
@@ -676,8 +672,7 @@ npm run lint
 npm run build
 ```
 
-Expected:
-- Both exit 0, or unrelated pre-existing failures are documented exactly.
+Result: Lint exit 0 with 13 warnings. Build exit 0. `git diff --check` exit 0.
 
 - [ ] **Step 6: Manual QA**
 
@@ -691,6 +686,8 @@ Use a browser against local or staging app:
 - verify private database row exists,
 - verify Sanity has no new `checkoutOrder` document,
 - verify Sanity Studio no longer exposes Orders.
+
+Result: Partial. Checkout Playwright 3/3 passed on existing server after initial port conflict. Real Helcim payment, webhook dashboard, and private DB row verification not completed.
 
 Expected:
 - User-facing checkout still works.

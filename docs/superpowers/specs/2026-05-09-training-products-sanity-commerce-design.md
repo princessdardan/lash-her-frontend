@@ -3,6 +3,8 @@
 Date: 2026-05-09
 Status: Draft partially clarified; training/content-model scope remains blocked on user clarification
 
+> **Superseded checkout-storage boundary:** Checkout storage/security guidance in this spec is superseded by `docs/superpowers/plans/2026-05-10-private-checkout-storage-security-remediation.md`. Sanity remains the public catalog/editorial CMS only. Checkout orders, customer PII, checkout tokens, payment reconciliation records, Helcim invoice identifiers, Helcim transaction identifiers, and encrypted Helcim secret tokens must not be stored in a public Sanity dataset or exposed through Sanity Studio.
+
 ## Purpose
 
 Design three Sanity-editable public surfaces in the `booking-helcim-integration` worktree:
@@ -28,7 +30,7 @@ Relevant implemented surfaces already exist in that worktree:
 - `frontend/src/types/index.ts`
 - `frontend/src/sanity/schemas/documents/training-program.ts`
 - `frontend/src/sanity/schemas/documents/sellable-product.ts`
-- `frontend/src/sanity/schemas/documents/checkout-order.ts`
+- Legacy/current-risk order schema slated for removal or unregistration by the 2026-05-10 private checkout storage remediation plan: `frontend/src/sanity/schemas/documents/checkout-order.ts`
 - `frontend/src/components/commerce/product-card.tsx`
 - `frontend/src/components/commerce/cart-panel.tsx`
 - `frontend/src/lib/commerce/*`
@@ -45,7 +47,7 @@ Design and implementation must also respect:
 - Next.js server components load Sanity data through `frontend/src/data/loaders.ts`.
 - Client components may handle interactions such as the referenced auto-advancing details section, cart state, or Helcim modal launch.
 - Helcim owns secure payment collection and payment records.
-- `checkoutOrder` is a reconciliation record, not a full ecommerce ERP.
+- Checkout reconciliation records are private server-side records stored in a PostgreSQL database, not Sanity documents, not public CMS content, and not Studio-editable records.
 
 No Helcim API token, checkout `secretToken`, price authority, inventory authority, or payment-status authority may move into client code.
 
@@ -158,7 +160,7 @@ Existing Helcim design remains authoritative:
 - Server reloads authoritative Sanity product data before creating invoices.
 - Client-provided totals, names, SKUs, quantities, availability, or payment status are untrusted.
 - Browser receives only `checkoutToken`.
-- `secretToken` stays server-side and encrypted in the reconciliation record.
+- `secretToken` stays server-side, is never stored raw, and if persisted is encrypted only in the private checkout datastore defined by the 2026-05-10 remediation plan.
 - Payment success is accepted only after hash and semantic validation.
 
 Official Helcim guidance supports this boundary:
@@ -178,7 +180,9 @@ Open Helcim decisions must be answered before implementation changes payment beh
 
 ## Content Editing Requirements
 
-All visible copy, section headings, product/program descriptions, images, pricing labels, CTA labels, availability display text, SEO title/description/images, and product/program detail items must be editable in Sanity Studio.
+All visible public copy, section headings, product/program descriptions, images, pricing labels, CTA labels, availability display text, SEO title/description/images, and product/program detail items must be editable in Sanity Studio.
+
+Sanity Studio editability applies only to public catalog, training, product, and editorial content. It does not include checkout orders, reconciliation records, payment metadata, Helcim invoice or transaction identifiers, checkout tokens, encrypted secret tokens, or customer PII.
 
 Implementation should not hard-code live content except fallback empty-state copy and developer-only error copy.
 
@@ -189,7 +193,7 @@ Implementation should not hard-code live content except fallback empty-state cop
 - Product info page renders one Sanity-managed product by slug with metadata and image handling.
 - Existing header, hero component contract, site shell, footer, and global navigation are not restyled merely to match the reference image.
 - Existing checkout server-side validation remains authoritative.
-- Sanity schema additions are mirrored in TypeScript types, GROQ projections, Studio structure, cache tags, route metadata, and tests.
+- Public Sanity schema additions are mirrored in TypeScript types, GROQ projections, Studio structure, cache tags, route metadata, and tests.
 - Any page with missing required content uses the project’s existing `notFound()` or empty-state conventions.
 - Browser tests cover catalog rendering, product detail rendering, and the training details interaction.
 
@@ -254,6 +258,7 @@ Implementation must not begin for still-unanswered scope areas until these are a
 - Do not build a general inventory management system.
 - Do not use Helcim as the product catalog or inventory source.
 - Do not expose Helcim secrets or trust client-side pricing.
+- Do not store checkout transaction history, customer PII, payment reconciliation records, checkout tokens, Helcim invoice/transaction IDs, or encrypted Helcim secret tokens in public Sanity or expose them through Studio.
 - Do not add customer accounts.
 - Do not add refunds, subscriptions, ACH-specific flows, Fee Saver, shipping calculators, or discount engines.
 - Do not restyle existing global header/hero/site shell to match the attached image.

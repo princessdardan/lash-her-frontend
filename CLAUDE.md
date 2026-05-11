@@ -52,6 +52,8 @@ Two forms (General Inquiry, Training Contact):
 
 ### Sanity
 
+**Checkout Security Guardrail:** Do not store checkout transaction history, customer PII, checkout tokens, Helcim invoice identifiers, Helcim transaction identifiers, payment reconciliation records, or encrypted Helcim secret tokens in public Sanity datasets or expose them through Studio. Use the private PostgreSQL database for sensitive checkout records.
+
 **Clients** (three, for separation of concerns):
 - `sanity/lib/client.ts` — read-only, CDN-enabled
 - `sanity/lib/write-client.ts` — server-only, token-authenticated, for mutations

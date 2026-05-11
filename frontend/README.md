@@ -52,3 +52,19 @@ The Google Calendar booking system requires these server-side environment variab
 Connect Nataliea's calendar by visiting `/api/booking/oauth/start?secret=<BOOKING_ADMIN_SETUP_SECRET>` in production and approving Google Calendar access. The connected calendar is configured in the Sanity `bookingSettings` singleton.
 
 Add a live-site entry point through the CMS menu or page CTAs with `/booking`, `/booking?type=training-call`, or `/booking?type=in-person-appointment` so visitors can reach the flow from the public site.
+
+## Checkout setup
+
+Checkout uses Sanity only for public catalog/editorial content. Sensitive checkout records must use private server-side storage; do not store transaction history, customer PII, checkout tokens, Helcim invoice or transaction identifiers, payment reconciliation records, or encrypted Helcim secret tokens in public Sanity datasets or expose them through Studio.
+
+Required server-side checkout environment variables:
+
+- `CHECKOUT_DATABASE_URL`
+- `CHECKOUT_SECRET_ENCRYPTION_KEY`
+- `HELCIM_API_TOKEN`
+
+Required to receive Helcim webhooks:
+
+- `HELCIM_WEBHOOK_VERIFIER_TOKEN`
+
+See `../docs/private-checkout-storage-setup.md` for database setup, migration, retention, and Sanity cleanup guidance.

@@ -10,6 +10,8 @@
 
 **Tech Stack:** Next.js 16 App Router, React 18, TypeScript strict, Sanity v4/next-sanity, Tailwind v4 CSS-first tokens, Framer Motion/Motion where already present, Helcim v2 API, HelcimPay.js, Playwright E2E, `tsx --test` unit tests.
 
+> **Superseded checkout-storage boundary:** Before implementing any checkout-related work from this plan, follow `docs/superpowers/plans/2026-05-10-private-checkout-storage-security-remediation.md`. Checkout storage is no longer a product/training TBD: it must use private server-side storage, not public Sanity documents or Studio Orders.
+
 ---
 
 ## Status and Blocker
@@ -23,7 +25,7 @@ This plan is intentionally blocked for any still-unanswered training/content-mod
 - Product detail route: `frontend/src/app/(site)/products/[slug]/page.tsx`
 - Product confirmation route: `frontend/src/app/(site)/products/confirmation/page.tsx`
 - Existing product schema: `frontend/src/sanity/schemas/documents/sellable-product.ts`
-- Existing order schema: `frontend/src/sanity/schemas/documents/checkout-order.ts`
+- Legacy/current-risk order schema slated for removal or unregistration by the 2026-05-10 private checkout storage remediation plan: `frontend/src/sanity/schemas/documents/checkout-order.ts`
 - Existing commerce UI: `frontend/src/components/commerce/product-card.tsx`, `frontend/src/components/commerce/cart-panel.tsx`, `frontend/src/components/commerce/helcim-pay-button.tsx`
 - Existing training detail route: `frontend/src/app/(site)/training-programs/[slug]/page.tsx`
 - Existing training schema: `frontend/src/sanity/schemas/documents/training-program.ts`
@@ -44,6 +46,7 @@ Before Task 1, replace every `TBD` with the approved answer.
 - Training schema strategy: `TBD: explicit fields, blocks, or hybrid`
 - SEO strategy: `TBD: reusable SEO object or simple fields`
 - Seed content: `TBD: yes/no`
+- Checkout storage: fixed by the 2026-05-10 remediation plan. Do not implement public Sanity `checkoutOrder` writes or Studio Orders exposure.
 
 If any `TBD` remains, stop and ask the user.
 
@@ -382,8 +385,9 @@ Ensure editors can find:
 - training page singleton,
 - training programs,
 - product catalog page singleton if approved,
-- sellable products,
-- checkout orders.
+- sellable products.
+
+Do not expose checkout orders in Sanity Studio. Studio sections are limited to public catalog and editorial content; checkout reconciliation belongs in private server-side PostgreSQL storage.
 
 Expected:
 - Singleton document IDs match schema type names.
@@ -475,6 +479,7 @@ Stop and ask the user if any of these occur:
 - product inventory/fulfillment rules are unclear,
 - route naming conflicts with existing navigation or SEO expectations,
 - implementation would require changing global header/hero styling beyond the requested pages.
+- any step would store checkout orders, customer PII, checkout tokens, Helcim invoice IDs, Helcim transaction IDs, encrypted secret tokens, or reconciliation records in public Sanity or expose them in Studio.
 
 ## Expected Commit Sequence After Approval
 

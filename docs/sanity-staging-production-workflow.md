@@ -76,8 +76,9 @@ Before proceeding, confirm you have:
   - `KV_REST_API_TOKEN`
   - `HELCIM_API_TOKEN`
   - `CHECKOUT_SECRET_ENCRYPTION_KEY`
+  - `CHECKOUT_DATABASE_URL`
 
-Do not put private tokens in `NEXT_PUBLIC_*` variables. `NEXT_PUBLIC_*` values are browser-visible.
+Do not put private tokens in `NEXT_PUBLIC_*` variables. `NEXT_PUBLIC_*` values are browser-visible. Checkout transaction history and customer PII must be stored in the private database, not Sanity. See [Private Checkout Storage Setup Guide](./private-checkout-storage-setup.md) for details.
 
 ## Phase 1: Confirm Current Sanity State
 
@@ -226,6 +227,7 @@ KV_REST_API_URL=<staging-kv-rest-api-url>
 KV_REST_API_TOKEN=<staging-kv-rest-api-token>
 HELCIM_API_TOKEN=<staging-helcim-token>
 CHECKOUT_SECRET_ENCRYPTION_KEY=<base64-encoded-32-byte-key>
+CHECKOUT_DATABASE_URL=<staging-private-postgres-url>
 ```
 
 If the embedded Studio or frontend is served from a custom staging domain, add that origin to Sanity CORS with credentials:

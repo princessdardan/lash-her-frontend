@@ -11,7 +11,7 @@ This design intentionally does **not** treat Helcim's Invoice API as a product o
 ## Architecture boundary
 
 - **Sanity / app catalog layer** owns sellable products, page content, imagery, SEO, merchandising copy, and visible availability.
-- **Next.js server layer** validates cart contents, creates Helcim invoices, initializes HelcimPay.js checkout sessions, and stores checkout/session metadata.
+- **Next.js server layer** validates cart contents, creates Helcim invoices, initializes HelcimPay.js checkout sessions, and stores checkout/session metadata in a private server-side datastore.
 - **Helcim** receives immutable invoice line-item snapshots, renders the secure payment iframe, processes payment, and returns payment response data.
 - **Post-payment app layer** validates Helcim's response hash, records invoice/payment identifiers, clears cart state, shows confirmation, and triggers any local email or admin notification workflow.
 
@@ -40,7 +40,7 @@ Implementation should stay split into small units:
 - `checkout` route/action: server-side cart validation, Helcim invoice creation, and HelcimPay.js initialization.
 - `payment-validation` route/action: HelcimPay.js response hash validation and order status updates.
 - Client payment component: loads `https://secure.helcim.app/helcim-pay/services/start.js`, opens/removes the iframe, and forwards payment events to the server.
-- Order persistence model/schema: local reconciliation record for invoice, payment, customer, and line-item snapshots.
+- Order persistence model/schema: local reconciliation record for invoice, payment, customer, and line-item snapshots stored in a private PostgreSQL database.
 
 ## Error handling
 
@@ -86,6 +86,7 @@ Local HelcimPay.js testing requires HTTPS tunneling because Helcim documents loc
 - Store each checkout `secretToken` server-side and bind it to the local checkout/order record.
 - Never trust client totals, product names, SKUs, prices, taxes, discounts, shipping, or payment status.
 - Validate all Helcim success responses server-side before marking an order paid.
+- Do not store transaction history or customer PII in public Sanity datasets.
 - Keep HelcimPay.js card collection inside Helcim's iframe to maintain reduced PCI scope.
 
 ## Open implementation decisions
