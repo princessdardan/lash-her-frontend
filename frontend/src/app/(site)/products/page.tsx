@@ -8,7 +8,7 @@ export default async function ProductsPage(): Promise<ReactElement> {
   const products = await loaders.getSellableProducts();
 
   return (
-    <main className="min-h-screen bg-brand-cream py-12 lg:py-24">
+    <div className="min-h-screen bg-lh-neutral-2 py-12 lg:py-24">
       <div className="content-container">
         <div className="text-container max-w-3xl mx-auto mb-16">
           <h1 className="section-heading-red-center text-4xl md:text-5xl lg:text-6xl mb-6">
@@ -20,8 +20,17 @@ export default async function ProductsPage(): Promise<ReactElement> {
           </p>
         </div>
 
-        <CartPanel products={products} />
+        {products.length === 0 ? (
+          <div className="text-center py-16 bg-lh-white rounded-2xl border border-lh-line">
+            <h2 className="text-2xl font-serif text-lh-shadow mb-4">Check Back Soon</h2>
+            <p className="text-lh-muted max-w-md mx-auto">
+              We are currently updating our product catalog. Please check back later for our curated selection of premium lash products.
+            </p>
+          </div>
+        ) : (
+          <CartPanel products={products} />
+        )}
       </div>
-    </main>
+    </div>
   );
 }

@@ -252,12 +252,32 @@ export interface TTrainingPage {
   blocks: TLayoutBlock[];
 }
 
+export interface TTrainingProgramDetailItem {
+  _key?: string;
+  title: string;
+  description: string;
+  image?: TSanityImage;
+}
+
 export interface TTrainingProgram {
   _id: string;
   title: string;
   description: string;
   slug: string;
+  detailHeading?: string;
+  detailDescription?: string;
+  detailItems?: TTrainingProgramDetailItem[];
+  factList?: string[];
+  primaryCta?: {
+    label: string;
+    href: string;
+  };
   blocks: TLayoutBlock[];
+  seo?: {
+    title?: string;
+    description?: string;
+    image?: TSanityImage;
+  };
 }
 
 export interface TTrainingProgramsPage {
@@ -268,45 +288,34 @@ export interface TTrainingProgramsPage {
 
 export type TSellableProductKind = "product" | "service" | "training" | "deposit";
 
-export type TCheckoutOrderStatus =
-  | "pending"
-  | "paid"
-  | "verification_failed"
-  | "cancelled"
-  | "refunded";
+export interface TSellableProductDetailSection {
+  _key?: string;
+  heading: string;
+  content: string;
+}
 
 export interface TSellableProduct {
   _id: string;
   title: string;
   description: string;
+  shortDescription?: string;
   slug: string;
   sku: string;
   kind: TSellableProductKind;
   price: number;
   currency: "CAD";
   isAvailable: boolean;
+  availabilityLabel?: string;
+  fulfillmentNote?: string;
+  displayOrder?: number;
   image?: TSanityImage;
-}
-
-export interface TCheckoutOrderLineItem {
-  sku: string;
-  description: string;
-  quantity: number;
-  price: number;
-  total: number;
-}
-
-export interface TCheckoutOrder {
-  orderId: string;
-  status: TCheckoutOrderStatus;
-  helcimInvoiceId?: number;
-  helcimInvoiceNumber?: string;
-  helcimTransactionId?: string;
-  customerName: string;
-  customerEmail: string;
-  amount: number;
-  currency: "CAD";
-  lineItems: TCheckoutOrderLineItem[];
+  gallery?: TSanityImage[];
+  detailSections?: TSellableProductDetailSection[];
+  seo?: {
+    title?: string;
+    description?: string;
+    image?: TSanityImage;
+  };
 }
 
 export interface THeader {

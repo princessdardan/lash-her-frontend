@@ -11,8 +11,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { slug } = await params;
   const data = await loaders.getSellableProductBySlug(slug);
 
-  const title = data?.title ?? "Product";
-  const description = data?.description ?? "Premium lash product";
+  const title = data?.seo?.title || data?.title || "Product";
+  const description = data?.seo?.description || data?.shortDescription || data?.description || "Premium lash product";
 
   return {
     title,
@@ -34,12 +34,18 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
   if (!product) notFound();
 
   return (
-    <main className="min-h-screen bg-brand-cream py-12 lg:py-24">
+    <div className="min-h-screen bg-lh-neutral-2 py-12 lg:py-24">
       <div className="content-container">
-        <div className="max-w-4xl mx-auto card-white p-8 md:p-12 flex flex-col md:flex-row gap-8 md:gap-12">
-          <div className="w-full md:w-1/2">
+        <div className="mb-8 pt-8">
+          <Link href="/products" className="text-lh-primary hover:underline font-medium flex items-center gap-2">
+            <span>←</span> Back to Catalog
+          </Link>
+        </div>
+
+        <div className="max-w-5xl mx-auto card-white p-8 md:p-12 flex flex-col md:flex-row gap-8 md:gap-12">
+          <div className="w-full md:w-1/2 flex flex-col gap-4">
             {product.image ? (
-              <div className="aspect-square relative rounded-md overflow-hidden bg-brand-pink/10">
+              <div className="aspect-square relative rounded-md overflow-hidden bg-lh-primary-soft/10">
                 <SanityImage
                   image={product.image}
                   alt={product.title}
@@ -48,15 +54,30 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
                 />
               </div>
             ) : (
-              <div className="aspect-square relative rounded-md overflow-hidden bg-brand-pink/20 flex items-center justify-center">
-                <span className="text-brand-dark-grey font-medium">No image available</span>
+              <div className="aspect-square relative rounded-md overflow-hidden bg-lh-primary-soft/20 flex items-center justify-center">
+                <span className="text-lh-muted font-medium">No image available</span>
+              </div>
+            )}
+
+            {product.gallery && product.gallery.length > 0 && (
+              <div className="grid grid-cols-4 gap-4 mt-4">
+                {product.gallery.map((img, idx) => (
+                  <div key={idx} className="aspect-square relative rounded-md overflow-hidden bg-lh-primary-soft/10">
+                    <SanityImage
+                      image={img}
+                      alt={img.alt || `${product.title} gallery image ${idx + 1}`}
+                      fill
+                      className="object-cover"
+                    />
+                  </div>
+                ))}
               </div>
             )}
           </div>
           
-          <div className="w-full md:w-1/2 flex flex-col justify-center">
+          <div className="w-full md:w-1/2 flex flex-col">
             {product.kind && (
-              <span className="text-sm font-bold text-brand-red uppercase tracking-wider mb-2 block">
+              <span className="text-sm font-bold text-lh-primary uppercase tracking-wider mb-2 block">
                 {product.kind}
               </span>
             )}
@@ -64,7 +85,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
               {product.title}
             </h1>
             
-            <div className="text-2xl font-medium text-brand-dark-grey mb-6">
+            <div className="text-2xl font-medium text-lh-muted mb-6">
               {formatCad(product.price)}
             </div>
             
@@ -73,19 +94,41 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
                 <p>{product.description}</p>
               </div>
             )}
+
+            {product.detailSections && product.detailSections.length > 0 && (
+              <div className="mb-8 space-y-6">
+                {product.detailSections.map((section, idx) => (
+                  <div key={section._key || idx}>
+                    <h3 className="font-bold text-lh-shadow mb-2">{section.heading}</h3>
+                    <p className="text-black font-light">{section.content}</p>
+                  </div>
+                ))}
+              </div>
+            )}
             
-            <div className="mt-auto pt-6 border-t border-brand-pink/30">
+            <div className="mt-auto pt-6 border-t border-lh-line/30">
+              {product.fulfillmentNote && (
+                <div className="bg-lh-neutral/30 p-4 rounded-md mb-6">
+                  <p className="text-sm text-lh-shadow italic">
+                    <span className="font-bold not-italic mr-2">Note:</span>
+                    {product.fulfillmentNote}
+                  </p>
+                </div>
+              )}
+
               {!product.isAvailable ? (
-                <div className="text-brand-red font-medium py-3">Currently Unavailable</div>
+                <div className="text-lh-primary font-medium py-3 text-center border border-lh-primary rounded-md">
+                  {product.availabilityLabel || "Currently Unavailable"}
+                </div>
               ) : (
                 <Link href="/products" className="btn-primary-red w-full text-center block">
-                  Back to Products to Purchase
+                  Back to Catalog to Purchase
                 </Link>
               )}
             </div>
           </div>
         </div>
       </div>
-    </main>
+    </div>
   );
 }

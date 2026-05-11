@@ -143,6 +143,12 @@ async function getTrainingProgramBySlug(slug: string): Promise<TTrainingProgram 
     title,
     description,
     "slug": slug.current,
+    detailHeading,
+    detailDescription,
+    detailItems[]{ _key, title, description, image{ asset, hotspot, crop, alt } },
+    factList,
+    primaryCta{ label, href },
+    seo{ title, description, image{ asset, hotspot, crop, alt } },
     blocks[]{
       _type,
       _key,
@@ -172,6 +178,12 @@ async function getAllTrainingPrograms(): Promise<TTrainingProgram[]> {
     title,
     description,
     "slug": slug.current,
+    detailHeading,
+    detailDescription,
+    detailItems[]{ _key, title, description, image{ asset, hotspot, crop, alt } },
+    factList,
+    primaryCta{ label, href },
+    seo{ title, description, image{ asset, hotspot, crop, alt } },
     blocks[]{
       _type,
       _key,
@@ -226,16 +238,20 @@ async function getBookingSettings(): Promise<BookingSettings | null> {
 }
 
 async function getSellableProducts(): Promise<TSellableProduct[]> {
-  const query = groq`*[_type == "sellableProduct" && isAvailable == true] | order(title asc) {
+  const query = groq`*[_type == "sellableProduct" && isAvailable == true] | order(displayOrder asc, title asc) {
     _id,
     title,
     description,
+    shortDescription,
     "slug": slug.current,
     sku,
     kind,
     price,
     currency,
     isAvailable,
+    availabilityLabel,
+    fulfillmentNote,
+    displayOrder,
     image{ asset, hotspot, crop, alt }
   }`;
   return client.fetch<TSellableProduct[]>(query, {}, { next: { tags: ['sellableProduct'] } });
@@ -246,35 +262,46 @@ async function getSellableProductsByIds(ids: string[]): Promise<TSellableProduct
     _id,
     title,
     description,
+    shortDescription,
     "slug": slug.current,
     sku,
     kind,
     price,
     currency,
     isAvailable,
+    availabilityLabel,
+    fulfillmentNote,
+    displayOrder,
     image{ asset, hotspot, crop, alt }
   }`;
   return client.fetch<TSellableProduct[]>(query, { ids }, { next: { tags: ['sellableProduct'] } });
 }
 
 async function getSellableProductBySlug(slug: string): Promise<TSellableProduct | null> {
-  const query = groq`*[_type == "sellableProduct" && slug.current == $slug][0]{
+  const query = groq`*[_type == "sellableProduct" && slug.current == $slug && isAvailable == true][0]{
     _id,
     title,
     description,
+    shortDescription,
     "slug": slug.current,
     sku,
     kind,
     price,
     currency,
     isAvailable,
-    image{ asset, hotspot, crop, alt }
+    availabilityLabel,
+    fulfillmentNote,
+    displayOrder,
+    image{ asset, hotspot, crop, alt },
+    gallery[]{ asset, hotspot, crop, alt },
+    detailSections[]{ _key, heading, content },
+    seo{ title, description, image{ asset, hotspot, crop, alt } }
   }`;
   return client.fetch<TSellableProduct | null>(query, { slug }, { next: { tags: ['sellableProduct'] } });
 }
 
 async function getAllSellableProductSlugs(): Promise<Array<{ slug: string }>> {
-  const query = groq`*[_type == "sellableProduct"]{
+  const query = groq`*[_type == "sellableProduct" && isAvailable == true]{
     "slug": slug.current
   }`;
   return client.fetch<Array<{ slug: string }>>(query, {}, { next: { tags: ['sellableProduct'] } });
