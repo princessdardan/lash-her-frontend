@@ -3,6 +3,7 @@ import "server-only";
 import { getHelcimApiToken } from "@/sanity/env";
 
 import type {
+  HelcimCardTransactionResponse,
   HelcimInvoiceRequest,
   HelcimInvoiceResponse,
   HelcimPayInitializeRequest,
@@ -24,6 +25,31 @@ export async function initializeHelcimPay(
     "/helcim-pay/initialize",
     request,
   );
+}
+
+export async function getHelcimCardTransaction(
+  cardTransactionId: string,
+): Promise<HelcimCardTransactionResponse> {
+  return getHelcim<HelcimCardTransactionResponse>(
+    `/card-transactions/${encodeURIComponent(cardTransactionId)}`,
+  );
+}
+
+async function getHelcim<TResponse>(path: string): Promise<TResponse> {
+  const response = await fetch(`${HELCIM_API_BASE_URL}${path}`, {
+    method: "GET",
+    headers: {
+      "api-token": getHelcimApiToken(),
+      accept: "application/json",
+    },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Helcim API request failed with status ${response.status}`);
+  }
+
+  return (await response.json()) as TResponse;
 }
 
 async function postHelcim<TRequest, TResponse>(path: string, request: TRequest): Promise<TResponse> {

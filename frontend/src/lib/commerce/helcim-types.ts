@@ -36,3 +36,16 @@ export interface HelcimPaySuccessPayload {
   data: Record<string, HelcimPayloadValue>;
   hash: string;
 }
+
+export type HelcimCardTransactionResponse = Record<string, unknown>;
+
+export interface HelcimTransactionReconciliationFields {
+  amount?: number | string;
+  approvalCode?: string;
+  cardLast4?: string;
+  cardType?: string;
+  currency?: string;
+  invoiceNumber?: string;
+  status?: string;
+  transactionId?: string;
+}
