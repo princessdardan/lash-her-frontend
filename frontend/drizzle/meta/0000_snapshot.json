@@ -1,0 +1,314 @@
+{
+  "id": "ade7a6d1-f435-4696-a23c-d52112738f9d",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.checkout_orders": {
+      "name": "checkout_orders",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "order_id": {
+          "name": "order_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "checkout_order_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "checkout_token_hash": {
+          "name": "checkout_token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "secret_token_ciphertext": {
+          "name": "secret_token_ciphertext",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "helcim_invoice_id": {
+          "name": "helcim_invoice_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "helcim_invoice_number": {
+          "name": "helcim_invoice_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "helcim_transaction_id": {
+          "name": "helcim_transaction_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "customer_name": {
+          "name": "customer_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "customer_email": {
+          "name": "customer_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'CAD'"
+        },
+        "line_items": {
+          "name": "line_items",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "paid_at": {
+          "name": "paid_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failed_at": {
+          "name": "failed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "redacted_at": {
+          "name": "redacted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "checkout_orders_checkout_token_hash_idx": {
+          "name": "checkout_orders_checkout_token_hash_idx",
+          "columns": [
+            {
+              "expression": "checkout_token_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "checkout_orders_order_id_unique": {
+          "name": "checkout_orders_order_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "order_id"
+          ]
+        },
+        "checkout_orders_checkout_token_hash_unique": {
+          "name": "checkout_orders_checkout_token_hash_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "checkout_token_hash"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.checkout_payment_events": {
+      "name": "checkout_payment_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "order_id": {
+          "name": "order_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "helcim_transaction_id": {
+          "name": "helcim_transaction_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "message": {
+          "name": "message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payload_redacted": {
+          "name": "payload_redacted",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "checkout_payment_events_idempotency_key_idx": {
+          "name": "checkout_payment_events_idempotency_key_idx",
+          "columns": [
+            {
+              "expression": "idempotency_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "checkout_payment_events_order_id_checkout_orders_id_fk": {
+          "name": "checkout_payment_events_order_id_checkout_orders_id_fk",
+          "tableFrom": "checkout_payment_events",
+          "tableTo": "checkout_orders",
+          "columnsFrom": [
+            "order_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "checkout_payment_events_idempotency_key_unique": {
+          "name": "checkout_payment_events_idempotency_key_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "idempotency_key"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.checkout_order_status": {
+      "name": "checkout_order_status",
+      "schema": "public",
+      "values": [
+        "pending",
+        "paid",
+        "verification_failed",
+        "cancelled",
+        "refunded"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
