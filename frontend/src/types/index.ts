@@ -294,6 +294,15 @@ export interface TSellableProductDetailSection {
   content: string;
 }
 
+export interface TSellableProductVariant {
+  _key: string;
+  title: string;
+  sku: string;
+  price: number;
+  isAvailable: boolean;
+  availabilityLabel?: string;
+}
+
 export interface TSellableProduct {
   _id: string;
   title: string;
@@ -304,6 +313,7 @@ export interface TSellableProduct {
   kind: TSellableProductKind;
   price: number;
   currency: "CAD";
+  variants?: TSellableProductVariant[];
   isAvailable: boolean;
   availabilityLabel?: string;
   fulfillmentNote?: string;

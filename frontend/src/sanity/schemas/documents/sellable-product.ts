@@ -68,6 +68,66 @@ export const sellableProduct = defineType({
       validation: (Rule) => Rule.required(),
     }),
     defineField({
+      name: "variants",
+      title: "Variants",
+      type: "array",
+      description: "Add purchasable options such as size, style, deposit type, or training format. If variants are present, shoppers must choose one before checkout.",
+      of: [
+        defineArrayMember({
+          type: "object",
+          title: "Variant",
+          fields: [
+            defineField({
+              name: "title",
+              title: "Variant Title",
+              type: "string",
+              validation: (Rule) => Rule.required(),
+            }),
+            defineField({
+              name: "sku",
+              title: "Variant SKU",
+              type: "string",
+              validation: (Rule) => Rule.required(),
+            }),
+            defineField({
+              name: "price",
+              title: "Variant Price",
+              type: "number",
+              validation: (Rule) => Rule.required().min(0),
+            }),
+            defineField({
+              name: "isAvailable",
+              title: "Available for checkout",
+              type: "boolean",
+              initialValue: true,
+              validation: (Rule) => Rule.required(),
+            }),
+            defineField({
+              name: "availabilityLabel",
+              title: "Availability Label",
+              type: "string",
+              description: "Optional label for this option, e.g., 'In Stock', 'Sold Out', or 'Limited spots'.",
+            }),
+          ],
+          preview: {
+            select: {
+              title: "title",
+              sku: "sku",
+              price: "price",
+              isAvailable: "isAvailable",
+            },
+            prepare({ title, sku, price, isAvailable }) {
+              const amount = typeof price === "number" ? `$${price.toFixed(2)}` : "No price";
+              return {
+                title,
+                subtitle: `${sku || "No SKU"} · ${amount}${isAvailable === false ? " · Unavailable" : ""}`,
+              };
+            },
+          },
+        }),
+      ],
+    }),
+    defineField({
       name: "isAvailable",
       title: "Available for checkout",
       type: "boolean",
