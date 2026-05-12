@@ -7,6 +7,21 @@ import Link from "next/link";
 
 export const revalidate = 300;
 
+function formatProductPrice(product: { price: number; variants?: Array<{ price: number }> }): string {
+  const variantPrices = product.variants?.map((variant) => variant.price) ?? [];
+
+  if (variantPrices.length === 0) {
+    return formatCad(product.price);
+  }
+
+  const lowestPrice = Math.min(...variantPrices);
+  const highestPrice = Math.max(...variantPrices);
+
+  return lowestPrice === highestPrice
+    ? formatCad(lowestPrice)
+    : `${formatCad(lowestPrice)} - ${formatCad(highestPrice)}`;
+}
+
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   const data = await loaders.getSellableProductBySlug(slug);
@@ -86,7 +101,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
             </h1>
             
             <div className="text-2xl font-medium text-lh-muted mb-6">
-              {formatCad(product.price)}
+              {formatProductPrice(product)}
             </div>
             
             {product.description && (
@@ -103,6 +118,34 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
                     <p className="text-black font-light">{section.content}</p>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {product.variants && product.variants.length > 0 && (
+              <div className="mb-8">
+                <h2 className="font-bold text-lh-shadow mb-3">Available Options</h2>
+                <div className="space-y-3">
+                  {product.variants.map((variant) => (
+                    <div
+                      key={variant._key}
+                      className="flex items-start justify-between gap-4 rounded-md border border-lh-line/60 bg-lh-neutral/20 p-4"
+                    >
+                      <div>
+                        <p className="font-bold text-black">{variant.title}</p>
+                        <p className="text-xs uppercase tracking-wider text-lh-muted">{variant.sku}</p>
+                        {variant.availabilityLabel && (
+                          <p className="mt-1 text-xs text-lh-primary">{variant.availabilityLabel}</p>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold text-black">{formatCad(variant.price)}</p>
+                        {!variant.isAvailable && (
+                          <p className="text-xs text-lh-primary">Unavailable</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             

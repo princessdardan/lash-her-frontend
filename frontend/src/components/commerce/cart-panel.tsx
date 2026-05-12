@@ -4,7 +4,7 @@ import { useState, type ReactElement } from "react";
 import { Button } from "@/components/ui/button";
 import { formatCad } from "@/lib/commerce/money";
 import { buildValidatedCart, type CartInputItem, type ValidatedCart } from "@/lib/commerce/cart";
-import type { TSellableProduct } from "@/types";
+import type { TSellableProduct, TSellableProductVariant } from "@/types";
 import { ProductCard } from "./product-card";
 import { HelcimPayButton } from "./helcim-pay-button";
 
@@ -17,23 +17,23 @@ export function CartPanel({ products }: CartPanelProps): ReactElement {
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
 
-  const handleAdd = (product: TSellableProduct) => {
+  const handleAdd = (product: TSellableProduct, variant?: TSellableProductVariant) => {
     setItems((prev) => {
-      const existing = prev.find((item) => item.productId === product._id);
+      const existing = prev.find((item) => item.productId === product._id && item.variantId === variant?._key);
       if (existing) {
         if (existing.quantity >= 10) return prev;
         return prev.map((item) =>
-          item.productId === product._id
+          item.productId === product._id && item.variantId === variant?._key
             ? { ...item, quantity: item.quantity + 1 }
             : item
         );
       }
-      return [...prev, { productId: product._id, quantity: 1 }];
+      return [...prev, { productId: product._id, variantId: variant?._key, quantity: 1 }];
     });
   };
 
-  const handleRemove = (productId: string) => {
-    setItems((prev) => prev.filter((item) => item.productId !== productId));
+  const handleRemove = (productId: string, variantId?: string) => {
+    setItems((prev) => prev.filter((item) => item.productId !== productId || item.variantId !== variantId));
   };
 
   const handleClear = () => {
@@ -50,7 +50,14 @@ export function CartPanel({ products }: CartPanelProps): ReactElement {
         title: p.title,
         price: p.price,
         currency: p.currency,
-        isAvailable: p.isAvailable
+        isAvailable: p.isAvailable,
+        variants: p.variants?.map((variant) => ({
+          id: variant._key,
+          sku: variant.sku,
+          title: variant.title,
+          price: variant.price,
+          isAvailable: variant.isAvailable,
+        })),
       }));
       cart = buildValidatedCart(items, catalogProducts);
     }
@@ -88,7 +95,7 @@ export function CartPanel({ products }: CartPanelProps): ReactElement {
                 <>
                   <ul className="divide-y divide-brand-pink">
                     {cart.lineItems.map((lineItem) => (
-                      <li key={lineItem.sku} className="py-3 flex justify-between items-start">
+                      <li key={`${lineItem.productId}:${lineItem.variantId || "default"}`} className="py-3 flex justify-between items-start">
                         <div>
                           <p className="font-bold text-black">{lineItem.description}</p>
                           <p className="text-sm text-brand-dark-grey">
@@ -98,10 +105,7 @@ export function CartPanel({ products }: CartPanelProps): ReactElement {
                         <div className="text-right">
                           <p className="font-bold text-black">{formatCad(lineItem.total)}</p>
                           <button
-                            onClick={() => {
-                              const product = products.find(p => p.sku === lineItem.sku);
-                              if (product) handleRemove(product._id);
-                            }}
+                            onClick={() => handleRemove(lineItem.productId, lineItem.variantId)}
                             className="text-xs text-brand-red hover:underline mt-1"
                           >
                             Remove
