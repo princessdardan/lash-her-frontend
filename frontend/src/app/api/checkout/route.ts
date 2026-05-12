@@ -118,6 +118,7 @@ function toCartInputItem(item: unknown): CartInputItem {
 
   return {
     productId: typeof item.productId === "string" ? item.productId : "",
+    variantId: typeof item.variantId === "string" ? item.variantId : undefined,
     quantity: typeof item.quantity === "number" ? item.quantity : Number.NaN,
   };
 }
@@ -130,6 +131,13 @@ function toCatalogProduct(product: TSellableProduct): CatalogProduct {
     price: product.price,
     currency: product.currency,
     isAvailable: product.isAvailable,
+    variants: product.variants?.map((variant) => ({
+      id: variant._key,
+      sku: variant.sku,
+      title: variant.title,
+      price: variant.price,
+      isAvailable: variant.isAvailable,
+    })),
   };
 }
 

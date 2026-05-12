@@ -101,6 +101,8 @@ export function createCheckoutOrderStore(
       const checkoutTokenHash = hashCheckoutToken(input.checkoutToken);
       const amountCents = toCents(input.cart.amount);
       const lineItems = input.cart.lineItems.map((lineItem) => ({
+        productId: lineItem.productId,
+        ...(lineItem.variantId ? { variantId: lineItem.variantId } : {}),
         sku: lineItem.sku,
         description: lineItem.description,
         quantity: lineItem.quantity,

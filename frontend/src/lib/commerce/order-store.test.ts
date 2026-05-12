@@ -25,13 +25,16 @@ const helperScript = String.raw`
       {
         description: "Signature Lash Set",
         price: 100,
+        productId: "signature-lash-set",
         quantity: 1,
         sku: "LASH-SIGNATURE",
         total: 100,
+        variantId: "classic",
       },
       {
         description: "Aftercare Kit",
         price: 23.45,
+        productId: "aftercare-kit",
         quantity: 1,
         sku: "CARE-KIT",
         total: 23.45,

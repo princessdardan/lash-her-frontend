@@ -18,6 +18,8 @@ export const checkoutOrderStatus = pgEnum("checkout_order_status", [
 ]);
 
 export interface CheckoutOrderLineItemSnapshot {
+  productId: string;
+  variantId?: string;
   sku: string;
   description: string;
   quantity: number;
