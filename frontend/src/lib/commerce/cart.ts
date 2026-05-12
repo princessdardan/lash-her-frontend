@@ -9,14 +9,26 @@ export interface CatalogProduct {
   price: number | string;
   currency: CommerceCurrency;
   isAvailable: boolean;
+  variants?: CatalogProductVariant[];
+}
+
+export interface CatalogProductVariant {
+  id: string;
+  sku: string;
+  title: string;
+  price: number | string;
+  isAvailable: boolean;
 }
 
 export interface CartInputItem {
   productId: string;
+  variantId?: string;
   quantity: number;
 }
 
 export interface ValidatedCartLineItem {
+  productId: string;
+  variantId?: string;
   sku: string;
   description: string;
   quantity: number;
@@ -35,6 +47,7 @@ const MAX_QUANTITY = 10;
 const CART_EMPTY_ERROR = "Cart must contain at least one item";
 const QUANTITY_ERROR = "Quantity must be between 1 and 10";
 const UNAVAILABLE_PRODUCT_ERROR = "Product is no longer available";
+const VARIANT_REQUIRED_ERROR = "Please choose an available product option";
 
 export function buildValidatedCart(
   items: CartInputItem[],
@@ -54,11 +67,15 @@ export function buildValidatedCart(
       throw new Error(UNAVAILABLE_PRODUCT_ERROR);
     }
 
-    const price = parseCad(product.price);
+    const variant = resolveVariant(product, item.variantId);
+    const price = parseCad(variant?.price ?? product.price);
+    const description = variant ? `${product.title} — ${variant.title}` : product.title;
 
     return {
-      sku: product.sku,
-      description: product.title,
+      productId: product.id,
+      ...(variant ? { variantId: variant.id } : {}),
+      sku: variant?.sku ?? product.sku,
+      description,
       quantity: item.quantity,
       price,
       total: multiplyCad(price, item.quantity),
@@ -70,6 +87,25 @@ export function buildValidatedCart(
     amount: addCad(lineItems.map((lineItem) => lineItem.total)),
     lineItems,
   };
+}
+
+function resolveVariant(
+  product: CatalogProduct,
+  variantId: string | undefined,
+): CatalogProductVariant | null {
+  const variants = product.variants?.filter((variant) => variant.title && variant.sku) ?? [];
+
+  if (variants.length === 0) {
+    return null;
+  }
+
+  const variant = variants.find((candidate) => candidate.id === variantId);
+
+  if (!variant?.isAvailable) {
+    throw new Error(VARIANT_REQUIRED_ERROR);
+  }
+
+  return variant;
 }
 
 function assertValidQuantity(quantity: number): void {
