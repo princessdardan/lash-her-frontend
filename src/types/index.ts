@@ -286,6 +286,30 @@ export interface TTrainingProgramsPage {
   trainingPrograms: TTrainingProgram[];
 }
 
+export interface TProductCollection {
+  _id: string;
+  title: string;
+  slug: string;
+  description?: string;
+  displayOrder?: number;
+}
+
+export interface TSellableProductFilterAttribute {
+  _key?: string;
+  label: string;
+  value: string;
+}
+
+export interface TProductsPage {
+  title: string;
+  eyebrow?: string;
+  description?: string;
+  heroImage?: TSanityImage;
+  featuredCollections?: TProductCollection[];
+  emptyStateTitle?: string;
+  emptyStateDescription?: string;
+}
+
 export type TSellableProductKind = "product" | "service" | "training" | "deposit";
 
 export interface TSellableProductDetailSection {

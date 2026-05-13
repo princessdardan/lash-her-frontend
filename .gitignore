@@ -55,6 +55,12 @@ tests/TEST_FIXES_SUMMARY.md
 PRODUCTION-CHECKLIST.md
 staging-export.tar.gz
 
+# tools and MCPs
+.planning/
+.playwright-mcp/
+.sisyphus/
+.stitch/
+
 # claude worktrees
 .claude/worktrees/
 

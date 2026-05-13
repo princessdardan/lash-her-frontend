@@ -42,13 +42,13 @@ export function ProductFilters({ collections, filterAttributes }: ProductFilters
     return `${pathname}?${params.toString()}`;
   };
 
-  const groupedAttributes = filterAttributes.reduce((acc, attr) => {
+  const groupedAttributes = filterAttributes.reduce<Record<string, Set<string>>>((acc, attr) => {
     if (!acc[attr.label]) {
       acc[attr.label] = new Set();
     }
     acc[attr.label].add(attr.value);
     return acc;
-  }, {} as Record<string, Set<string>>);
+  }, {});
 
   return (
     <aside className="w-full md:w-64 flex-shrink-0" aria-label="Catalog filters">

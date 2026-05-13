@@ -1,6 +1,4 @@
 import Link from "next/link";
-import { SanityImage } from "@/components/ui/sanity-image";
-import { formatCad } from "@/lib/commerce/money";
 import type { TTrainingProgram } from "@/types";
 
 interface TrainingEnrollmentSectionProps {
@@ -26,15 +24,11 @@ function isSafeUrl(url: string | undefined | null): boolean {
 export function TrainingEnrollmentSection({ data }: TrainingEnrollmentSectionProps) {
   const {
     title,
-    enrollmentTitle,
-    enrollmentDescription,
-    enrollmentBackgroundImage,
-    enrollmentInclusions,
-    linkedProduct,
+    description,
     primaryCta,
   } = data;
 
-  const hasEnrollmentData = enrollmentTitle || enrollmentDescription || (enrollmentInclusions && enrollmentInclusions.length > 0) || linkedProduct;
+  const hasEnrollmentData = primaryCta?.label && primaryCta.href;
 
   if (!hasEnrollmentData) return null;
 
@@ -46,9 +40,6 @@ export function TrainingEnrollmentSection({ data }: TrainingEnrollmentSectionPro
   if (primaryCta && primaryCta.label && isPrimarySafe) {
     ctaHref = primaryCta.href!;
     ctaLabel = primaryCta.label;
-  } else if (linkedProduct && linkedProduct.isAvailable) {
-    ctaHref = "/products";
-    ctaLabel = "Enroll Now";
   }
 
   return (
@@ -58,16 +49,7 @@ export function TrainingEnrollmentSection({ data }: TrainingEnrollmentSectionPro
           
           <div className="flex flex-col gap-8 relative overflow-hidden rounded-[24px] p-8 md:p-12 min-h-[500px] justify-between">
             <div className="absolute inset-0 z-0 bg-lh-shadow">
-              {enrollmentBackgroundImage ? (
-                <SanityImage
-                  image={enrollmentBackgroundImage}
-                  alt={enrollmentBackgroundImage.alt || "Enrollment background"}
-                  fill
-                  className="object-cover opacity-40 mix-blend-overlay"
-                />
-              ) : (
-                <div className="absolute inset-0 bg-gradient-to-br from-lh-shadow via-lh-accent to-lh-primary opacity-40 mix-blend-overlay" />
-              )}
+              <div className="absolute inset-0 bg-gradient-to-br from-lh-shadow via-lh-accent to-lh-primary opacity-40 mix-blend-overlay" />
               <div className="absolute inset-0 bg-lh-shadow/60" />
             </div>
             
@@ -76,36 +58,12 @@ export function TrainingEnrollmentSection({ data }: TrainingEnrollmentSectionPro
                 Secure Your Spot
               </p>
               <h2 className="font-serif text-4xl md:text-5xl uppercase text-lh-neutral-2">
-                {enrollmentTitle || "Complete Your Enrollment"}
+                Complete Your Enrollment
               </h2>
             </div>
             
             <div className="relative z-10 space-y-6 mt-8">
               <p className="font-serif text-3xl text-lh-neutral-2">{title}</p>
-              
-              {enrollmentInclusions && enrollmentInclusions.length > 0 && (
-                <div className="border-t border-lh-line/30 pt-6">
-                  <ul className="space-y-3">
-                    {enrollmentInclusions.map((inclusion, index) => (
-                      <li key={index} className="flex items-start gap-3">
-                        <span className="text-lh-light mt-1 text-lg leading-none">✓</span>
-                        <span className="font-sans text-base text-lh-neutral-2/90">{inclusion}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              
-              {linkedProduct && (
-                <div className="border-t border-lh-line/30 pt-6 mt-6">
-                  <p className="font-sans text-xs font-semibold uppercase text-lh-light tracking-wider mb-1">
-                    Total Investment
-                  </p>
-                  <p className="font-serif text-4xl text-lh-light">
-                    {formatCad(linkedProduct.price)}
-                  </p>
-                </div>
-              )}
             </div>
           </div>
           
@@ -113,18 +71,10 @@ export function TrainingEnrollmentSection({ data }: TrainingEnrollmentSectionPro
             <div className="max-w-md mx-auto w-full text-center">
               <h3 className="font-serif text-4xl text-lh-shadow mb-6">Ready to begin?</h3>
               
-              {enrollmentDescription && (
+              {description && (
                 <p className="font-sans text-base text-lh-shadow/80 mb-8 leading-relaxed">
-                  {enrollmentDescription}
+                  {description}
                 </p>
-              )}
-              
-              {linkedProduct && !linkedProduct.isAvailable && (
-                <div className="mb-8 p-4 bg-lh-neutral/50 rounded-xl border border-lh-line/20">
-                  <p className="font-sans text-sm font-medium text-lh-shadow">
-                    {linkedProduct.availabilityLabel || "Currently unavailable"}
-                  </p>
-                </div>
               )}
               
               <Link

@@ -1,5 +1,4 @@
 import type { ReactElement } from "react";
-import { PortableTextRenderer } from "@/components/ui/portable-text-renderer";
 import type { TSellableProductDetailSection } from "@/types";
 
 interface ProductDetailSectionsProps {
@@ -19,9 +18,7 @@ export function ProductDetailSections({ sections }: ProductDetailSectionsProps):
             <h2 className="font-heading text-3xl text-lh-shadow">{section.heading}</h2>
           </div>
           <div className="text-black font-light text-lg">
-            {section.body && section.body.length > 0 ? (
-              <PortableTextRenderer content={section.body} />
-            ) : section.content ? (
+            {section.content ? (
               <p className="leading-relaxed">{section.content}</p>
             ) : null}
           </div>
