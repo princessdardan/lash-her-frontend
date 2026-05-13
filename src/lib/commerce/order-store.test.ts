@@ -395,7 +395,6 @@ function runOrderStoreScenario(assertions: string): void {
   env.NEXT_PUBLIC_SANITY_DATASET = "test";
   env.NEXT_PUBLIC_SANITY_PROJECT_ID = "test-project";
   env.CHECKOUT_SECRET_ENCRYPTION_KEY = randomBytes(32).toString("base64");
-  delete env.CHECKOUT_DATABASE_URL;
 
   execFileSync(
     "./node_modules/.bin/tsx",

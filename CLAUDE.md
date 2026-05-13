@@ -2,11 +2,11 @@
 
 ## Project Overview
 
-Lash Her by Nataliea — a beauty/lash artistry business site. Monorepo with a Next.js frontend (primary) and a legacy Strapi backend (`/backend`, rarely touched).
+Lash Her by Nataliea — a beauty/lash artistry business site. Root-level Next.js app with legacy Strapi migration context only (`/backend` is not present in this checkout).
 
 ## Commands
 
-All frontend commands run from `/frontend`:
+All app commands run from the repository root:
 
 ```bash
 npm run dev          # Next.js dev server on :3000
@@ -70,7 +70,7 @@ Two forms (General Inquiry, Training Contact):
 - Vercel Blob
 
 ### Path Alias
-`@/*` → `frontend/src/*`
+`@/*` → `src/*`
 
 ## Environment Variables
 
@@ -81,4 +81,4 @@ Two forms (General Inquiry, Training Contact):
 
 ## Testing
 
-Playwright E2E in `/frontend/tests/`. Tests auto-start dev server. Uses semantic selectors (`getByRole`, `getByLabel`). Helpers in `tests/utils/test-helpers.ts`. Runs against Chromium, Firefox, WebKit.
+Playwright E2E in `/tests`. Tests auto-start dev server. Uses semantic selectors (`getByRole`, `getByLabel`). Helpers in `tests/utils/test-helpers.ts`. Runs against Chromium, Firefox, WebKit.

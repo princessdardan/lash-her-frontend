@@ -801,9 +801,15 @@ git commit -m "feat: add shop catalog page"
 Modify `frontend/src/sanity/env.ts` to export backend-only getters:
 
 ```ts
-export function getHelcimApiToken(): string {
-  const token = process.env.HELCIM_API_TOKEN;
-  if (!token) throw new Error("Missing env var: HELCIM_API_TOKEN");
+export function getHelcimGeneralApiToken(): string {
+  const token = process.env.HELCIM_GENERAL_API_TOKEN;
+  if (!token) throw new Error("Missing env var: HELCIM_GENERAL_API_TOKEN");
+  return token;
+}
+
+export function getHelcimTransactionApiToken(): string {
+  const token = process.env.HELCIM_TRANSACTION_API_TOKEN;
+  if (!token) throw new Error("Missing env var: HELCIM_TRANSACTION_API_TOKEN");
   return token;
 }
 ```
@@ -854,18 +860,18 @@ Create `frontend/src/lib/commerce/helcim-client.ts`:
 ```ts
 import "server-only";
 
-import { getHelcimApiToken } from "@/sanity/env";
+import { getHelcimGeneralApiToken, getHelcimTransactionApiToken } from "@/sanity/env";
 import type { HelcimInvoiceRequest, HelcimInvoiceResponse, HelcimPayInitializeRequest, HelcimPayInitializeResponse } from "./helcim-types";
 
 const HELCIM_API_BASE_URL = "https://api.helcim.com/v2";
 
-async function helcimFetch<TResponse>(path: string, init: RequestInit): Promise<TResponse> {
+async function helcimFetch<TResponse>(path: string, init: RequestInit, apiToken: string): Promise<TResponse> {
   const response = await fetch(`${HELCIM_API_BASE_URL}${path}`, {
     ...init,
     headers: {
       accept: "application/json",
       "content-type": "application/json",
-      "api-token": getHelcimApiToken(),
+      "api-token": apiToken,
       ...init.headers,
     },
     cache: "no-store",
@@ -883,14 +889,14 @@ export async function createHelcimInvoice(request: HelcimInvoiceRequest): Promis
   return helcimFetch<HelcimInvoiceResponse>("/invoices/", {
     method: "POST",
     body: JSON.stringify(request),
-  });
+  }, getHelcimGeneralApiToken());
 }
 
 export async function initializeHelcimPay(request: HelcimPayInitializeRequest): Promise<HelcimPayInitializeResponse> {
   return helcimFetch<HelcimPayInitializeResponse>("/helcim-pay/initialize", {
     method: "POST",
     body: JSON.stringify(request),
-  });
+  }, getHelcimTransactionApiToken());
 }
 ```
 

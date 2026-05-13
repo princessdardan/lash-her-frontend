@@ -9,7 +9,7 @@ The Vercel staging subdomain must target the `staging` branch in the frontend re
 https://github.com/princessdardan/lash-her-frontend
 ```
 
-Do not create or push deployment branches to `https://github.com/princessdardan/lash-her`. In local checkouts, verify remotes with `git remote -v` before pushing. This workspace may contain a legacy or planning remote named `origin`; use the `frontend` remote or run from `frontend`:
+Do not create or push deployment branches to `https://github.com/princessdardan/lash-her`. In local checkouts, verify remotes with `git remote -v` before pushing. This workspace may contain a legacy or planning remote named `origin`; use the `frontend` remote from the repository root:
 
 ```bash
 npm run git:push-staging
@@ -23,24 +23,24 @@ The implementation worktree for this effort is:
 /Users/dardan/Documents/lash-her-booking-helcim-integration
 ```
 
-Run frontend and Sanity commands from:
+Run app and Sanity commands from:
 
 ```bash
-cd /Users/dardan/Documents/lash-her-booking-helcim-integration/frontend
+cd /Users/dardan/Documents/lash-her-booking-helcim-integration
 ```
 
 ## Current Project Findings
 
-- The active application is the `frontend` Next.js app.
-- The Sanity Studio is embedded at `/studio` through `frontend/src/app/studio/[[...tool]]/page.tsx`.
-- Studio configuration lives in `frontend/src/sanity/sanity.config.ts`.
-- Schemas are code-defined and manually registered in `frontend/src/sanity/schemas/index.ts`.
-- Runtime Sanity targeting is environment-driven through `frontend/src/sanity/env.ts`:
+- The active application is the root Next.js app.
+- The Sanity Studio is embedded at `/studio` through `src/app/studio/[[...tool]]/page.tsx`.
+- Studio configuration lives in `src/sanity/sanity.config.ts`.
+- Schemas are code-defined and manually registered in `src/sanity/schemas/index.ts`.
+- Runtime Sanity targeting is environment-driven through `src/sanity/env.ts`:
   - `NEXT_PUBLIC_SANITY_PROJECT_ID`
   - `NEXT_PUBLIC_SANITY_DATASET`
   - `NEXT_PUBLIC_SANITY_API_VERSION`
-- The Sanity project ID found in `frontend/sanity.cli.ts` is `3auncj84`.
-- `frontend/sanity.cli.ts` currently hardcodes the CLI dataset to `production`.
+- The Sanity project ID found in `sanity.cli.ts` is `3auncj84`.
+- `sanity.cli.ts` currently hardcodes the CLI dataset to `production`.
 - The implementation worktree already contains booking/Helcim schema additions, including `bookingSettings` as a singleton.
 
 Important distinction: the Sanity Studio does not contain the content. The Studio is the editing application and schema code. Content lives in a Sanity Content Lake dataset. Copying production into staging means copying the production dataset into `staging-2026-05-10`; deploying Studio/schema code is a separate step.
@@ -74,18 +74,19 @@ Before proceeding, confirm you have:
   - `BOOKING_ADMIN_SETUP_SECRET`
   - `KV_REST_API_URL`
   - `KV_REST_API_TOKEN`
-  - `HELCIM_API_TOKEN`
+  - `HELCIM_GENERAL_API_TOKEN`
+  - `HELCIM_TRANSACTION_API_TOKEN`
   - `CHECKOUT_SECRET_ENCRYPTION_KEY`
-  - `CHECKOUT_DATABASE_URL`
+  - `DATABASE_URL`
 
 Do not put private tokens in `NEXT_PUBLIC_*` variables. `NEXT_PUBLIC_*` values are browser-visible. Checkout transaction history and customer PII must be stored in the private database, not Sanity. See [Private Checkout Storage Setup Guide](./private-checkout-storage-setup.md) for details.
 
 ## Phase 1: Confirm Current Sanity State
 
-From the implementation worktree frontend directory:
+From the implementation worktree root directory:
 
 ```bash
-cd /Users/dardan/Documents/lash-her-booking-helcim-integration/frontend
+cd /Users/dardan/Documents/lash-her-booking-helcim-integration
 
 npx sanity dataset list --project-id 3auncj84
 ```
@@ -175,7 +176,7 @@ Because this repo defines schemas in code, production schemas should be treated 
 Deploy the worktree schema to `staging-2026-05-10`:
 
 ```bash
-cd /Users/dardan/Documents/lash-her-booking-helcim-integration/frontend
+cd /Users/dardan/Documents/lash-her-booking-helcim-integration
 
 NEXT_PUBLIC_SANITY_PROJECT_ID=3auncj84 \
 NEXT_PUBLIC_SANITY_DATASET=staging-2026-05-10 \
@@ -225,9 +226,10 @@ GOOGLE_REDIRECT_URI=<staging-google-redirect-uri>
 BOOKING_ADMIN_SETUP_SECRET=<staging-admin-secret>
 KV_REST_API_URL=<staging-kv-rest-api-url>
 KV_REST_API_TOKEN=<staging-kv-rest-api-token>
-HELCIM_API_TOKEN=<staging-helcim-token>
+HELCIM_GENERAL_API_TOKEN=<staging-helcim-general-token>
+HELCIM_TRANSACTION_API_TOKEN=<staging-helcim-transaction-token>
 CHECKOUT_SECRET_ENCRYPTION_KEY=<base64-encoded-32-byte-key>
-CHECKOUT_DATABASE_URL=<staging-private-postgres-url>
+DATABASE_URL=<staging-neon-pooled-postgres-url>
 ```
 
 If the embedded Studio or frontend is served from a custom staging domain, add that origin to Sanity CORS with credentials:
@@ -251,7 +253,7 @@ npx sanity cors add http://localhost:3000 \
 Run local validation from the implementation worktree:
 
 ```bash
-cd /Users/dardan/Documents/lash-her-booking-helcim-integration/frontend
+cd /Users/dardan/Documents/lash-her-booking-helcim-integration
 
 npm run lint
 npm run build
@@ -280,7 +282,7 @@ Promote code through Git and CI, not by copying staging schema documents into pr
 5. Deploy the production schema representation:
 
 ```bash
-cd /Users/dardan/Documents/lash-her-booking-helcim-integration/frontend
+cd /Users/dardan/Documents/lash-her-booking-helcim-integration
 
 NEXT_PUBLIC_SANITY_PROJECT_ID=3auncj84 \
 NEXT_PUBLIC_SANITY_DATASET=production \
@@ -370,7 +372,7 @@ npx sanity dataset import ./staging-export.tar.gz production \
 
 ## Recommended Change to Make Before Heavy Staging Work
 
-`frontend/sanity.cli.ts` currently points CLI operations at `production` by default:
+`sanity.cli.ts` currently points CLI operations at `production` by default:
 
 ```ts
 export default defineCliConfig({

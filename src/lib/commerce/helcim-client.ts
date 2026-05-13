@@ -1,6 +1,9 @@
 import "server-only";
 
-import { getHelcimApiToken } from "@/sanity/env";
+import {
+  getHelcimGeneralApiToken,
+  getHelcimTransactionApiToken,
+} from "@/sanity/env";
 
 import type {
   HelcimCardTransactionResponse,
@@ -15,7 +18,11 @@ const HELCIM_API_BASE_URL = "https://api.helcim.com/v2";
 export async function createHelcimInvoice(
   request: HelcimInvoiceRequest,
 ): Promise<HelcimInvoiceResponse> {
-  return postHelcim<HelcimInvoiceRequest, HelcimInvoiceResponse>("/invoices/", request);
+  return postHelcim<HelcimInvoiceRequest, HelcimInvoiceResponse>(
+    "/invoices/",
+    request,
+    getHelcimGeneralApiToken(),
+  );
 }
 
 export async function initializeHelcimPay(
@@ -24,6 +31,7 @@ export async function initializeHelcimPay(
   return postHelcim<HelcimPayInitializeRequest, HelcimPayInitializeResponse>(
     "/helcim-pay/initialize",
     request,
+    getHelcimTransactionApiToken(),
   );
 }
 
@@ -32,14 +40,15 @@ export async function getHelcimCardTransaction(
 ): Promise<HelcimCardTransactionResponse> {
   return getHelcim<HelcimCardTransactionResponse>(
     `/card-transactions/${encodeURIComponent(cardTransactionId)}`,
+    getHelcimGeneralApiToken(),
   );
 }
 
-async function getHelcim<TResponse>(path: string): Promise<TResponse> {
+async function getHelcim<TResponse>(path: string, apiToken: string): Promise<TResponse> {
   const response = await fetch(`${HELCIM_API_BASE_URL}${path}`, {
     method: "GET",
     headers: {
-      "api-token": getHelcimApiToken(),
+      "api-token": apiToken,
       accept: "application/json",
     },
     cache: "no-store",
@@ -52,11 +61,15 @@ async function getHelcim<TResponse>(path: string): Promise<TResponse> {
   return (await response.json()) as TResponse;
 }
 
-async function postHelcim<TRequest, TResponse>(path: string, request: TRequest): Promise<TResponse> {
+async function postHelcim<TRequest, TResponse>(
+  path: string,
+  request: TRequest,
+  apiToken: string,
+): Promise<TResponse> {
   const response = await fetch(`${HELCIM_API_BASE_URL}${path}`, {
     method: "POST",
     headers: {
-      "api-token": getHelcimApiToken(),
+      "api-token": apiToken,
       accept: "application/json",
       "content-type": "application/json",
     },

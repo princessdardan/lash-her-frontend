@@ -2,7 +2,7 @@
 
 ## OVERVIEW
 
-E2E-only Playwright suite. Tests live under `frontend/tests` and auto-start the Next dev server on port 3000.
+E2E-only Playwright suite. Tests live under `tests` and auto-start the Next dev server on port 3000.
 
 ## STRUCTURE
 

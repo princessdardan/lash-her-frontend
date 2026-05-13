@@ -5,7 +5,7 @@ const helperScript = String.raw`
   import assert from "node:assert/strict";
   import { createHmac } from "node:crypto";
 
-  import { createHelcimWebhookPostHandler } from "./src/app/api/webhooks/helcim/route.ts";
+  import { createHelcimWebhookPostHandler } from "./src/app/api/webhooks/card-transactions/route.ts";
 
   const verifierToken = Buffer.from("webhook-secret-key").toString("base64");
 
@@ -20,7 +20,7 @@ const helperScript = String.raw`
     const timestamp = String(Math.floor(Date.now() / 1000));
     const signedSignature = signature ?? "v1," + createSignature(id, timestamp, body);
 
-    return new Request("http://localhost:3000/api/webhooks/helcim", {
+    return new Request("http://localhost:3000/api/webhooks/card-transactions", {
       method: "POST",
       headers: {
         "webhook-id": id,

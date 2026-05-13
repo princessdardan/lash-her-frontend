@@ -495,7 +495,7 @@ git commit -m "feat(api): add mux video workflow"
 
 - [ ] **Step 1: Add Helcim env vars**
 
-Add `HELCIM_API_TOKEN`, `HELCIM_WEBHOOK_VERIFIER_TOKEN`, `HELCIM_API_BASE_URL`, `MARKETING_SITE_URL`, and `ADMIN_SITE_URL` to `src/config/env.ts`.
+Add `HELCIM_GENERAL_API_TOKEN`, `HELCIM_TRANSACTION_API_TOKEN`, `HELCIM_WEBHOOK_VERIFIER_TOKEN`, `HELCIM_API_BASE_URL`, `MARKETING_SITE_URL`, and `ADMIN_SITE_URL` to `src/config/env.ts`.
 
 - [ ] **Step 2: Write checkout tests**
 
@@ -511,7 +511,7 @@ Expose:
 ```text
 POST /v1/checkout/course/:courseId
 POST /v1/checkout/helcim-success
-POST /v1/webhooks/helcim
+POST /v1/webhooks/card-transactions (Superseded: Helcim delivery URLs must not contain "helcim")
 ```
 
 - [ ] **Step 5: Verify raw body webhook handling**
@@ -842,7 +842,7 @@ Document Clerk, Helcim, Mux, PostgreSQL, marketing/admin URLs, webhook secrets, 
 - [ ] **Step 2: Document webhook setup**
 Include exact webhook endpoints:
 ```text
-POST https://api-domain.example/v1/webhooks/helcim
+POST https://api-domain.example/v1/webhooks/card-transactions (Superseded: Helcim delivery URLs must not contain "helcim")
 POST https://api-domain.example/v1/webhooks/mux
 ```
 

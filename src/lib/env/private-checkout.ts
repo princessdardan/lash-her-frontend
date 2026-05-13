@@ -2,8 +2,8 @@ import "server-only";
 
 export function getCheckoutDatabaseUrl(): string {
   return assertValue(
-    process.env.CHECKOUT_DATABASE_URL ?? process.env.DATABASE_URL,
-    "Missing env var: CHECKOUT_DATABASE_URL",
+    process.env.DATABASE_URL,
+    "Missing env var: DATABASE_URL",
   );
 }
 

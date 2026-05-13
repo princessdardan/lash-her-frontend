@@ -1,12 +1,59 @@
 # dependencies
 node_modules/
-package-lock.json
 *.tgz
+/.pnp
+.pnp.js
+.yarn/install-state.gz
 
+# local env files
 .env
+.env*.local
+.env*.production
 
-# OS
+# testing
+/coverage
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
 .DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# optimization test output
+.optimization-test-output/
+.temp-optimization/
+.backups/
+
+# generated/local project notes and artifacts
+tests/QUICK_START.md
+tests/README.md
+src/components/custom/layouts/BLOCK_RENDERER.md
+.github/workflows/e2e-tests.yml.example
+tests/TEST_FIXES_SUMMARY.md
+PRODUCTION-CHECKLIST.md
+staging-export.tar.gz
 
 # claude worktrees
 .claude/worktrees/

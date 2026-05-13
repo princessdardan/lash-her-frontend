@@ -21,10 +21,10 @@ async function main(): Promise<void> {
 }
 
 function getCheckoutDatabaseUrl(): string {
-  const databaseUrl = process.env.CHECKOUT_DATABASE_URL ?? process.env.DATABASE_URL;
+  const databaseUrl = process.env.DATABASE_URL;
 
   if (databaseUrl === undefined) {
-    throw new Error("Missing env var: CHECKOUT_DATABASE_URL");
+    throw new Error("Missing env var: DATABASE_URL");
   }
 
   return databaseUrl;

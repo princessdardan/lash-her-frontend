@@ -29,17 +29,17 @@ The booking implementation adds a public scheduling flow at `/booking`, with opt
 
 Implemented surfaces:
 
-- `frontend/src/app/(site)/booking/page.tsx`
-- `frontend/src/components/booking/booking-flow.tsx`
-- `frontend/src/components/booking/booking-entry-link.tsx`
-- `frontend/src/app/api/booking/availability/route.ts`
-- `frontend/src/app/api/booking/create/route.ts`
-- `frontend/src/app/api/booking/oauth/start/route.ts`
-- `frontend/src/app/api/booking/oauth/callback/route.ts`
-- `frontend/src/lib/booking/*`
-- `frontend/src/sanity/schemas/documents/booking-settings.ts`
-- `frontend/src/sanity/schemas/documents/booking-marketing-opt-in.ts`
-- `frontend/tests/booking.spec.ts`
+- `src/app/(site)/booking/page.tsx`
+- `src/components/booking/booking-flow.tsx`
+- `src/components/booking/booking-entry-link.tsx`
+- `src/app/api/booking/availability/route.ts`
+- `src/app/api/booking/create/route.ts`
+- `src/app/api/booking/oauth/start/route.ts`
+- `src/app/api/booking/oauth/callback/route.ts`
+- `src/lib/booking/*`
+- `src/sanity/schemas/documents/booking-settings.ts`
+- `src/sanity/schemas/documents/booking-marketing-opt-in.ts`
+- `tests/booking.spec.ts`
 
 Core behavior:
 
@@ -49,7 +49,7 @@ Core behavior:
 - All non-marker events on the same calendar are treated as busy conflicts, including Fresha/manual/site-created events.
 - Slot generation enforces minimum lead time, booking horizon, duration, interval, and before/after buffers.
 - Booking creation revalidates the selected slot server-side before inserting a Google Calendar event.
-- A whole-calendar lock and idempotency key are stored in Upstash Redis through `frontend/src/lib/booking/operational-store.ts`.
+- A whole-calendar lock and idempotency key are stored in Upstash Redis through `src/lib/booking/operational-store.ts`.
 - Google OAuth setup is protected by `BOOKING_ADMIN_SETUP_SECRET` and stores the refresh token server-side in Redis.
 - The Google Calendar event includes the customer as an attendee and uses `sendUpdates: "all"`.
 - Resend confirmation email is sent after Calendar insertion. If the email fails, booking remains confirmed and the failure is logged.
@@ -70,19 +70,19 @@ The checkout implementation exposes the public product catalog at `/products`, p
 
 Implemented surfaces:
 
-- `frontend/src/app/(site)/products/page.tsx`
-- `frontend/src/app/(site)/products/[slug]/page.tsx`
-- `frontend/src/app/(site)/products/confirmation/page.tsx`
-- `frontend/src/components/commerce/product-card.tsx`
-- `frontend/src/components/commerce/cart-panel.tsx`
-- `frontend/src/components/commerce/helcim-pay-button.tsx`
-- `frontend/src/app/api/checkout/route.ts`
-- `frontend/src/app/api/checkout/validate-payment/route.ts`
-- `frontend/src/lib/commerce/*`
-- `frontend/src/sanity/schemas/documents/sellable-product.ts`
-- `frontend/src/lib/private-db/*`
-- `frontend/src/app/api/webhooks/helcim/route.ts`
-- `frontend/tests/checkout.spec.ts`
+- `src/app/(site)/products/page.tsx`
+- `src/app/(site)/products/[slug]/page.tsx`
+- `src/app/(site)/products/confirmation/page.tsx`
+- `src/components/commerce/product-card.tsx`
+- `src/components/commerce/cart-panel.tsx`
+- `src/components/commerce/helcim-pay-button.tsx`
+- `src/app/api/checkout/route.ts`
+- `src/app/api/checkout/validate-payment/route.ts`
+- `src/lib/commerce/*`
+- `src/sanity/schemas/documents/sellable-product.ts`
+- `src/lib/private-db/*`
+- `src/app/api/webhooks/card-transactions/route.ts` (Renamed from `/helcim` to satisfy Helcim dashboard URL restrictions)
+- `tests/checkout.spec.ts`
 
 Core behavior:
 
@@ -108,13 +108,13 @@ Intentional first-release non-goals remain unimplemented:
 
 The integration branch merges booking and checkout additions into shared files:
 
-- `frontend/package.json` adds `test:unit` and dependencies for `googleapis`, `@upstash/redis`, and `tsx`.
-- `frontend/src/data/loaders.ts` includes `getBookingSettings`, `getSellableProducts`, and `getSellableProductsByIds`.
-- `frontend/src/sanity/env.ts` includes booking env helpers, Helcim token helper, and checkout secret encryption key helper.
-- `frontend/src/app/api/revalidate/route.ts` includes cache tags for `bookingSettings` and `sellableProduct`.
-- `frontend/src/sanity/schemas/index.ts` registers booking and catalog schemas.
-- `frontend/src/sanity/structure/index.ts` should expose Booking and Sellable Products in Studio. Checkout Orders belong in private storage and must not be exposed in Studio after remediation.
-- `frontend/src/types/index.ts` exports booking types and commerce document types.
+- `package.json` adds `test:unit` and dependencies for `googleapis`, `@upstash/redis`, and `tsx`.
+- `src/data/loaders.ts` includes `getBookingSettings`, `getSellableProducts`, and `getSellableProductsByIds`.
+- `src/sanity/env.ts` includes booking env helpers, Helcim token helper, and checkout secret encryption key helper.
+- `src/app/api/revalidate/route.ts` includes cache tags for `bookingSettings` and `sellableProduct`.
+- `src/sanity/schemas/index.ts` registers booking and catalog schemas.
+- `src/sanity/structure/index.ts` should expose Booking and Sellable Products in Studio. Checkout Orders belong in private storage and must not be exposed in Studio after remediation.
+- `src/types/index.ts` exports booking types and commerce document types.
 
 ## Required Environment Variables
 
@@ -132,12 +132,13 @@ Booking:
 
 Checkout:
 
-- `CHECKOUT_DATABASE_URL`
-- `HELCIM_API_TOKEN`
+- `DATABASE_URL`
+- `HELCIM_GENERAL_API_TOKEN`
+- `HELCIM_TRANSACTION_API_TOKEN`
 - `CHECKOUT_SECRET_ENCRYPTION_KEY`
 - `HELCIM_WEBHOOK_VERIFIER_TOKEN` if Helcim webhooks are enabled.
 
-`CHECKOUT_SECRET_ENCRYPTION_KEY` must be a base64-encoded 32-byte key. `CHECKOUT_DATABASE_URL`, Helcim tokens, and encryption keys must remain server-only and must never use `NEXT_PUBLIC_*` names.
+`CHECKOUT_SECRET_ENCRYPTION_KEY` must be a base64-encoded 32-byte key. `DATABASE_URL`, Helcim tokens, and encryption keys must remain server-only and must never use `NEXT_PUBLIC_*` names.
 
 ## Known Gaps and Follow-Up Risks
 
@@ -147,7 +148,7 @@ Checkout:
 - Playwright tests mock booking and checkout API calls, but the pages still depend on Sanity server-rendered data. E2E coverage is therefore not fully self-contained without seeded Sanity content.
 - There are helper unit tests and browser tests, but no direct route-handler unit tests for `/api/checkout`, `/api/checkout/validate-payment`, or `/api/booking/*`.
 - The branch includes broader UI/style/docs/artifact changes beyond the booking and Helcim feature files. Review the diff carefully before merging.
-- `git diff --check main...HEAD` reported trailing whitespace at `frontend/src/components/custom/layouts/cta-features-section.tsx:78` during audit.
+- `git diff --check main...HEAD` reported trailing whitespace at `src/components/custom/layouts/cta-features-section.tsx:78` during audit.
 - Local validation could not be completed before this summary because dependencies were not installed in the integration worktree; `npm run test:unit` failed with `tsx: command not found` and `npm run lint` failed with `eslint: command not found`.
 
 ## Verification Status From Audit
@@ -167,7 +168,7 @@ Not completed during audit:
 - Build.
 - Playwright E2E.
 
-Before merging or building on this branch, install dependencies in `frontend` and run:
+Before merging or building on this branch, install dependencies at the repository root and run:
 
 ```bash
 npm run test:unit

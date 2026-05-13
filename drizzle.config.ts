@@ -7,7 +7,7 @@ export default defineConfig({
   out: "./drizzle",
   schema: "./src/lib/private-db/schema.ts",
   dbCredentials: {
-    url: process.env.CHECKOUT_DATABASE_URL ?? process.env.DATABASE_URL ?? "",
+    url: process.env.DATABASE_URL ?? "",
   },
   strict: true,
   verbose: true,

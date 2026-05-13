@@ -37,11 +37,19 @@ export function getBookingEnv(): {
   };
 }
 
-/** Lazy — only asserts when server-side Helcim requests need it. */
-export function getHelcimApiToken(): string {
+/** Lazy — only asserts when server-side Helcim general API requests need it. */
+export function getHelcimGeneralApiToken(): string {
   return assertValue(
-    process.env.HELCIM_API_TOKEN,
-    "Missing env var: HELCIM_API_TOKEN"
+    process.env.HELCIM_GENERAL_API_TOKEN,
+    "Missing env var: HELCIM_GENERAL_API_TOKEN"
+  );
+}
+
+/** Lazy — only asserts when server-side HelcimPay transaction requests need it. */
+export function getHelcimTransactionApiToken(): string {
+  return assertValue(
+    process.env.HELCIM_TRANSACTION_API_TOKEN,
+    "Missing env var: HELCIM_TRANSACTION_API_TOKEN"
   );
 }
 

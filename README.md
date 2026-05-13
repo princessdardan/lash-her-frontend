@@ -16,7 +16,7 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+You can start editing the page by modifying `src/app/(site)/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
@@ -59,12 +59,15 @@ Checkout uses Sanity only for public catalog/editorial content. Sensitive checko
 
 Required server-side checkout environment variables:
 
-- `CHECKOUT_DATABASE_URL`
+- `DATABASE_URL` (injected by Neon)
 - `CHECKOUT_SECRET_ENCRYPTION_KEY`
-- `HELCIM_API_TOKEN`
+- `HELCIM_GENERAL_API_TOKEN`
+- `HELCIM_TRANSACTION_API_TOKEN`
 
 Required to receive Helcim webhooks:
 
 - `HELCIM_WEBHOOK_VERIFIER_TOKEN`
 
-See `../docs/private-checkout-storage-setup.md` for database setup, migration, retention, and Sanity cleanup guidance.
+**Note:** The Helcim webhook delivery URL must use HTTPS and must not contain the word `helcim` (e.g., use `/api/webhooks/card-transactions`).
+
+See `docs/private-checkout-storage-setup.md` for database setup, migration, retention, and Sanity cleanup guidance.

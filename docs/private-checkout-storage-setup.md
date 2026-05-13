@@ -23,14 +23,15 @@ Use a managed PostgreSQL provider such as Neon, Supabase, Render Postgres, Railw
 Add these variables to the matching Vercel environment and local `.env.local` file. Never prefix private values with `NEXT_PUBLIC_` because `NEXT_PUBLIC_*` values are browser-visible.
 
 ```env
-# Private PostgreSQL connection string
-CHECKOUT_DATABASE_URL="postgres://user:password@host:port/dbname?sslmode=require"
+# Private PostgreSQL connection string injected by Neon
+DATABASE_URL="postgres://user:password@host:port/dbname?sslmode=require"
 
 # Base64-encoded 32-byte key for AES-256-GCM encryption
 CHECKOUT_SECRET_ENCRYPTION_KEY="your-base64-key"
 
 # Helcim API credentials
-HELCIM_API_TOKEN="your-helcim-api-token"
+HELCIM_GENERAL_API_TOKEN="your-helcim-general-api-token"
+HELCIM_TRANSACTION_API_TOKEN="your-helcim-transaction-api-token"
 
 # Required to receive Helcim webhooks
 HELCIM_WEBHOOK_VERIFIER_TOKEN="your-webhook-verifier-token"
@@ -41,17 +42,17 @@ NEXT_PUBLIC_SANITY_DATASET="staging-2026-05-10-or-production"
 NEXT_PUBLIC_SANITY_API_VERSION="2026-03-24"
 ```
 
-Use `CHECKOUT_DATABASE_URL` for checkout storage. `DATABASE_URL` may be accepted as a deployment fallback by the application, but prefer the checkout-specific variable so the private data boundary is obvious.
+Checkout storage uses `DATABASE_URL`, which is injected by the Neon integration. Do not use `DATABASE_URL_UNPOOLED` for the checkout runtime; the app creates a pooled `pg` client.
 
 ## Drizzle Migration Commands
 
-Run these commands from the `frontend` directory to keep your database schema in sync.
+Run these commands from the repository root to keep your database schema in sync.
 
 ```bash
 # Generate migration files after schema changes
 npm run db:generate
 
-# Apply migrations to the database in CHECKOUT_DATABASE_URL
+# Apply migrations to the database in DATABASE_URL
 npm run db:migrate
 ```
 
@@ -61,18 +62,19 @@ Run migrations against staging first. Only run production migrations after stagi
 
 1. Log in to the Helcim account.
 2. Confirm API access is enabled for the account.
-3. Generate or copy the server API token and add it to `HELCIM_API_TOKEN` in Vercel and local server-only env files.
-4. Keep HelcimPay.js initialization on the secure backend. The browser should receive only the Helcim `checkoutToken`.
-5. Keep the Helcim `secretToken` server-side, encrypt it with `CHECKOUT_SECRET_ENCRYPTION_KEY`, and store only the ciphertext in the private database.
+3. Generate or copy the general API token and add it to `HELCIM_GENERAL_API_TOKEN` in Vercel and local server-only env files. This token is used for invoice creation and card-transaction lookup.
+4. Generate or copy the transaction-processing API token and add it to `HELCIM_TRANSACTION_API_TOKEN`. This token is used only for HelcimPay initialization.
+5. Keep HelcimPay.js initialization on the secure backend. The browser should receive only the Helcim `checkoutToken`.
+6. Keep the Helcim `secretToken` server-side, encrypt it with `CHECKOUT_SECRET_ENCRYPTION_KEY`, and store only the ciphertext in the private database.
 
 ### Helcim Webhook Setup
 
 Helcim webhook handling is implemented in the app, but the external Helcim dashboard and deployment secrets still need human configuration:
 
 1. Enable webhooks in Helcim under **All Tools -> Integrations -> Webhooks**.
-2. Set the staging webhook delivery URL to `https://<staging-domain>/api/webhooks/helcim`.
-3. Set the production webhook delivery URL to `https://<production-domain>/api/webhooks/helcim`.
-4. The webhook URL must use HTTPS and must not contain the word `Helcim`.
+2. Set the staging webhook delivery URL to `https://<staging-domain>/api/webhooks/card-transactions`.
+3. Set the production webhook delivery URL to `https://<production-domain>/api/webhooks/card-transactions`.
+4. The webhook URL must use HTTPS and must not contain the word `helcim` or `Helcim`.
 5. Copy the webhook verifier token into `HELCIM_WEBHOOK_VERIFIER_TOKEN`.
 6. Verify webhook signatures with HMAC-SHA256 over `<webhook-id>.<webhook-timestamp>.<raw-body>` using the base64-decoded verifier token.
 7. Store webhook idempotency keys or event IDs in the private database before updating order state.

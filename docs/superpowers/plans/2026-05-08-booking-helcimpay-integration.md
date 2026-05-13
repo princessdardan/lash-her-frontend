@@ -226,11 +226,11 @@ Do not refactor unrelated loader formatting during this conflict resolution.
 Preserve existing env behavior and include all new helpers:
 
 - `getBookingEnv()` for Google OAuth, booking setup secret, and Upstash Redis env values.
-- `getHelcimApiToken()` for `HELCIM_API_TOKEN`.
+- `getHelcimGeneralApiToken()` for `HELCIM_GENERAL_API_TOKEN` and `getHelcimTransactionApiToken()` for `HELCIM_TRANSACTION_API_TOKEN`.
 - `getCheckoutSecretEncryptionKey()` for validated base64 32-byte `CHECKOUT_SECRET_ENCRYPTION_KEY`.
 - Shared `assertValue()` helper remains single and unchanged except as needed for formatting.
 
-Do not rename env variables in this plan.
+Do not rename unrelated env variables in this plan.
 
 - [ ] **Step 4: Confirm conflict markers are gone**
 

@@ -199,7 +199,7 @@ Create a guide that tells the human how to:
 1. Create a Neon/Supabase project or equivalent managed Postgres instance.
 2. Create separate staging and production databases or branches.
 3. Copy the staging and production pooled connection strings.
-4. Store them as `CHECKOUT_DATABASE_URL` or `DATABASE_URL` in the correct deployment environments.
+4. Store the pooled Neon/Postgres connection string as `DATABASE_URL` in the correct deployment environments.
 5. Restrict database access to server-side environments only.
 6. Enable backups/point-in-time restore if available on the chosen plan.
 7. If using Supabase, keep checkout tables out of browser-exposed access paths and enable/verify RLS policies if the schema is exposed.
@@ -213,9 +213,10 @@ Expected:
 Document required env vars:
 
 ```env
-CHECKOUT_DATABASE_URL=<private-postgres-url>
+DATABASE_URL=<private-postgres-url>
 CHECKOUT_SECRET_ENCRYPTION_KEY=<base64-encoded-32-byte-key>
-HELCIM_API_TOKEN=<server-only-helcim-token>
+HELCIM_GENERAL_API_TOKEN=<server-only-helcim-general-token>
+HELCIM_TRANSACTION_API_TOKEN=<server-only-helcim-transaction-token>
 HELCIM_WEBHOOK_VERIFIER_TOKEN=<server-only-webhook-verifier-token-if-webhooks-in-scope>
 NEXT_PUBLIC_SANITY_PROJECT_ID=3auncj84
 NEXT_PUBLIC_SANITY_DATASET=<staging-2026-05-10-or-production>
@@ -276,15 +277,15 @@ Expected:
 
 - [x] **Step 2: Add private env helper**
 
-Create a server-only helper for checkout database config. Prefer a checkout-specific name:
+Create a server-only helper for checkout database config using Neon's injected `DATABASE_URL`:
 
 ```ts
 import "server-only";
 
 export function getCheckoutDatabaseUrl(): string {
   return assertValue(
-    process.env.CHECKOUT_DATABASE_URL ?? process.env.DATABASE_URL,
-    "Missing env var: CHECKOUT_DATABASE_URL"
+    process.env.DATABASE_URL,
+    "Missing env var: DATABASE_URL"
   );
 }
 ```
@@ -305,7 +306,7 @@ Expected:
 
 - [x] **Step 4: Add database client**
 
-Create a server-only Drizzle/pg client using `CHECKOUT_DATABASE_URL`.
+Create a server-only Drizzle/pg client using `DATABASE_URL`.
 
 Expected:
 - Client is imported only from route handlers/server-only libraries.
@@ -324,7 +325,7 @@ Add scripts to `frontend/package.json`:
 
 Expected:
 - `npx drizzle-kit generate` creates migrations under `frontend/drizzle`.
-- `npm run db:migrate` applies migrations to the database named by `CHECKOUT_DATABASE_URL`.
+- `npm run db:migrate` applies migrations to the database named by `DATABASE_URL`.
 
 ## Task 4: Replace Sanity Order Store With Private Repository
 
@@ -471,7 +472,7 @@ Expected:
 ## Task 7: Optional Helcim Webhook Hardening
 
 **Files:**
-- Create: `frontend/src/app/api/webhooks/helcim/route.ts`
+- Create: `frontend/src/app/api/webhooks/card-transactions/route.ts` (Note: Helcim delivery URLs must not contain "helcim")
 - Create: `frontend/src/lib/commerce/helcim-webhook.ts`
 - Modify: `frontend/src/lib/commerce/order-store.ts`
 - Modify: `frontend/src/sanity/env.ts` or private env helper.
@@ -644,7 +645,7 @@ Result: Active hits are private DB table names, tests, and docs only. No Sanity 
 
 - [x] **Step 3: Database migration verification**
 
-Run from `frontend` with staging `CHECKOUT_DATABASE_URL`:
+Run from `frontend` with staging `DATABASE_URL`:
 
 ```bash
 npm run db:generate

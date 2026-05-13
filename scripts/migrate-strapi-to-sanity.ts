@@ -6,7 +6,7 @@
  * writes all documents as published to the production Sanity dataset.
  *
  * Usage:
- *   cd frontend && npm run migrate
+ *   npm run migrate
  *
  * Required env vars (in .env.local):
  *   NEXT_PUBLIC_SANITY_PROJECT_ID
@@ -19,6 +19,7 @@
 import { createClient, type SanityClient } from "@sanity/client";
 import { nanoid } from "nanoid";
 import { Readable } from "node:stream";
+import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import * as dotenv from "dotenv";
 import qs from "qs";
 
@@ -258,7 +259,7 @@ async function uploadImage(
 
     const asset = await client.assets.upload(
       "image",
-      Readable.fromWeb(res.body as ReadableStream<Uint8Array>),
+      Readable.fromWeb(res.body as unknown as NodeReadableStream<Uint8Array>),
       {
         filename,
         source: {
@@ -294,7 +295,7 @@ async function uploadVideo(
 
     const asset = await client.assets.upload(
       "file",
-      Readable.fromWeb(res.body as ReadableStream<Uint8Array>),
+      Readable.fromWeb(res.body as unknown as NodeReadableStream<Uint8Array>),
       {
         filename,
         source: {
@@ -515,8 +516,8 @@ function convertBlocksToPortableText(nodes: StrapiBlockNode[] | null | undefined
     } else if (node.type === "code") {
       // Render code blocks as normal paragraphs (no code style in schema)
       const text =
-        typeof (node as Record<string, unknown>).code === "string"
-          ? (node as Record<string, unknown>).code
+        typeof (node as unknown as Record<string, unknown>).code === "string"
+          ? (node as unknown as Record<string, unknown>).code
           : (node.children
               ?.filter((c) => c.type === "text")
               .map((c) => (c as StrapiTextChild).text)
