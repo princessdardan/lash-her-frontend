@@ -147,7 +147,7 @@ export function HelcimPayButton({
             return;
           }
 
-          const result = await res.json() as { orderId?: string };
+          const result = await res.json() as { orderId?: string; redirectUrl?: string };
 
           if (window.removeHelcimPayIframe) {
             window.removeHelcimPayIframe();
@@ -155,7 +155,9 @@ export function HelcimPayButton({
 
           onPaid();
 
-          if (result.orderId) {
+          if (result.redirectUrl) {
+            router.push(result.redirectUrl);
+          } else if (result.orderId) {
             router.push(`/products/confirmation?order=${encodeURIComponent(result.orderId)}`);
           } else {
             router.push("/products/confirmation");
