@@ -5,7 +5,11 @@ export type HelcimPayloadValue = string | number | boolean | null;
 export type HelcimInvoiceLineItem = Pick<
   ValidatedCartLineItem,
   "sku" | "description" | "quantity" | "price"
->;
+> & {
+  taxAmount?: number;
+  taxName?: string;
+  taxRate?: number;
+};
 
 export interface HelcimInvoiceRequest {
   type: "INVOICE";
