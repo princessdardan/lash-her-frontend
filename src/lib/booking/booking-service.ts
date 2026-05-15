@@ -3,6 +3,10 @@ import "server-only";
 import { nanoid } from "nanoid";
 
 import { loaders } from "@/data/loaders";
+import {
+  findPendingTrainingEnrollmentByToken,
+  markTrainingEnrollmentScheduled,
+} from "@/lib/commerce/training-enrollment-store";
 import { formClient } from "@/sanity/lib/form-client";
 import { isSlotAvailable } from "./availability";
 import {
@@ -16,12 +20,14 @@ import {
   releaseCalendarLock,
 } from "./operational-store";
 import { sendBookingConfirmationEmail } from "./email";
+import { resolvePaidTrainingBookingContext } from "./paid-training-context";
 import { validateBookingRequest } from "./booking-validation";
 import type {
   BookingAnswerInput,
   BookingRequestInput,
   BookingTypeConfig,
   CalendarEventWindow,
+  PaidTrainingBookingContext,
 } from "./types";
 
 export interface BookingActionSuccess {
@@ -61,7 +67,23 @@ export async function createBooking(
       };
     }
 
-    const validation = validateBookingRequest(input, settings);
+    const paidContextResolution = await resolvePaidTrainingBookingContext(
+      input,
+      findPendingTrainingEnrollmentByToken,
+    );
+
+    if (!paidContextResolution.ok) {
+      return {
+        success: false,
+        error: paidContextResolution.error,
+        fieldErrors: paidContextResolution.fieldErrors,
+      };
+    }
+
+    const validation = validateBookingRequest(
+      paidContextResolution.input,
+      settings,
+    );
 
     if (!validation.success) {
       return {
@@ -148,7 +170,15 @@ export async function createBooking(
         selectedEnd,
         timezone: settings.timezone,
         calendarId: settings.calendarId,
+        paidTrainingContext: paidContextResolution.context ?? undefined,
       });
+
+      if (paidContextResolution.context !== null) {
+        await markTrainingEnrollmentScheduled({
+          enrollmentId: paidContextResolution.context.enrollmentId,
+          scheduledAt: selectedStart,
+        });
+      }
 
       if (validation.data.marketingOptIn) {
         try {
@@ -258,6 +288,7 @@ async function insertGoogleCalendarBooking(input: {
   selectedEnd: Date;
   timezone: string;
   calendarId: string;
+  paidTrainingContext?: PaidTrainingBookingContext;
 }): Promise<string> {
   const event = buildBookingEventPayload({
     bookingTypeLabel: input.bookingTypeConfig.label,
@@ -273,6 +304,7 @@ async function insertGoogleCalendarBooking(input: {
     start: input.selectedStart,
     end: input.selectedEnd,
     timezone: input.timezone,
+    paidTrainingContext: input.paidTrainingContext,
   });
 
   return insertBookingEvent({

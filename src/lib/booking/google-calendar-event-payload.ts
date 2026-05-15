@@ -1,4 +1,5 @@
 import type { calendar_v3 } from "googleapis";
+import type { PaidTrainingBookingContext } from "./types";
 
 interface BookingEventAnswerInput {
   questionLabel: string;
@@ -18,6 +19,7 @@ export interface BookingEventPayloadInput {
   start: Date;
   end: Date;
   timezone: string;
+  paidTrainingContext?: PaidTrainingBookingContext;
 }
 
 export function buildBookingEventPayload(
@@ -33,9 +35,21 @@ export function buildBookingEventPayload(
     "",
     "Answers:",
     answersText.length > 0 ? answersText : "No answers provided",
+  ];
+
+  if (input.paidTrainingContext !== undefined) {
+    descriptionParts.push(
+      "",
+      "Paid training context:",
+      `Program: ${input.paidTrainingContext.programTitle}`,
+      `Order: ${input.paidTrainingContext.publicOrderId}`,
+    );
+  }
+
+  descriptionParts.push(
     "",
     "Changes: Please contact Lash Her to request booking changes.",
-  ];
+  );
 
   return {
     summary: `Lash Her booking: ${input.bookingTypeLabel} — ${input.customer.name}`,
