@@ -113,9 +113,69 @@ export const trainingProgram = defineType({
         }),
       ],
     }),
+    defineField({
+      name: "checkoutEnabled",
+      title: "Enable Online Checkout",
+      type: "boolean",
+      group: "commerce",
+      initialValue: false,
+    }),
+    defineField({
+      name: "checkoutProduct",
+      title: "Checkout Product",
+      type: "reference",
+      to: [{ type: "sellableProduct" }],
+      group: "commerce",
+      hidden: ({ document }) => !document?.checkoutEnabled,
+      validation: (Rule) => Rule.custom((value, context) => {
+        if (context.document?.checkoutEnabled && !value) {
+          return "A checkout product is required when checkout is enabled.";
+        }
+        // TODO: Cross-document validation to ensure product kind is "training"
+        return true;
+      }),
+    }),
+    defineField({
+      name: "checkoutCtaLabel",
+      title: "Checkout CTA Label",
+      type: "string",
+      group: "commerce",
+      initialValue: "Enroll Now",
+      hidden: ({ document }) => !document?.checkoutEnabled,
+    }),
+    defineField({
+      name: "checkoutDisabledBookingCta",
+      title: "Disabled Checkout Booking CTA",
+      type: "object",
+      group: "commerce",
+      hidden: ({ document }) => !!document?.checkoutEnabled,
+      fields: [
+        defineField({ name: "label", title: "Label", type: "string", initialValue: "Book a Call" }),
+        defineField({ 
+          name: "href", 
+          title: "URL", 
+          type: "string", 
+          initialValue: "/booking?type=training-call",
+          validation: (Rule) => Rule.custom((value) => {
+            if (!value) return true;
+            if (value.startsWith('https://')) return true;
+            if (value.startsWith('/') && !value.startsWith('//')) return true;
+            return 'URL must start with "https://" or "/" (but not "//").';
+          })
+        }),
+      ],
+    }),
+    defineField({
+      name: "postPurchaseInstructions",
+      title: "Post-Purchase Instructions",
+      type: "text",
+      group: "commerce",
+      hidden: ({ document }) => !document?.checkoutEnabled,
+    }),
   ],
   groups: [
     { name: "details", title: "Details" },
+    { name: "commerce", title: "Commerce" },
     { name: "legacy", title: "Legacy Blocks" },
     { name: "seo", title: "SEO" },
   ],

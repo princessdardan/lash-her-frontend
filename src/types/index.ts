@@ -272,6 +272,26 @@ export interface TTrainingProgram {
     label: string;
     href: string;
   };
+  checkoutEnabled?: boolean;
+  checkoutProduct?: {
+    _id: string;
+    title: string;
+    slug: string;
+    sku: string;
+    kind: TSellableProductKind;
+    price: number;
+    currency: string;
+    variants?: TSellableProductVariant[];
+    isAvailable: boolean;
+    availabilityLabel?: string;
+    fulfillmentNote?: string;
+  };
+  checkoutCtaLabel?: string;
+  checkoutDisabledBookingCta?: {
+    label: string;
+    href: string;
+  };
+  postPurchaseInstructions?: string;
   blocks: TLayoutBlock[];
   seo?: {
     title?: string;
