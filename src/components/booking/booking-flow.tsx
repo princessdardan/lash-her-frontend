@@ -12,10 +12,12 @@ import { Field, FieldLabel, FieldError, FieldDescription } from "@/components/ui
 interface BookingFlowProps {
   settings: BookingSettings;
   initialBookingType?: BookingType;
+  paidSchedulingToken?: string;
 }
 
-export function BookingFlow({ settings, initialBookingType }: BookingFlowProps) {
+export function BookingFlow({ settings, initialBookingType, paidSchedulingToken }: BookingFlowProps) {
   const defaultType = initialBookingType ?? settings.bookingTypes[0]?.type ?? "training-call";
+  const hasPaidSchedulingToken = paidSchedulingToken !== undefined && paidSchedulingToken.trim().length > 0;
   const [bookingType, setBookingType] = useState<BookingType | "">(defaultType);
   const [slots, setSlots] = useState<BookingSlot[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<string>("");
@@ -41,7 +43,13 @@ export function BookingFlow({ settings, initialBookingType }: BookingFlowProps) 
 
     let isMounted = true;
 
-    fetch(`/api/booking/availability?type=${bookingType}`)
+    const availabilityParams = new URLSearchParams({ type: bookingType });
+
+    if (hasPaidSchedulingToken) {
+      availabilityParams.set("token", paidSchedulingToken.trim());
+    }
+
+    fetch(`/api/booking/availability?${availabilityParams.toString()}`)
       .then((res) => {
         if (!res.ok) throw new Error("Failed to fetch availability");
         return res.json();
@@ -63,7 +71,7 @@ export function BookingFlow({ settings, initialBookingType }: BookingFlowProps) 
     return () => {
       isMounted = false;
     };
-  }, [bookingType]);
+  }, [bookingType, hasPaidSchedulingToken, paidSchedulingToken]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,6 +102,9 @@ export function BookingFlow({ settings, initialBookingType }: BookingFlowProps) 
           answers: formattedAnswers,
           marketingOptIn,
           idempotencyKey: nanoid(),
+          ...(hasPaidSchedulingToken
+            ? { paidSchedulingToken: paidSchedulingToken.trim() }
+            : {}),
         }),
       });
 
@@ -137,6 +148,7 @@ export function BookingFlow({ settings, initialBookingType }: BookingFlowProps) 
         <FieldLabel htmlFor="bookingType">Service Type</FieldLabel>
         <Select
           value={bookingType}
+          disabled={hasPaidSchedulingToken}
           onValueChange={(val) => {
             setBookingType(val as BookingType);
             if (!val) {
@@ -162,6 +174,11 @@ export function BookingFlow({ settings, initialBookingType }: BookingFlowProps) 
         </Select>
         {activeTypeConfig?.description && (
           <FieldDescription>{activeTypeConfig.description}</FieldDescription>
+        )}
+        {hasPaidSchedulingToken && (
+          <FieldDescription>
+            This paid training scheduling link is reserved for the checkout email used at purchase.
+          </FieldDescription>
         )}
       </Field>
 

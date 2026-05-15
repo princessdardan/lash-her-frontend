@@ -50,6 +50,7 @@ function toBookingRequestInput(input: unknown): BookingRequestInput {
     answers: toBookingAnswers(record.answers),
     marketingOptIn: record.marketingOptIn === true,
     idempotencyKey: toStringValue(record.idempotencyKey),
+    paidSchedulingToken: toOptionalStringValue(record.paidSchedulingToken),
   };
 }
 
@@ -86,6 +87,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function toStringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function toOptionalStringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
 function getErrorMessage(error: unknown): string {

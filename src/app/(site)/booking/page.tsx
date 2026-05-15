@@ -8,7 +8,7 @@ export const revalidate = 1800;
 export default async function BookingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string }>;
+  searchParams: Promise<{ type?: string; token?: string }>;
 }) {
   const params = await searchParams;
   const settings = await loaders.getBookingSettings();
@@ -37,7 +37,8 @@ export default async function BookingPage({
         <div className="bg-card border border-border/50 rounded-xl p-6 md:p-10 shadow-sm">
           <BookingFlow
             settings={settings}
-            initialBookingType={normalizeType(params.type)}
+            initialBookingType={params.token ? "training-call" : normalizeType(params.type)}
+            paidSchedulingToken={params.token}
           />
         </div>
       </div>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { loaders } from "@/data/loaders";
+import { findPendingTrainingEnrollmentByToken } from "@/lib/commerce/training-enrollment-store";
 import { buildBookingSlots } from "@/lib/booking/availability";
 import { listCalendarEvents } from "@/lib/booking/google-calendar";
 import type {
@@ -16,7 +17,23 @@ const BOOKING_TYPES: readonly BookingType[] = [
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    const bookingType = req.nextUrl.searchParams.get("type");
+    const paidSchedulingToken = req.nextUrl.searchParams.get("token")?.trim();
+    let bookingType = req.nextUrl.searchParams.get("type");
+
+    if (paidSchedulingToken) {
+      const enrollment = await findPendingTrainingEnrollmentByToken({
+        schedulingToken: paidSchedulingToken,
+      });
+
+      if (enrollment === null) {
+        return NextResponse.json(
+          { error: "This training scheduling link is invalid or has expired" },
+          { status: 400 },
+        );
+      }
+
+      bookingType = "training-call";
+    }
 
     if (!isBookingType(bookingType)) {
       return NextResponse.json(
