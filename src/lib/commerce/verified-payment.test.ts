@@ -67,9 +67,44 @@ test("verifyHelcimPayment rejects a valid hash with the wrong currency", () => {
   assert.deepEqual(result, { ok: false, reason: "wrong_currency" });
 });
 
+test("verifyHelcimPayment rejects a valid hash with missing currency", () => {
+  const result = verifyHelcimPayment({
+    data: {
+      approved: true,
+      amount: 50,
+      invoiceId: 12345,
+      invoiceNumber: "INV-12345",
+      transactionId: "txn_123",
+    },
+    hash: "valid-hash",
+    order,
+    secretToken: "secret-token",
+    validateHash: () => true,
+  });
+
+  assert.deepEqual(result, { ok: false, reason: "wrong_currency" });
+});
+
 test("verifyHelcimPayment rejects a valid hash with the wrong invoice", () => {
   const result = verifyHelcimPayment({
     data: { ...validData, invoiceNumber: "INV-99999" },
+    hash: "valid-hash",
+    order,
+    secretToken: "secret-token",
+    validateHash: () => true,
+  });
+
+  assert.deepEqual(result, { ok: false, reason: "wrong_invoice" });
+});
+
+test("verifyHelcimPayment rejects a valid hash with missing invoice identifiers", () => {
+  const result = verifyHelcimPayment({
+    data: {
+      approved: true,
+      amount: 50,
+      currency: "CAD",
+      transactionId: "txn_123",
+    },
     hash: "valid-hash",
     order,
     secretToken: "secret-token",

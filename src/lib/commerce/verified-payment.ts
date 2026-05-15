@@ -145,7 +145,7 @@ function amountMatches(paymentAmount: HelcimPayloadValue | undefined, orderAmoun
 function currencyMatches(paymentCurrency: HelcimPayloadValue | undefined, orderCurrency: string): boolean {
   const currency = getTextValue(paymentCurrency);
 
-  return currency === null || currency.trim().toUpperCase() === orderCurrency.toUpperCase();
+  return currency !== null && currency.trim().toUpperCase() === orderCurrency.toUpperCase();
 }
 
 function invoiceMatches(
@@ -155,11 +155,11 @@ function invoiceMatches(
   const invoiceId = getTextValue(data.invoiceId);
   const invoiceNumber = getTextValue(data.invoiceNumber);
 
-  if (invoiceId !== null && invoiceId !== String(order.helcimInvoiceId)) {
+  if (invoiceId === null || invoiceId !== String(order.helcimInvoiceId)) {
     return false;
   }
 
-  if (invoiceNumber !== null && invoiceNumber !== order.helcimInvoiceNumber) {
+  if (invoiceNumber === null || invoiceNumber !== order.helcimInvoiceNumber) {
     return false;
   }
 
