@@ -78,6 +78,8 @@ export function validateBookingRequest(
 }
 
 function normalizeBookingRequest(input: BookingRequestInput): BookingRequestInput {
+  const paidSchedulingToken = input.paidSchedulingToken?.trim();
+
   return {
     bookingType: input.bookingType,
     start: input.start.trim(),
@@ -90,6 +92,7 @@ function normalizeBookingRequest(input: BookingRequestInput): BookingRequestInpu
     })),
     marketingOptIn: input.marketingOptIn,
     idempotencyKey: input.idempotencyKey.trim(),
+    ...(paidSchedulingToken ? { paidSchedulingToken } : {}),
   };
 }
 
@@ -105,7 +108,7 @@ function validateBookingType(
 
   try {
     return findBookingTypeConfig(settings, input.bookingType);
-  } catch (error) {
+  } catch {
     fieldErrors.bookingType = "Please select a valid booking type";
     return null;
   }

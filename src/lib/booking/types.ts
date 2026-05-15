@@ -59,4 +59,11 @@ export interface BookingRequestInput {
   answers: BookingAnswerInput[];
   marketingOptIn: boolean;
   idempotencyKey: string;
+  paidSchedulingToken?: string;
+}
+
+export interface PaidTrainingBookingContext {
+  enrollmentId: string;
+  programTitle: string;
+  publicOrderId: string;
 }
