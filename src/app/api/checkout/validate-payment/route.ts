@@ -4,8 +4,14 @@ import {
   markOrderPaid,
   markOrderVerificationFailed,
 } from "@/lib/commerce/order-store";
+import { sendTrainingPaymentNotificationEmails } from "@/lib/commerce/training-payment-email";
+import {
+  issueTrainingSchedulingTokenForPaidOrder,
+  markTrainingEnrollmentStaffAlerted,
+} from "@/lib/commerce/training-enrollment-store";
 import { persistVerifiedPayment, verifyHelcimPayment } from "@/lib/commerce/verified-payment";
 import type { HelcimPayloadValue } from "@/lib/commerce/helcim-types";
+import { buildTrainingConfirmationUrl } from "@/lib/training-checkout";
 
 interface ValidatePaymentBody {
   checkoutToken: string;
@@ -84,7 +90,55 @@ export async function POST(req: NextRequest): Promise<Response> {
       );
     }
 
-    return NextResponse.json({ orderId: order.orderId });
+    const trainingSchedulingToken = await issueTrainingSchedulingTokenForPaidOrder(order.orderId);
+
+    if (trainingSchedulingToken) {
+      const programSlug = trainingSchedulingToken.programSnapshot.slug;
+
+      if (!programSlug) {
+        return NextResponse.json(
+          { error: "Payment verified but training confirmation could not be prepared" },
+          { status: 500 },
+        );
+      }
+
+      const redirectUrl = buildTrainingConfirmationUrl({
+        orderId: order.orderId,
+        programSlug,
+        schedulingToken: trainingSchedulingToken.schedulingToken,
+      });
+
+      try {
+        await sendTrainingPaymentNotificationEmails({
+          customerEmail: trainingSchedulingToken.checkoutOrder.customerEmail,
+          customerName: trainingSchedulingToken.checkoutOrder.customerName,
+          orderId: order.orderId,
+          programTitle: trainingSchedulingToken.programSnapshot.title,
+          schedulingUrl: buildAbsoluteSchedulingUrl(
+            req.nextUrl.origin,
+            trainingSchedulingToken.schedulingToken,
+          ),
+        });
+        await markTrainingEnrollmentStaffAlerted({
+          enrollmentId: trainingSchedulingToken.enrollmentId,
+        });
+      } catch (error) {
+        console.error("[checkout] Training payment notification email failed", {
+          error: error instanceof Error ? error.message : "Unknown email error",
+          orderId: order.orderId,
+        });
+      }
+
+      return NextResponse.json({
+        orderId: order.orderId,
+        redirectUrl,
+      });
+    }
+
+    return NextResponse.json({
+      orderId: order.orderId,
+      redirectUrl: `/products/confirmation?order=${encodeURIComponent(order.orderId)}`,
+    });
   } catch (error) {
     console.error("[checkout] Payment validation failed", {
       error: error instanceof Error ? error.message : "Unknown validation error",
@@ -94,4 +148,11 @@ export async function POST(req: NextRequest): Promise<Response> {
       { status: 500 }
     );
   }
+}
+
+function buildAbsoluteSchedulingUrl(origin: string, schedulingToken: string): string {
+  const url = new URL("/booking", origin);
+  url.searchParams.set("type", "training-call");
+  url.searchParams.set("token", schedulingToken);
+  return url.toString();
 }
