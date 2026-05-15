@@ -31,11 +31,37 @@ const helperScript = String.raw`
     });
   }
 
-  async function runScenario({ getCardTransaction, recordEvent }) {
+  async function runScenario({
+    getCardTransaction,
+    issueSchedulingTokenForPaidHelcimInvoiceIfMissing,
+    markTrainingEnrollmentStaffAlerted,
+    recordEvent,
+    sendTrainingPaymentNotificationEmails,
+  }) {
     const recorded = [];
+    const issuedTokens = [];
+    const markedStaffAlerts = [];
+    const sentEmails = [];
     const handler = createHelcimWebhookPostHandler({
       getCardTransaction,
       getVerifierToken: () => verifierToken,
+      issueSchedulingTokenForPaidHelcimInvoiceIfMissing: async (input) => {
+        if (!issueSchedulingTokenForPaidHelcimInvoiceIfMissing) {
+          return null;
+        }
+
+        const issued = await issueSchedulingTokenForPaidHelcimInvoiceIfMissing(input);
+        if (issued) {
+          issuedTokens.push(issued);
+        }
+        return issued;
+      },
+      markTrainingEnrollmentStaffAlerted: async (input) => {
+        markedStaffAlerts.push(input);
+        if (markTrainingEnrollmentStaffAlerted) {
+          await markTrainingEnrollmentStaffAlerted(input);
+        }
+      },
       recordEvent: async (event) => {
         recorded.push(event);
         if (recordEvent) {
@@ -43,9 +69,15 @@ const helperScript = String.raw`
         }
         return true;
       },
+      sendTrainingPaymentNotificationEmails: async (input) => {
+        sentEmails.push(input);
+        if (sendTrainingPaymentNotificationEmails) {
+          await sendTrainingPaymentNotificationEmails(input);
+        }
+      },
     });
 
-    return { handler, recorded };
+    return { handler, issuedTokens, markedStaffAlerts, recorded, sentEmails };
   }
 `;
 
@@ -106,6 +138,84 @@ test("Helcim webhook route returns retryable status when private persistence fai
       status: "APPROVED",
       transactionId: "25764674",
     });
+  `);
+});
+
+test("Helcim webhook route recovers missing training scheduling token and sends payment emails", () => {
+  runRouteScenario(`
+    const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });
+    const { handler, issuedTokens, markedStaffAlerts, sentEmails } = await runScenario({
+      getCardTransaction: async () => ({
+        amount: "1499.00",
+        currency: "CAD",
+        id: 25764674,
+        invoiceNumber: "INV-TRAINING-4242",
+        status: "APPROVED",
+      }),
+      issueSchedulingTokenForPaidHelcimInvoiceIfMissing: async (input) => ({
+        checkoutEmail: "client@example.com",
+        checkoutOrder: {
+          customerEmail: "client@example.com",
+          customerName: "Client Name",
+          orderId: "lh-training-123",
+        },
+        enrollmentId: "training-enrollment-1",
+        productSnapshot: {
+          currency: "CAD",
+          id: "product-training-full",
+          priceCents: 149900,
+          sku: "TRAINING-FULL",
+          title: "Lash Training Full Payment",
+        },
+        programSnapshot: {
+          id: "program-lash-training",
+          slug: "lash-training",
+          title: "Lash Training Program",
+        },
+        schedulingToken: "fresh-webhook-token",
+        tokenExpiresAt: new Date("2026-05-24T00:00:00.000Z"),
+      }),
+      recordEvent: async () => true,
+    });
+
+    const response = await handler(createRequest(body));
+
+    assert.equal(response.status, 200);
+    assert.equal(issuedTokens.length, 1);
+    assert.deepEqual(sentEmails, [
+      {
+        customerEmail: "client@example.com",
+        customerName: "Client Name",
+        orderId: "lh-training-123",
+        programTitle: "Lash Training Program",
+        schedulingUrl: "http://localhost:3000/booking?type=training-call&token=fresh-webhook-token",
+      },
+    ]);
+    assert.deepEqual(markedStaffAlerts, [{ enrollmentId: "training-enrollment-1" }]);
+  `);
+});
+
+test("Helcim webhook route does not send duplicate training emails when token already exists", () => {
+  runRouteScenario(`
+    const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });
+    const { handler, issuedTokens, markedStaffAlerts, sentEmails } = await runScenario({
+      getCardTransaction: async () => ({
+        amount: "1499.00",
+        currency: "CAD",
+        id: 25764674,
+        invoiceNumber: "INV-TRAINING-4242",
+        status: "APPROVED",
+      }),
+      issueSchedulingTokenForPaidHelcimInvoiceIfMissing: async () => null,
+      recordEvent: async () => true,
+    });
+
+    const response = await handler(createRequest(body));
+
+    assert.equal(response.status, 200);
+    assert.equal(issuedTokens.length, 0);
+    assert.equal(sentEmails.length, 0);
+    assert.equal(markedStaffAlerts.length, 0);
   `);
 });
 

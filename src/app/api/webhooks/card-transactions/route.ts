@@ -1,6 +1,11 @@
 import { getHelcimWebhookVerifierToken } from "@/lib/env/private-checkout";
 import { recordHelcimWebhookEvent } from "@/lib/commerce/order-store";
 import { getHelcimCardTransaction } from "@/lib/commerce/helcim-client";
+import { sendTrainingPaymentNotificationEmails } from "@/lib/commerce/training-payment-email";
+import {
+  issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing,
+  markTrainingEnrollmentStaffAlerted,
+} from "@/lib/commerce/training-enrollment-store";
 import {
   getHelcimWebhookHeaders,
   mergeHelcimCardTransactionDetails,
@@ -13,13 +18,19 @@ export const runtime = "nodejs";
 interface HelcimWebhookDependencies {
   getCardTransaction: typeof getHelcimCardTransaction;
   getVerifierToken: typeof getHelcimWebhookVerifierToken;
+  issueSchedulingTokenForPaidHelcimInvoiceIfMissing: typeof issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing;
+  markTrainingEnrollmentStaffAlerted: typeof markTrainingEnrollmentStaffAlerted;
   recordEvent: typeof recordHelcimWebhookEvent;
+  sendTrainingPaymentNotificationEmails: typeof sendTrainingPaymentNotificationEmails;
 }
 
 const defaultDependencies: HelcimWebhookDependencies = {
   getCardTransaction: getHelcimCardTransaction,
   getVerifierToken: getHelcimWebhookVerifierToken,
+  issueSchedulingTokenForPaidHelcimInvoiceIfMissing: issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing,
+  markTrainingEnrollmentStaffAlerted,
   recordEvent: recordHelcimWebhookEvent,
+  sendTrainingPaymentNotificationEmails,
 };
 
 export const POST = createHelcimWebhookPostHandler(defaultDependencies);
@@ -72,11 +83,72 @@ export function createHelcimWebhookPostHandler(
       return new Response(null, { status: 503 });
     }
 
+    try {
+      await recoverTrainingPaymentNotification(req, eventForStorage, dependencies);
+    } catch (error) {
+      console.error("[helcim-webhook] Training payment notification recovery failed", {
+        error: error instanceof Error ? error.message : "Unknown recovery error",
+        eventId: eventForStorage.eventId,
+      });
+    }
+
     return new Response(null, { status: 200 });
   };
 }
 
 type ParsedHelcimWebhook = ReturnType<typeof parseVerifiedHelcimWebhook>;
+
+async function recoverTrainingPaymentNotification(
+  req: Request,
+  event: ParsedHelcimWebhook,
+  dependencies: Pick<
+    HelcimWebhookDependencies,
+    | "issueSchedulingTokenForPaidHelcimInvoiceIfMissing"
+    | "markTrainingEnrollmentStaffAlerted"
+    | "sendTrainingPaymentNotificationEmails"
+  >,
+): Promise<void> {
+  if (!isApprovedWebhookPayment(event)) {
+    return;
+  }
+
+  const issued = await dependencies.issueSchedulingTokenForPaidHelcimInvoiceIfMissing({
+    helcimInvoiceId: event.helcimInvoiceId,
+    helcimInvoiceNumber: event.helcimInvoiceNumber,
+  });
+
+  if (!issued) {
+    return;
+  }
+
+  await dependencies.sendTrainingPaymentNotificationEmails({
+    customerEmail: issued.checkoutOrder.customerEmail,
+    customerName: issued.checkoutOrder.customerName,
+    orderId: issued.checkoutOrder.orderId,
+    programTitle: issued.programSnapshot.title,
+    schedulingUrl: buildAbsoluteSchedulingUrl(new URL(req.url).origin, issued.schedulingToken),
+  });
+  await dependencies.markTrainingEnrollmentStaffAlerted({
+    enrollmentId: issued.enrollmentId,
+  });
+}
+
+function isApprovedWebhookPayment(event: ParsedHelcimWebhook): boolean {
+  if (event.eventType !== "cardTransaction" || event.helcimTransactionId === undefined) {
+    return false;
+  }
+
+  return event.status !== undefined && ["approved", "completed", "success", "succeeded", "true"].includes(
+    event.status.trim().toLowerCase(),
+  );
+}
+
+function buildAbsoluteSchedulingUrl(origin: string, schedulingToken: string): string {
+  const url = new URL("/booking", origin);
+  url.searchParams.set("type", "training-call");
+  url.searchParams.set("token", schedulingToken);
+  return url.toString();
+}
 
 async function reconcileCardTransactionWebhook(
   event: ParsedHelcimWebhook,
