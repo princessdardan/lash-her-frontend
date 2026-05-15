@@ -4,6 +4,7 @@ import Link from "next/link";
 import { loaders } from "@/data/loaders";
 import { BlockRenderer } from "@/components/custom/layouts/block-renderer";
 import { TrainingDetailItems } from "@/components/custom/training-detail-items";
+import { getTrainingCta } from "@/lib/training-checkout";
 
 export const revalidate = 1800;
 
@@ -43,6 +44,19 @@ export async function generateStaticParams() {
   return programs.map(p => ({ slug: p.slug }));
 }
 
+function renderTrainingCta(cta: { label: string; href: string }, className = "mt-16 text-center") {
+  return (
+    <div className={className}>
+      <Link
+        href={cta.href}
+        className="primary-cta inline-block bg-lh-shadow text-lh-neutral-2 px-8 py-4 rounded-full font-medium hover:bg-lh-shadow/90 transition-colors"
+      >
+        {cta.label}
+      </Link>
+    </div>
+  );
+}
+
 export default async function TrainingProgramPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const data = await loaders.getTrainingProgramBySlug(slug);
@@ -50,7 +64,8 @@ export default async function TrainingProgramPage({ params }: { params: Promise<
   if (!data) notFound();
 
   const hasStructuredDetails = data.detailHeading || data.detailDescription || (data.detailItems && data.detailItems.length > 0) || (data.factList && data.factList.length > 0);
-  const isCtaSafe = isSafeUrl(data.primaryCta?.href);
+  const cta = getTrainingCta(data);
+  const isCtaSafe = isSafeUrl(cta?.href);
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -87,16 +102,15 @@ export default async function TrainingProgramPage({ params }: { params: Promise<
               </div>
             )}
 
-            {data.primaryCta && data.primaryCta.label && isCtaSafe && (
-              <div className="mt-16 text-center">
-                <Link
-                  href={data.primaryCta.href!}
-                  className="primary-cta inline-block bg-lh-shadow text-lh-neutral-2 px-8 py-4 rounded-full font-medium hover:bg-lh-shadow/90 transition-colors"
-                >
-                  {data.primaryCta.label}
-                </Link>
-              </div>
-            )}
+            {cta && cta.label && isCtaSafe && renderTrainingCta(cta)}
+          </div>
+        </section>
+      )}
+
+      {!hasStructuredDetails && cta && cta.label && isCtaSafe && (
+        <section className="section-shell py-12" data-training-commerce-cta="true">
+          <div className="content-container text-center">
+            {renderTrainingCta(cta, "")}
           </div>
         </section>
       )}
