@@ -8,6 +8,13 @@
       "when": 1778450844121,
       "tag": "0000_old_moonstone",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1778784000000,
+      "tag": "0001_private_training_enrollments",
+      "breakpoints": true
     }
   ]
 }
