@@ -55,6 +55,8 @@ export interface TFeature {
 
 export interface TCtaFeature {
   _key?: string;
+  format?: "standard" | "imageFeature";
+  image?: TSanityImage;
   heading: string;
   subHeading: string;
   location: string;
@@ -81,6 +83,17 @@ export interface TContact {
 // === Layout Block Types ===
 // Each block has _type and _key from Sanity arrays
 
+export type THeroSize = "default" | "fullScreen" | "eighty" | "compact";
+
+export interface THeroSlide {
+  _key: string;
+  image: TSanityImage;
+  heading?: string;
+  subHeading?: string;
+  description?: string;
+  link?: TLink[];
+}
+
 export interface THeroSection {
   _type: "heroSection";
   _key: string;
@@ -90,6 +103,10 @@ export interface THeroSection {
   image: TSanityImage;
   link: TLink[];
   onHomepage: boolean;
+  heroSize?: THeroSize;
+  slides?: THeroSlide[];
+  autoRotate?: boolean;
+  rotationIntervalMs?: number;
 }
 
 export interface TFeaturesSection {

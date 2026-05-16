@@ -24,6 +24,10 @@ async function getHomePageData(): Promise<THomePage | null> {
       subHeading,
       description,
       onHomepage,
+      heroSize,
+      autoRotate,
+      rotationIntervalMs,
+      slides[]{ _key, image{ asset, hotspot, crop, alt }, heading, subHeading, description, link[]{ _key, href, label, isExternal } },
       image{ asset, hotspot, crop, alt },
       link[]{ _key, href, label, isExternal },
       title,
@@ -71,6 +75,10 @@ async function getGalleryPageData(): Promise<TGalleryPage | null> {
       subHeading,
       description,
       onHomepage,
+      heroSize,
+      autoRotate,
+      rotationIntervalMs,
+      slides[]{ _key, image{ asset, hotspot, crop, alt }, heading, subHeading, description, link[]{ _key, href, label, isExternal } },
       image{ asset, hotspot, crop, alt },
       link[]{ _key, href, label, isExternal },
       images[]{ asset, hotspot, crop, alt }
@@ -92,7 +100,7 @@ async function getTrainingsPageData(): Promise<TTrainingPage | null> {
       image{ asset, hotspot, crop, alt },
       orientation,
       perks,
-      features[]{ _key, heading, subHeading, location, tier, features, link{ href, label, isExternal }, icon, mostPopular }
+      features[]{ _key, format, image{ asset, hotspot, crop, alt }, heading, subHeading, location, tier, features, link{ href, label, isExternal }, icon, mostPopular }
     }
   }`;
   return client.fetch<TTrainingPage | null>(query, {}, { next: { tags: ['trainingPage'] } });
@@ -173,6 +181,10 @@ async function getTrainingProgramBySlug(slug: string): Promise<TTrainingProgram 
       subHeading,
       description,
       onHomepage,
+      heroSize,
+      autoRotate,
+      rotationIntervalMs,
+      slides[]{ _key, image{ asset, hotspot, crop, alt }, heading, subHeading, description, link[]{ _key, href, label, isExternal } },
       image{ asset, hotspot, crop, alt },
       link[]{ _key, href, label, isExternal },
       info,
@@ -225,6 +237,10 @@ async function getAllTrainingPrograms(): Promise<TTrainingProgram[]> {
       subHeading,
       description,
       onHomepage,
+      heroSize,
+      autoRotate,
+      rotationIntervalMs,
+      slides[]{ _key, image{ asset, hotspot, crop, alt }, heading, subHeading, description, link[]{ _key, href, label, isExternal } },
       image{ asset, hotspot, crop, alt },
       link[]{ _key, href, label, isExternal },
       info,
