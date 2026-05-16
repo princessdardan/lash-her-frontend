@@ -4,6 +4,7 @@ import { AwardIcon, UserIcon, UsersIcon, VideoIcon } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { PortableTextRenderer } from "@/components/ui/portable-text-renderer";
+import { SanityImage } from "@/components/ui/sanity-image";
 
 export type { TCtaFeaturesSection as CtaFeaturesSectionProps } from "@/types";
 export type { TCtaFeature as CtaFeature } from "@/types";
@@ -45,58 +46,119 @@ export async function CtaFeaturesSection({data}: { data: TCtaFeaturesSection }) 
           'md:grid-cols-2 lg:grid-cols-3'
         }`}>
           {data.features.map((item: TCtaFeature, index: number) => (
-            <div
-              key={item._key || index}
-              className={`editorial-card relative flex h-full min-h-[480px] w-full flex-col self-stretch p-8 ${
-                item.mostPopular ? "border-lh-light border-2 shadow-md" : ""
-              }`}
-            >
-              {/* Most Popular Badge */}
-              {item.mostPopular && (
-                <div className="absolute top-0 right-0 bg-lh-light text-lh-shadow text-xs px-4 py-1.5 rounded-bl-[18px] rounded-tr-[16px] font-heading tracking-widest uppercase font-bold">
-                  Most Popular
-                </div>
-              )}
+            item.format === "imageFeature" ? (
+              <div
+                key={item._key || index}
+                className={`editorial-card relative flex h-full min-h-[480px] w-full flex-col self-stretch overflow-hidden ${
+                  item.mostPopular ? "border-lh-light border-2 shadow-md" : ""
+                }`}
+              >
+                {/* Most Popular Badge */}
+                {item.mostPopular && (
+                  <div className="absolute top-0 right-0 z-10 bg-lh-light text-lh-shadow text-xs px-4 py-1.5 rounded-bl-[18px] rounded-tr-[16px] font-heading tracking-widest uppercase font-bold">
+                    Most Popular
+                  </div>
+                )}
 
-              {/* Feature Header */}
-              <div className="mb-6">
-                <div className="flex items-start mb-6">
-                  <div className={`rounded-full bg-lh-primary-soft p-3 inline-flex items-center justify-center text-lh-primary ${
-                    item.mostPopular ? "bg-lh-primary text-lh-white" : ""
-                  }`}>
-                    {getIcon(item.icon)}
+                {/* Image Header with Overlay */}
+                <div className="relative h-64 w-full shrink-0 bg-lh-primary-soft">
+                  {item.image && (
+                    <SanityImage
+                      image={item.image}
+                      fill
+                      className="object-cover"
+                    />
+                  )}
+                  <div className="absolute inset-0 bg-black/40" />
+                  <div className="absolute inset-0 p-8 flex flex-col justify-end text-lh-white">
+                    <h3 className="text-3xl font-heading mb-2">{item.heading}</h3>
+                    <p className="text-sm font-heading tracking-widest uppercase mb-2">{item.subHeading}</p>
+                    <div className="text-sm font-bold opacity-90">
+                      {item.location}
+                    </div>
                   </div>
                 </div>
-                <h3 className="text-3xl font-heading text-lh-shadow mb-2">{item.heading}</h3>
-                <p className="text-sm text-lh-primary font-heading tracking-widest uppercase mb-4">{item.subHeading}</p>
-                <div className="w-12 h-[1px] bg-lh-light mb-4" />
-                <div className="text-sm font-bold text-lh-shadow/70">
-                  {item.location}
+
+                {/* Content Below Image */}
+                <div className="flex flex-col flex-grow p-8">
+                  <div className="text-sm text-lh-primary font-heading tracking-widest uppercase mb-6">{item.tier}</div>
+                  
+                  {/* Rich Text Content */}
+                  <div className="flex-grow mb-8 text-lh-shadow/80 leading-relaxed">
+                    <PortableTextRenderer content={item.features} />
+                  </div>
+
+                  {/* CTA Link */}
+                  {item.link && (
+                    <Link
+                      href={item.link.href}
+                      target={item.link.isExternal ? "_blank" : undefined}
+                      rel={
+                        item.link.isExternal ? "noopener noreferrer" : undefined
+                      }
+                      className="mt-auto"
+                    >
+                      <Button variant={item.mostPopular ? "primary" : "outline"} className="w-full">
+                        {item.link.label}
+                      </Button>
+                    </Link>
+                  )}
                 </div>
               </div>
-              <div className="text-sm text-lh-primary font-heading tracking-widest uppercase mb-6">{item.tier}</div>
-              
-              {/* Rich Text Content */}
-              <div className="flex-grow mb-8 text-lh-shadow/80 leading-relaxed">
-                <PortableTextRenderer content={item.features} />
-              </div>
+            ) : (
+              <div
+                key={item._key || index}
+                className={`editorial-card relative flex h-full min-h-[480px] w-full flex-col self-stretch p-8 ${
+                  item.mostPopular ? "border-lh-light border-2 shadow-md" : ""
+                }`}
+              >
+                {/* Most Popular Badge */}
+                {item.mostPopular && (
+                  <div className="absolute top-0 right-0 bg-lh-light text-lh-shadow text-xs px-4 py-1.5 rounded-bl-[18px] rounded-tr-[16px] font-heading tracking-widest uppercase font-bold">
+                    Most Popular
+                  </div>
+                )}
 
-              {/* CTA Link */}
-              {item.link && (
-                <Link
-                  href={item.link.href}
-                  target={item.link.isExternal ? "_blank" : undefined}
-                  rel={
-                    item.link.isExternal ? "noopener noreferrer" : undefined
-                  }
-                  className="mt-auto"
-                >
-                  <Button variant={item.mostPopular ? "primary" : "outline"} className="w-full">
-                    {item.link.label}
-                  </Button>
-                </Link>
-              )}
-            </div>
+                {/* Feature Header */}
+                <div className="mb-6">
+                  <div className="flex items-start mb-6">
+                    <div className={`rounded-full bg-lh-primary-soft p-3 inline-flex items-center justify-center text-lh-primary ${
+                      item.mostPopular ? "bg-lh-primary text-lh-white" : ""
+                    }`}>
+                      {getIcon(item.icon)}
+                    </div>
+                  </div>
+                  <h3 className="text-3xl font-heading text-lh-shadow mb-2">{item.heading}</h3>
+                  <p className="text-sm text-lh-primary font-heading tracking-widest uppercase mb-4">{item.subHeading}</p>
+                  <div className="w-12 h-[1px] bg-lh-light mb-4" />
+                  <div className="text-sm font-bold text-lh-shadow/70">
+                    {item.location}
+                  </div>
+                </div>
+                <div className="text-sm text-lh-primary font-heading tracking-widest uppercase mb-6">{item.tier}</div>
+                
+                {/* Rich Text Content */}
+                <div className="flex-grow mb-8 text-lh-shadow/80 leading-relaxed">
+                  <PortableTextRenderer content={item.features} />
+                </div>
+
+                {/* CTA Link */}
+                {item.link && (
+                  <Link
+                    href={item.link.href}
+                    target={item.link.isExternal ? "_blank" : undefined}
+                    rel={
+                      item.link.isExternal ? "noopener noreferrer" : undefined
+                    }
+                    className="mt-auto"
+                  >
+                    <Button variant={item.mostPopular ? "primary" : "outline"} className="w-full">
+                      {item.link.label}
+                    </Button>
+                  </Link>
+                )}
+              </div>
+            )
           ))}
         </div>
       </div>
