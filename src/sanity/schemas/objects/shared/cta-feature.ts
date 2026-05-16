@@ -6,6 +6,35 @@ export const ctaFeature = defineType({
   type: "object",
   fields: [
     defineField({
+      name: "format",
+      title: "Card Format",
+      type: "string",
+      options: {
+        list: [
+          { title: "Standard", value: "standard" },
+          { title: "Image-led", value: "imageFeature" },
+        ],
+        layout: "radio",
+      },
+      initialValue: "standard",
+    }),
+    defineField({
+      name: "image",
+      title: "Image",
+      type: "image",
+      options: {
+        hotspot: true,
+      },
+      fields: [
+        defineField({
+          name: "alt",
+          title: "Alternative Text",
+          type: "string",
+        }),
+      ],
+      hidden: ({ parent }) => parent?.format !== "imageFeature",
+    }),
+    defineField({
       name: "heading",
       title: "Heading",
       type: "string",
