@@ -9,6 +9,7 @@ const TYPE_TAG_MAP: Record<string, string> = {
   contactPage: "contactPage",
   galleryPage: "galleryPage",
   trainingPage: "trainingPage",
+  trainingProgramsPage: "trainingProgramsPage",
   trainingProgram: "trainingProgram",
   sellableProduct: "sellableProduct",
   globalSettings: "global",

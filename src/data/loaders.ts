@@ -6,12 +6,23 @@ import type {
   TContactPage,
   TGalleryPage,
   TTrainingPage,
+  TTrainingProgramsPage,
   TTrainingProgram,
   TGlobalSettings,
   TMainMenu,
   TMetaData,
   TSellableProduct,
 } from "@/types";
+
+const isVercelPreview = process.env.VERCEL_ENV === "preview";
+
+function sanityFetchOptions(tags: string[]) {
+  if (isVercelPreview) {
+    return { cache: "no-store" as const };
+  }
+
+  return { next: { tags } };
+}
 
 async function getHomePageData(): Promise<THomePage | null> {
   const query = groq`*[_type == "homePage"][0]{
@@ -34,7 +45,7 @@ async function getHomePageData(): Promise<THomePage | null> {
       features[]{ _key, heading, subHeading, icon }
     }
   }`;
-  return client.fetch<THomePage | null>(query, {}, { next: { tags: ['homePage'] } });
+  return client.fetch<THomePage | null>(query, {}, sanityFetchOptions(['homePage']));
 }
 
 async function getContactPageData(): Promise<TContactPage | null> {
@@ -61,7 +72,7 @@ async function getContactPageData(): Promise<TContactPage | null> {
       message
     }
   }`;
-  return client.fetch<TContactPage | null>(query, {}, { next: { tags: ['contactPage'] } });
+  return client.fetch<TContactPage | null>(query, {}, sanityFetchOptions(['contactPage']));
 }
 
 async function getGalleryPageData(): Promise<TGalleryPage | null> {
@@ -84,7 +95,7 @@ async function getGalleryPageData(): Promise<TGalleryPage | null> {
       images[]{ asset, hotspot, crop, alt }
     }
   }`;
-  return client.fetch<TGalleryPage | null>(query, {}, { next: { tags: ['galleryPage'] } });
+  return client.fetch<TGalleryPage | null>(query, {}, sanityFetchOptions(['galleryPage']));
 }
 
 async function getTrainingsPageData(): Promise<TTrainingPage | null> {
@@ -103,7 +114,7 @@ async function getTrainingsPageData(): Promise<TTrainingPage | null> {
       features[]{ _key, format, image{ asset, hotspot, crop, alt }, heading, subHeading, location, tier, features, link{ href, label, isExternal }, icon, mostPopular }
     }
   }`;
-  return client.fetch<TTrainingPage | null>(query, {}, { next: { tags: ['trainingPage'] } });
+  return client.fetch<TTrainingPage | null>(query, {}, sanityFetchOptions(['trainingPage']));
 }
 
 async function getGlobalData(): Promise<TGlobalSettings | null> {
@@ -120,7 +131,7 @@ async function getGlobalData(): Promise<TGlobalSettings | null> {
       socialLink[]{ _key, href, label, isExternal }
     }
   }`;
-  return client.fetch<TGlobalSettings | null>(query, {}, { next: { tags: ['global'] } });
+  return client.fetch<TGlobalSettings | null>(query, {}, sanityFetchOptions(['global']));
 }
 
 async function getMainMenuData(): Promise<TMainMenu | null> {
@@ -133,7 +144,7 @@ async function getMainMenuData(): Promise<TMainMenu | null> {
       sections[]{ _key, heading, links[]{ _key, name, url, description } }
     }
   }`;
-  return client.fetch<TMainMenu | null>(query, {}, { next: { tags: ['menu'] } });
+  return client.fetch<TMainMenu | null>(query, {}, sanityFetchOptions(['menu']));
 }
 
 async function getMetaData(): Promise<TMetaData | null> {
@@ -142,7 +153,7 @@ async function getMetaData(): Promise<TMetaData | null> {
     description,
     "ogImageUrl": ogImage.asset->url
   }`;
-  return client.fetch<TMetaData | null>(query, {}, { next: { tags: ['global'] } });
+  return client.fetch<TMetaData | null>(query, {}, sanityFetchOptions(['global']));
 }
 
 async function getTrainingProgramBySlug(slug: string): Promise<TTrainingProgram | null> {
@@ -198,7 +209,67 @@ async function getTrainingProgramBySlug(slug: string): Promise<TTrainingProgram 
       clients
     }
   }`;
-  return client.fetch<TTrainingProgram | null>(query, { slug }, { next: { tags: ['trainingProgram'] } });
+  return client.fetch<TTrainingProgram | null>(query, { slug }, sanityFetchOptions(['trainingProgram']));
+}
+
+async function getTrainingProgramsPageData(): Promise<TTrainingProgramsPage | null> {
+  const query = groq`*[_type == "trainingProgramsPage"][0]{
+    title,
+    description,
+    trainingPrograms[]->{
+      _id,
+      title,
+      description,
+      "slug": slug.current,
+      detailHeading,
+      detailDescription,
+      detailItems[]{ _key, title, description, image{ asset, hotspot, crop, alt } },
+      factList,
+      primaryCta{ label, href },
+      checkoutEnabled,
+      checkoutProduct->{
+        _id,
+        title,
+        "slug": slug.current,
+        sku,
+        kind,
+        price,
+        currency,
+        variants[]{ _key, title, sku, price, isAvailable, availabilityLabel },
+        isAvailable,
+        availabilityLabel,
+        fulfillmentNote
+      },
+      checkoutCtaLabel,
+      checkoutDisabledBookingCta{ label, href },
+      postPurchaseInstructions,
+      seo{ title, description, image{ asset, hotspot, crop, alt } },
+      blocks[]{
+        _type,
+        _key,
+        heading,
+        subHeading,
+        description,
+        onHomepage,
+        heroSize,
+        autoRotate,
+        rotationIntervalMs,
+        slides[]{ _key, image{ asset, hotspot, crop, alt }, heading, subHeading, description, link[]{ _key, href, label, isExternal } },
+        image{ asset, hotspot, crop, alt },
+        link[]{ _key, href, label, isExternal },
+        info,
+        name,
+        email,
+        phone,
+        location,
+        instagram,
+        experience,
+        interest,
+        clients
+      }
+    }
+  }`;
+  return client.fetch<TTrainingProgramsPage | null>(query, {}, sanityFetchOptions(['trainingProgramsPage', 'trainingProgram']));
 }
 
 async function getAllTrainingPrograms(): Promise<TTrainingProgram[]> {
@@ -254,14 +325,14 @@ async function getAllTrainingPrograms(): Promise<TTrainingProgram[]> {
       clients
     }
   }`;
-  return client.fetch<TTrainingProgram[]>(query, {}, { next: { tags: ['trainingProgram'] } });
+  return client.fetch<TTrainingProgram[]>(query, {}, sanityFetchOptions(['trainingProgram']));
 }
 
 async function getAllTrainingProgramSlugs(): Promise<Array<{ slug: string }>> {
   const query = groq`*[_type == "trainingProgram"]{
     "slug": slug.current
   }`;
-  return client.fetch<Array<{ slug: string }>>(query, {}, { next: { tags: ['trainingProgram'] } });
+  return client.fetch<Array<{ slug: string }>>(query, {}, sanityFetchOptions(['trainingProgram']));
 }
 
 async function getBookingSettings(): Promise<BookingSettings | null> {
@@ -284,7 +355,7 @@ async function getBookingSettings(): Promise<BookingSettings | null> {
       "questions": coalesce(questions[]{ _key, id, label, inputType, required, options }, [])
     }
   }`;
-  return client.fetch<BookingSettings | null>(query, {}, { next: { tags: ["bookingSettings"] } });
+  return client.fetch<BookingSettings | null>(query, {}, sanityFetchOptions(["bookingSettings"]));
 }
 
 async function getSellableProducts(): Promise<TSellableProduct[]> {
@@ -305,7 +376,7 @@ async function getSellableProducts(): Promise<TSellableProduct[]> {
     displayOrder,
     image{ asset, hotspot, crop, alt }
   }`;
-  return client.fetch<TSellableProduct[]>(query, {}, { next: { tags: ['sellableProduct'] } });
+  return client.fetch<TSellableProduct[]>(query, {}, sanityFetchOptions(['sellableProduct']));
 }
 
 async function getSellableProductsByIds(ids: string[]): Promise<TSellableProduct[]> {
@@ -326,7 +397,7 @@ async function getSellableProductsByIds(ids: string[]): Promise<TSellableProduct
     displayOrder,
     image{ asset, hotspot, crop, alt }
   }`;
-  return client.fetch<TSellableProduct[]>(query, { ids }, { next: { tags: ['sellableProduct'] } });
+  return client.fetch<TSellableProduct[]>(query, { ids }, sanityFetchOptions(['sellableProduct']));
 }
 
 async function getSellableProductBySlug(slug: string): Promise<TSellableProduct | null> {
@@ -350,14 +421,14 @@ async function getSellableProductBySlug(slug: string): Promise<TSellableProduct 
     detailSections[]{ _key, heading, content },
     seo{ title, description, image{ asset, hotspot, crop, alt } }
   }`;
-  return client.fetch<TSellableProduct | null>(query, { slug }, { next: { tags: ['sellableProduct'] } });
+  return client.fetch<TSellableProduct | null>(query, { slug }, sanityFetchOptions(['sellableProduct']));
 }
 
 async function getAllSellableProductSlugs(): Promise<Array<{ slug: string }>> {
   const query = groq`*[_type == "sellableProduct" && isAvailable == true]{
     "slug": slug.current
   }`;
-  return client.fetch<Array<{ slug: string }>>(query, {}, { next: { tags: ['sellableProduct'] } });
+  return client.fetch<Array<{ slug: string }>>(query, {}, sanityFetchOptions(['sellableProduct']));
 }
 
 export const loaders = {
@@ -369,6 +440,7 @@ export const loaders = {
   getMainMenuData,
   getMetaData,
   getTrainingProgramBySlug,
+  getTrainingProgramsPageData,
   getAllTrainingPrograms,
   getAllTrainingProgramSlugs,
   getBookingSettings,
