@@ -3,7 +3,7 @@ import { setupApiMocks } from './utils/api-mocks';
 
 test.describe('Navigation', () => {
   test.beforeEach(async ({ page }) => {
-    // Setup API mocks before each test
+    // Install legacy endpoint fixtures for mocked navigation UX coverage.
     await setupApiMocks(page);
   });
 
@@ -144,7 +144,7 @@ test.describe('Navigation', () => {
 
 test.describe('Accessibility', () => {
   test.beforeEach(async ({ page }) => {
-    // Setup API mocks before each test
+    // Install legacy endpoint fixtures for mocked accessibility UX coverage.
     await setupApiMocks(page);
   });
 

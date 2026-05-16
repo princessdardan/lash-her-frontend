@@ -3,8 +3,8 @@ import { checkBrokenImages } from './utils/test-helpers';
 
 /**
  * E2E tests for training program detail pages.
- * Verifies MIG-03: Strapi Blocks rich text converted to Portable Text renders correctly.
- * No Strapi API mocks — the site now reads from Sanity CDN directly.
+ * Verifies MIG-03: migrated rich text renders through Sanity Portable Text.
+ * This spec does not use legacy endpoint fixtures; the site reads from Sanity.
  */
 
 const FALLBACK_SLUG = 'lash-designing-1-1-training';
@@ -91,7 +91,7 @@ test.describe('Training Program Detail Page — Rich Text Rendering (MIG-03)', (
     await page.goto(url);
     await page.waitForLoadState('networkidle');
 
-    // Portable Text converts Strapi paragraph nodes to <p> elements
+    // Portable Text renders migrated paragraph content as <p> elements.
     const paragraphs = page.locator('main p');
     await expect(paragraphs.first()).toBeVisible();
     const text = await paragraphs.first().textContent();

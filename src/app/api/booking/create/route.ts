@@ -1,6 +1,3 @@
-import { NextRequest, NextResponse } from "next/server";
-
-import { createBooking } from "@/lib/booking/booking-service";
 import type {
   BookingAnswerInput,
   BookingRequestInput,
@@ -12,31 +9,62 @@ const BOOKING_TYPES: readonly BookingType[] = [
   "in-person-appointment",
 ];
 
-export async function POST(req: NextRequest): Promise<NextResponse> {
-  let body: unknown;
-
-  try {
-    body = await req.json();
-  } catch (error) {
-    console.warn("[booking create] Invalid JSON:", getErrorMessage(error));
-
-    return NextResponse.json(
-      { success: false, error: "Invalid booking request" },
-      { status: 400 },
-    );
-  }
-
-  const input = toBookingRequestInput(body);
-  const result = await createBooking(input);
-
-  if (!result.success) {
-    return NextResponse.json(result, {
-      status: result.fieldErrors === undefined ? 409 : 400,
-    });
-  }
-
-  return NextResponse.json(result);
+interface BookingActionSuccess {
+  success: true;
+  eventId: string;
 }
+
+interface BookingActionFailure {
+  success: false;
+  error: string;
+  fieldErrors?: Record<string, string>;
+}
+
+type BookingActionResult = BookingActionSuccess | BookingActionFailure;
+
+export interface BookingCreatePostHandlerDependencies {
+  createBooking: (input: BookingRequestInput) => Promise<BookingActionResult>;
+}
+
+export function createBookingCreatePostHandler(
+  dependencies: BookingCreatePostHandlerDependencies,
+): (req: Request) => Promise<Response> {
+  return async function bookingCreatePostHandler(
+    req: Request,
+  ): Promise<Response> {
+    let body: unknown;
+
+    try {
+      body = await req.json();
+    } catch (error) {
+      console.warn("[booking create] Invalid JSON:", getErrorMessage(error));
+
+      return Response.json(
+        { success: false, error: "Invalid booking request" },
+        { status: 400 },
+      );
+    }
+
+    const input = toBookingRequestInput(body);
+    const result = await dependencies.createBooking(input);
+
+    if (!result.success) {
+      return Response.json(result, {
+        status: result.fieldErrors === undefined ? 409 : 400,
+      });
+    }
+
+    return Response.json(result);
+  };
+}
+
+export const POST = createBookingCreatePostHandler({
+  createBooking: async (input) => {
+    const { createBooking } = await import("@/lib/booking/booking-service");
+
+    return createBooking(input);
+  },
+});
 
 function toBookingRequestInput(input: unknown): BookingRequestInput {
   const record = isRecord(input) ? input : {};

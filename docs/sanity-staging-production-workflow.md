@@ -20,13 +20,13 @@ This document describes how to use the Lash Her staging Sanity Studio and the `s
 The implementation worktree for this effort is:
 
 ```bash
-/Users/dardan/Documents/lash-her-booking-helcim-integration
+/Users/dardan/workspace/lash-her-frontend
 ```
 
 Run app and Sanity commands from:
 
 ```bash
-cd /Users/dardan/Documents/lash-her-booking-helcim-integration
+cd /Users/dardan/workspace/lash-her-frontend
 ```
 
 ## Current Project Findings
@@ -68,6 +68,9 @@ Before proceeding, confirm you have:
   - `SANITY_WRITE_TOKEN`
   - `SANITY_FORM_TOKEN`
   - `SANITY_WEBHOOK_SECRET`
+  - `RESEND_API_KEY`
+  - `FROM_EMAIL`
+  - `ADMIN_EMAIL`
   - `GOOGLE_CLIENT_ID`
   - `GOOGLE_CLIENT_SECRET`
   - `GOOGLE_REDIRECT_URI`
@@ -76,6 +79,7 @@ Before proceeding, confirm you have:
   - `KV_REST_API_TOKEN`
   - `HELCIM_GENERAL_API_TOKEN`
   - `HELCIM_TRANSACTION_API_TOKEN`
+  - `HELCIM_WEBHOOK_VERIFIER_TOKEN`
   - `CHECKOUT_SECRET_ENCRYPTION_KEY`
   - `DATABASE_URL`
 
@@ -86,7 +90,7 @@ Do not put private tokens in `NEXT_PUBLIC_*` variables. `NEXT_PUBLIC_*` values a
 From the implementation worktree root directory:
 
 ```bash
-cd /Users/dardan/Documents/lash-her-booking-helcim-integration
+cd /Users/dardan/workspace/lash-her-frontend
 
 npx sanity dataset list --project-id 3auncj84
 ```
@@ -176,7 +180,7 @@ Because this repo defines schemas in code, production schemas should be treated 
 Deploy the worktree schema to `staging-2026-05-10`:
 
 ```bash
-cd /Users/dardan/Documents/lash-her-booking-helcim-integration
+cd /Users/dardan/workspace/lash-her-frontend
 
 NEXT_PUBLIC_SANITY_PROJECT_ID=3auncj84 \
 NEXT_PUBLIC_SANITY_DATASET=staging-2026-05-10 \
@@ -253,7 +257,7 @@ npx sanity cors add http://localhost:3000 \
 Run local validation from the implementation worktree:
 
 ```bash
-cd /Users/dardan/Documents/lash-her-booking-helcim-integration
+cd /Users/dardan/workspace/lash-her-frontend
 
 npm run lint
 npm run build
@@ -282,7 +286,7 @@ Promote code through Git and CI, not by copying staging schema documents into pr
 5. Deploy the production schema representation:
 
 ```bash
-cd /Users/dardan/Documents/lash-her-booking-helcim-integration
+cd /Users/dardan/workspace/lash-her-frontend
 
 NEXT_PUBLIC_SANITY_PROJECT_ID=3auncj84 \
 NEXT_PUBLIC_SANITY_DATASET=production \
@@ -447,3 +451,20 @@ Production release:
 - [ ] Run any approved targeted content migration.
 - [ ] Verify production Studio.
 - [ ] Verify production public pages and affected flows.
+
+## Phase 8: Launch Readiness and Smoke Testing
+
+Before declaring a release ready for production, you must complete the launch readiness checklist. This ensures that all environment variables are correct and that content revalidation is working as expected.
+
+Refer to [Launch Readiness Checklist](./launch-readiness-checklist.md) for the full smoke matrix and evidence requirements.
+
+### CMS Smoke Summary
+- **Verify Publish Flow:** Update a document in the Studio, publish it, and confirm the change appears on the public site.
+- **Check Webhooks:** Ensure the Sanity webhook delivers a signed payload to `/api/revalidate`.
+- **Validate Cache Tags:** Confirm the correct cache tags are being invalidated for each document type.
+
+### Stop Conditions
+Production promotion must stop if:
+- A production publish does not appear on the public page after webhook delivery.
+- The webhook targets the wrong dataset or cache tag.
+- Environment validation fails for any production-critical secret.

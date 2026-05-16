@@ -1,73 +1,98 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Lash Her by Nataliea - Operator Runbook
 
-## Getting Started
+Lash Her is a beauty and lash artistry platform built with Next.js 16 and Sanity CMS. This repository contains the public storefront, an embedded Sanity Studio, and service integrations for booking and commerce.
 
-First, run the development server:
+## Quick Start
+
+1. Install dependencies: `npm install`
+2. Configure environment: `cp .env.local.example .env.local`
+3. Start development server: `npm run dev`
+4. Open [http://localhost:3000](http://localhost:3000)
+
+## Core Commands
+
+- `npm run dev`: Start local development server
+- `npm run build`: Build for production
+- `npm run lint`: Run ESLint and type checks
+- `npm test`: Run Playwright E2E tests
+- `npm run db:generate`: Generate database migrations
+- `npm run db:migrate`: Apply database migrations
+- `node scripts/validate-sanity-env.mjs`: Validate launch environment variables
+
+## Environment Setup
+
+The application requires several service integrations. See `.env.local.example` for the full list of required variables.
+
+### Sanity CMS
+- Project ID: `3auncj84`
+- Production Dataset: `production`
+- Staging Dataset: `staging-2026-05-10`
+- API Version: `2026-03-24`
+
+### Booking System
+Google Calendar integration requires OAuth credentials and an Upstash KV store for token persistence.
+- Visit `/api/booking/oauth/start?secret=<BOOKING_ADMIN_SETUP_SECRET>` to connect the primary calendar.
+- Treat the setup URL as sensitive because it contains a secret; do not share it in chat or ticket systems, and rotate `BOOKING_ADMIN_SETUP_SECRET` after setup if it may have been logged.
+- Configure the connected calendar ID in the Sanity `bookingSettings` singleton.
+
+### Checkout and Private DB
+Checkout uses Helcim for payments and a private Neon/Drizzle database for order records.
+- **PII Policy:** Never store transaction history, customer PII, or payment tokens in Sanity.
+- Database migrations live in `drizzle/`.
+
+### Email
+Transactional emails are sent via Resend. Ensure `RESEND_API_KEY`, `FROM_EMAIL`, and `ADMIN_EMAIL` are configured.
+
+## Sanity Workflow
+
+The Sanity Studio is embedded at `/studio`.
+
+1. **Schema Changes:** Modify code in `src/sanity/schemas/`, then deploy:
+   `npx sanity schema deploy`
+2. **Content Promotion:** Follow the guidance in `docs/sanity-staging-production-workflow.md`.
+3. **Revalidation:** The app uses a webhook at `/api/revalidate` to clear Next.js cache tags.
+   - Endpoint: `/api/revalidate`
+   - Projection: `{ _type }`
+   - Secret: `SANITY_WEBHOOK_SECRET`
+   - Behavior: `revalidateTag(tag, { expire: 0 })` for immediate updates.
+
+## Validation and Smoke Testing
+
+Before promoting to production, run the validation suite:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run lint
+npm run build
+npm test
+node scripts/validate-sanity-env.mjs
+VERCEL_ENV=preview node scripts/validate-sanity-env.mjs
+VERCEL_ENV=production node scripts/validate-sanity-env.mjs
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The application also validates `VERCEL_ENV` to ensure environment parity.
+Use `VERCEL_ENV=preview` for staging checks, which requires `NEXT_PUBLIC_SANITY_DATASET=staging-2026-05-10`.
+Use `VERCEL_ENV=production` for production checks, which requires `NEXT_PUBLIC_SANITY_DATASET=production`.
 
-You can start editing the page by modifying `src/app/(site)/page.tsx`. The page auto-updates as you edit the file.
+### Launch Smoke Matrix
+Verify these document types in the target environment:
+- `homePage` -> `/`
+- `contactPage` -> `/contact`
+- `galleryPage` -> `/gallery`
+- `globalSettings` -> All pages (header/footer)
+- `mainMenu` -> All pages (navigation)
+- `trainingPage` -> `/training`
+- `trainingProgramsPage` -> `/training-programs`
+- `trainingProgram` -> `/training-programs/[slug]`
+- `sellableProduct` -> `/products/[slug]`
+- `bookingSettings` -> `/booking`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+See `docs/launch-readiness-checklist.md` for full smoke evidence requirements.
 
-## Learn More
+## Launch Stop Conditions
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-
-## Booking setup
-
-The Google Calendar booking system requires these server-side environment variables:
-
-- `GOOGLE_CLIENT_ID`
-- `GOOGLE_CLIENT_SECRET`
-- `GOOGLE_REDIRECT_URI`
-- `BOOKING_ADMIN_SETUP_SECRET`
-- `KV_REST_API_URL`
-- `KV_REST_API_TOKEN`
-- `RESEND_API_KEY`
-- `FROM_EMAIL`
-- `SANITY_FORM_TOKEN`
-
-Connect Nataliea's calendar by visiting `/api/booking/oauth/start?secret=<BOOKING_ADMIN_SETUP_SECRET>` in production and approving Google Calendar access. The connected calendar is configured in the Sanity `bookingSettings` singleton.
-
-Add a live-site entry point through the CMS menu or page CTAs with `/booking`, `/booking?type=training-call`, or `/booking?type=in-person-appointment` so visitors can reach the flow from the public site.
-
-## Checkout setup
-
-Checkout uses Sanity only for public catalog/editorial content. Sensitive checkout records must use private server-side storage; do not store transaction history, customer PII, checkout tokens, Helcim invoice or transaction identifiers, payment reconciliation records, or encrypted Helcim secret tokens in public Sanity datasets or expose them through Studio.
-
-Required server-side checkout environment variables:
-
-- `DATABASE_URL` (injected by Neon)
-- `CHECKOUT_SECRET_ENCRYPTION_KEY`
-- `HELCIM_GENERAL_API_TOKEN`
-- `HELCIM_TRANSACTION_API_TOKEN`
-
-Required to receive Helcim webhooks:
-
-- `HELCIM_WEBHOOK_VERIFIER_TOKEN`
-
-**Note:** The Helcim webhook delivery URL must use HTTPS and must not contain the word `helcim` (e.g., use `/api/webhooks/card-transactions`).
-
-See `docs/private-checkout-storage-setup.md` for database setup, migration, retention, and Sanity cleanup guidance.
+Do not promote to production if:
+1. Production dataset or project ID cannot be verified.
+2. A production publish does not appear on the public page after signed webhook delivery.
+3. Webhook targets the wrong dataset or cache tag.
+4. Environment validation fails for any production-critical secret.
+5. Stale content from a previous dataset refresh is present in the production target.

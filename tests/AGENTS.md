@@ -10,7 +10,7 @@ E2E-only Playwright suite. Tests live under `tests` and auto-start the Next dev 
 tests/
 ├── *.spec.ts              # route, navigation, responsive, performance specs
 ├── fixtures/*.json        # legacy fixture payloads
-└── utils/                 # helpers and API mocks
+└── utils/                 # helpers and legacy endpoint fixtures
 ```
 
 ## WHERE TO LOOK
@@ -19,7 +19,7 @@ tests/
 |------|----------|-------|
 | Config | `../playwright.config.ts` | Browser matrix, web server, trace/screenshot/video. |
 | Helpers | `utils/test-helpers.ts` | Image checks, accessibility checks, performance helpers. |
-| Mocks | `utils/api-mocks.ts` | Legacy Strapi-style endpoint mocks. |
+| Mocked UX fixtures | `utils/api-mocks.ts` | Legacy client-side endpoint fixtures retained for older UX specs; not Sanity data-flow proof. |
 | Route coverage | `*.spec.ts` | Homepage/contact/gallery/training/navigation/responsive/performance. |
 
 ## CONVENTIONS
@@ -42,6 +42,6 @@ npx playwright test tests/homepage.spec.ts --project=chromium
 
 ## ANTI-PATTERNS
 
-- Do not assume API mocks reflect current production data flow; current app loads Sanity server-side.
+- Do not assume legacy endpoint fixtures reflect current production data flow; current app loads Sanity server-side.
 - Do not leave `test.only`; Playwright config blocks it in CI.
 - Do not add a second E2E framework without explicit approval.

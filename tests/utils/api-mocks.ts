@@ -4,13 +4,16 @@ import globalData from '../fixtures/global-data.json';
 import trainingPageData from '../fixtures/training-page-data.json';
 
 /**
- * Setup API mocking for Strapi endpoints
- * This ensures tests can run without requiring a live Strapi backend
+ * Set up legacy client-side CMS endpoint fixtures for mocked UX tests.
+ *
+ * The current app reads Sanity data server-side through `src/data/loaders.ts`.
+ * These route mocks are retained only for older Playwright specs that exercise
+ * navigation/responsive UI behavior without depending on a historical API server.
  */
 export async function setupApiMocks(page: Page) {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:1337';
 
-  // Mock main menu data
+  // Legacy main menu fixture
   await page.route(`${apiUrl}/api/main-menu*`, async (route) => {
     await route.fulfill({
       status: 200,
@@ -19,7 +22,7 @@ export async function setupApiMocks(page: Page) {
     });
   });
 
-  // Mock global data (header, footer)
+  // Legacy global settings fixture (header, footer)
   await page.route(`${apiUrl}/api/global*`, async (route) => {
     await route.fulfill({
       status: 200,
@@ -28,7 +31,7 @@ export async function setupApiMocks(page: Page) {
     });
   });
 
-  // Mock training page data
+  // Legacy training page fixture
   await page.route(`${apiUrl}/api/training*`, async (route) => {
     await route.fulfill({
       status: 200,
@@ -37,7 +40,7 @@ export async function setupApiMocks(page: Page) {
     });
   });
 
-  // Mock home page data
+  // Legacy home page fixture
   await page.route(`${apiUrl}/api/home-page*`, async (route) => {
     await route.fulfill({
       status: 200,
@@ -54,7 +57,7 @@ export async function setupApiMocks(page: Page) {
     });
   });
 
-  // Mock contact page data
+  // Legacy contact page fixture
   await page.route(`${apiUrl}/api/contact*`, async (route) => {
     await route.fulfill({
       status: 200,
@@ -70,7 +73,7 @@ export async function setupApiMocks(page: Page) {
     });
   });
 
-  // Mock gallery data
+  // Legacy gallery fixture
   await page.route(`${apiUrl}/api/gallery*`, async (route) => {
     await route.fulfill({
       status: 200,
@@ -84,8 +87,8 @@ export async function setupApiMocks(page: Page) {
 }
 
 /**
- * Setup API mocks with custom menu data
- * Useful for testing specific menu configurations
+ * Set up legacy endpoint fixtures with custom menu data.
+ * Useful for testing specific mocked menu configurations.
  */
 export async function setupApiMocksWithCustomMenu(page: Page, customMenuData: typeof menuData) {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:1337';
@@ -98,6 +101,6 @@ export async function setupApiMocksWithCustomMenu(page: Page, customMenuData: ty
     });
   });
 
-  // Setup other mocks
+  // Install the remaining legacy endpoint fixtures.
   await setupApiMocks(page);
 }
