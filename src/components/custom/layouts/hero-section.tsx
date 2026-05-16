@@ -2,57 +2,69 @@ import type { THeroSection } from "@/types";
 import Link from "next/link";
 import { SanityImage } from "../../ui/sanity-image";
 import { Button } from "../../ui/button";
+import { HeroCarousel } from "./hero-carousel";
+import { cn } from "@/lib/utils";
+import { getSafeHref, getSafeLinks } from "./hero-links";
 
 export type { THeroSection as IHeroSectionProps } from "@/types";
 
 export function HeroSection({ data }: { data: THeroSection }) {
-    if (!data) return null;
+  if (!data) return null;
 
-    const { heading, subHeading, description, image, link, onHomepage } = data;
+  const { heading, subHeading, description, image, link, onHomepage, heroSize, slides } = data;
+  const safeLinks = getSafeLinks(link);
 
-  // Page variant for internal pages
-  if (!onHomepage) {
+  const isHomepageStyle = onHomepage;
+  
+  let containerClasses = "relative w-full overflow-hidden shadow-sm";
+  if (heroSize === "fullScreen") {
+    containerClasses = cn(containerClasses, "min-h-screen");
+  } else if (heroSize === "eighty") {
+    containerClasses = cn(containerClasses, "min-h-[80vh]");
+  } else if (heroSize === "compact") {
+    containerClasses = cn(containerClasses, "h-[50vh] md:h-[60vh]");
+  } else {
+    containerClasses = cn(containerClasses, isHomepageStyle ? "min-h-[85vh]" : "h-[50vh] md:h-[60vh]");
+  }
+
+  const overlayClasses = isHomepageStyle 
+    ? "bg-gradient-to-br from-lh-shadow/80 via-lh-accent/70 to-lh-primary/60"
+    : "bg-lh-shadow/60 mix-blend-multiply";
+
+  const contentHeightClasses =
+    heroSize === "fullScreen"
+      ? "min-h-screen"
+      : heroSize === "eighty"
+        ? "min-h-[80vh]"
+        : heroSize === "compact"
+          ? "h-full"
+          : isHomepageStyle
+            ? "min-h-[85vh]"
+            : "h-full";
+
+  const contentClasses = cn(
+    "relative px-8 z-10 flex flex-col items-center justify-center text-center",
+    isHomepageStyle ? "py-16" : "py-4",
+    contentHeightClasses
+  );
+
+  const validSlides = slides?.filter((slide) => slide.image?.asset) || [];
+  if (validSlides.length > 0) {
     return (
-      <section className="relative h-[50vh] md:h-[60vh] w-full overflow-hidden shadow-sm">
-        <SanityImage
-          image={image}
-          alt={image.alt || heading || "Hero banner image"}
-          className="absolute inset-0 object-cover w-full h-full"
-          height={2160}
-          width={3840}
-          priority={true}
-        />
-        <div className="absolute inset-0 bg-lh-shadow/60 mix-blend-multiply" />
-        <div className="relative px-8 py-4 z-10 flex flex-col items-center justify-center h-full text-center">
-          <h1 className="display-heading text-lh-neutral-2">
-            {heading}
-          </h1>
-          {subHeading && (
-            <p className="mt-6 max-w-3xl font-body text-base font-bold leading-8 text-lh-neutral-2/90 md:text-lg lg:text-xl">
-              {subHeading}
-            </p>
-          )}
-          {description && (
-            <p className="mt-6 max-w-2xl font-body text-base font-bold leading-8 text-lh-neutral-2/80 lg:text-lg">{description}</p>
-          )}
-          {link && link.length > 0 && (
-            <div className="flex flex-col md:flex-row gap-4 mt-8">
-              {link.map((btn, index) => (
-                  <Link key={btn._key || index} href={btn.href}>
-                      <Button variant={index === 0 ? "primary" : "ghost"} className={index !== 0 ? "text-lh-neutral-2 border-lh-neutral-2/40 hover:bg-lh-neutral-2/10" : ""}>
-                          {btn.label}
-                      </Button>
-                  </Link>
-              ))}
-            </div>)}
-        </div>
-      </section>
+      <HeroCarousel 
+        data={data} 
+        containerClasses={containerClasses}
+        overlayClasses={overlayClasses}
+        contentClasses={contentClasses}
+        isHomepageStyle={isHomepageStyle}
+      />
     );
   }
 
-  // Homepage variant (default)
+  if (!image?.asset) return null;
+
   return (
-    <section className="relative min-h-[85vh] w-full overflow-hidden shadow-sm">
+    <section className={containerClasses}>
       <SanityImage
         image={image}
         alt={image.alt || heading || "Hero banner image"}
@@ -61,21 +73,41 @@ export function HeroSection({ data }: { data: THeroSection }) {
         width={3840}
         priority={true}
       />
-      <div className="absolute inset-0 bg-gradient-to-br from-lh-shadow/80 via-lh-accent/70 to-lh-primary/60" />
-      <div className="relative px-8 py-16 z-10 flex flex-col items-center justify-center h-full min-h-[85vh] text-center">
-        <h1 className="display-heading text-lh-neutral-2 max-w-[880px]">{heading}</h1>
-        {subHeading && <p className="mt-8 max-w-3xl font-body text-base font-bold leading-8 text-lh-neutral-2/90 md:text-lg lg:text-xl">{subHeading}</p>}
-        {description && <p className="mt-6 max-w-2xl font-body text-base font-bold leading-8 text-lh-neutral-2/80 lg:text-lg">{description}</p>}
-        <div className="flex flex-col md:flex-row gap-4 mt-10">
-            {link.map((btn, index) => (
-                <Link key={btn._key || index} href={btn.href}>
-                    <Button variant={index === 0 ? "luxury" : "ghost"} className={index !== 0 ? "text-lh-neutral-2 border-lh-neutral-2/40 hover:bg-lh-neutral-2/10" : ""}>
-                        {btn.label}
-                    </Button>
-                </Link>
+      <div className={cn("absolute inset-0", overlayClasses)} />
+      <div className={contentClasses}>
+        <h1 className={cn("display-heading text-lh-neutral-2", isHomepageStyle && "max-w-[880px]")}>
+          {heading}
+        </h1>
+        {subHeading && (
+          <p className={cn("font-body text-base font-bold leading-8 text-lh-neutral-2/90 md:text-lg lg:text-xl", isHomepageStyle ? "mt-8 max-w-3xl" : "mt-6 max-w-3xl")}>
+            {subHeading}
+          </p>
+        )}
+        {description && (
+          <p className={cn("font-body text-base font-bold leading-8 text-lh-neutral-2/80 lg:text-lg", isHomepageStyle ? "mt-6 max-w-2xl" : "mt-6 max-w-2xl")}>
+            {description}
+          </p>
+        )}
+        {safeLinks.length > 0 && (
+          <div className={cn("flex flex-col md:flex-row gap-4", isHomepageStyle ? "mt-10" : "mt-8")}>
+            {safeLinks.map((btn, index) => (
+              <Link
+                key={btn._key || index}
+                href={getSafeHref(btn.href) ?? "/"}
+                target={btn.isExternal ? "_blank" : undefined}
+                rel={btn.isExternal ? "noopener noreferrer" : undefined}
+              >
+                <Button 
+                  variant={index === 0 ? (isHomepageStyle ? "luxury" : "primary") : "ghost"} 
+                  className={index !== 0 ? "text-lh-neutral-2 border-lh-neutral-2/40 hover:bg-lh-neutral-2/10" : ""}
+                >
+                  {btn.label}
+                </Button>
+              </Link>
             ))}
-        </div>
+          </div>
+        )}
       </div>
     </section>
-  )
+  );
 }
