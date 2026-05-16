@@ -1,6 +1,7 @@
 import { loaders } from "@/data/loaders";
 import { Header } from "@/components/custom/layouts/header";
 import { Footer } from "@/components/custom/layouts/footer";
+import { MainWrapper } from "@/components/custom/layouts/main-wrapper";
 
 const jsonLd = {
   "@context": "https://schema.org",
@@ -60,9 +61,9 @@ export default async function SiteLayout({
         Skip to main content
       </a>
       <Header data={globalData?.header} menuItems={mainMenuData?.items} />
-      <main id="main-content">
+      <MainWrapper>
         {children}
-      </main>
+      </MainWrapper>
       <Footer data={globalData?.footer} />
     </>
   );
