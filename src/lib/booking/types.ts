@@ -58,6 +58,8 @@ export interface BookingRequestInput {
   phone: string;
   answers: BookingAnswerInput[];
   marketingOptIn: boolean;
+  marketingConsentText?: string;
+  sourcePath?: string;
   idempotencyKey: string;
   paidSchedulingToken?: string;
 }

@@ -8,7 +8,7 @@ Scope: Next.js app, Sanity CMS, training programs, ecommerce, Helcim checkout, b
 
 The codebase is close to a launchable architecture, but it is not ready for a low-risk production cutover without an operational hardening pass and live-environment smoke testing.
 
-The strongest parts are the architectural boundaries: Sanity is used for public content, Helcim secrets stay server-side, sensitive checkout records are stored in private Postgres, Google Calendar remains the booking source of truth, and Sanity revalidation uses signed webhooks. The implementation also includes meaningful unit coverage for cart validation, payment verification, webhook signature handling, order storage, booking availability, and training enrollment state.
+The strongest parts are the architectural boundaries: Sanity is used for public/editorial content, Helcim secrets stay server-side, sensitive checkout/form/marketing records are stored in private Postgres, Google Calendar remains the booking source of truth, and Sanity revalidation uses signed webhooks. The implementation also includes meaningful unit coverage for cart validation, payment verification, webhook signature handling, order storage, booking availability, and training enrollment state.
 
 The main launch risks are not basic code shape problems. They are production operations gaps: environment parity, database migration/smoke-test discipline, live Helcim webhook verification, live Google OAuth and Calendar setup, remaining route-handler coverage, orphaned checkout record scenarios, stale documentation/env examples, placeholder structured data, and limited observability beyond console logs and Vercel defaults.
 
@@ -27,6 +27,7 @@ Primary implementation files inspected:
 - `playwright.config.ts`
 - `src/data/loaders.ts`
 - `src/sanity/env.ts`
+- `src/lib/marketing-contact/*`
 - `src/sanity/structure/index.ts`
 - `src/app/actions/form.ts`
 - `src/app/api/checkout/route.ts`
@@ -41,6 +42,7 @@ Primary implementation files inspected:
 - `scripts/migrate-private-db.ts`
 - `drizzle/0000_old_moonstone.sql`
 - `drizzle/0001_private_training_enrollments.sql`
+- `drizzle/0002_rapid_fat_cobra.sql`
 - `tests/*.spec.ts`
 - `tests/utils/api-mocks.ts`
 
@@ -75,7 +77,7 @@ External best-practice baseline used:
 | Training checkout and booking handoff | Partially ready | High |
 | Private database modeling | Mostly ready | High until migrated/smoke-tested |
 | Booking system | Partially ready | High until live OAuth/calendar tested |
-| Forms and email | Mostly ready | Medium |
+| Forms and email | Mostly ready | Medium until private DB/Resend smoke-tested |
 | Logging and observability | Not production-ready | High |
 | Test coverage | Partially ready | High |
 | Infrastructure/env parity | Not production-ready until manually verified | High |
@@ -85,7 +87,7 @@ External best-practice baseline used:
 
 ### Public App And CMS
 
-The app is a root-level Next.js 16 App Router application. Public pages are server components and load CMS data through `src/data/loaders.ts`. Sanity is the content source for pages, global settings, navigation, training programs, sellable products, booking settings, and form submissions.
+The app is a root-level Next.js 16 App Router application. Public pages are server components and load CMS data through `src/data/loaders.ts`. Sanity is the content source for pages, global settings, navigation, training programs, sellable products, and booking settings. Form, contact, marketing, and consent submissions are private DB-backed; historical Sanity submission documents are backfill sources only.
 
 Important loader behavior:
 
@@ -98,7 +100,7 @@ Ideal launch behavior:
 - Production uses `NEXT_PUBLIC_SANITY_DATASET=production`.
 - Preview/staging uses `NEXT_PUBLIC_SANITY_DATASET=staging-2026-05-10`.
 - Editors publish content in Sanity; signed webhooks call `/api/revalidate`; affected cache tags expire immediately.
-- Public pages never read private checkout records from Sanity.
+- Public pages never read private checkout or form/contact PII records from Sanity.
 
 Current concerns:
 
@@ -113,9 +115,9 @@ The embedded Studio is mounted under `/studio`. Schemas are code-defined under `
 Current Studio structure:
 
 - Pages: home, contact, gallery, training, training programs overview, global settings, navigation menu.
-- Booking: booking settings and marketing opt-ins.
+- Booking: booking settings. Historical marketing opt-ins may exist as legacy/backfill records.
 - Content: training programs and sellable products.
-- Submissions: general inquiries and training contact forms.
+- Submissions: legacy/backfill-only general inquiries, training contact forms, contact popup submissions, and booking marketing opt-ins if those document types are still registered.
 
 Good signs:
 
@@ -126,7 +128,7 @@ Good signs:
 Current concerns:
 
 - `training-program.ts` contains a TODO for cross-document validation to ensure the selected checkout product is kind `training`. Runtime validation catches this in `src/lib/training-checkout.ts`, but editorial validation should prevent bad content before publish.
-- Sanity token least privilege is limited by plan constraints. Historical docs state `SANITY_FORM_TOKEN` may need editor role on non-enterprise Sanity tiers. That is acceptable only if token isolation, rotation, and deployment scoping are documented and enforced.
+- Sanity token least privilege is limited by plan constraints. Historical docs state `SANITY_FORM_TOKEN` may need editor role on non-enterprise Sanity tiers. That token is not a current live form-write dependency if forms remain private DB-backed; retain it only for explicitly documented legacy/conditional Sanity submission work.
 
 ### Revalidation
 
@@ -171,7 +173,7 @@ Ideal launch behavior:
 Current concerns:
 
 - First-release checkout intentionally does not include taxes, discounts, shipping, ACH, partial payments, refunds, saved payment methods, or customer pre-linking for general products. That is acceptable only if the business confirms those are not needed at launch.
-- Product confirmation copy says an order confirmation email will be sent, but the implementation only clearly contains training payment email notifications. General product order email confirmation should be implemented or the copy should be changed before launch.
+- Product order confirmation email behavior is implemented in the current workstream, but it still requires live staging verification with Resend evidence before launch.
 
 ### Helcim Checkout And Payment Processing
 
@@ -271,28 +273,34 @@ Production-readiness gaps:
 
 ### Forms And Email
 
-General inquiry and training contact forms submit through server actions in `src/app/actions/form.ts`. The actions revalidate input, write to Sanity via `formClient`, then send Resend emails non-blockingly.
+General inquiry, training contact, and contact popup forms submit through server actions in `src/app/actions/form.ts`. The actions revalidate input, write to private DB-backed marketing/contact storage, then send Resend emails non-blockingly. Booking marketing choices are audited in the private DB from the booking service.
 
 Good signs:
 
 - Server-side validation duplicates client validation.
-- Sanity write failure blocks success and prevents email sending.
+- Private DB write failure blocks success and prevents email sending.
 - Email failure is non-blocking and logged.
-- Form tokens are separated from general write tokens.
+- New form/contact/marketing records are not written to Sanity.
+- Consent/no-consent choices are captured as private DB audit evidence.
 
 Production-readiness gaps:
 
-- End-to-end form verification requires real `SANITY_FORM_TOKEN`, `RESEND_API_KEY`, `FROM_EMAIL`, and `ADMIN_EMAIL` in the target environment.
+- End-to-end form verification requires private `DATABASE_URL`, `RESEND_API_KEY`, `FROM_EMAIL`, and `ADMIN_EMAIL` in the target environment.
 - There is no explicit spam/rate-limit layer for public forms.
-- Token permissions may be broader than ideal depending on Sanity plan.
+- `SANITY_FORM_TOKEN` should be removed from live form-write launch requirements unless explicitly retained for legacy/conditional Sanity submission work.
+- Launch evidence must prove general inquiry, training contact, contact popup, opted-in booking marketing choice, and not-opted-in booking marketing choice records reach the private DB with PII redacted in evidence.
+- Launch evidence must prove no new `generalInquiry`, `contactForm`, `contactPopupSubmission`, or `bookingMarketingOptIn` Sanity documents are created by live flows.
 
 ### Private Database And Migrations
 
-Private checkout storage uses Drizzle and Postgres. Runtime code gets a pooled `DATABASE_URL`, uses SSL with `rejectUnauthorized: true`, and models:
+Shared private PII storage uses Drizzle and Postgres. Runtime code gets a pooled `DATABASE_URL`, uses SSL with `rejectUnauthorized: true`, and models:
 
 - `checkout_orders`
 - `checkout_payment_events`
 - `training_enrollments`
+- `marketing_contacts`
+- `marketing_contact_submissions`
+- `marketing_consent_events`
 
 The repo includes Drizzle migrations and scripts:
 
@@ -302,24 +310,26 @@ The repo includes Drizzle migrations and scripts:
 
 Good signs:
 
-- Sensitive checkout records are outside Sanity.
+- Sensitive checkout, marketing/contact, and consent records are outside Sanity.
 - Checkout token hashes and scheduling token hashes are unique.
 - Payment event idempotency keys are unique.
 - Training enrollments cascade from checkout orders.
 - Setup docs require separate staging and production databases and backups/PITR where available.
+- Sanity submission backfill records preserve source system/document provenance in private DB tables.
 
 Production-readiness gaps:
 
 - There is no proof in repo that staging migrations have been applied to the target database.
 - There is no proof in repo that production database backups/PITR are enabled.
-- There is no retention/redaction job. Docs state the business owner must choose the retention period, but implementation does not yet enforce redaction.
+- There is no retention/redaction job. Docs state the business owner/counsel must choose retention decisions by record type, but implementation does not yet enforce redaction.
 - `DATABASE_URL` validation only checks presence, not whether the URL points to staging vs production.
+- Backfill dry-run/execute evidence and Sanity source retention/redaction decisions must be recorded before importing historical submission docs.
 
 Recommendation:
 
-- Before launch, run migrations against staging, complete checkout smoke tests, then run migrations against production in a controlled release window.
+- Before launch, run migrations against staging, complete checkout and marketing/contact smoke tests, then run migrations against production in a controlled release window.
 - Add an operator checklist that records database host/branch, migration version, backup status, and rollback plan.
-- Do not add an order dashboard until access control, audit logging, and retention policy are defined.
+- Do not add order/contact dashboards until access control, audit logging, and retention policy are defined.
 
 ### Logging, Monitoring, And Observability
 
@@ -396,7 +406,7 @@ Recommendation:
 These should be completed before production promotion.
 
 1. Verify all production environment variables in Vercel.
-   - Sanity: `NEXT_PUBLIC_SANITY_PROJECT_ID`, `NEXT_PUBLIC_SANITY_DATASET=production`, `NEXT_PUBLIC_SANITY_API_VERSION`, `SANITY_WRITE_TOKEN`, `SANITY_FORM_TOKEN`, `SANITY_WEBHOOK_SECRET`.
+   - Sanity: `NEXT_PUBLIC_SANITY_PROJECT_ID`, `NEXT_PUBLIC_SANITY_DATASET=production`, `NEXT_PUBLIC_SANITY_API_VERSION`, `SANITY_WRITE_TOKEN`, `SANITY_WEBHOOK_SECRET`. `SANITY_FORM_TOKEN` is legacy/conditional only if retained for documented Sanity submission backfill work.
    - Email: `RESEND_API_KEY`, `FROM_EMAIL`, `ADMIN_EMAIL`.
    - Booking: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `BOOKING_ADMIN_SETUP_SECRET`, `KV_REST_API_URL`, `KV_REST_API_TOKEN`.
    - Checkout: `DATABASE_URL`, `CHECKOUT_SECRET_ENCRYPTION_KEY`, `HELCIM_GENERAL_API_TOKEN`, `HELCIM_TRANSACTION_API_TOKEN`, `HELCIM_WEBHOOK_VERIFIER_TOKEN`.
@@ -415,6 +425,9 @@ These should be completed before production promotion.
    - Training payment issues scheduling token.
    - Scheduling link resolves into booking flow.
    - Booking creates a Google Calendar event and marks enrollment scheduled.
+   - General inquiry, training contact, contact popup, and booking marketing choices write private DB evidence.
+   - Booking marketing smoke covers both opted-in and not-opted-in choices.
+   - Live flows create no new Sanity submission documents.
 
 4. Configure and test Sanity production webhook.
    - Endpoint: `https://<production-domain>/api/revalidate`.
@@ -430,12 +443,13 @@ These should be completed before production promotion.
 
 6. Configure and test Resend.
    - Verify sending domain and `FROM_EMAIL`.
-   - Submit general inquiry, training contact, booking, and training purchase flows.
+   - Submit general inquiry, training contact, contact popup, booking, and training purchase flows.
    - Confirm admin and customer emails where expected.
+   - Confirm private DB writes occur before email evidence is accepted for forms.
 
 7. Resolve launch-facing data/copy gaps.
    - Replace placeholder JSON-LD phone/email/address/logo/hours in `src/app/(site)/layout.tsx`.
-   - Either implement general product order confirmation email or remove/change the promise on `/products/confirmation`.
+   - Verify implemented general product order confirmation email behavior or remove/change the promise on `/products/confirmation` before launch.
    - Remove or update legacy Strapi values in `.env.local.example`.
 
 8. Maintain minimum critical route-handler tests.
@@ -519,12 +533,12 @@ These checks require explicit live staging approval, real staging credentials, a
 | Product checkout | Complete a product cart checkout through the staging Helcim flow. | Checkout session/invoice reference, approved test transaction, and public confirmation page screenshot or log reference. | Not run |
 | Training checkout | Complete a training checkout through the staging Helcim flow. | Training checkout session/invoice reference, approved test transaction, and confirmation/scheduling link evidence. | Not run |
 | Helcim webhook | Confirm `/api/webhooks/card-transactions` receives and verifies the staging card transaction event. | Vercel log/event ID showing accepted signature, transaction lookup, idempotency key, and non-secret Helcim reference. | Not run |
-| Private DB state | Verify pending checkout rows transition to paid and payment events are stored idempotently. | Redacted database query output for checkout/order, training enrollment when applicable, and payment event rows. | Not run |
+| Private DB state | Verify pending checkout rows transition to paid, payment events are stored idempotently, and form/marketing submissions produce consent/no-consent records. | Redacted database query output for checkout/order, training enrollment when applicable, payment event, marketing contact submission, and consent event rows. | Not run |
 | Scheduling token | Confirm paid training checkout issues a valid scheduling token and rejects mismatched/expired contexts. | Redacted token issuance record or log, valid booking link behavior, and negative-case result. | Not run |
 | Booking Calendar event | Book a paid training call and a standard booking path against the staging calendar. | Google Calendar event IDs/timestamps, booking type, timezone, and attendee email redacted as needed. | Not run |
 | Sanity revalidation | Publish a staging Sanity edit and confirm the signed webhook refreshes the staging page only. | Sanity publish timestamp, webhook delivery result, cache tag/log reference, and before/after page evidence. | Not run |
 | Redis/Upstash | Verify OAuth refresh token access, booking locks, idempotency keys, and token TTL behavior in staging. | Redacted Upstash key presence/TTL or logs proving read/write/expiry behavior. | Not run |
-| Resend emails | Trigger general inquiry, training contact, booking confirmation, and training payment email paths. | Resend message IDs/statuses and recipient/domain evidence with addresses redacted as needed. | Not run |
+| Resend emails | Trigger general inquiry, training contact, contact popup, booking confirmation, and training payment email paths after private DB writes. | Resend message IDs/statuses and recipient/domain evidence with addresses redacted as needed. | Not run |
 
 ### Sanity Checks
 
@@ -534,6 +548,8 @@ These checks require explicit live staging approval, real staging credentials, a
 - [ ] Embedded `/studio` opens and targets the intended dataset
 - [ ] Production webhook configured and verified
 - [ ] No checkout records exist in Sanity
+- [ ] No new `generalInquiry`, `contactForm`, `contactPopupSubmission`, or `bookingMarketingOptIn` documents are created by live flows
+- [ ] Any existing submission document types are documented as legacy/backfill-only or pending removal/hiding after retention decision
 - [ ] Training programs with checkout enabled have valid training products
 
 ### Database Checks
@@ -543,6 +559,9 @@ These checks require explicit live staging approval, real staging credentials, a
 - [ ] Backups/PITR verified
 - [ ] Test order can be created and marked paid
 - [ ] Pending/failed orders can be queried by operator if support is needed
+- [ ] General inquiry, training contact, contact popup, and booking marketing choices write to private DB tables
+- [ ] Consent event evidence covers opt-in and no-opt-in choices with PII redacted in evidence
+- [ ] Backfill dry-run/execute evidence template, provenance fields, duplicate protection, and stop conditions are ready before any backfill command is approved
 
 ### Payment Checks
 
@@ -572,9 +591,10 @@ These checks require explicit live staging approval, real staging credentials, a
 - [ ] `ADMIN_EMAIL` correct
 - [ ] General inquiry email path verified
 - [ ] Training contact email path verified
+- [ ] Contact popup email path verified after private DB submission persistence
 - [ ] Booking confirmation email path verified
 - [ ] Training payment email path verified
-- [ ] Product order confirmation copy fixed or email implemented
+- [ ] Product order confirmation email behavior verified, or confirmation copy changed if verification fails
 
 ### Operations Checks
 
@@ -594,9 +614,10 @@ These checks require explicit live staging approval, real staging credentials, a
 2. Apply database migrations to production only after staging passes and backups are verified.
 3. Fix `.env.local.example` to remove legacy Strapi/Blob/Motion registry values and include all current launch env vars.
 4. Replace placeholder JSON-LD business data.
-5. Implement product order confirmation email or update confirmation page copy.
-6. Keep direct route-handler tests for checkout/payment/revalidation critical paths current, and add booking route-handler coverage where practical.
-7. Add manual reconciliation runbook for pending/orphan checkout records and Helcim invoices.
+5. Verify product order confirmation email behavior or update confirmation page copy if verification fails.
+6. Verify private DB form/contact/consent writes and no new Sanity submission docs in staging.
+7. Keep direct route-handler tests for checkout/payment/revalidation critical paths current, and add booking route-handler coverage where practical.
+8. Add manual reconciliation runbook for pending/orphan checkout records and Helcim invoices.
 
 ### P1 - Soon After Launch
 
@@ -604,7 +625,7 @@ These checks require explicit live staging approval, real staging credentials, a
 2. Add checkout attempt pre-persistence or durable reconciliation.
 3. Add Sanity validation for training product kind.
 4. Add spam/rate-limit controls for public forms and booking endpoints.
-5. Add retention/redaction process for checkout PII.
+5. Add retention/redaction process for checkout, marketing/contact, consent, and suppression records after owner/counsel decisions.
 6. Keep Playwright mock fixture comments aligned with the current Sanity-backed architecture as tests evolve.
 
 ### P2 - Strategic Improvements

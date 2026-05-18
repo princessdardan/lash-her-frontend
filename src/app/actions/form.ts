@@ -1,9 +1,16 @@
 'use server'
 
-import { formClient } from '@/sanity/lib/form-client'
 import { sendFormEmails } from '@/lib/email'
-import type { GeneralInquiryData, TrainingContactData } from '@/lib/email'
+import type { GeneralInquiryData, TrainingContactData, ContactPopupData } from '@/lib/email'
 import { validateForm, type FieldValidationConfig } from '@/lib/form-validation'
+import {
+  CONTACT_POPUP_CONSENT_TEXT,
+  GENERAL_INQUIRY_CONSENT_TEXT,
+  recordContactPopupSubmission,
+  recordGeneralInquirySubmission,
+  recordTrainingContactSubmission,
+  TRAINING_CONTACT_CONSENT_TEXT,
+} from '@/lib/marketing-contact/marketing-contact-store'
 
 export interface FormActionResult {
   success: boolean
@@ -36,6 +43,76 @@ const TRAINING_CONTACT_VALIDATION: FieldValidationConfig = {
   interest: [{ type: 'required', message: 'Please select your training interest' }],
 }
 
+const CONTACT_POPUP_VALIDATION: FieldValidationConfig = {
+  email: [
+    { type: 'required', message: 'Email is required' },
+    { type: 'email', message: 'Please enter a valid email address' },
+  ],
+}
+
+const CONTACT_POPUP_FULL_VALIDATION: FieldValidationConfig = {
+  name: [{ type: 'required', message: 'Name is required' }],
+  ...CONTACT_POPUP_VALIDATION,
+}
+
+const CONTACT_POPUP_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000
+const CONTACT_POPUP_RATE_LIMIT_MAX = 3
+const contactPopupSubmissionsByEmail = new Map<string, number[]>()
+
+function isContactPopupRateLimited(email: string) {
+  const now = Date.now()
+  const normalizedEmail = email.trim().toLowerCase()
+  const recentSubmissions = (contactPopupSubmissionsByEmail.get(normalizedEmail) ?? []).filter(
+    (submittedAt) => now - submittedAt < CONTACT_POPUP_RATE_LIMIT_WINDOW_MS
+  )
+
+  if (recentSubmissions.length >= CONTACT_POPUP_RATE_LIMIT_MAX) {
+    contactPopupSubmissionsByEmail.set(normalizedEmail, recentSubmissions)
+    return true
+  }
+
+  contactPopupSubmissionsByEmail.set(normalizedEmail, [...recentSubmissions, now])
+  return false
+}
+
+export async function submitContactPopup(
+  data: ContactPopupData
+): Promise<FormActionResult> {
+  if (data.company) {
+    return { success: true }
+  }
+
+  const isFullContact = data.variant === 'fullContact'
+  const { errors, isValid } = validateForm(
+    { name: data.name ?? '', email: data.email },
+    isFullContact ? CONTACT_POPUP_FULL_VALIDATION : CONTACT_POPUP_VALIDATION
+  )
+  if (!isValid) {
+    return { success: false, error: 'Please fix the form errors and try again.', fieldErrors: errors }
+  }
+
+  if (isContactPopupRateLimited(data.email)) {
+    return { success: false, error: 'Too many submissions. Please try again later.' }
+  }
+
+  try {
+    await recordContactPopupSubmission({
+      variant: data.variant ?? 'emailOnly',
+      name: data.name || undefined,
+      email: data.email,
+      instagram: data.instagram || undefined,
+      sourcePath: data.sourcePath || undefined,
+      consentText: data.consentText ?? CONTACT_POPUP_CONSENT_TEXT,
+    })
+  } catch (err) {
+    console.error('[submitContactPopup] Private DB write failed:', err instanceof Error ? err.message : String(err))
+    return { success: false, error: 'Something went wrong, please try again.' }
+  }
+
+  await sendFormEmails('contact-popup', data)
+
+  return { success: true }
+}
 export async function submitGeneralInquiry(
   data: GeneralInquiryData
 ): Promise<FormActionResult> {
@@ -50,16 +127,18 @@ export async function submitGeneralInquiry(
 
   // D-07: Sanity write -- failure blocks email send, returns generic error
   try {
-    await formClient.create({
-      _type: 'generalInquiry',
+    await recordGeneralInquirySubmission({
       name: data.name,
       email: data.email,
       phone: data.phone || undefined,
       instagram: data.instagram || undefined,
       message: data.message,
+      marketingConsent: data.marketingConsent === true,
+      consentText: data.consentText ?? GENERAL_INQUIRY_CONSENT_TEXT,
+      sourcePath: data.sourcePath || undefined,
     })
   } catch (err) {
-    console.error('[submitGeneralInquiry] Sanity write failed:', err instanceof Error ? err.message : String(err))
+    console.error('[submitGeneralInquiry] Private DB write failed:', err instanceof Error ? err.message : String(err))
     return { success: false, error: 'Something went wrong, please try again.' }
   }
 
@@ -92,8 +171,7 @@ export async function submitTrainingContact(
 
   // D-07: Sanity write -- failure blocks email send, returns generic error
   try {
-    await formClient.create({
-      _type: 'contactForm',
+    await recordTrainingContactSubmission({
       name: data.name,
       email: data.email,
       phone: data.phone,
@@ -103,9 +181,12 @@ export async function submitTrainingContact(
       interest: data.interest,
       clients: data.clients ?? undefined,
       info: data.info || undefined,
+      marketingConsent: data.marketingConsent === true,
+      consentText: data.consentText ?? TRAINING_CONTACT_CONSENT_TEXT,
+      sourcePath: data.sourcePath || undefined,
     })
   } catch (err) {
-    console.error('[submitTrainingContact] Sanity write failed:', err instanceof Error ? err.message : String(err))
+    console.error('[submitTrainingContact] Private DB write failed:', err instanceof Error ? err.message : String(err))
     return { success: false, error: 'Something went wrong, please try again.' }
   }
 

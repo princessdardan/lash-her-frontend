@@ -400,11 +400,25 @@ export interface TFooter {
   socialLink: TLink[];
 }
 
+export interface TContactPopupSettings {
+  enabled?: boolean;
+  variant?: "fullContact" | "emailOnly";
+  heading?: string;
+  description?: string;
+  privacyText?: string;
+  privacyLinkLabel?: string;
+  privacyLinkHref?: string;
+  submitLabel?: string;
+  successMessage?: string;
+  cookieExpiryDays?: number;
+}
+
 export interface TGlobalSettings {
   title: string;
   description: string;
   header: THeader;
   footer: TFooter;
+  contactPopup?: TContactPopupSettings;
 }
 
 export interface TMetaData {
@@ -436,5 +450,15 @@ export interface TContactForm {
   interest: string;
   clients?: number;
   info?: string;
+  _createdAt: string;
+}
+
+export interface TContactPopupSubmission {
+  _id: string;
+  variant?: "fullContact" | "emailOnly";
+  name?: string;
+  email: string;
+  instagram?: string;
+  sourcePath?: string;
   _createdAt: string;
 }

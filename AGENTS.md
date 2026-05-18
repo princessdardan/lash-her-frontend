@@ -1,12 +1,13 @@
 # PROJECT KNOWLEDGE BASE
 
 **Generated:** 2026-05-04
-**Updated:** 2026-05-12
+**Updated:** 2026-05-18
+**Commit:** 0a8aaf5
 **Branch:** staging
 
 ## OVERVIEW
 
-Lash Her by Nataliea is a Next.js 16 beauty/lash artistry site with an embedded Sanity Studio and Sanity-backed page/forms content. The active app now lives at the repository root so Vercel can detect the Next.js app without a nested package boundary. Root-level docs, planning, canonical git metadata, and local agent state remain at root.
+Lash Her by Nataliea is a Next.js 16 beauty/lash artistry site with an embedded Sanity Studio and Sanity-backed public/editorial content. Private form/contact, marketing, consent, checkout, payment, and training enrollment data lives in the private PostgreSQL database. The active app now lives at the repository root so Vercel can detect the Next.js app without a nested package boundary. Root-level docs, planning, canonical git metadata, and local agent state remain at root.
 
 ## STRUCTURE
 
@@ -19,7 +20,7 @@ lash-her/
 ├── src/types/index.ts               # Sanity/page/block TypeScript shapes
 ├── tests/                           # Playwright E2E
 ├── scripts/                         # migration, database, and git utilities
-├── drizzle/                         # private checkout database migrations
+├── drizzle/                         # shared private PII database migrations
 ├── public/                          # static assets
 ├── docs/lash-her-brand-kit.html     # design source of truth
 ├── docs/superpowers/                # historical specs/plans
@@ -45,12 +46,13 @@ lash-her/
 | Shared shapes | `src/types/index.ts` | Mirrors Sanity schema fields and block unions. |
 | Sanity Studio/schemas | `src/sanity` | Embedded Studio at `/studio`; manual schema registration. |
 | CMS block rendering | `src/components/custom/layouts` | `_type` registry, animation, error boundaries. |
-| Forms | `src/app/actions/form.ts`, `src/lib/form-validation.ts`, `src/lib/email.ts` | Validate twice, write to Sanity, email non-blocking. |
+| Forms | `src/app/actions/form.ts`, `src/lib/form-validation.ts`, `src/lib/email.ts`, `src/lib/marketing-contact` | Validate twice, write to private DB before email, email non-blocking. |
 | Booking | `src/lib/booking`, `src/app/api/booking` | Google Calendar booking service, API routes, and validation. |
 | Commerce/checkout | `src/lib/commerce`, `src/components/commerce`, `src/app/api/checkout` | Helcim checkout, cart, payment validation, and order storage. |
-| Private DB | `src/lib/private-db`, `drizzle`, `drizzle.config.ts` | Private checkout database schema and migrations. |
+| Private DB | `src/lib/private-db`, `drizzle`, `drizzle.config.ts` | Shared private PII schema and migrations for checkout, payment events, training enrollments, marketing contacts, contact submissions, and consent events. |
 | Revalidation | `src/app/api/revalidate/route.ts` | Sanity webhook HMAC + Next 16 tag expiry. |
-| E2E tests | `tests` | Playwright only; no Jest/Vitest. |
+| E2E tests | `tests` | Playwright browser specs, helpers, and legacy endpoint fixtures. |
+| Unit tests | `src/**/*.test.ts` | Node test runner via `tsx --test`; no Jest/Vitest. |
 | Operational scripts | `scripts` | Migration, database, and canonical remote helpers. |
 | Deployment install | Vercel default install | No private Motion registry token is required. |
 
@@ -73,6 +75,7 @@ lash-her/
 - npm is the package manager; commands run from repo root.
 - `@/*` maps to `src/*`; prefer it for app imports.
 - Sanity is the primary CMS. Strapi references are migration/legacy context unless explicit migration work is requested.
+- Sanity is public/editorial plus historical submission backfill source. New form/contact, marketing, consent, checkout, payment, and training enrollment records must not be written to Sanity.
 - Add CMS blocks across all layers together: schema, TS interface/union, GROQ projection, component, registry.
 - Cache tags in `loaders.ts` must match `TYPE_TAG_MAP` in the revalidation route.
 - Sanity singleton document IDs match schema names (`homePage`, `globalSettings`, `mainMenu`, etc.).
@@ -80,6 +83,7 @@ lash-her/
 - React Compiler is enabled in `next.config.ts`.
 - `/homepage` permanently redirects to `/`.
 - Design decisions must use `docs/lash-her-brand-kit.html` as the source of truth.
+- Unit tests use Node's built-in test runner through `npm run test:unit`; route-handler tests often live beside the handler.
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
@@ -88,6 +92,8 @@ lash-her/
 - Do not change `revalidateTag(tag, { expire: 0 })` to deprecated single-arg usage.
 - Do not assume registered Sanity schemas are rendered; `ctaSectionImage` and `ctaSectionVideo` are registered but not in `BlockRenderer`.
 - Do not bypass dedicated Sanity clients; use read/write/form clients by purpose.
+- Do not assume Sanity is live form storage; live form/contact writes must persist to the private DB before email.
+- Do not assume the private DB is limited to checkout; it is shared private PII storage.
 - Do not treat current Playwright API mocks as proof of current data flow; several are legacy Strapi-style mocks.
 - Do not add a parallel data access layer next to `src/data/loaders.ts`.
 - Do not replace embedded Sanity Studio with a separate package unless explicitly asked.
@@ -108,6 +114,7 @@ npm run lint
 npm test
 npm run test:unit
 npm run test:ui
+node scripts/validate-sanity-env.mjs
 npm run db:generate
 npm run db:migrate
 npx playwright test tests/homepage.spec.ts --project=chromium

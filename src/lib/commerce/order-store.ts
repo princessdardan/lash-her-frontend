@@ -35,6 +35,9 @@ export interface PendingOrderRecord {
   helcimInvoiceNumber: string;
   amount: number;
   currency: ValidatedCart["currency"];
+  customerEmail: string;
+  customerName: string;
+  lineItems: CheckoutOrderLineItemSnapshot[];
 }
 
 export interface HelcimWebhookEventInput {
@@ -132,6 +135,9 @@ export function createCheckoutOrderStore(
         helcimInvoiceNumber: input.helcimInvoiceNumber,
         amount: input.cart.amount,
         currency: input.cart.currency,
+        customerEmail: input.customerEmail,
+        customerName: input.customerName,
+        lineItems,
       };
     },
 
@@ -298,6 +304,9 @@ function toPendingOrderRecord(pendingOrder: CheckoutOrderRow): PendingOrderRecor
     helcimInvoiceNumber: pendingOrder.helcimInvoiceNumber,
     amount: centsToCad(pendingOrder.amountCents),
     currency,
+    customerEmail: pendingOrder.customerEmail,
+    customerName: pendingOrder.customerName,
+    lineItems: pendingOrder.lineItems,
   };
 }
 

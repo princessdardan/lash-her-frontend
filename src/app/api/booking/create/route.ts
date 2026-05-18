@@ -69,6 +69,9 @@ export const POST = createBookingCreatePostHandler({
 function toBookingRequestInput(input: unknown): BookingRequestInput {
   const record = isRecord(input) ? input : {};
 
+  const marketingConsentText = toOptionalStringValue(record.marketingConsentText);
+  const sourcePath = toOptionalStringValue(record.sourcePath);
+
   return {
     bookingType: toBookingType(record.bookingType),
     start: toStringValue(record.start),
@@ -78,6 +81,8 @@ function toBookingRequestInput(input: unknown): BookingRequestInput {
     answers: toBookingAnswers(record.answers),
     marketingOptIn: record.marketingOptIn === true,
     idempotencyKey: toStringValue(record.idempotencyKey),
+    ...(marketingConsentText ? { marketingConsentText } : {}),
+    ...(sourcePath ? { sourcePath } : {}),
     paidSchedulingToken: toOptionalStringValue(record.paidSchedulingToken),
   };
 }

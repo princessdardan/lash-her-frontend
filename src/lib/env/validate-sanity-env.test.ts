@@ -18,7 +18,6 @@ const publicSanityEnv = {
 const launchEnv = {
   ...publicSanityEnv,
   SANITY_WRITE_TOKEN: "sanity-write-token",
-  SANITY_FORM_TOKEN: "sanity-form-token",
   SANITY_WEBHOOK_SECRET: "sanity-webhook-secret",
   RESEND_API_KEY: "resend-api-key",
   FROM_EMAIL: "hello@lashher.com",

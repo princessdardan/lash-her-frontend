@@ -79,6 +79,7 @@ export const structure: StructureResolver = (S) =>
             .items([
               S.documentTypeListItem("generalInquiry").title("General Inquiries"),
               S.documentTypeListItem("contactForm").title("Training Contact Forms"),
+              S.documentTypeListItem("contactPopupSubmission").title("Popup Submissions"),
             ])
         ),
     ]);

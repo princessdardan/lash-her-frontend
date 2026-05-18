@@ -80,7 +80,7 @@ test.describe("Helcim checkout", () => {
 
     await expect(page.getByRole("heading", { name: "Products" })).toBeVisible();
     await expect(page.getByText(/discover our curated selection/i)).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Your Cart" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Your Cart" })).toBeHidden();
     await expect(page.getByRole("button", { name: /add to cart/i }).first()).toBeVisible();
   });
 

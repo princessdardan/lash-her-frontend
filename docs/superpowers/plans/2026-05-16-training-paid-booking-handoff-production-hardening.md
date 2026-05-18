@@ -1,5 +1,7 @@
 # Training Programs and Paid Booking Handoff Production Hardening Plan
 
+> **2026-05-18 status:** Superseded for future implementation by `docs/superpowers/plans/2026-05-18-unified-booking-system-redesign.md`. Training intro-call scheduling is no longer a separate `/booking?token=...` handoff. All booking-related flows, including paid training calls, must use the new unified booking system with shared holds, payment/finalization, and Google Calendar event creation.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` for implementation and `superpowers:executing-plans` for task tracking. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the paid training checkout-to-booking handoff production-ready by closing atomicity/editorial gaps and proving the live paid scheduling path end to end.

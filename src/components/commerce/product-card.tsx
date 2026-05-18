@@ -86,8 +86,8 @@ export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement 
               )}
               {variants.map((variant) => (
                 <option key={variant._key} value={variant._key} disabled={!variant.isAvailable}>
-                  {variant.title} — {formatCad(variant.price)}
-                  {!variant.isAvailable ? ` (${variant.availabilityLabel || "Unavailable"})` : ""}
+                  {variant.title} [{variant.sku}] — {formatCad(variant.price)}
+                  {!variant.isAvailable ? ` - ${variant.availabilityLabel || "Unavailable"}` : ""}
                 </option>
               ))}
             </select>

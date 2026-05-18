@@ -66,7 +66,6 @@ Before proceeding, confirm you have:
   - `NEXT_PUBLIC_SANITY_DATASET`
   - `NEXT_PUBLIC_SANITY_API_VERSION`
   - `SANITY_WRITE_TOKEN`
-  - `SANITY_FORM_TOKEN`
   - `SANITY_WEBHOOK_SECRET`
   - `RESEND_API_KEY`
   - `FROM_EMAIL`
@@ -83,7 +82,23 @@ Before proceeding, confirm you have:
   - `CHECKOUT_SECRET_ENCRYPTION_KEY`
   - `DATABASE_URL`
 
-Do not put private tokens in `NEXT_PUBLIC_*` variables. `NEXT_PUBLIC_*` values are browser-visible. Checkout transaction history and customer PII must be stored in the private database, not Sanity. See [Private Checkout Storage Setup Guide](./private-checkout-storage-setup.md) for details.
+Do not put private tokens in `NEXT_PUBLIC_*` variables. `NEXT_PUBLIC_*` values are browser-visible. Checkout transaction history, customer PII, form/contact submissions, marketing contacts, and consent events must be stored in the private database, not Sanity. Sanity is public/editorial plus historical submission backfill source. See [Shared Private PII Storage Setup Guide](./private-checkout-storage-setup.md) for details.
+
+### Token Guardrails and Least Privilege
+
+Sanity tokens must be managed with strict isolation and rotation policies. If plan constraints prevent granular custom roles, use the following guardrails:
+
+| Token | Purpose | Environment | Min. Role | Owner | Rotation |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `SANITY_WRITE_TOKEN` | Server-side mutations and migrations | Production/Staging | Editor | Dardan | Quarterly |
+| `SANITY_FORM_TOKEN` | Legacy/conditional Sanity submission writes only, if retained | Production/Staging | Editor | Dardan | Quarterly |
+| `SANITY_WEBHOOK_SECRET` | Webhook HMAC verification | Production/Staging | N/A | Dardan | Quarterly |
+
+**Rotation Policy:**
+- Rotate all tokens quarterly.
+- Rotate immediately after any suspected exposure.
+- Rotate after personnel or access changes.
+- Scoped tokens should be used in Vercel environment settings, never committed to the repository.
 
 ## Phase 1: Confirm Current Sanity State
 
@@ -222,7 +237,6 @@ Configure staging-only private secrets separately:
 
 ```env
 SANITY_WRITE_TOKEN=<staging-capable-write-token>
-SANITY_FORM_TOKEN=<staging-capable-form-token>
 SANITY_WEBHOOK_SECRET=<staging-webhook-secret>
 GOOGLE_CLIENT_ID=<staging-google-client-id>
 GOOGLE_CLIENT_SECRET=<staging-google-client-secret>
@@ -235,6 +249,8 @@ HELCIM_TRANSACTION_API_TOKEN=<staging-helcim-transaction-token>
 CHECKOUT_SECRET_ENCRYPTION_KEY=<base64-encoded-32-byte-key>
 DATABASE_URL=<staging-neon-pooled-postgres-url>
 ```
+
+`SANITY_FORM_TOKEN` is not required for current private DB-backed form writes. Add it only if a documented legacy/conditional Sanity submission workflow still needs it.
 
 If the embedded Studio or frontend is served from a custom staging domain, add that origin to Sanity CORS with credentials:
 
@@ -408,7 +424,7 @@ Even after this change, prefer explicit environment variables in release command
 
 - Treat production-to-staging copy as a refresh operation.
 - Treat staging-to-production as code promotion plus targeted content migration.
-- Never expose Sanity write tokens, form tokens, deploy tokens, Helcim tokens, Google secrets, Upstash tokens, or encryption keys in browser-visible variables.
+- Never expose Sanity write tokens, legacy/conditional form tokens, deploy tokens, Helcim tokens, Google secrets, Upstash tokens, database credentials, or encryption keys in browser-visible variables.
 - Do not run the legacy `npm run migrate` script casually; it is a Strapi-to-Sanity migration path, not a staging refresh tool.
 - Before any production content import, export production as a backup tarball.
 - Avoid deleting schema fields that contain production data. Deprecate, migrate, verify, then remove later.
@@ -452,7 +468,131 @@ Production release:
 - [ ] Verify production Studio.
 - [ ] Verify production public pages and affected flows.
 
-## Phase 8: Launch Readiness and Smoke Testing
+## Phase 8: Pre-Launch Content Audit
+
+Before promoting to production, run a GROQ audit to ensure all checkout-enabled training programs have valid product references.
+
+### Training Checkout Audit Query
+
+Run this query in the Sanity Vision tool or via CLI with the published perspective to find invalid launch configurations. It mirrors the Studio and runtime training checkout guardrails where content can be audited: product reference exists, referenced product resolves, kind is `training`, product is available, currency is `CAD`, price is positive, and no variants or historical options are configured.
+
+```groq
+*[
+  _type == "trainingProgram" &&
+  !(_id in path("drafts.**")) &&
+  checkoutEnabled == true &&
+  (
+    !defined(checkoutProduct._ref) ||
+    !defined(checkoutProduct->_id) ||
+    checkoutProduct->kind != "training" ||
+    checkoutProduct->isAvailable != true ||
+    checkoutProduct->currency != "CAD" ||
+    !defined(checkoutProduct->price) ||
+    checkoutProduct->price <= 0 ||
+    count(coalesce(checkoutProduct->variants, [])) > 0 ||
+    count(coalesce(checkoutProduct->options, [])) > 0
+  )
+] {
+  _id,
+  title,
+  "checkoutProductId": checkoutProduct._ref,
+  "checkoutProductTitle": checkoutProduct->title,
+  "issue": select(
+    !defined(checkoutProduct._ref) => "missing checkout product reference",
+    !defined(checkoutProduct->_id) => "checkout product reference does not resolve",
+    checkoutProduct->kind != "training" => "checkout product kind is not training",
+    checkoutProduct->isAvailable != true => "checkout product is unavailable",
+    checkoutProduct->currency != "CAD" => "checkout product currency is not CAD",
+    !defined(checkoutProduct->price) || checkoutProduct->price <= 0 => "checkout product price is missing or not positive",
+    count(coalesce(checkoutProduct->variants, [])) > 0 => "checkout product has variants configured",
+    count(coalesce(checkoutProduct->options, [])) > 0 => "checkout product has historical options configured",
+    "unknown invalid checkout configuration"
+  )
+}
+```
+
+**Expected Result:** Zero published documents returned. If any documents appear, they must be corrected in the Studio before launch. Running the same query without the draft exclusion in the raw perspective is useful for cleanup, but draft-only hits are not launch blockers unless they are published.
+
+## Phase 9: Studio Launch Verification
+
+Verify the Studio environment and structure before declaring production readiness.
+
+### Environment and Schema
+- [ ] **Target Dataset:** Confirm `NEXT_PUBLIC_SANITY_DATASET` matches the intended environment (`production` or `staging-2026-05-10`).
+- [ ] **Deployed Schema:** Run `npx sanity schema list` and verify it matches the current worktree.
+- [ ] **Embedded Studio:** Confirm `/studio` loads correctly on the target domain.
+
+### Structure and Security
+- [ ] **Singleton Integrity:** Verify `homePage`, `globalSettings`, `mainMenu`, and `bookingSettings` appear as singletons in the Studio sidebar.
+- [ ] **PII Isolation:** Confirm that checkout orders, payment events, Helcim references, and customer PII are NOT visible in the Studio. These must remain in the private database.
+- [ ] **Token Scoping:** Verify that the Studio does not expose any private tokens in the browser console or network tab.
+
+## Phase 10: Webhook Configuration and Operations
+
+The application uses signed Sanity webhooks to trigger immediate Next.js cache revalidation. This lets published Studio changes appear on the public site without waiting for the 30-minute ISR background refresh.
+
+### Webhook Configuration
+
+Configure separate webhooks for staging and production in the Sanity project management panel.
+
+| Setting | Staging Value | Production Value |
+| :--- | :--- | :--- |
+| URL | `https://staging.lashher.com/api/revalidate` | `https://www.lashher.com/api/revalidate` |
+| Project | `3auncj84` | `3auncj84` |
+| Dataset | `staging-2026-05-10` | `production` |
+| Trigger | Published document create, update, and delete events | Published document create, update, and delete events |
+| Filter | `_type in ["homePage", "contactPage", "galleryPage", "trainingPage", "trainingProgramsPage", "trainingProgram", "sellableProduct", "globalSettings", "mainMenu", "bookingSettings"]` | Same as staging |
+| Projection | `{ _type }` | `{ _type }` |
+| Method | `POST` | `POST` |
+| Secret | Staging `SANITY_WEBHOOK_SECRET` | Production `SANITY_WEBHOOK_SECRET` |
+
+Keep staging and production secrets separate. The Sanity webhook secret must exactly match the corresponding Vercel environment value for the target deployment.
+
+Drafts and release versions should not be used for launch smoke evidence. Smoke tests must publish the live document version in the matching dataset so the webhook reflects the same content the public app reads.
+
+### Tag Map and No-Op Rationale
+
+The revalidation route maps Sanity `_type` values to Next.js cache tags. Loader tags in `src/data/loaders.ts` and the route map in `src/app/api/revalidate/route.ts` must be updated together when a public cached document type is added.
+
+| Sanity `_type` | Cache tag | Public impact |
+| :--- | :--- | :--- |
+| `homePage` | `homePage` | `/` |
+| `contactPage` | `contactPage` | `/contact` |
+| `galleryPage` | `galleryPage` | `/gallery` |
+| `trainingPage` | `trainingPage` | `/training` |
+| `trainingProgramsPage` | `trainingProgramsPage`, `trainingProgram`, `sellableProduct` | `/training-programs` and referenced training product details |
+| `trainingProgram` | `trainingProgram`, `sellableProduct` | `/training-programs/[slug]` and referenced training product details |
+| `sellableProduct` | `sellableProduct` | `/products/[slug]`, checkout product reads, and training pages that dereference products |
+| `globalSettings` | `global` | Header, footer, metadata |
+| `mainMenu` | `menu` | Navigation |
+| `bookingSettings` | `bookingSettings` | `/booking` availability configuration |
+
+Unknown document types intentionally return 200 without revalidating a tag. Legacy submission or internal tracking types such as `contactForm`, `generalInquiry`, `contactPopupSubmission`, and `bookingMarketingOptIn` do not drive cached public page rendering, so they are documented no-ops rather than hard failures. Current live form/contact/marketing writes should go to the private database, not Sanity.
+
+### Smoke Testing
+
+Run this once in staging before launch and schedule production for a controlled launch window.
+
+1. Confirm the target deployment has the expected `NEXT_PUBLIC_SANITY_DATASET` and `SANITY_WEBHOOK_SECRET`.
+2. Publish a safe visible edit in the matching Studio dataset.
+3. Confirm Sanity reports a successful delivery to `/api/revalidate`.
+4. Check Vercel runtime logs for the expected `[revalidate] tag='<tag>' _type='<type>'` entry and HTTP 200.
+5. Refresh the mapped public page and record before/after evidence.
+6. Revert or clean up the smoke edit if it was only for testing.
+
+### Operational Response and Backfill
+
+Watch Vercel logs for `/api/revalidate` during launch.
+
+- `401`: `SANITY_WEBHOOK_SECRET` is missing or mismatched. Verify the Vercel secret and Sanity webhook secret for the same environment.
+- `400`: The webhook projection is missing `_type`. Verify the projection is exactly `{ _type }`.
+- `5xx`: The route crashed. Check route logs and do not proceed with production content publishing until resolved.
+- Repeated failures: Sanity retries are still failing. Pause publishes and fix the route or environment before continuing.
+- Stale content after 200: Verify the `_type` maps to the cache tag used by the affected loader.
+
+If a webhook is missed, re-publish the affected mapped document in Sanity to trigger a new delivery. For bulk updates, publish a safe edit to each affected mapped document type or wait for the 30-minute ISR timeout.
+
+## Phase 11: Launch Readiness and Smoke Testing
 
 Before declaring a release ready for production, you must complete the launch readiness checklist. This ensures that all environment variables are correct and that content revalidation is working as expected.
 

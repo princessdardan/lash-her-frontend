@@ -36,8 +36,8 @@ Google Calendar integration requires OAuth credentials and an Upstash KV store f
 - Configure the connected calendar ID in the Sanity `bookingSettings` singleton.
 
 ### Checkout and Private DB
-Checkout uses Helcim for payments and a private Neon/Drizzle database for order records.
-- **PII Policy:** Never store transaction history, customer PII, or payment tokens in Sanity.
+Checkout uses Helcim for payments and the private Neon/Drizzle database for order records. The same private database also stores training enrollments, marketing contacts, contact submissions, and consent events.
+- **PII Policy:** Never store transaction history, customer PII, form/contact submissions, marketing contacts, consent events, or payment tokens in Sanity.
 - Database migrations live in `drizzle/`.
 
 ### Email

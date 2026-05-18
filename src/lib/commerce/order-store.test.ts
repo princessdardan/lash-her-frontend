@@ -171,6 +171,9 @@ test("private checkout store looks up pending orders by token hash only", () => 
     assert.equal(found._id, row.id);
     assert.equal(found.orderId, row.orderId);
     assert.equal(found.amount, 123.45);
+    assert.equal(found.customerEmail, "client@example.com");
+    assert.equal(found.customerName, "Client Name");
+    assert.deepEqual(found.lineItems, row.lineItems);
 
     row.status = "paid";
     assert.equal(await store.getPendingOrderByCheckoutToken(pendingOrderInput.checkoutToken), null);

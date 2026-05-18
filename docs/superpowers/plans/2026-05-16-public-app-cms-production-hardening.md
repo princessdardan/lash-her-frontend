@@ -6,7 +6,7 @@
 
 **Goal:** Make the public Next.js app and Sanity CMS boundary launch-ready by removing stale setup guidance, strengthening environment validation, and proving content publish/revalidation behavior in staging and production.
 
-**Architecture:** Keep Next.js App Router pages as server components, keep `src/data/loaders.ts` as the Sanity read boundary, keep Sanity as the public content source, and keep private checkout records out of Sanity.
+**Architecture:** Keep Next.js App Router pages as server components, keep `src/data/loaders.ts` as the Sanity read boundary, keep Sanity as the public/editorial content source, and keep private checkout, form/contact, marketing, and consent records out of Sanity.
 
 **Tech Stack:** Next.js 16 App Router, TypeScript strict, Sanity v4/next-sanity, Vercel environments, npm scripts.
 
@@ -17,14 +17,14 @@
 - Feature section: `docs/production-readiness-audit-2026-05-16.md`, lines 86-108.
 - Critical blockers: lines 387-391, 408-428, 430-434.
 - High-priority recommendation: lines 466-474.
-- Preserve: root-level Next.js app, Sanity as CMS, central loaders, cache tags, server-side catalog reads, and no private checkout data in Sanity.
+- Preserve: root-level Next.js app, Sanity as CMS, central loaders, cache tags, server-side catalog reads, and no private PII data in Sanity.
 
 ## Locked Constraints
 
 - Do not add a second CMS/data access layer beside `src/data/loaders.ts`.
 - Do not reintroduce Strapi, Vercel Blob, or private Motion registry requirements into launch setup.
 - Do not weaken staging/production Sanity dataset separation.
-- Do not move checkout PII, payment state, or private order records into Sanity.
+- Do not move checkout PII, payment state, private order records, form/contact submissions, marketing contacts, or consent events into Sanity.
 
 ## Relevant Files
 

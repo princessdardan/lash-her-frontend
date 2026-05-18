@@ -17,7 +17,6 @@ const publicSanityEnvVars = [
 
 const launchEnvVars = [
   "SANITY_WRITE_TOKEN",
-  "SANITY_FORM_TOKEN",
   "SANITY_WEBHOOK_SECRET",
   "RESEND_API_KEY",
   "FROM_EMAIL",

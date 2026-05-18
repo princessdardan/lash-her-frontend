@@ -2,6 +2,7 @@
 
 import type { TGeneralInquiryLabels, TSchedule, TContactInfo } from "@/types";
 import { Suspense, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Button } from "../../ui/button";
 import { Field, FieldGroup, FieldLabel, FieldError } from "../../ui/field";
 import { Textarea } from "../../ui/textarea";
@@ -25,7 +26,10 @@ type InquiryData = {
     phone: string;
     instagram: string;
     message: string;
+    marketingConsent: boolean;
 }
+
+const GENERAL_INQUIRY_CONSENT_TEXT = "I agree to receive lash care tips, service updates, and offers from Lash Her by Nataliea.";
 
 const styles = {
     input: "form-input",
@@ -41,6 +45,7 @@ const VALIDATION_CONFIG: FieldValidationConfig = {
 };
 
 export function GeneralInquiryForm({data}: { data: TGeneralInquiryLabels }) {
+    const pathname = usePathname();
 
     const [formData, setFormData] = useState<InquiryData>({
         name: "",
@@ -48,6 +53,7 @@ export function GeneralInquiryForm({data}: { data: TGeneralInquiryLabels }) {
         phone: "",
         instagram: "",
         message: "",
+        marketingConsent: false,
       });
       const [isSubmitting, setIsSubmitting] = useState(false);
       const [submitStatus, setSubmitStatus] = useState<{
@@ -76,6 +82,13 @@ export function GeneralInquiryForm({data}: { data: TGeneralInquiryLabels }) {
         }
       };
 
+      const handleMarketingConsentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setFormData((prev) => ({
+          ...prev,
+          marketingConsent: e.target.checked,
+        }));
+      };
+
       const handleBlur = (
         e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>
       ) => {
@@ -92,7 +105,13 @@ export function GeneralInquiryForm({data}: { data: TGeneralInquiryLabels }) {
         e.preventDefault();
 
         // Validate all fields
-        const { errors, isValid } = validateForm(formData, VALIDATION_CONFIG);
+        const { errors, isValid } = validateForm({
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          instagram: formData.instagram,
+          message: formData.message,
+        }, VALIDATION_CONFIG);
         setFieldErrors(errors);
         setTouchedFields(new Set(Object.keys(VALIDATION_CONFIG)));
         if (!isValid) return;
@@ -106,6 +125,9 @@ export function GeneralInquiryForm({data}: { data: TGeneralInquiryLabels }) {
           phone: formData.phone || undefined,
           instagram: formData.instagram || undefined,
           message: formData.message,
+          marketingConsent: formData.marketingConsent,
+          consentText: GENERAL_INQUIRY_CONSENT_TEXT,
+          sourcePath: pathname,
         });
 
         if (result.success) {
@@ -119,6 +141,7 @@ export function GeneralInquiryForm({data}: { data: TGeneralInquiryLabels }) {
             phone: "",
             instagram: "",
             message: "",
+            marketingConsent: false,
           });
           setFieldErrors({});
           setTouchedFields(new Set());
@@ -241,6 +264,20 @@ export function GeneralInquiryForm({data}: { data: TGeneralInquiryLabels }) {
                 <FieldError id="message-error">{fieldErrors.message}</FieldError>
               )}
             </Field>
+
+            <div className="flex items-start gap-3 rounded-2xl border border-lh-line bg-lh-neutral-2/40 p-4">
+              <input
+                id="general-marketing-consent"
+                name="marketingConsent"
+                type="checkbox"
+                checked={formData.marketingConsent}
+                onChange={handleMarketingConsentChange}
+                className="mt-1 h-4 w-4 rounded border-lh-line text-lh-primary focus:ring-lh-primary"
+              />
+              <label htmlFor="general-marketing-consent" className="body-small text-lh-shadow leading-snug">
+                {GENERAL_INQUIRY_CONSENT_TEXT}
+              </label>
+            </div>
 
             {/* Submit Status */}
             <div aria-live="polite" role="status">

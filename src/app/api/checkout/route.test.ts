@@ -125,6 +125,56 @@ test("checkout route creates Helcim checkout for a valid cart", () => {
   `);
 });
 
+test("checkout route rejects unavailable Sanity products before Helcim setup", () => {
+  runRouteScenario(`
+    const { handler, invoices, orders, paySessions } = runScenario({
+      getSellableProductsByIds: async () => [{ ...product, isAvailable: false }],
+    });
+
+    const response = await handler(createRequest({
+      customer: { name: "Nataliea Lash", email: "client@example.com" },
+      items: [{ productId: "product-lash-cleanser", quantity: 1 }],
+    }));
+    const body = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(body, { error: "Unable to start checkout" });
+    assert.equal(invoices.length, 0);
+    assert.equal(paySessions.length, 0);
+    assert.equal(orders.length, 0);
+  `);
+});
+
+test("checkout route rejects unavailable selected variants before Helcim setup", () => {
+  runRouteScenario(`
+    const { handler, invoices, orders, paySessions } = runScenario({
+      getSellableProductsByIds: async () => [{
+        ...product,
+        variants: [{
+          _key: "volume",
+          availabilityLabel: "Sold Out",
+          isAvailable: false,
+          price: 32,
+          sku: "LASH-CLEANSER-VOLUME",
+          title: "Volume",
+        }],
+      }],
+    });
+
+    const response = await handler(createRequest({
+      customer: { name: "Nataliea Lash", email: "client@example.com" },
+      items: [{ productId: "product-lash-cleanser", variantId: "volume", quantity: 1 }],
+    }));
+    const body = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(body, { error: "Unable to start checkout" });
+    assert.equal(invoices.length, 0);
+    assert.equal(paySessions.length, 0);
+    assert.equal(orders.length, 0);
+  `);
+});
+
 test("checkout route returns a generic failure when downstream checkout setup fails", () => {
   runRouteScenario(`
     const { handler, invoices, orders, paySessions } = runScenario({

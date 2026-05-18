@@ -15,6 +15,13 @@
       "when": 1778784000000,
       "tag": "0001_private_training_enrollments",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779049037217,
+      "tag": "0002_rapid_fat_cobra",
+      "breakpoints": true
     }
   ]
 }

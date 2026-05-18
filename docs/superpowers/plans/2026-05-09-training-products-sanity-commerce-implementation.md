@@ -1,5 +1,7 @@
 # Training Program and Product Commerce Implementation Plan
 
+> **Historical note (2026-05-17):** This plan predates the shared private PII storage docs. Current private DB guidance supersedes any checkout-only wording and keeps new form/contact/marketing/consent records out of Sanity.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` for implementation and `superpowers:executing-plans` for task tracking. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
 > **Model constraint:** Do not use Claude models for any implementation, review, design, planning, or subagent work on this plan. Use non-Claude agents/models only.

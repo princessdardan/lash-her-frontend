@@ -41,11 +41,25 @@ export function createRevalidatePostHandler(
   dependencies: RevalidateWebhookDependencies,
 ): (req: NextRequest) => Promise<Response> {
   return async function postRevalidate(req: NextRequest): Promise<Response> {
+    let webhookSecret: string;
+
+    try {
+      webhookSecret = dependencies.getWebhookSecret();
+    } catch {
+      console.warn("[revalidate] Missing webhook secret");
+      return new Response(null, { status: 401 });
+    }
+
+    if (!webhookSecret) {
+      console.warn("[revalidate] Missing webhook secret");
+      return new Response(null, { status: 401 });
+    }
+
     // parseBody reads raw body text, verifies HMAC-SHA256, then JSON.parses
     // Do NOT call req.json() before this — it would consume the stream
     const { body, isValidSignature } = await dependencies.parseBody<{ _type: string }>(
       req,
-      dependencies.getWebhookSecret(),
+      webhookSecret,
     );
 
     // Per D-08: HTTP status codes only, no detail in response body

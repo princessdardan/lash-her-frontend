@@ -91,6 +91,8 @@ function normalizeBookingRequest(input: BookingRequestInput): BookingRequestInpu
       answer: answer.answer.trim(),
     })),
     marketingOptIn: input.marketingOptIn,
+    ...(input.marketingConsentText?.trim() ? { marketingConsentText: input.marketingConsentText.trim() } : {}),
+    ...(input.sourcePath?.trim() ? { sourcePath: input.sourcePath.trim() } : {}),
     idempotencyKey: input.idempotencyKey.trim(),
     ...(paidSchedulingToken ? { paidSchedulingToken } : {}),
   };

@@ -2,6 +2,7 @@ import { loaders } from "@/data/loaders";
 import { Header } from "@/components/custom/layouts/header";
 import { Footer } from "@/components/custom/layouts/footer";
 import { MainWrapper } from "@/components/custom/layouts/main-wrapper";
+import { ContactPopup } from "@/components/custom/contact-popup/contact-popup";
 
 const jsonLd = {
   "@context": "https://schema.org",
@@ -65,6 +66,7 @@ export default async function SiteLayout({
         {children}
       </MainWrapper>
       <Footer data={globalData?.footer} />
+      <ContactPopup settings={globalData?.contactPopup} />
     </>
   );
 }

@@ -1,5 +1,7 @@
 # Training Program and Product Commerce Design Spec
 
+> **Historical note (2026-05-17):** This design predates the shared private PII storage docs. Current private DB guidance supersedes any checkout-only wording and keeps new form/contact/marketing/consent records out of Sanity.
+
 Date: 2026-05-09
 Status: Draft partially clarified; training/content-model scope remains blocked on user clarification
 

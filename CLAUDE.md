@@ -20,7 +20,8 @@ npx playwright test tests/homepage.spec.ts   # Single file; also supports --proj
 
 ### Stack
 - **Next.js 16** (App Router, React 18, React Compiler enabled)
-- **Sanity v3** — primary CMS for all content and forms
+- **Sanity v4** — public/editorial CMS and historical submission backfill source
+- **PostgreSQL/Drizzle** — shared private PII storage for forms, marketing/contact, consent, checkout, payment events, and training enrollments
 - **Tailwind CSS v4** with Radix UI primitives
 - **Motion** for animations
 - **Resend** for transactional email
@@ -44,23 +45,23 @@ Pages are composed of CMS-driven layout blocks. Pipeline per block:
 `BlockRenderer` handles: component lookup, error boundaries, scroll-based entrance animations (skipped for hero), and Suspense.
 
 ### Form Pipeline
-Two forms (General Inquiry, Training Contact):
+General inquiry, training contact, contact popup, and booking marketing choice flows:
 1. Client-side validation (`lib/form-validation.ts`) with shared `ValidationRule` types
-2. Server action (`app/actions/form.ts`) re-validates, writes to Sanity via `writeClient`
-3. Emails sent non-blocking via `Promise.allSettled` through Resend (`lib/email.ts`)
+2. Server action or booking service re-validates and writes to private DB-backed marketing/contact storage
+3. Emails sent non-blocking via `Promise.allSettled` through Resend (`lib/email.ts`) after private DB persistence
 4. Field-level errors returned to client via `FormActionResult`
 
 ### Sanity
 
-**Checkout Security Guardrail:** Do not store checkout transaction history, customer PII, checkout tokens, Helcim invoice identifiers, Helcim transaction identifiers, payment reconciliation records, or encrypted Helcim secret tokens in public Sanity datasets or expose them through Studio. Use the private PostgreSQL database for sensitive checkout records.
+**Private PII Guardrail:** Do not store new checkout transaction history, customer PII, form/contact submissions, marketing contacts, consent events, checkout tokens, Helcim invoice identifiers, Helcim transaction identifiers, payment reconciliation records, or encrypted Helcim secret tokens in public Sanity datasets or expose them through Studio. Use the private PostgreSQL database for sensitive private records.
 
 **Clients** (three, for separation of concerns):
 - `sanity/lib/client.ts` — read-only, CDN-enabled
 - `sanity/lib/write-client.ts` — server-only, token-authenticated, for mutations
-- `sanity/lib/form-client.ts` — server-only, for form submission writes
+- `sanity/lib/form-client.ts` — server-only, legacy/conditional Sanity submission writes only if explicitly retained
 
 **Schemas:**
-- `schemas/documents/` — document types (pages, global settings, form submissions)
+- `schemas/documents/` — document types (pages, global settings, legacy/backfill submission types)
 - `schemas/objects/layout/` — block types that compose pages
 - `schemas/objects/shared/` — reusable field objects (link, feature, hours, contact, menu items)
 
@@ -76,6 +77,7 @@ Two forms (General Inquiry, Training Contact):
 
 - `NEXT_PUBLIC_SANITY_PROJECT_ID`, `NEXT_PUBLIC_SANITY_DATASET` — Sanity connection
 - `SANITY_WRITE_TOKEN` — server-side mutations
+- `DATABASE_URL` — server-only private PostgreSQL connection
 - `RESEND_API_KEY`, `FROM_EMAIL`, `ADMIN_EMAIL` — email delivery
 - `BLOB_READ_WRITE_TOKEN` — Vercel Blob (image migration scripts)
 

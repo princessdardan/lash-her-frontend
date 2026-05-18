@@ -129,6 +129,18 @@ async function getGlobalData(): Promise<TGlobalSettings | null> {
       logoText{ href, label, isExternal },
       text,
       socialLink[]{ _key, href, label, isExternal }
+    },
+    contactPopup{
+      enabled,
+      variant,
+      heading,
+      description,
+      privacyText,
+      privacyLinkLabel,
+      privacyLinkHref,
+      submitLabel,
+      successMessage,
+      cookieExpiryDays
     }
   }`;
   return client.fetch<TGlobalSettings | null>(query, {}, sanityFetchOptions(['global']));
@@ -209,7 +221,7 @@ async function getTrainingProgramBySlug(slug: string): Promise<TTrainingProgram 
       clients
     }
   }`;
-  return client.fetch<TTrainingProgram | null>(query, { slug }, sanityFetchOptions(['trainingProgram']));
+  return client.fetch<TTrainingProgram | null>(query, { slug }, sanityFetchOptions(['trainingProgram', 'sellableProduct']));
 }
 
 async function getTrainingProgramsPageData(): Promise<TTrainingProgramsPage | null> {
@@ -269,7 +281,7 @@ async function getTrainingProgramsPageData(): Promise<TTrainingProgramsPage | nu
       }
     }
   }`;
-  return client.fetch<TTrainingProgramsPage | null>(query, {}, sanityFetchOptions(['trainingProgramsPage', 'trainingProgram']));
+  return client.fetch<TTrainingProgramsPage | null>(query, {}, sanityFetchOptions(['trainingProgramsPage', 'trainingProgram', 'sellableProduct']));
 }
 
 async function getAllTrainingPrograms(): Promise<TTrainingProgram[]> {
@@ -325,7 +337,7 @@ async function getAllTrainingPrograms(): Promise<TTrainingProgram[]> {
       clients
     }
   }`;
-  return client.fetch<TTrainingProgram[]>(query, {}, sanityFetchOptions(['trainingProgram']));
+  return client.fetch<TTrainingProgram[]>(query, {}, sanityFetchOptions(['trainingProgram', 'sellableProduct']));
 }
 
 async function getAllTrainingProgramSlugs(): Promise<Array<{ slug: string }>> {

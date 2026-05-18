@@ -1,8 +1,14 @@
-# Private Checkout Storage Setup Guide
+# Shared Private PII Storage Setup Guide
 
-This guide describes how to set up and maintain the private PostgreSQL database used for Lash Her checkout records. This storage is separate from the public Sanity CMS and holds sensitive transaction history, customer contact details, checkout token hashes, encrypted Helcim secret tokens, invoice references, transaction references, and payment status.
+This guide describes how to set up and maintain the private PostgreSQL database used for Lash Her sensitive operational records. This storage is separate from the public Sanity CMS and holds checkout records, payment events, training enrollments, marketing contacts, contact submissions, consent events, checkout token hashes, encrypted Helcim secret tokens, invoice references, transaction references, and payment status.
 
-Sanity remains the public catalog and editorial CMS only. Do not store checkout transaction history, customer PII, checkout tokens, Helcim invoice identifiers, Helcim transaction identifiers, payment reconciliation records, or encrypted Helcim secret tokens in a public Sanity dataset or expose them through Sanity Studio.
+Sanity remains the public catalog/editorial CMS and historical submission backfill source only. Do not store new checkout transaction history, customer PII, form/contact submissions, marketing contacts, consent events, checkout tokens, Helcim invoice identifiers, Helcim transaction identifiers, payment reconciliation records, or encrypted Helcim secret tokens in a public Sanity dataset or expose them through Sanity Studio.
+
+Related workstreams:
+
+- `docs/private-database-migration-runbook.md` for migration, smoke, and backfill procedures.
+- `docs/marketing-contact-privacy-compliance-follow-up.md` for compliance planning support.
+- `docs/superpowers/plans/2026-05-17-marketing-contact-privacy-compliance-hardening.md` for checkbox implementation tasks.
 
 ## Database Setup
 
@@ -24,7 +30,7 @@ Add these variables to the matching Vercel environment and local `.env.local` fi
 
 ```env
 # Private PostgreSQL connection string injected by Neon
-DATABASE_URL="postgres://user:password@host:port/dbname?sslmode=require"
+DATABASE_URL="<server-only-pooled-postgres-url>"
 
 # Base64-encoded 32-byte key for AES-256-GCM encryption
 CHECKOUT_SECRET_ENCRYPTION_KEY="your-base64-key"
@@ -42,11 +48,13 @@ NEXT_PUBLIC_SANITY_DATASET="staging-2026-05-10-or-production"
 NEXT_PUBLIC_SANITY_API_VERSION="2026-03-24"
 ```
 
-Checkout storage uses `DATABASE_URL`, which is injected by the Neon integration. Do not use `DATABASE_URL_UNPOOLED` for the checkout runtime; the app creates a pooled `pg` client.
+Private storage uses `DATABASE_URL`, which is injected by the Neon integration. Do not use `DATABASE_URL_UNPOOLED` for the runtime; the app creates a pooled `pg` client.
 
 ## Drizzle Migration Commands
 
 Run these commands from the repository root to keep your database schema in sync.
+
+For the full migration procedure, target verification steps, evidence template, stop conditions, and rollback guidance, use `docs/private-database-migration-runbook.md`.
 
 ```bash
 # Generate migration files after schema changes
@@ -56,7 +64,63 @@ npm run db:generate
 npm run db:migrate
 ```
 
-Run migrations against staging first. Only run production migrations after staging checkout has been validated and the production connection string is confirmed.
+Run migrations against staging first. Only run production migrations after staging checkout, form/contact, and consent storage has been validated and the production connection string is confirmed.
+
+## Migration Runbook and Evidence
+
+Production migrations must never use schema push. Use only generated SQL migrations. Before running migrations against production, the operator must verify staging success and backup status.
+
+### Database Identity Verification
+
+Do not store full connection strings or passwords in this document. Record only the host or project identifiers to confirm the target.
+
+**Staging Identity:**
+- [ ] Provider: (e.g., Neon)
+- [ ] Project/Branch ID:
+- [ ] Host Label:
+- [ ] Verified by connecting and checking for test data: [Yes/No]
+
+**Production Identity:**
+- [ ] Provider: (e.g., Neon)
+- [ ] Project/Branch ID:
+- [ ] Host Label:
+- [ ] Verified by checking Vercel production environment variables: [Yes/No]
+
+### Migration Evidence Template
+
+Copy this template for every migration run.
+
+| Field | Value |
+| --- | --- |
+| Environment | (Staging / Production) |
+| Provider | |
+| Host/Dashboard Label | |
+| Branch/Project/DB ID | |
+| Migration Version/File | |
+| Backup/PITR Status | (Verified / Pending / Provider limitation recorded) |
+| Operator | |
+| Verifier | |
+| Approver | |
+| Timestamp | |
+| Result | (Success / Failure) |
+| Rollback Notes | |
+
+**Production Constraint:** Production migration cannot proceed while Backup/PITR status is "Pending" or "Unverified".
+
+### Stop and Rollback Criteria
+
+Stop immediately if:
+1. The migration command returns a non-zero exit code.
+2. The database becomes unreachable after migration.
+3. Staging smoke tests fail after migration.
+4. `DATABASE_URL` cannot be independently verified as the correct target.
+5. Production backups or PITR are unavailable or unverified.
+6. The migration approver has not signed off on the production run.
+
+**Rollback/Roll-forward Guidance:**
+- If a migration fails partially, do not attempt to fix it by manually editing the database schema.
+- Restore from the pre-migration backup or PITR snapshot.
+- If the failure is due to a missing dependency, resolve the dependency in a new migration file and roll forward in staging first.
 
 ## Helcim Configuration
 
@@ -81,7 +145,7 @@ Helcim webhook handling is implemented in the app, but the external Helcim dashb
 
 ## Sanity Cleanup and Retention
 
-The 2026-05-10 security remediation moves checkout orders out of Sanity. If a public Sanity dataset contains legacy `checkoutOrder` documents, follow these steps.
+The private storage remediation moves sensitive operational records out of Sanity. If a public Sanity dataset contains legacy `checkoutOrder`, `generalInquiry`, `contactForm`, `contactPopupSubmission`, or `bookingMarketingOptIn` documents, treat them as historical/backfill records until a retention/export/redaction decision is documented.
 
 1. Export production Sanity before cleanup:
 
@@ -93,26 +157,48 @@ The 2026-05-10 security remediation moves checkout orders out of Sanity. If a pu
 
 2. Count existing records with GROQ:
 
-   ```groq
-   count(*[_type == "checkoutOrder"])
-   ```
+    ```groq
+    count(*[_type in ["checkoutOrder", "generalInquiry", "contactForm", "contactPopupSubmission", "bookingMarketingOptIn"]])
+    ```
 
 3. Inspect a small sample only after confirming the operator has permission to view potentially sensitive customer data.
-4. If records exist, choose one retention path before deletion:
-   - delete without importing because records are confirmed test data,
-   - export to an encrypted archive and then delete,
-   - migrate selected records into private Postgres and then delete,
-   - retain temporarily while hidden from Studio, with a written deletion date.
+4. If records exist, choose one retention path before deletion/redaction:
+    - delete without importing because records are confirmed test data,
+    - export to an encrypted archive and then delete,
+    - migrate selected records into private Postgres and then delete,
+    - retain temporarily while hidden from Studio, with a written deletion date.
 5. Do not delete production records until private storage is live, a backup exists, and retention/export/deletion requirements are approved by the business owner.
 
 ## Retention and Redaction
 
-Keep order records only as long as required for accounting, support, fulfillment, chargeback, tax, and bookkeeping purposes. Do not invent a legal retention period in code; the business owner must choose it.
+Keep private records only as long as required for their approved purposes. Checkout records may be needed for accounting, support, fulfillment, chargeback, tax, and bookkeeping purposes. Marketing contacts, contact submissions, consent events, suppression records, and Sanity backfill records need separate owner/counsel retention and redaction decisions. Do not invent legal retention periods in code or docs.
 
-1. Identify your business and legal retention requirements for customer PII.
-2. Use a redaction policy to remove `customer_name`, `customer_email`, and any future phone/address/freeform note fields after the retention window.
-3. Retain non-PII data such as order IDs, totals, status, timestamps, and Helcim references for long-term financial reconciliation.
-4. If an internal order dashboard is approved later, add audit logs for who viewed or changed private orders, when, and what action was taken.
+### Retention Decision Record
+
+| Decision Point | Value |
+| --- | --- |
+| Retention Owner | |
+| Decision Date | |
+| Checkout PII Retention Period | (Business/legal decision) |
+| Marketing Contact Retention Period | (Business/legal decision) |
+| Contact Submission Retention Period | (Business/legal decision) |
+| Consent Event Retention Period | (Business/legal decision) |
+| Suppression Record Retention Period | (Business/legal decision) |
+| Sanity Backfill Retention/Redaction Path | (Business/legal decision) |
+| Financial Record Period | (Business/legal decision) |
+| Redaction Approval | |
+
+### Future Redaction Behavior
+
+Once retention periods and record-type rules are defined, a manual or automated job will:
+1. Remove approved PII fields from checkout, contact, marketing, and submission records.
+2. Preserve only approved non-PII reconciliation, accounting, suppression, provenance, and audit fields.
+3. Log the redaction event without including the redacted data.
+
+**Access Control Warning:**
+No order/contact dashboard or internal UI should be added until access control, audit logging, and a formal retention policy are defined and implemented.
+
+Contractor access should be least-privilege and time-bound. Dardan acts as contract technical operator/steward only while actively engaged; Nataliea remains accountable for business/privacy decisions and must name an ongoing owner or vendor before launch. Revoke or rotate contractor access when the contract ends or scope changes.
 
 ## Smoke Test Checklist
 
@@ -120,6 +206,9 @@ Keep order records only as long as required for accounting, support, fulfillment
 - [ ] Checkout initialization creates a pending row in the private database.
 - [ ] Helcim payment success updates the private database row to "paid".
 - [ ] No `checkoutOrder` documents are created in Sanity during a test transaction.
+- [ ] General inquiry, training contact, and contact popup submissions create private DB submission/consent records before email.
+- [ ] Booking marketing choices create private DB audit records for both opted-in and not-opted-in paths.
+- [ ] No `generalInquiry`, `contactForm`, `contactPopupSubmission`, or `bookingMarketingOptIn` documents are created in Sanity by live flows.
 - [ ] Sanity Studio does not display an "Orders" section.
 - [ ] Confirmation page still shows the public-safe order reference.
 - [ ] Sanity remains limited to public catalog/editorial content.

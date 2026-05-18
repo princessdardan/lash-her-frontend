@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useState } from "react";
+import { usePathname } from "next/navigation";
 import type { TContactFormLabels } from "@/types";
 import { Button } from "@/components/ui/button";
 import { ScrollToForm } from "@/components/ui/scroll-to-form";
@@ -42,7 +43,10 @@ type FormData = {
   interest: string;
   clients: string;
   info: string;
+  marketingConsent: boolean;
 };
+
+const TRAINING_CONTACT_CONSENT_TEXT = "I agree to receive training updates, program news, and offers from Lash Her by Nataliea.";
 
 const styles = {
     input: "form-input",
@@ -65,6 +69,7 @@ const CONTACT_VALIDATION_CONFIG: FieldValidationConfig = {
 };
 
 export function ContactFormLabels({ data }: { data: TContactFormLabels }) {
+  const pathname = usePathname();
   const [formData, setFormData] = useState<FormData>({
     name: "",
     email: "",
@@ -75,6 +80,7 @@ export function ContactFormLabels({ data }: { data: TContactFormLabels }) {
     interest: "",
     clients: "",
     info: "",
+    marketingConsent: false,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<{
@@ -125,10 +131,24 @@ export function ContactFormLabels({ data }: { data: TContactFormLabels }) {
     }
   };
 
+  const handleMarketingConsentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData((prev) => ({ ...prev, marketingConsent: e.target.checked }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const { errors, isValid } = validateForm(formData, CONTACT_VALIDATION_CONFIG);
+    const { errors, isValid } = validateForm({
+      name: formData.name,
+      email: formData.email,
+      phone: formData.phone,
+      location: formData.location,
+      instagram: formData.instagram,
+      experience: formData.experience,
+      interest: formData.interest,
+      clients: formData.clients,
+      info: formData.info,
+    }, CONTACT_VALIDATION_CONFIG);
     setFieldErrors(errors);
     setTouchedFields(new Set(Object.keys(CONTACT_VALIDATION_CONFIG)));
     if (!isValid) return;
@@ -146,6 +166,9 @@ export function ContactFormLabels({ data }: { data: TContactFormLabels }) {
       interest: formData.interest,
       clients: formData.clients ? parseInt(formData.clients, 10) : undefined,
       info: formData.info || undefined,
+      marketingConsent: formData.marketingConsent,
+      consentText: TRAINING_CONTACT_CONSENT_TEXT,
+      sourcePath: pathname,
     });
 
     if (result.success) {
@@ -163,6 +186,7 @@ export function ContactFormLabels({ data }: { data: TContactFormLabels }) {
         interest: "",
         clients: "",
         info: "",
+        marketingConsent: false,
       });
       setFieldErrors({});
       setTouchedFields(new Set());
@@ -388,6 +412,20 @@ export function ContactFormLabels({ data }: { data: TContactFormLabels }) {
                     className="form-textarea"
                 />
                 </Field>
+
+                <div className="flex items-start gap-3 rounded-2xl border border-lh-line bg-lh-neutral-2/40 p-4">
+                  <input
+                    id="training-marketing-consent"
+                    name="marketingConsent"
+                    type="checkbox"
+                    checked={formData.marketingConsent}
+                    onChange={handleMarketingConsentChange}
+                    className="mt-1 h-4 w-4 rounded border-lh-line text-lh-primary focus:ring-lh-primary"
+                  />
+                  <label htmlFor="training-marketing-consent" className="body-small text-lh-shadow leading-snug">
+                    {TRAINING_CONTACT_CONSENT_TEXT}
+                  </label>
+                </div>
 
                 {/* Submit Status */}
                 <div aria-live="polite" role="status">

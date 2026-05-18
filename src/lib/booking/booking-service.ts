@@ -7,7 +7,10 @@ import {
   findPendingTrainingEnrollmentByToken,
   markTrainingEnrollmentScheduled,
 } from "@/lib/commerce/training-enrollment-store";
-import { formClient } from "@/sanity/lib/form-client";
+import {
+  BOOKING_MARKETING_CONSENT_TEXT,
+  recordBookingMarketingChoice,
+} from "@/lib/marketing-contact/marketing-contact-store";
 import { isSlotAvailable } from "./availability";
 import {
   buildBookingEventPayload,
@@ -180,18 +183,16 @@ export async function createBooking(
         });
       }
 
-      if (validation.data.marketingOptIn) {
-        try {
-          await createMarketingOptIn({
-            input: validation.data,
-            answers,
-          });
-        } catch (error) {
-          console.error(
-            "[createBooking] Marketing opt-in write failed:",
-            getErrorMessage(error),
-          );
-        }
+      try {
+        await auditBookingMarketingChoice({
+          input: validation.data,
+          answers,
+        });
+      } catch (error) {
+        console.error(
+          "[createBooking] Marketing choice audit failed:",
+          getErrorMessage(error),
+        );
       }
 
       try {
@@ -313,22 +314,23 @@ async function insertGoogleCalendarBooking(input: {
   });
 }
 
-async function createMarketingOptIn(input: {
+async function auditBookingMarketingChoice(input: {
   input: BookingRequestInput;
   answers: BookingAnswerWithLabel[];
 }): Promise<void> {
-  await formClient.create({
-    _type: "bookingMarketingOptIn",
-    name: input.input.name,
-    email: input.input.email,
-    phone: input.input.phone,
-    bookingType: input.input.bookingType,
+  await recordBookingMarketingChoice({
     answers: input.answers.map((answer) => ({
-      _type: "bookingAnswer",
       questionId: answer.questionId,
       questionLabel: answer.questionLabel,
       answer: answer.answer,
     })),
+    bookingType: input.input.bookingType,
+    consentText: input.input.marketingConsentText ?? BOOKING_MARKETING_CONSENT_TEXT,
+    marketingOptIn: input.input.marketingOptIn,
+    name: input.input.name,
+    email: input.input.email,
+    phone: input.input.phone,
+    sourcePath: input.input.sourcePath,
   });
 }
 

@@ -24,7 +24,15 @@ test.describe('Product Detail Page', () => {
     await expect(page.getByRole('link', { name: /back to catalog|back to products/i }).first()).toBeVisible();
 
     await expect(page.locator('main h1')).toBeVisible();
-    
+
+    const title = await page.locator('main h1').innerText();
+    if (title.includes('Beginner Private Training')) {
+      await expect(page.locator('main')).toContainText('training');
+      await expect(page.locator('main')).toContainText('123456789');
+      await expect(page.locator('main')).toContainText('$4,097.00');
+      await expect(page.locator('main')).toContainText('We will be in touch as soon as possible');
+    }
+     
     await expect(page.getByRole('button', { name: /add to cart/i })).toHaveCount(0);
   });
 });

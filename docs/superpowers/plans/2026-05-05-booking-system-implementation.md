@@ -1,5 +1,7 @@
 # Google Calendar Booking System Implementation Plan
 
+> **Historical note (2026-05-17):** This implementation plan predates the private DB marketing/contact migration. Any references to live Sanity form writes, `formClient`, `SANITY_FORM_TOKEN`, or `bookingMarketingOptIn` as a current write target are historical. Current live form/contact/marketing writes belong in the private DB; Sanity submission documents are legacy/backfill source records only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build an instant-confirmed booking system where Sanity config drives the booking UI and Google Calendar is the only booking source of truth.

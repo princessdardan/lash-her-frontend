@@ -32,6 +32,73 @@ export const globalSettings = defineType({
       title: "Footer",
       type: "footer",
     }),
+    defineField({
+      name: "contactPopup",
+      title: "Contact Popup",
+      type: "object",
+      fields: [
+        defineField({
+          name: "enabled",
+          title: "Enabled",
+          type: "boolean",
+          initialValue: false,
+        }),
+        defineField({
+          name: "variant",
+          title: "Variant",
+          type: "string",
+          options: {
+            list: [
+              { title: "Full Contact (Name, Email, Instagram)", value: "fullContact" },
+              { title: "Email Only", value: "emailOnly" },
+            ],
+          },
+          initialValue: "fullContact",
+        }),
+        defineField({
+          name: "heading",
+          title: "Heading",
+          type: "string",
+        }),
+        defineField({
+          name: "description",
+          title: "Description",
+          type: "text",
+        }),
+        defineField({
+          name: "privacyText",
+          title: "Privacy Agreement Text",
+          type: "string",
+        }),
+        defineField({
+          name: "privacyLinkLabel",
+          title: "Privacy Link Label",
+          type: "string",
+        }),
+        defineField({
+          name: "privacyLinkHref",
+          title: "Privacy Link URL",
+          type: "string",
+        }),
+        defineField({
+          name: "submitLabel",
+          title: "Submit Button Label",
+          type: "string",
+        }),
+        defineField({
+          name: "successMessage",
+          title: "Success Message",
+          type: "string",
+        }),
+        defineField({
+          name: "cookieExpiryDays",
+          title: "Cookie Expiry (Days)",
+          type: "number",
+          initialValue: 30,
+          description: "How many days before the popup shows again after being dismissed or submitted.",
+        }),
+      ],
+    }),
   ],
   preview: {
     select: {

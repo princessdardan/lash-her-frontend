@@ -1,5 +1,7 @@
 # Private Checkout Storage Security Remediation Plan
 
+> **Historical note (2026-05-17):** This plan was intentionally scoped to checkout storage. Current private DB documentation supersedes it by treating the database as shared private PII storage for checkout orders, payment events, training enrollments, marketing contacts, contact submissions, and consent events.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` for implementation and `superpowers:executing-plans` for task tracking. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
 > **Security constraint:** Do not store checkout transaction history, customer PII, payment reconciliation records, checkout tokens, Helcim invoice identifiers, Helcim transaction identifiers, or encrypted Helcim secret tokens in a public Sanity dataset. Sanity may continue to store public catalog/content only.

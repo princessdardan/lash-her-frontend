@@ -4,6 +4,7 @@ import {
   markOrderPaid,
   markOrderVerificationFailed,
 } from "@/lib/commerce/order-store";
+import { sendProductOrderConfirmationEmail } from "@/lib/commerce/product-order-email";
 import { sendTrainingPaymentNotificationEmails } from "@/lib/commerce/training-payment-email";
 import {
   issueTrainingSchedulingTokenForPaidOrder,
@@ -33,6 +34,7 @@ interface ValidatePaymentPostHandlerDependencies {
   markOrderVerificationFailed: typeof markOrderVerificationFailed;
   markTrainingEnrollmentStaffAlerted: typeof markTrainingEnrollmentStaffAlerted;
   persistVerifiedPayment: typeof persistVerifiedPayment;
+  sendProductOrderConfirmationEmail: typeof sendProductOrderConfirmationEmail;
   sendTrainingPaymentNotificationEmails: typeof sendTrainingPaymentNotificationEmails;
   verifyHelcimPayment: typeof verifyHelcimPayment;
 }
@@ -156,6 +158,22 @@ export function createValidatePaymentPostHandler(
         });
       }
 
+      try {
+        await dependencies.sendProductOrderConfirmationEmail({
+          currency: order.currency,
+          customerEmail: order.customerEmail,
+          customerName: order.customerName,
+          lineItems: order.lineItems,
+          orderId: order.orderId,
+          totalAmount: order.amount,
+        });
+      } catch (error) {
+        dependencies.logError("[checkout] Product order confirmation email failed", {
+          error: error instanceof Error ? error.message : "Unknown email error",
+          orderId: order.orderId,
+        });
+      }
+
       return Response.json({
         orderId: order.orderId,
         redirectUrl: `/products/confirmation?order=${encodeURIComponent(order.orderId)}`,
@@ -181,6 +199,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     markOrderVerificationFailed,
     markTrainingEnrollmentStaffAlerted,
     persistVerifiedPayment,
+    sendProductOrderConfirmationEmail,
     sendTrainingPaymentNotificationEmails,
     verifyHelcimPayment,
   })(req);

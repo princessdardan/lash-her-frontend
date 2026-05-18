@@ -100,6 +100,12 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
               {product.title}
             </h1>
             
+            {(!product.variants || product.variants.length === 0) && product.sku && (
+              <p className="text-xs uppercase tracking-wider text-lh-muted mb-4">
+                {product.sku}
+              </p>
+            )}
+            
             <div className="text-2xl font-medium text-lh-muted mb-6">
               {formatProductPrice(product)}
             </div>

@@ -24,6 +24,12 @@
 - Do not promise a product order email unless implemented and verified.
 - Do not expose private checkout records through Sanity or public pages.
 
+## Recorded Launch Decisions
+
+- **Accepted exclusions:** Business owner accepts first release without taxes for general products, discounts, shipping, ACH, partial payments, refunds tooling, saved payment methods, or customer pre-linking.
+- **Product order email:** Product checkout must send a customer order confirmation email after verified payment is persisted. Email failure is logged for follow-up and does not roll back a successful payment.
+- **Webhook product email:** Helcim webhook recovery does not send product confirmation emails in this release because durable email idempotency is not yet tracked for product orders.
+
 ## Relevant Files
 
 - `src/sanity/schemas/documents/sellable-product.ts`
@@ -49,12 +55,12 @@
 - This plan or `docs/launch-readiness-checklist.md`
 - Optional README commerce section
 
-- [ ] **Step 1: Confirm excluded commerce features**
+- [x] **Step 1: Confirm excluded commerce features**
 
 Expected:
 - Business owner explicitly accepts launch without taxes for general products, discounts, shipping, ACH, partial payments, refunds tooling, saved methods, or customer pre-linking.
 
-- [ ] **Step 2: Decide product order email behavior**
+- [x] **Step 2: Decide product order email behavior**
 
 Expected:
 - Decision is either “implement email before launch” or “remove promise before launch.”
@@ -65,12 +71,12 @@ Expected:
 - `tests/checkout.spec.ts`
 - Relevant unit test files under `src/lib/commerce`
 
-- [ ] **Step 1: Add confirmation behavior expectation**
+- [x] **Step 1: Add confirmation behavior expectation**
 
 Expected:
 - Test or manual acceptance explicitly verifies no false email promise remains.
 
-- [ ] **Step 2: Add catalog state acceptance checks**
+- [x] **Step 2: Add catalog state acceptance checks**
 
 Expected:
 - Coverage verifies unavailable products/variants cannot be checked out and visible catalog state matches Sanity fixtures or smoke content.
@@ -81,27 +87,30 @@ Expected:
 - `src/app/(site)/products/confirmation/page.tsx`
 - Optional: `src/lib/email.ts`, checkout/payment verification code, tests
 
-- [ ] **Step 1: If implementing email, add server-side email after verified payment**
+- [x] **Step 1: If implementing email, add server-side email after verified payment**
 
 Expected:
 - Email is sent only after verified payment/order state, failure is logged, and checkout success is not rolled back.
 
-- [ ] **Step 2: If changing copy, remove unsupported promise**
+- [x] **Step 2: If changing copy, remove unsupported promise** *(not applicable; email was implemented instead)*
 
 Expected:
 - Confirmation page explains the order reference and support follow-up accurately without promising automation.
+
+Result:
+- Product confirmation copy remains accurate because product order confirmation email is now implemented after verified payment persistence.
 
 ## Task 4: Add Catalog Smoke Checklist
 
 **Files:**
 - `README.md` or `docs/launch-readiness-checklist.md`
 
-- [ ] **Step 1: Add editor-facing product checks**
+- [x] **Step 1: Add editor-facing product checks**
 
 Expected:
 - Checklist covers availability, variants, SKUs, prices, currency, and fulfillment copy.
 
-- [ ] **Step 2: Add checkout authority checks**
+- [x] **Step 2: Add checkout authority checks**
 
 Expected:
 - Checklist confirms checkout route uses server-derived Sanity product data only.

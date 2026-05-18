@@ -10,10 +10,30 @@ const helperScript = String.raw`
     _id: "checkout-order-row-1",
     amount: 1130,
     currency: "CAD",
+    customerEmail: "client@example.com",
+    customerName: "Client Name",
     helcimInvoiceId: 4242,
     helcimInvoiceNumber: "INV-4242",
     orderId: "lh-order-123",
     secretToken: "checkout-secret-token",
+    lineItems: [
+      {
+        description: "Signature Lash Set",
+        productId: "signature-lash-set",
+        quantity: 1,
+        sku: "LASH-SIGNATURE",
+        totalCents: 100000,
+        unitPriceCents: 100000,
+      },
+      {
+        description: "Aftercare Kit",
+        productId: "aftercare-kit",
+        quantity: 2,
+        sku: "CARE-KIT",
+        totalCents: 13000,
+        unitPriceCents: 6500,
+      },
+    ],
   };
 
   const approvedPaymentData = {
@@ -39,6 +59,7 @@ const helperScript = String.raw`
     markOrderVerificationFailed,
     markTrainingEnrollmentStaffAlerted,
     persistVerifiedPayment,
+    sendProductOrderConfirmationEmail,
     sendTrainingPaymentNotificationEmails,
     verifyHelcimPayment,
   } = {}) {
@@ -46,7 +67,9 @@ const helperScript = String.raw`
     const markedFailedOrders = [];
     const markedPaidOrders = [];
     const markedStaffAlerts = [];
+    const operationOrder = [];
     const sentEmails = [];
+    const sentProductEmails = [];
 
     const handler = createValidatePaymentPostHandler({
       getPendingOrderByCheckoutToken: async (checkoutToken) => {
@@ -66,6 +89,7 @@ const helperScript = String.raw`
       },
       markOrderPaid: async (orderId, transactionId) => {
         markedPaidOrders.push({ orderId, transactionId });
+        operationOrder.push("mark-paid");
         if (markOrderPaid) {
           await markOrderPaid(orderId, transactionId);
         }
@@ -87,7 +111,15 @@ const helperScript = String.raw`
           return persistVerifiedPayment(input);
         }
         await input.markPaid(input.orderId, input.transactionId);
+        operationOrder.push("persisted");
         return true;
+      },
+      sendProductOrderConfirmationEmail: async (input) => {
+        operationOrder.push("product-email");
+        sentProductEmails.push(input);
+        if (sendProductOrderConfirmationEmail) {
+          await sendProductOrderConfirmationEmail(input);
+        }
       },
       sendTrainingPaymentNotificationEmails: async (input) => {
         sentEmails.push(input);
@@ -103,7 +135,7 @@ const helperScript = String.raw`
       },
     });
 
-    return { errors, handler, markedFailedOrders, markedPaidOrders, markedStaffAlerts, sentEmails };
+    return { errors, handler, markedFailedOrders, markedPaidOrders, markedStaffAlerts, operationOrder, sentEmails, sentProductEmails };
   }
 `;
 
@@ -180,9 +212,9 @@ test("checkout payment validation marks order failed for payment mismatches", ()
   `);
 });
 
-test("checkout payment validation returns product confirmation URL after success", () => {
+test("checkout payment validation sends product confirmation email after persisted success", () => {
   runRouteScenario(`
-    const { handler, markedPaidOrders } = await runScenario();
+    const { handler, markedPaidOrders, operationOrder, sentProductEmails } = await runScenario();
 
     const response = await handler(createRequest({
       checkoutToken: "checkout-token",
@@ -196,12 +228,21 @@ test("checkout payment validation returns product confirmation URL after success
       redirectUrl: "/products/confirmation?order=lh-order-123",
     });
     assert.deepEqual(markedPaidOrders, [{ orderId: "lh-order-123", transactionId: "txn-verified-123" }]);
+    assert.deepEqual(operationOrder, ["mark-paid", "persisted", "product-email"]);
+    assert.deepEqual(sentProductEmails, [{
+      currency: "CAD",
+      customerEmail: "client@example.com",
+      customerName: "Client Name",
+      lineItems: pendingOrder.lineItems,
+      orderId: "lh-order-123",
+      totalAmount: 1130,
+    }]);
   `);
 });
 
 test("checkout payment validation returns 500 when verified payment persistence fails", () => {
   runRouteScenario(`
-    const { handler, markedPaidOrders } = await runScenario({
+    const { handler, markedPaidOrders, sentProductEmails } = await runScenario({
       persistVerifiedPayment: async () => false,
     });
 
@@ -216,12 +257,40 @@ test("checkout payment validation returns 500 when verified payment persistence 
       error: "Payment verified but order could not be recorded",
     });
     assert.equal(markedPaidOrders.length, 0);
+    assert.equal(sentProductEmails.length, 0);
+  `);
+});
+
+test("checkout payment validation logs product email failures without blocking success", () => {
+  runRouteScenario(`
+    const { errors, handler, sentProductEmails } = await runScenario({
+      sendProductOrderConfirmationEmail: async () => {
+        throw new Error("Resend unavailable");
+      },
+    });
+
+    const response = await handler(createRequest({
+      checkoutToken: "checkout-token",
+      data: approvedPaymentData,
+      hash: "hash",
+    }));
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      orderId: "lh-order-123",
+      redirectUrl: "/products/confirmation?order=lh-order-123",
+    });
+    assert.equal(sentProductEmails.length, 1);
+    assert.deepEqual(errors, [{
+      context: { error: "Resend unavailable", orderId: "lh-order-123" },
+      message: "[checkout] Product order confirmation email failed",
+    }]);
   `);
 });
 
 test("checkout payment validation logs training email failures without blocking success", () => {
   runRouteScenario(`
-    const { errors, handler, markedStaffAlerts, sentEmails } = await runScenario({
+    const { errors, handler, markedStaffAlerts, sentEmails, sentProductEmails } = await runScenario({
       issueTrainingSchedulingTokenForPaidOrder: async () => ({
         checkoutEmail: "client@example.com",
         checkoutOrder: {
@@ -261,6 +330,7 @@ test("checkout payment validation logs training email failures without blocking 
       orderId: "lh-order-123",
       redirectUrl: "/training-programs/lash-training/confirmation?order=lh-order-123&token=training-schedule-token",
     });
+    assert.equal(sentProductEmails.length, 0);
     assert.deepEqual(sentEmails, [{
       customerEmail: "client@example.com",
       customerName: "Client Name",

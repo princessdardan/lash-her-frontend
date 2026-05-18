@@ -7,6 +7,9 @@ export interface GeneralInquiryData {
   phone?: string;
   instagram?: string;
   message: string;
+  marketingConsent?: boolean;
+  consentText?: string;
+  sourcePath?: string;
 }
 
 export interface TrainingContactData {
@@ -19,9 +22,22 @@ export interface TrainingContactData {
   interest: string;
   clients?: number;
   info?: string;
+  marketingConsent?: boolean;
+  consentText?: string;
+  sourcePath?: string;
 }
 
-export type FormType = "general-inquiry" | "training-contact";
+export interface ContactPopupData {
+  variant?: "fullContact" | "emailOnly";
+  name?: string;
+  email: string;
+  instagram?: string;
+  sourcePath?: string;
+  consentText?: string;
+  company?: string;
+}
+
+export type FormType = "general-inquiry" | "training-contact" | "contact-popup";
 
 // Resend client initialized at module level
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -38,20 +54,31 @@ function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (m) => map[m]);
 }
 
+function mailtoHref(email: string): string {
+  return `mailto:${encodeURIComponent(email)}`;
+}
+
 // Subject line helpers
 function getAdminSubject(
   formType: FormType,
-  formData: GeneralInquiryData | TrainingContactData
+  formData: GeneralInquiryData | TrainingContactData | ContactPopupData
 ): string {
   if (formType === "general-inquiry") {
-    return `🔔 New General Inquiry from ${formData.name}`;
+    return `🔔 New General Inquiry from ${(formData as GeneralInquiryData).name}`;
   }
-  return `🎓 New Training Inquiry from ${formData.name}`;
+  if (formType === "contact-popup") {
+    const name = (formData as ContactPopupData).name || "a visitor";
+    return `✨ New Popup Lead from ${name}`;
+  }
+  return `🎓 New Training Inquiry from ${(formData as TrainingContactData).name}`;
 }
 
 function getUserSubject(formType: FormType): string {
   if (formType === "general-inquiry") {
     return "Thank You for Your Inquiry - Lash Her by Nataliea";
+  }
+  if (formType === "contact-popup") {
+    return "Welcome to Lash Her by Nataliea!";
   }
   return "Your Training Inquiry - Lash Her by Nataliea";
 }
@@ -115,7 +142,7 @@ function getGeneralInquiryAdminHtml(data: GeneralInquiryData): string {
                 <tr>
                   <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
                     <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 120px;">Email:</strong>
-                    <a href="mailto:${data.email}" style="color: #663976; font-size: 14px; text-decoration: none;">${data.email}</a>
+                    <a href="${escapeHtml(mailtoHref(data.email))}" style="color: #663976; font-size: 14px; text-decoration: none;">${escapeHtml(data.email)}</a>
                   </td>
                 </tr>
                 ${
@@ -154,7 +181,7 @@ function getGeneralInquiryAdminHtml(data: GeneralInquiryData): string {
 
               <!-- Action Button -->
               <div style="text-align: center; margin-top: 30px;">
-                <a href="mailto:${data.email}" style="display: inline-block; background-color: #663976; color: #ffffff; text-decoration: none; padding: 12px 30px; border-radius: 6px; font-weight: 500; font-size: 14px;">
+                <a href="${escapeHtml(mailtoHref(data.email))}" style="display: inline-block; background-color: #663976; color: #ffffff; text-decoration: none; padding: 12px 30px; border-radius: 6px; font-weight: 500; font-size: 14px;">
                   Reply to ${escapeHtml(data.name.split(" ")[0])}
                 </a>
               </div>
@@ -242,7 +269,7 @@ function getTrainingContactAdminHtml(data: TrainingContactData): string {
                 <tr>
                   <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
                     <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 140px;">Email:</strong>
-                    <a href="mailto:${data.email}" style="color: #663976; font-size: 14px; text-decoration: none;">${data.email}</a>
+                    <a href="${escapeHtml(mailtoHref(data.email))}" style="color: #663976; font-size: 14px; text-decoration: none;">${escapeHtml(data.email)}</a>
                   </td>
                 </tr>
                 <tr>
@@ -317,7 +344,7 @@ function getTrainingContactAdminHtml(data: TrainingContactData): string {
 
               <!-- Action Buttons -->
               <div style="text-align: center; margin-top: 30px;">
-                <a href="mailto:${data.email}" style="display: inline-block; background-color: #D4B483; color: #ffffff; text-decoration: none; padding: 12px 30px; border-radius: 6px; font-weight: 500; font-size: 14px; margin: 5px;">
+                  <a href="${escapeHtml(mailtoHref(data.email))}" style="display: inline-block; background-color: #D4B483; color: #ffffff; text-decoration: none; padding: 12px 30px; border-radius: 6px; font-weight: 500; font-size: 14px; margin: 5px;">
                   Email ${escapeHtml(data.name.split(" ")[0])}
                 </a>
                 <a href="tel:${data.phone}" style="display: inline-block; background-color: #663976; color: #ffffff; text-decoration: none; padding: 12px 30px; border-radius: 6px; font-weight: 500; font-size: 14px; margin: 5px;">
@@ -549,17 +576,165 @@ function getTrainingContactUserHtml(data: TrainingContactData): string {
   `.trim();
 }
 
+// Admin notification template for contact popup
+function getContactPopupAdminHtml(data: ContactPopupData): string {
+  const timestamp = new Date().toLocaleString("en-US", {
+    dateStyle: "full",
+    timeStyle: "short",
+  });
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>New Popup Lead</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f5f5;">
+  <table role="presentation" style="width: 100%; border-collapse: collapse;">
+    <tr>
+      <td align="center" style="padding: 40px 20px;">
+        <table role="presentation" style="max-width: 600px; width: 100%; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+          <tr>
+            <td style="background: linear-gradient(135deg, #1C1318 0%, #3D0B16 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">
+                ✨ New Popup Lead
+              </h1>
+              <p style="margin: 10px 0 0 0; color: #f0f0f0; font-size: 14px;">
+                Lash Her by Nataliea
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 40px 30px;">
+              <h2 style="margin: 0 0 20px 0; color: #1f2937; font-size: 18px; font-weight: 600; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px;">
+                Lead Details
+              </h2>
+              <table role="presentation" style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
+                ${data.name ? `
+                <tr>
+                  <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
+                    <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 120px;">Name:</strong>
+                    <span style="color: #1f2937; font-size: 14px;">${escapeHtml(data.name)}</span>
+                  </td>
+                </tr>` : ''}
+                <tr>
+                  <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
+                    <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 120px;">Email:</strong>
+                    <a href="${escapeHtml(mailtoHref(data.email))}" style="color: #663976; font-size: 14px; text-decoration: none;">${escapeHtml(data.email)}</a>
+                  </td>
+                </tr>
+                ${data.instagram ? `
+                <tr>
+                  <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
+                    <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 120px;">Instagram:</strong>
+                    <span style="color: #1f2937; font-size: 14px;">@${escapeHtml(data.instagram)}</span>
+                  </td>
+                </tr>` : ''}
+                ${data.sourcePath ? `
+                <tr>
+                  <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
+                    <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 120px;">Source Page:</strong>
+                    <span style="color: #1f2937; font-size: 14px;">${escapeHtml(data.sourcePath)}</span>
+                  </td>
+                </tr>` : ''}
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color: #f9fafb; padding: 20px 30px; border-radius: 0 0 8px 8px; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; color: #6b7280; font-size: 12px; text-align: center;">
+                Received on ${timestamp}
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `.trim();
+}
+
+// User confirmation template for contact popup
+function getContactPopupUserHtml(data: ContactPopupData): string {
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to Lash Her</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f5f5;">
+  <table role="presentation" style="width: 100%; border-collapse: collapse;">
+    <tr>
+      <td align="center" style="padding: 40px 20px;">
+        <table role="presentation" style="max-width: 600px; width: 100%; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+          <tr>
+            <td style="background: linear-gradient(135deg, #1C1318 0%, #3D0B16 100%); padding: 40px 30px; text-align: center; border-radius: 8px 8px 0 0;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 600; font-family: 'Georgia', serif;">
+                Lash Her by Nataliea
+              </h1>
+              <p style="margin: 15px 0 0 0; color: #f0f0f0; font-size: 16px;">
+                Welcome to our community!
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 40px 30px;">
+              <p style="margin: 0 0 20px 0; color: #1f2937; font-size: 16px; line-height: 1.6;">
+                Hi ${data.name ? escapeHtml(data.name.split(" ")[0]) : 'there'},
+              </p>
+              <p style="margin: 0 0 20px 0; color: #374151; font-size: 15px; line-height: 1.7;">
+                Thank you for subscribing to <strong style="color: #663976;">Lash Her by Nataliea</strong>. We're excited to share our latest updates, tips, and beautiful lash transformations with you!
+              </p>
+              <div style="text-align: center; margin: 30px 0; padding: 20px; background-color: #F5F1F5; border-radius: 6px;">
+                <p style="margin: 0 0 15px 0; color: #6b7280; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
+                  Connect With Us
+                </p>
+                <p style="margin: 0; color: #663976; font-size: 16px; font-weight: 500;">
+                  <a href="https://instagram.com/lav_lashher" style="color: #D4B483; text-decoration: none;">@lav_lashher</a> <a href="https://lashher.com" style="color: #D4B483; text-decoration: none;">lashher.com</a>
+                </p>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; border-top: 1px solid #e5e7eb; text-align: center;">
+              <p style="margin: 0 0 10px 0; color: #1f2937; font-size: 14px; font-weight: 500;">
+                Lash Her by Nataliea
+              </p>
+              <p style="margin: 0; color: #6b7280; font-size: 13px; line-height: 1.5;">
+                Professional Lash Artistry & Training
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `.trim();
+}
+
 // Exported email functions
 
 export async function sendAdminNotification(
   formType: FormType,
-  formData: GeneralInquiryData | TrainingContactData
+  formData: GeneralInquiryData | TrainingContactData | ContactPopupData
 ): Promise<void> {
   const subject = getAdminSubject(formType, formData);
-  const html =
-    formType === "general-inquiry"
-      ? getGeneralInquiryAdminHtml(formData as GeneralInquiryData)
-      : getTrainingContactAdminHtml(formData as TrainingContactData);
+  let html = "";
+  if (formType === "general-inquiry") {
+    html = getGeneralInquiryAdminHtml(formData as GeneralInquiryData);
+  } else if (formType === "contact-popup") {
+    html = getContactPopupAdminHtml(formData as ContactPopupData);
+  } else {
+    html = getTrainingContactAdminHtml(formData as TrainingContactData);
+  }
 
   const { error } = await resend.emails.send({
     from: process.env.FROM_EMAIL!,
@@ -575,13 +750,17 @@ export async function sendAdminNotification(
 
 export async function sendUserConfirmation(
   formType: FormType,
-  formData: GeneralInquiryData | TrainingContactData
+  formData: GeneralInquiryData | TrainingContactData | ContactPopupData
 ): Promise<void> {
   const subject = getUserSubject(formType);
-  const html =
-    formType === "general-inquiry"
-      ? getGeneralInquiryUserHtml(formData as GeneralInquiryData)
-      : getTrainingContactUserHtml(formData as TrainingContactData);
+  let html = "";
+  if (formType === "general-inquiry") {
+    html = getGeneralInquiryUserHtml(formData as GeneralInquiryData);
+  } else if (formType === "contact-popup") {
+    html = getContactPopupUserHtml(formData as ContactPopupData);
+  } else {
+    html = getTrainingContactUserHtml(formData as TrainingContactData);
+  }
 
   const { error } = await resend.emails.send({
     from: process.env.FROM_EMAIL!,
@@ -597,7 +776,7 @@ export async function sendUserConfirmation(
 
 export async function sendFormEmails(
   formType: FormType,
-  formData: GeneralInquiryData | TrainingContactData
+  formData: GeneralInquiryData | TrainingContactData | ContactPopupData
 ): Promise<void> {
   await Promise.allSettled([
     sendAdminNotification(formType, formData),

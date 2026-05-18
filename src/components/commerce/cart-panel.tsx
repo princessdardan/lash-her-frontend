@@ -65,29 +65,28 @@ export function CartPanel({ products }: CartPanelProps): ReactElement {
     cartError = err instanceof Error ? err.message : "Invalid cart";
   }
 
+  const hasItems = items.length > 0;
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-      <div className="lg:col-span-2">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div className={`grid grid-cols-1 gap-8 ${hasItems ? "lg:grid-cols-3" : ""}`}>
+      <div className={hasItems ? "lg:col-span-2" : ""}>
+        <div className={`grid grid-cols-1 gap-6 ${hasItems ? "md:grid-cols-2" : "md:grid-cols-3 lg:grid-cols-4"}`}>
           {products.map((product) => (
             <ProductCard key={product._id} product={product} onAdd={handleAdd} />
           ))}
         </div>
       </div>
 
-      <div className="lg:col-span-1">
-        <div className="card-white sticky top-24">
-          <h2 className="card-heading-red text-2xl mb-4">Your Cart</h2>
+      {hasItems && (
+        <aside aria-label="Shopping cart" className="lg:col-span-1">
+          <div className="card-white sticky top-24">
+            <h2 className="card-heading-red text-2xl mb-4">Your Cart</h2>
 
-          <div aria-live="polite" className="sr-only">
-            {totalItems} items in cart
-          </div>
+            <div aria-live="polite" className="sr-only">
+              {totalItems} items in cart
+            </div>
 
-          {items.length === 0 ? (
-            <p className="text-black font-light">Your cart is empty.</p>
-          ) : (
             <div className="flex flex-col gap-4">
               {cartError ? (
                 <p className="text-brand-red text-sm">{cartError}</p>
@@ -169,9 +168,9 @@ export function CartPanel({ products }: CartPanelProps): ReactElement {
                 </>
               ) : null}
             </div>
-          )}
-        </div>
-      </div>
+          </div>
+        </aside>
+      )}
     </div>
   );
 }

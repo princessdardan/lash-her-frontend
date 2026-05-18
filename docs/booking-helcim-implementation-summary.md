@@ -8,14 +8,16 @@ Integration branch: `integration/booking-helcim`
 
 This document summarizes the booking and HelcimPay work that has been implemented so future agents can build on it without rediscovering the architecture. It is a handoff summary, not proof that the branch is production-ready.
 
+> **2026-05-18 update:** This summary describes the historical implementation. Future booking work is governed by `docs/superpowers/plans/2026-05-18-unified-booking-system-redesign.md` and `docs/booking-system-architecture-reference.md`. The historical separation between booking and checkout is no longer the product direction.
+
 The implementation combines two originally separate efforts:
 
 - A scheduling-only Google Calendar booking system.
 - A Sanity-backed shop and HelcimPay.js checkout flow.
 
-**Note:** The 2026-05-10 security remediation supersedes the original Sanity-based order storage. Checkout orders must be moved to a private PostgreSQL database to protect customer PII and transaction history.
+**Note:** Later private storage remediation supersedes the original Sanity-based order and booking-marketing storage. Checkout orders, payment events, marketing contacts, contact submissions, and consent events belong in the private PostgreSQL database to protect customer PII and transaction/consent history.
 
-The two features are intentionally separate. Booking does not take payments. Checkout does not create Google Calendar bookings.
+Historically, the two features were intentionally separate. Booking did not take payments, and checkout did not create Google Calendar bookings. This is superseded for future work by the unified booking redesign linked above.
 
 ## Source Plans
 
@@ -53,7 +55,7 @@ Core behavior:
 - Google OAuth setup is protected by `BOOKING_ADMIN_SETUP_SECRET` and stores the refresh token server-side in Redis.
 - The Google Calendar event includes the customer as an attendee and uses `sendUpdates: "all"`.
 - Resend confirmation email is sent after Calendar insertion. If the email fails, booking remains confirmed and the failure is logged.
-- If marketing opt-in is checked, Sanity stores a `bookingMarketingOptIn` document containing name, email, phone, booking type, and answers.
+- Booking marketing choices are now audited in private DB-backed submission/consent tables. Historical Sanity `bookingMarketingOptIn` documents, if present, are backfill sources only.
 
 Important intentional non-goals from the booking design remain unimplemented:
 
@@ -128,7 +130,7 @@ Booking:
 - `KV_REST_API_TOKEN`
 - `RESEND_API_KEY`
 - `FROM_EMAIL`
-- `SANITY_FORM_TOKEN`
+- `DATABASE_URL` for private booking marketing choice audit records
 
 Checkout:
 
@@ -143,8 +145,8 @@ Checkout:
 ## Known Gaps and Follow-Up Risks
 
 - The requested worktree was referred to as `booking-helcim-itegration`, but the actual path is `.worktrees/booking-helcim-integration`.
-- Staging and production Neon connection strings still need to be configured in deployment environments before private checkout storage can be smoke-tested against a real database.
-- The checkout confirmation page says an order confirmation email will be sent, but no checkout-specific email sender was found.
+- Staging and production Neon connection strings still need to be configured in deployment environments before shared private PII storage can be smoke-tested against a real database.
+- Historical audit note: the checkout confirmation page promised an order confirmation email before the checkout-specific sender was confirmed. Current launch docs require verifying the implemented product order confirmation email behavior with Resend evidence.
 - Playwright tests mock booking and checkout API calls, but the pages still depend on Sanity server-rendered data. E2E coverage is therefore not fully self-contained without seeded Sanity content.
 - There are helper unit tests and browser tests, but no direct route-handler unit tests for `/api/checkout`, `/api/checkout/validate-payment`, or `/api/booking/*`.
 - The branch includes broader UI/style/docs/artifact changes beyond the booking and Helcim feature files. Review the diff carefully before merging.

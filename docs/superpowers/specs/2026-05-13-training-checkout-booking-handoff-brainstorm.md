@@ -1,5 +1,7 @@
 # Training Checkout and Booking Handoff Brainstorm
 
+> **Historical note (2026-05-17):** This brainstorm predates the shared private PII storage docs. Current private DB guidance supersedes any checkout-only wording and keeps new form/contact/marketing/consent records out of Sanity.
+
 Date: 2026-05-13
 Status: Draft with owner decisions recorded
 

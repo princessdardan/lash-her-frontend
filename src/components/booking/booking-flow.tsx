@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { nanoid } from "nanoid";
+import { usePathname } from "next/navigation";
 import type { BookingSettings, BookingType, BookingSlot, BookingAnswerInput } from "@/lib/booking/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,7 @@ interface BookingFlowProps {
 }
 
 export function BookingFlow({ settings, initialBookingType, paidSchedulingToken }: BookingFlowProps) {
+  const pathname = usePathname();
   const defaultType = initialBookingType ?? settings.bookingTypes[0]?.type ?? "training-call";
   const hasPaidSchedulingToken = paidSchedulingToken !== undefined && paidSchedulingToken.trim().length > 0;
   const [bookingType, setBookingType] = useState<BookingType | "">(defaultType);
@@ -26,6 +28,7 @@ export function BookingFlow({ settings, initialBookingType, paidSchedulingToken 
   const [phone, setPhone] = useState("");
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [marketingOptIn, setMarketingOptIn] = useState(false);
+  const marketingConsentText = settings.marketingOptInLabel || "I would like to receive updates and offers.";
 
   const [isLoadingSlots, setIsLoadingSlots] = useState(!!defaultType);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -101,6 +104,8 @@ export function BookingFlow({ settings, initialBookingType, paidSchedulingToken 
           phone,
           answers: formattedAnswers,
           marketingOptIn,
+          marketingConsentText,
+          sourcePath: pathname,
           idempotencyKey: nanoid(),
           ...(hasPaidSchedulingToken
             ? { paidSchedulingToken: paidSchedulingToken.trim() }
@@ -297,7 +302,7 @@ export function BookingFlow({ settings, initialBookingType, paidSchedulingToken 
               className="mt-1 h-4 w-4 rounded border-input text-primary focus:ring-primary"
             />
             <label htmlFor="marketingOptIn" className="text-sm text-muted-foreground leading-snug">
-              {settings.marketingOptInLabel || "I would like to receive updates and offers."}
+              {marketingConsentText}
             </label>
           </div>
 

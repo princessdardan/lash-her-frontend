@@ -1,5 +1,7 @@
 # Training Checkout and Booking Handoff Implementation Plan
 
+> **Historical note (2026-05-17):** This handoff plan uses the checkout/enrollment terminology from its original scope. Current private DB documentation treats the database as shared private PII storage and keeps new form/contact/marketing/consent records out of Sanity.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` for implementation and `superpowers:executing-plans` for task tracking. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
 > **Status:** Draft implementation plan with core business decisions resolved. Do not implement unapproved scope outside the decisions recorded in Task 1.

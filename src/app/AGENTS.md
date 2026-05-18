@@ -10,7 +10,7 @@ Routes are mostly async server components that fetch Sanity data through central
 |------|----------|-------|
 | Site shell | `layout.tsx`, `(site)/layout.tsx` | Root handles fonts/analytics; site layout handles header/footer/menu. |
 | Public pages | `(site)/*/page.tsx` | Home/contact/gallery/training/training detail. |
-| Server actions | `actions/form.ts` | Form submissions write to Sanity before email. |
+| Server actions | `actions/form.ts` | Form submissions write to the private DB before email. |
 | Webhooks | `api/revalidate/route.ts` | Sanity HMAC + tag revalidation. |
 | Studio route | `studio/[[...tool]]/page.tsx` | Embedded Sanity Studio. |
 
@@ -26,8 +26,9 @@ Routes are mostly async server components that fetch Sanity data through central
 
 - Client forms validate with `@/lib/form-validation`.
 - Server actions re-run validation before mutation.
-- Sanity write failure blocks success and returns a generic error.
+- Private DB write failure blocks success and returns a generic error.
 - Email sending happens after successful write and is intentionally non-blocking.
+- New form/contact, marketing, and consent records must not be written to Sanity; historical Sanity submission documents are backfill sources only.
 
 ## REVALIDATION RULES
 
@@ -40,4 +41,4 @@ Routes are mostly async server components that fetch Sanity data through central
 
 - Do not use legacy Pages API routes for revalidation.
 - Do not expose webhook error details in response bodies.
-- Do not let email failure roll back a successful Sanity form submission.
+- Do not let email failure roll back a successful private DB form submission.

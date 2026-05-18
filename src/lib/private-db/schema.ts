@@ -28,6 +28,21 @@ export const trainingEnrollmentSchedulingStatus = pgEnum("training_enrollment_sc
   "manual_followup",
 ]);
 
+export const marketingContactSubmissionType = pgEnum("marketing_contact_submission_type", [
+  "general_inquiry",
+  "training_contact",
+  "contact_popup",
+  "booking_marketing_choice",
+  "sanity_backfill",
+]);
+
+export const marketingConsentEventType = pgEnum("marketing_consent_event_type", [
+  "opt_in",
+  "no_opt_in",
+  "unsubscribe",
+  "backfill_consent",
+]);
+
 export interface CheckoutOrderLineItemSnapshot {
   productId: string;
   variantId?: string;
@@ -56,6 +71,16 @@ export interface TrainingEnrollmentProductSnapshot {
 
 export type TrainingEnrollmentPurchaseKind = typeof trainingEnrollmentPurchaseKind.enumValues[number];
 export type TrainingEnrollmentSchedulingStatus = typeof trainingEnrollmentSchedulingStatus.enumValues[number];
+export type MarketingContactSubmissionType = typeof marketingContactSubmissionType.enumValues[number];
+export type MarketingConsentEventType = typeof marketingConsentEventType.enumValues[number];
+
+export interface MarketingContactSubmissionPayload {
+  [key: string]: unknown;
+}
+
+export interface MarketingConsentEventMetadata {
+  [key: string]: unknown;
+}
 
 export const checkoutOrders = pgTable(
   "checkout_orders",
@@ -130,3 +155,71 @@ export const trainingEnrollments = pgTable(
     uniqueIndex("training_enrollments_scheduling_token_hash_idx").on(table.schedulingTokenHash),
   ],
 );
+
+export const marketingContacts = pgTable(
+  "marketing_contacts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    email: text("email").notNull(),
+    emailNormalized: text("email_normalized").notNull().unique(),
+    name: text("name"),
+    phone: text("phone"),
+    instagram: text("instagram"),
+    source: text("source").notNull(),
+    consentText: text("consent_text"),
+    firstConsentedAt: timestamp("first_consented_at", { withTimezone: true }).notNull(),
+    lastConsentedAt: timestamp("last_consented_at", { withTimezone: true }).notNull(),
+    unsubscribedAt: timestamp("unsubscribed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("marketing_contacts_email_normalized_idx").on(table.emailNormalized),
+  ],
+);
+
+export const marketingContactSubmissions = pgTable(
+  "marketing_contact_submissions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    submissionType: marketingContactSubmissionType("submission_type").notNull(),
+    email: text("email").notNull(),
+    emailNormalized: text("email_normalized").notNull(),
+    name: text("name"),
+    phone: text("phone"),
+    instagram: text("instagram"),
+    source: text("source").notNull(),
+    sourcePath: text("source_path"),
+    sourceSystem: text("source_system").notNull().default("website"),
+    sourceDocumentType: text("source_document_type"),
+    sourceDocumentId: text("source_document_id"),
+    consentChoice: text("consent_choice").notNull(),
+    consentText: text("consent_text"),
+    payload: jsonb("payload").$type<MarketingContactSubmissionPayload>().notNull(),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("marketing_contact_submissions_source_document_idx").on(
+      table.sourceSystem,
+      table.sourceDocumentType,
+      table.sourceDocumentId,
+    ),
+  ],
+);
+
+export const marketingConsentEvents = pgTable("marketing_consent_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  contactId: uuid("contact_id").references(() => marketingContacts.id, { onDelete: "set null" }),
+  submissionId: uuid("submission_id")
+    .notNull()
+    .references(() => marketingContactSubmissions.id, { onDelete: "cascade" }),
+  eventType: marketingConsentEventType("event_type").notNull(),
+  email: text("email").notNull(),
+  emailNormalized: text("email_normalized").notNull(),
+  source: text("source").notNull(),
+  consentText: text("consent_text"),
+  metadata: jsonb("metadata").$type<MarketingConsentEventMetadata>(),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

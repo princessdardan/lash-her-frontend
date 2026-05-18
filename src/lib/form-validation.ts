@@ -26,7 +26,7 @@ export function validateField(
         }
         break;
       case "email": {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const emailRegex = /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/;
         if (value && !emailRegex.test(value)) {
           return rule.message;
         }

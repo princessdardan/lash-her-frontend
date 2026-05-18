@@ -23,6 +23,8 @@ const helperScript = String.raw`
       phone: "555-0100",
       answers: [{ questionId: "goal", answer: "Classic lashes" }],
       marketingOptIn: true,
+      marketingConsentText: "Send me booking updates",
+      sourcePath: "/booking",
       idempotencyKey: "booking-idempotency-key",
       paidSchedulingToken: "paid-training-token",
       ...overrides,

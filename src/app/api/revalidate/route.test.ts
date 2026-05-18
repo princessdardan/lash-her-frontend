@@ -13,11 +13,19 @@ const helperScript = String.raw`
     });
   }
 
-  function runScenario({ body, isValidSignature }) {
+  function assertEmptyResponseBody(response) {
+    return response.text().then((text) => assert.equal(text, ""));
+  }
+
+  function runScenario({
+    body,
+    isValidSignature,
+    getWebhookSecret = () => "webhook-secret",
+  }) {
     const parseBodyCalls = [];
     const revalidatedTags = [];
     const handler = createRevalidatePostHandler({
-      getWebhookSecret: () => "webhook-secret",
+      getWebhookSecret,
       parseBody: async (req, secret) => {
         parseBodyCalls.push({ req, secret });
         return { body, isValidSignature };
@@ -46,6 +54,7 @@ test("Sanity revalidate route revalidates mapped tags for a valid signature", ()
     assert.equal(parseBodyCalls[0].req, request);
     assert.equal(parseBodyCalls[0].secret, "webhook-secret");
     assert.deepEqual(revalidatedTags, [{ tag: "homePage", profile: { expire: 0 } }]);
+    await assertEmptyResponseBody(response);
   `);
 });
 
@@ -61,6 +70,7 @@ test("Sanity revalidate route rejects invalid signatures before revalidation", (
     assert.equal(response.status, 401);
     assert.equal(parseBodyCalls.length, 1);
     assert.equal(revalidatedTags.length, 0);
+    await assertEmptyResponseBody(response);
   `);
 });
 
@@ -76,6 +86,43 @@ test("Sanity revalidate route rejects null signatures before revalidation", () =
     assert.equal(response.status, 401);
     assert.equal(parseBodyCalls.length, 1);
     assert.equal(revalidatedTags.length, 0);
+    await assertEmptyResponseBody(response);
+  `);
+});
+
+test("Sanity revalidate route rejects unavailable webhook secrets before parsing", () => {
+  runRouteScenario(`
+    const { handler, parseBodyCalls, revalidatedTags } = runScenario({
+      body: { _type: "homePage" },
+      isValidSignature: true,
+      getWebhookSecret: () => {
+        throw new Error("SANITY_WEBHOOK_SECRET is missing");
+      },
+    });
+
+    const response = await handler(createRequest());
+
+    assert.equal(response.status, 401);
+    assert.equal(parseBodyCalls.length, 0);
+    assert.equal(revalidatedTags.length, 0);
+    await assertEmptyResponseBody(response);
+  `);
+});
+
+test("Sanity revalidate route rejects blank webhook secrets before parsing", () => {
+  runRouteScenario(`
+    const { handler, parseBodyCalls, revalidatedTags } = runScenario({
+      body: { _type: "homePage" },
+      isValidSignature: true,
+      getWebhookSecret: () => "",
+    });
+
+    const response = await handler(createRequest());
+
+    assert.equal(response.status, 401);
+    assert.equal(parseBodyCalls.length, 0);
+    assert.equal(revalidatedTags.length, 0);
+    await assertEmptyResponseBody(response);
   `);
 });
 
@@ -91,6 +138,7 @@ test("Sanity revalidate route rejects missing document types before revalidation
     assert.equal(response.status, 400);
     assert.equal(parseBodyCalls.length, 1);
     assert.equal(revalidatedTags.length, 0);
+    await assertEmptyResponseBody(response);
   `);
 });
 
@@ -106,6 +154,7 @@ test("Sanity revalidate route no-ops unknown document types", () => {
     assert.equal(response.status, 200);
     assert.equal(parseBodyCalls.length, 1);
     assert.equal(revalidatedTags.length, 0);
+    await assertEmptyResponseBody(response);
   `);
 });
 

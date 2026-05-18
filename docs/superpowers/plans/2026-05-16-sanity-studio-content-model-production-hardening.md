@@ -6,7 +6,7 @@
 
 **Goal:** Prevent invalid launch content from being published and document Sanity token/operator guardrails before production promotion.
 
-**Architecture:** Keep the embedded Studio at `/studio`, keep schemas code-defined and manually registered, keep checkout/order records out of Studio, and preserve separate read/write/form clients.
+**Architecture:** Keep the embedded Studio at `/studio`, keep schemas code-defined and manually registered, keep private checkout/order, marketing/contact, and consent records out of live Studio workflows, and preserve dedicated Sanity clients for public/editorial mutations and legacy/backfill operations.
 
 **Tech Stack:** Sanity v4, next-sanity, TypeScript, GROQ, embedded Studio structure.
 
@@ -17,12 +17,14 @@
 - Feature section: `docs/production-readiness-audit-2026-05-16.md`, lines 109-130.
 - Related blockers: lines 408-412, 430-434, 502-510.
 - High-priority recommendation: lines 476-483.
-- Preserve: checkout orders absent from Studio, private checkout docs prohibit PII in Sanity, and `form-client.ts` / `write-client.ts` remain separated.
+- Preserve: checkout orders absent from Studio, private PII docs prohibit new private records in Sanity, and server-only Sanity clients remain separated for public/editorial or legacy/backfill mutations.
 
 ## Locked Constraints
 
 - Do not expose checkout orders, payment events, Helcim references, tokens, or checkout PII in Studio.
-- Do not bypass `formClient` or `writeClient` for mutations.
+- Do not expose live marketing contacts, contact submissions, consent events, or raw form payloads in Studio.
+- Do not treat legacy Sanity submission document types as current live write targets.
+- Do not bypass dedicated Sanity clients for any remaining Sanity mutations.
 - Do not rely only on runtime validation for editor-preventable content mistakes.
 - Do not broaden Sanity token privileges without documenting scope, environment, and rotation policy.
 
@@ -32,19 +34,20 @@
 - `src/sanity/schemas/documents/sellable-product.ts`
 - `src/sanity/schemas/index.ts`
 - `src/sanity/structure/index.ts`
-- `src/sanity/lib/form-client.ts`
 - `src/sanity/lib/write-client.ts`
 - `src/lib/training-checkout.ts`
 - `docs/private-checkout-storage-setup.md`
 - `docs/sanity-staging-production-workflow.md`
+- `docs/private-database-migration-runbook.md`
 
 ## Recommendation Strengthening
 
 | Audit Recommendation | Gap | Strengthened Requirement | Evidence Required |
 | --- | --- | --- | --- |
 | Add editorial guardrail | TODO exists but enforcement is absent | Add Sanity validation or custom input guard ensuring enabled training checkout references only `sellableProduct.kind == "training"` | Studio validation test/manual proof and GROQ audit query result |
-| Document token least privilege | Plan limits may force broader token role | Record token purpose, minimum role, deployment environment, owner, and rotation cadence | Token inventory checklist with no secret values |
+| Document token least privilege | Plan limits may force broader token role | Record current token purpose, minimum role, deployment environment, owner, and rotation cadence; mark `SANITY_FORM_TOKEN` legacy/conditional only | Token inventory checklist with no secret values |
 | Verify Studio production target | Studio can point at wrong dataset | Add launch check proving `/studio` targets intended dataset and schemas are deployed | Screenshot or checklist record for staging and production |
+| Submission document types | Legacy schemas may still be registered | Mark `generalInquiry`, `contactForm`, `contactPopupSubmission`, and `bookingMarketingOptIn` as legacy/backfill-only or pending removal/hiding after documented retention decision | Studio/content model checklist |
 
 ## Task 1: Define Acceptance Tests First
 
@@ -95,10 +98,10 @@ Expected:
 
 - [ ] **Step 1: Document token scope by purpose**
 
-Record `SANITY_WRITE_TOKEN`, `SANITY_FORM_TOKEN`, and `SANITY_WEBHOOK_SECRET` purpose, required environment, minimum feasible role, and rotation owner.
+Record `SANITY_WRITE_TOKEN` and `SANITY_WEBHOOK_SECRET` purpose, required environment, minimum feasible role, and rotation owner. Include `SANITY_FORM_TOKEN` only if explicitly retained for legacy/conditional Sanity submission work.
 
 Expected:
-- Operators can distinguish write, form, and webhook credentials without exposing secrets.
+- Operators can distinguish current write and webhook credentials from any legacy/conditional form token without exposing secrets.
 
 - [ ] **Step 2: Add Studio launch verification**
 
@@ -107,6 +110,11 @@ Add checks for deployed production schema, embedded `/studio` loading, intended 
 Expected:
 - Studio readiness is verified before production promotion.
 
+- [ ] **Step 3: Classify submission document types**
+
+Expected:
+- `generalInquiry`, `contactForm`, `contactPopupSubmission`, and `bookingMarketingOptIn` are documented as legacy/backfill-only or explicitly queued for removal/hiding after a retention/redaction decision.
+
 ## Final Verification
 
 - [ ] `npm run lint`
@@ -114,12 +122,15 @@ Expected:
 - [ ] Training product validation is manually tested in Studio or covered by a schema validation test.
 - [ ] GROQ audit returns zero invalid checkout-enabled training programs.
 - [ ] `/studio` targets the intended dataset in staging and production.
+- [ ] Studio/token docs do not describe live form writes to Sanity.
+- [ ] Sanity submission document types are legacy/backfill-only or pending removal/hiding.
 
 ## Stop Conditions
 
 - Stop if Sanity validation cannot inspect referenced product kind; implement a custom guard or pre-publish audit instead of pretending validation is complete.
 - Stop if token role cannot be reduced and token isolation/rotation is not documented.
 - Stop if any checkout/payment records appear in Studio structure.
+- Stop if live private form/contact/consent records are added to Studio without access control, audit logging, and retention policy.
 
 ## Suggested Commit Sequence
 

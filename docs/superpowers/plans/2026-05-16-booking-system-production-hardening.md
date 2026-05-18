@@ -1,5 +1,7 @@
 # Booking System Production Hardening Plan
 
+> **2026-05-18 status:** Superseded for future implementation by `docs/superpowers/plans/2026-05-18-unified-booking-system-redesign.md`. This file remains useful as historical audit context for the existing scheduling-only implementation, but the current product direction is now a unified booking/payment/calendar system. The previous `/booking?token=...` handoff and scheduling-only booking flow must not be extended.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` for implementation and `superpowers:executing-plans` for task tracking. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Verify the live Google Calendar booking system, Redis operational state, lock timing, and booking email path before production launch.

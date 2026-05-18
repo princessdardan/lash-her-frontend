@@ -1,5 +1,7 @@
 # Google Calendar booking system design
 
+> **Historical note (2026-05-17):** This approved design predates the private DB marketing/contact migration. Any references to live Sanity form submissions, Sanity marketing opt-in records, `SANITY_FORM_TOKEN`, or `bookingMarketingOptIn` as a current write target are historical. Current live form/contact/marketing writes belong in the private DB; Sanity submission documents are legacy/backfill source records only.
+
 Date: 2026-05-05
 Status: Approved design for implementation planning
 

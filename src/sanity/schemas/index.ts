@@ -14,6 +14,7 @@ import { trainingProgram } from "./documents/training-program";
 import { sellableProduct } from "./documents/sellable-product";
 import { contactForm } from "./documents/contact-form";
 import { generalInquiry } from "./documents/general-inquiry";
+import { contactPopupSubmission } from "./documents/contact-popup-submission";
 
 // Objects — Layout blocks
 import { heroSection } from "./objects/layout/hero-section";
@@ -59,6 +60,7 @@ export const schemaTypes = [
   sellableProduct,
   contactForm,
   generalInquiry,
+  contactPopupSubmission,
   // Layout blocks
   heroSection,
   featuresSection,

@@ -9,7 +9,7 @@ Operational scripts are high-risk because they can mutate external CMS assets/do
 | Task | Location | Notes |
 |------|----------|-------|
 | Strapi migration | `migrate-strapi-to-sanity.ts` | Large one-off migration from legacy Strapi shapes to Sanity. |
-| Private DB migration | `migrate-private-db.ts` | Applies private checkout database migrations. |
+| Private DB migration | `migrate-private-db.ts` | Applies shared private PII database migrations. |
 | Git remote verification | `verify-git-remote.mjs` | Confirms pushes target the canonical frontend repository. |
 
 ## DEPLOYMENT INSTALL CONTRACT
