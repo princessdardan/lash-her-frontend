@@ -1,3 +1,5 @@
+import type { BookingType } from "@/lib/booking/types";
+
 // === Sanity Base Types ===
 
 export interface TSanityImage {
@@ -283,6 +285,7 @@ export interface TTrainingProgram {
   slug: string;
   detailHeading?: string;
   detailDescription?: string;
+  detailHeroImage?: TSanityImage;
   detailItems?: TTrainingProgramDetailItem[];
   factList?: string[];
   primaryCta?: {
@@ -290,6 +293,13 @@ export interface TTrainingProgram {
     href: string;
   };
   checkoutEnabled?: boolean;
+  price?: number;
+  currency?: "CAD";
+  isAvailable?: boolean;
+  availabilityLabel?: string;
+  fulfillmentNote?: string;
+  displayOrder?: number;
+  image?: TSanityImage;
   checkoutProduct?: {
     _id: string;
     title: string;
@@ -347,6 +357,102 @@ export interface TProductsPage {
   emptyStateDescription?: string;
 }
 
+export type TCommerceCurrency = "CAD";
+
+export interface TCommerceSeo {
+  title?: string;
+  description?: string;
+  image?: TSanityImage;
+}
+
+export interface TCommerceDetailSection {
+  _key?: string;
+  heading: string;
+  content: string;
+}
+
+export interface TProductVariant {
+  _key: string;
+  title: string;
+  price: number;
+  isAvailable: boolean;
+  availabilityLabel?: string;
+}
+
+export interface TProduct {
+  _id: string;
+  title: string;
+  description: string;
+  shortDescription?: string;
+  slug: string;
+  price: number;
+  currency: TCommerceCurrency;
+  variants?: TProductVariant[];
+  isAvailable: boolean;
+  availabilityLabel?: string;
+  fulfillmentNote?: string;
+  displayOrder?: number;
+  image?: TSanityImage;
+  gallery?: TSanityImage[];
+  detailSections?: TCommerceDetailSection[];
+  seo?: TCommerceSeo;
+}
+
+export type TServicePaymentMode = "deposit" | "full" | "choice";
+
+export interface TService {
+  _id: string;
+  title: string;
+  description: string;
+  shortDescription?: string;
+  slug: string;
+  showDetailPage: boolean;
+  bookingType: BookingType;
+  durationMinutes: number;
+  slotIntervalMinutes: number;
+  bufferBeforeMinutes: number;
+  bufferAfterMinutes: number;
+  minimumLeadTimeHoursOverride?: number;
+  paymentMode: TServicePaymentMode;
+  fullPrice: number;
+  depositAmount?: number;
+  allowCustomAmount?: boolean;
+  customAmountMinimum?: number;
+  customAmountMaximum?: number;
+  currency: TCommerceCurrency;
+  isAvailable: boolean;
+  availabilityLabel?: string;
+  displayOrder?: number;
+  image?: TSanityImage;
+  gallery?: TSanityImage[];
+  detailSections?: TCommerceDetailSection[];
+  seo?: TCommerceSeo;
+}
+
+export interface TTrainingProgramCatalogItem {
+  _id: string;
+  title: string;
+  description: string;
+  slug: string;
+  checkoutEnabled?: boolean;
+  price?: number;
+  currency?: TCommerceCurrency;
+  isAvailable?: boolean;
+  availabilityLabel?: string;
+  fulfillmentNote?: string;
+  displayOrder?: number;
+  image?: TSanityImage;
+  checkoutProduct?: TTrainingProgram["checkoutProduct"];
+  checkoutCtaLabel?: string;
+  seo?: TCommerceSeo;
+}
+
+export interface TProductsGroupedCatalog {
+  products: TProduct[];
+  trainingPrograms: TTrainingProgramCatalogItem[];
+  services: TService[];
+}
+
 export type TSellableProductKind = "product" | "service" | "training" | "deposit";
 
 export interface TSellableProductDetailSection {
@@ -382,11 +488,27 @@ export interface TSellableProduct {
   image?: TSanityImage;
   gallery?: TSanityImage[];
   detailSections?: TSellableProductDetailSection[];
-  seo?: {
-    title?: string;
-    description?: string;
-    image?: TSanityImage;
-  };
+  seo?: TCommerceSeo;
+}
+
+export type TBookingOfferingPaymentMode = "deposit" | "full" | "choice";
+
+export interface TBookingOffering {
+  _id: string;
+  title: string;
+  description: string;
+  slug: string;
+  isActive: boolean;
+  bookingType: BookingType;
+  durationMinutes: number;
+  slotIntervalMinutes: number;
+  bufferBeforeMinutes: number;
+  bufferAfterMinutes: number;
+  minimumLeadTimeHoursOverride?: number;
+  paymentMode: TBookingOfferingPaymentMode;
+  depositProduct?: TSellableProduct;
+  fullProduct?: TSellableProduct;
+  displayOrder?: number;
 }
 
 export interface THeader {

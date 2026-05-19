@@ -70,6 +70,26 @@ export async function listCalendarEvents(input: {
     .filter((event): event is CalendarEventWithWindow => event !== null);
 }
 
+export async function findBookingEventForHold(input: {
+  calendarId: string;
+  hold: { id: string; selectedEnd: Date; selectedStart: Date };
+}): Promise<string | null> {
+  const calendar = await getAuthorizedCalendarClient();
+  const response = await calendar.events.list({
+    calendarId: input.calendarId,
+    maxResults: 1,
+    privateExtendedProperty: [`lashHerBookingHoldId=${input.hold.id}`],
+    singleEvents: true,
+    timeMax: input.hold.selectedEnd.toISOString(),
+    timeMin: input.hold.selectedStart.toISOString(),
+  });
+  const event = response.data.items?.find((candidate) => (
+    typeof candidate.id === "string" && candidate.id.length > 0
+  ));
+
+  return event?.id ?? null;
+}
+
 export async function insertBookingEvent(input: {
   calendarId: string;
   event: calendar_v3.Schema$Event;

@@ -5,17 +5,17 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { SanityImage } from "@/components/ui/sanity-image";
 import { formatCad } from "@/lib/commerce/money";
-import type { TSellableProduct, TSellableProductVariant } from "@/types";
+import type { TProduct, TProductVariant } from "@/types";
 
 interface ProductCardProps {
-  product: TSellableProduct;
-  onAdd: (product: TSellableProduct, variant?: TSellableProductVariant) => void;
+  product: TProduct;
+  onAdd: (product: TProduct, variant?: TProductVariant) => void;
 }
 
 export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement {
   const productHref = `/products/${product.slug}`;
   const variants = useMemo(
-    () => product.variants?.filter((variant) => variant.title && variant.sku) ?? [],
+    () => product.variants?.filter((variant) => variant.title) ?? [],
     [product.variants],
   );
   const availableVariants = variants.filter((variant) => variant.isAvailable);
@@ -45,7 +45,7 @@ export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement 
       )}
       <div className="flex-1 flex flex-col">
         <div className="text-xs font-bold uppercase tracking-wider text-lh-primary mb-1">
-          {product.kind}
+          Product
         </div>
         <h3 className="card-heading-red text-xl mb-2">
           <Link href={productHref} className="hover:underline">
@@ -86,7 +86,7 @@ export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement 
               )}
               {variants.map((variant) => (
                 <option key={variant._key} value={variant._key} disabled={!variant.isAvailable}>
-                  {variant.title} [{variant.sku}] — {formatCad(variant.price)}
+                  {variant.title} — {formatCad(variant.price)}
                   {!variant.isAvailable ? ` - ${variant.availabilityLabel || "Unavailable"}` : ""}
                 </option>
               ))}

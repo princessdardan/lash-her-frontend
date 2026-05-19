@@ -5,9 +5,9 @@ test.describe('Product Catalog Page', () => {
     await page.goto('/products');
     await page.waitForLoadState('networkidle');
 
-    await expect(page.getByRole('heading', { name: 'Products' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Catalog' })).toBeVisible();
     
-    const productCards = page.locator('article');
+    const productCards = page.locator('section').filter({ hasText: 'Products' }).locator('article');
     const count = await productCards.count();
     
     if (count > 0) {
@@ -20,18 +20,20 @@ test.describe('Product Catalog Page', () => {
         await expect(firstProductLink).toBeVisible();
       }
 
-      const beginnerTrainingCard = productCards.filter({ hasText: 'Beginner Private Training' });
-      if (await beginnerTrainingCard.count() > 0) {
-        await expect(beginnerTrainingCard).toContainText('Training Program');
-        await expect(beginnerTrainingCard).toContainText('$4,097.00');
-        await expect(beginnerTrainingCard).toContainText('We will be in touch as soon as possible');
-      }
-
       const addButton = productCards.first().getByRole('button', { name: /add to cart/i });
       if (await addButton.count() > 0) {
         await addButton.click();
         await expect(page.getByRole('heading', { name: 'Your Cart' })).toBeVisible();
         await expect(page.getByRole('complementary', { name: 'Shopping cart' })).toBeVisible();
+      }
+    }
+
+    const trainingCards = page.locator('section').filter({ hasText: 'Training Programs' }).locator('article');
+    if (await trainingCards.count() > 0) {
+      const beginnerTrainingCard = trainingCards.filter({ hasText: 'Beginner Private Training' });
+      if (await beginnerTrainingCard.count() > 0) {
+        await expect(beginnerTrainingCard).toContainText('Training');
+        await expect(beginnerTrainingCard).toContainText('$4,097.00');
       }
     }
   });
@@ -41,7 +43,7 @@ test.describe('Product Catalog Page', () => {
     await page.goto('/products');
     await page.waitForLoadState('networkidle');
 
-    const productCards = page.locator('article');
+    const productCards = page.locator('section').filter({ hasText: 'Products' }).locator('article');
     const count = await productCards.count();
 
     if (count > 0) {

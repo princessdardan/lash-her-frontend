@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { checkBrokenImages } from './utils/test-helpers';
+import { checkBrokenImages, checkNoHorizontalScroll } from './utils/test-helpers';
 
 /**
  * E2E tests for training program detail pages.
@@ -55,10 +55,11 @@ test.describe('Training Program Detail Page — Rich Text Rendering (MIG-03)', (
     const hasStructuredDetails = await page.locator('[data-structured-details="true"]').count() > 0;
 
     if (hasStructuredDetails) {
-      const heading = page.locator('h2.section-heading');
-      if (await heading.count() > 0) {
-        await expect(heading.first()).toBeVisible();
-      }
+      const detailHero = page.locator('[data-training-detail-hero="true"]');
+      await expect(detailHero).toBeVisible();
+
+      const heroHeading = detailHero.locator('h1');
+      await expect(heroHeading).toBeVisible();
 
       const factList = page.locator('ul.fact-list');
       if (await factList.count() > 0) {
@@ -84,6 +85,45 @@ test.describe('Training Program Detail Page — Rich Text Rendering (MIG-03)', (
         await expect(secondTab).toHaveAttribute('aria-selected', 'true');
       }
     }
+  });
+
+  test('should show a timed active detail card and image panel when detail items exist', async ({ page }) => {
+    const url = await getProgramUrl(page);
+    await page.goto(url);
+    await page.waitForLoadState('networkidle');
+
+    const tabs = page.locator('button[role="tab"]');
+    const tabCount = await tabs.count();
+
+    if (tabCount === 0) {
+      test.skip();
+      return;
+    }
+
+    const firstTab = tabs.first();
+    await expect(firstTab).toHaveAttribute('aria-selected', 'true');
+    await expect(firstTab).toHaveAttribute('data-training-detail-card', 'active');
+    await expect(firstTab.locator('[data-training-detail-progress="true"]')).toBeVisible();
+    await expect(page.locator('[data-training-detail-image="true"]')).toBeVisible();
+  });
+
+  test('should keep the training contact form below all other training content', async ({ page }) => {
+    const url = await getProgramUrl(page);
+    await page.goto(url);
+    await page.waitForLoadState('networkidle');
+
+    const contactBlocks = page.locator('[data-training-contact-blocks="true"]');
+    const structuredDetails = page.locator('[data-structured-details="true"]');
+
+    if (await contactBlocks.count() === 0 || await structuredDetails.count() === 0) {
+      test.skip();
+      return;
+    }
+
+    const contactTop = await contactBlocks.first().evaluate((element) => element.getBoundingClientRect().top + window.scrollY);
+    const detailTop = await structuredDetails.first().evaluate((element) => element.getBoundingClientRect().top + window.scrollY);
+
+    expect(contactTop).toBeGreaterThan(detailTop);
   });
 
   test('should render at least one paragraph of text inside main (Portable Text body)', async ({ page }) => {
@@ -168,6 +208,7 @@ test.describe('Training Program Detail Page — Rich Text Rendering (MIG-03)', (
     if (boundingBox) {
       expect(boundingBox.width).toBeLessThanOrEqual(375);
     }
+    await checkNoHorizontalScroll(page);
   });
 
   test('should navigate to multiple program detail pages when links exist', async ({ page }) => {

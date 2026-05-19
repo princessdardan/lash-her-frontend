@@ -26,7 +26,7 @@ const helperScript = String.raw`
       marketingConsentText: "Send me booking updates",
       sourcePath: "/booking",
       idempotencyKey: "booking-idempotency-key",
-      paidSchedulingToken: "paid-training-token",
+      paidTrainingOrderId: "LH-TRAINING-123",
       ...overrides,
     };
   }
@@ -74,6 +74,30 @@ test("booking create rejects invalid JSON before calling createBooking", () => {
   `);
 });
 
+test("booking create rejects legacy paid scheduling token payloads", () => {
+  runRouteScenario(`
+    let createBookingCalled = false;
+    const handler = createBookingCreatePostHandler({
+      createBooking: async () => {
+        createBookingCalled = true;
+        return { success: true, eventId: "calendar-event-1" };
+      },
+    });
+
+    const response = await handler(createRequest(JSON.stringify(createBookingPayload({
+      paidSchedulingToken: "legacy-token",
+    }))));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 400);
+    assert.equal(createBookingCalled, false);
+    assert.deepEqual(body, {
+      success: false,
+      error: "Legacy training scheduling links are no longer supported",
+    });
+  `);
+});
+
 test("booking create maps field validation failures to bad requests", () => {
   runRouteScenario(`
     const receivedInputs = [];
@@ -97,7 +121,7 @@ test("booking create maps field validation failures to bad requests", () => {
       answers: [{ questionId: "goal", answer: "Classic lashes" }, null],
       marketingOptIn: "yes",
       idempotencyKey: "booking-idempotency-key",
-      paidSchedulingToken: "",
+      paidTrainingOrderId: "",
     })));
     const body = await parseJson(response);
 
@@ -115,7 +139,7 @@ test("booking create maps field validation failures to bad requests", () => {
         ],
         marketingOptIn: false,
         idempotencyKey: "booking-idempotency-key",
-        paidSchedulingToken: undefined,
+        paidTrainingOrderId: undefined,
       },
     ]);
     assert.deepEqual(body, {
@@ -204,7 +228,10 @@ test("booking create keeps success status when email failures are absorbed by cr
 });
 
 function runRouteScenario(assertions: string): void {
-  const scenario = `${helperScript}\nvoid (async () => {\n${assertions}\n})()`;
+  const scenario = `${helperScript}
+void (async () => {
+${assertions}
+})()`;
   const env = { ...process.env };
 
   env.NEXT_PUBLIC_SANITY_DATASET = "test";

@@ -129,7 +129,7 @@ export function createTrainingCheckoutPostHandler({
         notes: `Lash Her training checkout: ${quote.programTitle}`,
         lineItems: [
           {
-            sku: program?.checkoutProduct?.sku ?? quote.productId,
+            sku: quote.productSku,
             description: quote.productTitle,
             quantity: 1,
             price: quote.subtotal,
@@ -154,7 +154,7 @@ export function createTrainingCheckoutPostHandler({
         secretToken: helcimPaySession.secretToken,
         helcimInvoiceId: invoice.invoiceId,
         helcimInvoiceNumber: invoice.invoiceNumber,
-        cart: toTrainingCart(quote, program?.checkoutProduct?.sku ?? quote.productId),
+        cart: toTrainingCart(quote),
       });
 
       await createTrainingEnrollment({
@@ -168,7 +168,7 @@ export function createTrainingCheckoutPostHandler({
         productSnapshot: {
           id: quote.productId,
           title: quote.productTitle,
-          sku: program?.checkoutProduct?.sku ?? quote.productId,
+          sku: quote.productSku,
           priceCents: toCents(quote.subtotal),
           currency: quote.currency,
         },
@@ -222,14 +222,14 @@ function parseProgramSlug(body: unknown): string | null {
   return programSlug.length > 0 ? programSlug : null;
 }
 
-function toTrainingCart(quote: TrainingCheckoutQuote, sku: string): ValidatedCart {
+function toTrainingCart(quote: TrainingCheckoutQuote): ValidatedCart {
   return {
     amount: quote.total,
     currency: "CAD",
     lineItems: [
       {
         productId: quote.productId,
-        sku,
+        sku: quote.productSku,
         description: `${quote.productTitle} — full training enrollment with Ontario HST`,
         quantity: 1,
         price: quote.total,

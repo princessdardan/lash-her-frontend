@@ -12,7 +12,12 @@ interface BookingEventCustomerInput {
   phone: string;
 }
 
+export interface BookingEventMetadataInput {
+  holdId: string;
+}
+
 export interface BookingEventPayloadInput {
+  bookingMetadata?: BookingEventMetadataInput;
   bookingTypeLabel: string;
   customer: BookingEventCustomerInput;
   answers: BookingEventAnswerInput[];
@@ -52,6 +57,13 @@ export function buildBookingEventPayload(
   );
 
   return {
+    extendedProperties: input.bookingMetadata
+      ? {
+          private: {
+            lashHerBookingHoldId: input.bookingMetadata.holdId,
+          },
+        }
+      : undefined,
     summary: `Lash Her booking: ${input.bookingTypeLabel} — ${input.customer.name}`,
     description: descriptionParts.join("\n"),
     start: {

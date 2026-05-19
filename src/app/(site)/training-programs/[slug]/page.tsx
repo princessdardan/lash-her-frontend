@@ -4,8 +4,10 @@ import Link from "next/link";
 import { loaders } from "@/data/loaders";
 import { BlockRenderer } from "@/components/custom/layouts/block-renderer";
 import { TrainingDetailItems } from "@/components/custom/training-detail-items";
+import { TrainingEditorialHero } from "@/components/custom/training-editorial-hero";
 import { getTrainingCta, isTrainingPurchasable } from "@/lib/training-checkout";
 import { TrainingPurchaseCard } from "@/components/commerce/training-purchase-card";
+import type { TLayoutBlock } from "@/types";
 
 export const revalidate = 1800;
 
@@ -58,45 +60,39 @@ function renderTrainingCta(cta: { label: string; href: string }, className = "mt
   );
 }
 
+function isContactFormBlock(block: TLayoutBlock): block is Extract<TLayoutBlock, { _type: "contactFormLabels" }> {
+  return block._type === "contactFormLabels";
+}
+
 export default async function TrainingProgramPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const data = await loaders.getTrainingProgramBySlug(slug);
 
   if (!data) notFound();
 
-  const hasStructuredDetails = data.detailHeading || data.detailDescription || (data.detailItems && data.detailItems.length > 0) || (data.factList && data.factList.length > 0);
+  const hasStructuredDetails = data.detailHeading || data.detailDescription || data.detailHeroImage || (data.detailItems && data.detailItems.length > 0) || (data.factList && data.factList.length > 0);
   const cta = getTrainingCta(data);
   const isCtaSafe = isSafeUrl(cta?.href);
   const isPurchasable = isTrainingPurchasable(data);
   const showPurchaseUi = isPurchasable && isCtaSafe;
+  const contactBlocks = (data.blocks ?? []).filter(isContactFormBlock);
 
   return (
     <div className={`flex flex-col min-h-screen ${showPurchaseUi ? "pb-24 lg:pb-0" : ""}`}>
-      {data.blocks && data.blocks.length > 0 && (
-        <BlockRenderer blocks={data.blocks} />
-      )}
-
       {hasStructuredDetails && (
-        <section className="section-shell py-16 md:py-24" data-structured-details="true">
-          <div className="content-container">
-            <div className={showPurchaseUi ? "flex flex-col lg:flex-row gap-12 relative items-start" : ""}>
-              <div className={showPurchaseUi ? "flex-1 w-full" : ""}>
-                <div className={`max-w-3xl mb-12 ${!showPurchaseUi ? "mx-auto text-center" : ""}`}>
-                  {data.detailHeading && (
-                    <h2 className="section-heading mb-6">{data.detailHeading}</h2>
-                  )}
-                  {data.detailDescription && (
-                    <p className="body-lead">{data.detailDescription}</p>
-                  )}
-                </div>
+        <section className="section-shell py-10 md:py-14 lg:py-16" data-structured-details="true">
+          <div className="mx-auto w-full max-w-[1380px] px-4 sm:px-5 lg:px-8">
+            <div className={showPurchaseUi ? "grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start xl:gap-10" : ""}>
+              <div className="min-w-0">
+                <TrainingEditorialHero data={data} hasPurchaseUi={showPurchaseUi} />
 
                 {data.detailItems && data.detailItems.length > 0 && (
                   <TrainingDetailItems items={data.detailItems} />
                 )}
 
                 {data.factList && data.factList.length > 0 && (
-                  <div className="soft-panel mt-12 p-8 md:p-12 rounded-2xl bg-lh-neutral/20">
-                    <ul className="fact-list grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="soft-panel mt-10 rounded-[28px] bg-lh-neutral/20 p-6 md:p-8 lg:p-10">
+                    <ul className="fact-list grid grid-cols-1 gap-5 md:grid-cols-2 lg:gap-6">
                       {data.factList.map((fact, index) => (
                         <li key={index} className="flex items-start gap-3">
                           <span className="text-lh-shadow mt-1">•</span>
@@ -122,7 +118,7 @@ export default async function TrainingProgramPage({ params }: { params: Promise<
 
       {!hasStructuredDetails && cta && cta.label && isCtaSafe && (
         <section className="section-shell py-12" data-training-commerce-cta="true">
-          <div className="content-container">
+          <div className="mx-auto w-full max-w-[1380px] px-4 sm:px-5 lg:px-8">
             {!showPurchaseUi ? (
               <div className="text-center">
                 {renderTrainingCta(cta, "")}
@@ -134,6 +130,14 @@ export default async function TrainingProgramPage({ params }: { params: Promise<
                 </div>
               </div>
             )}
+          </div>
+        </section>
+      )}
+
+      {contactBlocks.length > 0 && (
+        <section className="section-shell py-12 md:py-16" data-training-contact-blocks="true">
+          <div className={`mx-auto w-full max-w-[1380px] px-4 sm:px-5 lg:px-8 ${showPurchaseUi ? "lg:pr-[28rem] xl:pr-[30rem]" : ""}`}>
+            <BlockRenderer blocks={contactBlocks} />
           </div>
         </section>
       )}

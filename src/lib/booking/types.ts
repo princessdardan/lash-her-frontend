@@ -61,7 +61,8 @@ export interface BookingRequestInput {
   marketingConsentText?: string;
   sourcePath?: string;
   idempotencyKey: string;
-  paidSchedulingToken?: string;
+  paidTrainingOrderId?: string;
+  offeringSlug?: string;
 }
 
 export interface PaidTrainingBookingContext {

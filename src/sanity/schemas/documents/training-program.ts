@@ -72,6 +72,16 @@ export const trainingProgram = defineType({
       group: "details",
     }),
     defineField({
+      name: "detailHeroImage",
+      title: "Detail Hero Image",
+      type: "image",
+      group: "details",
+      options: { hotspot: true },
+      fields: [
+        defineField({ name: "alt", title: "Alt text", type: "string" }),
+      ],
+    }),
+    defineField({
       name: "detailItems",
       title: "Detail Items",
       type: "array",
@@ -128,8 +138,6 @@ export const trainingProgram = defineType({
       type: "array",
       group: "legacy",
       of: [
-        { type: "heroSection" },
-        { type: "infoSection" },
         { type: "contactFormLabels" },
       ],
     }),
@@ -157,17 +165,85 @@ export const trainingProgram = defineType({
       initialValue: false,
     }),
     defineField({
+      name: "price",
+      title: "Price",
+      type: "number",
+      group: "commerce",
+      hidden: ({ document }) => !document?.checkoutEnabled,
+      validation: (Rule) => Rule.custom((value, context) => {
+        if (!context.document?.checkoutEnabled) return true;
+        if (typeof value === "number" && Number.isFinite(value) && value > 0) return true;
+        return "Training checkout requires a positive native price.";
+      }),
+    }),
+    defineField({
+      name: "currency",
+      title: "Currency",
+      type: "string",
+      group: "commerce",
+      initialValue: "CAD",
+      readOnly: true,
+      hidden: ({ document }) => !document?.checkoutEnabled,
+      validation: (Rule) => Rule.custom((value, context) => {
+        if (!context.document?.checkoutEnabled) return true;
+        return value === "CAD" ? true : "Training checkout currency must be CAD.";
+      }),
+    }),
+    defineField({
+      name: "isAvailable",
+      title: "Available for checkout",
+      type: "boolean",
+      group: "commerce",
+      initialValue: true,
+      hidden: ({ document }) => !document?.checkoutEnabled,
+      validation: (Rule) => Rule.custom((value, context) => {
+        if (!context.document?.checkoutEnabled) return true;
+        return typeof value === "boolean" ? true : "Set whether this training program is available for checkout.";
+      }),
+    }),
+    defineField({
+      name: "availabilityLabel",
+      title: "Availability Label",
+      type: "string",
+      group: "commerce",
+      hidden: ({ document }) => !document?.checkoutEnabled,
+      description: "e.g., 'Now enrolling', 'Waitlist', or 'Limited seats'.",
+    }),
+    defineField({
+      name: "fulfillmentNote",
+      title: "Fulfillment Note",
+      type: "text",
+      group: "commerce",
+      hidden: ({ document }) => !document?.checkoutEnabled,
+      description: "Enrollment or next-step details shown around checkout.",
+    }),
+    defineField({
+      name: "displayOrder",
+      title: "Display Order",
+      type: "number",
+      group: "commerce",
+      initialValue: 0,
+      validation: (Rule) => Rule.integer(),
+    }),
+    defineField({
+      name: "image",
+      title: "Catalog Image",
+      type: "image",
+      group: "commerce",
+      options: { hotspot: true },
+      fields: [
+        defineField({ name: "alt", title: "Alt text", type: "string" }),
+      ],
+    }),
+    defineField({
       name: "checkoutProduct",
-      title: "Checkout Product",
+      title: "Checkout Product (Legacy Fallback)",
+      description: "Temporary fallback for migrated checkout reads while native training commerce fields roll out.",
       type: "reference",
       to: [{ type: "sellableProduct" }],
       group: "commerce",
       hidden: ({ document }) => !document?.checkoutEnabled,
       validation: (Rule) => Rule.custom(async (value, context) => {
-        if (context.document?.checkoutEnabled && !value) {
-          return "A checkout product is required when checkout is enabled.";
-        }
-
         if (!context.document?.checkoutEnabled || !value) {
           return true;
         }

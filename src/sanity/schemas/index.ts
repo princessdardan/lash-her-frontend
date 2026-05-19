@@ -10,6 +10,9 @@ import { bookingSettings } from "./documents/booking-settings";
 import { bookingMarketingOptIn } from "./documents/booking-marketing-opt-in";
 
 // Documents — Collections
+import { bookingOffering } from "./documents/booking-offering";
+import { product } from "./documents/product";
+import { service } from "./documents/service";
 import { trainingProgram } from "./documents/training-program";
 import { sellableProduct } from "./documents/sellable-product";
 import { contactForm } from "./documents/contact-form";
@@ -56,6 +59,9 @@ export const schemaTypes = [
   mainMenu,
   bookingSettings,
   bookingMarketingOptIn,
+  bookingOffering,
+  product,
+  service,
   trainingProgram,
   sellableProduct,
   contactForm,

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { TTrainingProgram } from "@/types";
-import { isTrainingPurchasable } from "@/lib/training-checkout";
+import { getTrainingCheckoutProduct, isTrainingPurchasable } from "@/lib/training-checkout";
 import { formatCad } from "@/lib/commerce/money";
 import { Button } from "@/components/ui/button";
 
@@ -17,7 +17,7 @@ export function TrainingPurchaseCard({ program, cta }: TrainingPurchaseCardProps
     return null;
   }
 
-  const product = program.checkoutProduct;
+  const product = getTrainingCheckoutProduct(program);
 
   if (!product) return null;
 
@@ -37,7 +37,7 @@ export function TrainingPurchaseCard({ program, cta }: TrainingPurchaseCardProps
         </div>
       </div>
 
-      <div className="hidden lg:block lg:fixed lg:right-[max(2rem,calc((100vw-1180px)/2+2rem))] lg:top-32 lg:z-40 lg:max-h-[calc(100vh-9rem)] lg:w-96 lg:overflow-y-auto bg-lh-white rounded-2xl p-8 shadow-xl border border-lh-line/50">
+      <div className="hidden lg:block lg:fixed lg:right-[max(2rem,calc((100vw-1380px)/2+2rem))] lg:top-32 lg:z-40 lg:max-h-[calc(100vh-9rem)] lg:w-96 lg:overflow-y-auto bg-lh-white rounded-2xl p-8 shadow-xl border border-lh-line/50">
         <h3 className="text-2xl font-serif text-lh-shadow mb-2">{product.title || program.title}</h3>
         <div className="text-3xl font-bold text-lh-primary mb-6">{priceFormatted}</div>
 

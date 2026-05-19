@@ -6,7 +6,7 @@ import { getBookingEnv } from "@/sanity/env";
 
 const TOKEN_KEY = "booking:google-refresh-token";
 const CALENDAR_LOCK_KEY = "booking:calendar-lock";
-const RELEASE_CALENDAR_LOCK_SCRIPT = `#!lua flags=allow-key-locking
+const RELEASE_LOCK_SCRIPT = `#!lua flags=allow-key-locking
 if redis.call("GET", KEYS[1]) == ARGV[1] then
   return redis.call("DEL", KEYS[1])
 end
@@ -49,7 +49,31 @@ export async function acquireCalendarLock(
 }
 
 export async function releaseCalendarLock(lockId: string): Promise<void> {
-  await getRedis().eval(RELEASE_CALENDAR_LOCK_SCRIPT, [CALENDAR_LOCK_KEY], [lockId]);
+  await getRedis().eval(RELEASE_LOCK_SCRIPT, [CALENDAR_LOCK_KEY], [lockId]);
+}
+
+export async function acquireScopedBookingLock(input: {
+  key: string;
+  lockId: string;
+  ttlSeconds: number;
+}): Promise<boolean> {
+  const result = await getRedis().set(toScopedBookingLockKey(input.key), input.lockId, {
+    nx: true,
+    ex: input.ttlSeconds,
+  });
+
+  return result === "OK";
+}
+
+export async function releaseScopedBookingLock(input: {
+  key: string;
+  lockId: string;
+}): Promise<void> {
+  await getRedis().eval(
+    RELEASE_LOCK_SCRIPT,
+    [toScopedBookingLockKey(input.key)],
+    [input.lockId],
+  );
 }
 
 export async function claimIdempotencyKey(
@@ -66,4 +90,8 @@ export async function claimIdempotencyKey(
   );
 
   return result === "OK";
+}
+
+function toScopedBookingLockKey(key: string): string {
+  return `booking:lock:${encodeURIComponent(key)}`;
 }

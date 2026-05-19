@@ -16,6 +16,7 @@ const helperScript = String.raw`
     helcimInvoiceNumber: "INV-4242",
     orderId: "lh-order-123",
     secretToken: "checkout-secret-token",
+    purpose: "product",
     lineItems: [
       {
         description: "Signature Lash Set",
@@ -53,8 +54,9 @@ const helperScript = String.raw`
   }
 
   async function runScenario({
+    finalizeAppointmentPaymentForOrder,
     getPendingOrderByCheckoutToken,
-    issueTrainingSchedulingTokenForPaidOrder,
+    getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
     markOrderPaid,
     markOrderVerificationFailed,
     markTrainingEnrollmentStaffAlerted,
@@ -64,6 +66,7 @@ const helperScript = String.raw`
     verifyHelcimPayment,
   } = {}) {
     const errors = [];
+    const finalizedBookings = [];
     const markedFailedOrders = [];
     const markedPaidOrders = [];
     const markedStaffAlerts = [];
@@ -72,15 +75,22 @@ const helperScript = String.raw`
     const sentProductEmails = [];
 
     const handler = createValidatePaymentPostHandler({
+      finalizeAppointmentPaymentForOrder: async (input) => {
+        finalizedBookings.push(input);
+        if (finalizeAppointmentPaymentForOrder) {
+          return finalizeAppointmentPaymentForOrder(input);
+        }
+        return { ok: true, eventId: "calendar-event-1", status: "booked" };
+      },
       getPendingOrderByCheckoutToken: async (checkoutToken) => {
         if (getPendingOrderByCheckoutToken) {
           return getPendingOrderByCheckoutToken(checkoutToken);
         }
         return pendingOrder;
       },
-      issueTrainingSchedulingTokenForPaidOrder: async (orderId) => {
-        if (issueTrainingSchedulingTokenForPaidOrder) {
-          return issueTrainingSchedulingTokenForPaidOrder(orderId);
+      getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId: async (orderId) => {
+        if (getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId) {
+          return getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId(orderId);
         }
         return null;
       },
@@ -103,8 +113,9 @@ const helperScript = String.raw`
       markTrainingEnrollmentStaffAlerted: async (input) => {
         markedStaffAlerts.push(input);
         if (markTrainingEnrollmentStaffAlerted) {
-          await markTrainingEnrollmentStaffAlerted(input);
+          return markTrainingEnrollmentStaffAlerted(input);
         }
+        return true;
       },
       persistVerifiedPayment: async (input) => {
         if (persistVerifiedPayment) {
@@ -135,7 +146,7 @@ const helperScript = String.raw`
       },
     });
 
-    return { errors, handler, markedFailedOrders, markedPaidOrders, markedStaffAlerts, operationOrder, sentEmails, sentProductEmails };
+    return { errors, finalizedBookings, handler, markedFailedOrders, markedPaidOrders, markedStaffAlerts, operationOrder, sentEmails, sentProductEmails };
   }
 `;
 
@@ -240,6 +251,126 @@ test("checkout payment validation sends product confirmation email after persist
   `);
 });
 
+
+test("checkout payment validation finalizes appointment payments after persistence", () => {
+  runRouteScenario(`
+    const appointmentOrder = {
+      ...pendingOrder,
+      purpose: "appointment_deposit",
+    };
+    const { finalizedBookings, handler, operationOrder, sentEmails, sentProductEmails } = await runScenario({
+      getPendingOrderByCheckoutToken: async () => appointmentOrder,
+      finalizeAppointmentPaymentForOrder: async () => ({
+        ok: true,
+        eventId: "calendar-event-appointment",
+        status: "booked",
+      }),
+      getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId: async () => {
+        throw new Error("training branch should not run");
+      },
+    });
+
+    const response = await handler(createRequest({
+      checkoutToken: "checkout-token",
+      data: approvedPaymentData,
+      hash: "hash",
+    }));
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      bookingStatus: "booked",
+      eventId: "calendar-event-appointment",
+      orderId: "lh-order-123",
+      redirectUrl: "/booking/confirmation?order=lh-order-123",
+    });
+    assert.equal(finalizedBookings.length, 1);
+    assert.equal(finalizedBookings[0].order.orderId, "lh-order-123");
+    assert.equal(finalizedBookings[0].source, "client_validation");
+    assert.equal(finalizedBookings[0].transactionId, "txn-verified-123");
+    assert.deepEqual(operationOrder, ["mark-paid", "persisted"]);
+    assert.equal(sentProductEmails.length, 0);
+    assert.equal(sentEmails.length, 0);
+  `);
+});
+
+
+test("checkout payment validation can confirm an already-paid appointment order", () => {
+  runRouteScenario(`
+    const paidAppointmentOrder = {
+      ...pendingOrder,
+      purpose: "appointment_deposit",
+    };
+    const { finalizedBookings, handler, operationOrder, sentEmails, sentProductEmails } = await runScenario({
+      getPendingOrderByCheckoutToken: async () => paidAppointmentOrder,
+      finalizeAppointmentPaymentForOrder: async () => ({
+        ok: true,
+        eventId: "calendar-event-existing",
+        status: "booked",
+      }),
+    });
+
+    const response = await handler(createRequest({
+      checkoutToken: "checkout-token",
+      data: approvedPaymentData,
+      hash: "hash",
+    }));
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      bookingStatus: "booked",
+      eventId: "calendar-event-existing",
+      orderId: "lh-order-123",
+      redirectUrl: "/booking/confirmation?order=lh-order-123",
+    });
+    assert.equal(finalizedBookings.length, 1);
+    assert.deepEqual(operationOrder, ["mark-paid", "persisted"]);
+    assert.equal(sentProductEmails.length, 0);
+    assert.equal(sentEmails.length, 0);
+  `);
+});
+
+test("checkout payment validation preserves paid appointment order when finalization fails", () => {
+  runRouteScenario(`
+    const appointmentOrder = {
+      ...pendingOrder,
+      purpose: "appointment_full",
+    };
+    const { errors, finalizedBookings, handler, operationOrder, sentEmails, sentProductEmails } = await runScenario({
+      getPendingOrderByCheckoutToken: async () => appointmentOrder,
+      finalizeAppointmentPaymentForOrder: async () => ({
+        ok: false,
+        error: "Calendar unavailable",
+        status: "booking_failed",
+      }),
+      getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId: async () => {
+        throw new Error("training branch should not run");
+      },
+    });
+
+    const response = await handler(createRequest({
+      checkoutToken: "checkout-token",
+      data: approvedPaymentData,
+      hash: "hash",
+    }));
+
+    assert.equal(response.status, 202);
+    assert.deepEqual(await response.json(), {
+      bookingStatus: "booking_failed",
+      error: "Payment received; booking requires manual follow-up",
+      orderId: "lh-order-123",
+      redirectUrl: "/booking/confirmation?order=lh-order-123",
+    });
+    assert.equal(finalizedBookings.length, 1);
+    assert.deepEqual(operationOrder, ["mark-paid", "persisted"]);
+    assert.equal(sentProductEmails.length, 0);
+    assert.equal(sentEmails.length, 0);
+    assert.deepEqual(errors, [{
+      context: { error: "Calendar unavailable", orderId: "lh-order-123", status: "booking_failed" },
+      message: "[checkout] Appointment booking finalization failed",
+    }]);
+  `);
+});
+
 test("checkout payment validation returns 500 when verified payment persistence fails", () => {
   runRouteScenario(`
     const { handler, markedPaidOrders, sentProductEmails } = await runScenario({
@@ -291,7 +422,7 @@ test("checkout payment validation logs product email failures without blocking s
 test("checkout payment validation logs training email failures without blocking success", () => {
   runRouteScenario(`
     const { errors, handler, markedStaffAlerts, sentEmails, sentProductEmails } = await runScenario({
-      issueTrainingSchedulingTokenForPaidOrder: async () => ({
+      getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId: async () => ({
         checkoutEmail: "client@example.com",
         checkoutOrder: {
           customerEmail: "client@example.com",
@@ -311,8 +442,8 @@ test("checkout payment validation logs training email failures without blocking 
           slug: "lash-training",
           title: "Lash Training Program",
         },
-        schedulingToken: "training-schedule-token",
-        tokenExpiresAt: new Date("2026-05-24T00:00:00.000Z"),
+        staffAlertedAt: null,
+        tokenExpiresAt: null,
       }),
       sendTrainingPaymentNotificationEmails: async () => {
         throw new Error("Resend unavailable");
@@ -328,7 +459,7 @@ test("checkout payment validation logs training email failures without blocking 
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), {
       orderId: "lh-order-123",
-      redirectUrl: "/training-programs/lash-training/confirmation?order=lh-order-123&token=training-schedule-token",
+      redirectUrl: "/training-programs/lash-training/confirmation?order=lh-order-123",
     });
     assert.equal(sentProductEmails.length, 0);
     assert.deepEqual(sentEmails, [{
@@ -336,9 +467,9 @@ test("checkout payment validation logs training email failures without blocking 
       customerName: "Client Name",
       orderId: "lh-order-123",
       programTitle: "Lash Training Program",
-      schedulingUrl: "http://localhost:3000/booking?type=training-call&token=training-schedule-token",
+      schedulingUrl: "http://localhost:3000/booking?type=training-call&order=lh-order-123",
     }]);
-    assert.equal(markedStaffAlerts.length, 0);
+    assert.deepEqual(markedStaffAlerts, [{ enrollmentId: "training-enrollment-1" }]);
     assert.deepEqual(errors, [{
       context: { error: "Resend unavailable", orderId: "lh-order-123" },
       message: "[checkout] Training payment notification email failed",

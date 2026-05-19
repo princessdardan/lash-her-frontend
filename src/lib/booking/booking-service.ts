@@ -3,8 +3,9 @@ import "server-only";
 import { nanoid } from "nanoid";
 
 import { loaders } from "@/data/loaders";
+import type { TBookingOffering } from "@/types";
 import {
-  findPendingTrainingEnrollmentByToken,
+  getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
   markTrainingEnrollmentScheduled,
 } from "@/lib/commerce/training-enrollment-store";
 import {
@@ -12,6 +13,7 @@ import {
   recordBookingMarketingChoice,
 } from "@/lib/marketing-contact/marketing-contact-store";
 import { isSlotAvailable } from "./availability";
+import { getActiveHoldBusyEvents, listActiveAppointmentHolds } from "./holds";
 import {
   buildBookingEventPayload,
   insertBookingEvent,
@@ -72,7 +74,7 @@ export async function createBooking(
 
     const paidContextResolution = await resolvePaidTrainingBookingContext(
       input,
-      findPendingTrainingEnrollmentByToken,
+      ({ publicOrderId }) => getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId(publicOrderId),
     );
 
     if (!paidContextResolution.ok) {
@@ -83,8 +85,28 @@ export async function createBooking(
       };
     }
 
+    const offeringSlug = paidContextResolution.input.offeringSlug?.trim();
+    const offering = offeringSlug
+      ? await loaders.getBookingOfferingBySlug(offeringSlug)
+      : null;
+
+    if (offeringSlug && offering === null) {
+      return {
+        success: false,
+        error: "Please fix the booking details and try again.",
+        fieldErrors: { offeringSlug: "Please select a valid booking offering" },
+      };
+    }
+
+    const validationInput = offering
+      ? {
+          ...paidContextResolution.input,
+          bookingType: offering.bookingType,
+          offeringSlug: offering.slug,
+        }
+      : paidContextResolution.input;
     const validation = validateBookingRequest(
-      paidContextResolution.input,
+      validationInput,
       settings,
     );
 
@@ -96,6 +118,18 @@ export async function createBooking(
       };
     }
 
+    const bookingTypeConfig = offering
+      ? toOfferingBookingTypeConfig(settings, offering)
+      : validation.bookingTypeConfig;
+
+    if (bookingTypeConfig === undefined) {
+      return {
+        success: false,
+        error: "Booking is not configured yet. Please try again later.",
+      };
+    }
+
+    const minimumLeadTimeHours = offering?.minimumLeadTimeHoursOverride ?? settings.minimumLeadTimeHours;
     const lockId = nanoid();
     const lockAcquired = await acquireCalendarLock(
       lockId,
@@ -129,13 +163,23 @@ export async function createBooking(
       const selectedStart = new Date(validation.data.start);
       const selectedEnd = new Date(
         selectedStart.getTime() +
-          validation.bookingTypeConfig.durationMinutes * MINUTE_MS,
+          bookingTypeConfig.durationMinutes * MINUTE_MS,
       );
-      const calendarEvents = await listCalendarEvents({
-        calendarId: settings.calendarId,
-        timeMin: now,
-        timeMax: horizonEnd,
-      });
+      const [calendarEvents, activeHoldBusyEvents] = await Promise.all([
+        listCalendarEvents({
+          calendarId: settings.calendarId,
+          timeMin: now,
+          timeMax: horizonEnd,
+        }),
+        offering
+          ? listActiveAppointmentHolds({
+              offeringId: offering._id,
+              timeMin: now,
+              timeMax: horizonEnd,
+              now,
+            }).then((holds) => getActiveHoldBusyEvents({ holds, now }))
+          : Promise.resolve([]),
+      ]);
       const { availabilityWindows, busyEvents } = partitionCalendarEvents(
         calendarEvents,
         settings.availabilityMarkerTitle,
@@ -143,12 +187,12 @@ export async function createBooking(
 
       if (
         !isSlotAvailable({
-          bookingType: validation.bookingTypeConfig,
+          bookingType: bookingTypeConfig,
           requestedStart: selectedStart,
           availabilityWindows,
-          busyEvents,
+          busyEvents: [...busyEvents, ...activeHoldBusyEvents],
           now,
-          minimumLeadTimeHours: settings.minimumLeadTimeHours,
+          minimumLeadTimeHours,
           horizonEnd,
         })
       ) {
@@ -161,26 +205,51 @@ export async function createBooking(
         };
       }
 
+      let paidTrainingContext = paidContextResolution.context;
+
+      if (validation.data.paidTrainingOrderId !== undefined) {
+        const refreshedPaidContextResolution = await resolvePaidTrainingBookingContext(
+          validation.data,
+          ({ publicOrderId }) => getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId(publicOrderId),
+        );
+
+        if (!refreshedPaidContextResolution.ok) {
+          return {
+            success: false,
+            error: refreshedPaidContextResolution.error,
+            fieldErrors: refreshedPaidContextResolution.fieldErrors,
+          };
+        }
+
+        paidTrainingContext = refreshedPaidContextResolution.context;
+      }
+
       const answers = buildAnswersWithLabels(
-        validation.bookingTypeConfig,
+        bookingTypeConfig,
         validation.data.answers,
       );
       const eventId = await insertGoogleCalendarBooking({
         input: validation.data,
-        bookingTypeConfig: validation.bookingTypeConfig,
+        bookingTypeConfig,
         answers,
         selectedStart,
         selectedEnd,
         timezone: settings.timezone,
         calendarId: settings.calendarId,
-        paidTrainingContext: paidContextResolution.context ?? undefined,
+        paidTrainingContext: paidTrainingContext ?? undefined,
       });
 
-      if (paidContextResolution.context !== null) {
-        await markTrainingEnrollmentScheduled({
-          enrollmentId: paidContextResolution.context.enrollmentId,
+      if (paidTrainingContext !== null) {
+        const markedScheduled = await markTrainingEnrollmentScheduled({
+          enrollmentId: paidTrainingContext.enrollmentId,
           scheduledAt: selectedStart,
         });
+
+        if (!markedScheduled) {
+          console.error("[createBooking] Paid training enrollment was already scheduled", {
+            orderId: paidTrainingContext.publicOrderId,
+          });
+        }
       }
 
       try {
@@ -199,7 +268,7 @@ export async function createBooking(
         await sendBookingConfirmationEmail({
           name: validation.data.name,
           email: validation.data.email,
-          bookingTypeLabel: validation.bookingTypeConfig.label,
+          bookingTypeLabel: bookingTypeConfig.label,
           start: selectedStart,
           timezone: settings.timezone,
         });
@@ -252,6 +321,28 @@ function partitionCalendarEvents(
   }
 
   return { availabilityWindows, busyEvents };
+}
+
+function toOfferingBookingTypeConfig(
+  settings: { bookingTypes: BookingTypeConfig[] },
+  offering: TBookingOffering,
+): BookingTypeConfig | undefined {
+  const baseConfig = settings.bookingTypes.find((config) => config.type === offering.bookingType);
+
+  if (baseConfig === undefined) {
+    return undefined;
+  }
+
+  return {
+    ...baseConfig,
+    type: offering.bookingType,
+    label: offering.title,
+    description: offering.description,
+    durationMinutes: offering.durationMinutes,
+    slotIntervalMinutes: offering.slotIntervalMinutes,
+    bufferBeforeMinutes: offering.bufferBeforeMinutes,
+    bufferAfterMinutes: offering.bufferAfterMinutes,
+  };
 }
 
 function buildAnswersWithLabels(

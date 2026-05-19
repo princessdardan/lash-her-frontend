@@ -8,10 +8,13 @@ const TYPE_TAG_MAP: Record<string, string> = {
   trainingPage: "trainingPage",
   trainingProgramsPage: "trainingProgramsPage",
   trainingProgram: "trainingProgram",
+  product: "product",
+  service: "service",
   sellableProduct: "sellableProduct",
   globalSettings: "global",
   mainMenu: "menu",
   bookingSettings: "bookingSettings",
+  bookingOffering: "bookingOffering",
 };
 
 interface RevalidateWebhookDependencies {

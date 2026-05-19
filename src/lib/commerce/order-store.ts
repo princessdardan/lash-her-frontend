@@ -2,10 +2,13 @@ import "server-only";
 
 import { createHmac } from "node:crypto";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
-import type { CheckoutOrderLineItemSnapshot } from "@/lib/private-db/schema";
+import type {
+  CheckoutOrderLineItemSnapshot,
+  CheckoutOrderPurpose,
+} from "@/lib/private-db/schema";
 import { getCheckoutSecretEncryptionKey } from "@/sanity/env";
 import {
   checkoutOrders,
@@ -24,6 +27,7 @@ export interface CreatePendingOrderInput {
   secretToken: string;
   helcimInvoiceId: number;
   helcimInvoiceNumber: string;
+  purpose?: CheckoutOrderPurpose;
   cart: ValidatedCart;
 }
 
@@ -38,6 +42,24 @@ export interface PendingOrderRecord {
   customerEmail: string;
   customerName: string;
   lineItems: CheckoutOrderLineItemSnapshot[];
+  purpose: CheckoutOrderPurpose;
+}
+
+
+export interface MatchedCheckoutOrderRecord {
+  _id: string;
+  amount: number;
+  currency: ValidatedCart["currency"];
+  helcimInvoiceId: number;
+  helcimInvoiceNumber: string;
+  orderId: string;
+  purpose: CheckoutOrderPurpose;
+}
+
+export interface HelcimWebhookEventRecordResult {
+  matchedOrder: MatchedCheckoutOrderRecord | null;
+  paid: boolean;
+  recorded: boolean;
 }
 
 export interface HelcimWebhookEventInput {
@@ -63,6 +85,7 @@ type CheckoutOrderInsert = {
   helcimInvoiceNumber: string;
   lineItems: CheckoutOrderLineItemSnapshot[];
   orderId: string;
+  purpose: CheckoutOrderPurpose;
   secretTokenCiphertext: string;
   status: "pending";
 };
@@ -81,7 +104,7 @@ export interface CheckoutOrderRepository {
   createCheckoutOrder(values: CheckoutOrderInsert): Promise<{ id: string }>;
   createWebhookEvent(values: CheckoutPaymentEventInsert): Promise<{ id: string } | null>;
   findOrderForWebhook(input: HelcimWebhookEventInput): Promise<CheckoutOrderRow | null>;
-  findPendingOrderByCheckoutTokenHash(checkoutTokenHash: string): Promise<CheckoutOrderRow | null>;
+  findCheckoutOrderByCheckoutTokenHash(checkoutTokenHash: string): Promise<CheckoutOrderRow | null>;
   markOrderPaid(orderId: string, helcimTransactionId: string): Promise<void>;
   markOrderVerificationFailed(orderId: string): Promise<void>;
 }
@@ -92,6 +115,7 @@ export interface CheckoutOrderStore {
   markOrderPaid(orderId: string, helcimTransactionId: string): Promise<void>;
   markOrderVerificationFailed(orderId: string): Promise<void>;
   recordHelcimWebhookEvent(input: HelcimWebhookEventInput): Promise<boolean>;
+  recordHelcimWebhookEventWithOrder(input: HelcimWebhookEventInput): Promise<HelcimWebhookEventRecordResult>;
 }
 
 export function createCheckoutOrderStore(
@@ -122,6 +146,7 @@ export function createCheckoutOrderStore(
         helcimInvoiceNumber: input.helcimInvoiceNumber,
         customerName: input.customerName,
         customerEmail: input.customerEmail,
+        purpose: input.purpose ?? "product",
         amountCents,
         currency: input.cart.currency,
         lineItems,
@@ -138,6 +163,7 @@ export function createCheckoutOrderStore(
         customerEmail: input.customerEmail,
         customerName: input.customerName,
         lineItems,
+        purpose: input.purpose ?? "product",
       };
     },
 
@@ -150,45 +176,24 @@ export function createCheckoutOrderStore(
     },
 
     async getPendingOrderByCheckoutToken(checkoutToken) {
-      const pendingOrder = await repository.findPendingOrderByCheckoutTokenHash(
+      const order = await repository.findCheckoutOrderByCheckoutTokenHash(
         hashCheckoutToken(checkoutToken),
       );
 
-      if (!pendingOrder) {
+      if (!order || !isCheckoutTokenValidationEligible(order)) {
         return null;
       }
 
-      return toPendingOrderRecord(pendingOrder);
+      return toPendingOrderRecord(order);
     },
 
     async recordHelcimWebhookEvent(input) {
-      const order = await repository.findOrderForWebhook(input);
-      const amountCents = input.amount === undefined ? null : toCents(input.amount);
-      const createdEvent = await repository.createWebhookEvent({
-        orderId: order?.id ?? null,
-        eventType: input.eventType,
-        helcimTransactionId: input.helcimTransactionId,
-        status: input.status,
-        amountCents,
-        currency: input.currency?.toUpperCase(),
-        idempotencyKey: input.eventId,
-        payloadRedacted: input.payloadRedacted,
-      });
+      const result = await recordHelcimWebhookEventWithOrderInternal(repository, input);
+      return result.recorded;
+    },
 
-      if (!createdEvent) {
-        return false;
-      }
-
-      if (order && input.helcimTransactionId && isApprovedStatus(input.status)) {
-        const expectedAmountMatches = amountCents !== null && amountCents === order.amountCents;
-        const expectedCurrencyMatches = input.currency !== undefined && input.currency.toUpperCase() === order.currency;
-
-        if (expectedAmountMatches && expectedCurrencyMatches) {
-          await repository.markOrderPaid(order.orderId, input.helcimTransactionId);
-        }
-      }
-
-      return true;
+    async recordHelcimWebhookEventWithOrder(input) {
+      return recordHelcimWebhookEventWithOrderInternal(repository, input);
     },
   };
 }
@@ -224,6 +229,91 @@ export async function recordHelcimWebhookEvent(
   return defaultOrderStore.recordHelcimWebhookEvent(input);
 }
 
+export async function recordHelcimWebhookEventWithOrder(
+  input: HelcimWebhookEventInput,
+): Promise<HelcimWebhookEventRecordResult> {
+  return defaultOrderStore.recordHelcimWebhookEventWithOrder(input);
+}
+
+async function recordHelcimWebhookEventWithOrderInternal(
+  repository: CheckoutOrderRepository,
+  input: HelcimWebhookEventInput,
+): Promise<HelcimWebhookEventRecordResult> {
+  const order = await repository.findOrderForWebhook(input);
+  const amountCents = input.amount === undefined ? null : toCents(input.amount);
+  const createdEvent = await repository.createWebhookEvent({
+    orderId: order?.id ?? null,
+    eventType: input.eventType,
+    helcimTransactionId: input.helcimTransactionId,
+    status: input.status,
+    amountCents,
+    currency: input.currency?.toUpperCase(),
+    idempotencyKey: input.eventId,
+    payloadRedacted: input.payloadRedacted,
+  });
+
+  const paid = await reconcileWebhookPaidOrder({
+    amountCents,
+    input,
+    order,
+    repository,
+  });
+
+  return {
+    matchedOrder: order ? toMatchedCheckoutOrderRecord(order) : null,
+    paid,
+    recorded: createdEvent !== null,
+  };
+}
+
+async function reconcileWebhookPaidOrder(input: {
+  amountCents: number | null;
+  input: HelcimWebhookEventInput;
+  order: CheckoutOrderRow | null;
+  repository: CheckoutOrderRepository;
+}): Promise<boolean> {
+  if (input.order === null) {
+    return false;
+  }
+
+  if (input.order.status === "paid") {
+    return true;
+  }
+
+  if (!input.input.helcimTransactionId || !isApprovedStatus(input.input.status)) {
+    return false;
+  }
+
+  const expectedAmountMatches = input.amountCents !== null && input.amountCents === input.order.amountCents;
+  const expectedCurrencyMatches = input.input.currency !== undefined &&
+    input.input.currency.toUpperCase() === input.order.currency;
+
+  if (!expectedAmountMatches || !expectedCurrencyMatches) {
+    return false;
+  }
+
+  await input.repository.markOrderPaid(input.order.orderId, input.input.helcimTransactionId);
+  return true;
+}
+
+function toMatchedCheckoutOrderRecord(order: CheckoutOrderRow): MatchedCheckoutOrderRecord {
+  const currency = order.currency.toUpperCase();
+
+  if (currency !== "CAD") {
+    throw new Error("Unsupported checkout order currency");
+  }
+
+  return {
+    _id: order.id,
+    amount: centsToCad(order.amountCents),
+    currency,
+    helcimInvoiceId: order.helcimInvoiceId,
+    helcimInvoiceNumber: order.helcimInvoiceNumber,
+    orderId: order.orderId,
+    purpose: order.purpose,
+  };
+}
+
 function createDrizzleCheckoutOrderRepository(): CheckoutOrderRepository {
   return {
     async createCheckoutOrder(values) {
@@ -249,19 +339,19 @@ function createDrizzleCheckoutOrderRepository(): CheckoutOrderRepository {
       return findOrderForWebhook(input);
     },
 
-    async findPendingOrderByCheckoutTokenHash(checkoutTokenHash) {
-      const [pendingOrder] = await getPrivateDb()
+    async findCheckoutOrderByCheckoutTokenHash(checkoutTokenHash) {
+      const [order] = await getPrivateDb()
         .select()
         .from(checkoutOrders)
         .where(
           and(
             eq(checkoutOrders.checkoutTokenHash, checkoutTokenHash),
-            eq(checkoutOrders.status, "pending"),
+            inArray(checkoutOrders.status, ["pending", "paid"]),
           ),
         )
         .limit(1);
 
-      return pendingOrder ?? null;
+      return order ?? null;
     },
 
     async markOrderPaid(orderId, helcimTransactionId) {
@@ -307,6 +397,7 @@ function toPendingOrderRecord(pendingOrder: CheckoutOrderRow): PendingOrderRecor
     customerEmail: pendingOrder.customerEmail,
     customerName: pendingOrder.customerName,
     lineItems: pendingOrder.lineItems,
+    purpose: pendingOrder.purpose,
   };
 }
 
@@ -351,4 +442,16 @@ function isApprovedStatus(status: string | undefined): boolean {
   return status !== undefined && ["approved", "completed", "success", "succeeded", "true"].includes(
     status.trim().toLowerCase(),
   );
+}
+
+function isCheckoutTokenValidationEligible(order: CheckoutOrderRow): boolean {
+  if (order.status === "pending") {
+    return true;
+  }
+
+  return order.status === "paid" && isAppointmentPurpose(order.purpose);
+}
+
+function isAppointmentPurpose(purpose: CheckoutOrderPurpose): boolean {
+  return purpose === "appointment_deposit" || purpose === "appointment_full";
 }

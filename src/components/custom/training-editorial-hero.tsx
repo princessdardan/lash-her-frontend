@@ -1,64 +1,58 @@
-import Link from "next/link";
 import type { TTrainingProgram } from "@/types";
+import { SanityImage } from "@/components/ui/sanity-image";
+import { cn } from "@/lib/utils";
 
 interface TrainingEditorialHeroProps {
   data: TTrainingProgram;
+  hasPurchaseUi?: boolean;
 }
 
-function isSafeUrl(url: string | undefined | null): boolean {
-  if (!url) return false;
-  try {
-    if (url.startsWith('https://')) {
-      new URL(url);
-      return true;
-    }
-    if (url.startsWith('/') && !url.startsWith('//')) {
-      return true;
-    }
-    return false;
-  } catch {
-    return false;
-  }
+function getHeroImage(data: TTrainingProgram) {
+  return data.detailHeroImage ?? data.detailItems?.find((item) => item.image)?.image ?? data.seo?.image;
 }
 
-export function TrainingEditorialHero({ data }: TrainingEditorialHeroProps) {
-  const {
-    title,
-    description,
-    primaryCta,
-  } = data;
-
-  const isPrimarySafe = isSafeUrl(primaryCta?.href);
+export function TrainingEditorialHero({ data, hasPurchaseUi = false }: TrainingEditorialHeroProps) {
+  const heroImage = getHeroImage(data);
+  const heading = data.detailHeading || data.title;
+  const description = data.detailDescription || data.description;
 
   return (
-    <section className="relative min-h-[80vh] md:min-h-[921px] flex items-end pb-16 md:pb-32 pt-32">
-      <div className="absolute inset-0 z-0 bg-lh-shadow">
-        <div className="absolute inset-0 bg-gradient-to-br from-lh-shadow via-lh-accent to-lh-primary opacity-60 mix-blend-overlay" />
-        <div className="absolute inset-0 bg-gradient-to-t from-lh-shadow via-lh-shadow/80 to-transparent" />
+    <section
+      className={cn(
+        "relative overflow-hidden rounded-[28px] border border-lh-line bg-lh-shadow text-lh-neutral-2 shadow-[0_24px_70px_rgba(28,19,24,0.12)]",
+        hasPurchaseUi ? "min-h-[520px] lg:min-h-[620px]" : "min-h-[560px] lg:min-h-[680px]",
+      )}
+      data-training-detail-hero="true"
+    >
+      <div className="absolute inset-0 z-0">
+        {heroImage ? (
+          <SanityImage
+            image={heroImage}
+            alt={heroImage.alt || heading}
+            fill
+            priority
+            sizes="(min-width: 1024px) 70vw, 100vw"
+            className="object-cover"
+          />
+        ) : (
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_74%_22%,rgba(212,180,131,0.28),transparent_30%),linear-gradient(135deg,rgba(28,19,24,0.98),rgba(61,11,22,0.92)_48%,rgba(102,57,118,0.88))]" />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-br from-lh-shadow/35 via-lh-accent/45 to-lh-primary/50 mix-blend-multiply" />
+        <div className="absolute inset-0 bg-gradient-to-t from-lh-shadow via-lh-shadow/75 to-lh-shadow/10" />
       </div>
 
-      <div className="relative z-10 w-full max-w-[1180px] mx-auto px-6 md:px-8">
-        <div className="max-w-3xl">
-          <h1 className="font-serif text-6xl md:text-8xl lg:text-[120px] text-lh-neutral-2 mb-6 text-balance leading-[0.9]">
-            {title}
+      <div className="relative z-10 flex min-h-[inherit] items-end p-6 sm:p-8 lg:p-12">
+        <div className="max-w-4xl">
+          <p className="eyebrow-label mb-5 text-lh-light">Training Program</p>
+          <h1 className="display-heading text-lh-neutral-2 text-balance">
+            {heading}
           </h1>
-          
+
           {description && (
-            <p className="font-sans text-lg md:text-xl text-lh-neutral-2/90 max-w-2xl mb-8 leading-relaxed">
+            <p className="mt-6 max-w-3xl font-body text-base font-bold leading-8 text-lh-neutral-2/85 md:text-lg lg:text-xl">
               {description}
             </p>
           )}
-
-          <div className="flex flex-wrap gap-4">
-            {primaryCta && primaryCta.label && isPrimarySafe && (
-              <Link
-                href={primaryCta.href!}
-                className="px-8 py-4 bg-lh-primary text-lh-white rounded-full font-sans text-sm font-semibold uppercase tracking-[0.1em] hover:bg-lh-primary/90 transition-colors"
-              >
-                {primaryCta.label}
-              </Link>
-            )}
-          </div>
         </div>
       </div>
     </section>

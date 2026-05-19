@@ -113,17 +113,17 @@ Expected:
 - [ ] **Step 1: Complete paid training checkout**
 
 Expected:
-- Pending order and training enrollment are created, payment marks order paid, and scheduling token is issued.
+- Historical superseded target: pending order and training enrollment are created, payment marks order paid, and a raw scheduling token is issued. Current implementation must not extend this path.
 
-- [ ] **Step 2: Complete tokenized booking**
+- [ ] **Step 2: Complete tokenized booking (superseded; do not implement)**
 
 Expected:
-- `/booking?type=training-call&token=...` resolves, enforces email match, creates Calendar event, sends booking email, and marks enrollment scheduled.
+- Historical raw-token booking handoff resolved, enforced email match, created a Calendar event, sent booking email, and marked enrollment scheduled. Current implementation rejects this customer-facing path and uses order-based private eligibility instead.
 
 - [ ] **Step 3: Verify recovery path**
 
 Expected:
-- Training payment email contains a valid recovery scheduling link and expired/used tokens fail safely.
+- Historical training payment email contained a recovery scheduling link and expired/used tokens failed safely. Current implementation uses order-based scheduling links and checkout-email mismatch rejection evidence.
 
 ## Final Verification
 
@@ -135,7 +135,7 @@ Expected:
 
 ## Stop Conditions
 
-- Stop if payment success does not issue a scheduling token.
+- Stop if payment success does not send an order-based scheduling link.
 - Stop if booking can be created with a different email from the checkout email.
 - Stop if Calendar event creation succeeds but enrollment state is not updated.
 

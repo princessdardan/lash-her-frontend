@@ -4,6 +4,7 @@ import type { TTrainingProgram } from "@/types";
 import {
   buildTrainingConfirmationUrl,
   getTrainingCta,
+  getTrainingCheckoutProduct,
   isTrainingPurchasable,
   TRAINING_CHECKOUT_TAX_RATE,
   TRAINING_PAID_BOOKING_TYPE,
@@ -70,6 +71,20 @@ describe("training-checkout", () => {
 
     it("returns false if checkoutProduct is missing", () => {
       assert.strictEqual(isTrainingPurchasable(buildProgram({ checkoutProduct: undefined })), false);
+    });
+
+    it("returns true when native commerce fields are valid without a legacy checkoutProduct", () => {
+      assert.strictEqual(
+        isTrainingPurchasable(
+          buildProgram({
+            checkoutProduct: undefined,
+            price: 1200,
+            currency: "CAD",
+            isAvailable: true,
+          }),
+        ),
+        true,
+      );
     });
 
     it("returns false if checkoutProduct kind is not training", () => {
@@ -185,6 +200,7 @@ describe("training-checkout", () => {
           programTitle: "Classic Lash Training",
           productId: "product-training-classic",
           productTitle: "Classic Lash Training",
+          productSku: "TRAINING-CLASSIC",
           currency: "CAD",
           subtotal: 1200,
           tax: 156,
@@ -209,6 +225,59 @@ describe("training-checkout", () => {
         assert.strictEqual(result.quote.subtotal, 999.99);
         assert.strictEqual(result.quote.tax, 130);
         assert.strictEqual(result.quote.total, 1129.99);
+      }
+    });
+
+    it("uses native training commerce fields before the legacy checkoutProduct fallback", () => {
+      const program = buildProgram({
+        price: 1500,
+        currency: "CAD",
+        isAvailable: true,
+        checkoutProduct: buildTrainingProduct({ price: 1200, sku: "LEGACY-TRAINING" }),
+      });
+
+      const result = validateTrainingCheckoutRequest(program, buildRequest({ clientPrice: 1500 }));
+
+      assert.strictEqual(result.ok, true);
+      assert.deepStrictEqual(getTrainingCheckoutProduct(program), {
+        id: "program-classic-lash-training",
+        title: "Classic Lash Training",
+        sku: "program-classic-lash-training",
+        price: 1500,
+        currency: "CAD",
+        isAvailable: true,
+        source: "native",
+      });
+      if (result.ok) {
+        assert.strictEqual(result.quote.productId, "program-classic-lash-training");
+        assert.strictEqual(result.quote.productSku, "program-classic-lash-training");
+        assert.strictEqual(result.quote.subtotal, 1500);
+      }
+    });
+
+    it("falls back to the legacy checkoutProduct when native commerce fields are incomplete", () => {
+      const program = buildProgram({
+        price: 1500,
+        checkoutProduct: buildTrainingProduct({ price: 1200, sku: "LEGACY-TRAINING" }),
+      });
+
+      const result = validateTrainingCheckoutRequest(program, buildRequest({ clientPrice: 1200 }));
+
+      assert.strictEqual(result.ok, true);
+      assert.deepStrictEqual(getTrainingCheckoutProduct(program), {
+        id: "product-training-classic",
+        title: "Classic Lash Training",
+        sku: "LEGACY-TRAINING",
+        price: 1200,
+        currency: "CAD",
+        isAvailable: true,
+        source: "legacy",
+        legacyProduct: buildTrainingProduct({ price: 1200, sku: "LEGACY-TRAINING" }),
+      });
+      if (result.ok) {
+        assert.strictEqual(result.quote.productId, "product-training-classic");
+        assert.strictEqual(result.quote.productSku, "LEGACY-TRAINING");
+        assert.strictEqual(result.quote.subtotal, 1200);
       }
     });
 
@@ -356,9 +425,8 @@ describe("training-checkout", () => {
         buildTrainingConfirmationUrl({
           orderId: "lh-order 123",
           programSlug: "classic-lash-training",
-          schedulingToken: "token+with/specials",
         }),
-        "/training-programs/classic-lash-training/confirmation?order=lh-order+123&token=token%2Bwith%2Fspecials",
+        "/training-programs/classic-lash-training/confirmation?order=lh-order+123",
       );
     });
   });

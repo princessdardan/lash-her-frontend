@@ -4,7 +4,7 @@ export type CommerceCurrency = "CAD";
 
 export interface CatalogProduct {
   id: string;
-  sku: string;
+  sku?: string;
   title: string;
   price: number | string;
   currency: CommerceCurrency;
@@ -14,7 +14,7 @@ export interface CatalogProduct {
 
 export interface CatalogProductVariant {
   id: string;
-  sku: string;
+  sku?: string;
   title: string;
   price: number | string;
   isAvailable: boolean;
@@ -74,7 +74,7 @@ export function buildValidatedCart(
     return {
       productId: product.id,
       ...(variant ? { variantId: variant.id } : {}),
-      sku: variant?.sku ?? product.sku,
+      sku: resolveLineItemSku(product, variant),
       description,
       quantity: item.quantity,
       price,
@@ -93,7 +93,7 @@ function resolveVariant(
   product: CatalogProduct,
   variantId: string | undefined,
 ): CatalogProductVariant | null {
-  const variants = product.variants?.filter((variant) => variant.title && variant.sku) ?? [];
+  const variants = product.variants?.filter((variant) => variant.title) ?? [];
 
   if (variants.length === 0) {
     return null;
@@ -106,6 +106,17 @@ function resolveVariant(
   }
 
   return variant;
+}
+
+function resolveLineItemSku(
+  product: CatalogProduct,
+  variant: CatalogProductVariant | null,
+): string {
+  if (variant) {
+    return variant.sku || `${product.id}:${variant.id}`;
+  }
+
+  return product.sku || product.id;
 }
 
 function assertValidQuantity(quantity: number): void {

@@ -23,6 +23,9 @@ type RuleStub = {
 
 type SchemaField = {
   name?: string;
+  group?: string;
+  of?: Array<{ type?: string }>;
+  fields?: SchemaField[];
   validation?: (rule: RuleStub) => unknown;
 };
 
@@ -44,12 +47,9 @@ function isSchemaField(value: unknown): value is SchemaField {
 }
 
 function getCheckoutProductValidator(): CheckoutProductValidator {
-  const fields = trainingProgram.fields.map((field: unknown) => field);
-  const checkoutProductField = fields.find(
-    (field) => isSchemaField(field) && field.name === "checkoutProduct",
-  );
+  const checkoutProductField = getSchemaField("checkoutProduct");
 
-  if (!isSchemaField(checkoutProductField) || typeof checkoutProductField.validation !== "function") {
+  if (typeof checkoutProductField.validation !== "function") {
     assert.fail("checkoutProduct validation should be configured");
   }
 
@@ -64,6 +64,19 @@ function getCheckoutProductValidator(): CheckoutProductValidator {
   checkoutProductField.validation(rule);
   assert.ok(capturedValidator, "checkoutProduct custom validator should be registered");
   return capturedValidator;
+}
+
+function getSchemaField(name: string): SchemaField {
+  const fields = trainingProgram.fields.map((field: unknown) => field);
+  const schemaField = fields.find(
+    (field) => isSchemaField(field) && field.name === name,
+  );
+
+  if (!isSchemaField(schemaField)) {
+    assert.fail(`${name} field should be configured`);
+  }
+
+  return schemaField;
 }
 
 function buildContext(product: ProductProjection | null): ValidationContextStub {
@@ -105,11 +118,11 @@ describe("trainingProgram checkoutProduct validation", () => {
     assert.strictEqual(result, true);
   });
 
-  it("requires a product when checkout is enabled", async () => {
+  it("allows enabled checkout without a legacy checkout product", async () => {
     const validator = getCheckoutProductValidator();
     const result = await validator(undefined, buildContext(validProduct));
 
-    assert.strictEqual(result, "A checkout product is required when checkout is enabled.");
+    assert.strictEqual(result, true);
   });
 
   it("rejects invalid training checkout product references", async () => {
@@ -157,5 +170,40 @@ describe("trainingProgram checkoutProduct validation", () => {
     const result = await validator({ _ref: "product-training" }, buildContext(validProduct));
 
     assert.strictEqual(result, true);
+  });
+});
+
+describe("trainingProgram detail content schema", () => {
+  it("configures native checkout commerce fields without requiring the legacy fallback", () => {
+    for (const fieldName of [
+      "price",
+      "currency",
+      "isAvailable",
+      "availabilityLabel",
+      "fulfillmentNote",
+      "displayOrder",
+      "image",
+    ]) {
+      assert.strictEqual(getSchemaField(fieldName).group, "commerce", `${fieldName} should be in the commerce group`);
+    }
+
+    assert.strictEqual(getSchemaField("checkoutProduct").group, "commerce");
+  });
+
+  it("configures a detail hero image in the details group", () => {
+    const detailHeroImage = getSchemaField("detailHeroImage");
+
+    assert.strictEqual(detailHeroImage.group, "details");
+    assert.ok(
+      detailHeroImage.fields?.some((field) => field.name === "alt"),
+      "detailHeroImage should expose alt text for accessibility",
+    );
+  });
+
+  it("keeps contact form blocks but removes legacy training hero and info blocks", () => {
+    const blocks = getSchemaField("blocks");
+    const allowedTypes = blocks.of?.map((member) => member.type) ?? [];
+
+    assert.deepStrictEqual(allowedTypes, ["contactFormLabels"]);
   });
 });

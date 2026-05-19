@@ -1,0 +1,25 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { test } from "node:test";
+
+const bookingServiceSource = readFileSync(new URL("./booking-service.ts", import.meta.url), "utf8");
+
+test("createBooking resolves offering-specific config when an offering slug is present", () => {
+  assert.match(bookingServiceSource, /loaders\.getBookingOfferingBySlug\(offeringSlug\)/);
+  assert.match(bookingServiceSource, /bookingType: offering\.bookingType/);
+  assert.match(bookingServiceSource, /offeringSlug: offering\.slug/);
+  assert.match(bookingServiceSource, /toOfferingBookingTypeConfig\(settings, offering\)/);
+  assert.match(bookingServiceSource, /minimumLeadTimeHours = offering\?\.minimumLeadTimeHoursOverride \?\? settings\.minimumLeadTimeHours/);
+});
+
+test("createBooking rechecks offering availability against active holds", () => {
+  assert.match(bookingServiceSource, /listActiveAppointmentHolds\(\{/);
+  assert.match(bookingServiceSource, /offeringId: offering\._id/);
+  assert.match(bookingServiceSource, /getActiveHoldBusyEvents\(\{ holds, now \}\)/);
+  assert.match(bookingServiceSource, /busyEvents: \[\.\.\.busyEvents, \.\.\.activeHoldBusyEvents\]/);
+});
+
+test("createBooking still refreshes paid training context before scheduling", () => {
+  assert.match(bookingServiceSource, /if \(validation\.data\.paidTrainingOrderId !== undefined\)/);
+  assert.match(bookingServiceSource, /markTrainingEnrollmentScheduled\(\{/);
+});

@@ -32,42 +32,56 @@ const helperScript = String.raw`
   }
 
   async function runScenario({
+    finalizeAppointmentPaymentForOrder,
     getCardTransaction,
-    issueSchedulingTokenForPaidHelcimInvoiceIfMissing,
+    getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing,
     markTrainingEnrollmentStaffAlerted,
     recordEvent,
     sendTrainingPaymentNotificationEmails,
   }) {
     const recorded = [];
-    const issuedTokens = [];
+    const finalizedBookings = [];
+    const trainingNotifications = [];
     const markedStaffAlerts = [];
     const sentEmails = [];
     const handler = createHelcimWebhookPostHandler({
+      finalizeAppointmentPaymentForOrder: async (input) => {
+        finalizedBookings.push(input);
+        if (finalizeAppointmentPaymentForOrder) {
+          return finalizeAppointmentPaymentForOrder(input);
+        }
+        return { ok: true, eventId: "calendar-event-1", status: "booked" };
+      },
       getCardTransaction,
       getVerifierToken: () => verifierToken,
-      issueSchedulingTokenForPaidHelcimInvoiceIfMissing: async (input) => {
-        if (!issueSchedulingTokenForPaidHelcimInvoiceIfMissing) {
+      getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing: async (input) => {
+        if (!getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing) {
           return null;
         }
 
-        const issued = await issueSchedulingTokenForPaidHelcimInvoiceIfMissing(input);
-        if (issued) {
-          issuedTokens.push(issued);
+        const notification = await getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing(input);
+        if (notification) {
+          trainingNotifications.push(notification);
         }
-        return issued;
+        return notification;
       },
       markTrainingEnrollmentStaffAlerted: async (input) => {
         markedStaffAlerts.push(input);
         if (markTrainingEnrollmentStaffAlerted) {
-          await markTrainingEnrollmentStaffAlerted(input);
+          return markTrainingEnrollmentStaffAlerted(input);
         }
+        return true;
       },
       recordEvent: async (event) => {
         recorded.push(event);
         if (recordEvent) {
-          await recordEvent(event);
+          const result = await recordEvent(event);
+          if (typeof result === "boolean") {
+            return { matchedOrder: null, paid: false, recorded: result };
+          }
+          return result;
         }
-        return true;
+        return { matchedOrder: null, paid: false, recorded: true };
       },
       sendTrainingPaymentNotificationEmails: async (input) => {
         sentEmails.push(input);
@@ -77,7 +91,7 @@ const helperScript = String.raw`
       },
     });
 
-    return { handler, issuedTokens, markedStaffAlerts, recorded, sentEmails };
+    return { finalizedBookings, handler, trainingNotifications, markedStaffAlerts, recorded, sentEmails };
   }
 `;
 
@@ -141,10 +155,10 @@ test("Helcim webhook route returns retryable status when private persistence fai
   `);
 });
 
-test("Helcim webhook route recovers missing training scheduling token and sends payment emails", () => {
+test("Helcim webhook route recovers missing training notification and sends payment emails", () => {
   runRouteScenario(`
     const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });
-    const { handler, issuedTokens, markedStaffAlerts, sentEmails } = await runScenario({
+    const { handler, trainingNotifications, markedStaffAlerts, sentEmails } = await runScenario({
       getCardTransaction: async () => ({
         amount: "1499.00",
         currency: "CAD",
@@ -152,7 +166,7 @@ test("Helcim webhook route recovers missing training scheduling token and sends 
         invoiceNumber: "INV-TRAINING-4242",
         status: "APPROVED",
       }),
-      issueSchedulingTokenForPaidHelcimInvoiceIfMissing: async (input) => ({
+      getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing: async (input) => ({
         checkoutEmail: "client@example.com",
         checkoutOrder: {
           customerEmail: "client@example.com",
@@ -172,8 +186,8 @@ test("Helcim webhook route recovers missing training scheduling token and sends 
           slug: "lash-training",
           title: "Lash Training Program",
         },
-        schedulingToken: "fresh-webhook-token",
-        tokenExpiresAt: new Date("2026-05-24T00:00:00.000Z"),
+        staffAlertedAt: null,
+        tokenExpiresAt: null,
       }),
       recordEvent: async () => true,
     });
@@ -181,24 +195,116 @@ test("Helcim webhook route recovers missing training scheduling token and sends 
     const response = await handler(createRequest(body));
 
     assert.equal(response.status, 200);
-    assert.equal(issuedTokens.length, 1);
+    assert.equal(trainingNotifications.length, 1);
     assert.deepEqual(sentEmails, [
       {
         customerEmail: "client@example.com",
         customerName: "Client Name",
         orderId: "lh-training-123",
         programTitle: "Lash Training Program",
-        schedulingUrl: "http://localhost:3000/booking?type=training-call&token=fresh-webhook-token",
+        schedulingUrl: "http://localhost:3000/booking?type=training-call&order=lh-training-123",
       },
     ]);
     assert.deepEqual(markedStaffAlerts, [{ enrollmentId: "training-enrollment-1" }]);
   `);
 });
 
-test("Helcim webhook route does not send duplicate training emails when token already exists", () => {
+
+test("Helcim webhook route finalizes approved appointment webhook after event persistence", () => {
   runRouteScenario(`
     const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });
-    const { handler, issuedTokens, markedStaffAlerts, sentEmails } = await runScenario({
+    const { finalizedBookings, handler } = await runScenario({
+      getCardTransaction: async () => ({
+        amount: "75.00",
+        currency: "CAD",
+        id: 25764674,
+        invoiceNumber: "INV-APPT-4242",
+        status: "APPROVED",
+      }),
+      recordEvent: async () => ({
+        matchedOrder: {
+          _id: "checkout-order-row-1",
+          amount: 75,
+          currency: "CAD",
+          helcimInvoiceId: 4242,
+          helcimInvoiceNumber: "INV-APPT-4242",
+          orderId: "lh-appointment-123",
+          purpose: "appointment_deposit",
+        },
+        paid: true,
+        recorded: true,
+      }),
+    });
+
+    const response = await handler(createRequest(body));
+
+    assert.equal(response.status, 200);
+    assert.equal(finalizedBookings.length, 1);
+    assert.equal(finalizedBookings[0].order.orderId, "lh-appointment-123");
+    assert.equal(finalizedBookings[0].source, "webhook");
+    assert.equal(finalizedBookings[0].transactionId, "25764674");
+  `);
+});
+
+test("Helcim webhook route finalizes duplicate paid appointment events", () => {
+  runRouteScenario(`
+    const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });
+    const { finalizedBookings, handler } = await runScenario({
+      getCardTransaction: async () => ({
+        amount: "75.00",
+        currency: "CAD",
+        id: 25764674,
+        invoiceNumber: "INV-APPT-4242",
+        status: "APPROVED",
+      }),
+      recordEvent: async () => ({
+        matchedOrder: {
+          _id: "checkout-order-row-1",
+          amount: 75,
+          currency: "CAD",
+          helcimInvoiceId: 4242,
+          helcimInvoiceNumber: "INV-APPT-4242",
+          orderId: "lh-appointment-123",
+          purpose: "appointment_deposit",
+        },
+        paid: true,
+        recorded: false,
+      }),
+    });
+
+    assert.equal((await handler(createRequest(body))).status, 200);
+    assert.equal(finalizedBookings.length, 1);
+    assert.equal(finalizedBookings[0].order.orderId, "lh-appointment-123");
+  `);
+});
+
+test("Helcim webhook route does not finalize unmatched appointment events", () => {
+  runRouteScenario(`
+    const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });
+    const { finalizedBookings, handler } = await runScenario({
+      getCardTransaction: async () => ({
+        amount: "75.00",
+        currency: "CAD",
+        id: 25764674,
+        invoiceNumber: "INV-APPT-4242",
+        status: "APPROVED",
+      }),
+      recordEvent: async () => ({
+        matchedOrder: null,
+        paid: false,
+        recorded: true,
+      }),
+    });
+
+    assert.equal((await handler(createRequest(body))).status, 200);
+    assert.equal(finalizedBookings.length, 0);
+  `);
+});
+
+test("Helcim webhook route does not send duplicate training emails when notification is already recorded", () => {
+  runRouteScenario(`
+    const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });
+    const { handler, trainingNotifications, markedStaffAlerts, sentEmails } = await runScenario({
       getCardTransaction: async () => ({
         amount: "1499.00",
         currency: "CAD",
@@ -206,14 +312,14 @@ test("Helcim webhook route does not send duplicate training emails when token al
         invoiceNumber: "INV-TRAINING-4242",
         status: "APPROVED",
       }),
-      issueSchedulingTokenForPaidHelcimInvoiceIfMissing: async () => null,
+      getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing: async () => null,
       recordEvent: async () => true,
     });
 
     const response = await handler(createRequest(body));
 
     assert.equal(response.status, 200);
-    assert.equal(issuedTokens.length, 0);
+    assert.equal(trainingNotifications.length, 0);
     assert.equal(sentEmails.length, 0);
     assert.equal(markedStaffAlerts.length, 0);
   `);

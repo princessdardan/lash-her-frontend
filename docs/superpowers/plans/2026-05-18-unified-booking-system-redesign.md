@@ -208,7 +208,7 @@ Expected:
 - `src/app/(site)/booking/page.tsx`
 - `src/components/booking/booking-flow.tsx`
 
-- [ ] **Step 1: Remove `/booking?token=...` as a booking path**
+- [x] **Step 1: Remove `/booking?token=...` as a booking path**
 
 Expected:
 - No customer-facing booking flow depends on a raw token query parameter.

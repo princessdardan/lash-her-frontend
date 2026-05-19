@@ -68,10 +68,10 @@ These checks require live staging approval, real staging credentials, and record
 | Area | Live staging check | Required evidence | Result |
 | --- | --- | --- | --- |
 | Product checkout | Complete a product cart checkout through the staging Helcim flow. | Checkout/invoice reference, approved test transaction, product confirmation page evidence, and Resend product order confirmation message ID/status with addresses redacted. | |
-| Training checkout | Complete a paid training checkout through the staging Helcim flow. | Checkout/invoice reference, approved test transaction, and scheduling link evidence. | |
+| Training checkout | Complete a paid training checkout through the staging Helcim flow. | Checkout/invoice reference, approved test transaction, order-only confirmation URL, and order-based scheduling link evidence. | |
 | Helcim webhook | Verify `/api/webhooks/card-transactions` receives and accepts the card transaction event. | Vercel log/event ID, accepted signature, idempotency key, and redacted transaction reference. | |
 | Private DB state | Confirm checkout/order rows, training enrollment rows, payment events, marketing contact submissions, and consent events reach the expected states. | Redacted query output showing pending-to-paid transition, idempotent event storage, form submission evidence, opt-in consent evidence, and no-opt-in audit evidence. | |
-| Scheduling token | Confirm paid training checkout issues a valid booking token. | Redacted token record/log, valid booking link behavior, and mismatched/expired token rejection evidence. | |
+| Paid training booking gate | Confirm paid training booking rejects legacy token links and requires the checkout email for the order-based scheduling link. | Legacy token rejection evidence, order-based booking link behavior, checkout-email mismatch rejection evidence, and Calendar event evidence. | |
 | Booking Calendar event | Create a standard booking and a paid training booking against the staging calendar. | Google Calendar event IDs/timestamps and booking metadata with PII redacted. | |
 | Sanity revalidation | Publish a staging Sanity edit and verify signed webhook-driven page refresh. | Publish timestamp, webhook delivery result, cache tag/log reference, and before/after page evidence. | |
 | Redis/Upstash | Verify OAuth refresh token access, booking locks, idempotency, and TTL behavior. | Redacted Upstash key/TTL evidence or runtime logs proving read/write/expiry. | |

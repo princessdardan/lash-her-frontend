@@ -32,6 +32,10 @@ export default async function TrainingConfirmationPage({
   const { slug } = await params;
   const { order, token } = await searchParams;
 
+  if (token !== undefined) {
+    notFound();
+  }
+
   const program = await loaders.getTrainingProgramBySlug(slug);
 
   if (!program) {
@@ -41,12 +45,13 @@ export default async function TrainingConfirmationPage({
   const confirmation = await getVerifiedTrainingConfirmation({
     orderId: order,
     programSlug: slug,
-    schedulingToken: token,
   });
 
   if (!confirmation) {
     notFound();
   }
+
+  const bookingHref = `/booking?type=training-call&order=${encodeURIComponent(confirmation.orderId)}`;
 
   return (
     <div className="flex flex-col min-h-screen bg-lh-neutral-2">
@@ -73,19 +78,19 @@ export default async function TrainingConfirmationPage({
 
             <div className="border-t border-lh-neutral/20 pt-8">
               <h3 className="font-medium text-xl mb-4">Next Steps</h3>
-              
+
               <div className="space-y-6">
                 <p className="text-lh-shadow/80">
                   Please schedule your initial training call to coordinate dates and program details.
                 </p>
                 <Link
-                  href={`/booking?type=training-call&token=${encodeURIComponent(confirmation.schedulingToken)}`}
+                  href={bookingHref}
                   className="btn-primary-red inline-block"
                 >
                   Schedule Training Call
                 </Link>
                 <p className="text-sm text-lh-shadow/70 mt-4">
-                  If no slots are currently available, don&apos;t worry. We will follow up with you manually to coordinate a time that works.
+                  Use the same email address from checkout when selecting your training call time. If no slots are currently available, we will follow up manually to coordinate a time that works.
                 </p>
               </div>
             </div>

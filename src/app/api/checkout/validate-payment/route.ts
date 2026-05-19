@@ -1,5 +1,9 @@
 import type { NextRequest } from "next/server";
 import {
+  finalizeAppointmentPaymentForOrder,
+  isAppointmentCheckoutPurpose,
+} from "@/lib/booking/finalizer";
+import {
   getPendingOrderByCheckoutToken,
   markOrderPaid,
   markOrderVerificationFailed,
@@ -7,7 +11,7 @@ import {
 import { sendProductOrderConfirmationEmail } from "@/lib/commerce/product-order-email";
 import { sendTrainingPaymentNotificationEmails } from "@/lib/commerce/training-payment-email";
 import {
-  issueTrainingSchedulingTokenForPaidOrder,
+  getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
   markTrainingEnrollmentStaffAlerted,
 } from "@/lib/commerce/training-enrollment-store";
 import { persistVerifiedPayment, verifyHelcimPayment } from "@/lib/commerce/verified-payment";
@@ -27,8 +31,9 @@ type ValidatePaymentRequest = Request & {
 };
 
 interface ValidatePaymentPostHandlerDependencies {
+  finalizeAppointmentPaymentForOrder: typeof finalizeAppointmentPaymentForOrder;
   getPendingOrderByCheckoutToken: typeof getPendingOrderByCheckoutToken;
-  issueTrainingSchedulingTokenForPaidOrder: typeof issueTrainingSchedulingTokenForPaidOrder;
+  getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId: typeof getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId;
   logError: typeof console.error;
   markOrderPaid: typeof markOrderPaid;
   markOrderVerificationFailed: typeof markOrderVerificationFailed;
@@ -113,10 +118,44 @@ export function createValidatePaymentPostHandler(
         );
       }
 
-      const trainingSchedulingToken = await dependencies.issueTrainingSchedulingTokenForPaidOrder(order.orderId);
+      if (isAppointmentCheckoutPurpose(order.purpose)) {
+        const booking = await dependencies.finalizeAppointmentPaymentForOrder({
+          order,
+          source: "client_validation",
+          transactionId: payment.transactionId,
+        });
+        const redirectUrl = `/booking/confirmation?order=${encodeURIComponent(order.orderId)}`;
 
-      if (trainingSchedulingToken) {
-        const programSlug = trainingSchedulingToken.programSnapshot.slug;
+        if (booking.ok) {
+          return Response.json({
+            bookingStatus: booking.status,
+            eventId: booking.eventId,
+            orderId: order.orderId,
+            redirectUrl,
+          });
+        }
+
+        dependencies.logError("[checkout] Appointment booking finalization failed", {
+          error: booking.error,
+          orderId: order.orderId,
+          status: booking.status,
+        });
+
+        return Response.json(
+          {
+            bookingStatus: booking.status,
+            error: "Payment received; booking requires manual follow-up",
+            orderId: order.orderId,
+            redirectUrl,
+          },
+          { status: 202 },
+        );
+      }
+
+      const trainingEnrollment = await dependencies.getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId(order.orderId);
+
+      if (trainingEnrollment) {
+        const programSlug = trainingEnrollment.programSnapshot.slug;
 
         if (!programSlug) {
           return Response.json(
@@ -128,28 +167,37 @@ export function createValidatePaymentPostHandler(
         const redirectUrl = buildTrainingConfirmationUrl({
           orderId: order.orderId,
           programSlug,
-          schedulingToken: trainingSchedulingToken.schedulingToken,
         });
 
-        try {
-          await dependencies.sendTrainingPaymentNotificationEmails({
-            customerEmail: trainingSchedulingToken.checkoutOrder.customerEmail,
-            customerName: trainingSchedulingToken.checkoutOrder.customerName,
-            orderId: order.orderId,
-            programTitle: trainingSchedulingToken.programSnapshot.title,
-            schedulingUrl: buildAbsoluteSchedulingUrl(
-              getRequestOrigin(req),
-              trainingSchedulingToken.schedulingToken,
-            ),
-          });
-          await dependencies.markTrainingEnrollmentStaffAlerted({
-            enrollmentId: trainingSchedulingToken.enrollmentId,
-          });
-        } catch (error) {
-          dependencies.logError("[checkout] Training payment notification email failed", {
-            error: error instanceof Error ? error.message : "Unknown email error",
-            orderId: order.orderId,
-          });
+        if (trainingEnrollment.staffAlertedAt === null) {
+          try {
+            const alertClaimed = await dependencies.markTrainingEnrollmentStaffAlerted({
+              enrollmentId: trainingEnrollment.enrollmentId,
+            });
+
+            if (!alertClaimed) {
+              return Response.json({
+                orderId: order.orderId,
+                redirectUrl,
+              });
+            }
+
+            await dependencies.sendTrainingPaymentNotificationEmails({
+              customerEmail: trainingEnrollment.checkoutOrder.customerEmail,
+              customerName: trainingEnrollment.checkoutOrder.customerName,
+              orderId: order.orderId,
+              programTitle: trainingEnrollment.programSnapshot.title,
+              schedulingUrl: buildAbsoluteSchedulingUrl(
+                getRequestOrigin(req),
+                order.orderId,
+              ),
+            });
+          } catch (error) {
+            dependencies.logError("[checkout] Training payment notification email failed", {
+              error: error instanceof Error ? error.message : "Unknown email error",
+              orderId: order.orderId,
+            });
+          }
         }
 
         return Response.json({
@@ -192,8 +240,9 @@ export function createValidatePaymentPostHandler(
 
 export async function POST(req: NextRequest): Promise<Response> {
   return createValidatePaymentPostHandler({
+    finalizeAppointmentPaymentForOrder,
     getPendingOrderByCheckoutToken,
-    issueTrainingSchedulingTokenForPaidOrder,
+    getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
     logError: console.error,
     markOrderPaid,
     markOrderVerificationFailed,
@@ -205,10 +254,10 @@ export async function POST(req: NextRequest): Promise<Response> {
   })(req);
 }
 
-function buildAbsoluteSchedulingUrl(origin: string, schedulingToken: string): string {
+function buildAbsoluteSchedulingUrl(origin: string, orderId: string): string {
   const url = new URL("/booking", origin);
   url.searchParams.set("type", "training-call");
-  url.searchParams.set("token", schedulingToken);
+  url.searchParams.set("order", orderId);
   return url.toString();
 }
 

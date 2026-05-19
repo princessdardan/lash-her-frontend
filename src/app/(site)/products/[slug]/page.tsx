@@ -24,7 +24,7 @@ function formatProductPrice(product: { price: number; variants?: Array<{ price: 
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
-  const data = await loaders.getSellableProductBySlug(slug);
+  const data = await loaders.getProductBySlug(slug);
 
   const title = data?.seo?.title || data?.title || "Product";
   const description = data?.seo?.description || data?.shortDescription || data?.description || "Premium lash product";
@@ -38,13 +38,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 }
 
 export async function generateStaticParams() {
-  const products = await loaders.getAllSellableProductSlugs();
+  const products = await loaders.getAllProductSlugs();
   return products.map(p => ({ slug: p.slug }));
 }
 
 export default async function ProductDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const product = await loaders.getSellableProductBySlug(slug);
+  const product = await loaders.getProductBySlug(slug);
 
   if (!product) notFound();
 
@@ -91,20 +91,12 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
           </div>
           
           <div className="w-full md:w-1/2 flex flex-col">
-            {product.kind && (
-              <span className="text-sm font-bold text-lh-primary uppercase tracking-wider mb-2 block">
-                {product.kind}
-              </span>
-            )}
+            <span className="text-sm font-bold text-lh-primary uppercase tracking-wider mb-2 block">
+              Product
+            </span>
             <h1 className="card-heading-red text-3xl md:text-4xl mb-4">
               {product.title}
             </h1>
-            
-            {(!product.variants || product.variants.length === 0) && product.sku && (
-              <p className="text-xs uppercase tracking-wider text-lh-muted mb-4">
-                {product.sku}
-              </p>
-            )}
             
             <div className="text-2xl font-medium text-lh-muted mb-6">
               {formatProductPrice(product)}
@@ -138,7 +130,6 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
                     >
                       <div>
                         <p className="font-bold text-black">{variant.title}</p>
-                        <p className="text-xs uppercase tracking-wider text-lh-muted">{variant.sku}</p>
                         {variant.availabilityLabel && (
                           <p className="mt-1 text-xs text-lh-primary">{variant.availabilityLabel}</p>
                         )}

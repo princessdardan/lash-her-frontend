@@ -8,11 +8,16 @@ const helperScript = String.raw`
 
   const product = {
     _id: "product-lash-cleanser",
-    sku: "LASH-CLEANSER",
     title: "Lash Cleanser",
     price: 24,
     currency: "CAD",
     isAvailable: true,
+  };
+
+  const sellableProduct = {
+    ...product,
+    sku: "LASH-CLEANSER",
+    kind: "product",
   };
 
   function createRequest(body) {
@@ -25,20 +30,29 @@ const helperScript = String.raw`
   function runScenario({
     createHelcimInvoice,
     createPendingOrder,
+    getProductsByIds,
     getSellableProductsByIds,
     initializeHelcimPay,
   } = {}) {
     const fetchedProductIds = [];
+    const fetchedSellableProductIds = [];
     const invoices = [];
     const orders = [];
     const paySessions = [];
     const handler = createCheckoutPostHandler({
-      getSellableProductsByIds: async (ids) => {
+      getProductsByIds: async (ids) => {
         fetchedProductIds.push(ids);
+        if (getProductsByIds) {
+          return getProductsByIds(ids);
+        }
+        return [product];
+      },
+      getSellableProductsByIds: async (ids) => {
+        fetchedSellableProductIds.push(ids);
         if (getSellableProductsByIds) {
           return getSellableProductsByIds(ids);
         }
-        return [product];
+        return [];
       },
       createHelcimInvoice: async (input) => {
         invoices.push(input);
@@ -63,13 +77,13 @@ const helperScript = String.raw`
       },
     });
 
-    return { fetchedProductIds, handler, invoices, orders, paySessions };
+    return { fetchedProductIds, fetchedSellableProductIds, handler, invoices, orders, paySessions };
   }
 `;
 
 test("checkout route rejects invalid requests before downstream calls", () => {
   runRouteScenario(`
-    const { fetchedProductIds, handler, invoices, orders, paySessions } = runScenario();
+    const { fetchedProductIds, fetchedSellableProductIds, handler, invoices, orders, paySessions } = runScenario();
 
     const response = await handler(createRequest({ customer: { name: "Nataliea" }, items: [] }));
     const body = await response.json();
@@ -77,6 +91,7 @@ test("checkout route rejects invalid requests before downstream calls", () => {
     assert.equal(response.status, 400);
     assert.deepEqual(body, { error: "Invalid checkout request" });
     assert.equal(fetchedProductIds.length, 0);
+    assert.equal(fetchedSellableProductIds.length, 0);
     assert.equal(invoices.length, 0);
     assert.equal(paySessions.length, 0);
     assert.equal(orders.length, 0);
@@ -85,7 +100,7 @@ test("checkout route rejects invalid requests before downstream calls", () => {
 
 test("checkout route creates Helcim checkout for a valid cart", () => {
   runRouteScenario(`
-    const { fetchedProductIds, handler, invoices, orders, paySessions } = runScenario();
+    const { fetchedProductIds, fetchedSellableProductIds, handler, invoices, orders, paySessions } = runScenario();
 
     const response = await handler(createRequest({
       customer: { name: "  Nataliea Lash  ", email: "client@example.com" },
@@ -96,13 +111,14 @@ test("checkout route creates Helcim checkout for a valid cart", () => {
     assert.equal(response.status, 200);
     assert.deepEqual(body, { checkoutToken: "checkout-token-4242" });
     assert.deepEqual(fetchedProductIds, [["product-lash-cleanser"]]);
+    assert.deepEqual(fetchedSellableProductIds, [["product-lash-cleanser"]]);
     assert.deepEqual(invoices, [{
       currency: "CAD",
       type: "INVOICE",
       status: "DUE",
       notes: "Lash Her website checkout",
       lineItems: [{
-        sku: "LASH-CLEANSER",
+        sku: "product-lash-cleanser",
         description: "Lash Cleanser",
         quantity: 2,
         price: 24,
@@ -128,7 +144,7 @@ test("checkout route creates Helcim checkout for a valid cart", () => {
 test("checkout route rejects unavailable Sanity products before Helcim setup", () => {
   runRouteScenario(`
     const { handler, invoices, orders, paySessions } = runScenario({
-      getSellableProductsByIds: async () => [{ ...product, isAvailable: false }],
+      getProductsByIds: async () => [{ ...product, isAvailable: false }],
     });
 
     const response = await handler(createRequest({
@@ -148,14 +164,13 @@ test("checkout route rejects unavailable Sanity products before Helcim setup", (
 test("checkout route rejects unavailable selected variants before Helcim setup", () => {
   runRouteScenario(`
     const { handler, invoices, orders, paySessions } = runScenario({
-      getSellableProductsByIds: async () => [{
+      getProductsByIds: async () => [{
         ...product,
         variants: [{
           _key: "volume",
           availabilityLabel: "Sold Out",
           isAvailable: false,
           price: 32,
-          sku: "LASH-CLEANSER-VOLUME",
           title: "Volume",
         }],
       }],
@@ -172,6 +187,23 @@ test("checkout route rejects unavailable selected variants before Helcim setup",
     assert.equal(invoices.length, 0);
     assert.equal(paySessions.length, 0);
     assert.equal(orders.length, 0);
+  `);
+});
+
+test("checkout route falls back to legacy sellable products", () => {
+  runRouteScenario(`
+    const { handler, invoices } = runScenario({
+      getProductsByIds: async () => [],
+      getSellableProductsByIds: async () => [sellableProduct],
+    });
+
+    const response = await handler(createRequest({
+      customer: { name: "Nataliea Lash", email: "client@example.com" },
+      items: [{ productId: "product-lash-cleanser", quantity: 1 }],
+    }));
+
+    assert.equal(response.status, 200);
+    assert.equal(invoices[0].lineItems[0].sku, "LASH-CLEANSER");
   `);
 });
 

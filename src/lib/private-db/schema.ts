@@ -1,4 +1,5 @@
 import {
+  index,
   integer,
   jsonb,
   pgEnum,
@@ -17,6 +18,13 @@ export const checkoutOrderStatus = pgEnum("checkout_order_status", [
   "refunded",
 ]);
 
+export const checkoutOrderPurpose = pgEnum("checkout_order_purpose", [
+  "product",
+  "training",
+  "appointment_deposit",
+  "appointment_full",
+]);
+
 export const trainingEnrollmentPurchaseKind = pgEnum("training_enrollment_purchase_kind", [
   "full",
 ]);
@@ -26,6 +34,18 @@ export const trainingEnrollmentSchedulingStatus = pgEnum("training_enrollment_sc
   "scheduled",
   "expired",
   "manual_followup",
+]);
+
+export const appointmentHoldStatus = pgEnum("appointment_hold_status", [
+  "held",
+  "payment_pending",
+  "paid_pending_booking",
+  "booked",
+  "expired",
+  "payment_failed",
+  "booking_failed",
+  "manual_followup",
+  "released",
 ]);
 
 export const marketingContactSubmissionType = pgEnum("marketing_contact_submission_type", [
@@ -54,6 +74,7 @@ export interface CheckoutOrderLineItemSnapshot {
 }
 
 export type CheckoutOrderStatus = typeof checkoutOrderStatus.enumValues[number];
+export type CheckoutOrderPurpose = typeof checkoutOrderPurpose.enumValues[number];
 
 export interface TrainingEnrollmentProgramSnapshot {
   id: string;
@@ -71,8 +92,23 @@ export interface TrainingEnrollmentProductSnapshot {
 
 export type TrainingEnrollmentPurchaseKind = typeof trainingEnrollmentPurchaseKind.enumValues[number];
 export type TrainingEnrollmentSchedulingStatus = typeof trainingEnrollmentSchedulingStatus.enumValues[number];
+export type AppointmentHoldStatus = typeof appointmentHoldStatus.enumValues[number];
 export type MarketingContactSubmissionType = typeof marketingContactSubmissionType.enumValues[number];
 export type MarketingConsentEventType = typeof marketingConsentEventType.enumValues[number];
+
+export interface AppointmentHoldOfferingSnapshot {
+  [key: string]: unknown;
+}
+
+export interface AppointmentHoldCustomerSnapshot {
+  email: string;
+  name: string;
+  phone: string;
+}
+
+export interface AppointmentHoldMetadata {
+  [key: string]: unknown;
+}
 
 export interface MarketingContactSubmissionPayload {
   [key: string]: unknown;
@@ -87,6 +123,7 @@ export const checkoutOrders = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     orderId: text("order_id").notNull().unique(),
+    purpose: checkoutOrderPurpose("purpose").notNull().default("product"),
     status: checkoutOrderStatus("status").notNull().default("pending"),
     checkoutTokenHash: text("checkout_token_hash").notNull().unique(),
     secretTokenCiphertext: text("secret_token_ciphertext").notNull(),
@@ -153,6 +190,52 @@ export const trainingEnrollments = pgTable(
   (table) => [
     uniqueIndex("training_enrollments_checkout_order_id_idx").on(table.checkoutOrderId),
     uniqueIndex("training_enrollments_scheduling_token_hash_idx").on(table.schedulingTokenHash),
+  ],
+);
+
+export const appointmentHolds = pgTable(
+  "appointment_holds",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publicReference: text("public_reference").notNull(),
+    checkoutOrderId: uuid("checkout_order_id").references(() => checkoutOrders.id, { onDelete: "set null" }),
+    checkoutOrderPublicId: text("checkout_order_public_id"),
+    offeringId: text("offering_id").notNull(),
+    offeringSnapshot: jsonb("offering_snapshot").$type<AppointmentHoldOfferingSnapshot>().notNull(),
+    bookingType: text("booking_type").notNull(),
+    customerSnapshot: jsonb("customer_snapshot").$type<AppointmentHoldCustomerSnapshot>().notNull(),
+    selectedStart: timestamp("selected_start", { withTimezone: true }).notNull(),
+    selectedEnd: timestamp("selected_end", { withTimezone: true }).notNull(),
+    timezone: text("timezone").notNull(),
+    status: appointmentHoldStatus("status").notNull().default("held"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    helcimInvoiceId: integer("helcim_invoice_id"),
+    helcimInvoiceNumber: text("helcim_invoice_number"),
+    helcimTransactionId: text("helcim_transaction_id"),
+    googleEventId: text("google_event_id"),
+    failureReason: text("failure_reason"),
+    failureMetadata: jsonb("failure_metadata").$type<AppointmentHoldMetadata>(),
+    reconciliationMetadata: jsonb("reconciliation_metadata").$type<AppointmentHoldMetadata>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    releasedAt: timestamp("released_at", { withTimezone: true }),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    bookedAt: timestamp("booked_at", { withTimezone: true }),
+    expiredAt: timestamp("expired_at", { withTimezone: true }),
+    paymentFailedAt: timestamp("payment_failed_at", { withTimezone: true }),
+    bookingFailedAt: timestamp("booking_failed_at", { withTimezone: true }),
+    manualFollowupAt: timestamp("manual_followup_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("appointment_holds_public_reference_idx").on(table.publicReference),
+    uniqueIndex("appointment_holds_checkout_order_id_idx").on(table.checkoutOrderId),
+    index("appointment_holds_slot_conflict_idx").on(
+      table.offeringId,
+      table.selectedStart,
+      table.selectedEnd,
+      table.status,
+      table.expiresAt,
+    ),
   ],
 );
 

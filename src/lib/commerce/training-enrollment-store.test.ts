@@ -164,18 +164,26 @@ const helperScript = String.raw`
       enrollment.updatedAt = updateTime;
     }
 
-    async markScheduled(enrollmentId: string, scheduledAt: Date, updateTime: Date): Promise<void> {
+    async markScheduled(enrollmentId: string, scheduledAt: Date, updateTime: Date): Promise<boolean> {
       const enrollment = this.findEnrollment(enrollmentId);
+      if (enrollment.schedulingStatus !== "pending" || enrollment.tokenUsedAt !== null) {
+        return false;
+      }
       enrollment.scheduledAt = scheduledAt;
       enrollment.schedulingStatus = "scheduled";
       enrollment.tokenUsedAt = updateTime;
       enrollment.updatedAt = updateTime;
+      return true;
     }
 
-    async markStaffAlerted(enrollmentId: string, updateTime: Date): Promise<void> {
+    async markStaffAlerted(enrollmentId: string, updateTime: Date): Promise<boolean> {
       const enrollment = this.findEnrollment(enrollmentId);
+      if (enrollment.staffAlertedAt !== null) {
+        return false;
+      }
       enrollment.staffAlertedAt = updateTime;
       enrollment.updatedAt = updateTime;
+      return true;
     }
 
     private findEnrollment(enrollmentId: string): TrainingEnrollmentRow {
@@ -341,14 +349,19 @@ test("training enrollment store marks scheduling pending, scheduled, and staff a
     const scheduledAt = new Date("2026-05-11T15:00:00.000Z");
     const updateTime = new Date("2026-05-10T02:00:00.000Z");
 
-    await store.markScheduled({
+    assert.equal(await store.markScheduled({
       enrollmentId: created.id,
       now: updateTime,
       scheduledAt,
-    });
+    }), true);
     assert.equal(repository.enrollments[0].schedulingStatus, "scheduled");
     assert.equal(repository.enrollments[0].scheduledAt, scheduledAt);
     assert.equal(repository.enrollments[0].tokenUsedAt, updateTime);
+    assert.equal(await store.markScheduled({
+      enrollmentId: created.id,
+      now: new Date("2026-05-10T02:30:00.000Z"),
+      scheduledAt,
+    }), false);
     assert.equal(await store.findPendingEnrollmentByToken({
       now,
       schedulingToken: issued.schedulingToken,
@@ -361,21 +374,27 @@ test("training enrollment store marks scheduling pending, scheduled, and staff a
     assert.equal(repository.enrollments[0].updatedAt, pendingTime);
 
     const alertedAt = new Date("2026-05-10T04:00:00.000Z");
-    await store.markStaffAlerted({ enrollmentId: created.id, now: alertedAt });
+    assert.equal(await store.markStaffAlerted({ enrollmentId: created.id, now: alertedAt }), true);
+    assert.equal(repository.enrollments[0].staffAlertedAt, alertedAt);
+    assert.equal(await store.markStaffAlerted({
+      enrollmentId: created.id,
+      now: new Date("2026-05-10T05:00:00.000Z"),
+    }), false);
     assert.equal(repository.enrollments[0].staffAlertedAt, alertedAt);
   `);
 });
 
-test("training enrollment store gets paid pending confirmations by public order id", () => {
+test("training enrollment store gets paid pending confirmations by public order id without scheduling tokens", () => {
   runTrainingEnrollmentStoreScenario(`
     const { repository, store } = createFakeStore();
     await store.createEnrollment(createEnrollmentInput);
-    await store.issueSchedulingTokenForPaidOrder(checkoutOrder.orderId, now);
 
     const found = await store.getPaidPendingConfirmationByPublicOrderId(checkoutOrder.orderId);
     assert.ok(found);
     assert.equal(found.checkoutOrder.id, checkoutOrder.id);
     assert.equal(found.enrollmentId, "training-enrollment-1");
+    assert.equal(found.staffAlertedAt, null);
+    assert.equal(found.tokenExpiresAt, null);
 
     repository.checkoutOrder.status = "pending";
     assert.equal(await store.getPaidPendingConfirmationByPublicOrderId(checkoutOrder.orderId), null);

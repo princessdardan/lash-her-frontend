@@ -6,6 +6,12 @@ const slotStart = '2030-06-15T16:00:00.000Z';
 const slotEnd = '2030-06-15T16:30:00.000Z';
 
 test.describe('Booking Page', () => {
+  test('shows not found for booking confirmation without an order reference', async ({ page }) => {
+    await page.goto('/booking/confirmation');
+
+    await expect(page.getByRole('heading', { name: /page not found/i })).toBeVisible();
+  });
+
   test('renders the booking flow with no available times', async ({ page }) => {
     await page.route('**/api/booking/availability?type=training-call', async (route) => {
       await route.fulfill({

@@ -24,56 +24,55 @@ const helperScript = String.raw`
       slug: "lash-training",
       title: "Lash Training Program",
     },
-    tokenExpiresAt: new Date("2026-05-24T00:00:00.000Z"),
+    staffAlertedAt: null,
+    tokenExpiresAt: null,
   };
 `;
 
-test("training confirmation verifies the order id and token against the private enrollment", () => {
+test("training confirmation verifies the order id against the private paid enrollment", () => {
   runTrainingConfirmationScenario(`
     const found = await getVerifiedTrainingConfirmation({
-      findEnrollmentByToken: async (input) => {
-        assert.equal(input.schedulingToken, "raw-token");
+      findEnrollmentByPublicOrderId: async (orderId) => {
+        assert.equal(orderId, "lh-training-123");
         return enrollment;
       },
       orderId: "lh-training-123",
       programSlug: "lash-training",
-      schedulingToken: "raw-token",
     });
 
     assert.deepEqual(found, {
       orderId: "lh-training-123",
-      schedulingToken: "raw-token",
     });
   `);
 });
 
-test("training confirmation rejects mismatched order, slug, or missing token", () => {
+test("training confirmation rejects mismatched order, slug, or missing order", () => {
   runTrainingConfirmationScenario(`
     assert.equal(await getVerifiedTrainingConfirmation({
-      findEnrollmentByToken: async () => enrollment,
+      findEnrollmentByPublicOrderId: async () => enrollment,
       orderId: "lh-other-order",
       programSlug: "lash-training",
-      schedulingToken: "raw-token",
     }), null);
 
     assert.equal(await getVerifiedTrainingConfirmation({
-      findEnrollmentByToken: async () => enrollment,
+      findEnrollmentByPublicOrderId: async () => enrollment,
       orderId: "lh-training-123",
       programSlug: "other-training",
-      schedulingToken: "raw-token",
     }), null);
 
     assert.equal(await getVerifiedTrainingConfirmation({
-      findEnrollmentByToken: async () => enrollment,
-      orderId: "lh-training-123",
+      findEnrollmentByPublicOrderId: async () => enrollment,
+      orderId: "",
       programSlug: "lash-training",
-      schedulingToken: "",
     }), null);
   `);
 });
 
 function runTrainingConfirmationScenario(assertions: string): void {
-  const scenario = `${helperScript}\nvoid (async () => {\n${assertions}\n})()`;
+  const scenario = `${helperScript}
+void (async () => {
+${assertions}
+})()`;
   const env = { ...process.env };
 
   env.NEXT_PUBLIC_SANITY_DATASET = "test";

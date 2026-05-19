@@ -45,6 +45,13 @@ export function createBookingCreatePostHandler(
       );
     }
 
+    if (hasLegacyPaidSchedulingToken(body)) {
+      return Response.json(
+        { success: false, error: "Legacy training scheduling links are no longer supported" },
+        { status: 400 },
+      );
+    }
+
     const input = toBookingRequestInput(body);
     const result = await dependencies.createBooking(input);
 
@@ -83,7 +90,8 @@ function toBookingRequestInput(input: unknown): BookingRequestInput {
     idempotencyKey: toStringValue(record.idempotencyKey),
     ...(marketingConsentText ? { marketingConsentText } : {}),
     ...(sourcePath ? { sourcePath } : {}),
-    paidSchedulingToken: toOptionalStringValue(record.paidSchedulingToken),
+    paidTrainingOrderId: toOptionalStringValue(record.paidTrainingOrderId),
+    ...(toOptionalStringValue(record.offeringSlug) ? { offeringSlug: toOptionalStringValue(record.offeringSlug) } : {}),
   };
 }
 
@@ -112,6 +120,14 @@ function toBookingAnswers(value: unknown): BookingAnswerInput[] {
       answer: toStringValue(record.answer),
     };
   });
+}
+
+function hasLegacyPaidSchedulingToken(input: unknown): boolean {
+  if (!isRecord(input)) {
+    return false;
+  }
+
+  return toOptionalStringValue(input.paidSchedulingToken) !== undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

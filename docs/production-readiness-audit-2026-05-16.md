@@ -226,22 +226,22 @@ Training programs live in Sanity as `trainingProgram`. A training program can en
 
 Training checkout calculates Ontario HST at 13 percent, creates a one-line Helcim invoice, stores the private pending order, and creates a `training_enrollments` row.
 
-After payment validation, `issueTrainingSchedulingTokenForPaidOrder()` issues a token with a 14-day TTL. Confirmation links route to `/training-programs/[slug]/confirmation`, and scheduling links route to `/booking?type=training-call&token=...`.
+After payment validation, confirmation links route to `/training-programs/[slug]/confirmation?order=...`, and scheduling links route to `/booking?type=training-call&order=...`. The public booking flow rejects legacy raw scheduling-token links.
 
-The booking service resolves the paid training token, ensures the booking email matches the checkout email, forces the paid training booking type, inserts a Google Calendar event, and marks the enrollment scheduled.
+The booking service resolves the paid training order against private paid enrollment state, ensures the booking email matches the checkout email, forces the paid training booking type, inserts a Google Calendar event, and marks the enrollment scheduled.
 
 Good signs:
 
 - Training purchase and booking are intentionally separated: payment does not directly create a calendar event.
-- Paid booking context enforces email matching.
-- Scheduling token is hashed in the database and expires.
+- Paid booking context enforces email matching against private order/enrollment state.
+- No customer-facing booking flow depends on raw scheduling tokens.
 - Booking creation revalidates availability immediately before calendar insertion.
 
 Production-readiness gaps:
 
 - The training checkout order/enrollment split needs atomicity or a cleanup/reconciliation plan.
 - Editorial validation should prevent non-training sellable products from being attached to training programs.
-- Live booking handoff must be manually tested with real Google OAuth, Redis, Calendar availability markers, payment success, tokenized booking link, and calendar event creation.
+- Live booking handoff must be manually tested with real Google OAuth, Redis, Calendar availability markers, payment success, order-based booking link, checkout-email mismatch rejection, and calendar event creation.
 
 ### Booking System
 
@@ -371,7 +371,7 @@ Good coverage exists for:
 - Helcim hash and webhook parsing,
 - payment verification,
 - order storage,
-- training enrollment token lifecycle,
+- training enrollment and notification state,
 - booking availability,
 - Google Calendar payload handling,
 - paid training booking context,
@@ -383,7 +383,7 @@ Current critical API coverage inventory:
 | --- | --- | --- |
 | `/api/revalidate` | Valid signature/tag revalidation, invalid signature, null signature, missing `_type`, and unknown `_type` no-op. | Live staging Sanity publish/webhook smoke has not been run. |
 | `/api/checkout` | Invalid request rejection, valid cart checkout initialization, Helcim initialization failure, and pending order persistence failure. | Live staging product checkout, private DB transition, and Helcim evidence have not been run. |
-| `/api/training-checkout` | Success/failure paths including enrollment write failure are covered by route-handler tests. | Live staging training checkout, enrollment, token, and booking handoff smoke has not been run. |
+| `/api/training-checkout` | Success/failure paths including enrollment write failure are covered by route-handler tests. | Live staging training checkout, enrollment, order-based confirmation, and booking handoff smoke has not been run. |
 | `/api/checkout/validate-payment` | Success and critical failure paths, including invalid hash, missing order, and persistence failure, are covered by route-handler tests. | Live staging payment validation against Helcim-returned data has not been run. |
 | `/api/webhooks/card-transactions` | Route-level Helcim webhook handler tests cover signature/parsing and payment event behavior. | Live staging Helcim webhook delivery and idempotency evidence has not been run. |
 | `/api/booking/*` | Booking availability and create route handlers now have direct mocked/local route-handler coverage, alongside booking service unit coverage. | Live staging Redis/Upstash, Google OAuth, availability markers, and Calendar event smoke have not been run. |
@@ -422,8 +422,8 @@ These should be completed before production promotion.
    - Helcim success marks order paid.
    - Helcim webhook arrives, verifies, and records idempotently.
    - Training checkout creates pending order and enrollment.
-   - Training payment issues scheduling token.
-   - Scheduling link resolves into booking flow.
+   - Training payment sends an order-based scheduling link.
+   - Scheduling link resolves into booking flow and requires checkout-email verification before slots load.
    - Booking creates a Google Calendar event and marks enrollment scheduled.
    - General inquiry, training contact, contact popup, and booking marketing choices write private DB evidence.
    - Booking marketing smoke covers both opted-in and not-opted-in choices.
@@ -531,13 +531,13 @@ These checks require explicit live staging approval, real staging credentials, a
 | Area | Live staging check | Required evidence | Status |
 | --- | --- | --- | --- |
 | Product checkout | Complete a product cart checkout through the staging Helcim flow. | Checkout session/invoice reference, approved test transaction, and public confirmation page screenshot or log reference. | Not run |
-| Training checkout | Complete a training checkout through the staging Helcim flow. | Training checkout session/invoice reference, approved test transaction, and confirmation/scheduling link evidence. | Not run |
+| Training checkout | Complete a training checkout through the staging Helcim flow. | Training checkout session/invoice reference, approved test transaction, confirmation page evidence, and order-based scheduling link evidence. | Not run |
 | Helcim webhook | Confirm `/api/webhooks/card-transactions` receives and verifies the staging card transaction event. | Vercel log/event ID showing accepted signature, transaction lookup, idempotency key, and non-secret Helcim reference. | Not run |
 | Private DB state | Verify pending checkout rows transition to paid, payment events are stored idempotently, and form/marketing submissions produce consent/no-consent records. | Redacted database query output for checkout/order, training enrollment when applicable, payment event, marketing contact submission, and consent event rows. | Not run |
-| Scheduling token | Confirm paid training checkout issues a valid scheduling token and rejects mismatched/expired contexts. | Redacted token issuance record or log, valid booking link behavior, and negative-case result. | Not run |
+| Paid training eligibility | Confirm paid training checkout sends an order-based booking link and rejects mismatched checkout emails. | Redacted order/enrollment record or log, valid booking link behavior, and negative-case result. | Not run |
 | Booking Calendar event | Book a paid training call and a standard booking path against the staging calendar. | Google Calendar event IDs/timestamps, booking type, timezone, and attendee email redacted as needed. | Not run |
 | Sanity revalidation | Publish a staging Sanity edit and confirm the signed webhook refreshes the staging page only. | Sanity publish timestamp, webhook delivery result, cache tag/log reference, and before/after page evidence. | Not run |
-| Redis/Upstash | Verify OAuth refresh token access, booking locks, idempotency keys, and token TTL behavior in staging. | Redacted Upstash key presence/TTL or logs proving read/write/expiry behavior. | Not run |
+| Redis/Upstash | Verify OAuth refresh token access, booking locks, and idempotency keys in staging. | Redacted Upstash key presence/TTL or logs proving read/write/expiry behavior. | Not run |
 | Resend emails | Trigger general inquiry, training contact, contact popup, booking confirmation, and training payment email paths after private DB writes. | Resend message IDs/statuses and recipient/domain evidence with addresses redacted as needed. | Not run |
 
 ### Sanity Checks
@@ -582,7 +582,7 @@ These checks require explicit live staging approval, real staging credentials, a
 - [ ] `bookingSettings` has correct calendar ID, timezone, lead time, horizon, buffers, and booking types
 - [ ] Availability loads from marker events
 - [ ] Booking creates Google Calendar event and sends confirmation email
-- [ ] Paid training token booking path works
+- [ ] Paid training order/email booking path works
 
 ### Email Checks
 

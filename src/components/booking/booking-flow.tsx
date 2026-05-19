@@ -13,14 +13,18 @@ import { Field, FieldLabel, FieldError, FieldDescription } from "@/components/ui
 interface BookingFlowProps {
   settings: BookingSettings;
   initialBookingType?: BookingType;
-  paidSchedulingToken?: string;
+  paidTrainingOrderId?: string;
+  initialOfferingSlug?: string;
 }
 
-export function BookingFlow({ settings, initialBookingType, paidSchedulingToken }: BookingFlowProps) {
+export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId, initialOfferingSlug }: BookingFlowProps) {
   const pathname = usePathname();
   const defaultType = initialBookingType ?? settings.bookingTypes[0]?.type ?? "training-call";
-  const hasPaidSchedulingToken = paidSchedulingToken !== undefined && paidSchedulingToken.trim().length > 0;
+  const paidTrainingOrder = paidTrainingOrderId?.trim();
+  const hasPaidTrainingOrder = paidTrainingOrder !== undefined && paidTrainingOrder.length > 0;
+  const hasOffering = Boolean(initialOfferingSlug);
   const [bookingType, setBookingType] = useState<BookingType | "">(defaultType);
+  const [offeringSlug] = useState<string>(initialOfferingSlug || "");
   const [slots, setSlots] = useState<BookingSlot[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<string>("");
   const [name, setName] = useState("");
@@ -30,7 +34,7 @@ export function BookingFlow({ settings, initialBookingType, paidSchedulingToken 
   const [marketingOptIn, setMarketingOptIn] = useState(false);
   const marketingConsentText = settings.marketingOptInLabel || "I would like to receive updates and offers.";
 
-  const [isLoadingSlots, setIsLoadingSlots] = useState(!!defaultType);
+  const [isLoadingSlots, setIsLoadingSlots] = useState(!!defaultType && !hasPaidTrainingOrder);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<"idle" | "success" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
@@ -39,22 +43,32 @@ export function BookingFlow({ settings, initialBookingType, paidSchedulingToken 
     return settings.bookingTypes.find((t) => t.type === bookingType);
   }, [bookingType, settings.bookingTypes]);
 
+  const hasValidPaidTrainingEmail = !hasPaidTrainingOrder || isLikelyEmail(email);
+  const availabilityEmail = hasPaidTrainingOrder ? email : "";
+
   useEffect(() => {
     if (!bookingType) {
       return;
     }
 
-    let isMounted = true;
-
-    const availabilityParams = new URLSearchParams({ type: bookingType });
-
-    if (hasPaidSchedulingToken) {
-      availabilityParams.set("token", paidSchedulingToken.trim());
+    if (!hasValidPaidTrainingEmail) {
+      return;
     }
 
-    fetch(`/api/booking/availability?${availabilityParams.toString()}`)
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to fetch availability");
+    let isMounted = true;
+
+    fetchAvailability({
+      bookingType: bookingType as BookingType,
+      email: availabilityEmail,
+      hasPaidTrainingOrder,
+      paidTrainingOrder,
+      offeringSlug,
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(typeof data.error === "string" ? data.error : "Failed to fetch availability");
+        }
         return res.json();
       })
       .then((data) => {
@@ -64,9 +78,9 @@ export function BookingFlow({ settings, initialBookingType, paidSchedulingToken 
           setIsLoadingSlots(false);
         }
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (isMounted) {
-          setErrorMessage("Could not load available times. Please try again later.");
+          setErrorMessage(error instanceof Error ? error.message : "Could not load available times. Please try again later.");
           setIsLoadingSlots(false);
         }
       });
@@ -74,12 +88,34 @@ export function BookingFlow({ settings, initialBookingType, paidSchedulingToken 
     return () => {
       isMounted = false;
     };
-  }, [bookingType, hasPaidSchedulingToken, paidSchedulingToken]);
+  }, [bookingType, availabilityEmail, hasPaidTrainingOrder, hasValidPaidTrainingEmail, paidTrainingOrder, offeringSlug]);
+
+  const handleEmailChange = (value: string) => {
+    setEmail(value);
+
+    if (!hasPaidTrainingOrder) {
+      return;
+    }
+
+    const hasValidEmail = isLikelyEmail(value);
+    setIsLoadingSlots(hasValidEmail);
+    setErrorMessage("");
+
+    if (!hasValidEmail) {
+      setSlots([]);
+      setSelectedSlot("");
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!bookingType || !selectedSlot || !name || !email || !phone) {
       setErrorMessage("Please fill in all required fields.");
+      return;
+    }
+
+    if (hasPaidTrainingOrder && !isLikelyEmail(email)) {
+      setErrorMessage("Please enter the same email address used at checkout.");
       return;
     }
 
@@ -107,9 +143,10 @@ export function BookingFlow({ settings, initialBookingType, paidSchedulingToken 
           marketingConsentText,
           sourcePath: pathname,
           idempotencyKey: nanoid(),
-          ...(hasPaidSchedulingToken
-            ? { paidSchedulingToken: paidSchedulingToken.trim() }
+          ...(hasPaidTrainingOrder && paidTrainingOrder
+            ? { paidTrainingOrderId: paidTrainingOrder }
             : {}),
+          ...(offeringSlug ? { offeringSlug } : {}),
         }),
       });
 
@@ -153,7 +190,7 @@ export function BookingFlow({ settings, initialBookingType, paidSchedulingToken 
         <FieldLabel htmlFor="bookingType">Service Type</FieldLabel>
         <Select
           value={bookingType}
-          disabled={hasPaidSchedulingToken}
+          disabled={hasPaidTrainingOrder || hasOffering}
           onValueChange={(val) => {
             setBookingType(val as BookingType);
             if (!val) {
@@ -161,7 +198,7 @@ export function BookingFlow({ settings, initialBookingType, paidSchedulingToken 
               setSelectedSlot("");
               setIsLoadingSlots(false);
             } else {
-              setIsLoadingSlots(true);
+              setIsLoadingSlots(!hasPaidTrainingOrder || isLikelyEmail(email));
               setErrorMessage("");
             }
           }}
@@ -180,19 +217,38 @@ export function BookingFlow({ settings, initialBookingType, paidSchedulingToken 
         {activeTypeConfig?.description && (
           <FieldDescription>{activeTypeConfig.description}</FieldDescription>
         )}
-        {hasPaidSchedulingToken && (
+        {hasPaidTrainingOrder && (
           <FieldDescription>
-            This paid training scheduling link is reserved for the checkout email used at purchase.
+            This paid training call is reserved for the checkout email used on order {paidTrainingOrder}.
           </FieldDescription>
         )}
       </Field>
 
+      {hasPaidTrainingOrder && (
+        <Field>
+          <FieldLabel htmlFor="email">Checkout Email</FieldLabel>
+          <Input
+            id="email"
+            type="email"
+            required
+            value={email}
+            onChange={(event) => handleEmailChange(event.target.value)}
+            placeholder="jane@example.com"
+          />
+          <FieldDescription>Enter the same email address used at checkout to unlock available training call times.</FieldDescription>
+        </Field>
+      )}
+
       {bookingType && (
         <Field>
           <FieldLabel htmlFor="selectedSlot">Available Times</FieldLabel>
-          <Select value={selectedSlot} onValueChange={setSelectedSlot} disabled={isLoadingSlots || slots.length === 0}>
+          <Select
+            value={selectedSlot}
+            onValueChange={setSelectedSlot}
+            disabled={isLoadingSlots || slots.length === 0 || !hasValidPaidTrainingEmail}
+          >
             <SelectTrigger id="selectedSlot">
-              <SelectValue placeholder={isLoadingSlots ? "Loading..." : slots.length === 0 ? "No times available" : "Select a time"} />
+              <SelectValue placeholder={getSlotPlaceholder({ hasValidPaidTrainingEmail, isLoadingSlots, slots })} />
             </SelectTrigger>
             <SelectContent>
               {slots.map((slot) => {
@@ -218,6 +274,10 @@ export function BookingFlow({ settings, initialBookingType, paidSchedulingToken 
         </Field>
       )}
 
+      {errorMessage && !selectedSlot && (
+        <FieldError className="text-center">{errorMessage}</FieldError>
+      )}
+
       {selectedSlot && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -231,17 +291,19 @@ export function BookingFlow({ settings, initialBookingType, paidSchedulingToken 
                 placeholder="Jane Doe"
               />
             </Field>
-            <Field>
-              <FieldLabel htmlFor="email">Email Address</FieldLabel>
-              <Input
-                id="email"
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="jane@example.com"
-              />
-            </Field>
+            {!hasPaidTrainingOrder && (
+              <Field>
+                <FieldLabel htmlFor="email">Email Address</FieldLabel>
+                <Input
+                  id="email"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => handleEmailChange(e.target.value)}
+                  placeholder="jane@example.com"
+                />
+              </Field>
+            )}
           </div>
 
           <Field>
@@ -317,4 +379,53 @@ export function BookingFlow({ settings, initialBookingType, paidSchedulingToken 
       )}
     </form>
   );
+}
+
+function fetchAvailability(input: {
+  bookingType: BookingType;
+  email: string;
+  hasPaidTrainingOrder: boolean;
+  paidTrainingOrder: string | undefined;
+  offeringSlug?: string;
+}): Promise<Response> {
+  if (input.hasPaidTrainingOrder && input.paidTrainingOrder) {
+    return fetch("/api/booking/availability", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({
+        type: input.bookingType,
+        order: input.paidTrainingOrder,
+        email: input.email.trim(),
+      }),
+    });
+  }
+
+  const availabilityParams = new URLSearchParams();
+  if (input.offeringSlug) {
+    availabilityParams.set("offering", input.offeringSlug);
+  } else if (input.bookingType) {
+    availabilityParams.set("type", input.bookingType);
+  }
+  return fetch(`/api/booking/availability?${availabilityParams.toString()}`);
+}
+
+function isLikelyEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+function getSlotPlaceholder(input: {
+  hasValidPaidTrainingEmail: boolean;
+  isLoadingSlots: boolean;
+  slots: BookingSlot[];
+}): string {
+  if (!input.hasValidPaidTrainingEmail) {
+    return "Enter checkout email first";
+  }
+
+  if (input.isLoadingSlots) {
+    return "Loading...";
+  }
+
+  return input.slots.length === 0 ? "No times available" : "Select a time";
 }

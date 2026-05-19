@@ -93,6 +93,46 @@ describe("commerce cart validation", () => {
     );
   });
 
+  it("derives stable line item codes from IDs when products or variants have no SKU", () => {
+    assert.deepEqual(
+      buildValidatedCart(
+        [{ productId: "product-sku-less", variantId: "volume", quantity: 1 }],
+        [
+          {
+            id: "product-sku-less",
+            title: "SKU-less Lash Kit",
+            price: 95,
+            currency: "CAD",
+            isAvailable: true,
+            variants: [
+              {
+                id: "volume",
+                title: "Volume Kit",
+                price: 125,
+                isAvailable: true,
+              },
+            ],
+          },
+        ],
+      ),
+      {
+        currency: "CAD",
+        amount: 125,
+        lineItems: [
+          {
+            productId: "product-sku-less",
+            variantId: "volume",
+            sku: "product-sku-less:volume",
+            description: "SKU-less Lash Kit — Volume Kit",
+            quantity: 1,
+            price: 125,
+            total: 125,
+          },
+        ],
+      },
+    );
+  });
+
   it("requires an available selected variant for products with variants", () => {
     const productWithVariants: CatalogProduct = {
       ...product,

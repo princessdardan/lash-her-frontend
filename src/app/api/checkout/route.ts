@@ -6,7 +6,7 @@ import {
   type CatalogProduct,
   type ValidatedCart,
 } from "@/lib/commerce/cart";
-import type { TSellableProduct } from "@/types";
+import type { TProduct, TSellableProduct } from "@/types";
 
 interface CheckoutCustomerInput {
   name: string;
@@ -27,6 +27,7 @@ interface CheckoutErrorBody {
 }
 
 interface CheckoutPostHandlerDependencies {
+  getProductsByIds: (ids: string[]) => Promise<TProduct[]>;
   getSellableProductsByIds: (ids: string[]) => Promise<TSellableProduct[]>;
   createHelcimInvoice: (input: CheckoutInvoiceInput) => Promise<CheckoutInvoice>;
   initializeHelcimPay: (input: CheckoutPaySessionInput) => Promise<CheckoutPaySession>;
@@ -74,6 +75,7 @@ interface CheckoutPendingOrderInput {
 }
 
 export function createCheckoutPostHandler({
+  getProductsByIds,
   getSellableProductsByIds,
   createHelcimInvoice,
   initializeHelcimPay,
@@ -96,8 +98,15 @@ export function createCheckoutPostHandler({
 
     try {
       const productIds = Array.from(new Set(checkoutRequest.items.map((item) => item.productId)));
-      const products = await getSellableProductsByIds(productIds);
-      const cart = buildValidatedCart(checkoutRequest.items, products.map(toCatalogProduct));
+      const [products, sellableProducts] = await Promise.all([
+        getProductsByIds(productIds),
+        getSellableProductsByIds(productIds),
+      ]);
+      const catalogProducts = mergeCatalogProducts(
+        products.map(toCatalogProduct),
+        sellableProducts.map(toCatalogProduct),
+      );
+      const cart = buildValidatedCart(checkoutRequest.items, catalogProducts);
 
       const invoice = await createHelcimInvoice({
         currency: "CAD",
@@ -154,6 +163,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     ]);
 
   return createCheckoutPostHandler({
+    getProductsByIds: loaders.getProductsByIds,
     getSellableProductsByIds: loaders.getSellableProductsByIds,
     createHelcimInvoice,
     initializeHelcimPay,
@@ -191,17 +201,34 @@ function toCartInputItem(item: unknown): CartInputItem {
   };
 }
 
-function toCatalogProduct(product: TSellableProduct): CatalogProduct {
+function mergeCatalogProducts(
+  products: CatalogProduct[],
+  fallbackProducts: CatalogProduct[],
+): CatalogProduct[] {
+  const productsById = new Map<string, CatalogProduct>();
+
+  for (const product of fallbackProducts) {
+    productsById.set(product.id, product);
+  }
+
+  for (const product of products) {
+    productsById.set(product.id, product);
+  }
+
+  return Array.from(productsById.values());
+}
+
+function toCatalogProduct(product: TProduct | TSellableProduct): CatalogProduct {
   return {
     id: product._id,
-    sku: product.sku,
+    sku: "sku" in product ? product.sku : undefined,
     title: product.title,
     price: product.price,
     currency: product.currency,
     isAvailable: product.isAvailable,
     variants: product.variants?.map((variant) => ({
       id: variant._key,
-      sku: variant.sku,
+      sku: "sku" in variant ? variant.sku : undefined,
       title: variant.title,
       price: variant.price,
       isAvailable: variant.isAvailable,

@@ -62,7 +62,7 @@ function getCustomerTrainingPaymentHtml(
             <td style="padding:34px 32px;">
               <p style="margin:0 0 18px 0;font-size:16px;line-height:1.7;">Hi ${escapeHtml(input.customerName)},</p>
               <p style="margin:0 0 22px 0;font-size:15px;line-height:1.7;">Your payment for <strong>${escapeHtml(input.programTitle)}</strong> is confirmed.</p>
-              <p style="margin:0 0 22px 0;font-size:15px;line-height:1.7;">Please schedule your required training call within 14 days using your private scheduling link.</p>
+              <p style="margin:0 0 22px 0;font-size:15px;line-height:1.7;">Please schedule your required training call using the secure booking link below and the email address used at checkout.</p>
               <p style="margin:28px 0;text-align:center;">
                 <a href="${escapeHtml(input.schedulingUrl)}" style="display:inline-block;padding:14px 24px;background-color:#4b1230;color:#fffaf1;text-decoration:none;font-size:14px;letter-spacing:0.08em;text-transform:uppercase;">Schedule Training Call</a>
               </p>

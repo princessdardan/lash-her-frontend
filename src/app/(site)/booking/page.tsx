@@ -8,12 +8,12 @@ export const revalidate = 1800;
 export default async function BookingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string; token?: string }>;
+  searchParams: Promise<{ order?: string; token?: string; type?: string; offering?: string; offeringSlug?: string }>;
 }) {
   const params = await searchParams;
   const settings = await loaders.getBookingSettings();
 
-  if (!settings) {
+  if (!settings || params.token !== undefined) {
     notFound();
   }
 
@@ -23,6 +23,13 @@ export default async function BookingPage({
     }
     return undefined;
   };
+
+  const paidTrainingOrderId = params.order?.trim();
+  const offeringSlug = params.offeringSlug?.trim() || params.offering?.trim();
+  const offering = offeringSlug ? await loaders.getBookingOfferingBySlug(offeringSlug) : null;
+  const initialBookingType = paidTrainingOrderId
+    ? "training-call"
+    : offering?.bookingType ?? normalizeType(params.type);
 
   return (
     <main className="min-h-screen bg-background py-20 px-4 md:px-8">
@@ -37,8 +44,9 @@ export default async function BookingPage({
         <div className="bg-card border border-border/50 rounded-xl p-6 md:p-10 shadow-sm">
           <BookingFlow
             settings={settings}
-            initialBookingType={params.token ? "training-call" : normalizeType(params.type)}
-            paidSchedulingToken={params.token}
+            initialBookingType={initialBookingType}
+            paidTrainingOrderId={paidTrainingOrderId}
+            initialOfferingSlug={offeringSlug}
           />
         </div>
       </div>

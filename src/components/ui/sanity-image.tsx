@@ -13,6 +13,7 @@ interface ISanityImageProps {
   className?: string;
   fill?: boolean;
   priority?: boolean;
+  sizes?: string;
 }
 
 export function SanityImage({
@@ -23,6 +24,7 @@ export function SanityImage({
   width,
   height,
   fill,
+  sizes,
 }: ISanityImageProps) {
   if (!image?.asset?._ref) return null;
 
@@ -34,6 +36,8 @@ export function SanityImage({
       alt={alt ?? image.alt ?? ""}
       className={className}
       priority={priority}
+      loading={priority ? "eager" : undefined}
+      sizes={sizes}
       {...(fill ? { fill } : { width: width ?? 800, height: height ?? 600 })}
     />
   );

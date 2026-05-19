@@ -1,42 +1,40 @@
 import "server-only";
 
 import {
-  findPendingTrainingEnrollmentByToken,
-  type FindPendingTrainingEnrollmentByTokenInput,
+  getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
   type PendingTrainingEnrollmentRecord,
 } from "@/lib/commerce/training-enrollment-store";
 
 export interface GetVerifiedTrainingConfirmationInput {
-  findEnrollmentByToken?: (
-    input: FindPendingTrainingEnrollmentByTokenInput,
+  findEnrollmentByPublicOrderId?: (
+    orderId: string,
   ) => Promise<PendingTrainingEnrollmentRecord | null>;
   orderId: string | undefined;
   programSlug: string;
-  schedulingToken: string | undefined;
 }
 
 export interface VerifiedTrainingConfirmation {
   orderId: string;
-  schedulingToken: string;
 }
 
 export async function getVerifiedTrainingConfirmation({
-  findEnrollmentByToken = findPendingTrainingEnrollmentByToken,
+  findEnrollmentByPublicOrderId = getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
   orderId,
   programSlug,
-  schedulingToken,
 }: GetVerifiedTrainingConfirmationInput): Promise<VerifiedTrainingConfirmation | null> {
-  if (!orderId || !schedulingToken) {
+  const publicOrderId = orderId?.trim();
+
+  if (!publicOrderId) {
     return null;
   }
 
-  const enrollment = await findEnrollmentByToken({ schedulingToken });
+  const enrollment = await findEnrollmentByPublicOrderId(publicOrderId);
 
   if (!enrollment) {
     return null;
   }
 
-  if (enrollment.checkoutOrder.orderId !== orderId) {
+  if (enrollment.checkoutOrder.orderId !== publicOrderId) {
     return null;
   }
 
@@ -45,7 +43,6 @@ export async function getVerifiedTrainingConfirmation({
   }
 
   return {
-    orderId,
-    schedulingToken,
+    orderId: publicOrderId,
   };
 }

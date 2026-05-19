@@ -4,12 +4,12 @@ import { useState, type ReactElement } from "react";
 import { Button } from "@/components/ui/button";
 import { formatCad } from "@/lib/commerce/money";
 import { buildValidatedCart, type CartInputItem, type ValidatedCart } from "@/lib/commerce/cart";
-import type { TSellableProduct, TSellableProductVariant } from "@/types";
+import type { TProduct, TProductVariant } from "@/types";
 import { ProductCard } from "./product-card";
 import { HelcimPayButton } from "./helcim-pay-button";
 
 interface CartPanelProps {
-  products: TSellableProduct[];
+  products: TProduct[];
 }
 
 export function CartPanel({ products }: CartPanelProps): ReactElement {
@@ -17,7 +17,7 @@ export function CartPanel({ products }: CartPanelProps): ReactElement {
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
 
-  const handleAdd = (product: TSellableProduct, variant?: TSellableProductVariant) => {
+  const handleAdd = (product: TProduct, variant?: TProductVariant) => {
     setItems((prev) => {
       const existing = prev.find((item) => item.productId === product._id && item.variantId === variant?._key);
       if (existing) {
@@ -46,14 +46,14 @@ export function CartPanel({ products }: CartPanelProps): ReactElement {
     if (items.length > 0) {
       const catalogProducts = products.map(p => ({
         id: p._id,
-        sku: p.sku,
+        sku: p._id,
         title: p.title,
         price: p.price,
         currency: p.currency,
         isAvailable: p.isAvailable,
         variants: p.variants?.map((variant) => ({
           id: variant._key,
-          sku: variant.sku,
+          sku: variant._key,
           title: variant.title,
           price: variant.price,
           isAvailable: variant.isAvailable,

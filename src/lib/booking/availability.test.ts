@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { buildBookingSlots, isSlotAvailable } from "./availability";
+import { getActiveHoldBusyEvents, type BookingHoldRecord } from "./holds";
 import type { BookingTypeConfig, CalendarEventWindow } from "./types";
 
 const bookingType: BookingTypeConfig = {
@@ -158,4 +159,37 @@ test("isSlotAvailable returns true for an open slot with no busy events", () => 
     }),
     true,
   );
+});
+
+test("buildBookingSlots treats active private holds as busy intervals", () => {
+  const activeHold: BookingHoldRecord = {
+    bookingType: "training-call",
+    createdAt: now,
+    customer: { email: "client@example.com", name: "Client Name", phone: "555-555-5555" },
+    expiresAt: new Date("2026-05-09T12:10:00.000Z"),
+    googleEventId: null,
+    id: "hold-1",
+    offeringId: "training-intro",
+    offeringSnapshot: { title: "Training Intro" },
+    payment: null,
+    publicReference: "hold_1",
+    selectedEnd: new Date("2026-05-10T14:45:00.000Z"),
+    selectedStart: new Date("2026-05-10T14:15:00.000Z"),
+    state: "held",
+    timezone: "America/Toronto",
+    updatedAt: now,
+  };
+  const busyEvents = getActiveHoldBusyEvents({ holds: [activeHold], now });
+
+  const slots = buildBookingSlots({
+    bookingType,
+    availabilityWindows: [availabilityWindow],
+    busyEvents,
+    now,
+    minimumLeadTimeHours: 24,
+    horizonEnd,
+  });
+
+  assert.equal(slots.some((slot) => slot.start === "2026-05-10T14:15:00.000Z"), false);
+  assert.equal(slots.some((slot) => slot.start === "2026-05-10T14:45:00.000Z"), true);
 });

@@ -78,7 +78,7 @@ export function validateBookingRequest(
 }
 
 function normalizeBookingRequest(input: BookingRequestInput): BookingRequestInput {
-  const paidSchedulingToken = input.paidSchedulingToken?.trim();
+  const paidTrainingOrderId = input.paidTrainingOrderId?.trim();
 
   return {
     bookingType: input.bookingType,
@@ -94,7 +94,8 @@ function normalizeBookingRequest(input: BookingRequestInput): BookingRequestInpu
     ...(input.marketingConsentText?.trim() ? { marketingConsentText: input.marketingConsentText.trim() } : {}),
     ...(input.sourcePath?.trim() ? { sourcePath: input.sourcePath.trim() } : {}),
     idempotencyKey: input.idempotencyKey.trim(),
-    ...(paidSchedulingToken ? { paidSchedulingToken } : {}),
+    ...(paidTrainingOrderId ? { paidTrainingOrderId } : {}),
+    ...(input.offeringSlug?.trim() ? { offeringSlug: input.offeringSlug.trim() } : {}),
   };
 }
 

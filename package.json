@@ -14,7 +14,6 @@
     "test:headed": "playwright test --headed",
     "test:debug": "playwright test --debug",
     "test:report": "playwright show-report",
-    "migrate": "tsx scripts/migrate-strapi-to-sanity.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate-private-db.ts",
     "git:verify-remote": "node scripts/verify-git-remote.mjs frontend",

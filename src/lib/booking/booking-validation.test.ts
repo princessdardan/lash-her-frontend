@@ -81,6 +81,7 @@ test("validateBookingRequest returns normalized success data", () => {
       phone: "  555-555-5555  ",
       answers: [{ questionId: "goal", answer: "  Build confidence.  " }],
       idempotencyKey: "  booking-request-1  ",
+      offeringSlug: "  classic-fill  ",
     },
     settings,
   );
@@ -96,6 +97,7 @@ test("validateBookingRequest returns normalized success data", () => {
       phone: "555-555-5555",
       answers: [{ questionId: "goal", answer: "Build confidence." }],
       idempotencyKey: "booking-request-1",
+      offeringSlug: "classic-fill",
     });
     assert.equal(result.bookingTypeConfig.label, "Training sign-up call");
   }

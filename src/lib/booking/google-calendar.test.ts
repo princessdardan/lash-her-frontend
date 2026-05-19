@@ -66,3 +66,26 @@ test("buildBookingEventPayload includes only safe paid training context", () => 
   assert.doesNotMatch(description, /token/i);
   assert.doesNotMatch(description, /helcim/i);
 });
+
+
+test("buildBookingEventPayload includes deterministic private booking metadata", () => {
+  const event = buildBookingEventPayload({
+    bookingMetadata: { holdId: "hold-123" },
+    bookingTypeLabel: "Lash fill",
+    customer: {
+      name: "Jane Client",
+      email: "jane@example.com",
+      phone: "555-555-5555",
+    },
+    answers: [],
+    start: new Date("2026-05-10T14:00:00.000Z"),
+    end: new Date("2026-05-10T14:30:00.000Z"),
+    timezone: "America/New_York",
+  });
+
+  assert.deepEqual(event.extendedProperties, {
+    private: {
+      lashHerBookingHoldId: "hold-123",
+    },
+  });
+});

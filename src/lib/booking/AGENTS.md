@@ -13,7 +13,7 @@ Booking domain logic validates requests, checks Google Calendar availability, cr
 | Availability | `availability.ts` | Calendar availability window and conflict calculations. |
 | Google Calendar | `google-calendar.ts`, `google-calendar-event-payload.ts` | External event fetch/insert boundary. |
 | Operational locks | `operational-store.ts` | Idempotency and calendar lock persistence. |
-| Paid training context | `paid-training-context.ts` | Scheduling-token lookup for paid training bookings. |
+| Paid training context | `paid-training-context.ts` | Order and checkout-email eligibility for paid training bookings. |
 | Email | `email.ts` | Booking notification content. |
 
 ## CONVENTIONS
@@ -28,5 +28,5 @@ Booking domain logic validates requests, checks Google Calendar availability, cr
 
 - Do not bypass availability or lock checks when creating calendar events.
 - Do not expose raw Google/Upstash errors to API clients.
-- Do not treat paid training scheduling tokens as public identifiers; resolve through the paid-training context path.
+- Do not reintroduce paid training scheduling tokens as public identifiers; resolve through the paid-training order/email context path.
 - Do not move booking consent records into Sanity.
