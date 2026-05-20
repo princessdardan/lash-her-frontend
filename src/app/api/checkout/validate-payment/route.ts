@@ -141,6 +141,17 @@ export function createValidatePaymentPostHandler(
           status: booking.status,
         });
 
+        if (booking.status === "finalization_pending") {
+          return Response.json(
+            {
+              bookingStatus: booking.status,
+              error: "Payment received; booking confirmation is still in progress",
+              orderId: order.orderId,
+            },
+            { status: 409 },
+          );
+        }
+
         return Response.json(
           {
             bookingStatus: booking.status,

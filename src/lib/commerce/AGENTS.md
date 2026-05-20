@@ -27,6 +27,6 @@ Checkout, Helcim payment integration, cart validation, order storage, webhooks, 
 ## ANTI-PATTERNS
 
 - Do not store checkout orders, Helcim identifiers, payment events, or customer PII in Sanity.
-- Do not trust client cart totals; rebuild totals from loaded sellable products.
+- Do not trust client cart totals; rebuild totals from canonical product records loaded on the server.
 - Do not compare raw checkout tokens in storage; use hashes or encrypted values as existing code does.
 - Do not make payment emails the source of truth; private DB state is canonical.

@@ -14,7 +14,6 @@ import { bookingOffering } from "./documents/booking-offering";
 import { product } from "./documents/product";
 import { service } from "./documents/service";
 import { trainingProgram } from "./documents/training-program";
-import { sellableProduct } from "./documents/sellable-product";
 import { contactForm } from "./documents/contact-form";
 import { generalInquiry } from "./documents/general-inquiry";
 import { contactPopupSubmission } from "./documents/contact-popup-submission";
@@ -63,7 +62,6 @@ export const schemaTypes = [
   product,
   service,
   trainingProgram,
-  sellableProduct,
   contactForm,
   generalInquiry,
   contactPopupSubmission,

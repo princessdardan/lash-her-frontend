@@ -278,6 +278,38 @@ test("Helcim webhook route finalizes duplicate paid appointment events", () => {
   `);
 });
 
+test("Helcim webhook route finalizes approved custom partial appointment webhooks", () => {
+  runRouteScenario(`
+    const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });
+    const { finalizedBookings, handler } = await runScenario({
+      getCardTransaction: async () => ({
+        amount: "100.00",
+        currency: "CAD",
+        id: 25764674,
+        invoiceNumber: "INV-APPT-4242",
+        status: "APPROVED",
+      }),
+      recordEvent: async () => ({
+        matchedOrder: {
+          _id: "checkout-order-row-1",
+          amount: 100,
+          currency: "CAD",
+          helcimInvoiceId: 4242,
+          helcimInvoiceNumber: "INV-APPT-4242",
+          orderId: "lh-appointment-123",
+          purpose: "appointment_custom_partial",
+        },
+        paid: true,
+        recorded: true,
+      }),
+    });
+
+    assert.equal((await handler(createRequest(body))).status, 200);
+    assert.equal(finalizedBookings.length, 1);
+    assert.equal(finalizedBookings[0].order.purpose, "appointment_custom_partial");
+  `);
+});
+
 test("Helcim webhook route does not finalize unmatched appointment events", () => {
   runRouteScenario(`
     const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });

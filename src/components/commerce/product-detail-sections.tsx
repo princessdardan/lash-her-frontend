@@ -1,8 +1,8 @@
 import type { ReactElement } from "react";
-import type { TSellableProductDetailSection } from "@/types";
+import type { TCommerceDetailSection } from "@/types";
 
 interface ProductDetailSectionsProps {
-  sections: TSellableProductDetailSection[];
+  sections: TCommerceDetailSection[];
 }
 
 export function ProductDetailSections({ sections }: ProductDetailSectionsProps): ReactElement | null {

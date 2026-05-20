@@ -38,7 +38,8 @@ test("product order confirmation email includes escaped order details", () => {
     assert.match(html, /Your order is confirmed/);
     assert.match(html, /Client &lt;Name&gt; &amp; Co/);
     assert.match(html, /Signature &lt;Lash&gt; Set/);
-    assert.match(html, /LASH-&amp;-SIGNATURE/);
+    assert.equal(html.includes("LASH-&amp;-SIGNATURE"), false);
+    assert.equal(html.includes("CARE-KIT"), false);
     assert.match(html, /Order lh-order-&lt;123&gt;/);
     assert.equal(html.includes("$1,130.00"), true);
     assert.match(html, /Aftercare Kit/);

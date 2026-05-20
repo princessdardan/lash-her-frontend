@@ -25,7 +25,7 @@ Use `docs/private-database-migration-runbook.md` for the complete migration proc
 - [ ] Migration evidence template is ready for recording the run.
 - [ ] Staging smoke tests pass with the latest database schema.
 - [ ] Retention and redaction owner is identified.
-- [ ] Shared private PII tables are present for checkout orders, payment events, training enrollments, marketing contacts, contact submissions, and consent events.
+- [ ] Shared private PII tables are present for checkout orders, payment events, appointment holds, training enrollments, marketing contacts, contact submissions, and consent events.
 - [ ] Backfill dry-run/execute evidence template, provenance fields, duplicate protection, and stop conditions are ready before any backfill command is approved.
 - [ ] Sanity submission source retention/redaction owner decision is identified before historical submission records are imported, hidden, redacted, or deleted.
 
@@ -41,14 +41,17 @@ For each document type, verify the publish flow: Update content in Studio -> Pub
 | | | `globalSettings` | | | `global` | (All pages) | |
 | | | `mainMenu` | | | `menu` | (All pages) | |
 | | | `trainingPage` | | | `trainingPage` | `/training` | |
-| | | `trainingProgramsPage` | | | `trainingProgramsPage`, `trainingProgram`, `sellableProduct` | `/training-programs` | |
-| | | `trainingProgram` | | | `trainingProgram`, `sellableProduct` | `/training-programs/[slug]` | |
-| | | `sellableProduct` | | | `sellableProduct` | `/products/[slug]`, training product references | |
+| | | `trainingProgramsPage` | | | `trainingProgramsPage`, `trainingProgram` | `/training-programs` | |
+| | | `trainingProgram` | | | `trainingProgram` | `/training-programs/[slug]` | |
+| | | `product` | | | `product` | `/products`, `/products/[slug]` | |
+| | | `service` | | | `service` | `/services`, `/services/[slug]`, `/booking?offering=<slug>` | |
+| | | `bookingOffering` | | | `bookingOffering` | `/booking?offering=<slug>` | |
 | | | `bookingSettings` | | | `bookingSettings` | `/booking` | |
 
 ## Service Integration Checks
 
 - [ ] **Booking:** Visit `/booking`, confirm slots load from Google Calendar.
+- [ ] **Paid appointment booking:** Visit an explicit service/offering booking URL, create a hold, complete deposit/full/custom partial Helcim checkout in staging, and confirm Google Calendar insertion happens only after verified payment.
 - [ ] **Checkout:** Add product to cart, proceed to Helcim checkout page (test mode).
 - [ ] **Forms:** Submit general inquiry, training contact, and contact popup tests; confirm private DB submission/consent evidence and Resend email delivery with PII redacted in evidence.
 - [ ] **Booking Marketing Choices:** Create one booking with marketing opt-in and one without; confirm both choices create private DB audit evidence, only affirmative consent updates the consolidated marketing contact, and no new Sanity submission documents are created.
@@ -69,8 +72,9 @@ These checks require live staging approval, real staging credentials, and record
 | --- | --- | --- | --- |
 | Product checkout | Complete a product cart checkout through the staging Helcim flow. | Checkout/invoice reference, approved test transaction, product confirmation page evidence, and Resend product order confirmation message ID/status with addresses redacted. | |
 | Training checkout | Complete a paid training checkout through the staging Helcim flow. | Checkout/invoice reference, approved test transaction, order-only confirmation URL, and order-based scheduling link evidence. | |
+| Appointment checkout | Complete deposit, full, and custom partial appointment payments through the staging Helcim flow. | Hold reference, checkout/order reference, approved test transaction, booking confirmation evidence, and Google Calendar event ID created after payment validation. | |
 | Helcim webhook | Verify `/api/webhooks/card-transactions` receives and accepts the card transaction event. | Vercel log/event ID, accepted signature, idempotency key, and redacted transaction reference. | |
-| Private DB state | Confirm checkout/order rows, training enrollment rows, payment events, marketing contact submissions, and consent events reach the expected states. | Redacted query output showing pending-to-paid transition, idempotent event storage, form submission evidence, opt-in consent evidence, and no-opt-in audit evidence. | |
+| Private DB state | Confirm checkout/order rows, appointment hold rows, training enrollment rows, payment events, marketing contact submissions, and consent events reach the expected states. | Redacted query output showing pending-to-paid transition, hold state transition to booked/manual follow-up, idempotent event storage, form submission evidence, opt-in consent evidence, and no-opt-in audit evidence. | |
 | Paid training booking gate | Confirm paid training booking rejects legacy token links and requires the checkout email for the order-based scheduling link. | Legacy token rejection evidence, order-based booking link behavior, checkout-email mismatch rejection evidence, and Calendar event evidence. | |
 | Booking Calendar event | Create a standard booking and a paid training booking against the staging calendar. | Google Calendar event IDs/timestamps and booking metadata with PII redacted. | |
 | Sanity revalidation | Publish a staging Sanity edit and verify signed webhook-driven page refresh. | Publish timestamp, webhook delivery result, cache tag/log reference, and before/after page evidence. | |

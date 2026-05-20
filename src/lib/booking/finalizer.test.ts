@@ -89,7 +89,7 @@ test("finalizePaidBooking recovers paid in-progress holds with existing Calendar
   assert.equal(repository.hold.googleEventId, "calendar-event-existing");
 });
 
-test("finalizeAppointmentPaymentWithLock returns manual follow-up when duplicate signal is in progress", async () => {
+test("finalizeAppointmentPaymentWithLock returns pending when duplicate signal is in progress", async () => {
   const lock = new FakeFinalizationLock({ acquire: false });
   let finalized = false;
 
@@ -105,7 +105,7 @@ test("finalizeAppointmentPaymentWithLock returns manual follow-up when duplicate
   assert.equal(result.ok, false);
 
   if (!result.ok) {
-    assert.equal(result.status, "manual_followup");
+    assert.equal(result.status, "finalization_pending");
     assert.match(result.error, /already in progress/i);
   }
 
@@ -197,6 +197,33 @@ test("finalizePaidBooking marks manual follow-up when calendar configuration is 
   });
   assert.equal(calendar.insertedEventCount, 0);
 });
+
+test("finalizePaidBooking marks manual follow-up when the slot becomes unavailable after payment", async () => {
+  const hold = createHold({ state: "payment_pending" });
+  const repository = new FakeFinalizerRepository(hold);
+  const calendar = new FakeCalendarGateway({ failInsertManualFollowup: true });
+
+  const result = await finalizePaidBooking({
+    calendar,
+    holdId: hold.id,
+    now,
+    payment: { amountCents: 7500, currency: "CAD", source: "client_validation", transactionId: "txn-123" },
+    repository,
+  });
+
+  assert.equal(result.ok, false);
+
+  if (!result.ok) {
+    assert.equal(result.status, "manual_followup");
+    assert.match(result.error, /became unavailable/i);
+  }
+
+  assert.equal(repository.recordPaidCallCount, 1);
+  assert.equal(repository.markBookingFailedCallCount, 1);
+  assert.equal(repository.hold.state, "manual_followup");
+  assert.equal(calendar.insertedEventCount, 0);
+});
+
 
 test("finalizePaidBooking sends late payments beyond grace to manual follow-up", async () => {
   const hold = createHold({ state: "payment_pending" });
@@ -339,7 +366,13 @@ class FakeCalendarGateway implements BookingCalendarGateway {
   findExistingEventCallCount = 0;
   insertedEventCount = 0;
 
-  constructor(private readonly options: { existingEventId?: string; failFindManualFollowup?: boolean; failInsert?: boolean; findInsertedEvent?: boolean } = {}) {}
+  constructor(private readonly options: {
+    existingEventId?: string;
+    failFindManualFollowup?: boolean;
+    failInsert?: boolean;
+    failInsertManualFollowup?: boolean;
+    findInsertedEvent?: boolean;
+  } = {}) {}
 
   async findExistingEventForHold(): Promise<string | null> {
     this.findExistingEventCallCount += 1;
@@ -354,6 +387,10 @@ class FakeCalendarGateway implements BookingCalendarGateway {
   }
 
   async insertBookingEvent(): Promise<string> {
+    if (this.options.failInsertManualFollowup === true) {
+      throw new BookingManualFollowupError("The selected appointment time became unavailable after payment.");
+    }
+
     if (this.options.failInsert === true) {
       throw new Error("Calendar unavailable");
     }

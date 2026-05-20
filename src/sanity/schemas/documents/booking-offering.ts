@@ -3,139 +3,70 @@ import { defineField, defineType } from "sanity";
 
 import { BOOKING_TYPE_OPTIONS } from "./booking-settings";
 
-const SANITY_API_VERSION = "2026-03-24";
-
 export const BOOKING_OFFERING_PAYMENT_MODE_OPTIONS = [
   { title: "Deposit", value: "deposit" },
   { title: "Full payment", value: "full" },
-  { title: "Customer choice", value: "choice" },
+  { title: "Custom partial payment", value: "customPartial" },
 ];
-
-type SellableProductReference = {
-  _ref: string;
-};
 
 type BookingOfferingDocument = {
   paymentMode?: string;
-  depositProduct?: SellableProductReference;
-  fullProduct?: SellableProductReference;
-};
-
-type ProductValidationProjection = {
-  kind?: string;
-  price?: number;
+  fullPrice?: number;
+  customAmountMinimum?: number;
 };
 
 type ValidationContext = {
   document?: unknown;
-  getClient: (config: { apiVersion: string }) => {
-    fetch: <T>(query: string, params: Record<string, string>) => Promise<T>;
-  };
 };
-
-function isSellableProductReference(value: unknown): value is SellableProductReference {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "_ref" in value &&
-    typeof value._ref === "string" &&
-    value._ref.length > 0
-  );
-}
 
 function isBookingOfferingDocument(value: unknown): value is BookingOfferingDocument {
   return typeof value === "object" && value !== null;
 }
 
-async function getValidationProduct(
-  context: ValidationContext,
-  productId: string,
-): Promise<ProductValidationProjection | null> {
-  return context
-    .getClient({ apiVersion: SANITY_API_VERSION })
-    .fetch<ProductValidationProjection | null>(
-      `*[_id == $productId][0]{
-        kind,
-        price
-      }`,
-      { productId },
-    );
+function getDocument(context: ValidationContext): BookingOfferingDocument | undefined {
+  return isBookingOfferingDocument(context.document) ? context.document : undefined;
 }
 
-async function validateDepositProduct(value: unknown, context: ValidationContext) {
-  const document = isBookingOfferingDocument(context.document) ? context.document : undefined;
+function isPositiveAmount(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
 
-  if ((document?.paymentMode === "deposit" || document?.paymentMode === "choice") && !value) {
-    return "A deposit product is required for deposit and choice payment modes.";
+function validateDepositAmount(value: unknown, context: ValidationContext) {
+  const document = getDocument(context);
+  if (document?.paymentMode !== "deposit") return true;
+  if (value === undefined) return "Deposit payment mode requires a positive deposit amount.";
+  return isPositiveAmount(value) ? true : "Deposit amount must be greater than zero.";
+}
+
+function validateFullPrice(value: unknown, context: ValidationContext) {
+  const document = getDocument(context);
+  if (document?.paymentMode !== "full" && document?.paymentMode !== "customPartial") return true;
+  if (value === undefined) return "Full payment and custom partial modes require a positive full price.";
+  return isPositiveAmount(value) ? true : "Full price must be greater than zero.";
+}
+
+function validateCustomAmountMinimum(value: unknown, context: ValidationContext) {
+  const document = getDocument(context);
+  if (document?.paymentMode !== "customPartial") return true;
+  if (value === undefined) return "Custom partial mode requires a positive minimum amount.";
+  if (!isPositiveAmount(value)) return "Custom partial minimum must be greater than zero.";
+  if (isPositiveAmount(document.fullPrice) && value >= document.fullPrice) {
+    return "Custom partial minimum must be less than the full price.";
   }
-
-  if (!value) return true;
-
-  if (!isSellableProductReference(value)) {
-    return "Choose a valid deposit product reference before publishing.";
-  }
-
-  const product = await getValidationProduct(context, value._ref);
-
-  if (!product) {
-    return "The selected deposit product could not be found. Choose an existing deposit product.";
-  }
-
-  if (product.kind !== "deposit") {
-    return "Deposit product must reference a sellable product with Kind set to Deposit.";
-  }
-
   return true;
 }
 
-async function validateFullProduct(value: unknown, context: ValidationContext) {
-  const document = isBookingOfferingDocument(context.document) ? context.document : undefined;
-
-  if ((document?.paymentMode === "full" || document?.paymentMode === "choice") && !value) {
-    return "A full payment product is required for full and choice payment modes.";
+function validateCustomAmountMaximum(value: unknown, context: ValidationContext) {
+  const document = getDocument(context);
+  if (document?.paymentMode !== "customPartial") return true;
+  if (value === undefined) return "Custom partial mode requires a maximum amount greater than the minimum.";
+  if (!isPositiveAmount(value)) return "Custom partial maximum must be greater than zero.";
+  if (isPositiveAmount(document.customAmountMinimum) && value <= document.customAmountMinimum) {
+    return "Custom partial maximum must be greater than the minimum.";
   }
-
-  if (!value) return true;
-
-  if (!isSellableProductReference(value)) {
-    return "Choose a valid full payment product reference before publishing.";
+  if (isPositiveAmount(document.fullPrice) && value > document.fullPrice) {
+    return "Custom partial maximum cannot exceed the full price.";
   }
-
-  const product = await getValidationProduct(context, value._ref);
-
-  if (!product) {
-    return "The selected full payment product could not be found. Choose an existing service product.";
-  }
-
-  if (product.kind !== "service" && product.kind !== "deposit") {
-    return "Full payment product must reference a sellable product with Kind set to Service or Deposit.";
-  }
-
-  return true;
-}
-
-async function validatePaymentMode(value: unknown, context: ValidationContext) {
-  if (value !== "choice") return true;
-
-  const document = isBookingOfferingDocument(context.document) ? context.document : undefined;
-
-  if (!isSellableProductReference(document?.depositProduct) || !isSellableProductReference(document?.fullProduct)) {
-    return "Choice payment mode requires both deposit and full payment products.";
-  }
-
-  const [depositProduct, fullProduct] = await Promise.all([
-    getValidationProduct(context, document.depositProduct._ref),
-    getValidationProduct(context, document.fullProduct._ref),
-  ]);
-
-  if (typeof depositProduct?.price !== "number" || typeof fullProduct?.price !== "number") {
-    return "Choice payment mode requires priced deposit and full payment products.";
-  }
-
-  if (fullProduct.price <= depositProduct.price) {
-    return "Choice payment mode requires the full payment product price to exceed the deposit product price.";
-  }
-
   return true;
 }
 
@@ -163,6 +94,13 @@ export const bookingOffering = defineType({
       title: "Slug",
       type: "slug",
       options: { source: "title" },
+      validation: (Rule) => Rule.required(),
+    }),
+    defineField({
+      name: "service",
+      title: "Service",
+      type: "reference",
+      to: [{ type: "service" }],
       validation: (Rule) => Rule.required(),
     }),
     defineField({
@@ -217,21 +155,50 @@ export const bookingOffering = defineType({
       title: "Payment Mode",
       type: "string",
       options: { list: BOOKING_OFFERING_PAYMENT_MODE_OPTIONS, layout: "radio" },
-      validation: (Rule) => Rule.required().custom(validatePaymentMode),
+      validation: (Rule) => Rule.required(),
     }),
     defineField({
-      name: "depositProduct",
-      title: "Deposit Product",
-      type: "reference",
-      to: [{ type: "sellableProduct" }],
-      validation: (Rule) => Rule.custom(validateDepositProduct),
+      name: "depositAmount",
+      title: "Deposit Amount",
+      type: "number",
+      hidden: ({ document }) => document?.paymentMode !== "deposit",
+      validation: (Rule) => Rule.custom(validateDepositAmount),
     }),
     defineField({
-      name: "fullProduct",
-      title: "Full Payment Product",
-      type: "reference",
-      to: [{ type: "sellableProduct" }],
-      validation: (Rule) => Rule.custom(validateFullProduct),
+      name: "fullPrice",
+      title: "Full Price",
+      type: "number",
+      hidden: ({ document }) => document?.paymentMode === "deposit",
+      validation: (Rule) => Rule.custom(validateFullPrice),
+    }),
+    defineField({
+      name: "allowCustomAmount",
+      title: "Allow Custom Amount",
+      type: "boolean",
+      initialValue: false,
+      hidden: ({ document }) => document?.paymentMode !== "customPartial",
+    }),
+    defineField({
+      name: "customAmountMinimum",
+      title: "Custom Amount Minimum",
+      type: "number",
+      hidden: ({ document }) => document?.paymentMode !== "customPartial",
+      validation: (Rule) => Rule.custom(validateCustomAmountMinimum),
+    }),
+    defineField({
+      name: "customAmountMaximum",
+      title: "Custom Amount Maximum",
+      type: "number",
+      hidden: ({ document }) => document?.paymentMode !== "customPartial",
+      validation: (Rule) => Rule.custom(validateCustomAmountMaximum),
+    }),
+    defineField({
+      name: "currency",
+      title: "Currency",
+      type: "string",
+      initialValue: "CAD",
+      readOnly: true,
+      validation: (Rule) => Rule.required(),
     }),
     defineField({
       name: "displayOrder",

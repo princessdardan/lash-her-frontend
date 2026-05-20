@@ -1,0 +1,1 @@
+export const PAYMENT_SUCCESS_GRACE_MINUTES = 5;

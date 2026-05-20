@@ -17,11 +17,21 @@ const MINUTE_MS = 60 * 1000;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface BookingHoldRequestInput {
+  customAmount?: number;
   email: string;
   name: string;
   offeringSlug: string;
+  paymentOption?: "deposit" | "full" | "customPartial";
   phone: string;
   start: string;
+}
+
+interface BookingPaymentSelectionSnapshot {
+  amount: number;
+  description: string;
+  option: "deposit" | "full" | "customPartial";
+  purpose: "appointment_deposit" | "appointment_full" | "appointment_custom_partial";
+  sku: "BOOKING-DEPOSIT" | "BOOKING-FULL" | "BOOKING-CUSTOM-PARTIAL";
 }
 
 export interface BookingHoldsPostHandlerDependencies {
@@ -134,6 +144,14 @@ export function createBookingHoldsPostHandler(
       );
       const activeHoldBusyEvents = getActiveHoldBusyEvents({ holds: activeHolds, now });
       const minimumLeadTimeHours = offering.minimumLeadTimeHoursOverride ?? settings.minimumLeadTimeHours;
+      const paymentSelection = getPaymentSelection(offering, input);
+
+      if (paymentSelection === null) {
+        return Response.json(
+          { error: "Booking payment is not configured" },
+          { status: 400 },
+        );
+      }
 
       if (!isSlotAvailable({
         bookingType: bookingTypeConfig,
@@ -161,7 +179,7 @@ export function createBookingHoldsPostHandler(
           phone: input.phone,
         },
         offeringId: offering._id,
-        offeringSnapshot: toOfferingSnapshot(offering),
+        offeringSnapshot: toOfferingSnapshot(offering, paymentSelection),
         selectedEnd,
         selectedStart,
         timezone: settings.timezone,
@@ -231,11 +249,15 @@ export const POST = createBookingHoldsPostHandler({
 
 function toBookingHoldRequestInput(input: unknown): BookingHoldRequestInput {
   const record = isRecord(input) ? input : {};
+  const customAmount = parseOptionalAmount(record.customAmount);
+  const paymentOption = parsePaymentOption(record.paymentOption);
 
   return {
+    ...(customAmount !== undefined && customAmount !== null ? { customAmount } : {}),
     email: toStringValue(record.email).trim(),
     name: toStringValue(record.name).trim(),
     offeringSlug: (toStringValue(record.offeringSlug) || toStringValue(record.offering)).trim(),
+    ...(paymentOption ? { paymentOption } : {}),
     phone: toStringValue(record.phone).trim(),
     start: toStringValue(record.start).trim(),
   };
@@ -291,7 +313,87 @@ function toOfferingBookingTypeConfig(
   };
 }
 
-function toOfferingSnapshot(offering: TBookingOffering): Record<string, unknown> {
+function getPaymentSelection(
+  offering: TBookingOffering,
+  input: BookingHoldRequestInput,
+): BookingPaymentSelectionSnapshot | null {
+  if (offering.paymentMode === "deposit") {
+    return resolveFixedPaymentSelection(offering, "deposit");
+  }
+
+  if (offering.paymentMode === "full") {
+    return resolveFixedPaymentSelection(offering, "full");
+  }
+
+  if (input.paymentOption === "full") {
+    return resolveFixedPaymentSelection(offering, "full");
+  }
+
+  if (input.paymentOption === "customPartial") {
+    if (offering.allowCustomAmount !== true || input.customAmount === undefined) {
+      return null;
+    }
+
+    const minimum = toPositiveAmount(offering.customAmountMinimum);
+    const maximum = toPositiveAmount(offering.customAmountMaximum);
+
+    if (
+      toPositiveAmount(input.customAmount) === null ||
+      minimum === null ||
+      maximum === null ||
+      input.customAmount < minimum ||
+      input.customAmount > maximum
+    ) {
+      return null;
+    }
+
+    return {
+      amount: input.customAmount,
+      description: `${offering.title} custom partial payment`,
+      option: "customPartial",
+      purpose: "appointment_custom_partial",
+      sku: "BOOKING-CUSTOM-PARTIAL",
+    };
+  }
+
+  return null;
+}
+
+function resolveFixedPaymentSelection(
+  offering: TBookingOffering,
+  option: "deposit" | "full",
+): BookingPaymentSelectionSnapshot | null {
+  if (option === "deposit") {
+    const amount = toPositiveAmount(offering.depositAmount);
+
+    return amount === null
+      ? null
+      : {
+          amount,
+          description: `${offering.title} deposit`,
+          option: "deposit",
+          purpose: "appointment_deposit",
+          sku: "BOOKING-DEPOSIT",
+        };
+  }
+
+  const amount = toPositiveAmount(offering.fullPrice);
+
+  return amount === null
+    ? null
+    : {
+        amount,
+        description: `${offering.title} full payment`,
+        option: "full",
+        purpose: "appointment_full",
+        sku: "BOOKING-FULL",
+      };
+}
+
+function toOfferingSnapshot(
+  offering: TBookingOffering,
+  paymentSelection: BookingPaymentSelectionSnapshot,
+): Record<string, unknown> {
   return {
     id: offering._id,
     slug: offering.slug,
@@ -299,9 +401,34 @@ function toOfferingSnapshot(offering: TBookingOffering): Record<string, unknown>
     bookingType: offering.bookingType,
     durationMinutes: offering.durationMinutes,
     paymentMode: offering.paymentMode,
-    ...(offering.depositProduct ? { depositProductId: offering.depositProduct._id } : {}),
-    ...(offering.fullProduct ? { fullProductId: offering.fullProduct._id } : {}),
+    ...(offering.depositAmount !== undefined ? { depositAmount: offering.depositAmount } : {}),
+    ...(offering.fullPrice !== undefined ? { fullPrice: offering.fullPrice } : {}),
+    ...(offering.allowCustomAmount !== undefined ? { allowCustomAmount: offering.allowCustomAmount } : {}),
+    ...(offering.customAmountMinimum !== undefined ? { customAmountMinimum: offering.customAmountMinimum } : {}),
+    ...(offering.customAmountMaximum !== undefined ? { customAmountMaximum: offering.customAmountMaximum } : {}),
+    currency: offering.currency,
+    selectedPayment: paymentSelection,
   };
+}
+
+function parsePaymentOption(value: unknown): "deposit" | "full" | "customPartial" | null {
+  return value === "deposit" || value === "full" || value === "customPartial" ? value : null;
+}
+
+function parseOptionalAmount(value: unknown): number | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  return toPositiveAmount(value);
+}
+
+function toPositiveAmount(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+
+  return Math.round(value * 100) / 100;
 }
 
 function partitionCalendarEvents(

@@ -12,6 +12,15 @@ test("createBooking resolves offering-specific config when an offering slug is p
   assert.match(bookingServiceSource, /minimumLeadTimeHours = offering\?\.minimumLeadTimeHoursOverride \?\? settings\.minimumLeadTimeHours/);
 });
 
+test("createBooking blocks effective in-person appointment scheduling before calendar insertion", () => {
+  assert.match(bookingServiceSource, /if \(validationInput\.bookingType === "in-person-appointment"\) \{/);
+  assert.match(bookingServiceSource, /In-person appointments require secure payment before confirmation\./);
+  assert.ok(
+    bookingServiceSource.indexOf("validationInput.bookingType === \"in-person-appointment\"") <
+      bookingServiceSource.indexOf("insertGoogleCalendarBooking"),
+  );
+});
+
 test("createBooking rechecks offering availability against active holds", () => {
   assert.match(bookingServiceSource, /listActiveAppointmentHolds\(\{/);
   assert.match(bookingServiceSource, /offeringId: offering\._id/);

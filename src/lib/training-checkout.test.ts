@@ -4,7 +4,6 @@ import type { TTrainingProgram } from "@/types";
 import {
   buildTrainingConfirmationUrl,
   getTrainingCta,
-  getTrainingCheckoutProduct,
   isTrainingPurchasable,
   TRAINING_CHECKOUT_TAX_RATE,
   TRAINING_PAID_BOOKING_TYPE,
@@ -13,22 +12,6 @@ import {
   type TrainingCheckoutRequest,
 } from "./training-checkout";
 
-type TrainingCheckoutProduct = NonNullable<TTrainingProgram["checkoutProduct"]>;
-
-function buildTrainingProduct(overrides: Partial<TrainingCheckoutProduct> = {}): TrainingCheckoutProduct {
-  return {
-    _id: "product-training-classic",
-    title: "Classic Lash Training",
-    slug: "classic-lash-training-product",
-    sku: "TRAINING-CLASSIC",
-    kind: "training",
-    price: 1200,
-    currency: "CAD",
-    isAvailable: true,
-    ...overrides,
-  };
-}
-
 function buildProgram(overrides: Partial<TTrainingProgram> = {}): TTrainingProgram {
   return {
     _id: "program-classic-lash-training",
@@ -36,7 +19,9 @@ function buildProgram(overrides: Partial<TTrainingProgram> = {}): TTrainingProgr
     description: "A focused classic lash training program.",
     slug: "classic-lash-training",
     checkoutEnabled: true,
-    checkoutProduct: buildTrainingProduct(),
+    price: 1200,
+    currency: "CAD",
+    isAvailable: true,
     blocks: [],
     ...overrides,
   };
@@ -69,8 +54,8 @@ describe("training-checkout", () => {
       assert.strictEqual(isTrainingPurchasable(buildProgram({ checkoutEnabled: false })), false);
     });
 
-    it("returns false if checkoutProduct is missing", () => {
-      assert.strictEqual(isTrainingPurchasable(buildProgram({ checkoutProduct: undefined })), false);
+    it("returns false if native price is missing", () => {
+      assert.strictEqual(isTrainingPurchasable(buildProgram({ price: undefined })), false);
     });
 
     it("returns true when native commerce fields are valid without a legacy checkoutProduct", () => {
@@ -87,34 +72,17 @@ describe("training-checkout", () => {
       );
     });
 
-    it("returns false if checkoutProduct kind is not training", () => {
-      assert.strictEqual(isTrainingPurchasable(buildProgram({ checkoutProduct: buildTrainingProduct({ kind: "product" }) })), false);
+    it("returns false if native availability is false", () => {
+      assert.strictEqual(isTrainingPurchasable(buildProgram({ isAvailable: false })), false);
     });
 
-    it("returns false if checkoutProduct is unavailable", () => {
-      assert.strictEqual(isTrainingPurchasable(buildProgram({ checkoutProduct: buildTrainingProduct({ isAvailable: false }) })), false);
+    it("returns false if native currency is missing", () => {
+      assert.strictEqual(isTrainingPurchasable(buildProgram({ currency: undefined })), false);
     });
 
-    it("returns false if checkoutProduct currency is not CAD", () => {
-      assert.strictEqual(isTrainingPurchasable(buildProgram({ checkoutProduct: buildTrainingProduct({ currency: "USD" }) })), false);
-    });
-
-    it("returns false if checkoutProduct price is invalid or zero", () => {
-      assert.strictEqual(isTrainingPurchasable(buildProgram({ checkoutProduct: buildTrainingProduct({ price: -10 }) })), false);
-      assert.strictEqual(isTrainingPurchasable(buildProgram({ checkoutProduct: buildTrainingProduct({ price: 0 }) })), false);
-    });
-
-    it("returns false if checkoutProduct has variants", () => {
-      assert.strictEqual(
-        isTrainingPurchasable(
-          buildProgram({
-            checkoutProduct: buildTrainingProduct({
-              variants: [{ _key: "1", title: "V1", sku: "V1", price: 100, isAvailable: true }],
-            }),
-          }),
-        ),
-        false,
-      );
+    it("returns false if native price is invalid or zero", () => {
+      assert.strictEqual(isTrainingPurchasable(buildProgram({ price: -10 })), false);
+      assert.strictEqual(isTrainingPurchasable(buildProgram({ price: 0 })), false);
     });
 
     it("returns true if checkoutEnabled is true and product is valid", () => {
@@ -198,9 +166,9 @@ describe("training-checkout", () => {
           programId: "program-classic-lash-training",
           programSlug: "classic-lash-training",
           programTitle: "Classic Lash Training",
-          productId: "product-training-classic",
+          productId: "program-classic-lash-training",
           productTitle: "Classic Lash Training",
-          productSku: "TRAINING-CLASSIC",
+          productSku: "program-classic-lash-training",
           currency: "CAD",
           subtotal: 1200,
           tax: 156,
@@ -215,7 +183,7 @@ describe("training-checkout", () => {
 
     it("computes Ontario HST at 13%", () => {
       const result = validateTrainingCheckoutRequest(
-        buildProgram({ checkoutProduct: buildTrainingProduct({ price: 999.99 }) }),
+        buildProgram({ price: 999.99 }),
         buildRequest(),
       );
 
@@ -228,26 +196,26 @@ describe("training-checkout", () => {
       }
     });
 
-    it("uses native training commerce fields before the legacy checkoutProduct fallback", () => {
+    it("uses native training commerce fields even if a legacy checkoutProduct is present", () => {
       const program = buildProgram({
         price: 1500,
         currency: "CAD",
         isAvailable: true,
-        checkoutProduct: buildTrainingProduct({ price: 1200, sku: "LEGACY-TRAINING" }),
+        checkoutProduct: {
+          _id: "legacy-training-product",
+          title: "Legacy Training Product",
+          slug: "legacy-training-product",
+          sku: "LEGACY-TRAINING",
+          kind: "training",
+          price: 1200,
+          currency: "CAD",
+          isAvailable: true,
+        },
       });
 
       const result = validateTrainingCheckoutRequest(program, buildRequest({ clientPrice: 1500 }));
 
       assert.strictEqual(result.ok, true);
-      assert.deepStrictEqual(getTrainingCheckoutProduct(program), {
-        id: "program-classic-lash-training",
-        title: "Classic Lash Training",
-        sku: "program-classic-lash-training",
-        price: 1500,
-        currency: "CAD",
-        isAvailable: true,
-        source: "native",
-      });
       if (result.ok) {
         assert.strictEqual(result.quote.productId, "program-classic-lash-training");
         assert.strictEqual(result.quote.productSku, "program-classic-lash-training");
@@ -255,30 +223,25 @@ describe("training-checkout", () => {
       }
     });
 
-    it("falls back to the legacy checkoutProduct when native commerce fields are incomplete", () => {
+    it("does not fall back to the legacy checkoutProduct when native commerce fields are incomplete", () => {
       const program = buildProgram({
-        price: 1500,
-        checkoutProduct: buildTrainingProduct({ price: 1200, sku: "LEGACY-TRAINING" }),
+        price: undefined,
+        checkoutProduct: {
+          _id: "legacy-training-product",
+          title: "Legacy Training Product",
+          slug: "legacy-training-product",
+          sku: "LEGACY-TRAINING",
+          kind: "training",
+          price: 1200,
+          currency: "CAD",
+          isAvailable: true,
+        },
       });
 
       const result = validateTrainingCheckoutRequest(program, buildRequest({ clientPrice: 1200 }));
 
-      assert.strictEqual(result.ok, true);
-      assert.deepStrictEqual(getTrainingCheckoutProduct(program), {
-        id: "product-training-classic",
-        title: "Classic Lash Training",
-        sku: "LEGACY-TRAINING",
-        price: 1200,
-        currency: "CAD",
-        isAvailable: true,
-        source: "legacy",
-        legacyProduct: buildTrainingProduct({ price: 1200, sku: "LEGACY-TRAINING" }),
-      });
-      if (result.ok) {
-        assert.strictEqual(result.quote.productId, "product-training-classic");
-        assert.strictEqual(result.quote.productSku, "LEGACY-TRAINING");
-        assert.strictEqual(result.quote.subtotal, 1200);
-      }
+      assert.strictEqual(result.ok, false);
+      if (!result.ok) assert.strictEqual(result.code, "checkout_unavailable");
     });
 
     it("uses a 14-day scheduling TTL and training-call paid booking type", () => {
@@ -301,40 +264,23 @@ describe("training-checkout", () => {
       assertRejected(buildRequest(), buildProgram({ checkoutEnabled: false }), "checkout_unavailable");
     });
 
-    it("rejects an unconfigured checkout product", () => {
-      assertRejected(buildRequest(), buildProgram({ checkoutProduct: undefined }), "checkout_unavailable");
+    it("rejects incomplete native commerce fields", () => {
+      assertRejected(buildRequest(), buildProgram({ price: undefined }), "checkout_unavailable");
     });
 
-    it("rejects linked products that are not training", () => {
-      assertRejected(
-        buildRequest(),
-        buildProgram({ checkoutProduct: buildTrainingProduct({ kind: "product" }) }),
-        "invalid_product_kind",
-      );
-    });
-
-    it("rejects unavailable products", () => {
-      assertRejected(
-        buildRequest(),
-        buildProgram({ checkoutProduct: buildTrainingProduct({ isAvailable: false }) }),
-        "product_unavailable",
-      );
+    it("rejects unavailable programs", () => {
+      assertRejected(buildRequest(), buildProgram({ isAvailable: false }), "product_unavailable");
     });
 
     it("rejects non-CAD currency", () => {
-      assertRejected(
-        buildRequest(),
-        buildProgram({ checkoutProduct: buildTrainingProduct({ currency: "USD" }) }),
-        "invalid_currency",
-      );
+      const program = buildProgram();
+      Object.defineProperty(program, "currency", { value: "USD" });
+
+      assertRejected(buildRequest(), program, "invalid_currency");
     });
 
     it("rejects invalid prices", () => {
-      assertRejected(
-        buildRequest(),
-        buildProgram({ checkoutProduct: buildTrainingProduct({ price: 0 }) }),
-        "invalid_price",
-      );
+      assertRejected(buildRequest(), buildProgram({ price: 0 }), "invalid_price");
     });
 
     it("rejects blank customer names", () => {
@@ -356,29 +302,6 @@ describe("training-checkout", () => {
     it("rejects missing and non-string customer emails", () => {
       assertRejected({ customerName: "Student" }, buildProgram(), "invalid_customer_email");
       assertRejected({ ...buildRequest(), customerEmail: ["student@example.com"] }, buildProgram(), "invalid_customer_email");
-    });
-
-    it("rejects variants and options", () => {
-      const productWithOptions: TrainingCheckoutProduct & { options: string[] } = {
-        ...buildTrainingProduct(),
-        options: ["kit"],
-      };
-
-      assertRejected(
-        buildRequest(),
-        buildProgram({
-          checkoutProduct: buildTrainingProduct({
-            variants: [{ _key: "volume", title: "Volume", sku: "VOL", price: 1400, isAvailable: true }],
-          }),
-        }),
-        "variants_not_supported",
-      );
-
-      assertRejected(
-        buildRequest(),
-        buildProgram({ checkoutProduct: productWithOptions }),
-        "variants_not_supported",
-      );
     });
 
     it("rejects stale client prices", () => {

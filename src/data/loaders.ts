@@ -16,7 +16,6 @@ import type {
   TProductsGroupedCatalog,
   TService,
   TTrainingProgramCatalogItem,
-  TSellableProduct,
 } from "@/types";
 
 const isVercelPreview = process.env.VERCEL_ENV === "preview";
@@ -28,8 +27,9 @@ const PRODUCT_PROJECTION = groq`{
   shortDescription,
   "slug": slug.current,
   price,
+  sku,
   currency,
-  variants[]{ _key, title, price, isAvailable, availabilityLabel },
+  variants[]{ _key, title, sku, price, isAvailable, availabilityLabel },
   isAvailable,
   availabilityLabel,
   fulfillmentNote,
@@ -82,19 +82,6 @@ const TRAINING_PROGRAM_CATALOG_PROJECTION = groq`{
   fulfillmentNote,
   displayOrder,
   image{ asset, hotspot, crop, alt },
-  checkoutProduct->{
-    _id,
-    title,
-    "slug": slug.current,
-    sku,
-    kind,
-    price,
-    currency,
-    variants[]{ _key, title, sku, price, isAvailable, availabilityLabel },
-    isAvailable,
-    availabilityLabel,
-    fulfillmentNote
-  },
   checkoutCtaLabel,
   seo{ title, description, image{ asset, hotspot, crop, alt } }
 }`;
@@ -271,19 +258,6 @@ async function getTrainingProgramBySlug(slug: string): Promise<TTrainingProgram 
     fulfillmentNote,
     displayOrder,
     image{ asset, hotspot, crop, alt },
-    checkoutProduct->{
-      _id,
-      title,
-      "slug": slug.current,
-      sku,
-      kind,
-      price,
-      currency,
-      variants[]{ _key, title, sku, price, isAvailable, availabilityLabel },
-      isAvailable,
-      availabilityLabel,
-      fulfillmentNote
-    },
     checkoutCtaLabel,
     checkoutDisabledBookingCta{ label, href },
     postPurchaseInstructions,
@@ -312,7 +286,7 @@ async function getTrainingProgramBySlug(slug: string): Promise<TTrainingProgram 
       clients
     }
   }`;
-  return client.fetch<TTrainingProgram | null>(query, { slug }, sanityFetchOptions(['trainingProgram', 'sellableProduct']));
+  return client.fetch<TTrainingProgram | null>(query, { slug }, sanityFetchOptions(['trainingProgram']));
 }
 
 async function getTrainingProgramsPageData(): Promise<TTrainingProgramsPage | null> {
@@ -338,19 +312,6 @@ async function getTrainingProgramsPageData(): Promise<TTrainingProgramsPage | nu
       fulfillmentNote,
       displayOrder,
       image{ asset, hotspot, crop, alt },
-      checkoutProduct->{
-        _id,
-        title,
-        "slug": slug.current,
-        sku,
-        kind,
-        price,
-        currency,
-        variants[]{ _key, title, sku, price, isAvailable, availabilityLabel },
-        isAvailable,
-        availabilityLabel,
-        fulfillmentNote
-      },
       checkoutCtaLabel,
       checkoutDisabledBookingCta{ label, href },
       postPurchaseInstructions,
@@ -380,7 +341,7 @@ async function getTrainingProgramsPageData(): Promise<TTrainingProgramsPage | nu
       }
     }
   }`;
-  return client.fetch<TTrainingProgramsPage | null>(query, {}, sanityFetchOptions(['trainingProgramsPage', 'trainingProgram', 'sellableProduct']));
+  return client.fetch<TTrainingProgramsPage | null>(query, {}, sanityFetchOptions(['trainingProgramsPage', 'trainingProgram']));
 }
 
 async function getAllTrainingPrograms(): Promise<TTrainingProgram[]> {
@@ -403,19 +364,6 @@ async function getAllTrainingPrograms(): Promise<TTrainingProgram[]> {
     fulfillmentNote,
     displayOrder,
     image{ asset, hotspot, crop, alt },
-    checkoutProduct->{
-      _id,
-      title,
-      "slug": slug.current,
-      sku,
-      kind,
-      price,
-      currency,
-      variants[]{ _key, title, sku, price, isAvailable, availabilityLabel },
-      isAvailable,
-      availabilityLabel,
-      fulfillmentNote
-    },
     checkoutCtaLabel,
     checkoutDisabledBookingCta{ label, href },
     postPurchaseInstructions,
@@ -444,7 +392,7 @@ async function getAllTrainingPrograms(): Promise<TTrainingProgram[]> {
       clients
     }
   }`;
-  return client.fetch<TTrainingProgram[]>(query, {}, sanityFetchOptions(['trainingProgram', 'sellableProduct']));
+  return client.fetch<TTrainingProgram[]>(query, {}, sanityFetchOptions(['trainingProgram']));
 }
 
 async function getAllTrainingProgramSlugs(): Promise<Array<{ slug: string }>> {
@@ -482,6 +430,13 @@ const BOOKING_OFFERING_PROJECTION = groq`{
   title,
   description,
   "slug": slug.current,
+  service->{
+    _id,
+    title,
+    description,
+    "slug": slug.current,
+    image{ asset, hotspot, crop, alt }
+  },
   isActive,
   bookingType,
   durationMinutes,
@@ -490,40 +445,12 @@ const BOOKING_OFFERING_PROJECTION = groq`{
   bufferAfterMinutes,
   minimumLeadTimeHoursOverride,
   paymentMode,
-  depositProduct->{
-    _id,
-    title,
-    description,
-    shortDescription,
-    "slug": slug.current,
-    sku,
-    kind,
-    price,
-    currency,
-    variants[]{ _key, title, sku, price, isAvailable, availabilityLabel },
-    isAvailable,
-    availabilityLabel,
-    fulfillmentNote,
-    displayOrder,
-    image{ asset, hotspot, crop, alt }
-  },
-  fullProduct->{
-    _id,
-    title,
-    description,
-    shortDescription,
-    "slug": slug.current,
-    sku,
-    kind,
-    price,
-    currency,
-    variants[]{ _key, title, sku, price, isAvailable, availabilityLabel },
-    isAvailable,
-    availabilityLabel,
-    fulfillmentNote,
-    displayOrder,
-    image{ asset, hotspot, crop, alt }
-  },
+  depositAmount,
+  fullPrice,
+  allowCustomAmount,
+  customAmountMinimum,
+  customAmountMaximum,
+  currency,
   displayOrder
 }`;
 
@@ -539,7 +466,13 @@ const SERVICE_BOOKING_OFFERING_PROJECTION = groq`{
   bufferBeforeMinutes,
   bufferAfterMinutes,
   minimumLeadTimeHoursOverride,
-  paymentMode,
+  "paymentMode": select(paymentMode == "choice" => "customPartial", paymentMode),
+  fullPrice,
+  depositAmount,
+  allowCustomAmount,
+  customAmountMinimum,
+  customAmountMaximum,
+  currency,
   displayOrder
 }`;
 
@@ -547,7 +480,7 @@ async function getActiveBookingOfferings(): Promise<TBookingOffering[]> {
   const bookingOfferingsQuery = groq`*[_type == "bookingOffering" && isActive == true] | order(displayOrder asc, title asc) ${BOOKING_OFFERING_PROJECTION}`;
   const servicesQuery = groq`*[_type == "service" && isAvailable == true] | order(displayOrder asc, title asc) ${SERVICE_BOOKING_OFFERING_PROJECTION}`;
   const [bookingOfferings, services] = await Promise.all([
-    client.fetch<TBookingOffering[]>(bookingOfferingsQuery, {}, sanityFetchOptions(["bookingOffering", "sellableProduct"])),
+    client.fetch<TBookingOffering[]>(bookingOfferingsQuery, {}, sanityFetchOptions(["bookingOffering"])),
     client.fetch<TBookingOffering[]>(servicesQuery, {}, sanityFetchOptions(["service"])),
   ]);
   const bookingOfferingSlugs = new Set(bookingOfferings.map((offering) => offering.slug));
@@ -561,7 +494,7 @@ async function getBookingOfferingBySlug(slug: string): Promise<TBookingOffering 
   const bookingOffering = await client.fetch<TBookingOffering | null>(
     bookingOfferingQuery,
     { slug },
-    sanityFetchOptions(["bookingOffering", "sellableProduct"]),
+    sanityFetchOptions(["bookingOffering"]),
   );
 
   if (bookingOffering !== null) {
@@ -586,15 +519,7 @@ function compareBookingOfferings(first: TBookingOffering, second: TBookingOfferi
 
 async function getProducts(): Promise<TProduct[]> {
   const query = groq`*[_type == "product" && isAvailable == true] | order(displayOrder asc, title asc) ${PRODUCT_PROJECTION}`;
-  const [products, legacyProducts] = await Promise.all([
-    client.fetch<TProduct[]>(query, {}, sanityFetchOptions(["product"])),
-    getLegacyProductCatalogItems(),
-  ]);
-
-  const productKeys = new Set(products.flatMap((product) => [product._id, product.slug]));
-  const uniqueLegacyProducts = legacyProducts.filter((product) => !productKeys.has(product._id) && !productKeys.has(product.slug));
-
-  return [...products, ...uniqueLegacyProducts].sort(compareProducts);
+  return client.fetch<TProduct[]>(query, {}, sanityFetchOptions(["product"]));
 }
 
 async function getProductsByIds(ids: string[]): Promise<TProduct[]> {
@@ -609,7 +534,7 @@ async function getServices(): Promise<TService[]> {
 
 async function getTrainingProgramCatalogItems(): Promise<TTrainingProgramCatalogItem[]> {
   const query = groq`*[_type == "trainingProgram" && checkoutEnabled == true] | order(displayOrder asc, title asc) ${TRAINING_PROGRAM_CATALOG_PROJECTION}`;
-  return client.fetch<TTrainingProgramCatalogItem[]>(query, {}, sanityFetchOptions(["trainingProgram", "sellableProduct"]));
+  return client.fetch<TTrainingProgramCatalogItem[]>(query, {}, sanityFetchOptions(["trainingProgram"]));
 }
 
 async function getProductsGroupedCatalog(): Promise<TProductsGroupedCatalog> {
@@ -622,152 +547,16 @@ async function getProductsGroupedCatalog(): Promise<TProductsGroupedCatalog> {
   return { products, trainingPrograms, services };
 }
 
-async function getSellableProducts(): Promise<TSellableProduct[]> {
-  const query = groq`*[_type == "sellableProduct" && isAvailable == true] | order(displayOrder asc, title asc) {
-    _id,
-    title,
-    description,
-    shortDescription,
-    "slug": slug.current,
-    sku,
-    kind,
-    price,
-    currency,
-    variants[]{ _key, title, sku, price, isAvailable, availabilityLabel },
-    isAvailable,
-    availabilityLabel,
-    fulfillmentNote,
-    displayOrder,
-    image{ asset, hotspot, crop, alt }
-  }`;
-  return client.fetch<TSellableProduct[]>(query, {}, sanityFetchOptions(['sellableProduct']));
-}
-
-async function getLegacyProductCatalogItems(): Promise<TProduct[]> {
-  const sellableProducts = await getSellableProducts();
-  return sellableProducts
-    .filter((product) => product.kind === "product")
-    .map(mapSellableProductToProduct);
-}
-
-function mapSellableProductToProduct(product: TSellableProduct): TProduct {
-  return {
-    _id: product._id,
-    title: product.title,
-    description: product.description,
-    ...(product.shortDescription ? { shortDescription: product.shortDescription } : {}),
-    slug: product.slug,
-    price: product.price,
-    currency: product.currency,
-    ...(product.variants
-      ? {
-          variants: product.variants.map((variant) => ({
-            _key: variant._key,
-            title: variant.title,
-            price: variant.price,
-            isAvailable: variant.isAvailable,
-            ...(variant.availabilityLabel ? { availabilityLabel: variant.availabilityLabel } : {}),
-          })),
-        }
-      : {}),
-    isAvailable: product.isAvailable,
-    ...(product.availabilityLabel ? { availabilityLabel: product.availabilityLabel } : {}),
-    ...(product.fulfillmentNote ? { fulfillmentNote: product.fulfillmentNote } : {}),
-    ...(product.displayOrder !== undefined ? { displayOrder: product.displayOrder } : {}),
-    ...(product.image ? { image: product.image } : {}),
-    ...(product.gallery ? { gallery: product.gallery } : {}),
-    ...(product.detailSections ? { detailSections: product.detailSections } : {}),
-    ...(product.seo ? { seo: product.seo } : {}),
-  };
-}
-
-function compareProducts(first: TProduct, second: TProduct): number {
-  const firstOrder = first.displayOrder ?? Number.MAX_SAFE_INTEGER;
-  const secondOrder = second.displayOrder ?? Number.MAX_SAFE_INTEGER;
-
-  if (firstOrder !== secondOrder) {
-    return firstOrder - secondOrder;
-  }
-
-  return first.title.localeCompare(second.title);
-}
-
-async function getSellableProductsByIds(ids: string[]): Promise<TSellableProduct[]> {
-  const query = groq`*[_type == "sellableProduct" && _id in $ids] {
-    _id,
-    title,
-    description,
-    shortDescription,
-    "slug": slug.current,
-    sku,
-    kind,
-    price,
-    currency,
-    variants[]{ _key, title, sku, price, isAvailable, availabilityLabel },
-    isAvailable,
-    availabilityLabel,
-    fulfillmentNote,
-    displayOrder,
-    image{ asset, hotspot, crop, alt }
-  }`;
-  return client.fetch<TSellableProduct[]>(query, { ids }, sanityFetchOptions(['sellableProduct']));
-}
-
-async function getSellableProductBySlug(slug: string): Promise<TSellableProduct | null> {
-  const query = groq`*[_type == "sellableProduct" && slug.current == $slug && isAvailable == true][0]{
-    _id,
-    title,
-    description,
-    shortDescription,
-    "slug": slug.current,
-    sku,
-    kind,
-    price,
-    currency,
-    variants[]{ _key, title, sku, price, isAvailable, availabilityLabel },
-    isAvailable,
-    availabilityLabel,
-    fulfillmentNote,
-    displayOrder,
-    image{ asset, hotspot, crop, alt },
-    gallery[]{ asset, hotspot, crop, alt },
-    detailSections[]{ _key, heading, content },
-    seo{ title, description, image{ asset, hotspot, crop, alt } }
-  }`;
-  return client.fetch<TSellableProduct | null>(query, { slug }, sanityFetchOptions(['sellableProduct']));
-}
-
-async function getAllSellableProductSlugs(): Promise<Array<{ slug: string }>> {
-  const query = groq`*[_type == "sellableProduct" && isAvailable == true]{
-    "slug": slug.current
-  }`;
-  return client.fetch<Array<{ slug: string }>>(query, {}, sanityFetchOptions(['sellableProduct']));
-}
-
 async function getProductBySlug(slug: string): Promise<TProduct | null> {
   const query = groq`*[_type == "product" && slug.current == $slug && isAvailable == true][0] ${PRODUCT_PROJECTION}`;
-  const product = await client.fetch<TProduct | null>(query, { slug }, sanityFetchOptions(["product"]));
-  if (product !== null) {
-    return product;
-  }
-
-  const legacyProduct = await getSellableProductBySlug(slug);
-  return legacyProduct?.kind === "product" ? mapSellableProductToProduct(legacyProduct) : null;
+  return client.fetch<TProduct | null>(query, { slug }, sanityFetchOptions(["product"]));
 }
 
 async function getAllProductSlugs(): Promise<Array<{ slug: string }>> {
   const query = groq`*[_type == "product" && isAvailable == true]{
     "slug": slug.current
   }`;
-  const [products, legacyProducts] = await Promise.all([
-    client.fetch<Array<{ slug: string }>>(query, {}, sanityFetchOptions(["product"])),
-    getSellableProducts(),
-  ]);
-  const slugs = new Set(products.map((product) => product.slug));
-  const legacySlugs = legacyProducts
-    .filter((product) => product.kind === "product" && !slugs.has(product.slug))
-    .map((product) => ({ slug: product.slug }));
-  return [...products, ...legacySlugs];
+  return client.fetch<Array<{ slug: string }>>(query, {}, sanityFetchOptions(["product"]));
 }
 
 async function getServiceBySlug(slug: string): Promise<TService | null> {
@@ -806,8 +595,4 @@ export const loaders = {
   getAllProductSlugs,
   getServiceBySlug,
   getAllServiceSlugs,
-  getSellableProducts,
-  getSellableProductsByIds,
-  getSellableProductBySlug,
-  getAllSellableProductSlugs,
 };

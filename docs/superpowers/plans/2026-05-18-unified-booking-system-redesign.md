@@ -125,14 +125,15 @@ Expected:
 
 **Files:**
 - `src/sanity/schemas/documents/booking-settings.ts`
-- `src/sanity/schemas/documents/sellable-product.ts`
+- `src/sanity/schemas/documents/booking-offering.ts`
+- `src/sanity/schemas/documents/service.ts`
 - `src/data/loaders.ts`
 - `src/types/index.ts`
 
 - [ ] **Step 1: Add offering-level configuration**
 
 Expected:
-- Offerings support slug, title, duration, payment mode, deposit/full payment product reference, buffers, lead time, and active state.
+- Offerings support slug, title, duration, payment mode, native deposit/full/custom partial payment fields, buffers, lead time, and active state.
 
 - [ ] **Step 2: Preserve public/editorial boundary**
 

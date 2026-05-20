@@ -293,6 +293,39 @@ test("checkout payment validation finalizes appointment payments after persisten
   `);
 });
 
+test("checkout payment validation finalizes custom partial appointment payments after persistence", () => {
+  runRouteScenario(`
+    const appointmentOrder = {
+      ...pendingOrder,
+      purpose: "appointment_custom_partial",
+    };
+    const { finalizedBookings, handler, operationOrder, sentEmails, sentProductEmails } = await runScenario({
+      getPendingOrderByCheckoutToken: async () => appointmentOrder,
+      finalizeAppointmentPaymentForOrder: async () => ({
+        ok: true,
+        eventId: "calendar-event-appointment",
+        status: "booked",
+      }),
+      getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId: async () => {
+        throw new Error("training branch should not run");
+      },
+    });
+
+    const response = await handler(createRequest({
+      checkoutToken: "checkout-token",
+      data: approvedPaymentData,
+      hash: "hash",
+    }));
+
+    assert.equal(response.status, 200);
+    assert.equal(finalizedBookings.length, 1);
+    assert.equal(finalizedBookings[0].order.purpose, "appointment_custom_partial");
+    assert.deepEqual(operationOrder, ["mark-paid", "persisted"]);
+    assert.equal(sentProductEmails.length, 0);
+    assert.equal(sentEmails.length, 0);
+  `);
+});
+
 
 test("checkout payment validation can confirm an already-paid appointment order", () => {
   runRouteScenario(`
@@ -366,6 +399,49 @@ test("checkout payment validation preserves paid appointment order when finaliza
     assert.equal(sentEmails.length, 0);
     assert.deepEqual(errors, [{
       context: { error: "Calendar unavailable", orderId: "lh-order-123", status: "booking_failed" },
+      message: "[checkout] Appointment booking finalization failed",
+    }]);
+  `);
+});
+
+test("checkout payment validation does not redirect while appointment finalization is already in progress", () => {
+  runRouteScenario(`
+    const appointmentOrder = {
+      ...pendingOrder,
+      purpose: "appointment_full",
+    };
+    const { errors, finalizedBookings, handler, operationOrder } = await runScenario({
+      getPendingOrderByCheckoutToken: async () => appointmentOrder,
+      finalizeAppointmentPaymentForOrder: async () => ({
+        ok: false,
+        error: "Booking finalization is already in progress.",
+        status: "finalization_pending",
+      }),
+      getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId: async () => {
+        throw new Error("training branch should not run");
+      },
+    });
+
+    const response = await handler(createRequest({
+      checkoutToken: "checkout-token",
+      data: approvedPaymentData,
+      hash: "hash",
+    }));
+
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), {
+      bookingStatus: "finalization_pending",
+      error: "Payment received; booking confirmation is still in progress",
+      orderId: "lh-order-123",
+    });
+    assert.equal(finalizedBookings.length, 1);
+    assert.deepEqual(operationOrder, ["mark-paid", "persisted"]);
+    assert.deepEqual(errors, [{
+      context: {
+        error: "Booking finalization is already in progress.",
+        orderId: "lh-order-123",
+        status: "finalization_pending",
+      },
       message: "[checkout] Appointment booking finalization failed",
     }]);
   `);

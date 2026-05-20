@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SanityImage } from "@/components/ui/sanity-image";
 import type { TTrainingProgramDetailItem } from "@/types";
 import { cn } from "@/lib/utils";
 
 const DETAIL_ROTATION_MS = 7000;
 const DETAIL_PROGRESS_STEP_MS = 100;
+const DETAIL_PANEL_ID = "training-detail-panel";
 
 interface TrainingDetailItemsProps {
   items: TTrainingProgramDetailItem[];
@@ -17,6 +18,7 @@ export function TrainingDetailItems({ items }: TrainingDetailItemsProps) {
   const [progress, setProgress] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const carouselRef = useRef<HTMLDivElement>(null);
 
   const validItems = useMemo(() => items.filter((item) => item.title || item.description || item.image), [items]);
 
@@ -53,21 +55,36 @@ export function TrainingDetailItems({ items }: TrainingDetailItemsProps) {
     return () => window.clearInterval(interval);
   }, [isPaused, prefersReducedMotion, validItems.length]);
 
-  if (validItems.length === 0) return null;
-
   const effectiveActiveIndex = activeIndex >= validItems.length ? 0 : activeIndex;
   const activeItem = validItems[effectiveActiveIndex];
 
+  useEffect(() => {
+    if (!carouselRef.current) return;
+    const activeElement = carouselRef.current.children.item(effectiveActiveIndex);
+    if (!(activeElement instanceof HTMLElement)) return;
+
+    const container = carouselRef.current;
+    const scrollLeft = activeElement.offsetLeft - (container.clientWidth - activeElement.clientWidth) / 2;
+    container.scrollTo({ left: scrollLeft, behavior: prefersReducedMotion ? "auto" : "smooth" });
+  }, [effectiveActiveIndex, prefersReducedMotion]);
+
+  if (validItems.length === 0) return null;
+
   return (
     <div
-      className="my-12 grid grid-cols-1 gap-6 lg:my-16 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.35fr)] lg:gap-8 xl:gap-10"
+      className="my-12 grid grid-cols-1 gap-6 md:min-h-[calc(100vh+8rem)] md:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] md:items-start md:gap-7 lg:my-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-8 xl:gap-10"
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
       onFocusCapture={() => setIsPaused(true)}
       onBlurCapture={() => setIsPaused(false)}
       data-training-detail-items="true"
     >
-      <div className="flex flex-col gap-4 lg:gap-5" role="tablist" aria-label="Training Details">
+      <div 
+        ref={carouselRef}
+        className="order-2 relative flex flex-row gap-4 overflow-x-auto snap-x snap-mandatory pb-4 [-ms-overflow-style:none] [scrollbar-width:none] md:order-1 md:flex-col md:overflow-x-visible md:snap-none md:pb-0 lg:gap-5 [&::-webkit-scrollbar]:hidden" 
+        role="tablist" 
+        aria-label="Training Details"
+      >
         {validItems.map((item, index) => {
           const isActive = index === effectiveActiveIndex;
           return (
@@ -77,11 +94,12 @@ export function TrainingDetailItems({ items }: TrainingDetailItemsProps) {
               role="tab"
               aria-selected={isActive}
               aria-current={isActive ? "true" : undefined}
-              aria-controls={`detail-panel-${index}`}
+              aria-controls={DETAIL_PANEL_ID}
               id={`detail-tab-${index}`}
               onClick={() => activateItem(index)}
               className={cn(
                 "group relative overflow-hidden rounded-[24px] border p-6 text-left transition-all duration-300 md:p-7 lg:p-8",
+                "w-[85vw] shrink-0 snap-center sm:w-[400px] md:w-auto",
                 isActive
                   ? "border-lh-light/70 bg-lh-shadow text-lh-neutral-2 shadow-[0_24px_70px_rgba(28,19,24,0.14)]"
                   : "border-lh-line bg-lh-neutral-2/70 text-lh-shadow hover:border-lh-primary/30 hover:bg-lh-neutral",
@@ -112,25 +130,27 @@ export function TrainingDetailItems({ items }: TrainingDetailItemsProps) {
       </div>
 
       <div 
-        className="relative min-h-[420px] overflow-hidden rounded-[28px] border border-lh-line bg-lh-neutral/20 shadow-[0_24px_70px_rgba(28,19,24,0.08)] md:min-h-[560px] lg:min-h-full"
+        className="order-1 md:order-2 md:sticky md:top-24 md:self-start"
         role="tabpanel"
-        id={`detail-panel-${effectiveActiveIndex}`}
+        id={DETAIL_PANEL_ID}
         aria-labelledby={`detail-tab-${effectiveActiveIndex}`}
         data-training-detail-image="true"
       >
-        {activeItem?.image ? (
-          <SanityImage
-            image={activeItem.image}
-            alt={activeItem.image.alt || activeItem.title}
-            fill
-            sizes="(min-width: 1024px) 48vw, 100vw"
-            className="object-cover transition-opacity duration-500"
-          />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center text-lh-shadow/40 font-serif italic">
-            No image available
-          </div>
-        )}
+        <div className="relative min-h-[420px] overflow-hidden rounded-[28px] border border-lh-line bg-lh-neutral/20 shadow-[0_24px_70px_rgba(28,19,24,0.08)] md:h-[calc(100vh-8rem)] md:min-h-0">
+          {activeItem?.image ? (
+            <SanityImage
+              image={activeItem.image}
+              alt={activeItem.image.alt || activeItem.title}
+              fill
+              sizes="(min-width: 1024px) 48vw, 100vw"
+              className="object-cover transition-opacity duration-500"
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center text-lh-shadow/40 font-serif italic">
+              No image available
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -8,26 +8,17 @@ import {
 
 type ValidationResult = true | string;
 
-type ReferenceValue = {
-  _ref: string;
-};
-
 type ValidationDocument = {
   paymentMode?: string;
-  depositProduct?: ReferenceValue;
-  fullProduct?: ReferenceValue;
+  depositAmount?: number;
+  fullPrice?: number;
+  allowCustomAmount?: boolean;
+  customAmountMinimum?: number;
+  customAmountMaximum?: number;
 };
 
 type ValidationContextStub = {
   document?: ValidationDocument;
-  getClient: (config: { apiVersion: string }) => {
-    fetch: <T>(query: string, params: Record<string, string>) => Promise<T>;
-  };
-};
-
-type ProductProjection = {
-  kind?: string;
-  price?: number;
 };
 
 type FieldValidator = (
@@ -48,6 +39,9 @@ type SchemaField = {
   };
   to?: Array<{ type: string }>;
   validation?: (rule: RuleStub) => unknown;
+  hidden?: unknown;
+  readOnly?: unknown;
+  deprecated?: { reason?: string };
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -101,24 +95,12 @@ function getFieldValidator(name: string): FieldValidator {
   return capturedValidator;
 }
 
-function buildContext(products: Record<string, ProductProjection | null>, document?: ValidationDocument) {
-  return {
-    document,
-    getClient: ({ apiVersion }: { apiVersion: string }) => {
-      assert.strictEqual(apiVersion, "2026-03-24");
-
-      return {
-        async fetch<T>(query: string, params: Record<string, string>): Promise<T> {
-          assert.match(query, /\*\[_id == \$productId\]/);
-          return products[params.productId] as T;
-        },
-      };
-    },
-  };
+function buildContext(document?: ValidationDocument): ValidationContextStub {
+  return { document };
 }
 
 describe("bookingOffering schema", () => {
-  it("defines the expected editorial fields without private booking data", () => {
+  it("defines native booking payment fields without private booking data", () => {
     assert.strictEqual(bookingOffering.name, "bookingOffering");
     assert.strictEqual(bookingOffering.type, "document");
 
@@ -128,6 +110,7 @@ describe("bookingOffering schema", () => {
       "title",
       "description",
       "slug",
+      "service",
       "isActive",
       "bookingType",
       "durationMinutes",
@@ -136,12 +119,16 @@ describe("bookingOffering schema", () => {
       "bufferAfterMinutes",
       "minimumLeadTimeHoursOverride",
       "paymentMode",
-      "depositProduct",
-      "fullProduct",
+      "depositAmount",
+      "fullPrice",
+      "allowCustomAmount",
+      "customAmountMinimum",
+      "customAmountMaximum",
+      "currency",
       "displayOrder",
     ]);
 
-    const forbiddenFields = [
+    for (const forbiddenField of [
       "customerName",
       "customerEmail",
       "customerPhone",
@@ -150,18 +137,16 @@ describe("bookingOffering schema", () => {
       "bookingHistory",
       "transactionId",
       "paymentToken",
-    ];
-
-    for (const forbiddenField of forbiddenFields) {
+    ]) {
       assert.ok(!fieldNames.includes(forbiddenField), `${forbiddenField} must not be stored in Sanity`);
     }
   });
 
-  it("limits booking and payment mode options to the v1 contract", () => {
+  it("limits booking and payment mode options to the canonical contract", () => {
     assert.deepStrictEqual(BOOKING_OFFERING_PAYMENT_MODE_OPTIONS, [
       { title: "Deposit", value: "deposit" },
       { title: "Full payment", value: "full" },
-      { title: "Customer choice", value: "choice" },
+      { title: "Custom partial payment", value: "customPartial" },
     ]);
 
     assert.deepStrictEqual(getField("paymentMode").options?.list, BOOKING_OFFERING_PAYMENT_MODE_OPTIONS);
@@ -171,95 +156,48 @@ describe("bookingOffering schema", () => {
     ]);
   });
 
-  it("uses sellable product references for payment products", () => {
-    assert.strictEqual(getField("depositProduct").type, "reference");
-    assert.deepStrictEqual(getField("depositProduct").to, [{ type: "sellableProduct" }]);
-    assert.strictEqual(getField("fullProduct").type, "reference");
-    assert.deepStrictEqual(getField("fullProduct").to, [{ type: "sellableProduct" }]);
+  it("requires a canonical service reference", () => {
+    const serviceField = getField("service");
+
+    assert.strictEqual(serviceField.type, "reference");
+    assert.deepStrictEqual(serviceField.to, [{ type: "service" }]);
   });
 
-  it("validates deposit product references as deposit products", async () => {
-    const validator = getFieldValidator("depositProduct");
-    const reference = { _ref: "deposit-product" };
+  it("does not expose legacy sellable product references", () => {
+    const fieldNames = getFields().map((field) => field.name);
 
-    assert.strictEqual(
-      await validator(undefined, buildContext({}, { paymentMode: "deposit" })),
-      "A deposit product is required for deposit and choice payment modes.",
-    );
-    assert.strictEqual(
-      await validator(reference, buildContext({ "deposit-product": null })),
-      "The selected deposit product could not be found. Choose an existing deposit product.",
-    );
-    assert.strictEqual(
-      await validator(reference, buildContext({ "deposit-product": { kind: "service", price: 50 } })),
-      "Deposit product must reference a sellable product with Kind set to Deposit.",
-    );
-    assert.strictEqual(
-      await validator(reference, buildContext({ "deposit-product": { kind: "deposit", price: 50 } })),
-      true,
-    );
+    assert.ok(!fieldNames.includes("depositProduct"));
+    assert.ok(!fieldNames.includes("fullProduct"));
   });
 
-  it("validates full payment product references as service or deposit products", async () => {
-    const validator = getFieldValidator("fullProduct");
-    const reference = { _ref: "full-product" };
+  it("validates deposit amounts only for deposit mode", async () => {
+    const validator = getFieldValidator("depositAmount");
 
-    assert.strictEqual(
-      await validator(undefined, buildContext({}, { paymentMode: "full" })),
-      "A full payment product is required for full and choice payment modes.",
-    );
-    assert.strictEqual(
-      await validator(reference, buildContext({ "full-product": null })),
-      "The selected full payment product could not be found. Choose an existing service product.",
-    );
-    assert.strictEqual(
-      await validator(reference, buildContext({ "full-product": { kind: "training", price: 250 } })),
-      "Full payment product must reference a sellable product with Kind set to Service or Deposit.",
-    );
-    assert.strictEqual(
-      await validator(reference, buildContext({ "full-product": { kind: "service", price: 250 } })),
-      true,
-    );
+    assert.strictEqual(await validator(undefined, buildContext({ paymentMode: "deposit" })), "Deposit payment mode requires a positive deposit amount.");
+    assert.strictEqual(await validator(0, buildContext({ paymentMode: "deposit" })), "Deposit amount must be greater than zero.");
+    assert.strictEqual(await validator(50, buildContext({ paymentMode: "deposit" })), true);
+    assert.strictEqual(await validator(undefined, buildContext({ paymentMode: "full" })), true);
   });
 
-  it("allows choice mode only when full payment exceeds deposit", async () => {
-    const validator = getFieldValidator("paymentMode");
-    const document = {
-      paymentMode: "choice",
-      depositProduct: { _ref: "deposit-product" },
-      fullProduct: { _ref: "full-product" },
-    };
+  it("validates full price for full and custom partial modes", async () => {
+    const validator = getFieldValidator("fullPrice");
 
-    assert.strictEqual(await validator("deposit", buildContext({})), true);
-    assert.strictEqual(
-      await validator("choice", buildContext({}, { paymentMode: "choice" })),
-      "Choice payment mode requires both deposit and full payment products.",
-    );
-    assert.strictEqual(
-      await validator(
-        "choice",
-        buildContext(
-          {
-            "deposit-product": { kind: "deposit", price: 100 },
-            "full-product": { kind: "service", price: 100 },
-          },
-          document,
-        ),
-      ),
-      "Choice payment mode requires the full payment product price to exceed the deposit product price.",
-    );
-    assert.strictEqual(
-      await validator(
-        "choice",
-        buildContext(
-          {
-            "deposit-product": { kind: "deposit", price: 100 },
-            "full-product": { kind: "service", price: 250 },
-          },
-          document,
-        ),
-      ),
-      true,
-    );
+    assert.strictEqual(await validator(undefined, buildContext({ paymentMode: "full" })), "Full payment and custom partial modes require a positive full price.");
+    assert.strictEqual(await validator(0, buildContext({ paymentMode: "customPartial" })), "Full price must be greater than zero.");
+    assert.strictEqual(await validator(250, buildContext({ paymentMode: "full" })), true);
+    assert.strictEqual(await validator(undefined, buildContext({ paymentMode: "deposit" })), true);
+  });
+
+  it("validates custom partial amount bounds", async () => {
+    const minimumValidator = getFieldValidator("customAmountMinimum");
+    const maximumValidator = getFieldValidator("customAmountMaximum");
+
+    assert.strictEqual(await minimumValidator(undefined, buildContext({ paymentMode: "customPartial" })), "Custom partial mode requires a positive minimum amount.");
+    assert.strictEqual(await maximumValidator(undefined, buildContext({ paymentMode: "customPartial" })), "Custom partial mode requires a maximum amount greater than the minimum.");
+    assert.strictEqual(await minimumValidator(300, buildContext({ paymentMode: "customPartial", fullPrice: 250 })), "Custom partial minimum must be less than the full price.");
+    assert.strictEqual(await maximumValidator(50, buildContext({ paymentMode: "customPartial", customAmountMinimum: 100 })), "Custom partial maximum must be greater than the minimum.");
+    assert.strictEqual(await maximumValidator(300, buildContext({ paymentMode: "customPartial", fullPrice: 250, customAmountMinimum: 100 })), "Custom partial maximum cannot exceed the full price.");
+    assert.strictEqual(await minimumValidator(100, buildContext({ paymentMode: "customPartial", fullPrice: 250 })), true);
+    assert.strictEqual(await maximumValidator(200, buildContext({ paymentMode: "customPartial", fullPrice: 250, customAmountMinimum: 100 })), true);
   });
 });

@@ -7,6 +7,7 @@ import {
   createAppointmentHoldStore,
   createBookingHold,
   getActiveHoldBusyEvents,
+  isActiveHold,
   type AppointmentHoldLifecycleRepository,
   type BookingHoldRecord,
   type BookingHoldRepository,
@@ -112,6 +113,75 @@ test("getActiveHoldBusyEvents exposes active holds as busy intervals and ignores
   );
   assert.equal(activeStates.has("held"), true);
   assert.equal(activeStates.has("booked"), false);
+});
+
+test("payment-progress holds remain active through the payment success grace window", () => {
+  const expiredHeld = createHoldRecord({
+    id: "expired-held",
+    state: "held",
+    expiresAt: new Date("2026-05-18T11:59:00.000Z"),
+  });
+  const gracePending = createHoldRecord({
+    id: "pending-in-grace",
+    state: "payment_pending",
+    expiresAt: new Date("2026-05-18T11:59:00.000Z"),
+  });
+  const stalePending = createHoldRecord({
+    id: "pending-after-grace",
+    state: "payment_pending",
+    expiresAt: new Date("2026-05-18T11:54:59.000Z"),
+  });
+  const paidPendingInGrace = createHoldRecord({
+    id: "paid-pending-in-grace",
+    state: "paid_pending_booking",
+    expiresAt: new Date("2026-05-18T11:59:00.000Z"),
+  });
+  const paidPendingAfterGrace = createHoldRecord({
+    id: "paid-pending-after-grace",
+    state: "paid_pending_booking",
+    expiresAt: new Date("2026-05-18T11:54:59.000Z"),
+  });
+
+  assert.equal(isActiveHold(expiredHeld, now), false);
+  assert.equal(isActiveHold(gracePending, now), true);
+  assert.equal(isActiveHold(stalePending, now), false);
+  assert.equal(isActiveHold(paidPendingInGrace, now), true);
+  assert.equal(isActiveHold(paidPendingAfterGrace, now), false);
+  assert.deepEqual(
+    getActiveHoldBusyEvents({
+      holds: [expiredHeld, gracePending, stalePending, paidPendingInGrace, paidPendingAfterGrace],
+      now,
+    }).map((event) => event.id),
+    ["hold:pending-in-grace", "hold:paid-pending-in-grace"],
+  );
+});
+
+test("createBookingHold rejects paid in-progress conflicts during payment grace", async () => {
+  const repository = new FakeHoldRepository([
+    createHoldRecord({
+      id: "paid-pending-hold",
+      state: "paid_pending_booking",
+      expiresAt: new Date("2026-05-18T11:59:00.000Z"),
+    }),
+  ]);
+
+  const result = await createBookingHold({
+    bookingType: "in-person-appointment",
+    customer: { email: "second@example.com", name: "Second Client", phone: "555-555-5556" },
+    offeringId: "lash-fill",
+    offeringSnapshot: { title: "Lash Fill" },
+    repository,
+    selectedEnd: slotEnd,
+    selectedStart: slotStart,
+    timezone: "America/Toronto",
+    now,
+  });
+
+  assert.equal(result.ok, false);
+
+  if (!result.ok) {
+    assert.equal(result.conflictingHoldId, "paid-pending-hold");
+  }
 });
 
 test("appointment hold store creates holds through the conflict-safe contract", async () => {
@@ -324,7 +394,7 @@ class FakeHoldRepository implements BookingHoldRepository {
     for (const record of this.records) {
       if (
         record.offeringId === input.offeringId &&
-        record.expiresAt <= input.now &&
+        !isActiveHold(record, input.now) &&
         record.selectedStart < input.selectedEnd &&
         input.selectedStart < record.selectedEnd &&
         ACTIVE_HOLD_STATES.includes(record.state)
@@ -336,7 +406,7 @@ class FakeHoldRepository implements BookingHoldRepository {
 
     const conflict = this.records.find((record) => (
       record.offeringId === input.offeringId &&
-      record.expiresAt > input.now &&
+      isActiveHold(record, input.now) &&
       record.selectedStart < input.selectedEnd &&
       input.selectedStart < record.selectedEnd &&
       ACTIVE_HOLD_STATES.includes(record.state)

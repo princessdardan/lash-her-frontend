@@ -233,14 +233,15 @@ Required fields:
 - Duration, slot interval, buffer before, buffer after.
 - Optional minimum lead-time override.
 - Payment mode: deposit, full payment, or customer choice.
-- Deposit/full payment product references as required by the selected payment mode.
+- Native CAD payment amounts as required by the selected payment mode.
 - Display order.
 
-Product reference rules:
+Native payment field rules:
 
-- Deposit and choice modes require a deposit product.
-- Full and choice modes require a full-payment product.
-- Choice mode requires both products and the full-payment price must be greater than the deposit price.
+- Deposit mode requires a deposit amount.
+- Full mode requires a full payment amount.
+- Customer-choice/custom-partial mode requires a full payment amount plus custom minimum and maximum amounts.
+- Legacy deposit/full product references are migration-only and must not be used for active booking checkout setup.
 
 After publishing `bookingSettings` or `bookingOffering`, verify the Sanity webhook refreshes `/booking` in the target environment.
 

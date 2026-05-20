@@ -98,6 +98,30 @@ test("booking create rejects legacy paid scheduling token payloads", () => {
   `);
 });
 
+test("booking create rejects direct unpaid in-person appointments before calling createBooking", () => {
+  runRouteScenario(`
+    let createBookingCalled = false;
+    const handler = createBookingCreatePostHandler({
+      createBooking: async () => {
+        createBookingCalled = true;
+        return { success: true, eventId: "calendar-event-1" };
+      },
+    });
+
+    const response = await handler(createRequest(JSON.stringify(createBookingPayload({
+      bookingType: "in-person-appointment",
+    }))));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 400);
+    assert.equal(createBookingCalled, false);
+    assert.deepEqual(body, {
+      success: false,
+      error: "In-person appointments require secure payment before confirmation.",
+    });
+  `);
+});
+
 test("booking create maps field validation failures to bad requests", () => {
   runRouteScenario(`
     const receivedInputs = [];

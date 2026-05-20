@@ -1,6 +1,6 @@
 # Private Database Migration Runbook
 
-This runbook describes how to safely verify, run, and record private PostgreSQL migrations for Lash Her. The private database stores checkout/order records and marketing/contact submission records. Sanity remains the public editorial CMS and historical submission backfill source; new private data must not be written to Sanity.
+This runbook describes how to safely verify, run, and record private PostgreSQL migrations for Lash Her. The private database stores checkout/order records, appointment hold/payment lifecycle records, and marketing/contact submission records. Sanity remains the public editorial CMS and historical submission backfill source; new private data must not be written to Sanity.
 
 Use this runbook for generated Drizzle migrations in `drizzle/`, including the marketing-contact storage migration `drizzle/0002_rapid_fat_cobra.sql`.
 
@@ -11,6 +11,7 @@ Private database migrations cover tables defined in `src/lib/private-db/schema.t
 Current private DB domains include:
 
 - Checkout orders and payment events.
+- Appointment holds and paid booking finalization state.
 - Training enrollments.
 - Marketing contacts, contact submissions, and consent events.
 
@@ -91,7 +92,7 @@ For the marketing-contact migration, verify that `drizzle/0002_rapid_fat_cobra.s
    ```
 
 4. Record the command result and timestamp.
-5. Verify the new tables exist in the staging database.
+5. Verify the new tables, enum values, or indexes exist in the staging database.
 6. Run the relevant application checks:
 
    ```bash
@@ -102,11 +103,13 @@ For the marketing-contact migration, verify that `drizzle/0002_rapid_fat_cobra.s
    ```
 
 7. Smoke test staging flows that write private data:
-   - General inquiry submission.
-   - Training/contact form submission.
-   - Contact popup/email-list submission.
-   - Booking with marketing opt-in checked.
-   - Booking with marketing opt-in unchecked.
+    - General inquiry submission.
+    - Training/contact form submission.
+    - Contact popup/email-list submission.
+    - Booking with marketing opt-in checked.
+    - Booking with marketing opt-in unchecked.
+    - Paid appointment checkout for deposit, full payment, and custom partial payment where configured.
+    - Paid appointment finalization from Helcim client validation and webhook retry paths.
 8. Confirm new submissions do not create new Sanity submission documents.
 
 ## Production Procedure

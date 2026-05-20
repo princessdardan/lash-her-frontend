@@ -5,13 +5,13 @@ import { SanityImage } from "@/components/ui/sanity-image";
 import { CartPanel } from "./cart-panel";
 import { ProductFilters } from "./product-filters";
 import { ProductSort } from "./product-sort";
-import type { TProductsPage, TSellableProduct, TProductCollection, TSellableProductFilterAttribute } from "@/types";
+import type { TProductsPage, TProduct, TProductCollection, TProductFilterAttribute } from "@/types";
 
 interface ProductCatalogShellProps {
   pageData: TProductsPage | null;
-  products: TSellableProduct[];
+  products: TProduct[];
   collections: TProductCollection[];
-  filterAttributes: TSellableProductFilterAttribute[];
+  filterAttributes: TProductFilterAttribute[];
 }
 
 export function ProductCatalogShell({ 

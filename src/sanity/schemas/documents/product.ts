@@ -36,6 +36,12 @@ export const product = defineType({
       validation: (Rule) => Rule.required().min(0),
     }),
     defineField({
+      name: "sku",
+      title: "Merchant SKU",
+      type: "string",
+      description: "Optional merchant-facing SKU for reconciliation. Generated fallback codes are internal and not shown to customers.",
+    }),
+    defineField({
       name: "currency",
       title: "Currency",
       type: "string",
@@ -113,6 +119,12 @@ export const product = defineType({
               title: "Variant Price",
               type: "number",
               validation: (Rule) => Rule.required().min(0),
+            }),
+            defineField({
+              name: "sku",
+              title: "Variant Merchant SKU",
+              type: "string",
+              description: "Optional merchant-facing SKU for reconciliation.",
             }),
             defineField({
               name: "isAvailable",

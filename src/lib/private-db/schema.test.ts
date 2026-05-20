@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   appointmentHolds,
   appointmentHoldStatus,
+  checkoutOrderPurpose,
 } from "./schema";
 
 test("appointment hold status enum matches booking lifecycle states", () => {
@@ -17,6 +18,16 @@ test("appointment hold status enum matches booking lifecycle states", () => {
     "booking_failed",
     "manual_followup",
     "released",
+  ]);
+});
+
+test("checkout order purpose enum includes custom partial appointment payments", () => {
+  assert.deepEqual(checkoutOrderPurpose.enumValues, [
+    "product",
+    "training",
+    "appointment_deposit",
+    "appointment_full",
+    "appointment_custom_partial",
   ]);
 });
 

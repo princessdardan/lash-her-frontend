@@ -57,7 +57,12 @@ const helperScript = String.raw`
       bufferBeforeMinutes: 0,
       bufferAfterMinutes: 0,
       paymentMode: "deposit",
-      depositProduct: { _id: "deposit-product-1" },
+      depositAmount: 50,
+      fullPrice: 150,
+      allowCustomAmount: true,
+      customAmountMinimum: 75,
+      customAmountMaximum: 125,
+      currency: "CAD",
       ...overrides,
     };
   }
@@ -135,7 +140,19 @@ test("booking hold route revalidates a slot and returns a public hold reference"
       bookingType: "in-person-appointment",
       durationMinutes: 60,
       paymentMode: "deposit",
-      depositProductId: "deposit-product-1",
+      depositAmount: 50,
+      fullPrice: 150,
+      allowCustomAmount: true,
+      customAmountMinimum: 75,
+      customAmountMaximum: 125,
+      currency: "CAD",
+      selectedPayment: {
+        amount: 50,
+        description: "Classic Fill deposit",
+        option: "deposit",
+        purpose: "appointment_deposit",
+        sku: "BOOKING-DEPOSIT",
+      },
     });
     assert.deepEqual(body, {
       hold: {
@@ -150,6 +167,92 @@ test("booking hold route revalidates a slot and returns a public hold reference"
         paymentMode: "deposit",
       },
     });
+  `);
+});
+
+test("booking hold route snapshots a validated custom partial payment choice", () => {
+  runRouteScenario(`
+    const selectedStart = createFutureDate(2, 0);
+    const selectedEnd = new Date(selectedStart.getTime() + 60 * 60 * 1000);
+    const availabilityEnd = new Date(selectedStart.getTime() + 2 * 60 * 60 * 1000);
+    const createInputs = [];
+    const handler = createHoldHandler({
+      getBookingOfferingBySlug: async () => createOffering({ paymentMode: "customPartial" }),
+      listCalendarEvents: async () => [{
+        id: "available-window",
+        title: "Available",
+        start: selectedStart,
+        end: availabilityEnd,
+      }],
+      createAppointmentHold: async (input) => {
+        createInputs.push(input);
+
+        return {
+          ok: true,
+          hold: {
+            publicReference: "hold_public_1",
+            expiresAt: new Date("2026-06-01T12:10:00.000Z"),
+            selectedStart: input.selectedStart,
+            selectedEnd: input.selectedEnd,
+          },
+        };
+      },
+    });
+
+    const response = await handler(createRequest({
+      offeringSlug: "classic-fill",
+      start: selectedStart.toISOString(),
+      name: "Client Name",
+      email: "client@example.com",
+      phone: "555-0100",
+      paymentOption: "customPartial",
+      customAmount: 100,
+    }));
+
+    assert.equal(response.status, 201);
+    assert.deepEqual(createInputs[0].offeringSnapshot.selectedPayment, {
+      amount: 100,
+      description: "Classic Fill custom partial payment",
+      option: "customPartial",
+      purpose: "appointment_custom_partial",
+      sku: "BOOKING-CUSTOM-PARTIAL",
+    });
+  `);
+});
+
+test("booking hold route rejects invalid custom partial payment choices before creating a hold", () => {
+  runRouteScenario(`
+    const selectedStart = createFutureDate(2, 0);
+    const selectedEnd = new Date(selectedStart.getTime() + 60 * 60 * 1000);
+    let createCalled = false;
+    const handler = createHoldHandler({
+      getBookingOfferingBySlug: async () => createOffering({ paymentMode: "customPartial" }),
+      listCalendarEvents: async () => [{
+        id: "available-window",
+        title: "Available",
+        start: selectedStart,
+        end: selectedEnd,
+      }],
+      createAppointmentHold: async () => {
+        createCalled = true;
+        return { ok: false, reason: "slot_conflict", conflictingHoldId: "hold-1" };
+      },
+    });
+
+    const response = await handler(createRequest({
+      offeringSlug: "classic-fill",
+      start: selectedStart.toISOString(),
+      name: "Client Name",
+      email: "client@example.com",
+      phone: "555-0100",
+      paymentOption: "customPartial",
+      customAmount: 74.99,
+    }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 400);
+    assert.equal(createCalled, false);
+    assert.deepEqual(body, { error: "Booking payment is not configured" });
   `);
 });
 

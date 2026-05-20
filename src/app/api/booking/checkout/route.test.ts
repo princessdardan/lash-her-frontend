@@ -6,28 +6,9 @@ const helperScript = String.raw`
 
   import { createBookingCheckoutPostHandler } from "./src/app/api/booking/checkout/route.ts";
 
-  const now = new Date("2026-05-18T12:00:00.000Z");
   const selectedStart = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
   selectedStart.setUTCHours(14, 0, 0, 0);
   const selectedEnd = new Date(selectedStart.getTime() + 60 * 60 * 1000);
-
-  const depositProduct = {
-    _id: "deposit-product-1",
-    sku: "LASH-DEPOSIT",
-    title: "Lash Appointment Deposit",
-    price: 50,
-    currency: "CAD",
-    isAvailable: true,
-  };
-
-  const fullProduct = {
-    _id: "full-product-1",
-    sku: "LASH-FULL",
-    title: "Lash Appointment Full Payment",
-    price: 150,
-    currency: "CAD",
-    isAvailable: true,
-  };
 
   function createRequest(body) {
     return new Request("http://localhost:3000/api/booking/checkout", {
@@ -48,7 +29,16 @@ const helperScript = String.raw`
       offeringSnapshot: {
         title: "Classic Fill",
         paymentMode: "deposit",
-        depositProductId: "deposit-product-1",
+        depositAmount: 50,
+        fullPrice: 150,
+        allowCustomAmount: false,
+        currency: "CAD",
+        selectedPayment: {
+          amount: 50,
+          description: "Classic Fill deposit",
+          purpose: "appointment_deposit",
+          sku: "BOOKING-DEPOSIT",
+        },
       },
       customer: {
         name: "Client Name",
@@ -61,7 +51,6 @@ const helperScript = String.raw`
 
   function runScenario(overrides = {}) {
     const createdOrders = [];
-    const fetchedProductIds = [];
     const invoices = [];
     const paySessions = [];
     const transitions = [];
@@ -90,10 +79,6 @@ const helperScript = String.raw`
         assert.equal(reference, "hold_public_1");
         return createHold();
       },
-      getSellableProductsByIds: async (ids) => {
-        fetchedProductIds.push(ids);
-        return ids.map((id) => id === "full-product-1" ? fullProduct : depositProduct);
-      },
       initializeHelcimPay: async (input) => {
         paySessions.push(input);
         return { checkoutToken: "checkout-token-1", secretToken: "secret-token-1" };
@@ -109,7 +94,7 @@ const helperScript = String.raw`
       ...overrides,
     });
 
-    return { createdOrders, fetchedProductIds, handler, invoices, paySessions, transitions };
+    return { createdOrders, handler, invoices, paySessions, transitions };
   }
 
   async function parseJson(response) {
@@ -119,7 +104,7 @@ const helperScript = String.raw`
 
 test("booking checkout initializes Helcim for a held deposit appointment", () => {
   runRouteScenario(`
-    const { createdOrders, fetchedProductIds, handler, invoices, paySessions, transitions } = runScenario();
+    const { createdOrders, handler, invoices, paySessions, transitions } = runScenario();
 
     const response = await handler(createRequest({ holdReference: " hold_public_1 " }));
     const body = await parseJson(response);
@@ -130,15 +115,14 @@ test("booking checkout initializes Helcim for a held deposit appointment", () =>
       holdReference: "hold_public_1",
       orderId: "lh-order-1",
     });
-    assert.deepEqual(fetchedProductIds, [["deposit-product-1"]]);
     assert.deepEqual(invoices, [{
       currency: "CAD",
       type: "INVOICE",
       status: "DUE",
       notes: "Lash Her booking checkout: Classic Fill",
       lineItems: [{
-        sku: "LASH-DEPOSIT",
-        description: "Lash Appointment Deposit",
+        sku: "BOOKING-DEPOSIT",
+        description: "Classic Fill deposit",
         quantity: 1,
         price: 50,
       }],
@@ -151,6 +135,9 @@ test("booking checkout initializes Helcim for a held deposit appointment", () =>
     }]);
     assert.equal(createdOrders.length, 1);
     assert.equal(createdOrders[0].purpose, "appointment_deposit");
+    assert.equal(createdOrders[0].cart.amount, 50);
+    assert.equal(createdOrders[0].cart.lineItems[0].productId, "booking:hold-internal-1");
+    assert.equal(createdOrders[0].cart.lineItems[0].sku, "BOOKING-DEPOSIT");
     assert.equal(createdOrders[0].customerName, "Client Name");
     assert.equal(createdOrders[0].customerEmail, "client@example.com");
     assert.equal(transitions.length, 1);
@@ -163,15 +150,92 @@ test("booking checkout initializes Helcim for a held deposit appointment", () =>
   `);
 });
 
-test("booking checkout uses full payment product for customer-choice full payment", () => {
+test("booking checkout initializes Helcim for a full-payment appointment", () => {
   runRouteScenario(`
-    const { createdOrders, fetchedProductIds, handler, paySessions } = runScenario({
+    const { createdOrders, handler, invoices, paySessions } = runScenario({
       getAppointmentHoldByPublicReference: async () => createHold({
         offeringSnapshot: {
           title: "Classic Fill",
-          paymentMode: "choice",
-          depositProductId: "deposit-product-1",
-          fullProductId: "full-product-1",
+          paymentMode: "full",
+          fullPrice: 150,
+          allowCustomAmount: false,
+          currency: "CAD",
+          selectedPayment: {
+            amount: 150,
+            description: "Classic Fill full payment",
+            purpose: "appointment_full",
+            sku: "BOOKING-FULL",
+          },
+        },
+      }),
+    });
+
+    const response = await handler(createRequest({ holdReference: "hold_public_1" }));
+
+    assert.equal(response.status, 200);
+    assert.equal(invoices[0].lineItems[0].sku, "BOOKING-FULL");
+    assert.equal(invoices[0].lineItems[0].description, "Classic Fill full payment");
+    assert.equal(paySessions[0].amount, 150);
+    assert.equal(createdOrders[0].purpose, "appointment_full");
+    assert.equal(createdOrders[0].cart.lineItems[0].productId, "booking:hold-internal-1");
+  `);
+});
+
+test("booking checkout supports custom partial payment within configured boundaries", () => {
+  runRouteScenario(`
+    const { createdOrders, handler, invoices, paySessions } = runScenario({
+      getAppointmentHoldByPublicReference: async () => createHold({
+        offeringSnapshot: {
+          title: "Classic Fill",
+          paymentMode: "customPartial",
+          fullPrice: 150,
+          allowCustomAmount: true,
+          customAmountMinimum: 75,
+          customAmountMaximum: 125,
+          currency: "CAD",
+          selectedPayment: {
+            amount: 100,
+            description: "Classic Fill custom partial payment",
+            purpose: "appointment_custom_partial",
+            sku: "BOOKING-CUSTOM-PARTIAL",
+          },
+        },
+      }),
+    });
+
+    const response = await handler(createRequest({
+      holdReference: "hold_public_1",
+      paymentOption: "full",
+      customAmount: 1,
+    }));
+
+    assert.equal(response.status, 200);
+    assert.equal(invoices[0].lineItems[0].sku, "BOOKING-CUSTOM-PARTIAL");
+    assert.equal(invoices[0].lineItems[0].description, "Classic Fill custom partial payment");
+    assert.equal(paySessions[0].amount, 100);
+    assert.equal(createdOrders[0].purpose, "appointment_custom_partial");
+    assert.equal(createdOrders[0].cart.lineItems[0].productId, "booking:hold-internal-1");
+  `);
+});
+
+test("booking checkout uses full payment selected on the immutable hold snapshot", () => {
+  runRouteScenario(`
+    const { createdOrders, handler, paySessions } = runScenario({
+      getAppointmentHoldByPublicReference: async () => createHold({
+        offeringSnapshot: {
+          title: "Classic Fill",
+          paymentMode: "customPartial",
+          fullPrice: 150,
+          allowCustomAmount: true,
+          customAmountMinimum: 75,
+          customAmountMaximum: 125,
+          currency: "CAD",
+          selectedPayment: {
+            amount: 150,
+            description: "Classic Fill full payment",
+            purpose: "appointment_full",
+            sku: "BOOKING-FULL",
+          },
         },
       }),
     });
@@ -182,15 +246,44 @@ test("booking checkout uses full payment product for customer-choice full paymen
     }));
 
     assert.equal(response.status, 200);
-    assert.deepEqual(fetchedProductIds, [["full-product-1"]]);
     assert.equal(paySessions[0].amount, 150);
     assert.equal(createdOrders[0].purpose, "appointment_full");
   `);
 });
 
+test("booking checkout rejects holds without an immutable payment selection", () => {
+  runRouteScenario(`
+    const getAppointmentHoldByPublicReference = async () => createHold({
+      offeringSnapshot: {
+        title: "Classic Fill",
+        paymentMode: "customPartial",
+        fullPrice: 150,
+        allowCustomAmount: true,
+        customAmountMinimum: 75,
+        customAmountMaximum: 125,
+        currency: "CAD",
+      },
+    });
+
+    const { createdOrders, handler, invoices, paySessions } = runScenario({ getAppointmentHoldByPublicReference });
+    const response = await handler(createRequest({
+      holdReference: "hold_public_1",
+      paymentOption: "customPartial",
+      customAmount: 100,
+    }));
+    const responseBody = await parseJson(response);
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(responseBody, { error: "Booking payment is not configured" });
+    assert.equal(invoices.length, 0);
+    assert.equal(paySessions.length, 0);
+    assert.equal(createdOrders.length, 0);
+  `);
+});
+
 test("booking checkout rejects expired or already-used holds before payment setup", () => {
   runRouteScenario(`
-    const { createdOrders, fetchedProductIds, handler, invoices, paySessions } = runScenario({
+    const { createdOrders, handler, invoices, paySessions } = runScenario({
       getAppointmentHoldByPublicReference: async () => createHold({
         expiresAt: new Date(Date.now() - 1000),
       }),
@@ -201,7 +294,6 @@ test("booking checkout rejects expired or already-used holds before payment setu
 
     assert.equal(response.status, 409);
     assert.deepEqual(body, { error: "Booking hold is no longer available" });
-    assert.equal(fetchedProductIds.length, 0);
     assert.equal(invoices.length, 0);
     assert.equal(paySessions.length, 0);
     assert.equal(createdOrders.length, 0);

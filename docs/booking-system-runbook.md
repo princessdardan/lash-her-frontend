@@ -8,7 +8,7 @@ Use this runbook when operating, smoke testing, or troubleshooting Lash Her book
 
 | System | Operator responsibility | Must not become |
 | --- | --- | --- |
-| Sanity | Public booking copy, booking settings, booking offerings, product references, cache revalidation | Storage for PII, payment state, holds, booking history, or transaction records |
+| Sanity | Public booking copy, booking settings, booking offerings, native payment fields, cache revalidation | Storage for PII, payment state, holds, booking history, or transaction records |
 | Private Postgres | Holds, checkout orders, payment events, appointment state, training enrollments, reconciliation data | Public CMS or browser-readable data source |
 | Upstash Redis | Google Calendar OAuth refresh token, calendar locks, idempotency keys, short-lived contention locks | Canonical payment or booking storage |
 | Google Calendar | Staff source of truth for final booked events and busy intervals | Payment gate or appointment-schedule engine |
@@ -25,16 +25,16 @@ If a record contains customer contact data, payment identifiers, hold state, or 
 2. The page loads Sanity `bookingSettings` and active `bookingOffering` records.
 3. The browser requests availability from `/api/booking/availability`.
 4. The server builds slots from configured availability marker events, Google Calendar busy intervals, private active holds, lead time, horizon, duration, intervals, and buffers.
-5. The customer submits the selected slot through `/api/booking/create` or the paid appointment hold/checkout flow.
-6. The server revalidates the slot before creating or confirming the booking.
+5. Training calls submit through `/api/booking/create`; in-person appointments must use the paid appointment hold/checkout flow.
+6. The server revalidates the slot before creating or confirming the booking. Direct unpaid in-person appointment creation is rejected.
 7. A Google Calendar event is inserted or reused.
 8. Booking confirmation emails are attempted through Resend. Email failure does not undo a confirmed booking.
 
 ### Paid Appointment With Hold And Helcim Payment
 
 1. Customer selects a paid booking offering and slot.
-2. `/api/booking/holds` revalidates the slot and creates a private hold.
-3. `/api/booking/checkout` initializes the Helcim checkout, creates or updates a pending private order, and marks the hold `payment_pending`.
+2. `/api/booking/holds` revalidates the slot and creates a private hold with an immutable snapshot of the selected deposit/full/custom-partial payment amount.
+3. `/api/booking/checkout` initializes the Helcim checkout from the hold snapshot, creates or updates a pending private order, and marks the hold `payment_pending`.
 4. Payment success may arrive from browser validation, the Helcim webhook, or both.
 5. `/api/checkout/validate-payment` and `/api/webhooks/card-transactions` both route through the shared appointment finalizer.
 6. The finalizer verifies payment, locks the relevant state, reuses or creates the Google Calendar event, marks the hold booked, persists payment evidence, and sends emails non-blockingly.
@@ -106,8 +106,8 @@ Run these checks for staging release validation, production launch windows, and 
 
 At launch and after payment/calendar incidents, inspect private operational state for:
 
-- Active holds past expiry.
-- `payment_pending` holds older than the expected Helcim return window.
+- Active `held` holds past expiry.
+- `payment_pending` holds older than the configured payment-success grace window.
 - Paid orders without Google Calendar event IDs.
 - Expired holds that later received payment success.
 - Orders or holds marked `booking_failed` or `manual_followup`.

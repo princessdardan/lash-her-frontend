@@ -1,0 +1,1 @@
+ALTER TYPE "public"."checkout_order_purpose" ADD VALUE 'appointment_custom_partial';

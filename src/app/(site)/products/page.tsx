@@ -41,9 +41,9 @@ export default async function ProductsPage(): Promise<ReactElement> {
               <h2 className="section-heading-red text-3xl mb-8">Training Programs</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {trainingPrograms.map((program) => {
-                  const price = program.price ?? program.checkoutProduct?.price;
-                  const isAvailable = program.isAvailable ?? program.checkoutProduct?.isAvailable;
-                  const availabilityLabel = program.availabilityLabel ?? program.checkoutProduct?.availabilityLabel;
+                  const price = program.price;
+                  const isAvailable = program.isAvailable;
+                  const availabilityLabel = program.availabilityLabel;
 
                   return (
                     <article key={program._id} className="card-white flex flex-col h-full">

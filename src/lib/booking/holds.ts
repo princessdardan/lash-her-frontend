@@ -15,6 +15,7 @@ import {
   type AppointmentHoldMetadata,
 } from "@/lib/private-db/schema";
 import type { BookingFinalizerRepository } from "./finalizer";
+import { PAYMENT_SUCCESS_GRACE_MINUTES } from "./payment-policy";
 
 import type { BookingType, CalendarEventWindow } from "./types";
 
@@ -135,7 +136,13 @@ export const ACTIVE_HOLD_STATES: readonly BookingHoldState[] = [
 ];
 
 const MINUTE_MS = 60_000;
+const PAYMENT_SUCCESS_GRACE_MS = PAYMENT_SUCCESS_GRACE_MINUTES * MINUTE_MS;
 const ACTIVE_HOLD_STATES_FOR_QUERY = [...ACTIVE_HOLD_STATES];
+const GRACE_PROTECTED_HOLD_STATES: readonly BookingHoldState[] = [
+  "payment_pending",
+  "paid_pending_booking",
+];
+const GRACE_PROTECTED_HOLD_STATES_FOR_QUERY = [...GRACE_PROTECTED_HOLD_STATES];
 const SENSITIVE_METADATA_KEY_PATTERN = /card|checkouttoken|checkout_token|cvc|cvv|pan|rawwebhook|raw_webhook|secret|token/i;
 
 export function createAppointmentHoldStore(
@@ -211,7 +218,7 @@ export async function listActiveAppointmentHolds(input: {
       and(
         eq(appointmentHolds.offeringId, input.offeringId),
         inArray(appointmentHolds.status, ACTIVE_HOLD_STATES_FOR_QUERY),
-        gt(appointmentHolds.expiresAt, now),
+        isDrizzleActiveHold(now),
         lt(appointmentHolds.selectedStart, input.timeMax),
         gt(appointmentHolds.selectedEnd, input.timeMin),
       ),
@@ -394,7 +401,15 @@ export function isActiveHold(
   hold: Pick<BookingHoldRecord, "expiresAt" | "state">,
   now: Date,
 ): boolean {
-  return ACTIVE_HOLD_STATES.includes(hold.state) && hold.expiresAt > now;
+  return ACTIVE_HOLD_STATES.includes(hold.state) && getActiveHoldExpiresAt(hold) > now;
+}
+
+function getActiveHoldExpiresAt(hold: Pick<BookingHoldRecord, "expiresAt" | "state">): Date {
+  if (GRACE_PROTECTED_HOLD_STATES.includes(hold.state)) {
+    return new Date(hold.expiresAt.getTime() + PAYMENT_SUCCESS_GRACE_MS);
+  }
+
+  return hold.expiresAt;
 }
 
 export function createDrizzleAppointmentHoldRepository(): AppointmentHoldLifecycleRepository {
@@ -414,7 +429,7 @@ export function createDrizzleAppointmentHoldRepository(): AppointmentHoldLifecyc
             and(
               eq(appointmentHolds.offeringId, input.offeringId),
               inArray(appointmentHolds.status, ACTIVE_HOLD_STATES_FOR_QUERY),
-              lte(appointmentHolds.expiresAt, input.now),
+              isDrizzleExpiredActiveHold(input.now),
               lt(appointmentHolds.selectedStart, input.selectedEnd),
               gt(appointmentHolds.selectedEnd, input.selectedStart),
             ),
@@ -427,7 +442,7 @@ export function createDrizzleAppointmentHoldRepository(): AppointmentHoldLifecyc
             and(
               eq(appointmentHolds.offeringId, input.offeringId),
               inArray(appointmentHolds.status, ACTIVE_HOLD_STATES_FOR_QUERY),
-              gt(appointmentHolds.expiresAt, input.now),
+              isDrizzleActiveHold(input.now),
               lt(appointmentHolds.selectedStart, input.selectedEnd),
               gt(appointmentHolds.selectedEnd, input.selectedStart),
             ),
@@ -484,6 +499,29 @@ export function createDrizzleAppointmentHoldRepository(): AppointmentHoldLifecyc
       return updatedHold ? toBookingHoldRecord(updatedHold) : null;
     },
   };
+}
+
+function isDrizzleActiveHold(now: Date) {
+  return or(
+    gt(appointmentHolds.expiresAt, now),
+    and(
+      inArray(appointmentHolds.status, GRACE_PROTECTED_HOLD_STATES_FOR_QUERY),
+      gt(sql`${appointmentHolds.expiresAt} + interval '${sql.raw(String(PAYMENT_SUCCESS_GRACE_MINUTES))} minutes'`, now),
+    ),
+  );
+}
+
+function isDrizzleExpiredActiveHold(now: Date) {
+  return or(
+    and(
+      inArray(appointmentHolds.status, GRACE_PROTECTED_HOLD_STATES_FOR_QUERY),
+      lte(sql`${appointmentHolds.expiresAt} + interval '${sql.raw(String(PAYMENT_SUCCESS_GRACE_MINUTES))} minutes'`, now),
+    ),
+    and(
+      sql`${appointmentHolds.status} not in ('payment_pending', 'paid_pending_booking')`,
+      lte(appointmentHolds.expiresAt, now),
+    ),
+  );
 }
 
 async function getAppointmentHoldDb() {

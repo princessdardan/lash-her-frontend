@@ -7,18 +7,15 @@ type ValidationResult = true | string;
 
 type ValidationContextStub = {
   document?: { checkoutEnabled?: boolean };
-  getClient: (config: { apiVersion: string }) => {
-    fetch: <T>(query: string, params: Record<string, string>) => Promise<T>;
-  };
 };
 
-type CheckoutProductValidator = (
+type FieldValidator = (
   value: unknown,
   context: ValidationContextStub,
 ) => ValidationResult | Promise<ValidationResult>;
 
 type RuleStub = {
-  custom: (validator: CheckoutProductValidator) => RuleStub;
+  custom: (validator: FieldValidator) => RuleStub;
 };
 
 type SchemaField = {
@@ -27,15 +24,9 @@ type SchemaField = {
   of?: Array<{ type?: string }>;
   fields?: SchemaField[];
   validation?: (rule: RuleStub) => unknown;
-};
-
-type ProductProjection = {
-  kind?: string;
-  isAvailable?: boolean;
-  currency?: string;
-  price?: number;
-  variants?: unknown[];
-  options?: unknown[];
+  hidden?: unknown;
+  readOnly?: unknown;
+  deprecated?: { reason?: string };
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -46,14 +37,14 @@ function isSchemaField(value: unknown): value is SchemaField {
   return isRecord(value) && (value.name === undefined || typeof value.name === "string");
 }
 
-function getCheckoutProductValidator(): CheckoutProductValidator {
-  const checkoutProductField = getSchemaField("checkoutProduct");
+function getFieldValidator(name: string): FieldValidator {
+  const field = getSchemaField(name);
 
-  if (typeof checkoutProductField.validation !== "function") {
-    assert.fail("checkoutProduct validation should be configured");
+  if (typeof field.validation !== "function") {
+    assert.fail(`${name} validation should be configured`);
   }
 
-  let capturedValidator: CheckoutProductValidator | undefined;
+  let capturedValidator: FieldValidator | undefined;
   const rule: RuleStub = {
     custom(validator) {
       capturedValidator = validator;
@@ -61,8 +52,8 @@ function getCheckoutProductValidator(): CheckoutProductValidator {
     },
   };
 
-  checkoutProductField.validation(rule);
-  assert.ok(capturedValidator, "checkoutProduct custom validator should be registered");
+  field.validation(rule);
+  assert.ok(capturedValidator, `${name} custom validator should be registered`);
   return capturedValidator;
 }
 
@@ -79,102 +70,43 @@ function getSchemaField(name: string): SchemaField {
   return schemaField;
 }
 
-function buildContext(product: ProductProjection | null): ValidationContextStub {
-  return {
-    document: { checkoutEnabled: true },
-    getClient: ({ apiVersion }) => {
-      assert.strictEqual(apiVersion, "2026-03-24");
-
-      return {
-        async fetch<T>(query: string, params: Record<string, string>): Promise<T> {
-          assert.match(query, /\*\[_id == \$productId\]/);
-          assert.deepStrictEqual(params, { productId: "product-training" });
-          return product as T;
-        },
-      };
-    },
-  };
+function buildContext(document: { checkoutEnabled?: boolean } = { checkoutEnabled: true }): ValidationContextStub {
+  return { document };
 }
 
-describe("trainingProgram checkoutProduct validation", () => {
-  const validProduct: ProductProjection = {
-    kind: "training",
-    isAvailable: true,
-    currency: "CAD",
-    price: 1200,
-  };
+describe("trainingProgram native commerce validation", () => {
+  it("requires native price only when checkout is enabled", async () => {
+    const validator = getFieldValidator("price");
 
-  it("allows disabled checkout without a product", async () => {
-    const validator = getCheckoutProductValidator();
-    const result = await validator(undefined, {
-      document: { checkoutEnabled: false },
-      getClient: () => ({
-        async fetch<T>(): Promise<T> {
-          throw new Error("fetch should not run when checkout is disabled");
-        },
-      }),
-    });
-
-    assert.strictEqual(result, true);
+    assert.strictEqual(await validator(undefined, buildContext()), "Training checkout requires a positive native price.");
+    assert.strictEqual(await validator(0, buildContext()), "Training checkout requires a positive native price.");
+    assert.strictEqual(await validator(1200, buildContext()), true);
+    assert.strictEqual(await validator(undefined, buildContext({ checkoutEnabled: false })), true);
   });
 
-  it("allows enabled checkout without a legacy checkout product", async () => {
-    const validator = getCheckoutProductValidator();
-    const result = await validator(undefined, buildContext(validProduct));
+  it("requires CAD currency only when checkout is enabled", async () => {
+    const validator = getFieldValidator("currency");
 
-    assert.strictEqual(result, true);
+    assert.strictEqual(await validator("USD", buildContext()), "Training checkout currency must be CAD.");
+    assert.strictEqual(await validator("CAD", buildContext()), true);
+    assert.strictEqual(await validator(undefined, buildContext({ checkoutEnabled: false })), true);
   });
 
-  it("rejects invalid training checkout product references", async () => {
-    const validator = getCheckoutProductValidator();
-    const reference = { _ref: "product-training" };
+  it("requires availability only when checkout is enabled", async () => {
+    const validator = getFieldValidator("isAvailable");
 
-    const cases: Array<{ product: ProductProjection | null; message: string }> = [
-      {
-        product: null,
-        message: "The selected checkout product could not be found. Choose an existing training product.",
-      },
-      {
-        product: { ...validProduct, kind: "product" },
-        message: "Training checkout requires a sellable product with Kind set to Training.",
-      },
-      {
-        product: { ...validProduct, isAvailable: false },
-        message: "Training checkout requires the selected product to be available for checkout.",
-      },
-      {
-        product: { ...validProduct, currency: "USD" },
-        message: "Training checkout requires the selected product currency to be CAD.",
-      },
-      {
-        product: { ...validProduct, price: 0 },
-        message: "Training checkout requires the selected product price to be a positive number.",
-      },
-      {
-        product: { ...validProduct, variants: [{ title: "Option" }] },
-        message: "Training checkout does not support product variants or options. Remove them from the selected product.",
-      },
-      {
-        product: { ...validProduct, options: [{ title: "Legacy Option" }] },
-        message: "Training checkout does not support product variants or options. Remove them from the selected product.",
-      },
-    ];
-
-    for (const testCase of cases) {
-      assert.strictEqual(await validator(reference, buildContext(testCase.product)), testCase.message);
-    }
-  });
-
-  it("accepts a valid training product", async () => {
-    const validator = getCheckoutProductValidator();
-    const result = await validator({ _ref: "product-training" }, buildContext(validProduct));
-
-    assert.strictEqual(result, true);
+    assert.strictEqual(await validator(undefined, buildContext()), "Set whether this training program is available for checkout.");
+    assert.strictEqual(await validator(true, buildContext()), true);
+    assert.strictEqual(await validator(false, buildContext()), true);
   });
 });
 
 describe("trainingProgram detail content schema", () => {
   it("configures native checkout commerce fields without requiring the legacy fallback", () => {
+    const schemaFieldNames = trainingProgram.fields
+      .map((field: unknown) => isSchemaField(field) ? field.name : undefined)
+      .filter((name): name is string => typeof name === "string");
+
     for (const fieldName of [
       "price",
       "currency",
@@ -187,7 +119,7 @@ describe("trainingProgram detail content schema", () => {
       assert.strictEqual(getSchemaField(fieldName).group, "commerce", `${fieldName} should be in the commerce group`);
     }
 
-    assert.strictEqual(getSchemaField("checkoutProduct").group, "commerce");
+    assert.ok(!schemaFieldNames.includes("checkoutProduct"));
   });
 
   it("configures a detail hero image in the details group", () => {

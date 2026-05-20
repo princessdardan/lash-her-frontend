@@ -81,8 +81,8 @@ export default async function TrainingProgramPage({ params }: { params: Promise<
     <div className={`flex flex-col min-h-screen ${showPurchaseUi ? "pb-24 lg:pb-0" : ""}`}>
       {hasStructuredDetails && (
         <section className="section-shell py-10 md:py-14 lg:py-16" data-structured-details="true">
-          <div className="mx-auto w-full max-w-[1380px] px-4 sm:px-5 lg:px-8">
-            <div className={showPurchaseUi ? "grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start xl:gap-10" : ""}>
+          <div className="mx-auto w-full max-w-[1380px] px-4 sm:px-5 lg:px-4 xl:px-6">
+            <div className={showPurchaseUi ? "grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start xl:gap-10" : ""}>
               <div className="min-w-0">
                 <TrainingEditorialHero data={data} hasPurchaseUi={showPurchaseUi} />
 
@@ -107,7 +107,7 @@ export default async function TrainingProgramPage({ params }: { params: Promise<
               </div>
 
               {showPurchaseUi && (
-                <div className="w-full lg:w-96 shrink-0">
+                <div className="w-full lg:w-[22rem] shrink-0">
                   <TrainingPurchaseCard program={data} cta={cta} />
                 </div>
               )}
@@ -118,7 +118,7 @@ export default async function TrainingProgramPage({ params }: { params: Promise<
 
       {!hasStructuredDetails && cta && cta.label && isCtaSafe && (
         <section className="section-shell py-12" data-training-commerce-cta="true">
-          <div className="mx-auto w-full max-w-[1380px] px-4 sm:px-5 lg:px-8">
+          <div className="mx-auto w-full max-w-[1380px] px-4 sm:px-5 lg:px-4 xl:px-6">
             {!showPurchaseUi ? (
               <div className="text-center">
                 {renderTrainingCta(cta, "")}
@@ -136,7 +136,7 @@ export default async function TrainingProgramPage({ params }: { params: Promise<
 
       {contactBlocks.length > 0 && (
         <section className="section-shell py-12 md:py-16" data-training-contact-blocks="true">
-          <div className={`mx-auto w-full max-w-[1380px] px-4 sm:px-5 lg:px-8 ${showPurchaseUi ? "lg:pr-[28rem] xl:pr-[30rem]" : ""}`}>
+          <div className={`mx-auto w-full max-w-[1380px] px-4 sm:px-5 lg:px-4 xl:px-6 ${showPurchaseUi ? "lg:pr-[24rem] xl:pr-[26rem]" : ""}`}>
             <BlockRenderer blocks={contactBlocks} />
           </div>
         </section>

@@ -23,6 +23,7 @@ describe("booking offering loader contract", () => {
       "title",
       "description",
       '"slug": slug.current',
+      "service->{",
       "isActive",
       "bookingType",
       "durationMinutes",
@@ -31,31 +32,26 @@ describe("booking offering loader contract", () => {
       "bufferAfterMinutes",
       "minimumLeadTimeHoursOverride",
       "paymentMode",
-      "depositProduct->{",
-      "fullProduct->{",
+      "depositAmount",
+      "fullPrice",
+      "allowCustomAmount",
+      "customAmountMinimum",
+      "customAmountMaximum",
+      "currency",
       "displayOrder",
     ]) {
       assert.ok(loadersSource.includes(projectedField), `${projectedField} should be projected`);
     }
   });
 
-  it("uses the sellable product projection shape for deposit and full product references", () => {
-    for (const projectedField of [
-      "shortDescription",
-      "sku",
-      "kind",
-      "price",
-      "currency",
-      "variants[]{ _key, title, sku, price, isAvailable, availabilityLabel }",
-      "isAvailable",
-      "availabilityLabel",
-      "fulfillmentNote",
-      "image{ asset, hotspot, crop, alt }",
-    ]) {
-      assert.ok(loadersSource.includes(projectedField), `${projectedField} should be projected`);
-    }
+  it("does not project legacy sellable product references for booking payment", () => {
+    const bookingProjection = loadersSource.slice(
+      loadersSource.indexOf("const BOOKING_OFFERING_PROJECTION"),
+      loadersSource.indexOf("const SERVICE_BOOKING_OFFERING_PROJECTION"),
+    );
 
-    assert.match(loadersSource, /sanityFetchOptions\(\["bookingOffering", "sellableProduct"\]\)/);
+    assert.doesNotMatch(bookingProjection, /depositProduct|fullProduct|sellableProduct/);
+    assert.match(loadersSource, /sanityFetchOptions\(\["bookingOffering"\]\)/);
   });
 
   it("maps canonical services to the booking offering shape without sellable product references", () => {
@@ -74,6 +70,12 @@ describe("booking offering loader contract", () => {
       "bufferAfterMinutes",
       "minimumLeadTimeHoursOverride",
       "paymentMode",
+      "fullPrice",
+      "depositAmount",
+      "allowCustomAmount",
+      "customAmountMinimum",
+      "customAmountMaximum",
+      "currency",
       "displayOrder",
     ]) {
       assert.ok(loadersSource.includes(projectedField), `${projectedField} should be projected for services`);
@@ -84,7 +86,7 @@ describe("booking offering loader contract", () => {
       loadersSource.indexOf("async function getActiveBookingOfferings"),
     );
 
-    assert.doesNotMatch(serviceProjection, /depositProduct|fullProduct|fullPrice|depositAmount/);
+    assert.doesNotMatch(serviceProjection, /depositProduct|fullProduct/);
     assert.match(
       loadersSource,
       new RegExp("if \\(bookingOffering !== null\\) \\{\\n    return bookingOffering;\\n  \\}"),

@@ -1,41 +1,5 @@
 import { defineField, defineType, defineArrayMember } from "sanity";
 
-const SANITY_API_VERSION = "2026-03-24";
-
-type CheckoutProductReference = {
-  _ref: string;
-};
-
-type CheckoutProductValidationProjection = {
-  kind?: string;
-  isAvailable?: boolean;
-  currency?: string;
-  price?: number;
-  variants?: unknown[];
-  options?: unknown[];
-};
-
-function isCheckoutProductReference(value: unknown): value is CheckoutProductReference {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "_ref" in value &&
-    typeof value._ref === "string" &&
-    value._ref.length > 0
-  );
-}
-
-function isValidTrainingPrice(price: unknown): boolean {
-  return typeof price === "number" && Number.isFinite(price) && price > 0;
-}
-
-function hasConfiguredChoices(product: CheckoutProductValidationProjection): boolean {
-  return Boolean(
-    (Array.isArray(product.variants) && product.variants.length > 0) ||
-      (Array.isArray(product.options) && product.options.length > 0),
-  );
-}
-
 export const trainingProgram = defineType({
   name: "trainingProgram",
   title: "Training Program",
@@ -234,64 +198,6 @@ export const trainingProgram = defineType({
       fields: [
         defineField({ name: "alt", title: "Alt text", type: "string" }),
       ],
-    }),
-    defineField({
-      name: "checkoutProduct",
-      title: "Checkout Product (Legacy Fallback)",
-      description: "Temporary fallback for migrated checkout reads while native training commerce fields roll out.",
-      type: "reference",
-      to: [{ type: "sellableProduct" }],
-      group: "commerce",
-      hidden: ({ document }) => !document?.checkoutEnabled,
-      validation: (Rule) => Rule.custom(async (value, context) => {
-        if (!context.document?.checkoutEnabled || !value) {
-          return true;
-        }
-
-        if (!isCheckoutProductReference(value)) {
-          return "Choose a valid checkout product reference before publishing.";
-        }
-
-        const product = await context
-          .getClient({ apiVersion: SANITY_API_VERSION })
-          .fetch<CheckoutProductValidationProjection | null>(
-            `*[_id == $productId][0]{
-              kind,
-              isAvailable,
-              currency,
-              price,
-              variants,
-              options
-            }`,
-            { productId: value._ref },
-          );
-
-        if (!product) {
-          return "The selected checkout product could not be found. Choose an existing training product.";
-        }
-
-        if (product.kind !== "training") {
-          return "Training checkout requires a sellable product with Kind set to Training.";
-        }
-
-        if (product.isAvailable !== true) {
-          return "Training checkout requires the selected product to be available for checkout.";
-        }
-
-        if (product.currency !== "CAD") {
-          return "Training checkout requires the selected product currency to be CAD.";
-        }
-
-        if (!isValidTrainingPrice(product.price)) {
-          return "Training checkout requires the selected product price to be a positive number.";
-        }
-
-        if (hasConfiguredChoices(product)) {
-          return "Training checkout does not support product variants or options. Remove them from the selected product.";
-        }
-
-        return true;
-      }),
     }),
     defineField({
       name: "checkoutCtaLabel",

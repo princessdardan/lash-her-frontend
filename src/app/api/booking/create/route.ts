@@ -53,6 +53,14 @@ export function createBookingCreatePostHandler(
     }
 
     const input = toBookingRequestInput(body);
+
+    if (input.bookingType === "in-person-appointment") {
+      return Response.json(
+        { success: false, error: "In-person appointments require secure payment before confirmation." },
+        { status: 400 },
+      );
+    }
+
     const result = await dependencies.createBooking(input);
 
     if (!result.success) {

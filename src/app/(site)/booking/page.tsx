@@ -31,6 +31,16 @@ export default async function BookingPage({
     ? "training-call"
     : offering?.bookingType ?? normalizeType(params.type);
 
+  const offeringPayment = offering ? {
+    paymentMode: offering.paymentMode,
+    depositAmount: offering.depositAmount,
+    fullPrice: offering.fullPrice,
+    allowCustomAmount: offering.allowCustomAmount,
+    customAmountMinimum: offering.customAmountMinimum,
+    customAmountMaximum: offering.customAmountMaximum,
+    currency: offering.currency,
+  } : undefined;
+
   return (
     <main className="min-h-screen bg-background py-20 px-4 md:px-8">
       <div className="max-w-4xl mx-auto">
@@ -47,6 +57,7 @@ export default async function BookingPage({
             initialBookingType={initialBookingType}
             paidTrainingOrderId={paidTrainingOrderId}
             initialOfferingSlug={offeringSlug}
+            offeringPayment={offeringPayment}
           />
         </div>
       </div>

@@ -50,7 +50,7 @@ Implication: paid Lash Her booking must be a custom app flow that uses Google Ca
 
 | System | Responsibility | Must Not Do |
 | --- | --- | --- |
-| Sanity | Public/editorial booking offering config, product references, copy | Store PII, holds, payment status, booking history, transaction data |
+| Sanity | Public/editorial booking offering config, native payment fields, copy | Store PII, holds, payment status, booking history, transaction data |
 | Private Postgres | Holds, orders, payment events, booking lifecycle, training eligibility, audit/reconciliation | Act as public CMS |
 | Redis / Upstash | Google OAuth token storage and short-lived race locks | Be canonical booking/payment state |
 | Google Calendar | Busy-time source and final staff event store | Gate Helcim payment or hold Appointment Schedule slots |
@@ -67,8 +67,8 @@ Offering selected
   -> slots displayed
   -> slot selected
   -> server revalidates slot
-  -> private 10-minute hold created
-  -> Helcim checkout initialized
+  -> private 10-minute hold created with selected payment snapshot
+  -> Helcim checkout initialized from hold snapshot
   -> payment success from client and/or webhook
   -> shared finalizer locks order/hold
   -> payment verified and recorded
@@ -112,7 +112,7 @@ Recommended hold states:
 Required stored fields:
 
 - hold ID and public-safe hold reference,
-- offering ID and offering snapshot,
+- offering ID, offering snapshot, and immutable selected payment snapshot,
 - customer contact snapshot,
 - selected start/end/timezone,
 - `expires_at`,
@@ -144,7 +144,7 @@ It must:
 | Failure | Policy |
 | --- | --- |
 | Two customers select the same slot | Server revalidation plus DB conflict prevention decides winner. |
-| Hold expires before payment | Checkout cannot finalize automatically unless a defined payment-success grace policy applies. |
+| Hold expires before payment | Checkout cannot finalize automatically unless the payment success arrives inside the defined grace policy; `payment_pending` holds continue blocking the slot during that grace window. |
 | Payment succeeds after slot becomes unavailable | Mark `manual_followup`; offer another slot before refund. |
 | Browser closes after payment | Helcim webhook can still run finalizer. |
 | Client validation and webhook both arrive | Finalizer is idempotent and creates one Calendar event. |
@@ -159,7 +159,7 @@ Names can change during implementation, but keep these boundaries:
 - `GET /api/booking/availability`: offering-aware slot availability.
 - `POST /api/booking/holds`: create a 10-minute hold after server revalidation.
 - `DELETE /api/booking/holds/[id]`: release a hold before payment when safe.
-- `POST /api/booking/checkout`: initialize Helcim checkout for a hold.
+- `POST /api/booking/checkout`: initialize Helcim checkout for a hold using only the hold's selected payment snapshot.
 - `POST /api/checkout/validate-payment`: verify browser payment payload and call finalizer.
 - `POST /api/webhooks/card-transactions`: verify webhook and call finalizer.
 - `POST /api/booking/reconcile` or scheduled job: expire stale holds and surface recovery states.
@@ -200,7 +200,8 @@ Likely extend:
 - `src/lib/commerce/training-enrollment-store.ts`
 - `src/lib/private-db/schema.ts`
 - `src/sanity/schemas/documents/booking-settings.ts`
-- `src/sanity/schemas/documents/sellable-product.ts`
+- `src/sanity/schemas/documents/booking-offering.ts`
+- `src/sanity/schemas/documents/service.ts`
 - `src/data/loaders.ts`
 - `src/types/index.ts`
 

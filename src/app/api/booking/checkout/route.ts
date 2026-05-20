@@ -1,18 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import {
-  buildValidatedCart,
-  type CatalogProduct,
-  type ValidatedCart,
-} from "@/lib/commerce/cart";
+import type { ValidatedCart } from "@/lib/commerce/cart";
 import type { PendingOrderRecord } from "@/lib/commerce/order-store";
 import type { CheckoutOrderPurpose } from "@/lib/private-db/schema";
 import type { BookingHoldRecord } from "@/lib/booking/holds";
-import type { TSellableProduct } from "@/types";
 
 interface BookingCheckoutRequestBody {
   holdReference: string;
-  paymentOption?: "deposit" | "full";
 }
 
 interface BookingCheckoutInvoiceInput {
@@ -60,7 +54,6 @@ interface BookingCheckoutPostHandlerDependencies {
   createHelcimInvoice: (input: BookingCheckoutInvoiceInput) => Promise<BookingCheckoutInvoice>;
   createPendingOrder: (input: BookingCheckoutPendingOrderInput) => Promise<PendingOrderRecord>;
   getAppointmentHoldByPublicReference: (publicReference: string) => Promise<BookingHoldRecord | null>;
-  getSellableProductsByIds: (ids: string[]) => Promise<TSellableProduct[]>;
   initializeHelcimPay: (input: BookingCheckoutPaySessionInput) => Promise<BookingCheckoutPaySession>;
   transitionAppointmentHold: (input: {
     checkoutOrderId: string;
@@ -76,10 +69,17 @@ interface BookingCheckoutPostHandlerDependencies {
 }
 
 interface BookingOfferingSnapshot {
-  depositProductId?: string;
-  fullProductId?: string;
-  paymentMode?: "deposit" | "full" | "choice";
-  title?: string;
+  currency: "CAD";
+  paymentMode: "deposit" | "full" | "customPartial";
+  selectedPayment: BookingPaymentSelection;
+  title: string;
+}
+
+interface BookingPaymentSelection {
+  amount: number;
+  description: string;
+  purpose: Extract<CheckoutOrderPurpose, "appointment_deposit" | "appointment_full" | "appointment_custom_partial">;
+  sku: "BOOKING-DEPOSIT" | "BOOKING-FULL" | "BOOKING-CUSTOM-PARTIAL";
 }
 
 export function createBookingCheckoutPostHandler(
@@ -113,7 +113,7 @@ export function createBookingCheckoutPostHandler(
         );
       }
 
-      const paymentSelection = getPaymentSelection(hold, checkoutRequest.paymentOption);
+      const paymentSelection = getPaymentSelection(hold);
 
       if (paymentSelection === null) {
         return NextResponse.json(
@@ -122,11 +122,7 @@ export function createBookingCheckoutPostHandler(
         );
       }
 
-      const products = await dependencies.getSellableProductsByIds([paymentSelection.productId]);
-      const cart = buildValidatedCart(
-        [{ productId: paymentSelection.productId, quantity: 1 }],
-        products.map(toCatalogProduct),
-      );
+      const cart = buildBookingCart(hold, paymentSelection);
       const invoice = await dependencies.createHelcimInvoice({
         currency: "CAD",
         type: "INVOICE",
@@ -193,8 +189,7 @@ export function createBookingCheckoutPostHandler(
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
-  const [loadersModule, helcimModule, orderStoreModule, holdsModule] = await Promise.all([
-    import("@/data/loaders"),
+  const [helcimModule, orderStoreModule, holdsModule] = await Promise.all([
     import("@/lib/commerce/helcim-client"),
     import("@/lib/commerce/order-store"),
     import("@/lib/booking/holds"),
@@ -204,7 +199,6 @@ export async function POST(req: NextRequest): Promise<Response> {
     createHelcimInvoice: helcimModule.createHelcimInvoice,
     createPendingOrder: orderStoreModule.createPendingOrder,
     getAppointmentHoldByPublicReference: holdsModule.getAppointmentHoldByPublicReference,
-    getSellableProductsByIds: loadersModule.loaders.getSellableProductsByIds,
     initializeHelcimPay: helcimModule.initializeHelcimPay,
     transitionAppointmentHold: holdsModule.transitionAppointmentHold,
   })(req);
@@ -221,61 +215,44 @@ function parseBookingCheckoutRequest(body: unknown): BookingCheckoutRequestBody 
     return null;
   }
 
-  const paymentOption = parsePaymentOption(body.paymentOption);
-
-  return {
-    holdReference,
-    ...(paymentOption ? { paymentOption } : {}),
-  };
+  return { holdReference };
 }
 
-function getPaymentSelection(
-  hold: BookingHoldRecord,
-  paymentOption: "deposit" | "full" | undefined,
-): { productId: string; purpose: Extract<CheckoutOrderPurpose, "appointment_deposit" | "appointment_full"> } | null {
+function getPaymentSelection(hold: BookingHoldRecord): BookingPaymentSelection | null {
   const snapshot = toBookingOfferingSnapshot(hold.offeringSnapshot);
 
   if (snapshot === null) {
     return null;
   }
 
-  if (snapshot.paymentMode === "deposit") {
-    return snapshot.depositProductId
-      ? { productId: snapshot.depositProductId, purpose: "appointment_deposit" }
-      : null;
-  }
-
-  if (snapshot.paymentMode === "full") {
-    return snapshot.fullProductId
-      ? { productId: snapshot.fullProductId, purpose: "appointment_full" }
-      : null;
-  }
-
-  if (snapshot.paymentMode === "choice") {
-    if (paymentOption === "deposit" && snapshot.depositProductId) {
-      return { productId: snapshot.depositProductId, purpose: "appointment_deposit" };
-    }
-
-    if (paymentOption === "full" && snapshot.fullProductId) {
-      return { productId: snapshot.fullProductId, purpose: "appointment_full" };
-    }
-  }
-
-  return null;
+  return snapshot.selectedPayment;
 }
 
 function toBookingOfferingSnapshot(value: Record<string, unknown>): BookingOfferingSnapshot | null {
   const paymentMode = value.paymentMode;
+  const currency = value.currency;
+  const selectedPayment = toBookingPaymentSelection(value.selectedPayment);
+  const title = typeof value.title === "string" && value.title.trim().length > 0
+    ? value.title.trim()
+    : null;
 
-  if (paymentMode !== "deposit" && paymentMode !== "full" && paymentMode !== "choice") {
+  if (
+    paymentMode !== "deposit" &&
+    paymentMode !== "full" &&
+    paymentMode !== "customPartial"
+  ) {
+    return null;
+  }
+
+  if (currency !== "CAD" || title === null || selectedPayment === null) {
     return null;
   }
 
   return {
-    ...(typeof value.depositProductId === "string" ? { depositProductId: value.depositProductId } : {}),
-    ...(typeof value.fullProductId === "string" ? { fullProductId: value.fullProductId } : {}),
+    currency,
     paymentMode,
-    ...(typeof value.title === "string" ? { title: value.title } : {}),
+    selectedPayment,
+    title,
   };
 }
 
@@ -285,26 +262,70 @@ function getHoldOfferingTitle(hold: BookingHoldRecord): string {
   return snapshot?.title ?? hold.offeringId;
 }
 
-function toCatalogProduct(product: TSellableProduct): CatalogProduct {
+function buildBookingCart(
+  hold: BookingHoldRecord,
+  paymentSelection: BookingPaymentSelection,
+): ValidatedCart {
   return {
-    id: product._id,
-    sku: product.sku,
-    title: product.title,
-    price: product.price,
-    currency: product.currency,
-    isAvailable: product.isAvailable,
-    variants: product.variants?.map((variant) => ({
-      id: variant._key,
-      sku: variant.sku,
-      title: variant.title,
-      price: variant.price,
-      isAvailable: variant.isAvailable,
-    })),
+    amount: paymentSelection.amount,
+    currency: "CAD",
+    lineItems: [
+      {
+        productId: `booking:${hold.id}`,
+        sku: paymentSelection.sku,
+        description: paymentSelection.description,
+        quantity: 1,
+        price: paymentSelection.amount,
+        total: paymentSelection.amount,
+      },
+    ],
   };
 }
 
-function parsePaymentOption(value: unknown): "deposit" | "full" | null {
-  return value === "deposit" || value === "full" ? value : null;
+function toPositiveAmount(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+
+  return Math.round(value * 100) / 100;
+}
+
+function toBookingPaymentSelection(value: unknown): BookingPaymentSelection | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const amount = toPositiveAmount(value.amount);
+  const description = typeof value.description === "string" && value.description.trim().length > 0
+    ? value.description.trim()
+    : null;
+
+  if (amount === null || description === null) {
+    return null;
+  }
+
+  if (
+    value.purpose !== "appointment_deposit" &&
+    value.purpose !== "appointment_full" &&
+    value.purpose !== "appointment_custom_partial"
+  ) {
+    return null;
+  }
+
+  if (
+    value.sku !== "BOOKING-DEPOSIT" &&
+    value.sku !== "BOOKING-FULL" &&
+    value.sku !== "BOOKING-CUSTOM-PARTIAL"
+  ) {
+    return null;
+  }
+
+  return {
+    amount,
+    description,
+    purpose: value.purpose,
+    sku: value.sku,
+  };
 }
 
 function parseRequiredString(value: unknown): string | null {

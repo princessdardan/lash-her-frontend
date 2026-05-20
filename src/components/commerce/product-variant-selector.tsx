@@ -2,13 +2,13 @@
 
 import { useMemo, type ReactElement } from "react";
 import { cn } from "@/lib/utils";
-import type { TSellableProduct, TSellableProductVariant } from "@/types";
+import type { TProduct, TProductVariant } from "@/types";
 
 export interface ProductVariantSelectorProps {
-  product: TSellableProduct;
+  product: TProduct;
   selectedVariantId?: string;
   selectedOptions?: Record<string, string>;
-  onVariantSelect?: (variant: TSellableProductVariant) => void;
+  onVariantSelect?: (variant: TProductVariant) => void;
   onOptionsChange?: (options: Record<string, string>) => void;
   readOnly?: boolean;
   className?: string;
@@ -27,7 +27,7 @@ export function ProductVariantSelector({
     return null;
   }
 
-  const handleVariantClick = (variant: TSellableProductVariant) => {
+  const handleVariantClick = (variant: TProductVariant) => {
     if (readOnly) return;
 
     onVariantSelect?.(variant);

@@ -165,17 +165,19 @@ test("private checkout store creates pending orders with hashed tokens and cent 
   `);
 });
 
-test("private checkout store records appointment order purpose", () => {
+test("private checkout store records appointment order purposes", () => {
   runOrderStoreScenario(`
-    const { repository, store } = createFakeStore();
-    const created = await store.createPendingOrder({
-      ...pendingOrderInput,
-      purpose: "appointment_deposit",
-    });
-    const row = repository.rows[0];
+    for (const purpose of ["appointment_deposit", "appointment_full", "appointment_custom_partial"]) {
+      const { repository, store } = createFakeStore();
+      const created = await store.createPendingOrder({
+        ...pendingOrderInput,
+        purpose,
+      });
+      const row = repository.rows[0];
 
-    assert.equal(created.purpose, "appointment_deposit");
-    assert.equal(row.purpose, "appointment_deposit");
+      assert.equal(created.purpose, purpose);
+      assert.equal(row.purpose, purpose);
+    }
   `);
 });
 
@@ -208,7 +210,7 @@ test("private checkout store can recover paid appointment orders by checkout tok
     const { repository, store } = createFakeStore();
     const appointment = await store.createPendingOrder({
       ...pendingOrderInput,
-      purpose: "appointment_deposit",
+      purpose: "appointment_custom_partial",
     });
     const product = await store.createPendingOrder({
       ...pendingOrderInput,
@@ -225,7 +227,7 @@ test("private checkout store can recover paid appointment orders by checkout tok
 
     assert.ok(foundAppointment);
     assert.equal(foundAppointment.orderId, appointment.orderId);
-    assert.equal(foundAppointment.purpose, "appointment_deposit");
+    assert.equal(foundAppointment.purpose, "appointment_custom_partial");
     assert.equal(foundProduct, null);
   `);
 });

@@ -11,16 +11,9 @@ const helperScript = String.raw`
     slug: "classic-lash-training",
     title: "Classic Lash Training",
     checkoutEnabled: true,
-    checkoutProduct: {
-      _id: "product-classic-lash-training",
-      kind: "training",
-      sku: "TRAINING-CLASSIC",
-      title: "Classic Lash Training Full Payment",
-      price: 1499,
-      currency: "CAD",
-      isAvailable: true,
-      variants: [],
-    },
+    price: 1499,
+    currency: "CAD",
+    isAvailable: true,
   };
 
   function createRequest(body) {
@@ -151,8 +144,8 @@ test("training checkout route creates checkout and enrollment for a valid reques
       status: "DUE",
       notes: "Lash Her training checkout: Classic Lash Training",
       lineItems: [{
-        sku: "TRAINING-CLASSIC",
-        description: "Classic Lash Training Full Payment",
+        sku: "training-program-classic-lash",
+        description: "Classic Lash Training",
         quantity: 1,
         price: 1499,
         taxAmount: 194.87,
@@ -179,9 +172,9 @@ test("training checkout route creates checkout and enrollment for a valid reques
         title: "Classic Lash Training",
       },
       productSnapshot: {
-        id: "product-classic-lash-training",
-        title: "Classic Lash Training Full Payment",
-        sku: "TRAINING-CLASSIC",
+        id: "training-program-classic-lash",
+        title: "Classic Lash Training",
+        sku: "training-program-classic-lash",
         priceCents: 149900,
         currency: "CAD",
       },
@@ -189,14 +182,22 @@ test("training checkout route creates checkout and enrollment for a valid reques
   `);
 });
 
-test("training checkout route uses native training commerce fields with derived SKU", () => {
+test("training checkout route ignores legacy checkoutProduct and uses native training fields", () => {
   runRouteScenario(`
     const nativeProgram = {
       ...program,
-      checkoutProduct: undefined,
       price: 1499,
       currency: "CAD",
       isAvailable: true,
+      checkoutProduct: {
+        _id: "legacy-training-product",
+        kind: "training",
+        sku: "LEGACY-TRAINING",
+        title: "Legacy Training Product",
+        price: 999,
+        currency: "CAD",
+        isAvailable: true,
+      },
     };
     const { enrollments, handler, invoices, orders } = runScenario({
       getTrainingProgramBySlug: async () => nativeProgram,

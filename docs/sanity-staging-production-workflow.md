@@ -363,7 +363,7 @@ Example:
 ```bash
 npx sanity dataset export staging-2026-05-10 ./booking-content.tar.gz \
   --project-id 3auncj84 \
-  --types bookingSettings,sellableProduct
+  --types bookingSettings,bookingOffering,service,product,trainingProgram
 
 npx sanity dataset import ./booking-content.tar.gz production \
   --project-id 3auncj84 \
@@ -470,11 +470,11 @@ Production release:
 
 ## Phase 8: Pre-Launch Content Audit
 
-Before promoting to production, run a GROQ audit to ensure all checkout-enabled training programs have valid product references.
+Before promoting to production, run a GROQ audit to ensure all checkout-enabled training programs have valid native commerce fields.
 
 ### Training Checkout Audit Query
 
-Run this query in the Sanity Vision tool or via CLI with the published perspective to find invalid launch configurations. It mirrors the Studio and runtime training checkout guardrails where content can be audited: product reference exists, referenced product resolves, kind is `training`, product is available, currency is `CAD`, price is positive, and no variants or historical options are configured.
+Run this query in the Sanity Vision tool or via CLI with the published perspective to find invalid launch configurations. It mirrors the Studio and runtime training checkout guardrails where content can be audited: checkout is enabled, native price is positive, currency is `CAD`, and availability has been explicitly set.
 
 ```groq
 *[
@@ -482,30 +482,21 @@ Run this query in the Sanity Vision tool or via CLI with the published perspecti
   !(_id in path("drafts.**")) &&
   checkoutEnabled == true &&
   (
-    !defined(checkoutProduct._ref) ||
-    !defined(checkoutProduct->_id) ||
-    checkoutProduct->kind != "training" ||
-    checkoutProduct->isAvailable != true ||
-    checkoutProduct->currency != "CAD" ||
-    !defined(checkoutProduct->price) ||
-    checkoutProduct->price <= 0 ||
-    count(coalesce(checkoutProduct->variants, [])) > 0 ||
-    count(coalesce(checkoutProduct->options, [])) > 0
+    !defined(price) ||
+    price <= 0 ||
+    currency != "CAD" ||
+    !defined(isAvailable)
   )
 ] {
   _id,
   title,
-  "checkoutProductId": checkoutProduct._ref,
-  "checkoutProductTitle": checkoutProduct->title,
+  price,
+  currency,
+  isAvailable,
   "issue": select(
-    !defined(checkoutProduct._ref) => "missing checkout product reference",
-    !defined(checkoutProduct->_id) => "checkout product reference does not resolve",
-    checkoutProduct->kind != "training" => "checkout product kind is not training",
-    checkoutProduct->isAvailable != true => "checkout product is unavailable",
-    checkoutProduct->currency != "CAD" => "checkout product currency is not CAD",
-    !defined(checkoutProduct->price) || checkoutProduct->price <= 0 => "checkout product price is missing or not positive",
-    count(coalesce(checkoutProduct->variants, [])) > 0 => "checkout product has variants configured",
-    count(coalesce(checkoutProduct->options, [])) > 0 => "checkout product has historical options configured",
+    !defined(price) || price <= 0 => "native training price is missing or not positive",
+    currency != "CAD" => "native training currency is not CAD",
+    !defined(isAvailable) => "native training availability is not set",
     "unknown invalid checkout configuration"
   )
 }
@@ -541,7 +532,7 @@ Configure separate webhooks for staging and production in the Sanity project man
 | Project | `3auncj84` | `3auncj84` |
 | Dataset | `staging-2026-05-10` | `production` |
 | Trigger | Published document create, update, and delete events | Published document create, update, and delete events |
-| Filter | `_type in ["homePage", "contactPage", "galleryPage", "trainingPage", "trainingProgramsPage", "trainingProgram", "sellableProduct", "globalSettings", "mainMenu", "bookingSettings"]` | Same as staging |
+| Filter | `_type in ["homePage", "contactPage", "galleryPage", "trainingPage", "trainingProgramsPage", "trainingProgram", "product", "service", "bookingOffering", "globalSettings", "mainMenu", "bookingSettings"]` | Same as staging |
 | Projection | `{ _type }` | `{ _type }` |
 | Method | `POST` | `POST` |
 | Secret | Staging `SANITY_WEBHOOK_SECRET` | Production `SANITY_WEBHOOK_SECRET` |
@@ -560,9 +551,11 @@ The revalidation route maps Sanity `_type` values to Next.js cache tags. Loader 
 | `contactPage` | `contactPage` | `/contact` |
 | `galleryPage` | `galleryPage` | `/gallery` |
 | `trainingPage` | `trainingPage` | `/training` |
-| `trainingProgramsPage` | `trainingProgramsPage`, `trainingProgram`, `sellableProduct` | `/training-programs` and referenced training product details |
-| `trainingProgram` | `trainingProgram`, `sellableProduct` | `/training-programs/[slug]` and referenced training product details |
-| `sellableProduct` | `sellableProduct` | `/products/[slug]`, checkout product reads, and training pages that dereference products |
+| `trainingProgramsPage` | `trainingProgramsPage`, `trainingProgram` | `/training-programs` and training program cards |
+| `trainingProgram` | `trainingProgram` | `/training-programs/[slug]` and native training checkout reads |
+| `product` | `product` | `/products`, `/products/[slug]`, and canonical product checkout reads |
+| `service` | `service` | `/services`, `/services/[slug]`, and booking offering cards |
+| `bookingOffering` | `bookingOffering` | `/booking`, `/services`, and paid appointment checkout configuration |
 | `globalSettings` | `global` | Header, footer, metadata |
 | `mainMenu` | `menu` | Navigation |
 | `bookingSettings` | `bookingSettings` | `/booking` availability configuration |

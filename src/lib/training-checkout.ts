@@ -17,11 +17,9 @@ export type TrainingCheckoutErrorCode =
   | "missing_program"
   | "program_mismatch"
   | "checkout_unavailable"
-  | "invalid_product_kind"
   | "product_unavailable"
   | "invalid_currency"
   | "invalid_price"
-  | "variants_not_supported"
   | "stale_client_price"
   | "cart_input_not_supported"
   | "discounts_not_supported"
@@ -49,8 +47,6 @@ export type TrainingCheckoutValidationResult =
   | { ok: true; quote: TrainingCheckoutQuote }
   | { ok: false; code: TrainingCheckoutErrorCode };
 
-type LegacyTrainingCheckoutProduct = NonNullable<TTrainingProgram["checkoutProduct"]>;
-
 export type TrainingCheckoutProduct = {
   id: string;
   title: string;
@@ -60,8 +56,6 @@ export type TrainingCheckoutProduct = {
   isAvailable: boolean | undefined;
   availabilityLabel?: string;
   fulfillmentNote?: string;
-  source: "native" | "legacy";
-  legacyProduct?: LegacyTrainingCheckoutProduct;
 };
 
 export interface TrainingConfirmationUrlInput {
@@ -78,11 +72,9 @@ export function isTrainingPurchasable(program: TTrainingProgram | null | undefin
   if (!program.checkoutEnabled) return false;
   const product = getTrainingCheckoutProduct(program);
   if (!product) return false;
-  if (product.source === "legacy" && product.legacyProduct?.kind !== "training") return false;
   if (!product.isAvailable) return false;
   if (product.currency !== "CAD") return false;
   if (!isValidTrainingPrice(product.price)) return false;
-  if (product.source === "legacy" && product.legacyProduct && hasConfiguredChoices(product.legacyProduct)) return false;
   return true;
 }
 
@@ -91,33 +83,16 @@ export function getTrainingCheckoutProduct(
 ): TrainingCheckoutProduct | null {
   if (!program?.checkoutEnabled) return null;
 
-  if (hasCompleteNativeTrainingCommerceFields(program)) {
-    return {
-      id: program._id,
-      title: program.title,
-      sku: program._id,
-      price: typeof program.price === "number" ? program.price : Number.NaN,
-      currency: program.currency,
-      isAvailable: program.isAvailable,
-      ...(program.availabilityLabel ? { availabilityLabel: program.availabilityLabel } : {}),
-      ...(program.fulfillmentNote ? { fulfillmentNote: program.fulfillmentNote } : {}),
-      source: "native",
-    };
-  }
-
-  if (!program.checkoutProduct) return null;
-
+  if (!hasCompleteNativeTrainingCommerceFields(program)) return null;
   return {
-    id: program.checkoutProduct._id,
-    title: program.checkoutProduct.title,
-    sku: program.checkoutProduct.sku || program.checkoutProduct._id,
-    price: program.checkoutProduct.price,
-    currency: program.checkoutProduct.currency,
-    isAvailable: program.checkoutProduct.isAvailable,
-    ...(program.checkoutProduct.availabilityLabel ? { availabilityLabel: program.checkoutProduct.availabilityLabel } : {}),
-    ...(program.checkoutProduct.fulfillmentNote ? { fulfillmentNote: program.checkoutProduct.fulfillmentNote } : {}),
-    source: "legacy",
-    legacyProduct: program.checkoutProduct,
+    id: program._id,
+    title: program.title,
+    sku: program._id,
+    price: typeof program.price === "number" ? program.price : Number.NaN,
+    currency: program.currency,
+    isAvailable: program.isAvailable,
+    ...(program.availabilityLabel ? { availabilityLabel: program.availabilityLabel } : {}),
+    ...(program.fulfillmentNote ? { fulfillmentNote: program.fulfillmentNote } : {}),
   };
 }
 
@@ -153,11 +128,9 @@ export function validateTrainingCheckoutRequest(
 
   const product = getTrainingCheckoutProduct(program);
   if (!product) return { ok: false, code: "checkout_unavailable" };
-  if (product.source === "legacy" && product.legacyProduct?.kind !== "training") return { ok: false, code: "invalid_product_kind" };
   if (!product.isAvailable) return { ok: false, code: "product_unavailable" };
   if (product.currency !== "CAD") return { ok: false, code: "invalid_currency" };
   if (!isValidTrainingPrice(product.price)) return { ok: false, code: "invalid_price" };
-  if (product.source === "legacy" && product.legacyProduct && hasConfiguredChoices(product.legacyProduct)) return { ok: false, code: "variants_not_supported" };
 
   const clientPrice = input.clientPrice;
   if (clientPrice !== undefined && (typeof clientPrice !== "number" || !Number.isFinite(clientPrice) || moneyToCents(clientPrice) !== moneyToCents(product.price))) {
@@ -210,14 +183,6 @@ function hasCartLikeInput(input: Record<string, unknown>): boolean {
 
 function hasDiscountInput(input: Record<string, unknown>): boolean {
   return input.discountCode !== undefined || input.promoCode !== undefined;
-}
-
-function hasConfiguredChoices(product: LegacyTrainingCheckoutProduct): boolean {
-  const productWithOptions = product as LegacyTrainingCheckoutProduct & { options?: unknown };
-  return Boolean(
-    (product.variants && product.variants.length > 0) ||
-      (Array.isArray(productWithOptions.options) && productWithOptions.options.length > 0),
-  );
 }
 
 function isValidTrainingPrice(price: number): boolean {

@@ -4,6 +4,8 @@ Date: 2026-05-16
 Branch context: `staging`  
 Scope: Next.js app, Sanity CMS, training programs, ecommerce, Helcim checkout, booking, private database, forms, email, revalidation, infrastructure, testing, logging, and launch operations.
 
+> **2026-05-20 status:** This audit is historical. Its legacy commerce taxonomy references have been superseded by the canonical `product`, `service`, `bookingOffering`, and native `trainingProgram` model in `docs/superpowers/plans/2026-05-20-commerce-taxonomy-migration-hardening.md`.
+
 ## Executive Summary
 
 The codebase is close to a launchable architecture, but it is not ready for a low-risk production cutover without an operational hardening pass and live-environment smoke testing.
@@ -87,12 +89,12 @@ External best-practice baseline used:
 
 ### Public App And CMS
 
-The app is a root-level Next.js 16 App Router application. Public pages are server components and load CMS data through `src/data/loaders.ts`. Sanity is the content source for pages, global settings, navigation, training programs, sellable products, and booking settings. Form, contact, marketing, and consent submissions are private DB-backed; historical Sanity submission documents are backfill sources only.
+The app is a root-level Next.js 16 App Router application. Public pages are server components and load CMS data through `src/data/loaders.ts`. Sanity is the content source for pages, global settings, navigation, canonical products, services, booking offerings, training programs, and booking settings. Form, contact, marketing, and consent submissions are private DB-backed; historical Sanity submission documents are backfill sources only.
 
 Important loader behavior:
 
 - `sanityFetchOptions()` disables caching on Vercel preview deployments and uses cache tags elsewhere.
-- Page and singleton queries use tags such as `homePage`, `trainingProgram`, `sellableProduct`, `bookingSettings`, `global`, and `menu`.
+- Page and singleton queries use tags such as `homePage`, `trainingProgram`, `product`, `service`, `bookingOffering`, `bookingSettings`, `global`, and `menu`.
 - Product and training checkout flows re-read Sanity data server-side before creating checkout sessions.
 
 Ideal launch behavior:
@@ -116,7 +118,7 @@ Current Studio structure:
 
 - Pages: home, contact, gallery, training, training programs overview, global settings, navigation menu.
 - Booking: booking settings. Historical marketing opt-ins may exist as legacy/backfill records.
-- Content: training programs and sellable products.
+- Content: training programs, canonical products, services, and booking offerings.
 - Submissions: legacy/backfill-only general inquiries, training contact forms, contact popup submissions, and booking marketing opt-ins if those document types are still registered.
 
 Good signs:
@@ -127,7 +129,7 @@ Good signs:
 
 Current concerns:
 
-- `training-program.ts` contains a TODO for cross-document validation to ensure the selected checkout product is kind `training`. Runtime validation catches this in `src/lib/training-checkout.ts`, but editorial validation should prevent bad content before publish.
+- Training checkout now uses native `trainingProgram` commerce fields. Editorial validation should continue preventing incomplete native price/currency/availability content before publish.
 - Sanity token least privilege is limited by plan constraints. Historical docs state `SANITY_FORM_TOKEN` may need editor role on non-enterprise Sanity tiers. That token is not a current live form-write dependency if forms remain private DB-backed; retain it only for explicitly documented legacy/conditional Sanity submission work.
 
 ### Revalidation
@@ -139,7 +141,7 @@ Good signs:
 - Raw body is parsed before JSON, preserving signature validation.
 - `isValidSignature !== true` rejects both invalid and missing-secret cases.
 - Unknown document types no-op with a 200 response.
-- Cache tags include booking settings and sellable products.
+- Cache tags include booking settings, booking offerings, services, products, and training programs.
 
 Ideal launch behavior:
 
@@ -156,7 +158,7 @@ Current concerns:
 
 ### Ecommerce Product Catalog
 
-Sellable product content is stored in Sanity as `sellableProduct`. The catalog supports products, services, training, and deposits through schema fields. Public catalog pages read from `src/data/loaders.ts`; cart behavior lives in `src/lib/commerce/cart.ts` and UI components under `src/components/commerce`.
+Canonical product content is stored in Sanity as `product`. Services and paid appointment configuration use `service` and `bookingOffering`; training checkout uses native commerce fields on `trainingProgram`. Public catalog pages read from `src/data/loaders.ts`; cart behavior lives in `src/lib/commerce/cart.ts` and UI components under `src/components/commerce`.
 
 Good signs:
 
@@ -213,11 +215,11 @@ Recommendation:
 
 ### Training Programs And Paid Booking Handoff
 
-Training programs live in Sanity as `trainingProgram`. A training program can enable checkout and reference a `sellableProduct` of kind `training`. The runtime checkout guard in `src/lib/training-checkout.ts` requires:
+Training programs live in Sanity as `trainingProgram`. A training program can enable checkout using native commerce fields. The runtime checkout guard in `src/lib/training-checkout.ts` requires:
 
 - checkout enabled,
-- checkout product present,
-- product kind `training`,
+- native price present,
+- native currency `CAD`,
 - product available,
 - currency CAD,
 - valid positive price,
@@ -240,7 +242,7 @@ Good signs:
 Production-readiness gaps:
 
 - The training checkout order/enrollment split needs atomicity or a cleanup/reconciliation plan.
-- Editorial validation should prevent non-training sellable products from being attached to training programs.
+- Editorial validation should prevent checkout-enabled training programs from missing native price, CAD currency, or availability fields.
 - Live booking handoff must be manually tested with real Google OAuth, Redis, Calendar availability markers, payment success, order-based booking link, checkout-email mismatch rejection, and calendar event creation.
 
 ### Booking System
@@ -500,12 +502,12 @@ Actions:
 
 ### 4. Add Editorial Guardrails
 
-Current risk: editors can attach a non-training product to a training program until runtime rejects checkout.
+Current risk: editors can publish incomplete native training commerce fields until runtime rejects checkout.
 
 Actions:
 
-- Add Sanity validation or a custom input guard for `trainingProgram.checkoutProduct` kind.
-- Add a pre-launch GROQ audit query for training programs with `checkoutEnabled == true` and invalid/missing checkout products.
+- Add Sanity validation or a custom input guard for native `trainingProgram` price, currency, and availability fields.
+- Add a pre-launch GROQ audit query for training programs with `checkoutEnabled == true` and invalid/missing native commerce fields.
 
 ### 5. Decide Payment Provider Strategy
 

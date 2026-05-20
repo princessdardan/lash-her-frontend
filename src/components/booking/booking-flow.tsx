@@ -2,27 +2,49 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { nanoid } from "nanoid";
-import { usePathname } from "next/navigation";
+import Script from "next/script";
+import { usePathname, useRouter } from "next/navigation";
 import type { BookingSettings, BookingType, BookingSlot, BookingAnswerInput } from "@/lib/booking/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Field, FieldLabel, FieldError, FieldDescription } from "@/components/ui/field";
+import { formatCad } from "@/lib/commerce/money";
+import type { HelcimPayloadValue } from "@/lib/commerce/helcim-types";
+
+declare global {
+  interface Window {
+    appendHelcimPayIframe?: (checkoutToken: string, allowExit?: boolean) => void;
+    removeHelcimPayIframe?: () => void;
+  }
+}
 
 interface BookingFlowProps {
   settings: BookingSettings;
   initialBookingType?: BookingType;
   paidTrainingOrderId?: string;
   initialOfferingSlug?: string;
+  offeringPayment?: {
+    paymentMode: "deposit" | "full" | "customPartial";
+    depositAmount?: number;
+    fullPrice?: number;
+    allowCustomAmount?: boolean;
+    customAmountMinimum?: number;
+    customAmountMaximum?: number;
+    currency: "CAD";
+  };
 }
 
-export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId, initialOfferingSlug }: BookingFlowProps) {
+export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId, initialOfferingSlug, offeringPayment }: BookingFlowProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const defaultType = initialBookingType ?? settings.bookingTypes[0]?.type ?? "training-call";
   const paidTrainingOrder = paidTrainingOrderId?.trim();
   const hasPaidTrainingOrder = paidTrainingOrder !== undefined && paidTrainingOrder.length > 0;
   const hasOffering = Boolean(initialOfferingSlug);
+  const isPaidOfferingCheckout = offeringPayment !== undefined && hasOffering && !hasPaidTrainingOrder;
+  const shouldCollectIntake = !isPaidOfferingCheckout;
   const [bookingType, setBookingType] = useState<BookingType | "">(defaultType);
   const [offeringSlug] = useState<string>(initialOfferingSlug || "");
   const [slots, setSlots] = useState<BookingSlot[]>([]);
@@ -38,6 +60,11 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<"idle" | "success" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
+
+  const [isScriptReady, setIsScriptReady] = useState(false);
+  const [checkoutToken, setCheckoutToken] = useState<string | null>(null);
+  const [paymentOption, setPaymentOption] = useState<"deposit" | "full" | "customPartial">("full");
+  const [customAmount, setCustomAmount] = useState<string>("");
 
   const activeTypeConfig = useMemo(() => {
     return settings.bookingTypes.find((t) => t.type === bookingType);
@@ -90,6 +117,111 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
     };
   }, [bookingType, availabilityEmail, hasPaidTrainingOrder, hasValidPaidTrainingEmail, paidTrainingOrder, offeringSlug]);
 
+  useEffect(() => {
+    if (!checkoutToken) return;
+
+    const handleMessage = async (event: MessageEvent) => {
+      if (event.origin !== "https://secure.helcim.app") {
+        return;
+      }
+
+      let parsedData: unknown;
+      try {
+        parsedData = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+      } catch {
+        return;
+      }
+
+      if (!parsedData || typeof parsedData !== "object") return;
+      const dataObj = parsedData as Record<string, unknown>;
+
+      if (dataObj.eventName !== `helcim-pay-js-${checkoutToken}`) {
+        return;
+      }
+
+      if (dataObj.eventStatus === "ABORTED" || dataObj.eventStatus === "HIDE") {
+        if (window.removeHelcimPayIframe) {
+          window.removeHelcimPayIframe();
+        }
+        setCheckoutToken(null);
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (dataObj.eventStatus === "SUCCESS") {
+        let payloadData: Record<string, HelcimPayloadValue> | undefined;
+        let payloadHash: string | undefined;
+        let eventMessage = dataObj.eventMessage;
+
+        if (typeof eventMessage === "string") {
+          try {
+            eventMessage = JSON.parse(eventMessage);
+          } catch {
+            setErrorMessage("Payment could not be verified. Please contact Lash Her before retrying.");
+            setIsSubmitting(false);
+            return;
+          }
+        }
+
+        if (eventMessage && typeof eventMessage === "object") {
+          const msgObj = eventMessage as Record<string, unknown>;
+
+          if (msgObj.data && typeof msgObj.data === "object" && "hash" in msgObj.data) {
+            const innerData = msgObj.data as Record<string, unknown>;
+            payloadData = parsePayloadData(innerData.data);
+            payloadHash = typeof innerData.hash === "string" ? innerData.hash : undefined;
+          } else if (msgObj.data && typeof msgObj.data === "object" && typeof msgObj.hash === "string") {
+            payloadData = parsePayloadData(msgObj.data);
+            payloadHash = msgObj.hash;
+          }
+        }
+
+        if (!payloadData || !payloadHash) {
+          setErrorMessage("Payment could not be verified. Please contact Lash Her before retrying.");
+          setIsSubmitting(false);
+          return;
+        }
+
+        try {
+          const response = await fetch("/api/checkout/validate-payment", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              checkoutToken,
+              data: payloadData,
+              hash: payloadHash,
+            }),
+          });
+
+          if (!response.ok) {
+            setErrorMessage("Payment could not be verified. Please contact Lash Her before retrying.");
+            setIsSubmitting(false);
+            return;
+          }
+
+          const result = await response.json() as { redirectUrl?: string };
+
+          if (window.removeHelcimPayIframe) {
+            window.removeHelcimPayIframe();
+          }
+
+          setSubmitStatus("success");
+          setIsSubmitting(false);
+
+          if (result.redirectUrl) {
+            router.push(result.redirectUrl);
+          }
+        } catch {
+          setErrorMessage("Payment could not be verified. Please contact Lash Her before retrying.");
+          setIsSubmitting(false);
+        }
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [checkoutToken, router]);
+
   const handleEmailChange = (value: string) => {
     setEmail(value);
 
@@ -116,6 +248,89 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
 
     if (hasPaidTrainingOrder && !isLikelyEmail(email)) {
       setErrorMessage("Please enter the same email address used at checkout.");
+      return;
+    }
+
+    if (offeringPayment && hasOffering && !hasPaidTrainingOrder) {
+      let parsedCustomAmount: number | undefined;
+      if (offeringPayment.paymentMode === "customPartial" && paymentOption === "customPartial") {
+        parsedCustomAmount = parseFloat(customAmount);
+        if (isNaN(parsedCustomAmount) || parsedCustomAmount <= 0) {
+          setErrorMessage("Please enter a valid custom amount.");
+          return;
+        }
+        if (offeringPayment.customAmountMinimum && parsedCustomAmount < offeringPayment.customAmountMinimum) {
+          setErrorMessage(`Minimum custom amount is ${formatCad(offeringPayment.customAmountMinimum)}.`);
+          return;
+        }
+        if (offeringPayment.customAmountMaximum && parsedCustomAmount > offeringPayment.customAmountMaximum) {
+          setErrorMessage(`Maximum custom amount is ${formatCad(offeringPayment.customAmountMaximum)}.`);
+          return;
+        }
+      }
+
+      setIsSubmitting(true);
+      setErrorMessage("");
+      setSubmitStatus("idle");
+
+      try {
+        const holdRes = await fetch("/api/booking/holds", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            offeringSlug,
+            start: selectedSlot,
+            name,
+            email,
+            phone,
+            paymentOption: offeringPayment.paymentMode === "customPartial" ? paymentOption : offeringPayment.paymentMode,
+            ...(parsedCustomAmount ? { customAmount: parsedCustomAmount } : {}),
+          }),
+        });
+
+        if (!holdRes.ok) {
+          const data = await holdRes.json();
+          throw new Error(data.error || "Failed to hold appointment time");
+        }
+
+        const holdData = await holdRes.json();
+        const holdReference = holdData.hold.reference;
+
+        const checkoutRes = await fetch("/api/booking/checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            holdReference,
+          }),
+        });
+
+        if (!checkoutRes.ok) {
+          const data = await checkoutRes.json();
+          throw new Error(data.error || "Failed to start checkout");
+        }
+
+        const checkoutData = await checkoutRes.json();
+        
+        if (!checkoutData.checkoutToken) {
+          throw new Error("Failed to start checkout");
+        }
+
+        setCheckoutToken(checkoutData.checkoutToken);
+
+        if (window.appendHelcimPayIframe) {
+          window.appendHelcimPayIframe(checkoutData.checkoutToken, true);
+        } else {
+          throw new Error("Checkout is not available right now.");
+        }
+      } catch (err: unknown) {
+        if (err instanceof Error) {
+          setErrorMessage(err.message || "An error occurred while booking. Please try again.");
+        } else {
+          setErrorMessage("An error occurred while booking. Please try again.");
+        }
+        setSubmitStatus("error");
+        setIsSubmitting(false);
+      }
       return;
     }
 
@@ -181,6 +396,11 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
 
   return (
     <form onSubmit={handleSubmit} className="max-w-2xl mx-auto space-y-8">
+      <Script
+        src="https://secure.helcim.app/helcim-pay/services/start.js"
+        strategy="afterInteractive"
+        onLoad={() => setIsScriptReady(true)}
+      />
       <div aria-live="polite" className="sr-only">
         {errorMessage && `Error: ${errorMessage}`}
         {isLoadingSlots && "Loading available times..."}
@@ -318,7 +538,7 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
             />
           </Field>
 
-          {activeTypeConfig?.questions.map((q) => (
+          {shouldCollectIntake && activeTypeConfig?.questions.map((q) => (
             <Field key={q.id}>
               <FieldLabel htmlFor={q.id}>{q.label}</FieldLabel>
               {q.inputType === "textarea" ? (
@@ -355,7 +575,7 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
             </Field>
           ))}
 
-          <div className="flex items-start gap-3 pt-4">
+          {shouldCollectIntake && <div className="flex items-start gap-3 pt-4">
             <input
               type="checkbox"
               id="marketingOptIn"
@@ -366,13 +586,67 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
             <label htmlFor="marketingOptIn" className="text-sm text-muted-foreground leading-snug">
               {marketingConsentText}
             </label>
-          </div>
+          </div>}
+
+          {offeringPayment && (
+            <div className="pt-4 border-t border-border/50">
+              <h3 className="text-lg font-medium text-primary mb-4">Payment Details</h3>
+              {offeringPayment.paymentMode === "deposit" && offeringPayment.depositAmount && (
+                <p className="text-muted-foreground mb-4">
+                  A deposit of <strong className="text-foreground">{formatCad(offeringPayment.depositAmount)}</strong> is required to secure your appointment.
+                </p>
+              )}
+              {offeringPayment.paymentMode === "full" && offeringPayment.fullPrice && (
+                <p className="text-muted-foreground mb-4">
+                  Full payment of <strong className="text-foreground">{formatCad(offeringPayment.fullPrice)}</strong> is required to secure your appointment.
+                </p>
+              )}
+              {offeringPayment.paymentMode === "customPartial" && (
+                <div className="space-y-4">
+                  <Field>
+                    <FieldLabel>Payment Option</FieldLabel>
+                    <Select
+                      value={paymentOption}
+                      onValueChange={(val) => setPaymentOption(val as "full" | "customPartial")}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select payment option" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="full">Pay in Full ({offeringPayment.fullPrice ? formatCad(offeringPayment.fullPrice) : ""})</SelectItem>
+                        <SelectItem value="customPartial">Pay Partial Amount</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  {paymentOption === "customPartial" && (
+                    <Field>
+                      <FieldLabel htmlFor="customAmount">Custom Amount (CAD)</FieldLabel>
+                      <Input
+                        id="customAmount"
+                        type="number"
+                        step="0.01"
+                        min={offeringPayment.customAmountMinimum}
+                        max={offeringPayment.customAmountMaximum}
+                        value={customAmount}
+                        onChange={(e) => setCustomAmount(e.target.value)}
+                        placeholder={`Min: ${offeringPayment.customAmountMinimum ? formatCad(offeringPayment.customAmountMinimum) : "0"}`}
+                        required
+                      />
+                      <FieldDescription>
+                        Enter an amount between {offeringPayment.customAmountMinimum ? formatCad(offeringPayment.customAmountMinimum) : "0"} and {offeringPayment.customAmountMaximum ? formatCad(offeringPayment.customAmountMaximum) : "the full price"}.
+                      </FieldDescription>
+                    </Field>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {errorMessage && (
             <FieldError className="text-center">{errorMessage}</FieldError>
           )}
 
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
+          <Button type="submit" className="w-full" disabled={isSubmitting || (offeringPayment && !isScriptReady)}>
             {isSubmitting ? "Confirming..." : "Confirm Booking"}
           </Button>
         </div>
@@ -412,6 +686,27 @@ function fetchAvailability(input: {
 
 function isLikelyEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+function isHelcimPayloadValue(value: unknown): value is HelcimPayloadValue {
+  return (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  );
+}
+
+function parsePayloadData(value: unknown): Record<string, HelcimPayloadValue> | undefined {
+  if (!value || typeof value !== "object") return undefined;
+
+  const entries = Object.entries(value as Record<string, unknown>);
+
+  if (entries.some(([, entryValue]) => !isHelcimPayloadValue(entryValue))) {
+    return undefined;
+  }
+
+  return Object.fromEntries(entries) as Record<string, HelcimPayloadValue>;
 }
 
 function getSlotPlaceholder(input: {

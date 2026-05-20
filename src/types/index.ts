@@ -300,19 +300,6 @@ export interface TTrainingProgram {
   fulfillmentNote?: string;
   displayOrder?: number;
   image?: TSanityImage;
-  checkoutProduct?: {
-    _id: string;
-    title: string;
-    slug: string;
-    sku: string;
-    kind: TSellableProductKind;
-    price: number;
-    currency: string;
-    variants?: TSellableProductVariant[];
-    isAvailable: boolean;
-    availabilityLabel?: string;
-    fulfillmentNote?: string;
-  };
   checkoutCtaLabel?: string;
   checkoutDisabledBookingCta?: {
     label: string;
@@ -341,7 +328,7 @@ export interface TProductCollection {
   displayOrder?: number;
 }
 
-export interface TSellableProductFilterAttribute {
+export interface TProductFilterAttribute {
   _key?: string;
   label: string;
   value: string;
@@ -374,6 +361,7 @@ export interface TCommerceDetailSection {
 export interface TProductVariant {
   _key: string;
   title: string;
+  sku?: string;
   price: number;
   isAvailable: boolean;
   availabilityLabel?: string;
@@ -386,6 +374,7 @@ export interface TProduct {
   shortDescription?: string;
   slug: string;
   price: number;
+  sku?: string;
   currency: TCommerceCurrency;
   variants?: TProductVariant[];
   isAvailable: boolean;
@@ -442,7 +431,6 @@ export interface TTrainingProgramCatalogItem {
   fulfillmentNote?: string;
   displayOrder?: number;
   image?: TSanityImage;
-  checkoutProduct?: TTrainingProgram["checkoutProduct"];
   checkoutCtaLabel?: string;
   seo?: TCommerceSeo;
 }
@@ -453,51 +441,14 @@ export interface TProductsGroupedCatalog {
   services: TService[];
 }
 
-export type TSellableProductKind = "product" | "service" | "training" | "deposit";
-
-export interface TSellableProductDetailSection {
-  _key?: string;
-  heading: string;
-  content: string;
-}
-
-export interface TSellableProductVariant {
-  _key: string;
-  title: string;
-  sku: string;
-  price: number;
-  isAvailable: boolean;
-  availabilityLabel?: string;
-}
-
-export interface TSellableProduct {
-  _id: string;
-  title: string;
-  description: string;
-  shortDescription?: string;
-  slug: string;
-  sku: string;
-  kind: TSellableProductKind;
-  price: number;
-  currency: "CAD";
-  variants?: TSellableProductVariant[];
-  isAvailable: boolean;
-  availabilityLabel?: string;
-  fulfillmentNote?: string;
-  displayOrder?: number;
-  image?: TSanityImage;
-  gallery?: TSanityImage[];
-  detailSections?: TSellableProductDetailSection[];
-  seo?: TCommerceSeo;
-}
-
-export type TBookingOfferingPaymentMode = "deposit" | "full" | "choice";
+export type TBookingOfferingPaymentMode = "deposit" | "full" | "customPartial";
 
 export interface TBookingOffering {
   _id: string;
   title: string;
   description: string;
   slug: string;
+  service?: Pick<TService, "_id" | "title" | "slug" | "description" | "image">;
   isActive: boolean;
   bookingType: BookingType;
   durationMinutes: number;
@@ -506,8 +457,12 @@ export interface TBookingOffering {
   bufferAfterMinutes: number;
   minimumLeadTimeHoursOverride?: number;
   paymentMode: TBookingOfferingPaymentMode;
-  depositProduct?: TSellableProduct;
-  fullProduct?: TSellableProduct;
+  depositAmount?: number;
+  fullPrice?: number;
+  allowCustomAmount?: boolean;
+  customAmountMinimum?: number;
+  customAmountMaximum?: number;
+  currency: TCommerceCurrency;
   displayOrder?: number;
 }
 

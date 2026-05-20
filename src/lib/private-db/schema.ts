@@ -23,6 +23,7 @@ export const checkoutOrderPurpose = pgEnum("checkout_order_purpose", [
   "training",
   "appointment_deposit",
   "appointment_full",
+  "appointment_custom_partial",
 ]);
 
 export const trainingEnrollmentPurchaseKind = pgEnum("training_enrollment_purchase_kind", [

@@ -83,7 +83,8 @@ Verify these document types in the target environment:
 - `trainingPage` -> `/training`
 - `trainingProgramsPage` -> `/training-programs`
 - `trainingProgram` -> `/training-programs/[slug]`
-- `sellableProduct` -> `/products/[slug]`
+- `product` -> `/products/[slug]`
+- `service` / `bookingOffering` -> `/services`, `/services/[slug]`, `/booking?offering=<slug>`
 - `bookingSettings` -> `/booking`
 
 See `docs/launch-readiness-checklist.md` for full smoke evidence requirements.

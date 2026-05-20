@@ -453,5 +453,7 @@ function isCheckoutTokenValidationEligible(order: CheckoutOrderRow): boolean {
 }
 
 function isAppointmentPurpose(purpose: CheckoutOrderPurpose): boolean {
-  return purpose === "appointment_deposit" || purpose === "appointment_full";
+  return purpose === "appointment_deposit" ||
+    purpose === "appointment_full" ||
+    purpose === "appointment_custom_partial";
 }

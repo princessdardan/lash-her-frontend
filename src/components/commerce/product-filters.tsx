@@ -3,11 +3,11 @@
 import { type ReactElement } from "react";
 import Link from "next/link";
 import { useSearchParams, usePathname } from "next/navigation";
-import type { TProductCollection, TSellableProductFilterAttribute } from "@/types";
+import type { TProductCollection, TProductFilterAttribute } from "@/types";
 
 interface ProductFiltersProps {
   collections: TProductCollection[];
-  filterAttributes: TSellableProductFilterAttribute[];
+  filterAttributes: TProductFilterAttribute[];
 }
 
 export function ProductFilters({ collections, filterAttributes }: ProductFiltersProps): ReactElement {

@@ -1,6 +1,6 @@
 # Shared Private PII Storage Setup Guide
 
-This guide describes how to set up and maintain the private PostgreSQL database used for Lash Her sensitive operational records. This storage is separate from the public Sanity CMS and holds checkout records, payment events, training enrollments, marketing contacts, contact submissions, consent events, checkout token hashes, encrypted Helcim secret tokens, invoice references, transaction references, and payment status.
+This guide describes how to set up and maintain the private PostgreSQL database used for Lash Her sensitive operational records. This storage is separate from the public Sanity CMS and holds checkout records, appointment holds, payment events, training enrollments, marketing contacts, contact submissions, consent events, checkout token hashes, encrypted Helcim secret tokens, invoice references, transaction references, and payment/booking status.
 
 Sanity remains the public catalog/editorial CMS and historical submission backfill source only. Do not store new checkout transaction history, customer PII, form/contact submissions, marketing contacts, consent events, checkout tokens, Helcim invoice identifiers, Helcim transaction identifiers, payment reconciliation records, or encrypted Helcim secret tokens in a public Sanity dataset or expose them through Sanity Studio.
 
@@ -203,8 +203,9 @@ Contractor access should be least-privilege and time-bound. Dardan acts as contr
 ## Smoke Test Checklist
 
 - [ ] Database migrations apply without errors.
-- [ ] Checkout initialization creates a pending row in the private database.
-- [ ] Helcim payment success updates the private database row to "paid".
+- [ ] Product, training, and appointment checkout initialization create pending rows in the private database.
+- [ ] Appointment hold creation stores a private hold row before Helcim checkout starts.
+- [ ] Helcim payment success updates the private database row to "paid" and moves paid appointment holds to booked or manual follow-up after finalization.
 - [ ] No `checkoutOrder` documents are created in Sanity during a test transaction.
 - [ ] General inquiry, training contact, and contact popup submissions create private DB submission/consent records before email.
 - [ ] Booking marketing choices create private DB audit records for both opted-in and not-opted-in paths.

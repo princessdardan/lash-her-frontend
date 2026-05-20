@@ -92,11 +92,9 @@ function getLineItemRow(
   lineItem: CheckoutOrderLineItemSnapshot,
   currency: string,
 ): string {
-  const sku = lineItem.sku.length > 0 ? ` <span style="color:#6f5d55;">(${escapeHtml(lineItem.sku)})</span>` : "";
-
   return `
 <tr>
-  <td style="padding:14px 0;border-top:1px solid #efe5d6;font-size:15px;line-height:1.5;">${escapeHtml(lineItem.description)}${sku}</td>
+  <td style="padding:14px 0;border-top:1px solid #efe5d6;font-size:15px;line-height:1.5;">${escapeHtml(lineItem.description)}</td>
   <td align="center" style="padding:14px 8px;border-top:1px solid #efe5d6;font-size:15px;line-height:1.5;">${lineItem.quantity}</td>
   <td align="right" style="padding:14px 0;border-top:1px solid #efe5d6;font-size:15px;line-height:1.5;">${escapeHtml(formatCurrency(lineItem.totalCents / 100, currency))}</td>
 </tr>

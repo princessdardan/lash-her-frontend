@@ -1,9 +1,12 @@
 import { nanoid } from "nanoid";
 
 import type { CheckoutOrderPurpose } from "@/lib/private-db/schema";
+import { isSlotAvailable } from "./availability";
 import type { BookingHoldRecord, BookingHoldState } from "./holds";
+import { PAYMENT_SUCCESS_GRACE_MINUTES } from "./payment-policy";
+import type { BookingSettings, BookingTypeConfig, CalendarEventWindow } from "./types";
 
-export const PAYMENT_SUCCESS_GRACE_MINUTES = 5;
+export { PAYMENT_SUCCESS_GRACE_MINUTES };
 
 const MINUTE_MS = 60_000;
 
@@ -51,7 +54,7 @@ export type FinalizePaidBookingResult =
   | {
       ok: false;
       error: string;
-      status: "booking_failed" | "hold_not_found" | "manual_followup";
+      status: "booking_failed" | "finalization_pending" | "hold_not_found" | "manual_followup";
     };
 
 export interface AppointmentFinalizerOrderInput {
@@ -123,18 +126,52 @@ export async function finalizeAppointmentPaymentForOrder(
           });
         },
         async insertBookingEvent(paidHold) {
-          return googleCalendarModule.insertBookingEvent({
-            calendarId: await getCalendarId(),
-            event: googleCalendarModule.buildBookingEventPayload({
-              answers: [],
-              bookingMetadata: { holdId: paidHold.id },
-              bookingTypeLabel: getBookingTypeLabel(paidHold),
-              customer: paidHold.customer,
-              end: paidHold.selectedEnd,
-              start: paidHold.selectedStart,
-              timezone: paidHold.timezone,
-            }),
-          });
+          const calendarLockId = nanoid();
+          const calendarLockAcquired = await operationalStoreModule.acquireCalendarLock(
+            calendarLockId,
+            20,
+          );
+
+          if (!calendarLockAcquired) {
+            throw new BookingManualFollowupError("Booking calendar is busy. Staff will confirm this appointment manually.");
+          }
+
+          try {
+            const settings = await getBookingSettingsOrThrow(loadersModule.loaders.getBookingSettings);
+            const calendarId = settings.calendarId.trim();
+
+            if (calendarId.length === 0) {
+              throw new BookingManualFollowupError("Booking calendar is not configured.");
+            }
+
+            const available = await isPaidHoldSlotStillAvailable({
+              calendarId,
+              googleCalendarModule,
+              hold: paidHold,
+              holdsModule,
+              now: input.now ?? new Date(),
+              settings,
+            });
+
+            if (!available) {
+              throw new BookingManualFollowupError("The selected appointment time became unavailable after payment.");
+            }
+
+            return googleCalendarModule.insertBookingEvent({
+              calendarId,
+              event: googleCalendarModule.buildBookingEventPayload({
+                answers: [],
+                bookingMetadata: { holdId: paidHold.id },
+                bookingTypeLabel: getBookingTypeLabel(paidHold),
+                customer: paidHold.customer,
+                end: paidHold.selectedEnd,
+                start: paidHold.selectedStart,
+                timezone: paidHold.timezone,
+              }),
+            });
+          } finally {
+            await operationalStoreModule.releaseCalendarLock(calendarLockId);
+          }
         },
       },
       holdId: hold.id,
@@ -188,7 +225,7 @@ export async function finalizeAppointmentPaymentWithLock(input: {
     return {
       ok: false,
       error: "Booking finalization is already in progress.",
-      status: "manual_followup",
+      status: "finalization_pending",
     };
   }
 
@@ -212,10 +249,115 @@ export async function finalizeAppointmentPaymentWithLock(input: {
   }
 }
 
+async function getBookingSettingsOrThrow(
+  getBookingSettings: () => Promise<BookingSettings | null>,
+): Promise<BookingSettings> {
+  const settings = await getBookingSettings();
+
+  if (settings === null) {
+    throw new BookingManualFollowupError("Booking calendar is not configured.");
+  }
+
+  return settings;
+}
+
+async function isPaidHoldSlotStillAvailable(input: {
+  calendarId: string;
+  googleCalendarModule: typeof import("./google-calendar");
+  hold: BookingHoldRecord;
+  holdsModule: typeof import("./holds");
+  now: Date;
+  settings: BookingSettings;
+}): Promise<boolean> {
+  const bookingTypeConfig = toPaidHoldBookingTypeConfig(input.settings, input.hold);
+
+  if (bookingTypeConfig === undefined) {
+    throw new BookingManualFollowupError("Booking type is not configured.");
+  }
+
+  const [calendarEvents, activeHolds] = await Promise.all([
+    input.googleCalendarModule.listCalendarEvents({
+      calendarId: input.calendarId,
+      timeMin: input.now,
+      timeMax: input.hold.selectedEnd,
+    }),
+    input.holdsModule.listActiveAppointmentHolds({
+      offeringId: input.hold.offeringId,
+      timeMin: input.now,
+      timeMax: input.hold.selectedEnd,
+      now: input.now,
+    }),
+  ]);
+  const { availabilityWindows, busyEvents } = partitionCalendarEvents(
+    calendarEvents,
+    input.settings.availabilityMarkerTitle,
+  );
+  const activeHoldBusyEvents = input.holdsModule.getActiveHoldBusyEvents({
+    holds: activeHolds.filter((hold) => hold.id !== input.hold.id),
+    now: input.now,
+  });
+
+  return isSlotAvailable({
+    bookingType: bookingTypeConfig,
+    requestedStart: input.hold.selectedStart,
+    availabilityWindows,
+    busyEvents: [...busyEvents, ...activeHoldBusyEvents],
+    now: input.now,
+    minimumLeadTimeHours: 0,
+    horizonEnd: input.hold.selectedEnd,
+  });
+}
+
+function toPaidHoldBookingTypeConfig(
+  settings: BookingSettings,
+  hold: BookingHoldRecord,
+): BookingTypeConfig | undefined {
+  const baseConfig = settings.bookingTypes.find((config) => config.type === hold.bookingType);
+
+  if (baseConfig === undefined) {
+    return undefined;
+  }
+
+  return {
+    ...baseConfig,
+    label: getBookingTypeLabel(hold),
+    durationMinutes: getSnapshotNumber(hold.offeringSnapshot.durationMinutes) ?? baseConfig.durationMinutes,
+  };
+}
+
+function partitionCalendarEvents(
+  events: CalendarEventWindow[],
+  markerTitle: string,
+): {
+  availabilityWindows: CalendarEventWindow[];
+  busyEvents: CalendarEventWindow[];
+} {
+  const trimmedMarkerTitle = markerTitle.trim();
+  const availabilityWindows: CalendarEventWindow[] = [];
+  const busyEvents: CalendarEventWindow[] = [];
+
+  for (const event of events) {
+    if (event.title.trim() === trimmedMarkerTitle) {
+      availabilityWindows.push(event);
+      continue;
+    }
+
+    busyEvents.push(event);
+  }
+
+  return { availabilityWindows, busyEvents };
+}
+
+function getSnapshotNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 export function isAppointmentCheckoutPurpose(
   purpose: CheckoutOrderPurpose,
-): purpose is Extract<CheckoutOrderPurpose, "appointment_deposit" | "appointment_full"> {
-  return purpose === "appointment_deposit" || purpose === "appointment_full";
+): purpose is Extract<CheckoutOrderPurpose, "appointment_deposit" | "appointment_full" | "appointment_custom_partial"> {
+  return purpose === "appointment_deposit" ||
+    purpose === "appointment_full" ||
+    purpose === "appointment_custom_partial";
 }
 
 function getBookingTypeLabel(hold: BookingHoldRecord): string {

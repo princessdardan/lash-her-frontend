@@ -105,6 +105,14 @@ export async function createBooking(
           offeringSlug: offering.slug,
         }
       : paidContextResolution.input;
+
+    if (validationInput.bookingType === "in-person-appointment") {
+      return {
+        success: false,
+        error: "In-person appointments require secure payment before confirmation.",
+      };
+    }
+
     const validation = validateBookingRequest(
       validationInput,
       settings,
