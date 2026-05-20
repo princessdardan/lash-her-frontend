@@ -141,19 +141,6 @@ export const trainingProgram = defineType({
       }),
     }),
     defineField({
-      name: "currency",
-      title: "Currency",
-      type: "string",
-      group: "commerce",
-      initialValue: "CAD",
-      readOnly: true,
-      hidden: ({ document }) => !document?.checkoutEnabled,
-      validation: (Rule) => Rule.custom((value, context) => {
-        if (!context.document?.checkoutEnabled) return true;
-        return value === "CAD" ? true : "Training checkout currency must be CAD.";
-      }),
-    }),
-    defineField({
       name: "isAvailable",
       title: "Available for checkout",
       type: "boolean",

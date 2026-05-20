@@ -39,4 +39,14 @@ describe("catalog loader contract", () => {
 
     assert.doesNotMatch(trainingProjection, /checkoutProduct|sellableProduct/);
   });
+
+  it("derives CAD currency for training catalog checkout shapes", () => {
+    const trainingProjection = loadersSource.slice(
+      loadersSource.indexOf("const TRAINING_PROGRAM_CATALOG_PROJECTION"),
+      loadersSource.indexOf("function sanityFetchOptions"),
+    );
+
+    assert.match(trainingProjection, /"currency": "CAD"/);
+    assert.doesNotMatch(trainingProjection, /^\s*currency,\s*$/m);
+  });
 });

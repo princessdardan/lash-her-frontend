@@ -84,14 +84,6 @@ describe("trainingProgram native commerce validation", () => {
     assert.strictEqual(await validator(undefined, buildContext({ checkoutEnabled: false })), true);
   });
 
-  it("requires CAD currency only when checkout is enabled", async () => {
-    const validator = getFieldValidator("currency");
-
-    assert.strictEqual(await validator("USD", buildContext()), "Training checkout currency must be CAD.");
-    assert.strictEqual(await validator("CAD", buildContext()), true);
-    assert.strictEqual(await validator(undefined, buildContext({ checkoutEnabled: false })), true);
-  });
-
   it("requires availability only when checkout is enabled", async () => {
     const validator = getFieldValidator("isAvailable");
 
@@ -102,14 +94,13 @@ describe("trainingProgram native commerce validation", () => {
 });
 
 describe("trainingProgram detail content schema", () => {
-  it("configures native checkout commerce fields without requiring the legacy fallback", () => {
+  it("configures native checkout commerce fields without exposing an editor currency field", () => {
     const schemaFieldNames = trainingProgram.fields
       .map((field: unknown) => isSchemaField(field) ? field.name : undefined)
       .filter((name): name is string => typeof name === "string");
 
     for (const fieldName of [
       "price",
-      "currency",
       "isAvailable",
       "availabilityLabel",
       "fulfillmentNote",
@@ -119,6 +110,7 @@ describe("trainingProgram detail content schema", () => {
       assert.strictEqual(getSchemaField(fieldName).group, "commerce", `${fieldName} should be in the commerce group`);
     }
 
+    assert.ok(!schemaFieldNames.includes("currency"));
     assert.ok(!schemaFieldNames.includes("checkoutProduct"));
   });
 
