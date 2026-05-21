@@ -207,7 +207,6 @@ export function createBookingHoldsPostHandler(
               slug: offering.slug,
               title: offering.title,
             },
-            paymentMode: offering.paymentMode,
           },
         },
         { status: 201 },
@@ -317,12 +316,8 @@ function getPaymentSelection(
   offering: TBookingOffering,
   input: BookingHoldRequestInput,
 ): BookingPaymentSelectionSnapshot | null {
-  if (offering.paymentMode === "deposit") {
+  if (input.paymentOption === "deposit") {
     return resolveFixedPaymentSelection(offering, "deposit");
-  }
-
-  if (offering.paymentMode === "full") {
-    return resolveFixedPaymentSelection(offering, "full");
   }
 
   if (input.paymentOption === "full") {
@@ -330,25 +325,27 @@ function getPaymentSelection(
   }
 
   if (input.paymentOption === "customPartial") {
-    if (offering.allowCustomAmount !== true || input.customAmount === undefined) {
+    if (input.customAmount === undefined) {
       return null;
     }
 
-    const minimum = toPositiveAmount(offering.customAmountMinimum);
-    const maximum = toPositiveAmount(offering.customAmountMaximum);
+    const depositAmount = toPositiveAmount(offering.depositAmount);
+    const fullPrice = toPositiveAmount(offering.fullPrice);
+
+    const customAmount = toPositiveAmount(input.customAmount);
 
     if (
-      toPositiveAmount(input.customAmount) === null ||
-      minimum === null ||
-      maximum === null ||
-      input.customAmount < minimum ||
-      input.customAmount > maximum
+      customAmount === null ||
+      depositAmount === null ||
+      fullPrice === null ||
+      customAmount <= depositAmount ||
+      customAmount >= fullPrice
     ) {
       return null;
     }
 
     return {
-      amount: input.customAmount,
+      amount: customAmount,
       description: `${offering.title} custom partial payment`,
       option: "customPartial",
       purpose: "appointment_custom_partial",
@@ -400,12 +397,8 @@ function toOfferingSnapshot(
     title: offering.title,
     bookingType: offering.bookingType,
     durationMinutes: offering.durationMinutes,
-    paymentMode: offering.paymentMode,
-    ...(offering.depositAmount !== undefined ? { depositAmount: offering.depositAmount } : {}),
-    ...(offering.fullPrice !== undefined ? { fullPrice: offering.fullPrice } : {}),
-    ...(offering.allowCustomAmount !== undefined ? { allowCustomAmount: offering.allowCustomAmount } : {}),
-    ...(offering.customAmountMinimum !== undefined ? { customAmountMinimum: offering.customAmountMinimum } : {}),
-    ...(offering.customAmountMaximum !== undefined ? { customAmountMaximum: offering.customAmountMaximum } : {}),
+    depositAmount: offering.depositAmount,
+    fullPrice: offering.fullPrice,
     currency: offering.currency,
     selectedPayment: paymentSelection,
   };

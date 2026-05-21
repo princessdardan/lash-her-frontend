@@ -1,19 +1,13 @@
 import { CalendarIcon } from "@sanity/icons";
 import { defineArrayMember, defineField, defineType } from "sanity";
 
-import { BOOKING_OFFERING_PAYMENT_MODE_OPTIONS } from "./booking-offering";
-
 const SERVICE_BOOKING_TYPE_OPTIONS = [
   { title: "In-person appointment", value: "in-person-appointment" },
 ];
 
 type ServiceCommerceDocument = {
-  paymentMode?: string;
   fullPrice?: number;
   depositAmount?: number;
-  allowCustomAmount?: boolean;
-  customAmountMinimum?: number;
-  customAmountMaximum?: number;
 };
 
 function isServiceCommerceDocument(value: unknown): value is ServiceCommerceDocument {
@@ -27,11 +21,11 @@ function getServiceDocument(value: unknown): ServiceCommerceDocument | undefined
 function validateDepositAmount(value: unknown, context: { document?: unknown }) {
   const document = getServiceDocument(context.document);
 
-  if ((document?.paymentMode === "deposit" || document?.paymentMode === "choice") && typeof value !== "number") {
-    return "Deposit amount is required for deposit and choice payment modes.";
-  }
+  if (typeof value !== "number") return "Deposit amount is required.";
 
-  if (typeof value !== "number") return true;
+  if (!Number.isFinite(value) || value <= 0) {
+    return "Deposit amount must be greater than zero.";
+  }
 
   if (typeof document?.fullPrice === "number" && value >= document.fullPrice) {
     return "Deposit amount must be less than the full price.";
@@ -40,45 +34,17 @@ function validateDepositAmount(value: unknown, context: { document?: unknown }) 
   return true;
 }
 
-function validateCustomAmountMinimum(value: unknown, context: { document?: unknown }) {
+function validateFullPrice(value: unknown, context: { document?: unknown }) {
   const document = getServiceDocument(context.document);
 
-  if (!document?.allowCustomAmount) return true;
+  if (typeof value !== "number") return "Full price is required.";
 
-  if (typeof value !== "number") {
-    return "Custom amount minimum is required when custom amount support is enabled.";
+  if (!Number.isFinite(value) || value <= 0) {
+    return "Full price must be greater than zero.";
   }
 
-  if (typeof document.depositAmount === "number" && value <= document.depositAmount) {
-    return "Custom amount minimum must be greater than the deposit amount.";
-  }
-
-  if (typeof document.fullPrice === "number" && value >= document.fullPrice) {
-    return "Custom amount minimum must be less than the full price.";
-  }
-
-  return true;
-}
-
-function validateCustomAmountMaximum(value: unknown, context: { document?: unknown }) {
-  const document = getServiceDocument(context.document);
-
-  if (!document?.allowCustomAmount) return true;
-
-  if (typeof value !== "number") {
-    return "Custom amount maximum is required when custom amount support is enabled.";
-  }
-
-  if (typeof document.depositAmount === "number" && value <= document.depositAmount) {
-    return "Custom amount maximum must be greater than the deposit amount.";
-  }
-
-  if (typeof document.fullPrice === "number" && value >= document.fullPrice) {
-    return "Custom amount maximum must be less than the full price.";
-  }
-
-  if (typeof document.customAmountMinimum === "number" && value < document.customAmountMinimum) {
-    return "Custom amount maximum must be greater than or equal to the minimum.";
+  if (typeof document?.depositAmount === "number" && value <= document.depositAmount) {
+    return "Full price must be greater than the deposit amount.";
   }
 
   return true;
@@ -165,44 +131,16 @@ export const service = defineType({
       validation: (Rule) => Rule.integer().min(0).max(720),
     }),
     defineField({
-      name: "paymentMode",
-      title: "Payment Mode",
-      type: "string",
-      options: { list: BOOKING_OFFERING_PAYMENT_MODE_OPTIONS, layout: "radio" },
-      validation: (Rule) => Rule.required(),
-    }),
-    defineField({
       name: "fullPrice",
       title: "Full Price",
       type: "number",
-      validation: (Rule) => Rule.required().min(0),
+      validation: (Rule) => Rule.custom(validateFullPrice),
     }),
     defineField({
       name: "depositAmount",
       title: "Deposit Amount",
       type: "number",
-      hidden: ({ document }) => document?.paymentMode === "full",
-      validation: (Rule) => Rule.min(0).custom(validateDepositAmount),
-    }),
-    defineField({
-      name: "allowCustomAmount",
-      title: "Allow Custom Amount",
-      type: "boolean",
-      initialValue: false,
-    }),
-    defineField({
-      name: "customAmountMinimum",
-      title: "Custom Amount Minimum",
-      type: "number",
-      hidden: ({ document }) => !document?.allowCustomAmount,
-      validation: (Rule) => Rule.min(0).custom(validateCustomAmountMinimum),
-    }),
-    defineField({
-      name: "customAmountMaximum",
-      title: "Custom Amount Maximum",
-      type: "number",
-      hidden: ({ document }) => !document?.allowCustomAmount,
-      validation: (Rule) => Rule.min(0).custom(validateCustomAmountMaximum),
+      validation: (Rule) => Rule.custom(validateDepositAmount),
     }),
     defineField({
       name: "currency",

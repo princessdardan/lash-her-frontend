@@ -27,17 +27,18 @@ export default async function BookingPage({
   const paidTrainingOrderId = params.order?.trim();
   const offeringSlug = params.offeringSlug?.trim() || params.offering?.trim();
   const offering = offeringSlug ? await loaders.getBookingOfferingBySlug(offeringSlug) : null;
+
+  if (offeringSlug && !offering) {
+    notFound();
+  }
+
   const initialBookingType = paidTrainingOrderId
     ? "training-call"
     : offering?.bookingType ?? normalizeType(params.type);
 
   const offeringPayment = offering ? {
-    paymentMode: offering.paymentMode,
     depositAmount: offering.depositAmount,
     fullPrice: offering.fullPrice,
-    allowCustomAmount: offering.allowCustomAmount,
-    customAmountMinimum: offering.customAmountMinimum,
-    customAmountMaximum: offering.customAmountMaximum,
     currency: offering.currency,
   } : undefined;
 

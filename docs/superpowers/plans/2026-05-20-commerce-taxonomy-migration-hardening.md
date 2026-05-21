@@ -47,14 +47,12 @@
 
 - Bookable wrapper that references one `service`.
 - Owns booking behavior: duration, buffer, active state, calendar routing, availability windows, and operational copy.
-- Owns appointment payment configuration:
-  - `paymentMode`: `deposit`, `full`, `customPartial`
+- Owns appointment payment bounds:
   - `depositAmount`
   - `fullPrice`
-  - `allowCustomAmount`
-  - `customAmountMinimum`
-  - `customAmountMaximum`
   - `currency`
+- Does not own a payment mode. The purchaser chooses deposit, full payment, or a custom amount at booking time.
+- Custom purchaser-entered amounts are valid only when they are greater than `depositAmount` and less than `fullPrice`.
 - Stores only configuration. Customer-selected custom amounts and customer snapshots live in private DB hold/order records.
 
 ### Training Program
@@ -81,9 +79,9 @@
   - offering ID and service ID
   - customer-safe offering/service title
   - selected start/end/timezone
-  - payment mode
+  - purchaser-selected payment option
   - selected payment amount
-  - full appointment price when applicable
+  - deposit and full appointment payment bounds
   - currency
   - generated/internal line-item code if needed
 - `/api/booking/checkout` builds Helcim line items from hold snapshots, not live Sanity product references.
@@ -149,12 +147,13 @@ Expected:
 - `src/sanity/schemas/index.ts`
 - `src/types/index.ts`
 
-- [ ] **Step 1: Convert `bookingOffering` to native payment configuration**
+- [ ] **Step 1: Convert `bookingOffering` to native payment bounds**
 
 Expected:
-- Add native amount/currency/payment-mode fields.
-- Add validation for required payment fields by mode.
-- Add validation for custom partial min/max boundaries.
+- Add native deposit/full amount fields and fixed CAD currency.
+- Do not add or retain a service-level payment mode.
+- Add validation requiring a positive deposit amount below the full price.
+- Custom partial amounts are purchaser-selected at booking time and validated against deposit/full bounds.
 - Keep the service reference required.
 - Remove or deprecate legacy product refs from active editing guidance.
 
@@ -192,7 +191,7 @@ Expected:
 - [ ] **Step 1: Project native booking payment fields**
 
 Expected:
-- Booking loaders expose native payment mode, amount fields, custom amount range, service reference, duration, and calendar behavior.
+- Booking loaders expose native deposit/full amount fields, service reference, duration, and calendar behavior.
 - Revalidation tags cover `bookingOffering` and `service` changes.
 
 - [ ] **Step 2: Project training native commerce fields**
@@ -221,9 +220,9 @@ Expected:
 - [ ] **Step 1: Snapshot native booking payment data into holds**
 
 Expected:
-- Hold creation validates offering activity, availability, selected time, and payment mode.
+- Hold creation validates offering activity, availability, selected time, and purchaser-selected payment option.
 - Deposit/full/custom partial amount is resolved and stored before checkout starts.
-- Custom partial amount is required and range-validated when enabled.
+- Custom partial amount is required and range-validated against the configured deposit/full bounds.
 
 - [ ] **Step 2: Build booking checkout from hold snapshots**
 

@@ -56,12 +56,8 @@ const helperScript = String.raw`
       slotIntervalMinutes: 60,
       bufferBeforeMinutes: 0,
       bufferAfterMinutes: 0,
-      paymentMode: "deposit",
       depositAmount: 50,
       fullPrice: 150,
-      allowCustomAmount: true,
-      customAmountMinimum: 75,
-      customAmountMaximum: 125,
       currency: "CAD",
       ...overrides,
     };
@@ -124,6 +120,7 @@ test("booking hold route revalidates a slot and returns a public hold reference"
       name: " Client Name ",
       email: " client@example.com ",
       phone: " 555-0100 ",
+      paymentOption: "deposit",
     }));
     const body = await parseJson(response);
 
@@ -139,12 +136,8 @@ test("booking hold route revalidates a slot and returns a public hold reference"
       title: "Classic Fill",
       bookingType: "in-person-appointment",
       durationMinutes: 60,
-      paymentMode: "deposit",
       depositAmount: 50,
       fullPrice: 150,
-      allowCustomAmount: true,
-      customAmountMinimum: 75,
-      customAmountMaximum: 125,
       currency: "CAD",
       selectedPayment: {
         amount: 50,
@@ -164,7 +157,6 @@ test("booking hold route revalidates a slot and returns a public hold reference"
           slug: "classic-fill",
           title: "Classic Fill",
         },
-        paymentMode: "deposit",
       },
     });
   `);
@@ -177,7 +169,6 @@ test("booking hold route snapshots a validated custom partial payment choice", (
     const availabilityEnd = new Date(selectedStart.getTime() + 2 * 60 * 60 * 1000);
     const createInputs = [];
     const handler = createHoldHandler({
-      getBookingOfferingBySlug: async () => createOffering({ paymentMode: "customPartial" }),
       listCalendarEvents: async () => [{
         id: "available-window",
         title: "Available",
@@ -226,7 +217,6 @@ test("booking hold route rejects invalid custom partial payment choices before c
     const selectedEnd = new Date(selectedStart.getTime() + 60 * 60 * 1000);
     let createCalled = false;
     const handler = createHoldHandler({
-      getBookingOfferingBySlug: async () => createOffering({ paymentMode: "customPartial" }),
       listCalendarEvents: async () => [{
         id: "available-window",
         title: "Available",
@@ -246,13 +236,92 @@ test("booking hold route rejects invalid custom partial payment choices before c
       email: "client@example.com",
       phone: "555-0100",
       paymentOption: "customPartial",
-      customAmount: 74.99,
+      customAmount: 50,
     }));
     const body = await parseJson(response);
 
     assert.equal(response.status, 400);
     assert.equal(createCalled, false);
     assert.deepEqual(body, { error: "Booking payment is not configured" });
+  `);
+});
+
+test("booking hold route rejects missing purchaser payment choices before creating a hold", () => {
+  runRouteScenario(`
+    const selectedStart = createFutureDate(2, 0);
+    const selectedEnd = new Date(selectedStart.getTime() + 60 * 60 * 1000);
+    let createCalled = false;
+    const handler = createHoldHandler({
+      listCalendarEvents: async () => [{
+        id: "available-window",
+        title: "Available",
+        start: selectedStart,
+        end: selectedEnd,
+      }],
+      createAppointmentHold: async () => {
+        createCalled = true;
+        return { ok: false, reason: "slot_conflict", conflictingHoldId: "hold-1" };
+      },
+    });
+
+    const response = await handler(createRequest({
+      offeringSlug: "classic-fill",
+      start: selectedStart.toISOString(),
+      name: "Client Name",
+      email: "client@example.com",
+      phone: "555-0100",
+    }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 400);
+    assert.equal(createCalled, false);
+    assert.deepEqual(body, { error: "Booking payment is not configured" });
+  `);
+});
+
+test("booking hold route snapshots purchaser-selected full payments", () => {
+  runRouteScenario(`
+    const selectedStart = createFutureDate(2, 0);
+    const availabilityEnd = new Date(selectedStart.getTime() + 2 * 60 * 60 * 1000);
+    const createInputs = [];
+    const handler = createHoldHandler({
+      listCalendarEvents: async () => [{
+        id: "available-window",
+        title: "Available",
+        start: selectedStart,
+        end: availabilityEnd,
+      }],
+      createAppointmentHold: async (input) => {
+        createInputs.push(input);
+        return {
+          ok: true,
+          hold: {
+            publicReference: "hold_public_1",
+            expiresAt: new Date("2026-06-01T12:10:00.000Z"),
+            selectedStart: input.selectedStart,
+            selectedEnd: input.selectedEnd,
+          },
+        };
+      },
+    });
+
+    const response = await handler(createRequest({
+      offeringSlug: "classic-fill",
+      start: selectedStart.toISOString(),
+      name: "Client Name",
+      email: "client@example.com",
+      phone: "555-0100",
+      paymentOption: "full",
+    }));
+
+    assert.equal(response.status, 201);
+    assert.deepEqual(createInputs[0].offeringSnapshot.selectedPayment, {
+      amount: 150,
+      description: "Classic Fill full payment",
+      option: "full",
+      purpose: "appointment_full",
+      sku: "BOOKING-FULL",
+    });
   `);
 });
 
@@ -287,6 +356,7 @@ test("booking hold route rejects slots blocked by active private holds", () => {
       name: "Client Name",
       email: "client@example.com",
       phone: "555-0100",
+      paymentOption: "deposit",
     }));
     const body = await parseJson(response);
 
@@ -323,6 +393,7 @@ test("booking hold route maps conflict-safe hold rejection to a slot conflict", 
       name: "Client Name",
       email: "client@example.com",
       phone: "555-0100",
+      paymentOption: "deposit",
     }));
     const body = await parseJson(response);
 

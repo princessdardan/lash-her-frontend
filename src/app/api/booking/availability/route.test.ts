@@ -221,7 +221,6 @@ test("booking availability uses offering configuration and active holds", () => 
           bufferBeforeMinutes: 0,
           bufferAfterMinutes: 0,
           minimumLeadTimeHoursOverride: 0,
-          paymentMode: "deposit",
         };
       },
       listActiveAppointmentHolds: async (input) => {

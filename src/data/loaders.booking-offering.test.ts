@@ -31,12 +31,8 @@ describe("booking offering loader contract", () => {
       "bufferBeforeMinutes",
       "bufferAfterMinutes",
       "minimumLeadTimeHoursOverride",
-      "paymentMode",
       "depositAmount",
       "fullPrice",
-      "allowCustomAmount",
-      "customAmountMinimum",
-      "customAmountMaximum",
       "currency",
       "displayOrder",
     ]) {
@@ -69,12 +65,8 @@ describe("booking offering loader contract", () => {
       "bufferBeforeMinutes",
       "bufferAfterMinutes",
       "minimumLeadTimeHoursOverride",
-      "paymentMode",
       "fullPrice",
       "depositAmount",
-      "allowCustomAmount",
-      "customAmountMinimum",
-      "customAmountMaximum",
       "currency",
       "displayOrder",
     ]) {
@@ -87,11 +79,16 @@ describe("booking offering loader contract", () => {
     );
 
     assert.doesNotMatch(serviceProjection, /depositProduct|fullProduct/);
-    assert.match(
-      loadersSource,
-      new RegExp("if \\(bookingOffering !== null\\) \\{\\n    return bookingOffering;\\n  \\}"),
-    );
+    assert.match(loadersSource, /if \(bookingOffering !== null && isPaymentConfiguredBookingOffering\(bookingOffering\)\)/);
     assert.match(loadersSource, /sanityFetchOptions\(\["service"\]\)/);
+  });
+
+  it("keeps unconfigured payment documents out of active booking flows", () => {
+    assert.match(loadersSource, /function isPaymentConfiguredBookingOffering\(offering: TBookingOffering\): boolean/);
+    assert.match(loadersSource, /bookingOfferings\.filter\(isPaymentConfiguredBookingOffering\)/);
+    assert.match(loadersSource, /services\.filter\(isPaymentConfiguredBookingOffering\)/);
+    assert.match(loadersSource, /bookingOffering !== null && isPaymentConfiguredBookingOffering\(bookingOffering\)/);
+    assert.match(loadersSource, /service !== null && isPaymentConfiguredBookingOffering\(service\) \? service : null/);
   });
 
 });

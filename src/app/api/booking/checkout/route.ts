@@ -70,7 +70,6 @@ interface BookingCheckoutPostHandlerDependencies {
 
 interface BookingOfferingSnapshot {
   currency: "CAD";
-  paymentMode: "deposit" | "full" | "customPartial";
   selectedPayment: BookingPaymentSelection;
   title: string;
 }
@@ -229,20 +228,11 @@ function getPaymentSelection(hold: BookingHoldRecord): BookingPaymentSelection |
 }
 
 function toBookingOfferingSnapshot(value: Record<string, unknown>): BookingOfferingSnapshot | null {
-  const paymentMode = value.paymentMode;
   const currency = value.currency;
   const selectedPayment = toBookingPaymentSelection(value.selectedPayment);
   const title = typeof value.title === "string" && value.title.trim().length > 0
     ? value.title.trim()
     : null;
-
-  if (
-    paymentMode !== "deposit" &&
-    paymentMode !== "full" &&
-    paymentMode !== "customPartial"
-  ) {
-    return null;
-  }
 
   if (currency !== "CAD" || title === null || selectedPayment === null) {
     return null;
@@ -250,7 +240,6 @@ function toBookingOfferingSnapshot(value: Record<string, unknown>): BookingOffer
 
   return {
     currency,
-    paymentMode,
     selectedPayment,
     title,
   };

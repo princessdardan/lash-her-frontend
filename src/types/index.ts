@@ -387,8 +387,6 @@ export interface TProduct {
   seo?: TCommerceSeo;
 }
 
-export type TServicePaymentMode = "deposit" | "full" | "choice";
-
 export interface TService {
   _id: string;
   title: string;
@@ -402,12 +400,8 @@ export interface TService {
   bufferBeforeMinutes: number;
   bufferAfterMinutes: number;
   minimumLeadTimeHoursOverride?: number;
-  paymentMode: TServicePaymentMode;
   fullPrice: number;
-  depositAmount?: number;
-  allowCustomAmount?: boolean;
-  customAmountMinimum?: number;
-  customAmountMaximum?: number;
+  depositAmount: number;
   currency: TCommerceCurrency;
   isAvailable: boolean;
   availabilityLabel?: string;
@@ -441,8 +435,6 @@ export interface TProductsGroupedCatalog {
   services: TService[];
 }
 
-export type TBookingOfferingPaymentMode = "deposit" | "full" | "customPartial";
-
 export interface TBookingOffering {
   _id: string;
   title: string;
@@ -456,12 +448,8 @@ export interface TBookingOffering {
   bufferBeforeMinutes: number;
   bufferAfterMinutes: number;
   minimumLeadTimeHoursOverride?: number;
-  paymentMode: TBookingOfferingPaymentMode;
-  depositAmount?: number;
-  fullPrice?: number;
-  allowCustomAmount?: boolean;
-  customAmountMinimum?: number;
-  customAmountMaximum?: number;
+  depositAmount: number;
+  fullPrice: number;
   currency: TCommerceCurrency;
   displayOrder?: number;
 }

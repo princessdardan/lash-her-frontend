@@ -28,10 +28,8 @@ const helperScript = String.raw`
       offeringId: "bookingOffering-classic-fill",
       offeringSnapshot: {
         title: "Classic Fill",
-        paymentMode: "deposit",
         depositAmount: 50,
         fullPrice: 150,
-        allowCustomAmount: false,
         currency: "CAD",
         selectedPayment: {
           amount: 50,
@@ -156,9 +154,7 @@ test("booking checkout initializes Helcim for a full-payment appointment", () =>
       getAppointmentHoldByPublicReference: async () => createHold({
         offeringSnapshot: {
           title: "Classic Fill",
-          paymentMode: "full",
           fullPrice: 150,
-          allowCustomAmount: false,
           currency: "CAD",
           selectedPayment: {
             amount: 150,
@@ -187,11 +183,7 @@ test("booking checkout supports custom partial payment within configured boundar
       getAppointmentHoldByPublicReference: async () => createHold({
         offeringSnapshot: {
           title: "Classic Fill",
-          paymentMode: "customPartial",
           fullPrice: 150,
-          allowCustomAmount: true,
-          customAmountMinimum: 75,
-          customAmountMaximum: 125,
           currency: "CAD",
           selectedPayment: {
             amount: 100,
@@ -224,11 +216,7 @@ test("booking checkout uses full payment selected on the immutable hold snapshot
       getAppointmentHoldByPublicReference: async () => createHold({
         offeringSnapshot: {
           title: "Classic Fill",
-          paymentMode: "customPartial",
           fullPrice: 150,
-          allowCustomAmount: true,
-          customAmountMinimum: 75,
-          customAmountMaximum: 125,
           currency: "CAD",
           selectedPayment: {
             amount: 150,
@@ -256,11 +244,7 @@ test("booking checkout rejects holds without an immutable payment selection", ()
     const getAppointmentHoldByPublicReference = async () => createHold({
       offeringSnapshot: {
         title: "Classic Fill",
-        paymentMode: "customPartial",
         fullPrice: 150,
-        allowCustomAmount: true,
-        customAmountMinimum: 75,
-        customAmountMaximum: 125,
         currency: "CAD",
       },
     });

@@ -31,8 +31,16 @@ describe("booking offering flow contract", () => {
   it("uses /api/booking/holds and /api/booking/checkout for paid offerings", () => {
     assert.match(bookingFlowSource, /fetch\("\/api\/booking\/holds"/);
     assert.match(bookingFlowSource, /fetch\("\/api\/booking\/checkout"/);
-    assert.match(bookingFlowSource, /paymentOption: offeringPayment\.paymentMode === "customPartial" \? paymentOption : offeringPayment\.paymentMode/);
+    assert.match(bookingFlowSource, /paymentOption,/);
     assert.match(bookingFlowSource, /body: JSON\.stringify\(\{\s*holdReference,\s*\}\)/);
+  });
+
+  it("renders all purchaser payment options for paid offerings", () => {
+    assert.match(bookingFlowSource, /Pay Deposit/);
+    assert.match(bookingFlowSource, /Pay in Full/);
+    assert.match(bookingFlowSource, /Pay Custom Amount/);
+    assert.match(bookingFlowSource, /Custom amount must be greater than the deposit/);
+    assert.match(bookingFlowSource, /Custom amount must be less than the full price/);
   });
 
   it("does not collect appointment intake fields that paid offering checkout does not persist", () => {

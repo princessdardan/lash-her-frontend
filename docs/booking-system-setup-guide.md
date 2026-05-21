@@ -232,15 +232,15 @@ Required fields:
 - Booking type: `training-call` or `in-person-appointment`.
 - Duration, slot interval, buffer before, buffer after.
 - Optional minimum lead-time override.
-- Payment mode: deposit, full payment, or customer choice.
-- Native CAD payment amounts as required by the selected payment mode.
+- Deposit amount and full price in native CAD fields.
 - Display order.
 
 Native payment field rules:
 
-- Deposit mode requires a deposit amount.
-- Full mode requires a full payment amount.
-- Customer-choice/custom-partial mode requires a full payment amount plus custom minimum and maximum amounts.
+- Every paid booking offering requires both a positive deposit amount and a positive full price.
+- The deposit amount must be less than the full price.
+- Do not configure a service-level payment mode. The purchaser chooses deposit, full payment, or a custom amount at booking time.
+- Custom purchaser-entered amounts are valid only when they are greater than the deposit amount and less than the full price.
 - Legacy deposit/full product references are migration-only and must not be used for active booking checkout setup.
 
 After publishing `bookingSettings` or `bookingOffering`, verify the Sanity webhook refreshes `/booking` in the target environment.

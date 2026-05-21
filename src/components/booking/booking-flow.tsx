@@ -26,12 +26,8 @@ interface BookingFlowProps {
   paidTrainingOrderId?: string;
   initialOfferingSlug?: string;
   offeringPayment?: {
-    paymentMode: "deposit" | "full" | "customPartial";
-    depositAmount?: number;
-    fullPrice?: number;
-    allowCustomAmount?: boolean;
-    customAmountMinimum?: number;
-    customAmountMaximum?: number;
+    depositAmount: number;
+    fullPrice: number;
     currency: "CAD";
   };
 }
@@ -253,18 +249,18 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
 
     if (offeringPayment && hasOffering && !hasPaidTrainingOrder) {
       let parsedCustomAmount: number | undefined;
-      if (offeringPayment.paymentMode === "customPartial" && paymentOption === "customPartial") {
+      if (paymentOption === "customPartial") {
         parsedCustomAmount = parseFloat(customAmount);
         if (isNaN(parsedCustomAmount) || parsedCustomAmount <= 0) {
           setErrorMessage("Please enter a valid custom amount.");
           return;
         }
-        if (offeringPayment.customAmountMinimum && parsedCustomAmount < offeringPayment.customAmountMinimum) {
-          setErrorMessage(`Minimum custom amount is ${formatCad(offeringPayment.customAmountMinimum)}.`);
+        if (parsedCustomAmount <= offeringPayment.depositAmount) {
+          setErrorMessage(`Custom amount must be greater than the deposit of ${formatCad(offeringPayment.depositAmount)}.`);
           return;
         }
-        if (offeringPayment.customAmountMaximum && parsedCustomAmount > offeringPayment.customAmountMaximum) {
-          setErrorMessage(`Maximum custom amount is ${formatCad(offeringPayment.customAmountMaximum)}.`);
+        if (parsedCustomAmount >= offeringPayment.fullPrice) {
+          setErrorMessage(`Custom amount must be less than the full price of ${formatCad(offeringPayment.fullPrice)}.`);
           return;
         }
       }
@@ -283,7 +279,7 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
             name,
             email,
             phone,
-            paymentOption: offeringPayment.paymentMode === "customPartial" ? paymentOption : offeringPayment.paymentMode,
+            paymentOption,
             ...(parsedCustomAmount ? { customAmount: parsedCustomAmount } : {}),
           }),
         });
@@ -591,54 +587,46 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
           {offeringPayment && (
             <div className="pt-4 border-t border-border/50">
               <h3 className="text-lg font-medium text-primary mb-4">Payment Details</h3>
-              {offeringPayment.paymentMode === "deposit" && offeringPayment.depositAmount && (
-                <p className="text-muted-foreground mb-4">
-                  A deposit of <strong className="text-foreground">{formatCad(offeringPayment.depositAmount)}</strong> is required to secure your appointment.
-                </p>
-              )}
-              {offeringPayment.paymentMode === "full" && offeringPayment.fullPrice && (
-                <p className="text-muted-foreground mb-4">
-                  Full payment of <strong className="text-foreground">{formatCad(offeringPayment.fullPrice)}</strong> is required to secure your appointment.
-                </p>
-              )}
-              {offeringPayment.paymentMode === "customPartial" && (
-                <div className="space-y-4">
+              <p className="text-muted-foreground mb-4">
+                Choose the amount you would like to pay now. Your appointment is valid with the deposit, the full price, or any amount between them.
+              </p>
+              <div className="space-y-4">
+                <Field>
+                  <FieldLabel>Payment Option</FieldLabel>
+                  <Select
+                    value={paymentOption}
+                    onValueChange={(val) => setPaymentOption(val as "deposit" | "full" | "customPartial")}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select payment option" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="deposit">Pay Deposit ({formatCad(offeringPayment.depositAmount)})</SelectItem>
+                      <SelectItem value="full">Pay in Full ({formatCad(offeringPayment.fullPrice)})</SelectItem>
+                      <SelectItem value="customPartial">Pay Custom Amount</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                {paymentOption === "customPartial" && (
                   <Field>
-                    <FieldLabel>Payment Option</FieldLabel>
-                    <Select
-                      value={paymentOption}
-                      onValueChange={(val) => setPaymentOption(val as "full" | "customPartial")}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select payment option" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="full">Pay in Full ({offeringPayment.fullPrice ? formatCad(offeringPayment.fullPrice) : ""})</SelectItem>
-                        <SelectItem value="customPartial">Pay Partial Amount</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <FieldLabel htmlFor="customAmount">Custom Amount (CAD)</FieldLabel>
+                    <Input
+                      id="customAmount"
+                      type="number"
+                      step="0.01"
+                      min={offeringPayment.depositAmount}
+                      max={offeringPayment.fullPrice}
+                      value={customAmount}
+                      onChange={(e) => setCustomAmount(e.target.value)}
+                      placeholder={`Between ${formatCad(offeringPayment.depositAmount)} and ${formatCad(offeringPayment.fullPrice)}`}
+                      required
+                    />
+                    <FieldDescription>
+                      Enter an amount greater than {formatCad(offeringPayment.depositAmount)} and less than {formatCad(offeringPayment.fullPrice)}.
+                    </FieldDescription>
                   </Field>
-                  {paymentOption === "customPartial" && (
-                    <Field>
-                      <FieldLabel htmlFor="customAmount">Custom Amount (CAD)</FieldLabel>
-                      <Input
-                        id="customAmount"
-                        type="number"
-                        step="0.01"
-                        min={offeringPayment.customAmountMinimum}
-                        max={offeringPayment.customAmountMaximum}
-                        value={customAmount}
-                        onChange={(e) => setCustomAmount(e.target.value)}
-                        placeholder={`Min: ${offeringPayment.customAmountMinimum ? formatCad(offeringPayment.customAmountMinimum) : "0"}`}
-                        required
-                      />
-                      <FieldDescription>
-                        Enter an amount between {offeringPayment.customAmountMinimum ? formatCad(offeringPayment.customAmountMinimum) : "0"} and {offeringPayment.customAmountMaximum ? formatCad(offeringPayment.customAmountMaximum) : "the full price"}.
-                      </FieldDescription>
-                    </Field>
-                  )}
-                </div>
-              )}
+                )}
+              </div>
             </div>
           )}
 
