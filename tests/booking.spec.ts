@@ -12,10 +12,10 @@ test.describe('Booking Page', () => {
     await expect(page.getByRole('heading', { name: /page not found/i })).toBeVisible();
   });
 
-  test('redirects bare in-person-appointment to service selection', async ({ page }) => {
+  test('keeps in-person-appointment selection on the query URL', async ({ page }) => {
     await page.goto('/booking?type=in-person-appointment');
-    
-    await expect(page).toHaveURL(/\/booking$/);
+
+    await expect(page).toHaveURL(/\/booking\?type=in-person-appointment$/);
     await expect(page.getByRole('heading', { name: /select service/i })).toBeVisible();
   });
 
