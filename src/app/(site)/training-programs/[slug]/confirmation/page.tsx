@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { unstable_noStore as noStore } from "next/cache";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { loaders } from "@/data/loaders";
@@ -6,6 +7,7 @@ import { getVerifiedTrainingConfirmation } from "@/lib/training-confirmation";
 import { issueTrainingSchedulingTokenForPaidOrder } from "@/lib/commerce/training-enrollment-store";
 import { buildTrainingScheduleUrl } from "@/lib/training-checkout";
 
+export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -31,6 +33,8 @@ export default async function TrainingConfirmationPage({
   params,
   searchParams,
 }: ConfirmationPageProps) {
+  noStore();
+
   const { slug } = await params;
   const { order, schedulingToken, token } = await searchParams;
 

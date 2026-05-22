@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { unstable_noStore as noStore } from "next/cache";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { loaders } from "@/data/loaders";
@@ -32,6 +33,8 @@ export default async function TrainingSchedulePage({
   params,
   searchParams,
 }: SchedulePageProps) {
+  noStore();
+
   const { slug } = await params;
   const resolvedSearchParams = await searchParams;
   const keys = Object.keys(resolvedSearchParams);

@@ -5,6 +5,14 @@ import { describe, it } from "node:test";
 const schedulePageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 
 describe("training schedule route contract", () => {
+  it("disables static caching and indexing for token-bearing schedule links", () => {
+    assert.match(schedulePageSource, /unstable_noStore as noStore/);
+    assert.match(schedulePageSource, /export const revalidate = 0;/);
+    assert.match(schedulePageSource, /export const dynamic = "force-dynamic";/);
+    assert.match(schedulePageSource, /robots: \{ index: false, follow: false \}/);
+    assert.match(schedulePageSource, /noStore\(\);/);
+  });
+
   it("accepts only token in searchParams and rejects any other keys", () => {
     assert.match(schedulePageSource, /const resolvedSearchParams = await searchParams;/);
     assert.match(schedulePageSource, /const keys = Object\.keys\(resolvedSearchParams\);/);
