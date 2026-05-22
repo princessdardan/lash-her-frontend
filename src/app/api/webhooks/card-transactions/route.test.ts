@@ -35,6 +35,7 @@ const helperScript = String.raw`
     finalizeAppointmentPaymentForOrder,
     getCardTransaction,
     getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing,
+    issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing,
     markTrainingEnrollmentStaffAlerted,
     recordEvent,
     sendTrainingPaymentNotificationEmails,
@@ -54,6 +55,12 @@ const helperScript = String.raw`
       },
       getCardTransaction,
       getVerifierToken: () => verifierToken,
+      issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing: async (input) => {
+        if (issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing) {
+          return issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing(input);
+        }
+        return null;
+      },
       getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing: async (input) => {
         if (!getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing) {
           return null;
@@ -189,6 +196,19 @@ test("Helcim webhook route recovers missing training notification and sends paym
         staffAlertedAt: null,
         tokenExpiresAt: null,
       }),
+      issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing: async (input) => {
+        assert.deepEqual(input, { helcimInvoiceId: undefined, helcimInvoiceNumber: "INV-TRAINING-4242" });
+        return {
+          checkoutEmail: "client@example.com",
+          checkoutOrder: { customerEmail: "client@example.com", customerName: "Client Name", orderId: "lh-training-123" },
+          enrollmentId: "training-enrollment-1",
+          productSnapshot: { currency: "CAD", id: "product-training-full", priceCents: 149900, sku: "TRAINING-FULL", title: "Lash Training Full Payment" },
+          programSnapshot: { id: "program-lash-training", slug: "lash-training", title: "Lash Training Program" },
+          schedulingToken: "webhook-token-123",
+          staffAlertedAt: null,
+          tokenExpiresAt: new Date("2026-05-24T00:00:00.000Z"),
+        };
+      },
       recordEvent: async () => true,
     });
 
@@ -202,13 +222,45 @@ test("Helcim webhook route recovers missing training notification and sends paym
         customerName: "Client Name",
         orderId: "lh-training-123",
         programTitle: "Lash Training Program",
-        schedulingUrl: "http://localhost:3000/booking?type=training-call&order=lh-training-123",
+        schedulingUrl: "http://localhost:3000/training-programs/lash-training/schedule?token=webhook-token-123",
       },
     ]);
     assert.deepEqual(markedStaffAlerts, [{ enrollmentId: "training-enrollment-1" }]);
   `);
 });
 
+
+test("Helcim webhook route skips duplicate training notification when token issuance is already claimed", () => {
+  runRouteScenario(`
+    const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });
+    const { handler, markedStaffAlerts, sentEmails } = await runScenario({
+      getCardTransaction: async () => ({
+        amount: "1499.00",
+        currency: "CAD",
+        id: 25764674,
+        invoiceNumber: "INV-TRAINING-4242",
+        status: "APPROVED",
+      }),
+      getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing: async () => ({
+        checkoutEmail: "client@example.com",
+        checkoutOrder: { customerEmail: "client@example.com", customerName: "Client Name", orderId: "lh-training-123" },
+        enrollmentId: "training-enrollment-1",
+        productSnapshot: { currency: "CAD", id: "product-training-full", priceCents: 149900, sku: "TRAINING-FULL", title: "Lash Training Full Payment" },
+        programSnapshot: { id: "program-lash-training", slug: "lash-training", title: "Lash Training Program" },
+        staffAlertedAt: null,
+        tokenExpiresAt: new Date("2026-05-24T00:00:00.000Z"),
+      }),
+      issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing: async () => null,
+      recordEvent: async () => true,
+    });
+
+    const response = await handler(createRequest(body));
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(sentEmails, []);
+    assert.deepEqual(markedStaffAlerts, []);
+  `);
+});
 
 test("Helcim webhook route finalizes approved appointment webhook after event persistence", () => {
   runRouteScenario(`
