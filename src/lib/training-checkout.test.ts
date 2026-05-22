@@ -3,6 +3,10 @@ import { describe, it } from "node:test";
 import type { TTrainingProgram } from "@/types";
 import {
   buildTrainingConfirmationUrl,
+  buildTrainingScheduleUrl,
+  buildServiceBookingConfirmationResolverUrl,
+  buildServiceBookingConfirmationUrl,
+  buildServiceBookingUrl,
   getTrainingCta,
   isTrainingPurchasable,
   TRAINING_CHECKOUT_TAX_RATE,
@@ -12,7 +16,20 @@ import {
   type TrainingCheckoutRequest,
 } from "./training-checkout";
 
-function buildProgram(overrides: Partial<TTrainingProgram> = {}): TTrainingProgram {
+type TrainingProgramFixture = TTrainingProgram & {
+  checkoutProduct?: {
+    _id: string;
+    title: string;
+    slug: string;
+    sku: string;
+    kind: string;
+    price: number;
+    currency: string;
+    isAvailable: boolean;
+  };
+};
+
+function buildProgram(overrides: Partial<TrainingProgramFixture> = {}): TrainingProgramFixture {
   return {
     _id: "program-classic-lash-training",
     title: "Classic Lash Training",
@@ -35,6 +52,17 @@ function buildRequest(overrides: Partial<TrainingCheckoutRequest> = {}): Trainin
     ...overrides,
   };
 }
+
+const legacyTrainingCheckoutProduct: NonNullable<TrainingProgramFixture["checkoutProduct"]> = {
+  _id: "legacy-training-product",
+  title: "Legacy Training Product",
+  slug: "legacy-training-product",
+  sku: "LEGACY-TRAINING",
+  kind: "training",
+  price: 1200,
+  currency: "CAD",
+  isAvailable: true,
+};
 
 function assertRejected(request: unknown, program: TTrainingProgram | null, code: string): void {
   const result = validateTrainingCheckoutRequest(program, request);
@@ -61,12 +89,7 @@ describe("training-checkout", () => {
     it("returns true when native commerce fields are valid without a legacy checkoutProduct", () => {
       assert.strictEqual(
         isTrainingPurchasable(
-          buildProgram({
-            checkoutProduct: undefined,
-            price: 1200,
-            currency: "CAD",
-            isAvailable: true,
-          }),
+          buildProgram({ price: 1200, currency: "CAD", isAvailable: true }),
         ),
         true,
       );
@@ -201,16 +224,7 @@ describe("training-checkout", () => {
         price: 1500,
         currency: "CAD",
         isAvailable: true,
-        checkoutProduct: {
-          _id: "legacy-training-product",
-          title: "Legacy Training Product",
-          slug: "legacy-training-product",
-          sku: "LEGACY-TRAINING",
-          kind: "training",
-          price: 1200,
-          currency: "CAD",
-          isAvailable: true,
-        },
+        checkoutProduct: legacyTrainingCheckoutProduct,
       });
 
       const result = validateTrainingCheckoutRequest(program, buildRequest({ clientPrice: 1500 }));
@@ -226,16 +240,7 @@ describe("training-checkout", () => {
     it("does not fall back to the legacy checkoutProduct when native commerce fields are incomplete", () => {
       const program = buildProgram({
         price: undefined,
-        checkoutProduct: {
-          _id: "legacy-training-product",
-          title: "Legacy Training Product",
-          slug: "legacy-training-product",
-          sku: "LEGACY-TRAINING",
-          kind: "training",
-          price: 1200,
-          currency: "CAD",
-          isAvailable: true,
-        },
+        checkoutProduct: legacyTrainingCheckoutProduct,
       });
 
       const result = validateTrainingCheckoutRequest(program, buildRequest({ clientPrice: 1200 }));
@@ -350,6 +355,92 @@ describe("training-checkout", () => {
           programSlug: "classic-lash-training",
         }),
         "/training-programs/classic-lash-training/confirmation?order=lh-order+123",
+      );
+    });
+
+    it("encodes the program slug and order query value", () => {
+      assert.strictEqual(
+        buildTrainingConfirmationUrl({
+          orderId: "lh/order?123",
+          programSlug: "classic lash/training",
+        }),
+        "/training-programs/classic%20lash%2Ftraining/confirmation?order=lh%2Forder%3F123",
+      );
+    });
+  });
+
+  describe("buildTrainingScheduleUrl", () => {
+    it("builds a token-only schedule URL", () => {
+      const url = buildTrainingScheduleUrl({
+        programSlug: "classic-lash-training",
+        schedulingToken: "token-123",
+      });
+
+      assert.strictEqual(url, "/training-programs/classic-lash-training/schedule?token=token-123");
+      assert.strictEqual(url.includes("order="), false);
+      assert.strictEqual(url.includes("email="), false);
+      assert.strictEqual(url.includes("phone="), false);
+      assert.strictEqual(url.includes("name="), false);
+    });
+
+    it("encodes the program slug and scheduling token", () => {
+      assert.strictEqual(
+        buildTrainingScheduleUrl({
+          programSlug: "classic lash/training",
+          schedulingToken: "token +/=?",
+        }),
+        "/training-programs/classic%20lash%2Ftraining/schedule?token=token+%2B%2F%3D%3F",
+      );
+    });
+  });
+
+  describe("service booking url helpers", () => {
+    it("builds an internal service booking URL", () => {
+      assert.strictEqual(buildServiceBookingUrl({ serviceSlug: "lash-fill" }), "/services/lash-fill/booking");
+    });
+
+    it("encodes reserved characters in the service booking URL", () => {
+      assert.strictEqual(
+        buildServiceBookingUrl({ serviceSlug: "lash fill/express?" }),
+        "/services/lash%20fill%2Fexpress%3F/booking",
+      );
+    });
+
+    it("builds a service booking confirmation URL without personal data", () => {
+      const url = buildServiceBookingConfirmationUrl({
+        serviceSlug: "lash-fill",
+        orderId: "lh-order-123",
+      });
+
+      assert.strictEqual(url, "/services/lash-fill/booking/confirmation?order=lh-order-123");
+      assert.strictEqual(url.includes("email="), false);
+      assert.strictEqual(url.includes("phone="), false);
+      assert.strictEqual(url.includes("name="), false);
+    });
+
+    it("encodes reserved characters in the service booking confirmation URL", () => {
+      assert.strictEqual(
+        buildServiceBookingConfirmationUrl({
+          serviceSlug: "lash fill/express?",
+          orderId: "lh/order 123?",
+        }),
+        "/services/lash%20fill%2Fexpress%3F/booking/confirmation?order=lh%2Forder+123%3F",
+      );
+    });
+
+    it("builds the service booking confirmation resolver URL without personal data", () => {
+      const url = buildServiceBookingConfirmationResolverUrl({ orderId: "lh-order-123" });
+
+      assert.strictEqual(url, "/services/booking/confirmation?order=lh-order-123");
+      assert.strictEqual(url.includes("email="), false);
+      assert.strictEqual(url.includes("phone="), false);
+      assert.strictEqual(url.includes("name="), false);
+    });
+
+    it("encodes reserved characters in the service booking confirmation resolver URL", () => {
+      assert.strictEqual(
+        buildServiceBookingConfirmationResolverUrl({ orderId: "lh/order 123?" }),
+        "/services/booking/confirmation?order=lh%2Forder+123%3F",
       );
     });
   });

@@ -63,6 +63,24 @@ export interface TrainingConfirmationUrlInput {
   programSlug: string;
 }
 
+export interface TrainingScheduleUrlInput {
+  programSlug: string;
+  schedulingToken: string;
+}
+
+export interface ServiceBookingUrlInput {
+  serviceSlug: string;
+}
+
+export interface ServiceBookingConfirmationUrlInput {
+  serviceSlug: string;
+  orderId: string;
+}
+
+export interface ServiceBookingConfirmationResolverUrlInput {
+  orderId: string;
+}
+
 export type PurchasableTrainingProgram = TTrainingProgram & {
   checkoutEnabled: true;
 };
@@ -257,4 +275,34 @@ export function buildTrainingConfirmationUrl({
   const params = new URLSearchParams({ order: orderId });
 
   return `/training-programs/${encodeURIComponent(programSlug)}/confirmation?${params.toString()}`;
+}
+
+export function buildTrainingScheduleUrl({
+  programSlug,
+  schedulingToken,
+}: TrainingScheduleUrlInput): string {
+  const params = new URLSearchParams({ token: schedulingToken });
+
+  return `/training-programs/${encodeURIComponent(programSlug)}/schedule?${params.toString()}`;
+}
+
+export function buildServiceBookingUrl({ serviceSlug }: ServiceBookingUrlInput): string {
+  return `/services/${encodeURIComponent(serviceSlug)}/booking`;
+}
+
+export function buildServiceBookingConfirmationUrl({
+  serviceSlug,
+  orderId,
+}: ServiceBookingConfirmationUrlInput): string {
+  const params = new URLSearchParams({ order: orderId });
+
+  return `/services/${encodeURIComponent(serviceSlug)}/booking/confirmation?${params.toString()}`;
+}
+
+export function buildServiceBookingConfirmationResolverUrl({
+  orderId,
+}: ServiceBookingConfirmationResolverUrlInput): string {
+  const params = new URLSearchParams({ order: orderId });
+
+  return `/services/booking/confirmation?${params.toString()}`;
 }
