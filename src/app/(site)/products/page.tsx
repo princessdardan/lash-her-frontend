@@ -105,7 +105,7 @@ export default async function ProductsPage(): Promise<ReactElement> {
                 {services.map((service) => {
                   const href = service.showDetailPage 
                     ? `/services/${service.slug}` 
-                    : `/booking?offering=${service.slug}`;
+                    : `/services/${service.slug}/booking`;
                   
                   return (
                     <article key={service._id} className="card-white flex flex-col h-full">

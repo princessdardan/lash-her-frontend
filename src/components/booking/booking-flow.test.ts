@@ -86,6 +86,26 @@ describe("booking offering flow contract", () => {
     assert.match(servicesPageSource, /href=\{`\/services\/\$\{service\.slug\}`\}/);
   });
 
+  it("service listing offering links use /services/<slug>/booking", () => {
+    assert.match(servicesPageSource, /href=\{`\/services\/\$\{offering\.slug\}\/booking`\}/);
+  });
+
+  it("service detail booking link uses /services/<slug>/booking", () => {
+    const serviceDetailPageSource = readFileSync(new URL("../../app/(site)/services/[slug]/page.tsx", import.meta.url), "utf8");
+    assert.match(serviceDetailPageSource, /href=\{`\/services\/\$\{service\.slug\}\/booking`\}/);
+  });
+
+  it("product catalog services without detail pages use /services/<slug>/booking", () => {
+    assert.match(productsPageSource, /href = service\.showDetailPage\s*\?\s*`\/services\/\$\{service\.slug\}`\s*:\s*`\/services\/\$\{service\.slug\}\/booking`/);
+  });
+
+  it("no /booking?offering= remains in these canonical service CTA surfaces", () => {
+    const serviceDetailPageSource = readFileSync(new URL("../../app/(site)/services/[slug]/page.tsx", import.meta.url), "utf8");
+    assert.doesNotMatch(servicesPageSource, /\/booking\?offering=/);
+    assert.doesNotMatch(productsPageSource, /\/booking\?offering=/);
+    assert.doesNotMatch(serviceDetailPageSource, /\/booking\?offering=/);
+  });
+
   it("starts paid offering checkout with hold and checkout requests", async () => {
     const requests: Array<{ url: string; body: unknown }> = [];
     const fetcher: typeof fetch = async (input, init) => {

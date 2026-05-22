@@ -110,7 +110,7 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
                   {service.availabilityLabel || "Currently Unavailable"}
                 </div>
               ) : (
-                <Link href={`/booking?offering=${service.slug}`} className="btn-primary-red w-full text-center block">
+                <Link href={`/services/${service.slug}/booking`} className="btn-primary-red w-full text-center block">
                   Book Now
                 </Link>
               )}

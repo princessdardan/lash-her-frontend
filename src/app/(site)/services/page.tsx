@@ -55,7 +55,7 @@ export default async function ServicesPage(): Promise<ReactElement> {
                     <div className="flex flex-col items-end gap-3">
                       <span className="font-medium text-black">{formatCad(offering.fullPrice)}</span>
                       <Button asChild className="px-6 py-2 text-sm">
-                        <Link href={`/booking?offering=${offering.slug}`}>
+                        <Link href={`/services/${offering.slug}/booking`}>
                           Book
                         </Link>
                       </Button>
@@ -75,7 +75,7 @@ export default async function ServicesPage(): Promise<ReactElement> {
                   <span className="text-lh-muted">(100+ reviews)</span>
                 </div>
                 <Button asChild className="w-full mb-6">
-                  <Link href="/booking">Book now</Link>
+                  <Link href={`/services/${offerings[0].slug}/booking`}>Book now</Link>
                 </Button>
                 <div className="pt-4 border-t border-lh-line">
                   <p className="font-medium text-black mb-1">Location</p>
