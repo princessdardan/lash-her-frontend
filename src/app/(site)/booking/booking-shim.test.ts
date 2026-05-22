@@ -69,6 +69,11 @@ test("booking shim redirects accepted service legacy offering links", async () =
   });
 });
 
+test("booking page disables static caching for the legacy shim route", () => {
+  assert.match(bookingPageSource, /export const dynamic = "force-dynamic";/);
+  assert.match(bookingPageSource, /export const revalidate = 0;/);
+});
+
 test("booking page uses permanent redirect semantics for service legacy links and temporary semantics for training links", () => {
   assert.match(bookingPageSource, /permanentRedirect\(resolution\.href\)/);
   assert.match(bookingPageSource, /noStore\(\);/);

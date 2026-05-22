@@ -5,7 +5,8 @@ import { BookingFlow } from "@/components/booking/booking-flow";
 import { findPendingTrainingEnrollmentByToken, getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId, issueTrainingSchedulingTokenForPaidOrderIfMissing } from "@/lib/commerce/training-enrollment-store";
 import { resolveBookingShim } from "./booking-shim";
 
-export const revalidate = 1800;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default async function BookingPage({
   searchParams,
