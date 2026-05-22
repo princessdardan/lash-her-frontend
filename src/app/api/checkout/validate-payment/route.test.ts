@@ -63,7 +63,7 @@ const helperScript = String.raw`
     markTrainingEnrollmentStaffAlerted,
     persistVerifiedPayment,
     sendProductOrderConfirmationEmail,
-    issueTrainingSchedulingTokenForPaidOrderIfMissing,
+    getOrIssueTrainingSchedulingTokenForPaidOrder,
     sendTrainingPaymentNotificationEmails,
     verifyHelcimPayment,
   } = {}) {
@@ -102,9 +102,9 @@ const helperScript = String.raw`
         }
         return null;
       },
-      issueTrainingSchedulingTokenForPaidOrderIfMissing: async (orderId) => {
-        if (issueTrainingSchedulingTokenForPaidOrderIfMissing) {
-          return issueTrainingSchedulingTokenForPaidOrderIfMissing(orderId);
+      getOrIssueTrainingSchedulingTokenForPaidOrder: async (orderId) => {
+        if (getOrIssueTrainingSchedulingTokenForPaidOrder) {
+          return getOrIssueTrainingSchedulingTokenForPaidOrder(orderId);
         }
         return null;
       },
@@ -572,7 +572,7 @@ test("checkout payment validation sends token-only training schedule URL", () =>
         staffAlertedAt: null,
         tokenExpiresAt: null,
       }),
-      issueTrainingSchedulingTokenForPaidOrderIfMissing: async (orderId) => {
+      getOrIssueTrainingSchedulingTokenForPaidOrder: async (orderId) => {
         assert.equal(orderId, "lh-order-123");
         return {
           checkoutEmail: "client@example.com",
@@ -596,7 +596,7 @@ test("checkout payment validation sends token-only training schedule URL", () =>
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), {
       orderId: "lh-order-123",
-      redirectUrl: "/training-programs/lash-training/confirmation?order=lh-order-123&schedulingToken=schedule-token-123",
+      redirectUrl: "/training-programs/lash-training/schedule?token=schedule-token-123",
     });
     assert.deepEqual(sentEmails, [{
       customerEmail: "client@example.com",
@@ -611,7 +611,7 @@ test("checkout payment validation sends token-only training schedule URL", () =>
   `);
 });
 
-test("checkout payment validation skips duplicate training notification when token issuance is already claimed", () => {
+test("checkout payment validation reuses active training scheduling tokens on duplicate validation", () => {
   runRouteScenario(`
     const { handler, markedStaffAlerts, sentEmails } = await runScenario({
       getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId: async () => ({
@@ -620,10 +620,22 @@ test("checkout payment validation skips duplicate training notification when tok
         enrollmentId: "training-enrollment-1",
         productSnapshot: { currency: "CAD", id: "product-training-full", priceCents: 113000, sku: "TRAINING-FULL", title: "Lash Training Full Payment" },
         programSnapshot: { id: "program-lash-training", slug: "lash-training", title: "Lash Training Program" },
-        staffAlertedAt: null,
+        staffAlertedAt: new Date("2026-05-10T00:30:00.000Z"),
         tokenExpiresAt: new Date("2026-05-24T00:00:00.000Z"),
       }),
-      issueTrainingSchedulingTokenForPaidOrderIfMissing: async () => null,
+      getOrIssueTrainingSchedulingTokenForPaidOrder: async (orderId) => {
+        assert.equal(orderId, "lh-order-123");
+        return {
+          checkoutEmail: "client@example.com",
+          checkoutOrder: { customerEmail: "client@example.com", customerName: "Client Name", orderId: "lh-order-123" },
+          enrollmentId: "training-enrollment-1",
+          productSnapshot: { currency: "CAD", id: "product-training-full", priceCents: 113000, sku: "TRAINING-FULL", title: "Lash Training Full Payment" },
+          programSnapshot: { id: "program-lash-training", slug: "lash-training", title: "Lash Training Program" },
+          schedulingToken: "existing-schedule-token-123",
+          staffAlertedAt: new Date("2026-05-10T00:30:00.000Z"),
+          tokenExpiresAt: new Date("2026-05-24T00:00:00.000Z"),
+        };
+      },
     });
 
     const response = await handler(createRequest({ checkoutToken: "checkout-token", data: approvedPaymentData, hash: "hash" }));
@@ -631,7 +643,7 @@ test("checkout payment validation skips duplicate training notification when tok
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), {
       orderId: "lh-order-123",
-      redirectUrl: "/training-programs/lash-training/confirmation?order=lh-order-123",
+      redirectUrl: "/training-programs/lash-training/schedule?token=existing-schedule-token-123",
     });
     assert.deepEqual(sentEmails, []);
     assert.deepEqual(markedStaffAlerts, []);
@@ -664,7 +676,7 @@ test("checkout payment validation logs training email failures without blocking 
         staffAlertedAt: null,
         tokenExpiresAt: null,
       }),
-      issueTrainingSchedulingTokenForPaidOrderIfMissing: async () => ({
+      getOrIssueTrainingSchedulingTokenForPaidOrder: async () => ({
         checkoutEmail: "client@example.com",
         checkoutOrder: { customerEmail: "client@example.com", customerName: "Client Name", orderId: "lh-order-123" },
         enrollmentId: "training-enrollment-1",
@@ -688,7 +700,7 @@ test("checkout payment validation logs training email failures without blocking 
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), {
       orderId: "lh-order-123",
-      redirectUrl: "/training-programs/lash-training/confirmation?order=lh-order-123&schedulingToken=schedule-token-123",
+      redirectUrl: "/training-programs/lash-training/schedule?token=schedule-token-123",
     });
     assert.equal(sentProductEmails.length, 0);
     assert.deepEqual(sentEmails, [{
