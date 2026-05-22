@@ -1,88 +1,109 @@
 import type { ReactElement } from "react";
 import { loaders } from "@/data/loaders";
 import Link from "next/link";
-import { SanityImage } from "@/components/ui/sanity-image";
 import { formatCad } from "@/lib/commerce/money";
+import { Button } from "@/components/ui/button";
 
 export const revalidate = 300;
 
 export default async function ServicesPage(): Promise<ReactElement> {
-  const services = await loaders.getServices();
+  const [offerings, services] = await Promise.all([
+    loaders.getActiveBookingOfferings(),
+    loaders.getServices(),
+  ]);
+
+  const detailServices = services.filter(s => s.showDetailPage);
 
   return (
     <div className="min-h-screen bg-lh-neutral-2 py-12 lg:py-24">
-      <div className="content-container">
-        <div className="text-container max-w-3xl mx-auto mb-16">
-          <h1 className="section-heading-red-center text-4xl md:text-5xl lg:text-6xl mb-6">
+      <div className="content-container max-w-5xl mx-auto">
+        <div className="text-container mb-12">
+          <h1 className="section-heading text-4xl md:text-5xl lg:text-6xl mb-6 text-center">
             Services
           </h1>
           <p className="section-description text-center text-lg">
-            Discover our premium lash services.
+            Select a service to book your appointment.
           </p>
         </div>
 
-        {services.length === 0 ? (
+        {offerings.length === 0 ? (
           <div className="text-center py-16 bg-lh-white rounded-2xl border border-lh-line">
             <p className="text-lh-muted max-w-md mx-auto">
               We are currently updating our services. Please check back later.
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {services.map((service) => {
-              const href = service.showDetailPage 
-                ? `/services/${service.slug}` 
-                : `/booking?offering=${service.slug}`;
+          <div className="flex flex-col lg:flex-row gap-8">
+            <div className="flex-1">
+              <div className="flex gap-2 mb-6 overflow-x-auto pb-2" role="group" aria-label="Service filters">
+                <span className="px-4 py-2 bg-lh-primary text-white rounded-full text-sm font-medium whitespace-nowrap">
+                  All Services
+                </span>
+                <span className="px-4 py-2 bg-white border border-lh-line text-lh-muted rounded-full text-sm font-medium whitespace-nowrap">
+                  Nataliea
+                </span>
+              </div>
               
-              return (
-                <article key={service._id} className="card-white flex flex-col h-full">
-                  {service.image && (
-                    <Link
-                      href={href}
-                      className="relative w-full aspect-square mb-4 overflow-hidden rounded-md bg-lh-neutral-2 block"
-                    >
-                      <SanityImage
-                        image={service.image}
-                        alt={service.title}
-                        fill
-                        className="object-cover"
-                      />
-                    </Link>
-                  )}
-                  <div className="flex-1 flex flex-col">
-                    <div className="text-xs font-bold uppercase tracking-wider text-lh-primary mb-1">
-                      Service
+              <div className="space-y-4">
+                {offerings.map((offering) => (
+                  <div key={offering._id} className="editorial-card p-6 flex justify-between items-center">
+                    <div>
+                      <h3 className="text-lg font-medium text-black mb-1">{offering.title}</h3>
+                      <p className="text-sm text-lh-muted mb-2">{offering.durationMinutes} min</p>
+                      <p className="text-sm text-black font-light max-w-md">{offering.description}</p>
                     </div>
-                    <h3 className="card-heading-red text-xl mb-2">
-                      <Link href={href} className="hover:underline">
-                        {service.title}
-                      </Link>
-                    </h3>
-                    <p className="text-sm text-black font-light mb-4 flex-1">
-                      {service.shortDescription || service.description}
-                    </p>
-                    
-                    {service.availabilityLabel && service.isAvailable && (
-                      <p className="text-xs font-bold text-lh-primary mb-2">
-                        {service.availabilityLabel}
-                      </p>
-                    )}
-
-                    <div className="flex items-center justify-between mt-auto pt-4 border-t border-lh-line">
-                      <span className="font-bold text-lg text-black">
-                        {service.fullPrice ? formatCad(service.fullPrice) : "View Details"}
-                      </span>
-                      <Link
-                        href={href}
-                        className="btn-primary-red w-auto px-6 text-center"
-                      >
-                        {service.showDetailPage ? "View Details" : "Book Now"}
-                      </Link>
+                    <div className="flex flex-col items-end gap-3">
+                      <span className="font-medium text-black">{formatCad(offering.fullPrice)}</span>
+                      <Button asChild className="px-6 py-2 text-sm">
+                        <Link href={`/booking?offering=${offering.slug}`}>
+                          Book
+                        </Link>
+                      </Button>
                     </div>
                   </div>
-                </article>
-              );
-            })}
+                ))}
+              </div>
+
+            </div>
+            
+            <div className="w-full lg:w-80 shrink-0">
+              <div className="soft-panel p-6 sticky top-24">
+                <h2 className="text-xl font-serif text-black mb-2">Lash Her by Nataliea</h2>
+                <div className="flex items-center gap-1 mb-4 text-sm text-black">
+                  <span className="text-yellow-500" aria-hidden="true">★</span>
+                  <span className="font-medium">5.0</span>
+                  <span className="text-lh-muted">(100+ reviews)</span>
+                </div>
+                <Button asChild className="w-full mb-6">
+                  <Link href="/booking">Book now</Link>
+                </Button>
+                <div className="pt-4 border-t border-lh-line">
+                  <p className="font-medium text-black mb-1">Location</p>
+                  <p className="text-sm text-lh-muted">Toronto, ON</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {detailServices.length > 0 && (
+          <div className="mt-16">
+            <h2 className="text-2xl font-serif text-black mb-6">Learn More About Our Services</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {detailServices.map((service) => (
+                <div key={service._id} className="soft-panel p-6 flex flex-col h-full">
+                  <h3 className="text-lg font-medium text-black mb-2">{service.title}</h3>
+                  <p className="text-sm text-black font-light mb-6 flex-1">
+                    {service.shortDescription || service.description}
+                  </p>
+                  <Button asChild variant="outline" className="w-full">
+                    <Link href={`/services/${service.slug}`}>
+                      View details
+                    </Link>
+                  </Button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>

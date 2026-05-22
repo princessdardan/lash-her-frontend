@@ -12,6 +12,13 @@ test.describe('Booking Page', () => {
     await expect(page.getByRole('heading', { name: /page not found/i })).toBeVisible();
   });
 
+  test('redirects bare in-person-appointment to service selection', async ({ page }) => {
+    await page.goto('/booking?type=in-person-appointment');
+    
+    await expect(page).toHaveURL(/\/booking$/);
+    await expect(page.getByRole('heading', { name: /select service/i })).toBeVisible();
+  });
+
   test('renders the booking flow with no available times', async ({ page }) => {
     await page.route('**/api/booking/availability?type=training-call', async (route) => {
       await route.fulfill({
@@ -23,8 +30,8 @@ test.describe('Booking Page', () => {
 
     await page.goto(bookingUrl);
 
-    await expect(page.getByRole('heading', { name: /book an appointment/i })).toBeVisible();
-    await expect(page.getByRole('combobox', { name: /available times/i })).toContainText('No times available');
+    await expect(page.getByRole('heading', { name: /select time/i })).toBeVisible();
+    await expect(page.getByText('No times available for this service.')).toBeVisible();
   });
 
   test('submits a booking and shows confirmation', async ({ page }) => {
@@ -53,10 +60,16 @@ test.describe('Booking Page', () => {
 
     await page.goto(bookingUrl);
 
-    await expect(page.getByRole('heading', { name: /book an appointment/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /select time/i })).toBeVisible();
 
-    await page.getByRole('combobox', { name: /available times/i }).click();
-    await page.getByRole('option').first().click();
+    const timeStr = new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: "America/Toronto",
+    }).format(new Date(slotStart));
+    await page.getByRole('button', { name: timeStr }).click();
+
+    await page.getByRole('button', { name: /continue/i }).click();
 
     await page.getByLabel(/full name/i).fill('Test Client');
     await page.getByLabel(/email address/i).fill('test.client@example.com');

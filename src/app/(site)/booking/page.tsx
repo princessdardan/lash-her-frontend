@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { loaders } from "@/data/loaders";
 import { BookingFlow } from "@/components/booking/booking-flow";
 import type { BookingType } from "@/lib/booking/types";
@@ -17,6 +17,13 @@ export default async function BookingPage({
     notFound();
   }
 
+  const paidTrainingOrderId = params.order?.trim();
+  const offeringSlug = params.offeringSlug?.trim() || params.offering?.trim();
+
+  if (params.type === "in-person-appointment" && !offeringSlug && !paidTrainingOrderId) {
+    redirect("/booking");
+  }
+
   const normalizeType = (type?: string): BookingType | undefined => {
     if (type === "training-call" || type === "in-person-appointment") {
       return type as BookingType;
@@ -24,8 +31,6 @@ export default async function BookingPage({
     return undefined;
   };
 
-  const paidTrainingOrderId = params.order?.trim();
-  const offeringSlug = params.offeringSlug?.trim() || params.offering?.trim();
   const offering = offeringSlug ? await loaders.getBookingOfferingBySlug(offeringSlug) : null;
 
   if (offeringSlug && !offering) {
@@ -39,28 +44,22 @@ export default async function BookingPage({
   const offeringPayment = offering ? {
     depositAmount: offering.depositAmount,
     fullPrice: offering.fullPrice,
-    currency: offering.currency,
+    currency: offering.currency as "CAD",
   } : undefined;
 
-  return (
-    <main className="min-h-screen bg-background py-20 px-4 md:px-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-12">
-          <h1 className="text-4xl md:text-5xl font-serif text-primary mb-4">Book an Appointment</h1>
-          <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-            Select a service and time below to schedule your session.
-          </p>
-        </div>
+  const activeOfferings = await loaders.getActiveBookingOfferings();
 
-        <div className="bg-card border border-border/50 rounded-xl p-6 md:p-10 shadow-sm">
-          <BookingFlow
-            settings={settings}
-            initialBookingType={initialBookingType}
-            paidTrainingOrderId={paidTrainingOrderId}
-            initialOfferingSlug={offeringSlug}
-            offeringPayment={offeringPayment}
-          />
-        </div>
+  return (
+    <main className="min-h-screen bg-lh-neutral-2 py-12 lg:py-24">
+      <div className="content-container max-w-5xl mx-auto">
+        <BookingFlow
+          settings={settings}
+          initialBookingType={initialBookingType}
+          paidTrainingOrderId={paidTrainingOrderId}
+          initialOfferingSlug={offeringSlug}
+          offeringPayment={offeringPayment}
+          offerings={activeOfferings}
+        />
       </div>
     </main>
   );

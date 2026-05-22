@@ -6,7 +6,7 @@ import { BlockRenderer } from "@/components/custom/layouts/block-renderer";
 import { TrainingDetailItems } from "@/components/custom/training-detail-items";
 import { TrainingEditorialHero } from "@/components/custom/training-editorial-hero";
 import { getTrainingCta, isTrainingPurchasable } from "@/lib/training-checkout";
-import { TrainingPurchaseCard } from "@/components/commerce/training-purchase-card";
+import { TrainingPurchaseCard, TrainingMobileTray } from "@/components/commerce/training-purchase-card";
 import type { TLayoutBlock } from "@/types";
 
 export const revalidate = 1800;
@@ -78,7 +78,14 @@ export default async function TrainingProgramPage({ params }: { params: Promise<
   const contactBlocks = (data.blocks ?? []).filter(isContactFormBlock);
 
   return (
-    <div className={`flex flex-col min-h-screen ${showPurchaseUi ? "pb-24 lg:pb-0" : ""}`}>
+    <div className="relative flex flex-col min-h-screen">
+      {showPurchaseUi && (
+        <div className="hidden lg:block absolute top-0 bottom-0 right-[max(2rem,calc((100vw-1380px)/2+2rem))] w-[22rem] pointer-events-none z-40 lg:pt-24">
+          <div className="sticky top-24 pointer-events-auto">
+            <TrainingPurchaseCard program={data} cta={cta} />
+          </div>
+        </div>
+      )}
       {hasStructuredDetails && (
         <section className="section-shell py-10 md:py-14 lg:py-16" data-structured-details="true">
           <div className="mx-auto w-full max-w-[1380px] px-4 sm:px-5 lg:px-4 xl:px-6">
@@ -107,29 +114,19 @@ export default async function TrainingProgramPage({ params }: { params: Promise<
               </div>
 
               {showPurchaseUi && (
-                <div className="w-full lg:w-[22rem] shrink-0">
-                  <TrainingPurchaseCard program={data} cta={cta} />
-                </div>
+                <div className="hidden lg:block w-full lg:w-[22rem] shrink-0"></div>
               )}
             </div>
           </div>
         </section>
       )}
 
-      {!hasStructuredDetails && cta && cta.label && isCtaSafe && (
+      {!hasStructuredDetails && !showPurchaseUi && cta && cta.label && isCtaSafe && (
         <section className="section-shell py-12" data-training-commerce-cta="true">
           <div className="mx-auto w-full max-w-[1380px] px-4 sm:px-5 lg:px-4 xl:px-6">
-            {!showPurchaseUi ? (
-              <div className="text-center">
-                {renderTrainingCta(cta, "")}
-              </div>
-            ) : (
-              <div className="flex justify-center">
-                <div className="w-full max-w-md">
-                  <TrainingPurchaseCard program={data} cta={cta} />
-                </div>
-              </div>
-            )}
+            <div className="text-center">
+              {renderTrainingCta(cta, "")}
+            </div>
           </div>
         </section>
       )}
@@ -140,6 +137,10 @@ export default async function TrainingProgramPage({ params }: { params: Promise<
             <BlockRenderer blocks={contactBlocks} />
           </div>
         </section>
+      )}
+
+      {showPurchaseUi && (
+        <TrainingMobileTray program={data} cta={cta} />
       )}
     </div>
   );

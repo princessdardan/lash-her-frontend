@@ -12,6 +12,32 @@ interface TrainingPurchaseCardProps {
   };
 }
 
+export function TrainingMobileTray({ program, cta }: TrainingPurchaseCardProps) {
+  if (!isTrainingPurchasable(program)) {
+    return null;
+  }
+
+  const product = getTrainingCheckoutProduct(program);
+
+  if (!product) return null;
+
+  const priceFormatted = formatCad(product.price);
+
+  return (
+    <div className="sticky bottom-0 w-full z-50 mt-auto bg-lh-white border-t border-lh-line p-4 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] lg:hidden">
+      <div className="flex items-center justify-between gap-4 max-w-md mx-auto">
+        <div className="flex flex-col">
+          <span className="text-sm font-medium text-lh-shadow line-clamp-1">{product.title || program.title}</span>
+          <span className="text-lg font-bold text-lh-primary">{priceFormatted}</span>
+        </div>
+        <Button asChild variant="dark" size="lg" className="shrink-0">
+          <Link href={cta.href}>{cta.label}</Link>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function TrainingPurchaseCard({ program, cta }: TrainingPurchaseCardProps) {
   if (!isTrainingPurchasable(program)) {
     return null;
@@ -24,20 +50,7 @@ export function TrainingPurchaseCard({ program, cta }: TrainingPurchaseCardProps
   const priceFormatted = formatCad(product.price);
 
   return (
-    <>
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-lh-white border-t border-lh-line p-4 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] lg:hidden">
-        <div className="flex items-center justify-between gap-4 max-w-md mx-auto">
-          <div className="flex flex-col">
-            <span className="text-sm font-medium text-lh-shadow line-clamp-1">{product.title || program.title}</span>
-            <span className="text-lg font-bold text-lh-primary">{priceFormatted}</span>
-          </div>
-          <Button asChild variant="dark" size="lg" className="shrink-0">
-            <Link href={cta.href}>{cta.label}</Link>
-          </Button>
-        </div>
-      </div>
-
-      <div className="hidden lg:block lg:fixed lg:right-[max(2rem,calc((100vw-1380px)/2+2rem))] lg:top-auto lg:bottom-12 lg:z-40 lg:max-h-[calc(100vh-9rem)] lg:w-[22rem] lg:overflow-y-auto bg-lh-white rounded-2xl p-8 shadow-xl border border-lh-line/50">
+    <div className="hidden lg:block w-full lg:w-[22rem] lg:max-h-[calc(100vh-9rem)] lg:overflow-y-auto bg-lh-white rounded-2xl p-8 shadow-xl border border-lh-line/50 pointer-events-auto">
         <h3 className="text-2xl font-serif text-lh-shadow mb-2">{product.title || program.title}</h3>
         <div className="text-3xl font-bold text-lh-primary mb-6">{priceFormatted}</div>
 
@@ -68,6 +81,5 @@ export function TrainingPurchaseCard({ program, cta }: TrainingPurchaseCardProps
           You will be redirected to our secure payment portal.
         </p>
       </div>
-    </>
   );
 }
