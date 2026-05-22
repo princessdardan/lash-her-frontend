@@ -16,7 +16,7 @@ describe("booking offering flow contract", () => {
 
   it("skips the service selection step for explicit offering links", () => {
     assert.match(bookingFlowSource, /const hasOffering = Boolean\(initialOfferingSlug\)/);
-    assert.match(bookingFlowSource, /\(hasPaidTrainingOrder \|\| hasOffering \|\| initialBookingType\) \? "datetime" : "service"/);
+    assert.match(bookingFlowSource, /\(hasPaidTraining \|\| hasOffering \|\| initialBookingType\) \? "datetime" : "service"/);
   });
 
   it("does not refetch availability when a non-paid booking email field changes", () => {
@@ -62,7 +62,7 @@ describe("booking offering flow contract", () => {
   });
 
   it("does not collect appointment intake fields that paid offering checkout does not persist", () => {
-    assert.match(bookingFlowSource, /const isPaidOfferingCheckout = currentOfferingPayment !== undefined && Boolean\(selectedOfferingSlug\) && !hasPaidTrainingOrder/);
+    assert.match(bookingFlowSource, /const isPaidOfferingCheckout = currentOfferingPayment !== undefined && Boolean\(selectedOfferingSlug\) && !hasPaidTraining/);
     assert.match(bookingFlowSource, /const shouldCollectIntake = !isPaidOfferingCheckout/);
     assert.match(bookingFlowSource, /\{shouldCollectIntake && activeTypeConfig\?\.questions\.map/);
     assert.match(bookingFlowSource, /\{shouldCollectIntake && <div className="flex items-start gap-3 pt-4">/);

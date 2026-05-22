@@ -38,6 +38,8 @@ interface BookingFlowProps {
   settings: BookingSettings;
   initialBookingType?: BookingType;
   paidTrainingOrderId?: string;
+  paidSchedulingToken?: string;
+  paidTrainingSlug?: string;
   initialOfferingSlug?: string;
   offeringPayment?: {
     depositAmount: number;
@@ -47,16 +49,18 @@ interface BookingFlowProps {
   offerings?: TBookingOffering[];
 }
 
-export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId, initialOfferingSlug, offeringPayment, offerings = [] }: BookingFlowProps) {
+export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId, paidSchedulingToken, paidTrainingSlug, initialOfferingSlug, offeringPayment, offerings = [] }: BookingFlowProps) {
   const pathname = usePathname();
   const router = useRouter();
   
   const paidTrainingOrder = paidTrainingOrderId?.trim();
   const hasPaidTrainingOrder = paidTrainingOrder !== undefined && paidTrainingOrder.length > 0;
+  const hasPaidSchedulingToken = paidSchedulingToken !== undefined && paidSchedulingToken.trim().length > 0;
+  const hasPaidTraining = hasPaidTrainingOrder || hasPaidSchedulingToken;
   const hasOffering = Boolean(initialOfferingSlug);
   
   const [step, setStep] = useState<"service" | "datetime" | "details">(
-    (hasPaidTrainingOrder || hasOffering || initialBookingType) ? "datetime" : "service"
+    (hasPaidTraining || hasOffering || initialBookingType) ? "datetime" : "service"
   );
   const [selectedOfferingSlug, setSelectedOfferingSlug] = useState<string>(initialOfferingSlug || "");
   
@@ -70,11 +74,11 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
     currency: currentOffering.currency as "CAD",
   } : offeringPayment;
 
-  const currentBookingType = hasPaidTrainingOrder 
+  const currentBookingType = hasPaidTraining 
     ? "training-call" 
     : (currentOffering?.bookingType || initialBookingType || settings.bookingTypes[0]?.type || "training-call");
 
-  const isPaidOfferingCheckout = currentOfferingPayment !== undefined && Boolean(selectedOfferingSlug) && !hasPaidTrainingOrder;
+  const isPaidOfferingCheckout = currentOfferingPayment !== undefined && Boolean(selectedOfferingSlug) && !hasPaidTraining;
   const shouldCollectIntake = !isPaidOfferingCheckout;
 
   const [slots, setSlots] = useState<BookingSlot[]>([]);
@@ -119,6 +123,8 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
           email: availabilityEmail,
           hasPaidTrainingOrder,
           paidTrainingOrder,
+          paidSchedulingToken,
+          paidTrainingSlug,
           offeringSlug: selectedOfferingSlug,
         });
         if (!res.ok) {
@@ -147,7 +153,7 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
     return () => {
       isMounted = false;
     };
-  }, [step, currentBookingType, availabilityEmail, hasPaidTrainingOrder, hasValidPaidTrainingEmail, paidTrainingOrder, selectedOfferingSlug]);
+  }, [step, currentBookingType, availabilityEmail, hasPaidTrainingOrder, hasValidPaidTrainingEmail, paidTrainingOrder, paidSchedulingToken, paidTrainingSlug, selectedOfferingSlug]);
 
   useEffect(() => {
     if (!checkoutToken) return;
@@ -273,7 +279,8 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentBookingType || !selectedSlot || !name || !email || !phone) {
+    const isEmailRequired = !hasPaidTrainingOrder && !hasPaidSchedulingToken;
+    if (!currentBookingType || !selectedSlot || !name || (isEmailRequired && !email) || !phone) {
       setErrorMessage("Please fill in all required fields.");
       return;
     }
@@ -283,7 +290,7 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
       return;
     }
 
-    if (currentOfferingPayment && Boolean(selectedOfferingSlug) && !hasPaidTrainingOrder) {
+    if (currentOfferingPayment && Boolean(selectedOfferingSlug) && !hasPaidTraining) {
       let parsedCustomAmount: number | undefined;
       if (paymentOption === "customPartial") {
         parsedCustomAmount = parseFloat(customAmount);
@@ -361,6 +368,9 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
           idempotencyKey: nanoid(),
           ...(hasPaidTrainingOrder && paidTrainingOrder
             ? { paidTrainingOrderId: paidTrainingOrder }
+            : {}),
+          ...(hasPaidSchedulingToken && paidSchedulingToken
+            ? { paidSchedulingToken, paidTrainingSlug }
             : {}),
           ...(selectedOfferingSlug ? { offeringSlug: selectedOfferingSlug } : {}),
         }),
@@ -693,7 +703,7 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
                 placeholder="Jane Doe"
               />
             </Field>
-            {!hasPaidTrainingOrder && (
+            {!hasPaidTrainingOrder && !hasPaidSchedulingToken && (
               <Field>
                 <FieldLabel htmlFor="email">Email Address</FieldLabel>
                 <Input
@@ -891,6 +901,8 @@ function fetchAvailability(input: {
   email: string;
   hasPaidTrainingOrder: boolean;
   paidTrainingOrder: string | undefined;
+  paidSchedulingToken?: string;
+  paidTrainingSlug?: string;
   offeringSlug?: string;
 }): Promise<Response> {
   if (input.hasPaidTrainingOrder && input.paidTrainingOrder) {
@@ -902,6 +914,19 @@ function fetchAvailability(input: {
         type: input.bookingType,
         order: input.paidTrainingOrder,
         email: input.email.trim(),
+      }),
+    });
+  }
+
+  if (input.paidSchedulingToken && input.paidTrainingSlug) {
+    return fetch("/api/booking/availability", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({
+        type: input.bookingType,
+        token: input.paidSchedulingToken,
+        slug: input.paidTrainingSlug,
       }),
     });
   }
