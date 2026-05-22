@@ -14,6 +14,7 @@ import { sendProductOrderConfirmationEmail } from "@/lib/commerce/product-order-
 import { sendTrainingPaymentNotificationEmails } from "@/lib/commerce/training-payment-email";
 import {
   getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
+  issueTrainingSchedulingTokenForPaidOrderIfMissing,
   markTrainingEnrollmentStaffAlerted,
 } from "@/lib/commerce/training-enrollment-store";
 import { persistVerifiedPayment, verifyHelcimPayment } from "@/lib/commerce/verified-payment";
@@ -22,6 +23,7 @@ import {
   buildServiceBookingConfirmationResolverUrl,
   buildServiceBookingConfirmationUrl,
   buildTrainingConfirmationUrl,
+  buildTrainingScheduleUrl,
 } from "@/lib/training-checkout";
 
 interface ValidatePaymentBody {
@@ -41,6 +43,7 @@ interface ValidatePaymentPostHandlerDependencies {
   getAppointmentHoldByCheckoutOrderPublicId: typeof getAppointmentHoldByCheckoutOrderPublicId;
   getPendingOrderByCheckoutToken: typeof getPendingOrderByCheckoutToken;
   getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId: typeof getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId;
+  issueTrainingSchedulingTokenForPaidOrderIfMissing: typeof issueTrainingSchedulingTokenForPaidOrderIfMissing;
   logError: typeof console.error;
   markOrderPaid: typeof markOrderPaid;
   markOrderVerificationFailed: typeof markOrderVerificationFailed;
@@ -186,13 +189,28 @@ export function createValidatePaymentPostHandler(
           );
         }
 
-        const redirectUrl = buildTrainingConfirmationUrl({
+        const safeProgramSlug: string = programSlug;
+        let redirectUrl = buildTrainingConfirmationUrl({
           orderId: order.orderId,
-          programSlug,
+          programSlug: safeProgramSlug,
         });
 
         if (trainingEnrollment.staffAlertedAt === null) {
           try {
+            const schedulingToken = await dependencies.issueTrainingSchedulingTokenForPaidOrderIfMissing(order.orderId);
+
+            if (!schedulingToken) {
+              return Response.json({
+                orderId: order.orderId,
+                redirectUrl,
+              });
+            }
+
+            redirectUrl = buildTrainingConfirmationWithSchedulingTokenUrl({
+              confirmationUrl: redirectUrl,
+              schedulingToken: schedulingToken.schedulingToken,
+            });
+
             const alertClaimed = await dependencies.markTrainingEnrollmentStaffAlerted({
               enrollmentId: trainingEnrollment.enrollmentId,
             });
@@ -211,7 +229,8 @@ export function createValidatePaymentPostHandler(
               programTitle: trainingEnrollment.programSnapshot.title,
               schedulingUrl: buildAbsoluteSchedulingUrl(
                 getRequestOrigin(req),
-                order.orderId,
+                safeProgramSlug,
+                schedulingToken.schedulingToken,
               ),
             });
           } catch (error) {
@@ -266,6 +285,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     getAppointmentHoldByCheckoutOrderPublicId,
     getPendingOrderByCheckoutToken,
     getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
+    issueTrainingSchedulingTokenForPaidOrderIfMissing,
     logError: console.error,
     markOrderPaid,
     markOrderVerificationFailed,
@@ -296,11 +316,24 @@ async function getAppointmentBookingConfirmationRedirectUrl(input: {
   });
 }
 
-function buildAbsoluteSchedulingUrl(origin: string, orderId: string): string {
-  const url = new URL("/booking", origin);
-  url.searchParams.set("type", "training-call");
-  url.searchParams.set("order", orderId);
-  return url.toString();
+function buildTrainingConfirmationWithSchedulingTokenUrl(input: {
+  confirmationUrl: string;
+  schedulingToken: string;
+}): string {
+  const [path, query = ""] = input.confirmationUrl.split("?");
+  const params = new URLSearchParams(query);
+  params.set("schedulingToken", input.schedulingToken);
+  return `${path}?${params.toString()}`;
+}
+
+function buildAbsoluteSchedulingUrl(origin: string, programSlug: string, schedulingToken: string): string {
+  return new URL(
+    buildTrainingScheduleUrl({
+      programSlug,
+      schedulingToken,
+    }),
+    origin,
+  ).toString();
 }
 
 function getRequestOrigin(req: ValidatePaymentRequest): string {

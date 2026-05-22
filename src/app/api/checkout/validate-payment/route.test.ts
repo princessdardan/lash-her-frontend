@@ -63,6 +63,7 @@ const helperScript = String.raw`
     markTrainingEnrollmentStaffAlerted,
     persistVerifiedPayment,
     sendProductOrderConfirmationEmail,
+    issueTrainingSchedulingTokenForPaidOrderIfMissing,
     sendTrainingPaymentNotificationEmails,
     verifyHelcimPayment,
   } = {}) {
@@ -98,6 +99,12 @@ const helperScript = String.raw`
       getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId: async (orderId) => {
         if (getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId) {
           return getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId(orderId);
+        }
+        return null;
+      },
+      issueTrainingSchedulingTokenForPaidOrderIfMissing: async (orderId) => {
+        if (issueTrainingSchedulingTokenForPaidOrderIfMissing) {
+          return issueTrainingSchedulingTokenForPaidOrderIfMissing(orderId);
         }
         return null;
       },
@@ -539,6 +546,98 @@ test("checkout payment validation logs product email failures without blocking s
   `);
 });
 
+test("checkout payment validation sends token-only training schedule URL", () => {
+  runRouteScenario(`
+    const { handler, markedStaffAlerts, sentEmails } = await runScenario({
+      getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId: async () => ({
+        checkoutEmail: "client@example.com",
+        checkoutOrder: {
+          customerEmail: "client@example.com",
+          customerName: "Client Name",
+          orderId: "lh-order-123",
+        },
+        enrollmentId: "training-enrollment-1",
+        productSnapshot: {
+          currency: "CAD",
+          id: "product-training-full",
+          priceCents: 113000,
+          sku: "TRAINING-FULL",
+          title: "Lash Training Full Payment",
+        },
+        programSnapshot: {
+          id: "program-lash-training",
+          slug: "lash-training",
+          title: "Lash Training Program",
+        },
+        staffAlertedAt: null,
+        tokenExpiresAt: null,
+      }),
+      issueTrainingSchedulingTokenForPaidOrderIfMissing: async (orderId) => {
+        assert.equal(orderId, "lh-order-123");
+        return {
+          checkoutEmail: "client@example.com",
+          checkoutOrder: { customerEmail: "client@example.com", customerName: "Client Name", orderId: "lh-order-123" },
+          enrollmentId: "training-enrollment-1",
+          productSnapshot: { currency: "CAD", id: "product-training-full", priceCents: 113000, sku: "TRAINING-FULL", title: "Lash Training Full Payment" },
+          programSnapshot: { id: "program-lash-training", slug: "lash-training", title: "Lash Training Program" },
+          schedulingToken: "schedule-token-123",
+          staffAlertedAt: null,
+          tokenExpiresAt: new Date("2026-05-24T00:00:00.000Z"),
+        };
+      },
+    });
+
+    const response = await handler(createRequest({
+      checkoutToken: "checkout-token",
+      data: approvedPaymentData,
+      hash: "hash",
+    }));
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      orderId: "lh-order-123",
+      redirectUrl: "/training-programs/lash-training/confirmation?order=lh-order-123&schedulingToken=schedule-token-123",
+    });
+    assert.deepEqual(sentEmails, [{
+      customerEmail: "client@example.com",
+      customerName: "Client Name",
+      orderId: "lh-order-123",
+      programTitle: "Lash Training Program",
+      schedulingUrl: "http://localhost:3000/training-programs/lash-training/schedule?token=schedule-token-123",
+    }]);
+    assert.equal(sentEmails[0].schedulingUrl.includes("order="), false);
+    assert.equal(sentEmails[0].schedulingUrl.includes("email="), false);
+    assert.deepEqual(markedStaffAlerts, [{ enrollmentId: "training-enrollment-1" }]);
+  `);
+});
+
+test("checkout payment validation skips duplicate training notification when token issuance is already claimed", () => {
+  runRouteScenario(`
+    const { handler, markedStaffAlerts, sentEmails } = await runScenario({
+      getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId: async () => ({
+        checkoutEmail: "client@example.com",
+        checkoutOrder: { customerEmail: "client@example.com", customerName: "Client Name", orderId: "lh-order-123" },
+        enrollmentId: "training-enrollment-1",
+        productSnapshot: { currency: "CAD", id: "product-training-full", priceCents: 113000, sku: "TRAINING-FULL", title: "Lash Training Full Payment" },
+        programSnapshot: { id: "program-lash-training", slug: "lash-training", title: "Lash Training Program" },
+        staffAlertedAt: null,
+        tokenExpiresAt: new Date("2026-05-24T00:00:00.000Z"),
+      }),
+      issueTrainingSchedulingTokenForPaidOrderIfMissing: async () => null,
+    });
+
+    const response = await handler(createRequest({ checkoutToken: "checkout-token", data: approvedPaymentData, hash: "hash" }));
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      orderId: "lh-order-123",
+      redirectUrl: "/training-programs/lash-training/confirmation?order=lh-order-123",
+    });
+    assert.deepEqual(sentEmails, []);
+    assert.deepEqual(markedStaffAlerts, []);
+  `);
+});
+
 test("checkout payment validation logs training email failures without blocking success", () => {
   runRouteScenario(`
     const { errors, handler, markedStaffAlerts, sentEmails, sentProductEmails } = await runScenario({
@@ -565,6 +664,16 @@ test("checkout payment validation logs training email failures without blocking 
         staffAlertedAt: null,
         tokenExpiresAt: null,
       }),
+      issueTrainingSchedulingTokenForPaidOrderIfMissing: async () => ({
+        checkoutEmail: "client@example.com",
+        checkoutOrder: { customerEmail: "client@example.com", customerName: "Client Name", orderId: "lh-order-123" },
+        enrollmentId: "training-enrollment-1",
+        productSnapshot: { currency: "CAD", id: "product-training-full", priceCents: 113000, sku: "TRAINING-FULL", title: "Lash Training Full Payment" },
+        programSnapshot: { id: "program-lash-training", slug: "lash-training", title: "Lash Training Program" },
+        schedulingToken: "schedule-token-123",
+        staffAlertedAt: null,
+        tokenExpiresAt: new Date("2026-05-24T00:00:00.000Z"),
+      }),
       sendTrainingPaymentNotificationEmails: async () => {
         throw new Error("Resend unavailable");
       },
@@ -579,7 +688,7 @@ test("checkout payment validation logs training email failures without blocking 
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), {
       orderId: "lh-order-123",
-      redirectUrl: "/training-programs/lash-training/confirmation?order=lh-order-123",
+      redirectUrl: "/training-programs/lash-training/confirmation?order=lh-order-123&schedulingToken=schedule-token-123",
     });
     assert.equal(sentProductEmails.length, 0);
     assert.deepEqual(sentEmails, [{
@@ -587,7 +696,7 @@ test("checkout payment validation logs training email failures without blocking 
       customerName: "Client Name",
       orderId: "lh-order-123",
       programTitle: "Lash Training Program",
-      schedulingUrl: "http://localhost:3000/booking?type=training-call&order=lh-order-123",
+      schedulingUrl: "http://localhost:3000/training-programs/lash-training/schedule?token=schedule-token-123",
     }]);
     assert.deepEqual(markedStaffAlerts, [{ enrollmentId: "training-enrollment-1" }]);
     assert.deepEqual(errors, [{
