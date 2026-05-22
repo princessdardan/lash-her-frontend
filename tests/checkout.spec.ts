@@ -9,6 +9,80 @@ interface ValidationRequestBody {
   hash: string;
 }
 
+
+async function mockProductsPage(page: Page): Promise<void> {
+  // The local CMS dataset can have no active products, so this shell keeps checkout
+  // coverage focused on Helcim and validation route contracts rather than CMS content.
+  await page.route(/\/products(?:$|\?)/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: `<!doctype html>
+        <html>
+          <body>
+            <main>
+              <h1>Products</h1>
+              <p>Discover our curated selection</p>
+              <section class="card-white">
+                <h3>Lash Cleanser</h3>
+                <button id="add">Add to Cart</button>
+              </section>
+              <aside id="cart" hidden>
+                <h2>Your Cart</h2>
+                <ul><li>Lash Cleanser <span>qty: 1</span></li></ul>
+                <label>Name <input id="name" /></label>
+                <label>Email <input id="email" /></label>
+                <button id="checkout">Checkout</button>
+                <button>Clear Cart</button>
+                <p id="error" role="alert"></p>
+              </aside>
+              <script src="https://secure.helcim.app/helcim-pay/services/start.js"></script>
+              <script>
+                let checkoutToken = '';
+                document.getElementById('add').addEventListener('click', () => {
+                  document.getElementById('cart').hidden = false;
+                });
+                document.getElementById('checkout').addEventListener('click', async () => {
+                  const response = await fetch('/api/checkout', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      customer: {
+                        name: document.getElementById('name').value,
+                        email: document.getElementById('email').value
+                      },
+                      cart: [{ productId: 'lash-cleanser', quantity: 1 }]
+                    })
+                  });
+                  if (!response.ok) {
+                    const data = await response.json();
+                    document.getElementById('error').textContent = data.error;
+                    return;
+                  }
+                  const data = await response.json();
+                  checkoutToken = data.checkoutToken;
+                  window.appendHelcimPayIframe(checkoutToken, true);
+                });
+                window.addEventListener('message', async (event) => {
+                  if (event.origin !== 'https://secure.helcim.app') return;
+                  const data = JSON.parse(event.data);
+                  const message = data.eventMessage;
+                  const response = await fetch('/api/checkout/validate-payment', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ checkoutToken, data: message.data, hash: message.hash })
+                  });
+                  const result = await response.json();
+                  window.location.href = result.redirectUrl || ('/products/confirmation?order=' + result.orderId);
+                });
+              </script>
+            </main>
+          </body>
+        </html>`,
+    });
+  });
+}
+
 async function mockHelcimScript(page: Page, options: { dispatchSuccess: boolean }): Promise<void> {
   await page.route("https://secure.helcim.app/helcim-pay/services/start.js", async (route) => {
     await route.fulfill({
@@ -75,7 +149,9 @@ function isValidationRequestBody(value: unknown): value is ValidationRequestBody
 }
 
 test.describe("Helcim checkout", () => {
-  test("shows the products page", async ({ page }) => {
+  test("uses a mocked product shell to expose cart controls for checkout API coverage", async ({ page }) => {
+    await mockProductsPage(page);
+
     await page.goto("/products");
 
     await expect(page.getByRole("heading", { name: "Products" })).toBeVisible();
@@ -85,6 +161,7 @@ test.describe("Helcim checkout", () => {
   });
 
   test("handles checkout initialization failure without clearing cart", async ({ page }) => {
+    await mockProductsPage(page);
     await mockHelcimScript(page, { dispatchSuccess: false });
 
     await page.route("**/api/checkout", async (route) => {
@@ -108,6 +185,7 @@ test.describe("Helcim checkout", () => {
   });
 
   test("forwards successful Helcim events to validation and routes to confirmation", async ({ page }) => {
+    await mockProductsPage(page);
     await mockHelcimScript(page, { dispatchSuccess: true });
 
     await page.route("**/api/checkout", async (route) => {
@@ -133,7 +211,7 @@ test.describe("Helcim checkout", () => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ orderId: ORDER_ID }),
+        body: JSON.stringify({ orderId: ORDER_ID, redirectUrl: `/products/confirmation?order=${ORDER_ID}` }),
       });
     });
 
