@@ -55,6 +55,7 @@ const helperScript = String.raw`
 
   async function runScenario({
     finalizeAppointmentPaymentForOrder,
+    getAppointmentHoldByCheckoutOrderPublicId,
     getPendingOrderByCheckoutToken,
     getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
     markOrderPaid,
@@ -81,6 +82,12 @@ const helperScript = String.raw`
           return finalizeAppointmentPaymentForOrder(input);
         }
         return { ok: true, eventId: "calendar-event-1", status: "booked" };
+      },
+      getAppointmentHoldByCheckoutOrderPublicId: async (orderId) => {
+        if (getAppointmentHoldByCheckoutOrderPublicId) {
+          return getAppointmentHoldByCheckoutOrderPublicId(orderId);
+        }
+        return null;
       },
       getPendingOrderByCheckoutToken: async (checkoutToken) => {
         if (getPendingOrderByCheckoutToken) {
@@ -260,6 +267,9 @@ test("checkout payment validation finalizes appointment payments after persisten
     };
     const { finalizedBookings, handler, operationOrder, sentEmails, sentProductEmails } = await runScenario({
       getPendingOrderByCheckoutToken: async () => appointmentOrder,
+      getAppointmentHoldByCheckoutOrderPublicId: async () => ({
+        offeringSnapshot: { slug: "signature-lash-set" },
+      }),
       finalizeAppointmentPaymentForOrder: async () => ({
         ok: true,
         eventId: "calendar-event-appointment",
@@ -281,7 +291,7 @@ test("checkout payment validation finalizes appointment payments after persisten
       bookingStatus: "booked",
       eventId: "calendar-event-appointment",
       orderId: "lh-order-123",
-      redirectUrl: "/booking/confirmation?order=lh-order-123",
+      redirectUrl: "/services/signature-lash-set/booking/confirmation?order=lh-order-123",
     });
     assert.equal(finalizedBookings.length, 1);
     assert.equal(finalizedBookings[0].order.orderId, "lh-order-123");
@@ -326,6 +336,40 @@ test("checkout payment validation finalizes custom partial appointment payments 
   `);
 });
 
+test("checkout payment validation falls back to service confirmation resolver for unsafe appointment snapshot slugs", () => {
+  runRouteScenario(`
+    const appointmentOrder = {
+      ...pendingOrder,
+      purpose: "appointment_full",
+    };
+    const { handler } = await runScenario({
+      getPendingOrderByCheckoutToken: async () => appointmentOrder,
+      getAppointmentHoldByCheckoutOrderPublicId: async () => ({
+        offeringSnapshot: { slug: "../admin" },
+      }),
+      finalizeAppointmentPaymentForOrder: async () => ({
+        ok: true,
+        eventId: "calendar-event-appointment",
+        status: "booked",
+      }),
+    });
+
+    const response = await handler(createRequest({
+      checkoutToken: "checkout-token",
+      data: approvedPaymentData,
+      hash: "hash",
+    }));
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      bookingStatus: "booked",
+      eventId: "calendar-event-appointment",
+      orderId: "lh-order-123",
+      redirectUrl: "/services/booking/confirmation?order=lh-order-123",
+    });
+  `);
+});
+
 
 test("checkout payment validation can confirm an already-paid appointment order", () => {
   runRouteScenario(`
@@ -353,7 +397,7 @@ test("checkout payment validation can confirm an already-paid appointment order"
       bookingStatus: "booked",
       eventId: "calendar-event-existing",
       orderId: "lh-order-123",
-      redirectUrl: "/booking/confirmation?order=lh-order-123",
+      redirectUrl: "/services/booking/confirmation?order=lh-order-123",
     });
     assert.equal(finalizedBookings.length, 1);
     assert.deepEqual(operationOrder, ["mark-paid", "persisted"]);
@@ -391,7 +435,7 @@ test("checkout payment validation preserves paid appointment order when finaliza
       bookingStatus: "booking_failed",
       error: "Payment received; booking requires manual follow-up",
       orderId: "lh-order-123",
-      redirectUrl: "/booking/confirmation?order=lh-order-123",
+      redirectUrl: "/services/booking/confirmation?order=lh-order-123",
     });
     assert.equal(finalizedBookings.length, 1);
     assert.deepEqual(operationOrder, ["mark-paid", "persisted"]);

@@ -3,6 +3,8 @@ import {
   finalizeAppointmentPaymentForOrder,
   isAppointmentCheckoutPurpose,
 } from "@/lib/booking/finalizer";
+import { getAppointmentHoldByCheckoutOrderPublicId } from "@/lib/booking/holds";
+import { isSafeServiceConfirmationSlug } from "@/lib/booking-confirmation";
 import {
   getPendingOrderByCheckoutToken,
   markOrderPaid,
@@ -16,7 +18,11 @@ import {
 } from "@/lib/commerce/training-enrollment-store";
 import { persistVerifiedPayment, verifyHelcimPayment } from "@/lib/commerce/verified-payment";
 import type { HelcimPayloadValue } from "@/lib/commerce/helcim-types";
-import { buildTrainingConfirmationUrl } from "@/lib/training-checkout";
+import {
+  buildServiceBookingConfirmationResolverUrl,
+  buildServiceBookingConfirmationUrl,
+  buildTrainingConfirmationUrl,
+} from "@/lib/training-checkout";
 
 interface ValidatePaymentBody {
   checkoutToken: string;
@@ -32,6 +38,7 @@ type ValidatePaymentRequest = Request & {
 
 interface ValidatePaymentPostHandlerDependencies {
   finalizeAppointmentPaymentForOrder: typeof finalizeAppointmentPaymentForOrder;
+  getAppointmentHoldByCheckoutOrderPublicId: typeof getAppointmentHoldByCheckoutOrderPublicId;
   getPendingOrderByCheckoutToken: typeof getPendingOrderByCheckoutToken;
   getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId: typeof getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId;
   logError: typeof console.error;
@@ -124,7 +131,11 @@ export function createValidatePaymentPostHandler(
           source: "client_validation",
           transactionId: payment.transactionId,
         });
-        const redirectUrl = `/booking/confirmation?order=${encodeURIComponent(order.orderId)}`;
+        const redirectUrl = await getAppointmentBookingConfirmationRedirectUrl({
+          getAppointmentHoldByCheckoutOrderPublicId:
+            dependencies.getAppointmentHoldByCheckoutOrderPublicId,
+          orderId: order.orderId,
+        });
 
         if (booking.ok) {
           return Response.json({
@@ -252,6 +263,7 @@ export function createValidatePaymentPostHandler(
 export async function POST(req: NextRequest): Promise<Response> {
   return createValidatePaymentPostHandler({
     finalizeAppointmentPaymentForOrder,
+    getAppointmentHoldByCheckoutOrderPublicId,
     getPendingOrderByCheckoutToken,
     getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
     logError: console.error,
@@ -263,6 +275,25 @@ export async function POST(req: NextRequest): Promise<Response> {
     sendTrainingPaymentNotificationEmails,
     verifyHelcimPayment,
   })(req);
+}
+
+async function getAppointmentBookingConfirmationRedirectUrl(input: {
+  getAppointmentHoldByCheckoutOrderPublicId: typeof getAppointmentHoldByCheckoutOrderPublicId;
+  orderId: string;
+}): Promise<string> {
+  const appointmentHold = await input.getAppointmentHoldByCheckoutOrderPublicId(input.orderId);
+  const serviceSlug = appointmentHold?.offeringSnapshot.slug;
+
+  if (typeof serviceSlug === "string" && isSafeServiceConfirmationSlug(serviceSlug)) {
+    return buildServiceBookingConfirmationUrl({
+      orderId: input.orderId,
+      serviceSlug,
+    });
+  }
+
+  return buildServiceBookingConfirmationResolverUrl({
+    orderId: input.orderId,
+  });
 }
 
 function buildAbsoluteSchedulingUrl(origin: string, orderId: string): string {
