@@ -92,7 +92,7 @@ test("booking shim keeps type-only training and in-person flows on the booking p
   );
 });
 
-test("booking shim issues a training scheduling token for order-only links", async () => {
+test("booking shim gets or issues a training scheduling token for order-only links", async () => {
   const result = await resolveBookingShim(
     { type: "training-call", order: "lh-order-123" },
     createDependencies({
@@ -114,6 +114,10 @@ test("booking shim issues a training scheduling token for order-only links", asy
     href: "/training-programs/lash-training/schedule?token=schedule-token-123",
     redirectMode: "temporary",
   });
+  assert.equal(result.href.includes("order="), false);
+  assert.equal(result.href.includes("email="), false);
+  assert.equal(result.href.includes("phone="), false);
+  assert.equal(result.href.includes("name="), false);
 });
 
 test("booking shim rejects conflicting token aliases instead of issuing a token", async () => {
@@ -258,7 +262,7 @@ function createDependencies(overrides: {
 
       return null;
     },
-    issueTrainingSchedulingTokenForPaidOrderIfMissing: async (orderId: string) => {
+    getOrIssueTrainingSchedulingTokenForPaidOrder: async (orderId: string) => {
       if (overrides.issuedToken && overrides.issuedToken.checkoutOrder.orderId === orderId) {
         return overrides.issuedToken as never;
       }

@@ -13,9 +13,9 @@ export type BookingShimSearchParams = Record<string, string | string[] | undefin
 
 export interface BookingShimDependencies {
   findPendingTrainingEnrollmentByToken(input: { schedulingToken: string }): Promise<PendingTrainingEnrollmentRecord | null>;
+  getOrIssueTrainingSchedulingTokenForPaidOrder(orderId: string): Promise<IssuedTrainingSchedulingTokenRecord | null>;
   getBookingOfferingBySlug(slug: string): Promise<TBookingOffering | null>;
   getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId(orderId: string): Promise<PendingTrainingEnrollmentRecord | null>;
-  issueTrainingSchedulingTokenForPaidOrderIfMissing(orderId: string): Promise<IssuedTrainingSchedulingTokenRecord | null>;
 }
 
 export type BookingShimResolution =
@@ -129,7 +129,7 @@ export async function resolveBookingShim(
       };
     }
 
-    const issued = await dependencies.issueTrainingSchedulingTokenForPaidOrderIfMissing(orderId.value);
+    const issued = await dependencies.getOrIssueTrainingSchedulingTokenForPaidOrder(orderId.value);
 
     if (
       !issued ||

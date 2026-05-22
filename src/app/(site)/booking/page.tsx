@@ -2,7 +2,7 @@ import { unstable_noStore as noStore } from "next/cache";
 import { notFound, permanentRedirect, redirect } from "next/navigation";
 import { loaders } from "@/data/loaders";
 import { BookingFlow } from "@/components/booking/booking-flow";
-import { findPendingTrainingEnrollmentByToken, getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId, issueTrainingSchedulingTokenForPaidOrderIfMissing } from "@/lib/commerce/training-enrollment-store";
+import { findPendingTrainingEnrollmentByToken, getOrIssueTrainingSchedulingTokenForPaidOrder, getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId } from "@/lib/commerce/training-enrollment-store";
 import { resolveBookingShim } from "./booking-shim";
 
 export const dynamic = "force-dynamic";
@@ -15,9 +15,9 @@ export default async function BookingPage({
 }) {
   const resolution = await resolveBookingShim(await searchParams, {
     findPendingTrainingEnrollmentByToken,
+    getOrIssueTrainingSchedulingTokenForPaidOrder,
     getBookingOfferingBySlug: async (slug) => loaders.getBookingOfferingBySlug(slug),
     getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
-    issueTrainingSchedulingTokenForPaidOrderIfMissing,
   });
 
   if (resolution.kind === "notFound") {
