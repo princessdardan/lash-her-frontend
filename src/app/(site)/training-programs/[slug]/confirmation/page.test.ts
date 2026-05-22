@@ -15,6 +15,8 @@ test("training confirmation disables static caching and indexing for order-beari
 test("training confirmation schedule button uses token-only schedule route", () => {
   assert.match(source, /buildTrainingScheduleUrl/);
   assert.match(source, /schedulingToken/);
+  assert.match(source, /getOrIssueTrainingSchedulingTokenForPaidOrder/);
+  assert.doesNotMatch(source, /issueTrainingSchedulingTokenForPaidOrder\(/);
   assert.doesNotMatch(source, /href=\{`\/booking\?type=training-call&order=/);
   assert.equal(source.includes("Use the same email address from checkout"), false);
 });

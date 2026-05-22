@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { loaders } from "@/data/loaders";
 import { getVerifiedTrainingConfirmation } from "@/lib/training-confirmation";
-import { issueTrainingSchedulingTokenForPaidOrder } from "@/lib/commerce/training-enrollment-store";
+import { getOrIssueTrainingSchedulingTokenForPaidOrder } from "@/lib/commerce/training-enrollment-store";
 import { buildTrainingScheduleUrl } from "@/lib/training-checkout";
 
 export const dynamic = "force-dynamic";
@@ -59,7 +59,7 @@ export default async function TrainingConfirmationPage({
 
   const issuedSchedulingToken = schedulingToken
     ? null
-    : await issueTrainingSchedulingTokenForPaidOrder(confirmation.orderId);
+    : await getOrIssueTrainingSchedulingTokenForPaidOrder(confirmation.orderId);
   const scheduleToken = schedulingToken ?? issuedSchedulingToken?.schedulingToken;
 
   if (!scheduleToken) {
