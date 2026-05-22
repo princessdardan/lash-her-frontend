@@ -1,51 +1,42 @@
-import { notFound, redirect } from "next/navigation";
+import { unstable_noStore as noStore } from "next/cache";
+import { notFound, permanentRedirect, redirect } from "next/navigation";
 import { loaders } from "@/data/loaders";
 import { BookingFlow } from "@/components/booking/booking-flow";
-import type { BookingType } from "@/lib/booking/types";
+import { findPendingTrainingEnrollmentByToken, getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId, issueTrainingSchedulingTokenForPaidOrderIfMissing } from "@/lib/commerce/training-enrollment-store";
+import { resolveBookingShim } from "./booking-shim";
 
 export const revalidate = 1800;
 
 export default async function BookingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ order?: string; token?: string; type?: string; offering?: string; offeringSlug?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const params = await searchParams;
+  const resolution = await resolveBookingShim(await searchParams, {
+    findPendingTrainingEnrollmentByToken,
+    getBookingOfferingBySlug: async (slug) => loaders.getBookingOfferingBySlug(slug),
+    getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
+    issueTrainingSchedulingTokenForPaidOrderIfMissing,
+  });
+
+  if (resolution.kind === "notFound") {
+    notFound();
+  }
+
+  if (resolution.kind === "redirect") {
+    if (resolution.redirectMode === "permanent") {
+      permanentRedirect(resolution.href);
+    } else {
+      noStore();
+      redirect(resolution.href);
+    }
+  }
+
   const settings = await loaders.getBookingSettings();
 
-  if (!settings || params.token !== undefined) {
+  if (!settings) {
     notFound();
   }
-
-  const paidTrainingOrderId = params.order?.trim();
-  const offeringSlug = params.offeringSlug?.trim() || params.offering?.trim();
-
-  if (params.type === "in-person-appointment" && !offeringSlug && !paidTrainingOrderId) {
-    redirect("/booking");
-  }
-
-  const normalizeType = (type?: string): BookingType | undefined => {
-    if (type === "training-call" || type === "in-person-appointment") {
-      return type as BookingType;
-    }
-    return undefined;
-  };
-
-  const offering = offeringSlug ? await loaders.getBookingOfferingBySlug(offeringSlug) : null;
-
-  if (offeringSlug && !offering) {
-    notFound();
-  }
-
-  const initialBookingType = paidTrainingOrderId
-    ? "training-call"
-    : offering?.bookingType ?? normalizeType(params.type);
-
-  const offeringPayment = offering ? {
-    depositAmount: offering.depositAmount,
-    fullPrice: offering.fullPrice,
-    currency: offering.currency as "CAD",
-  } : undefined;
 
   const activeOfferings = await loaders.getActiveBookingOfferings();
 
@@ -54,10 +45,7 @@ export default async function BookingPage({
       <div className="content-container max-w-5xl mx-auto">
         <BookingFlow
           settings={settings}
-          initialBookingType={initialBookingType}
-          paidTrainingOrderId={paidTrainingOrderId}
-          initialOfferingSlug={offeringSlug}
-          offeringPayment={offeringPayment}
+          initialBookingType={resolution.initialBookingType}
           offerings={activeOfferings}
         />
       </div>

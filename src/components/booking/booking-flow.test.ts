@@ -5,13 +5,16 @@ import { startPaidOfferingCheckout } from "./booking-flow";
 
 const bookingFlowSource = readFileSync(new URL("./booking-flow.tsx", import.meta.url), "utf8");
 const bookingPageSource = readFileSync(new URL("../../app/(site)/booking/page.tsx", import.meta.url), "utf8");
+const bookingShimSource = readFileSync(new URL("../../app/(site)/booking/booking-shim.ts", import.meta.url), "utf8");
 const productsPageSource = readFileSync(new URL("../../app/(site)/products/page.tsx", import.meta.url), "utf8");
 const servicesPageSource = readFileSync(new URL("../../app/(site)/services/page.tsx", import.meta.url), "utf8");
 
 describe("booking offering flow contract", () => {
-  it("initializes service offering links with the offering booking type", () => {
-    assert.match(bookingPageSource, /const offering = offeringSlug \? await loaders\.getBookingOfferingBySlug\(offeringSlug\) : null/);
-    assert.match(bookingPageSource, /offering\?\.bookingType \?\? normalizeType\(params\.type\)/);
+  it("initializes service offering redirects through the booking shim helper", () => {
+    assert.match(bookingPageSource, /resolveBookingShim\(await searchParams/);
+    assert.match(bookingPageSource, /if \(resolution\.kind === "redirect"\) \{/);
+    assert.match(bookingShimSource, /getBookingOfferingBySlug/);
+    assert.match(bookingShimSource, /buildServiceBookingUrl/);
   });
 
   it("skips the service selection step for explicit offering links", () => {
@@ -40,9 +43,10 @@ describe("booking offering flow contract", () => {
     assert.match(bookingFlowSource, /We are currently updating our services\. Please check back later\./);
   });
 
-  it("passes offeringPayment to BookingFlow", () => {
-    assert.match(bookingPageSource, /offeringPayment=\{offeringPayment\}/);
-    assert.match(bookingFlowSource, /offeringPayment\?: \{/);
+  it("passes only the active booking flow state to BookingFlow", () => {
+    assert.match(bookingPageSource, /initialBookingType=\{resolution\.initialBookingType\}/);
+    assert.doesNotMatch(bookingPageSource, /offeringPayment=\{offeringPayment\}/);
+    assert.doesNotMatch(bookingPageSource, /paidTrainingOrderId=/);
   });
 
   it("uses /api/booking/holds and /api/booking/checkout for paid offerings", () => {
