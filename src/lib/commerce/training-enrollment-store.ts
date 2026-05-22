@@ -115,6 +115,7 @@ export interface TrainingEnrollmentStore {
     input: FindTrainingEnrollmentByHelcimInvoiceInput,
     now?: Date,
   ): Promise<IssuedTrainingSchedulingTokenRecord | null>;
+  getOrIssueSchedulingTokenForPaidOrder(orderId: string, now?: Date): Promise<IssuedTrainingSchedulingTokenRecord | null>;
   issueSchedulingTokenForPaidOrder(orderId: string, now?: Date): Promise<IssuedTrainingSchedulingTokenRecord | null>;
   issueSchedulingTokenForPaidOrderIfMissing(orderId: string, now?: Date): Promise<IssuedTrainingSchedulingTokenRecord | null>;
   markSchedulingPending(enrollmentId: string, now?: Date): Promise<void>;
@@ -168,6 +169,26 @@ export function createTrainingEnrollmentStore(
       }
 
       return toPendingTrainingEnrollmentRecord(found);
+    },
+
+    async getOrIssueSchedulingTokenForPaidOrder(orderId, now = new Date()) {
+      const found = await repository.findPaidPendingEnrollmentByPublicOrderId(orderId);
+
+      if (!found) {
+        return null;
+      }
+
+      const activeToken = getActiveSchedulingToken(found, now);
+
+      if (activeToken) {
+        return activeToken;
+      }
+
+      if (found.enrollment.schedulingTokenHash !== null) {
+        return null;
+      }
+
+      return issueSchedulingToken(found, repository, now, { requireMissingToken: true });
     },
 
     async issueSchedulingTokenForPaidOrder(orderId, now = new Date()) {
@@ -250,6 +271,13 @@ export async function getPaidPendingTrainingEnrollmentNotificationByHelcimInvoic
   input: FindTrainingEnrollmentByHelcimInvoiceInput,
 ): Promise<PendingTrainingEnrollmentRecord | null> {
   return defaultTrainingEnrollmentStore.getPaidPendingNotificationByHelcimInvoiceIfMissing(input);
+}
+
+export async function getOrIssueTrainingSchedulingTokenForPaidOrder(
+  orderId: string,
+  now?: Date,
+): Promise<IssuedTrainingSchedulingTokenRecord | null> {
+  return defaultTrainingEnrollmentStore.getOrIssueSchedulingTokenForPaidOrder(orderId, now);
 }
 
 export async function issueTrainingSchedulingTokenForPaidOrder(
@@ -494,9 +522,9 @@ async function issueSchedulingToken(
     return null;
   }
 
-  const schedulingToken = generateTrainingSchedulingToken();
-  const schedulingTokenHash = hashSchedulingToken(schedulingToken);
   const tokenExpiresAt = expiresInDaysFrom(now, SCHEDULING_TOKEN_TTL_DAYS);
+  const schedulingToken = buildTrainingSchedulingToken(found.enrollment.id, tokenExpiresAt);
+  const schedulingTokenHash = hashSchedulingToken(schedulingToken);
 
   const assigned = await repository.assignSchedulingToken(
     found.enrollment.id,
@@ -523,6 +551,38 @@ async function issueSchedulingToken(
     }),
     schedulingToken,
   };
+}
+
+function getActiveSchedulingToken(
+  found: TrainingEnrollmentWithCheckoutOrder,
+  now: Date,
+): IssuedTrainingSchedulingTokenRecord | null {
+  const tokenHash = found.enrollment.schedulingTokenHash;
+  const tokenExpiresAt = found.enrollment.tokenExpiresAt;
+
+  if (tokenHash === null || tokenExpiresAt === null || tokenExpiresAt <= now) {
+    return null;
+  }
+
+  const schedulingToken = buildTrainingSchedulingToken(found.enrollment.id, tokenExpiresAt);
+
+  if (hashSchedulingToken(schedulingToken) !== tokenHash) {
+    return null;
+  }
+
+  return {
+    ...toPendingTrainingEnrollmentRecord(found),
+    schedulingToken,
+  };
+}
+
+function buildTrainingSchedulingToken(enrollmentId: string, tokenExpiresAt: Date): string {
+  const expiresAt = tokenExpiresAt.toISOString();
+  const signature = createHmac("sha256", getCheckoutSecretEncryptionKey())
+    .update(`training-scheduling-token:${enrollmentId}:${expiresAt}`, "utf8")
+    .digest("base64url");
+
+  return `tr_${signature}`;
 }
 
 function toPendingTrainingEnrollmentRecord(

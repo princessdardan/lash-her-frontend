@@ -257,6 +257,10 @@ test("training enrollment store issues scheduling tokens after payment and store
     assert.ok(issued);
     assert.match(issued.schedulingToken, /^[A-Za-z0-9_-]+$/);
     assert.equal(issued.tokenExpiresAt.toISOString(), "2026-05-24T00:00:00.000Z");
+    assert.equal(issued.schedulingToken.includes("training-enrollment-1"), false);
+    assert.equal(issued.schedulingToken.includes("2026-05-24T00:00:00.000Z"), false);
+    assert.equal(issued.schedulingToken.includes(Buffer.from("training-enrollment-1", "utf8").toString("base64url")), false);
+    assert.equal(issued.schedulingToken.includes(Buffer.from("2026-05-24T00:00:00.000Z", "utf8").toString("base64url")), false);
 
     const row = repository.enrollments[0];
     assert.match(row.schedulingTokenHash ?? "", /^[a-f0-9]{64}$/);
@@ -280,6 +284,56 @@ test("training enrollment store issues scheduling tokens only when missing", () 
     assert.equal(duplicate, null);
     assert.equal(repository.enrollments[0].schedulingTokenHash, originalHash);
     assert.equal(JSON.stringify(repository.enrollments).includes(issued.schedulingToken), false);
+  `);
+});
+
+test("training enrollment store reuses active unused scheduling tokens for paid orders", () => {
+  runTrainingEnrollmentStoreScenario(`
+    const { repository, store } = createFakeStore();
+    await store.createEnrollment(createEnrollmentInput);
+
+    const issued = await store.issueSchedulingTokenForPaidOrderIfMissing(checkoutOrder.orderId, now);
+    assert.ok(issued);
+    const originalHash = repository.enrollments[0].schedulingTokenHash;
+    const originalExpiry = repository.enrollments[0].tokenExpiresAt;
+
+    const reused = await store.getOrIssueSchedulingTokenForPaidOrder(checkoutOrder.orderId, new Date("2026-05-10T01:00:00.000Z"));
+    assert.ok(reused);
+    assert.equal(reused.schedulingToken, issued.schedulingToken);
+    assert.equal(reused.schedulingToken.includes("training-enrollment-1"), false);
+    assert.equal(reused.schedulingToken.includes("2026-05-24T00:00:00.000Z"), false);
+    assert.equal(reused.schedulingToken.includes(Buffer.from("training-enrollment-1", "utf8").toString("base64url")), false);
+    assert.equal(reused.schedulingToken.includes(Buffer.from("2026-05-24T00:00:00.000Z", "utf8").toString("base64url")), false);
+    assert.equal(reused.tokenExpiresAt, originalExpiry);
+    assert.equal(repository.enrollments[0].schedulingTokenHash, originalHash);
+    assert.equal(JSON.stringify(repository.enrollments).includes(reused.schedulingToken), false);
+  `);
+});
+
+test("training enrollment store does not reuse expired, used, unpaid, or scheduled tokens", () => {
+  runTrainingEnrollmentStoreScenario(`
+    const { repository, store } = createFakeStore();
+    await store.createEnrollment(createEnrollmentInput);
+    const issued = await store.issueSchedulingTokenForPaidOrderIfMissing(checkoutOrder.orderId, now);
+    assert.ok(issued);
+
+    assert.equal(await store.getOrIssueSchedulingTokenForPaidOrder(checkoutOrder.orderId, new Date("2026-05-25T00:00:00.000Z")), null);
+
+    repository.enrollments[0].tokenUsedAt = new Date("2026-05-10T02:00:00.000Z");
+    assert.equal(await store.getOrIssueSchedulingTokenForPaidOrder(checkoutOrder.orderId, now), null);
+
+    repository.enrollments[0].tokenUsedAt = null;
+    repository.checkoutOrder.status = "pending";
+    assert.equal(await store.getOrIssueSchedulingTokenForPaidOrder(checkoutOrder.orderId, now), null);
+
+    repository.checkoutOrder.status = "paid";
+    repository.enrollments[0].schedulingStatus = "scheduled";
+    repository.enrollments[0].scheduledAt = new Date("2026-05-11T15:00:00.000Z");
+    assert.equal(await store.getOrIssueSchedulingTokenForPaidOrder(checkoutOrder.orderId, now), null);
+
+    repository.enrollments[0].schedulingStatus = "pending";
+    repository.enrollments[0].scheduledAt = null;
+    assert.equal(await store.getOrIssueSchedulingTokenForPaidOrder("lh-missing", now), null);
   `);
 });
 
