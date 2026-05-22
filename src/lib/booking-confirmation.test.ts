@@ -4,7 +4,12 @@ import test from "node:test";
 const helperScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { getVerifiedBookingConfirmation } from "./src/lib/booking-confirmation.ts";
+  import {
+    getServiceBookingConfirmationRedirect,
+    getVerifiedBookingConfirmation,
+    getVerifiedServiceBookingConfirmation,
+    isSafeServiceConfirmationSlug,
+  } from "./src/lib/booking-confirmation.ts";
 
   const bookedAppointment = {
     bookingType: "in-person-appointment",
@@ -19,6 +24,7 @@ const helperScript = String.raw`
     id: "appointment-hold-1",
     offeringId: "lash-fill",
     offeringSnapshot: {
+      slug: "lash-fill",
       title: "Lash Fill",
     },
     paidAt: new Date("2026-05-18T12:31:00.000Z"),
@@ -149,6 +155,117 @@ test("booking confirmation accepts paid pending, manual follow-up, and booking f
       }))?.status,
       "booking_failed",
     );
+  `);
+});
+
+
+test("service booking confirmation verifies the requested slug against the private snapshot", () => {
+  runBookingConfirmationScenario(`
+    const confirmation = await getVerifiedServiceBookingConfirmation({
+      findAppointmentByPublicOrderId: async ({ publicOrderId }) => {
+        assert.equal(publicOrderId, "LH-BOOKING-123");
+        return bookedAppointment;
+      },
+      orderId: "LH-BOOKING-123",
+      serviceSlug: "lash-fill",
+    });
+
+    assert.deepEqual(confirmation, {
+      orderId: "LH-BOOKING-123",
+      status: "booked",
+    });
+  `);
+});
+
+test("service booking confirmation rejects mismatched and unsafe route slugs", () => {
+  runBookingConfirmationScenario(`
+    assert.equal(
+      await getVerifiedServiceBookingConfirmation({
+        findAppointmentByPublicOrderId: async () => bookedAppointment,
+        orderId: "LH-BOOKING-123",
+        serviceSlug: "volume-lashes",
+      }),
+      null,
+    );
+
+    assert.equal(
+      await getVerifiedServiceBookingConfirmation({
+        findAppointmentByPublicOrderId: async () => bookedAppointment,
+        orderId: "LH-BOOKING-123",
+        serviceSlug: "../admin",
+      }),
+      null,
+    );
+  `);
+});
+
+test("service booking confirmation redirect uses only the private offering snapshot slug", () => {
+  runBookingConfirmationScenario(`
+    const redirect = await getServiceBookingConfirmationRedirect({
+      findAppointmentByPublicOrderId: async ({ publicOrderId }) => {
+        assert.equal(publicOrderId, "LH-BOOKING-123");
+        return bookedAppointment;
+      },
+      orderId: "LH-BOOKING-123",
+    });
+
+    assert.equal(
+      redirect,
+      "/services/lash-fill/booking/confirmation?order=LH-BOOKING-123",
+    );
+  `);
+});
+
+test("service booking confirmation redirect rejects missing, unconfirmed, and unsafe snapshot slugs", () => {
+  runBookingConfirmationScenario(`
+    assert.equal(
+      await getServiceBookingConfirmationRedirect({
+        findAppointmentByPublicOrderId: async () => ({
+          ...bookedAppointment,
+          offeringSnapshot: { title: "Missing Slug" },
+        }),
+        orderId: "LH-BOOKING-123",
+      }),
+      null,
+    );
+
+    assert.equal(
+      await getServiceBookingConfirmationRedirect({
+        findAppointmentByPublicOrderId: async () => ({
+          ...bookedAppointment,
+          state: "held",
+          offeringSnapshot: { slug: "lash-fill" },
+        }),
+        orderId: "LH-BOOKING-123",
+      }),
+      null,
+    );
+
+    for (const slug of ["booking", "confirmation", "schedule", "../admin", "lash fill", "https://example.com"]) {
+      assert.equal(
+        await getServiceBookingConfirmationRedirect({
+          findAppointmentByPublicOrderId: async () => ({
+            ...bookedAppointment,
+            offeringSnapshot: { slug },
+          }),
+          orderId: "LH-BOOKING-123",
+        }),
+        null,
+      );
+    }
+  `);
+});
+
+test("service confirmation slug safety accepts canonical slugs and rejects reserved segments", () => {
+  runBookingConfirmationScenario(`
+    assert.equal(isSafeServiceConfirmationSlug("classic-lash-fill"), true);
+    assert.equal(isSafeServiceConfirmationSlug("classic-lash-fill-2"), true);
+    assert.equal(isSafeServiceConfirmationSlug("booking"), false);
+    assert.equal(isSafeServiceConfirmationSlug("confirmation"), false);
+    assert.equal(isSafeServiceConfirmationSlug("schedule"), false);
+    assert.equal(isSafeServiceConfirmationSlug("classic lash fill"), false);
+    assert.equal(isSafeServiceConfirmationSlug("Classic-Lash-Fill"), false);
+    assert.equal(isSafeServiceConfirmationSlug("classic/lash"), false);
   `);
 });
 
