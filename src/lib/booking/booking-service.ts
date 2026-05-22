@@ -5,7 +5,7 @@ import { nanoid } from "nanoid";
 import { loaders } from "@/data/loaders";
 import type { TBookingOffering } from "@/types";
 import {
-  getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
+  findPendingTrainingEnrollmentByToken,
   markTrainingEnrollmentScheduled,
 } from "@/lib/commerce/training-enrollment-store";
 import {
@@ -74,7 +74,7 @@ export async function createBooking(
 
     const paidContextResolution = await resolvePaidTrainingBookingContext(
       input,
-      ({ publicOrderId }) => getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId(publicOrderId),
+      ({ schedulingToken }) => findPendingTrainingEnrollmentByToken({ schedulingToken }),
     );
 
     if (!paidContextResolution.ok) {
@@ -215,10 +215,10 @@ export async function createBooking(
 
       let paidTrainingContext = paidContextResolution.context;
 
-      if (validation.data.paidTrainingOrderId !== undefined) {
+      if (validation.data.paidSchedulingToken !== undefined) {
         const refreshedPaidContextResolution = await resolvePaidTrainingBookingContext(
           validation.data,
-          ({ publicOrderId }) => getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId(publicOrderId),
+          ({ schedulingToken }) => findPendingTrainingEnrollmentByToken({ schedulingToken }),
         );
 
         if (!refreshedPaidContextResolution.ok) {
@@ -251,6 +251,7 @@ export async function createBooking(
         const markedScheduled = await markTrainingEnrollmentScheduled({
           enrollmentId: paidTrainingContext.enrollmentId,
           scheduledAt: selectedStart,
+          schedulingToken: paidTrainingContext.schedulingToken,
         });
 
         if (!markedScheduled) {

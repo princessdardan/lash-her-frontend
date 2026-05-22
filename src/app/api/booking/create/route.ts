@@ -45,13 +45,6 @@ export function createBookingCreatePostHandler(
       );
     }
 
-    if (hasLegacyPaidSchedulingToken(body)) {
-      return Response.json(
-        { success: false, error: "Legacy training scheduling links are no longer supported" },
-        { status: 400 },
-      );
-    }
-
     const input = toBookingRequestInput(body);
 
     if (input.bookingType === "in-person-appointment") {
@@ -98,7 +91,9 @@ function toBookingRequestInput(input: unknown): BookingRequestInput {
     idempotencyKey: toStringValue(record.idempotencyKey),
     ...(marketingConsentText ? { marketingConsentText } : {}),
     ...(sourcePath ? { sourcePath } : {}),
-    paidTrainingOrderId: toOptionalStringValue(record.paidTrainingOrderId),
+    ...(toOptionalStringValue(record.paidTrainingOrderId) ? { paidTrainingOrderId: toOptionalStringValue(record.paidTrainingOrderId) } : {}),
+    ...(toOptionalStringValue(record.paidSchedulingToken) ? { paidSchedulingToken: toOptionalStringValue(record.paidSchedulingToken) } : {}),
+    ...(toOptionalStringValue(record.paidTrainingSlug) ? { paidTrainingSlug: toOptionalStringValue(record.paidTrainingSlug) } : {}),
     ...(toOptionalStringValue(record.offeringSlug) ? { offeringSlug: toOptionalStringValue(record.offeringSlug) } : {}),
   };
 }
@@ -130,14 +125,6 @@ function toBookingAnswers(value: unknown): BookingAnswerInput[] {
   });
 }
 
-function hasLegacyPaidSchedulingToken(input: unknown): boolean {
-  if (!isRecord(input)) {
-    return false;
-  }
-
-  return toOptionalStringValue(input.paidSchedulingToken) !== undefined;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -147,7 +134,12 @@ function toStringValue(value: unknown): string {
 }
 
 function toOptionalStringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function getErrorMessage(error: unknown): string {

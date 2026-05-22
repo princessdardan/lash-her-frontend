@@ -26,7 +26,8 @@ const helperScript = String.raw`
       marketingConsentText: "Send me booking updates",
       sourcePath: "/booking",
       idempotencyKey: "booking-idempotency-key",
-      paidTrainingOrderId: "LH-TRAINING-123",
+      paidSchedulingToken: "training-scheduling-token",
+      paidTrainingSlug: "lash-training",
       ...overrides,
     };
   }
@@ -74,27 +75,26 @@ test("booking create rejects invalid JSON before calling createBooking", () => {
   `);
 });
 
-test("booking create rejects legacy paid scheduling token payloads", () => {
+test("booking create accepts paid scheduling token payloads", () => {
   runRouteScenario(`
-    let createBookingCalled = false;
+    const receivedInputs = [];
     const handler = createBookingCreatePostHandler({
-      createBooking: async () => {
-        createBookingCalled = true;
+      createBooking: async (input) => {
+        receivedInputs.push(input);
         return { success: true, eventId: "calendar-event-1" };
       },
     });
 
     const response = await handler(createRequest(JSON.stringify(createBookingPayload({
-      paidSchedulingToken: "legacy-token",
+      paidSchedulingToken: " token-from-schedule-link ",
+      paidTrainingSlug: " lash-training ",
     }))));
     const body = await parseJson(response);
 
-    assert.equal(response.status, 400);
-    assert.equal(createBookingCalled, false);
-    assert.deepEqual(body, {
-      success: false,
-      error: "Legacy training scheduling links are no longer supported",
-    });
+    assert.equal(response.status, 200);
+    assert.equal(receivedInputs[0].paidSchedulingToken, "token-from-schedule-link");
+    assert.equal(receivedInputs[0].paidTrainingSlug, "lash-training");
+    assert.deepEqual(body, { success: true, eventId: "calendar-event-1" });
   `);
 });
 
@@ -146,6 +146,8 @@ test("booking create maps field validation failures to bad requests", () => {
       marketingOptIn: "yes",
       idempotencyKey: "booking-idempotency-key",
       paidTrainingOrderId: "",
+      paidSchedulingToken: "",
+      paidTrainingSlug: "",
     })));
     const body = await parseJson(response);
 
@@ -163,7 +165,6 @@ test("booking create maps field validation failures to bad requests", () => {
         ],
         marketingOptIn: false,
         idempotencyKey: "booking-idempotency-key",
-        paidTrainingOrderId: undefined,
       },
     ]);
     assert.deepEqual(body, {

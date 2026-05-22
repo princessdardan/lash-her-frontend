@@ -14,6 +14,7 @@ const helperScript = String.raw`
     checkoutEmail: "client@example.com",
     checkoutOrder: {
       orderId: "LH-TRAINING-123",
+      status: "paid",
     },
     enrollmentId: "training-enrollment-1",
     productSnapshot: {
@@ -29,7 +30,7 @@ const helperScript = String.raw`
       title: "Lash Training Program",
     },
     staffAlertedAt: null,
-    tokenExpiresAt: null,
+    tokenExpiresAt: new Date("2999-01-01T00:00:00.000Z"),
   };
 
   function createRequest(searchParams) {
@@ -163,13 +164,13 @@ test("booking availability returns slots for a configured booking type", () => {
   `);
 });
 
-test("booking availability verifies paid training order and checkout email before returning slots", () => {
+test("booking availability verifies paid training token and route slug before returning slots", () => {
   runRouteScenario(`
     const availabilityStart = createFutureDate(2, 0);
     const availabilityEnd = createFutureDate(2, 1);
     const handler = createPostHandler({
       findPaidTrainingIntroEligibility: async (input) => {
-        assert.deepEqual(input, { publicOrderId: "LH-TRAINING-123" });
+        assert.deepEqual(input, { schedulingToken: "training-token" });
         return paidTrainingEnrollment;
       },
       listCalendarEvents: async () => [{
@@ -184,7 +185,7 @@ test("booking availability verifies paid training order and checkout email befor
       },
     });
 
-    const response = await handler(createPostRequest({ order: " LH-TRAINING-123 ", email: " Client@Example.com " }));
+    const response = await handler(createPostRequest({ token: " training-token ", slug: " lash-training " }));
     const body = await parseJson(response);
 
     assert.equal(response.status, 200);
@@ -286,23 +287,34 @@ test("booking availability rejects invalid booking types", () => {
   `);
 });
 
-test("booking availability rejects legacy paid scheduling tokens", () => {
+test("booking availability supports paid training token links in GET requests", () => {
   runRouteScenario(`
-    let settingsLoaded = false;
+    const availabilityStart = createFutureDate(2, 0);
+    const availabilityEnd = createFutureDate(2, 1);
     const handler = createHandler({
-      getBookingSettings: async () => {
-        settingsLoaded = true;
-        return createSettings();
+      findPaidTrainingIntroEligibility: async (input) => {
+        assert.deepEqual(input, { schedulingToken: "training-token" });
+        return paidTrainingEnrollment;
       },
+      listCalendarEvents: async () => [{
+        id: "available-window",
+        title: "Available",
+        start: availabilityStart,
+        end: availabilityEnd,
+      }],
     });
 
-    const response = await handler(createRequest({ token: "expired-token" }));
+    const response = await handler(createRequest({ token: "training-token", slug: "lash-training" }));
     const body = await parseJson(response);
 
-    assert.equal(response.status, 400);
-    assert.equal(settingsLoaded, false);
+    assert.equal(response.status, 200);
     assert.deepEqual(body, {
-      error: "Legacy training scheduling links are no longer supported",
+      slots: [
+        {
+          start: availabilityStart.toISOString(),
+          end: availabilityEnd.toISOString(),
+        },
+      ],
     });
   `);
 });
@@ -328,7 +340,7 @@ test("booking availability rejects paid training orders in GET requests", () => 
   `);
 });
 
-test("booking availability rejects paid training POST bodies without checkout email", () => {
+test("booking availability rejects paid training POST bodies without token or slug", () => {
   runRouteScenario(`
     let settingsLoaded = false;
     const handler = createPostHandler({
@@ -338,13 +350,14 @@ test("booking availability rejects paid training POST bodies without checkout em
       },
     });
 
-    const response = await handler(createPostRequest({ order: "LH-TRAINING-123" }));
+    const response = await handler(createPostRequest({ token: "training-token" }));
     const body = await parseJson(response);
 
     assert.equal(response.status, 400);
     assert.equal(settingsLoaded, false);
     assert.deepEqual(body, {
-      error: "Please enter the checkout email used for this training purchase",
+      error: "We could not verify this training scheduling link.",
+      fieldErrors: { schedulingToken: "Valid training scheduling link is required" },
     });
   `);
 });

@@ -12,7 +12,7 @@ const baseRequest: BookingRequestInput = {
   bookingType: "in-person-appointment",
   start: "2026-05-12T14:00:00.000Z",
   name: "Client Name",
-  email: " Client@Example.com ",
+  email: " client-entered@example.com ",
   phone: "555-555-5555",
   answers: [],
   marketingOptIn: false,
@@ -20,13 +20,13 @@ const baseRequest: BookingRequestInput = {
 };
 
 const pendingEnrollment: PendingTrainingEnrollmentRecord = {
-  checkoutEmail: "client@example.com",
+  checkoutEmail: "checkout@example.com",
   checkoutOrder: {
     amountCents: 149900,
     checkoutTokenHash: "checkout-token-hash",
     createdAt: new Date("2026-05-10T00:00:00.000Z"),
     currency: "CAD",
-    customerEmail: "client@example.com",
+    customerEmail: "checkout@example.com",
     customerName: "Client Name",
     deletedAt: null,
     failedAt: null,
@@ -66,10 +66,10 @@ const pendingEnrollment: PendingTrainingEnrollmentRecord = {
     title: "Lash Training Program",
   },
   staffAlertedAt: null,
-  tokenExpiresAt: null,
+  tokenExpiresAt: new Date("2026-05-24T00:00:00.000Z"),
 };
 
-test("resolvePaidTrainingBookingContext preserves public booking input without paid order", async () => {
+test("resolvePaidTrainingBookingContext preserves public booking input without scheduling token", async () => {
   let lookupCalled = false;
   const result = await resolvePaidTrainingBookingContext(baseRequest, async () => {
     lookupCalled = true;
@@ -85,11 +85,16 @@ test("resolvePaidTrainingBookingContext preserves public booking input without p
   }
 });
 
-test("resolvePaidTrainingBookingContext verifies public order id and forces paid training bookings to training-call", async () => {
+test("resolvePaidTrainingBookingContext verifies scheduling token and matching route slug", async () => {
   const result = await resolvePaidTrainingBookingContext(
-    { ...baseRequest, paidTrainingOrderId: " LH-TRAINING-123 " },
-    async ({ publicOrderId }) => {
-      assert.equal(publicOrderId, "LH-TRAINING-123");
+    {
+      ...baseRequest,
+      email: "client-entered@example.com",
+      paidSchedulingToken: " raw-token ",
+      paidTrainingSlug: " lash-training ",
+    },
+    async ({ schedulingToken }) => {
+      assert.equal(schedulingToken, "raw-token");
       return pendingEnrollment;
     },
   );
@@ -98,68 +103,81 @@ test("resolvePaidTrainingBookingContext verifies public order id and forces paid
 
   if (result.ok) {
     assert.equal(result.input.bookingType, "training-call");
-    assert.equal(result.input.paidTrainingOrderId, "LH-TRAINING-123");
+    assert.equal(result.input.email, "checkout@example.com");
+    assert.equal(result.input.paidSchedulingToken, "raw-token");
+    assert.equal(result.input.paidTrainingSlug, "lash-training");
     assert.deepEqual(result.context, {
+      checkoutEmail: "checkout@example.com",
       enrollmentId: "training-enrollment-1",
       programTitle: "Lash Training Program",
       publicOrderId: "LH-TRAINING-123",
+      schedulingToken: "raw-token",
     });
   }
 });
 
-test("resolvePaidTrainingBookingContext rejects checkout email mismatch", async () => {
-  const result = await resolvePaidTrainingBookingContext(
-    {
-      ...baseRequest,
-      email: "other@example.com",
-      paidTrainingOrderId: "LH-TRAINING-123",
-    },
+test("resolveTrainingIntroCallEligibility rejects missing scheduling token", async () => {
+  const result = await resolveTrainingIntroCallEligibility(
+    { programSlug: "lash-training", schedulingToken: " " },
     async () => pendingEnrollment,
   );
 
   assert.equal(result.ok, false);
 
   if (!result.ok) {
-    assert.equal(result.fieldErrors?.email, "Use the same email address used at checkout");
+    assert.equal(result.error, "We could not verify this training scheduling link.");
+    assert.deepEqual(result.fieldErrors, { schedulingToken: "Valid training scheduling link is required" });
   }
 });
 
-test("resolveTrainingIntroCallEligibility uses private paid enrollment state instead of raw booking token path", async () => {
-  let lookedUpOrderId = "";
+test("resolveTrainingIntroCallEligibility returns generic failure for expired, used, unpaid, scheduled, or missing token state", async () => {
+  const scenarios = [
+    null,
+    { ...pendingEnrollment, tokenExpiresAt: new Date("2026-05-09T00:00:00.000Z") },
+    { ...pendingEnrollment, checkoutOrder: { ...pendingEnrollment.checkoutOrder, status: "pending" } },
+  ] as const;
+
+  for (const enrollment of scenarios) {
+    const result = await resolveTrainingIntroCallEligibility(
+      { now: new Date("2026-05-10T00:00:00.000Z"), programSlug: "lash-training", schedulingToken: "raw-token" },
+      async () => enrollment,
+    );
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error, "We could not verify this training scheduling link.");
+      assert.equal(result.fieldErrors, undefined);
+    }
+  }
+});
+
+test("resolveTrainingIntroCallEligibility returns generic failure for wrong route slug", async () => {
   const result = await resolveTrainingIntroCallEligibility(
-    {
-      checkoutEmail: " client@example.com ",
-      publicOrderId: "LH-TRAINING-123",
-      sourcePath: "/booking?token=raw-token-must-not-drive-eligibility",
-    },
-    async ({ publicOrderId }) => {
-      lookedUpOrderId = publicOrderId;
+    { programSlug: "other-program", schedulingToken: "raw-token" },
+    async () => pendingEnrollment,
+  );
+
+  assert.equal(result.ok, false);
+
+  if (!result.ok) {
+    assert.equal(result.error, "We could not verify this training scheduling link.");
+    assert.equal(result.fieldErrors, undefined);
+  }
+});
+
+test("resolveTrainingIntroCallEligibility accepts valid token and derives checkout email server-side", async () => {
+  const result = await resolveTrainingIntroCallEligibility(
+    { programSlug: "lash-training", schedulingToken: " raw-token " },
+    async ({ schedulingToken }) => {
+      assert.equal(schedulingToken, "raw-token");
       return pendingEnrollment;
     },
   );
 
-  assert.equal(lookedUpOrderId, "LH-TRAINING-123");
   assert.equal(result.ok, true);
 
   if (result.ok) {
-    assert.deepEqual(result.context, {
-      enrollmentId: "training-enrollment-1",
-      programTitle: "Lash Training Program",
-      publicOrderId: "LH-TRAINING-123",
-    });
+    assert.equal(result.context.checkoutEmail, "checkout@example.com");
+    assert.equal(result.context.schedulingToken, "raw-token");
   }
-});
-
-test("resolveTrainingIntroCallEligibility rejects unpaid or mismatched private enrollment state", async () => {
-  const missing = await resolveTrainingIntroCallEligibility(
-    { checkoutEmail: "client@example.com", publicOrderId: "LH-MISSING" },
-    async () => null,
-  );
-  const mismatched = await resolveTrainingIntroCallEligibility(
-    { checkoutEmail: "other@example.com", publicOrderId: "LH-TRAINING-123" },
-    async () => pendingEnrollment,
-  );
-
-  assert.equal(missing.ok, false);
-  assert.equal(mismatched.ok, false);
 });

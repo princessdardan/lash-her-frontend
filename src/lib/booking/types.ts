@@ -62,11 +62,15 @@ export interface BookingRequestInput {
   sourcePath?: string;
   idempotencyKey: string;
   paidTrainingOrderId?: string;
+  paidSchedulingToken?: string;
+  paidTrainingSlug?: string;
   offeringSlug?: string;
 }
 
 export interface PaidTrainingBookingContext {
+  checkoutEmail: string;
   enrollmentId: string;
   programTitle: string;
   publicOrderId: string;
+  schedulingToken: string;
 }

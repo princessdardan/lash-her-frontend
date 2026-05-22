@@ -45,7 +45,6 @@ export interface CreateTrainingEnrollmentInput {
 }
 
 export interface FindPendingTrainingEnrollmentByTokenInput {
-  checkoutEmail?: string;
   now?: Date;
   schedulingToken: string;
 }
@@ -68,6 +67,7 @@ export interface MarkTrainingEnrollmentScheduledInput {
   enrollmentId: string;
   now?: Date;
   scheduledAt?: Date;
+  schedulingToken?: string;
 }
 
 export interface MarkTrainingEnrollmentStaffAlertedInput {
@@ -93,6 +93,12 @@ export interface TrainingEnrollmentRepository {
   ): Promise<TrainingEnrollmentWithCheckoutOrder | null>;
   markSchedulingPending(enrollmentId: string, now: Date): Promise<void>;
   markScheduled(enrollmentId: string, scheduledAt: Date, now: Date): Promise<boolean>;
+  markScheduledByTokenHash(
+    enrollmentId: string,
+    schedulingTokenHash: string,
+    scheduledAt: Date,
+    now: Date,
+  ): Promise<boolean>;
   markStaffAlerted(enrollmentId: string, now: Date): Promise<boolean>;
 }
 
@@ -138,10 +144,6 @@ export function createTrainingEnrollmentStore(
       );
 
       if (!found) {
-        return null;
-      }
-
-      if (input.checkoutEmail !== undefined && normalizeEmail(input.checkoutEmail) !== found.enrollment.checkoutEmail) {
         return null;
       }
 
@@ -204,6 +206,15 @@ export function createTrainingEnrollmentStore(
 
     async markScheduled(input) {
       const now = input.now ?? new Date();
+      if (input.schedulingToken !== undefined) {
+        return repository.markScheduledByTokenHash(
+          input.enrollmentId,
+          hashSchedulingToken(input.schedulingToken),
+          input.scheduledAt ?? now,
+          now,
+        );
+      }
+
       return repository.markScheduled(input.enrollmentId, input.scheduledAt ?? now, now);
     },
 
@@ -387,6 +398,31 @@ function createDrizzleTrainingEnrollmentRepository(): TrainingEnrollmentReposito
           and(
             eq(trainingEnrollments.id, enrollmentId),
             eq(trainingEnrollments.schedulingStatus, "pending"),
+            isNull(trainingEnrollments.tokenUsedAt),
+          ),
+        )
+        .returning({ id: trainingEnrollments.id });
+
+      return updated.length === 1;
+    },
+
+    async markScheduledByTokenHash(enrollmentId, schedulingTokenHash, scheduledAt, now) {
+      const updated = await getPrivateDb()
+        .update(trainingEnrollments)
+        .set({
+          scheduledAt,
+          schedulingStatus: "scheduled",
+          tokenUsedAt: now,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(trainingEnrollments.id, enrollmentId),
+            eq(trainingEnrollments.schedulingTokenHash, schedulingTokenHash),
+            eq(trainingEnrollments.schedulingStatus, "pending"),
+            isNotNull(trainingEnrollments.schedulingTokenHash),
+            isNotNull(trainingEnrollments.tokenExpiresAt),
+            gt(trainingEnrollments.tokenExpiresAt, now),
             isNull(trainingEnrollments.tokenUsedAt),
           ),
         )

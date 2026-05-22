@@ -176,6 +176,30 @@ const helperScript = String.raw`
       return true;
     }
 
+    async markScheduledByTokenHash(
+      enrollmentId: string,
+      schedulingTokenHash: string,
+      scheduledAt: Date,
+      updateTime: Date,
+    ): Promise<boolean> {
+      const enrollment = this.findEnrollment(enrollmentId);
+      if (
+        enrollment.schedulingStatus !== "pending"
+        || enrollment.schedulingTokenHash !== schedulingTokenHash
+        || enrollment.tokenExpiresAt === null
+        || enrollment.tokenExpiresAt <= updateTime
+        || enrollment.tokenUsedAt !== null
+      ) {
+        return false;
+      }
+
+      enrollment.scheduledAt = scheduledAt;
+      enrollment.schedulingStatus = "scheduled";
+      enrollment.tokenUsedAt = updateTime;
+      enrollment.updatedAt = updateTime;
+      return true;
+    }
+
     async markStaffAlerted(enrollmentId: string, updateTime: Date): Promise<boolean> {
       const enrollment = this.findEnrollment(enrollmentId);
       if (enrollment.staffAlertedAt !== null) {
@@ -304,15 +328,7 @@ test("training enrollment store finds pending eligibility by raw token with stri
     assert.equal(found.enrollmentId, "training-enrollment-1");
     assert.equal(found.checkoutOrder.orderId, checkoutOrder.orderId);
 
-    const wrongEmail = await store.findPendingEnrollmentByToken({
-      checkoutEmail: "client+alias@example.com",
-      now,
-      schedulingToken: issued.schedulingToken,
-    });
-    assert.equal(wrongEmail, null);
-
     const wrongToken = await store.findPendingEnrollmentByToken({
-      checkoutEmail: "client@example.com",
       now,
       schedulingToken: "wrong-token",
     });
@@ -381,6 +397,61 @@ test("training enrollment store marks scheduling pending, scheduled, and staff a
       now: new Date("2026-05-10T05:00:00.000Z"),
     }), false);
     assert.equal(repository.enrollments[0].staffAlertedAt, alertedAt);
+  `);
+});
+
+test("training enrollment store atomically consumes scheduling tokens when marking scheduled", () => {
+  runTrainingEnrollmentStoreScenario(`
+    const { repository, store } = createFakeStore();
+    const created = await store.createEnrollment(createEnrollmentInput);
+    const issued = await store.issueSchedulingTokenForPaidOrder(checkoutOrder.orderId, now);
+    assert.ok(issued);
+    const scheduledAt = new Date("2026-05-11T15:00:00.000Z");
+    const updateTime = new Date("2026-05-10T02:00:00.000Z");
+
+    assert.equal(await store.markScheduled({
+      enrollmentId: created.id,
+      now: updateTime,
+      scheduledAt,
+      schedulingToken: issued.schedulingToken,
+    }), true);
+    assert.equal(repository.enrollments[0].schedulingStatus, "scheduled");
+    assert.equal(repository.enrollments[0].scheduledAt, scheduledAt);
+    assert.equal(repository.enrollments[0].tokenUsedAt, updateTime);
+
+    await store.markSchedulingPending(created.id, new Date("2026-05-10T03:00:00.000Z"));
+    assert.equal(await store.markScheduled({
+      enrollmentId: created.id,
+      now: new Date("2026-05-10T04:00:00.000Z"),
+      scheduledAt,
+      schedulingToken: "wrong-token",
+    }), false);
+    assert.equal(repository.enrollments[0].schedulingStatus, "pending");
+  `);
+});
+
+test("training enrollment store refuses token consumption after expiry or prior use", () => {
+  runTrainingEnrollmentStoreScenario(`
+    const { repository, store } = createFakeStore();
+    const created = await store.createEnrollment(createEnrollmentInput);
+    const issued = await store.issueSchedulingTokenForPaidOrder(checkoutOrder.orderId, now);
+    assert.ok(issued);
+    const scheduledAt = new Date("2026-05-25T15:00:00.000Z");
+
+    assert.equal(await store.markScheduled({
+      enrollmentId: created.id,
+      now: new Date("2026-05-25T00:00:00.000Z"),
+      scheduledAt,
+      schedulingToken: issued.schedulingToken,
+    }), false);
+
+    repository.enrollments[0].tokenUsedAt = new Date("2026-05-10T02:00:00.000Z");
+    assert.equal(await store.markScheduled({
+      enrollmentId: created.id,
+      now: new Date("2026-05-10T03:00:00.000Z"),
+      scheduledAt,
+      schedulingToken: issued.schedulingToken,
+    }), false);
   `);
 });
 

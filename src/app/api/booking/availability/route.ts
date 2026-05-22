@@ -22,7 +22,7 @@ const BOOKING_TYPES: readonly BookingType[] = [
 
 export interface BookingAvailabilityGetHandlerDependencies {
   findPaidTrainingIntroEligibility: (input: {
-    publicOrderId: string;
+    schedulingToken: string;
   }) => Promise<PendingTrainingEnrollmentRecord | null>;
   getBookingSettings: () => Promise<BookingSettings | null>;
   getBookingOfferingBySlug: (slug: string) => Promise<TBookingOffering | null>;
@@ -50,8 +50,8 @@ export interface BookingAvailabilityGetHandlerDependencies {
 interface BookingAvailabilityInput {
   bookingType: string | null;
   offeringSlug: string | null;
-  paidTrainingEmail?: string;
-  paidTrainingOrderId?: string;
+  paidSchedulingToken?: string;
+  paidTrainingSlug?: string;
 }
 
 export function createBookingAvailabilityGetHandler(
@@ -62,13 +62,6 @@ export function createBookingAvailabilityGetHandler(
   ): Promise<Response> {
     try {
       const searchParams = new URL(req.url).searchParams;
-
-      if (searchParams.has("token")) {
-        return Response.json(
-          { error: "Legacy training scheduling links are no longer supported" },
-          { status: 400 },
-        );
-      }
 
       if (searchParams.has("email")) {
         return Response.json(
@@ -88,6 +81,8 @@ export function createBookingAvailabilityGetHandler(
         {
           bookingType: searchParams.get("type"),
           offeringSlug: getOfferingSlug(searchParams),
+          paidSchedulingToken: optionalString(searchParams.get("token")),
+          paidTrainingSlug: getTrainingSlug(searchParams),
         },
         dependencies,
       );
@@ -118,19 +113,12 @@ export function createBookingAvailabilityPostHandler(
         );
       }
 
-      if (typeof body.token === "string" && body.token.trim().length > 0) {
-        return Response.json(
-          { error: "Legacy training scheduling links are no longer supported" },
-          { status: 400 },
-        );
-      }
-
       return await handleBookingAvailabilityRequest(
         {
           bookingType: optionalString(body.type) ?? null,
           offeringSlug: optionalString(body.offering) ?? optionalString(body.offeringSlug) ?? null,
-          paidTrainingEmail: optionalString(body.email),
-          paidTrainingOrderId: optionalString(body.order),
+          paidSchedulingToken: optionalString(body.token) ?? optionalString(body.paidSchedulingToken),
+          paidTrainingSlug: optionalString(body.slug) ?? optionalString(body.trainingSlug) ?? optionalString(body.paidTrainingSlug),
         },
         dependencies,
       );
@@ -150,22 +138,15 @@ async function handleBookingAvailabilityRequest(
   dependencies: BookingAvailabilityGetHandlerDependencies,
 ): Promise<Response> {
   const offeringSlug = input.offeringSlug;
-  const paidTrainingOrderId = input.paidTrainingOrderId;
-  const paidTrainingEmail = input.paidTrainingEmail;
+  const paidSchedulingToken = input.paidSchedulingToken;
+  const paidTrainingSlug = input.paidTrainingSlug;
   let bookingType = input.bookingType;
 
-  if (!offeringSlug && paidTrainingOrderId) {
-    if (!paidTrainingEmail) {
-      return Response.json(
-        { error: "Please enter the checkout email used for this training purchase" },
-        { status: 400 },
-      );
-    }
-
+  if (!offeringSlug && (paidSchedulingToken || paidTrainingSlug)) {
     const eligibility = await resolveTrainingIntroCallEligibility(
       {
-        checkoutEmail: paidTrainingEmail,
-        publicOrderId: paidTrainingOrderId,
+        programSlug: paidTrainingSlug ?? "",
+        schedulingToken: paidSchedulingToken ?? "",
       },
       dependencies.findPaidTrainingIntroEligibility,
     );
@@ -173,7 +154,7 @@ async function handleBookingAvailabilityRequest(
     if (!eligibility.ok) {
       return Response.json(
         {
-          error: "We could not verify that order and checkout email combination.",
+          error: eligibility.error,
           fieldErrors: eligibility.fieldErrors,
         },
         { status: 400 },
@@ -259,11 +240,11 @@ async function handleBookingAvailabilityRequest(
 
 const availabilityDependencies: BookingAvailabilityGetHandlerDependencies = {
   findPaidTrainingIntroEligibility: async (input) => {
-    const { getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId } = await import(
+    const { findPendingTrainingEnrollmentByToken } = await import(
       "@/lib/commerce/training-enrollment-store"
     );
 
-    return getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId(input.publicOrderId);
+    return findPendingTrainingEnrollmentByToken({ schedulingToken: input.schedulingToken });
   },
   getBookingSettings: async () => {
     const { loaders } = await import("@/data/loaders");
@@ -313,6 +294,12 @@ function isBookingType(value: string | null): value is BookingType {
 function getOfferingSlug(searchParams: URLSearchParams): string | null {
   const offeringSlug = searchParams.get("offering")?.trim() ?? searchParams.get("offeringSlug")?.trim();
   return offeringSlug && offeringSlug.length > 0 ? offeringSlug : null;
+}
+
+function getTrainingSlug(searchParams: URLSearchParams): string | undefined {
+  return optionalString(searchParams.get("slug"))
+    ?? optionalString(searchParams.get("trainingSlug"))
+    ?? optionalString(searchParams.get("paidTrainingSlug"));
 }
 
 function toOfferingBookingTypeConfig(

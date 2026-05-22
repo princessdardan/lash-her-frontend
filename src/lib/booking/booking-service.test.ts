@@ -29,6 +29,18 @@ test("createBooking rechecks offering availability against active holds", () => 
 });
 
 test("createBooking still refreshes paid training context before scheduling", () => {
-  assert.match(bookingServiceSource, /if \(validation\.data\.paidTrainingOrderId !== undefined\)/);
+  assert.match(bookingServiceSource, /if \(validation\.data\.paidSchedulingToken !== undefined\)/);
   assert.match(bookingServiceSource, /markTrainingEnrollmentScheduled\(\{/);
+  assert.match(bookingServiceSource, /schedulingToken: paidTrainingContext\.schedulingToken/);
+});
+
+test("createBooking keeps unexpected failures generic", () => {
+  const catchBlockStart = bookingServiceSource.indexOf("console.error(\"[createBooking] Booking failed:\"");
+  const genericErrorIndex = bookingServiceSource.indexOf(
+    "Something went wrong while creating your booking. Please try again.",
+    catchBlockStart,
+  );
+
+  assert.notEqual(catchBlockStart, -1);
+  assert.notEqual(genericErrorIndex, -1);
 });
