@@ -1,5 +1,16 @@
+import type { Metadata } from "next";
+import { unstable_noStore as noStore } from "next/cache";
 import type { ReactElement } from "react";
 import Link from "next/link";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+export const metadata: Metadata = {
+  title: "Order Confirmation",
+  description: "Your order confirmation.",
+  robots: { index: false, follow: false },
+};
 
 interface ConfirmationPageProps {
   searchParams: Promise<{ order?: string }>;
@@ -8,6 +19,8 @@ interface ConfirmationPageProps {
 export default async function ConfirmationPage({
   searchParams,
 }: ConfirmationPageProps): Promise<ReactElement> {
+  noStore();
+
   const params = await searchParams;
   const orderId = params.order;
 
