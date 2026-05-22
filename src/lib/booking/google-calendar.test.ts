@@ -56,6 +56,8 @@ test("buildBookingEventPayload includes only safe paid training context", () => 
       enrollmentId: "enrollment-secret-internal-id",
       programTitle: "Lash Training Program",
       publicOrderId: "LH-TRAINING-123",
+      checkoutEmail: "jane@example.com",
+      schedulingToken: "token-123",
     },
   });
 
