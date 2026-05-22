@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { loaders } from "@/data/loaders";
 import { getVerifiedTrainingConfirmation } from "@/lib/training-confirmation";
+import { issueTrainingSchedulingTokenForPaidOrder } from "@/lib/commerce/training-enrollment-store";
+import { buildTrainingScheduleUrl } from "@/lib/training-checkout";
 
 export const revalidate = 0;
 
@@ -22,7 +24,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 interface ConfirmationPageProps {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ order?: string; token?: string }>;
+  searchParams: Promise<{ order?: string; schedulingToken?: string; token?: string }>;
 }
 
 export default async function TrainingConfirmationPage({
@@ -30,7 +32,7 @@ export default async function TrainingConfirmationPage({
   searchParams,
 }: ConfirmationPageProps) {
   const { slug } = await params;
-  const { order, token } = await searchParams;
+  const { order, schedulingToken, token } = await searchParams;
 
   if (token !== undefined) {
     notFound();
@@ -51,7 +53,19 @@ export default async function TrainingConfirmationPage({
     notFound();
   }
 
-  const bookingHref = `/booking?type=training-call&order=${encodeURIComponent(confirmation.orderId)}`;
+  const issuedSchedulingToken = schedulingToken
+    ? null
+    : await issueTrainingSchedulingTokenForPaidOrder(confirmation.orderId);
+  const scheduleToken = schedulingToken ?? issuedSchedulingToken?.schedulingToken;
+
+  if (!scheduleToken) {
+    notFound();
+  }
+
+  const bookingHref = buildTrainingScheduleUrl({
+    programSlug: slug,
+    schedulingToken: scheduleToken,
+  });
 
   return (
     <div className="flex flex-col min-h-screen bg-lh-neutral-2">
@@ -90,7 +104,7 @@ export default async function TrainingConfirmationPage({
                   Schedule Training Call
                 </Link>
                 <p className="text-sm text-lh-shadow/70 mt-4">
-                  Use the same email address from checkout when selecting your training call time. If no slots are currently available, we will follow up manually to coordinate a time that works.
+                  Use your secure scheduling link to select your training call time. If no slots are currently available, we will follow up manually to coordinate a time that works.
                 </p>
               </div>
             </div>
