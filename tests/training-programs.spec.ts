@@ -133,7 +133,7 @@ test.describe('Training Program Detail Page — Rich Text Rendering (MIG-03)', (
     await expect(main.locator('input[autocomplete="cc-number"], input[name*="card" i], input[id*="card" i]')).toHaveCount(0);
   });
 
-  test('should show a timed active detail card and image panel when detail items exist', async ({ page }) => {
+  test('should show a timed active detail card when detail items exist', async ({ page }) => {
     const url = await getProgramUrl(page);
     await page.goto(url);
     await page.waitForLoadState('networkidle');
@@ -150,7 +150,6 @@ test.describe('Training Program Detail Page — Rich Text Rendering (MIG-03)', (
     await expect(firstTab).toHaveAttribute('aria-selected', 'true');
     await expect(firstTab).toHaveAttribute('data-training-detail-card', 'active');
     await expect(firstTab.locator('[data-training-detail-progress="true"]')).toBeVisible();
-    await expect(page.locator('[data-training-detail-image="true"]')).toBeVisible();
   });
 
   test('should keep the training contact form below all other training content', async ({ page }) => {

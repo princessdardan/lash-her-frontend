@@ -9,7 +9,7 @@ interface TrainingEditorialHeroProps {
 }
 
 function getHeroImage(data: TTrainingProgram) {
-  return data.heroImage ?? data.detailHeroImage ?? data.seo?.image;
+  return data.heroImage ?? data.seo?.image;
 }
 
 function isSafeUrl(url: string | undefined | null): boolean {

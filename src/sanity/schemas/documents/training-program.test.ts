@@ -22,7 +22,7 @@ type SchemaField = {
   name?: string;
   group?: string;
   type?: string;
-  of?: Array<{ type?: string }>;
+  of?: Array<{ type?: string; fields?: SchemaField[] }>;
   fields?: SchemaField[];
   validation?: (rule: RuleStub) => unknown;
   hidden?: unknown;
@@ -123,13 +123,11 @@ describe("trainingProgram detail content schema", () => {
       "isAvailable",
       "availabilityLabel",
       "fulfillmentNote",
-      "displayOrder",
-      "image",
       "introCallAppointmentScheduleUrl",
       "introCallAppointmentScheduleEmbedMode",
       "introCallSchedulingInstructions",
     ]) {
-      assert.strictEqual(getSchemaField(fieldName).group, "commerce", `${fieldName} should be in the commerce group`);
+      assert.strictEqual(getSchemaField(fieldName).group, "checkout", `${fieldName} should be in the checkout group`);
     }
 
     assert.ok(!schemaFieldNames.includes("currency"));
@@ -150,14 +148,42 @@ describe("trainingProgram detail content schema", () => {
     assert.strictEqual(instructionsField.type, "text");
   });
 
-  it("configures a detail hero image in the details group", () => {
-    const detailHeroImage = getSchemaField("detailHeroImage");
+  it("does not include removed detail image or enrollment inclusion fields", () => {
+    const schemaFieldNames = trainingProgram.fields
+      .map((field: unknown) => isSchemaField(field) ? field.name : undefined)
+      .filter((name): name is string => typeof name === "string");
 
-    assert.strictEqual(detailHeroImage.group, "details");
-    assert.ok(
-      detailHeroImage.fields?.some((field) => field.name === "alt"),
-      "detailHeroImage should expose alt text for accessibility",
-    );
+    assert.ok(!schemaFieldNames.includes("detailHeroImage"), "detailHeroImage should be removed");
+    assert.ok(!schemaFieldNames.includes("detailMainImage"), "detailMainImage should be removed");
+    assert.ok(!schemaFieldNames.includes("enrollmentInclusions"), "enrollmentInclusions should be removed");
+  });
+
+  it("configures detail items with eyelash field and without image", () => {
+    const detailItems = getSchemaField("detailItems");
+    const memberFields = detailItems.of?.[0]?.fields;
+
+    assert.ok(memberFields, "detailItems member should have fields");
+    const fieldNames = memberFields?.map((f) => f.name);
+    assert.ok(fieldNames?.includes("eyelash"), "detailItems should have eyelash field");
+    assert.ok(fieldNames?.includes("title"), "detailItems should have title field");
+    assert.ok(fieldNames?.includes("description"), "detailItems should have description field");
+    assert.ok(!fieldNames?.includes("image"), "detailItems should not have image field");
+  });
+
+  it("groups fields into overview, curriculum, enrollment, checkout, legacy, and seo", () => {
+    const groupNames = trainingProgram.groups?.map((g) => g.name) ?? [];
+    assert.deepStrictEqual(groupNames, ["overview", "curriculum", "enrollment", "checkout", "legacy", "seo"]);
+
+    assert.strictEqual(getSchemaField("title").group, "overview");
+    assert.strictEqual(getSchemaField("heroImage").group, "overview");
+    assert.strictEqual(getSchemaField("detailHeading").group, "curriculum");
+    assert.strictEqual(getSchemaField("detailItems").group, "curriculum");
+    assert.strictEqual(getSchemaField("factList").group, "curriculum");
+    assert.strictEqual(getSchemaField("enrollmentTitle").group, "enrollment");
+    assert.strictEqual(getSchemaField("primaryCta").group, "enrollment");
+    assert.strictEqual(getSchemaField("linkedProduct").group, "checkout");
+    assert.strictEqual(getSchemaField("blocks").group, "legacy");
+    assert.strictEqual(getSchemaField("seo").group, "seo");
   });
 
   it("configures the structured training contact section and deprecates legacy contact blocks", () => {
@@ -166,7 +192,7 @@ describe("trainingProgram detail content schema", () => {
     const allowedTypes = blocks.of?.map((member) => member.type) ?? [];
 
     assert.strictEqual(trainingContact.type, "trainingContactSection");
-    assert.strictEqual(trainingContact.group, "details");
+    assert.strictEqual(trainingContact.group, "enrollment");
     assert.deepStrictEqual(allowedTypes, ["contactFormLabels"]);
     assert.strictEqual(blocks.readOnly, true);
     assert.ok(blocks.deprecated?.reason?.includes("Training Contact Section"));

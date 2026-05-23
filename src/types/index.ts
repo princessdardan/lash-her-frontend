@@ -273,9 +273,9 @@ export interface TTrainingPage {
 
 export interface TTrainingProgramDetailItem {
   _key?: string;
+  eyelash?: string;
   title: string;
   description: string;
-  image?: TSanityImage;
 }
 
 export interface TLinkedTrainingProduct {
@@ -313,8 +313,6 @@ export interface TTrainingProgram {
   detailHeading?: string;
   detailEyebrow?: string;
   detailDescription?: string;
-  detailHeroImage?: TSanityImage;
-  detailMainImage?: TSanityImage;
   detailItems?: TTrainingProgramDetailItem[];
   factList?: string[];
   primaryCta?: {
@@ -328,7 +326,6 @@ export interface TTrainingProgram {
   enrollmentTitle?: string;
   enrollmentDescription?: string;
   enrollmentBackgroundImage?: TSanityImage;
-  enrollmentInclusions?: string[];
   linkedProduct?: TLinkedTrainingProduct;
   checkoutEnabled?: boolean;
   price?: number;

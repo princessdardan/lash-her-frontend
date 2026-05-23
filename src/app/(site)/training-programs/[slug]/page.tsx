@@ -84,14 +84,11 @@ export default async function TrainingProgramPage({ params }: { params: Promise<
       data.detailHeading ||
       data.detailEyebrow ||
       data.detailDescription ||
-      data.detailHeroImage ||
-      data.detailMainImage ||
       (data.detailItems && data.detailItems.length > 0) ||
       (data.factList && data.factList.length > 0) ||
       data.enrollmentTitle ||
       data.enrollmentDescription ||
       data.enrollmentBackgroundImage ||
-      (data.enrollmentInclusions && data.enrollmentInclusions.length > 0) ||
       data.linkedProduct,
   );
   const cta = getTrainingCta(data);

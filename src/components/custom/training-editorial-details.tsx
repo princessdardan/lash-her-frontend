@@ -1,4 +1,3 @@
-import { SanityImage } from "@/components/ui/sanity-image";
 import type { TTrainingProgram } from "@/types";
 
 interface TrainingEditorialDetailsProps {
@@ -7,23 +6,21 @@ interface TrainingEditorialDetailsProps {
 
 export function TrainingEditorialDetails({ data }: TrainingEditorialDetailsProps) {
   const {
-    title,
     detailEyebrow,
     detailHeading,
     detailDescription,
-    detailMainImage,
     detailItems,
     factList,
   } = data;
 
   const validDetailItems = detailItems?.filter((item) => item.title || item.description) ?? [];
   const facts = factList?.filter(Boolean) ?? [];
-  const hasStructuredDetails = detailEyebrow || detailHeading || detailDescription || detailMainImage || validDetailItems.length > 0 || facts.length > 0;
+  const hasStructuredDetails = detailEyebrow || detailHeading || detailDescription || validDetailItems.length > 0 || facts.length > 0;
 
   if (!hasStructuredDetails) return null;
 
   return (
-    <section className="py-16 md:py-20 lg:py-24" data-training-editorial-details="true">
+    <section className="py-10 md:py-12 lg:py-14" data-training-editorial-details="true">
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:items-start xl:gap-14">
         <div className="lg:sticky lg:top-32">
           <p className="eyebrow-label mb-4">
@@ -58,24 +55,12 @@ export function TrainingEditorialDetails({ data }: TrainingEditorialDetailsProps
         </div>
 
         <div className="space-y-6">
-          {detailMainImage && (
-            <div className="relative min-h-[420px] overflow-hidden rounded-[28px] border border-lh-line bg-lh-primary-soft shadow-[0_24px_70px_rgba(28,19,24,0.10)] md:min-h-[540px]" data-training-detail-image="true">
-              <SanityImage
-                image={detailMainImage}
-                alt={detailMainImage.alt || detailHeading || title}
-                fill
-                sizes="(min-width: 1024px) 48vw, 100vw"
-                className="object-cover"
-              />
-            </div>
-          )}
-
           {validDetailItems.length > 0 && (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2" data-training-detail-items="true">
+            <div className="grid grid-cols-1 gap-4" data-training-detail-items="true">
               {validDetailItems.map((item, index) => (
                 <article key={item._key || `${item.title}-${index}`} className="editorial-card min-h-56 p-6 md:p-7">
                   <span className="mb-4 font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-primary">
-                    Lesson {index + 1}
+                    {item.eyelash || `Lesson ${index + 1}`}
                   </span>
                   {item.title && <h3 className="font-heading text-3xl font-normal leading-none text-lh-shadow">{item.title}</h3>}
                   {item.description && (

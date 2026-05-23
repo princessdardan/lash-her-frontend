@@ -32,13 +32,13 @@ export function TrainingEnrollmentSection({ data }: TrainingEnrollmentSectionPro
     enrollmentTitle,
     enrollmentDescription,
     enrollmentBackgroundImage,
-    enrollmentInclusions,
+    factList,
     linkedProduct,
     primaryCta,
     secondaryCta,
   } = data;
 
-  const inclusions = enrollmentInclusions?.filter(Boolean) ?? [];
+  const inclusions = factList?.filter(Boolean) ?? [];
   const price = getFinitePrice(linkedProduct?.price ?? data.price);
   const availabilityLabel = linkedProduct?.availabilityLabel ?? data.availabilityLabel;
   const isAvailable = linkedProduct?.isAvailable ?? data.isAvailable;

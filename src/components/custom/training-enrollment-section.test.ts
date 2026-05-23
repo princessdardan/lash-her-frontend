@@ -40,4 +40,29 @@ describe("TrainingEnrollmentSection", () => {
     assert.doesNotMatch(html, /Investment/);
     assert.doesNotMatch(html, /CAD/);
   });
+
+  it("renders fact list as inclusions when enrollmentInclusions is absent", async () => {
+    const { TrainingEnrollmentSection } = await import("./training-enrollment-section");
+    const program = buildProgram({
+      factList: ["Kit included", "Certificate provided", "Ongoing support"],
+    });
+
+    const html = renderToStaticMarkup(createElement(TrainingEnrollmentSection, { data: program }));
+
+    assert.match(html, /Included/);
+    assert.match(html, /Kit included/);
+    assert.match(html, /Certificate provided/);
+    assert.match(html, /Ongoing support/);
+  });
+
+  it("does not render inclusions section when fact list is empty", async () => {
+    const { TrainingEnrollmentSection } = await import("./training-enrollment-section");
+    const program = buildProgram({
+      factList: [],
+    });
+
+    const html = renderToStaticMarkup(createElement(TrainingEnrollmentSection, { data: program }));
+
+    assert.doesNotMatch(html, /Included/);
+  });
 });

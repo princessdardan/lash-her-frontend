@@ -21,7 +21,7 @@ function getProgramFacts(program: TTrainingProgram): string[] {
 
 function TrainingProgramCard({ program, index }: { program: TTrainingProgram; index: number }): ReactElement {
   const facts = getProgramFacts(program).slice(0, 3);
-  const image = program.image ?? program.detailHeroImage;
+  const image = program.image ?? program.heroImage ?? program.seo?.image;
   const ctaLabel = program.primaryCta?.label ?? program.checkoutCtaLabel ?? "View Details";
 
   return (

@@ -1,13 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { SanityImage } from "@/components/ui/sanity-image";
 import type { TTrainingProgramDetailItem } from "@/types";
 import { cn } from "@/lib/utils";
 
 const DETAIL_ROTATION_MS = 7000;
 const DETAIL_PROGRESS_STEP_MS = 100;
-const DETAIL_PANEL_ID = "training-detail-panel";
 
 interface TrainingDetailItemsProps {
   items: TTrainingProgramDetailItem[];
@@ -20,7 +18,7 @@ export function TrainingDetailItems({ items }: TrainingDetailItemsProps) {
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const carouselRef = useRef<HTMLDivElement>(null);
 
-  const validItems = useMemo(() => items.filter((item) => item.title || item.description || item.image), [items]);
+  const validItems = useMemo(() => items.filter((item) => item.title || item.description), [items]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -56,7 +54,6 @@ export function TrainingDetailItems({ items }: TrainingDetailItemsProps) {
   }, [isPaused, prefersReducedMotion, validItems.length]);
 
   const effectiveActiveIndex = activeIndex >= validItems.length ? 0 : activeIndex;
-  const activeItem = validItems[effectiveActiveIndex];
 
   useEffect(() => {
     if (!carouselRef.current) return;
@@ -72,17 +69,17 @@ export function TrainingDetailItems({ items }: TrainingDetailItemsProps) {
 
   return (
     <div
-      className="my-12 grid grid-cols-1 gap-6 md:min-h-[calc(100vh+11rem)] md:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] md:items-start md:gap-7 lg:my-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-8 xl:gap-10"
+      className="my-12 grid grid-cols-1 gap-6 md:my-16"
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
       onFocusCapture={() => setIsPaused(true)}
       onBlurCapture={() => setIsPaused(false)}
       data-training-detail-items="true"
     >
-      <div 
+      <div
         ref={carouselRef}
-        className="order-2 relative flex flex-row gap-4 overflow-x-auto snap-x snap-mandatory pb-4 [-ms-overflow-style:none] [scrollbar-width:none] md:order-1 md:flex-col md:overflow-x-visible md:snap-none md:pb-0 lg:gap-5 [&::-webkit-scrollbar]:hidden" 
-        role="tablist" 
+        className="relative flex flex-row gap-4 overflow-x-auto snap-x snap-mandatory pb-4 [-ms-overflow-style:none] [scrollbar-width:none] md:flex-col md:overflow-x-visible md:snap-none md:pb-0 lg:gap-5 [&::-webkit-scrollbar]:hidden"
+        role="tablist"
         aria-label="Training Details"
       >
         {validItems.map((item, index) => {
@@ -94,7 +91,6 @@ export function TrainingDetailItems({ items }: TrainingDetailItemsProps) {
               role="tab"
               aria-selected={isActive}
               aria-current={isActive ? "true" : undefined}
-              aria-controls={DETAIL_PANEL_ID}
               id={`detail-tab-${index}`}
               onClick={() => activateItem(index)}
               className={cn(
@@ -106,9 +102,9 @@ export function TrainingDetailItems({ items }: TrainingDetailItemsProps) {
               )}
               data-training-detail-card={isActive ? "active" : "inactive"}
             >
-              <span className={cn("mb-4 inline-flex text-xs font-bold uppercase tracking-[0.24em]", isActive ? "text-lh-light" : "text-lh-primary")}>Lesson {index + 1}</span>
+              <span className={cn("mb-4 inline-flex text-xs font-bold uppercase tracking-[0.24em]", isActive ? "text-lh-light" : "text-lh-primary")}>{item.eyelash || `Lesson ${index + 1}`}</span>
               <h3 className="font-heading text-2xl font-normal leading-tight md:text-3xl">{item.title}</h3>
-              <div 
+              <div
                 className={cn(
                   "grid transition-all duration-300 ease-in-out",
                   isActive ? "mt-4 grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
@@ -127,30 +123,6 @@ export function TrainingDetailItems({ items }: TrainingDetailItemsProps) {
             </button>
           );
         })}
-      </div>
-
-      <div 
-        className="order-1 md:order-2 md:sticky md:top-32 md:self-start lg:top-40"
-        role="tabpanel"
-        id={DETAIL_PANEL_ID}
-        aria-labelledby={`detail-tab-${effectiveActiveIndex}`}
-        data-training-detail-image="true"
-      >
-        <div className="relative min-h-[420px] overflow-hidden rounded-[28px] border border-lh-line bg-lh-neutral/20 shadow-[0_24px_70px_rgba(28,19,24,0.08)] md:h-[calc(100vh-10rem)] md:min-h-0 lg:h-[calc(100vh-12rem)]">
-          {activeItem?.image ? (
-            <SanityImage
-              image={activeItem.image}
-              alt={activeItem.image.alt || activeItem.title}
-              fill
-              sizes="(min-width: 1024px) 48vw, 100vw"
-              className="object-cover transition-opacity duration-500"
-            />
-          ) : (
-            <div className="absolute inset-0 flex items-center justify-center text-lh-shadow/40 font-serif italic">
-              No image available
-            </div>
-          )}
-        </div>
       </div>
     </div>
   );
