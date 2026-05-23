@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` for implementation and `superpowers:executing-plans` for task tracking. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Finish the migration away from legacy `sellableProduct` commerce records and make canonical `service`, `bookingOffering`, `trainingProgram`, and `product` documents the only active public commerce taxonomy. Booking, checkout, Helcim validation, private DB snapshots, emails, and docs must all use the canonical model. In-person appointments must be paid before Google Calendar confirmation, including custom partial appointment payments.
+**Goal:** Finish the migration away from legacy `sellableProduct` commerce records and make canonical `service`, `bookingOffering`, `trainingProgram`, and `product` documents the only active public commerce taxonomy. Booking, checkout, provider validation, private DB snapshots, emails, and docs must all use the canonical model. In-person appointments must be paid before Google Calendar confirmation, including custom partial appointment payments.
 
-**Architecture:** Sanity stores public/editorial offering configuration only. Private PostgreSQL stores customer snapshots, checkout/order/payment state, booking holds, final booking state, and reconciliation data. Helcim remains the payment processor. Google Calendar events are created only after payment/eligibility is verified. Internal generated line-item codes may be used for DB and processor reconciliation, but customer-facing emails must not display generated/internal codes.
+**Architecture:** Sanity stores public/editorial offering configuration only. Private PostgreSQL stores customer snapshots, checkout/order/payment state, booking holds, final booking state, paid training schedule token state, and reconciliation data. Square is the service booking payment provider. Helcim remains the product and training checkout provider. Google Calendar API events are created for service bookings only after payment is verified. Paid training intro-call scheduling uses private token eligibility before rendering a Google Appointment Schedule link or embed. Internal generated line-item codes may be used for DB and processor reconciliation, but customer-facing emails must not display generated/internal codes.
 
 **Current audit:** Production and staging currently have zero published canonical `product`, `service`, or `bookingOffering` documents, three published `trainingProgram` documents, and two published legacy `sellableProduct` documents. One checkout-enabled training program in each dataset still depends on legacy `checkoutProduct`; no audited training program has native commerce fields fully wired. Production private DB records, if present, are test/dummy data and do not need preservation. Staging content may be recreated.
 
@@ -84,8 +84,8 @@
   - deposit and full appointment payment bounds
   - currency
   - generated/internal line-item code if needed
-- `/api/booking/checkout` builds Helcim line items from hold snapshots, not live Sanity product references.
-- Payment validation and webhooks compare Helcim amounts to private DB snapshots.
+- `/api/booking/checkout` builds Square service checkout line items from hold snapshots, not live Sanity product references.
+- Service booking return/webhook validation compares Square amounts to private DB snapshots; product and training validation compares Helcim amounts to private DB snapshots.
 - Final booking happens only through the shared finalizer after payment verification.
 - If payment succeeds but Calendar insert fails, keep payment state and mark the booking for manual follow-up.
 - Product/training/appointment order snapshots may keep internal codes for reconciliation.
@@ -133,7 +133,7 @@ Expected:
 
 Expected:
 - Client validation and webhook finalization are idempotent.
-- Duplicate Helcim callbacks do not create duplicate Calendar events.
+- Duplicate Square service booking callbacks do not create duplicate Calendar events.
 - Paid-but-not-booked states are preserved for manual follow-up.
 
 ## Task 2: Update Sanity Schemas And Types
@@ -228,7 +228,7 @@ Expected:
 
 Expected:
 - `/api/booking/checkout` no longer requires `depositProductId` or `fullProductId`.
-- Helcim line items use the immutable hold snapshot amount and readable title.
+- Square service checkout line items use the immutable hold snapshot amount and readable title.
 - Private checkout order metadata links to the hold and booking purpose.
 
 - [ ] **Step 3: Enforce paid-before-calendar for in-person appointments**
@@ -240,7 +240,7 @@ Expected:
 - [ ] **Step 4: Preserve idempotent finalization**
 
 Expected:
-- Client validation and Helcim webhook call the same finalizer.
+- Square return reconciliation and Square webhook call the same service booking finalizer; Helcim client validation and Helcim webhook remain product/training checkout paths.
 - Finalizer detects existing Calendar events before inserting another one.
 - Failure states are persisted for reconciliation.
 
@@ -361,7 +361,7 @@ Expected:
 - `npm run test:unit`
 - Targeted Playwright specs under `tests/`
 - Browser flow through `/booking`, training checkout, and product checkout
-- Helcim sandbox callbacks or local webhook fixtures
+- Square service booking sandbox callbacks plus product/training Helcim callbacks, or local webhook fixtures
 
 - [ ] **Step 1: Run static and unit verification**
 

@@ -550,8 +550,7 @@ The revalidation route maps Sanity `_type` values to Next.js cache tags. Loader 
 | `homePage` | `homePage` | `/` |
 | `contactPage` | `contactPage` | `/contact` |
 | `galleryPage` | `galleryPage` | `/gallery` |
-| `trainingPage` | `trainingPage` | `/training` |
-| `trainingProgramsPage` | `trainingProgramsPage`, `trainingProgram` | `/training-programs` and training program cards |
+| `trainingProgramsPage` | `trainingProgramsPage`, `trainingProgram` | `/training-programs` and training program cards (`/training` redirects here) |
 | `trainingProgram` | `trainingProgram` | `/training-programs/[slug]` and native training checkout reads |
 | `product` | `product` | `/products`, `/products/[slug]`, and canonical product checkout reads |
 | `service` | `service` | `/services`, `/services/[slug]`, and booking offering cards |

@@ -187,8 +187,22 @@ test.describe("Helcim checkout", () => {
   test("forwards successful Helcim events to validation and routes to confirmation", async ({ page }) => {
     await mockProductsPage(page);
     await mockHelcimScript(page, { dispatchSuccess: true });
+    const apiPostPaths: string[] = [];
+
+    page.on("request", (request) => {
+      if (request.method() !== "POST") return;
+      const url = new URL(request.url());
+      if (url.origin !== "http://localhost:3000" || !url.pathname.startsWith("/api/")) return;
+      apiPostPaths.push(url.pathname);
+    });
 
     await page.route("**/api/checkout", async (route) => {
+      const requestBody: unknown = route.request().postDataJSON();
+      expect(requestBody).toEqual({
+        customer: { name: "Nataliea Test", email: "test@example.com" },
+        cart: [{ productId: "lash-cleanser", quantity: 1 }],
+      });
+
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -225,5 +239,8 @@ test.describe("Helcim checkout", () => {
     await expect(page).toHaveURL(`/products/confirmation?order=${ORDER_ID}`);
     await expect(page.getByRole("heading", { name: /payment received/i })).toBeVisible();
     await expect(page.getByText(ORDER_ID)).toBeVisible();
+    expect(apiPostPaths).toEqual(["/api/checkout", "/api/checkout/validate-payment"]);
+    expect(apiPostPaths).not.toContain("/api/training-checkout");
+    expect(apiPostPaths.some((path) => /^\/api\/(payment|payments|stripe)\b/.test(path))).toBe(false);
   });
 });

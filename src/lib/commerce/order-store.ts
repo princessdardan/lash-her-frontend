@@ -8,6 +8,7 @@ import { nanoid } from "nanoid";
 import type {
   CheckoutOrderLineItemSnapshot,
   CheckoutOrderPurpose,
+  PaymentProvider,
 } from "@/lib/private-db/schema";
 import { getCheckoutSecretEncryptionKey } from "@/sanity/env";
 import {
@@ -35,13 +36,14 @@ export interface PendingOrderRecord {
   _id: string;
   orderId: string;
   secretToken: string;
-  helcimInvoiceId: number;
-  helcimInvoiceNumber: string;
+  helcimInvoiceId: number | null;
+  helcimInvoiceNumber: string | null;
   amount: number;
   currency: ValidatedCart["currency"];
   customerEmail: string;
   customerName: string;
   lineItems: CheckoutOrderLineItemSnapshot[];
+  paymentProvider: PaymentProvider;
   purpose: CheckoutOrderPurpose;
 }
 
@@ -50,9 +52,10 @@ export interface MatchedCheckoutOrderRecord {
   _id: string;
   amount: number;
   currency: ValidatedCart["currency"];
-  helcimInvoiceId: number;
-  helcimInvoiceNumber: string;
+  helcimInvoiceId: number | null;
+  helcimInvoiceNumber: string | null;
   orderId: string;
+  paymentProvider: PaymentProvider;
   purpose: CheckoutOrderPurpose;
 }
 
@@ -85,6 +88,7 @@ type CheckoutOrderInsert = {
   helcimInvoiceNumber: string;
   lineItems: CheckoutOrderLineItemSnapshot[];
   orderId: string;
+  paymentProvider: "helcim";
   purpose: CheckoutOrderPurpose;
   secretTokenCiphertext: string;
   status: "pending";
@@ -150,6 +154,7 @@ export function createCheckoutOrderStore(
         amountCents,
         currency: input.cart.currency,
         lineItems,
+        paymentProvider: "helcim",
       });
 
       return {
@@ -163,6 +168,7 @@ export function createCheckoutOrderStore(
         customerEmail: input.customerEmail,
         customerName: input.customerName,
         lineItems,
+        paymentProvider: "helcim",
         purpose: input.purpose ?? "product",
       };
     },
@@ -311,6 +317,7 @@ function toMatchedCheckoutOrderRecord(order: CheckoutOrderRow): MatchedCheckoutO
     helcimInvoiceNumber: order.helcimInvoiceNumber,
     orderId: order.orderId,
     purpose: order.purpose,
+    paymentProvider: order.paymentProvider,
   };
 }
 
@@ -397,6 +404,7 @@ function toPendingOrderRecord(pendingOrder: CheckoutOrderRow): PendingOrderRecor
     customerEmail: pendingOrder.customerEmail,
     customerName: pendingOrder.customerName,
     lineItems: pendingOrder.lineItems,
+    paymentProvider: pendingOrder.paymentProvider,
     purpose: pendingOrder.purpose,
   };
 }
@@ -418,7 +426,7 @@ async function findOrderForWebhook(input: HelcimWebhookEventInput): Promise<Chec
   const [order] = await getPrivateDb()
     .select()
     .from(checkoutOrders)
-    .where(and(...invoiceConditions))
+    .where(and(eq(checkoutOrders.paymentProvider, "helcim"), ...invoiceConditions))
     .limit(1);
 
   return order ?? null;
@@ -445,6 +453,10 @@ function isApprovedStatus(status: string | undefined): boolean {
 }
 
 function isCheckoutTokenValidationEligible(order: CheckoutOrderRow): boolean {
+  if (order.paymentProvider !== "helcim") {
+    return false;
+  }
+
   if (order.status === "pending") {
     return true;
   }

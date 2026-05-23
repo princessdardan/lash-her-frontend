@@ -49,7 +49,7 @@ export function CheckoutForm({
       </div>
 
       <div className="space-y-4">
-        <h3 className="font-medium text-lg">Your Details</h3>
+        <h3 className="section-subheading text-lg md:text-lg lg:text-lg">Your Details</h3>
         <div className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="name">Full Name</Label>
@@ -79,7 +79,7 @@ export function CheckoutForm({
       </div>
 
       <div className="space-y-4">
-        <h3 className="font-medium text-lg">What happens next?</h3>
+        <h3 className="section-subheading text-lg md:text-lg lg:text-lg">What happens next?</h3>
         <ul className="space-y-3 text-lh-shadow/80">
           <li className="flex items-start gap-3">
             <span className="text-lh-shadow mt-1">•</span>

@@ -61,8 +61,10 @@ staging-export.tar.gz
 .sisyphus/
 .stitch/
 
-# claude worktrees
+# claude/agent files
 .claude/worktrees/
+.omo/
+docs/superpowers/
 
 # local git worktrees
 .worktrees/

@@ -1,8 +1,10 @@
 # Shared Private PII Storage Setup Guide
 
-This guide describes how to set up and maintain the private PostgreSQL database used for Lash Her sensitive operational records. This storage is separate from the public Sanity CMS and holds checkout records, appointment holds, payment events, training enrollments, marketing contacts, contact submissions, consent events, checkout token hashes, encrypted Helcim secret tokens, invoice references, transaction references, and payment/booking status.
+This guide describes how to set up and maintain the private PostgreSQL database used for Lash Her sensitive operational records. This storage is separate from the public Sanity CMS and holds appointment holds, checkout records, payment events, training enrollments, paid training schedule token state, marketing contacts, contact submissions, consent events, provider references, invoice references, transaction references, and payment/booking status.
 
-Sanity remains the public catalog/editorial CMS and historical submission backfill source only. Do not store new checkout transaction history, customer PII, form/contact submissions, marketing contacts, consent events, checkout tokens, Helcim invoice identifiers, Helcim transaction identifiers, payment reconciliation records, or encrypted Helcim secret tokens in a public Sanity dataset or expose them through Sanity Studio.
+It also stores checkout token hashes and encrypted Helcim secret tokens for the Helcim-backed product/training flows.
+
+Sanity remains the public catalog/editorial CMS and historical submission backfill source only. Do not store new checkout transaction history, customer PII, form/contact submissions, marketing contacts, consent events, checkout tokens, Square identifiers, Helcim invoice identifiers, Helcim transaction identifiers, payment reconciliation records, service holds, paid training schedule tokens, or encrypted provider secrets in a public Sanity dataset or expose them through Sanity Studio.
 
 Related workstreams:
 
@@ -42,13 +44,22 @@ HELCIM_TRANSACTION_API_TOKEN="your-helcim-transaction-api-token"
 # Required to receive Helcim webhooks
 HELCIM_WEBHOOK_VERIFIER_TOKEN="your-webhook-verifier-token"
 
+# Square service booking checkout, server-only
+SERVICE_BOOKING_SQUARE_ENABLED="false"
+SQUARE_ENVIRONMENT="sandbox"
+SQUARE_ACCESS_TOKEN="your-square-access-token"
+SQUARE_LOCATION_ID="your-square-location-id"
+SQUARE_WEBHOOK_SIGNATURE_KEY="your-square-webhook-signature-key"
+SQUARE_SERVICE_BOOKING_RETURN_URL="https://yourdomain.com/api/booking/square/return"
+SQUARE_SERVICE_BOOKING_WEBHOOK_URL="https://yourdomain.com/api/webhooks/square"
+
 # Public Sanity catalog/editorial configuration
 NEXT_PUBLIC_SANITY_PROJECT_ID="3auncj84"
 NEXT_PUBLIC_SANITY_DATASET="staging-2026-05-10-or-production"
 NEXT_PUBLIC_SANITY_API_VERSION="2026-03-24"
 ```
 
-Private storage uses `DATABASE_URL`, which is injected by the Neon integration. Do not use `DATABASE_URL_UNPOOLED` for the runtime; the app creates a pooled `pg` client.
+Private storage uses `DATABASE_URL`, which is injected by the Neon integration. Do not use `DATABASE_URL_UNPOOLED` for the runtime; the app creates a pooled `pg` client. Keep Square and Helcim secrets server-only. Product checkout and training checkout remain Helcim-backed and should not require Square variables.
 
 ## Drizzle Migration Commands
 
@@ -124,12 +135,30 @@ Stop immediately if:
 
 ## Helcim Configuration
 
+Helcim is the provider for product checkout and training checkout. New paid service bookings use Square hosted checkout instead.
+
 1. Log in to the Helcim account.
 2. Confirm API access is enabled for the account.
 3. Generate or copy the general API token and add it to `HELCIM_GENERAL_API_TOKEN` in Vercel and local server-only env files. This token is used for invoice creation and card-transaction lookup.
 4. Generate or copy the transaction-processing API token and add it to `HELCIM_TRANSACTION_API_TOKEN`. This token is used only for HelcimPay initialization.
 5. Keep HelcimPay.js initialization on the secure backend. The browser should receive only the Helcim `checkoutToken`.
 6. Keep the Helcim `secretToken` server-side, encrypt it with `CHECKOUT_SECRET_ENCRYPTION_KEY`, and store only the ciphertext in the private database.
+
+## Square Service Booking Configuration
+
+Square is the provider only for paid service booking checkout.
+
+1. Confirm the Square app, location, and environment for the deployment.
+2. Add `SERVICE_BOOKING_SQUARE_ENABLED=true` only where service booking checkout should use Square.
+3. Set `SQUARE_ENVIRONMENT` to `sandbox` for local and preview, or `production` for live production.
+4. Add `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, and `SQUARE_WEBHOOK_SIGNATURE_KEY` as server-only variables.
+5. Set `SQUARE_SERVICE_BOOKING_RETURN_URL` to `https://<domain>/api/booking/square/return`.
+6. Set `SQUARE_SERVICE_BOOKING_WEBHOOK_URL` to `https://<domain>/api/webhooks/square`.
+7. In Vercel, scope sandbox values to Development and Preview, and scope production values to Production.
+
+Service bookings keep the custom Lash Her UI, create private Postgres holds, then redirect to Square hosted checkout. Square return is not proof of payment. Webhook and return handling must reconcile server-side before finalization. Verified Square service payment finalizes through idempotent private DB state and Google Calendar API event creation.
+
+If a verified paid service hold is expired or conflicts with another booking, mark it for rebooking-first manual review. Staff should offer a replacement time, verify availability before creating a Calendar event, and refund only after rebooking fails or staff chooses refund.
 
 ### Helcim Webhook Setup
 
@@ -203,9 +232,11 @@ Contractor access should be least-privilege and time-bound. Dardan acts as contr
 ## Smoke Test Checklist
 
 - [ ] Database migrations apply without errors.
-- [ ] Product, training, and appointment checkout initialization create pending rows in the private database.
-- [ ] Appointment hold creation stores a private hold row before Helcim checkout starts.
-- [ ] Helcim payment success updates the private database row to "paid" and moves paid appointment holds to booked or manual follow-up after finalization.
+- [ ] Product checkout and training checkout initialization create Helcim-backed pending rows in the private database.
+- [ ] Service booking hold creation stores a private hold row before Square checkout starts.
+- [ ] Square payment success updates the private database row to "paid" and moves paid service booking holds to booked or `paid_unbookable_rebooking_pending` after finalization.
+- [ ] Helcim payment success updates product/training private database rows without requiring Square variables.
+- [ ] Paid training schedule token data stays in private Postgres and does not appear in Sanity.
 - [ ] No `checkoutOrder` documents are created in Sanity during a test transaction.
 - [ ] General inquiry, training contact, and contact popup submissions create private DB submission/consent records before email.
 - [ ] Booking marketing choices create private DB audit records for both opted-in and not-opted-in paths.

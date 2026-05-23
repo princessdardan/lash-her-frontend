@@ -4,6 +4,7 @@ import { google } from "googleapis";
 import type { calendar_v3 } from "googleapis";
 
 import { getBookingEnv } from "@/sanity/env";
+import { BOOKING_EVENT_HOLD_PROPERTY } from "./google-calendar-event-payload";
 import { getGoogleRefreshToken } from "./operational-store";
 import type { CalendarEventWindow } from "./types";
 
@@ -78,7 +79,7 @@ export async function findBookingEventForHold(input: {
   const response = await calendar.events.list({
     calendarId: input.calendarId,
     maxResults: 1,
-    privateExtendedProperty: [`lashHerBookingHoldId=${input.hold.id}`],
+    privateExtendedProperty: [toBookingHoldExtendedProperty(input.hold.id)],
     singleEvents: true,
     timeMax: input.hold.selectedEnd.toISOString(),
     timeMin: input.hold.selectedStart.toISOString(),
@@ -106,6 +107,10 @@ export async function insertBookingEvent(input: {
   }
 
   return response.data.id;
+}
+
+function toBookingHoldExtendedProperty(holdId: string): string {
+  return `${BOOKING_EVENT_HOLD_PROPERTY}=${holdId}`;
 }
 
 function toCalendarEventWindow(

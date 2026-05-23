@@ -37,12 +37,12 @@ test.describe('Navigation', () => {
       await page.goBack();
     }
 
-    // Test navigation to Training page
+    // Test navigation to Training Programs page
     const trainingLink = page.getByRole('link', { name: /training|programs/i }).first();
     if (await trainingLink.isVisible({ timeout: 1000 }).catch(() => false)) {
       await trainingLink.click();
       await page.waitForLoadState('networkidle');
-      expect(page.url()).toContain('/training');
+      expect(page.url()).toContain('/training-programs');
     }
   });
 
@@ -231,7 +231,7 @@ test.describe('Accessibility', () => {
   });
 
   test('should have proper heading hierarchy on each page', async ({ page }) => {
-    const pages = ['/', '/contact', '/gallery', '/training'];
+    const pages = ['/', '/contact', '/gallery', '/training-programs'];
 
     for (const pagePath of pages) {
       await page.goto(pagePath);

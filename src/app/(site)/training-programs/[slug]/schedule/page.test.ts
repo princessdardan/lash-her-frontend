@@ -28,13 +28,27 @@ describe("training schedule route contract", () => {
 
   it("renders route-specific quiet-luxury schedule shell", () => {
     assert.match(schedulePageSource, /<h1 className="section-heading mb-2">Schedule Training Call<\/h1>/);
-    assert.match(schedulePageSource, /<h2 className="text-2xl font-serif text-lh-shadow">\{program\.title\}<\/h2>/);
+    assert.match(schedulePageSource, /<h2 className="section-subheading">\{program\.title\}<\/h2>/);
   });
 
-  it("passes verified token/context into existing booking pieces", () => {
-    assert.match(schedulePageSource, /<BookingFlow/);
-    assert.match(schedulePageSource, /paidSchedulingToken=\{token\}/);
-    assert.match(schedulePageSource, /paidTrainingSlug=\{slug\}/);
+  it("renders Google Appointment Schedule after paid token eligibility without app-owned slot picker", () => {
+    assert.match(schedulePageSource, /const eligibility = await resolveTrainingIntroCallEligibility\(/);
+    assert.match(schedulePageSource, /const appointmentScheduleUrl = getGoogleAppointmentScheduleUrl\(program\.introCallAppointmentScheduleUrl\);/);
+    assert.match(schedulePageSource, /<AppointmentScheduleCard/);
+    assert.match(schedulePageSource, /Open Google Appointment Schedule/);
+    assert.match(schedulePageSource, /<iframe\s+src=\{scheduleUrl\}/);
+    assert.doesNotMatch(schedulePageSource, /BookingFlow/);
+    assert.doesNotMatch(schedulePageSource, /paidSchedulingToken=\{token\}/);
+    assert.doesNotMatch(schedulePageSource, /paidTrainingSlug=\{slug\}/);
+  });
+
+  it("rejects invalid or missing schedule config without exposing the Appointment Schedule URL", () => {
+    assert.match(schedulePageSource, /if \(!eligibility\.ok\) \{/);
+    assert.match(schedulePageSource, /return <SafeErrorShell programTitle=\{program\.title\} \/>;/);
+    assert.match(schedulePageSource, /if \(!appointmentScheduleUrl\) \{/);
+    assert.match(schedulePageSource, /function getGoogleAppointmentScheduleUrl/);
+    assert.match(schedulePageSource, /url\.hostname === "calendar\.google\.com"/);
+    assert.match(schedulePageSource, /url\.pathname\.startsWith\("\/calendar\/appointments\/schedules\/"\)/);
   });
 
   it("renders a branded safe error with support/contact CTA and no private details for token failures", () => {

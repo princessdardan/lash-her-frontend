@@ -1,6 +1,4 @@
-import { notFound } from "next/navigation";
-import { loaders } from "@/data/loaders";
-import { BlockRenderer } from "@/components/custom/layouts/block-renderer";
+import { permanentRedirect } from "next/navigation";
 import { buildPageMetadata } from "@/lib/metadata";
 
 // Revalidate every 30 minutes (1800 seconds)
@@ -12,23 +10,6 @@ export const metadata = buildPageMetadata({
     "Professional lash training programs for beginners and advanced artists. Learn from expert lash artist Nataliea.",
 });
 
-export default async function TrainingPage() {
-  const data = await loaders.getTrainingsPageData();
-  if (!data) notFound();
-
-  const { blocks } = data;
-
-  // Check if there's a hero section with h1
-  const hasHeroSection = blocks?.some(block => block._type === "heroSection");
-
-  return (
-    <>
-      {!hasHeroSection && (
-        <div className="container mx-auto px-4 py-8">
-          <h1 className="text-4xl font-heading text-center">Training Programs</h1>
-        </div>
-      )}
-      <BlockRenderer blocks={blocks} />
-    </>
-  );
+export default function TrainingPage(): never {
+  permanentRedirect("/training-programs");
 }

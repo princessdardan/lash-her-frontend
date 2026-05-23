@@ -27,7 +27,7 @@ export default async function ConfirmationPage({
   return (
     <div className="container mx-auto px-4 py-16 max-w-2xl text-center">
       <div className="card-white p-8 md:p-12">
-        <h1 className="card-heading-red text-3xl md:text-4xl mb-6">
+        <h1 className="section-heading mb-6">
           Payment Received
         </h1>
 

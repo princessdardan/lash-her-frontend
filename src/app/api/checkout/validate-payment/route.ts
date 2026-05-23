@@ -18,6 +18,7 @@ import {
   markTrainingEnrollmentStaffAlerted,
 } from "@/lib/commerce/training-enrollment-store";
 import { persistVerifiedPayment, verifyHelcimPayment } from "@/lib/commerce/verified-payment";
+import type { VerifiablePendingOrder } from "@/lib/commerce/verified-payment";
 import type { HelcimPayloadValue } from "@/lib/commerce/helcim-types";
 import {
   buildServiceBookingConfirmationResolverUrl,
@@ -96,6 +97,13 @@ export function createValidatePaymentPostHandler(
         return Response.json(
           { error: "Checkout session not found" },
           { status: 404 }
+        );
+      }
+
+      if (!hasHelcimInvoiceIdentifiers(order)) {
+        return Response.json(
+          { error: "Payment could not be verified" },
+          { status: 400 }
         );
       }
 
@@ -318,6 +326,18 @@ function buildAbsoluteSchedulingUrl(origin: string, programSlug: string, schedul
     }),
     origin,
   ).toString();
+}
+
+function hasHelcimInvoiceIdentifiers<T extends {
+  helcimInvoiceId: number | null;
+  helcimInvoiceNumber: string | null;
+  paymentProvider?: string;
+}>(order: T): order is T & VerifiablePendingOrder {
+  return (
+    order.paymentProvider === "helcim" &&
+    order.helcimInvoiceId !== null &&
+    order.helcimInvoiceNumber !== null
+  );
 }
 
 function getRequestOrigin(req: ValidatePaymentRequest): string {

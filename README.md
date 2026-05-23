@@ -36,7 +36,7 @@ Google Calendar integration requires OAuth credentials and an Upstash KV store f
 - Configure the connected calendar ID in the Sanity `bookingSettings` singleton.
 
 ### Checkout and Private DB
-Checkout uses Helcim for payments and the private Neon/Drizzle database for order records. The same private database also stores training enrollments, marketing contacts, contact submissions, and consent events.
+Product checkout and training checkout use Helcim. Paid service bookings use custom Lash Her holds, Square hosted checkout, and Google Calendar API finalization after server-side payment reconciliation. The private Neon/Drizzle database stores order records, service holds, payment events, training enrollments, marketing contacts, contact submissions, and consent events.
 - **PII Policy:** Never store transaction history, customer PII, form/contact submissions, marketing contacts, consent events, or payment tokens in Sanity.
 - Database migrations live in `drizzle/`.
 
@@ -80,8 +80,7 @@ Verify these document types in the target environment:
 - `galleryPage` -> `/gallery`
 - `globalSettings` -> All pages (header/footer)
 - `mainMenu` -> All pages (navigation)
-- `trainingPage` -> `/training`
-- `trainingProgramsPage` -> `/training-programs`
+- `trainingProgramsPage` -> `/training-programs` (canonical training listing; `/training` redirects here)
 - `trainingProgram` -> `/training-programs/[slug]`
 - `product` -> `/products/[slug]`
 - `service` / `bookingOffering` -> `/services`, `/services/[slug]`, `/booking?offering=<slug>`

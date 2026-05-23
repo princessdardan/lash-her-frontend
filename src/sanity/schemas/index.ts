@@ -4,6 +4,7 @@ import { contactPage } from "./documents/contact-page";
 import { galleryPage } from "./documents/gallery-page";
 import { trainingPage } from "./documents/training-page";
 import { trainingProgramsPage } from "./documents/training-programs-page";
+import { productsPage } from "./documents/products-page";
 import { globalSettings } from "./documents/global-settings";
 import { mainMenu } from "./documents/main-menu";
 import { bookingSettings } from "./documents/booking-settings";
@@ -12,6 +13,8 @@ import { bookingMarketingOptIn } from "./documents/booking-marketing-opt-in";
 // Documents — Collections
 import { bookingOffering } from "./documents/booking-offering";
 import { product } from "./documents/product";
+import { productCollection } from "./documents/product-collection";
+import { sellableProduct } from "./documents/sellable-product";
 import { service } from "./documents/service";
 import { trainingProgram } from "./documents/training-program";
 import { contactForm } from "./documents/contact-form";
@@ -54,12 +57,15 @@ export const schemaTypes = [
   galleryPage,
   trainingPage,
   trainingProgramsPage,
+  productsPage,
   globalSettings,
   mainMenu,
   bookingSettings,
   bookingMarketingOptIn,
   bookingOffering,
   product,
+  productCollection,
+  sellableProduct,
   service,
   trainingProgram,
   contactForm,

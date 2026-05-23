@@ -26,6 +26,32 @@ export const checkoutOrderPurpose = pgEnum("checkout_order_purpose", [
   "appointment_custom_partial",
 ]);
 
+export const paymentProvider = pgEnum("payment_provider", [
+  "helcim",
+  "square",
+]);
+
+export const calendarFinalizationStatus = pgEnum("calendar_finalization_status", [
+  "not_required",
+  "pending",
+  "paid_calendar_pending",
+  "booked",
+  "paid_unbookable_rebooking_pending",
+  "manual_rebooked",
+  "refund_required",
+  "refunded",
+  "failed",
+  "manual_review",
+]);
+
+export const paymentEventProcessingStatus = pgEnum("payment_event_processing_status", [
+  "received",
+  "processed",
+  "duplicate",
+  "ignored",
+  "failed",
+]);
+
 export const trainingEnrollmentPurchaseKind = pgEnum("training_enrollment_purchase_kind", [
   "full",
 ]);
@@ -46,6 +72,10 @@ export const appointmentHoldStatus = pgEnum("appointment_hold_status", [
   "payment_failed",
   "booking_failed",
   "manual_followup",
+  "paid_unbookable_rebooking_pending",
+  "manual_rebooked",
+  "refund_required",
+  "refunded",
   "released",
 ]);
 
@@ -76,6 +106,9 @@ export interface CheckoutOrderLineItemSnapshot {
 
 export type CheckoutOrderStatus = typeof checkoutOrderStatus.enumValues[number];
 export type CheckoutOrderPurpose = typeof checkoutOrderPurpose.enumValues[number];
+export type PaymentProvider = typeof paymentProvider.enumValues[number];
+export type CalendarFinalizationStatus = typeof calendarFinalizationStatus.enumValues[number];
+export type PaymentEventProcessingStatus = typeof paymentEventProcessingStatus.enumValues[number];
 
 export interface TrainingEnrollmentProgramSnapshot {
   id: string;
@@ -111,6 +144,14 @@ export interface AppointmentHoldMetadata {
   [key: string]: unknown;
 }
 
+export interface CheckoutProviderMetadata {
+  [key: string]: unknown;
+}
+
+export interface CheckoutPaymentEventPayload {
+  [key: string]: unknown;
+}
+
 export interface MarketingContactSubmissionPayload {
   [key: string]: unknown;
 }
@@ -128,9 +169,24 @@ export const checkoutOrders = pgTable(
     status: checkoutOrderStatus("status").notNull().default("pending"),
     checkoutTokenHash: text("checkout_token_hash").notNull().unique(),
     secretTokenCiphertext: text("secret_token_ciphertext").notNull(),
-    helcimInvoiceId: integer("helcim_invoice_id").notNull(),
-    helcimInvoiceNumber: text("helcim_invoice_number").notNull(),
+    helcimInvoiceId: integer("helcim_invoice_id"),
+    helcimInvoiceNumber: text("helcim_invoice_number"),
     helcimTransactionId: text("helcim_transaction_id"),
+    paymentProvider: paymentProvider("payment_provider").notNull().default("helcim"),
+    providerCheckoutId: text("provider_checkout_id"),
+    providerOrderId: text("provider_order_id"),
+    providerPaymentId: text("provider_payment_id"),
+    providerStatus: text("provider_status"),
+    providerMetadata: jsonb("provider_metadata").$type<CheckoutProviderMetadata>(),
+    squarePaymentLinkId: text("square_payment_link_id"),
+    squarePaymentLinkUrl: text("square_payment_link_url"),
+    squareLocationId: text("square_location_id"),
+    squareTipAmountCents: integer("square_tip_amount_cents"),
+    calendarFinalizationStatus: calendarFinalizationStatus("calendar_finalization_status")
+      .notNull()
+      .default("not_required"),
+    calendarEventId: text("calendar_event_id"),
+    finalizedAt: timestamp("finalized_at", { withTimezone: true }),
     customerName: text("customer_name").notNull(),
     customerEmail: text("customer_email").notNull(),
     amountCents: integer("amount_cents").notNull(),
@@ -145,6 +201,19 @@ export const checkoutOrders = pgTable(
   },
   (table) => [
     uniqueIndex("checkout_orders_checkout_token_hash_idx").on(table.checkoutTokenHash),
+    uniqueIndex("checkout_orders_provider_checkout_idx").on(
+      table.paymentProvider,
+      table.providerCheckoutId,
+    ),
+    uniqueIndex("checkout_orders_provider_order_idx").on(
+      table.paymentProvider,
+      table.providerOrderId,
+    ),
+    uniqueIndex("checkout_orders_provider_payment_idx").on(
+      table.paymentProvider,
+      table.providerPaymentId,
+    ),
+    uniqueIndex("checkout_orders_calendar_event_id_idx").on(table.calendarEventId),
   ],
 );
 
@@ -155,16 +224,30 @@ export const checkoutPaymentEvents = pgTable(
     orderId: uuid("order_id").references(() => checkoutOrders.id, { onDelete: "cascade" }),
     eventType: text("event_type").notNull(),
     helcimTransactionId: text("helcim_transaction_id"),
+    paymentProvider: paymentProvider("payment_provider").notNull().default("helcim"),
+    providerEventId: text("provider_event_id"),
+    providerCheckoutId: text("provider_checkout_id"),
+    providerOrderId: text("provider_order_id"),
+    providerPaymentId: text("provider_payment_id"),
     status: text("status"),
+    providerStatus: text("provider_status"),
     amountCents: integer("amount_cents"),
     currency: text("currency"),
     message: text("message"),
     idempotencyKey: text("idempotency_key").unique(),
+    payloadHash: text("payload_hash"),
     payloadRedacted: jsonb("payload_redacted").$type<Record<string, unknown>>(),
+    payloadSanitized: jsonb("payload_sanitized").$type<CheckoutPaymentEventPayload>(),
+    processingStatus: paymentEventProcessingStatus("processing_status").notNull().default("received"),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     uniqueIndex("checkout_payment_events_idempotency_key_idx").on(table.idempotencyKey),
+    uniqueIndex("checkout_payment_events_provider_event_idx").on(
+      table.paymentProvider,
+      table.providerEventId,
+    ),
   ],
 );
 
@@ -213,7 +296,19 @@ export const appointmentHolds = pgTable(
     helcimInvoiceId: integer("helcim_invoice_id"),
     helcimInvoiceNumber: text("helcim_invoice_number"),
     helcimTransactionId: text("helcim_transaction_id"),
+    paymentProvider: paymentProvider("payment_provider").notNull().default("helcim"),
+    squarePaymentLinkId: text("square_payment_link_id"),
+    squarePaymentLinkUrl: text("square_payment_link_url"),
+    squareCheckoutId: text("square_checkout_id"),
+    squarePaymentId: text("square_payment_id"),
+    squareOrderId: text("square_order_id"),
     googleEventId: text("google_event_id"),
+    finalizationStatus: calendarFinalizationStatus("finalization_status")
+      .notNull()
+      .default("pending"),
+    finalizationReason: text("finalization_reason"),
+    manualReviewStatus: text("manual_review_status"),
+    manualReviewReason: text("manual_review_reason"),
     failureReason: text("failure_reason"),
     failureMetadata: jsonb("failure_metadata").$type<AppointmentHoldMetadata>(),
     reconciliationMetadata: jsonb("reconciliation_metadata").$type<AppointmentHoldMetadata>(),
@@ -230,6 +325,11 @@ export const appointmentHolds = pgTable(
   (table) => [
     uniqueIndex("appointment_holds_public_reference_idx").on(table.publicReference),
     uniqueIndex("appointment_holds_checkout_order_id_idx").on(table.checkoutOrderId),
+    uniqueIndex("appointment_holds_square_payment_link_id_idx").on(table.squarePaymentLinkId),
+    uniqueIndex("appointment_holds_square_checkout_id_idx").on(table.squareCheckoutId),
+    uniqueIndex("appointment_holds_square_payment_id_idx").on(table.squarePaymentId),
+    uniqueIndex("appointment_holds_square_order_id_idx").on(table.squareOrderId),
+    uniqueIndex("appointment_holds_google_event_id_idx").on(table.googleEventId),
     index("appointment_holds_slot_conflict_idx").on(
       table.offeringId,
       table.selectedStart,

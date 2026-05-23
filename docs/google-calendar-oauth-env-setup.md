@@ -1,6 +1,6 @@
 # Google Calendar OAuth Environment Setup
 
-This document explains how to create the Google service configuration required by the booking system and how to populate these environment variables:
+This document explains how to create the Google service configuration required by service booking Calendar event creation and how to populate these environment variables:
 
 ```env
 GOOGLE_CLIENT_ID=
@@ -8,7 +8,7 @@ GOOGLE_CLIENT_SECRET=
 GOOGLE_REDIRECT_URI=
 ```
 
-These values are server-side secrets used by the booking OAuth setup flow. Do not prefix them with `NEXT_PUBLIC_` and do not expose the client secret in browser code.
+These values are server-side secrets used by the booking OAuth setup flow. Do not prefix them with `NEXT_PUBLIC_` and do not expose the client secret in browser code. These variables are for the Google Calendar API integration. They are not Google Appointment Schedule payment or eligibility controls.
 
 ## What These Variables Do
 
@@ -22,7 +22,9 @@ The implementation uses the `googleapis` package with the Google Calendar API sc
 https://www.googleapis.com/auth/calendar.events
 ```
 
-That scope lets the app read and create events on the connected calendar. The long-lived Google refresh token is not stored in these variables; it is generated during the protected admin setup flow and saved server-side in Upstash Redis.
+That scope lets the app read and create events on the connected calendar. Paid service booking finalization uses it after Square payment is verified server-side. The long-lived Google refresh token is not stored in these variables; it is generated during the protected admin setup flow and saved server-side in Upstash Redis.
+
+Paid training intro-call scheduling is separate. The app checks private paid token eligibility first, then renders the public Google Appointment Schedule URL or embed configured on the training program. The app does not mark training scheduled just because that page renders, and Google Appointment Schedule is not used for service bookings.
 
 ## Service You Need To Configure
 
@@ -53,7 +55,7 @@ Recommended naming:
 2. Search for **Google Calendar API**.
 3. Open it and click **Enable**.
 
-The booking code calls Calendar Events endpoints, so the Calendar API must be enabled before OAuth setup and booking requests can work.
+The booking code calls Calendar Events endpoints, so the Calendar API must be enabled before OAuth setup and service booking finalization can work.
 
 ## Step 3: Configure The OAuth Consent Screen
 
@@ -186,7 +188,7 @@ After OAuth connection:
 3. Add availability marker events in Google Calendar using the configured marker title, defaulting to `Available for booking`.
 4. Open `/booking` on the same deployed environment.
 5. Confirm availability loads.
-6. Create a test booking and confirm a Google Calendar event is inserted.
+6. Create or finalize a test service booking after verified payment and confirm a Google Calendar event is inserted.
 
 ## Troubleshooting
 

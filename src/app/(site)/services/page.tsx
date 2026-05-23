@@ -48,7 +48,7 @@ export default async function ServicesPage(): Promise<ReactElement> {
                 {offerings.map((offering) => (
                   <div key={offering._id} className="editorial-card p-6 flex justify-between items-center">
                     <div>
-                      <h3 className="text-lg font-medium text-black mb-1">{offering.title}</h3>
+                      <h3 className="section-subheading mb-1 text-lg md:text-lg lg:text-lg">{offering.title}</h3>
                       <p className="text-sm text-lh-muted mb-2">{offering.durationMinutes} min</p>
                       <p className="text-sm text-black font-light max-w-md">{offering.description}</p>
                     </div>
@@ -68,7 +68,7 @@ export default async function ServicesPage(): Promise<ReactElement> {
             
             <div className="w-full lg:w-80 shrink-0">
               <div className="soft-panel p-6 sticky top-24">
-                <h2 className="text-xl font-serif text-black mb-2">Lash Her by Nataliea</h2>
+                <h2 className="section-subheading mb-2 text-xl md:text-xl lg:text-xl">Lash Her by Nataliea</h2>
                 <div className="flex items-center gap-1 mb-4 text-sm text-black">
                   <span className="text-yellow-500" aria-hidden="true">★</span>
                   <span className="font-medium">5.0</span>
@@ -88,11 +88,11 @@ export default async function ServicesPage(): Promise<ReactElement> {
 
         {detailServices.length > 0 && (
           <div className="mt-16">
-            <h2 className="text-2xl font-serif text-black mb-6">Learn More About Our Services</h2>
+            <h2 className="section-subheading mb-6">Learn More About Our Services</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {detailServices.map((service) => (
                 <div key={service._id} className="soft-panel p-6 flex flex-col h-full">
-                  <h3 className="text-lg font-medium text-black mb-2">{service.title}</h3>
+                  <h3 className="section-subheading mb-2 text-lg md:text-lg lg:text-lg">{service.title}</h3>
                   <p className="text-sm text-black font-light mb-6 flex-1">
                     {service.shortDescription || service.description}
                   </p>

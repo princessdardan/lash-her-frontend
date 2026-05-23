@@ -23,6 +23,18 @@ export const sellableProduct = defineType({
       type: "text",
     }),
     defineField({
+      name: "cardSubtitle",
+      title: "Card Subtitle",
+      type: "string",
+      description: "Short catalog card label, such as retention or finish details.",
+    }),
+    defineField({
+      name: "badgeLabel",
+      title: "Badge Label",
+      type: "string",
+      description: "Optional merchandising label, such as Best Seller or New.",
+    }),
+    defineField({
       name: "slug",
       title: "Slug",
       type: "slug",
@@ -68,6 +80,67 @@ export const sellableProduct = defineType({
       validation: (Rule) => Rule.required(),
     }),
     defineField({
+      name: "collections",
+      title: "Collections",
+      type: "array",
+      of: [
+        defineArrayMember({
+          type: "reference",
+          to: [{ type: "productCollection" }],
+        }),
+      ],
+    }),
+    defineField({
+      name: "filterAttributes",
+      title: "Filter Attributes",
+      type: "array",
+      description: "Catalog filter facts such as diameter, curl, finish, or style.",
+      of: [
+        defineArrayMember({
+          type: "object",
+          title: "Filter Attribute",
+          fields: [
+            defineField({ name: "label", title: "Label", type: "string" }),
+            defineField({ name: "value", title: "Value", type: "string" }),
+          ],
+          preview: {
+            select: { title: "label", subtitle: "value" },
+          },
+        }),
+      ],
+    }),
+    defineField({
+      name: "optionGroups",
+      title: "Option Groups",
+      type: "array",
+      description: "Groups used by the product detail option UI, such as Curl or Diameter.",
+      of: [
+        defineArrayMember({
+          type: "object",
+          title: "Option Group",
+          fields: [
+            defineField({ name: "name", title: "Name", type: "string" }),
+            defineField({
+              name: "values",
+              title: "Values",
+              type: "array",
+              of: [defineArrayMember({ type: "string" })],
+            }),
+          ],
+          preview: {
+            select: { title: "name", values: "values" },
+            prepare({ title, values }) {
+              const optionCount = Array.isArray(values) ? values.length : 0;
+              return {
+                title,
+                subtitle: `${optionCount} value${optionCount === 1 ? "" : "s"}`,
+              };
+            },
+          },
+        }),
+      ],
+    }),
+    defineField({
       name: "variants",
       title: "Variants",
       type: "array",
@@ -107,6 +180,25 @@ export const sellableProduct = defineType({
               title: "Availability Label",
               type: "string",
               description: "Optional label for this option, e.g., 'In Stock', 'Sold Out', or 'Limited spots'.",
+            }),
+            defineField({
+              name: "options",
+              title: "Options",
+              type: "array",
+              description: "Name/value pairs that connect this variant to option groups.",
+              of: [
+                defineArrayMember({
+                  type: "object",
+                  title: "Option",
+                  fields: [
+                    defineField({ name: "name", title: "Name", type: "string" }),
+                    defineField({ name: "value", title: "Value", type: "string" }),
+                  ],
+                  preview: {
+                    select: { title: "name", subtitle: "value" },
+                  },
+                }),
+              ],
             }),
           ],
           preview: {
@@ -191,6 +283,21 @@ export const sellableProduct = defineType({
           fields: [
             defineField({ name: "heading", title: "Heading", type: "string" }),
             defineField({ name: "content", title: "Content", type: "text" }),
+            defineField({
+              name: "body",
+              title: "Rich Content",
+              type: "array",
+              description: "Optional rich replacement for Content. Existing plain text content is preserved.",
+              of: [
+                defineArrayMember({
+                  type: "block",
+                  lists: [
+                    { title: "Bullet", value: "bullet" },
+                    { title: "Numbered", value: "number" },
+                  ],
+                }),
+              ],
+            }),
           ],
         }),
       ],

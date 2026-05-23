@@ -21,6 +21,7 @@ type RuleStub = {
 type SchemaField = {
   name?: string;
   group?: string;
+  type?: string;
   of?: Array<{ type?: string }>;
   fields?: SchemaField[];
   validation?: (rule: RuleStub) => unknown;
@@ -91,6 +92,24 @@ describe("trainingProgram native commerce validation", () => {
     assert.strictEqual(await validator(true, buildContext()), true);
     assert.strictEqual(await validator(false, buildContext()), true);
   });
+
+  it("allows only Google Appointment Schedule URLs for paid training intro calls", async () => {
+    const validator = getFieldValidator("introCallAppointmentScheduleUrl");
+
+    assert.strictEqual(await validator(undefined, buildContext()), true);
+    assert.strictEqual(
+      await validator("https://calendar.google.com/calendar/appointments/schedules/AcZssZ_example", buildContext()),
+      true,
+    );
+    assert.strictEqual(
+      await validator("https://calendar.google.com/calendar/u/0/r/eventedit", buildContext()),
+      "Use the public Google Appointment Schedule URL from calendar.google.com/calendar/appointments/schedules/.",
+    );
+    assert.strictEqual(
+      await validator("https://example.com/calendar/appointments/schedules/AcZssZ_example", buildContext()),
+      "Use the public Google Appointment Schedule URL from calendar.google.com/calendar/appointments/schedules/.",
+    );
+  });
 });
 
 describe("trainingProgram detail content schema", () => {
@@ -106,12 +125,29 @@ describe("trainingProgram detail content schema", () => {
       "fulfillmentNote",
       "displayOrder",
       "image",
+      "introCallAppointmentScheduleUrl",
+      "introCallAppointmentScheduleEmbedMode",
+      "introCallSchedulingInstructions",
     ]) {
       assert.strictEqual(getSchemaField(fieldName).group, "commerce", `${fieldName} should be in the commerce group`);
     }
 
     assert.ok(!schemaFieldNames.includes("currency"));
     assert.ok(!schemaFieldNames.includes("checkoutProduct"));
+  });
+
+  it("configures paid intro-call Appointment Schedule as editorial public fields", () => {
+    const urlField = getSchemaField("introCallAppointmentScheduleUrl");
+    const modeField = getSchemaField("introCallAppointmentScheduleEmbedMode") as SchemaField & {
+      options?: { layout?: string; list?: Array<{ title?: string; value?: string }> };
+    };
+    const instructionsField = getSchemaField("introCallSchedulingInstructions");
+
+    assert.strictEqual(urlField.type, "url");
+    assert.strictEqual(modeField.type, "string");
+    assert.strictEqual(modeField.options?.layout, "radio");
+    assert.deepStrictEqual(modeField.options?.list?.map((item) => item.value), ["link", "embed"]);
+    assert.strictEqual(instructionsField.type, "text");
   });
 
   it("configures a detail hero image in the details group", () => {

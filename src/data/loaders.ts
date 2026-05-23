@@ -13,30 +13,64 @@ import type {
   TMetaData,
   TBookingOffering,
   TProduct,
+  TProductCollection,
+  TProductFilterAttribute,
+  TProductsPage,
   TProductsGroupedCatalog,
   TService,
+  TSellableProduct,
   TTrainingProgramCatalogItem,
 } from "@/types";
 
 const isVercelPreview = process.env.VERCEL_ENV === "preview";
+
+export type SellableProductSort = "default" | "titleAsc" | "priceAsc" | "priceDesc";
+
+export interface SellableProductFilters {
+  collection?: string;
+  attributes?: string[];
+  sort?: SellableProductSort;
+}
+
+const PRODUCT_COLLECTION_PROJECTION = groq`{
+  _id,
+  _key,
+  title,
+  "slug": slug.current,
+  description,
+  displayOrder
+}`;
 
 const PRODUCT_PROJECTION = groq`{
   _id,
   title,
   description,
   shortDescription,
+  cardSubtitle,
+  badgeLabel,
   "slug": slug.current,
+  kind,
   price,
   sku,
   currency,
-  variants[]{ _key, title, sku, price, isAvailable, availabilityLabel },
+  collections[]{
+    _key,
+    "_id": @->_id,
+    "title": @->title,
+    "slug": @->slug.current,
+    "description": @->description,
+    "displayOrder": @->displayOrder
+  },
+  filterAttributes[]{ _key, label, value },
+  optionGroups[]{ _key, name, values },
+  variants[]{ _key, title, sku, price, isAvailable, availabilityLabel, options[]{ _key, name, value } },
   isAvailable,
   availabilityLabel,
   fulfillmentNote,
   displayOrder,
   image{ asset, hotspot, crop, alt },
   gallery[]{ asset, hotspot, crop, alt },
-  detailSections[]{ _key, heading, content },
+  detailSections[]{ _key, heading, content, body[]{ ..., _key } },
   seo{ title, description, image{ asset, hotspot, crop, alt } }
 }`;
 
@@ -234,18 +268,42 @@ async function getMetaData(): Promise<TMetaData | null> {
   return client.fetch<TMetaData | null>(query, {}, sanityFetchOptions(['global']));
 }
 
+async function getProductsPageData(): Promise<TProductsPage | null> {
+  const query = groq`*[_type == "productsPage"][0]{
+    title,
+    eyebrow,
+    description,
+    heroImage{ asset, hotspot, crop, alt },
+    featuredCollections[]->${PRODUCT_COLLECTION_PROJECTION},
+    emptyStateTitle,
+    emptyStateDescription
+  }`;
+  return client.fetch<TProductsPage | null>(query, {}, sanityFetchOptions(["productsPage", "productCollection"]));
+}
+
 async function getTrainingProgramBySlug(slug: string): Promise<TTrainingProgram | null> {
   const query = groq`*[_type == "trainingProgram" && slug.current == $slug][0]{
     _id,
     title,
     description,
     "slug": slug.current,
+    heroSubtitle,
+    heroImage{ asset, hotspot, crop, alt },
+    heroBadges,
     detailHeading,
+    detailEyebrow,
     detailDescription,
     detailHeroImage{ asset, hotspot, crop, alt },
+    detailMainImage{ asset, hotspot, crop, alt },
     detailItems[]{ _key, title, description, image{ asset, hotspot, crop, alt } },
     factList,
     primaryCta{ label, href },
+    secondaryCta{ label, href },
+    enrollmentTitle,
+    enrollmentDescription,
+    enrollmentBackgroundImage{ asset, hotspot, crop, alt },
+    enrollmentInclusions,
+    linkedProduct->{ _id, title, "slug": slug.current, price, currency, isAvailable, availabilityLabel },
     checkoutEnabled,
     price,
     "currency": "CAD",
@@ -257,6 +315,9 @@ async function getTrainingProgramBySlug(slug: string): Promise<TTrainingProgram 
     checkoutCtaLabel,
     checkoutDisabledBookingCta{ label, href },
     postPurchaseInstructions,
+    introCallAppointmentScheduleUrl,
+    "introCallAppointmentScheduleEmbedMode": coalesce(introCallAppointmentScheduleEmbedMode, "link"),
+    introCallSchedulingInstructions,
     seo{ title, description, image{ asset, hotspot, crop, alt } },
     blocks[]{
       _type,
@@ -294,12 +355,23 @@ async function getTrainingProgramsPageData(): Promise<TTrainingProgramsPage | nu
       title,
       description,
       "slug": slug.current,
+      heroSubtitle,
+      heroImage{ asset, hotspot, crop, alt },
+      heroBadges,
       detailHeading,
+      detailEyebrow,
       detailDescription,
       detailHeroImage{ asset, hotspot, crop, alt },
+      detailMainImage{ asset, hotspot, crop, alt },
       detailItems[]{ _key, title, description, image{ asset, hotspot, crop, alt } },
       factList,
       primaryCta{ label, href },
+      secondaryCta{ label, href },
+      enrollmentTitle,
+      enrollmentDescription,
+      enrollmentBackgroundImage{ asset, hotspot, crop, alt },
+      enrollmentInclusions,
+      linkedProduct->{ _id, title, "slug": slug.current, price, currency, isAvailable, availabilityLabel },
       checkoutEnabled,
       price,
       "currency": "CAD",
@@ -311,6 +383,9 @@ async function getTrainingProgramsPageData(): Promise<TTrainingProgramsPage | nu
       checkoutCtaLabel,
       checkoutDisabledBookingCta{ label, href },
       postPurchaseInstructions,
+      introCallAppointmentScheduleUrl,
+      "introCallAppointmentScheduleEmbedMode": coalesce(introCallAppointmentScheduleEmbedMode, "link"),
+      introCallSchedulingInstructions,
       seo{ title, description, image{ asset, hotspot, crop, alt } },
       blocks[]{
         _type,
@@ -346,12 +421,23 @@ async function getAllTrainingPrograms(): Promise<TTrainingProgram[]> {
     title,
     description,
     "slug": slug.current,
+    heroSubtitle,
+    heroImage{ asset, hotspot, crop, alt },
+    heroBadges,
     detailHeading,
+    detailEyebrow,
     detailDescription,
     detailHeroImage{ asset, hotspot, crop, alt },
+    detailMainImage{ asset, hotspot, crop, alt },
     detailItems[]{ _key, title, description, image{ asset, hotspot, crop, alt } },
     factList,
     primaryCta{ label, href },
+    secondaryCta{ label, href },
+    enrollmentTitle,
+    enrollmentDescription,
+    enrollmentBackgroundImage{ asset, hotspot, crop, alt },
+    enrollmentInclusions,
+    linkedProduct->{ _id, title, "slug": slug.current, price, currency, isAvailable, availabilityLabel },
     checkoutEnabled,
     price,
     "currency": "CAD",
@@ -363,6 +449,9 @@ async function getAllTrainingPrograms(): Promise<TTrainingProgram[]> {
     checkoutCtaLabel,
     checkoutDisabledBookingCta{ label, href },
     postPurchaseInstructions,
+    introCallAppointmentScheduleUrl,
+    "introCallAppointmentScheduleEmbedMode": coalesce(introCallAppointmentScheduleEmbedMode, "link"),
+    introCallSchedulingInstructions,
     seo{ title, description, image{ asset, hotspot, crop, alt } },
     blocks[]{
       _type,
@@ -519,6 +608,71 @@ function compareBookingOfferings(first: TBookingOffering, second: TBookingOfferi
 }
 
 
+function getSellableProductOrder(sort: SellableProductSort | undefined): string {
+  switch (sort) {
+    case "titleAsc":
+      return "title asc";
+    case "priceAsc":
+      return "price asc, title asc";
+    case "priceDesc":
+      return "price desc, title asc";
+    default:
+      return "displayOrder asc, title asc";
+  }
+}
+
+function normalizeProductFilters(filters: SellableProductFilters): Required<SellableProductFilters> {
+  return {
+    collection: filters.collection?.trim() ?? "",
+    attributes: filters.attributes?.map((attribute) => attribute.trim()).filter(Boolean) ?? [],
+    sort: filters.sort ?? "default",
+  };
+}
+
+async function getProductsPageCollections(): Promise<TProductCollection[]> {
+  const query = groq`*[_type == "productCollection"] | order(displayOrder asc, title asc) ${PRODUCT_COLLECTION_PROJECTION}`;
+  return client.fetch<TProductCollection[]>(query, {}, sanityFetchOptions(["productCollection"]));
+}
+
+async function getSellableProductFilterAttributes(): Promise<TProductFilterAttribute[]> {
+  const query = groq`*[_type == "sellableProduct" && isAvailable == true].filterAttributes[]{ _key, label, value }`;
+  return client.fetch<TProductFilterAttribute[]>(query, {}, sanityFetchOptions(["sellableProduct"]));
+}
+
+async function getSellableProducts(filters: SellableProductFilters = {}): Promise<TSellableProduct[]> {
+  const normalizedFilters = normalizeProductFilters(filters);
+  const order = getSellableProductOrder(normalizedFilters.sort);
+  const query = groq`*[
+    _type == "sellableProduct" &&
+    isAvailable == true &&
+    ($collection == "" || collections[]._ref in *[_type == "productCollection" && slug.current == $collection]._id) &&
+    (count($attributes) == 0 || count(filterAttributes[value in $attributes]) == count($attributes))
+  ] | order(${order}) ${PRODUCT_PROJECTION}`;
+
+  return client.fetch<TSellableProduct[]>(
+    query,
+    { collection: normalizedFilters.collection, attributes: normalizedFilters.attributes },
+    sanityFetchOptions(["sellableProduct", "productCollection"]),
+  );
+}
+
+async function getSellableProductsByIds(ids: string[]): Promise<TSellableProduct[]> {
+  const query = groq`*[_type == "sellableProduct" && _id in $ids] ${PRODUCT_PROJECTION}`;
+  return client.fetch<TSellableProduct[]>(query, { ids }, sanityFetchOptions(["sellableProduct"]));
+}
+
+async function getSellableProductBySlug(slug: string): Promise<TSellableProduct | null> {
+  const query = groq`*[_type == "sellableProduct" && slug.current == $slug && isAvailable == true][0] ${PRODUCT_PROJECTION}`;
+  return client.fetch<TSellableProduct | null>(query, { slug }, sanityFetchOptions(["sellableProduct"]));
+}
+
+async function getAllSellableProductSlugs(): Promise<Array<{ slug: string }>> {
+  const query = groq`*[_type == "sellableProduct" && isAvailable == true]{
+    "slug": slug.current
+  }`;
+  return client.fetch<Array<{ slug: string }>>(query, {}, sanityFetchOptions(["sellableProduct"]));
+}
+
 async function getProducts(): Promise<TProduct[]> {
   const query = groq`*[_type == "product" && isAvailable == true] | order(displayOrder asc, title asc) ${PRODUCT_PROJECTION}`;
   return client.fetch<TProduct[]>(query, {}, sanityFetchOptions(["product"]));
@@ -581,6 +735,7 @@ export const loaders = {
   getGlobalData,
   getMainMenuData,
   getMetaData,
+  getProductsPageData,
   getTrainingProgramBySlug,
   getTrainingProgramsPageData,
   getAllTrainingPrograms,
@@ -588,6 +743,12 @@ export const loaders = {
   getBookingSettings,
   getActiveBookingOfferings,
   getBookingOfferingBySlug,
+  getProductsPageCollections,
+  getSellableProductFilterAttributes,
+  getSellableProducts,
+  getSellableProductsByIds,
+  getSellableProductBySlug,
+  getAllSellableProductSlugs,
   getProducts,
   getProductsByIds,
   getServices,

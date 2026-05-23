@@ -3,8 +3,9 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { loaders } from "@/data/loaders";
 import { BlockRenderer } from "@/components/custom/layouts/block-renderer";
-import { TrainingDetailItems } from "@/components/custom/training-detail-items";
 import { TrainingEditorialHero } from "@/components/custom/training-editorial-hero";
+import { TrainingEditorialDetails } from "@/components/custom/training-editorial-details";
+import { TrainingEnrollmentSection } from "@/components/custom/training-enrollment-section";
 import { getTrainingCta, isTrainingPurchasable } from "@/lib/training-checkout";
 import { TrainingPurchaseCard, TrainingMobileTray } from "@/components/commerce/training-purchase-card";
 import type { TLayoutBlock } from "@/types";
@@ -64,49 +65,62 @@ function isContactFormBlock(block: TLayoutBlock): block is Extract<TLayoutBlock,
   return block._type === "contactFormLabels";
 }
 
+function isLegacyContentBlock(block: TLayoutBlock): boolean {
+  return !isContactFormBlock(block);
+}
+
 export default async function TrainingProgramPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const data = await loaders.getTrainingProgramBySlug(slug);
 
   if (!data) notFound();
 
-  const hasStructuredDetails = data.detailHeading || data.detailDescription || data.detailHeroImage || (data.detailItems && data.detailItems.length > 0) || (data.factList && data.factList.length > 0);
+  const hasStructuredDetails = Boolean(
+    data.heroSubtitle ||
+      data.heroImage ||
+      (data.heroBadges && data.heroBadges.length > 0) ||
+      data.detailHeading ||
+      data.detailEyebrow ||
+      data.detailDescription ||
+      data.detailHeroImage ||
+      data.detailMainImage ||
+      (data.detailItems && data.detailItems.length > 0) ||
+      (data.factList && data.factList.length > 0) ||
+      data.enrollmentTitle ||
+      data.enrollmentDescription ||
+      data.enrollmentBackgroundImage ||
+      (data.enrollmentInclusions && data.enrollmentInclusions.length > 0) ||
+      data.linkedProduct,
+  );
   const cta = getTrainingCta(data);
   const isCtaSafe = isSafeUrl(cta?.href);
   const isPurchasable = isTrainingPurchasable(data);
   const showPurchaseUi = isPurchasable && isCtaSafe;
   const contactBlocks = (data.blocks ?? []).filter(isContactFormBlock);
+  const legacyBlocks = (data.blocks ?? []).filter(isLegacyContentBlock);
 
   return (
     <div className="relative flex flex-col min-h-screen">
       {showPurchaseUi && (
-        <div className="hidden lg:block absolute top-0 bottom-0 right-[max(2rem,calc((100vw-1380px)/2+2rem))] w-[22rem] pointer-events-none z-40 lg:pt-24">
-          <div className="sticky top-24 pointer-events-auto">
+        <div className="hidden lg:block absolute top-0 bottom-0 right-[max(2rem,calc((100vw-1380px)/2+2rem))] w-[22rem] pointer-events-none z-40 lg:pt-40">
+          <div className="sticky top-40 pointer-events-auto">
             <TrainingPurchaseCard program={data} cta={cta} />
           </div>
         </div>
       )}
       {hasStructuredDetails && (
-        <section className="section-shell py-10 md:py-14 lg:py-16" data-structured-details="true">
-          <div className="mx-auto w-full max-w-[1380px] px-4 sm:px-5 lg:px-4 xl:px-6">
+        <section className="bg-lh-neutral-2" data-structured-details="true">
+          <TrainingEditorialHero data={data} hasPurchaseUi={showPurchaseUi} />
+
+          <div className="mx-auto w-full max-w-[1380px] px-4 py-10 sm:px-5 md:py-14 lg:px-4 lg:py-16 xl:px-6">
             <div className={showPurchaseUi ? "grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start xl:gap-10" : ""}>
               <div className="min-w-0">
-                <TrainingEditorialHero data={data} hasPurchaseUi={showPurchaseUi} />
+                <TrainingEditorialDetails data={data} />
+                <TrainingEnrollmentSection data={data} />
 
-                {data.detailItems && data.detailItems.length > 0 && (
-                  <TrainingDetailItems items={data.detailItems} />
-                )}
-
-                {data.factList && data.factList.length > 0 && (
-                  <div className="soft-panel mt-10 rounded-[28px] bg-lh-neutral/20 p-6 md:p-8 lg:p-10">
-                    <ul className="fact-list grid grid-cols-1 gap-5 md:grid-cols-2 lg:gap-6">
-                      {data.factList.map((fact, index) => (
-                        <li key={index} className="flex items-start gap-3">
-                          <span className="text-lh-shadow mt-1">•</span>
-                          <span className="text-lg">{fact}</span>
-                        </li>
-                      ))}
-                    </ul>
+                {legacyBlocks.length > 0 && (
+                  <div className="mt-8" data-training-legacy-blocks="true">
+                    <BlockRenderer blocks={legacyBlocks} />
                   </div>
                 )}
 
@@ -117,6 +131,14 @@ export default async function TrainingProgramPage({ params }: { params: Promise<
                 <div className="hidden lg:block w-full lg:w-[22rem] shrink-0"></div>
               )}
             </div>
+          </div>
+        </section>
+      )}
+
+      {!hasStructuredDetails && legacyBlocks.length > 0 && (
+        <section className="section-shell py-12 md:py-16" data-training-legacy-blocks="true">
+          <div className="mx-auto w-full max-w-[1380px] px-4 sm:px-5 lg:px-4 xl:px-6">
+            <BlockRenderer blocks={legacyBlocks} />
           </div>
         </section>
       )}

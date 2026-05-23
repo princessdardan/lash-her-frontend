@@ -15,6 +15,7 @@ const helperScript = String.raw`
     helcimInvoiceId: 4242,
     helcimInvoiceNumber: "INV-4242",
     orderId: "lh-order-123",
+    paymentProvider: "helcim",
     secretToken: "checkout-secret-token",
     purpose: "product",
     lineItems: [
@@ -198,6 +199,39 @@ test("checkout payment validation returns not found for missing pending order", 
     assert.equal(response.status, 404);
     assert.deepEqual(await response.json(), { error: "Checkout session not found" });
     assert.equal(markedFailedOrders.length, 0);
+  `);
+});
+
+test("checkout payment validation rejects Square provider orders before Helcim verification", () => {
+  runRouteScenario(`
+    const squareServiceOrder = {
+      ...pendingOrder,
+      helcimInvoiceId: null,
+      helcimInvoiceNumber: null,
+      paymentProvider: "square",
+      purpose: "appointment_deposit",
+    };
+    const { finalizedBookings, handler, markedFailedOrders, markedPaidOrders } = await runScenario({
+      getPendingOrderByCheckoutToken: async () => squareServiceOrder,
+      verifyHelcimPayment: () => {
+        throw new Error("Square service rows must not enter Helcim verification");
+      },
+      finalizeAppointmentPaymentForOrder: async () => {
+        throw new Error("Square service rows must not enter Helcim appointment finalization");
+      },
+    });
+
+    const response = await handler(createRequest({
+      checkoutToken: "square-checkout-token",
+      data: approvedPaymentData,
+      hash: "hash",
+    }));
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { error: "Payment could not be verified" });
+    assert.deepEqual(markedFailedOrders, []);
+    assert.deepEqual(markedPaidOrders, []);
+    assert.deepEqual(finalizedBookings, []);
   `);
 });
 

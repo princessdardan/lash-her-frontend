@@ -41,7 +41,7 @@ export default async function TrainingCheckoutPage({ params }: { params: Promise
         <div className="content-container max-w-2xl mx-auto">
           <div className="soft-panel p-8 md:p-12 rounded-2xl bg-white shadow-sm">
             <h1 className="section-heading mb-2 text-center">Enrollment Checkout</h1>
-            <h2 className="text-2xl font-serif text-center text-lh-shadow mb-8">{data.title}</h2>
+            <h2 className="section-subheading mb-8 text-center">{data.title}</h2>
 
             <CheckoutForm
               programSlug={slug}

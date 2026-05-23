@@ -5,68 +5,260 @@ import { cn } from "@/lib/utils";
 import type { TProduct, TProductVariant } from "@/types";
 
 export interface ProductVariantSelectorProps {
-  product: TProduct;
-  selectedVariantId?: string;
-  selectedOptions?: Record<string, string>;
-  onVariantSelect?: (variant: TProductVariant) => void;
-  onOptionsChange?: (options: Record<string, string>) => void;
-  readOnly?: boolean;
-  className?: string;
+  readonly product: TProduct;
+  readonly selectedVariantId?: string;
+  readonly selectedOptions?: Readonly<Record<string, string>>;
+  readonly onVariantSelect?: (variant: TProductVariant) => void;
+  readonly onOptionsChange?: (options: Record<string, string>) => void;
+  readonly readOnly?: boolean;
+  readonly className?: string;
+}
+
+interface OptionGroupViewModel {
+  readonly key: string;
+  readonly name: string;
+  readonly values: string[];
+}
+
+function getVariantOptionValue(variant: TProductVariant, groupName: string): string | undefined {
+  return variant.options?.find((option) => option.name === groupName)?.value;
+}
+
+function unique(values: string[]): string[] {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
+function getOptionGroups(product: TProduct, variants: TProductVariant[]): OptionGroupViewModel[] {
+  const definedGroups = product.optionGroups?.map((group, index) => {
+    const variantValues = variants.flatMap((variant) =>
+      variant.options?.filter((option) => option.name === group.name).map((option) => option.value) ?? [],
+    );
+
+    return {
+      key: group._key || `${group.name}-${index}`,
+      name: group.name,
+      values: unique([...(group.values ?? []), ...variantValues]),
+    };
+  }) ?? [];
+
+  const knownGroupNames = new Set(definedGroups.map((group) => group.name));
+  const inferredGroups = variants.reduce<Record<string, string[]>>((groups, variant) => {
+    variant.options?.forEach((option) => {
+      if (knownGroupNames.has(option.name)) return;
+      groups[option.name] ??= [];
+      groups[option.name].push(option.value);
+    });
+
+    return groups;
+  }, {});
+
+  return [
+    ...definedGroups,
+    ...Object.entries(inferredGroups).map(([name, values]) => ({
+      key: name,
+      name,
+      values: unique(values),
+    })),
+  ].filter((group) => group.name && group.values.length > 0);
+}
+
+function variantMatchesOptions(variant: TProductVariant, options: Readonly<Record<string, string>>): boolean {
+  return Object.entries(options).every(([name, value]) => !value || getVariantOptionValue(variant, name) === value);
 }
 
 export function ProductVariantSelector({
   product,
   selectedVariantId,
+  selectedOptions = {},
   onVariantSelect,
+  onOptionsChange,
   readOnly = false,
   className,
 }: ProductVariantSelectorProps): ReactElement | null {
   const variants = useMemo(() => product.variants ?? [], [product.variants]);
+  const optionGroups = useMemo(() => getOptionGroups(product, variants), [product, variants]);
+  const selectedVariant = selectedVariantId ? variants.find((variant) => variant._key === selectedVariantId) : undefined;
 
-  if (variants.length === 0) {
+  if (variants.length === 0 && optionGroups.length === 0) {
     return null;
   }
 
   const handleVariantClick = (variant: TProductVariant) => {
-    if (readOnly) return;
+    if (readOnly || !variant.isAvailable || !product.isAvailable) return;
 
     onVariantSelect?.(variant);
   };
 
-  return (
-    <div className={cn("space-y-6", className)}>
-      <div className="space-y-3">
-        <h4 className="text-xs font-bold uppercase tracking-wider text-lh-primary">
-          Choose option
-        </h4>
-        <div className="flex flex-wrap gap-2">
-          {variants.map((variant) => {
-            const isSelected = selectedVariantId === variant._key;
-            const disabled = readOnly || !variant.isAvailable;
+  const handleOptionClick = (groupName: string, value: string, isAvailableForCheckout: boolean) => {
+    if (readOnly || !isAvailableForCheckout) return;
+
+    const nextOptions = { ...selectedOptions, [groupName]: value };
+    const matchingVariant = variants.find((variant) => variant.isAvailable && variantMatchesOptions(variant, nextOptions));
+
+    onOptionsChange?.(nextOptions);
+    if (matchingVariant) onVariantSelect?.(matchingVariant);
+  };
+
+  if (optionGroups.length > 0) {
+    return (
+      <div className={cn("space-y-6", className)}>
+        <div>
+          <h2 className="section-subheading text-3xl" id="product-options-heading">
+            Available Options
+          </h2>
+          {readOnly ? (
+            <p className="mt-2 font-body text-sm font-bold leading-6 text-lh-muted">
+              Options are shown for editorial reference. Checkout selections are made in the catalog.
+            </p>
+          ) : null}
+        </div>
+
+        <div className="space-y-5">
+          {optionGroups.map((group) => {
+            const groupHeadingId = `product-option-${group.key}`;
 
             return (
-              <button
-                key={variant._key}
-                type="button"
-                disabled={disabled}
-                onClick={() => handleVariantClick(variant)}
-                aria-pressed={isSelected}
-                className={cn(
-                  "px-4 py-2 text-sm font-bold font-sans rounded-md border transition-colors focus:outline-none focus:ring-2 focus:ring-lh-primary focus:ring-offset-2",
-                  isSelected
-                    ? "border-lh-primary bg-lh-primary text-white"
-                    : "border-lh-line bg-white text-lh-shadow",
-                  !readOnly && !isSelected && "hover:border-lh-primary/50",
-                  !variant.isAvailable && !isSelected && "opacity-50 text-lh-muted bg-lh-neutral-2",
-                  !readOnly && !variant.isAvailable && !isSelected && "cursor-not-allowed",
-                  readOnly && "cursor-default"
+              <section key={group.key} aria-labelledby={groupHeadingId} className="rounded-[24px] border border-lh-line bg-lh-white p-4 md:p-5">
+                <h3 id={groupHeadingId} className="mb-3 font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-primary">
+                  {group.name}
+                </h3>
+                {readOnly ? (
+                  <ul className="flex flex-wrap gap-2" aria-label={`${group.name} options`}>
+                    {group.values.map((value) => {
+                      const nextOptions = { ...selectedOptions, [group.name]: value };
+                      const hasVariantForValue = variants.length === 0 || variants.some((variant) => variantMatchesOptions(variant, nextOptions));
+                      const isAvailableForCheckout = product.isAvailable && (
+                        variants.length === 0 || variants.some((variant) => variant.isAvailable && variantMatchesOptions(variant, nextOptions))
+                      );
+                      const isUnavailable = !hasVariantForValue || !isAvailableForCheckout;
+
+                      return (
+                        <li
+                          key={`${group.key}-${value}`}
+                          aria-label={`${value}${isUnavailable ? ", unavailable for checkout" : ""}`}
+                          className={cn(
+                            "rounded-full border px-4 py-2 font-body text-sm font-bold",
+                            isUnavailable
+                              ? "border-lh-line bg-lh-neutral text-lh-muted line-through opacity-70"
+                              : "border-lh-line bg-lh-neutral-2/70 text-lh-shadow",
+                          )}
+                        >
+                          {value}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <div className="flex flex-wrap gap-2" role="group" aria-label={`${group.name} options`}>
+                    {group.values.map((value) => {
+                      const nextOptions = { ...selectedOptions, [group.name]: value };
+                      const selectedValue = selectedOptions[group.name] ?? (selectedVariant ? getVariantOptionValue(selectedVariant, group.name) : undefined);
+                      const isSelected = selectedValue === value;
+                      const hasVariantForValue = variants.length === 0 || variants.some((variant) => variantMatchesOptions(variant, nextOptions));
+                      const isAvailableForCheckout = product.isAvailable && (
+                        variants.length === 0 || variants.some((variant) => variant.isAvailable && variantMatchesOptions(variant, nextOptions))
+                      );
+                      const isUnavailable = !hasVariantForValue || !isAvailableForCheckout;
+
+                      return (
+                        <button
+                          key={`${group.key}-${value}`}
+                          type="button"
+                          disabled={isUnavailable}
+                          aria-disabled={isUnavailable}
+                          aria-pressed={isSelected}
+                          aria-label={`${group.name}: ${value}${isUnavailable ? ", unavailable for checkout" : ""}`}
+                          onClick={() => handleOptionClick(group.name, value, isAvailableForCheckout)}
+                          className={cn(
+                            "rounded-full border px-4 py-2 font-body text-sm font-bold transition-colors focus-visible:outline-lh-primary",
+                            isSelected
+                              ? "border-lh-primary bg-lh-primary text-lh-white"
+                              : "border-lh-line bg-lh-neutral-2/70 text-lh-shadow",
+                            !isSelected && !isUnavailable && "hover:border-lh-primary hover:bg-lh-primary-soft hover:text-lh-primary",
+                            isUnavailable && !isSelected && "border-lh-line bg-lh-neutral text-lh-muted line-through opacity-70",
+                            isUnavailable && "cursor-not-allowed",
+                          )}
+                        >
+                          {value}
+                        </button>
+                      );
+                    })}
+                  </div>
                 )}
-              >
-                {variant.title}
-              </button>
+              </section>
             );
           })}
         </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn("space-y-6", className)}>
+      <div className="space-y-3">
+        <h2 className="section-subheading text-3xl">
+          Choose option
+        </h2>
+        {readOnly ? (
+          <ul className="flex flex-wrap gap-2" aria-label="Product variants">
+            {variants.map((variant) => {
+              const isUnavailable = !product.isAvailable || !variant.isAvailable;
+
+              return (
+                <li
+                  key={variant._key}
+                  className={cn(
+                    "rounded-full border px-4 py-2 font-body text-sm font-bold",
+                    isUnavailable
+                      ? "border-lh-line bg-lh-neutral text-lh-muted opacity-70"
+                      : "border-lh-line bg-lh-neutral-2/70 text-lh-shadow",
+                  )}
+                >
+                  <span>{variant.title}</span>
+                  {variant.availabilityLabel && (
+                    <span className="ml-2 text-xs uppercase tracking-[0.12em] opacity-80">
+                      {variant.availabilityLabel}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Product variants">
+            {variants.map((variant) => {
+              const isSelected = selectedVariantId === variant._key;
+              const isUnavailable = !product.isAvailable || !variant.isAvailable;
+
+              return (
+                <button
+                  key={variant._key}
+                  type="button"
+                  disabled={isUnavailable}
+                  aria-disabled={isUnavailable}
+                  onClick={() => handleVariantClick(variant)}
+                  aria-pressed={isSelected}
+                  className={cn(
+                    "rounded-full border px-4 py-2 font-body text-sm font-bold transition-colors focus-visible:outline-lh-primary",
+                    isSelected
+                      ? "border-lh-primary bg-lh-primary text-lh-white"
+                      : "border-lh-line bg-lh-neutral-2/70 text-lh-shadow",
+                    !isSelected && !isUnavailable && "hover:border-lh-primary hover:bg-lh-primary-soft hover:text-lh-primary",
+                    isUnavailable && !isSelected && "bg-lh-neutral text-lh-muted opacity-70",
+                    isUnavailable && !isSelected && "cursor-not-allowed",
+                  )}
+                >
+                  <span>{variant.title}</span>
+                  {variant.availabilityLabel && (
+                    <span className="ml-2 text-xs uppercase tracking-[0.12em] opacity-80">
+                      {variant.availabilityLabel}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

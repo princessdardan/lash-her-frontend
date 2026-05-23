@@ -502,6 +502,7 @@ async function findPaidPendingEnrollmentByHelcimInvoice(
     .where(
       and(
         ...invoiceConditions,
+        eq(checkoutOrders.paymentProvider, "helcim"),
         eq(checkoutOrders.status, "paid"),
         eq(trainingEnrollments.schedulingStatus, "pending"),
         isNull(trainingEnrollments.tokenUsedAt),

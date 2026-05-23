@@ -19,16 +19,21 @@ describe("catalog loader contract", () => {
     );
 
     assert.match(productProjection, /sku/);
-    assert.match(productProjection, /variants\[\]\{ _key, title, sku, price, isAvailable, availabilityLabel \}/);
+    assert.match(
+      productProjection,
+      /variants\[\]\{ _key, title, sku, price, isAvailable, availabilityLabel, options\[\]\{ _key, name, value \} \}/,
+    );
   });
 
-  it("does not expose legacy sellableProduct loaders from the active data boundary", () => {
-    assert.doesNotMatch(loadersSource, /async function getSellableProducts\(/);
-    assert.doesNotMatch(loadersSource, /async function getSellableProductsByIds\(/);
-    assert.doesNotMatch(loadersSource, /async function getSellableProductBySlug\(/);
-    assert.doesNotMatch(loadersSource, /async function getAllSellableProductSlugs\(/);
-    assert.doesNotMatch(loadersSource, /getSellableProducts,/);
-    assert.doesNotMatch(loadersSource, /getSellableProductsByIds,/);
+  it("exposes sellableProduct editorial loaders from the active data boundary", () => {
+    assert.match(loadersSource, /async function getSellableProducts\(filters: SellableProductFilters = \{\}\): Promise<TSellableProduct\[]>/);
+    assert.match(loadersSource, /async function getSellableProductsByIds\(ids: string\[\]\): Promise<TSellableProduct\[]>/);
+    assert.match(loadersSource, /async function getSellableProductBySlug\(slug: string\): Promise<TSellableProduct \| null>/);
+    assert.match(loadersSource, /async function getAllSellableProductSlugs\(\): Promise<Array<\{ slug: string \}>>/);
+    assert.match(loadersSource, /^\s{2}getSellableProducts,$/m);
+    assert.match(loadersSource, /^\s{2}getSellableProductsByIds,$/m);
+    assert.match(loadersSource, /^\s{2}getSellableProductBySlug,$/m);
+    assert.match(loadersSource, /^\s{2}getAllSellableProductSlugs,$/m);
   });
 
   it("does not project checkoutProduct for training catalog checkout shapes", () => {

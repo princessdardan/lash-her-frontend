@@ -51,10 +51,10 @@ export default async function ServiceBookingPage({
         </div>
         
         <div className="mb-8 text-center">
-          <span className="text-sm font-bold text-lh-primary uppercase tracking-wider mb-2 block">
+          <span className="eyebrow-label mb-2 block">
             Book Appointment
           </span>
-          <h1 className="card-heading-red text-3xl md:text-4xl mb-4">
+          <h1 className="section-heading mb-4">
             {offering.title}
           </h1>
           {offering.description && (
@@ -62,6 +62,9 @@ export default async function ServiceBookingPage({
               {offering.description}
             </p>
           )}
+          <p className="mt-4 font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-muted">
+            Select a time, confirm your details, then continue through secure Square checkout.
+          </p>
         </div>
 
         <BookingFlow

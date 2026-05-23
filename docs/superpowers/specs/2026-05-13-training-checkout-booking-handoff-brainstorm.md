@@ -34,10 +34,10 @@ The following docs remain authoritative:
 
 - Sanity stores public content, catalog metadata, training program content, visible pricing copy, CTA copy, SEO, and editorial configuration only.
 - Sanity must not store checkout transaction history, customer PII, checkout tokens, Helcim invoice identifiers, Helcim transaction identifiers, payment reconciliation records, or encrypted Helcim secret tokens.
-- Helcim remains the payment processor and secure card collection surface.
+- Helcim remains the training checkout payment processor and secure card collection surface.
 - The browser receives only a Helcim `checkoutToken`.
 - The server reloads authoritative Sanity/catalog data before creating a payment session.
-- Google Calendar remains the booking source of truth.
+- Google Calendar remains the scheduling source of truth for this training handoff, now through a private token gate before a Google Appointment Schedule link or embed.
 - Client-selected booking slot, product IDs, prices, quantities, payment success, and scheduling eligibility are untrusted until server-validated.
 
 ## Business Goal

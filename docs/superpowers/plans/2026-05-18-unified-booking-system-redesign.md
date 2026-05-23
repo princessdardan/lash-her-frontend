@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` for implementation and `superpowers:executing-plans` for task tracking. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the current scheduling-only booking flow and paid training token handoff with one unified booking system for lash appointments, training intro calls, and future booking modes. The new system must show availability before payment, hold selected slots during checkout, verify Helcim payment, and create the final Google Calendar event only after the booking is ready to commit.
+**Goal:** Replace the current scheduling-only booking flow with a service booking system for lash appointments, plus a separate paid training intro-call handoff. Service bookings must show availability before payment, hold selected slots during checkout, verify Square payment, and create the final Google Calendar event only after the booking is ready to commit.
 
-**Architecture:** Sanity stores editorial/offering configuration only. Private PostgreSQL stores holds, payment state, booking state, customer snapshots, and audit/reconciliation data. Google Calendar is the final calendar source of truth and is used through Calendar API primitives, not Appointment Schedule booking-page APIs. Helcim remains the payment processor. The old `/booking?token=...` flow is retired.
+**Architecture:** Sanity stores editorial/offering configuration only. Private PostgreSQL stores holds, payment state, booking state, paid training schedule token state, customer snapshots, and audit/reconciliation data. Service bookings use Square for hosted checkout and Google Calendar API primitives for final staff events. Product checkout and training checkout remain on Helcim. Paid training intro-call scheduling uses private token eligibility before rendering a Google Appointment Schedule link or embed.
 
 **Reference:** See `docs/booking-system-architecture-reference.md` for the decision record, state model, flow diagrams, and file impact map.
 
@@ -18,11 +18,9 @@
 
 ## Locked Product Decisions
 
-- The previous `/booking?token=...` flow will no longer be used.
-- All booking-related events and flows go through the new unified booking system.
-- Google Calendar Appointment Schedules are not used as customer-facing booking flows for v1. Existing/admin-created pages can be kept only as non-authoritative reference URLs if needed.
-- Google Appointment Schedules do not provide the documented API controls needed for Helcim payment gating, 10-minute holds, or programmatic final booking.
-- Do not hand customers to Google booking pages or embeds as a post-payment scheduling step in the current system.
+- Paid service bookings go through the custom Lash Her slot and hold flow.
+- Google Appointment Schedule is not used for service bookings.
+- Paid training intro-call scheduling can hand eligible customers to a Google Appointment Schedule link or embed after private token eligibility passes.
 - Lash appointment customers must see availability before paying.
 - Lash appointments require payment or deposit before final booking.
 - Training intro calls require successful training payment before booking.
@@ -39,7 +37,7 @@
 - Keep Google OAuth and refresh-token storage server-side through existing booking OAuth infrastructure.
 - Use private PostgreSQL as the canonical hold/payment/booking lifecycle store.
 - Use Redis only as a short race/concurrency lock, not as the source of truth.
-- Use one idempotent booking finalizer for client payment validation and Helcim webhooks.
+- Use one idempotent service booking finalizer for Square return reconciliation and Square webhooks.
 - Store event/order/hold IDs in a way that allows retries to detect an already-created Calendar event before inserting another one.
 - Prefer route handlers, private DB transactions, and cron/reconciliation for minimal v1. If Vercel Workflow is adopted, keep business logic in `"use step"` functions and use workflows only for durable orchestration, sleeps, hooks, and retries.
 
@@ -52,18 +50,19 @@
 3. App shows available slots from Google busy data minus active app holds.
 4. Customer chooses a slot.
 5. Server revalidates availability and creates a 10-minute private hold.
-6. Server starts Helcim checkout linked to the hold.
+6. Server starts Square hosted checkout linked to the hold.
 7. Customer completes payment.
-8. Client validation and/or Helcim webhook calls the shared finalizer.
+8. Square return and/or Square webhook reconciles payment server-side and calls the shared finalizer.
 9. Finalizer marks the order paid, verifies the hold, creates the Google Calendar event, stores `google_event_id`, marks the hold booked, and sends emails.
 
 ### Paid Training Intro Call
 
 1. Customer completes training checkout.
-2. Verified payment creates or updates the training enrollment/payment state in private DB.
-3. Customer enters the same unified booking system for the training intro-call offering.
-4. Eligibility is resolved from private training enrollment/payment state, not from a raw scheduling token URL.
-5. Booking uses the same availability, hold, finalizer, Calendar event, and email path as other booking flows.
+2. Helcim verifies payment and creates or updates the training enrollment/payment state in private DB.
+3. The app issues private paid schedule token state.
+4. Customer opens the tokenized paid training schedule page.
+5. Eligibility is resolved from private token and enrollment/payment state.
+6. A valid token renders the Google Appointment Schedule link or embed. Rendering the page does not mark the enrollment scheduled.
 
 ### Future No-Payment Or Manual Approval Flow
 
@@ -78,13 +77,13 @@
   - offering ID and offering snapshot
   - customer contact snapshot
   - selected start/end/timezone
-  - status such as `held`, `payment_pending`, `paid_pending_booking`, `booked`, `expired`, `payment_failed`, `booking_failed`, `manual_followup`, `released`
+  - status such as `held`, `payment_pending`, `paid_pending_booking`, `paid_unbookable_rebooking_pending`, `booked`, `expired`, `payment_failed`, `booking_failed`, `manual_followup`, `released`
   - `expires_at`
-  - checkout order/payment references
+  - checkout provider and provider order/payment references
   - Google Calendar event ID
   - timestamps and failure/reconciliation metadata
 - Extend private checkout/order state with a booking purpose, such as `product`, `training`, `appointment_deposit`, `appointment_full`, or equivalent.
-- Preserve training enrollment records, but remove reliance on raw scheduling-token URLs as the public booking handoff.
+- Preserve training enrollment and paid schedule token records in private Postgres. Token eligibility gates the public Google Appointment Schedule URL or embed.
 - Add Sanity offering configuration either as `bookingOffering` documents or a richer `bookingSettings.offerings[]` model.
 - Link offerings to sellable products when payment is required.
 
@@ -94,9 +93,10 @@ Exact route names can change during implementation, but the new system should ha
 
 - Availability route: returns slots for a selected offering after applying Calendar busy data and active private holds.
 - Hold route: revalidates and creates/releases a 10-minute hold.
-- Booking checkout route: starts Helcim checkout for appointment deposit/full-payment flows and links the checkout order to the hold.
-- Payment validation route: verifies Helcim browser result and calls the shared finalizer.
-- Helcim webhook route: calls the same shared finalizer idempotently.
+- Booking checkout route: starts Square hosted checkout for service booking deposit/full-payment flows and links the checkout order to the hold.
+- Square return route: treats browser return as a hint, reconciles server-side, and calls the shared finalizer only after payment is verified.
+- Square webhook route: verifies signatures, dedupes events, reconciles payment, and calls the same shared finalizer idempotently.
+- Helcim payment validation and webhook routes remain scoped to product and training checkout.
 - Finalizer module: locks the order/hold, records payment, creates or finds the Google Calendar event, marks booking state, and queues/sends emails.
 - Reconciliation/cron route or job: expires abandoned holds and reports paid-but-not-booked or booking-failed states.
 
@@ -176,19 +176,19 @@ Expected:
 Expected:
 - Hold creation revalidates selected slot server-side and returns a public-safe hold reference for checkout.
 
-## Task 5: Integrate Helcim With Booking Finalization
+## Task 5: Integrate Square With Booking Finalization
 
 **Files:**
-- `src/app/api/checkout/route.ts`
-- `src/app/api/checkout/validate-payment/route.ts`
-- `src/app/api/webhooks/card-transactions/route.ts`
+- `src/app/api/booking/checkout/route.ts`
+- `src/app/api/booking/square/return/route.ts`
+- `src/app/api/webhooks/square/route.ts`
 - `src/lib/commerce/*`
 - `src/lib/booking/*`
 
 - [ ] **Step 1: Link checkout orders to holds**
 
 Expected:
-- Appointment checkout creates a pending private order tied to a valid hold and offering snapshot.
+- Service booking checkout creates a pending private order tied to a valid hold and offering snapshot.
 
 - [ ] **Step 2: Add shared idempotent finalizer**
 
@@ -247,7 +247,7 @@ Expected:
 - [ ] **Step 1: Add hold expiry/reconciliation job**
 
 Expected:
-- Abandoned holds expire, stale paid-pending-booking states are reported, and unmatched Helcim webhooks are recoverable.
+- Abandoned holds expire, stale paid-pending-booking states are reported, and unmatched Square service-booking webhooks are recoverable.
 
 - [ ] **Step 2: Add operator queries/runbook**
 
@@ -269,7 +269,7 @@ Expected:
 - [ ] **Step 2: Update launch smoke matrix**
 
 Expected:
-- Launch smoke covers unified booking, Helcim payment, final Calendar event creation, duplicate finalizer inputs, and manual-follow-up failure states.
+- Launch smoke covers unified booking, Square service-booking payment, final Calendar event creation, duplicate finalizer inputs, and manual-follow-up failure states.
 
 ## Final Verification
 
@@ -279,12 +279,12 @@ Expected:
 - [ ] `npm run lint`
 - [ ] `npm run build`
 - [ ] Playwright covers the customer booking happy path.
-- [ ] Manual staging smoke proves availability, hold, Helcim payment, Google Calendar event, emails, duplicate finalizer safety, and booking-failure reconciliation.
+- [ ] Manual staging smoke proves availability, hold, Square service-booking payment, Google Calendar event, emails, duplicate finalizer safety, and booking-failure reconciliation.
 
 ## Stop Conditions
 
 - Stop if a booking can be finalized without server-side hold and availability revalidation.
-- Stop if Helcim payment can mark a booking confirmed without a durable private record.
+- Stop if Square service-booking payment can mark a booking confirmed without a durable private record.
 - Stop if duplicate client/webhook events can create duplicate Google Calendar events.
 - Stop if any live booking flow depends on `/booking?token=...`.
 - Stop if customer PII, payment status, hold state, or booking history is written to Sanity.

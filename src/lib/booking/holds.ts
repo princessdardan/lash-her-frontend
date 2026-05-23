@@ -12,7 +12,10 @@ import { nanoid } from "nanoid";
 
 import {
   appointmentHolds,
+  checkoutOrders,
+  type CalendarFinalizationStatus,
   type AppointmentHoldMetadata,
+  type PaymentProvider,
 } from "@/lib/private-db/schema";
 import type { BookingFinalizerRepository } from "./finalizer";
 import { PAYMENT_SUCCESS_GRACE_MINUTES } from "./payment-policy";
@@ -28,6 +31,10 @@ export type BookingHoldState =
   | "payment_failed"
   | "booking_failed"
   | "manual_followup"
+  | "paid_unbookable_rebooking_pending"
+  | "manual_rebooked"
+  | "refund_required"
+  | "refunded"
   | "released";
 
 export interface BookingHoldCustomerSnapshot {
@@ -40,7 +47,7 @@ export interface BookingHoldPaymentSnapshot {
   amountCents: number;
   currency: string;
   recordedAt: Date;
-  source: "client_validation" | "webhook";
+  source: "client_validation" | "return" | "webhook";
   transactionId: string;
 }
 
@@ -56,22 +63,32 @@ export interface BookingHoldRecord {
   expiredAt?: Date | null;
   failureMetadata?: AppointmentHoldMetadata | null;
   failureReason?: string | null;
+  finalizationReason?: string | null;
+  finalizationStatus?: CalendarFinalizationStatus | null;
   googleEventId: string | null;
   helcimInvoiceId?: number | null;
   helcimInvoiceNumber?: string | null;
   helcimTransactionId?: string | null;
   id: string;
   manualFollowupAt?: Date | null;
+  manualReviewReason?: string | null;
+  manualReviewStatus?: string | null;
   offeringId: string;
   offeringSnapshot: Record<string, unknown>;
   paidAt?: Date | null;
   payment: BookingHoldPaymentSnapshot | null;
+  paymentProvider?: PaymentProvider | null;
   paymentFailedAt?: Date | null;
   publicReference: string;
   reconciliationMetadata?: AppointmentHoldMetadata | null;
   releasedAt?: Date | null;
   selectedEnd: Date;
   selectedStart: Date;
+  squareCheckoutId?: string | null;
+  squareOrderId?: string | null;
+  squarePaymentId?: string | null;
+  squarePaymentLinkId?: string | null;
+  squarePaymentLinkUrl?: string | null;
   state: BookingHoldState;
   timezone: string;
   updatedAt: Date;
@@ -98,15 +115,25 @@ export interface TransitionAppointmentHoldInput {
   checkoutOrderPublicId?: string;
   failureMetadata?: AppointmentHoldMetadata;
   failureReason?: string;
+  finalizationReason?: string;
+  finalizationStatus?: CalendarFinalizationStatus;
   googleEventId?: string;
   helcimInvoiceId?: number;
   helcimInvoiceNumber?: string;
   helcimTransactionId?: string;
   holdId: string;
   now: Date;
+  paymentProvider?: PaymentProvider;
   reconciliationMetadata?: AppointmentHoldMetadata;
   requiredState?: BookingHoldState;
   expiresAfter?: Date;
+  squareCheckoutId?: string;
+  squareOrderId?: string;
+  squarePaymentId?: string;
+  squarePaymentLinkId?: string;
+  squarePaymentLinkUrl?: string;
+  manualReviewReason?: string;
+  manualReviewStatus?: string;
   status: BookingHoldState;
 }
 
@@ -204,6 +231,56 @@ export async function transitionAppointmentHold(
   return defaultAppointmentHoldStore.transitionHold(input);
 }
 
+export async function markAppointmentHoldManualRebooked(input: {
+  availabilityValidatedAt: Date;
+  googleEventId: string;
+  holdId: string;
+  manualReviewReason?: string;
+  now?: Date;
+  store?: AppointmentHoldStore;
+}): Promise<BookingHoldRecord | null> {
+  const now = input.now ?? new Date();
+  assertManualRebookingAvailabilityValidated({
+    availabilityValidatedAt: input.availabilityValidatedAt,
+    googleEventId: input.googleEventId,
+    now,
+  });
+
+  return (input.store ?? defaultAppointmentHoldStore).transitionHold({
+    finalizationStatus: "manual_rebooked",
+    googleEventId: input.googleEventId,
+    holdId: input.holdId,
+    manualReviewReason: input.manualReviewReason ?? "Manual rebooking availability validated before Calendar correlation.",
+    manualReviewStatus: "availability_validated",
+    now,
+    reconciliationMetadata: {
+      manualRebooking: {
+        availabilityValidatedAt: input.availabilityValidatedAt.toISOString(),
+      },
+    },
+    requiredState: "paid_unbookable_rebooking_pending",
+    status: "manual_rebooked",
+  });
+}
+
+function assertManualRebookingAvailabilityValidated(input: {
+  availabilityValidatedAt: Date;
+  googleEventId: string;
+  now: Date;
+}): void {
+  if (input.googleEventId.trim().length === 0) {
+    throw new Error("Manual rebooking requires a Google Calendar event ID.");
+  }
+
+  if (Number.isNaN(input.availabilityValidatedAt.getTime())) {
+    throw new Error("Manual rebooking requires a valid availability validation timestamp.");
+  }
+
+  if (input.availabilityValidatedAt.getTime() > input.now.getTime()) {
+    throw new Error("Manual rebooking availability validation cannot be in the future.");
+  }
+}
+
 export async function listActiveAppointmentHolds(input: {
   offeringId: string;
   timeMin: Date;
@@ -276,6 +353,12 @@ export async function getAppointmentHoldByCheckoutOrderPublicId(
 export interface AppointmentHoldFinalizerRepositoryDependencies {
   getHoldById(holdId: string): Promise<BookingHoldRecord | null>;
   transitionHold(input: Omit<TransitionAppointmentHoldInput, "now"> & { now?: Date }): Promise<BookingHoldRecord | null>;
+  updateCheckoutOrderCalendarFinalization?(input: {
+    calendarEventId?: string;
+    checkoutOrderId: string;
+    now: Date;
+    status: CalendarFinalizationStatus;
+  }): Promise<void>;
 }
 
 export function createAppointmentHoldFinalizerRepository(
@@ -288,6 +371,7 @@ export function createAppointmentHoldFinalizerRepository(
 
     async recordPaidPendingBooking(input) {
       const updated = await dependencies.transitionHold({
+        finalizationStatus: "paid_calendar_pending",
         helcimTransactionId: input.payment.transactionId,
         holdId: input.holdId,
         now: input.now,
@@ -306,20 +390,70 @@ export function createAppointmentHoldFinalizerRepository(
         throw new Error("Booking hold could not be marked paid.");
       }
 
+      await syncCheckoutOrderCalendarFinalization(dependencies, {
+        hold: updated,
+        now: input.now,
+        status: "paid_calendar_pending",
+      });
+
       return updated;
+    },
+
+    async recordCalendarRetryPending(input) {
+      const updated = await dependencies.transitionHold({
+        failureMetadata: { error: input.error },
+        failureReason: input.error,
+        finalizationReason: input.error,
+        finalizationStatus: "paid_calendar_pending",
+        holdId: input.holdId,
+        now: input.now,
+        requiredState: "paid_pending_booking",
+        status: "paid_pending_booking",
+      });
+
+      const hold = updated ?? await dependencies.getHoldById(input.holdId);
+
+      if (hold === null) {
+        throw new Error("Booking hold could not be left pending Calendar retry.");
+      }
+
+      if (updated !== null) {
+        await syncCheckoutOrderCalendarFinalization(dependencies, {
+          hold: updated,
+          now: input.now,
+          status: "paid_calendar_pending",
+        });
+      }
+
+      return hold;
     },
 
     async markBooked(input) {
       const updated = await dependencies.transitionHold({
+        finalizationStatus: "booked",
         googleEventId: input.googleEventId,
         holdId: input.holdId,
         now: input.now,
+        requiredState: "paid_pending_booking",
         status: "booked",
       });
 
       if (updated === null) {
+        const current = await dependencies.getHoldById(input.holdId);
+
+        if (current !== null && current.googleEventId !== null) {
+          return current;
+        }
+
         throw new Error("Booking hold could not be marked booked.");
       }
+
+      await syncCheckoutOrderCalendarFinalization(dependencies, {
+        calendarEventId: input.googleEventId,
+        hold: updated,
+        now: input.now,
+        status: "booked",
+      });
 
       return updated;
     },
@@ -328,6 +462,8 @@ export function createAppointmentHoldFinalizerRepository(
       const updated = await dependencies.transitionHold({
         failureMetadata: { error: input.error },
         failureReason: input.error,
+        finalizationReason: input.error,
+        finalizationStatus: input.state === "manual_followup" ? "manual_review" : "failed",
         holdId: input.holdId,
         now: input.now,
         status: input.state,
@@ -337,9 +473,71 @@ export function createAppointmentHoldFinalizerRepository(
         throw new Error("Booking hold could not be marked for follow-up.");
       }
 
+      await syncCheckoutOrderCalendarFinalization(dependencies, {
+        hold: updated,
+        now: input.now,
+        status: input.state === "manual_followup" ? "manual_review" : "failed",
+      });
+
       return updated;
     },
+
+    async markPaidUnbookableForRebooking(input) {
+      const updated = await dependencies.transitionHold({
+        failureMetadata: { error: input.reason, manualReview: "rebooking_first" },
+        failureReason: input.reason,
+        finalizationReason: input.reason,
+        finalizationStatus: "paid_unbookable_rebooking_pending",
+        holdId: input.holdId,
+        manualReviewReason: input.reason,
+        manualReviewStatus: "rebooking_pending",
+        now: input.now,
+        requiredState: "paid_pending_booking",
+        status: "paid_unbookable_rebooking_pending",
+      });
+
+      const hold = updated ?? await dependencies.getHoldById(input.holdId);
+
+      if (hold === null) {
+        throw new Error("Booking hold could not be marked for manual rebooking.");
+      }
+
+      if (updated !== null) {
+        await syncCheckoutOrderCalendarFinalization(dependencies, {
+          hold: updated,
+          now: input.now,
+          status: "paid_unbookable_rebooking_pending",
+        });
+      }
+
+      return hold;
+    },
   };
+}
+
+async function syncCheckoutOrderCalendarFinalization(
+  dependencies: AppointmentHoldFinalizerRepositoryDependencies,
+  input: {
+    calendarEventId?: string;
+    hold: BookingHoldRecord;
+    now: Date;
+    status: CalendarFinalizationStatus;
+  },
+): Promise<void> {
+  if (
+    dependencies.updateCheckoutOrderCalendarFinalization === undefined ||
+    input.hold.checkoutOrderId === null ||
+    input.hold.checkoutOrderId === undefined
+  ) {
+    return;
+  }
+
+  await dependencies.updateCheckoutOrderCalendarFinalization({
+    calendarEventId: input.calendarEventId,
+    checkoutOrderId: input.hold.checkoutOrderId,
+    now: input.now,
+    status: input.status,
+  });
 }
 
 export function createDrizzleBookingFinalizerRepository(): BookingFinalizerRepository {
@@ -354,6 +552,9 @@ export function createDrizzleBookingFinalizerRepository(): BookingFinalizerRepos
       return row ? toBookingHoldRecord(row) : null;
     },
     transitionHold: transitionAppointmentHold,
+    async updateCheckoutOrderCalendarFinalization(input) {
+      await updateCheckoutOrderCalendarFinalization(input);
+    },
   });
 }
 
@@ -529,6 +730,28 @@ async function getAppointmentHoldDb() {
   return getPrivateDb();
 }
 
+async function updateCheckoutOrderCalendarFinalization(input: {
+  calendarEventId?: string;
+  checkoutOrderId: string;
+  now: Date;
+  status: CalendarFinalizationStatus;
+}): Promise<void> {
+  const update: Partial<typeof checkoutOrders.$inferInsert> = {
+    calendarFinalizationStatus: input.status,
+    updatedAt: input.now,
+  };
+
+  if (input.calendarEventId !== undefined) {
+    update.calendarEventId = input.calendarEventId;
+    update.finalizedAt = input.now;
+  }
+
+  await (await getAppointmentHoldDb())
+    .update(checkoutOrders)
+    .set(update)
+    .where(eq(checkoutOrders.id, input.checkoutOrderId));
+}
+
 type AppointmentHoldRow = typeof appointmentHolds.$inferSelect;
 type AppointmentHoldUpdate = Partial<typeof appointmentHolds.$inferInsert>;
 
@@ -545,22 +768,32 @@ function toBookingHoldRecord(row: AppointmentHoldRow): BookingHoldRecord {
     expiredAt: row.expiredAt,
     failureMetadata: row.failureMetadata,
     failureReason: row.failureReason,
+    finalizationReason: row.finalizationReason,
+    finalizationStatus: row.finalizationStatus,
     googleEventId: row.googleEventId,
     helcimInvoiceId: row.helcimInvoiceId,
     helcimInvoiceNumber: row.helcimInvoiceNumber,
     helcimTransactionId: row.helcimTransactionId,
     id: row.id,
     manualFollowupAt: row.manualFollowupAt,
+    manualReviewReason: row.manualReviewReason,
+    manualReviewStatus: row.manualReviewStatus,
     offeringId: row.offeringId,
     offeringSnapshot: row.offeringSnapshot,
     paidAt: row.paidAt,
     payment: null,
+    paymentProvider: row.paymentProvider,
     paymentFailedAt: row.paymentFailedAt,
     publicReference: row.publicReference,
     reconciliationMetadata: row.reconciliationMetadata,
     releasedAt: row.releasedAt,
     selectedEnd: row.selectedEnd,
     selectedStart: row.selectedStart,
+    squareCheckoutId: row.squareCheckoutId,
+    squareOrderId: row.squareOrderId,
+    squarePaymentId: row.squarePaymentId,
+    squarePaymentLinkId: row.squarePaymentLinkId,
+    squarePaymentLinkUrl: row.squarePaymentLinkUrl,
     state: row.status,
     timezone: row.timezone,
     updatedAt: row.updatedAt,
@@ -597,6 +830,46 @@ function toAppointmentHoldUpdate(input: TransitionAppointmentHoldInput): Appoint
     update.googleEventId = input.googleEventId;
   }
 
+  if (input.paymentProvider !== undefined) {
+    update.paymentProvider = input.paymentProvider;
+  }
+
+  if (input.squarePaymentLinkId !== undefined) {
+    update.squarePaymentLinkId = input.squarePaymentLinkId;
+  }
+
+  if (input.squarePaymentLinkUrl !== undefined) {
+    update.squarePaymentLinkUrl = input.squarePaymentLinkUrl;
+  }
+
+  if (input.squareCheckoutId !== undefined) {
+    update.squareCheckoutId = input.squareCheckoutId;
+  }
+
+  if (input.squarePaymentId !== undefined) {
+    update.squarePaymentId = input.squarePaymentId;
+  }
+
+  if (input.squareOrderId !== undefined) {
+    update.squareOrderId = input.squareOrderId;
+  }
+
+  if (input.finalizationStatus !== undefined) {
+    update.finalizationStatus = input.finalizationStatus;
+  }
+
+  if (input.finalizationReason !== undefined) {
+    update.finalizationReason = input.finalizationReason;
+  }
+
+  if (input.manualReviewStatus !== undefined) {
+    update.manualReviewStatus = input.manualReviewStatus;
+  }
+
+  if (input.manualReviewReason !== undefined) {
+    update.manualReviewReason = input.manualReviewReason;
+  }
+
   if (input.failureReason !== undefined) {
     update.failureReason = input.failureReason;
   }
@@ -627,7 +900,7 @@ function applyStatusTimestamp(
     update.paidAt = timestamp;
   }
 
-  if (status === "booked") {
+  if (status === "booked" || status === "manual_rebooked") {
     update.bookedAt = timestamp;
   }
 
@@ -643,7 +916,7 @@ function applyStatusTimestamp(
     update.bookingFailedAt = timestamp;
   }
 
-  if (status === "manual_followup") {
+  if (status === "manual_followup" || status === "paid_unbookable_rebooking_pending") {
     update.manualFollowupAt = timestamp;
   }
 }

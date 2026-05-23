@@ -1,30 +1,55 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { loaders } from "@/data/loaders";
 import { SanityImage } from "@/components/ui/sanity-image";
+import { ProductDetailSections } from "@/components/commerce/product-detail-sections";
+import { ProductVariantSelector } from "@/components/commerce/product-variant-selector";
 import { formatCad } from "@/lib/commerce/money";
-import Link from "next/link";
+import type { TProduct } from "@/types";
 
 export const revalidate = 300;
 
-function formatProductPrice(product: { price: number; variants?: Array<{ price: number }> }): string {
-  const variantPrices = product.variants?.map((variant) => variant.price) ?? [];
+const PRICE_UNAVAILABLE_LABEL = "Price unavailable";
+
+function formatDisplayPrice(value: unknown): string | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+
+  try {
+    return formatCad(value);
+  } catch {
+    return null;
+  }
+}
+
+function formatProductPrice(product: { price?: number | null; variants?: Array<{ price?: number | null }> }): string {
+  const variantPrices = product.variants
+    ?.map((variant) => variant.price)
+    .filter((price): price is number => typeof price === "number" && Number.isFinite(price)) ?? [];
 
   if (variantPrices.length === 0) {
-    return formatCad(product.price);
+    return formatDisplayPrice(product.price) ?? PRICE_UNAVAILABLE_LABEL;
   }
 
   const lowestPrice = Math.min(...variantPrices);
   const highestPrice = Math.max(...variantPrices);
+  const lowestPriceLabel = formatDisplayPrice(lowestPrice);
+  const highestPriceLabel = formatDisplayPrice(highestPrice);
+
+  if (!lowestPriceLabel || !highestPriceLabel) {
+    return PRICE_UNAVAILABLE_LABEL;
+  }
 
   return lowestPrice === highestPrice
-    ? formatCad(lowestPrice)
-    : `${formatCad(lowestPrice)} - ${formatCad(highestPrice)}`;
+    ? lowestPriceLabel
+    : `${lowestPriceLabel} - ${highestPriceLabel}`;
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
-  const data = await loaders.getProductBySlug(slug);
+  const data = await loaders.getSellableProductBySlug(slug);
 
   const title = data?.seo?.title || data?.title || "Product";
   const description = data?.seo?.description || data?.shortDescription || data?.description || "Premium lash product";
@@ -38,137 +63,176 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 }
 
 export async function generateStaticParams() {
-  const products = await loaders.getAllProductSlugs();
+  const products = await loaders.getAllSellableProductSlugs();
   return products.map(p => ({ slug: p.slug }));
+}
+
+function getDisplayImages(product: TProduct) {
+  const gallery = product.gallery ?? [];
+  return product.image ? [product.image, ...gallery] : gallery;
+}
+
+function getAvailabilityLabel(product: TProduct): string {
+  return product.availabilityLabel || (product.isAvailable ? "Available in catalog" : "Currently unavailable");
 }
 
 export default async function ProductDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const product = await loaders.getProductBySlug(slug);
+  const product = await loaders.getSellableProductBySlug(slug);
 
   if (!product) notFound();
 
+  const displayImages = getDisplayImages(product);
+  const primaryImage = displayImages[0];
+  const galleryImages = displayImages.slice(1, 5);
+  const availabilityLabel = getAvailabilityLabel(product);
+  const collections = product.collections?.filter((collection) => collection.title).slice(0, 3) ?? [];
+  const attributes = product.filterAttributes?.filter((attribute) => attribute.label && attribute.value).slice(0, 4) ?? [];
+
   return (
-    <div className="min-h-screen bg-lh-neutral-2 py-12 lg:py-24">
-      <div className="content-container">
-        <div className="mb-8 pt-8">
-          <Link href="/products" className="text-lh-primary hover:underline font-medium flex items-center gap-2">
-            <span>←</span> Back to Catalog
+    <div className="min-h-screen bg-lh-neutral-2">
+      <section className="section-shell-soft pt-12 md:pt-16 lg:pt-20">
+        <div className="content-container">
+          <Link href="/products" className="mb-8 inline-flex items-center gap-2 font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-primary transition-colors hover:text-lh-accent">
+            <span aria-hidden="true">←</span> Back to Catalog
           </Link>
-        </div>
 
-        <div className="max-w-5xl mx-auto card-white p-8 md:p-12 flex flex-col md:flex-row gap-8 md:gap-12">
-          <div className="w-full md:w-1/2 flex flex-col gap-4">
-            {product.image ? (
-              <div className="aspect-square relative rounded-md overflow-hidden bg-lh-primary-soft/10">
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1.05fr)_minmax(22rem,0.95fr)] lg:items-start xl:gap-12">
+            <div className="space-y-5">
+              <div className="relative min-h-[520px] overflow-hidden rounded-[28px] border border-lh-line bg-lh-shadow shadow-[0_24px_70px_rgba(28,19,24,0.10)] md:min-h-[660px]">
+                {primaryImage ? (
                 <SanityImage
-                  image={product.image}
-                  alt={product.title}
+                    image={primaryImage}
+                    alt={primaryImage.alt || product.title}
                   fill
-                  className="object-cover"
+                    priority
+                    sizes="(min-width: 1024px) 54vw, 100vw"
+                    className="object-cover"
                 />
+                ) : (
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_72%_18%,var(--lh-light-soft),transparent_32%),linear-gradient(135deg,var(--lh-shadow),var(--lh-accent)_52%,var(--lh-primary))]" />
+                )}
+                <div className="absolute inset-0 bg-gradient-to-t from-lh-shadow/65 via-lh-shadow/10 to-transparent" aria-hidden="true" />
+                <div className="absolute left-5 top-5 flex flex-wrap gap-2 md:left-7 md:top-7">
+                  {product.badgeLabel ? (
+                    <span className="rounded-full bg-lh-light px-4 py-2 font-body text-xs font-bold uppercase tracking-[0.14em] text-lh-shadow">
+                      {product.badgeLabel}
+                    </span>
+                  ) : null}
+                  {!product.isAvailable ? (
+                    <span className="rounded-full bg-lh-accent px-4 py-2 font-body text-xs font-bold uppercase tracking-[0.14em] text-lh-white">
+                      {availabilityLabel}
+                    </span>
+                  ) : null}
+                </div>
               </div>
-            ) : (
-              <div className="aspect-square relative rounded-md overflow-hidden bg-lh-primary-soft/20 flex items-center justify-center">
-                <span className="text-lh-muted font-medium">No image available</span>
-              </div>
-            )}
 
-            {product.gallery && product.gallery.length > 0 && (
-              <div className="grid grid-cols-4 gap-4 mt-4">
-                {product.gallery.map((img, idx) => (
-                  <div key={idx} className="aspect-square relative rounded-md overflow-hidden bg-lh-primary-soft/10">
+              {galleryImages.length > 0 && (
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-4" aria-label="Product gallery">
+                  {galleryImages.map((image, index) => (
+                    <div key={`${image.asset._ref}-${index}`} className="relative min-h-36 overflow-hidden rounded-[24px] border border-lh-line bg-lh-white shadow-[0_18px_50px_rgba(28,19,24,0.05)] md:min-h-44">
                     <SanityImage
-                      image={img}
-                      alt={img.alt || `${product.title} gallery image ${idx + 1}`}
+                        image={image}
+                        alt={image.alt || `${product.title} gallery image ${index + 2}`}
                       fill
+                        sizes="(min-width: 1024px) 14vw, 50vw"
                       className="object-cover"
                     />
                   </div>
                 ))}
               </div>
             )}
-          </div>
-          
-          <div className="w-full md:w-1/2 flex flex-col">
-            <span className="text-sm font-bold text-lh-primary uppercase tracking-wider mb-2 block">
-              Product
-            </span>
-            <h1 className="card-heading-red text-3xl md:text-4xl mb-4">
-              {product.title}
-            </h1>
-            
-            <div className="text-2xl font-medium text-lh-muted mb-6">
-              {formatProductPrice(product)}
             </div>
-            
-            {product.description && (
-              <div className="text-black font-light text-lg mb-8 space-y-4">
-                <p>{product.description}</p>
-              </div>
-            )}
 
-            {product.detailSections && product.detailSections.length > 0 && (
-              <div className="mb-8 space-y-6">
-                {product.detailSections.map((section, idx) => (
-                  <div key={section._key || idx}>
-                    <h3 className="font-bold text-lh-shadow mb-2">{section.heading}</h3>
-                    <p className="text-black font-light">{section.content}</p>
-                  </div>
-                ))}
-              </div>
-            )}
+            <aside className="lg:sticky lg:top-28">
+              <div className="soft-panel bg-lh-white/90 p-6 backdrop-blur md:p-8 lg:p-9">
+                <div className="mb-7 border-b border-lh-line pb-7">
+                  <p className="eyebrow-label mb-3">{product.kind === "training" ? "Training" : "Product"}</p>
+                  <h1 className="display-heading text-5xl md:text-7xl lg:text-8xl">
+                    {product.title}
+                  </h1>
 
-            {product.variants && product.variants.length > 0 && (
-              <div className="mb-8">
-                <h2 className="font-bold text-lh-shadow mb-3">Available Options</h2>
-                <div className="space-y-3">
-                  {product.variants.map((variant) => (
-                    <div
-                      key={variant._key}
-                      className="flex items-start justify-between gap-4 rounded-md border border-lh-line/60 bg-lh-neutral/20 p-4"
-                    >
-                      <div>
-                        <p className="font-bold text-black">{variant.title}</p>
-                        {variant.availabilityLabel && (
-                          <p className="mt-1 text-xs text-lh-primary">{variant.availabilityLabel}</p>
-                        )}
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-black">{formatCad(variant.price)}</p>
-                        {!variant.isAvailable && (
-                          <p className="text-xs text-lh-primary">Unavailable</p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            
-            <div className="mt-auto pt-6 border-t border-lh-line/30">
-              {product.fulfillmentNote && (
-                <div className="bg-lh-neutral/30 p-4 rounded-md mb-6">
-                  <p className="text-sm text-lh-shadow italic">
-                    <span className="font-bold not-italic mr-2">Note:</span>
-                    {product.fulfillmentNote}
+                  {product.cardSubtitle ? (
+                    <p className="mt-4 font-body text-sm font-bold uppercase tracking-[0.16em] text-lh-primary">
+                      {product.cardSubtitle}
+                    </p>
+                  ) : null}
+
+                  <p className="mt-6 font-body text-2xl font-bold text-lh-shadow md:text-3xl">
+                    {formatProductPrice(product)}
                   </p>
                 </div>
-              )}
 
-              {!product.isAvailable ? (
-                <div className="text-lh-primary font-medium py-3 text-center border border-lh-primary rounded-md">
-                  {product.availabilityLabel || "Currently Unavailable"}
+                {product.description && (
+                  <p className="body-lead text-lh-shadow/80">
+                    {product.description}
+                  </p>
+                )}
+
+                {(collections.length > 0 || attributes.length > 0 || product.isAvailable) && (
+                  <div className="mt-7 flex flex-wrap gap-2">
+                    {product.isAvailable ? (
+                      <span className="rounded-full border border-lh-line px-3 py-1.5 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-muted">
+                        {availabilityLabel}
+                      </span>
+                    ) : null}
+                    {collections.map((collection) => (
+                      <span key={collection._id} className="rounded-full border border-lh-line px-3 py-1.5 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-shadow/70">
+                        {collection.title}
+                      </span>
+                    ))}
+                    {attributes.map((attribute) => (
+                      <span key={`${attribute.label}-${attribute.value}`} className="rounded-full border border-lh-line px-3 py-1.5 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-primary">
+                        {attribute.value}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <ProductVariantSelector product={product} readOnly className="mt-8" />
+
+                {product.fulfillmentNote ? (
+                  <div className="mt-8 border-l-2 border-lh-light bg-lh-light-soft/60 px-5 py-4">
+                    <p className="font-body text-sm font-bold leading-7 text-lh-shadow/78">
+                      <span className="mr-2 uppercase tracking-[0.12em] text-lh-primary">Fulfillment</span>
+                      {product.fulfillmentNote}
+                    </p>
+                  </div>
+                ) : null}
+
+                <div className="mt-8 border-t border-lh-line pt-6">
+                  {!product.isAvailable ? (
+                    <div className="rounded-full border border-lh-accent px-6 py-4 text-center font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-accent">
+                      {availabilityLabel}
+                    </div>
+                  ) : (
+                    <Link href="/products" className="primary-cta block rounded-full bg-lh-primary px-7 py-4 text-center font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-white transition-colors hover:bg-lh-accent">
+                      Back to Catalog to Purchase
+                    </Link>
+                  )}
+                  <p className="mt-4 font-body text-xs font-bold leading-6 text-lh-muted">
+                    Detail pages are editorial only; purchases remain inside the catalog cart flow.
+                  </p>
                 </div>
-              ) : (
-                <Link href="/products" className="btn-primary-red w-full text-center block">
-                  Back to Catalog to Purchase
-                </Link>
-              )}
-            </div>
+              </div>
+            </aside>
           </div>
         </div>
-      </div>
+      </section>
+
+      {product.detailSections && product.detailSections.length > 0 && (
+        <section className="section-shell bg-lh-white py-12 md:py-16 lg:py-20" aria-labelledby="product-detail-sections-heading">
+          <div className="content-container">
+            <div className="mb-10 max-w-3xl">
+              <p className="eyebrow-label mb-3">Product Notes</p>
+              <h2 id="product-detail-sections-heading" className="section-heading text-4xl md:text-5xl">
+                Details for a precise purchase.
+              </h2>
+            </div>
+            <ProductDetailSections sections={product.detailSections} />
+          </div>
+        </section>
+      )}
     </div>
   );
 }

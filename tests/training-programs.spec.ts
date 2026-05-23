@@ -8,15 +8,16 @@ import { checkBrokenImages, checkNoHorizontalScroll } from './utils/test-helpers
  */
 
 const FALLBACK_SLUG = 'lash-designing-1-1-training';
+const UNSAFE_PAYMENT_COPY = /stripe|card number|credit card number|cvc|cvv|expiry|expiration date/i;
 
 /**
- * Discover a training program detail URL from /training, or fall back to a known slug.
+ * Discover a training program detail URL from /training-programs, or fall back to a known slug.
  */
 async function getProgramUrl(page: import('@playwright/test').Page): Promise<string> {
-  await page.goto('/training');
+  await page.goto('/training-programs');
   await page.waitForLoadState('networkidle');
 
-  // The Sanity-powered training page links to /training-programs/{slug}
+  // The Sanity-powered training programs page links to /training-programs/{slug}
   const programLinks = page.locator('a[href*="/training-programs/"]');
   const count = await programLinks.count();
 
@@ -60,6 +61,13 @@ test.describe('Training Program Detail Page — Rich Text Rendering (MIG-03)', (
 
       const heroHeading = detailHero.locator('h1');
       await expect(heroHeading).toBeVisible();
+      await expect(detailHero.getByText(/training program/i)).toBeVisible();
+
+      const heroBody = detailHero.locator('p').filter({ hasNotText: /training program/i });
+      if (await heroBody.count() > 0) {
+        await expect(heroBody.first()).toBeVisible();
+        await expect(heroBody.first()).not.toBeEmpty();
+      }
 
       const factList = page.locator('ul.fact-list');
       if (await factList.count() > 0) {
@@ -85,6 +93,44 @@ test.describe('Training Program Detail Page — Rich Text Rendering (MIG-03)', (
         await expect(secondTab).toHaveAttribute('aria-selected', 'true');
       }
     }
+  });
+
+  test('should keep badges or fallback detail content visible without breaking legacy detail pages', async ({ page }) => {
+    const url = await getProgramUrl(page);
+    await page.goto(url);
+    await page.waitForLoadState('networkidle');
+
+    const main = page.locator('main');
+    await expect(main).toBeVisible();
+    await expect(page.getByRole('heading', { name: /page not found/i })).toHaveCount(0);
+
+    const structuredDetails = page.locator('[data-structured-details="true"]');
+    if (await structuredDetails.count() > 0) {
+      const detailHero = structuredDetails.locator('[data-training-detail-hero="true"]');
+      await expect(detailHero).toBeVisible();
+      await expect(detailHero.locator('h1')).toBeVisible();
+
+      const detailBadges = structuredDetails.getByText(/training program|lesson \d+|duration|level|investment|format|enrollment/i);
+      await expect(detailBadges.first()).toBeVisible();
+      return;
+    }
+
+    await expect(main.locator('h1, h2, h3').first()).toBeVisible();
+    await expect(main.locator('p').first()).toBeVisible();
+  });
+
+  test('should never render raw card fields or Stripe copy in training detail enrollment surfaces', async ({ page }) => {
+    const url = await getProgramUrl(page);
+    await page.goto(url);
+    await page.waitForLoadState('networkidle');
+
+    const main = page.locator('main');
+    await expect(main).toBeVisible();
+    await expect(page.getByRole('heading', { name: /page not found/i })).toHaveCount(0);
+
+    await expect(main.getByText(UNSAFE_PAYMENT_COPY)).toHaveCount(0);
+    await expect(main.getByLabel(/card number|credit card|cvc|cvv|expiry|expiration/i)).toHaveCount(0);
+    await expect(main.locator('input[autocomplete="cc-number"], input[name*="card" i], input[id*="card" i]')).toHaveCount(0);
   });
 
   test('should show a timed active detail card and image panel when detail items exist', async ({ page }) => {
@@ -212,7 +258,7 @@ test.describe('Training Program Detail Page — Rich Text Rendering (MIG-03)', (
   });
 
   test('should navigate to multiple program detail pages when links exist', async ({ page }) => {
-    await page.goto('/training');
+    await page.goto('/training-programs');
     await page.waitForLoadState('networkidle');
 
     const programLinks = page.locator('a[href*="/training-programs/"]');

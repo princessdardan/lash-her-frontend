@@ -8,6 +8,7 @@ import {
   createBookingHold,
   getActiveHoldBusyEvents,
   isActiveHold,
+  markAppointmentHoldManualRebooked,
   type AppointmentHoldLifecycleRepository,
   type BookingHoldRecord,
   type BookingHoldRepository,
@@ -334,6 +335,7 @@ test("appointment hold finalizer repository maps payment and booking transitions
   });
 
   assert.equal(hold.state, "booked");
+  assert.equal(hold.finalizationStatus, "booked");
   assert.equal(hold.helcimTransactionId, "txn-finalizer");
   assert.equal(hold.googleEventId, "calendar-event-finalizer");
   assert.deepEqual(hold.reconciliationMetadata, {
@@ -375,9 +377,56 @@ test("appointment hold finalizer repository preserves payment when booking fails
   });
 
   assert.equal(hold.state, "booking_failed");
+  assert.equal(hold.finalizationStatus, "failed");
   assert.equal(hold.helcimTransactionId, "txn-finalizer");
   assert.equal(hold.failureReason, "Calendar unavailable");
   assert.deepEqual(hold.failureMetadata, { error: "Calendar unavailable" });
+});
+
+test("manual rebooking correlation requires availability validation and pending rebooking state", async () => {
+  const repository = new FakeLifecycleHoldRepository([
+    createHoldRecord({
+      id: "rebooking-hold",
+      finalizationStatus: "paid_unbookable_rebooking_pending",
+      state: "paid_unbookable_rebooking_pending",
+    }),
+    createHoldRecord({ id: "paid-hold", state: "paid_pending_booking" }),
+  ]);
+  const store = createAppointmentHoldStore(repository);
+
+  await assert.rejects(
+    markAppointmentHoldManualRebooked({
+      availabilityValidatedAt: new Date("2026-05-18T12:01:00.000Z"),
+      googleEventId: "",
+      holdId: "rebooking-hold",
+      now,
+      store,
+    }),
+    /requires a Google Calendar event ID/i,
+  );
+
+  const wrongState = await markAppointmentHoldManualRebooked({
+    availabilityValidatedAt: now,
+    googleEventId: "calendar-event-wrong-state",
+    holdId: "paid-hold",
+    now,
+    store,
+  });
+  const rebooked = await markAppointmentHoldManualRebooked({
+    availabilityValidatedAt: now,
+    googleEventId: "calendar-event-rebooked",
+    holdId: "rebooking-hold",
+    manualReviewReason: "Support validated 2026-05-20 11:00 availability.",
+    now,
+    store,
+  });
+
+  assert.equal(wrongState, null);
+  assert.ok(rebooked);
+  assert.equal(rebooked.state, "manual_rebooked");
+  assert.equal(rebooked.finalizationStatus, "manual_rebooked");
+  assert.equal(rebooked.googleEventId, "calendar-event-rebooked");
+  assert.equal(rebooked.manualReviewStatus, "availability_validated");
 });
 
 class FakeHoldRepository implements BookingHoldRepository {
@@ -462,6 +511,10 @@ class FakeLifecycleHoldRepository extends FakeHoldRepository implements Appointm
     record.googleEventId = input.googleEventId ?? record.googleEventId;
     record.failureReason = input.failureReason ?? record.failureReason;
     record.failureMetadata = input.failureMetadata ?? record.failureMetadata;
+    record.finalizationReason = input.finalizationReason ?? record.finalizationReason;
+    record.finalizationStatus = input.finalizationStatus ?? record.finalizationStatus;
+    record.manualReviewReason = input.manualReviewReason ?? record.manualReviewReason;
+    record.manualReviewStatus = input.manualReviewStatus ?? record.manualReviewStatus;
     record.reconciliationMetadata = input.reconciliationMetadata ?? record.reconciliationMetadata;
     applyTransitionTimestamp(record, input.status, input.now);
 
@@ -482,7 +535,7 @@ function applyTransitionTimestamp(
     record.paidAt = timestamp;
   }
 
-  if (status === "booked") {
+  if (status === "booked" || status === "manual_rebooked") {
     record.bookedAt = timestamp;
   }
 
@@ -498,7 +551,7 @@ function applyTransitionTimestamp(
     record.bookingFailedAt = timestamp;
   }
 
-  if (status === "manual_followup") {
+  if (status === "manual_followup" || status === "paid_unbookable_rebooking_pending") {
     record.manualFollowupAt = timestamp;
   }
 }
@@ -511,6 +564,7 @@ function createHoldRecord(
     createdAt: now,
     customer: { email: "client@example.com", name: "Client Name", phone: "555-555-5555" },
     expiresAt: new Date("2026-05-18T12:10:00.000Z"),
+    finalizationStatus: "pending",
     googleEventId: null,
     id: "hold-1",
     offeringId: "lash-fill",

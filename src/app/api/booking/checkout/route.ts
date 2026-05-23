@@ -1,84 +1,29 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import type { ValidatedCart } from "@/lib/commerce/cart";
-import type { PendingOrderRecord } from "@/lib/commerce/order-store";
-import type { CheckoutOrderPurpose } from "@/lib/private-db/schema";
 import type { BookingHoldRecord } from "@/lib/booking/holds";
+import { getBookingPaymentSelection } from "@/lib/booking/payment-policy";
+import type { SquareServiceCheckoutResult } from "@/lib/booking/square-service-checkout";
 
 interface BookingCheckoutRequestBody {
   holdReference: string;
 }
 
-interface BookingCheckoutInvoiceInput {
-  currency: "CAD";
-  type: "INVOICE";
-  status: "DUE";
-  notes: string;
-  lineItems: Array<{
-    sku: string;
-    description: string;
-    quantity: number;
-    price: number;
-  }>;
-}
-
-interface BookingCheckoutInvoice {
-  invoiceId: number;
-  invoiceNumber: string;
-}
-
-interface BookingCheckoutPaySessionInput {
-  paymentType: "purchase";
-  amount: number;
-  currency: "CAD";
-  invoiceNumber: string;
-}
-
-interface BookingCheckoutPaySession {
-  checkoutToken: string;
-  secretToken: string;
-}
-
-interface BookingCheckoutPendingOrderInput {
-  customerName: string;
-  customerEmail: string;
-  checkoutToken: string;
-  secretToken: string;
-  helcimInvoiceId: number;
-  helcimInvoiceNumber: string;
-  purpose: CheckoutOrderPurpose;
-  cart: ValidatedCart;
-}
-
 interface BookingCheckoutPostHandlerDependencies {
-  createHelcimInvoice: (input: BookingCheckoutInvoiceInput) => Promise<BookingCheckoutInvoice>;
-  createPendingOrder: (input: BookingCheckoutPendingOrderInput) => Promise<PendingOrderRecord>;
+  createSquareServiceBookingCheckout: (input: {
+    hold: BookingHoldRecord;
+    now?: Date;
+  }) => Promise<SquareServiceCheckoutResult>;
   getAppointmentHoldByPublicReference: (publicReference: string) => Promise<BookingHoldRecord | null>;
-  initializeHelcimPay: (input: BookingCheckoutPaySessionInput) => Promise<BookingCheckoutPaySession>;
-  transitionAppointmentHold: (input: {
-    checkoutOrderId: string;
-    checkoutOrderPublicId: string;
-    helcimInvoiceId: number;
-    helcimInvoiceNumber: string;
-    holdId: string;
-    now: Date;
-    requiredState: "held";
-    expiresAfter: Date;
-    status: "payment_pending";
-  }) => Promise<BookingHoldRecord | null>;
 }
 
-interface BookingOfferingSnapshot {
-  currency: "CAD";
-  selectedPayment: BookingPaymentSelection;
-  title: string;
-}
-
-interface BookingPaymentSelection {
-  amount: number;
-  description: string;
-  purpose: Extract<CheckoutOrderPurpose, "appointment_deposit" | "appointment_full" | "appointment_custom_partial">;
-  sku: "BOOKING-DEPOSIT" | "BOOKING-FULL" | "BOOKING-CUSTOM-PARTIAL";
+interface BookingCheckoutResponseBody {
+  checkoutUrl: string;
+  holdReference: string;
+  orderId: string;
+  paymentProvider: "square";
+  reused: boolean;
+  squareOrderId?: string;
+  squarePaymentLinkId: string;
 }
 
 export function createBookingCheckoutPostHandler(
@@ -106,75 +51,32 @@ export function createBookingCheckoutPostHandler(
       );
 
       if (hold === null || hold.state !== "held" || hold.expiresAt <= now) {
-        return NextResponse.json(
-          { error: "Booking hold is no longer available" },
-          { status: 409 },
-        );
+        return unavailableBookingHoldResponse();
       }
 
-      const paymentSelection = getPaymentSelection(hold);
-
-      if (paymentSelection === null) {
+      if (getBookingPaymentSelection(hold) === null) {
         return NextResponse.json(
           { error: "Booking payment is not configured" },
           { status: 400 },
         );
       }
 
-      const cart = buildBookingCart(hold, paymentSelection);
-      const invoice = await dependencies.createHelcimInvoice({
-        currency: "CAD",
-        type: "INVOICE",
-        status: "DUE",
-        notes: `Lash Her booking checkout: ${getHoldOfferingTitle(hold)}`,
-        lineItems: cart.lineItems.map(({ sku, description, quantity, price }) => ({
-          sku,
-          description,
-          quantity,
-          price,
-        })),
-      });
-      const helcimPaySession = await dependencies.initializeHelcimPay({
-        paymentType: "purchase",
-        amount: cart.amount,
-        currency: "CAD",
-        invoiceNumber: invoice.invoiceNumber,
-      });
-      const order = await dependencies.createPendingOrder({
-        customerName: hold.customer.name,
-        customerEmail: hold.customer.email,
-        checkoutToken: helcimPaySession.checkoutToken,
-        secretToken: helcimPaySession.secretToken,
-        helcimInvoiceId: invoice.invoiceId,
-        helcimInvoiceNumber: invoice.invoiceNumber,
-        purpose: paymentSelection.purpose,
-        cart,
-      });
-      const updatedHold = await dependencies.transitionAppointmentHold({
-        checkoutOrderId: order._id,
-        checkoutOrderPublicId: order.orderId,
-        expiresAfter: now,
-        helcimInvoiceId: invoice.invoiceId,
-        helcimInvoiceNumber: invoice.invoiceNumber,
-        holdId: hold.id,
-        now,
-        requiredState: "held",
-        status: "payment_pending",
-      });
+      const checkout = await dependencies.createSquareServiceBookingCheckout({ hold, now });
 
-      if (updatedHold === null) {
-        return NextResponse.json(
-          { error: "Booking hold is no longer available" },
-          { status: 409 },
-        );
-      }
-
-      return NextResponse.json({
-        checkoutToken: helcimPaySession.checkoutToken,
-        holdReference: hold.publicReference,
-        orderId: order.orderId,
+      return NextResponse.json<BookingCheckoutResponseBody>({
+        checkoutUrl: checkout.checkoutUrl,
+        holdReference: checkout.holdReference,
+        orderId: checkout.orderId,
+        paymentProvider: "square",
+        reused: checkout.reused,
+        ...(checkout.squareOrderId ? { squareOrderId: checkout.squareOrderId } : {}),
+        squarePaymentLinkId: checkout.squarePaymentLinkId,
       });
     } catch (error) {
+      if (isUnavailableBookingHoldError(error)) {
+        return unavailableBookingHoldResponse();
+      }
+
       console.error("[booking checkout] Unable to initialize checkout", {
         error: error instanceof Error ? error.message : "Unknown checkout error",
       });
@@ -188,18 +90,14 @@ export function createBookingCheckoutPostHandler(
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
-  const [helcimModule, orderStoreModule, holdsModule] = await Promise.all([
-    import("@/lib/commerce/helcim-client"),
-    import("@/lib/commerce/order-store"),
+  const [squareCheckoutModule, holdsModule] = await Promise.all([
+    import("@/lib/booking/square-service-checkout"),
     import("@/lib/booking/holds"),
   ]);
 
   return createBookingCheckoutPostHandler({
-    createHelcimInvoice: helcimModule.createHelcimInvoice,
-    createPendingOrder: orderStoreModule.createPendingOrder,
+    createSquareServiceBookingCheckout: squareCheckoutModule.createSquareServiceBookingCheckout,
     getAppointmentHoldByPublicReference: holdsModule.getAppointmentHoldByPublicReference,
-    initializeHelcimPay: helcimModule.initializeHelcimPay,
-    transitionAppointmentHold: holdsModule.transitionAppointmentHold,
   })(req);
 }
 
@@ -215,106 +113,6 @@ function parseBookingCheckoutRequest(body: unknown): BookingCheckoutRequestBody 
   }
 
   return { holdReference };
-}
-
-function getPaymentSelection(hold: BookingHoldRecord): BookingPaymentSelection | null {
-  const snapshot = toBookingOfferingSnapshot(hold.offeringSnapshot);
-
-  if (snapshot === null) {
-    return null;
-  }
-
-  return snapshot.selectedPayment;
-}
-
-function toBookingOfferingSnapshot(value: Record<string, unknown>): BookingOfferingSnapshot | null {
-  const currency = value.currency;
-  const selectedPayment = toBookingPaymentSelection(value.selectedPayment);
-  const title = typeof value.title === "string" && value.title.trim().length > 0
-    ? value.title.trim()
-    : null;
-
-  if (currency !== "CAD" || title === null || selectedPayment === null) {
-    return null;
-  }
-
-  return {
-    currency,
-    selectedPayment,
-    title,
-  };
-}
-
-function getHoldOfferingTitle(hold: BookingHoldRecord): string {
-  const snapshot = toBookingOfferingSnapshot(hold.offeringSnapshot);
-
-  return snapshot?.title ?? hold.offeringId;
-}
-
-function buildBookingCart(
-  hold: BookingHoldRecord,
-  paymentSelection: BookingPaymentSelection,
-): ValidatedCart {
-  return {
-    amount: paymentSelection.amount,
-    currency: "CAD",
-    lineItems: [
-      {
-        productId: `booking:${hold.id}`,
-        sku: paymentSelection.sku,
-        description: paymentSelection.description,
-        quantity: 1,
-        price: paymentSelection.amount,
-        total: paymentSelection.amount,
-      },
-    ],
-  };
-}
-
-function toPositiveAmount(value: unknown): number | null {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-    return null;
-  }
-
-  return Math.round(value * 100) / 100;
-}
-
-function toBookingPaymentSelection(value: unknown): BookingPaymentSelection | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-
-  const amount = toPositiveAmount(value.amount);
-  const description = typeof value.description === "string" && value.description.trim().length > 0
-    ? value.description.trim()
-    : null;
-
-  if (amount === null || description === null) {
-    return null;
-  }
-
-  if (
-    value.purpose !== "appointment_deposit" &&
-    value.purpose !== "appointment_full" &&
-    value.purpose !== "appointment_custom_partial"
-  ) {
-    return null;
-  }
-
-  if (
-    value.sku !== "BOOKING-DEPOSIT" &&
-    value.sku !== "BOOKING-FULL" &&
-    value.sku !== "BOOKING-CUSTOM-PARTIAL"
-  ) {
-    return null;
-  }
-
-  return {
-    amount,
-    description,
-    purpose: value.purpose,
-    sku: value.sku,
-  };
 }
 
 function parseRequiredString(value: unknown): string | null {
@@ -336,4 +134,15 @@ function invalidBookingCheckoutRequest(): NextResponse<{ error: string }> {
     { error: "Invalid booking checkout request" },
     { status: 400 },
   );
+}
+
+function unavailableBookingHoldResponse(): NextResponse<{ error: string }> {
+  return NextResponse.json(
+    { error: "Booking hold is no longer available" },
+    { status: 409 },
+  );
+}
+
+function isUnavailableBookingHoldError(error: unknown): boolean {
+  return error instanceof Error && error.message === "Booking hold is no longer available";
 }

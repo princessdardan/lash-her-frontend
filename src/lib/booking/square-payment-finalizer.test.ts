@@ -1,0 +1,481 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  createSquarePaymentFinalizer,
+  type SquarePaymentFinalizerRepository,
+} from "./square-payment-finalizer";
+
+function createEnv() {
+  return {
+    accessToken: "access-token",
+    environment: "sandbox" as const,
+    helcimLegacyCutoffAt: null,
+    locationId: "loc_123",
+    serviceBookingReturnUrl: "https://example.com/api/booking/square/return",
+    serviceBookingWebhookUrl: "https://example.com/api/webhooks/square",
+    webhookSignatureKey: "signature-key",
+  };
+}
+
+test("Square finalizer dedupes duplicate webhook event IDs before Square fetch", async () => {
+  const eventProcessingStatuses = new Map<string, "processed" | "received">();
+  let bookingFinalizations = 0;
+  let paidTransitions = 0;
+  let squareFetches = 0;
+  const repository: SquarePaymentFinalizerRepository = {
+    async claimSquareEvent(input) {
+      if (input.eventId === undefined) {
+        return { duplicate: false };
+      }
+
+      const processingStatus = eventProcessingStatuses.get(input.eventId);
+
+      if (processingStatus !== undefined) {
+        return { duplicate: true, processingStatus };
+      }
+
+      eventProcessingStatuses.set(input.eventId, "received");
+      return { duplicate: false };
+    },
+    async findSquareOrder() {
+      return {
+        amountCents: 5000,
+        id: "order-db-id",
+        orderId: "lh-sq-local",
+        providerOrderId: "order_123",
+        providerPaymentId: null,
+        purpose: "appointment_deposit",
+        squareLocationId: "loc_123",
+        status: "pending",
+      };
+    },
+    async recordSquareEvent(input) {
+      if (input.eventId !== undefined && input.processingStatus === "processed") {
+        eventProcessingStatuses.set(input.eventId, "processed");
+      }
+
+      return { duplicate: false };
+    },
+    async recordSquarePaymentPendingCalendar() {
+      paidTransitions += 1;
+    },
+  };
+  const finalizer = createSquarePaymentFinalizer({
+    finalizeAppointmentPaymentForOrder: async () => {
+      bookingFinalizations += 1;
+      return { ok: true, eventId: "calendar-event-1", status: "booked" };
+    },
+    getEnv: createEnv,
+    repository,
+    squareClientFactory: () => ({
+      async createPaymentLink() {
+        throw new Error("Not used");
+      },
+      async getOrder() {
+        squareFetches += 1;
+        return { order: { id: "order_123" } };
+      },
+      async getPayment() {
+        squareFetches += 1;
+        return {
+          payment: {
+            amount_money: { amount: 5000, currency: "CAD" },
+            id: "pay_123",
+            order_id: "order_123",
+            status: "COMPLETED",
+          },
+        };
+      },
+    }),
+  });
+
+  await finalizer({
+    event: {
+      eventId: "evt_123",
+      eventType: "payment.updated",
+      orderId: "order_123",
+      paymentId: "pay_123",
+      payloadSanitized: {},
+    },
+    source: "webhook",
+  });
+  const duplicateResult = await finalizer({
+    event: {
+      eventId: "evt_123",
+      eventType: "payment.updated",
+      orderId: "order_123",
+      paymentId: "pay_123",
+      payloadSanitized: {},
+    },
+    source: "webhook",
+  });
+
+  assert.equal(duplicateResult.status, "duplicate");
+  assert.equal(duplicateResult.duplicateEvent, true);
+  assert.equal(squareFetches, 1);
+  assert.equal(paidTransitions, 1);
+  assert.equal(bookingFinalizations, 1);
+});
+
+test("Square finalizer retries duplicate webhook event IDs that are not terminal processed", async () => {
+  const eventProcessingStatuses = new Map<string, "processed" | "received">();
+  let bookingFinalizations = 0;
+  let paidTransitions = 0;
+  let squareFetches = 0;
+  const repository: SquarePaymentFinalizerRepository = {
+    async claimSquareEvent(input) {
+      if (input.eventId === undefined) {
+        return { duplicate: false };
+      }
+
+      const processingStatus = eventProcessingStatuses.get(input.eventId);
+
+      if (processingStatus !== undefined) {
+        return { duplicate: true, processingStatus };
+      }
+
+      eventProcessingStatuses.set(input.eventId, "received");
+      return { duplicate: false };
+    },
+    async findSquareOrder() {
+      return {
+        amountCents: 5000,
+        id: "order-db-id",
+        orderId: "lh-sq-local",
+        providerOrderId: "order_123",
+        providerPaymentId: null,
+        purpose: "appointment_deposit",
+        squareLocationId: "loc_123",
+        status: "pending",
+      };
+    },
+    async recordSquareEvent(input) {
+      if (input.eventId !== undefined && input.processingStatus === "processed") {
+        eventProcessingStatuses.set(input.eventId, "processed");
+      }
+
+      return { duplicate: false };
+    },
+    async recordSquarePaymentPendingCalendar() {
+      paidTransitions += 1;
+    },
+  };
+  const finalizer = createSquarePaymentFinalizer({
+    finalizeAppointmentPaymentForOrder: async () => {
+      bookingFinalizations += 1;
+      return { ok: true, eventId: "calendar-event-1", status: "booked" };
+    },
+    getEnv: createEnv,
+    repository,
+    squareClientFactory: () => ({
+      async createPaymentLink() {
+        throw new Error("Not used");
+      },
+      async getOrder() {
+        throw new Error("Not used");
+      },
+      async getPayment() {
+        squareFetches += 1;
+
+        if (squareFetches === 1) {
+          throw new Error("Transient Square fetch failure");
+        }
+
+        return {
+          payment: {
+            amount_money: { amount: 5000, currency: "CAD" },
+            id: "pay_123",
+            order_id: "order_123",
+            status: "COMPLETED",
+          },
+        };
+      },
+    }),
+  });
+  const event = {
+    eventId: "evt_retryable",
+    eventType: "payment.updated",
+    orderId: "order_123",
+    paymentId: "pay_123",
+    payloadSanitized: {},
+  };
+
+  await assert.rejects(
+    () => finalizer({ event, source: "webhook" }),
+    /Transient Square fetch failure/,
+  );
+  const retryResult = await finalizer({ event, source: "webhook" });
+
+  assert.equal(retryResult.status, "paid_calendar_pending");
+  assert.equal(retryResult.duplicateEvent, false);
+  assert.equal(squareFetches, 2);
+  assert.equal(paidTransitions, 1);
+  assert.equal(bookingFinalizations, 1);
+});
+
+test("Square browser return does not finalize an unpaid server-side payment", async () => {
+  let recordedPaidState = false;
+  const repository: SquarePaymentFinalizerRepository = {
+    async claimSquareEvent() {
+      return { duplicate: false };
+    },
+    async findSquareOrder() {
+      return {
+        amountCents: 5000,
+        id: "order-db-id",
+        orderId: "lh-sq-local",
+        providerOrderId: "order_123",
+        providerPaymentId: null,
+        purpose: "appointment_deposit",
+        squareLocationId: "loc_123",
+        status: "pending",
+      };
+    },
+    async recordSquareEvent() {
+      return { duplicate: false };
+    },
+    async recordSquarePaymentPendingCalendar() {
+      recordedPaidState = true;
+    },
+  };
+  const finalizer = createSquarePaymentFinalizer({
+    finalizeAppointmentPaymentForOrder: async () => {
+      throw new Error("Unpaid Square payment must not finalize a booking");
+    },
+    getEnv: createEnv,
+    repository,
+    squareClientFactory: () => ({
+      async createPaymentLink() {
+        throw new Error("Not used");
+      },
+      async getOrder() {
+        throw new Error("Not used");
+      },
+      async getPayment() {
+        return {
+          payment: {
+            amount_money: { amount: 5000, currency: "CAD" },
+            id: "pay_123",
+            order_id: "order_123",
+            status: "PENDING",
+          },
+        };
+      },
+    }),
+  });
+
+  const result = await finalizer({ paymentId: "pay_123", source: "return" });
+
+  assert.equal(result.status, "unpaid");
+  assert.equal(result.finalized, false);
+  assert.equal(recordedPaidState, false);
+});
+
+test("Square finalizer updates a claimed webhook event to processed after verified payment", async () => {
+  const eventStates: Array<{ processingStatus: string; status?: string }> = [];
+  const repository: SquarePaymentFinalizerRepository = {
+    async claimSquareEvent(input) {
+      eventStates.push({ processingStatus: input.processingStatus, status: input.status });
+      return { duplicate: false };
+    },
+    async findSquareOrder() {
+      return {
+        amountCents: 5000,
+        id: "order-db-id",
+        orderId: "lh-sq-local",
+        providerOrderId: "order_123",
+        providerPaymentId: null,
+        purpose: "appointment_deposit",
+        squareLocationId: "loc_123",
+        status: "pending",
+      };
+    },
+    async recordSquareEvent(input) {
+      eventStates.push({ processingStatus: input.processingStatus, status: input.status });
+      return { duplicate: false };
+    },
+    async recordSquarePaymentPendingCalendar() {},
+  };
+  const finalizer = createSquarePaymentFinalizer({
+    finalizeAppointmentPaymentForOrder: async (input) => {
+      assert.deepEqual(input, {
+        order: {
+          _id: "order-db-id",
+          amount: 50,
+          currency: "CAD",
+          orderId: "lh-sq-local",
+          purpose: "appointment_deposit",
+        },
+        source: "webhook",
+        transactionId: "pay_123",
+      });
+
+      return { ok: true, eventId: "calendar-event-1", status: "booked" };
+    },
+    getEnv: createEnv,
+    repository,
+    squareClientFactory: () => ({
+      async createPaymentLink() {
+        throw new Error("Not used");
+      },
+      async getOrder() {
+        throw new Error("Not used");
+      },
+      async getPayment() {
+        return {
+          payment: {
+            amount_money: { amount: 5000, currency: "CAD" },
+            id: "pay_123",
+            order_id: "order_123",
+            status: "COMPLETED",
+          },
+        };
+      },
+    }),
+  });
+
+  const result = await finalizer({
+    event: {
+      eventId: "evt_123",
+      eventType: "payment.updated",
+      orderId: "order_123",
+      paymentId: "pay_123",
+      payloadSanitized: {},
+    },
+    source: "webhook",
+  });
+
+  assert.equal(result.status, "paid_calendar_pending");
+  assert.equal(result.bookingFinalizationStatus, "booked");
+  assert.deepEqual(eventStates, [
+    { processingStatus: "received", status: "received" },
+    { processingStatus: "processed", status: "paid_calendar_pending" },
+  ]);
+});
+
+test("Square finalizer invokes booking finalization after paid persistence", async () => {
+  const operationOrder: string[] = [];
+  const repository: SquarePaymentFinalizerRepository = {
+    async claimSquareEvent() {
+      return { duplicate: false };
+    },
+    async findSquareOrder() {
+      return {
+        amountCents: 7500,
+        id: "order-db-id",
+        orderId: "lh-sq-local",
+        providerOrderId: "order_123",
+        providerPaymentId: null,
+        purpose: "appointment_full",
+        squareLocationId: "loc_123",
+        status: "pending",
+      };
+    },
+    async recordSquareEvent() {
+      operationOrder.push("square-event-processed");
+      return { duplicate: false };
+    },
+    async recordSquarePaymentPendingCalendar() {
+      operationOrder.push("paid-calendar-pending");
+    },
+  };
+  const finalizer = createSquarePaymentFinalizer({
+    finalizeAppointmentPaymentForOrder: async (input) => {
+      assert.deepEqual(operationOrder, ["paid-calendar-pending"]);
+      operationOrder.push("booking-finalized");
+      assert.equal(input.source, "return");
+      assert.equal(input.transactionId, "pay_123");
+      assert.deepEqual(input.order, {
+        _id: "order-db-id",
+        amount: 75,
+        currency: "CAD",
+        orderId: "lh-sq-local",
+        purpose: "appointment_full",
+      });
+      return { ok: true, eventId: "calendar-event-1", status: "booked" };
+    },
+    getEnv: createEnv,
+    repository,
+    squareClientFactory: () => ({
+      async createPaymentLink() {
+        throw new Error("Not used");
+      },
+      async getOrder() {
+        throw new Error("Not used");
+      },
+      async getPayment() {
+        return {
+          payment: {
+            amount_money: { amount: 7500, currency: "CAD" },
+            id: "pay_123",
+            order_id: "order_123",
+            status: "COMPLETED",
+          },
+        };
+      },
+    }),
+  });
+
+  const result = await finalizer({ paymentId: "pay_123", source: "return" });
+
+  assert.equal(result.status, "paid_calendar_pending");
+  assert.equal(result.bookingFinalizationStatus, "booked");
+  assert.deepEqual(operationOrder, ["paid-calendar-pending", "booking-finalized", "square-event-processed"]);
+});
+
+test("Square finalizer surfaces paid unbookable rebooking status from booking finalization", async () => {
+  const repository: SquarePaymentFinalizerRepository = {
+    async claimSquareEvent() {
+      return { duplicate: false };
+    },
+    async findSquareOrder() {
+      return {
+        amountCents: 5000,
+        id: "order-db-id",
+        orderId: "lh-sq-local",
+        providerOrderId: "order_123",
+        providerPaymentId: null,
+        purpose: "appointment_deposit",
+        squareLocationId: "loc_123",
+        status: "pending",
+      };
+    },
+    async recordSquareEvent() {
+      return { duplicate: false };
+    },
+    async recordSquarePaymentPendingCalendar() {},
+  };
+  const finalizer = createSquarePaymentFinalizer({
+    finalizeAppointmentPaymentForOrder: async () => ({
+      ok: false,
+      error: "The selected appointment time became unavailable after payment.",
+      status: "paid_unbookable_rebooking_pending",
+    }),
+    getEnv: createEnv,
+    repository,
+    squareClientFactory: () => ({
+      async createPaymentLink() {
+        throw new Error("Not used");
+      },
+      async getOrder() {
+        throw new Error("Not used");
+      },
+      async getPayment() {
+        return {
+          payment: {
+            amount_money: { amount: 5000, currency: "CAD" },
+            id: "pay_123",
+            order_id: "order_123",
+            status: "COMPLETED",
+          },
+        };
+      },
+    }),
+  });
+
+  const result = await finalizer({ paymentId: "pay_123", source: "return" });
+
+  assert.equal(result.status, "paid_calendar_pending");
+  assert.equal(result.bookingFinalizationStatus, "paid_unbookable_rebooking_pending");
+});

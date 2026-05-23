@@ -1,9 +1,7 @@
-"use client";
-
 import { type ReactElement } from "react";
 import { SanityImage } from "@/components/ui/sanity-image";
 import { CartPanel } from "./cart-panel";
-import { ProductFilters } from "./product-filters";
+import { ProductFilters, type ProductCatalogQueryState } from "./product-filters";
 import { ProductSort } from "./product-sort";
 import type { TProductsPage, TProduct, TProductCollection, TProductFilterAttribute } from "@/types";
 
@@ -12,73 +10,84 @@ interface ProductCatalogShellProps {
   products: TProduct[];
   collections: TProductCollection[];
   filterAttributes: TProductFilterAttribute[];
+  query: ProductCatalogQueryState;
 }
 
-export function ProductCatalogShell({ 
-  pageData, 
-  products, 
-  collections, 
-  filterAttributes 
+export function ProductCatalogShell({
+  pageData,
+  products,
+  collections,
+  filterAttributes,
+  query,
 }: ProductCatalogShellProps): ReactElement {
-  const title = pageData?.title || "Products";
-  const eyebrow = pageData?.eyebrow || "Definitive Excellence";
-  const description = pageData?.description || "Discover our curated selection of premium lash products and training materials. Elevate your artistry with the same tools we use in our studio.";
-  
+  const title = pageData?.title || "Catalog";
+  const eyebrow = pageData?.eyebrow || "Lash Her Edit";
+  const description = pageData?.description || "Discover our curated selection of premium lash products, training materials, and services.";
+  const emptyStateTitle = pageData?.emptyStateTitle || "Check Back Soon";
+  const emptyStateDescription = pageData?.emptyStateDescription || "We are currently updating our product catalog. Please check back later for our curated selection of premium lash products.";
+
   return (
     <div className="min-h-screen bg-lh-white">
-      <section className="bg-lh-neutral-2 py-16 lg:py-24">
-        <div className="max-w-[1180px] mx-auto px-6 grid grid-cols-1 md:grid-cols-12 gap-8">
-          <div className="col-span-1 md:col-span-7 flex flex-col justify-center gap-6">
-            <span className="font-label-caps text-xs text-lh-light tracking-widest uppercase">
-              {eyebrow}
-            </span>
-            <h1 className="font-display text-5xl md:text-6xl lg:text-7xl text-lh-primary leading-none uppercase">
-              {title}
-            </h1>
-            <p className="font-body text-lg text-lh-muted max-w-md">
+      <section className="relative isolate overflow-hidden bg-lh-shadow text-lh-neutral-2">
+        <div className="absolute inset-0 z-0">
+          {pageData?.heroImage ? (
+            <SanityImage
+              image={pageData.heroImage}
+              alt={pageData.heroImage.alt || title}
+              fill
+              priority
+              sizes="100vw"
+              className="object-cover"
+            />
+          ) : (
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_76%_18%,var(--lh-light-soft),transparent_30%),linear-gradient(135deg,var(--lh-shadow),var(--lh-accent)_52%,var(--lh-primary))]" />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-br from-lh-shadow/70 via-lh-accent/58 to-lh-primary/50 mix-blend-multiply" />
+          <div className="absolute inset-0 bg-gradient-to-t from-lh-shadow via-lh-shadow/82 to-lh-shadow/16" />
+          <div className="absolute -right-32 bottom-[-10rem] h-[30rem] w-[30rem] rounded-full border border-lh-light/35" aria-hidden="true" />
+        </div>
+
+        <div className="content-container relative z-10 flex min-h-[520px] items-end py-14 md:min-h-[620px] md:py-20">
+          <div className="max-w-4xl">
+            <p className="eyebrow-label mb-4 text-lh-light">{eyebrow}</p>
+            <h1 className="display-heading text-lh-neutral-2 text-balance">{title}</h1>
+            <p className="mt-6 max-w-3xl font-body text-base font-bold leading-8 text-lh-neutral-2/85 md:text-lg lg:text-xl">
               {description}
             </p>
           </div>
-          {pageData?.heroImage && (
-            <div className="hidden md:block col-span-5 relative">
-              <div className="absolute -top-10 -right-10 w-full h-full bg-lh-light-soft -z-10 rounded-[28px]"></div>
-              <div className="relative w-full h-[450px] rounded-[28px] overflow-hidden shadow-sm">
-                <SanityImage
-                  image={pageData.heroImage}
-                  alt={title}
-                  fill
-                  className="object-cover"
-                />
-              </div>
-            </div>
-          )}
         </div>
       </section>
 
-      <section className="py-16 lg:py-24 max-w-[1180px] mx-auto px-6">
-        <div className="flex flex-col md:flex-row gap-8">
-          <ProductFilters collections={collections} filterAttributes={filterAttributes} />
-          
-          <div className="flex-grow">
-            <div className="flex justify-between items-end mb-10">
-              <p className="font-label-caps text-xs text-lh-muted uppercase tracking-widest">
-                Showing {products.length} Products
-              </p>
-              <ProductSort />
-            </div>
-            
-            {products.length === 0 ? (
-              <div className="text-center py-16 bg-lh-neutral-2 rounded-2xl border border-lh-line">
-                <h2 className="text-2xl font-display text-lh-shadow mb-4 uppercase">
-                  {pageData?.emptyStateTitle || "Check Back Soon"}
-                </h2>
-                <p className="text-lh-muted max-w-md mx-auto">
-                  {pageData?.emptyStateDescription || "We are currently updating our product catalog. Please check back later for our curated selection of premium lash products."}
-                </p>
+      <section className="section-shell-soft" aria-labelledby="products-heading">
+        <div className="content-container">
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-[18rem_minmax(0,1fr)] lg:gap-10">
+            <ProductFilters collections={collections} filterAttributes={filterAttributes} query={query} />
+
+            <div className="min-w-0">
+              <div className="mb-8 flex flex-col gap-5 border-b border-lh-line pb-6 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <p className="eyebrow-label mb-2">Products</p>
+                  <h2 id="products-heading" className="section-heading text-4xl md:text-5xl">
+                    The Product Edit
+                  </h2>
+                  <p className="mt-3 font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-muted" aria-live="polite">
+                    Showing {products.length} Products
+                  </p>
+                </div>
+                <ProductSort collection={query.collection} attributes={query.attributes} sort={query.sort || "default"} />
               </div>
-            ) : (
-              <CartPanel products={products} />
-            )}
+
+              {products.length === 0 ? (
+                <div className="soft-panel bg-lh-white py-16 text-center">
+                  <h3 className="section-subheading mb-4 text-3xl">{emptyStateTitle}</h3>
+                  <p className="mx-auto max-w-md font-body text-sm font-bold leading-7 text-lh-muted md:text-base">
+                    {emptyStateDescription}
+                  </p>
+                </div>
+              ) : (
+                <CartPanel products={products} />
+              )}
+            </div>
           </div>
         </div>
       </section>

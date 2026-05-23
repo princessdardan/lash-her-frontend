@@ -72,7 +72,12 @@ test("buildBookingEventPayload includes only safe paid training context", () => 
 
 test("buildBookingEventPayload includes deterministic private booking metadata", () => {
   const event = buildBookingEventPayload({
-    bookingMetadata: { holdId: "hold-123" },
+    bookingMetadata: {
+      checkoutOrderId: "order-row-123",
+      checkoutOrderPublicId: "lh-square-123",
+      holdId: "hold-123",
+      paymentProvider: "square",
+    },
     bookingTypeLabel: "Lash fill",
     customer: {
       name: "Jane Client",
@@ -88,6 +93,9 @@ test("buildBookingEventPayload includes deterministic private booking metadata",
   assert.deepEqual(event.extendedProperties, {
     private: {
       lashHerBookingHoldId: "hold-123",
+      lashHerCheckoutOrderId: "order-row-123",
+      lashHerCheckoutOrderPublicId: "lh-square-123",
+      lashHerPaymentProvider: "square",
     },
   });
 });

@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const helperScript = String.raw`
@@ -182,6 +183,26 @@ test("training checkout route creates checkout and enrollment for a valid reques
   `);
 });
 
+test("training checkout route creates Helcim checkout without Square secrets", () => {
+  runRouteScenario(`
+    assert.equal(process.env.SERVICE_BOOKING_SQUARE_ENABLED, "true");
+    assert.equal(process.env.SQUARE_ACCESS_TOKEN, undefined);
+
+    const { enrollments, handler, invoices, orders, paySessions } = runScenario();
+
+    const response = await handler(createRequest(validBody()));
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { checkoutToken: "training-checkout-token" });
+    assert.equal(invoices.length, 1);
+    assert.equal(paySessions.length, 1);
+    assert.equal(orders.length, 1);
+    assert.equal(enrollments.length, 1);
+    assert.equal(orders[0].helcimInvoiceId, 5252);
+    assert.equal(orders[0].helcimInvoiceNumber, "INV-TRAINING-5252");
+  `);
+});
+
 test("training checkout route ignores legacy checkoutProduct and uses native training fields", () => {
   runRouteScenario(`
     const nativeProgram = {
@@ -239,12 +260,30 @@ test("training checkout route returns a generic failure when enrollment write fa
   `);
 });
 
+test("training checkout route remains Helcim-only and does not import Square modules", () => {
+  const routeSource = readFileSync("src/app/api/training-checkout/route.ts", "utf8");
+
+  assertNoSquareImports(routeSource);
+});
+
+function assertNoSquareImports(routeSource: string): void {
+  if (/square|Square|SQUARE/.test(routeSource)) {
+    throw new Error("Helcim-only checkout route must not import or reference Square");
+  }
+}
+
 function runRouteScenario(assertions: string): void {
   const scenario = `${helperScript}\nvoid (async () => {\n${assertions}\n})()`;
   const env = { ...process.env };
 
   env.NEXT_PUBLIC_SANITY_DATASET = "test";
   env.NEXT_PUBLIC_SANITY_PROJECT_ID = "test-project";
+  env.SERVICE_BOOKING_SQUARE_ENABLED = "true";
+  delete env.SQUARE_ACCESS_TOKEN;
+  delete env.SQUARE_LOCATION_ID;
+  delete env.SQUARE_WEBHOOK_SIGNATURE_KEY;
+  delete env.SQUARE_SERVICE_BOOKING_RETURN_URL;
+  delete env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL;
 
   execFileSync(
     "./node_modules/.bin/tsx",

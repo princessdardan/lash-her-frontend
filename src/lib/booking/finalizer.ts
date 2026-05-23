@@ -13,7 +13,7 @@ const MINUTE_MS = 60_000;
 export interface BookingFinalizerPaymentInput {
   amountCents: number;
   currency: string;
-  source: "client_validation" | "webhook";
+  source: "client_validation" | "return" | "webhook";
   transactionId: string;
 }
 
@@ -23,6 +23,11 @@ export interface BookingFinalizerRepository {
     holdId: string;
     now: Date;
     payment: BookingFinalizerPaymentInput;
+  }): Promise<BookingHoldRecord>;
+  recordCalendarRetryPending(input: {
+    error: string;
+    holdId: string;
+    now: Date;
   }): Promise<BookingHoldRecord>;
   markBooked(input: {
     googleEventId: string;
@@ -34,6 +39,11 @@ export interface BookingFinalizerRepository {
     holdId: string;
     now: Date;
     state: Extract<BookingHoldState, "booking_failed" | "manual_followup">;
+  }): Promise<BookingHoldRecord>;
+  markPaidUnbookableForRebooking(input: {
+    reason: string;
+    holdId: string;
+    now: Date;
   }): Promise<BookingHoldRecord>;
 }
 
@@ -49,12 +59,24 @@ export class BookingManualFollowupError extends Error {
   }
 }
 
+export class BookingRebookingRequiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BookingRebookingRequiredError";
+  }
+}
+
 export type FinalizePaidBookingResult =
   | { ok: true; eventId: string; status: "booked" }
   | {
       ok: false;
       error: string;
-      status: "booking_failed" | "finalization_pending" | "hold_not_found" | "manual_followup";
+      status:
+        | "booking_failed"
+        | "finalization_pending"
+        | "hold_not_found"
+        | "manual_followup"
+        | "paid_unbookable_rebooking_pending";
     };
 
 export interface AppointmentFinalizerOrderInput {
@@ -154,14 +176,19 @@ export async function finalizeAppointmentPaymentForOrder(
             });
 
             if (!available) {
-              throw new BookingManualFollowupError("The selected appointment time became unavailable after payment.");
+              throw new BookingRebookingRequiredError("The selected appointment time became unavailable after payment.");
             }
 
             return googleCalendarModule.insertBookingEvent({
               calendarId,
               event: googleCalendarModule.buildBookingEventPayload({
                 answers: [],
-                bookingMetadata: { holdId: paidHold.id },
+                bookingMetadata: {
+                  checkoutOrderId: paidHold.checkoutOrderId ?? undefined,
+                  checkoutOrderPublicId: paidHold.checkoutOrderPublicId ?? undefined,
+                  holdId: paidHold.id,
+                  paymentProvider: paidHold.paymentProvider ?? "helcim",
+                },
                 bookingTypeLabel: getBookingTypeLabel(paidHold),
                 customer: paidHold.customer,
                 end: paidHold.selectedEnd,
@@ -385,7 +412,7 @@ export async function finalizePaidBooking(input: {
     };
   }
 
-  if (lockedHold.state === "booked" && lockedHold.googleEventId !== null) {
+  if (isCalendarCorrelatedHold(lockedHold)) {
     return {
       ok: true,
       eventId: lockedHold.googleEventId,
@@ -393,105 +420,162 @@ export async function finalizePaidBooking(input: {
     };
   }
 
-  if (lockedHold.state === "paid_pending_booking" && lockedHold.googleEventId === null) {
-    try {
-      const existingEventId = await input.calendar.findExistingEventForHold(lockedHold);
+  if (lockedHold.state === "paid_unbookable_rebooking_pending") {
+    return {
+      ok: false,
+      error: lockedHold.manualReviewReason ?? lockedHold.failureReason ?? "Paid booking requires manual rebooking review.",
+      status: "paid_unbookable_rebooking_pending",
+    };
+  }
 
-      if (existingEventId !== null) {
-        await input.repository.markBooked({
-          googleEventId: existingEventId,
-          holdId: lockedHold.id,
-          now: input.now,
-        });
+  if (!isPaidBookingFinalizableState(lockedHold.state)) {
+    return {
+      ok: false,
+      error: `Booking hold is not eligible for Calendar finalization from ${lockedHold.state}.`,
+      status: "manual_followup",
+    };
+  }
 
-        return { ok: true, eventId: existingEventId, status: "booked" };
-      }
+  const paidHold = lockedHold.state === "paid_pending_booking"
+    ? lockedHold
+    : await input.repository.recordPaidPendingBooking({
+      holdId: lockedHold.id,
+      now: input.now,
+      payment: input.payment,
+    });
 
-      const message = "Paid booking requires manual follow-up because finalization did not complete.";
+  return finalizePaidCalendarBooking({
+    calendar: input.calendar,
+    now: input.now,
+    paidHold,
+    repository: input.repository,
+  });
+}
+
+async function finalizePaidCalendarBooking(input: {
+  calendar: BookingCalendarGateway;
+  now: Date;
+  paidHold: BookingHoldRecord;
+  repository: BookingFinalizerRepository;
+}): Promise<FinalizePaidBookingResult> {
+  try {
+    const existingEventId = input.paidHold.googleEventId ??
+      await input.calendar.findExistingEventForHold(input.paidHold);
+
+    if (existingEventId !== null) {
+      const bookedHold = await input.repository.markBooked({
+        googleEventId: existingEventId,
+        holdId: input.paidHold.id,
+        now: input.now,
+      });
+
+      return {
+        ok: true,
+        eventId: bookedHold.googleEventId ?? existingEventId,
+        status: "booked",
+      };
+    }
+
+    if (isPastPaymentSuccessGrace({ hold: input.paidHold, now: input.now })) {
+      return markPaidUnbookableForRebooking({
+        holdId: input.paidHold.id,
+        now: input.now,
+        reason: "Payment arrived after the booking hold grace window.",
+        repository: input.repository,
+      });
+    }
+
+    const eventId = await input.calendar.insertBookingEvent(input.paidHold);
+    const bookedHold = await input.repository.markBooked({
+      googleEventId: eventId,
+      holdId: input.paidHold.id,
+      now: input.now,
+    });
+
+    return {
+      ok: true,
+      eventId: bookedHold.googleEventId ?? eventId,
+      status: "booked",
+    };
+  } catch (error) {
+    const message = getErrorMessage(error);
+
+    if (error instanceof BookingRebookingRequiredError) {
+      return markPaidUnbookableForRebooking({
+        holdId: input.paidHold.id,
+        now: input.now,
+        reason: message,
+        repository: input.repository,
+      });
+    }
+
+    if (error instanceof BookingManualFollowupError) {
       await input.repository.markBookingFailed({
         error: message,
-        holdId: lockedHold.id,
+        holdId: input.paidHold.id,
         now: input.now,
         state: "manual_followup",
       });
 
-      return {
-        ok: false,
-        error: message,
-        status: "manual_followup",
-      };
-    } catch (error) {
-      const message = getErrorMessage(error);
-      const state = error instanceof BookingManualFollowupError
-        ? "manual_followup"
-        : "booking_failed";
-
-      await input.repository.markBookingFailed({
-        error: message,
-        holdId: lockedHold.id,
-        now: input.now,
-        state,
-      });
-
-      return { ok: false, error: message, status: state };
+      return { ok: false, error: message, status: "manual_followup" };
     }
-  }
 
-  const paidHold = await input.repository.recordPaidPendingBooking({
-    holdId: lockedHold.id,
+    const retryHold = await input.repository.recordCalendarRetryPending({
+      error: message,
+      holdId: input.paidHold.id,
+      now: input.now,
+    });
+
+    if (isCalendarCorrelatedHold(retryHold)) {
+      return {
+        ok: true,
+        eventId: retryHold.googleEventId,
+        status: "booked",
+      };
+    }
+
+    return { ok: false, error: message, status: "finalization_pending" };
+  }
+}
+
+async function markPaidUnbookableForRebooking(input: {
+  holdId: string;
+  now: Date;
+  reason: string;
+  repository: BookingFinalizerRepository;
+}): Promise<FinalizePaidBookingResult> {
+  const updatedHold = await input.repository.markPaidUnbookableForRebooking({
+    holdId: input.holdId,
     now: input.now,
-    payment: input.payment,
+    reason: input.reason,
   });
 
-  if (isPastPaymentSuccessGrace({ hold: paidHold, now: input.now })) {
-    const message = "Payment arrived after the booking hold grace window.";
-    await input.repository.markBookingFailed({
-      error: message,
-      holdId: paidHold.id,
-      now: input.now,
-      state: "manual_followup",
-    });
-
-    return { ok: false, error: message, status: "manual_followup" };
+  if (isCalendarCorrelatedHold(updatedHold)) {
+    return {
+      ok: true,
+      eventId: updatedHold.googleEventId,
+      status: "booked",
+    };
   }
 
-  try {
-    const existingEventId = paidHold.googleEventId ??
-      await input.calendar.findExistingEventForHold(paidHold);
+  return {
+    ok: false,
+    error: input.reason,
+    status: "paid_unbookable_rebooking_pending",
+  };
+}
 
-    if (existingEventId !== null) {
-      await input.repository.markBooked({
-        googleEventId: existingEventId,
-        holdId: paidHold.id,
-        now: input.now,
-      });
+function isCalendarCorrelatedHold(hold: BookingHoldRecord): hold is BookingHoldRecord & { googleEventId: string } {
+  return hold.googleEventId !== null && (hold.state === "booked" || hold.state === "manual_rebooked");
+}
 
-      return { ok: true, eventId: existingEventId, status: "booked" };
-    }
-
-    const eventId = await input.calendar.insertBookingEvent(paidHold);
-    await input.repository.markBooked({
-      googleEventId: eventId,
-      holdId: paidHold.id,
-      now: input.now,
-    });
-
-    return { ok: true, eventId, status: "booked" };
-  } catch (error) {
-    const message = getErrorMessage(error);
-    const state = error instanceof BookingManualFollowupError
-      ? "manual_followup"
-      : "booking_failed";
-
-    await input.repository.markBookingFailed({
-      error: message,
-      holdId: paidHold.id,
-      now: input.now,
-      state,
-    });
-
-    return { ok: false, error: message, status: state };
-  }
+function isPaidBookingFinalizableState(state: BookingHoldState): boolean {
+  return state === "held" ||
+    state === "payment_pending" ||
+    state === "paid_pending_booking" ||
+    state === "expired" ||
+    state === "booking_failed" ||
+    state === "manual_followup";
 }
 
 function isPastPaymentSuccessGrace(input: { hold: BookingHoldRecord; now: Date }): boolean {

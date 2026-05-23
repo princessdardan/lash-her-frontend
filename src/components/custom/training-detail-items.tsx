@@ -72,7 +72,7 @@ export function TrainingDetailItems({ items }: TrainingDetailItemsProps) {
 
   return (
     <div
-      className="my-12 grid grid-cols-1 gap-6 md:min-h-[calc(100vh+8rem)] md:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] md:items-start md:gap-7 lg:my-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-8 xl:gap-10"
+      className="my-12 grid grid-cols-1 gap-6 md:min-h-[calc(100vh+11rem)] md:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] md:items-start md:gap-7 lg:my-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-8 xl:gap-10"
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
       onFocusCapture={() => setIsPaused(true)}
@@ -130,13 +130,13 @@ export function TrainingDetailItems({ items }: TrainingDetailItemsProps) {
       </div>
 
       <div 
-        className="order-1 md:order-2 md:sticky md:top-24 md:self-start"
+        className="order-1 md:order-2 md:sticky md:top-32 md:self-start lg:top-40"
         role="tabpanel"
         id={DETAIL_PANEL_ID}
         aria-labelledby={`detail-tab-${effectiveActiveIndex}`}
         data-training-detail-image="true"
       >
-        <div className="relative min-h-[420px] overflow-hidden rounded-[28px] border border-lh-line bg-lh-neutral/20 shadow-[0_24px_70px_rgba(28,19,24,0.08)] md:h-[calc(100vh-8rem)] md:min-h-0">
+        <div className="relative min-h-[420px] overflow-hidden rounded-[28px] border border-lh-line bg-lh-neutral/20 shadow-[0_24px_70px_rgba(28,19,24,0.08)] md:h-[calc(100vh-10rem)] md:min-h-0 lg:h-[calc(100vh-12rem)]">
           {activeItem?.image ? (
             <SanityImage
               image={activeItem.image}

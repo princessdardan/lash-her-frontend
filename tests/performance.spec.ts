@@ -195,7 +195,7 @@ test.describe('Performance Tests', () => {
     await page.goto('/gallery');
     await page.waitForLoadState('networkidle');
 
-    await page.goto('/training');
+    await page.goto('/training-programs');
     await page.waitForLoadState('networkidle');
 
     // Get JavaScript heap size

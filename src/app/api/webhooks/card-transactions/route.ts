@@ -132,6 +132,7 @@ async function finalizeAppointmentWebhookPayment(
   if (
     !recordedEvent.paid ||
     recordedEvent.matchedOrder === null ||
+    recordedEvent.matchedOrder.paymentProvider !== "helcim" ||
     transactionId === undefined ||
     !isApprovedWebhookPayment(event) ||
     !isAppointmentCheckoutPurpose(recordedEvent.matchedOrder.purpose)

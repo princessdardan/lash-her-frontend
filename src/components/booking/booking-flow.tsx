@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { nanoid } from "nanoid";
-import Script from "next/script";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import type { BookingSettings, BookingType, BookingSlot, BookingAnswerInput } from "@/lib/booking/types";
 import type { TBookingOffering } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -12,7 +11,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Field, FieldLabel, FieldError, FieldDescription } from "@/components/ui/field";
 import { formatCad } from "@/lib/commerce/money";
-import type { HelcimPayloadValue } from "@/lib/commerce/helcim-types";
 
 type PaidOfferingPaymentOption = "deposit" | "full" | "customPartial";
 
@@ -27,10 +25,22 @@ interface PaidOfferingCheckoutInput {
   fetcher?: typeof fetch;
 }
 
-declare global {
-  interface Window {
-    appendHelcimPayIframe?: (checkoutToken: string, allowExit?: boolean) => void;
-    removeHelcimPayIframe?: () => void;
+interface PaidOfferingCheckoutResult {
+  checkoutUrl: string;
+  holdReference: string;
+  orderId: string;
+  paymentProvider: "square";
+  reused: boolean;
+  squareOrderId?: string;
+  squarePaymentLinkId?: string;
+}
+
+type SquareCheckoutStatus = "idle" | "opening" | "expired";
+
+class BookingHoldExpiredError extends Error {
+  constructor() {
+    super("Hold expired, choose another time.");
+    this.name = "BookingHoldExpiredError";
   }
 }
 
@@ -51,7 +61,6 @@ interface BookingFlowProps {
 
 export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId, paidSchedulingToken, paidTrainingSlug, initialOfferingSlug, offeringPayment, offerings = [] }: BookingFlowProps) {
   const pathname = usePathname();
-  const router = useRouter();
   
   const paidTrainingOrder = paidTrainingOrderId?.trim();
   const hasPaidTrainingOrder = paidTrainingOrder !== undefined && paidTrainingOrder.length > 0;
@@ -95,8 +104,8 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
   const [submitStatus, setSubmitStatus] = useState<"idle" | "success" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
 
-  const [isScriptReady, setIsScriptReady] = useState(false);
-  const [checkoutToken, setCheckoutToken] = useState<string | null>(null);
+  const [squareCheckout, setSquareCheckout] = useState<PaidOfferingCheckoutResult | null>(null);
+  const [squareCheckoutStatus, setSquareCheckoutStatus] = useState<SquareCheckoutStatus>("idle");
   const [paymentOption, setPaymentOption] = useState<PaidOfferingPaymentOption>("full");
   const [customAmount, setCustomAmount] = useState<string>("");
 
@@ -155,110 +164,15 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
     };
   }, [step, currentBookingType, availabilityEmail, hasPaidTrainingOrder, hasValidPaidTrainingEmail, paidTrainingOrder, paidSchedulingToken, paidTrainingSlug, selectedOfferingSlug]);
 
-  useEffect(() => {
-    if (!checkoutToken) return;
+  const resetSquareCheckoutState = () => {
+    setSquareCheckout(null);
+    setSquareCheckoutStatus("idle");
+  };
 
-    const handleMessage = async (event: MessageEvent) => {
-      if (event.origin !== "https://secure.helcim.app") {
-        return;
-      }
-
-      let parsedData: unknown;
-      try {
-        parsedData = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
-      } catch {
-        return;
-      }
-
-      if (!parsedData || typeof parsedData !== "object") return;
-      const dataObj = parsedData as Record<string, unknown>;
-
-      if (dataObj.eventName !== `helcim-pay-js-${checkoutToken}`) {
-        return;
-      }
-
-      if (dataObj.eventStatus === "ABORTED" || dataObj.eventStatus === "HIDE") {
-        if (window.removeHelcimPayIframe) {
-          window.removeHelcimPayIframe();
-        }
-        setCheckoutToken(null);
-        setIsSubmitting(false);
-        return;
-      }
-
-      if (dataObj.eventStatus === "SUCCESS") {
-        let payloadData: Record<string, HelcimPayloadValue> | undefined;
-        let payloadHash: string | undefined;
-        let eventMessage = dataObj.eventMessage;
-
-        if (typeof eventMessage === "string") {
-          try {
-            eventMessage = JSON.parse(eventMessage);
-          } catch {
-            setErrorMessage("Payment could not be verified. Please contact Lash Her before retrying.");
-            setIsSubmitting(false);
-            return;
-          }
-        }
-
-        if (eventMessage && typeof eventMessage === "object") {
-          const msgObj = eventMessage as Record<string, unknown>;
-
-          if (msgObj.data && typeof msgObj.data === "object" && "hash" in msgObj.data) {
-            const innerData = msgObj.data as Record<string, unknown>;
-            payloadData = parsePayloadData(innerData.data);
-            payloadHash = typeof innerData.hash === "string" ? innerData.hash : undefined;
-          } else if (msgObj.data && typeof msgObj.data === "object" && typeof msgObj.hash === "string") {
-            payloadData = parsePayloadData(msgObj.data);
-            payloadHash = msgObj.hash;
-          }
-        }
-
-        if (!payloadData || !payloadHash) {
-          setErrorMessage("Payment could not be verified. Please contact Lash Her before retrying.");
-          setIsSubmitting(false);
-          return;
-        }
-
-        try {
-          const response = await fetch("/api/checkout/validate-payment", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              checkoutToken,
-              data: payloadData,
-              hash: payloadHash,
-            }),
-          });
-
-          if (!response.ok) {
-            setErrorMessage("Payment could not be verified. Please contact Lash Her before retrying.");
-            setIsSubmitting(false);
-            return;
-          }
-
-          const result = await response.json() as { redirectUrl?: string };
-
-          if (window.removeHelcimPayIframe) {
-            window.removeHelcimPayIframe();
-          }
-
-          setSubmitStatus("success");
-          setIsSubmitting(false);
-
-          if (result.redirectUrl) {
-            router.push(result.redirectUrl);
-          }
-        } catch {
-          setErrorMessage("Payment could not be verified. Please contact Lash Her before retrying.");
-          setIsSubmitting(false);
-        }
-      }
-    };
-
-    window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
-  }, [checkoutToken, router]);
+  const handleSelectedSlotChange = (value: string) => {
+    setSelectedSlot(value);
+    resetSquareCheckoutState();
+  };
 
   const handleEmailChange = (value: string) => {
     setEmail(value);
@@ -313,7 +227,7 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
       setSubmitStatus("idle");
 
       try {
-        const checkoutToken = await startPaidOfferingCheckout({
+        const checkout = await startPaidOfferingCheckout({
           offeringSlug: selectedOfferingSlug,
           start: selectedSlot,
           name,
@@ -323,15 +237,15 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
           ...(parsedCustomAmount ? { customAmount: parsedCustomAmount } : {}),
         });
 
-        setCheckoutToken(checkoutToken);
-
-        if (window.appendHelcimPayIframe) {
-          window.appendHelcimPayIframe(checkoutToken, true);
-        } else {
-          throw new Error("Checkout is not available right now.");
-        }
+        setSquareCheckout(checkout);
+        setSquareCheckoutStatus("opening");
+        setIsSubmitting(false);
+        window.location.assign(checkout.checkoutUrl);
       } catch (err: unknown) {
-        if (err instanceof Error) {
+        if (err instanceof BookingHoldExpiredError) {
+          setSquareCheckoutStatus("expired");
+          setErrorMessage(err.message);
+        } else if (err instanceof Error) {
           setErrorMessage(err.message || "An error occurred while booking. Please try again.");
         } else {
           setErrorMessage("An error occurred while booking. Please try again.");
@@ -427,7 +341,7 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
   if (submitStatus === "success") {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center" aria-live="polite">
-        <h2 className="text-2xl font-medium text-primary mb-4">Booking Confirmed</h2>
+        <h2 className="section-subheading mb-4 text-primary">Booking Confirmed</h2>
         <p className="text-muted-foreground">
           Your booking is confirmed. Check your email for details and a Google Calendar invitation.
         </p>
@@ -439,7 +353,7 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
     return (
       <div className="flex flex-col lg:flex-row gap-8">
         <div className="flex-1">
-          <h1 className="text-3xl font-serif text-black mb-6">Select Service</h1>
+          <h1 className="section-heading mb-6 text-3xl md:text-3xl lg:text-3xl">Select Service</h1>
           <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
             <div className="px-4 py-2 bg-lh-primary text-white rounded-full text-sm font-medium whitespace-nowrap">
               All Services
@@ -464,7 +378,7 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
                   onClick={() => setSelectedOfferingSlug(offering.slug)}
                 >
                   <div>
-                    <h3 className="text-lg font-medium text-black mb-1">{offering.title}</h3>
+                    <h3 className="section-subheading mb-1 text-lg md:text-lg lg:text-lg">{offering.title}</h3>
                     <p className="text-sm text-lh-muted mb-2">{offering.durationMinutes} min</p>
                     <p className="text-sm text-black font-light max-w-md">{offering.description}</p>
                   </div>
@@ -481,7 +395,7 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
         </div>
         <div className="w-full lg:w-80 shrink-0">
           <div className="bg-white p-6 rounded-xl border border-lh-line sticky top-24">
-            <h2 className="text-xl font-serif text-black mb-4">Summary</h2>
+            <h2 className="section-subheading mb-4 text-xl md:text-xl lg:text-xl">Summary</h2>
             {currentOffering ? (
               <div className="space-y-4">
                 <div className="flex justify-between text-sm">
@@ -522,7 +436,7 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
                 ← Back
               </button>
             )}
-            <h1 className="text-3xl font-serif text-black">Select Time</h1>
+            <h1 className="section-heading text-3xl md:text-3xl lg:text-3xl">Select Time</h1>
           </div>
 
           {hasPaidTrainingOrder && (
@@ -592,7 +506,7 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
                   return (
                     <button
                       key={slot.start}
-                      onClick={() => setSelectedSlot(slot.start)}
+                      onClick={() => handleSelectedSlotChange(slot.start)}
                       className={`py-3 px-2 rounded-lg border text-sm font-medium text-center ${isSelected ? 'bg-lh-primary border-lh-primary text-white' : 'bg-white border-lh-line text-black hover:border-lh-primary'} transition-colors`}
                     >
                       {timeStr}
@@ -607,7 +521,7 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
 
         <div className="w-full lg:w-80 shrink-0">
           <div className="bg-white p-6 rounded-xl border border-lh-line sticky top-24">
-            <h2 className="text-xl font-serif text-black mb-4">Summary</h2>
+            <h2 className="section-subheading mb-4 text-xl md:text-xl lg:text-xl">Summary</h2>
             {currentOffering ? (
               <div className="space-y-4">
                 <div className="flex justify-between text-sm">
@@ -679,18 +593,53 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
           <button onClick={() => setStep("datetime")} className="text-lh-muted hover:text-black">
             ← Back
           </button>
-          <h1 className="text-3xl font-serif text-black">Your Details</h1>
+          <h1 className="section-heading text-3xl md:text-3xl lg:text-3xl">Your Details</h1>
         </div>
         
         <form onSubmit={handleSubmit} className="space-y-8 bg-white p-6 rounded-xl border border-lh-line">
-          <Script
-            src="https://secure.helcim.app/helcim-pay/services/start.js"
-            strategy="afterInteractive"
-            onLoad={() => setIsScriptReady(true)}
-          />
           <div aria-live="polite" className="sr-only">
             {errorMessage && `Error: ${errorMessage}`}
           </div>
+
+          {squareCheckoutStatus !== "idle" && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="rounded-[18px] border border-lh-line bg-lh-neutral-2 p-5 shadow-sm"
+            >
+              {squareCheckoutStatus === "expired" ? (
+                <div className="space-y-3 text-center">
+                  <p className="font-heading text-lg uppercase tracking-[0.12em] text-lh-accent">Hold expired, choose another time</p>
+                  <p className="font-body text-sm font-bold leading-6 text-lh-muted">
+                    That private hold closed before secure checkout opened. Please choose a fresh appointment time and we will create a new hold before payment.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setStep("datetime");
+                      resetSquareCheckoutState();
+                      setErrorMessage("");
+                    }}
+                  >
+                    Choose another time
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3 text-center">
+                  <p className="font-heading text-lg uppercase tracking-[0.12em] text-lh-primary">Opening secure Square checkout</p>
+                  <p className="font-body text-sm font-bold leading-6 text-lh-muted">
+                    Your appointment time is privately held while Square opens in this tab. If it does not open automatically, use the secure checkout link below.
+                  </p>
+                  {squareCheckout && (
+                    <Button asChild type="button" variant="dark">
+                      <a href={squareCheckout.checkoutUrl}>Continue to secure Square checkout</a>
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Field>
@@ -782,7 +731,7 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
 
           {currentOfferingPayment && (
             <div className="pt-4 border-t border-border/50">
-              <h3 className="text-lg font-medium text-primary mb-4">Payment Details</h3>
+              <h3 className="section-subheading mb-4 text-lg text-primary md:text-lg lg:text-lg">Payment Details</h3>
               <p className="text-muted-foreground mb-4">
                 Choose the amount you would like to pay now. Your appointment is valid with the deposit, the full price, or any amount between them.
               </p>
@@ -827,18 +776,18 @@ export function BookingFlow({ settings, initialBookingType, paidTrainingOrderId,
           )}
 
           {errorMessage && (
-            <FieldError className="text-center">{errorMessage}</FieldError>
+            <FieldError role="alert" className="text-center">{errorMessage}</FieldError>
           )}
 
-          <Button type="submit" className="w-full" disabled={isSubmitting || (currentOfferingPayment && !isScriptReady)}>
-            {isSubmitting ? "Confirming..." : "Confirm Booking"}
+          <Button type="submit" className="w-full" disabled={isSubmitting}>
+            {isSubmitting ? "Creating private hold..." : currentOfferingPayment ? "Continue to secure Square checkout" : "Confirm Booking"}
           </Button>
         </form>
       </div>
       
       <div className="w-full lg:w-80 shrink-0">
         <div className="bg-white p-6 rounded-xl border border-lh-line sticky top-24">
-          <h2 className="text-xl font-serif text-black mb-4">Summary</h2>
+          <h2 className="section-subheading mb-4 text-xl md:text-xl lg:text-xl">Summary</h2>
           {currentOffering ? (
             <div className="space-y-4">
               <div className="flex justify-between text-sm">
@@ -940,7 +889,7 @@ function fetchAvailability(input: {
   return fetch(`/api/booking/availability?${availabilityParams.toString()}`);
 }
 
-export async function startPaidOfferingCheckout(input: PaidOfferingCheckoutInput): Promise<string> {
+export async function startPaidOfferingCheckout(input: PaidOfferingCheckoutInput): Promise<PaidOfferingCheckoutResult> {
   const fetcher = input.fetcher ?? fetch;
   const holdRes = await fetcher("/api/booking/holds", {
     method: "POST",
@@ -978,16 +927,36 @@ export async function startPaidOfferingCheckout(input: PaidOfferingCheckoutInput
 
   if (!checkoutRes.ok) {
     const data = await checkoutRes.json();
+
+    if (checkoutRes.status === 409) {
+      throw new BookingHoldExpiredError();
+    }
+
     throw new Error(readResponseError(data, "Failed to start checkout"));
   }
 
-  const checkoutData = await checkoutRes.json() as { checkoutToken?: unknown };
+  const checkoutData = await checkoutRes.json() as Record<string, unknown>;
 
-  if (typeof checkoutData.checkoutToken !== "string" || checkoutData.checkoutToken.length === 0) {
+  if (checkoutData.paymentProvider !== "square" ||
+    typeof checkoutData.checkoutUrl !== "string" ||
+    checkoutData.checkoutUrl.length === 0 ||
+    typeof checkoutData.holdReference !== "string" ||
+    checkoutData.holdReference.length === 0 ||
+    typeof checkoutData.orderId !== "string" ||
+    checkoutData.orderId.length === 0 ||
+    typeof checkoutData.reused !== "boolean") {
     throw new Error("Failed to start checkout");
   }
 
-  return checkoutData.checkoutToken;
+  return {
+    checkoutUrl: checkoutData.checkoutUrl,
+    holdReference: checkoutData.holdReference,
+    orderId: checkoutData.orderId,
+    paymentProvider: "square",
+    reused: checkoutData.reused,
+    ...(typeof checkoutData.squareOrderId === "string" ? { squareOrderId: checkoutData.squareOrderId } : {}),
+    ...(typeof checkoutData.squarePaymentLinkId === "string" ? { squarePaymentLinkId: checkoutData.squarePaymentLinkId } : {}),
+  };
 }
 
 function readResponseError(data: unknown, fallback: string): string {
@@ -1003,25 +972,4 @@ function readResponseError(data: unknown, fallback: string): string {
 
 function isLikelyEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
-}
-
-function isHelcimPayloadValue(value: unknown): value is HelcimPayloadValue {
-  return (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  );
-}
-
-function parsePayloadData(value: unknown): Record<string, HelcimPayloadValue> | undefined {
-  if (!value || typeof value !== "object") return undefined;
-
-  const entries = Object.entries(value as Record<string, unknown>);
-
-  if (entries.some(([, entryValue]) => !isHelcimPayloadValue(entryValue))) {
-    return undefined;
-  }
-
-  return Object.fromEntries(entries) as Record<string, HelcimPayloadValue>;
 }

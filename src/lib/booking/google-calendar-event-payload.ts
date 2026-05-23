@@ -1,5 +1,8 @@
 import type { calendar_v3 } from "googleapis";
+import type { PaymentProvider } from "@/lib/private-db/schema";
 import type { PaidTrainingBookingContext } from "./types";
+
+export const BOOKING_EVENT_HOLD_PROPERTY = "lashHerBookingHoldId";
 
 interface BookingEventAnswerInput {
   questionLabel: string;
@@ -13,7 +16,10 @@ interface BookingEventCustomerInput {
 }
 
 export interface BookingEventMetadataInput {
+  checkoutOrderId?: string;
+  checkoutOrderPublicId?: string;
   holdId: string;
+  paymentProvider?: PaymentProvider;
 }
 
 export interface BookingEventPayloadInput {
@@ -58,11 +64,7 @@ export function buildBookingEventPayload(
 
   return {
     extendedProperties: input.bookingMetadata
-      ? {
-          private: {
-            lashHerBookingHoldId: input.bookingMetadata.holdId,
-          },
-        }
+      ? { private: toPrivateBookingMetadata(input.bookingMetadata) }
       : undefined,
     summary: `Lash Her booking: ${input.bookingTypeLabel} — ${input.customer.name}`,
     description: descriptionParts.join("\n"),
@@ -84,4 +86,15 @@ export function buildBookingEventPayload(
       useDefault: true,
     },
   };
+}
+
+function toPrivateBookingMetadata(input: BookingEventMetadataInput): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries({
+      [BOOKING_EVENT_HOLD_PROPERTY]: input.holdId,
+      lashHerCheckoutOrderId: input.checkoutOrderId,
+      lashHerCheckoutOrderPublicId: input.checkoutOrderPublicId,
+      lashHerPaymentProvider: input.paymentProvider,
+    }).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0),
+  );
 }

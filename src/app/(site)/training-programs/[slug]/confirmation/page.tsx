@@ -77,7 +77,7 @@ export default async function TrainingConfirmationPage({
         <div className="content-container max-w-2xl mx-auto">
           <div className="soft-panel p-8 md:p-12 rounded-2xl bg-white shadow-sm text-center">
             <h1 className="section-heading mb-2">Enrollment Confirmed</h1>
-            <h2 className="text-2xl font-serif text-lh-shadow mb-6">{program.title}</h2>
+            <h2 className="section-subheading mb-6">{program.title}</h2>
 
             <div className="space-y-6 text-lh-shadow/80 text-lg mb-8">
               <p>
@@ -95,7 +95,7 @@ export default async function TrainingConfirmationPage({
             </div>
 
             <div className="border-t border-lh-neutral/20 pt-8">
-              <h3 className="font-medium text-xl mb-4">Next Steps</h3>
+              <h3 className="section-subheading mb-4">Next Steps</h3>
 
               <div className="space-y-6">
                 <p className="text-lh-shadow/80">

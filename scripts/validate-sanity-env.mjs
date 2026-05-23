@@ -34,6 +34,15 @@ const launchEnvVars = [
   "HELCIM_WEBHOOK_VERIFIER_TOKEN",
 ];
 
+const squareLaunchEnvVars = [
+  "SQUARE_ENVIRONMENT",
+  "SQUARE_ACCESS_TOKEN",
+  "SQUARE_LOCATION_ID",
+  "SQUARE_WEBHOOK_SIGNATURE_KEY",
+  "SQUARE_SERVICE_BOOKING_RETURN_URL",
+  "SQUARE_SERVICE_BOOKING_WEBHOOK_URL",
+];
+
 const urlEnvVars = [
   "GOOGLE_REDIRECT_URI",
   "KV_REST_API_URL",
@@ -45,8 +54,14 @@ const emailEnvVars = ["FROM_EMAIL", "ADMIN_EMAIL"];
 const vercelEnv = process.env.VERCEL_ENV;
 const expectedDataset = expectedDatasets[vercelEnv];
 const isLaunchEnvironment = expectedDataset !== undefined;
+const isSquareServiceBookingEnabled =
+  process.env.SERVICE_BOOKING_SQUARE_ENABLED === "true";
 const requiredEnvVars = isLaunchEnvironment
-  ? [...publicSanityEnvVars, ...launchEnvVars]
+  ? [
+      ...publicSanityEnvVars,
+      ...launchEnvVars,
+      ...(isSquareServiceBookingEnabled ? squareLaunchEnvVars : []),
+    ]
   : publicSanityEnvVars;
 
 const errors = [];
@@ -86,6 +101,19 @@ if (isLaunchEnvironment) {
 
   if (hasValue(process.env.CHECKOUT_SECRET_ENCRYPTION_KEY)) {
     validateCheckoutSecretEncryptionKey(process.env.CHECKOUT_SECRET_ENCRYPTION_KEY);
+  }
+
+  if (isSquareServiceBookingEnabled) {
+    validateSquareEnvironment(process.env.SQUARE_ENVIRONMENT);
+
+    for (const name of [
+      "SQUARE_SERVICE_BOOKING_RETURN_URL",
+      "SQUARE_SERVICE_BOOKING_WEBHOOK_URL",
+    ]) {
+      if (hasValue(process.env[name])) {
+        validateUrl(name, process.env[name]);
+      }
+    }
   }
 }
 
@@ -143,6 +171,14 @@ function validateCheckoutSecretEncryptionKey(value) {
   if (key.length !== 32 || key.toString("base64") !== value) {
     errors.push(
       "Malformed env var: CHECKOUT_SECRET_ENCRYPTION_KEY must be base64-encoded 32 bytes"
+    );
+  }
+}
+
+function validateSquareEnvironment(value) {
+  if (value !== "sandbox" && value !== "production") {
+    errors.push(
+      "Malformed env var: SQUARE_ENVIRONMENT must be sandbox or production"
     );
   }
 }

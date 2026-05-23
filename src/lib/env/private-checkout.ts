@@ -14,10 +14,74 @@ export function getHelcimWebhookVerifierToken(): string {
   );
 }
 
+export function getSquareServiceBookingEnv(): SquareServiceBookingEnv | null {
+  if (process.env.SERVICE_BOOKING_SQUARE_ENABLED !== "true") {
+    return null;
+  }
+
+  const environment = assertValue(
+    process.env.SQUARE_ENVIRONMENT,
+    "Missing env var: SQUARE_ENVIRONMENT",
+  );
+
+  if (environment !== "sandbox" && environment !== "production") {
+    throw new Error(
+      "Malformed env var: SQUARE_ENVIRONMENT must be sandbox or production",
+    );
+  }
+
+  return {
+    environment,
+    accessToken: assertValue(
+      process.env.SQUARE_ACCESS_TOKEN,
+      "Missing env var: SQUARE_ACCESS_TOKEN",
+    ),
+    locationId: assertValue(
+      process.env.SQUARE_LOCATION_ID,
+      "Missing env var: SQUARE_LOCATION_ID",
+    ),
+    webhookSignatureKey: assertValue(
+      process.env.SQUARE_WEBHOOK_SIGNATURE_KEY,
+      "Missing env var: SQUARE_WEBHOOK_SIGNATURE_KEY",
+    ),
+    serviceBookingReturnUrl: assertUrlValue(
+      process.env.SQUARE_SERVICE_BOOKING_RETURN_URL,
+      "SQUARE_SERVICE_BOOKING_RETURN_URL",
+    ),
+    serviceBookingWebhookUrl: assertUrlValue(
+      process.env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL,
+      "SQUARE_SERVICE_BOOKING_WEBHOOK_URL",
+    ),
+    helcimLegacyCutoffAt: process.env.SERVICE_BOOKING_HELCIM_LEGACY_CUTOFF_AT ?? null,
+  };
+}
+
 function assertValue<T>(value: T | undefined, errorMessage: string): T {
-  if (value === undefined) {
+  if (value === undefined || (typeof value === "string" && value.trim().length === 0)) {
     throw new Error(errorMessage);
   }
 
   return value;
 }
+
+function assertUrlValue(value: string | undefined, name: string): string {
+  const url = assertValue(value, `Missing env var: ${name}`);
+
+  try {
+    new URL(url);
+  } catch {
+    throw new Error(`Malformed env var: ${name} must be a valid URL`);
+  }
+
+  return url;
+}
+
+type SquareServiceBookingEnv = {
+  environment: "sandbox" | "production";
+  accessToken: string;
+  locationId: string;
+  webhookSignatureKey: string;
+  serviceBookingReturnUrl: string;
+  serviceBookingWebhookUrl: string;
+  helcimLegacyCutoffAt: string | null;
+};

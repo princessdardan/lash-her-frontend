@@ -1,54 +1,93 @@
-import { TrainingDetailItems } from "@/components/custom/training-detail-items";
+import { SanityImage } from "@/components/ui/sanity-image";
 import type { TTrainingProgram } from "@/types";
 
 interface TrainingEditorialDetailsProps {
-  data: TTrainingProgram;
+  readonly data: TTrainingProgram;
 }
 
 export function TrainingEditorialDetails({ data }: TrainingEditorialDetailsProps) {
   const {
+    title,
+    detailEyebrow,
     detailHeading,
     detailDescription,
+    detailMainImage,
     detailItems,
     factList,
   } = data;
 
-  const hasStructuredDetails = detailHeading || detailDescription || (detailItems && detailItems.length > 0) || (factList && factList.length > 0);
+  const validDetailItems = detailItems?.filter((item) => item.title || item.description) ?? [];
+  const facts = factList?.filter(Boolean) ?? [];
+  const hasStructuredDetails = detailEyebrow || detailHeading || detailDescription || detailMainImage || validDetailItems.length > 0 || facts.length > 0;
 
   if (!hasStructuredDetails) return null;
 
   return (
-    <section className="py-24 md:py-32 bg-lh-neutral-2/50" data-structured-details="true">
-      <div className="max-w-[1180px] mx-auto px-6 md:px-8">
-        <div className="mb-16 md:mb-20">
+    <section className="py-16 md:py-20 lg:py-24" data-training-editorial-details="true">
+      <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:items-start xl:gap-14">
+        <div className="lg:sticky lg:top-32">
+          <p className="eyebrow-label mb-4">
+            {detailEyebrow || "Curriculum"}
+          </p>
           {detailHeading && (
-            <h2 className="font-serif text-5xl md:text-6xl text-lh-shadow">
+            <h2 className="section-heading text-balance">
               {detailHeading}
             </h2>
           )}
           {detailDescription && (
-            <p className="font-sans text-lg text-lh-shadow/80 max-w-2xl mt-6 leading-relaxed">
+            <p className="mt-6 max-w-2xl font-body text-base font-bold leading-8 text-lh-shadow/78 md:text-lg">
               {detailDescription}
             </p>
           )}
+
+          {facts.length > 0 && (
+            <div className="soft-panel mt-8 bg-lh-neutral-2/70 p-6 md:p-7">
+              <p className="mb-5 font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-primary">
+                Program Facts
+              </p>
+              <ul className="fact-list grid grid-cols-1 gap-4">
+                {facts.map((fact) => (
+                  <li key={fact} className="flex items-start gap-3">
+                    <span className="mt-3 h-px w-8 shrink-0 bg-lh-light" aria-hidden="true" />
+                    <span className="font-body text-base font-bold leading-7 text-lh-shadow/85">{fact}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
 
-        {detailItems && detailItems.length > 0 && (
-          <TrainingDetailItems items={detailItems} />
-        )}
-        
-        {factList && factList.length > 0 && (
-          <div className="soft-panel mt-12 p-8 md:p-12 rounded-[24px] bg-lh-neutral/30 border border-lh-line/30">
-            <ul className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {factList.map((fact, index) => (
-                <li key={index} className="flex items-start gap-3">
-                  <span className="text-lh-primary mt-1 text-xl leading-none">•</span>
-                  <span className="font-sans text-lg text-lh-shadow/90">{fact}</span>
-                </li>
+        <div className="space-y-6">
+          {detailMainImage && (
+            <div className="relative min-h-[420px] overflow-hidden rounded-[28px] border border-lh-line bg-lh-primary-soft shadow-[0_24px_70px_rgba(28,19,24,0.10)] md:min-h-[540px]" data-training-detail-image="true">
+              <SanityImage
+                image={detailMainImage}
+                alt={detailMainImage.alt || detailHeading || title}
+                fill
+                sizes="(min-width: 1024px) 48vw, 100vw"
+                className="object-cover"
+              />
+            </div>
+          )}
+
+          {validDetailItems.length > 0 && (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2" data-training-detail-items="true">
+              {validDetailItems.map((item, index) => (
+                <article key={item._key || `${item.title}-${index}`} className="editorial-card min-h-56 p-6 md:p-7">
+                  <span className="mb-4 font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-primary">
+                    Lesson {index + 1}
+                  </span>
+                  {item.title && <h3 className="font-heading text-3xl font-normal leading-none text-lh-shadow">{item.title}</h3>}
+                  {item.description && (
+                    <p className="mt-4 font-body text-sm font-bold leading-7 text-lh-shadow/75 md:text-base">
+                      {item.description}
+                    </p>
+                  )}
+                </article>
               ))}
-            </ul>
-          </div>
-        )}
+            </div>
+          )}
+        </div>
       </div>
     </section>
   );

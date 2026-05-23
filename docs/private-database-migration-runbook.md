@@ -108,8 +108,8 @@ For the marketing-contact migration, verify that `drizzle/0002_rapid_fat_cobra.s
     - Contact popup/email-list submission.
     - Booking with marketing opt-in checked.
     - Booking with marketing opt-in unchecked.
-    - Paid appointment checkout for deposit, full payment, and custom partial payment where configured.
-    - Paid appointment finalization from Helcim client validation and webhook retry paths.
+    - Paid service booking checkout for deposit, full payment, and custom partial payment where configured.
+    - Paid service booking finalization from Square return reconciliation and webhook retry paths; product/training checkout remains on Helcim validation and webhook paths.
 8. Confirm new submissions do not create new Sanity submission documents.
 
 ## Production Procedure

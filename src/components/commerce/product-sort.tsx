@@ -1,41 +1,44 @@
-"use client";
-
 import { type ReactElement } from "react";
-import { useRouter, useSearchParams, usePathname } from "next/navigation";
 
-export function ProductSort(): ReactElement {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  
-  const currentSort = searchParams.get("sort") || "default";
+interface ProductSortProps {
+  collection?: string;
+  attributes: string[];
+  sort: string;
+}
 
-  const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const params = new URLSearchParams(searchParams.toString());
-    if (e.target.value === "default") {
-      params.delete("sort");
-    } else {
-      params.set("sort", e.target.value);
-    }
-    router.push(`${pathname}?${params.toString()}`);
-  };
+const SORT_OPTIONS = [
+  { value: "default", label: "Featured" },
+  { value: "titleAsc", label: "Alphabetical, A-Z" },
+  { value: "priceAsc", label: "Price, low to high" },
+  { value: "priceDesc", label: "Price, high to low" },
+] as const;
 
+export function ProductSort({ collection, attributes, sort }: ProductSortProps): ReactElement {
   return (
-    <div className="flex items-center gap-4">
-      <label htmlFor="product-sort" className="font-label-caps text-[10px] text-lh-muted uppercase tracking-widest">
-        Sort By:
+    <form action="/products" className="flex flex-col gap-3 sm:flex-row sm:items-center" aria-label="Sort products">
+      {collection ? <input type="hidden" name="collection" value={collection} /> : null}
+      {attributes.map((attribute) => (
+        <input key={attribute} type="hidden" name="attribute" value={attribute} />
+      ))}
+
+      <label htmlFor="product-sort" className="font-heading text-[11px] font-normal uppercase tracking-[0.28em] text-lh-muted">
+        Sort By
       </label>
-      <select 
-        id="product-sort"
-        value={currentSort}
-        onChange={handleSortChange}
-        className="bg-transparent border-none text-base font-semibold text-lh-shadow focus:ring-0 cursor-pointer p-0 pr-8"
-      >
-        <option value="default">Featured</option>
-        <option value="titleAsc">Alphabetical, A-Z</option>
-        <option value="priceAsc">Price, low to high</option>
-        <option value="priceDesc">Price, high to low</option>
-      </select>
-    </div>
+      <div className="flex items-center gap-2">
+        <select id="product-sort" name="sort" defaultValue={sort} className="form-input h-10 min-w-48 rounded-full bg-lh-white pr-9 text-sm">
+          {SORT_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <button
+          type="submit"
+          className="rounded-full border border-lh-line px-4 py-2 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-shadow transition-colors hover:border-lh-primary hover:text-lh-primary"
+        >
+          Apply
+        </button>
+      </div>
+    </form>
   );
 }

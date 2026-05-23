@@ -62,7 +62,7 @@ Rationale:
 
 - Transaction history needs relational constraints, durable auditability, queryability, and private access.
 - Upstash Redis is already used for operational booking locks/tokens, but it is not the right long-term order ledger.
-- Helcim remains the payment processor and external source of payment truth, but the site still needs a private local reconciliation record for checkout status, customer contact, line-item snapshot, and operational support.
+- Helcim remains the product/training checkout payment processor and external source of payment truth for those flows, but the site still needs a private local reconciliation record for checkout status, customer contact, line-item snapshot, and operational support.
 - Drizzle provides typed schema and migration generation without adding a large framework.
 - Supabase is acceptable when row-level security, backups/PITR, and service-role separation are configured correctly; Neon is acceptable when separate protected staging/production branches/databases, TLS, backups/PITR, and server-only connection strings are configured correctly.
 

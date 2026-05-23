@@ -69,7 +69,7 @@ export default async function ServiceBookingConfirmationPage({
             </div>
 
             <div className="border-t border-lh-neutral/20 pt-8">
-              <h3 className="font-medium text-xl mb-4">Next Steps</h3>
+              <h3 className="section-subheading mb-4">Next Steps</h3>
 
               <div className="space-y-6">
                 <p className="text-lh-shadow/80">{nextSteps}</p>

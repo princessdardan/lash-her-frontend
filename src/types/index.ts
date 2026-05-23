@@ -278,20 +278,44 @@ export interface TTrainingProgramDetailItem {
   image?: TSanityImage;
 }
 
+export interface TLinkedTrainingProduct {
+  _id: string;
+  title: string;
+  slug: string;
+  price: number;
+  currency: TCommerceCurrency;
+  isAvailable: boolean;
+  availabilityLabel?: string;
+}
+
 export interface TTrainingProgram {
   _id: string;
   title: string;
   description: string;
+  heroSubtitle?: string;
+  heroImage?: TSanityImage;
+  heroBadges?: string[];
   slug: string;
   detailHeading?: string;
+  detailEyebrow?: string;
   detailDescription?: string;
   detailHeroImage?: TSanityImage;
+  detailMainImage?: TSanityImage;
   detailItems?: TTrainingProgramDetailItem[];
   factList?: string[];
   primaryCta?: {
     label: string;
     href: string;
   };
+  secondaryCta?: {
+    label: string;
+    href: string;
+  };
+  enrollmentTitle?: string;
+  enrollmentDescription?: string;
+  enrollmentBackgroundImage?: TSanityImage;
+  enrollmentInclusions?: string[];
+  linkedProduct?: TLinkedTrainingProduct;
   checkoutEnabled?: boolean;
   price?: number;
   currency?: "CAD";
@@ -306,6 +330,9 @@ export interface TTrainingProgram {
     href: string;
   };
   postPurchaseInstructions?: string;
+  introCallAppointmentScheduleUrl?: string;
+  introCallAppointmentScheduleEmbedMode?: "link" | "embed";
+  introCallSchedulingInstructions?: string;
   blocks: TLayoutBlock[];
   seo?: {
     title?: string;
@@ -322,15 +349,30 @@ export interface TTrainingProgramsPage {
 
 export interface TProductCollection {
   _id: string;
+  _key?: string;
   title: string;
   slug: string;
   description?: string;
   displayOrder?: number;
 }
 
-export interface TProductFilterAttribute {
+export interface TSellableProductFilterAttribute {
   _key?: string;
   label: string;
+  value: string;
+}
+
+export type TProductFilterAttribute = TSellableProductFilterAttribute;
+
+export interface TSellableProductOptionGroup {
+  _key?: string;
+  name: string;
+  values?: string[];
+}
+
+export interface TSellableProductVariantOption {
+  _key?: string;
+  name: string;
   value: string;
 }
 
@@ -355,7 +397,8 @@ export interface TCommerceSeo {
 export interface TCommerceDetailSection {
   _key?: string;
   heading: string;
-  content: string;
+  content?: string;
+  body?: TPortableTextBlock[];
 }
 
 export interface TProductVariant {
@@ -365,17 +408,24 @@ export interface TProductVariant {
   price: number;
   isAvailable: boolean;
   availabilityLabel?: string;
+  options?: TSellableProductVariantOption[];
 }
 
-export interface TProduct {
+export interface TSellableProduct {
   _id: string;
   title: string;
   description: string;
   shortDescription?: string;
+  cardSubtitle?: string;
+  badgeLabel?: string;
   slug: string;
+  kind?: "product" | "service" | "training" | "deposit";
   price: number;
   sku?: string;
   currency: TCommerceCurrency;
+  collections?: TProductCollection[];
+  filterAttributes?: TSellableProductFilterAttribute[];
+  optionGroups?: TSellableProductOptionGroup[];
   variants?: TProductVariant[];
   isAvailable: boolean;
   availabilityLabel?: string;
@@ -386,6 +436,8 @@ export interface TProduct {
   detailSections?: TCommerceDetailSection[];
   seo?: TCommerceSeo;
 }
+
+export type TProduct = TSellableProduct;
 
 export interface TService {
   _id: string;

@@ -50,8 +50,8 @@ export function TrainingPurchaseCard({ program, cta }: TrainingPurchaseCardProps
   const priceFormatted = formatCad(product.price);
 
   return (
-    <div className="hidden lg:block w-full lg:w-[22rem] lg:max-h-[calc(100vh-9rem)] lg:overflow-y-auto bg-lh-white rounded-2xl p-8 shadow-xl border border-lh-line/50 pointer-events-auto">
-        <h3 className="text-2xl font-serif text-lh-shadow mb-2">{product.title || program.title}</h3>
+    <div className="hidden lg:block w-full lg:w-[22rem] lg:max-h-[calc(100vh-12rem)] lg:overflow-y-auto bg-lh-white rounded-2xl p-8 shadow-xl border border-lh-line/50 pointer-events-auto">
+        <h3 className="section-subheading mb-2">{product.title || program.title}</h3>
         <div className="text-3xl font-bold text-lh-primary mb-6">{priceFormatted}</div>
 
         <div className="space-y-4 mb-8">

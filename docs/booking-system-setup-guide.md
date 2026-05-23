@@ -1,8 +1,8 @@
 # Booking System Setup Guide
 
-Date: 2026-05-19
+Date: 2026-05-23
 
-This guide sets up the Lash Her unified booking system for a staging or production environment. It covers Sanity booking content, private storage, Upstash Redis, Google Calendar OAuth, Helcim, Resend, and smoke tests.
+This guide sets up the Lash Her provider split for booking and checkout in a staging or production environment. It covers Sanity booking content, private storage, Upstash Redis, Google Calendar OAuth, Square hosted checkout for services, Helcim product/training checkout, Resend, and smoke tests.
 
 Run commands from the repository root: `/Users/dardan/workspace/lash-her-frontend`.
 
@@ -16,10 +16,11 @@ Do not run private database migrations until the target database, approval, back
 4. Provision Upstash Redis.
 5. Configure Google OAuth and connect the calendar.
 6. Configure Sanity booking settings and offerings.
-7. Configure Helcim API credentials and webhook.
-8. Configure Resend.
-9. Run staging smoke tests.
-10. Prepare production handoff evidence.
+7. Configure Square service booking credentials and webhook where service checkout is enabled.
+8. Configure Helcim API credentials and webhook for product/training checkout.
+9. Configure Resend.
+10. Run staging smoke tests.
+11. Prepare production handoff evidence.
 
 ## 1. Confirm The Target
 
@@ -32,6 +33,7 @@ Before adding secrets or running setup flows, record:
 | Private DB provider/project | | |
 | Upstash Redis database | | |
 | Google OAuth client | | |
+| Square mode/account | | |
 | Helcim mode/account | | |
 | Resend sender domain | | |
 
@@ -118,9 +120,23 @@ HELCIM_WEBHOOK_VERIFIER_TOKEN=<helcim-webhook-verifier-token>
 
 Never prefix private values with `NEXT_PUBLIC_`. Do not paste real connection strings, tokens, customer data, or payment identifiers into docs, tickets, or chat.
 
+### Square Service Booking
+
+```env
+SERVICE_BOOKING_SQUARE_ENABLED=false
+SQUARE_ENVIRONMENT=sandbox
+SQUARE_ACCESS_TOKEN=<square-access-token>
+SQUARE_LOCATION_ID=<square-location-id>
+SQUARE_WEBHOOK_SIGNATURE_KEY=<square-webhook-signature-key>
+SQUARE_SERVICE_BOOKING_RETURN_URL=https://<domain>/api/booking/square/return
+SQUARE_SERVICE_BOOKING_WEBHOOK_URL=https://<domain>/api/webhooks/square
+```
+
+Square variables are server-only. Do not create `NEXT_PUBLIC_SQUARE_*` variables. In Vercel, scope sandbox Square values to Development and Preview, and scope production Square values to Production. Product checkout and training checkout remain Helcim-backed and should work without Square variables.
+
 ## 4. Private Postgres Setup
 
-The private database stores checkout orders, payment events, appointment holds, training enrollments, marketing contacts, contact submissions, consent events, and operational reconciliation state.
+The private database stores checkout orders, payment events, appointment holds, training enrollments, paid training schedule token state, marketing contacts, contact submissions, consent events, and operational reconciliation state.
 
 1. Create separate staging and production databases, branches, or projects.
 2. Prefer a pooled server-side connection string for runtime `DATABASE_URL`.
@@ -245,9 +261,39 @@ Native payment field rules:
 
 After publishing `bookingSettings` or `bookingOffering`, verify the Sanity webhook refreshes `/booking` in the target environment.
 
-## 8. Helcim Setup
+## 8. Square Service Booking Setup
 
-Helcim is used for paid appointment and product/training checkout.
+Square is used only for paid service booking checkout. Do not configure Square as a global checkout provider.
+
+1. Confirm the Square application, location, and environment for the target deployment.
+2. Add `SERVICE_BOOKING_SQUARE_ENABLED=true` only in environments where service booking checkout should redirect to Square.
+3. Add `SQUARE_ENVIRONMENT` as `sandbox` for local/preview or `production` for live production.
+4. Add `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, and `SQUARE_WEBHOOK_SIGNATURE_KEY` as server-only variables.
+5. Configure the service booking return URL:
+
+```text
+https://<domain>/api/booking/square/return
+```
+
+6. Configure the Square webhook URL:
+
+```text
+https://<domain>/api/webhooks/square
+```
+
+7. Set `SQUARE_SERVICE_BOOKING_RETURN_URL` and `SQUARE_SERVICE_BOOKING_WEBHOOK_URL` to the exact deployed URLs.
+8. Redeploy after changing Square variables.
+
+Operational expectations:
+
+- The customer keeps the custom Lash Her booking UI until the private hold exists, then redirects to Square hosted checkout.
+- Square browser return is not proof of payment. The return route must reconcile server-side before finalization.
+- Verified Square payment finalizes through private DB state and the Google Calendar API.
+- Expired or conflicting paid service holds enter rebooking-first manual review. Verify a replacement slot before creating a Calendar event, and refund only after rebooking fails or staff chooses refund.
+
+## 9. Helcim Setup
+
+Helcim is used for product checkout and training checkout. New service booking checkout uses Square.
 
 1. Confirm API access is enabled in the Helcim account.
 2. Add the general API token to `HELCIM_GENERAL_API_TOKEN`.
@@ -267,9 +313,10 @@ Operational expectations:
 - The browser receives only the Helcim checkout token.
 - The Helcim secret token stays server-side and is encrypted before storage.
 - Webhook event IDs or idempotency keys are stored before state changes.
-- Browser validation and webhook delivery may both finalize the same payment; finalization must remain idempotent.
+- Browser validation and webhook delivery may both verify the same product or training payment; finalization must remain idempotent.
+- Product checkout and training checkout must not require Square env vars.
 
-## 9. Resend Setup
+## 10. Resend Setup
 
 1. Verify the sender domain in Resend.
 2. Add `RESEND_API_KEY`, `FROM_EMAIL`, and `ADMIN_EMAIL` to the target environment.
@@ -279,7 +326,7 @@ Operational expectations:
 
 Email failures should be logged for follow-up. They should not roll back a booking, payment, or private DB write that already succeeded.
 
-## 10. Staging Smoke
+## 11. Staging Smoke
 
 Complete staging smoke before production handoff.
 
@@ -290,7 +337,9 @@ Complete staging smoke before production handoff.
 - [ ] Private DB identity is verified in the provider dashboard.
 - [ ] Upstash Redis target is verified.
 - [ ] Google OAuth setup succeeds and stores the refresh token.
-- [ ] Helcim webhook delivery URL targets staging.
+- [ ] Square service booking variables are present only if service Square checkout is enabled.
+- [ ] Square webhook and return URLs target staging for service bookings.
+- [ ] Helcim webhook delivery URL targets staging for product/training checkout.
 - [ ] Resend sender domain is verified.
 
 ### Public Booking
@@ -302,23 +351,24 @@ Complete staging smoke before production handoff.
 - [ ] Booking confirmation email is sent or failure is logged.
 - [ ] Marketing opt-in and no-opt-in booking paths write private audit evidence only.
 
-### Paid Appointment
+### Paid Service Booking
 
-- [ ] A hold is created for the selected paid appointment slot.
-- [ ] Helcim checkout initializes for the hold.
-- [ ] Test payment marks the private order paid.
-- [ ] The hold is booked or moved to manual follow-up.
+- [ ] A hold is created for the selected paid service slot.
+- [ ] Square hosted checkout initializes for the hold.
+- [ ] Square return alone does not finalize until server-side reconciliation verifies payment.
+- [ ] Square sandbox/test payment marks the private order paid.
+- [ ] The hold is booked or moved to `paid_unbookable_rebooking_pending`.
 - [ ] The Calendar event exists exactly once.
-- [ ] Webhook retry or browser validation duplication does not create duplicate bookings.
+- [ ] Webhook retry or browser return duplication does not create duplicate bookings.
 
 ### Paid Training
 
 - [ ] Training checkout creates a paid private enrollment/order.
-- [ ] Customer email copy points to `/booking?type=training-call&order=<order-reference>`.
-- [ ] Wrong checkout email is rejected.
-- [ ] Correct checkout email loads training-call slots.
-- [ ] Training intro-call booking creates one Calendar event.
-- [ ] Enrollment is marked scheduled/booked.
+- [ ] Helcim verifies the training payment without Square env vars.
+- [ ] Customer email copy points to the tokenized paid training schedule path.
+- [ ] Invalid, unpaid, expired, or wrong-program tokens do not reveal the Google Appointment Schedule URL.
+- [ ] Valid token eligibility renders the Google Appointment Schedule link or embed.
+- [ ] Rendering the schedule page does not mark the private enrollment scheduled.
 
 ### Sanity And Privacy
 
@@ -342,7 +392,8 @@ Record:
 | Production migration approval recorded if needed | |
 | Production Upstash Redis verified | |
 | Production Google OAuth connected | |
-| Production Helcim webhook configured | |
+| Production Square service booking return and webhook configured if enabled | |
+| Production Helcim product/training webhook configured | |
 | Production Resend sender verified | |
 | Business/privacy owner confirmed | |
 | Post-contract operator/vendor recorded | |
@@ -353,14 +404,16 @@ Production stop conditions:
 - Backup/PITR is missing before an approved migration window.
 - Required payment, calendar, Redis, or email secrets are absent.
 - Sanity is storing new private operational records.
-- Paid booking finalization cannot create Calendar events.
-- Helcim webhook signatures cannot be verified.
+- Paid service booking finalization cannot create Calendar events.
+- Square service webhook signatures cannot be verified when service Square checkout is enabled.
+- Helcim commerce webhook signatures cannot be verified.
 - No operator is named for private-record follow-up.
 
 ## Related Documents
 
 - `docs/booking-system-runbook.md`
 - `docs/booking-system-architecture-reference.md`
+- `docs/booking-payment-provider-split.md`
 - `docs/google-calendar-oauth-env-setup.md`
 - `docs/private-checkout-storage-setup.md`
 - `docs/private-database-migration-runbook.md`

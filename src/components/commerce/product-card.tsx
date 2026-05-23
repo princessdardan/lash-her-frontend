@@ -4,12 +4,27 @@ import { useMemo, useState, type ReactElement } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { SanityImage } from "@/components/ui/sanity-image";
+import { cn } from "@/lib/utils";
 import { formatCad } from "@/lib/commerce/money";
 import type { TProduct, TProductVariant } from "@/types";
 
 interface ProductCardProps {
   product: TProduct;
   onAdd: (product: TProduct, variant?: TProductVariant) => void;
+}
+
+const PRICE_UNAVAILABLE_LABEL = "Price unavailable";
+
+function formatDisplayPrice(value: unknown): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return PRICE_UNAVAILABLE_LABEL;
+  }
+
+  try {
+    return formatCad(value);
+  } catch {
+    return PRICE_UNAVAILABLE_LABEL;
+  }
 }
 
 export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement {
@@ -23,60 +38,86 @@ export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement 
   const selectedVariant = variants.find((variant) => variant._key === selectedVariantId);
   const price = selectedVariant?.price ?? product.price;
   const canAdd = product.isAvailable && (variants.length === 0 || Boolean(selectedVariant?.isAvailable));
-  const addLabel = product.isAvailable
-    ? variants.length > 0 ? "Add Option" : "Add to Cart"
-    : (product.availabilityLabel || "Sold Out");
+  const availabilityLabel = product.availabilityLabel || (product.isAvailable ? "Ready to ship" : "Unavailable");
 
   return (
-    <article className="card-white flex flex-col h-full">
-      {product.image && (
-        <Link
-          href={productHref}
-          className="relative w-full aspect-square mb-4 overflow-hidden rounded-md bg-lh-neutral-2 block"
-          aria-label={`View ${product.title}`}
-        >
+    <article className="editorial-card group min-h-[560px] overflow-hidden p-0">
+      <Link
+        href={productHref}
+        className="relative block min-h-72 overflow-hidden bg-lh-primary-soft focus-visible:outline-lh-primary"
+        aria-label={`View ${product.title}`}
+      >
+        {product.image ? (
           <SanityImage
             image={product.image}
-            alt={product.title}
+            alt={product.image.alt || product.title}
             fill
-            className="object-cover"
+            sizes="(min-width: 1280px) 25vw, (min-width: 768px) 50vw, 100vw"
+            className="object-cover transition-transform duration-500 group-hover:scale-105"
           />
-        </Link>
-      )}
-      <div className="flex-1 flex flex-col">
-        <div className="text-xs font-bold uppercase tracking-wider text-lh-primary mb-1">
-          Product
+        ) : (
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_78%_18%,var(--lh-light-soft),transparent_32%),linear-gradient(135deg,var(--lh-neutral-2),var(--lh-neutral))]" />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-lh-shadow/70 via-lh-shadow/10 to-transparent" aria-hidden="true" />
+        <div className="absolute left-5 top-5 flex flex-wrap gap-2">
+          {product.badgeLabel ? (
+            <span className="rounded-full bg-lh-light px-3 py-1 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-shadow">
+              {product.badgeLabel}
+            </span>
+          ) : null}
+          {!product.isAvailable ? (
+            <span className="rounded-full bg-lh-accent px-3 py-1 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-white">
+              {availabilityLabel}
+            </span>
+          ) : null}
         </div>
-        <h3 className="card-heading-red text-xl mb-2">
-          <Link href={productHref} className="hover:underline">
-            {product.title}
-          </Link>
-        </h3>
-        <p className="text-sm text-black font-light mb-4 flex-1">
+      </Link>
+
+      <div className="flex flex-1 flex-col p-6 md:p-7">
+        <div className="mb-4">
+          <p className="eyebrow-label mb-2">{product.kind === "training" ? "Training" : "Product"}</p>
+          <h3 className="section-subheading text-3xl leading-none md:text-4xl">
+            <Link href={productHref} className="transition-colors hover:text-lh-primary">
+              {product.title}
+            </Link>
+          </h3>
+          {product.cardSubtitle ? (
+            <p className="mt-3 font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-primary">
+              {product.cardSubtitle}
+            </p>
+          ) : null}
+        </div>
+
+        <p className="mb-5 flex-1 font-body text-sm font-bold leading-7 text-lh-shadow/76 md:text-base">
           {product.shortDescription || product.description}
         </p>
 
-        {product.availabilityLabel && product.isAvailable && (
-          <p className="text-xs font-bold text-lh-primary mb-2">
-            {product.availabilityLabel}
-          </p>
-        )}
+        <div className="mb-5 flex flex-wrap gap-2">
+          {product.isAvailable ? (
+            <span className="rounded-full border border-lh-line px-3 py-1 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-muted">
+              {availabilityLabel}
+            </span>
+          ) : null}
+          {product.collections?.slice(0, 2).map((collection) => (
+            <span key={collection._id} className="rounded-full border border-lh-line px-3 py-1 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-shadow/70">
+              {collection.title}
+            </span>
+          ))}
+        </div>
 
-        {product.fulfillmentNote && (
-          <p className="text-xs text-lh-muted italic mb-4">
+        {product.fulfillmentNote ? (
+          <p className="mb-5 border-l-2 border-lh-light pl-3 font-body text-xs font-bold leading-6 text-lh-muted">
             {product.fulfillmentNote}
           </p>
-        )}
+        ) : null}
 
         {variants.length > 0 && (
-          <label className="mb-4 block">
-            <span className="text-xs font-bold uppercase tracking-wider text-lh-primary mb-2 block">
-              Choose option
-            </span>
+          <label className="mb-5 block">
+            <span className="eyebrow-label mb-2 block">Choose option</span>
             <select
               value={selectedVariantId}
               onChange={(event) => setSelectedVariantId(event.target.value)}
-              className="form-input text-sm"
+              className="form-input"
               disabled={!product.isAvailable}
             >
               {availableVariants.length === 0 && (
@@ -86,7 +127,7 @@ export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement 
               )}
               {variants.map((variant) => (
                 <option key={variant._key} value={variant._key} disabled={!variant.isAvailable}>
-                  {variant.title} — {formatCad(variant.price)}
+                  {variant.title} - {formatDisplayPrice(variant.price)}
                   {!variant.isAvailable ? ` - ${variant.availabilityLabel || "Unavailable"}` : ""}
                 </option>
               ))}
@@ -94,16 +135,22 @@ export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement 
           </label>
         )}
 
-        <div className="flex items-center justify-between mt-auto pt-4 border-t border-lh-line">
-          <span className="font-bold text-lg text-black">
-            {formatCad(price)}
-          </span>
+        <div className="mt-auto rounded-[24px] border border-lh-line bg-lh-neutral-2/70 p-4">
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <span className="font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-muted">Price</span>
+            <span className="font-body text-xl font-bold text-lh-shadow">{formatDisplayPrice(price)}</span>
+          </div>
           <Button
+            type="button"
             onClick={() => onAdd(product, selectedVariant)}
             disabled={!canAdd}
-            className="btn-primary-red w-auto px-6"
+            aria-label={canAdd ? `Add to Cart: ${product.title}` : `${product.title} ${availabilityLabel}`}
+            className={cn(
+              "w-full rounded-full px-6 py-3 uppercase tracking-[0.12em]",
+              canAdd ? "bg-lh-primary text-lh-white hover:bg-lh-accent" : "bg-lh-neutral text-lh-muted",
+            )}
           >
-            {addLabel}
+            {canAdd ? "Add to Cart" : availabilityLabel}
           </Button>
         </div>
       </div>

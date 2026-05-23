@@ -1,10 +1,19 @@
 import { test, expect } from '@playwright/test';
 import { setupApiMocks } from './utils/api-mocks';
 
-test.describe('Training Page', () => {
+test.describe('Legacy Training Route', () => {
+  test('should permanently redirect to the canonical training programs page', async ({ request }) => {
+    const response = await request.get('/training', { maxRedirects: 0 });
+
+    expect(response.status()).toBe(308);
+    expect(response.headers().location).toBe('/training-programs');
+  });
+});
+
+test.describe('Training Programs Page', () => {
   test.beforeEach(async ({ page }) => {
     await setupApiMocks(page);
-    await page.goto('/training');
+    await page.goto('/training-programs');
   });
 
   test('should load training page successfully', async ({ page }) => {
@@ -52,7 +61,6 @@ test.describe('Training Page', () => {
 
     if (linkCount > 0) {
       // Click on the first program link
-      const href = await programLinks.first().getAttribute('href');
       await programLinks.first().click();
 
       // Wait for navigation
@@ -125,8 +133,7 @@ test.describe('Training Page', () => {
 
 test.describe('Training Program Detail Page', () => {
   test('should load a training program detail page', async ({ page }) => {
-    // Navigate to training page first
-    await page.goto('/training');
+    await page.goto('/training-programs');
     await page.waitForLoadState('networkidle');
 
     // Find a program link
@@ -155,7 +162,7 @@ test.describe('Training Program Detail Page', () => {
   });
 
   test('should display program details', async ({ page }) => {
-    await page.goto('/training');
+    await page.goto('/training-programs');
     await page.waitForLoadState('networkidle');
 
     const programLinks = page.locator('a[href*="/training-program"]');
@@ -176,7 +183,7 @@ test.describe('Training Program Detail Page', () => {
   });
 
   test('should have enrollment or booking CTA', async ({ page }) => {
-    await page.goto('/training');
+    await page.goto('/training-programs');
     await page.waitForLoadState('networkidle');
 
     const programLinks = page.locator('a[href*="/training-program"]');
@@ -205,7 +212,7 @@ test.describe('Training Program Detail Page', () => {
 
   test('should be mobile responsive', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
-    await page.goto('/training');
+    await page.goto('/training-programs');
     await page.waitForLoadState('networkidle');
 
     const programLinks = page.locator('a[href*="/training-program"]');

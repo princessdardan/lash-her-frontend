@@ -92,6 +92,8 @@ const helperScript = String.raw`
       }
 
       return this.rows.find((row) => (
+        row.paymentProvider === "helcim"
+        &&
         (input.helcimInvoiceId === undefined || row.helcimInvoiceId === input.helcimInvoiceId)
         && (input.helcimInvoiceNumber === undefined || row.helcimInvoiceNumber === input.helcimInvoiceNumber)
       )) ?? null;
@@ -156,6 +158,7 @@ test("private checkout store creates pending orders with hashed tokens and cent 
     assert.equal(created.currency, "CAD");
     assert.equal(created.purpose, "product");
     assert.equal(row.status, "pending");
+    assert.equal(row.paymentProvider, "helcim");
     assert.equal(row.purpose, "product");
     assert.equal(row.amountCents, 12345);
     assert.equal(row.lineItems[0].unitPriceCents, 10000);
@@ -372,6 +375,7 @@ test("private checkout store exposes matched order details for webhook branching
         helcimInvoiceId: 4242,
         helcimInvoiceNumber: "INV-4242",
         orderId: created.orderId,
+        paymentProvider: "helcim",
         purpose: "appointment_full",
       },
       paid: true,
@@ -389,6 +393,32 @@ test("private checkout store exposes matched order details for webhook branching
       helcimTransactionId: "txn-webhook-boolean",
       status: "approved",
     }), true);
+  `);
+});
+
+test("private checkout store ignores Square provider rows during Helcim webhook reconciliation", () => {
+  runOrderStoreScenario(`
+    const { repository, store } = createFakeStore();
+    await store.createPendingOrder(pendingOrderInput);
+    repository.rows[0].paymentProvider = "square";
+    repository.rows[0].purpose = "appointment_deposit";
+
+    const result = await store.recordHelcimWebhookEventWithOrder({
+      amount: "123.45",
+      currency: "CAD",
+      eventId: "event-square-provider-ignored",
+      eventType: "cardTransaction",
+      helcimInvoiceNumber: "INV-4242",
+      helcimTransactionId: "txn-square-must-not-finalize",
+      status: "approved",
+    });
+
+    assert.equal(result.recorded, true);
+    assert.equal(result.paid, false);
+    assert.equal(result.matchedOrder, null);
+    assert.equal(repository.events[0].orderId, null);
+    assert.equal(repository.rows[0].status, "pending");
+    assert.equal(repository.rows[0].helcimTransactionId, null);
   `);
 });
 

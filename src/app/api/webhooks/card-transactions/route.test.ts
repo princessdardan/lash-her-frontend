@@ -281,6 +281,7 @@ test("Helcim webhook route finalizes approved appointment webhook after event pe
           helcimInvoiceId: 4242,
           helcimInvoiceNumber: "INV-APPT-4242",
           orderId: "lh-appointment-123",
+          paymentProvider: "helcim",
           purpose: "appointment_deposit",
         },
         paid: true,
@@ -317,6 +318,7 @@ test("Helcim webhook route finalizes duplicate paid appointment events", () => {
           helcimInvoiceId: 4242,
           helcimInvoiceNumber: "INV-APPT-4242",
           orderId: "lh-appointment-123",
+          paymentProvider: "helcim",
           purpose: "appointment_deposit",
         },
         paid: true,
@@ -349,6 +351,7 @@ test("Helcim webhook route finalizes approved custom partial appointment webhook
           helcimInvoiceId: 4242,
           helcimInvoiceNumber: "INV-APPT-4242",
           orderId: "lh-appointment-123",
+          paymentProvider: "helcim",
           purpose: "appointment_custom_partial",
         },
         paid: true,
@@ -359,6 +362,41 @@ test("Helcim webhook route finalizes approved custom partial appointment webhook
     assert.equal((await handler(createRequest(body))).status, 200);
     assert.equal(finalizedBookings.length, 1);
     assert.equal(finalizedBookings[0].order.purpose, "appointment_custom_partial");
+  `);
+});
+
+test("Helcim webhook route does not finalize Square appointment orders matched by legacy identifiers", () => {
+  runRouteScenario(`
+    const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });
+    const { finalizedBookings, handler } = await runScenario({
+      getCardTransaction: async () => ({
+        amount: "75.00",
+        currency: "CAD",
+        id: 25764674,
+        invoiceNumber: "INV-APPT-4242",
+        status: "APPROVED",
+      }),
+      recordEvent: async () => ({
+        matchedOrder: {
+          _id: "checkout-order-row-square",
+          amount: 75,
+          currency: "CAD",
+          helcimInvoiceId: null,
+          helcimInvoiceNumber: null,
+          orderId: "lh-square-appointment-123",
+          paymentProvider: "square",
+          purpose: "appointment_deposit",
+        },
+        paid: true,
+        recorded: true,
+      }),
+      finalizeAppointmentPaymentForOrder: async () => {
+        throw new Error("Square service rows must not enter Helcim appointment finalization");
+      },
+    });
+
+    assert.equal((await handler(createRequest(body))).status, 200);
+    assert.equal(finalizedBookings.length, 0);
   `);
 });
 

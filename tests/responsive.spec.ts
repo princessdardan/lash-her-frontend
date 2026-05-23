@@ -5,7 +5,7 @@ const pages = [
   { path: '/', name: 'Homepage' },
   { path: '/contact', name: 'Contact' },
   { path: '/gallery', name: 'Gallery' },
-  { path: '/training', name: 'Training' },
+  { path: '/training-programs', name: 'Training Programs' },
 ];
 
 const viewports = {

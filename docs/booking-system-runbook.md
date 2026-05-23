@@ -1,8 +1,8 @@
 # Booking System Runbook
 
-Date: 2026-05-19
+Date: 2026-05-23
 
-Use this runbook when operating, smoke testing, or troubleshooting Lash Her booking flows in staging or production. It assumes the unified booking system is live: customers select slots in the Lash Her app, payment is handled by Helcim when required, and confirmed events are created on the connected Google Calendar.
+Use this runbook when operating, smoke testing, or troubleshooting Lash Her booking flows in staging or production. It assumes the provider split is live: service booking customers select slots in the Lash Her app, paid service bookings redirect to Square hosted checkout, product and training checkout remain on Helcim, and verified service bookings create events on the connected Google Calendar through the Google Calendar API.
 
 ## System Boundaries
 
@@ -11,8 +11,10 @@ Use this runbook when operating, smoke testing, or troubleshooting Lash Her book
 | Sanity | Public booking copy, booking settings, booking offerings, native payment fields, cache revalidation | Storage for PII, payment state, holds, booking history, or transaction records |
 | Private Postgres | Holds, checkout orders, payment events, appointment state, training enrollments, reconciliation data | Public CMS or browser-readable data source |
 | Upstash Redis | Google Calendar OAuth refresh token, calendar locks, idempotency keys, short-lived contention locks | Canonical payment or booking storage |
-| Google Calendar | Staff source of truth for final booked events and busy intervals | Payment gate or appointment-schedule engine |
-| Helcim | Checkout initialization, payment approval, webhook event source | Sole authority for final booking state |
+| Google Calendar API | Staff source of truth for final service booking events and busy intervals | Payment gate or Appointment Schedule engine |
+| Google Appointment Schedule | Paid training intro-call scheduling after private token eligibility passes | Service booking engine or paid-status verifier |
+| Square | Hosted checkout, return reconciliation, and webhook payment source for service bookings only | Product checkout, training checkout, or sole proof of booking success |
+| Helcim | Product checkout and training checkout initialization, payment approval, webhook event source | New service booking payment provider or sole authority for final booking state |
 | Resend | Customer/admin transactional emails | Source of truth for booking success |
 
 If a record contains customer contact data, payment identifiers, hold state, or reconciliation metadata, treat it as private Postgres data. Do not move it into Sanity.
@@ -25,32 +27,34 @@ If a record contains customer contact data, payment identifiers, hold state, or 
 2. The page loads Sanity `bookingSettings` and active `bookingOffering` records.
 3. The browser requests availability from `/api/booking/availability`.
 4. The server builds slots from configured availability marker events, Google Calendar busy intervals, private active holds, lead time, horizon, duration, intervals, and buffers.
-5. Training calls submit through `/api/booking/create`; in-person appointments must use the paid appointment hold/checkout flow.
+5. Free or internal training-call booking paths submit through `/api/booking/create` only when explicitly enabled; paid training intro-call scheduling uses the gated training schedule page and Google Appointment Schedule.
 6. The server revalidates the slot before creating or confirming the booking. Direct unpaid in-person appointment creation is rejected.
 7. A Google Calendar event is inserted or reused.
 8. Booking confirmation emails are attempted through Resend. Email failure does not undo a confirmed booking.
 
-### Paid Appointment With Hold And Helcim Payment
+### Paid Service Booking With Hold And Square Payment
 
 1. Customer selects a paid booking offering and slot.
 2. `/api/booking/holds` revalidates the slot and creates a private hold with an immutable snapshot of the selected deposit/full/custom-partial payment amount.
-3. `/api/booking/checkout` initializes the Helcim checkout from the hold snapshot, creates or updates a pending private order, and marks the hold `payment_pending`.
-4. Payment success may arrive from browser validation, the Helcim webhook, or both.
-5. `/api/checkout/validate-payment` and `/api/webhooks/card-transactions` both route through the shared appointment finalizer.
-6. The finalizer verifies payment, locks the relevant state, reuses or creates the Google Calendar event, marks the hold booked, persists payment evidence, and sends emails non-blockingly.
+3. `/api/booking/checkout` initializes Square hosted checkout from the hold snapshot, creates or updates a pending private order, and marks the hold `payment_pending`.
+4. The browser redirects to Square. The Square return URL is not proof of payment.
+5. `/api/booking/square/return` and `/api/webhooks/square` reconcile server-side with Square before treating the payment as verified.
+6. Verified Square payment moves the service booking into private paid Calendar-pending state, then the shared finalizer locks the order and hold.
+7. The finalizer reuses or creates one Google Calendar API event, marks the hold booked, persists payment and Calendar evidence in private DB, and sends emails non-blockingly.
 
-Duplicate browser/webhook success should produce one final booking, not duplicate Calendar events.
+Duplicate return/webhook success should produce one final booking, not duplicate Calendar events. If payment is verified after the original hold expired or conflicts with another event, keep the hold in `paid_unbookable_rebooking_pending`. Staff must try manual rebooking first, verify replacement availability before creating a Calendar event, and refund only after rebooking fails or staff chooses refund.
 
 ### Paid Training Intro Call
 
 1. Training checkout completes through the commerce checkout flow.
-2. The private training enrollment/order is marked paid.
-3. The customer receives the order-based scheduling path: `/booking?type=training-call&order=<order-reference>`.
-4. The booking form asks for the checkout email. The email is sent in the secure request body, not in the URL.
-5. The server matches the order reference and checkout email against private training enrollment state before exposing training-call availability.
-6. The resulting booking is forced to the `training-call` type and marked scheduled/booked in private state after Calendar event creation.
+2. Helcim verifies the payment for the training order.
+3. The private training enrollment/order is marked paid and a private schedule token is issued.
+4. The customer receives the tokenized paid training schedule path.
+5. The app resolves private token eligibility before rendering anything that exposes the Google Appointment Schedule URL.
+6. After eligibility passes, the page shows the public Google Appointment Schedule link or embed configured on the training program.
+7. The app does not mark the enrollment scheduled only because the schedule page rendered. Invalid, unpaid, expired, or wrong-program tokens must not reveal the schedule URL.
 
-Legacy tokenized training links are retired. If a customer presents one, do not try to use it; find the paid training order reference and use the order-based booking path.
+Google Appointment Schedule is only for paid training intro-call scheduling after the app token gate. Do not use it for service bookings.
 
 ## Routine Operator Checks
 
@@ -65,6 +69,8 @@ Run these checks for staging release validation, production launch windows, and 
 - [ ] `KV_REST_API_URL` and `KV_REST_API_TOKEN` point to the intended Upstash Redis instance.
 - [ ] `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` match the environment OAuth client.
 - [ ] `HELCIM_GENERAL_API_TOKEN`, `HELCIM_TRANSACTION_API_TOKEN`, and `HELCIM_WEBHOOK_VERIFIER_TOKEN` are configured.
+- [ ] `SERVICE_BOOKING_SQUARE_ENABLED=true` only where service booking checkout should use Square.
+- [ ] `SQUARE_ENVIRONMENT`, `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, `SQUARE_WEBHOOK_SIGNATURE_KEY`, `SQUARE_SERVICE_BOOKING_RETURN_URL`, and `SQUARE_SERVICE_BOOKING_WEBHOOK_URL` are configured only as server-side variables.
 - [ ] `RESEND_API_KEY`, `FROM_EMAIL`, and `ADMIN_EMAIL` are configured.
 
 ### Booking Smoke
@@ -76,24 +82,25 @@ Run these checks for staging release validation, production launch windows, and 
 - [ ] Confirm the booking confirmation email is delivered or that any email failure is logged without rolling back the booking.
 - [ ] Confirm the booking marketing opt-in and no-opt-in paths create private audit evidence and do not create Sanity submission documents.
 
-### Paid Appointment Smoke
+### Paid Service Booking Smoke
 
-- [ ] Create a paid appointment hold in staging with test data.
-- [ ] Start Helcim checkout from the hold.
-- [ ] Complete a staging/test payment.
+- [ ] Create a paid service booking hold in staging with test data.
+- [ ] Start Square hosted checkout from the hold.
+- [ ] Complete a Square sandbox/test payment.
 - [ ] Confirm the private order transitions from pending to paid.
-- [ ] Confirm the private hold transitions to booked or manual follow-up.
+- [ ] Confirm Square return without server-side paid reconciliation does not finalize booking.
+- [ ] Confirm the private hold transitions to booked or `paid_unbookable_rebooking_pending`.
 - [ ] Confirm one Google Calendar event exists for the selected slot.
-- [ ] Confirm browser validation and webhook retries are idempotent.
+- [ ] Confirm Square return and webhook retries are idempotent.
 
 ### Paid Training Smoke
 
 - [ ] Complete a paid training checkout in staging.
-- [ ] Confirm the customer receives an order-based scheduling link.
-- [ ] Confirm the training booking gate rejects the wrong checkout email.
-- [ ] Confirm the correct checkout email loads `training-call` availability.
-- [ ] Create the training intro-call booking and verify the private enrollment is marked scheduled/booked.
-- [ ] Confirm one Google Calendar event exists with redacted training metadata evidence.
+- [ ] Confirm Helcim payment marks the private enrollment/order paid.
+- [ ] Confirm the customer receives the tokenized paid training schedule link.
+- [ ] Confirm invalid, unpaid, expired, or wrong-program tokens do not reveal the Google Appointment Schedule URL.
+- [ ] Confirm a valid token renders the Google Appointment Schedule link or embed.
+- [ ] Confirm rendering the page does not mark the private enrollment scheduled.
 
 ### Sanity Revalidation Smoke
 
@@ -106,14 +113,16 @@ Run these checks for staging release validation, production launch windows, and 
 
 At launch and after payment/calendar incidents, inspect private operational state for:
 
-- Active `held` holds past expiry.
+- Active service `held` holds past expiry.
 - `payment_pending` holds older than the configured payment-success grace window.
-- Paid orders without Google Calendar event IDs.
+- Paid service orders without Google Calendar event IDs.
 - Expired holds that later received payment success.
-- Orders or holds marked `booking_failed` or `manual_followup`.
-- Helcim webhook events that do not match a known private order.
+- Orders or holds marked `booking_failed`, `manual_followup`, or `paid_unbookable_rebooking_pending`.
+- Square webhook events that do not match a known private service order.
+- Helcim webhook events that do not match a known product or training order.
 - Duplicate webhook/idempotency keys.
-- Paid training enrollments not yet booked.
+- Paid training enrollments without schedule-token progress.
+- Paid training schedule tokens that cannot pass eligibility.
 - Calendar events created without a matching private booking record.
 
 Evidence must be redacted. Do not paste customer emails, phone numbers, raw webhook bodies, full connection strings, payment tokens, or complete transaction identifiers into tickets or release notes.
@@ -175,17 +184,33 @@ Operator action:
 Check:
 
 - Hold state and expiry timestamp in private Postgres.
-- Checkout order status and Helcim invoice/payment references.
-- Helcim webhook delivery logs.
+- Checkout order status and provider references.
+- Square order/payment references for service bookings, or Helcim invoice/payment references for product and training checkout.
+- Square webhook delivery logs for service bookings, or Helcim webhook delivery logs for product and training checkout.
 - Whether a Calendar event already exists for the hold metadata.
 
 Operator action:
 
 1. If payment did not succeed, release or let the hold expire and ask the customer to retry.
-2. If payment succeeded but the slot is no longer available, keep the record in manual follow-up and offer a new slot before any refund decision.
+2. If service payment succeeded but the slot is no longer available, keep the record in `paid_unbookable_rebooking_pending`, offer a new slot first, verify replacement availability before Calendar event creation, and refund only after rebooking fails or staff chooses refund.
 3. If Calendar insertion may have succeeded but the response was lost, search for the existing event before creating anything manually.
 
-### Helcim Webhook Or Payment Verification Fails
+### Square Service Payment Verification Fails
+
+Check:
+
+- Webhook URL exactly matches `SQUARE_SERVICE_BOOKING_WEBHOOK_URL`.
+- `SQUARE_WEBHOOK_SIGNATURE_KEY` is scoped to the same Square app and webhook subscription.
+- `SQUARE_ENVIRONMENT`, `SQUARE_ACCESS_TOKEN`, and `SQUARE_LOCATION_ID` match the intended Square sandbox or production account.
+- Square provider event IDs are recorded in private idempotency rows.
+
+Operator action:
+
+1. Treat browser return as an incomplete handoff until server-side reconciliation proves payment.
+2. Use Square dashboard delivery status and Vercel logs to identify failed events.
+3. Do not replay events manually unless idempotency evidence is understood.
+
+### Helcim Commerce Webhook Or Payment Verification Fails
 
 Check:
 
@@ -199,7 +224,7 @@ Operator action:
 
 1. Use Helcim dashboard delivery status and Vercel logs to identify the failed event.
 2. Do not replay the same event manually unless idempotency evidence is understood.
-3. If browser validation succeeded but webhook failed, confirm the shared finalizer already booked the hold before retrying anything.
+3. If browser validation succeeded but webhook failed, confirm the product or training order already reached the expected private paid state before retrying anything.
 
 ### Email Does Not Send
 
@@ -215,20 +240,20 @@ Operator action:
 2. Record the Resend message/error ID with addresses redacted.
 3. Send a manual customer follow-up if the booking or paid training instruction email failed.
 
-### Customer Cannot Access Paid Training Booking
+### Customer Cannot Access Paid Training Schedule
 
 Check:
 
-- The order reference belongs to a paid training enrollment.
-- The customer is entering the checkout email, not another contact address.
-- The booking path contains `type=training-call` and the order reference.
-- Availability requests are using the secure request body for email verification.
+- The token belongs to a paid training enrollment for the requested program.
+- The token has not expired or already been revoked.
+- The requested training program has a published Google Appointment Schedule URL or embed mode.
+- The page is resolving eligibility before rendering the schedule URL.
 
 Operator action:
 
 1. Verify the paid training enrollment in private Postgres.
-2. Send the customer the order-based booking path again.
-3. If the email is wrong because checkout data was entered incorrectly, escalate for a private record correction decision; do not bypass eligibility in Sanity.
+2. Send the customer a valid paid training schedule link again if policy allows.
+3. If the token state is wrong, escalate for a private record correction decision; do not bypass eligibility in Sanity and do not paste the Appointment Schedule URL into public docs or tickets.
 
 ## Stop Conditions
 
@@ -238,8 +263,9 @@ Stop the launch or release window if any of these occur:
 - Production backup/PITR is unavailable before an approved migration window.
 - Customer PII, payment state, or booking history appears in Sanity.
 - Live booking or form flows create new Sanity submission documents.
-- Paid payment succeeds but the finalizer repeatedly fails to book or mark manual follow-up.
-- Helcim webhook signatures cannot be verified.
+- Paid service payment succeeds but the finalizer repeatedly fails to book or mark rebooking/manual follow-up.
+- Square service webhook signatures cannot be verified.
+- Helcim commerce webhook signatures cannot be verified.
 - Google Calendar writes fail for confirmed paid bookings.
 - Public booking accepts a retired tokenized handoff.
 
@@ -248,8 +274,8 @@ Stop the launch or release window if any of these occur:
 | Situation | First action | Escalate to |
 | --- | --- | --- |
 | Booking page stale after publish | Verify Sanity webhook delivery, projection, and cache tag | Technical operator |
-| Payment succeeded but booking did not finalize | Preserve private records, inspect finalizer logs, check Calendar event existence | Technical operator and business owner |
-| Customer paid and slot is unavailable | Mark/manual-follow-up, offer alternate slot before refund decision | Business owner |
+| Service payment succeeded but booking did not finalize | Preserve private records, inspect finalizer logs, check Calendar event existence | Technical operator and business owner |
+| Customer paid for a service and slot is unavailable | Keep rebooking pending, offer alternate slot, verify availability before Calendar event, refund only if rebooking fails or staff chooses refund | Business owner |
 | PII or payment data appears in Sanity | Stop affected flows and preserve evidence | Business/privacy owner and technical operator |
 | Production migration concern | Stop; follow `docs/private-database-migration-runbook.md` | Migration approver |
 

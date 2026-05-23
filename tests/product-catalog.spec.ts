@@ -6,6 +6,9 @@ test.describe('Product Catalog Page', () => {
     await page.waitForLoadState('networkidle');
 
     await expect(page.getByRole('heading', { name: 'Catalog' })).toBeVisible();
+    await expect(page.getByRole('complementary', { name: /catalog filters/i })).toBeVisible();
+    await expect(page.getByLabel(/sort by/i)).toBeVisible();
+    await expect(page.getByText(/showing\s+\d+\s+products/i)).toBeVisible();
     
     const productCards = page.locator('section').filter({ hasText: 'Products' }).locator('article');
     const count = await productCards.count();
@@ -14,11 +17,9 @@ test.describe('Product Catalog Page', () => {
       await expect(page.getByRole('heading', { name: 'Your Cart' })).toBeHidden();
       await expect(productCards.first().getByRole('heading')).toBeVisible();
       await expect(productCards.first()).toContainText(/\$[\d,]+\.\d{2}/);
-       
-      const firstProductLink = productCards.first().locator('a[href*="/products/"]');
-      if (await firstProductLink.count() > 0) {
-        await expect(firstProductLink).toBeVisible();
-      }
+        
+      await expect(productCards.first().getByRole('link').first()).toBeVisible();
+      await expect(productCards.first().getByRole('button', { name: /add (to cart|option)|sold out|unavailable/i }).first()).toBeVisible();
 
       const addButton = productCards.first().getByRole('button', { name: /add to cart/i });
       if (await addButton.count() > 0) {
@@ -61,5 +62,27 @@ test.describe('Product Catalog Page', () => {
         expect(scrollWidth).toBeLessThanOrEqual(clientWidth + 1);
       }
     }
+  });
+
+  test('should expose accessible catalog filter, sort, result count, and product card controls', async ({ page }) => {
+    await page.goto('/products');
+    await page.waitForLoadState('networkidle');
+
+    await expect(page.getByRole('heading', { name: 'Catalog' })).toBeVisible();
+    await expect(page.getByRole('complementary', { name: /catalog filters/i })).toBeVisible();
+    await expect(page.getByLabel(/sort by/i)).toBeVisible();
+    await expect(page.getByText(/showing\s+\d+\s+products/i)).toBeVisible();
+
+    const productCards = page.locator('section').filter({ hasText: 'Products' }).locator('article');
+    const count = await productCards.count();
+
+    if (count === 0) {
+      return;
+    }
+
+    const firstCard = productCards.first();
+    await expect(firstCard.getByRole('heading')).toBeVisible();
+    await expect(firstCard.getByRole('link').first()).toBeVisible();
+    await expect(firstCard.getByRole('button', { name: /add (to cart|option)|sold out|unavailable/i }).first()).toBeVisible();
   });
 });

@@ -40,8 +40,7 @@ For each document type, verify the publish flow: Update content in Studio -> Pub
 | | | `galleryPage` | | | `galleryPage` | `/gallery` | |
 | | | `globalSettings` | | | `global` | (All pages) | |
 | | | `mainMenu` | | | `menu` | (All pages) | |
-| | | `trainingPage` | | | `trainingPage` | `/training` | |
-| | | `trainingProgramsPage` | | | `trainingProgramsPage`, `trainingProgram` | `/training-programs` | |
+| | | `trainingProgramsPage` | | | `trainingProgramsPage`, `trainingProgram` | `/training-programs` (`/training` redirects here) | |
 | | | `trainingProgram` | | | `trainingProgram` | `/training-programs/[slug]` | |
 | | | `product` | | | `product` | `/products`, `/products/[slug]` | |
 | | | `service` | | | `service` | `/services`, `/services/[slug]`, `/booking?offering=<slug>` | |
@@ -51,7 +50,7 @@ For each document type, verify the publish flow: Update content in Studio -> Pub
 ## Service Integration Checks
 
 - [ ] **Booking:** Visit `/booking`, confirm slots load from Google Calendar.
-- [ ] **Paid appointment booking:** Visit an explicit service/offering booking URL, create a hold, complete deposit/full/custom partial Helcim checkout in staging, and confirm Google Calendar insertion happens only after verified payment.
+- [ ] **Paid service booking:** Visit an explicit service/offering booking URL, create a hold, complete deposit/full/custom partial Square hosted checkout in staging, and confirm Google Calendar insertion happens only after verified payment.
 - [ ] **Checkout:** Add product to cart, proceed to Helcim checkout page (test mode).
 - [ ] **Forms:** Submit general inquiry, training contact, and contact popup tests; confirm private DB submission/consent evidence and Resend email delivery with PII redacted in evidence.
 - [ ] **Booking Marketing Choices:** Create one booking with marketing opt-in and one without; confirm both choices create private DB audit evidence, only affirmative consent updates the consolidated marketing contact, and no new Sanity submission documents are created.
@@ -72,7 +71,7 @@ These checks require live staging approval, real staging credentials, and record
 | --- | --- | --- | --- |
 | Product checkout | Complete a product cart checkout through the staging Helcim flow. | Checkout/invoice reference, approved test transaction, product confirmation page evidence, and Resend product order confirmation message ID/status with addresses redacted. | |
 | Training checkout | Complete a paid training checkout through the staging Helcim flow. | Checkout/invoice reference, approved test transaction, order-only confirmation URL, and order-based scheduling link evidence. | |
-| Appointment checkout | Complete deposit, full, and custom partial appointment payments through the staging Helcim flow. | Hold reference, checkout/order reference, approved test transaction, booking confirmation evidence, and Google Calendar event ID created after payment validation. | |
+| Service booking checkout | Complete deposit, full, and custom partial service booking payments through the staging Square hosted checkout flow. | Hold reference, Square checkout/order reference, approved test transaction, booking confirmation evidence, and Google Calendar event ID created after payment validation. | |
 | Helcim webhook | Verify `/api/webhooks/card-transactions` receives and accepts the card transaction event. | Vercel log/event ID, accepted signature, idempotency key, and redacted transaction reference. | |
 | Private DB state | Confirm checkout/order rows, appointment hold rows, training enrollment rows, payment events, marketing contact submissions, and consent events reach the expected states. | Redacted query output showing pending-to-paid transition, hold state transition to booked/manual follow-up, idempotent event storage, form submission evidence, opt-in consent evidence, and no-opt-in audit evidence. | |
 | Paid training booking gate | Confirm paid training booking rejects legacy token links and requires the checkout email for the order-based scheduling link. | Legacy token rejection evidence, order-based booking link behavior, checkout-email mismatch rejection evidence, and Calendar event evidence. | |

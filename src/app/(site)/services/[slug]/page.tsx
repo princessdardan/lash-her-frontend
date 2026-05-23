@@ -76,10 +76,10 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
           </div>
           
           <div className="w-full md:w-1/2 flex flex-col">
-            <span className="text-sm font-bold text-lh-primary uppercase tracking-wider mb-2 block">
+            <span className="eyebrow-label mb-2 block">
               Service
             </span>
-            <h1 className="card-heading-red text-3xl md:text-4xl mb-4">
+            <h1 className="section-heading mb-4">
               {service.title}
             </h1>
             
@@ -97,7 +97,7 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
               <div className="mb-8 space-y-6">
                 {service.detailSections.map((section, idx) => (
                   <div key={section._key || idx}>
-                    <h3 className="font-bold text-lh-shadow mb-2">{section.heading}</h3>
+                    <h3 className="section-subheading mb-2">{section.heading}</h3>
                     <p className="text-black font-light">{section.content}</p>
                   </div>
                 ))}

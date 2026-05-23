@@ -42,6 +42,7 @@ const helperScript = String.raw`
     ],
     orderId: "lh-training-123",
     paidAt: new Date("2026-05-10T00:10:00.000Z"),
+    paymentProvider: "helcim",
     redactedAt: null,
     secretTokenCiphertext: "v1:encrypted",
     status: "paid",
@@ -93,6 +94,7 @@ const helperScript = String.raw`
         (input.helcimInvoiceId !== undefined || input.helcimInvoiceNumber !== undefined)
         && invoiceIdMatches
         && invoiceNumberMatches
+        && this.checkoutOrder.paymentProvider === "helcim"
         && this.checkoutOrder.status === "paid"
         && candidate.checkoutOrderId === this.checkoutOrder.id
         && candidate.schedulingStatus === "pending"
@@ -525,6 +527,27 @@ test("training enrollment store gets paid pending confirmations by public order 
     assert.equal(await store.getPaidPendingConfirmationByPublicOrderId(checkoutOrder.orderId), null);
     repository.checkoutOrder.status = "paid";
     assert.equal(await store.getPaidPendingConfirmationByPublicOrderId("lh-missing"), null);
+  `);
+});
+
+test("training enrollment store does not issue Helcim invoice tokens for Square orders", () => {
+  runTrainingEnrollmentStoreScenario(`
+    const { repository, store } = createFakeStore();
+    await store.createEnrollment(createEnrollmentInput);
+    repository.checkoutOrder.paymentProvider = "square";
+
+    const found = await store.getPaidPendingNotificationByHelcimInvoiceIfMissing({
+      helcimInvoiceId: 4242,
+      helcimInvoiceNumber: "INV-4242",
+    });
+    const issued = await store.issueSchedulingTokenForPaidHelcimInvoiceIfMissing({
+      helcimInvoiceId: 4242,
+      helcimInvoiceNumber: "INV-4242",
+    }, now);
+
+    assert.equal(found, null);
+    assert.equal(issued, null);
+    assert.equal(repository.enrollments[0].schedulingTokenHash, null);
   `);
 });
 

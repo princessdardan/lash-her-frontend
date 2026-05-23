@@ -8,6 +8,7 @@ const bookingPageSource = readFileSync(new URL("../../app/(site)/booking/page.ts
 const bookingShimSource = readFileSync(new URL("../../app/(site)/booking/booking-shim.ts", import.meta.url), "utf8");
 const productsPageSource = readFileSync(new URL("../../app/(site)/products/page.tsx", import.meta.url), "utf8");
 const servicesPageSource = readFileSync(new URL("../../app/(site)/services/page.tsx", import.meta.url), "utf8");
+const bookingConfirmationSource = readFileSync(new URL("../../app/(site)/booking/confirmation/page.tsx", import.meta.url), "utf8");
 
 describe("booking offering flow contract", () => {
   it("initializes service offering redirects through the booking shim helper", () => {
@@ -49,11 +50,12 @@ describe("booking offering flow contract", () => {
     assert.doesNotMatch(bookingPageSource, /paidTrainingOrderId=/);
   });
 
-  it("uses /api/booking/holds and /api/booking/checkout for paid offerings", () => {
+  it("uses private holds and the Square hosted checkout contract for paid offerings", () => {
     assert.match(bookingFlowSource, /startPaidOfferingCheckout\(\{/);
     assert.match(bookingFlowSource, /fetcher\("\/api\/booking\/holds"/);
     assert.match(bookingFlowSource, /fetcher\("\/api\/booking\/checkout"/);
-    assert.match(bookingFlowSource, /paymentOption,/);
+    assert.match(bookingFlowSource, /paymentProvider: "square"/);
+    assert.match(bookingFlowSource, /checkoutUrl/);
     assert.match(bookingFlowSource, /body: JSON\.stringify\(\{\s*holdReference,\s*\}\)/);
   });
 
@@ -72,9 +74,20 @@ describe("booking offering flow contract", () => {
     assert.match(bookingFlowSource, /\{shouldCollectIntake && <div className="flex items-start gap-3 pt-4">/);
   });
 
-  it("validates Helcim success before showing a confirmed paid appointment", () => {
-    assert.match(bookingFlowSource, /fetch\("\/api\/checkout\/validate-payment"/);
-    assert.match(bookingFlowSource, /Payment could not be verified/);
+  it("does not render Helcim Pay or Google Appointment Schedule UI for service bookings", () => {
+    assert.doesNotMatch(bookingFlowSource, /appendHelcimPayIframe|removeHelcimPayIframe|secure\.helcim\.app|\/api\/checkout\/validate-payment/);
+    assert.doesNotMatch(bookingFlowSource, /<iframe|iframe|Appointment Schedule|appointments\.google\.com/i);
+    assert.match(bookingFlowSource, /Opening secure Square checkout/);
+    assert.match(bookingFlowSource, /Continue to secure Square checkout/);
+  });
+
+  it("shows Square return status copy without private identifiers", () => {
+    assert.match(bookingConfirmationSource, /Payment verification pending/);
+    assert.match(bookingConfirmationSource, /Rebooking pending/);
+    assert.match(bookingConfirmationSource, /Payment under review/);
+    assert.match(bookingConfirmationSource, /Booking confirmed/);
+    assert.match(bookingConfirmationSource, /No private payment identifiers are shown here/);
+    assert.doesNotMatch(bookingConfirmationSource, /squarePaymentLinkId|squareOrderId|holdReference/);
   });
 
   it("does not reference checkoutProduct in products page", () => {
@@ -124,13 +137,21 @@ describe("booking offering flow contract", () => {
       }
 
       if (url === "/api/booking/checkout") {
-        return Response.json({ checkoutToken: "checkout_token_123" });
+        return Response.json({
+          checkoutUrl: "https://square.link/u/service-checkout",
+          holdReference: "hold_public_123",
+          orderId: "lh-sq-order-1",
+          paymentProvider: "square",
+          reused: false,
+          squareOrderId: "square-order-1",
+          squarePaymentLinkId: "square-payment-link-1",
+        });
       }
 
       return Response.json({ error: "Unexpected request" }, { status: 500 });
     };
 
-    const checkoutToken = await startPaidOfferingCheckout({
+    const checkout = await startPaidOfferingCheckout({
       offeringSlug: "classic-full-set",
       start: "2030-06-15T16:00:00.000Z",
       name: "Test Client",
@@ -141,7 +162,15 @@ describe("booking offering flow contract", () => {
       fetcher,
     });
 
-    assert.equal(checkoutToken, "checkout_token_123");
+    assert.deepEqual(checkout, {
+      checkoutUrl: "https://square.link/u/service-checkout",
+      holdReference: "hold_public_123",
+      orderId: "lh-sq-order-1",
+      paymentProvider: "square",
+      reused: false,
+      squareOrderId: "square-order-1",
+      squarePaymentLinkId: "square-payment-link-1",
+    });
     assert.deepEqual(requests, [
       {
         url: "/api/booking/holds",
@@ -162,6 +191,36 @@ describe("booking offering flow contract", () => {
         },
       },
     ]);
+  });
+
+
+
+  it("surfaces expired holds before payment navigation", async () => {
+    const requests: string[] = [];
+    const fetcher: typeof fetch = async (input) => {
+      const url = input.toString();
+      requests.push(url);
+
+      if (url === "/api/booking/holds") {
+        return Response.json({ hold: { reference: "hold_public_123" } });
+      }
+
+      return Response.json({ error: "Booking hold is no longer available" }, { status: 409 });
+    };
+
+    await assert.rejects(
+      startPaidOfferingCheckout({
+        offeringSlug: "classic-full-set",
+        start: "2030-06-15T16:00:00.000Z",
+        name: "Test Client",
+        email: "test.client@example.com",
+        phone: "(555) 123-4567",
+        paymentOption: "full",
+        fetcher,
+      }),
+      /Hold expired, choose another time\./,
+    );
+    assert.deepEqual(requests, ["/api/booking/holds", "/api/booking/checkout"]);
   });
 
   it("surfaces paid offering hold failures before checkout starts", async () => {

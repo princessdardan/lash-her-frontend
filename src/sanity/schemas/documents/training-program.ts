@@ -1,5 +1,31 @@
 import { defineField, defineType, defineArrayMember } from "sanity";
 
+function validateSafeHref(value: string | undefined) {
+  if (!value) return true;
+  if (value.startsWith("https://")) return true;
+  if (value.startsWith("/") && !value.startsWith("//")) return true;
+  return 'URL must start with "https://" or "/" (but not "//").';
+}
+
+function validateGoogleAppointmentScheduleUrl(value: string | undefined) {
+  if (!value) return true;
+
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol === "https:"
+      && url.hostname === "calendar.google.com"
+      && url.pathname.startsWith("/calendar/appointments/schedules/")
+    ) {
+      return true;
+    }
+  } catch {
+    return "Enter a valid Google Appointment Schedule URL.";
+  }
+
+  return "Use the public Google Appointment Schedule URL from calendar.google.com/calendar/appointments/schedules/.";
+}
+
 export const trainingProgram = defineType({
   name: "trainingProgram",
   title: "Training Program",
@@ -16,6 +42,29 @@ export const trainingProgram = defineType({
       type: "text",
     }),
     defineField({
+      name: "heroSubtitle",
+      title: "Hero Subtitle",
+      type: "string",
+      group: "details",
+    }),
+    defineField({
+      name: "heroImage",
+      title: "Hero Image",
+      type: "image",
+      group: "details",
+      options: { hotspot: true },
+      fields: [
+        defineField({ name: "alt", title: "Alt text", type: "string" }),
+      ],
+    }),
+    defineField({
+      name: "heroBadges",
+      title: "Hero Badges",
+      type: "array",
+      group: "details",
+      of: [defineArrayMember({ type: "string" })],
+    }),
+    defineField({
       name: "slug",
       title: "Slug",
       type: "slug",
@@ -30,6 +79,12 @@ export const trainingProgram = defineType({
       group: "details",
     }),
     defineField({
+      name: "detailEyebrow",
+      title: "Detail Eyebrow",
+      type: "string",
+      group: "details",
+    }),
+    defineField({
       name: "detailDescription",
       title: "Detail Section Description",
       type: "text",
@@ -38,6 +93,16 @@ export const trainingProgram = defineType({
     defineField({
       name: "detailHeroImage",
       title: "Detail Hero Image",
+      type: "image",
+      group: "details",
+      options: { hotspot: true },
+      fields: [
+        defineField({ name: "alt", title: "Alt text", type: "string" }),
+      ],
+    }),
+    defineField({
+      name: "detailMainImage",
+      title: "Detail Main Image",
       type: "image",
       group: "details",
       options: { hotspot: true },
@@ -87,14 +152,61 @@ export const trainingProgram = defineType({
           name: "href",
           title: "URL",
           type: "string",
-          validation: (Rule) => Rule.custom((value) => {
-            if (!value) return true;
-            if (value.startsWith('https://')) return true;
-            if (value.startsWith('/') && !value.startsWith('//')) return true;
-            return 'URL must start with "https://" or "/" (but not "//").';
-          })
+          validation: (Rule) => Rule.custom(validateSafeHref),
         }),
       ],
+    }),
+    defineField({
+      name: "secondaryCta",
+      title: "Secondary CTA",
+      type: "object",
+      group: "details",
+      fields: [
+        defineField({ name: "label", title: "Label", type: "string" }),
+        defineField({
+          name: "href",
+          title: "URL",
+          type: "string",
+          validation: (Rule) => Rule.custom(validateSafeHref),
+        }),
+      ],
+    }),
+    defineField({
+      name: "enrollmentTitle",
+      title: "Enrollment Title",
+      type: "string",
+      group: "details",
+    }),
+    defineField({
+      name: "enrollmentDescription",
+      title: "Enrollment Description",
+      type: "text",
+      group: "details",
+    }),
+    defineField({
+      name: "enrollmentBackgroundImage",
+      title: "Enrollment Background Image",
+      type: "image",
+      group: "details",
+      options: { hotspot: true },
+      fields: [
+        defineField({ name: "alt", title: "Alt text", type: "string" }),
+      ],
+    }),
+    defineField({
+      name: "enrollmentInclusions",
+      title: "Enrollment Inclusions",
+      type: "array",
+      group: "details",
+      of: [defineArrayMember({ type: "string" })],
+    }),
+    defineField({
+      name: "linkedProduct",
+      title: "Linked Product",
+      type: "reference",
+      group: "commerce",
+      to: [{ type: "sellableProduct" }],
+      description: "Price and checkout source of truth for this program.",
     }),
     defineField({
       name: "blocks",
@@ -208,10 +320,7 @@ export const trainingProgram = defineType({
           type: "string", 
           initialValue: "/booking?type=training-call",
           validation: (Rule) => Rule.custom((value) => {
-            if (!value) return true;
-            if (value.startsWith('https://')) return true;
-            if (value.startsWith('/') && !value.startsWith('//')) return true;
-            return 'URL must start with "https://" or "/" (but not "//").';
+            return validateSafeHref(value);
           })
         }),
       ],
@@ -222,6 +331,43 @@ export const trainingProgram = defineType({
       type: "text",
       group: "commerce",
       hidden: ({ document }) => !document?.checkoutEnabled,
+    }),
+    defineField({
+      name: "introCallAppointmentScheduleUrl",
+      title: "Intro Call Appointment Schedule URL",
+      type: "url",
+      group: "commerce",
+      hidden: ({ document }) => !document?.checkoutEnabled,
+      description: "Public Google Calendar Appointment Schedule URL shown only after a paid training scheduling token is verified.",
+      validation: (Rule) => Rule.custom(validateGoogleAppointmentScheduleUrl),
+    }),
+    defineField({
+      name: "introCallAppointmentScheduleEmbedMode",
+      title: "Intro Call Appointment Schedule Display",
+      type: "string",
+      group: "commerce",
+      hidden: ({ document }) => !document?.checkoutEnabled,
+      description: "Choose whether verified students see an embedded scheduler or a button to open the Google Appointment Schedule.",
+      initialValue: "link",
+      options: {
+        layout: "radio",
+        list: [
+          { title: "Open as link", value: "link" },
+          { title: "Embed on page", value: "embed" },
+        ],
+      },
+      validation: (Rule) => Rule.custom((value) => {
+        if (value === undefined || value === "link" || value === "embed") return true;
+        return "Choose link or embed display mode.";
+      }),
+    }),
+    defineField({
+      name: "introCallSchedulingInstructions",
+      title: "Intro Call Scheduling Instructions",
+      type: "text",
+      group: "commerce",
+      hidden: ({ document }) => !document?.checkoutEnabled,
+      description: "Optional public guidance shown above the Google Appointment Schedule after paid token verification.",
     }),
   ],
   groups: [

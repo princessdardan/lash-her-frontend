@@ -12,6 +12,7 @@ const singletonTypes = new Set([
   "galleryPage",
   "trainingPage",
   "trainingProgramsPage",
+  "productsPage",
   "globalSettings",
   "mainMenu",
   "bookingSettings",
