@@ -8,6 +8,10 @@ const helperScript = String.raw`
     buildSquareServiceCheckoutIdempotencyKey,
     createSquareServiceCheckout,
   } from "./src/lib/booking/square-service-checkout.ts";
+  import {
+    createSquareServiceBookingClient,
+    getSquareServiceBookingRuntimeEnv,
+  } from "./src/lib/booking/square-runtime.ts";
 
   const now = new Date("2026-05-22T14:00:00.000Z");
 
@@ -180,6 +184,79 @@ test("Square service checkout rejects holds without configured payment policy", 
 
     assert.equal(clientRequests.length, 0);
     assert.equal(persisted.length, 0);
+  `);
+});
+
+test("Square service booking checkout mock mode creates a local payment link without Square credentials", () => {
+  runSquareServiceScenario(`
+    process.env.SERVICE_BOOKING_SQUARE_ENABLED = "true";
+    process.env.PAYMENT_GATEWAY_MODE = "mock";
+    process.env.PAYMENT_MOCK_DEFAULT_SCENARIO = "success";
+    delete process.env.SQUARE_ACCESS_TOKEN;
+    delete process.env.SQUARE_LOCATION_ID;
+    delete process.env.SQUARE_WEBHOOK_SIGNATURE_KEY;
+    delete process.env.SQUARE_SERVICE_BOOKING_RETURN_URL;
+    delete process.env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL;
+
+    const hold = createHold();
+    const persisted = [];
+    const pendingByHoldId = new Map();
+    const checkout = createSquareServiceCheckout({
+      getEnv: getSquareServiceBookingRuntimeEnv,
+      repository: {
+      async findPendingCheckoutForHold(holdId) {
+        return pendingByHoldId.get(holdId) ?? null;
+      },
+      async persistPendingCheckout(input) {
+        persisted.push(input);
+        const record = {
+          checkoutUrl: input.paymentLink.url,
+          orderId: input.orderId,
+          squareOrderId: input.paymentLink.order_id,
+          squarePaymentLinkId: input.paymentLink.id,
+        };
+        pendingByHoldId.set(input.hold.id, record);
+        return record;
+      },
+      },
+      squareClientFactory: (env) => createSquareServiceBookingClient({
+        env,
+        now,
+        request: new Request("http://localhost:3000/api/booking/checkout"),
+      }),
+    });
+    const result = await checkout({ hold, now });
+
+    assert.ok(result.checkoutUrl.startsWith("http://localhost:3000/api/booking/square/return?"));
+    assert.match(result.checkoutUrl, /orderId=lh-sq-/);
+    assert.match(result.checkoutUrl, /paymentId=mock-square-payment-1/);
+    assert.equal(result.squarePaymentLinkId, "mock-square-payment-link-1");
+    assert.equal(persisted.length, 1);
+    assert.equal(persisted[0].locationId, "mock-square-location");
+  `);
+});
+
+test("Square service booking checkout rejects mock request controls unless mock mode is enabled", () => {
+  runSquareServiceScenario(`
+    process.env.SERVICE_BOOKING_SQUARE_ENABLED = "true";
+    process.env.PAYMENT_GATEWAY_MODE = "live";
+    process.env.SQUARE_ENVIRONMENT = "sandbox";
+    process.env.SQUARE_ACCESS_TOKEN = "square-token";
+    process.env.SQUARE_LOCATION_ID = "LOC123";
+    process.env.SQUARE_WEBHOOK_SIGNATURE_KEY = "signature-key";
+    process.env.SQUARE_SERVICE_BOOKING_RETURN_URL = "https://lashher.test/api/booking/square/return";
+    process.env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL = "https://lashher.test/api/webhooks/square";
+    const request = new Request("http://localhost:3000/api/booking/checkout?mockPaymentScenario=success");
+    const checkout = createSquareServiceCheckout({
+      getEnv: getSquareServiceBookingRuntimeEnv,
+      repository: createDependencies().dependencies.repository,
+      squareClientFactory: (env) => createSquareServiceBookingClient({ env, now, request }),
+    });
+
+    await assert.rejects(
+      () => checkout({ hold: createHold(), now }),
+      /Payment mock controls require PAYMENT_GATEWAY_MODE=mock/,
+    );
   `);
 });
 

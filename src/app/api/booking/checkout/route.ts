@@ -12,6 +12,7 @@ interface BookingCheckoutPostHandlerDependencies {
   createSquareServiceBookingCheckout: (input: {
     hold: BookingHoldRecord;
     now?: Date;
+    request?: NextRequest;
   }) => Promise<SquareServiceCheckoutResult>;
   getAppointmentHoldByPublicReference: (publicReference: string) => Promise<BookingHoldRecord | null>;
 }
@@ -61,7 +62,7 @@ export function createBookingCheckoutPostHandler(
         );
       }
 
-      const checkout = await dependencies.createSquareServiceBookingCheckout({ hold, now });
+      const checkout = await dependencies.createSquareServiceBookingCheckout({ hold, now, request: req });
 
       return NextResponse.json<BookingCheckoutResponseBody>({
         checkoutUrl: checkout.checkoutUrl,

@@ -20,8 +20,8 @@ interface SquareWebhookEnv {
 const defaultDependencies: SquareWebhookDependencies = {
   finalizeSquarePayment,
   async getEnv() {
-    const { getSquareServiceBookingEnv } = await import("@/lib/env/private-checkout");
-    return getSquareServiceBookingEnv();
+    const { getSquareServiceBookingRuntimeEnv } = await import("@/lib/booking/square-runtime");
+    return getSquareServiceBookingRuntimeEnv();
   },
 };
 

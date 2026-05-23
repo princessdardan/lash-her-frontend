@@ -2,9 +2,10 @@ import { defineField, defineType, defineArrayMember } from "sanity";
 
 function validateSafeHref(value: string | undefined) {
   if (!value) return true;
+  if (value.startsWith("#")) return true;
   if (value.startsWith("https://")) return true;
   if (value.startsWith("/") && !value.startsWith("//")) return true;
-  return 'URL must start with "https://" or "/" (but not "//").';
+  return 'URL must start with "#", "https://", or "/" (but not "//").';
 }
 
 function validateGoogleAppointmentScheduleUrl(value: string | undefined) {
@@ -209,10 +210,22 @@ export const trainingProgram = defineType({
       description: "Price and checkout source of truth for this program.",
     }),
     defineField({
+      name: "trainingContact",
+      title: "Training Contact Section",
+      type: "trainingContactSection",
+      group: "details",
+      description: "Structured contact section rendered at #contact on the training detail page.",
+    }),
+    defineField({
       name: "blocks",
       title: "Blocks",
       type: "array",
       group: "legacy",
+      deprecated: {
+        reason: "Training detail contact forms now use the Training Contact Section field.",
+      },
+      readOnly: true,
+      hidden: ({ value }) => value === undefined,
       of: [
         { type: "contactFormLabels" },
       ],
@@ -318,7 +331,7 @@ export const trainingProgram = defineType({
           name: "href", 
           title: "URL", 
           type: "string", 
-          initialValue: "/booking?type=training-call",
+          initialValue: "#contact",
           validation: (Rule) => Rule.custom((value) => {
             return validateSafeHref(value);
           })

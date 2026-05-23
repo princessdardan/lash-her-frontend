@@ -36,6 +36,16 @@ describe("catalog loader contract", () => {
     assert.match(loadersSource, /^\s{2}getAllSellableProductSlugs,$/m);
   });
 
+  it("omits products without filter attribute arrays from flattened catalog filters", () => {
+    const filterAttributesLoader = loadersSource.slice(
+      loadersSource.indexOf("async function getSellableProductFilterAttributes"),
+      loadersSource.indexOf("async function getSellableProducts"),
+    );
+
+    assert.match(filterAttributesLoader, /defined\(filterAttributes\)/);
+    assert.match(filterAttributesLoader, /filterAttributes\[defined\(label\) && defined\(value\)\]/);
+  });
+
   it("does not project checkoutProduct for training catalog checkout shapes", () => {
     const trainingProjection = loadersSource.slice(
       loadersSource.indexOf("const TRAINING_PROGRAM_CATALOG_PROJECTION"),

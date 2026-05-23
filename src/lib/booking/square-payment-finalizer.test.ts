@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { createPaymentMockStore } from "@/lib/payment-mocks/in-memory-store";
+
 import {
   createSquarePaymentFinalizer,
   type SquarePaymentFinalizerRepository,
 } from "./square-payment-finalizer";
+import type {
+  FinalizeAppointmentPaymentForOrderInput,
+  FinalizePaidBookingResult,
+} from "./finalizer";
+import { createMockSquareClient } from "./square-mock-client";
+import type { SquareCreatePaymentLinkRequest } from "./square-client";
 
 function createEnv() {
   return {
@@ -15,6 +23,108 @@ function createEnv() {
     serviceBookingReturnUrl: "https://example.com/api/booking/square/return",
     serviceBookingWebhookUrl: "https://example.com/api/webhooks/square",
     webhookSignatureKey: "signature-key",
+  };
+}
+
+function createPaymentLinkRequest(): SquareCreatePaymentLinkRequest {
+  return {
+    checkout_options: {
+      allow_tipping: true,
+      redirect_url: "https://example.com/api/booking/square/return",
+    },
+    idempotency_key: "sq-idempotency-1",
+    order: {
+      location_id: "loc_123",
+      line_items: [
+        {
+          base_price_money: { amount: 5000, currency: "CAD" },
+          name: "Classic Fill deposit",
+          quantity: "1",
+        },
+      ],
+      reference_id: "lh-sq-local",
+    },
+  };
+}
+
+function createStatefulSquareFinalizerRepository() {
+  const processedEvents = new Set<string>();
+  const finalizedOrders = new Set<string>();
+  const paidOrders = new Set<string>();
+  const counts = {
+    bookingFinalizations: 0,
+    eventRecords: 0,
+    paidTransitions: 0,
+  };
+
+  const repository: SquarePaymentFinalizerRepository = {
+    async claimSquareEvent(input) {
+      if (input.eventId === undefined) {
+        return { duplicate: false };
+      }
+
+      if (processedEvents.has(input.eventId)) {
+        return { duplicate: true, processingStatus: "processed" };
+      }
+
+      processedEvents.add(input.eventId);
+      return { duplicate: false };
+    },
+    async findSquareOrder() {
+      return {
+        amountCents: 5000,
+        id: "order-db-id",
+        orderId: "lh-sq-local",
+        providerOrderId: "mock-square-order-1",
+        providerPaymentId: null,
+        purpose: "appointment_deposit",
+        squareLocationId: "loc_123",
+        status: "pending",
+      };
+    },
+    async recordSquareEvent(input) {
+      if (input.eventId !== undefined) {
+        counts.eventRecords += 1;
+      }
+
+      return { duplicate: false };
+    },
+    async recordSquarePaymentPendingCalendar(input) {
+      if (paidOrders.has(input.order.orderId)) {
+        return;
+      }
+
+      paidOrders.add(input.order.orderId);
+      counts.paidTransitions += 1;
+    },
+  };
+
+  return {
+    counts,
+    repository,
+    async finalizeAppointmentPaymentForOrder(
+      input: FinalizeAppointmentPaymentForOrderInput,
+    ): Promise<FinalizePaidBookingResult> {
+      if (finalizedOrders.has(input.order.orderId)) {
+        const bookedResult = {
+          ok: true,
+          eventId: "calendar-event-1",
+          status: "booked",
+        } satisfies FinalizePaidBookingResult;
+
+        return bookedResult;
+      }
+
+      finalizedOrders.add(input.order.orderId);
+      counts.bookingFinalizations += 1;
+      const bookedResult = {
+        ok: true,
+        eventId: "calendar-event-1",
+        status: "booked",
+      } satisfies FinalizePaidBookingResult;
+
+      return bookedResult;
+    },
   };
 }
 
@@ -212,6 +322,74 @@ test("Square finalizer retries duplicate webhook event IDs that are not terminal
   assert.equal(squareFetches, 2);
   assert.equal(paidTransitions, 1);
   assert.equal(bookingFinalizations, 1);
+});
+
+test("Square finalizer handles webhook before return on the shared mock payment", async () => {
+  const store = createPaymentMockStore({ now: new Date("2026-05-23T12:00:00.000Z") });
+  const client = createMockSquareClient({ scenario: "webhook", store });
+  const created = await client.createPaymentLink(createPaymentLinkRequest());
+  const harness = createStatefulSquareFinalizerRepository();
+  const finalizer = createSquarePaymentFinalizer({
+    finalizeAppointmentPaymentForOrder: harness.finalizeAppointmentPaymentForOrder,
+    getEnv: createEnv,
+    repository: harness.repository,
+    squareClientFactory: () => client,
+  });
+
+  const webhookResult = await finalizer({
+    event: {
+      eventId: "evt_webhook_first",
+      eventType: "payment.updated",
+      orderId: created.payment_link.order_id,
+      paymentId: "mock-square-payment-1",
+      payloadSanitized: {},
+    },
+    source: "webhook",
+  });
+  const returnResult = await finalizer({
+    paymentId: "mock-square-payment-1",
+    source: "return",
+  });
+
+  assert.equal(webhookResult.status, "paid_calendar_pending");
+  assert.equal(returnResult.status, "paid_calendar_pending");
+  assert.equal(harness.counts.paidTransitions, 1);
+  assert.equal(harness.counts.bookingFinalizations, 1);
+  assert.equal(harness.counts.eventRecords, 1);
+});
+
+test("Square finalizer handles return before webhook on the shared mock payment", async () => {
+  const store = createPaymentMockStore({ now: new Date("2026-05-23T12:00:00.000Z") });
+  const client = createMockSquareClient({ scenario: "webhook", store });
+  const created = await client.createPaymentLink(createPaymentLinkRequest());
+  const harness = createStatefulSquareFinalizerRepository();
+  const finalizer = createSquarePaymentFinalizer({
+    finalizeAppointmentPaymentForOrder: harness.finalizeAppointmentPaymentForOrder,
+    getEnv: createEnv,
+    repository: harness.repository,
+    squareClientFactory: () => client,
+  });
+
+  const returnResult = await finalizer({
+    paymentId: "mock-square-payment-1",
+    source: "return",
+  });
+  const webhookResult = await finalizer({
+    event: {
+      eventId: "evt_return_first",
+      eventType: "payment.updated",
+      orderId: created.payment_link.order_id,
+      paymentId: "mock-square-payment-1",
+      payloadSanitized: {},
+    },
+    source: "webhook",
+  });
+
+  assert.equal(returnResult.status, "paid_calendar_pending");
+  assert.equal(webhookResult.status, "paid_calendar_pending");
+  assert.equal(harness.counts.paidTransitions, 1);
+  assert.equal(harness.counts.bookingFinalizations, 1);
+  assert.equal(harness.counts.eventRecords, 1);
 });
 
 test("Square browser return does not finalize an unpaid server-side payment", async () => {
@@ -478,4 +656,149 @@ test("Square finalizer surfaces paid unbookable rebooking status from booking fi
 
   assert.equal(result.status, "paid_calendar_pending");
   assert.equal(result.bookingFinalizationStatus, "paid_unbookable_rebooking_pending");
+});
+
+test("Square finalizer treats mock delayed capture APPROVED payments as paid under current rules", async () => {
+  const store = createPaymentMockStore({ now: new Date("2026-05-23T12:00:00.000Z") });
+  const client = createMockSquareClient({ scenario: "delayed_capture", store });
+  const created = await client.createPaymentLink({
+    idempotency_key: "delayed-capture-idempotency",
+    order: {
+      location_id: "loc_123",
+      line_items: [
+        {
+          name: "Classic Fill deposit",
+          quantity: "1",
+          base_price_money: { amount: 5000, currency: "CAD" },
+        },
+      ],
+      reference_id: "lh-sq-local",
+    },
+  });
+  const operationOrder: string[] = [];
+  const recordedEvents: Array<{ providerStatus?: string; status?: string }> = [];
+  const repository: SquarePaymentFinalizerRepository = {
+    async claimSquareEvent() {
+      return { duplicate: false };
+    },
+    async findSquareOrder() {
+      return {
+        amountCents: 5000,
+        id: "order-db-id",
+        orderId: "lh-sq-local",
+        providerOrderId: created.payment_link.order_id ?? null,
+        providerPaymentId: null,
+        purpose: "appointment_deposit",
+        squareLocationId: "loc_123",
+        status: "pending",
+      };
+    },
+    async recordSquareEvent(input) {
+      recordedEvents.push({ providerStatus: input.providerStatus, status: input.status });
+      operationOrder.push("square-event-processed");
+      return { duplicate: false };
+    },
+    async recordSquarePaymentPendingCalendar(input) {
+      assert.equal(input.payment.status, "APPROVED");
+      operationOrder.push("paid-calendar-pending");
+    },
+  };
+  const finalizer = createSquarePaymentFinalizer({
+    finalizeAppointmentPaymentForOrder: async (input) => {
+      assert.equal(input.transactionId, "mock-square-payment-1");
+      assert.equal(input.order.orderId, "lh-sq-local");
+      operationOrder.push("booking-finalized");
+      return { ok: true, eventId: "calendar-event-1", status: "booked" };
+    },
+    getEnv: createEnv,
+    repository,
+    squareClientFactory: () => client,
+  });
+
+  const result = await finalizer({ paymentId: "mock-square-payment-1", source: "return" });
+
+  assert.equal(result.status, "paid_calendar_pending");
+  assert.equal(result.bookingFinalizationStatus, "booked");
+  assert.deepEqual(operationOrder, ["paid-calendar-pending", "booking-finalized", "square-event-processed"]);
+  assert.deepEqual(recordedEvents, [{ providerStatus: "APPROVED", status: "paid_calendar_pending" }]);
+});
+
+test("Square finalizer records mock Square amount and currency mismatches as ignored failures", async () => {
+  const mismatchCases = [
+    { amountCents: 4900, currency: "CAD", expectedAmount: 4900, expectedCurrency: "CAD" },
+    { amountCents: 5000, currency: "USD", expectedAmount: 5000, expectedCurrency: "USD" },
+  ];
+
+  for (const mismatchCase of mismatchCases) {
+    const store = createPaymentMockStore({ now: new Date("2026-05-23T12:00:00.000Z") });
+    const client = createMockSquareClient({
+      amountCents: mismatchCase.amountCents,
+      currency: mismatchCase.currency,
+      scenario: "success",
+      store,
+    });
+    const created = await client.createPaymentLink({
+      idempotency_key: `idempotency-${mismatchCase.currency}-${mismatchCase.amountCents}`,
+      order: {
+        location_id: "loc_123",
+        line_items: [
+          {
+            name: "Classic Fill deposit",
+            quantity: "1",
+            base_price_money: { amount: 5000, currency: "CAD" },
+          },
+        ],
+        reference_id: "lh-sq-local",
+      },
+    });
+    const recordedEvents: Array<{ amountCents?: number; currency?: string; status?: string }> = [];
+    const repository: SquarePaymentFinalizerRepository = {
+      async claimSquareEvent() {
+        return { duplicate: false };
+      },
+      async findSquareOrder() {
+        return {
+          amountCents: 5000,
+          id: "order-db-id",
+          orderId: "lh-sq-local",
+          providerOrderId: created.payment_link.order_id ?? null,
+          providerPaymentId: null,
+          purpose: "appointment_deposit",
+          squareLocationId: "loc_123",
+          status: "pending",
+        };
+      },
+      async recordSquareEvent(input) {
+        recordedEvents.push({
+          amountCents: input.amountCents,
+          currency: input.currency,
+          status: input.status,
+        });
+        return { duplicate: false };
+      },
+      async recordSquarePaymentPendingCalendar() {
+        throw new Error("Mismatched Square payments must not be persisted as paid");
+      },
+    };
+    const finalizer = createSquarePaymentFinalizer({
+      finalizeAppointmentPaymentForOrder: async () => {
+        throw new Error("Mismatched Square payments must not finalize bookings");
+      },
+      getEnv: createEnv,
+      repository,
+      squareClientFactory: () => client,
+    });
+
+    const result = await finalizer({ paymentId: "mock-square-payment-1", source: "return" });
+
+    assert.equal(result.status, "ignored");
+    assert.equal(result.reason, "Square payment amount or currency did not match local order");
+    assert.deepEqual(recordedEvents, [
+      {
+        amountCents: mismatchCase.expectedAmount,
+        currency: mismatchCase.expectedCurrency,
+        status: "amount_or_currency_mismatch",
+      },
+    ]);
+  }
 });

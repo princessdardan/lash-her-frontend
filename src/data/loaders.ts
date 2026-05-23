@@ -318,6 +318,19 @@ async function getTrainingProgramBySlug(slug: string): Promise<TTrainingProgram 
     introCallAppointmentScheduleUrl,
     "introCallAppointmentScheduleEmbedMode": coalesce(introCallAppointmentScheduleEmbedMode, "link"),
     introCallSchedulingInstructions,
+    trainingContact{
+      _type,
+      enabled,
+      heading,
+      subHeading,
+      name,
+      email,
+      phone,
+      location,
+      instagram,
+      submitLabel,
+      successMessage
+    },
     seo{ title, description, image{ asset, hotspot, crop, alt } },
     blocks[]{
       _type,
@@ -386,6 +399,19 @@ async function getTrainingProgramsPageData(): Promise<TTrainingProgramsPage | nu
       introCallAppointmentScheduleUrl,
       "introCallAppointmentScheduleEmbedMode": coalesce(introCallAppointmentScheduleEmbedMode, "link"),
       introCallSchedulingInstructions,
+      trainingContact{
+        _type,
+        enabled,
+        heading,
+        subHeading,
+        name,
+        email,
+        phone,
+        location,
+        instagram,
+        submitLabel,
+        successMessage
+      },
       seo{ title, description, image{ asset, hotspot, crop, alt } },
       blocks[]{
         _type,
@@ -452,6 +478,19 @@ async function getAllTrainingPrograms(): Promise<TTrainingProgram[]> {
     introCallAppointmentScheduleUrl,
     "introCallAppointmentScheduleEmbedMode": coalesce(introCallAppointmentScheduleEmbedMode, "link"),
     introCallSchedulingInstructions,
+    trainingContact{
+      _type,
+      enabled,
+      heading,
+      subHeading,
+      name,
+      email,
+      phone,
+      location,
+      instagram,
+      submitLabel,
+      successMessage
+    },
     seo{ title, description, image{ asset, hotspot, crop, alt } },
     blocks[]{
       _type,
@@ -635,7 +674,11 @@ async function getProductsPageCollections(): Promise<TProductCollection[]> {
 }
 
 async function getSellableProductFilterAttributes(): Promise<TProductFilterAttribute[]> {
-  const query = groq`*[_type == "sellableProduct" && isAvailable == true].filterAttributes[]{ _key, label, value }`;
+  const query = groq`*[
+    _type == "sellableProduct" &&
+    isAvailable == true &&
+    defined(filterAttributes)
+  ].filterAttributes[defined(label) && defined(value)]{ _key, label, value }`;
   return client.fetch<TProductFilterAttribute[]>(query, {}, sanityFetchOptions(["sellableProduct"]));
 }
 

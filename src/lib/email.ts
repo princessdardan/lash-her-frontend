@@ -16,12 +16,10 @@ export interface TrainingContactData {
   name: string;
   email: string;
   phone: string;
-  location: string;
-  instagram: string;
-  experience: string;
-  interest: string;
-  clients?: number;
-  info?: string;
+  location?: string;
+  instagram?: string;
+  programSlug: string;
+  programTitle: string;
   marketingConsent?: boolean;
   consentText?: string;
   sourcePath?: string;
@@ -70,17 +68,18 @@ function getAdminSubject(
     const name = (formData as ContactPopupData).name || "a visitor";
     return `✨ New Popup Lead from ${name}`;
   }
-  return `🎓 New Training Inquiry from ${(formData as TrainingContactData).name}`;
+  const trainingData = formData as TrainingContactData;
+  return `🎓 New ${trainingData.programTitle} Inquiry from ${trainingData.name}`;
 }
 
-function getUserSubject(formType: FormType): string {
+function getUserSubject(formType: FormType, formData: GeneralInquiryData | TrainingContactData | ContactPopupData): string {
   if (formType === "general-inquiry") {
     return "Thank You for Your Inquiry - Lash Her by Nataliea";
   }
   if (formType === "contact-popup") {
     return "Welcome to Lash Her by Nataliea!";
   }
-  return "Your Training Inquiry - Lash Her by Nataliea";
+  return `Your ${(formData as TrainingContactData).programTitle} Inquiry - Lash Her by Nataliea`;
 }
 
 // Admin notification template for general inquiry
@@ -281,66 +280,36 @@ function getTrainingContactAdminHtml(data: TrainingContactData): string {
                 <tr>
                   <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
                     <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 140px;">Location:</strong>
-                    <span style="color: #1f2937; font-size: 14px;">${escapeHtml(data.location)}</span>
+                    <span style="color: #1f2937; font-size: 14px;">${escapeHtml(data.location ?? "Not provided")}</span>
                   </td>
                 </tr>
                 <tr>
                   <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
                     <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 140px;">Instagram:</strong>
-                    <span style="color: #1f2937; font-size: 14px;">@${escapeHtml(data.instagram)}</span>
+                    <span style="color: #1f2937; font-size: 14px;">${data.instagram ? `@${escapeHtml(data.instagram)}` : "Not provided"}</span>
                   </td>
                 </tr>
               </table>
 
               <!-- Training Details -->
               <h2 style="margin: 0 0 20px 0; color: #1f2937; font-size: 18px; font-weight: 600; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px;">
-                Training Interest
+                Training Program
               </h2>
 
               <table role="presentation" style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
                 <tr>
                   <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
-                    <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 140px;">Experience Level:</strong>
-                    <span style="display: inline-block; background-color: ${data.experience.includes("Beginner") ? "#F5F1F5" : "#FFFFFF"}; color: ${data.experience.includes("Beginner") ? "#663976" : "#3D0B16"}; padding: 4px 12px; border-radius: 12px; font-size: 13px; font-weight: 500;">
-                      ${escapeHtml(data.experience)}
-                    </span>
+                    <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 140px;">Program:</strong>
+                    <span style="display: inline-block; background-color: #F5F1F5; color: #663976; padding: 4px 12px; border-radius: 12px; font-size: 13px; font-weight: 500;">${escapeHtml(data.programTitle)}</span>
                   </td>
                 </tr>
                 <tr>
                   <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
-                    <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 140px;">Program Interest:</strong>
-                    <span style="display: inline-block; background-color: #E8E2E9; color: #3D0B16; padding: 4px 12px; border-radius: 12px; font-size: 13px; font-weight: 500;">
-                      ${escapeHtml(data.interest)}
-                    </span>
+                    <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 140px;">Submitted Page:</strong>
+                    <span style="color: #1f2937; font-size: 14px;">${escapeHtml(data.sourcePath ?? `/training-programs/${data.programSlug}`)}</span>
                   </td>
                 </tr>
-                ${
-                  data.clients !== undefined && data.clients !== null
-                    ? `
-                <tr>
-                  <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
-                    <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 140px;">Current Clients:</strong>
-                    <span style="color: #1f2937; font-size: 14px; font-weight: 500;">${data.clients} clients</span>
-                  </td>
-                </tr>
-                `
-                    : ""
-                }
               </table>
-
-              <!-- Additional Info -->
-              ${
-                data.info
-                  ? `
-              <h2 style="margin: 0 0 15px 0; color: #1f2937; font-size: 18px; font-weight: 600; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px;">
-                Additional Information
-              </h2>
-              <div style="background-color: #f9fafb; padding: 20px; border-radius: 6px; border: 1px solid #e5e7eb; margin-bottom: 30px;">
-                <p style="margin: 0; color: #374151; font-size: 14px; line-height: 1.6; white-space: pre-wrap;">${escapeHtml(data.info)}</p>
-              </div>
-              `
-                  : ""
-              }
 
               <!-- Action Buttons -->
               <div style="text-align: center; margin-top: 30px;">
@@ -501,17 +470,17 @@ function getTrainingContactUserHtml(data: TrainingContactData): string {
               </p>
 
               <p style="margin: 0 0 20px 0; color: #374151; font-size: 15px; line-height: 1.7;">
-                Thank you for your interest in training with <strong style="color: #663976;">Lash Her by Nataliea</strong>! We're thrilled that you're considering joining our lash artistry community.
+                Thank you for your interest in <strong style="color: #663976;">${escapeHtml(data.programTitle)}</strong> with Lash Her by Nataliea. We're thrilled that you're considering joining our lash artistry community.
               </p>
 
               <!-- Program Summary -->
               <div style="background-color: #FFFFFF; border-left: 4px solid #D4B483; padding: 20px; margin: 30px 0; border-radius: 4px;">
                 <p style="margin: 0 0 10px 0; color: #3D0B16; font-size: 14px; font-weight: 600;">
-                  Your Training Interest:
+                  Your Training Program:
                 </p>
                 <p style="margin: 0; color: #3D0B16; font-size: 15px; line-height: 1.6;">
-                  <strong>${escapeHtml(data.interest)}</strong><br>
-                  <span style="font-size: 13px; color: #663976;">Experience Level: ${escapeHtml(data.experience)}</span>
+                  <strong>${escapeHtml(data.programTitle)}</strong><br>
+                  <span style="font-size: 13px; color: #663976;">Submitted from ${escapeHtml(data.sourcePath ?? `/training-programs/${data.programSlug}`)}</span>
                 </p>
               </div>
 
@@ -752,7 +721,7 @@ export async function sendUserConfirmation(
   formType: FormType,
   formData: GeneralInquiryData | TrainingContactData | ContactPopupData
 ): Promise<void> {
-  const subject = getUserSubject(formType);
+  const subject = getUserSubject(formType, formData);
   let html = "";
   if (formType === "general-inquiry") {
     html = getGeneralInquiryUserHtml(formData as GeneralInquiryData);

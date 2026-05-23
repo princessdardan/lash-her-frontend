@@ -16,11 +16,12 @@ import {
   toBookingPaymentAmountCents,
   type BookingPaymentSelection,
 } from "./payment-policy";
-import { createSquareClient, type SquareClient, type SquarePaymentLink } from "./square-client";
+import type { SquareClient, SquarePaymentLink } from "./square-client";
 
 export interface SquareServiceCheckoutInput {
   hold: BookingHoldRecord;
   now?: Date;
+  request?: Request;
 }
 
 export interface SquareServiceCheckoutResult {
@@ -136,10 +137,16 @@ export function createSquareServiceCheckout(
 export async function createSquareServiceBookingCheckout(
   input: SquareServiceCheckoutInput,
 ): Promise<SquareServiceCheckoutResult> {
+  const { createSquareServiceBookingClient, getSquareServiceBookingRuntimeEnv } = await import("./square-runtime");
+
   return createSquareServiceCheckout({
-    getEnv: getSquareServiceBookingEnv,
+    getEnv: getSquareServiceBookingRuntimeEnv,
     repository: createDrizzleSquareServiceCheckoutRepository(),
-    squareClientFactory: createSquareClient,
+    squareClientFactory: (env) => createSquareServiceBookingClient({
+      env,
+      now: input.now,
+      request: input.request,
+    }),
   })(input);
 }
 

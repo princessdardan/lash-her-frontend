@@ -246,16 +246,13 @@ export function createSquarePaymentFinalizer(
 export async function finalizeSquarePayment(
   input: SquarePaymentFinalizerInput,
 ): Promise<SquarePaymentFinalizerResult> {
-  const [{ getSquareServiceBookingEnv }, { createSquareClient }] = await Promise.all([
-    import("@/lib/env/private-checkout"),
-    import("./square-client"),
-  ]);
+  const { createSquareServiceBookingClient, getSquareServiceBookingRuntimeEnv } = await import("./square-runtime");
 
   return createSquarePaymentFinalizer({
     finalizeAppointmentPaymentForOrder: defaultFinalizeAppointmentPaymentForOrder,
-    getEnv: getSquareServiceBookingEnv,
+    getEnv: getSquareServiceBookingRuntimeEnv,
     repository: createDrizzleSquarePaymentFinalizerRepository(),
-    squareClientFactory: createSquareClient,
+    squareClientFactory: (env) => createSquareServiceBookingClient({ env }),
   })(input);
 }
 

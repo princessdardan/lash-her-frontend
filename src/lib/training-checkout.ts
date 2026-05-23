@@ -233,6 +233,7 @@ function isValidCustomerEmail(email: string): boolean {
 
 function isSafeUrl(url: string): boolean {
   try {
+    if (url.startsWith("#")) return true;
     if (url.startsWith("https://")) {
       new URL(url);
       return true;
@@ -264,7 +265,7 @@ export function getTrainingCta(program: TTrainingProgram | null | undefined): { 
 
   return {
     label: "Book a Call",
-    href: "/booking?type=training-call",
+    href: "#contact",
   };
 }
 

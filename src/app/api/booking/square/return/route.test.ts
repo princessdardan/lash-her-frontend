@@ -76,3 +76,20 @@ test("Square return redirects idempotent already-processed results without payme
     "https://example.com/booking/confirmation?payment=duplicate",
   );
 });
+
+test("Square mock return keeps local order/payment query names and redirects with unpaid status", async () => {
+  const result = await runReturnRoute({
+    requestUrl: "http://localhost:3000/api/booking/square/return?orderId=lh-sq-local&paymentId=mock-square-payment-1",
+    resultStatus: "unpaid",
+  });
+
+  assert.deepEqual(result.finalizerCalls, [{
+    orderId: "lh-sq-local",
+    paymentId: "mock-square-payment-1",
+    source: "return",
+  }]);
+  assert.equal(
+    result.redirectUrl,
+    "http://localhost:3000/booking/confirmation?payment=unpaid",
+  );
+});

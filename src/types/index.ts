@@ -288,6 +288,20 @@ export interface TLinkedTrainingProduct {
   availabilityLabel?: string;
 }
 
+export interface TTrainingContactSection {
+  _type?: "trainingContactSection";
+  enabled?: boolean;
+  heading?: string;
+  subHeading?: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  location?: string;
+  instagram?: string;
+  submitLabel?: string;
+  successMessage?: string;
+}
+
 export interface TTrainingProgram {
   _id: string;
   title: string;
@@ -333,6 +347,7 @@ export interface TTrainingProgram {
   introCallAppointmentScheduleUrl?: string;
   introCallAppointmentScheduleEmbedMode?: "link" | "embed";
   introCallSchedulingInstructions?: string;
+  trainingContact?: TTrainingContactSection;
   blocks: TLayoutBlock[];
   seo?: {
     title?: string;

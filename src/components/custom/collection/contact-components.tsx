@@ -11,14 +11,6 @@ import {
   FieldLabel,
   FieldError,
 } from "@/components/ui/field";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "../../ui/textarea";
 import { Input } from "../../ui/input";
 import { ContactInfo, IContactInfoProps } from "../layouts/contact-info";
 import { IScheduleProps, Schedule } from "../layouts/schedule";
@@ -39,10 +31,6 @@ type FormData = {
   phone: string;
   location: string;
   instagram: string;
-  experience: string;
-  interest: string;
-  clients: string;
-  info: string;
   marketingConsent: boolean;
 };
 
@@ -64,8 +52,6 @@ const CONTACT_VALIDATION_CONFIG: FieldValidationConfig = {
   ],
   location: [{ type: "required", message: "Location is required" }],
   instagram: [{ type: "required", message: "Instagram handle is required" }],
-  experience: [{ type: "required", message: "Please select your experience level" }],
-  interest: [{ type: "required", message: "Please select your training interest" }],
 };
 
 export function ContactFormLabels({ data }: { data: TContactFormLabels }) {
@@ -76,10 +62,6 @@ export function ContactFormLabels({ data }: { data: TContactFormLabels }) {
     phone: "",
     location: "",
     instagram: "",
-    experience: "",
-    interest: "",
-    clients: "",
-    info: "",
     marketingConsent: false,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -120,17 +102,6 @@ export function ContactFormLabels({ data }: { data: TContactFormLabels }) {
     }));
   };
 
-  const handleSelectChange = (name: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [name]: value }));
-    setTouchedFields((prev) => new Set(prev).add(name));
-    if (CONTACT_VALIDATION_CONFIG[name]) {
-      setFieldErrors((prev) => ({
-        ...prev,
-        [name]: validateField(value, CONTACT_VALIDATION_CONFIG[name]),
-      }));
-    }
-  };
-
   const handleMarketingConsentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData((prev) => ({ ...prev, marketingConsent: e.target.checked }));
   };
@@ -144,10 +115,6 @@ export function ContactFormLabels({ data }: { data: TContactFormLabels }) {
       phone: formData.phone,
       location: formData.location,
       instagram: formData.instagram,
-      experience: formData.experience,
-      interest: formData.interest,
-      clients: formData.clients,
-      info: formData.info,
     }, CONTACT_VALIDATION_CONFIG);
     setFieldErrors(errors);
     setTouchedFields(new Set(Object.keys(CONTACT_VALIDATION_CONFIG)));
@@ -160,12 +127,10 @@ export function ContactFormLabels({ data }: { data: TContactFormLabels }) {
       name: formData.name,
       email: formData.email,
       phone: formData.phone,
-      location: formData.location,
-      instagram: formData.instagram,
-      experience: formData.experience,
-      interest: formData.interest,
-      clients: formData.clients ? parseInt(formData.clients, 10) : undefined,
-      info: formData.info || undefined,
+      location: formData.location || undefined,
+      instagram: formData.instagram || undefined,
+      programSlug: "legacy-training-contact",
+      programTitle: "Training Inquiry",
       marketingConsent: formData.marketingConsent,
       consentText: TRAINING_CONTACT_CONSENT_TEXT,
       sourcePath: pathname,
@@ -182,10 +147,6 @@ export function ContactFormLabels({ data }: { data: TContactFormLabels }) {
         phone: "",
         location: "",
         instagram: "",
-        experience: "",
-        interest: "",
-        clients: "",
-        info: "",
         marketingConsent: false,
       });
       setFieldErrors({});
@@ -323,95 +284,7 @@ export function ContactFormLabels({ data }: { data: TContactFormLabels }) {
                     )}
                 </Field>
 
-                {/* Experience */}
-                    <Field>
-                        <FieldLabel htmlFor="experience">
-                        {data.experience}*
-                        </FieldLabel>
-                        <Select
-                        value={formData.experience}
-                        onValueChange={(value: string) => handleSelectChange("experience", value)}
-                        required
-                        >
-                        <SelectTrigger
-                          className={styles.input}
-                          id="experience"
-                          aria-invalid={touchedFields.has("experience") && !!fieldErrors.experience}
-                          aria-describedby={fieldErrors.experience ? "contact-experience-error" : undefined}
-                        >
-                            <SelectValue placeholder="Select experience level" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="Beginner - New to Lashes">Beginner - New to Lashes</SelectItem>
-                            <SelectItem value="Advanced - Have Experience">Advanced - Have Experience</SelectItem>
-                        </SelectContent>
-                        </Select>
-                        {touchedFields.has("experience") && fieldErrors.experience && (
-                          <FieldError id="contact-experience-error">{fieldErrors.experience}</FieldError>
-                        )}
-                    </Field>
-
-                    {/* Clients */}
-                    <Field>
-                        <FieldLabel htmlFor="clients">
-                        {data.clients}
-                        </FieldLabel>
-                        <Input
-                        id="clients"
-                        name="clients"
-                        type="number"
-                        value={formData.clients}
-                        onChange={handleChange}
-                        placeholder="e.g., 5"
-                        className={styles.input}
-                        />
-                    </Field>
-
-                    {/* Interest */}
-                    <Field>
-                        <FieldLabel htmlFor="interest">
-                        {data.interest}*
-                        </FieldLabel>
-                        <Select
-                        value={formData.interest}
-                        onValueChange={(value: string) => handleSelectChange("interest", value)}
-                        required
-                        >
-                        <SelectTrigger
-                          className={styles.input}
-                          id="interest"
-                          aria-invalid={touchedFields.has("interest") && !!fieldErrors.interest}
-                          aria-describedby={fieldErrors.interest ? "contact-interest-error" : undefined}
-                        >
-                            <SelectValue placeholder="Select training interest" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="Lash Designer Academy">Lash Designer Academy</SelectItem>
-                            <SelectItem value="Beginner Private Training">Beginner Private Training</SelectItem>
-                            <SelectItem value="Beginner Group Training">Beginner Group Training</SelectItem>
-                            <SelectItem value="Advanced Private Training">Advanced Private Training</SelectItem>
-                            <SelectItem value="Not Sure Yet">Not Sure Yet</SelectItem>
-                        </SelectContent>
-                        </Select>
-                        {touchedFields.has("interest") && fieldErrors.interest && (
-                          <FieldError id="contact-interest-error">{fieldErrors.interest}</FieldError>
-                        )}
-                    </Field>
                 </FieldGroup>
-
-                {/* Info - Full Width */}
-                <Field>
-                <FieldLabel htmlFor="info">{data.info}</FieldLabel>
-                <Textarea
-                    id="info"
-                    name="info"
-                    rows={4}
-                    value={formData.info}
-                    onChange={handleChange}
-                    placeholder="Tell us more about your goals and what you hope to achieve..."
-                    className="form-textarea"
-                />
-                </Field>
 
                 <div className="flex items-start gap-3 rounded-2xl border border-lh-line bg-lh-neutral-2/40 p-4">
                   <input

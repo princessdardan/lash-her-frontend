@@ -38,6 +38,8 @@ Google Calendar integration requires OAuth credentials and an Upstash KV store f
 ### Checkout and Private DB
 Product checkout and training checkout use Helcim. Paid service bookings use custom Lash Her holds, Square hosted checkout, and Google Calendar API finalization after server-side payment reconciliation. The private Neon/Drizzle database stores order records, service holds, payment events, training enrollments, marketing contacts, contact submissions, and consent events.
 - **PII Policy:** Never store transaction history, customer PII, form/contact submissions, marketing contacts, consent events, or payment tokens in Sanity.
+- For local payment testing only, set `PAYMENT_GATEWAY_MODE=mock` and optionally `PAYMENT_MOCK_DEFAULT_SCENARIO=success`; dev request controls are the `x-lash-payment-mock-scenario` header and `mockPaymentScenario` query parameter. Mock mode and request controls are server-only and are rejected in production.
+- Live checkout environments use `PAYMENT_GATEWAY_MODE=live` and still require the Helcim credentials listed in `.env.local.example`.
 - Database migrations live in `drizzle/`.
 
 ### Email

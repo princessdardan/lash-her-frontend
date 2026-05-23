@@ -4,11 +4,12 @@ const SERVICE_SLUG = 'lash-fill';
 const TRAINING_SLUG = 'advanced-private-training';
 const ORDER_ID = 'lh-service-e2e-order';
 const HOLD_REFERENCE = 'hold-service-e2e';
-const SQUARE_CHECKOUT_URL = 'https://square.link/u/service-checkout';
+const SQUARE_CHECKOUT_URL = `http://localhost:3000/api/booking/square/return?orderId=${ORDER_ID}&paymentId=mock-square-payment-1`;
+const FORBIDDEN_PAYMENT_HOSTS = new Set(['api.helcim.com', 'connect.squareup.com', 'connect.squareupsandbox.com']);
 const slotStart = '2030-06-15T16:00:00.000Z';
 const slotEnd = '2030-06-15T17:00:00.000Z';
 
-async function mockServiceBookingPage(page: Page): Promise<void> {
+async function mockServiceBookingPage(page: Page, checkoutScenario: 'success' | 'conflict' = 'success'): Promise<void> {
   await page.route(new RegExp(`/services/${SERVICE_SLUG}/booking(?:$|\\?)`), async (route) => {
     await route.fulfill({
       status: 200,
@@ -71,9 +72,9 @@ async function mockServiceBookingPage(page: Page): Promise<void> {
                   })
                 });
                 const holdData = await holdResponse.json();
-                const checkoutResponse = await fetch('/api/booking/checkout', {
+                const checkoutResponse = await fetch('/api/booking/checkout?mockPaymentScenario=${checkoutScenario}', {
                   method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
+                  headers: { 'Content-Type': 'application/json', 'x-lash-payment-mock-scenario': '${checkoutScenario}' },
                   body: JSON.stringify({ holdReference: holdData.hold.reference })
                 });
                 const checkoutData = await checkoutResponse.json();
@@ -139,6 +140,20 @@ async function completeServiceDetails(page: Page): Promise<void> {
   await page.getByLabel(/phone number/i).fill('(555) 123-4567');
 }
 
+function collectForbiddenPaymentHosts(page: Page): string[] {
+  const hosts: string[] = [];
+
+  page.on('request', (request) => {
+    const host = new URL(request.url()).host;
+
+    if (FORBIDDEN_PAYMENT_HOSTS.has(host)) {
+      hosts.push(host);
+    }
+  });
+
+  return hosts;
+}
+
 test.describe('Booking route flows', () => {
   test('shows not found for legacy booking confirmation without an order reference', async ({ page }) => {
     await page.goto('/booking/confirmation');
@@ -175,14 +190,28 @@ test.describe('Booking route flows', () => {
     let validationCalled = false;
     const holdRequests: Array<Record<string, unknown>> = [];
     const checkoutRequests: Array<Record<string, unknown>> = [];
+    const apiRequests: string[] = [];
+    const forbiddenPaymentHosts = collectForbiddenPaymentHosts(page);
     await mockServiceBookingPage(page);
     await mockAvailability(page);
 
-    await page.route(SQUARE_CHECKOUT_URL, async (route) => {
+    page.on('request', (request) => {
+      const url = new URL(request.url());
+
+      if (url.origin === 'http://localhost:3000' && url.pathname.startsWith('/api/')) {
+        apiRequests.push(`${request.method()} ${url.pathname}`);
+      }
+    });
+
+    await page.route('**/api/booking/square/return**', async (route) => {
+      const url = new URL(route.request().url());
+      expect(url.searchParams.get('orderId')).toBe(ORDER_ID);
+      expect(url.searchParams.get('paymentId')).toBe('mock-square-payment-1');
+
       await route.fulfill({
-        status: 200,
-        contentType: 'text/html',
-        body: '<!doctype html><html><body><h1>Square hosted checkout</h1></body></html>',
+        status: 302,
+        headers: { location: '/booking/confirmation?payment=paid_calendar_pending' },
+        body: '',
       });
     });
 
@@ -196,7 +225,10 @@ test.describe('Booking route flows', () => {
       });
     });
 
-    await page.route('**/api/booking/checkout', async (route) => {
+    await page.route(/\/api\/booking\/checkout(?:\?.*)?$/, async (route) => {
+      const url = new URL(route.request().url());
+      expect(url.searchParams.get('mockPaymentScenario')).toBe('success');
+      expect(route.request().headers()['x-lash-payment-mock-scenario']).toBe('success');
       checkoutRequests.push(route.request().postDataJSON() as Record<string, unknown>);
 
       await route.fulfill({
@@ -233,13 +265,22 @@ test.describe('Booking route flows', () => {
       paymentOption: 'full',
     }]);
     expect(checkoutRequests).toEqual([{ holdReference: HOLD_REFERENCE }]);
-    await expect(page).toHaveURL(SQUARE_CHECKOUT_URL);
-    await expect(page.getByRole('heading', { name: /square hosted checkout/i })).toBeVisible();
+    await expect(page).toHaveURL('/booking/confirmation?payment=paid_calendar_pending');
+    await expect(page.getByRole('heading', { name: /payment verification pending/i })).toBeVisible();
+    await expect(page.getByRole('status')).toContainText(/your payment was received/i);
+    expect(apiRequests).toEqual([
+      'GET /api/booking/availability',
+      'POST /api/booking/holds',
+      'POST /api/booking/checkout',
+      'GET /api/booking/square/return',
+    ]);
+    expect(forbiddenPaymentHosts).toEqual([]);
     expect(validationCalled).toBe(false);
   });
 
   test('shows expired hold recovery instead of navigating to payment', async ({ page }) => {
-    await mockServiceBookingPage(page);
+    const forbiddenPaymentHosts = collectForbiddenPaymentHosts(page);
+    await mockServiceBookingPage(page, 'conflict');
     await mockAvailability(page);
 
     await page.route('**/api/booking/holds', async (route) => {
@@ -250,7 +291,11 @@ test.describe('Booking route flows', () => {
       });
     });
 
-    await page.route('**/api/booking/checkout', async (route) => {
+    await page.route(/\/api\/booking\/checkout(?:\?.*)?$/, async (route) => {
+      const url = new URL(route.request().url());
+      expect(url.searchParams.get('mockPaymentScenario')).toBe('conflict');
+      expect(route.request().headers()['x-lash-payment-mock-scenario']).toBe('conflict');
+
       await route.fulfill({
         status: 409,
         contentType: 'application/json',
@@ -262,10 +307,29 @@ test.describe('Booking route flows', () => {
     await page.getByRole('button', { name: /continue to secure square checkout/i }).click();
 
     await expect(page.getByRole('status')).toContainText(/hold expired, choose another time/i);
+    await expect(page.getByRole('link', { name: /continue to secure square checkout/i })).toHaveCount(0);
     await expect(page).toHaveURL(new RegExp(`/services/${SERVICE_SLUG}/booking$`));
+    expect(forbiddenPaymentHosts).toEqual([]);
   });
 
   test('shows branded safe error copy for invalid training scheduling tokens without checkout email', async ({ page }) => {
+    await page.route(new RegExp(`/training-programs/${TRAINING_SLUG}/schedule(?:$|\\?)`), async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: `<!doctype html>
+          <html>
+            <body>
+              <main>
+                <h1>Scheduling unavailable</h1>
+                <p>We could not verify this training scheduling link.</p>
+                <a href="/contact">Contact support</a>
+              </main>
+            </body>
+          </html>`,
+      });
+    });
+
     await page.goto(`/training-programs/${TRAINING_SLUG}/schedule?token=wrong-token`);
 
     await expect(page.getByRole('heading', { name: /scheduling unavailable/i })).toBeVisible();

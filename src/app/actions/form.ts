@@ -37,10 +37,6 @@ const TRAINING_CONTACT_VALIDATION: FieldValidationConfig = {
     { type: 'required', message: 'Phone number is required' },
     { type: 'phone', message: 'Please enter a valid phone number' },
   ],
-  location: [{ type: 'required', message: 'Location is required' }],
-  instagram: [{ type: 'required', message: 'Instagram handle is required' }],
-  experience: [{ type: 'required', message: 'Please select your experience level' }],
-  interest: [{ type: 'required', message: 'Please select your training interest' }],
 }
 
 const CONTACT_POPUP_VALIDATION: FieldValidationConfig = {
@@ -158,10 +154,8 @@ export async function submitTrainingContact(
       name: data.name,
       email: data.email,
       phone: data.phone,
-      location: data.location,
-      instagram: data.instagram,
-      experience: data.experience,
-      interest: data.interest,
+      location: data.location ?? '',
+      instagram: data.instagram ?? '',
     },
     TRAINING_CONTACT_VALIDATION
   )
@@ -175,12 +169,10 @@ export async function submitTrainingContact(
       name: data.name,
       email: data.email,
       phone: data.phone,
-      location: data.location,
-      instagram: data.instagram,
-      experience: data.experience,
-      interest: data.interest,
-      clients: data.clients ?? undefined,
-      info: data.info || undefined,
+      location: data.location || undefined,
+      instagram: data.instagram || undefined,
+      programSlug: data.programSlug,
+      programTitle: data.programTitle,
       marketingConsent: data.marketingConsent === true,
       consentText: data.consentText ?? TRAINING_CONTACT_CONSENT_TEXT,
       sourcePath: data.sourcePath || undefined,

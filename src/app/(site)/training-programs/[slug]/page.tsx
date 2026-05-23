@@ -6,6 +6,7 @@ import { BlockRenderer } from "@/components/custom/layouts/block-renderer";
 import { TrainingEditorialHero } from "@/components/custom/training-editorial-hero";
 import { TrainingEditorialDetails } from "@/components/custom/training-editorial-details";
 import { TrainingEnrollmentSection } from "@/components/custom/training-enrollment-section";
+import { TrainingProgramContactSection } from "@/components/custom/training-program-contact-section";
 import { getTrainingCta, isTrainingPurchasable } from "@/lib/training-checkout";
 import { TrainingPurchaseCard, TrainingMobileTray } from "@/components/commerce/training-purchase-card";
 import type { TLayoutBlock } from "@/types";
@@ -15,6 +16,7 @@ export const revalidate = 1800;
 function isSafeUrl(url: string | undefined | null): boolean {
   if (!url) return false;
   try {
+    if (url.startsWith('#')) return true;
     if (url.startsWith('https://')) {
       new URL(url);
       return true;
@@ -96,8 +98,8 @@ export default async function TrainingProgramPage({ params }: { params: Promise<
   const isCtaSafe = isSafeUrl(cta?.href);
   const isPurchasable = isTrainingPurchasable(data);
   const showPurchaseUi = isPurchasable && isCtaSafe;
-  const contactBlocks = (data.blocks ?? []).filter(isContactFormBlock);
   const legacyBlocks = (data.blocks ?? []).filter(isLegacyContentBlock);
+  const showTrainingContact = data.trainingContact?.enabled !== false;
 
   return (
     <div className="relative flex flex-col min-h-screen">
@@ -153,10 +155,15 @@ export default async function TrainingProgramPage({ params }: { params: Promise<
         </section>
       )}
 
-      {contactBlocks.length > 0 && (
-        <section className="section-shell py-12 md:py-16" data-training-contact-blocks="true">
-          <div className={`mx-auto w-full max-w-[1380px] px-4 sm:px-5 lg:px-4 xl:px-6 ${showPurchaseUi ? "lg:pr-[24rem] xl:pr-[26rem]" : ""}`}>
-            <BlockRenderer blocks={contactBlocks} />
+      {showTrainingContact && (
+        <section className="bg-lh-neutral-2" data-training-contact-region="true">
+          <div className="mx-auto w-full max-w-[1380px] px-4 sm:px-5 lg:px-4 xl:px-6">
+            <TrainingProgramContactSection
+              data={data.trainingContact}
+              programSlug={data.slug}
+              programTitle={data.title}
+              hasPurchaseUi={showPurchaseUi}
+            />
           </div>
         </section>
       )}

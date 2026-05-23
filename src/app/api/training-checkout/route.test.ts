@@ -5,7 +5,7 @@ import test from "node:test";
 const helperScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { createTrainingCheckoutPostHandler } from "./src/app/api/training-checkout/route.ts";
+  import { createTrainingCheckoutPostHandler, resolveTrainingCheckoutHelcimGatewayForRequest } from "./src/app/api/training-checkout/route.ts";
 
   const program = {
     _id: "training-program-classic-lash",
@@ -203,6 +203,87 @@ test("training checkout route creates Helcim checkout without Square secrets", (
   `);
 });
 
+test("training checkout route selects mock Helcim gateway when mock mode is allowed", () => {
+  runRouteScenario(`
+    process.env.PAYMENT_GATEWAY_MODE = "mock";
+    process.env.PAYMENT_MOCK_DEFAULT_SCENARIO = "success";
+    delete process.env.VERCEL_ENV;
+
+    const gateway = await resolveTrainingCheckoutHelcimGatewayForRequest(createRequest(validBody()));
+    const invoice = await gateway.createInvoice({
+      currency: "CAD",
+      type: "INVOICE",
+      status: "DUE",
+      notes: "Lash Her training checkout: Classic Lash Training",
+      lineItems: [{
+        sku: "training-program-classic-lash",
+        description: "Classic Lash Training",
+        quantity: 1,
+        price: 1499,
+        taxAmount: 194.87,
+        taxName: "Ontario HST",
+        taxRate: 0.13,
+      }],
+    });
+    const paySession = await gateway.initializePay({
+      paymentType: "purchase",
+      amount: 1693.87,
+      currency: "CAD",
+      invoiceNumber: invoice.invoiceNumber,
+    });
+
+    assert.equal(invoice.invoiceNumber, "MOCK-INV-1");
+    assert.equal(paySession.checkoutToken, "mock_helcim_checkout_1");
+  `);
+});
+
+test("training checkout route rejects request mock controls unless mock mode is enabled", () => {
+  runRouteScenario(`
+    await assert.rejects(
+      resolveTrainingCheckoutHelcimGatewayForRequest(new Request("http://localhost:3000/api/training-checkout", {
+        method: "POST",
+        headers: { "x-lash-payment-mock-scenario": "success" },
+      })),
+      /Payment mock controls require PAYMENT_GATEWAY_MODE=mock/,
+    );
+
+    process.env.PAYMENT_GATEWAY_MODE = "live";
+
+    await assert.rejects(
+      resolveTrainingCheckoutHelcimGatewayForRequest(new Request("http://localhost:3000/api/training-checkout?mockPaymentScenario=success", {
+        method: "POST",
+      })),
+      /Payment mock controls require PAYMENT_GATEWAY_MODE=mock/,
+    );
+  `);
+});
+
+test("training checkout route rejects request mock controls in production", () => {
+  runRouteScenario(`
+    process.env.VERCEL_ENV = "production";
+
+    await assert.rejects(
+      resolveTrainingCheckoutHelcimGatewayForRequest(new Request("http://localhost:3000/api/training-checkout", {
+        method: "POST",
+        headers: { "x-lash-payment-mock-scenario": "success" },
+      })),
+      /Payment mock mode is not allowed in production/,
+    );
+  `);
+});
+
+test("training checkout route rejects mock Helcim gateway mode in production", () => {
+  runRouteScenario(`
+    process.env.PAYMENT_GATEWAY_MODE = "mock";
+    process.env.VERCEL_ENV = "production";
+
+    await assert.rejects(
+      resolveTrainingCheckoutHelcimGatewayForRequest(createRequest(validBody())),
+      /Payment mock mode is not allowed in production/,
+    );
+  `);
+});
+
 test("training checkout route ignores legacy checkoutProduct and uses native training fields", () => {
   runRouteScenario(`
     const nativeProgram = {
@@ -279,6 +360,9 @@ function runRouteScenario(assertions: string): void {
   env.NEXT_PUBLIC_SANITY_DATASET = "test";
   env.NEXT_PUBLIC_SANITY_PROJECT_ID = "test-project";
   env.SERVICE_BOOKING_SQUARE_ENABLED = "true";
+  delete env.PAYMENT_GATEWAY_MODE;
+  delete env.PAYMENT_MOCK_DEFAULT_SCENARIO;
+  delete env.VERCEL_ENV;
   delete env.SQUARE_ACCESS_TOKEN;
   delete env.SQUARE_LOCATION_ID;
   delete env.SQUARE_WEBHOOK_SIGNATURE_KEY;

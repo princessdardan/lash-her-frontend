@@ -158,18 +158,30 @@ test.describe('Training Program Detail Page — Rich Text Rendering (MIG-03)', (
     await page.goto(url);
     await page.waitForLoadState('networkidle');
 
-    const contactBlocks = page.locator('[data-training-contact-blocks="true"]');
+    const contactSection = page.locator('#contact[data-training-contact-section="true"]');
     const structuredDetails = page.locator('[data-structured-details="true"]');
+    const legacyBlocks = page.locator('[data-training-legacy-blocks="true"]');
 
-    if (await contactBlocks.count() === 0 || await structuredDetails.count() === 0) {
-      test.skip();
-      return;
+    await expect(contactSection).toBeVisible();
+    await expect(page.locator('[data-training-contact-blocks="true"]')).toHaveCount(0);
+    await expect(contactSection.getByLabel(/name/i)).toBeVisible();
+    await expect(contactSection.getByLabel(/email/i)).toBeVisible();
+    await expect(contactSection.getByLabel(/phone number/i)).toBeVisible();
+    await expect(contactSection.getByLabel(/location \(optional\)/i)).toBeVisible();
+    await expect(contactSection.getByLabel(/instagram \(optional\)/i)).toBeVisible();
+    await expect(contactSection.getByText(/experience level|program interest|clients per week|additional information/i)).toHaveCount(0);
+
+    const contactTop = await contactSection.evaluate((element) => element.getBoundingClientRect().top + window.scrollY);
+
+    if (await structuredDetails.count() > 0) {
+      const detailTop = await structuredDetails.first().evaluate((element) => element.getBoundingClientRect().top + window.scrollY);
+      expect(contactTop).toBeGreaterThan(detailTop);
     }
 
-    const contactTop = await contactBlocks.first().evaluate((element) => element.getBoundingClientRect().top + window.scrollY);
-    const detailTop = await structuredDetails.first().evaluate((element) => element.getBoundingClientRect().top + window.scrollY);
-
-    expect(contactTop).toBeGreaterThan(detailTop);
+    if (await legacyBlocks.count() > 0) {
+      const legacyTop = await legacyBlocks.first().evaluate((element) => element.getBoundingClientRect().top + window.scrollY);
+      expect(contactTop).toBeGreaterThan(legacyTop);
+    }
   });
 
   test('should render at least one paragraph of text inside main (Portable Text body)', async ({ page }) => {

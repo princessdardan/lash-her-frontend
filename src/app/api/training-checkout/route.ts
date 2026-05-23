@@ -1,12 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import type { ValidatedCart } from "@/lib/commerce/cart";
+import type { HelcimGateway } from "@/lib/commerce/helcim-gateway";
+import { createPaymentMockStore } from "@/lib/payment-mocks/in-memory-store";
 import {
   TRAINING_CHECKOUT_TAX_RATE,
   validateTrainingCheckoutRequest,
   type TrainingCheckoutQuote,
 } from "@/lib/training-checkout";
 import type { TTrainingProgram } from "@/types";
+
+const trainingCheckoutPaymentMockStore = createPaymentMockStore();
 
 interface TrainingCheckoutResponseBody {
   checkoutToken: string;
@@ -193,23 +197,55 @@ export function createTrainingCheckoutPostHandler({
 export async function POST(req: NextRequest): Promise<Response> {
   const [
     { loaders },
-    { createHelcimInvoice, initializeHelcimPay },
+    gateway,
     { createPendingOrder },
     { createTrainingEnrollment },
   ] = await Promise.all([
     import("@/data/loaders"),
-    import("@/lib/commerce/helcim-client"),
+    resolveTrainingCheckoutHelcimGatewayForRequest(req),
     import("@/lib/commerce/order-store"),
     import("@/lib/commerce/training-enrollment-store"),
   ]);
 
   return createTrainingCheckoutPostHandler({
     getTrainingProgramBySlug: loaders.getTrainingProgramBySlug,
-    createHelcimInvoice,
-    initializeHelcimPay,
+    createHelcimInvoice: gateway.createInvoice,
+    initializeHelcimPay: gateway.initializePay,
     createPendingOrder,
     createTrainingEnrollment,
   })(req);
+}
+
+export async function resolveTrainingCheckoutHelcimGatewayForRequest(req: Request): Promise<HelcimGateway> {
+  const runtimeControls = await import("@/lib/payment-mocks/runtime-controls");
+  const runtimeEnvironment = getPaymentMockRuntimeEnvironment();
+
+  runtimeControls.assertPaymentMockAllowed({ env: runtimeEnvironment, request: req });
+
+  if (runtimeControls.resolvePaymentGatewayMode(runtimeEnvironment) !== "mock") {
+    const liveGateway = await import("@/lib/commerce/helcim-gateway");
+    return liveGateway.createLiveHelcimGateway();
+  }
+
+  const mockGateway = await import("@/lib/commerce/helcim-mock-gateway");
+
+  return mockGateway.createMockHelcimGateway({
+    scenario: runtimeControls.resolvePaymentMockScenario({
+      env: runtimeEnvironment,
+      now: new Date(),
+      request: req,
+    }),
+    store: trainingCheckoutPaymentMockStore,
+  });
+}
+
+function getPaymentMockRuntimeEnvironment() {
+  return {
+    NODE_ENV: process.env.NODE_ENV,
+    PAYMENT_GATEWAY_MODE: process.env.PAYMENT_GATEWAY_MODE,
+    PAYMENT_MOCK_DEFAULT_SCENARIO: process.env.PAYMENT_MOCK_DEFAULT_SCENARIO,
+    VERCEL_ENV: process.env.VERCEL_ENV,
+  };
 }
 
 function parseProgramSlug(body: unknown): string | null {

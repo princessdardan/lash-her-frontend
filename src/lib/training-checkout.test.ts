@@ -117,7 +117,7 @@ describe("training-checkout", () => {
     it("returns default fallback if program is null", () => {
       assert.deepStrictEqual(getTrainingCta(null), {
         label: "Book a Call",
-        href: "/booking?type=training-call",
+        href: "#contact",
       });
     });
 
@@ -166,7 +166,7 @@ describe("training-checkout", () => {
         ),
         {
           label: "Book a Call",
-          href: "/booking?type=training-call",
+          href: "#contact",
         },
       );
     });
@@ -174,7 +174,7 @@ describe("training-checkout", () => {
     it("returns default fallback if not purchasable and no fallback CTAs exist", () => {
       assert.deepStrictEqual(getTrainingCta(buildProgram({ checkoutEnabled: false })), {
         label: "Book a Call",
-        href: "/booking?type=training-call",
+        href: "#contact",
       });
     });
   });

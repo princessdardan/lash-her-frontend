@@ -58,6 +58,7 @@ const helperScript = String.raw`
     const handler = createBookingCheckoutPostHandler({
       createSquareServiceBookingCheckout: async (input) => {
         squareCheckouts.push(input);
+        assert.ok(!("validateHelcimPayment" in input));
         return {
           checkoutUrl: "https://square.link/u/service-checkout",
           holdReference: input.hold.publicReference,
@@ -104,6 +105,33 @@ test("booking checkout returns a Square hosted checkout URL for a held deposit a
     assert.equal(squareCheckouts[0].hold.id, "hold-internal-1");
     assert.equal(squareCheckouts[0].hold.publicReference, "hold_public_1");
     assert.ok(squareCheckouts[0].now instanceof Date);
+  `);
+});
+
+test("booking checkout forwards the request for Square mock-mode controls", () => {
+  runRouteScenario(`
+    const { handler, squareCheckouts } = runScenario({
+      createSquareServiceBookingCheckout: async (input) => {
+        squareCheckouts.push(input);
+        return {
+          checkoutUrl: "http://localhost:3000/api/booking/square/return?orderId=lh-sq-order-1&paymentId=mock-square-payment-1",
+          holdReference: input.hold.publicReference,
+          orderId: "lh-sq-order-1",
+          reused: false,
+          squareOrderId: "mock-square-order-1",
+          squarePaymentLinkId: "mock-square-payment-link-1",
+        };
+      },
+    });
+
+    const request = createRequest({ holdReference: "hold_public_1" });
+    const response = await handler(request);
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 200);
+    assert.equal(body.checkoutUrl, "http://localhost:3000/api/booking/square/return?orderId=lh-sq-order-1&paymentId=mock-square-payment-1");
+    assert.equal(squareCheckouts[0].request, request);
+    assert.equal("validateHelcimPayment" in squareCheckouts[0], false);
   `);
 });
 

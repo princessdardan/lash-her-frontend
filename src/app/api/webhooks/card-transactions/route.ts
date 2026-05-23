@@ -1,4 +1,5 @@
 import { getHelcimWebhookVerifierToken } from "@/lib/env/private-checkout";
+import type { HelcimGateway } from "@/lib/commerce/helcim-gateway";
 import {
   recordHelcimWebhookEventWithOrder,
   type HelcimWebhookEventRecordResult,
@@ -8,6 +9,7 @@ import {
   isAppointmentCheckoutPurpose,
 } from "@/lib/booking/finalizer";
 import { getHelcimCardTransaction } from "@/lib/commerce/helcim-client";
+import { createPaymentMockStore } from "@/lib/payment-mocks/in-memory-store";
 import { sendTrainingPaymentNotificationEmails } from "@/lib/commerce/training-payment-email";
 import {
   getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing,
@@ -24,9 +26,11 @@ import { buildTrainingScheduleUrl } from "@/lib/training-checkout";
 
 export const runtime = "nodejs";
 
+const webhookPaymentMockStore = createPaymentMockStore();
+
 interface HelcimWebhookDependencies {
   finalizeAppointmentPaymentForOrder: typeof finalizeAppointmentPaymentForOrder;
-  getCardTransaction: typeof getHelcimCardTransaction;
+  getCardTransaction: (cardTransactionId: string, req: Request) => ReturnType<typeof getHelcimCardTransaction>;
   getVerifierToken: typeof getHelcimWebhookVerifierToken;
   getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing: typeof getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing;
   issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing: typeof issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing;
@@ -37,7 +41,10 @@ interface HelcimWebhookDependencies {
 
 const defaultDependencies: HelcimWebhookDependencies = {
   finalizeAppointmentPaymentForOrder,
-  getCardTransaction: getHelcimCardTransaction,
+  getCardTransaction: async (cardTransactionId, req) => {
+    const gateway = await resolveHelcimWebhookGatewayForRequest(req);
+    return gateway.getCardTransaction(cardTransactionId);
+  },
   getVerifierToken: getHelcimWebhookVerifierToken,
   getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing: getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing,
   issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing,
@@ -83,7 +90,7 @@ export function createHelcimWebhookPostHandler(
     let eventForStorage: ParsedHelcimWebhook;
 
     try {
-      eventForStorage = await reconcileCardTransactionWebhook(event, dependencies);
+      eventForStorage = await reconcileCardTransactionWebhook(req, event, dependencies);
     } catch (error) {
       console.warn("[helcim-webhook] Transaction detail fetch failed", error);
       return new Response(null, { status: 503 });
@@ -236,6 +243,7 @@ function buildAbsoluteSchedulingUrl(origin: string, programSlug: string, schedul
 }
 
 async function reconcileCardTransactionWebhook(
+  req: Request,
   event: ParsedHelcimWebhook,
   dependencies: Pick<HelcimWebhookDependencies, "getCardTransaction">,
 ): Promise<ParsedHelcimWebhook> {
@@ -244,11 +252,37 @@ async function reconcileCardTransactionWebhook(
   }
 
   try {
-    const details = await dependencies.getCardTransaction(event.helcimTransactionId);
+    const details = await dependencies.getCardTransaction(event.helcimTransactionId, req);
     return mergeHelcimCardTransactionDetails(event, details);
   } catch (cause) {
     throw new HelcimWebhookReconciliationError(cause);
   }
+}
+
+export async function resolveHelcimWebhookGatewayForRequest(req: Request): Promise<HelcimGateway> {
+  const [env, runtimeControls] = await Promise.all([
+    import("@/lib/env/private-checkout"),
+    import("@/lib/payment-mocks/runtime-controls"),
+  ]);
+  const runtimeEnvironment = env.getPaymentMockRuntimeEnvironment();
+
+  runtimeControls.assertPaymentMockAllowed({ env: runtimeEnvironment, request: req });
+
+  if (runtimeControls.resolvePaymentGatewayMode(runtimeEnvironment) !== "mock") {
+    const liveGateway = await import("@/lib/commerce/helcim-gateway");
+    return liveGateway.createLiveHelcimGateway();
+  }
+
+  const mockGateway = await import("@/lib/commerce/helcim-mock-gateway");
+
+  return mockGateway.createMockHelcimGateway({
+    scenario: runtimeControls.resolvePaymentMockScenario({
+      env: runtimeEnvironment,
+      now: new Date(),
+      request: req,
+    }),
+    store: webhookPaymentMockStore,
+  });
 }
 
 class HelcimWebhookReconciliationError extends Error {

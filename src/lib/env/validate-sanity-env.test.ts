@@ -79,6 +79,59 @@ test("validates preview launch environment", () => {
   assert.match(result.stdout, /Vercel preview environment validated/);
 });
 
+test("validates preview mock payment environment without live payment credentials", () => {
+  const env: Record<string, string> = {
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+    PAYMENT_GATEWAY_MODE: "mock",
+    PAYMENT_MOCK_DEFAULT_SCENARIO: "success",
+  };
+
+  delete env.HELCIM_GENERAL_API_TOKEN;
+  delete env.HELCIM_TRANSACTION_API_TOKEN;
+  delete env.SQUARE_ACCESS_TOKEN;
+  delete env.SQUARE_LOCATION_ID;
+  delete env.SQUARE_WEBHOOK_SIGNATURE_KEY;
+  delete env.SQUARE_SERVICE_BOOKING_RETURN_URL;
+  delete env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL;
+
+  const result = runValidator(env);
+
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Vercel preview environment validated/);
+});
+
+test("fails preview live payment environment without Helcim credentials", () => {
+  const env: Record<string, string> = {
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+    PAYMENT_GATEWAY_MODE: "live",
+  };
+
+  delete env.HELCIM_GENERAL_API_TOKEN;
+  delete env.HELCIM_TRANSACTION_API_TOKEN;
+
+  const result = runValidator(env);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.combinedOutput, /Missing env var: HELCIM_GENERAL_API_TOKEN/);
+  assert.match(result.combinedOutput, /Missing env var: HELCIM_TRANSACTION_API_TOKEN/);
+});
+
+test("fails production environment when payment mock mode is enabled", () => {
+  const result = runValidator({
+    ...launchEnv,
+    VERCEL_ENV: "production",
+    NEXT_PUBLIC_SANITY_DATASET: "production",
+    PAYMENT_GATEWAY_MODE: "mock",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.combinedOutput, /Payment mock mode is not allowed in production/);
+});
+
 test("fails production launch environment with wrong dataset", () => {
   const result = runValidator({
     ...launchEnv,

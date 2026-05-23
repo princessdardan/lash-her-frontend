@@ -5,6 +5,8 @@ const helperScript = String.raw`
   import assert from "node:assert/strict";
 
   import { createValidatePaymentPostHandler } from "./src/app/api/checkout/validate-payment/route.ts";
+  import { buildMockHelcimSuccessPayload } from "./src/lib/commerce/helcim-mock-gateway.ts";
+  import { verifyHelcimPayment as realVerifyHelcimPayment } from "./src/lib/commerce/verified-payment.ts";
 
   const pendingOrder = {
     _id: "checkout-order-row-1",
@@ -268,6 +270,34 @@ test("checkout payment validation marks order failed for payment mismatches", ()
     assert.equal(response.status, 400);
     assert.deepEqual(markedFailedOrders, ["lh-order-123"]);
     assert.equal(markedPaidOrders.length, 0);
+  `);
+});
+
+test("checkout payment validation rejects mock Helcim decline and cancel payloads", () => {
+  runRouteScenario(`
+    for (const scenario of ["decline", "cancel"]) {
+      const mockPayment = buildMockHelcimSuccessPayload({
+        amount: 1130,
+        invoice: { invoiceId: 4242, invoiceNumber: "INV-4242" },
+        paySession: { checkoutToken: "checkout-token", secretToken: "checkout-secret-token" },
+        scenario,
+        transactionId: "txn-" + scenario,
+      });
+      const { handler, markedFailedOrders, markedPaidOrders } = await runScenario({
+        verifyHelcimPayment: realVerifyHelcimPayment,
+      });
+
+      const response = await handler(createRequest({
+        checkoutToken: "checkout-token",
+        data: mockPayment.data,
+        hash: mockPayment.hash,
+      }));
+
+      assert.equal(response.status, 400);
+      assert.deepEqual(await response.json(), { error: "Payment could not be verified" });
+      assert.deepEqual(markedFailedOrders, ["lh-order-123"]);
+      assert.deepEqual(markedPaidOrders, []);
+    }
   `);
 });
 

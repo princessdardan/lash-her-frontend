@@ -6,7 +6,7 @@ import { startPaidOfferingCheckout } from "./booking-flow";
 const bookingFlowSource = readFileSync(new URL("./booking-flow.tsx", import.meta.url), "utf8");
 const bookingPageSource = readFileSync(new URL("../../app/(site)/booking/page.tsx", import.meta.url), "utf8");
 const bookingShimSource = readFileSync(new URL("../../app/(site)/booking/booking-shim.ts", import.meta.url), "utf8");
-const productsPageSource = readFileSync(new URL("../../app/(site)/products/page.tsx", import.meta.url), "utf8");
+const productCardSource = readFileSync(new URL("../commerce/product-card.tsx", import.meta.url), "utf8");
 const servicesPageSource = readFileSync(new URL("../../app/(site)/services/page.tsx", import.meta.url), "utf8");
 const bookingConfirmationSource = readFileSync(new URL("../../app/(site)/booking/confirmation/page.tsx", import.meta.url), "utf8");
 
@@ -90,8 +90,8 @@ describe("booking offering flow contract", () => {
     assert.doesNotMatch(bookingConfirmationSource, /squarePaymentLinkId|squareOrderId|holdReference/);
   });
 
-  it("does not reference checkoutProduct in products page", () => {
-    assert.doesNotMatch(productsPageSource, /checkoutProduct/);
+  it("does not reference checkoutProduct in product cards", () => {
+    assert.doesNotMatch(productCardSource, /checkoutProduct/);
   });
 
   it("keeps service detail links discoverable outside the active offerings branch", () => {
@@ -112,14 +112,15 @@ describe("booking offering flow contract", () => {
     assert.match(serviceDetailPageSource, /href=\{`\/services\/\$\{service\.slug\}\/booking`\}/);
   });
 
-  it("product catalog services without detail pages use /services/<slug>/booking", () => {
-    assert.match(productsPageSource, /href = service\.showDetailPage\s*\?\s*`\/services\/\$\{service\.slug\}`\s*:\s*`\/services\/\$\{service\.slug\}\/booking`/);
+  it("product cards link products through /products/<slug>", () => {
+    assert.match(productCardSource, /const productHref = `\/products\/\$\{product\.slug\}`;/);
+    assert.match(productCardSource, /<Link\s+href=\{productHref\}/);
   });
 
   it("no /booking?offering= remains in these canonical service CTA surfaces", () => {
     const serviceDetailPageSource = readFileSync(new URL("../../app/(site)/services/[slug]/page.tsx", import.meta.url), "utf8");
     assert.doesNotMatch(servicesPageSource, /\/booking\?offering=/);
-    assert.doesNotMatch(productsPageSource, /\/booking\?offering=/);
+    assert.doesNotMatch(productCardSource, /\/booking\?offering=/);
     assert.doesNotMatch(serviceDetailPageSource, /\/booking\?offering=/);
   });
 

@@ -34,6 +34,7 @@ import { schedule } from "./objects/layout/schedule";
 import { contactInfo } from "./objects/layout/contact-info";
 import { contactFormLabels } from "./objects/layout/contact-form-labels";
 import { generalInquiryLabels } from "./objects/layout/general-inquiry-labels";
+import { trainingContactSection } from "./objects/layout/training-contact-section";
 import { header } from "./objects/layout/header";
 import { footer } from "./objects/layout/footer";
 
@@ -84,6 +85,7 @@ export const schemaTypes = [
   contactInfo,
   contactFormLabels,
   generalInquiryLabels,
+  trainingContactSection,
   header,
   footer,
   // Shared objects

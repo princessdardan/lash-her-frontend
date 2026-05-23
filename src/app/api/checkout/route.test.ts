@@ -5,7 +5,7 @@ import test from "node:test";
 const helperScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { createCheckoutPostHandler } from "./src/app/api/checkout/route.ts";
+  import { createCheckoutPostHandler, resolveCheckoutHelcimGatewayForRequest } from "./src/app/api/checkout/route.ts";
 
   const product = {
     _id: "product-lash-cleanser",
@@ -147,6 +147,87 @@ test("checkout route creates Helcim checkout without Square secrets", () => {
   `);
 });
 
+test("checkout route selects mock Helcim gateway when mock mode is allowed", () => {
+  runRouteScenario(`
+    process.env.PAYMENT_GATEWAY_MODE = "mock";
+    process.env.PAYMENT_MOCK_DEFAULT_SCENARIO = "success";
+    delete process.env.VERCEL_ENV;
+
+    const gateway = await resolveCheckoutHelcimGatewayForRequest(createRequest({
+      customer: { name: "Nataliea Lash", email: "client@example.com" },
+      items: [{ productId: "product-lash-cleanser", quantity: 1 }],
+    }));
+
+    const invoice = await gateway.createInvoice({
+      currency: "CAD",
+      type: "INVOICE",
+      status: "DUE",
+      notes: "Lash Her website checkout",
+      lineItems: [{ sku: "product-lash-cleanser", description: "Lash Cleanser", quantity: 1, price: 24 }],
+    });
+    const paySession = await gateway.initializePay({
+      paymentType: "purchase",
+      amount: 24,
+      currency: "CAD",
+      invoiceNumber: invoice.invoiceNumber,
+    });
+
+    assert.equal(invoice.invoiceNumber, "MOCK-INV-1");
+    assert.equal(paySession.checkoutToken, "mock_helcim_checkout_1");
+    assert.equal(paySession.secretToken, "mock_helcim_secret_1");
+  `);
+});
+
+test("checkout route rejects request mock controls unless mock mode is enabled", () => {
+  runRouteScenario(`
+    await assert.rejects(
+      resolveCheckoutHelcimGatewayForRequest(new Request("http://localhost:3000/api/checkout", {
+        method: "POST",
+        headers: { "x-lash-payment-mock-scenario": "success" },
+      })),
+      /Payment mock controls require PAYMENT_GATEWAY_MODE=mock/,
+    );
+
+    process.env.PAYMENT_GATEWAY_MODE = "live";
+
+    await assert.rejects(
+      resolveCheckoutHelcimGatewayForRequest(new Request("http://localhost:3000/api/checkout?mockPaymentScenario=success", {
+        method: "POST",
+      })),
+      /Payment mock controls require PAYMENT_GATEWAY_MODE=mock/,
+    );
+  `);
+});
+
+test("checkout route rejects request mock controls in production", () => {
+  runRouteScenario(`
+    process.env.VERCEL_ENV = "production";
+
+    await assert.rejects(
+      resolveCheckoutHelcimGatewayForRequest(new Request("http://localhost:3000/api/checkout", {
+        method: "POST",
+        headers: { "x-lash-payment-mock-scenario": "success" },
+      })),
+      /Payment mock mode is not allowed in production/,
+    );
+  `);
+});
+
+test("checkout route rejects mock Helcim gateway mode in production", () => {
+  runRouteScenario(`
+    process.env.PAYMENT_GATEWAY_MODE = "mock";
+    process.env.VERCEL_ENV = "production";
+
+    await assert.rejects(
+      resolveCheckoutHelcimGatewayForRequest(createRequest({
+        customer: { name: "Nataliea Lash", email: "client@example.com" },
+        items: [{ productId: "product-lash-cleanser", quantity: 1 }],
+      })),
+      /Payment mock mode is not allowed in production/,
+    );
+  `);
+});
+
 test("checkout route rejects unavailable Sanity products before Helcim setup", () => {
   runRouteScenario(`
     const { handler, invoices, orders, paySessions } = runScenario({
@@ -275,6 +356,9 @@ function runRouteScenario(assertions: string): void {
   env.NEXT_PUBLIC_SANITY_DATASET = "test";
   env.NEXT_PUBLIC_SANITY_PROJECT_ID = "test-project";
   env.SERVICE_BOOKING_SQUARE_ENABLED = "true";
+  delete env.PAYMENT_GATEWAY_MODE;
+  delete env.PAYMENT_MOCK_DEFAULT_SCENARIO;
+  delete env.VERCEL_ENV;
   delete env.SQUARE_ACCESS_TOKEN;
   delete env.SQUARE_LOCATION_ID;
   delete env.SQUARE_WEBHOOK_SIGNATURE_KEY;

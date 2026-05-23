@@ -53,14 +53,12 @@ export interface RecordGeneralInquiryInput extends MarketingContactIdentity {
 }
 
 export interface RecordTrainingContactInput extends MarketingContactIdentity {
-  clients?: number;
   consentText?: string;
-  experience: string;
-  info?: string;
-  interest: string;
-  location: string;
+  location?: string;
   marketingConsent: boolean;
   phone: string;
+  programSlug: string;
+  programTitle: string;
   sourceDocument?: SourceDocumentReference;
   sourcePath?: string;
   submittedAt?: Date;
@@ -171,13 +169,12 @@ export function createMarketingContactStore(
         identity: input,
         marketingConsent: input.marketingConsent,
         payload: {
-          clients: input.clients,
-          experience: input.experience,
-          info: cleanOptionalText(input.info),
           instagram: cleanOptionalText(input.instagram),
-          interest: input.interest,
-          location: input.location,
+          location: cleanOptionalText(input.location),
           phone: input.phone,
+          programSlug: input.programSlug,
+          programTitle: input.programTitle,
+          sourcePath: cleanOptionalText(input.sourcePath),
         },
         source: "training_contact",
         sourceDocument: input.sourceDocument,

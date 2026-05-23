@@ -7,11 +7,39 @@ const disabledSquareScript = String.raw`
 
   import {
     getCheckoutDatabaseUrl,
+    getPaymentGatewayMode,
     getSquareServiceBookingEnv,
+    isPaymentMockMode,
   } from "./src/lib/env/private-checkout.ts";
 
   assert.equal(getCheckoutDatabaseUrl(), "postgres://neon-pooled-url");
+  assert.equal(getPaymentGatewayMode(), "mock");
+  assert.equal(isPaymentMockMode(), true);
   assert.equal(getSquareServiceBookingEnv(), null);
+`;
+
+const liveModeScript = String.raw`
+  import assert from "node:assert/strict";
+
+  import {
+    getPaymentGatewayMode,
+    isPaymentMockMode,
+  } from "./src/lib/env/private-checkout.ts";
+
+  assert.equal(getPaymentGatewayMode(), "live");
+  assert.equal(isPaymentMockMode(), false);
+`;
+
+const mockModeScript = String.raw`
+  import assert from "node:assert/strict";
+
+  import {
+    getPaymentGatewayMode,
+    isPaymentMockMode,
+  } from "./src/lib/env/private-checkout.ts";
+
+  assert.equal(getPaymentGatewayMode(), "mock");
+  assert.equal(isPaymentMockMode(), true);
 `;
 
 const enabledSquareScript = String.raw`
@@ -24,6 +52,7 @@ test("square service booking stays disabled without Square secrets", () => {
   const env = { ...process.env };
 
   env.DATABASE_URL = "postgres://neon-pooled-url";
+  env.PAYMENT_GATEWAY_MODE = "mock";
   delete env.SERVICE_BOOKING_SQUARE_ENABLED;
   delete env.SQUARE_ENVIRONMENT;
   delete env.SQUARE_ACCESS_TOKEN;
@@ -33,6 +62,49 @@ test("square service booking stays disabled without Square secrets", () => {
   delete env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL;
 
   const result = runTsx(disabledSquareScript, env);
+
+  assert.equal(result.status, 0);
+  assert.equal(result.stderr, "");
+});
+
+test("payment mock mode is server-checkable without live Helcim or Square credentials", () => {
+  const env = { ...process.env };
+
+  env.PAYMENT_GATEWAY_MODE = "mock";
+  delete env.HELCIM_GENERAL_API_TOKEN;
+  delete env.HELCIM_TRANSACTION_API_TOKEN;
+  delete env.SERVICE_BOOKING_SQUARE_ENABLED;
+  delete env.SQUARE_ENVIRONMENT;
+  delete env.SQUARE_ACCESS_TOKEN;
+  delete env.SQUARE_LOCATION_ID;
+  delete env.SQUARE_WEBHOOK_SIGNATURE_KEY;
+  delete env.SQUARE_SERVICE_BOOKING_RETURN_URL;
+  delete env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL;
+
+  const result = runTsx(mockModeScript, env);
+
+  assert.equal(result.status, 0);
+  assert.equal(result.stderr, "");
+});
+
+test("payment mock mode is rejected in production before provider selection", () => {
+  const env = { ...process.env };
+
+  env.NODE_ENV = "production";
+  env.PAYMENT_GATEWAY_MODE = "mock";
+
+  const result = runTsx(liveModeScript, env);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.combinedOutput, /Payment mock mode is not allowed in production/);
+});
+
+test("payment live mode remains server-checkable as the default", () => {
+  const env = { ...process.env };
+
+  delete env.PAYMENT_GATEWAY_MODE;
+
+  const result = runTsx(liveModeScript, env);
 
   assert.equal(result.status, 0);
   assert.equal(result.stderr, "");

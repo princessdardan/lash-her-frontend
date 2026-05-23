@@ -2,6 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 
 const CHECKOUT_TOKEN = "checkout_test_token";
 const ORDER_ID = "lh-test-order";
+const FORBIDDEN_PAYMENT_HOSTS = new Set(["api.helcim.com", "connect.squareup.com", "connect.squareupsandbox.com"]);
 
 interface ValidationRequestBody {
   checkoutToken: string;
@@ -43,9 +44,9 @@ async function mockProductsPage(page: Page): Promise<void> {
                   document.getElementById('cart').hidden = false;
                 });
                 document.getElementById('checkout').addEventListener('click', async () => {
-                  const response = await fetch('/api/checkout', {
+                  const response = await fetch('/api/checkout?mockPaymentScenario=success', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'x-lash-payment-mock-scenario': 'success' },
                     body: JSON.stringify({
                       customer: {
                         name: document.getElementById('name').value,
@@ -73,6 +74,10 @@ async function mockProductsPage(page: Page): Promise<void> {
                     body: JSON.stringify({ checkoutToken, data: message.data, hash: message.hash })
                   });
                   const result = await response.json();
+                  if (!response.ok) {
+                    document.getElementById('error').textContent = result.error || 'Payment could not be verified';
+                    return;
+                  }
                   window.location.href = result.redirectUrl || ('/products/confirmation?order=' + result.orderId);
                 });
               </script>
@@ -83,26 +88,28 @@ async function mockProductsPage(page: Page): Promise<void> {
   });
 }
 
-async function mockHelcimScript(page: Page, options: { dispatchSuccess: boolean }): Promise<void> {
+async function mockHelcimScript(page: Page, options: { scenario: "success" | "decline" | "none" }): Promise<void> {
   await page.route("https://secure.helcim.app/helcim-pay/services/start.js", async (route) => {
+    const approved = options.scenario === "success";
+    const transactionId = approved ? "txn_123" : "txn_declined_123";
     await route.fulfill({
       status: 200,
       contentType: "application/javascript",
       body: `
         window.appendHelcimPayIframe = function (checkoutToken, allowExit) {
           window.__helcimAppendCall = { checkoutToken: checkoutToken, allowExit: allowExit };
-          if (${String(options.dispatchSuccess)}) {
+          if (${String(options.scenario !== "none")}) {
             window.setTimeout(function () {
               window.dispatchEvent(new MessageEvent("message", {
                 origin: "https://secure.helcim.app",
                 data: JSON.stringify({
                   eventName: "helcim-pay-js-" + checkoutToken,
-                  eventStatus: "SUCCESS",
+                  eventStatus: "${approved ? "SUCCESS" : "DECLINED"}",
                   eventMessage: {
                     data: {
-                      transactionId: "txn_123",
+                      transactionId: "${transactionId}",
                       amount: 50,
-                      approved: true
+                      approved: ${String(approved)}
                     },
                     hash: "hash_123"
                   }
@@ -117,6 +124,20 @@ async function mockHelcimScript(page: Page, options: { dispatchSuccess: boolean 
       `,
     });
   });
+}
+
+function collectForbiddenPaymentHosts(page: Page): string[] {
+  const hosts: string[] = [];
+
+  page.on("request", (request) => {
+    const host = new URL(request.url()).host;
+
+    if (FORBIDDEN_PAYMENT_HOSTS.has(host)) {
+      hosts.push(host);
+    }
+  });
+
+  return hosts;
 }
 
 async function addFirstProductToCart(page: Page): Promise<string> {
@@ -162,9 +183,9 @@ test.describe("Helcim checkout", () => {
 
   test("handles checkout initialization failure without clearing cart", async ({ page }) => {
     await mockProductsPage(page);
-    await mockHelcimScript(page, { dispatchSuccess: false });
+    await mockHelcimScript(page, { scenario: "none" });
 
-    await page.route("**/api/checkout", async (route) => {
+    await page.route(/\/api\/checkout(?:\?.*)?$/, async (route) => {
       await route.fulfill({
         status: 400,
         contentType: "application/json",
@@ -186,8 +207,9 @@ test.describe("Helcim checkout", () => {
 
   test("forwards successful Helcim events to validation and routes to confirmation", async ({ page }) => {
     await mockProductsPage(page);
-    await mockHelcimScript(page, { dispatchSuccess: true });
+    await mockHelcimScript(page, { scenario: "success" });
     const apiPostPaths: string[] = [];
+    const forbiddenPaymentHosts = collectForbiddenPaymentHosts(page);
 
     page.on("request", (request) => {
       if (request.method() !== "POST") return;
@@ -196,12 +218,14 @@ test.describe("Helcim checkout", () => {
       apiPostPaths.push(url.pathname);
     });
 
-    await page.route("**/api/checkout", async (route) => {
+    await page.route(/\/api\/checkout(?:\?.*)?$/, async (route) => {
       const requestBody: unknown = route.request().postDataJSON();
       expect(requestBody).toEqual({
         customer: { name: "Nataliea Test", email: "test@example.com" },
         cart: [{ productId: "lash-cleanser", quantity: 1 }],
       });
+      expect(new URL(route.request().url()).searchParams.get("mockPaymentScenario")).toBe("success");
+      expect(route.request().headers()["x-lash-payment-mock-scenario"]).toBe("success");
 
       await route.fulfill({
         status: 200,
@@ -210,7 +234,7 @@ test.describe("Helcim checkout", () => {
       });
     });
 
-    await page.route("**/api/checkout/validate-payment", async (route) => {
+    await page.route(/\/api\/checkout\/validate-payment(?:\?.*)?$/, async (route) => {
       const requestBody: unknown = route.request().postDataJSON();
       expect(isValidationRequestBody(requestBody)).toBe(true);
 
@@ -242,5 +266,62 @@ test.describe("Helcim checkout", () => {
     expect(apiPostPaths).toEqual(["/api/checkout", "/api/checkout/validate-payment"]);
     expect(apiPostPaths).not.toContain("/api/training-checkout");
     expect(apiPostPaths.some((path) => /^\/api\/(payment|payments|stripe)\b/.test(path))).toBe(false);
+    expect(forbiddenPaymentHosts).toEqual([]);
+  });
+
+  test("keeps cart visible when a mock Helcim decline fails validation", async ({ page }) => {
+    await mockProductsPage(page);
+    await mockHelcimScript(page, { scenario: "decline" });
+    const apiPostPaths: string[] = [];
+    const forbiddenPaymentHosts = collectForbiddenPaymentHosts(page);
+
+    page.on("request", (request) => {
+      if (request.method() !== "POST") return;
+      const url = new URL(request.url());
+      if (url.origin !== "http://localhost:3000" || !url.pathname.startsWith("/api/")) return;
+      apiPostPaths.push(url.pathname);
+    });
+
+    await page.route(/\/api\/checkout(?:\?.*)?$/, async (route) => {
+      expect(new URL(route.request().url()).searchParams.get("mockPaymentScenario")).toBe("success");
+
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ checkoutToken: CHECKOUT_TOKEN }),
+      });
+    });
+
+    await page.route(/\/api\/checkout\/validate-payment(?:\?.*)?$/, async (route) => {
+      const requestBody: unknown = route.request().postDataJSON();
+      expect(isValidationRequestBody(requestBody)).toBe(true);
+
+      if (!isValidationRequestBody(requestBody)) {
+        await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "Invalid request" }) });
+        return;
+      }
+
+      expect(requestBody.data.transactionId).toBe("txn_declined_123");
+      expect(requestBody.data.approved).toBe(false);
+
+      await route.fulfill({
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Payment could not be verified" }),
+      });
+    });
+
+    await page.goto("/products");
+
+    const productTitle = await addFirstProductToCart(page);
+    await fillCheckoutCustomer(page);
+    await page.getByRole("button", { name: "Checkout" }).click();
+
+    await expect(page.getByRole("alert")).toContainText(/payment could not be verified/i);
+    await expect(page).toHaveURL(/\/products$/);
+    await expect(page.locator("li", { hasText: productTitle })).toContainText(/qty:\s*1/i);
+    await expect(page.getByRole("button", { name: "Clear Cart" })).toBeVisible();
+    expect(apiPostPaths).toEqual(["/api/checkout", "/api/checkout/validate-payment"]);
+    expect(forbiddenPaymentHosts).toEqual([]);
   });
 });

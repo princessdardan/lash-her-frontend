@@ -160,10 +160,16 @@ describe("trainingProgram detail content schema", () => {
     );
   });
 
-  it("keeps contact form blocks but removes legacy training hero and info blocks", () => {
+  it("configures the structured training contact section and deprecates legacy contact blocks", () => {
+    const trainingContact = getSchemaField("trainingContact");
     const blocks = getSchemaField("blocks");
     const allowedTypes = blocks.of?.map((member) => member.type) ?? [];
 
+    assert.strictEqual(trainingContact.type, "trainingContactSection");
+    assert.strictEqual(trainingContact.group, "details");
     assert.deepStrictEqual(allowedTypes, ["contactFormLabels"]);
+    assert.strictEqual(blocks.readOnly, true);
+    assert.ok(blocks.deprecated?.reason?.includes("Training Contact Section"));
+    assert.strictEqual(typeof blocks.hidden, "function");
   });
 });

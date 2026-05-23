@@ -5,7 +5,8 @@ const helperScript = String.raw`
   import assert from "node:assert/strict";
   import { createHmac } from "node:crypto";
 
-  import { createHelcimWebhookPostHandler } from "./src/app/api/webhooks/card-transactions/route.ts";
+  import { createHelcimWebhookPostHandler, resolveHelcimWebhookGatewayForRequest } from "./src/app/api/webhooks/card-transactions/route.ts";
+  import { buildMockHelcimWebhook, signMockHelcimWebhook } from "./src/lib/commerce/helcim-mock-gateway.ts";
 
   const verifierToken = Buffer.from("webhook-secret-key").toString("base64");
 
@@ -159,6 +160,105 @@ test("Helcim webhook route returns retryable status when private persistence fai
       status: "APPROVED",
       transactionId: "25764674",
     });
+  `);
+});
+
+test("Helcim webhook route uses mock gateway to enrich sparse card transaction webhooks", () => {
+  runRouteScenario(`
+    process.env.PAYMENT_GATEWAY_MODE = "mock";
+    process.env.PAYMENT_MOCK_DEFAULT_SCENARIO = "success";
+    delete process.env.VERCEL_ENV;
+    process.env.HELCIM_WEBHOOK_VERIFIER_TOKEN = verifierToken;
+
+    const seedRequest = new Request("http://localhost:3000/api/webhooks/card-transactions", { method: "POST" });
+    const gateway = await resolveHelcimWebhookGatewayForRequest(seedRequest);
+    const invoice = await gateway.createInvoice({
+      currency: "CAD",
+      type: "INVOICE",
+      status: "DUE",
+      notes: "Webhook mock seed",
+      lineItems: [{ sku: "LASH", description: "Lash Set", quantity: 1, price: 75 }],
+    });
+    await gateway.initializePay({
+      paymentType: "purchase",
+      amount: 75,
+      currency: "CAD",
+      invoiceNumber: invoice.invoiceNumber,
+    });
+
+    const webhook = buildMockHelcimWebhook({ transactionId: "mock_helcim_txn_1" });
+    const signedHeaders = signMockHelcimWebhook({
+      headers: webhook.headers,
+      rawBody: webhook.rawBody,
+      verifierToken,
+    });
+    const recorded = [];
+    const handler = createHelcimWebhookPostHandler({
+      finalizeAppointmentPaymentForOrder: async () => ({ ok: true, eventId: "calendar-event-1", status: "booked" }),
+      getCardTransaction: async (transactionId, request) => {
+        const selectedGateway = await resolveHelcimWebhookGatewayForRequest(request);
+        return selectedGateway.getCardTransaction(transactionId);
+      },
+      getVerifierToken: () => verifierToken,
+      getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing: async () => null,
+      issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing: async () => null,
+      markTrainingEnrollmentStaffAlerted: async () => true,
+      recordEvent: async (event) => {
+        recorded.push(event);
+        return { matchedOrder: null, paid: false, recorded: true };
+      },
+      sendTrainingPaymentNotificationEmails: async () => {},
+    });
+    const response = await handler(new Request("http://localhost:3000/api/webhooks/card-transactions", {
+      method: "POST",
+      headers: {
+        "webhook-id": signedHeaders.id,
+        "webhook-signature": signedHeaders.signature,
+        "webhook-timestamp": signedHeaders.timestamp,
+      },
+      body: webhook.rawBody,
+    }));
+
+    assert.equal(response.status, 200);
+    assert.equal(recorded[0].helcimTransactionId, "mock_helcim_txn_1");
+    assert.equal(recorded[0].helcimInvoiceNumber, "MOCK-INV-1");
+    assert.equal(recorded[0].status, "APPROVED");
+    assert.deepEqual(recorded[0].payloadRedacted.invoiceNumber, "MOCK-INV-1");
+  `);
+});
+
+test("Helcim webhook route rejects request mock controls unless mock mode is enabled", () => {
+  runRouteScenario(`
+    await assert.rejects(
+      resolveHelcimWebhookGatewayForRequest(new Request("http://localhost:3000/api/webhooks/card-transactions", {
+        method: "POST",
+        headers: { "x-lash-payment-mock-scenario": "success" },
+      })),
+      /Payment mock controls require PAYMENT_GATEWAY_MODE=mock/,
+    );
+
+    process.env.PAYMENT_GATEWAY_MODE = "live";
+
+    await assert.rejects(
+      resolveHelcimWebhookGatewayForRequest(new Request("http://localhost:3000/api/webhooks/card-transactions?mockPaymentScenario=success", {
+        method: "POST",
+      })),
+      /Payment mock controls require PAYMENT_GATEWAY_MODE=mock/,
+    );
+  `);
+});
+
+test("Helcim webhook route rejects request mock controls in production", () => {
+  runRouteScenario(`
+    process.env.VERCEL_ENV = "production";
+
+    await assert.rejects(
+      resolveHelcimWebhookGatewayForRequest(new Request("http://localhost:3000/api/webhooks/card-transactions", {
+        method: "POST",
+        headers: { "x-lash-payment-mock-scenario": "success" },
+      })),
+      /Payment mock mode is not allowed in production/,
+    );
   `);
 });
 
@@ -453,6 +553,9 @@ function runRouteScenario(assertions: string): void {
 
   env.NEXT_PUBLIC_SANITY_DATASET = "test";
   env.NEXT_PUBLIC_SANITY_PROJECT_ID = "test-project";
+  delete env.PAYMENT_GATEWAY_MODE;
+  delete env.PAYMENT_MOCK_DEFAULT_SCENARIO;
+  delete env.VERCEL_ENV;
 
   execFileSync(
     "./node_modules/.bin/tsx",

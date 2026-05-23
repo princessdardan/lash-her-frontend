@@ -1,5 +1,11 @@
 import "server-only";
 
+import {
+  resolvePaymentGatewayMode,
+  type PaymentGatewayMode,
+  type PaymentMockRuntimeEnvironment,
+} from "@/lib/payment-mocks/runtime-controls";
+
 export function getCheckoutDatabaseUrl(): string {
   return assertValue(
     process.env.DATABASE_URL,
@@ -12,6 +18,23 @@ export function getHelcimWebhookVerifierToken(): string {
     process.env.HELCIM_WEBHOOK_VERIFIER_TOKEN,
     "Missing env var: HELCIM_WEBHOOK_VERIFIER_TOKEN",
   );
+}
+
+export function getPaymentGatewayMode(): PaymentGatewayMode {
+  return resolvePaymentGatewayMode(getPaymentMockRuntimeEnvironment());
+}
+
+export function isPaymentMockMode(): boolean {
+  return getPaymentGatewayMode() === "mock";
+}
+
+export function getPaymentMockRuntimeEnvironment(): PaymentMockRuntimeEnvironment {
+  return {
+    NODE_ENV: process.env.NODE_ENV,
+    PAYMENT_GATEWAY_MODE: process.env.PAYMENT_GATEWAY_MODE,
+    PAYMENT_MOCK_DEFAULT_SCENARIO: process.env.PAYMENT_MOCK_DEFAULT_SCENARIO,
+    VERCEL_ENV: process.env.VERCEL_ENV,
+  };
 }
 
 export function getSquareServiceBookingEnv(): SquareServiceBookingEnv | null {

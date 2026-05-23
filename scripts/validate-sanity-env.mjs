@@ -54,13 +54,15 @@ const emailEnvVars = ["FROM_EMAIL", "ADMIN_EMAIL"];
 const vercelEnv = process.env.VERCEL_ENV;
 const expectedDataset = expectedDatasets[vercelEnv];
 const isLaunchEnvironment = expectedDataset !== undefined;
+const paymentGatewayMode = process.env.PAYMENT_GATEWAY_MODE ?? "live";
+const isPaymentMockMode = paymentGatewayMode === "mock";
 const isSquareServiceBookingEnabled =
   process.env.SERVICE_BOOKING_SQUARE_ENABLED === "true";
 const requiredEnvVars = isLaunchEnvironment
   ? [
       ...publicSanityEnvVars,
-      ...launchEnvVars,
-      ...(isSquareServiceBookingEnabled ? squareLaunchEnvVars : []),
+      ...(isPaymentMockMode ? launchEnvVarsWithoutLivePayment() : launchEnvVars),
+      ...(isSquareServiceBookingEnabled && !isPaymentMockMode ? squareLaunchEnvVars : []),
     ]
   : publicSanityEnvVars;
 
@@ -84,6 +86,14 @@ if (expectedDataset && process.env.NEXT_PUBLIC_SANITY_DATASET !== expectedDatase
   errors.push(
     `Invalid env var: NEXT_PUBLIC_SANITY_DATASET for Vercel ${vercelEnv}; expected ${expectedDataset}`
   );
+}
+
+if (paymentGatewayMode !== "live" && paymentGatewayMode !== "mock") {
+  errors.push("Malformed env var: PAYMENT_GATEWAY_MODE must be live or mock");
+}
+
+if (isPaymentMockMode && (process.env.NODE_ENV === "production" || vercelEnv === "production")) {
+  errors.push("Payment mock mode is not allowed in production");
 }
 
 if (isLaunchEnvironment) {
@@ -181,4 +191,12 @@ function validateSquareEnvironment(value) {
       "Malformed env var: SQUARE_ENVIRONMENT must be sandbox or production"
     );
   }
+}
+
+function launchEnvVarsWithoutLivePayment() {
+  return launchEnvVars.filter(
+    (name) => name !== "HELCIM_GENERAL_API_TOKEN"
+      && name !== "HELCIM_TRANSACTION_API_TOKEN"
+      && name !== "HELCIM_WEBHOOK_VERIFIER_TOKEN"
+  );
 }
