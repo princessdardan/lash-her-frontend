@@ -14,7 +14,6 @@ const MAX_QUANTITY = 10;
 
 interface ProductDetailPurchaseControlsProps {
   readonly product: TProduct;
-  readonly products: TProduct[];
 }
 
 function clampQuantity(value: number): number {
@@ -38,7 +37,7 @@ function variantMatchesSelectedOptions(variant: TProductVariant, selectedOptions
   });
 }
 
-export function ProductDetailPurchaseControls({ product, products }: ProductDetailPurchaseControlsProps): ReactElement {
+export function ProductDetailPurchaseControls({ product }: ProductDetailPurchaseControlsProps): ReactElement {
   const router = useRouter();
   const { addItem, openCart } = useProductCart();
   const variants = useMemo(() => product.variants?.filter((variant) => variant.title) ?? [], [product.variants]);
@@ -92,16 +91,17 @@ export function ProductDetailPurchaseControls({ product, products }: ProductDeta
   const handleBuyNow = () => {
     if (!canPurchase) return;
 
-    // Store buy-now item in sessionStorage (not localStorage, so it doesn't persist)
-    // This allows the checkout page to know it's a buy-now without modifying the cart
-    const buyNowItem = {
+    const params = new URLSearchParams({
+      buyNow: "1",
       productId: product._id,
-      ...(selectedVariant ? { variantId: selectedVariant._key } : {}),
-      quantity,
-    };
-    sessionStorage.setItem("lash-her:buy-now-item", JSON.stringify(buyNowItem));
+      quantity: String(quantity),
+    });
 
-    router.push("/checkout?buyNow=1");
+    if (selectedVariant) {
+      params.set("variantId", selectedVariant._key);
+    }
+
+    router.push(`/checkout?${params.toString()}`);
   };
 
   const handleQuantityChange = (value: string) => {

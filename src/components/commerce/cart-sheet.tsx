@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, type ReactElement } from "react";
+import { useMemo, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,31 +12,19 @@ import {
 } from "@/components/ui/sheet";
 import { formatCad } from "@/lib/commerce/money";
 import { buildValidatedCart, type ValidatedCart } from "@/lib/commerce/cart";
-import type { TProduct, TProductVariant } from "@/types";
+import type { TProduct } from "@/types";
 import { useProductCart } from "./product-cart-provider";
-import { HelcimPayButton } from "./helcim-pay-button";
 
 interface CartSheetProps {
   products: TProduct[];
 }
 
 export function CartSheet({ products }: CartSheetProps): ReactElement {
+  const router = useRouter();
   const { items, isOpen, removeItem, updateQuantity, clearCart, closeCart } = useProductCart();
-  const [customerName, setCustomerName] = useState("");
-  const [customerEmail, setCustomerEmail] = useState("");
-  const [cartError, setCartError] = useState<string | null>(null);
-  const [validatedCart, setValidatedCart] = useState<ValidatedCart | null>(null);
-
-  useEffect(() => {
-    if (!isOpen) {
-      setCartError(null);
-      return;
-    }
-
-    if (items.length === 0) {
-      setValidatedCart(null);
-      setCartError(null);
-      return;
+  const { cartError, validatedCart } = useMemo<{ cartError: string | null; validatedCart: ValidatedCart | null }>(() => {
+    if (!isOpen || items.length === 0) {
+      return { cartError: null, validatedCart: null };
     }
 
     try {
@@ -57,25 +45,27 @@ export function CartSheet({ products }: CartSheetProps): ReactElement {
       }));
 
       const cart = buildValidatedCart(items, catalogProducts);
-      setValidatedCart(cart);
-      setCartError(null);
+      return { cartError: null, validatedCart: cart };
     } catch (err) {
-      setValidatedCart(null);
-      setCartError(err instanceof Error ? err.message : "Invalid cart");
+      return { cartError: err instanceof Error ? err.message : "Invalid cart", validatedCart: null };
     }
   }, [isOpen, items, products]);
 
   const handleClose = () => {
     closeCart();
-    setCartError(null);
+  };
+
+  const handleCheckout = () => {
+    closeCart();
+    router.push("/checkout");
   };
 
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && handleClose()}>
-      <SheetContent side="right" className="w-full sm:max-w-md flex flex-col">
-        <SheetHeader className="space-y-2">
+      <SheetContent side="right" className="w-full px-5 pb-5 pt-5 sm:max-w-md sm:px-6 sm:pb-6 sm:pt-6 flex flex-col gap-0">
+        <SheetHeader className="space-y-2 p-0 pr-8">
           <SheetTitle className="font-heading text-2xl font-normal text-lh-shadow">
             Your Cart
           </SheetTitle>
@@ -86,7 +76,7 @@ export function CartSheet({ products }: CartSheetProps): ReactElement {
           </SheetDescription>
         </SheetHeader>
 
-        <div className="flex-1 overflow-y-auto py-4" aria-live="polite">
+        <div className="flex-1 overflow-y-auto py-6" aria-live="polite">
           {items.length === 0 ? (
             <div className="rounded-[24px] border border-lh-line bg-lh-neutral-2/70 p-5">
               <h3 className="font-heading text-2xl font-normal text-lh-shadow">Your cart is empty</h3>
@@ -163,44 +153,19 @@ export function CartSheet({ products }: CartSheetProps): ReactElement {
         </div>
 
         {items.length > 0 && validatedCart && !cartError && (
-          <div className="border-t border-lh-line pt-4 space-y-4">
-            <div className="space-y-3">
-              <div>
-                <label htmlFor="cart-customer-name" className="block text-sm font-bold text-lh-primary mb-1 font-body">
-                  Name
-                </label>
-                <input
-                  id="cart-customer-name"
-                  type="text"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  className="form-input w-full"
-                  placeholder="Your full name"
-                />
-              </div>
-              <div>
-                <label htmlFor="cart-customer-email" className="block text-sm font-bold text-lh-primary mb-1 font-body">
-                  Email
-                </label>
-                <input
-                  id="cart-customer-email"
-                  type="email"
-                  value={customerEmail}
-                  onChange={(e) => setCustomerEmail(e.target.value)}
-                  className="form-input w-full"
-                  placeholder="your@email.com"
-                />
-              </div>
-            </div>
+          <div className="border-t border-lh-line pt-5 space-y-4">
+            <p className="font-body text-sm font-bold leading-6 text-lh-muted">
+              Review your shipping details and complete secure payment on the checkout page.
+            </p>
 
             <div className="flex flex-col gap-2">
-              <HelcimPayButton
-                disabled={!customerName.trim() || !customerEmail.trim()}
-                items={items}
-                customer={{ name: customerName.trim(), email: customerEmail.trim() }}
-                onPaid={clearCart}
+              <Button
+                type="button"
+                onClick={handleCheckout}
+                className="btn-primary-red w-full"
               >
-              </HelcimPayButton>
+                Checkout
+              </Button>
               <Button
                 variant="ghost"
                 onClick={clearCart}

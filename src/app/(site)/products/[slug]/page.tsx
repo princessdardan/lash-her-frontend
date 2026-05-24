@@ -78,10 +78,7 @@ function getAvailabilityLabel(product: TProduct): string {
 
 export default async function ProductDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const [product, products] = await Promise.all([
-    loaders.getProductBySlug(slug),
-    loaders.getProducts(),
-  ]);
+  const product = await loaders.getProductBySlug(slug);
 
   if (!product) notFound();
 
@@ -202,7 +199,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
                 ) : null}
 
                 {product.isAvailable ? (
-                  <ProductDetailPurchaseControls product={product} products={products} />
+                  <ProductDetailPurchaseControls product={product} />
                 ) : (
                   <div className="mt-8 border-t border-lh-line pt-6">
                     <div className="rounded-full border border-lh-accent px-6 py-4 text-center font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-accent">
