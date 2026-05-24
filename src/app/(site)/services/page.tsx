@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 export const revalidate = 300;
 
 export default async function ServicesPage(): Promise<ReactElement> {
-  const [offerings, services] = await Promise.all([
-    loaders.getActiveBookingOfferings(),
+  const [bookableServices, services] = await Promise.all([
+    loaders.getBookableServices(),
     loaders.getServices(),
   ]);
 
@@ -26,7 +26,7 @@ export default async function ServicesPage(): Promise<ReactElement> {
           </p>
         </div>
 
-        {offerings.length === 0 ? (
+        {bookableServices.length === 0 ? (
           <div className="text-center py-16 bg-lh-white rounded-2xl border border-lh-line">
             <p className="text-lh-muted max-w-md mx-auto">
               We are currently updating our services. Please check back later.
@@ -45,17 +45,17 @@ export default async function ServicesPage(): Promise<ReactElement> {
               </div>
               
               <div className="space-y-4">
-                {offerings.map((offering) => (
-                  <div key={offering._id} className="editorial-card p-6 flex justify-between items-center">
+                {bookableServices.map((service) => (
+                  <div key={service._id} className="editorial-card p-6 flex justify-between items-center">
                     <div>
-                      <h3 className="section-subheading mb-1 text-lg md:text-lg lg:text-lg">{offering.title}</h3>
-                      <p className="text-sm text-lh-muted mb-2">{offering.durationMinutes} min</p>
-                      <p className="text-sm text-black font-light max-w-md">{offering.description}</p>
+                      <h3 className="section-subheading mb-1 text-lg md:text-lg lg:text-lg">{service.title}</h3>
+                      <p className="text-sm text-lh-muted mb-2">{service.durationMinutes} min</p>
+                      <p className="text-sm text-black font-light max-w-md">{service.description}</p>
                     </div>
                     <div className="flex flex-col items-end gap-3">
-                      <span className="font-medium text-black">{formatCad(offering.fullPrice)}</span>
+                      <span className="font-medium text-black">{formatCad(service.fullPrice)}</span>
                       <Button asChild className="px-6 py-2 text-sm">
-                        <Link href={`/services/${offering.slug}/booking`}>
+                        <Link href={`/services/${service.slug}/booking`}>
                           Book
                         </Link>
                       </Button>
@@ -75,7 +75,7 @@ export default async function ServicesPage(): Promise<ReactElement> {
                   <span className="text-lh-muted">(100+ reviews)</span>
                 </div>
                 <Button asChild className="w-full mb-6">
-                  <Link href={`/services/${offerings[0].slug}/booking`}>Book now</Link>
+                  <Link href={`/services/${bookableServices[0].slug}/booking`}>Book now</Link>
                 </Button>
                 <div className="pt-4 border-t border-lh-line">
                   <p className="font-medium text-black mb-1">Location</p>

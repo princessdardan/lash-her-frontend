@@ -107,7 +107,7 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
             <div className="mt-auto pt-6 border-t border-lh-line/30">
               {!service.isAvailable ? (
                 <div className="text-lh-primary font-medium py-3 text-center border border-lh-primary rounded-md">
-                  {service.availabilityLabel || "Currently Unavailable"}
+                  Currently Unavailable
                 </div>
               ) : (
                 <Link href={`/services/${service.slug}/booking`} className="btn-primary-red w-full text-center block">
