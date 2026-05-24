@@ -2,7 +2,6 @@ import { EnvelopeIcon } from "@sanity/icons";
 import { defineArrayMember, defineField, defineType } from "sanity";
 
 const BOOKING_TYPE_OPTIONS = [
-  { title: "Training sign-up call", value: "training-call" },
   { title: "In-person appointment", value: "in-person-appointment" },
 ];
 
