@@ -8,6 +8,7 @@ import { nanoid } from "nanoid";
 import type {
   CheckoutOrderLineItemSnapshot,
   CheckoutOrderPurpose,
+  CheckoutOrderShippingAddressSnapshot,
   PaymentProvider,
 } from "@/lib/private-db/schema";
 import { getCheckoutSecretEncryptionKey } from "@/sanity/env";
@@ -30,6 +31,7 @@ export interface CreatePendingOrderInput {
   helcimInvoiceNumber: string;
   purpose?: CheckoutOrderPurpose;
   cart: ValidatedCart;
+  shippingAddress?: CheckoutOrderShippingAddressSnapshot;
 }
 
 export interface PendingOrderRecord {
@@ -45,6 +47,7 @@ export interface PendingOrderRecord {
   lineItems: CheckoutOrderLineItemSnapshot[];
   paymentProvider: PaymentProvider;
   purpose: CheckoutOrderPurpose;
+  shippingAddress: CheckoutOrderShippingAddressSnapshot | null;
 }
 
 
@@ -91,6 +94,7 @@ type CheckoutOrderInsert = {
   paymentProvider: "helcim";
   purpose: CheckoutOrderPurpose;
   secretTokenCiphertext: string;
+  shippingAddress?: CheckoutOrderShippingAddressSnapshot;
   status: "pending";
 };
 type CheckoutPaymentEventInsert = {
@@ -155,6 +159,7 @@ export function createCheckoutOrderStore(
         currency: input.cart.currency,
         lineItems,
         paymentProvider: "helcim",
+        ...(input.shippingAddress ? { shippingAddress: input.shippingAddress } : {}),
       });
 
       return {
@@ -170,6 +175,7 @@ export function createCheckoutOrderStore(
         lineItems,
         paymentProvider: "helcim",
         purpose: input.purpose ?? "product",
+        shippingAddress: input.shippingAddress ?? null,
       };
     },
 
@@ -406,6 +412,7 @@ function toPendingOrderRecord(pendingOrder: CheckoutOrderRow): PendingOrderRecor
     lineItems: pendingOrder.lineItems,
     paymentProvider: pendingOrder.paymentProvider,
     purpose: pendingOrder.purpose,
+    shippingAddress: pendingOrder.shippingAddress ?? null,
   };
 }
 
