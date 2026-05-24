@@ -2,13 +2,15 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
-  PRODUCT_CART_STORAGE_KEY,
   createBuyNowPayload,
-  loadProductCartItems,
-  persistProductCartItems,
   productCartReducer,
   type ProductCartState,
 } from "./product-cart-provider";
+import {
+  PRODUCT_CART_STORAGE_KEY,
+  loadProductCartItems,
+  persistProductCartItems,
+} from "@/lib/commerce/cart-storage";
 
 class MemoryStorage {
   private readonly entries = new Map<string, string>();
@@ -146,7 +148,7 @@ describe("product cart provider helpers", () => {
     storage.setItem(PRODUCT_CART_STORAGE_KEY, "{not valid json");
 
     assert.deepEqual(loadProductCartItems(storage), []);
-    assert.equal(storage.getItem(PRODUCT_CART_STORAGE_KEY), "[]");
+    assert.equal(storage.getItem(PRODUCT_CART_STORAGE_KEY), null);
   });
 
   it("falls back to an empty cart when storage access throws", () => {

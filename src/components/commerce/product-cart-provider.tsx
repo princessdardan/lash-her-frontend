@@ -10,17 +10,13 @@ import {
   type ReactNode,
 } from "react";
 import type { CartInputItem } from "@/lib/commerce/cart";
-
-export const PRODUCT_CART_STORAGE_KEY = "lash-her:product-cart:v1";
+import {
+  loadProductCartItems,
+  persistProductCartItems,
+} from "@/lib/commerce/cart-storage";
 
 const MIN_QUANTITY = 1;
 const MAX_QUANTITY = 10;
-
-interface StorageLike {
-  getItem(key: string): string | null;
-  setItem(key: string, value: string): void;
-  removeItem(key: string): void;
-}
 
 export interface ProductCartState {
   items: CartInputItem[];
@@ -64,11 +60,11 @@ export function ProductCartProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!hasHydratedRef.current) return;
-    persistProductCartItems(state.items, getBrowserStorage());
+    persistProductCartItems(state.items);
   }, [state.items]);
 
   useEffect(() => {
-    dispatch({ type: "hydrate", items: loadProductCartItems(getBrowserStorage()) });
+    dispatch({ type: "hydrate", items: loadProductCartItems() });
     hasHydratedRef.current = true;
   }, []);
 
@@ -141,40 +137,6 @@ export function createBuyNowPayload(item: ProductCartInputItem): CartInputItem[]
   return [normalizeCartInputItem(item)];
 }
 
-export function loadProductCartItems(storage: StorageLike | null = getBrowserStorage()): CartInputItem[] {
-  if (!storage) return [];
-
-  try {
-    const rawItems = storage.getItem(PRODUCT_CART_STORAGE_KEY);
-    if (!rawItems) return [];
-
-    const parsedItems: unknown = JSON.parse(rawItems);
-    if (!Array.isArray(parsedItems)) {
-      resetStoredCart(storage);
-      return [];
-    }
-
-    return normalizeCartItems(parsedItems);
-  } catch {
-    resetStoredCart(storage);
-    return [];
-  }
-}
-
-export function persistProductCartItems(
-  items: CartInputItem[],
-  storage: StorageLike | null = getBrowserStorage(),
-): void {
-  if (!storage) return;
-
-  try {
-    storage.setItem(PRODUCT_CART_STORAGE_KEY, JSON.stringify(normalizeCartItems(items)));
-  } catch {
-    // Storage write failures (e.g., quota exceeded, private mode) are silently ignored.
-    // The cart remains functional in memory for the current session.
-  }
-}
-
 function addCartItem(items: CartInputItem[], item: ProductCartInputItem): CartInputItem[] {
   const normalizedItem = normalizeCartInputItem(item);
   const existingItem = items.find((candidate) =>
@@ -231,27 +193,4 @@ function isMatchingLineItem(
 function clampQuantity(quantity: number): number {
   if (!Number.isFinite(quantity)) return MIN_QUANTITY;
   return Math.max(MIN_QUANTITY, Math.min(MAX_QUANTITY, Math.trunc(quantity)));
-}
-
-function resetStoredCart(storage: StorageLike): void {
-  try {
-    storage.setItem(PRODUCT_CART_STORAGE_KEY, JSON.stringify([]));
-  } catch {
-    // If reset fails, try removing the key entirely.
-    try {
-      storage.removeItem(PRODUCT_CART_STORAGE_KEY);
-    } catch {
-      // If removing the key also fails, the cart still resets in memory for this session.
-    }
-  }
-}
-
-function getBrowserStorage(): StorageLike | null {
-  if (typeof window === "undefined") return null;
-
-  try {
-    return window.localStorage;
-  } catch {
-    return null;
-  }
 }

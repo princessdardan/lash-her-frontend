@@ -4,6 +4,7 @@ import { Footer } from "@/components/custom/layouts/footer";
 import { MainWrapper } from "@/components/custom/layouts/main-wrapper";
 import { ContactPopup } from "@/components/custom/contact-popup/contact-popup";
 import { ProductCartProvider } from "@/components/commerce/product-cart-provider";
+import { CartSheet } from "@/components/commerce/cart-sheet";
 
 const jsonLd = {
   "@context": "https://schema.org",
@@ -49,6 +50,7 @@ export default async function SiteLayout({
 }>) {
   const globalData = await loaders.getGlobalData();
   const mainMenuData = await loaders.getMainMenuData();
+  const products = await loaders.getProducts();
 
   return (
     <>
@@ -69,6 +71,7 @@ export default async function SiteLayout({
         </MainWrapper>
         <Footer data={globalData?.footer} />
         <ContactPopup settings={globalData?.contactPopup} />
+        <CartSheet products={products} />
       </ProductCartProvider>
     </>
   );
