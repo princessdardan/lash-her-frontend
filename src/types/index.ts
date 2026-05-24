@@ -200,6 +200,30 @@ export interface TGeneralInquiryLabels {
   message: string;
 }
 
+export interface TFeatureItem {
+  _key: string;
+  image: TSanityImage;
+  heading: string;
+  subHeading?: string;
+  description: string;
+  link?: TLink;
+  product?: {
+    _type: "reference";
+    _ref: string;
+  };
+}
+
+export type TFeatureLayout = "imageLeft" | "imageRight" | "imageTop";
+
+export interface TFeatureSection {
+  _type: "featureSection";
+  _key: string;
+  layout: TFeatureLayout;
+  enableCarousel: boolean;
+  carouselIntervalMs?: number;
+  items: TFeatureItem[];
+}
+
 // === Block Union Types (per D-11 — moved here from page files) ===
 
 export type TLayoutBlock =
@@ -212,7 +236,8 @@ export type TLayoutBlock =
   | TSchedule
   | TContactInfo
   | TContactFormLabels
-  | TGeneralInquiryLabels;
+  | TGeneralInquiryLabels
+  | TFeatureSection;
 
 // === Navigation Types ===
 
