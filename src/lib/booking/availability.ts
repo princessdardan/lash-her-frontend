@@ -96,8 +96,8 @@ function getBufferedBusyWindow(
   event: CalendarEventWindow,
 ): TimeWindow {
   return {
-    startMs: event.start.getTime() - bookingType.bufferBeforeMinutes * MINUTE_MS,
-    endMs: event.end.getTime() + bookingType.bufferAfterMinutes * MINUTE_MS,
+    startMs: event.start.getTime() - bookingType.bufferMinutes * MINUTE_MS,
+    endMs: event.end.getTime() + bookingType.bufferMinutes * MINUTE_MS,
   };
 }
 

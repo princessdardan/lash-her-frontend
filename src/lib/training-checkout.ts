@@ -2,7 +2,6 @@ import type { TTrainingProgram } from "@/types";
 
 export const TRAINING_CHECKOUT_TAX_RATE = 0.13;
 export const TRAINING_SCHEDULING_LINK_TTL_DAYS = 14;
-export const TRAINING_PAID_BOOKING_TYPE = "training-call";
 
 export type TrainingCheckoutRequest = {
   programSlug?: string;
@@ -40,7 +39,6 @@ export type TrainingCheckoutQuote = {
   customerName: string;
   customerEmail: string;
   schedulingTtlDays: typeof TRAINING_SCHEDULING_LINK_TTL_DAYS;
-  paidBookingType: typeof TRAINING_PAID_BOOKING_TYPE;
 };
 
 export type TrainingCheckoutValidationResult =
@@ -175,7 +173,6 @@ export function validateTrainingCheckoutRequest(
       customerName,
       customerEmail,
       schedulingTtlDays: TRAINING_SCHEDULING_LINK_TTL_DAYS,
-      paidBookingType: TRAINING_PAID_BOOKING_TYPE,
     },
   };
 }

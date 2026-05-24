@@ -1,6 +1,5 @@
 import type { calendar_v3 } from "googleapis";
 import type { PaymentProvider } from "@/lib/private-db/schema";
-import type { PaidTrainingBookingContext } from "./types";
 
 export const BOOKING_EVENT_HOLD_PROPERTY = "lashHerBookingHoldId";
 
@@ -30,7 +29,6 @@ export interface BookingEventPayloadInput {
   start: Date;
   end: Date;
   timezone: string;
-  paidTrainingContext?: PaidTrainingBookingContext;
 }
 
 export function buildBookingEventPayload(
@@ -48,14 +46,6 @@ export function buildBookingEventPayload(
     answersText.length > 0 ? answersText : "No answers provided",
   ];
 
-  if (input.paidTrainingContext !== undefined) {
-    descriptionParts.push(
-      "",
-      "Paid training context:",
-      `Program: ${input.paidTrainingContext.programTitle}`,
-      `Order: ${input.paidTrainingContext.publicOrderId}`,
-    );
-  }
 
   descriptionParts.push(
     "",

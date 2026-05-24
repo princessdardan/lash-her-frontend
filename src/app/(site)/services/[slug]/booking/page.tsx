@@ -8,15 +8,15 @@ export const revalidate = 1800;
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
-  const offering = await loaders.getBookingOfferingBySlug(slug);
+  const service = await loaders.getBookableServiceBySlug(slug);
 
-  if (!offering) {
+  if (!service) {
     return { title: "Book Service" };
   }
 
   return {
-    title: `Book ${offering.title}`,
-    description: `Book an appointment for ${offering.title}`,
+    title: `Book ${service.title}`,
+    description: `Book an appointment for ${service.title}`,
   };
 }
 
@@ -26,20 +26,21 @@ export default async function ServiceBookingPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const settings = await loaders.getBookingSettings();
-  const offering = await loaders.getBookingOfferingBySlug(slug);
+  const [settings, service, services] = await Promise.all([
+    loaders.getBookingSettings(),
+    loaders.getBookableServiceBySlug(slug),
+    loaders.getBookableServices(),
+  ]);
 
-  if (!settings || !offering) {
+  if (!settings || !service) {
     notFound();
   }
 
-  const offeringPayment = {
-    depositAmount: offering.depositAmount,
-    fullPrice: offering.fullPrice,
-    currency: offering.currency as "CAD",
+  const servicePayment = {
+    depositAmount: service.depositAmount,
+    fullPrice: service.fullPrice,
+    currency: service.currency as "CAD",
   };
-
-  const activeOfferings = await loaders.getActiveBookingOfferings();
 
   return (
     <main className="min-h-screen bg-lh-neutral-2 py-12 lg:py-24">
@@ -55,11 +56,11 @@ export default async function ServiceBookingPage({
             Book Appointment
           </span>
           <h1 className="section-heading mb-4">
-            {offering.title}
+            {service.title}
           </h1>
-          {offering.description && (
+          {service.description && (
             <p className="text-black font-light text-lg max-w-2xl mx-auto">
-              {offering.description}
+              {service.description}
             </p>
           )}
           <p className="mt-4 font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-muted">
@@ -69,10 +70,9 @@ export default async function ServiceBookingPage({
 
         <BookingFlow
           settings={settings}
-          initialBookingType={offering.bookingType}
-          initialOfferingSlug={slug}
-          offeringPayment={offeringPayment}
-          offerings={activeOfferings}
+          initialServiceSlug={service.slug}
+          servicePayment={servicePayment}
+          services={services}
         />
       </div>
     </main>

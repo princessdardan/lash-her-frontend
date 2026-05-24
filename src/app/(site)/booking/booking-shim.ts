@@ -1,27 +1,18 @@
-import type { BookingType } from "@/lib/booking/types";
-import {
-  type IssuedTrainingSchedulingTokenRecord,
-  type PendingTrainingEnrollmentRecord,
-} from "@/lib/commerce/training-enrollment-store";
 import {
   buildServiceBookingUrl,
-  buildTrainingScheduleUrl,
 } from "@/lib/training-checkout";
-import type { TBookingOffering } from "@/types";
+import type { TService } from "@/types";
 
 export type BookingShimSearchParams = Record<string, string | string[] | undefined>;
 
 export interface BookingShimDependencies {
-  findPendingTrainingEnrollmentByToken(input: { schedulingToken: string }): Promise<PendingTrainingEnrollmentRecord | null>;
-  getOrIssueTrainingSchedulingTokenForPaidOrder(orderId: string): Promise<IssuedTrainingSchedulingTokenRecord | null>;
-  getBookingOfferingBySlug(slug: string): Promise<TBookingOffering | null>;
-  getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId(orderId: string): Promise<PendingTrainingEnrollmentRecord | null>;
+  getBookableServiceBySlug(slug: string): Promise<TService | null>;
 }
 
 export type BookingShimResolution =
   | { kind: "notFound" }
-  | { kind: "redirect"; href: string; redirectMode: "permanent" | "temporary" }
-  | { initialBookingType?: BookingType; initialOfferingSlug?: string; kind: "render" };
+  | { kind: "redirect"; href: string; redirectMode: "permanent" }
+  | { kind: "render" };
 
 type ExclusiveAliasGroupResult =
   | { kind: "absent" }
@@ -30,28 +21,11 @@ type ExclusiveAliasGroupResult =
 
 const LEGACY_QUERY_KEYS = new Set([
   "type",
-  "order",
   "offering",
   "offeringSlug",
-  "token",
-  "schedulingToken",
-  "paidSchedulingToken",
-  "email",
-  "phone",
-  "name",
-  "next",
-  "returnUrl",
+  "service",
+  "serviceSlug",
 ]);
-
-const PII_AND_EXTERNAL_QUERY_KEYS = new Set([
-  "email",
-  "phone",
-  "name",
-  "next",
-  "returnUrl",
-]);
-
-const TRAINING_TYPES = new Set<BookingType>(["training-call", "in-person-appointment"]);
 
 export async function resolveBookingShim(
   searchParams: BookingShimSearchParams,
@@ -59,8 +33,12 @@ export async function resolveBookingShim(
 ): Promise<BookingShimResolution> {
   const parsed = parseSearchParams(searchParams);
 
-  if (!parsed || parsed.size === 0) {
+  if (parsed === null) {
     return { kind: "notFound" };
+  }
+
+  if (parsed.size === 0) {
+    return { kind: "render" };
   }
 
   for (const key of parsed.keys()) {
@@ -69,103 +47,40 @@ export async function resolveBookingShim(
     }
   }
 
-  for (const key of PII_AND_EXTERNAL_QUERY_KEYS) {
-    if (parsed.has(key)) {
-      return { kind: "notFound" };
-    }
-  }
-
-  const serviceSlug = getExclusiveString(parsed, ["offeringSlug", "offering"]);
-  const orderId = getExclusiveString(parsed, ["order"]);
+  const serviceSlug = getExclusiveString(parsed, ["serviceSlug", "service", "offeringSlug", "offering"]);
   const bookingType = getExclusiveString(parsed, ["type"]);
-  const schedulingToken = getExclusiveString(parsed, ["schedulingToken", "token", "paidSchedulingToken"]);
 
-  if (serviceSlug.kind === "conflict" || schedulingToken.kind === "conflict" || bookingType.kind === "conflict") {
+  if (serviceSlug.kind === "conflict" || bookingType.kind === "conflict") {
     return { kind: "notFound" };
   }
 
   if (serviceSlug.kind === "present") {
-    if (orderId.kind === "present" || bookingType.kind === "present" || schedulingToken.kind === "present") {
+    if (bookingType.kind === "present") {
       return { kind: "notFound" };
     }
 
-    const offering = await dependencies.getBookingOfferingBySlug(serviceSlug.value);
+    const service = await dependencies.getBookableServiceBySlug(serviceSlug.value);
 
-    if (!offering) {
+    if (!service) {
       return { kind: "notFound" };
     }
 
     return {
       kind: "redirect",
-      href: buildServiceBookingUrl({ serviceSlug: offering.slug }),
+      href: buildServiceBookingUrl({ serviceSlug: service.slug }),
       redirectMode: "permanent",
     };
   }
 
-  if (orderId.kind === "present") {
-    if (bookingType.kind !== "present" || bookingType.value !== "training-call") {
-      return { kind: "notFound" };
-    }
-
-    if (schedulingToken.kind === "present") {
-      const enrollment = await dependencies.findPendingTrainingEnrollmentByToken({ schedulingToken: schedulingToken.value });
-
-      if (
-        !enrollment ||
-        enrollment.checkoutOrder.orderId !== orderId.value ||
-        typeof enrollment.programSnapshot.slug !== "string" ||
-        enrollment.programSnapshot.slug.trim().length === 0
-      ) {
-        return { kind: "notFound" };
-      }
-
-      return {
-        kind: "redirect",
-        href: buildTrainingScheduleUrl({
-          programSlug: enrollment.programSnapshot.slug,
-          schedulingToken: schedulingToken.value,
-        }),
-        redirectMode: "temporary",
-      };
-    }
-
-    const issued = await dependencies.getOrIssueTrainingSchedulingTokenForPaidOrder(orderId.value);
-
-    if (
-      !issued ||
-      issued.checkoutOrder.orderId !== orderId.value ||
-      typeof issued.programSnapshot.slug !== "string" ||
-      issued.programSnapshot.slug.trim().length === 0
-    ) {
-      return { kind: "notFound" };
-    }
-
-    return {
-      kind: "redirect",
-      href: buildTrainingScheduleUrl({
-        programSlug: issued.programSnapshot.slug,
-        schedulingToken: issued.schedulingToken,
-      }),
-      redirectMode: "temporary",
-    };
-  }
-
-  if (bookingType.kind !== "present") {
+  if (bookingType.kind === "absent") {
     return { kind: "notFound" };
   }
 
-  if (!TRAINING_TYPES.has(bookingType.value as BookingType)) {
+  if (bookingType.value !== "in-person-appointment") {
     return { kind: "notFound" };
   }
 
-  if (schedulingToken.kind === "present") {
-    return { kind: "notFound" };
-  }
-
-  return {
-    kind: "render",
-    initialBookingType: bookingType.value === "training-call" ? "training-call" : undefined,
-  };
+  return { kind: "render" };
 }
 
 function parseSearchParams(searchParams: BookingShimSearchParams): Map<string, string> | null {

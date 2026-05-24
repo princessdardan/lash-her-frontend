@@ -1,24 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import {
-  resolvePaidTrainingBookingContext,
-  resolveTrainingIntroCallEligibility,
-} from "./paid-training-context";
+import { resolveTrainingIntroCallEligibility } from "./paid-training-context";
 import type { PendingTrainingEnrollmentRecord } from "@/lib/commerce/training-enrollment-store";
-import type { BookingRequestInput } from "./types";
-
-const baseRequest: BookingRequestInput = {
-  bookingType: "in-person-appointment",
-  start: "2026-05-12T14:00:00.000Z",
-  name: "Client Name",
-  email: " client-entered@example.com ",
-  phone: "555-555-5555",
-  answers: [],
-  marketingOptIn: false,
-  idempotencyKey: "booking-request-1",
-};
-
 const pendingEnrollment: PendingTrainingEnrollmentRecord = {
   checkoutEmail: "checkout@example.com",
   checkoutOrder: {
@@ -81,53 +65,6 @@ const pendingEnrollment: PendingTrainingEnrollmentRecord = {
   staffAlertedAt: null,
   tokenExpiresAt: new Date("2099-05-24T00:00:00.000Z"),
 };
-
-test("resolvePaidTrainingBookingContext preserves public booking input without scheduling token", async () => {
-  let lookupCalled = false;
-  const result = await resolvePaidTrainingBookingContext(baseRequest, async () => {
-    lookupCalled = true;
-    return pendingEnrollment;
-  });
-
-  assert.equal(result.ok, true);
-  assert.equal(lookupCalled, false);
-
-  if (result.ok) {
-    assert.equal(result.context, null);
-    assert.equal(result.input.bookingType, "in-person-appointment");
-  }
-});
-
-test("resolvePaidTrainingBookingContext verifies scheduling token and matching route slug", async () => {
-  const result = await resolvePaidTrainingBookingContext(
-    {
-      ...baseRequest,
-      email: "client-entered@example.com",
-      paidSchedulingToken: " raw-token ",
-      paidTrainingSlug: " lash-training ",
-    },
-    async ({ schedulingToken }) => {
-      assert.equal(schedulingToken, "raw-token");
-      return pendingEnrollment;
-    },
-  );
-
-  assert.equal(result.ok, true);
-
-  if (result.ok) {
-    assert.equal(result.input.bookingType, "training-call");
-    assert.equal(result.input.email, "checkout@example.com");
-    assert.equal(result.input.paidSchedulingToken, "raw-token");
-    assert.equal(result.input.paidTrainingSlug, "lash-training");
-    assert.deepEqual(result.context, {
-      checkoutEmail: "checkout@example.com",
-      enrollmentId: "training-enrollment-1",
-      programTitle: "Lash Training Program",
-      publicOrderId: "LH-TRAINING-123",
-      schedulingToken: "raw-token",
-    });
-  }
-});
 
 test("resolveTrainingIntroCallEligibility rejects missing scheduling token", async () => {
   const result = await resolveTrainingIntroCallEligibility(

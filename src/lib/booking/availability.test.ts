@@ -6,13 +6,12 @@ import { getActiveHoldBusyEvents, type BookingHoldRecord } from "./holds";
 import type { BookingTypeConfig, CalendarEventWindow } from "./types";
 
 const bookingType: BookingTypeConfig = {
-  type: "training-call",
-  label: "Training sign-up call",
-  description: "Discuss training options.",
+  type: "in-person-appointment",
+  label: "Lash appointment",
+  description: "Lash service appointment.",
   durationMinutes: 30,
   slotIntervalMinutes: 15,
-  bufferBeforeMinutes: 0,
-  bufferAfterMinutes: 0,
+  bufferMinutes: 0,
   questions: [],
 };
 
@@ -79,8 +78,7 @@ test("buildBookingSlots subtracts busy events with before and after buffers", ()
   const slots = buildBookingSlots({
     bookingType: {
       ...bookingType,
-      bufferBeforeMinutes: 15,
-      bufferAfterMinutes: 15,
+      bufferMinutes: 15,
     },
     availabilityWindows: [availabilityWindow],
     busyEvents: [busyEvent],
@@ -163,14 +161,14 @@ test("isSlotAvailable returns true for an open slot with no busy events", () => 
 
 test("buildBookingSlots treats active private holds as busy intervals", () => {
   const activeHold: BookingHoldRecord = {
-    bookingType: "training-call",
+    bookingType: "in-person-appointment",
     createdAt: now,
     customer: { email: "client@example.com", name: "Client Name", phone: "555-555-5555" },
     expiresAt: new Date("2026-05-09T12:10:00.000Z"),
     googleEventId: null,
     id: "hold-1",
-    offeringId: "training-intro",
-    offeringSnapshot: { title: "Training Intro" },
+    offeringId: "service-classic-fill",
+    offeringSnapshot: { title: "Classic Fill" },
     payment: null,
     publicReference: "hold_1",
     selectedEnd: new Date("2026-05-10T14:45:00.000Z"),

@@ -1,8 +1,6 @@
-import { unstable_noStore as noStore } from "next/cache";
-import { notFound, permanentRedirect, redirect } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import { loaders } from "@/data/loaders";
 import { BookingFlow } from "@/components/booking/booking-flow";
-import { findPendingTrainingEnrollmentByToken, getOrIssueTrainingSchedulingTokenForPaidOrder, getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId } from "@/lib/commerce/training-enrollment-store";
 import { resolveBookingShim } from "./booking-shim";
 
 export const dynamic = "force-dynamic";
@@ -14,10 +12,7 @@ export default async function BookingPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const resolution = await resolveBookingShim(await searchParams, {
-    findPendingTrainingEnrollmentByToken,
-    getOrIssueTrainingSchedulingTokenForPaidOrder,
-    getBookingOfferingBySlug: async (slug) => loaders.getBookingOfferingBySlug(slug),
-    getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
+    getBookableServiceBySlug: async (slug) => loaders.getBookableServiceBySlug(slug),
   });
 
   if (resolution.kind === "notFound") {
@@ -25,29 +20,24 @@ export default async function BookingPage({
   }
 
   if (resolution.kind === "redirect") {
-    if (resolution.redirectMode === "permanent") {
-      permanentRedirect(resolution.href);
-    } else {
-      noStore();
-      redirect(resolution.href);
-    }
+    permanentRedirect(resolution.href);
   }
 
-  const settings = await loaders.getBookingSettings();
+  const [settings, services] = await Promise.all([
+    loaders.getBookingSettings(),
+    loaders.getBookableServices(),
+  ]);
 
   if (!settings) {
     notFound();
   }
-
-  const activeOfferings = await loaders.getActiveBookingOfferings();
 
   return (
     <main className="min-h-screen bg-lh-neutral-2 py-12 lg:py-24">
       <div className="content-container max-w-5xl mx-auto">
         <BookingFlow
           settings={settings}
-          initialBookingType={resolution.initialBookingType}
-          offerings={activeOfferings}
+          services={services}
         />
       </div>
     </main>

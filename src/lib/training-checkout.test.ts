@@ -177,7 +177,6 @@ describe("training-checkout", () => {
           customerName: "Nataliea Tester",
           customerEmail: "nataliea@example.com",
           schedulingTtlDays: TRAINING_SCHEDULING_LINK_TTL_DAYS,
-          paidBookingType: TRAINING_PAID_BOOKING_TYPE,
         });
       }
     });
@@ -223,15 +222,15 @@ describe("training-checkout", () => {
       if (!result.ok) assert.strictEqual(result.code, "checkout_unavailable");
     });
 
-    it("uses a 14-day scheduling TTL and training-call paid booking type", () => {
+    it("uses a 14-day scheduling TTL for dedicated training scheduling links", () => {
       const result = validateTrainingCheckoutRequest(buildProgram(), buildRequest());
 
       assert.strictEqual(TRAINING_SCHEDULING_LINK_TTL_DAYS, 14);
-      assert.strictEqual(TRAINING_PAID_BOOKING_TYPE, "training-call");
+      assert.strictEqual(TRAINING_PAID_BOOKING_TYPE, undefined);
       assert.strictEqual(result.ok, true);
       if (result.ok) {
         assert.strictEqual(result.quote.schedulingTtlDays, 14);
-        assert.strictEqual(result.quote.paidBookingType, "training-call");
+        assert.equal("paidBookingType" in result.quote, false);
       }
     });
 

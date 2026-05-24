@@ -1,5 +1,3 @@
-import type { BookingType } from "@/lib/booking/types";
-
 // === Sanity Base Types ===
 
 export interface TSanityImage {
@@ -443,17 +441,11 @@ export interface TService {
   shortDescription?: string;
   slug: string;
   showDetailPage: boolean;
-  bookingType: BookingType;
   durationMinutes: number;
-  slotIntervalMinutes: number;
-  bufferBeforeMinutes: number;
-  bufferAfterMinutes: number;
-  minimumLeadTimeHoursOverride?: number;
   fullPrice: number;
   depositAmount: number;
   currency: TCommerceCurrency;
   isAvailable: boolean;
-  availabilityLabel?: string;
   displayOrder?: number;
   image?: TSanityImage;
   gallery?: TSanityImage[];
@@ -482,25 +474,6 @@ export interface TProductsGroupedCatalog {
   products: TProduct[];
   trainingPrograms: TTrainingProgramCatalogItem[];
   services: TService[];
-}
-
-export interface TBookingOffering {
-  _id: string;
-  title: string;
-  description: string;
-  slug: string;
-  service?: Pick<TService, "_id" | "title" | "slug" | "description" | "image">;
-  isActive: boolean;
-  bookingType: BookingType;
-  durationMinutes: number;
-  slotIntervalMinutes: number;
-  bufferBeforeMinutes: number;
-  bufferAfterMinutes: number;
-  minimumLeadTimeHoursOverride?: number;
-  depositAmount: number;
-  fullPrice: number;
-  currency: TCommerceCurrency;
-  displayOrder?: number;
 }
 
 export interface THeader {
