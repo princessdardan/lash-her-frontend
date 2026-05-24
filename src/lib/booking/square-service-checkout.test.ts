@@ -23,7 +23,7 @@ const helperScript = String.raw`
       expiresAt: new Date("2026-05-22T14:10:00.000Z"),
       selectedStart: new Date("2026-05-23T14:00:00.000Z"),
       selectedEnd: new Date("2026-05-23T15:00:00.000Z"),
-      offeringId: "bookingOffering-classic-fill",
+      offeringId: "service-classic-fill",
       offeringSnapshot: {
         title: "Classic Fill",
         depositAmount: 50,

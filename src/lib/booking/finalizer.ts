@@ -4,7 +4,8 @@ import type { CheckoutOrderPurpose } from "@/lib/private-db/schema";
 import { isSlotAvailable } from "./availability";
 import type { BookingHoldRecord, BookingHoldState } from "./holds";
 import { PAYMENT_SUCCESS_GRACE_MINUTES } from "./payment-policy";
-import type { BookingSettings, BookingTypeConfig, CalendarEventWindow } from "./types";
+import type { BookingSettings, BookingTypeConfig } from "./types";
+import { buildAvailabilityWindowsFromHours } from "./schedule-windows";
 
 export { PAYMENT_SUCCESS_GRACE_MINUTES };
 
@@ -298,10 +299,6 @@ async function isPaidHoldSlotStillAvailable(input: {
 }): Promise<boolean> {
   const bookingTypeConfig = toPaidHoldBookingTypeConfig(input.settings, input.hold);
 
-  if (bookingTypeConfig === undefined) {
-    throw new BookingManualFollowupError("Booking type is not configured.");
-  }
-
   const [calendarEvents, activeHolds] = await Promise.all([
     input.googleCalendarModule.listCalendarEvents({
       calendarId: input.calendarId,
@@ -315,10 +312,12 @@ async function isPaidHoldSlotStillAvailable(input: {
       now: input.now,
     }),
   ]);
-  const { availabilityWindows, busyEvents } = partitionCalendarEvents(
-    calendarEvents,
-    input.settings.availabilityMarkerTitle,
-  );
+  const availabilityWindows = buildAvailabilityWindowsFromHours({
+    horizonEnd: input.hold.selectedEnd,
+    now: input.now,
+    settings: input.settings,
+  });
+  const busyEvents = calendarEvents;
   const activeHoldBusyEvents = input.holdsModule.getActiveHoldBusyEvents({
     holds: activeHolds.filter((hold) => hold.id !== input.hold.id),
     now: input.now,
@@ -334,49 +333,31 @@ async function isPaidHoldSlotStillAvailable(input: {
     horizonEnd: input.hold.selectedEnd,
   });
 }
-
 function toPaidHoldBookingTypeConfig(
   settings: BookingSettings,
   hold: BookingHoldRecord,
-): BookingTypeConfig | undefined {
-  const baseConfig = settings.bookingTypes.find((config) => config.type === hold.bookingType);
-
-  if (baseConfig === undefined) {
-    return undefined;
-  }
-
+): BookingTypeConfig {
   return {
-    ...baseConfig,
+    type: hold.bookingType,
     label: getBookingTypeLabel(hold),
-    durationMinutes: getSnapshotNumber(hold.offeringSnapshot.durationMinutes) ?? baseConfig.durationMinutes,
+    description: getSnapshotString(hold.offeringSnapshot.description) ?? "Lash appointment",
+    durationMinutes: getSnapshotNumber(hold.offeringSnapshot.durationMinutes) ?? getHoldDurationMinutes(hold),
+    slotIntervalMinutes: settings.slotIntervalMinutes,
+    bufferMinutes: settings.bufferMinutes,
+    questions: settings.intakeQuestions,
   };
 }
 
-function partitionCalendarEvents(
-  events: CalendarEventWindow[],
-  markerTitle: string,
-): {
-  availabilityWindows: CalendarEventWindow[];
-  busyEvents: CalendarEventWindow[];
-} {
-  const trimmedMarkerTitle = markerTitle.trim();
-  const availabilityWindows: CalendarEventWindow[] = [];
-  const busyEvents: CalendarEventWindow[] = [];
-
-  for (const event of events) {
-    if (event.title.trim() === trimmedMarkerTitle) {
-      availabilityWindows.push(event);
-      continue;
-    }
-
-    busyEvents.push(event);
-  }
-
-  return { availabilityWindows, busyEvents };
+function getSnapshotString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
 function getSnapshotNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function getHoldDurationMinutes(hold: BookingHoldRecord): number {
+  return Math.max(1, Math.round((hold.selectedEnd.getTime() - hold.selectedStart.getTime()) / MINUTE_MS));
 }
 
 export function isAppointmentCheckoutPurpose(
