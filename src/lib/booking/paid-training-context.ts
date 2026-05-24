@@ -1,55 +1,22 @@
 import type { PendingTrainingEnrollmentRecord } from "@/lib/commerce/training-enrollment-store";
-import type { BookingRequestInput, PaidTrainingBookingContext } from "./types";
 
 const GENERIC_TRAINING_LINK_ERROR = "We could not verify this training scheduling link.";
 
-export type PaidTrainingContextResolution =
-  | { ok: true; input: BookingRequestInput; context: PaidTrainingBookingContext | null }
+export type TrainingIntroCallEligibilityResolution =
+  | { ok: true; context: TrainingIntroCallEligibilityContext }
   | { ok: false; error: string; fieldErrors?: Record<string, string> };
+
+export interface TrainingIntroCallEligibilityContext {
+  checkoutEmail: string;
+  enrollmentId: string;
+  programTitle: string;
+  publicOrderId: string;
+  schedulingToken: string;
+}
 
 export type FindPaidTrainingIntroEligibility = (input: {
   schedulingToken: string;
 }) => Promise<PendingTrainingEnrollmentRecord | null>;
-
-export type TrainingIntroCallEligibilityResolution =
-  | { ok: true; context: PaidTrainingBookingContext }
-  | { ok: false; error: string; fieldErrors?: Record<string, string> };
-
-export async function resolvePaidTrainingBookingContext(
-  input: BookingRequestInput,
-  findPaidEnrollment: FindPaidTrainingIntroEligibility,
-): Promise<PaidTrainingContextResolution> {
-  const schedulingToken = input.paidSchedulingToken?.trim();
-  const programSlug = input.paidTrainingSlug?.trim();
-
-  if (!schedulingToken && !programSlug) {
-    return { ok: true, input, context: null };
-  }
-
-  const eligibility = await resolveTrainingIntroCallEligibility(
-    {
-      programSlug: programSlug ?? "",
-      schedulingToken: schedulingToken ?? "",
-    },
-    findPaidEnrollment,
-  );
-
-  if (!eligibility.ok) {
-    return eligibility;
-  }
-
-  return {
-    ok: true,
-    input: {
-      ...input,
-      bookingType: "training-call",
-      email: eligibility.context.checkoutEmail,
-      paidSchedulingToken: schedulingToken,
-      paidTrainingSlug: programSlug,
-    },
-    context: eligibility.context,
-  };
-}
 
 export async function resolveTrainingIntroCallEligibility(
   input: {
