@@ -5,8 +5,7 @@ import { loaders } from "@/data/loaders";
 import { BlockRenderer } from "@/components/custom/layouts/block-renderer";
 import { TrainingEditorialHero } from "@/components/custom/training-editorial-hero";
 import { TrainingEditorialDetails } from "@/components/custom/training-editorial-details";
-import { TrainingEnrollmentSection } from "@/components/custom/training-enrollment-section";
-import { TrainingProgramContactSection } from "@/components/custom/training-program-contact-section";
+import { TrainingEnrollmentToggle } from "@/components/custom/training-enrollment-toggle";
 import { getTrainingCta, isTrainingPurchasable } from "@/lib/training-checkout";
 import { TrainingPurchaseCard, TrainingMobileTray } from "@/components/commerce/training-purchase-card";
 import type { TLayoutBlock } from "@/types";
@@ -117,7 +116,13 @@ export default async function TrainingProgramPage({ params }: { params: Promise<
             <div className={showPurchaseUi ? "grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start xl:gap-10" : ""}>
               <div className="min-w-0">
                 <TrainingEditorialDetails data={data} />
-                <TrainingEnrollmentSection data={data} />
+                <TrainingEnrollmentToggle
+                  data={data}
+                  contactData={data.trainingContact}
+                  programSlug={data.slug}
+                  programTitle={data.title}
+                  hasPurchaseUi={showPurchaseUi}
+                />
 
                 {legacyBlocks.length > 0 && (
                   <div className="mt-8" data-training-legacy-blocks="true">
@@ -150,19 +155,6 @@ export default async function TrainingProgramPage({ params }: { params: Promise<
             <div className="text-center">
               {renderTrainingCta(cta, "")}
             </div>
-          </div>
-        </section>
-      )}
-
-      {showTrainingContact && (
-        <section className="bg-lh-neutral-2" data-training-contact-region="true">
-          <div className="mx-auto w-full max-w-[1380px] px-4 sm:px-5 lg:px-4 xl:px-6">
-            <TrainingProgramContactSection
-              data={data.trainingContact}
-              programSlug={data.slug}
-              programTitle={data.title}
-              hasPurchaseUi={showPurchaseUi}
-            />
           </div>
         </section>
       )}
