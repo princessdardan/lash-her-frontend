@@ -1,6 +1,6 @@
 import type { ReactElement } from "react";
 import { ProductCatalogShell } from "@/components/commerce/product-catalog-shell";
-import { loaders, type SellableProductSort } from "@/data/loaders";
+import { loaders, type ProductSort } from "@/data/loaders";
 
 export const revalidate = 300;
 
@@ -15,7 +15,7 @@ interface ProductsPageProps {
   searchParams: ProductsSearchParams;
 }
 
-const SORT_VALUES = new Set<SellableProductSort>(["default", "titleAsc", "priceAsc", "priceDesc"]);
+const SORT_VALUES = new Set<ProductSort>(["default", "titleAsc", "priceAsc", "priceDesc"]);
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) return value[0];
@@ -27,9 +27,9 @@ function allParams(value: string | string[] | undefined): string[] {
   return values.map((item) => item.trim()).filter(Boolean);
 }
 
-function getSort(value: string | string[] | undefined): SellableProductSort {
+function getSort(value: string | string[] | undefined): ProductSort {
   const sort = firstParam(value)?.trim();
-  return sort && SORT_VALUES.has(sort as SellableProductSort) ? (sort as SellableProductSort) : "default";
+  return sort && SORT_VALUES.has(sort as ProductSort) ? (sort as ProductSort) : "default";
 }
 
 export default async function ProductsPage({ searchParams }: ProductsPageProps): Promise<ReactElement> {
@@ -41,9 +41,9 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps):
 
   const [pageData, products, collections, filterAttributes] = await Promise.all([
     loaders.getProductsPageData(),
-    loaders.getSellableProducts({ collection, attributes, sort }),
+    loaders.getProducts({ collection, attributes, sort }),
     loaders.getProductsPageCollections(),
-    loaders.getSellableProductFilterAttributes(),
+    loaders.getProductFilterAttributes(),
   ]);
 
   return (

@@ -79,7 +79,7 @@ const pendingEnrollment: PendingTrainingEnrollmentRecord = {
     title: "Lash Training Program",
   },
   staffAlertedAt: null,
-  tokenExpiresAt: new Date("2026-05-24T00:00:00.000Z"),
+  tokenExpiresAt: new Date("2099-05-24T00:00:00.000Z"),
 };
 
 test("resolvePaidTrainingBookingContext preserves public booking input without scheduling token", async () => {

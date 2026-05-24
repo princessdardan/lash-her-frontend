@@ -10,7 +10,6 @@ const TYPE_TAG_MAP: Record<string, string> = {
   trainingProgram: "trainingProgram",
   productsPage: "productsPage",
   productCollection: "productCollection",
-  sellableProduct: "sellableProduct",
   product: "product",
   service: "service",
   globalSettings: "global",

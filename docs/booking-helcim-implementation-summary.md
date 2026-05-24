@@ -8,7 +8,7 @@ Integration branch: `integration/booking-helcim`
 
 This document summarizes the booking and HelcimPay work that has been implemented so future agents can build on it without rediscovering the architecture. It is a handoff summary, not proof that the branch is production-ready.
 
-> **2026-05-20 update:** This summary describes the historical implementation. Current commerce work is governed by `docs/superpowers/plans/2026-05-20-commerce-taxonomy-migration-hardening.md` and `docs/booking-system-architecture-reference.md`. Active checkout uses canonical `product`, `service`, `bookingOffering`, and native `trainingProgram` commerce fields, not legacy `sellableProduct` records.
+> **2026-05-20 update:** This summary describes the historical implementation. Current commerce work is governed by `docs/superpowers/plans/2026-05-20-commerce-taxonomy-migration-hardening.md` and `docs/booking-system-architecture-reference.md`. Active checkout uses canonical `product`, `service`, `bookingOffering`, and native `trainingProgram` commerce fields.
 
 The implementation combines two originally separate efforts:
 
@@ -81,14 +81,14 @@ Implemented surfaces:
 - `src/app/api/checkout/route.ts`
 - `src/app/api/checkout/validate-payment/route.ts`
 - `src/lib/commerce/*`
-- Historical only: `src/sanity/schemas/documents/sellable-product.ts`; active checkout now uses `product`, `service`, `bookingOffering`, and native `trainingProgram` schema fields.
+- Active checkout uses `product`, `service`, `bookingOffering`, and native `trainingProgram` schema fields.
 - `src/lib/private-db/*`
 - `src/app/api/webhooks/card-transactions/route.ts` (Renamed from `/helcim` to satisfy Helcim dashboard URL restrictions)
 - `tests/checkout.spec.ts`
 
 Core behavior:
 
-- Historical note: Sanity `sellableProduct` was the catalog source for products, services, training items, and deposits in this branch. Active checkout now uses canonical `product`, `service`, `bookingOffering`, and native `trainingProgram` commerce fields.
+- The catalog source is canonical Sanity `product` documents. Services, booking offerings, and training programs own their own public commerce fields.
 - Supported currency is CAD.
 - Cart validation enforces whole-number quantities from 1 to 10.
 - Server-side checkout reloads Sanity products by ID and rebuilds invoice line items from current catalog data.
@@ -111,7 +111,7 @@ Intentional first-release non-goals remain unimplemented:
 The integration branch merges booking and checkout additions into shared files:
 
 - `package.json` adds `test:unit` and dependencies for `googleapis`, `@upstash/redis`, and `tsx`.
-- Historical note: `src/data/loaders.ts` included `getBookingSettings`, `getSellableProducts`, and `getSellableProductsByIds`. Active public checkout reads canonical product and native training/booking fields.
+- `src/data/loaders.ts` includes `getBookingSettings`, canonical product catalog loaders, and native training/booking loaders.
 - `src/sanity/env.ts` includes booking env helpers, Helcim token helper, and checkout secret encryption key helper.
 - Active revalidation must include cache tags for `bookingSettings`, `bookingOffering`, `service`, `product`, and `trainingProgram` where those document types affect public pages.
 - `src/sanity/schemas/index.ts` registers booking and catalog schemas.

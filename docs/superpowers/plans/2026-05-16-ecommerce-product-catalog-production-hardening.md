@@ -32,7 +32,7 @@
 
 ## Relevant Files
 
-- `src/sanity/schemas/documents/sellable-product.ts`
+- `src/sanity/schemas/documents/product.ts`
 - `src/data/loaders.ts`
 - `src/lib/commerce/cart.ts`
 - `src/lib/commerce/money.ts`

@@ -18,18 +18,17 @@ import type {
   TProductsPage,
   TProductsGroupedCatalog,
   TService,
-  TSellableProduct,
   TTrainingProgramCatalogItem,
 } from "@/types";
 
 const isVercelPreview = process.env.VERCEL_ENV === "preview";
 
-export type SellableProductSort = "default" | "titleAsc" | "priceAsc" | "priceDesc";
+export type ProductSort = "default" | "titleAsc" | "priceAsc" | "priceDesc";
 
-export interface SellableProductFilters {
+export interface ProductFilters {
   collection?: string;
   attributes?: string[];
-  sort?: SellableProductSort;
+  sort?: ProductSort;
 }
 
 const PRODUCT_COLLECTION_PROJECTION = groq`{
@@ -49,7 +48,6 @@ const PRODUCT_PROJECTION = groq`{
   cardSubtitle,
   badgeLabel,
   "slug": slug.current,
-  kind,
   price,
   sku,
   currency,
@@ -300,7 +298,6 @@ async function getTrainingProgramBySlug(slug: string): Promise<TTrainingProgram 
     enrollmentTitle,
     enrollmentDescription,
     enrollmentBackgroundImage{ asset, hotspot, crop, alt },
-    linkedProduct->{ _id, title, "slug": slug.current, price, currency, isAvailable, availabilityLabel },
     checkoutEnabled,
     price,
     "currency": "CAD",
@@ -378,7 +375,6 @@ async function getTrainingProgramsPageData(): Promise<TTrainingProgramsPage | nu
     enrollmentTitle,
     enrollmentDescription,
     enrollmentBackgroundImage{ asset, hotspot, crop, alt },
-      linkedProduct->{ _id, title, "slug": slug.current, price, currency, isAvailable, availabilityLabel },
       checkoutEnabled,
       price,
       "currency": "CAD",
@@ -455,7 +451,6 @@ async function getAllTrainingPrograms(): Promise<TTrainingProgram[]> {
     enrollmentTitle,
     enrollmentDescription,
     enrollmentBackgroundImage{ asset, hotspot, crop, alt },
-    linkedProduct->{ _id, title, "slug": slug.current, price, currency, isAvailable, availabilityLabel },
     checkoutEnabled,
     price,
     "currency": "CAD",
@@ -640,7 +635,7 @@ function compareBookingOfferings(first: TBookingOffering, second: TBookingOfferi
 }
 
 
-function getSellableProductOrder(sort: SellableProductSort | undefined): string {
+function getProductOrder(sort: ProductSort | undefined): string {
   switch (sort) {
     case "titleAsc":
       return "title asc";
@@ -653,7 +648,7 @@ function getSellableProductOrder(sort: SellableProductSort | undefined): string 
   }
 }
 
-function normalizeProductFilters(filters: SellableProductFilters): Required<SellableProductFilters> {
+function normalizeProductFilters(filters: ProductFilters): Required<ProductFilters> {
   return {
     collection: filters.collection?.trim() ?? "",
     attributes: filters.attributes?.map((attribute) => attribute.trim()).filter(Boolean) ?? [],
@@ -666,52 +661,30 @@ async function getProductsPageCollections(): Promise<TProductCollection[]> {
   return client.fetch<TProductCollection[]>(query, {}, sanityFetchOptions(["productCollection"]));
 }
 
-async function getSellableProductFilterAttributes(): Promise<TProductFilterAttribute[]> {
+async function getProductFilterAttributes(): Promise<TProductFilterAttribute[]> {
   const query = groq`*[
-    _type == "sellableProduct" &&
+    _type == "product" &&
     isAvailable == true &&
     defined(filterAttributes)
   ].filterAttributes[defined(label) && defined(value)]{ _key, label, value }`;
-  return client.fetch<TProductFilterAttribute[]>(query, {}, sanityFetchOptions(["sellableProduct"]));
+  return client.fetch<TProductFilterAttribute[]>(query, {}, sanityFetchOptions(["product"]));
 }
 
-async function getSellableProducts(filters: SellableProductFilters = {}): Promise<TSellableProduct[]> {
+async function getProducts(filters: ProductFilters = {}): Promise<TProduct[]> {
   const normalizedFilters = normalizeProductFilters(filters);
-  const order = getSellableProductOrder(normalizedFilters.sort);
+  const order = getProductOrder(normalizedFilters.sort);
   const query = groq`*[
-    _type == "sellableProduct" &&
+    _type == "product" &&
     isAvailable == true &&
     ($collection == "" || collections[]._ref in *[_type == "productCollection" && slug.current == $collection]._id) &&
     (count($attributes) == 0 || count(filterAttributes[value in $attributes]) == count($attributes))
   ] | order(${order}) ${PRODUCT_PROJECTION}`;
 
-  return client.fetch<TSellableProduct[]>(
+  return client.fetch<TProduct[]>(
     query,
     { collection: normalizedFilters.collection, attributes: normalizedFilters.attributes },
-    sanityFetchOptions(["sellableProduct", "productCollection"]),
+    sanityFetchOptions(["product", "productCollection"]),
   );
-}
-
-async function getSellableProductsByIds(ids: string[]): Promise<TSellableProduct[]> {
-  const query = groq`*[_type == "sellableProduct" && _id in $ids] ${PRODUCT_PROJECTION}`;
-  return client.fetch<TSellableProduct[]>(query, { ids }, sanityFetchOptions(["sellableProduct"]));
-}
-
-async function getSellableProductBySlug(slug: string): Promise<TSellableProduct | null> {
-  const query = groq`*[_type == "sellableProduct" && slug.current == $slug && isAvailable == true][0] ${PRODUCT_PROJECTION}`;
-  return client.fetch<TSellableProduct | null>(query, { slug }, sanityFetchOptions(["sellableProduct"]));
-}
-
-async function getAllSellableProductSlugs(): Promise<Array<{ slug: string }>> {
-  const query = groq`*[_type == "sellableProduct" && isAvailable == true]{
-    "slug": slug.current
-  }`;
-  return client.fetch<Array<{ slug: string }>>(query, {}, sanityFetchOptions(["sellableProduct"]));
-}
-
-async function getProducts(): Promise<TProduct[]> {
-  const query = groq`*[_type == "product" && isAvailable == true] | order(displayOrder asc, title asc) ${PRODUCT_PROJECTION}`;
-  return client.fetch<TProduct[]>(query, {}, sanityFetchOptions(["product"]));
 }
 
 async function getProductsByIds(ids: string[]): Promise<TProduct[]> {
@@ -780,11 +753,7 @@ export const loaders = {
   getActiveBookingOfferings,
   getBookingOfferingBySlug,
   getProductsPageCollections,
-  getSellableProductFilterAttributes,
-  getSellableProducts,
-  getSellableProductsByIds,
-  getSellableProductBySlug,
-  getAllSellableProductSlugs,
+  getProductFilterAttributes,
   getProducts,
   getProductsByIds,
   getServices,

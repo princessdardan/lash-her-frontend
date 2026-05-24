@@ -40,17 +40,17 @@ describe("booking offering loader contract", () => {
     }
   });
 
-  it("does not project legacy sellable product references for booking payment", () => {
+  it("projects booking payment fields without product reference wrappers", () => {
     const bookingProjection = loadersSource.slice(
       loadersSource.indexOf("const BOOKING_OFFERING_PROJECTION"),
       loadersSource.indexOf("const SERVICE_BOOKING_OFFERING_PROJECTION"),
     );
 
-    assert.doesNotMatch(bookingProjection, /depositProduct|fullProduct|sellableProduct/);
+    assert.doesNotMatch(bookingProjection, /depositProduct|fullProduct/);
     assert.match(loadersSource, /sanityFetchOptions\(\["bookingOffering"\]\)/);
   });
 
-  it("maps canonical services to the booking offering shape without sellable product references", () => {
+  it("maps canonical services to the booking offering shape without product reference wrappers", () => {
     assert.match(loadersSource, /const SERVICE_BOOKING_OFFERING_PROJECTION = groq`\{/);
 
     for (const projectedField of [

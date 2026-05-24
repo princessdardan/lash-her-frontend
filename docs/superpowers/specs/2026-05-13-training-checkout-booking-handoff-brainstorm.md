@@ -17,7 +17,7 @@ That is not the desired business flow. A training program purchase has a differe
 
 - Training detail route: `src/app/(site)/training-programs/[slug]/page.tsx`.
 - Current training CMS document: `src/sanity/schemas/documents/training-program.ts`.
-- Current commerce catalog document: `src/sanity/schemas/documents/sellable-product.ts`.
+- Current commerce catalog document: `src/sanity/schemas/documents/product.ts`.
 - Current product checkout route: `src/app/api/checkout/route.ts`.
 - Current payment validation route: `src/app/api/checkout/validate-payment/route.ts`.
 - Current booking entry route: `/booking?type=training-call`.
@@ -66,7 +66,7 @@ These decisions are approved for the implementation plan:
 | Paid scheduling purpose | Paid-context scheduling is for a training call only; any later training dates or program scheduling are handled manually. |
 | Email matching | Paid scheduling is strictly tied to the checkout email. |
 | Rescheduling | Customers cannot self-serve reschedule; they must contact Nataliea. |
-| Sanity commerce model | `trainingProgram` references a `sellableProduct` whose `kind` is `training`. |
+| Sanity commerce model | `trainingProgram` owns native checkout fields for price, availability, fulfillment, and CTA copy. |
 | Price display | Public price shown to users must match the checkout-authoritative price. |
 | Editor control | Editors control online purchase with a `checkoutEnabled` toggle on the training program. |
 | Disabled checkout fallback | Disabled checkout shows a book-call CTA. |
@@ -86,8 +86,8 @@ These decisions are approved for the implementation plan:
 
 ## Implementation Direction
 
-1. Keep `trainingProgram` and `sellableProduct` as separate Sanity document types.
-2. Add a structured commerce reference from `trainingProgram` to a `sellableProduct` whose `kind` is `training`.
+1. Keep `trainingProgram` and `product` as separate Sanity document types.
+2. Add native checkout fields directly on `trainingProgram` instead of linking training checkout to product catalog records.
 3. Add a training-specific checkout UI at `/training-programs/[slug]/checkout`.
 4. Keep the existing product cart checkout for `/products`.
 5. Add a single-program training checkout path that does not use a multi-item cart.
@@ -144,7 +144,7 @@ Approved public journey:
 1. User reads `/training-programs/[slug]`.
 2. User clicks an enrollment CTA.
 3. User lands on `/training-programs/[slug]/checkout`.
-4. Server loads the training program and its linked checkout product.
+4. Server loads the training program and its native checkout fields.
 5. User enters required checkout details using the same email that will be required for paid scheduling.
 6. Server initializes Helcim checkout using authoritative full-program pricing and Ontario HST at 13% through Helcim.
 7. Payment is verified server-side.
@@ -232,7 +232,7 @@ Training purchases should create private checkout records plus a separate privat
 - `training_program_id`.
 - `training_program_slug`.
 - `training_program_title_snapshot`.
-- `checkout_product_id`.
+- `training_program_price_snapshot` and `training_program_currency`.
 - `purchase_kind`: `full`.
 - `checkout_email` or a normalized email hash for strict scheduling match.
 - `scheduling_status`: `pending`, `scheduled`, `expired`, or `manual_followup`.

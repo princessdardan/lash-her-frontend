@@ -69,7 +69,7 @@ If any of these locked choices are not acceptable, stop before Task 1 and revise
 - `frontend/src/app/api/checkout/validate-payment/route.ts`
 - `frontend/src/components/commerce/*`
 - `frontend/src/lib/commerce/*`
-- `frontend/src/sanity/schemas/documents/sellable-product.ts`
+- `frontend/src/sanity/schemas/documents/product.ts`
 - `frontend/src/sanity/schemas/documents/checkout-order.ts`
 - `frontend/tests/checkout.spec.ts`
 - Commerce additions to package scripts, data loaders, Sanity schema registry, Studio structure, revalidation tags, env helpers, and shared types.
@@ -214,9 +214,9 @@ If any other file conflicts, stop and inspect why before editing.
 Keep all existing loader exports and preserve both feature additions:
 
 - Booking import: `BookingSettings` type from `@/lib/booking/types`.
-- Helcim import: `TSellableProduct` type from `@/types`.
+- Helcim import: `TProduct` type from `@/types`.
 - Booking function: `getBookingSettings()` with `bookingSettings` cache tag.
-- Commerce functions: `getSellableProducts()` and `getSellableProductsByIds()` with `sellableProduct` cache tag.
+- Commerce functions: `getProducts()` and `getProductsByIds()` with `product` cache tag.
 - Export all three new loaders from `loaders`.
 
 Do not refactor unrelated loader formatting during this conflict resolution.
@@ -279,7 +279,7 @@ Check `frontend/src/app/api/revalidate/route.ts` includes both:
 
 ```ts
 bookingSettings: "bookingSettings"
-sellableProduct: "sellableProduct"
+product: "product"
 ```
 
 Also preserve existing anti-pattern constraints from project guidance:
@@ -293,7 +293,7 @@ Check `frontend/src/sanity/schemas/index.ts` registers all four new document sch
 
 - `bookingSettings`
 - `bookingMarketingOptIn`
-- `sellableProduct`
+- `product`
 - `checkoutOrder`
 
 - [ ] **Step 4: Review Studio structure**
@@ -302,7 +302,7 @@ Check `frontend/src/sanity/structure/index.ts` exposes:
 
 - Booking Settings singleton.
 - Booking Marketing Opt-ins list.
-- Sellable Products list.
+- Products list.
 - Checkout Orders list.
 
 Keep the existing singleton/page/content/submission organization intact.
@@ -312,7 +312,7 @@ Keep the existing singleton/page/content/submission organization intact.
 Check `frontend/src/types/index.ts` includes:
 
 - Booking type exports from `@/lib/booking/types`.
-- `TSellableProduct`, `TCheckoutOrder`, and related commerce types.
+- `TProduct`, `TCheckoutOrder`, and related commerce types.
 
 Avoid duplicating equivalent types with incompatible names or shapes.
 

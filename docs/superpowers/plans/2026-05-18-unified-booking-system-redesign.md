@@ -85,7 +85,7 @@
 - Extend private checkout/order state with a booking purpose, such as `product`, `training`, `appointment_deposit`, `appointment_full`, or equivalent.
 - Preserve training enrollment and paid schedule token records in private Postgres. Token eligibility gates the public Google Appointment Schedule URL or embed.
 - Add Sanity offering configuration either as `bookingOffering` documents or a richer `bookingSettings.offerings[]` model.
-- Link offerings to sellable products when payment is required.
+- Link offerings to purchasable products when payment is required.
 
 ## API And Module Surface
 

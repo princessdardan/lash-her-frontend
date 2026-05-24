@@ -27,7 +27,7 @@
 
 - `src/app/(site)/training-programs/[slug]/page.tsx`
 - `src/sanity/schemas/documents/training-program.ts`
-- `src/sanity/schemas/documents/sellable-product.ts`
+- `src/sanity/schemas/documents/product.ts`
 - `src/data/loaders.ts`
 - `src/types/index.ts`
 - `src/app/api/checkout/route.ts`
@@ -104,7 +104,7 @@ Expected:
 
 Owner decision:
 
-- `trainingProgram` references a `sellableProduct` whose `kind` is `training`.
+- `trainingProgram` owns native checkout fields for price, availability, fulfillment, and CTA copy.
 - Online purchase is controlled per training program with a `checkoutEnabled` toggle.
 - Public price displayed to users must match the checkout-authoritative price.
 - Training checkout is single-program only.
@@ -170,8 +170,8 @@ Expected:
 Cover:
 
 - invalid training program ID rejection,
-- training product kind validation,
-- unavailable program/product rejection,
+- native training checkout field validation,
+- unavailable training program rejection,
 - disabled `checkoutEnabled` rejection,
 - stale price protection,
 - exact displayed price matches checkout-authoritative price,
@@ -235,7 +235,7 @@ Expected:
 
 **Files:**
 - `src/sanity/schemas/documents/training-program.ts`
-- `src/sanity/schemas/documents/sellable-product.ts` if validation/preview changes are needed
+- `src/sanity/schemas/documents/product.ts` if validation/preview changes are needed
 - `src/types/index.ts`
 - `src/data/loaders.ts`
 - `src/app/api/revalidate/route.ts` if cache tags change
@@ -245,7 +245,7 @@ Expected:
 Add:
 
 - `checkoutEnabled` boolean.
-- `checkoutProduct` reference to `sellableProduct`.
+- native `price`, availability, fulfillment, and scheduling fields.
 - `checkoutCtaLabel` string defaulting to `Enroll Now`.
 - `checkoutDisabledBookingCta` or equivalent book-call fallback configuration.
 - `postPurchaseInstructions` text.
@@ -257,9 +257,8 @@ Expected:
 
 Validate:
 
-- checkout-enabled programs require a checkout product,
-- checkout product must reference a `sellableProduct` with `kind: "training"`,
-- displayed program price must derive from checkout-authoritative data,
+- checkout-enabled programs require native price and availability fields,
+- displayed program price must derive from `trainingProgram` checkout data,
 - visible URLs remain safe if legacy CTA remains.
 
 Expected:
@@ -299,7 +298,7 @@ Include approved metadata:
 - training program ID,
 - training program slug,
 - training program title snapshot,
-- checkout product ID,
+- native training price and currency snapshot,
 - purchase kind: `full`,
 - checkout email or normalized email hash for strict matching,
 - scheduling status,
@@ -347,9 +346,9 @@ Validate:
 
 - program exists,
 - program checkout is enabled,
-- linked checkout product exists,
-- linked product kind is `training`,
-- product is available,
+- native training checkout price exists,
+- native training checkout currency is supported,
+- training program is available,
 - no variants/options are accepted in v1,
 - exactly one program is purchased,
 - authoritative price and currency are loaded server-side.
@@ -611,8 +610,8 @@ Expected:
 
 Checklist should include:
 
-- create/verify training `sellableProduct`,
-- link it from `trainingProgram`,
+- configure native training checkout fields,
+- verify the `trainingProgram` price, currency, and availability,
 - enable checkout,
 - verify exact displayed price,
 - verify tax is added at checkout,

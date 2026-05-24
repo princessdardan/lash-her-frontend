@@ -8,7 +8,7 @@
 
 **Architecture:** Keep training purchase and booking separate: verified payment creates paid enrollment/scheduling eligibility, while Google Calendar remains the booking source of truth. Paid scheduling links are tokenized, hashed, expiring, and email-matched.
 
-**Tech Stack:** Next.js route handlers, Sanity training/product schemas, Helcim, PostgreSQL/Drizzle, Google Calendar booking, Upstash Redis, Resend, Playwright, `tsx --test`.
+**Tech Stack:** Next.js route handlers, Sanity training and product schemas, Helcim, PostgreSQL/Drizzle, Google Calendar booking, Upstash Redis, Resend, Playwright, `tsx --test`.
 
 ---
 
@@ -95,10 +95,10 @@ Expected:
 - `src/sanity/schemas/documents/training-program.ts`
 - `docs/sanity-staging-production-workflow.md`
 
-- [ ] **Step 1: Enforce training product references**
+- [ ] **Step 1: Enforce native training checkout fields**
 
 Expected:
-- Editors cannot publish checkout-enabled training programs pointing to non-training products without a validation warning/block.
+- Editors cannot publish checkout-enabled training programs without valid native checkout fields and availability state.
 
 - [ ] **Step 2: Add pre-launch GROQ audit**
 

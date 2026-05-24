@@ -15,7 +15,7 @@
 - Feature section: `docs/production-readiness-audit-2026-05-16.md`, lines 131-154.
 - Critical blockers: lines 408-413 and 430-434.
 - Observability recommendation: lines 450-464.
-- Preserve: `parseBody()` before JSON parsing, `isValidSignature !== true` rejection, unknown type no-op, and cache tags for booking settings and sellable products.
+- Preserve: `parseBody()` before JSON parsing, `isValidSignature !== true` rejection, unknown type no-op, and cache tags for booking settings and purchasable products.
 
 ## Locked Constraints
 

@@ -10,7 +10,7 @@ This design intentionally does **not** treat Helcim's Invoice API as a product o
 
 ## Architecture boundary
 
-- **Sanity / app catalog layer** owns sellable products, page content, imagery, SEO, merchandising copy, and visible availability.
+- **Sanity / app catalog layer** owns purchasable products, page content, imagery, SEO, merchandising copy, and visible availability.
 - **Next.js server layer** validates cart contents, creates Helcim invoices, initializes HelcimPay.js checkout sessions, and stores checkout/session metadata in a private server-side datastore.
 - **Helcim** receives immutable invoice line-item snapshots, renders the secure payment iframe, processes payment, and returns payment response data.
 - **Post-payment app layer** validates Helcim's response hash, records invoice/payment identifiers, clears cart state, shows confirmation, and triggers any local email or admin notification workflow.
@@ -36,7 +36,7 @@ The checkout flow is invoice-first, then payment.
 Implementation should stay split into small units:
 
 - `helcim-client`: server-only Helcim API wrapper for authenticated requests.
-- `catalog` loaders: approved sellable product reads from the chosen catalog source.
+- `catalog` loaders: approved product reads from the chosen catalog source.
 - `checkout` route/action: server-side cart validation, Helcim invoice creation, and HelcimPay.js initialization.
 - `payment-validation` route/action: HelcimPay.js response hash validation and order status updates.
 - Client payment component: loads `https://secure.helcim.app/helcim-pay/services/start.js`, opens/removes the iframe, and forwards payment events to the server.
@@ -93,7 +93,7 @@ Local HelcimPay.js testing requires HTTPS tunneling because Helcim documents loc
 
 These are intentionally deferred to implementation planning:
 
-- the exact catalog schema/source for sellable products,
+- the exact catalog schema/source for purchasable products,
 - whether products are physical products, services, training courses, deposits, or a mix,
 - tax, discount, shipping, and pickup rules,
 - whether customer records should be created or linked in Helcim before payment,

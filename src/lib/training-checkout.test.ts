@@ -16,18 +16,7 @@ import {
   type TrainingCheckoutRequest,
 } from "./training-checkout";
 
-type TrainingProgramFixture = TTrainingProgram & {
-  checkoutProduct?: {
-    _id: string;
-    title: string;
-    slug: string;
-    sku: string;
-    kind: string;
-    price: number;
-    currency: string;
-    isAvailable: boolean;
-  };
-};
+type TrainingProgramFixture = TTrainingProgram;
 
 function buildProgram(overrides: Partial<TrainingProgramFixture> = {}): TrainingProgramFixture {
   return {
@@ -53,17 +42,6 @@ function buildRequest(overrides: Partial<TrainingCheckoutRequest> = {}): Trainin
   };
 }
 
-const legacyTrainingCheckoutProduct: NonNullable<TrainingProgramFixture["checkoutProduct"]> = {
-  _id: "legacy-training-product",
-  title: "Legacy Training Product",
-  slug: "legacy-training-product",
-  sku: "LEGACY-TRAINING",
-  kind: "training",
-  price: 1200,
-  currency: "CAD",
-  isAvailable: true,
-};
-
 function assertRejected(request: unknown, program: TTrainingProgram | null, code: string): void {
   const result = validateTrainingCheckoutRequest(program, request);
   assert.strictEqual(result.ok, false);
@@ -86,7 +64,7 @@ describe("training-checkout", () => {
       assert.strictEqual(isTrainingPurchasable(buildProgram({ price: undefined })), false);
     });
 
-    it("returns true when native commerce fields are valid without a legacy checkoutProduct", () => {
+    it("returns true when native commerce fields are valid", () => {
       assert.strictEqual(
         isTrainingPurchasable(
           buildProgram({ price: 1200, currency: "CAD", isAvailable: true }),
@@ -219,12 +197,11 @@ describe("training-checkout", () => {
       }
     });
 
-    it("uses native training commerce fields even if a legacy checkoutProduct is present", () => {
+    it("uses native training commerce fields", () => {
       const program = buildProgram({
         price: 1500,
         currency: "CAD",
         isAvailable: true,
-        checkoutProduct: legacyTrainingCheckoutProduct,
       });
 
       const result = validateTrainingCheckoutRequest(program, buildRequest({ clientPrice: 1500 }));
@@ -237,11 +214,8 @@ describe("training-checkout", () => {
       }
     });
 
-    it("does not fall back to the legacy checkoutProduct when native commerce fields are incomplete", () => {
-      const program = buildProgram({
-        price: undefined,
-        checkoutProduct: legacyTrainingCheckoutProduct,
-      });
+    it("rejects incomplete native commerce fields", () => {
+      const program = buildProgram({ price: undefined });
 
       const result = validateTrainingCheckoutRequest(program, buildRequest({ clientPrice: 1200 }));
 

@@ -277,7 +277,7 @@ test("checkout route rejects unavailable selected variants before Helcim setup",
   `);
 });
 
-test("checkout route rejects legacy sellable products when canonical products are missing", () => {
+test("checkout route rejects missing canonical products before Helcim setup", () => {
   runRouteScenario(`
     const { handler, invoices } = runScenario({
       getProductsByIds: async () => [],

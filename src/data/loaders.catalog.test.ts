@@ -6,10 +6,12 @@ const loadersSource = readFileSync(new URL("./loaders.ts", import.meta.url), "ut
 
 describe("catalog loader contract", () => {
   it("uses canonical products for public catalog and checkout loaders", () => {
-    assert.match(loadersSource, /async function getProducts\(\): Promise<TProduct\[]>/);
+    assert.match(loadersSource, /async function getProducts\(filters: ProductFilters = \{\}\): Promise<TProduct\[]>/);
     assert.match(loadersSource, /async function getProductsByIds\(ids: string\[\]\): Promise<TProduct\[]>/);
+    assert.match(loadersSource, /async function getProductBySlug\(slug: string\): Promise<TProduct \| null>/);
+    assert.match(loadersSource, /async function getAllProductSlugs\(\): Promise<Array<\{ slug: string \}>>/);
     assert.doesNotMatch(loadersSource, /getLegacyProductCatalogItems/);
-    assert.doesNotMatch(loadersSource, /mapSellableProductToProduct/);
+    assert.doesNotMatch(loadersSource, /legacyProductCatalog/);
   });
 
   it("projects optional merchant SKUs without exposing generated fallback codes", () => {
@@ -25,34 +27,26 @@ describe("catalog loader contract", () => {
     );
   });
 
-  it("exposes sellableProduct editorial loaders from the active data boundary", () => {
-    assert.match(loadersSource, /async function getSellableProducts\(filters: SellableProductFilters = \{\}\): Promise<TSellableProduct\[]>/);
-    assert.match(loadersSource, /async function getSellableProductsByIds\(ids: string\[\]\): Promise<TSellableProduct\[]>/);
-    assert.match(loadersSource, /async function getSellableProductBySlug\(slug: string\): Promise<TSellableProduct \| null>/);
-    assert.match(loadersSource, /async function getAllSellableProductSlugs\(\): Promise<Array<\{ slug: string \}>>/);
-    assert.match(loadersSource, /^\s{2}getSellableProducts,$/m);
-    assert.match(loadersSource, /^\s{2}getSellableProductsByIds,$/m);
-    assert.match(loadersSource, /^\s{2}getSellableProductBySlug,$/m);
-    assert.match(loadersSource, /^\s{2}getAllSellableProductSlugs,$/m);
-  });
-
   it("omits products without filter attribute arrays from flattened catalog filters", () => {
+    const loaderStart = loadersSource.indexOf("async function getProductFilterAttributes");
     const filterAttributesLoader = loadersSource.slice(
-      loadersSource.indexOf("async function getSellableProductFilterAttributes"),
-      loadersSource.indexOf("async function getSellableProducts"),
+      loaderStart,
+      loadersSource.indexOf("async function getProducts(", loaderStart),
     );
 
+    assert.match(filterAttributesLoader, /_type == "product"/);
     assert.match(filterAttributesLoader, /defined\(filterAttributes\)/);
     assert.match(filterAttributesLoader, /filterAttributes\[defined\(label\) && defined\(value\)\]/);
   });
 
-  it("does not project checkoutProduct for training catalog checkout shapes", () => {
+  it("projects only native training checkout fields for training checkout shapes", () => {
     const trainingProjection = loadersSource.slice(
       loadersSource.indexOf("const TRAINING_PROGRAM_CATALOG_PROJECTION"),
       loadersSource.indexOf("function sanityFetchOptions"),
     );
 
-    assert.doesNotMatch(trainingProjection, /checkoutProduct|sellableProduct/);
+    assert.doesNotMatch(trainingProjection, /legacyProductCatalog/);
+    assert.doesNotMatch(trainingProjection, /->/);
   });
 
   it("derives CAD currency for training catalog checkout shapes", () => {

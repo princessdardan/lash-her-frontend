@@ -33,18 +33,17 @@ export function TrainingEnrollmentSection({ data }: TrainingEnrollmentSectionPro
     enrollmentDescription,
     enrollmentBackgroundImage,
     factList,
-    linkedProduct,
     primaryCta,
     secondaryCta,
   } = data;
 
   const inclusions = factList?.filter(Boolean) ?? [];
-  const price = getFinitePrice(linkedProduct?.price ?? data.price);
-  const availabilityLabel = linkedProduct?.availabilityLabel ?? data.availabilityLabel;
-  const isAvailable = linkedProduct?.isAvailable ?? data.isAvailable;
+  const price = getFinitePrice(data.price);
+  const availabilityLabel = data.availabilityLabel;
+  const isAvailable = data.isAvailable;
   const safePrimaryCta = primaryCta?.label && isSafeUrl(primaryCta.href) ? primaryCta : null;
   const safeSecondaryCta = secondaryCta?.label && isSafeUrl(secondaryCta.href) ? secondaryCta : null;
-  const hasEnrollmentData = enrollmentTitle || enrollmentDescription || enrollmentBackgroundImage || inclusions.length > 0 || linkedProduct || safePrimaryCta || safeSecondaryCta;
+  const hasEnrollmentData = enrollmentTitle || enrollmentDescription || enrollmentBackgroundImage || inclusions.length > 0 || price !== null || availabilityLabel || isAvailable !== undefined || safePrimaryCta || safeSecondaryCta;
 
   if (!hasEnrollmentData) return null;
 
@@ -77,7 +76,7 @@ export function TrainingEnrollmentSection({ data }: TrainingEnrollmentSectionPro
 
             <div className="mt-10 border-t border-lh-neutral-2/20 pt-6">
               <p className="font-body text-sm font-bold uppercase tracking-[0.16em] text-lh-neutral-2/70">Program</p>
-              <p className="mt-2 font-heading text-3xl font-normal leading-none text-lh-neutral-2 md:text-4xl">{linkedProduct?.title || title}</p>
+              <p className="mt-2 font-heading text-3xl font-normal leading-none text-lh-neutral-2 md:text-4xl">{title}</p>
             </div>
           </div>
         </div>

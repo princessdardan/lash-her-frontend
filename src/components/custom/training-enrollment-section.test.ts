@@ -24,14 +24,6 @@ describe("TrainingEnrollmentSection", () => {
     const { TrainingEnrollmentSection } = await import("./training-enrollment-section");
     const program = buildProgram({
       price: null,
-      linkedProduct: {
-        _id: "linked-training-product",
-        title: "Beginner Private Training",
-        slug: "beginner-private-training",
-        price: null,
-        currency: "CAD",
-        isAvailable: true,
-      },
     } as unknown as Partial<TTrainingProgram>);
 
     const html = renderToStaticMarkup(createElement(TrainingEnrollmentSection, { data: program }));

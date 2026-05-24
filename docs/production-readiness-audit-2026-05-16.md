@@ -552,7 +552,7 @@ These checks require explicit live staging approval, real staging credentials, a
 - [ ] No checkout records exist in Sanity
 - [ ] No new `generalInquiry`, `contactForm`, `contactPopupSubmission`, or `bookingMarketingOptIn` documents are created by live flows
 - [ ] Any existing submission document types are documented as legacy/backfill-only or pending removal/hiding after retention decision
-- [ ] Training programs with checkout enabled have valid training products
+- [ ] Training programs with checkout enabled have valid native checkout fields
 
 ### Database Checks
 
@@ -625,7 +625,7 @@ These checks require explicit live staging approval, real staging credentials, a
 
 1. Add structured logging and alerting.
 2. Add checkout attempt pre-persistence or durable reconciliation.
-3. Add Sanity validation for training product kind.
+3. Add Sanity validation for native training checkout fields.
 4. Add spam/rate-limit controls for public forms and booking endpoints.
 5. Add retention/redaction process for checkout, marketing/contact, consent, and suppression records after owner/counsel decisions.
 6. Keep Playwright mock fixture comments aligned with the current Sanity-backed architecture as tests evolve.

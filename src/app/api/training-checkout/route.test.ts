@@ -284,43 +284,6 @@ test("training checkout route rejects mock Helcim gateway mode in production", (
   `);
 });
 
-test("training checkout route ignores legacy checkoutProduct and uses native training fields", () => {
-  runRouteScenario(`
-    const nativeProgram = {
-      ...program,
-      price: 1499,
-      currency: "CAD",
-      isAvailable: true,
-      checkoutProduct: {
-        _id: "legacy-training-product",
-        kind: "training",
-        sku: "LEGACY-TRAINING",
-        title: "Legacy Training Product",
-        price: 999,
-        currency: "CAD",
-        isAvailable: true,
-      },
-    };
-    const { enrollments, handler, invoices, orders } = runScenario({
-      getTrainingProgramBySlug: async () => nativeProgram,
-    });
-
-    const response = await handler(createRequest(validBody()));
-
-    assert.equal(response.status, 200);
-    assert.equal(invoices[0].lineItems[0].sku, "training-program-classic-lash");
-    assert.equal(invoices[0].lineItems[0].description, "Classic Lash Training");
-    assert.equal(orders[0].cart.lineItems[0].sku, "training-program-classic-lash");
-    assert.deepEqual(enrollments[0].productSnapshot, {
-      id: "training-program-classic-lash",
-      title: "Classic Lash Training",
-      sku: "training-program-classic-lash",
-      priceCents: 149900,
-      currency: "CAD",
-    });
-  `);
-});
-
 test("training checkout route returns a generic failure when enrollment write fails", () => {
   runRouteScenario(`
     const { enrollments, handler, invoices, orders, paySessions } = runScenario({

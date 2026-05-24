@@ -8,7 +8,7 @@
 
 **Goal:** Remove transaction-history and customer-PII persistence from Sanity, replace it with a private server-side datastore, and create human-facing setup guides for the services, secrets, migrations, and operational checks required to run checkout safely.
 
-**Architecture:** Keep Sanity as the public content/catalog source for `sellableProduct` and editorial configuration. Move `checkoutOrder` persistence behind a server-only repository backed by a private PostgreSQL database. Preserve the existing HelcimPay.js flow: server validates catalog price/availability, creates Helcim invoice, initializes HelcimPay, stores a pending private order, validates the Helcim iframe response server-side, and marks the private order paid or failed. Add optional Helcim webhook infrastructure only after the private database is in place.
+**Architecture:** Keep Sanity as the public content/catalog source for `product` and editorial configuration. Move `checkoutOrder` persistence behind a server-only repository backed by a private PostgreSQL database. Preserve the existing HelcimPay.js flow: server validates catalog price/availability, creates Helcim invoice, initializes HelcimPay, stores a pending private order, validates the Helcim iframe response server-side, and marks the private order paid or failed. Add optional Helcim webhook infrastructure only after the private database is in place.
 
 **Tech Stack:** Next.js 16 App Router, TypeScript strict, Sanity v4/next-sanity for public CMS content, Helcim v2 API and HelcimPay.js, PostgreSQL for private checkout records, Drizzle ORM/drizzle-kit for typed schema and migrations, Neon or equivalent managed Postgres for hosted staging/production databases, Playwright E2E, `tsx --test` unit tests.
 
@@ -68,7 +68,7 @@ Rationale:
 
 Recommended data boundary:
 
-- Sanity: public catalog/editorial data only (`sellableProduct`, page content, booking settings).
+- Sanity: public catalog/editorial data only (`product`, page content, booking settings).
 - PostgreSQL: private checkout order reconciliation, customer contact, line-item snapshots, encrypted Helcim secret token, invoice/transaction references, status, timestamps.
 - Helcim: payment processing, payment records, invoices, processor-side transaction details.
 - Google Calendar/Redis: unchanged booking implementation.

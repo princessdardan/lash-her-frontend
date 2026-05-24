@@ -196,14 +196,6 @@ export const trainingProgram = defineType({
       description: "Structured contact section rendered at #contact on the training detail page.",
     }),
     defineField({
-      name: "linkedProduct",
-      title: "Linked Product",
-      type: "reference",
-      group: "checkout",
-      to: [{ type: "sellableProduct" }],
-      description: "Price and checkout source of truth for this program.",
-    }),
-    defineField({
       name: "checkoutEnabled",
       title: "Enable Online Checkout",
       type: "boolean",

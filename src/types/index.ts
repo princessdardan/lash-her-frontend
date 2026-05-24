@@ -278,16 +278,6 @@ export interface TTrainingProgramDetailItem {
   description: string;
 }
 
-export interface TLinkedTrainingProduct {
-  _id: string;
-  title: string;
-  slug: string;
-  price: number;
-  currency: TCommerceCurrency;
-  isAvailable: boolean;
-  availabilityLabel?: string;
-}
-
 export interface TTrainingContactSection {
   _type?: "trainingContactSection";
   enabled?: boolean;
@@ -327,7 +317,6 @@ export interface TTrainingProgram {
   enrollmentTitle?: string;
   enrollmentDescription?: string;
   enrollmentBackgroundImage?: TSanityImage;
-  linkedProduct?: TLinkedTrainingProduct;
   checkoutEnabled?: boolean;
   price?: number;
   currency?: "CAD";
@@ -369,21 +358,19 @@ export interface TProductCollection {
   displayOrder?: number;
 }
 
-export interface TSellableProductFilterAttribute {
+export interface TProductFilterAttribute {
   _key?: string;
   label: string;
   value: string;
 }
 
-export type TProductFilterAttribute = TSellableProductFilterAttribute;
-
-export interface TSellableProductOptionGroup {
+export interface TProductOptionGroup {
   _key?: string;
   name: string;
   values?: string[];
 }
 
-export interface TSellableProductVariantOption {
+export interface TProductVariantOption {
   _key?: string;
   name: string;
   value: string;
@@ -421,10 +408,10 @@ export interface TProductVariant {
   price: number;
   isAvailable: boolean;
   availabilityLabel?: string;
-  options?: TSellableProductVariantOption[];
+  options?: TProductVariantOption[];
 }
 
-export interface TSellableProduct {
+export interface TProduct {
   _id: string;
   title: string;
   description: string;
@@ -432,13 +419,12 @@ export interface TSellableProduct {
   cardSubtitle?: string;
   badgeLabel?: string;
   slug: string;
-  kind?: "product" | "service" | "training" | "deposit";
   price: number;
   sku?: string;
   currency: TCommerceCurrency;
   collections?: TProductCollection[];
-  filterAttributes?: TSellableProductFilterAttribute[];
-  optionGroups?: TSellableProductOptionGroup[];
+  filterAttributes?: TProductFilterAttribute[];
+  optionGroups?: TProductOptionGroup[];
   variants?: TProductVariant[];
   isAvailable: boolean;
   availabilityLabel?: string;
@@ -449,8 +435,6 @@ export interface TSellableProduct {
   detailSections?: TCommerceDetailSection[];
   seo?: TCommerceSeo;
 }
-
-export type TProduct = TSellableProduct;
 
 export interface TService {
   _id: string;

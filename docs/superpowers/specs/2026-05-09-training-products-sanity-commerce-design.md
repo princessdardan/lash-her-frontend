@@ -31,7 +31,7 @@ Relevant implemented surfaces already exist in that worktree:
 - `frontend/src/data/loaders.ts`
 - `frontend/src/types/index.ts`
 - `frontend/src/sanity/schemas/documents/training-program.ts`
-- `frontend/src/sanity/schemas/documents/sellable-product.ts`
+- `frontend/src/sanity/schemas/documents/product.ts`
 - Legacy/current-risk order schema slated for removal or unregistration by the 2026-05-10 private checkout storage remediation plan: `frontend/src/sanity/schemas/documents/checkout-order.ts`
 - `frontend/src/components/commerce/product-card.tsx`
 - `frontend/src/components/commerce/cart-panel.tsx`
@@ -95,7 +95,7 @@ The design should preserve existing `blocks` only if the user confirms that prog
 
 ## Product Catalog Model
 
-The current `sellableProduct` schema supports a minimal checkout catalog:
+The current `product` schema supports a minimal checkout catalog:
 
 - `title`
 - `description`
@@ -129,7 +129,7 @@ The catalog is small, so the default plan should avoid pagination, heavy filteri
 
 The product info page should be a dynamic route for one product document. The approved public route is `/products/[slug]`.
 
-The detail page should load a single `sellableProduct` by slug, use `notFound()` when unavailable or missing, generate metadata from Sanity fields, and keep checkout actions server-validated through the existing Helcim flow.
+The detail page should load a single `product` by slug, use `notFound()` when unavailable or missing, generate metadata from Sanity fields, and keep checkout actions server-validated through the existing Helcim flow.
 
 ## Sanity Content Modeling Guidance
 
@@ -153,7 +153,7 @@ Reference material:
 - Real-world Sanity ecommerce product schema example: `https://github.com/sanity-io/demo-ecommerce/blob/63371030ac892bad8089d8a07c64ff3424ea6f86/packages/sanity/src/schema/documents/product.tsx`.
 - Real-world product/variant object example: `https://github.com/sanity-io/demo-ecommerce/blob/63371030ac892bad8089d8a07c64ff3424ea6f86/packages/sanity/src/schema/objects/productWithVariant.tsx`.
 
-For Lash Her's small catalog, the first implementation should default to `sellableProduct` plus optional singleton page content, not a larger category/variant system, unless the user confirms categories, variants, independent inventory, or collection pages are needed.
+For Lash Her's small catalog, the first implementation should default to `product` plus optional singleton page content, not a larger category/variant system, unless the user confirms categories, variants, independent inventory, or collection pages are needed.
 
 ## Helcim Boundary
 
@@ -178,7 +178,7 @@ Open Helcim decisions must be answered before implementation changes payment beh
 - whether training programs are paid in full, deposit-only, or inquiry/book-call first,
 - whether products use immediate checkout, inquiry-only, or mixed CTA behavior,
 - whether tax, discounts, shipping, pickup, ACH, Fee Saver, partial payments, refunds, saved cards, or customer pre-linking are in scope,
-- whether training programs should create `sellableProduct` records, reference sellable products, or use a distinct `trainingProgram` payment config.
+- whether training programs should use native `trainingProgram` payment config or another approved checkout model.
 
 ## Content Editing Requirements
 
@@ -235,7 +235,7 @@ Implementation must not begin for still-unanswered scope areas until these are a
 19. Are all prices CAD-only for launch?
 20. Are training program prices paid through Helcim now, later, or not at all?
 21. If training uses Helcim, is payment full amount, deposit, installment, invoice request, or manual follow-up?
-22. Should products and training share the existing `sellableProduct` checkout path, or should training have separate payment configuration?
+22. Should products and training share checkout infrastructure, or should training have separate native payment configuration?
 23. Are taxes, discounts, shipping, pickup fees, ACH, Fee Saver, partial payments, refunds, saved payment methods, or customer records in scope?
 24. Should successful product/training payment send a branded email, create internal notifications, or only show the existing confirmation page?
 

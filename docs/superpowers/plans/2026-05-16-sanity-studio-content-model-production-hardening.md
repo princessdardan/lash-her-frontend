@@ -31,7 +31,7 @@
 ## Relevant Files
 
 - `src/sanity/schemas/documents/training-program.ts`
-- `src/sanity/schemas/documents/sellable-product.ts`
+- `src/sanity/schemas/documents/product.ts`
 - `src/sanity/schemas/index.ts`
 - `src/sanity/structure/index.ts`
 - `src/sanity/lib/write-client.ts`
@@ -44,7 +44,7 @@
 
 | Audit Recommendation | Gap | Strengthened Requirement | Evidence Required |
 | --- | --- | --- | --- |
-| Add editorial guardrail | TODO exists but enforcement is absent | Add Sanity validation or custom input guard ensuring enabled training checkout references only `sellableProduct.kind == "training"` | Studio validation test/manual proof and GROQ audit query result |
+| Add editorial guardrail | TODO exists but enforcement is absent | Add Sanity validation ensuring checkout-enabled training programs have native price, availability, fulfillment, and CTA fields | Studio validation test/manual proof and GROQ audit query result |
 | Document token least privilege | Plan limits may force broader token role | Record current token purpose, minimum role, deployment environment, owner, and rotation cadence; mark `SANITY_FORM_TOKEN` legacy/conditional only | Token inventory checklist with no secret values |
 | Verify Studio production target | Studio can point at wrong dataset | Add launch check proving `/studio` targets intended dataset and schemas are deployed | Screenshot or checklist record for staging and production |
 | Submission document types | Legacy schemas may still be registered | Mark `generalInquiry`, `contactForm`, `contactPopupSubmission`, and `bookingMarketingOptIn` as legacy/backfill-only or pending removal/hiding after documented retention decision | Studio/content model checklist |
@@ -58,19 +58,19 @@
 
 - [ ] **Step 1: Define invalid content scenarios**
 
-List cases for checkout enabled with missing product, non-training product, unavailable product, wrong currency, or variants/options.
+List cases for checkout enabled with missing native price, invalid currency, unavailable program state, missing fulfillment copy, or unsupported checkout options.
 
 Expected:
 - Editorial validation criteria mirror the runtime guard in `src/lib/training-checkout.ts` where Studio can reasonably enforce them.
 
 - [ ] **Step 2: Define pre-launch audit query**
 
-Write a GROQ query for training programs where `checkoutEnabled == true` and the referenced product is missing or not `training`.
+Write a GROQ query for training programs where `checkoutEnabled == true` and required native checkout fields are missing or invalid.
 
 Expected:
 - Operators have a repeatable content audit before launch.
 
-## Task 2: Add Training Product Editorial Guardrails
+## Task 2: Add Training Checkout Editorial Guardrails
 
 **Files:**
 - `src/sanity/schemas/documents/training-program.ts`
@@ -78,7 +78,7 @@ Expected:
 
 - [ ] **Step 1: Replace TODO with validation implementation**
 
-Use Sanity-supported validation/context or a custom input guard to prevent non-training products from being attached to checkout-enabled training programs.
+Use Sanity-supported validation/context or a custom input guard to prevent checkout-enabled training programs from publishing without valid native checkout data.
 
 Expected:
 - Editors receive actionable validation before publishing bad training checkout content.
@@ -119,7 +119,7 @@ Expected:
 
 - [ ] `npm run lint`
 - [ ] `npm run build`
-- [ ] Training product validation is manually tested in Studio or covered by a schema validation test.
+- [ ] Training checkout validation is manually tested in Studio or covered by a schema validation test.
 - [ ] GROQ audit returns zero invalid checkout-enabled training programs.
 - [ ] `/studio` targets the intended dataset in staging and production.
 - [ ] Studio/token docs do not describe live form writes to Sanity.
@@ -134,5 +134,5 @@ Expected:
 
 ## Suggested Commit Sequence
 
-1. `feat: add training product editorial validation`
+1. `feat: add training checkout editorial validation`
 2. `docs: document sanity token and studio launch checks`

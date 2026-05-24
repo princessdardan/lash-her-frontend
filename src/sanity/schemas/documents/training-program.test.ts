@@ -131,7 +131,10 @@ describe("trainingProgram detail content schema", () => {
     }
 
     assert.ok(!schemaFieldNames.includes("currency"));
-    assert.ok(!schemaFieldNames.includes("checkoutProduct"));
+    assert.ok(
+      !trainingProgram.fields.some((field: unknown) => isSchemaField(field) && field.group === "checkout" && field.type === "reference"),
+      "checkout fields should be native training fields, not catalog references",
+    );
   });
 
   it("configures paid intro-call Appointment Schedule as editorial public fields", () => {
@@ -181,7 +184,6 @@ describe("trainingProgram detail content schema", () => {
     assert.strictEqual(getSchemaField("factList").group, "curriculum");
     assert.strictEqual(getSchemaField("enrollmentTitle").group, "enrollment");
     assert.strictEqual(getSchemaField("primaryCta").group, "enrollment");
-    assert.strictEqual(getSchemaField("linkedProduct").group, "checkout");
     assert.strictEqual(getSchemaField("blocks").group, "legacy");
     assert.strictEqual(getSchemaField("seo").group, "seo");
   });

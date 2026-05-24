@@ -145,7 +145,7 @@ describe("bookingOffering schema", () => {
     assert.deepStrictEqual(serviceField.to, [{ type: "service" }]);
   });
 
-  it("does not expose legacy sellable product references", () => {
+  it("does not expose product reference wrappers", () => {
     const fieldNames = getFields().map((field) => field.name);
 
     assert.ok(!fieldNames.includes("depositProduct"));

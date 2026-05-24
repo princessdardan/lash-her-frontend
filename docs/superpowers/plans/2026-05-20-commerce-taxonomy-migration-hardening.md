@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` for implementation and `superpowers:executing-plans` for task tracking. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Finish the migration away from legacy `sellableProduct` commerce records and make canonical `service`, `bookingOffering`, `trainingProgram`, and `product` documents the only active public commerce taxonomy. Booking, checkout, provider validation, private DB snapshots, emails, and docs must all use the canonical model. In-person appointments must be paid before Google Calendar confirmation, including custom partial appointment payments.
+**Goal:** Finish the migration away from the legacy checkout-catalog split and make canonical `service`, `bookingOffering`, `trainingProgram`, and `product` documents the only active public commerce taxonomy. Booking, checkout, provider validation, private DB snapshots, emails, and docs must all use the canonical model. In-person appointments must be paid before Google Calendar confirmation, including custom partial appointment payments.
 
 **Architecture:** Sanity stores public/editorial offering configuration only. Private PostgreSQL stores customer snapshots, checkout/order/payment state, booking holds, final booking state, paid training schedule token state, and reconciliation data. Square is the service booking payment provider. Helcim remains the product and training checkout provider. Google Calendar API events are created for service bookings only after payment is verified. Paid training intro-call scheduling uses private token eligibility before rendering a Google Appointment Schedule link or embed. Internal generated line-item codes may be used for DB and processor reconciliation, but customer-facing emails must not display generated/internal codes.
 
-**Current audit:** Production and staging currently have zero published canonical `product`, `service`, or `bookingOffering` documents, three published `trainingProgram` documents, and two published legacy `sellableProduct` documents. One checkout-enabled training program in each dataset still depends on legacy `checkoutProduct`; no audited training program has native commerce fields fully wired. Production private DB records, if present, are test/dummy data and do not need preservation. Staging content may be recreated.
+**Current audit:** Production and staging currently have zero published canonical `product`, `service`, or `bookingOffering` documents, three published `trainingProgram` documents, and two published legacy checkout-catalog documents. One checkout-enabled training program in each dataset still depends on a linked catalog item; no audited training program has native commerce fields fully wired. Production private DB records, if present, are test/dummy data and do not need preservation. Staging content may be recreated.
 
 ---
 
@@ -14,7 +14,7 @@
 
 - Updates the commerce and booking taxonomy assumptions in `docs/superpowers/plans/2026-05-18-unified-booking-system-redesign.md`.
 - Supersedes future work that keeps `bookingOffering.depositProduct` or `bookingOffering.fullProduct` as the payment source.
-- Supersedes training checkout assumptions that require `trainingProgram.checkoutProduct`.
+- Supersedes training checkout assumptions that require a linked checkout catalog item.
 - Requires follow-up edits to:
   - `docs/booking-system-setup-guide.md`
   - `docs/booking-system-runbook.md`
@@ -27,7 +27,7 @@
 - Keep `bookingOffering` as the bookable/payment wrapper linked to `service`.
 - Multiple lash-style variants may share timing/calendar behavior but require separate content and pricing, so `bookingOffering` remains a first-class wrapper rather than merging into `service`.
 - New code must not depend on `bookingOffering.depositProduct` or `bookingOffering.fullProduct`.
-- New code must not depend on `trainingProgram.checkoutProduct`.
+- New code must not depend on linked checkout catalog items for training commerce.
 - All in-person appointments require successful payment before Calendar confirmation.
 - Custom partial appointment payments launch as part of this migration.
 - Generated/internal line-item codes are acceptable for Helcim/private DB reconciliation only if hidden from customer-facing emails.
@@ -57,21 +57,21 @@
 
 ### Training Program
 
-- Training checkout uses native fields on `trainingProgram` rather than `checkoutProduct`.
+- Training checkout uses native fields on `trainingProgram` rather than a separate linked catalog item.
 - Required native checkout data includes price, currency, checkout enablement, payment label/description, deposit or payment-plan fields if still needed, and any training-specific fulfillment metadata.
 - Training intro-call eligibility is resolved from private training payment/enrollment state.
 
 ### Product
 
-- Canonical physical/digital product checkout uses `product`, not `sellableProduct`.
+- Canonical physical/digital product checkout reads directly from the `product` document type.
 - Product checkout may generate an internal deterministic line-item code when no merchant SKU exists.
 - Customer emails display product titles/options, never generated codes.
 
-### Legacy Sellable Product
+### Retired Checkout Catalog
 
-- Legacy `sellableProduct` remains only as migration reference until the canonical content and code paths are live.
-- Do not add new feature work against `sellableProduct`.
-- Remove public checkout dependencies on `sellableProduct` after canonical content is recreated and verified.
+- Retired checkout-catalog records remain only as migration reference until canonical content and code paths are live.
+- Do not add new feature work against the retired checkout catalog.
+- Remove public checkout dependencies on retired catalog records after canonical content is recreated and verified.
 
 ## Data And State Rules
 
@@ -118,8 +118,8 @@ Expected:
 - [ ] **Step 2: Add contract tests for training native commerce**
 
 Expected:
-- Checkout-enabled training programs can quote and start checkout without `checkoutProduct`.
-- Legacy `checkoutProduct` fallback is either explicitly temporary or removed in the final migration step.
+- Checkout-enabled training programs can quote and start checkout from native `trainingProgram` fields.
+- Any linked-catalog fallback is either explicitly temporary or removed in the final migration step.
 - Payment/enrollment snapshots preserve native training title, amount, and currency.
 
 - [ ] **Step 3: Add contract tests for canonical product checkout**
@@ -143,7 +143,6 @@ Expected:
 - `src/sanity/schemas/documents/booking-offering.ts`
 - `src/sanity/schemas/documents/training-program.ts`
 - `src/sanity/schemas/documents/product.ts`
-- `src/sanity/schemas/documents/sellable-product.ts`
 - `src/sanity/schemas/index.ts`
 - `src/types/index.ts`
 
@@ -167,7 +166,7 @@ Expected:
 
 Expected:
 - Checkout-enabled programs have all required native fields.
-- `checkoutProduct` is hidden/deprecated or removed after code migration.
+- Linked checkout-catalog fields are hidden/deprecated or removed after code migration.
 
 - [ ] **Step 4: Add canonical product checkout metadata**
 
@@ -179,14 +178,14 @@ Expected:
 
 Expected:
 - `TBookingOffering`, `TTrainingProgram`, and `TProduct` match schema and loader projections.
-- `TSellableProduct` is marked legacy and removed from new public checkout surfaces when safe.
+- Retired checkout-catalog aliases are removed from new public checkout surfaces when safe.
 
 ## Task 3: Update Sanity Loaders And Projections
 
 **Files:**
 - `src/data/loaders.ts`
 - `src/app/api/revalidate/route.ts`
-- Any consumers of `TSellableProduct`, `TBookingOffering`, `TTrainingProgram`, or `TProduct`
+- Any consumers of product, booking offering, training program, or retired checkout-catalog types
 
 - [ ] **Step 1: Project native booking payment fields**
 
@@ -197,14 +196,14 @@ Expected:
 - [ ] **Step 2: Project training native commerce fields**
 
 Expected:
-- Training loaders no longer require dereferenced `checkoutProduct` data for checkout.
+- Training loaders no longer require dereferenced linked-catalog data for checkout.
 - Legacy data remains visible only where explicitly needed for migration inspection.
 
 - [ ] **Step 3: Project canonical product checkout fields**
 
 Expected:
 - Product checkout reads canonical product documents.
-- Legacy `sellableProduct` loaders are isolated or scheduled for deletion.
+- Retired checkout-catalog loaders are isolated or scheduled for deletion.
 
 ## Task 4: Rewrite Appointment Hold And Checkout Flow
 
@@ -256,7 +255,7 @@ Expected:
 - [ ] **Step 1: Quote training checkout from `trainingProgram` fields**
 
 Expected:
-- Training checkout works with no `checkoutProduct` reference.
+- Training checkout works with no linked-catalog reference.
 - Amount, currency, program title, and fulfillment metadata are snapshotted into private DB.
 
 - [ ] **Step 2: Update training UI and eligibility handoff**
@@ -268,7 +267,7 @@ Expected:
 - [ ] **Step 3: Remove stale legacy dependency**
 
 Expected:
-- No active checkout path requires legacy `sellableProduct` for training.
+- No active checkout path requires retired catalog records for training.
 - Any remaining references are migration-only and documented for deletion.
 
 ## Task 6: Migrate Product Checkout To Canonical Products
@@ -286,7 +285,7 @@ Expected:
 
 Expected:
 - Canonical product title, slug, amount, currency, options, and fulfillment metadata are enough to validate carts.
-- Legacy `sellableProduct` fallback is removed or isolated behind a temporary migration flag.
+- Retired catalog fallback is removed or isolated behind a temporary migration flag.
 
 - [ ] **Step 2: Generate internal line-item codes safely**
 
@@ -321,7 +320,7 @@ Expected:
 Expected:
 - Create only launch-approved canonical records.
 - Do not preserve dummy private DB state.
-- Retire or unpublish legacy `sellableProduct` records after replacement pages/checkout paths are verified.
+- Retire or unpublish legacy checkout-catalog records after replacement pages/checkout paths are verified.
 
 - [ ] **Step 3: Validate content publish and revalidation**
 
@@ -342,7 +341,7 @@ Expected:
 Expected:
 - Docs describe native `bookingOffering` payment fields, not `depositProduct` or `fullProduct`.
 
-- [ ] **Step 2: Replace stale training `checkoutProduct` guidance**
+- [ ] **Step 2: Replace stale linked-catalog training guidance**
 
 Expected:
 - Docs describe training native commerce fields and private payment/enrollment eligibility.
@@ -403,8 +402,8 @@ Expected:
 
 ## Completion Criteria
 
-- No active public checkout or booking path depends on `sellableProduct`.
-- No active training checkout path depends on `trainingProgram.checkoutProduct`.
+- No active public checkout or booking path depends on retired checkout-catalog records.
+- No active training checkout path depends on linked checkout-catalog fields.
 - No active booking checkout path depends on `bookingOffering.depositProduct` or `bookingOffering.fullProduct`.
 - In-person appointments cannot create Calendar confirmations before verified payment.
 - Custom partial appointment payment works end to end.

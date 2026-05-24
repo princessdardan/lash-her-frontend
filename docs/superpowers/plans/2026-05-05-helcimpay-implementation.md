@@ -4,7 +4,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a custom Lash Her storefront checkout where Sanity/app catalog data drives sellable items and Helcim handles invoice creation plus HelcimPay.js payment processing.
+**Goal:** Build a custom Lash Her storefront checkout where Sanity/app catalog data drives purchasable items and Helcim handles invoice creation plus HelcimPay.js payment processing.
 
 **Architecture:** The first release uses Sanity as the catalog and order-reconciliation store, Next.js server routes for checkout/payment validation, and Helcim for invoice/payment records. The browser never receives Helcim credentials or response-validation secrets; it only receives a HelcimPay.js `checkoutToken` and forwards iframe events back to the server.
 
@@ -14,7 +14,7 @@
 
 ## First-release scope locked by this plan
 
-- Catalog source: Sanity document type `sellableProduct`.
+- Catalog source: Sanity document type `product`.
 - Supported item kinds: `product`, `service`, `training`, and `deposit`.
 - Currency: CAD only.
 - Quantity: whole numbers from 1 to 10.
@@ -27,7 +27,7 @@ If any of those choices are not acceptable, stop before Task 1 and revise this p
 
 ### Create
 
-- `frontend/src/sanity/schemas/documents/sellable-product.ts` — editable catalog records.
+- `frontend/src/sanity/schemas/documents/product.ts` — editable catalog records.
 - `frontend/src/sanity/schemas/documents/checkout-order.ts` — local reconciliation records.
 - `frontend/src/lib/commerce/money.ts` — CAD money helpers.
 - `frontend/src/lib/commerce/cart.ts` — cart input parsing and validation helpers.
@@ -51,8 +51,8 @@ If any of those choices are not acceptable, stop before Task 1 and revise this p
 - `frontend/src/types/index.ts` — add catalog/order TypeScript shapes.
 - `frontend/src/sanity/schemas/index.ts` — register new document schemas.
 - `frontend/src/sanity/structure/index.ts` — add Catalog and Orders sections.
-- `frontend/src/data/loaders.ts` — add sellable product loaders and cache tags.
-- `frontend/src/app/api/revalidate/route.ts` — revalidate `sellableProduct` cache tag.
+- `frontend/src/data/loaders.ts` — add product loaders and cache tags.
+- `frontend/src/app/api/revalidate/route.ts` — revalidate `product` cache tag.
 - `frontend/src/sanity/env.ts` — add backend-only Helcim env assertions.
 - `frontend/src/components/ui/mobile-navigation.tsx` or menu content in Sanity — add Shop navigation only if product launch requires it; otherwise leave navigation unchanged.
 
@@ -350,23 +350,23 @@ git commit -m "feat: add commerce cart validation helpers"
 ### Task 3: Add Sanity catalog and order schemas
 
 **Files:**
-- Create: `frontend/src/sanity/schemas/documents/sellable-product.ts`
+- Create: `frontend/src/sanity/schemas/documents/product.ts`
 - Create: `frontend/src/sanity/schemas/documents/checkout-order.ts`
 - Modify: `frontend/src/sanity/schemas/index.ts`
 - Modify: `frontend/src/sanity/structure/index.ts`
 - Modify: `frontend/src/types/index.ts`
 - Modify: `frontend/src/app/api/revalidate/route.ts`
 
-- [ ] **Step 1: Create sellable product schema**
+- [ ] **Step 1: Create product schema**
 
-Create `frontend/src/sanity/schemas/documents/sellable-product.ts`:
+Create `frontend/src/sanity/schemas/documents/product.ts`:
 
 ```ts
 import { defineField, defineType } from "sanity";
 
-export const sellableProduct = defineType({
-  name: "sellableProduct",
-  title: "Sellable Product",
+export const product = defineType({
+  name: "product",
+  title: "Product",
   type: "document",
   fields: [
     defineField({ name: "title", title: "Title", type: "string", validation: (Rule) => Rule.required() }),
@@ -470,7 +470,7 @@ export const checkoutOrder = defineType({
 Modify `frontend/src/sanity/schemas/index.ts`:
 
 ```ts
-import { sellableProduct } from "./documents/sellable-product";
+import { product } from "./documents/product";
 import { checkoutOrder } from "./documents/checkout-order";
 ```
 
@@ -478,7 +478,7 @@ Add both to `schemaTypes` immediately after `trainingProgram`:
 
 ```ts
 trainingProgram,
-sellableProduct,
+product,
 checkoutOrder,
 contactForm,
 generalInquiry,
@@ -490,7 +490,7 @@ Modify `frontend/src/sanity/structure/index.ts` so the Content section includes 
 
 ```ts
 S.documentTypeListItem("trainingProgram").title("Training Programs"),
-S.documentTypeListItem("sellableProduct").title("Sellable Products"),
+S.documentTypeListItem("product").title("Products"),
 ```
 
 Add an Orders section:
@@ -513,16 +513,16 @@ S.listItem()
 Modify `frontend/src/types/index.ts` near document types:
 
 ```ts
-export type TSellableProductKind = "product" | "service" | "training" | "deposit";
+export type TProductKind = "product" | "service" | "training" | "deposit";
 export type TCheckoutOrderStatus = "pending" | "paid" | "verification_failed" | "cancelled" | "refunded";
 
-export interface TSellableProduct {
+export interface TProduct {
   _id: string;
   title: string;
   description: string;
   slug: string;
   sku: string;
-  kind: TSellableProductKind;
+  kind: TProductKind;
   price: number;
   currency: "CAD";
   isAvailable: boolean;
@@ -556,7 +556,7 @@ export interface TCheckoutOrder {
 Modify `frontend/src/app/api/revalidate/route.ts`:
 
 ```ts
-sellableProduct: "sellableProduct",
+product: "product",
 ```
 
 - [ ] **Step 7: Run lint**
@@ -572,7 +572,7 @@ Expected: PASS.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add frontend/src/sanity/schemas/documents/sellable-product.ts frontend/src/sanity/schemas/documents/checkout-order.ts frontend/src/sanity/schemas/index.ts frontend/src/sanity/structure/index.ts frontend/src/types/index.ts frontend/src/app/api/revalidate/route.ts
+git add frontend/src/sanity/schemas/documents/product.ts frontend/src/sanity/schemas/documents/checkout-order.ts frontend/src/sanity/schemas/index.ts frontend/src/sanity/structure/index.ts frontend/src/types/index.ts frontend/src/app/api/revalidate/route.ts
 git commit -m "feat: add checkout catalog schemas"
 ```
 
@@ -591,14 +591,14 @@ git commit -m "feat: add checkout catalog schemas"
 Modify `frontend/src/data/loaders.ts` imports:
 
 ```ts
-import type { TSellableProduct } from "@/types";
+import type { TProduct } from "@/types";
 ```
 
 Add functions before `export const loaders`:
 
 ```ts
-async function getSellableProducts(): Promise<TSellableProduct[]> {
-  const query = groq`*[_type == "sellableProduct" && isAvailable == true] | order(title asc){
+async function getProducts(): Promise<TProduct[]> {
+  const query = groq`*[_type == "product" && isAvailable == true] | order(title asc){
     _id,
     title,
     description,
@@ -610,11 +610,11 @@ async function getSellableProducts(): Promise<TSellableProduct[]> {
     isAvailable,
     image{ asset, hotspot, crop, alt }
   }`;
-  return client.fetch<TSellableProduct[]>(query, {}, { next: { tags: ["sellableProduct"] } });
+  return client.fetch<TProduct[]>(query, {}, { next: { tags: ["product"] } });
 }
 
-async function getSellableProductsByIds(ids: string[]): Promise<TSellableProduct[]> {
-  const query = groq`*[_type == "sellableProduct" && _id in $ids]{
+async function getProductsByIds(ids: string[]): Promise<TProduct[]> {
+  const query = groq`*[_type == "product" && _id in $ids]{
     _id,
     title,
     description,
@@ -626,15 +626,15 @@ async function getSellableProductsByIds(ids: string[]): Promise<TSellableProduct
     isAvailable,
     image{ asset, hotspot, crop, alt }
   }`;
-  return client.fetch<TSellableProduct[]>(query, { ids }, { next: { tags: ["sellableProduct"] } });
+  return client.fetch<TProduct[]>(query, { ids }, { next: { tags: ["product"] } });
 }
 ```
 
 Add both to `loaders`:
 
 ```ts
-getSellableProducts,
-getSellableProductsByIds,
+getProducts,
+getProductsByIds,
 ```
 
 - [ ] **Step 2: Create product card**
@@ -644,13 +644,13 @@ Create `frontend/src/components/commerce/product-card.tsx`:
 ```tsx
 "use client";
 
-import type { TSellableProduct } from "@/types";
+import type { TProduct } from "@/types";
 import { Button } from "@/components/ui/button";
 import { formatCad } from "@/lib/commerce/money";
 
 interface ProductCardProps {
-  product: TSellableProduct;
-  onAdd: (product: TSellableProduct) => void;
+  product: TProduct;
+  onAdd: (product: TProduct) => void;
 }
 
 export function ProductCard({ product, onAdd }: ProductCardProps): React.ReactElement {
@@ -677,7 +677,7 @@ Create `frontend/src/components/commerce/cart-panel.tsx`:
 
 import { useMemo, useState } from "react";
 
-import type { TSellableProduct } from "@/types";
+import type { TProduct } from "@/types";
 import { buildValidatedCart, type CartInputItem } from "@/lib/commerce/cart";
 import { formatCad } from "@/lib/commerce/money";
 import { Button } from "@/components/ui/button";
@@ -685,7 +685,7 @@ import { ProductCard } from "./product-card";
 import { HelcimPayButton } from "./helcim-pay-button";
 
 interface CartPanelProps {
-  products: TSellableProduct[];
+  products: TProduct[];
 }
 
 export function CartPanel({ products }: CartPanelProps): React.ReactElement {
@@ -705,7 +705,7 @@ export function CartPanel({ products }: CartPanelProps): React.ReactElement {
     })));
   }, [items, products]);
 
-  function addProduct(product: TSellableProduct): void {
+  function addProduct(product: TProduct): void {
     setItems((current) => {
       const existing = current.find((item) => item.productId === product._id);
       if (existing) {
@@ -752,7 +752,7 @@ import { CartPanel } from "@/components/commerce/cart-panel";
 export const revalidate = 300;
 
 export default async function ShopPage(): Promise<React.ReactElement> {
-  const products = await loaders.getSellableProducts();
+  const products = await loaders.getProducts();
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-16">
@@ -1104,7 +1104,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
 
     const productIds = body.items.map((item) => item.productId);
-    const products = await loaders.getSellableProductsByIds(productIds);
+    const products = await loaders.getProductsByIds(productIds);
     const cart = buildValidatedCart(
       body.items,
       products.map((product) => ({
@@ -1434,13 +1434,13 @@ test.describe("Helcim checkout", () => {
 });
 ```
 
-- [ ] **Step 2: Seed at least one sellable product in Sanity development data**
+- [ ] **Step 2: Seed at least one product in Sanity development data**
 
-Use Sanity Studio at `/studio` or a one-off script to create one `sellableProduct` with:
+Use Sanity Studio at `/studio` or a one-off script to create one `product` with:
 
 ```json
 {
-  "_type": "sellableProduct",
+  "_type": "product",
   "title": "Classic Lash Set Deposit",
   "description": "Deposit for a classic lash set appointment.",
   "slug": { "_type": "slug", "current": "classic-lash-set-deposit" },
@@ -1555,4 +1555,4 @@ The plan contains no `TBD`, no unspecified implementation steps, and no referenc
 
 ### Type consistency
 
-Shared names are consistent across tasks: `sellableProduct`, `checkoutOrder`, `TSellableProduct`, `TCheckoutOrder`, `CartInputItem`, `ValidatedCart`, `createHelcimInvoice`, `initializeHelcimPay`, `createPendingOrder`, `markOrderPaid`, and `validateHelcimResponseHash`.
+Shared names are consistent across tasks: `product`, `checkoutOrder`, `TProduct`, `TCheckoutOrder`, `CartInputItem`, `ValidatedCart`, `createHelcimInvoice`, `initializeHelcimPay`, `createPendingOrder`, `markOrderPaid`, and `validateHelcimResponseHash`.

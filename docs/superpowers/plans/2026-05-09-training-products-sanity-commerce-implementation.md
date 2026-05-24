@@ -26,7 +26,7 @@ This plan is intentionally blocked for any still-unanswered training/content-mod
 - Product catalog route: `frontend/src/app/(site)/products/page.tsx`
 - Product detail route: `frontend/src/app/(site)/products/[slug]/page.tsx`
 - Product confirmation route: `frontend/src/app/(site)/products/confirmation/page.tsx`
-- Existing product schema: `frontend/src/sanity/schemas/documents/sellable-product.ts`
+- Existing product schema: `frontend/src/sanity/schemas/documents/product.ts`
 - Legacy/current-risk order schema slated for removal or unregistration by the 2026-05-10 private checkout storage remediation plan: `frontend/src/sanity/schemas/documents/checkout-order.ts`
 - Existing commerce UI: `frontend/src/components/commerce/product-card.tsx`, `frontend/src/components/commerce/cart-panel.tsx`, `frontend/src/components/commerce/helcim-pay-button.tsx`
 - Existing training detail route: `frontend/src/app/(site)/training-programs/[slug]/page.tsx`
@@ -44,7 +44,7 @@ Before Task 1, replace every `TBD` with the approved answer.
 - Training payment mode: `TBD: none, booking-call only, deposit, full payment, invoice/manual follow-up`
 - Inventory mode: `TBD: manual availability only, stock counts, variants, no inventory`
 - Fulfillment mode: `TBD: pickup, shipping, digital/manual, service/training only`
-- Product schema strategy: `TBD: extend sellableProduct or introduce additional documents/objects`
+- Product schema strategy: `TBD: extend product or introduce additional documents/objects`
 - Training schema strategy: `TBD: explicit fields, blocks, or hybrid`
 - SEO strategy: `TBD: reusable SEO object or simple fields`
 - Seed content: `TBD: yes/no`
@@ -163,7 +163,7 @@ Expected:
 **Files:**
 - Modify as approved:
   - `frontend/src/sanity/schemas/documents/training-program.ts`
-  - `frontend/src/sanity/schemas/documents/sellable-product.ts`
+  - `frontend/src/sanity/schemas/documents/product.ts`
   - `frontend/src/sanity/schemas/index.ts`
   - `frontend/src/sanity/structure/index.ts`
   - `frontend/src/sanity/sanity.config.ts` if a new singleton is approved
@@ -189,7 +189,7 @@ Expected:
 - Existing documents remain readable.
 - Existing required fields are not deleted.
 
-- [ ] **Step 3: Extend `sellableProduct`**
+- [ ] **Step 3: Extend `product`**
 
 Add only approved fields for catalog/detail behavior.
 
@@ -236,9 +236,9 @@ Expected:
 Required loaders based on approved routes:
 
 - `getProductCatalogPageData()` if a singleton is approved.
-- `getSellableProducts()` extended for approved card fields.
-- `getSellableProductBySlug(slug)` for product detail.
-- `getAllSellableProductSlugs()` for static params.
+- `getProducts()` extended for approved card fields.
+- `getProductBySlug(slug)` for product detail.
+- `getAllProductSlugs()` for static params.
 - `getTrainingProgramBySlug(slug)` extended for redesigned training fields.
 - `getAllTrainingProgramSlugs()` filtered to defined slugs if needed.
 
@@ -387,7 +387,7 @@ Ensure editors can find:
 - training page singleton,
 - training programs,
 - product catalog page singleton if approved,
-- sellable products.
+- purchasable products.
 
 Do not expose checkout orders in Sanity Studio. Studio sections are limited to public catalog and editorial content; checkout reconciliation belongs in private server-side PostgreSQL storage.
 

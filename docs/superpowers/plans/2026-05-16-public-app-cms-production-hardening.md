@@ -65,7 +65,7 @@ Expected:
 - [ ] **Step 3: Add CMS smoke acceptance criteria**
 
 Expected:
-- Content publish smoke covers at least one singleton, one page, one menu/global item, and one sellable/training content document.
+- Content publish smoke covers at least one singleton, one page, one menu/global item, and one product/training content document.
 
 ## Task 2: Rewrite Launch Setup Documentation
 
@@ -116,7 +116,7 @@ Expected:
 
 - [ ] **Step 1: Add smoke matrix**
 
-Document staging and production smoke checks for homepage, global settings, main menu, training program, sellable product, and booking settings publish flows.
+Document staging and production smoke checks for homepage, global settings, main menu, training program, product, and booking settings publish flows.
 
 Expected:
 - Each smoke step records dataset, document type, webhook delivery, expected cache tag, and public URL.

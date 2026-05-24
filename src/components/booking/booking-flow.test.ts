@@ -90,8 +90,8 @@ describe("booking offering flow contract", () => {
     assert.doesNotMatch(bookingConfirmationSource, /squarePaymentLinkId|squareOrderId|holdReference/);
   });
 
-  it("does not reference checkoutProduct in product cards", () => {
-    assert.doesNotMatch(productCardSource, /checkoutProduct/);
+  it("keeps booking product cards decoupled from product checkout objects", () => {
+    assert.doesNotMatch(productCardSource, /checkout/);
   });
 
   it("keeps service detail links discoverable outside the active offerings branch", () => {

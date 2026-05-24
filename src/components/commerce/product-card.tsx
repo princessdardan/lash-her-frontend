@@ -75,7 +75,7 @@ export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement 
 
       <div className="flex flex-1 flex-col p-6 md:p-7">
         <div className="mb-4">
-          <p className="eyebrow-label mb-2">{product.kind === "training" ? "Training" : "Product"}</p>
+          <p className="eyebrow-label mb-2">Product</p>
           <h3 className="section-subheading text-3xl leading-none md:text-4xl">
             <Link href={productHref} className="transition-colors hover:text-lh-primary">
               {product.title}

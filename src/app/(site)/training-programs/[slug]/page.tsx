@@ -89,7 +89,9 @@ export default async function TrainingProgramPage({ params }: { params: Promise<
       data.enrollmentTitle ||
       data.enrollmentDescription ||
       data.enrollmentBackgroundImage ||
-      data.linkedProduct,
+      data.price !== undefined ||
+      data.availabilityLabel ||
+      data.isAvailable !== undefined,
   );
   const cta = getTrainingCta(data);
   const isCtaSafe = isSafeUrl(cta?.href);

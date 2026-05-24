@@ -49,7 +49,7 @@ function formatProductPrice(product: { price?: number | null; variants?: Array<{
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
-  const data = await loaders.getSellableProductBySlug(slug);
+  const data = await loaders.getProductBySlug(slug);
 
   const title = data?.seo?.title || data?.title || "Product";
   const description = data?.seo?.description || data?.shortDescription || data?.description || "Premium lash product";
@@ -63,7 +63,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 }
 
 export async function generateStaticParams() {
-  const products = await loaders.getAllSellableProductSlugs();
+  const products = await loaders.getAllProductSlugs();
   return products.map(p => ({ slug: p.slug }));
 }
 
@@ -79,8 +79,8 @@ function getAvailabilityLabel(product: TProduct): string {
 export default async function ProductDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const [product, products] = await Promise.all([
-    loaders.getSellableProductBySlug(slug),
-    loaders.getSellableProducts(),
+    loaders.getProductBySlug(slug),
+    loaders.getProducts(),
   ]);
 
   if (!product) notFound();
@@ -150,7 +150,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
             <aside className="lg:sticky lg:top-28">
               <div className="soft-panel bg-lh-white/90 p-6 backdrop-blur md:p-8 lg:p-9">
                 <div className="mb-7 border-b border-lh-line pb-7">
-                  <p className="eyebrow-label mb-3">{product.kind === "training" ? "Training" : "Product"}</p>
+                  <p className="eyebrow-label mb-3">Product</p>
                   <h1 className="display-heading text-5xl md:text-7xl lg:text-8xl">
                     {product.title}
                   </h1>
