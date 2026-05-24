@@ -104,6 +104,7 @@ test("checkout orders schema exposes provider and calendar finalization fields",
   assert.ok(columnNames.includes("helcimInvoiceId"));
   assert.ok(columnNames.includes("helcimInvoiceNumber"));
   assert.ok(columnNames.includes("helcimTransactionId"));
+  assert.ok(columnNames.includes("shippingAddress"));
 });
 
 test("checkout order Helcim invoice fields are retained but provider-specific", () => {

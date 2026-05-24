@@ -104,6 +104,15 @@ export interface CheckoutOrderLineItemSnapshot {
   totalCents: number;
 }
 
+export interface CheckoutOrderShippingAddressSnapshot {
+  line1: string;
+  line2?: string;
+  city: string;
+  province: string;
+  postalCode: string;
+  country: string;
+}
+
 export type CheckoutOrderStatus = typeof checkoutOrderStatus.enumValues[number];
 export type CheckoutOrderPurpose = typeof checkoutOrderPurpose.enumValues[number];
 export type PaymentProvider = typeof paymentProvider.enumValues[number];
@@ -189,6 +198,7 @@ export const checkoutOrders = pgTable(
     finalizedAt: timestamp("finalized_at", { withTimezone: true }),
     customerName: text("customer_name").notNull(),
     customerEmail: text("customer_email").notNull(),
+    shippingAddress: jsonb("shipping_address").$type<CheckoutOrderShippingAddressSnapshot>(),
     amountCents: integer("amount_cents").notNull(),
     currency: text("currency").notNull().default("CAD"),
     lineItems: jsonb("line_items").$type<CheckoutOrderLineItemSnapshot[]>().notNull(),
