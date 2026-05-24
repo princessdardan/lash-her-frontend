@@ -10,29 +10,6 @@ const helperScript = String.raw`
     createBookingAvailabilityPostHandler,
   } from "./src/app/api/booking/availability/route.ts";
 
-  const paidTrainingEnrollment = {
-    checkoutEmail: "client@example.com",
-    checkoutOrder: {
-      orderId: "LH-TRAINING-123",
-      status: "paid",
-    },
-    enrollmentId: "training-enrollment-1",
-    productSnapshot: {
-      currency: "CAD",
-      id: "product-training-full",
-      priceCents: 149900,
-      sku: "TRAINING-FULL",
-      title: "Lash Training Full Payment",
-    },
-    programSnapshot: {
-      id: "program-lash-training",
-      slug: "lash-training",
-      title: "Lash Training Program",
-    },
-    staffAlertedAt: null,
-    tokenExpiresAt: new Date("2999-01-01T00:00:00.000Z"),
-  };
-
   function createRequest(searchParams) {
     const url = new URL("http://localhost:3000/api/booking/availability");
 
@@ -53,34 +30,39 @@ const helperScript = String.raw`
 
   function createSettings(overrides = {}) {
     return {
-      availabilityMarkerTitle: "Available",
       bookingHorizonDays: 10,
-      bookingTypes: [
-        {
-          type: "training-call",
-          label: "Training call",
-          description: "Training call",
-          durationMinutes: 60,
-          slotIntervalMinutes: 60,
-          bufferBeforeMinutes: 0,
-          bufferAfterMinutes: 0,
-          questions: [],
-        },
-        {
-          type: "in-person-appointment",
-          label: "Appointment",
-          description: "Appointment",
-          durationMinutes: 60,
-          slotIntervalMinutes: 60,
-          bufferBeforeMinutes: 0,
-          bufferAfterMinutes: 0,
-          questions: [],
-        },
-      ],
+      bufferMinutes: 0,
       calendarId: "calendar-1",
+      hoursOfOperation: [
+        { day: "monday", isOpen: true, opensAt: "00:00", closesAt: "23:59" },
+        { day: "tuesday", isOpen: true, opensAt: "00:00", closesAt: "23:59" },
+        { day: "wednesday", isOpen: true, opensAt: "00:00", closesAt: "23:59" },
+        { day: "thursday", isOpen: true, opensAt: "00:00", closesAt: "23:59" },
+        { day: "friday", isOpen: true, opensAt: "00:00", closesAt: "23:59" },
+        { day: "saturday", isOpen: true, opensAt: "00:00", closesAt: "23:59" },
+        { day: "sunday", isOpen: true, opensAt: "00:00", closesAt: "23:59" },
+      ],
+      intakeQuestions: [],
       marketingOptInLabel: "Send me updates",
       minimumLeadTimeHours: 0,
-      timezone: "America/Toronto",
+      slotIntervalMinutes: 60,
+      timezone: "UTC",
+      ...overrides,
+    };
+  }
+
+  function createService(overrides = {}) {
+    return {
+      _id: "service-classic-fill",
+      title: "Classic Fill",
+      description: "Classic fill appointment",
+      slug: "classic-fill",
+      showDetailPage: true,
+      durationMinutes: 60,
+      fullPrice: 150,
+      depositAmount: 50,
+      currency: "CAD",
+      isAvailable: true,
       ...overrides,
     };
   }
@@ -97,8 +79,7 @@ const helperScript = String.raw`
 
   function createHandler(overrides = {}) {
     return createBookingAvailabilityGetHandler({
-      findPaidTrainingIntroEligibility: async () => paidTrainingEnrollment,
-      getBookingOfferingBySlug: async () => null,
+      getBookableServiceBySlug: async () => createService(),
       getBookingSettings: async () => createSettings(),
       listActiveAppointmentHolds: async () => [],
       listCalendarEvents: async () => [],
@@ -109,8 +90,7 @@ const helperScript = String.raw`
 
   function createPostHandler(overrides = {}) {
     return createBookingAvailabilityPostHandler({
-      findPaidTrainingIntroEligibility: async () => paidTrainingEnrollment,
-      getBookingOfferingBySlug: async () => null,
+      getBookableServiceBySlug: async () => createService(),
       getBookingSettings: async () => createSettings(),
       listActiveAppointmentHolds: async () => [],
       listCalendarEvents: async () => [],
@@ -120,7 +100,7 @@ const helperScript = String.raw`
   }
 `;
 
-test("booking availability returns slots for a configured booking type", () => {
+test("booking availability returns slots for a configured service", () => {
   runRouteScenario(`
     const availabilityStart = createFutureDate(2, 0);
     const availabilityEnd = createFutureDate(2, 2);
@@ -132,117 +112,69 @@ test("booking availability returns slots for a configured booking type", () => {
         assert.ok(input.timeMin instanceof Date);
         assert.ok(input.timeMax instanceof Date);
 
-        return [
-          {
-            id: "available-window",
-            title: "Available",
-            start: availabilityStart,
-            end: availabilityEnd,
-          },
-          {
-            id: "busy-event",
-            title: "Existing appointment",
-            start: busyStart,
-            end: busyEnd,
-          },
-        ];
+        return [{ id: "busy-event", title: "Existing appointment", start: busyStart, end: busyEnd }];
+      },
+      buildBookingSlots: (input) => {
+        assert.equal(input.bookingType.type, "in-person-appointment");
+        assert.equal(input.bookingType.label, "Classic Fill");
+        return [{ start: availabilityStart.toISOString(), end: busyStart.toISOString() }];
       },
     });
 
-    const response = await handler(createRequest({ type: "training-call" }));
+    const response = await handler(createRequest({ service: "classic-fill" }));
     const body = await parseJson(response);
 
     assert.equal(response.status, 200);
-    assert.deepEqual(body, {
-      slots: [
-        {
-          start: availabilityStart.toISOString(),
-          end: busyStart.toISOString(),
-        },
-      ],
-    });
+    assert.deepEqual(body, { slots: [{ start: availabilityStart.toISOString(), end: busyStart.toISOString() }] });
   `);
 });
 
-test("booking availability verifies paid training token and route slug before returning slots", () => {
+test("booking availability supports service aliases in POST bodies", () => {
   runRouteScenario(`
     const availabilityStart = createFutureDate(2, 0);
     const availabilityEnd = createFutureDate(2, 1);
     const handler = createPostHandler({
-      findPaidTrainingIntroEligibility: async (input) => {
-        assert.deepEqual(input, { schedulingToken: "training-token" });
-        return paidTrainingEnrollment;
+      getBookableServiceBySlug: async (slug) => {
+        assert.equal(slug, "classic-fill");
+        return createService();
       },
-      listCalendarEvents: async () => [{
-        id: "available-window",
-        title: "Available",
-        start: availabilityStart,
-        end: availabilityEnd,
-      }],
       buildBookingSlots: (input) => {
-        assert.equal(input.bookingType.type, "training-call");
-        return buildBookingSlots(input);
+        assert.equal(input.bookingType.type, "in-person-appointment");
+        return [{ start: availabilityStart.toISOString(), end: availabilityEnd.toISOString() }];
       },
     });
 
-    const response = await handler(createPostRequest({ token: " training-token ", slug: " lash-training " }));
+    const response = await handler(createPostRequest({ offeringSlug: " classic-fill " }));
     const body = await parseJson(response);
 
     assert.equal(response.status, 200);
-    assert.deepEqual(body, {
-      slots: [
-        {
-          start: availabilityStart.toISOString(),
-          end: availabilityEnd.toISOString(),
-        },
-      ],
-    });
+    assert.deepEqual(body, { slots: [{ start: availabilityStart.toISOString(), end: availabilityEnd.toISOString() }] });
   `);
 });
 
-test("booking availability uses offering configuration and active holds", () => {
+test("booking availability uses service configuration and active holds", () => {
   runRouteScenario(`
     const availabilityStart = createFutureDate(2, 0);
     const availabilityEnd = createFutureDate(2, 2);
     const holdStart = new Date(availabilityStart.getTime() + 60 * 60 * 1000);
     const holdEnd = new Date(holdStart.getTime() + 30 * 60 * 1000);
     const handler = createHandler({
-      getBookingOfferingBySlug: async (slug) => {
+      getBookableServiceBySlug: async (slug) => {
         assert.equal(slug, "classic-fill");
-
-        return {
-          _id: "bookingOffering-classic-fill",
-          title: "Classic Fill",
-          description: "Classic fill appointment",
-          slug: "classic-fill",
-          isActive: true,
-          bookingType: "in-person-appointment",
-          durationMinutes: 30,
-          slotIntervalMinutes: 30,
-          bufferBeforeMinutes: 0,
-          bufferAfterMinutes: 0,
-          minimumLeadTimeHoursOverride: 0,
-        };
+        return createService({ durationMinutes: 30 });
       },
       listActiveAppointmentHolds: async (input) => {
-        assert.equal(input.offeringId, "bookingOffering-classic-fill");
+        assert.equal(input.offeringId, "service-classic-fill");
         assert.ok(input.timeMin instanceof Date);
         assert.ok(input.timeMax instanceof Date);
 
-        return [{
-          id: "hold-1",
-          state: "held",
-          expiresAt: new Date(Date.now() + 10 * 60 * 1000),
-          selectedStart: holdStart,
-          selectedEnd: holdEnd,
-        }];
+        return [{ id: "hold-1", state: "held", expiresAt: new Date(Date.now() + 10 * 60 * 1000), selectedStart: holdStart, selectedEnd: holdEnd }];
       },
-      listCalendarEvents: async () => [{
-        id: "available-window",
-        title: "Available",
-        start: availabilityStart,
-        end: availabilityEnd,
-      }],
+      buildBookingSlots: (input) => {
+        assert.equal(input.bookingType.durationMinutes, 30);
+        assert.equal(input.busyEvents.length, 1);
+        return buildBookingSlots({ ...input, availabilityWindows: [{ id: "window", title: "Open", start: availabilityStart, end: availabilityEnd }] });
+      },
     });
 
     const response = await handler(createRequest({ offering: "classic-fill" }));
@@ -251,24 +183,13 @@ test("booking availability uses offering configuration and active holds", () => 
     assert.equal(response.status, 200);
     assert.deepEqual(body, {
       slots: [
-        {
-          start: availabilityStart.toISOString(),
-          end: new Date(availabilityStart.getTime() + 30 * 60 * 1000).toISOString(),
-        },
-        {
-          start: new Date(availabilityStart.getTime() + 30 * 60 * 1000).toISOString(),
-          end: holdStart.toISOString(),
-        },
-        {
-          start: holdEnd.toISOString(),
-          end: availabilityEnd.toISOString(),
-        },
+        { start: availabilityStart.toISOString(), end: new Date(availabilityStart.getTime() + 30 * 60 * 1000).toISOString() },
       ],
     });
   `);
 });
 
-test("booking availability rejects invalid booking types", () => {
+test("booking availability rejects missing service slugs", () => {
   runRouteScenario(`
     let settingsLoaded = false;
     const handler = createHandler({
@@ -283,64 +204,11 @@ test("booking availability rejects invalid booking types", () => {
 
     assert.equal(response.status, 400);
     assert.equal(settingsLoaded, false);
-    assert.deepEqual(body, { error: "A valid booking type is required" });
+    assert.deepEqual(body, { error: "A valid service is required" });
   `);
 });
 
-test("booking availability supports paid training token links in GET requests", () => {
-  runRouteScenario(`
-    const availabilityStart = createFutureDate(2, 0);
-    const availabilityEnd = createFutureDate(2, 1);
-    const handler = createHandler({
-      findPaidTrainingIntroEligibility: async (input) => {
-        assert.deepEqual(input, { schedulingToken: "training-token" });
-        return paidTrainingEnrollment;
-      },
-      listCalendarEvents: async () => [{
-        id: "available-window",
-        title: "Available",
-        start: availabilityStart,
-        end: availabilityEnd,
-      }],
-    });
-
-    const response = await handler(createRequest({ token: "training-token", slug: "lash-training" }));
-    const body = await parseJson(response);
-
-    assert.equal(response.status, 200);
-    assert.deepEqual(body, {
-      slots: [
-        {
-          start: availabilityStart.toISOString(),
-          end: availabilityEnd.toISOString(),
-        },
-      ],
-    });
-  `);
-});
-
-test("booking availability rejects paid training orders in GET requests", () => {
-  runRouteScenario(`
-    let settingsLoaded = false;
-    const handler = createHandler({
-      getBookingSettings: async () => {
-        settingsLoaded = true;
-        return createSettings();
-      },
-    });
-
-    const response = await handler(createRequest({ order: "LH-TRAINING-123" }));
-    const body = await parseJson(response);
-
-    assert.equal(response.status, 405);
-    assert.equal(settingsLoaded, false);
-    assert.deepEqual(body, {
-      error: "Paid training availability requires a secure request body",
-    });
-  `);
-});
-
-test("booking availability rejects paid training POST bodies without token or slug", () => {
+test("booking availability rejects POST bodies without a service", () => {
   runRouteScenario(`
     let settingsLoaded = false;
     const handler = createPostHandler({
@@ -355,10 +223,7 @@ test("booking availability rejects paid training POST bodies without token or sl
 
     assert.equal(response.status, 400);
     assert.equal(settingsLoaded, false);
-    assert.deepEqual(body, {
-      error: "We could not verify this training scheduling link.",
-      fieldErrors: { schedulingToken: "Valid training scheduling link is required" },
-    });
+    assert.deepEqual(body, { error: "A valid service is required" });
   `);
 });
 
@@ -370,7 +235,7 @@ test("booking availability returns retryable status when calendar provider fails
       },
     });
 
-    const response = await handler(createRequest({ type: "training-call" }));
+    const response = await handler(createRequest({ service: "classic-fill" }));
     const body = await parseJson(response);
 
     assert.equal(response.status, 503);
