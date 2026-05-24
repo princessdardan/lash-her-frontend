@@ -15,7 +15,6 @@ const TYPE_TAG_MAP: Record<string, string> = {
   globalSettings: "global",
   mainMenu: "menu",
   bookingSettings: "bookingSettings",
-  bookingOffering: "bookingOffering",
 };
 
 interface RevalidateWebhookDependencies {

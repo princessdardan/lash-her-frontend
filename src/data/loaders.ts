@@ -11,7 +11,6 @@ import type {
   TGlobalSettings,
   TMainMenu,
   TMetaData,
-  TBookingOffering,
   TProduct,
   TProductCollection,
   TProductFilterAttribute,
@@ -79,17 +78,11 @@ const SERVICE_PROJECTION = groq`{
   shortDescription,
   "slug": slug.current,
   showDetailPage,
-  bookingType,
   durationMinutes,
-  slotIntervalMinutes,
-  bufferBeforeMinutes,
-  bufferAfterMinutes,
-  minimumLeadTimeHoursOverride,
   fullPrice,
   depositAmount,
   currency,
   isAvailable,
-  availabilityLabel,
   displayOrder,
   image{ asset, hotspot, crop, alt },
   gallery[]{ asset, hotspot, crop, alt },
@@ -517,113 +510,39 @@ async function getAllTrainingProgramSlugs(): Promise<Array<{ slug: string }>> {
 async function getBookingSettings(): Promise<BookingSettings | null> {
   const query = groq`*[_type == "bookingSettings"][0]{
     calendarId,
-    availabilityMarkerTitle,
     bookingHorizonDays,
     minimumLeadTimeHours,
     timezone,
-    marketingOptInLabel,
-    bookingTypes[]{
-      _key,
-      type,
-      label,
-      description,
-      durationMinutes,
-      slotIntervalMinutes,
-      bufferBeforeMinutes,
-      bufferAfterMinutes,
-      "questions": coalesce(questions[]{ _key, id, label, inputType, required, options }, [])
-    }
+    bufferMinutes,
+    slotIntervalMinutes,
+    hoursOfOperation[]{ _key, day, isOpen, opensAt, closesAt },
+    "intakeQuestions": coalesce(intakeQuestions[]{ _key, id, label, inputType, required, options }, []),
+    marketingOptInLabel
   }`;
   return client.fetch<BookingSettings | null>(query, {}, sanityFetchOptions(["bookingSettings"]));
 }
 
-const BOOKING_OFFERING_PROJECTION = groq`{
-  _id,
-  title,
-  description,
-  "slug": slug.current,
-  service->{
-    _id,
-    title,
-    description,
-    "slug": slug.current,
-    image{ asset, hotspot, crop, alt }
-  },
-  isActive,
-  bookingType,
-  durationMinutes,
-  slotIntervalMinutes,
-  bufferBeforeMinutes,
-  bufferAfterMinutes,
-  minimumLeadTimeHoursOverride,
-  depositAmount,
-  fullPrice,
-  currency,
-  displayOrder
-}`;
-
-const SERVICE_BOOKING_OFFERING_PROJECTION = groq`{
-  _id,
-  title,
-  description,
-  "slug": slug.current,
-  "isActive": isAvailable,
-  bookingType,
-  durationMinutes,
-  slotIntervalMinutes,
-  bufferBeforeMinutes,
-  bufferAfterMinutes,
-  minimumLeadTimeHoursOverride,
-  fullPrice,
-  depositAmount,
-  currency,
-  displayOrder
-}`;
-
-async function getActiveBookingOfferings(): Promise<TBookingOffering[]> {
-  const bookingOfferingsQuery = groq`*[_type == "bookingOffering" && isActive == true] | order(displayOrder asc, title asc) ${BOOKING_OFFERING_PROJECTION}`;
-  const servicesQuery = groq`*[_type == "service" && isAvailable == true] | order(displayOrder asc, title asc) ${SERVICE_BOOKING_OFFERING_PROJECTION}`;
-  const [bookingOfferings, services] = await Promise.all([
-    client.fetch<TBookingOffering[]>(bookingOfferingsQuery, {}, sanityFetchOptions(["bookingOffering"])),
-    client.fetch<TBookingOffering[]>(servicesQuery, {}, sanityFetchOptions(["service"])),
-  ]);
-  const configuredBookingOfferings = bookingOfferings.filter(isPaymentConfiguredBookingOffering);
-  const configuredServices = services.filter(isPaymentConfiguredBookingOffering);
-  const bookingOfferingSlugs = new Set(configuredBookingOfferings.map((offering) => offering.slug));
-  const serviceOfferings = configuredServices.filter((service) => !bookingOfferingSlugs.has(service.slug));
-
-  return [...configuredBookingOfferings, ...serviceOfferings].sort(compareBookingOfferings);
+async function getBookableServices(): Promise<TService[]> {
+  const services = await getServices();
+  return services.filter(isPaymentConfiguredService).sort(compareServices);
 }
 
-async function getBookingOfferingBySlug(slug: string): Promise<TBookingOffering | null> {
-  const bookingOfferingQuery = groq`*[_type == "bookingOffering" && slug.current == $slug && isActive == true][0] ${BOOKING_OFFERING_PROJECTION}`;
-  const bookingOffering = await client.fetch<TBookingOffering | null>(
-    bookingOfferingQuery,
-    { slug },
-    sanityFetchOptions(["bookingOffering"]),
-  );
-
-  if (bookingOffering !== null && isPaymentConfiguredBookingOffering(bookingOffering)) {
-    return bookingOffering;
-  }
-
-  const serviceQuery = groq`*[_type == "service" && slug.current == $slug && isAvailable == true][0] ${SERVICE_BOOKING_OFFERING_PROJECTION}`;
-  const service = await client.fetch<TBookingOffering | null>(serviceQuery, { slug }, sanityFetchOptions(["service"]));
-
-  return service !== null && isPaymentConfiguredBookingOffering(service) ? service : null;
+async function getBookableServiceBySlug(slug: string): Promise<TService | null> {
+  const service = await getServiceBySlug(slug);
+  return service !== null && isPaymentConfiguredService(service) ? service : null;
 }
 
-function isPaymentConfiguredBookingOffering(offering: TBookingOffering): boolean {
-  return isPositiveAmount(offering.depositAmount) &&
-    isPositiveAmount(offering.fullPrice) &&
-    offering.depositAmount < offering.fullPrice;
+function isPaymentConfiguredService(service: TService): boolean {
+  return isPositiveAmount(service.depositAmount) &&
+    isPositiveAmount(service.fullPrice) &&
+    service.depositAmount < service.fullPrice;
 }
 
 function isPositiveAmount(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
-function compareBookingOfferings(first: TBookingOffering, second: TBookingOffering): number {
+function compareServices(first: TService, second: TService): number {
   const firstOrder = first.displayOrder ?? Number.MAX_SAFE_INTEGER;
   const secondOrder = second.displayOrder ?? Number.MAX_SAFE_INTEGER;
 
@@ -750,8 +669,8 @@ export const loaders = {
   getAllTrainingPrograms,
   getAllTrainingProgramSlugs,
   getBookingSettings,
-  getActiveBookingOfferings,
-  getBookingOfferingBySlug,
+  getBookableServices,
+  getBookableServiceBySlug,
   getProductsPageCollections,
   getProductFilterAttributes,
   getProducts,
