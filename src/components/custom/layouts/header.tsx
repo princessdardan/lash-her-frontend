@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { ShoppingBag } from "lucide-react";
 import type { THeader } from "@/types";
 import type { IMainMenuItems } from "@/app/main-menu";
@@ -77,18 +78,20 @@ function CartButton() {
 
 function HeaderContent({ data, menuItems }: IHeaderProps) {
   const { isActive } = useHeaderContext();
+  const pathname = usePathname();
   
   if (!data) return null;
 
   const { logoText, ctaButton } = data;
   const primaryCta = ctaButton[0]; // Use first CTA button for mobile
+  const showCartButton = pathname !== "/products";
   
   return (
     <>
       <div className="w-full relative flex items-center justify-center">
         {/* Mobile hamburger - top left */}
         <div className="absolute left-4 md:hidden">
-          <MobileNavigation ctaButton={primaryCta} menuItems={menuItems} />
+          <MobileNavigation ctaButton={primaryCta} menuItems={menuItems} showCartButton={showCartButton} />
         </div>
 
         {/* Desktop navigation - left */}
@@ -107,7 +110,7 @@ function HeaderContent({ data, menuItems }: IHeaderProps) {
           {ctaButton.map((button, index) => (
             <HeaderButton key={index} href={button.href} label={button.label} isPrimary={index === 0} />
           ))}
-          <CartButton />
+          {showCartButton ? <CartButton /> : null}
         </div>
         
         {/* Logo - centered */}

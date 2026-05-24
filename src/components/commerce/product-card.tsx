@@ -10,7 +10,7 @@ import type { TProduct, TProductVariant } from "@/types";
 
 interface ProductCardProps {
   product: TProduct;
-  onAdd: (product: TProduct, variant?: TProductVariant) => void;
+  onAdd?: (product: TProduct, variant?: TProductVariant) => void;
 }
 
 const PRICE_UNAVAILABLE_LABEL = "Price unavailable";
@@ -140,18 +140,26 @@ export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement 
             <span className="font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-muted">Price</span>
             <span className="font-body text-xl font-bold text-lh-shadow">{formatDisplayPrice(price)}</span>
           </div>
-          <Button
-            type="button"
-            onClick={() => onAdd(product, selectedVariant)}
-            disabled={!canAdd}
-            aria-label={canAdd ? `Add to Cart: ${product.title}` : `${product.title} ${availabilityLabel}`}
-            className={cn(
-              "w-full rounded-full px-6 py-3 uppercase tracking-[0.12em]",
-              canAdd ? "bg-lh-primary text-lh-white hover:bg-lh-accent" : "bg-lh-neutral text-lh-muted",
-            )}
-          >
-            {canAdd ? "Add to Cart" : availabilityLabel}
-          </Button>
+          {onAdd ? (
+            <Button
+              type="button"
+              onClick={() => onAdd(product, selectedVariant)}
+              disabled={!canAdd}
+              aria-label={canAdd ? `Add to Cart: ${product.title}` : `${product.title} ${availabilityLabel}`}
+              className={cn(
+                "w-full rounded-full px-6 py-3 uppercase tracking-[0.12em]",
+                canAdd ? "bg-lh-primary text-lh-white hover:bg-lh-accent" : "bg-lh-neutral text-lh-muted",
+              )}
+            >
+              {canAdd ? "Add to Cart" : availabilityLabel}
+            </Button>
+          ) : (
+            <Button asChild className="w-full rounded-full bg-lh-primary px-6 py-3 uppercase tracking-[0.12em] text-lh-white hover:bg-lh-accent">
+              <Link href={productHref} aria-label={`View details for ${product.title}`}>
+                View Details
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
     </article>

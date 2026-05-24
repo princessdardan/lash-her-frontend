@@ -34,9 +34,10 @@ interface MobileNavigationProps {
     label: string;
   };
   menuItems?: TMainMenuItem[];
+  showCartButton?: boolean;
 }
 
-export function MobileNavigation({ ctaButton, menuItems = [] }: MobileNavigationProps) {
+export function MobileNavigation({ ctaButton, menuItems = [], showCartButton = true }: MobileNavigationProps) {
   const pathname = usePathname();
   const { isActive: isHeaderActive } = useHeaderContext();
   const { items, openCart } = useProductCart();
@@ -180,26 +181,28 @@ export function MobileNavigation({ ctaButton, menuItems = [] }: MobileNavigation
           })}
         </nav>
         <SheetFooter className="mt-0 pt-4 pb-4 border-t border-lh-line">
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => {
-              openCart();
-              setOpen(false);
-            }}
-            className={cn(
-              "relative w-full justify-center gap-2 font-sans font-bold text-base px-4 py-6",
-              isHeaderActive ? "text-lh-shadow" : "text-lh-white",
-            )}
-          >
-            <ShoppingBag className="h-4 w-4" aria-hidden="true" />
-            <span>Cart</span>
-            {itemCount > 0 ? (
-              <span className="absolute right-4 inline-flex min-w-5 items-center justify-center rounded-full bg-lh-primary px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
-                {itemCount}
-              </span>
-            ) : null}
-          </Button>
+          {showCartButton ? (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                openCart();
+                setOpen(false);
+              }}
+              className={cn(
+                "relative w-full justify-center gap-2 font-sans font-bold text-base px-4 py-6",
+                isHeaderActive ? "text-lh-shadow" : "text-lh-white",
+              )}
+            >
+              <ShoppingBag className="h-4 w-4" aria-hidden="true" />
+              <span>Cart</span>
+              {itemCount > 0 ? (
+                <span className="absolute right-4 inline-flex min-w-5 items-center justify-center rounded-full bg-lh-primary px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                  {itemCount}
+                </span>
+              ) : null}
+            </Button>
+          ) : null}
           <Link href={ctaButton.href} className="w-full" onClick={() => setOpen(false)}>
             <Button variant="primary" className="w-full font-sans font-bold text-base px-4 py-6">
               {ctaButton.label}

@@ -1,23 +1,25 @@
 import { type ReactElement } from "react";
 import { SanityImage } from "@/components/ui/sanity-image";
-import { CartPanel } from "./cart-panel";
-import { ProductFilters, type ProductCatalogQueryState } from "./product-filters";
+import { ProductCard } from "./product-card";
 import { ProductSort } from "./product-sort";
-import type { TProductsPage, TProduct, TProductCollection, TProductFilterAttribute } from "@/types";
+import type { TProductsPage, TProduct } from "@/types";
+
+export interface ProductCatalogQueryState {
+  collection?: string;
+  attributes: string[];
+  sort: string;
+  page?: string;
+}
 
 interface ProductCatalogShellProps {
   pageData: TProductsPage | null;
   products: TProduct[];
-  collections: TProductCollection[];
-  filterAttributes: TProductFilterAttribute[];
   query: ProductCatalogQueryState;
 }
 
 export function ProductCatalogShell({
   pageData,
   products,
-  collections,
-  filterAttributes,
   query,
 }: ProductCatalogShellProps): ReactElement {
   const title = pageData?.title || "Catalog";
@@ -60,34 +62,34 @@ export function ProductCatalogShell({
 
       <section className="section-shell-soft" aria-labelledby="products-heading">
         <div className="content-container">
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-[18rem_minmax(0,1fr)] lg:gap-10">
-            <ProductFilters collections={collections} filterAttributes={filterAttributes} query={query} />
-
-            <div className="min-w-0">
-              <div className="mb-8 flex flex-col gap-5 border-b border-lh-line pb-6 lg:flex-row lg:items-end lg:justify-between">
-                <div>
-                  <p className="eyebrow-label mb-2">Products</p>
-                  <h2 id="products-heading" className="section-heading text-4xl md:text-5xl">
-                    The Product Edit
-                  </h2>
-                  <p className="mt-3 font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-muted" aria-live="polite">
-                    Showing {products.length} Products
-                  </p>
-                </div>
-                <ProductSort collection={query.collection} attributes={query.attributes} sort={query.sort || "default"} />
+          <div className="min-w-0">
+            <div className="mb-8 flex flex-col gap-5 border-b border-lh-line pb-6 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <p className="eyebrow-label mb-2">Products</p>
+                <h2 id="products-heading" className="section-heading text-4xl md:text-5xl">
+                  The Product Edit
+                </h2>
+                <p className="mt-3 font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-muted" aria-live="polite">
+                  Showing {products.length} Products
+                </p>
               </div>
-
-              {products.length === 0 ? (
-                <div className="soft-panel bg-lh-white py-16 text-center">
-                  <h3 className="section-subheading mb-4 text-3xl">{emptyStateTitle}</h3>
-                  <p className="mx-auto max-w-md font-body text-sm font-bold leading-7 text-lh-muted md:text-base">
-                    {emptyStateDescription}
-                  </p>
-                </div>
-              ) : (
-                <CartPanel products={products} />
-              )}
+              <ProductSort collection={query.collection} attributes={query.attributes} sort={query.sort || "default"} />
             </div>
+
+            {products.length === 0 ? (
+              <div className="soft-panel bg-lh-white py-16 text-center">
+                <h3 className="section-subheading mb-4 text-3xl">{emptyStateTitle}</h3>
+                <p className="mx-auto max-w-md font-body text-sm font-bold leading-7 text-lh-muted md:text-base">
+                  {emptyStateDescription}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+                {products.map((product) => (
+                  <ProductCard key={product._id} product={product} />
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </section>
