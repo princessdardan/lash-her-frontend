@@ -32,6 +32,14 @@ test("product order confirmation email includes escaped order details", () => {
         },
       ],
       orderId: "lh-order-<123>",
+      shippingAddress: {
+        line1: "646 <Oakwood> Avenue",
+        line2: "Suite & Studio",
+        city: "Toronto",
+        province: "Ontario",
+        postalCode: "M6E 2Y4",
+        country: "Canada",
+      },
       totalAmount: 1130,
     });
 
@@ -41,11 +49,15 @@ test("product order confirmation email includes escaped order details", () => {
     assert.equal(html.includes("LASH-&amp;-SIGNATURE"), false);
     assert.equal(html.includes("CARE-KIT"), false);
     assert.match(html, /Order lh-order-&lt;123&gt;/);
+    assert.match(html, /Shipping to/);
+    assert.match(html, /646 &lt;Oakwood&gt; Avenue/);
+    assert.match(html, /Suite &amp; Studio/);
     assert.equal(html.includes("$1,130.00"), true);
     assert.match(html, /Aftercare Kit/);
     assert.equal(html.includes(">2</td>"), true);
     assert.equal(html.includes("Client <Name> & Co"), false);
     assert.equal(html.includes("Signature <Lash> Set"), false);
+    assert.equal(html.includes("646 <Oakwood> Avenue"), false);
   `);
 });
 

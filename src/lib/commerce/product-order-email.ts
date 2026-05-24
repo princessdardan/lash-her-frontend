@@ -2,7 +2,10 @@ import "server-only";
 
 import { Resend } from "resend";
 
-import type { CheckoutOrderLineItemSnapshot } from "@/lib/private-db/schema";
+import type {
+  CheckoutOrderLineItemSnapshot,
+  CheckoutOrderShippingAddressSnapshot,
+} from "@/lib/private-db/schema";
 
 export interface SendProductOrderConfirmationEmailInput {
   currency: string;
@@ -10,6 +13,7 @@ export interface SendProductOrderConfirmationEmailInput {
   customerName: string;
   lineItems: CheckoutOrderLineItemSnapshot[];
   orderId: string;
+  shippingAddress: CheckoutOrderShippingAddressSnapshot | null;
   totalAmount: number;
 }
 
@@ -36,6 +40,7 @@ export function buildProductOrderConfirmationHtml(
 ): string {
   const formattedTotal = formatCurrency(input.totalAmount, input.currency);
   const itemRows = input.lineItems.map((lineItem) => getLineItemRow(lineItem, input.currency)).join("");
+  const shippingAddress = input.shippingAddress ? getShippingAddressHtml(input.shippingAddress) : "";
 
   return `
 <!DOCTYPE html>
@@ -60,6 +65,7 @@ export function buildProductOrderConfirmationHtml(
             <td style="padding:34px 32px;">
               <p style="margin:0 0 18px 0;font-size:16px;line-height:1.7;">Hi ${escapeHtml(input.customerName)},</p>
               <p style="margin:0 0 22px 0;font-size:15px;line-height:1.7;">Thank you for your Lash Her order. Your payment has been confirmed and your order is now being prepared for fulfillment.</p>
+              ${shippingAddress}
               <table role="presentation" style="width:100%;border-collapse:collapse;margin:28px 0;border-top:1px solid #e8dcc8;border-bottom:1px solid #e8dcc8;">
                 <thead>
                   <tr>
@@ -85,6 +91,22 @@ export function buildProductOrderConfirmationHtml(
   </table>
 </body>
 </html>
+  `.trim();
+}
+
+function getShippingAddressHtml(address: CheckoutOrderShippingAddressSnapshot): string {
+  const lines = [
+    address.line1,
+    address.line2,
+    `${address.city}, ${address.province} ${address.postalCode}`,
+    address.country,
+  ].filter((line): line is string => Boolean(line));
+
+  return `
+<div style="margin:24px 0;padding:18px;border:1px solid #e8dcc8;background-color:#fffaf1;">
+  <p style="margin:0 0 10px 0;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:#6f5d55;">Shipping to</p>
+  <p style="margin:0;font-size:14px;line-height:1.7;">${lines.map(escapeHtml).join("<br>")}</p>
+</div>
   `.trim();
 }
 
