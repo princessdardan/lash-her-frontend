@@ -363,7 +363,7 @@ test.describe("Helcim checkout", () => {
     await expect(page.locator("li", { hasText: productTitle })).toContainText(/qty:\s*1/i);
     await expect(page.getByRole("button", { name: "Checkout" })).toBeEnabled();
     expect(apiPostPaths).toEqual(["/api/checkout"]);
-    expect(await page.evaluate(() => window.__helcimIframeRemoved)).toBe(true);
+    expect(await page.evaluate(() => Reflect.get(window, "__helcimIframeRemoved") === true)).toBe(true);
     expect(forbiddenPaymentHosts).toEqual([]);
   });
 });
