@@ -1,13 +1,13 @@
 # PROJECT KNOWLEDGE BASE
 
 **Generated:** 2026-05-04
-**Updated:** 2026-05-18
+**Updated:** 2026-05-24
 **Commit:** 0a8aaf5
 **Branch:** staging
 
 ## OVERVIEW
 
-Lash Her by Nataliea is a Next.js 16 beauty/lash artistry site with an embedded Sanity Studio and Sanity-backed public/editorial content. Private form/contact, marketing, consent, checkout, payment, and training enrollment data lives in the private PostgreSQL database. The active app now lives at the repository root so Vercel can detect the Next.js app without a nested package boundary. Root-level docs, planning, canonical git metadata, and local agent state remain at root.
+Lash Her by Nataliea is a Next.js 16 beauty/lash artistry site with an embedded Sanity Studio and Sanity-backed public/editorial content. Private form/contact, marketing, consent, checkout, payment, and training enrollment data lives in the private PostgreSQL database. The active app lives at the repository root so Vercel can detect the Next.js app without a nested package boundary.
 
 ## STRUCTURE
 
@@ -24,8 +24,7 @@ lash-her/
 ├── public/                          # static assets
 ├── docs/lash-her-brand-kit.html     # design source of truth
 ├── docs/superpowers/                # historical specs/plans
-├── .planning/                       # historical phase plans/research
-└── CLAUDE.md                        # repo guidance loaded by agents
+└── .planning/                       # historical phase plans/research
 ```
 
 ## CANONICAL GIT REPOSITORY
@@ -119,6 +118,38 @@ npm run db:generate
 npm run db:migrate
 npx playwright test tests/homepage.spec.ts --project=chromium
 ```
+
+## PAYMENT ARCHITECTURE
+
+- **Dual payment providers**: Helcim (products, training enrollments, appointment deposits) and Square (service bookings only). Square is gated by `SERVICE_BOOKING_SQUARE_ENABLED=true`.
+- **Payment mock system**: Sophisticated mock framework for local testing. Set `PAYMENT_GATEWAY_MODE=mock` and optionally `PAYMENT_MOCK_DEFAULT_SCENARIO=success`. Request controls via `x-lash-payment-mock-scenario` header or `mockPaymentScenario` query parameter. Mock mode is rejected in production (`NODE_ENV=production` or `VERCEL_ENV=production`).
+- **Helcim webhook**: `/api/webhooks/card-transactions` handles Helcim payment confirmations for product orders and training enrollments.
+- **Square webhook**: `/api/webhooks/square` handles Square payment confirmations for service bookings.
+- **Order lifecycle**: `src/lib/commerce/order-store.ts` processes webhook events and manages order state transitions.
+
+## BOOKING SYSTEM
+
+- **Hold state machine**: 13 states from `held` → `payment_pending` → `paid_pending_booking` → `booked`. See `src/lib/booking/holds.ts` for full state definitions and transitions.
+- **Hold duration**: 10 minutes (`HOLD_DURATION_MINUTES = 10`). Payment success grace period extends this for `payment_pending` and `paid_pending_booking` states.
+- **Conflict resolution**: PostgreSQL advisory locks (`pg_advisory_xact_lock`) per offering ID prevent double-booking during hold creation.
+- **Google Calendar**: OAuth-connected calendar for event insertion. Setup via `/api/booking/oauth/start?secret=<BOOKING_ADMIN_SETUP_SECRET>`. Calendar ID configured in Sanity `bookingSettings` singleton.
+- **Redis locks**: Upstash Redis distributed locks prevent concurrent calendar finalization.
+- **Direct booking disabled**: The `/api/booking/create` endpoint returns 400 with "Appointments require secure payment before Calendar confirmation." All bookings require payment first.
+
+## TRAINING ENROLLMENT FLOW
+
+1. Program page → checkout page (`/training-programs/[slug]/checkout`)
+2. Customer submits checkout form → Helcim hosted checkout
+3. Payment webhook → `training-enrollment-store.ts` creates enrollment record
+4. Confirmation page (`/training-programs/[slug]/confirmation`) with order ID
+5. Schedule page (`/training-programs/[slug]/schedule`) with 14-day scheduling token (`TRAINING_SCHEDULING_LINK_TTL_DAYS = 14`)
+6. Training confirmation email sent via Resend
+
+## ENVIRONMENT VALIDATION
+
+- `npm run prebuild` runs `scripts/validate-sanity-env.mjs` which checks required env vars and dataset alignment per `VERCEL_ENV`.
+- Production requires `NEXT_PUBLIC_SANITY_DATASET=production`.
+- Preview/staging requires `NEXT_PUBLIC_SANITY_DATASET=staging-2026-05-10`.
 
 ## NOTES
 
