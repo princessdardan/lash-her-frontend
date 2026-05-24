@@ -165,17 +165,17 @@ export function GeneralInquiryForm({data}: { data: TGeneralInquiryLabels }) {
         <Suspense fallback={null}>
           <ScrollToForm formId="general-inquiry" />
         </Suspense>
-        <div className="soft-panel relative flex flex-col p-5 xl:p-8">
-          <div className="mb-5 xl:mb-10">
-            <h2 className="section-heading text-lh-primary mb-2 md:text-3xl xl:text-6xl">{data.heading}</h2>
-            <p className="body-lead text-lh-shadow max-w-xl md:text-sm md:leading-7 xl:text-lg xl:leading-8">{data.subHeading}</p>
+        <div className="soft-panel relative flex flex-col p-4 xl:p-6">
+          <div className="mb-4 xl:mb-6">
+            <h2 className="section-heading text-lh-primary mb-1.5 md:text-3xl xl:text-5xl">{data.heading}</h2>
+            <p className="body-lead text-lh-shadow max-w-xl md:text-sm md:leading-6 xl:text-base xl:leading-7">{data.subHeading}</p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-3 xl:space-y-6">
-            <FieldGroup className="grid grid-cols-1 md:grid-cols-2 gap-3 xl:gap-6">
+          <form onSubmit={handleSubmit} className="space-y-3 xl:space-y-4">
+            <FieldGroup className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:gap-4">
               {/* Name */}
-              <Field>
-                <FieldLabel htmlFor="name">{data.name}*</FieldLabel>
+              <Field className="gap-1.5">
+                <FieldLabel htmlFor="name" className="text-sm">{data.name}*</FieldLabel>
                 <Input
                   id="name"
                   name="name"
@@ -187,16 +187,16 @@ export function GeneralInquiryForm({data}: { data: TGeneralInquiryLabels }) {
                   aria-invalid={touchedFields.has("name") && !!fieldErrors.name}
                   aria-describedby={fieldErrors.name ? "name-error" : undefined}
                   placeholder="Enter your full name"
-                  className={`${styles.input} md:h-10 xl:h-11`}
+                  className={`${styles.input} h-10 xl:h-10`}
                 />
                 {touchedFields.has("name") && fieldErrors.name && (
-                  <FieldError id="name-error">{fieldErrors.name}</FieldError>
+                  <FieldError id="name-error" className="text-xs">{fieldErrors.name}</FieldError>
                 )}
               </Field>
 
               {/* Email */}
-              <Field>
-                <FieldLabel htmlFor="email">{data.email}*</FieldLabel>
+              <Field className="gap-1.5">
+                <FieldLabel htmlFor="email" className="text-sm">{data.email}*</FieldLabel>
                 <Input
                   id="email"
                   name="email"
@@ -208,16 +208,16 @@ export function GeneralInquiryForm({data}: { data: TGeneralInquiryLabels }) {
                   aria-invalid={touchedFields.has("email") && !!fieldErrors.email}
                   aria-describedby={fieldErrors.email ? "email-error" : undefined}
                   placeholder="your.email@example.com"
-                  className={`${styles.input} md:h-10 xl:h-11`}
+                  className={`${styles.input} h-10 xl:h-10`}
                 />
                 {touchedFields.has("email") && fieldErrors.email && (
-                  <FieldError id="email-error">{fieldErrors.email}</FieldError>
+                  <FieldError id="email-error" className="text-xs">{fieldErrors.email}</FieldError>
                 )}
               </Field>
 
               {/* Phone */}
-              <Field>
-                <FieldLabel htmlFor="phone">{data.phone}</FieldLabel>
+              <Field className="gap-1.5">
+                <FieldLabel htmlFor="phone" className="text-sm">{data.phone}</FieldLabel>
                 <Input
                   id="phone"
                   name="phone"
@@ -225,13 +225,13 @@ export function GeneralInquiryForm({data}: { data: TGeneralInquiryLabels }) {
                   value={formData.phone}
                   onChange={handleChange}
                   placeholder="(123) 456-7890"
-                  className={`${styles.input} md:h-10 xl:h-11`}
+                  className={`${styles.input} h-10 xl:h-10`}
                 />
               </Field>
 
               {/* Instagram */}
-              <Field>
-                <FieldLabel htmlFor="instagram">{data.instagram}</FieldLabel>
+              <Field className="gap-1.5">
+                <FieldLabel htmlFor="instagram" className="text-sm">{data.instagram}</FieldLabel>
                 <Input
                   id="instagram"
                   name="instagram"
@@ -239,14 +239,14 @@ export function GeneralInquiryForm({data}: { data: TGeneralInquiryLabels }) {
                   value={formData.instagram}
                   onChange={handleChange}
                   placeholder="@your_username"
-                  className={`${styles.input} md:h-10 xl:h-11`}
+                  className={`${styles.input} h-10 xl:h-10`}
                 />
               </Field>
             </FieldGroup>
 
             {/* Message - Full Width */}
-            <Field>
-              <FieldLabel htmlFor="message">{data.message}*</FieldLabel>
+            <Field className="gap-1.5">
+              <FieldLabel htmlFor="message" className="text-sm">{data.message}*</FieldLabel>
               <Textarea
                 id="message"
                 name="message"
@@ -258,14 +258,14 @@ export function GeneralInquiryForm({data}: { data: TGeneralInquiryLabels }) {
                 aria-invalid={touchedFields.has("message") && !!fieldErrors.message}
                 aria-describedby={fieldErrors.message ? "message-error" : undefined}
                 placeholder="What are you inquiring about?"
-                className="form-textarea md:min-h-24 xl:min-h-28"
+                className="form-textarea min-h-20 md:min-h-20 xl:min-h-24"
               />
               {touchedFields.has("message") && fieldErrors.message && (
-                <FieldError id="message-error">{fieldErrors.message}</FieldError>
+                <FieldError id="message-error" className="text-xs">{fieldErrors.message}</FieldError>
               )}
             </Field>
 
-            <div className="flex items-start gap-3 rounded-2xl border border-lh-line bg-lh-neutral-2/40 p-3 xl:p-4">
+            <div className="flex items-start gap-2.5 rounded-lg border border-lh-line bg-lh-neutral-2/40 p-2.5 xl:p-3">
               <input
                 id="general-marketing-consent"
                 name="marketingConsent"
@@ -283,7 +283,7 @@ export function GeneralInquiryForm({data}: { data: TGeneralInquiryLabels }) {
             <div aria-live="polite" role="status">
               {submitStatus.type && (
                 <div
-                  className={`p-4 rounded-md border ${
+                  className={`rounded-md border p-3 text-sm ${
                     submitStatus.type === "success"
                       ? "bg-lh-neutral-2 text-lh-shadow border-lh-line"
                       : "bg-lh-white text-lh-accent border-lh-accent-soft"
@@ -295,7 +295,7 @@ export function GeneralInquiryForm({data}: { data: TGeneralInquiryLabels }) {
             </div>
 
             {/* Submit Button */}
-            <Button type="submit" disabled={isSubmitting} className="w-full rounded-full bg-lh-primary px-6 py-2.5 font-body font-bold text-lh-white transition-colors hover:bg-lh-accent xl:py-3">
+            <Button type="submit" disabled={isSubmitting} className="w-full rounded-full bg-lh-primary px-6 py-2.5 font-body font-bold text-lh-white transition-colors hover:bg-lh-accent">
               {isSubmitting ? "Submitting..." : "Send Inquiry"}
             </Button>
           </form>
@@ -323,9 +323,9 @@ export function GeneralInquiryLayout({data}:{data: IGeneralInquiryLayoutProps}) 
             <p className="section-subheading">{data.subTitle}</p>
             <p className="section-description">{data.description}</p>
             </div>
-            <div className="grid grid-cols-1 gap-8 md:grid-cols-[minmax(15rem,0.82fr)_minmax(0,1.35fr)] md:items-start md:gap-5 xl:grid-cols-[5fr_8fr] xl:gap-24">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(15rem,0.82fr)_minmax(0,1.35fr)] md:items-start md:gap-5 xl:grid-cols-[5fr_8fr] xl:gap-16">
                 {/* Left Column - Schedule and Contact Info */}
-                <div className="grid gap-6 md:gap-5 xl:gap-6">
+                <div className="grid gap-4 md:gap-4 xl:gap-5">
                     {data.contactInfoData && <ContactInfo data={data.contactInfoData} />}
                     {data.scheduleData && <Schedule data={data.scheduleData} />}
                 </div>
