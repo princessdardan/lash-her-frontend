@@ -393,19 +393,20 @@ async function getTrainingProgramsPageData(): Promise<TTrainingProgramsPage | nu
       introCallAppointmentScheduleUrl,
       "introCallAppointmentScheduleEmbedMode": coalesce(introCallAppointmentScheduleEmbedMode, "link"),
       introCallSchedulingInstructions,
-      trainingContact{
-        _type,
-        enabled,
-        heading,
-        subHeading,
-        name,
-        email,
-        phone,
-        location,
-        instagram,
-        submitLabel,
-        successMessage
-      },
+    trainingContact{
+      _type,
+      enabled,
+      heading,
+      subHeading,
+      name,
+      email,
+      phone,
+      location,
+      instagram,
+      submitLabel,
+      successMessage,
+      privacyPolicyText[]{ ..., _key }
+    },
       seo{ title, description, image{ asset, hotspot, crop, alt } },
       blocks[]{
         _type,
@@ -480,7 +481,8 @@ async function getAllTrainingPrograms(): Promise<TTrainingProgram[]> {
       location,
       instagram,
       submitLabel,
-      successMessage
+      successMessage,
+      privacyPolicyText[]{ ..., _key }
     },
     seo{ title, description, image{ asset, hotspot, crop, alt } },
     blocks[]{

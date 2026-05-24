@@ -57,6 +57,7 @@ export interface RecordTrainingContactInput extends MarketingContactIdentity {
   location?: string;
   marketingConsent: boolean;
   phone: string;
+  privacyPolicyConsent?: boolean;
   programSlug: string;
   programTitle: string;
   sourceDocument?: SourceDocumentReference;
@@ -172,6 +173,7 @@ export function createMarketingContactStore(
           instagram: cleanOptionalText(input.instagram),
           location: cleanOptionalText(input.location),
           phone: input.phone,
+          privacyPolicyConsent: input.privacyPolicyConsent ?? false,
           programSlug: input.programSlug,
           programTitle: input.programTitle,
           sourcePath: cleanOptionalText(input.sourcePath),

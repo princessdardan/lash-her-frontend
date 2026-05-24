@@ -300,6 +300,7 @@ export interface TTrainingContactSection {
   instagram?: string;
   submitLabel?: string;
   successMessage?: string;
+  privacyPolicyText?: TPortableTextBlock[];
 }
 
 export interface TTrainingProgram {

@@ -37,6 +37,7 @@ const TRAINING_CONTACT_VALIDATION: FieldValidationConfig = {
     { type: 'required', message: 'Phone number is required' },
     { type: 'phone', message: 'Please enter a valid phone number' },
   ],
+  privacyPolicyConsent: [{ type: 'required', message: 'You must agree to the privacy policy to continue' }],
 }
 
 const CONTACT_POPUP_VALIDATION: FieldValidationConfig = {
@@ -156,6 +157,7 @@ export async function submitTrainingContact(
       phone: data.phone,
       location: data.location ?? '',
       instagram: data.instagram ?? '',
+        privacyPolicyConsent: data.privacyPolicyConsent ?? false,
     },
     TRAINING_CONTACT_VALIDATION
   )
@@ -175,6 +177,7 @@ export async function submitTrainingContact(
       programTitle: data.programTitle,
       marketingConsent: data.marketingConsent === true,
       consentText: data.consentText ?? TRAINING_CONTACT_CONSENT_TEXT,
+      privacyPolicyConsent: data.privacyPolicyConsent === true,
       sourcePath: data.sourcePath || undefined,
     })
   } catch (err) {

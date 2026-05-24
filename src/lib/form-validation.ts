@@ -15,17 +15,22 @@ export type ValidationErrors = Record<string, string>;
  * Returns an error message string if invalid, or empty string if valid.
  */
 export function validateField(
-  value: string,
+  value: string | boolean,
   rules: ValidationRule[]
 ): string {
   for (const rule of rules) {
     switch (rule.type) {
       case "required":
-        if (!value || value.trim() === "") {
+        if (typeof value === "boolean") {
+          if (!value) {
+            return rule.message;
+          }
+        } else if (!value || value.trim() === "") {
           return rule.message;
         }
         break;
       case "email": {
+        if (typeof value !== "string") break;
         const emailRegex = /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/;
         if (value && !emailRegex.test(value)) {
           return rule.message;
@@ -33,6 +38,7 @@ export function validateField(
         break;
       }
       case "phone": {
+        if (typeof value !== "string") break;
         // Allow common formats: (123) 456-7890, 123-456-7890, +1 123 456 7890, etc.
         const phoneRegex = /^[+]?[(]?[0-9]{1,4}[)]?[-\s.]?[(]?[0-9]{1,4}[)]?[-\s.]?[0-9]{1,4}[-\s.]?[0-9]{1,9}$/;
         if (value && !phoneRegex.test(value.replace(/\s/g, ""))) {
@@ -41,11 +47,13 @@ export function validateField(
         break;
       }
       case "minLength":
+        if (typeof value !== "string") break;
         if (rule.value !== undefined && value.length < rule.value) {
           return rule.message;
         }
         break;
       case "maxLength":
+        if (typeof value !== "string") break;
         if (rule.value !== undefined && value.length > rule.value) {
           return rule.message;
         }
@@ -66,7 +74,7 @@ export function validateField(
  * Fields with no errors have an empty string in the map.
  */
 export function validateForm(
-  data: Record<string, string>,
+  data: Record<string, string | boolean>,
   config: FieldValidationConfig
 ): { errors: ValidationErrors; isValid: boolean } {
   const errors: ValidationErrors = {};

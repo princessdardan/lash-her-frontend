@@ -22,6 +22,7 @@ export interface TrainingContactData {
   programTitle: string;
   marketingConsent?: boolean;
   consentText?: string;
+  privacyPolicyConsent?: boolean;
   sourcePath?: string;
 }
 

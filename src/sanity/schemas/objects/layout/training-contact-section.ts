@@ -1,5 +1,5 @@
 import { EnvelopeIcon } from "@sanity/icons";
-import { defineField, defineType } from "sanity";
+import { defineField, defineType, defineArrayMember } from "sanity";
 
 export const trainingContactSection = defineType({
   name: "trainingContactSection",
@@ -69,6 +69,51 @@ export const trainingContactSection = defineType({
       title: "Success message",
       type: "string",
       initialValue: "Thank you. Your training inquiry has been received.",
+    }),
+    defineField({
+      name: "privacyPolicyText",
+      title: "Privacy Policy Text",
+      type: "array",
+      of: [
+        defineArrayMember({
+          type: "block",
+          styles: [{ title: "Normal", value: "normal" }],
+          lists: [],
+          marks: {
+            decorators: [
+              { title: "Strong", value: "strong" },
+              { title: "Emphasis", value: "em" },
+            ],
+            annotations: [
+              {
+                name: "link",
+                type: "object",
+                title: "Link",
+                fields: [
+                  defineField({
+                    name: "href",
+                    type: "url",
+                    title: "URL",
+                    validation: (Rule) =>
+                      Rule.required().uri({
+                        allowRelative: true,
+                        scheme: ["https", "http", "mailto", "tel"],
+                      }),
+                  }),
+                  defineField({
+                    name: "blank",
+                    type: "boolean",
+                    title: "Open in new tab",
+                    initialValue: true,
+                  }),
+                ],
+              },
+            ],
+          },
+        }),
+      ],
+      description:
+        "Text displayed before the privacy policy checkbox. Supports links (e.g. to /privacy-policy).",
     }),
   ],
   preview: {

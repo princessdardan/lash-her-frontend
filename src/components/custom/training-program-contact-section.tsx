@@ -7,6 +7,7 @@ import { submitTrainingContact, type FormActionResult } from "@/app/actions/form
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { PortableTextRenderer } from "@/components/ui/portable-text-renderer";
 import { validateField, validateForm, type FieldValidationConfig, type ValidationErrors } from "@/lib/form-validation";
 import type { TTrainingContactSection } from "@/types";
 
@@ -23,6 +24,7 @@ type TrainingContactFormData = {
   phone: string;
   location: string;
   instagram: string;
+  privacyPolicyConsent: boolean;
 };
 
 const TRAINING_CONTACT_CONSENT_TEXT = "I agree to receive training updates, program news, and offers from Lash Her by Nataliea.";
@@ -37,6 +39,7 @@ const TRAINING_CONTACT_VALIDATION: FieldValidationConfig = {
     { type: "required", message: "Phone number is required" },
     { type: "phone", message: "Please enter a valid phone number" },
   ],
+  privacyPolicyConsent: [{ type: "required", message: "You must agree to the privacy policy to continue" }],
 };
 
 const DEFAULT_LABELS = {
@@ -65,6 +68,7 @@ export function TrainingProgramContactSection({
     phone: "",
     location: "",
     instagram: "",
+    privacyPolicyConsent: false,
   });
   const [fieldErrors, setFieldErrors] = useState<ValidationErrors>({});
   const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set());
@@ -77,13 +81,14 @@ export function TrainingProgramContactSection({
   if (data?.enabled === false) return null;
 
   const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = event.target;
-    setFormData((current) => ({ ...current, [name]: value }));
+    const { name, value, type, checked } = event.target;
+    const fieldValue = type === "checkbox" ? checked : value;
+    setFormData((current) => ({ ...current, [name]: fieldValue }));
 
     if (touchedFields.has(name) && TRAINING_CONTACT_VALIDATION[name]) {
       setFieldErrors((current) => ({
         ...current,
-        [name]: validateField(value, TRAINING_CONTACT_VALIDATION[name]),
+        [name]: validateField(String(fieldValue), TRAINING_CONTACT_VALIDATION[name]),
       }));
     }
   };
@@ -109,6 +114,7 @@ export function TrainingProgramContactSection({
         phone: formData.phone,
         location: formData.location,
         instagram: formData.instagram,
+        privacyPolicyConsent: formData.privacyPolicyConsent,
       },
       TRAINING_CONTACT_VALIDATION,
     );
@@ -129,12 +135,13 @@ export function TrainingProgramContactSection({
       programTitle,
       marketingConsent: false,
       consentText: TRAINING_CONTACT_CONSENT_TEXT,
+      privacyPolicyConsent: formData.privacyPolicyConsent,
       sourcePath: pathname,
     });
 
     if (result.success) {
       setSubmitStatus({ type: "success", message: labels.successMessage });
-      setFormData({ name: "", email: "", phone: "", location: "", instagram: "" });
+      setFormData({ name: "", email: "", phone: "", location: "", instagram: "", privacyPolicyConsent: false });
       setFieldErrors({});
       setTouchedFields(new Set());
     } else {
@@ -256,6 +263,33 @@ export function TrainingProgramContactSection({
                   />
                 </Field>
               </FieldGroup>
+
+              {labels.privacyPolicyText && labels.privacyPolicyText.length > 0 && (
+                <div className="mt-6">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      name="privacyPolicyConsent"
+                      checked={formData.privacyPolicyConsent}
+                      onChange={handleChange}
+                      onBlur={handleBlur}
+                      className="mt-1 h-4 w-4 rounded border-lh-line text-lh-primary focus:ring-lh-primary"
+                      aria-invalid={touchedFields.has("privacyPolicyConsent") && !!fieldErrors.privacyPolicyConsent}
+                      aria-describedby={
+                        fieldErrors.privacyPolicyConsent ? "training-contact-privacy-error" : undefined
+                      }
+                    />
+                    <div className="text-sm text-lh-shadow/80">
+                      <PortableTextRenderer content={labels.privacyPolicyText} />
+                    </div>
+                  </label>
+                  {touchedFields.has("privacyPolicyConsent") && fieldErrors.privacyPolicyConsent && (
+                    <FieldError id="training-contact-privacy-error" className="mt-2">
+                      {fieldErrors.privacyPolicyConsent}
+                    </FieldError>
+                  )}
+                </div>
+              )}
 
               <div aria-live="polite" role="status">
                 {submitStatus.type && (
