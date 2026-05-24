@@ -3,6 +3,7 @@ import { Header } from "@/components/custom/layouts/header";
 import { Footer } from "@/components/custom/layouts/footer";
 import { MainWrapper } from "@/components/custom/layouts/main-wrapper";
 import { ContactPopup } from "@/components/custom/contact-popup/contact-popup";
+import { ProductCartProvider } from "@/components/commerce/product-cart-provider";
 
 const jsonLd = {
   "@context": "https://schema.org",
@@ -61,12 +62,14 @@ export default async function SiteLayout({
       >
         Skip to main content
       </a>
-      <Header data={globalData?.header} menuItems={mainMenuData?.items} />
-      <MainWrapper>
-        {children}
-      </MainWrapper>
-      <Footer data={globalData?.footer} />
-      <ContactPopup settings={globalData?.contactPopup} />
+      <ProductCartProvider>
+        <Header data={globalData?.header} menuItems={mainMenuData?.items} />
+        <MainWrapper>
+          {children}
+        </MainWrapper>
+        <Footer data={globalData?.footer} />
+        <ContactPopup settings={globalData?.contactPopup} />
+      </ProductCartProvider>
     </>
   );
 }

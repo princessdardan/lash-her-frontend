@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ShoppingBag } from "lucide-react";
 import type { THeader } from "@/types";
 import type { IMainMenuItems } from "@/app/main-menu";
 
@@ -11,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { HeaderWrapper, useHeaderContext } from "@/components/custom/layouts/header-wrapper";
 import { NavigationMenu, NavigationMenuList } from "@/components/ui/navigation-menu";
 import { cn } from "@/lib/utils";
+import { useProductCart } from "@/components/commerce/product-cart-provider";
 
 interface IHeaderProps {
   data?: THeader | null;
@@ -42,6 +44,34 @@ function HeaderButton({ href, label, isPrimary }: { href: string; label: string;
         {label}
       </Button>
     </Link>
+  );
+}
+
+function CartButton() {
+  const { isActive } = useHeaderContext();
+  const { items, openCart } = useProductCart();
+  const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
+
+  return (
+    <button
+      type="button"
+      onClick={openCart}
+      className={cn(
+        "relative inline-flex items-center gap-2 rounded-md font-sans font-bold text-sm px-4 py-2 transition-all duration-300",
+        isActive
+          ? "bg-lh-neutral/50 border border-lh-line text-lh-shadow hover:bg-lh-neutral hover:border-lh-light hover:text-lh-primary shadow-sm"
+          : "border border-transparent text-lh-white hover:text-lh-light hover:bg-white/10",
+      )}
+      aria-label={itemCount > 0 ? `Open cart with ${itemCount} items` : "Open cart"}
+    >
+      <ShoppingBag className="h-4 w-4" aria-hidden="true" />
+      <span>Cart</span>
+      {itemCount > 0 ? (
+        <span className="absolute -right-1 -top-1 inline-flex min-w-5 items-center justify-center rounded-full bg-lh-primary px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+          {itemCount}
+        </span>
+      ) : null}
+    </button>
   );
 }
 
@@ -77,6 +107,7 @@ function HeaderContent({ data, menuItems }: IHeaderProps) {
           {ctaButton.map((button, index) => (
             <HeaderButton key={index} href={button.href} label={button.label} isPrimary={index === 0} />
           ))}
+          <CartButton />
         </div>
         
         {/* Logo - centered */}

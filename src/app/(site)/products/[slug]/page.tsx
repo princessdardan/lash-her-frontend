@@ -4,7 +4,7 @@ import Link from "next/link";
 import { loaders } from "@/data/loaders";
 import { SanityImage } from "@/components/ui/sanity-image";
 import { ProductDetailSections } from "@/components/commerce/product-detail-sections";
-import { ProductVariantSelector } from "@/components/commerce/product-variant-selector";
+import { ProductDetailPurchaseControls } from "@/components/commerce/product-detail-purchase-controls";
 import { formatCad } from "@/lib/commerce/money";
 import type { TProduct } from "@/types";
 
@@ -78,7 +78,10 @@ function getAvailabilityLabel(product: TProduct): string {
 
 export default async function ProductDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const product = await loaders.getSellableProductBySlug(slug);
+  const [product, products] = await Promise.all([
+    loaders.getSellableProductBySlug(slug),
+    loaders.getSellableProducts(),
+  ]);
 
   if (!product) notFound();
 
@@ -189,8 +192,6 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
                   </div>
                 )}
 
-                <ProductVariantSelector product={product} readOnly className="mt-8" />
-
                 {product.fulfillmentNote ? (
                   <div className="mt-8 border-l-2 border-lh-light bg-lh-light-soft/60 px-5 py-4">
                     <p className="font-body text-sm font-bold leading-7 text-lh-shadow/78">
@@ -200,20 +201,18 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
                   </div>
                 ) : null}
 
-                <div className="mt-8 border-t border-lh-line pt-6">
-                  {!product.isAvailable ? (
+                {product.isAvailable ? (
+                  <ProductDetailPurchaseControls product={product} products={products} />
+                ) : (
+                  <div className="mt-8 border-t border-lh-line pt-6">
                     <div className="rounded-full border border-lh-accent px-6 py-4 text-center font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-accent">
                       {availabilityLabel}
                     </div>
-                  ) : (
-                    <Link href="/products" className="primary-cta block rounded-full bg-lh-primary px-7 py-4 text-center font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-white transition-colors hover:bg-lh-accent">
-                      Back to Catalog to Purchase
-                    </Link>
-                  )}
-                  <p className="mt-4 font-body text-xs font-bold leading-6 text-lh-muted">
-                    Detail pages are editorial only; purchases remain inside the catalog cart flow.
-                  </p>
-                </div>
+                    <p className="mt-4 font-body text-xs font-bold leading-6 text-lh-muted">
+                      This piece is not available for online checkout right now. Return to the catalog to browse available selections.
+                    </p>
+                  </div>
+                )}
               </div>
             </aside>
           </div>

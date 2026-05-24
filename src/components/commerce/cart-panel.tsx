@@ -1,43 +1,43 @@
 "use client";
 
-import { useState, type ReactElement } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import { Button } from "@/components/ui/button";
 import { formatCad } from "@/lib/commerce/money";
-import { buildValidatedCart, type CartInputItem, type ValidatedCart } from "@/lib/commerce/cart";
+import { buildValidatedCart, type ValidatedCart } from "@/lib/commerce/cart";
 import type { TProduct, TProductVariant } from "@/types";
 import { ProductCard } from "./product-card";
 import { HelcimPayButton } from "./helcim-pay-button";
+import { useProductCart } from "./product-cart-provider";
 
 interface CartPanelProps {
   products: TProduct[];
 }
 
 export function CartPanel({ products }: CartPanelProps): ReactElement {
-  const [items, setItems] = useState<CartInputItem[]>([]);
+  const { items, isOpen, addItem, removeItem, updateQuantity, clearCart, openCart, closeCart } = useProductCart();
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
 
-  const handleAdd = (product: TProduct, variant?: TProductVariant) => {
-    setItems((prev) => {
-      const existing = prev.find((item) => item.productId === product._id && item.variantId === variant?._key);
-      if (existing) {
-        if (existing.quantity >= 10) return prev;
-        return prev.map((item) =>
-          item.productId === product._id && item.variantId === variant?._key
-            ? { ...item, quantity: item.quantity + 1 }
-            : item
-        );
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeCart();
       }
-      return [...prev, { productId: product._id, variantId: variant?._key, quantity: 1 }];
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [closeCart, isOpen]);
+
+  const handleAdd = (product: TProduct, variant?: TProductVariant) => {
+    addItem({
+      productId: product._id,
+      variantId: variant?._key,
+      quantity: 1,
     });
-  };
-
-  const handleRemove = (productId: string, variantId?: string) => {
-    setItems((prev) => prev.filter((item) => item.productId !== productId || item.variantId !== variantId));
-  };
-
-  const handleClear = () => {
-    setItems([]);
+    openCart();
   };
 
   let cart: ValidatedCart | null = null;
@@ -69,26 +69,44 @@ export function CartPanel({ products }: CartPanelProps): ReactElement {
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
 
   return (
-    <div className={`grid grid-cols-1 gap-8 ${hasItems ? "lg:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)]" : ""}`}>
+    <div className={`grid grid-cols-1 gap-8 ${isOpen ? "lg:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)]" : ""}`}>
       <div>
-        <div className={`grid grid-cols-1 gap-6 ${hasItems ? "md:grid-cols-2" : "md:grid-cols-2 xl:grid-cols-3"}`}>
+        <div className={`grid grid-cols-1 gap-6 ${isOpen ? "md:grid-cols-2" : "md:grid-cols-2 xl:grid-cols-3"}`}>
           {products.map((product) => (
             <ProductCard key={product._id} product={product} onAdd={handleAdd} />
           ))}
         </div>
       </div>
 
-      {hasItems && (
+      {isOpen && (
         <aside aria-label="Shopping cart">
           <div className="soft-panel sticky top-24 bg-lh-white">
-            <h2 className="section-subheading mb-4">Your Cart</h2>
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <h2 className="section-subheading">Your Cart</h2>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={closeCart}
+                aria-label="Close shopping cart"
+                className="px-4 py-2 text-xs uppercase tracking-[0.12em]"
+              >
+                Close
+              </Button>
+            </div>
 
             <div aria-live="polite" className="sr-only">
               {totalItems} items in cart
             </div>
 
             <div className="flex flex-col gap-4">
-              {cartError ? (
+              {!hasItems ? (
+                <div role="status" className="rounded-[24px] border border-lh-line bg-lh-neutral-2/70 p-5">
+                  <h3 className="font-heading text-2xl font-normal text-lh-shadow">Your cart is empty</h3>
+                  <p className="mt-2 font-body text-sm font-bold leading-6 text-lh-muted">
+                    Add a product from the catalog to begin checkout.
+                  </p>
+                </div>
+              ) : cartError ? (
                 <p className="text-lh-accent text-sm">{cartError}</p>
               ) : cart ? (
                 <>
@@ -97,14 +115,41 @@ export function CartPanel({ products }: CartPanelProps): ReactElement {
                       <li key={`${lineItem.productId}:${lineItem.variantId || "default"}`} className="py-3 flex justify-between items-start">
                         <div>
                           <p className="font-body font-bold text-lh-shadow">{lineItem.description}</p>
-                          <p className="text-sm text-lh-muted">
-                            Qty: {lineItem.quantity} × {formatCad(lineItem.price)}
-                          </p>
+                          <div className="mt-2 flex items-center gap-2">
+                            <span className="font-body text-sm font-bold text-lh-muted">
+                              Qty
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => updateQuantity(lineItem.productId, lineItem.quantity - 1, lineItem.variantId)}
+                              disabled={lineItem.quantity <= 1}
+                              aria-label={`Decrease quantity for ${lineItem.description}`}
+                              className="flex h-8 w-8 items-center justify-center rounded-full border border-lh-line bg-lh-neutral-2/70 font-body text-sm font-bold text-lh-shadow transition-colors hover:border-lh-primary hover:bg-lh-primary-soft hover:text-lh-primary focus-visible:outline-lh-primary disabled:cursor-not-allowed disabled:bg-lh-neutral disabled:text-lh-muted disabled:opacity-70"
+                            >
+                              -
+                            </button>
+                            <span className="min-w-6 text-center font-body text-sm font-bold text-lh-shadow" aria-live="polite">
+                              {lineItem.quantity}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => updateQuantity(lineItem.productId, lineItem.quantity + 1, lineItem.variantId)}
+                              disabled={lineItem.quantity >= 10}
+                              aria-label={`Increase quantity for ${lineItem.description}`}
+                              className="flex h-8 w-8 items-center justify-center rounded-full border border-lh-line bg-lh-neutral-2/70 font-body text-sm font-bold text-lh-shadow transition-colors hover:border-lh-primary hover:bg-lh-primary-soft hover:text-lh-primary focus-visible:outline-lh-primary disabled:cursor-not-allowed disabled:bg-lh-neutral disabled:text-lh-muted disabled:opacity-70"
+                            >
+                              +
+                            </button>
+                            <span className="font-body text-sm font-bold text-lh-muted">
+                              × {formatCad(lineItem.price)}
+                            </span>
+                          </div>
                         </div>
                         <div className="text-right">
                           <p className="font-bold text-lh-shadow">{formatCad(lineItem.total)}</p>
                           <button
-                            onClick={() => handleRemove(lineItem.productId, lineItem.variantId)}
+                            aria-label={`Remove ${lineItem.description} from cart`}
+                            onClick={() => removeItem(lineItem.productId, lineItem.variantId)}
                             className="text-xs text-lh-accent hover:underline mt-1"
                           >
                             Remove
@@ -154,11 +199,11 @@ export function CartPanel({ products }: CartPanelProps): ReactElement {
                         disabled={!cart || !customerName || !customerEmail}
                         items={items}
                         customer={{ name: customerName, email: customerEmail }}
-                        onPaid={handleClear}
+                        onPaid={clearCart}
                       />
                       <Button
                         variant="ghost"
-                        onClick={handleClear}
+                        onClick={clearCart}
                         className="text-lh-muted hover:text-lh-accent"
                       >
                         Clear Cart

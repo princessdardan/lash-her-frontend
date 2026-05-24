@@ -108,7 +108,7 @@ export function ProductVariantSelector({
           </h2>
           {readOnly ? (
             <p className="mt-2 font-body text-sm font-bold leading-6 text-lh-muted">
-              Options are shown for editorial reference. Checkout selections are made in the catalog.
+              Options are shown for selection context.
             </p>
           ) : null}
         </div>
