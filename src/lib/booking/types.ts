@@ -1,4 +1,4 @@
-export type BookingType = "training-call" | "in-person-appointment";
+export type BookingType = "in-person-appointment";
 
 export type BookingQuestionInputType = "text" | "textarea" | "select";
 
@@ -11,6 +11,23 @@ export interface BookingQuestion {
   options?: string[];
 }
 
+export type BookingWeekday =
+  | "monday"
+  | "tuesday"
+  | "wednesday"
+  | "thursday"
+  | "friday"
+  | "saturday"
+  | "sunday";
+
+export interface BookingHoursWindow {
+  _key?: string;
+  day: BookingWeekday;
+  isOpen: boolean;
+  opensAt: string;
+  closesAt: string;
+}
+
 export interface BookingTypeConfig {
   _key?: string;
   type: BookingType;
@@ -18,18 +35,19 @@ export interface BookingTypeConfig {
   description: string;
   durationMinutes: number;
   slotIntervalMinutes: number;
-  bufferBeforeMinutes: number;
-  bufferAfterMinutes: number;
+  bufferMinutes: number;
   questions: BookingQuestion[];
 }
 
 export interface BookingSettings {
   calendarId: string;
-  availabilityMarkerTitle: string;
   bookingHorizonDays: number;
   minimumLeadTimeHours: number;
   timezone: string;
-  bookingTypes: BookingTypeConfig[];
+  bufferMinutes: number;
+  slotIntervalMinutes: number;
+  hoursOfOperation: BookingHoursWindow[];
+  intakeQuestions: BookingQuestion[];
   marketingOptInLabel: string;
 }
 
@@ -61,16 +79,5 @@ export interface BookingRequestInput {
   marketingConsentText?: string;
   sourcePath?: string;
   idempotencyKey: string;
-  paidTrainingOrderId?: string;
-  paidSchedulingToken?: string;
-  paidTrainingSlug?: string;
-  offeringSlug?: string;
-}
-
-export interface PaidTrainingBookingContext {
-  checkoutEmail: string;
-  enrollmentId: string;
-  programTitle: string;
-  publicOrderId: string;
-  schedulingToken: string;
+  serviceSlug?: string;
 }
