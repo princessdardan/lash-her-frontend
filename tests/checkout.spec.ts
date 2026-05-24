@@ -12,8 +12,6 @@ interface ValidationRequestBody {
 
 
 async function mockProductsPage(page: Page): Promise<void> {
-  // The local CMS dataset can have no active products, so this shell keeps checkout
-  // coverage focused on Helcim and validation route contracts rather than CMS content.
   await page.route(/\/products(?:$|\?)/, async (route) => {
     await route.fulfill({
       status: 200,
@@ -31,18 +29,46 @@ async function mockProductsPage(page: Page): Promise<void> {
               <aside id="cart" hidden>
                 <h2>Your Cart</h2>
                 <ul><li>Lash Cleanser <span>qty: 1</span></li></ul>
-                <label>Name <input id="name" /></label>
-                <label>Email <input id="email" /></label>
                 <button id="checkout">Checkout</button>
                 <button>Clear Cart</button>
                 <p id="error" role="alert"></p>
               </aside>
-              <script src="https://secure.helcim.app/helcim-pay/services/start.js"></script>
               <script>
-                let checkoutToken = '';
                 document.getElementById('add').addEventListener('click', () => {
                   document.getElementById('cart').hidden = false;
                 });
+                document.getElementById('checkout').addEventListener('click', () => {
+                  window.location.href = '/checkout';
+                });
+              </script>
+            </main>
+          </body>
+        </html>`,
+    });
+  });
+
+  await page.route(/\/checkout(?:$|\?)/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: `<!doctype html>
+        <html>
+          <body>
+            <main>
+              <h1>Review Your Order</h1>
+              <ul><li>Lash Cleanser <span>qty: 1</span></li></ul>
+              <label>Name <input id="name" /></label>
+              <label>Email <input id="email" /></label>
+              <label>Address <input id="line1" /></label>
+              <label>City <input id="city" /></label>
+              <label>Province / State <input id="province" /></label>
+              <label>Postal code <input id="postalCode" /></label>
+              <label>Country <input id="country" value="Canada" /></label>
+              <button id="checkout">Checkout</button>
+              <p id="error" role="alert"></p>
+              <script src="https://secure.helcim.app/helcim-pay/services/start.js"></script>
+              <script>
+                let checkoutToken = '';
                 document.getElementById('checkout').addEventListener('click', async () => {
                   const response = await fetch('/api/checkout?mockPaymentScenario=success', {
                     method: 'POST',
@@ -52,7 +78,14 @@ async function mockProductsPage(page: Page): Promise<void> {
                         name: document.getElementById('name').value,
                         email: document.getElementById('email').value
                       },
-                      cart: [{ productId: 'lash-cleanser', quantity: 1 }]
+                      items: [{ productId: 'lash-cleanser', quantity: 1 }],
+                      shippingAddress: {
+                        line1: document.getElementById('line1').value,
+                        city: document.getElementById('city').value,
+                        province: document.getElementById('province').value,
+                        postalCode: document.getElementById('postalCode').value,
+                        country: document.getElementById('country').value
+                      }
                     })
                   });
                   if (!response.ok) {
@@ -67,6 +100,11 @@ async function mockProductsPage(page: Page): Promise<void> {
                 window.addEventListener('message', async (event) => {
                   if (event.origin !== 'https://secure.helcim.app') return;
                   const data = JSON.parse(event.data);
+                  if (data.eventStatus !== 'SUCCESS') {
+                    window.removeHelcimPayIframe();
+                    document.getElementById('error').textContent = 'Payment was not completed. Please try again or use another payment method.';
+                    return;
+                  }
                   const message = data.eventMessage;
                   const response = await fetch('/api/checkout/validate-payment', {
                     method: 'POST',
@@ -155,6 +193,11 @@ async function addFirstProductToCart(page: Page): Promise<string> {
 async function fillCheckoutCustomer(page: Page): Promise<void> {
   await page.getByLabel("Name").fill("Nataliea Test");
   await page.getByLabel("Email").fill("test@example.com");
+  await page.getByLabel("Address").fill("646 Oakwood Avenue");
+  await page.getByLabel("City").fill("Toronto");
+  await page.getByLabel("Province / State").fill("Ontario");
+  await page.getByLabel("Postal code").fill("M6E 2Y4");
+  await page.getByLabel("Country").fill("Canada");
 }
 
 function isValidationRequestBody(value: unknown): value is ValidationRequestBody {
@@ -196,13 +239,15 @@ test.describe("Helcim checkout", () => {
     await page.goto("/products");
 
     const productTitle = await addFirstProductToCart(page);
+    await page.getByRole("button", { name: "Checkout" }).click();
+    await expect(page).toHaveURL("/checkout");
     await fillCheckoutCustomer(page);
     await expect(page.getByRole("button", { name: "Checkout" })).toBeEnabled();
     await page.getByRole("button", { name: "Checkout" }).click();
 
     await expect(page.getByText(/unable to start checkout/i)).toBeVisible();
     await expect(page.locator("li", { hasText: productTitle })).toContainText(/qty:\s*1/i);
-    await expect(page.getByRole("button", { name: "Clear Cart" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Checkout" })).toBeEnabled();
   });
 
   test("forwards successful Helcim events to validation and routes to confirmation", async ({ page }) => {
@@ -222,7 +267,14 @@ test.describe("Helcim checkout", () => {
       const requestBody: unknown = route.request().postDataJSON();
       expect(requestBody).toEqual({
         customer: { name: "Nataliea Test", email: "test@example.com" },
-        cart: [{ productId: "lash-cleanser", quantity: 1 }],
+        items: [{ productId: "lash-cleanser", quantity: 1 }],
+        shippingAddress: {
+          line1: "646 Oakwood Avenue",
+          city: "Toronto",
+          province: "Ontario",
+          postalCode: "M6E 2Y4",
+          country: "Canada",
+        },
       });
       expect(new URL(route.request().url()).searchParams.get("mockPaymentScenario")).toBe("success");
       expect(route.request().headers()["x-lash-payment-mock-scenario"]).toBe("success");
@@ -256,20 +308,22 @@ test.describe("Helcim checkout", () => {
     await page.goto("/products");
 
     await addFirstProductToCart(page);
+    await page.getByRole("button", { name: "Checkout" }).click();
+    await expect(page).toHaveURL("/checkout");
     await fillCheckoutCustomer(page);
     await expect(page.getByRole("button", { name: "Checkout" })).toBeEnabled();
     await page.getByRole("button", { name: "Checkout" }).click();
 
     await expect(page).toHaveURL(`/products/confirmation?order=${ORDER_ID}`);
     await expect(page.getByRole("heading", { name: /payment received/i })).toBeVisible();
-    await expect(page.getByText(ORDER_ID)).toBeVisible();
+    await expect(page.locator("#main-content").getByText(ORDER_ID)).toBeVisible();
     expect(apiPostPaths).toEqual(["/api/checkout", "/api/checkout/validate-payment"]);
     expect(apiPostPaths).not.toContain("/api/training-checkout");
     expect(apiPostPaths.some((path) => /^\/api\/(payment|payments|stripe)\b/.test(path))).toBe(false);
     expect(forbiddenPaymentHosts).toEqual([]);
   });
 
-  test("keeps cart visible when a mock Helcim decline fails validation", async ({ page }) => {
+  test("keeps cart visible when Helcim reports a declined payment", async ({ page }) => {
     await mockProductsPage(page);
     await mockHelcimScript(page, { scenario: "decline" });
     const apiPostPaths: string[] = [];
@@ -293,35 +347,23 @@ test.describe("Helcim checkout", () => {
     });
 
     await page.route(/\/api\/checkout\/validate-payment(?:\?.*)?$/, async (route) => {
-      const requestBody: unknown = route.request().postDataJSON();
-      expect(isValidationRequestBody(requestBody)).toBe(true);
-
-      if (!isValidationRequestBody(requestBody)) {
-        await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "Invalid request" }) });
-        return;
-      }
-
-      expect(requestBody.data.transactionId).toBe("txn_declined_123");
-      expect(requestBody.data.approved).toBe(false);
-
-      await route.fulfill({
-        status: 400,
-        contentType: "application/json",
-        body: JSON.stringify({ error: "Payment could not be verified" }),
-      });
+      throw new Error(`Declined Helcim status should not call validation: ${route.request().url()}`);
     });
 
     await page.goto("/products");
 
     const productTitle = await addFirstProductToCart(page);
+    await page.getByRole("button", { name: "Checkout" }).click();
+    await expect(page).toHaveURL("/checkout");
     await fillCheckoutCustomer(page);
     await page.getByRole("button", { name: "Checkout" }).click();
 
-    await expect(page.getByRole("alert")).toContainText(/payment could not be verified/i);
-    await expect(page).toHaveURL(/\/products$/);
+    await expect(page.getByRole("alert")).toContainText(/payment was not completed/i);
+    await expect(page).toHaveURL(/\/checkout$/);
     await expect(page.locator("li", { hasText: productTitle })).toContainText(/qty:\s*1/i);
-    await expect(page.getByRole("button", { name: "Clear Cart" })).toBeVisible();
-    expect(apiPostPaths).toEqual(["/api/checkout", "/api/checkout/validate-payment"]);
+    await expect(page.getByRole("button", { name: "Checkout" })).toBeEnabled();
+    expect(apiPostPaths).toEqual(["/api/checkout"]);
+    expect(await page.evaluate(() => window.__helcimIframeRemoved)).toBe(true);
     expect(forbiddenPaymentHosts).toEqual([]);
   });
 });

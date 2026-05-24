@@ -7,6 +7,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatCad } from "@/lib/commerce/money";
 import { buildValidatedCart, type ValidatedCart, type CartInputItem } from "@/lib/commerce/cart";
+import {
+  CHECKOUT_CUSTOMER_NAME_MAX_LENGTH,
+  CHECKOUT_EMAIL_MAX_LENGTH,
+  CHECKOUT_SHIPPING_LINE_MAX_LENGTH,
+  CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH,
+  CHECKOUT_SHIPPING_POSTAL_CODE_MAX_LENGTH,
+  isValidCheckoutEmail,
+  isValidCheckoutText,
+  normalizeCheckoutText,
+} from "@/lib/commerce/checkout-validation";
 import type { TProduct } from "@/types";
 import { HelcimPayButton } from "@/components/commerce/helcim-pay-button";
 import { useProductCart } from "@/components/commerce/product-cart-provider";
@@ -26,6 +36,12 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
 
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
+  const [shippingLine1, setShippingLine1] = useState("");
+  const [shippingLine2, setShippingLine2] = useState("");
+  const [shippingCity, setShippingCity] = useState("");
+  const [shippingProvince, setShippingProvince] = useState("");
+  const [shippingPostalCode, setShippingPostalCode] = useState("");
+  const [shippingCountry, setShippingCountry] = useState("Canada");
 
   // Build checkout items: either buy-now single item or full cart
   const checkoutItems = useMemo<CartInputItem[]>(() => {
@@ -70,6 +86,29 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
   }, [checkoutItems, products]);
 
   const totalItems = checkoutItems.reduce((sum, item) => sum + item.quantity, 0);
+  const normalizedCustomerName = normalizeCheckoutText(customerName);
+  const normalizedCustomerEmail = customerEmail.trim().toLowerCase();
+  const normalizedShippingLine2 = normalizeCheckoutText(shippingLine2);
+  const shippingAddress = {
+    line1: normalizeCheckoutText(shippingLine1),
+    ...(normalizedShippingLine2 ? { line2: normalizedShippingLine2 } : {}),
+    city: normalizeCheckoutText(shippingCity),
+    province: normalizeCheckoutText(shippingProvince),
+    postalCode: normalizeCheckoutText(shippingPostalCode),
+    country: normalizeCheckoutText(shippingCountry),
+  };
+  const hasValidShippingAddress = Boolean(
+    isValidCheckoutText(shippingLine1, CHECKOUT_SHIPPING_LINE_MAX_LENGTH) &&
+    (!normalizedShippingLine2 || isValidCheckoutText(shippingLine2, CHECKOUT_SHIPPING_LINE_MAX_LENGTH)) &&
+    isValidCheckoutText(shippingCity, CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH) &&
+    isValidCheckoutText(shippingProvince, CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH) &&
+    isValidCheckoutText(shippingPostalCode, CHECKOUT_SHIPPING_POSTAL_CODE_MAX_LENGTH) &&
+    isValidCheckoutText(shippingCountry, CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH),
+  );
+  const hasValidCustomerDetails = Boolean(
+    isValidCheckoutText(customerName, CHECKOUT_CUSTOMER_NAME_MAX_LENGTH) &&
+    isValidCheckoutEmail(normalizedCustomerEmail),
+  );
 
   if (checkoutItems.length === 0) {
     return (
@@ -159,6 +198,8 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
                       type="text"
                       value={customerName}
                       onChange={(e) => setCustomerName(e.target.value)}
+                      maxLength={CHECKOUT_CUSTOMER_NAME_MAX_LENGTH}
+                      autoComplete="name"
                       placeholder="Your full name"
                     />
                   </div>
@@ -171,16 +212,116 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
                       type="email"
                       value={customerEmail}
                       onChange={(e) => setCustomerEmail(e.target.value)}
+                      maxLength={CHECKOUT_EMAIL_MAX_LENGTH}
+                      autoComplete="email"
                       placeholder="you@example.com"
                     />
                   </div>
                 </div>
 
+                <div className="rounded-[24px] border border-lh-line bg-lh-neutral-2/60 p-5 md:p-6">
+                  <div className="mb-5">
+                    <p className="eyebrow-label mb-2">Shipping</p>
+                    <h2 className="font-heading text-2xl font-normal text-lh-shadow">Where should we send it?</h2>
+                    <p className="mt-2 font-body text-sm font-bold leading-6 text-lh-muted">
+                      Physical products require a delivery address before secure payment opens.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="sm:col-span-2">
+                      <label htmlFor="checkout-shipping-line1" className="block text-sm font-bold text-lh-primary mb-1">
+                        Address
+                      </label>
+                      <Input
+                        id="checkout-shipping-line1"
+                        type="text"
+                        value={shippingLine1}
+                        onChange={(e) => setShippingLine1(e.target.value)}
+                        maxLength={CHECKOUT_SHIPPING_LINE_MAX_LENGTH}
+                        autoComplete="shipping address-line1"
+                        placeholder="Street address"
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label htmlFor="checkout-shipping-line2" className="block text-sm font-bold text-lh-primary mb-1">
+                        Apartment, suite, etc. <span className="text-lh-muted">(optional)</span>
+                      </label>
+                      <Input
+                        id="checkout-shipping-line2"
+                        type="text"
+                        value={shippingLine2}
+                        onChange={(e) => setShippingLine2(e.target.value)}
+                        maxLength={CHECKOUT_SHIPPING_LINE_MAX_LENGTH}
+                        autoComplete="shipping address-line2"
+                        placeholder="Unit or buzzer"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="checkout-shipping-city" className="block text-sm font-bold text-lh-primary mb-1">
+                        City
+                      </label>
+                      <Input
+                        id="checkout-shipping-city"
+                        type="text"
+                        value={shippingCity}
+                        onChange={(e) => setShippingCity(e.target.value)}
+                        maxLength={CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH}
+                        autoComplete="shipping address-level2"
+                        placeholder="Toronto"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="checkout-shipping-province" className="block text-sm font-bold text-lh-primary mb-1">
+                        Province / State
+                      </label>
+                      <Input
+                        id="checkout-shipping-province"
+                        type="text"
+                        value={shippingProvince}
+                        onChange={(e) => setShippingProvince(e.target.value)}
+                        maxLength={CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH}
+                        autoComplete="shipping address-level1"
+                        placeholder="Ontario"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="checkout-shipping-postal-code" className="block text-sm font-bold text-lh-primary mb-1">
+                        Postal code
+                      </label>
+                      <Input
+                        id="checkout-shipping-postal-code"
+                        type="text"
+                        value={shippingPostalCode}
+                        onChange={(e) => setShippingPostalCode(e.target.value)}
+                        maxLength={CHECKOUT_SHIPPING_POSTAL_CODE_MAX_LENGTH}
+                        autoComplete="shipping postal-code"
+                        placeholder="M6E 2Y4"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="checkout-shipping-country" className="block text-sm font-bold text-lh-primary mb-1">
+                        Country
+                      </label>
+                      <Input
+                        id="checkout-shipping-country"
+                        type="text"
+                        value={shippingCountry}
+                        onChange={(e) => setShippingCountry(e.target.value)}
+                        maxLength={CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH}
+                        autoComplete="shipping country-name"
+                        placeholder="Canada"
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 <div className="mt-2">
                   <HelcimPayButton
-                    disabled={!cart.cart || !customerName.trim() || !customerEmail.trim()}
+                    disabled={!cart.cart || !hasValidCustomerDetails || !hasValidShippingAddress}
                     items={checkoutItems}
-                    customer={{ name: customerName.trim(), email: customerEmail.trim() }}
+                    customer={{ name: normalizedCustomerName, email: normalizedCustomerEmail }}
+                    shippingAddress={shippingAddress}
                     onPaid={isBuyNow ? () => undefined : clearCart}
                   />
                 </div>

@@ -5,6 +5,7 @@ import Script from "next/script";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import type { CartInputItem } from "@/lib/commerce/cart";
+import { getHelcimPayEventOutcome } from "@/lib/commerce/helcim-pay-events";
 import type { HelcimPayloadValue } from "@/lib/commerce/helcim-types";
 
 declare global {
@@ -21,7 +22,19 @@ interface HelcimPayButtonProps {
     name: string;
     email: string;
   };
+  shippingAddress: ProductShippingAddress;
   onPaid: () => void;
+}
+
+const PAYMENT_INCOMPLETE_ERROR = "Payment was not completed. Please try again or use another payment method.";
+
+export interface ProductShippingAddress {
+  line1: string;
+  line2?: string;
+  city: string;
+  province: string;
+  postalCode: string;
+  country: string;
 }
 
 function isHelcimPayloadValue(value: unknown): value is HelcimPayloadValue {
@@ -50,6 +63,7 @@ export function HelcimPayButton({
   disabled = false,
   items,
   customer,
+  shippingAddress,
   onPaid,
 }: HelcimPayButtonProps): ReactElement {
   const router = useRouter();
@@ -80,16 +94,28 @@ export function HelcimPayButton({
         return;
       }
 
-      if (dataObj.eventStatus === "ABORTED" || dataObj.eventStatus === "HIDE") {
-        if (window.removeHelcimPayIframe) {
-          window.removeHelcimPayIframe();
-        }
+      const eventOutcome = getHelcimPayEventOutcome(dataObj.eventStatus);
+
+      if (eventOutcome === "ignored") {
+        return;
+      }
+
+      if (eventOutcome === "dismissed") {
+        window.removeHelcimPayIframe?.();
         setCheckoutToken(null);
         setIsLoading(false);
         return;
       }
 
-      if (dataObj.eventStatus === "SUCCESS") {
+      if (eventOutcome === "failed") {
+        window.removeHelcimPayIframe?.();
+        setCheckoutToken(null);
+        setError(PAYMENT_INCOMPLETE_ERROR);
+        setIsLoading(false);
+        return;
+      }
+
+      if (eventOutcome === "success") {
         let eventMessage = dataObj.eventMessage;
         if (typeof eventMessage === "string") {
           try {
@@ -149,9 +175,7 @@ export function HelcimPayButton({
 
           const result = await res.json() as { orderId?: string; redirectUrl?: string };
 
-          if (window.removeHelcimPayIframe) {
-            window.removeHelcimPayIframe();
-          }
+          window.removeHelcimPayIframe?.();
 
           onPaid();
 
@@ -181,7 +205,7 @@ export function HelcimPayButton({
       const res = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ customer, items }),
+        body: JSON.stringify({ customer, items, shippingAddress }),
       });
 
       if (!res.ok) {
@@ -204,6 +228,7 @@ export function HelcimPayButton({
         window.appendHelcimPayIframe(data.checkoutToken, true);
       } else {
         setError("Unable to start checkout. Please review your cart and try again.");
+        setCheckoutToken(null);
         setIsLoading(false);
       }
     } catch {
