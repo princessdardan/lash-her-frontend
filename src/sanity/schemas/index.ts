@@ -11,7 +11,6 @@ import { bookingSettings } from "./documents/booking-settings";
 import { bookingMarketingOptIn } from "./documents/booking-marketing-opt-in";
 
 // Documents — Collections
-import { bookingOffering } from "./documents/booking-offering";
 import { product } from "./documents/product";
 import { productCollection } from "./documents/product-collection";
 import { service } from "./documents/service";
@@ -62,7 +61,6 @@ export const schemaTypes = [
   mainMenu,
   bookingSettings,
   bookingMarketingOptIn,
-  bookingOffering,
   product,
   productCollection,
   service,

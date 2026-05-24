@@ -59,7 +59,6 @@ export const structure: StructureResolver = (S) =>
                 .title("Booking Settings")
                 .id("bookingSettings")
                 .child(S.document().schemaType("bookingSettings").documentId("bookingSettings")),
-              S.documentTypeListItem("bookingOffering").title("Booking Offerings"),
               S.documentTypeListItem("bookingMarketingOptIn").title("Marketing Opt-ins"),
             ])
         ),
@@ -73,7 +72,6 @@ export const structure: StructureResolver = (S) =>
             .items([
               S.documentTypeListItem("product").title("Products"),
               S.documentTypeListItem("productCollection").title("Product Collections"),
-              S.documentTypeListItem("service").title("Services"),
               S.documentTypeListItem("trainingProgram").title("Training Programs"),
             ])
         ),
