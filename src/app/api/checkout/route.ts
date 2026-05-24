@@ -6,6 +6,15 @@ import {
   type CatalogProduct,
   type ValidatedCart,
 } from "@/lib/commerce/cart";
+import {
+  CHECKOUT_CUSTOMER_NAME_MAX_LENGTH,
+  CHECKOUT_SHIPPING_LINE_MAX_LENGTH,
+  CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH,
+  CHECKOUT_SHIPPING_POSTAL_CODE_MAX_LENGTH,
+  isValidCheckoutEmail,
+  parseCheckoutText,
+  parseOptionalCheckoutText,
+} from "@/lib/commerce/checkout-validation";
 import type { HelcimGateway } from "@/lib/commerce/helcim-gateway";
 import { createPaymentMockStore } from "@/lib/payment-mocks/in-memory-store";
 import type { TProduct } from "@/types";
@@ -17,9 +26,19 @@ interface CheckoutCustomerInput {
   email: string;
 }
 
+interface CheckoutShippingAddressInput {
+  line1: string;
+  line2?: string;
+  city: string;
+  province: string;
+  postalCode: string;
+  country: string;
+}
+
 interface CheckoutRequestBody {
   customer: CheckoutCustomerInput;
   items: CartInputItem[];
+  shippingAddress: CheckoutShippingAddressInput;
 }
 
 interface CheckoutResponseBody {
@@ -75,6 +94,7 @@ interface CheckoutPendingOrderInput {
   helcimInvoiceId: number;
   helcimInvoiceNumber: string;
   cart: ValidatedCart;
+  shippingAddress: CheckoutShippingAddressInput;
 }
 
 export function createCheckoutPostHandler({
@@ -132,6 +152,7 @@ export function createCheckoutPostHandler({
         helcimInvoiceId: invoice.invoiceId,
         helcimInvoiceNumber: invoice.invoiceNumber,
         cart,
+        shippingAddress: checkoutRequest.shippingAddress,
       });
 
       return NextResponse.json<CheckoutResponseBody>({
@@ -199,20 +220,49 @@ function getPaymentMockRuntimeEnvironment() {
 }
 
 function parseCheckoutRequest(body: unknown): CheckoutRequestBody | null {
-  if (!isRecord(body) || !isRecord(body.customer) || !Array.isArray(body.items)) {
+  if (!isRecord(body) || !isRecord(body.customer) || !Array.isArray(body.items) || !isRecord(body.shippingAddress)) {
     return null;
   }
 
-  const name = parseRequiredString(body.customer.name);
-  const email = parseRequiredString(body.customer.email);
+  const name = parseCheckoutText(body.customer.name, CHECKOUT_CUSTOMER_NAME_MAX_LENGTH);
+  const email = typeof body.customer.email === "string" ? body.customer.email.trim().toLowerCase() : null;
+  const shippingAddress = parseShippingAddress(body.shippingAddress);
 
-  if (name === null || email === null) {
+  if (name === null || email === null || !isValidCheckoutEmail(email) || shippingAddress === null) {
     return null;
   }
 
   return {
     customer: { name, email },
     items: body.items.map(toCartInputItem),
+    shippingAddress,
+  };
+}
+
+function parseShippingAddress(value: Record<string, unknown>): CheckoutShippingAddressInput | null {
+  const line1 = parseCheckoutText(value.line1, CHECKOUT_SHIPPING_LINE_MAX_LENGTH);
+  const city = parseCheckoutText(value.city, CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH);
+  const province = parseCheckoutText(value.province, CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH);
+  const postalCode = parseCheckoutText(value.postalCode, CHECKOUT_SHIPPING_POSTAL_CODE_MAX_LENGTH);
+  const country = parseCheckoutText(value.country, CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH);
+
+  if (line1 === null || city === null || province === null || postalCode === null || country === null) {
+    return null;
+  }
+
+  const line2 = parseOptionalCheckoutText(value.line2, CHECKOUT_SHIPPING_LINE_MAX_LENGTH);
+
+  if (line2 === null) {
+    return null;
+  }
+
+  return {
+    line1,
+    ...(line2 ? { line2 } : {}),
+    city,
+    province,
+    postalCode,
+    country,
   };
 }
 
@@ -244,16 +294,6 @@ function toCatalogProduct(product: TProduct): CatalogProduct {
       isAvailable: variant.isAvailable,
     })),
   };
-}
-
-function parseRequiredString(value: unknown): string | null {
-  if (typeof value !== "string") {
-    return null;
-  }
-
-  const trimmedValue = value.trim();
-
-  return trimmedValue.length > 0 ? trimmedValue : null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

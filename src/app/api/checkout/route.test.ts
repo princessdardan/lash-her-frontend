@@ -6,6 +6,12 @@ const helperScript = String.raw`
   import assert from "node:assert/strict";
 
   import { createCheckoutPostHandler, resolveCheckoutHelcimGatewayForRequest } from "./src/app/api/checkout/route.ts";
+  import {
+    CHECKOUT_CUSTOMER_NAME_MAX_LENGTH,
+    CHECKOUT_EMAIL_MAX_LENGTH,
+    CHECKOUT_SHIPPING_LINE_MAX_LENGTH,
+    CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH,
+  } from "./src/lib/commerce/checkout-validation.ts";
 
   const product = {
     _id: "product-lash-cleanser",
@@ -13,6 +19,14 @@ const helperScript = String.raw`
     price: 24,
     currency: "CAD",
     isAvailable: true,
+  };
+
+  const shippingAddress = {
+    line1: "646 Oakwood Avenue",
+    city: "Toronto",
+    province: "Ontario",
+    postalCode: "M6E 2Y4",
+    country: "Canada",
   };
 
   function createRequest(body) {
@@ -83,12 +97,68 @@ test("checkout route rejects invalid requests before downstream calls", () => {
   `);
 });
 
+test("checkout route rejects malformed customer and shipping fields before downstream calls", () => {
+  runRouteScenario(`
+    const { fetchedProductIds, handler, invoices, orders, paySessions } = runScenario();
+
+    const invalidBodies = [
+      {
+        customer: { name: "Nataliea Lash", email: "client.example.com" },
+        shippingAddress,
+      },
+      {
+        customer: { name: "Nataliea Lash", email: "client@" },
+        shippingAddress,
+      },
+      {
+        customer: { name: "Nataliea Lash", email: "x".repeat(CHECKOUT_EMAIL_MAX_LENGTH + 1) + "@example.com" },
+        shippingAddress,
+      },
+      {
+        customer: { name: "x".repeat(CHECKOUT_CUSTOMER_NAME_MAX_LENGTH + 1), email: "client@example.com" },
+        shippingAddress,
+      },
+      {
+        customer: { name: "Nataliea Lash", email: "client@example.com" },
+        shippingAddress: { ...shippingAddress, line1: "x".repeat(CHECKOUT_SHIPPING_LINE_MAX_LENGTH + 1) },
+      },
+      {
+        customer: { name: "Nataliea Lash", email: "client@example.com" },
+        shippingAddress: { ...shippingAddress, line2: "x".repeat(CHECKOUT_SHIPPING_LINE_MAX_LENGTH + 1) },
+      },
+      {
+        customer: { name: "Nataliea Lash", email: "client@example.com" },
+        shippingAddress: { ...shippingAddress, city: "Tor" + String.fromCharCode(10) + "onto" },
+      },
+      {
+        customer: { name: "Nataliea Lash", email: "client@example.com" },
+        shippingAddress: { ...shippingAddress, country: "x".repeat(CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH + 1) },
+      },
+    ];
+
+    for (const body of invalidBodies) {
+      const response = await handler(createRequest({
+        ...body,
+        items: [{ productId: "product-lash-cleanser", quantity: 1 }],
+      }));
+      assert.equal(response.status, 400);
+      assert.deepEqual(await response.json(), { error: "Invalid checkout request" });
+    }
+
+    assert.equal(fetchedProductIds.length, 0);
+    assert.equal(invoices.length, 0);
+    assert.equal(paySessions.length, 0);
+    assert.equal(orders.length, 0);
+  `);
+});
+
 test("checkout route creates Helcim checkout for a valid cart", () => {
   runRouteScenario(`
     const { fetchedProductIds, handler, invoices, orders, paySessions } = runScenario();
 
     const response = await handler(createRequest({
       customer: { name: "  Nataliea Lash  ", email: "client@example.com" },
+      shippingAddress: { ...shippingAddress, line1: " 646 Oakwood Avenue ", line2: " Suite 2 " },
       items: [{ productId: "product-lash-cleanser", quantity: 2 }],
     }));
     const body = await response.json();
@@ -121,6 +191,7 @@ test("checkout route creates Helcim checkout for a valid cart", () => {
     assert.equal(orders[0].secretToken, "secret-token-4242");
     assert.equal(orders[0].helcimInvoiceId, 4242);
     assert.equal(orders[0].helcimInvoiceNumber, "INV-4242");
+    assert.deepEqual(orders[0].shippingAddress, { ...shippingAddress, line2: "Suite 2" });
     assert.equal(orders[0].cart.amount, 48);
   `);
 });
@@ -134,6 +205,7 @@ test("checkout route creates Helcim checkout without Square secrets", () => {
 
     const response = await handler(createRequest({
       customer: { name: "Nataliea Lash", email: "client@example.com" },
+      shippingAddress,
       items: [{ productId: "product-lash-cleanser", quantity: 1 }],
     }));
 
@@ -155,6 +227,7 @@ test("checkout route selects mock Helcim gateway when mock mode is allowed", () 
 
     const gateway = await resolveCheckoutHelcimGatewayForRequest(createRequest({
       customer: { name: "Nataliea Lash", email: "client@example.com" },
+      shippingAddress,
       items: [{ productId: "product-lash-cleanser", quantity: 1 }],
     }));
 
@@ -221,6 +294,7 @@ test("checkout route rejects mock Helcim gateway mode in production", () => {
     await assert.rejects(
       resolveCheckoutHelcimGatewayForRequest(createRequest({
         customer: { name: "Nataliea Lash", email: "client@example.com" },
+        shippingAddress,
         items: [{ productId: "product-lash-cleanser", quantity: 1 }],
       })),
       /Payment mock mode is not allowed in production/,
@@ -236,6 +310,7 @@ test("checkout route rejects unavailable Sanity products before Helcim setup", (
 
     const response = await handler(createRequest({
       customer: { name: "Nataliea Lash", email: "client@example.com" },
+      shippingAddress,
       items: [{ productId: "product-lash-cleanser", quantity: 1 }],
     }));
     const body = await response.json();
@@ -265,6 +340,7 @@ test("checkout route rejects unavailable selected variants before Helcim setup",
 
     const response = await handler(createRequest({
       customer: { name: "Nataliea Lash", email: "client@example.com" },
+      shippingAddress,
       items: [{ productId: "product-lash-cleanser", variantId: "volume", quantity: 1 }],
     }));
     const body = await response.json();
@@ -285,6 +361,7 @@ test("checkout route rejects missing canonical products before Helcim setup", ()
 
     const response = await handler(createRequest({
       customer: { name: "Nataliea Lash", email: "client@example.com" },
+      shippingAddress,
       items: [{ productId: "product-lash-cleanser", quantity: 1 }],
     }));
 
@@ -303,6 +380,7 @@ test("checkout route returns a generic failure when downstream checkout setup fa
 
     const response = await handler(createRequest({
       customer: { name: "Nataliea Lash", email: "client@example.com" },
+      shippingAddress,
       items: [{ productId: "product-lash-cleanser", quantity: 1 }],
     }));
     const body = await response.json();
@@ -325,6 +403,7 @@ test("checkout route returns a generic failure when pending order persistence fa
 
     const response = await handler(createRequest({
       customer: { name: "Nataliea Lash", email: "client@example.com" },
+      shippingAddress,
       items: [{ productId: "product-lash-cleanser", quantity: 1 }],
     }));
     const body = await response.json();
