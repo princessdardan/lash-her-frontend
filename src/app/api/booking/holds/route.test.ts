@@ -22,43 +22,39 @@ const helperScript = String.raw`
 
   function createSettings(overrides = {}) {
     return {
-      availabilityMarkerTitle: "Available",
       bookingHorizonDays: 10,
-      bookingTypes: [
-        {
-          type: "in-person-appointment",
-          label: "Appointment",
-          description: "Appointment",
-          durationMinutes: 60,
-          slotIntervalMinutes: 60,
-          bufferBeforeMinutes: 0,
-          bufferAfterMinutes: 0,
-          questions: [],
-        },
+      bufferMinutes: 0,
+      hoursOfOperation: [
+        { day: "monday", isOpen: true, opensAt: "00:00", closesAt: "23:59" },
+        { day: "tuesday", isOpen: true, opensAt: "00:00", closesAt: "23:59" },
+        { day: "wednesday", isOpen: true, opensAt: "00:00", closesAt: "23:59" },
+        { day: "thursday", isOpen: true, opensAt: "00:00", closesAt: "23:59" },
+        { day: "friday", isOpen: true, opensAt: "00:00", closesAt: "23:59" },
+        { day: "saturday", isOpen: true, opensAt: "00:00", closesAt: "23:59" },
+        { day: "sunday", isOpen: true, opensAt: "00:00", closesAt: "23:59" },
       ],
       calendarId: "calendar-1",
+      intakeQuestions: [],
       marketingOptInLabel: "Send me updates",
       minimumLeadTimeHours: 0,
-      timezone: "America/Toronto",
+      slotIntervalMinutes: 60,
+      timezone: "UTC",
       ...overrides,
     };
   }
 
-  function createOffering(overrides = {}) {
+  function createService(overrides = {}) {
     return {
-      _id: "bookingOffering-classic-fill",
+      _id: "service-classic-fill",
       title: "Classic Fill",
       description: "Classic fill appointment",
       slug: "classic-fill",
-      isActive: true,
-      bookingType: "in-person-appointment",
+      showDetailPage: true,
       durationMinutes: 60,
-      slotIntervalMinutes: 60,
-      bufferBeforeMinutes: 0,
-      bufferAfterMinutes: 0,
       depositAmount: 50,
       fullPrice: 150,
       currency: "CAD",
+      isAvailable: true,
       ...overrides,
     };
   }
@@ -66,7 +62,7 @@ const helperScript = String.raw`
   function createHoldHandler(overrides = {}) {
     return createBookingHoldsPostHandler({
       createAppointmentHold: async () => ({ ok: false, reason: "slot_conflict", conflictingHoldId: "default" }),
-      getBookingOfferingBySlug: async () => createOffering(),
+      getBookableServiceBySlug: async () => createService(),
       getBookingSettings: async () => createSettings(),
       listActiveAppointmentHolds: async () => [],
       listCalendarEvents: async () => [],
@@ -83,7 +79,6 @@ test("booking hold route revalidates a slot and returns a public hold reference"
   runRouteScenario(`
     const selectedStart = createFutureDate(2, 0);
     const selectedEnd = new Date(selectedStart.getTime() + 60 * 60 * 1000);
-    const availabilityEnd = new Date(selectedStart.getTime() + 2 * 60 * 60 * 1000);
     const expiresAt = new Date("2026-06-01T12:10:00.000Z");
     const createInputs = [];
     const handler = createHoldHandler({
@@ -92,12 +87,7 @@ test("booking hold route revalidates a slot and returns a public hold reference"
         assert.ok(input.timeMin instanceof Date);
         assert.ok(input.timeMax instanceof Date);
 
-        return [{
-          id: "available-window",
-          title: "Available",
-          start: selectedStart,
-          end: availabilityEnd,
-        }];
+        return [];
       },
       createAppointmentHold: async (input) => {
         createInputs.push(input);
@@ -115,7 +105,7 @@ test("booking hold route revalidates a slot and returns a public hold reference"
     });
 
     const response = await handler(createRequest({
-      offeringSlug: " classic-fill ",
+      serviceSlug: " classic-fill ",
       start: selectedStart.toISOString(),
       name: " Client Name ",
       email: " client@example.com ",
@@ -126,12 +116,12 @@ test("booking hold route revalidates a slot and returns a public hold reference"
 
     assert.equal(response.status, 201);
     assert.equal(createInputs.length, 1);
-    assert.equal(createInputs[0].offeringId, "bookingOffering-classic-fill");
+    assert.equal(createInputs[0].offeringId, "service-classic-fill");
     assert.equal(createInputs[0].customer.email, "client@example.com");
     assert.equal(createInputs[0].selectedStart.toISOString(), selectedStart.toISOString());
     assert.equal(createInputs[0].selectedEnd.toISOString(), selectedEnd.toISOString());
     assert.deepEqual(createInputs[0].offeringSnapshot, {
-      id: "bookingOffering-classic-fill",
+      id: "service-classic-fill",
       slug: "classic-fill",
       title: "Classic Fill",
       bookingType: "in-person-appointment",
@@ -146,6 +136,8 @@ test("booking hold route revalidates a slot and returns a public hold reference"
         purpose: "appointment_deposit",
         sku: "BOOKING-DEPOSIT",
       },
+      answers: [],
+      marketingOptIn: false,
     });
     assert.deepEqual(body, {
       hold: {
@@ -153,7 +145,7 @@ test("booking hold route revalidates a slot and returns a public hold reference"
         expiresAt: expiresAt.toISOString(),
         start: selectedStart.toISOString(),
         end: selectedEnd.toISOString(),
-        offering: {
+        service: {
           slug: "classic-fill",
           title: "Classic Fill",
         },
@@ -166,15 +158,9 @@ test("booking hold route snapshots a validated custom partial payment choice", (
   runRouteScenario(`
     const selectedStart = createFutureDate(2, 0);
     const selectedEnd = new Date(selectedStart.getTime() + 60 * 60 * 1000);
-    const availabilityEnd = new Date(selectedStart.getTime() + 2 * 60 * 60 * 1000);
     const createInputs = [];
     const handler = createHoldHandler({
-      listCalendarEvents: async () => [{
-        id: "available-window",
-        title: "Available",
-        start: selectedStart,
-        end: availabilityEnd,
-      }],
+      listCalendarEvents: async () => [],
       createAppointmentHold: async (input) => {
         createInputs.push(input);
 
@@ -191,7 +177,7 @@ test("booking hold route snapshots a validated custom partial payment choice", (
     });
 
     const response = await handler(createRequest({
-      offeringSlug: "classic-fill",
+      serviceSlug: "classic-fill",
       start: selectedStart.toISOString(),
       name: "Client Name",
       email: "client@example.com",
@@ -219,7 +205,7 @@ test("booking hold route rejects invalid custom partial payment choices before c
     const handler = createHoldHandler({
       listCalendarEvents: async () => [{
         id: "available-window",
-        title: "Available",
+        title: "Open",
         start: selectedStart,
         end: selectedEnd,
       }],
@@ -230,7 +216,7 @@ test("booking hold route rejects invalid custom partial payment choices before c
     });
 
     const response = await handler(createRequest({
-      offeringSlug: "classic-fill",
+      serviceSlug: "classic-fill",
       start: selectedStart.toISOString(),
       name: "Client Name",
       email: "client@example.com",
@@ -254,7 +240,7 @@ test("booking hold route rejects missing purchaser payment choices before creati
     const handler = createHoldHandler({
       listCalendarEvents: async () => [{
         id: "available-window",
-        title: "Available",
+        title: "Open",
         start: selectedStart,
         end: selectedEnd,
       }],
@@ -265,7 +251,7 @@ test("booking hold route rejects missing purchaser payment choices before creati
     });
 
     const response = await handler(createRequest({
-      offeringSlug: "classic-fill",
+      serviceSlug: "classic-fill",
       start: selectedStart.toISOString(),
       name: "Client Name",
       email: "client@example.com",
@@ -282,15 +268,9 @@ test("booking hold route rejects missing purchaser payment choices before creati
 test("booking hold route snapshots purchaser-selected full payments", () => {
   runRouteScenario(`
     const selectedStart = createFutureDate(2, 0);
-    const availabilityEnd = new Date(selectedStart.getTime() + 2 * 60 * 60 * 1000);
     const createInputs = [];
     const handler = createHoldHandler({
-      listCalendarEvents: async () => [{
-        id: "available-window",
-        title: "Available",
-        start: selectedStart,
-        end: availabilityEnd,
-      }],
+      listCalendarEvents: async () => [],
       createAppointmentHold: async (input) => {
         createInputs.push(input);
         return {
@@ -306,7 +286,7 @@ test("booking hold route snapshots purchaser-selected full payments", () => {
     });
 
     const response = await handler(createRequest({
-      offeringSlug: "classic-fill",
+      serviceSlug: "classic-fill",
       start: selectedStart.toISOString(),
       name: "Client Name",
       email: "client@example.com",
@@ -333,7 +313,7 @@ test("booking hold route rejects slots blocked by active private holds", () => {
     const handler = createHoldHandler({
       listCalendarEvents: async () => [{
         id: "available-window",
-        title: "Available",
+        title: "Open",
         start: selectedStart,
         end: selectedEnd,
       }],
@@ -351,7 +331,7 @@ test("booking hold route rejects slots blocked by active private holds", () => {
     });
 
     const response = await handler(createRequest({
-      offeringSlug: "classic-fill",
+      serviceSlug: "classic-fill",
       start: selectedStart.toISOString(),
       name: "Client Name",
       email: "client@example.com",
@@ -376,7 +356,7 @@ test("booking hold route maps conflict-safe hold rejection to a slot conflict", 
     const handler = createHoldHandler({
       listCalendarEvents: async () => [{
         id: "available-window",
-        title: "Available",
+        title: "Open",
         start: selectedStart,
         end: selectedEnd,
       }],
@@ -388,7 +368,7 @@ test("booking hold route maps conflict-safe hold rejection to a slot conflict", 
     });
 
     const response = await handler(createRequest({
-      offeringSlug: "classic-fill",
+      serviceSlug: "classic-fill",
       start: selectedStart.toISOString(),
       name: "Client Name",
       email: "client@example.com",

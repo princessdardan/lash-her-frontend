@@ -25,7 +25,7 @@ const helperScript = String.raw`
       expiresAt: new Date(Date.now() + 10 * 60 * 1000),
       selectedStart,
       selectedEnd,
-      offeringId: "bookingOffering-classic-fill",
+      offeringId: "service-classic-fill",
       offeringSnapshot: {
         title: "Classic Fill",
         depositAmount: 50,

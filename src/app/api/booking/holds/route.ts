@@ -5,24 +5,32 @@ import {
   type BookingHoldRecord,
   type CreateBookingHoldResult,
 } from "@/lib/booking/holds";
+import { buildAvailabilityWindowsFromHours } from "@/lib/booking/schedule-windows";
+import { SERVICE_BOOKING_TYPE, toServiceBookingTypeConfig } from "@/lib/booking/service-config";
 import type {
+  BookingAnswerInput,
   BookingSettings,
+  BookingType,
   BookingTypeConfig,
   CalendarEventWindow,
 } from "@/lib/booking/types";
-import type { TBookingOffering } from "@/types";
+import type { TService } from "@/types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MINUTE_MS = 60 * 1000;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface BookingHoldRequestInput {
+  answers: BookingAnswerInput[];
   customAmount?: number;
   email: string;
+  marketingConsentText?: string;
+  marketingOptIn: boolean;
   name: string;
-  offeringSlug: string;
   paymentOption?: "deposit" | "full" | "customPartial";
   phone: string;
+  serviceSlug: string;
+  sourcePath?: string;
   start: string;
 }
 
@@ -36,7 +44,7 @@ interface BookingPaymentSelectionSnapshot {
 
 export interface BookingHoldsPostHandlerDependencies {
   createAppointmentHold: (input: {
-    bookingType: TBookingOffering["bookingType"];
+    bookingType: BookingType;
     customer: { email: string; name: string; phone: string };
     offeringId: string;
     offeringSnapshot: Record<string, unknown>;
@@ -45,7 +53,7 @@ export interface BookingHoldsPostHandlerDependencies {
     timezone: string;
     now: Date;
   }) => Promise<CreateBookingHoldResult>;
-  getBookingOfferingBySlug: (slug: string) => Promise<TBookingOffering | null>;
+  getBookableServiceBySlug: (slug: string) => Promise<TService | null>;
   getBookingSettings: () => Promise<BookingSettings | null>;
   listActiveAppointmentHolds: (input: {
     offeringId: string;
@@ -93,29 +101,24 @@ export function createBookingHoldsPostHandler(
     }
 
     try {
-      const [settings, offering] = await Promise.all([
+      const [settings, service] = await Promise.all([
         dependencies.getBookingSettings(),
-        dependencies.getBookingOfferingBySlug(input.offeringSlug),
+        dependencies.getBookableServiceBySlug(input.serviceSlug),
       ]);
 
-      if (settings === null || offering === null) {
+      if (settings === null || service === null || settings.calendarId.trim().length === 0 || settings.bookingHorizonDays <= 0) {
         return Response.json(
           { error: "Booking is not configured" },
           { status: 400 },
         );
       }
 
-      const bookingTypeConfig = toOfferingBookingTypeConfig(settings, offering);
-      const markerTitle = settings.availabilityMarkerTitle.trim();
+      const bookingTypeConfig = toServiceBookingTypeConfig(settings, service);
+      const answerErrors = validateRequiredAnswers(input.answers, bookingTypeConfig);
 
-      if (
-        bookingTypeConfig === undefined ||
-        settings.calendarId.trim().length === 0 ||
-        markerTitle.length === 0 ||
-        settings.bookingHorizonDays <= 0
-      ) {
+      if (Object.keys(answerErrors).length > 0) {
         return Response.json(
-          { error: "Booking is not configured" },
+          { error: "Please fix the hold details and try again.", fieldErrors: answerErrors },
           { status: 400 },
         );
       }
@@ -132,19 +135,15 @@ export function createBookingHoldsPostHandler(
           timeMax: horizonEnd,
         }),
         dependencies.listActiveAppointmentHolds({
-          offeringId: offering._id,
+          offeringId: service._id,
           timeMin: now,
           timeMax: horizonEnd,
           now,
         }),
       ]);
-      const { availabilityWindows, busyEvents } = partitionCalendarEvents(
-        calendarEvents,
-        markerTitle,
-      );
+      const availabilityWindows = buildAvailabilityWindowsFromHours({ horizonEnd, now, settings });
       const activeHoldBusyEvents = getActiveHoldBusyEvents({ holds: activeHolds, now });
-      const minimumLeadTimeHours = offering.minimumLeadTimeHoursOverride ?? settings.minimumLeadTimeHours;
-      const paymentSelection = getPaymentSelection(offering, input);
+      const paymentSelection = getPaymentSelection(service, input);
 
       if (paymentSelection === null) {
         return Response.json(
@@ -157,9 +156,9 @@ export function createBookingHoldsPostHandler(
         bookingType: bookingTypeConfig,
         requestedStart: selectedStart,
         availabilityWindows,
-        busyEvents: [...busyEvents, ...activeHoldBusyEvents],
+        busyEvents: [...calendarEvents, ...activeHoldBusyEvents],
         now,
-        minimumLeadTimeHours,
+        minimumLeadTimeHours: settings.minimumLeadTimeHours,
         horizonEnd,
       })) {
         return Response.json(
@@ -172,14 +171,14 @@ export function createBookingHoldsPostHandler(
       }
 
       const holdResult = await dependencies.createAppointmentHold({
-        bookingType: offering.bookingType,
+        bookingType: SERVICE_BOOKING_TYPE,
         customer: {
           email: input.email,
           name: input.name,
           phone: input.phone,
         },
-        offeringId: offering._id,
-        offeringSnapshot: toOfferingSnapshot(offering, paymentSelection),
+        offeringId: service._id,
+        offeringSnapshot: toServiceSnapshot(service, input, paymentSelection),
         selectedEnd,
         selectedStart,
         timezone: settings.timezone,
@@ -203,9 +202,9 @@ export function createBookingHoldsPostHandler(
             expiresAt: holdResult.hold.expiresAt.toISOString(),
             start: holdResult.hold.selectedStart.toISOString(),
             end: holdResult.hold.selectedEnd.toISOString(),
-            offering: {
-              slug: offering.slug,
-              title: offering.title,
+            service: {
+              slug: service.slug,
+              title: service.title,
             },
           },
         },
@@ -224,10 +223,10 @@ export function createBookingHoldsPostHandler(
 
 export const POST = createBookingHoldsPostHandler({
   createAppointmentHold,
-  getBookingOfferingBySlug: async (slug) => {
+  getBookableServiceBySlug: async (slug) => {
     const { loaders } = await import("@/data/loaders");
 
-    return loaders.getBookingOfferingBySlug(slug);
+    return loaders.getBookableServiceBySlug(slug);
   },
   getBookingSettings: async () => {
     const { loaders } = await import("@/data/loaders");
@@ -250,14 +249,25 @@ function toBookingHoldRequestInput(input: unknown): BookingHoldRequestInput {
   const record = isRecord(input) ? input : {};
   const customAmount = parseOptionalAmount(record.customAmount);
   const paymentOption = parsePaymentOption(record.paymentOption);
+  const marketingConsentText = toOptionalStringValue(record.marketingConsentText);
+  const sourcePath = toOptionalStringValue(record.sourcePath);
 
   return {
     ...(customAmount !== undefined && customAmount !== null ? { customAmount } : {}),
+    answers: toBookingAnswers(record.answers),
     email: toStringValue(record.email).trim(),
+    marketingOptIn: record.marketingOptIn === true,
+    ...(marketingConsentText ? { marketingConsentText } : {}),
     name: toStringValue(record.name).trim(),
-    offeringSlug: (toStringValue(record.offeringSlug) || toStringValue(record.offering)).trim(),
     ...(paymentOption ? { paymentOption } : {}),
     phone: toStringValue(record.phone).trim(),
+    serviceSlug: (
+      toStringValue(record.serviceSlug) ||
+      toStringValue(record.service) ||
+      toStringValue(record.offeringSlug) ||
+      toStringValue(record.offering)
+    ).trim(),
+    ...(sourcePath ? { sourcePath } : {}),
     start: toStringValue(record.start).trim(),
   };
 }
@@ -265,8 +275,8 @@ function toBookingHoldRequestInput(input: unknown): BookingHoldRequestInput {
 function validateHoldRequestInput(input: BookingHoldRequestInput): Record<string, string> {
   const fieldErrors: Record<string, string> = {};
 
-  if (input.offeringSlug.length === 0) {
-    fieldErrors.offeringSlug = "Please select a booking offering";
+  if (input.serviceSlug.length === 0) {
+    fieldErrors.serviceSlug = "Please select a booking service";
   }
 
   if (input.start.length === 0) {
@@ -290,38 +300,40 @@ function validateHoldRequestInput(input: BookingHoldRequestInput): Record<string
   return fieldErrors;
 }
 
-function toOfferingBookingTypeConfig(
-  settings: BookingSettings,
-  offering: TBookingOffering,
-): BookingTypeConfig | undefined {
-  const baseConfig = settings.bookingTypes.find((config) => config.type === offering.bookingType);
+function validateRequiredAnswers(
+  answers: BookingAnswerInput[],
+  bookingTypeConfig: BookingTypeConfig,
+): Record<string, string> {
+  const fieldErrors: Record<string, string> = {};
+  const answersByQuestionId = new Map(
+    answers.map((answer) => [answer.questionId, answer.answer.trim()]),
+  );
 
-  if (baseConfig === undefined) {
-    return undefined;
+  for (const question of bookingTypeConfig.questions) {
+    if (!question.required) {
+      continue;
+    }
+
+    const answer = answersByQuestionId.get(question.id);
+
+    if (answer === undefined || answer.length === 0) {
+      fieldErrors[`answers.${question.id}`] = `${question.label} is required`;
+    }
   }
 
-  return {
-    ...baseConfig,
-    type: offering.bookingType,
-    label: offering.title,
-    description: offering.description,
-    durationMinutes: offering.durationMinutes,
-    slotIntervalMinutes: offering.slotIntervalMinutes,
-    bufferBeforeMinutes: offering.bufferBeforeMinutes,
-    bufferAfterMinutes: offering.bufferAfterMinutes,
-  };
+  return fieldErrors;
 }
 
 function getPaymentSelection(
-  offering: TBookingOffering,
+  service: TService,
   input: BookingHoldRequestInput,
 ): BookingPaymentSelectionSnapshot | null {
   if (input.paymentOption === "deposit") {
-    return resolveFixedPaymentSelection(offering, "deposit");
+    return resolveFixedPaymentSelection(service, "deposit");
   }
 
   if (input.paymentOption === "full") {
-    return resolveFixedPaymentSelection(offering, "full");
+    return resolveFixedPaymentSelection(service, "full");
   }
 
   if (input.paymentOption === "customPartial") {
@@ -329,9 +341,8 @@ function getPaymentSelection(
       return null;
     }
 
-    const depositAmount = toPositiveAmount(offering.depositAmount);
-    const fullPrice = toPositiveAmount(offering.fullPrice);
-
+    const depositAmount = toPositiveAmount(service.depositAmount);
+    const fullPrice = toPositiveAmount(service.fullPrice);
     const customAmount = toPositiveAmount(input.customAmount);
 
     if (
@@ -346,7 +357,7 @@ function getPaymentSelection(
 
     return {
       amount: customAmount,
-      description: `${offering.title} custom partial payment`,
+      description: `${service.title} custom partial payment`,
       option: "customPartial",
       purpose: "appointment_custom_partial",
       sku: "BOOKING-CUSTOM-PARTIAL",
@@ -357,51 +368,80 @@ function getPaymentSelection(
 }
 
 function resolveFixedPaymentSelection(
-  offering: TBookingOffering,
+  service: TService,
   option: "deposit" | "full",
 ): BookingPaymentSelectionSnapshot | null {
   if (option === "deposit") {
-    const amount = toPositiveAmount(offering.depositAmount);
+    const amount = toPositiveAmount(service.depositAmount);
 
     return amount === null
       ? null
       : {
           amount,
-          description: `${offering.title} deposit`,
+          description: `${service.title} deposit`,
           option: "deposit",
           purpose: "appointment_deposit",
           sku: "BOOKING-DEPOSIT",
         };
   }
 
-  const amount = toPositiveAmount(offering.fullPrice);
+  const amount = toPositiveAmount(service.fullPrice);
 
   return amount === null
     ? null
     : {
         amount,
-        description: `${offering.title} full payment`,
+        description: `${service.title} full payment`,
         option: "full",
         purpose: "appointment_full",
         sku: "BOOKING-FULL",
       };
 }
 
-function toOfferingSnapshot(
-  offering: TBookingOffering,
+function toServiceSnapshot(
+  service: TService,
+  input: BookingHoldRequestInput,
   paymentSelection: BookingPaymentSelectionSnapshot,
 ): Record<string, unknown> {
   return {
-    id: offering._id,
-    slug: offering.slug,
-    title: offering.title,
-    bookingType: offering.bookingType,
-    durationMinutes: offering.durationMinutes,
-    depositAmount: offering.depositAmount,
-    fullPrice: offering.fullPrice,
-    currency: offering.currency,
+    id: service._id,
+    slug: service.slug,
+    title: service.title,
+    bookingType: SERVICE_BOOKING_TYPE,
+    durationMinutes: service.durationMinutes,
+    depositAmount: service.depositAmount,
+    fullPrice: service.fullPrice,
+    currency: service.currency,
     selectedPayment: paymentSelection,
+    answers: normalizeAnswers(input.answers),
+    marketingOptIn: input.marketingOptIn,
+    ...(input.marketingConsentText ? { marketingConsentText: input.marketingConsentText } : {}),
+    ...(input.sourcePath ? { sourcePath: input.sourcePath } : {}),
   };
+}
+
+function normalizeAnswers(answers: BookingAnswerInput[]): BookingAnswerInput[] {
+  return answers
+    .map((answer) => ({
+      questionId: answer.questionId.trim(),
+      answer: answer.answer.trim(),
+    }))
+    .filter((answer) => answer.questionId.length > 0 && answer.answer.length > 0);
+}
+
+function toBookingAnswers(value: unknown): BookingAnswerInput[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map((answer) => {
+    const record = isRecord(answer) ? answer : {};
+
+    return {
+      questionId: toStringValue(record.questionId),
+      answer: toStringValue(record.answer),
+    };
+  });
 }
 
 function parsePaymentOption(value: unknown): "deposit" | "full" | "customPartial" | null {
@@ -424,34 +464,21 @@ function toPositiveAmount(value: unknown): number | null {
   return Math.round(value * 100) / 100;
 }
 
-function partitionCalendarEvents(
-  events: CalendarEventWindow[],
-  markerTitle: string,
-): {
-  availabilityWindows: CalendarEventWindow[];
-  busyEvents: CalendarEventWindow[];
-} {
-  const availabilityWindows: CalendarEventWindow[] = [];
-  const busyEvents: CalendarEventWindow[] = [];
-
-  for (const event of events) {
-    if (event.title.trim() === markerTitle) {
-      availabilityWindows.push(event);
-      continue;
-    }
-
-    busyEvents.push(event);
-  }
-
-  return { availabilityWindows, busyEvents };
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function toStringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function toOptionalStringValue(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function getErrorMessage(error: unknown): string {
