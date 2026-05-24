@@ -97,7 +97,6 @@ export default async function TrainingProgramPage({ params }: { params: Promise<
   const isPurchasable = isTrainingPurchasable(data);
   const showPurchaseUi = isPurchasable && isCtaSafe;
   const legacyBlocks = (data.blocks ?? []).filter(isLegacyContentBlock);
-  const showTrainingContact = data.trainingContact?.enabled !== false;
 
   return (
     <div className="relative flex flex-col min-h-screen">
