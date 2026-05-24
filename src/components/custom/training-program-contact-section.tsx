@@ -157,7 +157,7 @@ export function TrainingProgramContactSection({
 
   return (
     <section id="contact" className="scroll-mt-32 py-8 md:py-12 lg:py-16" data-training-contact-section="true">
-      <div className={hasPurchaseUi ? "lg:pr-[24rem] xl:pr-[26rem]" : undefined}>
+      <div className={hasPurchaseUi ? "" : undefined}>
         <div className="overflow-hidden rounded-[28px] border border-lh-line bg-lh-white shadow-[0_24px_70px_rgba(28,19,24,0.08)]">
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
             <div className="relative overflow-hidden bg-lh-shadow p-8 text-lh-neutral-2 md:p-10 lg:p-12">

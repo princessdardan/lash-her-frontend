@@ -142,7 +142,7 @@ export function TrainingEnrollmentToggle({
 
   return (
     <section className="py-8 md:py-12 lg:py-16" id={viewMode} data-training-enrollment-toggle="true">
-      <div className={hasPurchaseUi ? "lg:pr-[24rem] xl:pr-[26rem]" : undefined}>
+      <div className={hasPurchaseUi ? "" : undefined}>
         {/* Toggle Header */}
         {showContact && hasEnrollmentData && (
           <div className="mb-6 flex items-center justify-center gap-4">
