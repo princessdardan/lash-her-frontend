@@ -14,6 +14,34 @@ interface FeatureSectionProps {
   products?: TProduct[];
 }
 
+type ResolvedFeatureProduct = Pick<
+  TProduct,
+  "_id" | "title" | "slug" | "shortDescription" | "description" | "cardSubtitle" | "image"
+>;
+
+type FeatureProductReference = { _type: "reference"; _ref: string };
+
+function isFeatureProductReference(product: TFeatureItem["product"]): product is FeatureProductReference {
+  return Boolean(product && "_ref" in product);
+}
+
+function isResolvedFeatureProduct(product: TFeatureItem["product"]): product is ResolvedFeatureProduct {
+  return Boolean(product && "_id" in product && "slug" in product);
+}
+
+function getFeatureProduct(item: TFeatureItem, products?: TProduct[]): ResolvedFeatureProduct | undefined {
+  const { product } = item;
+
+  if (isResolvedFeatureProduct(product)) return product;
+
+  if (isFeatureProductReference(product) && products) {
+    const productId = product._ref;
+    return products.find((product) => product._id === productId);
+  }
+
+  return undefined;
+}
+
 function resolveFeatureItem(
   item: TFeatureItem,
   products?: TProduct[]
@@ -26,28 +54,26 @@ function resolveFeatureItem(
   linkLabel: string;
   isExternal: boolean;
 } {
-  // If a product is linked, try to find it in the provided products array
-  if (item.product?._ref && products) {
-    const product = products.find((p) => p._id === item.product?._ref);
-    if (product) {
-      return {
-        image: product.image || item.image,
-        heading: product.title || item.heading,
-        subHeading: item.subHeading || product.cardSubtitle,
-        description: product.shortDescription || item.description,
-        linkHref: `/products/${product.slug}`,
-        linkLabel: item.link?.label || "View Product",
-        isExternal: false,
-      };
-    }
+  const product = getFeatureProduct(item, products);
+
+  if (product) {
+    return {
+      image: product.image || item.image,
+      heading: product.title || item.heading || "Featured product",
+      subHeading: item.subHeading || product.cardSubtitle,
+      description: product.shortDescription || product.description || item.description || "",
+      linkHref: `/products/${product.slug}`,
+      linkLabel: item.link?.label || "View Product",
+      isExternal: false,
+    };
   }
 
   // Fallback to explicit fields
   return {
     image: item.image,
-    heading: item.heading,
+    heading: item.heading || "Featured service",
     subHeading: item.subHeading,
-    description: item.description,
+    description: item.description || "",
     linkHref: item.link?.href || "#",
     linkLabel: item.link?.label || "Learn More",
     isExternal: item.link?.isExternal || false,
@@ -179,9 +205,9 @@ export function FeatureSection({ data, products }: FeatureSectionProps) {
               <ChevronLeft className="w-5 h-5 text-lh-shadow" />
             </button>
             <div className="flex gap-2">
-              {items.map((_, index) => (
+              {items.map((item, index) => (
                 <button
-                  key={index}
+                  key={item._key}
                   onClick={() => setCurrentIndex(index)}
                   className={cn(
                     "w-2 h-2 rounded-full transition-colors",

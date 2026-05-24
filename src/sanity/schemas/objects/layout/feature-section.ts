@@ -45,9 +45,17 @@ export const featureSection = defineType({
           title: "Feature Item",
           fields: [
             defineField({
+              name: "product",
+              title: "Linked Product",
+              type: "reference",
+              to: [{ type: "product" }],
+              description: "Optional: link to an existing product. When set, the product image, heading, description, and CTA destination come from the product unless manually overridden.",
+            }),
+            defineField({
               name: "image",
               title: "Image",
               type: "image",
+              description: "Used when no product is linked, or as a fallback if the product has no image.",
               options: { hotspot: true },
               fields: [
                 defineField({
@@ -61,7 +69,12 @@ export const featureSection = defineType({
               name: "heading",
               title: "Heading",
               type: "string",
-              validation: (Rule) => Rule.required(),
+              description: "Used when no product is linked, or as a fallback if the product has no title.",
+              validation: (Rule) =>
+                Rule.custom((heading, context) => {
+                  const parent = context.parent as { product?: unknown } | undefined;
+                  return parent?.product || heading ? true : "Heading is required when no product is linked.";
+                }),
             }),
             defineField({
               name: "subHeading",
@@ -72,7 +85,12 @@ export const featureSection = defineType({
               name: "description",
               title: "Description",
               type: "text",
-              validation: (Rule) => Rule.required(),
+              description: "Used when no product is linked, or as a fallback if the product has no short description.",
+              validation: (Rule) =>
+                Rule.custom((description, context) => {
+                  const parent = context.parent as { product?: unknown } | undefined;
+                  return parent?.product || description ? true : "Description is required when no product is linked.";
+                }),
             }),
             defineField({
               name: "link",
@@ -97,19 +115,22 @@ export const featureSection = defineType({
                 }),
               ],
             }),
-            defineField({
-              name: "product",
-              title: "Linked Product",
-              type: "reference",
-              to: [{ type: "product" }],
-              description: "Optional: link to an existing product. When set, the product's image and details will be used, and the CTA will link to the product page.",
-            }),
           ],
           preview: {
             select: {
               title: "heading",
+              productTitle: "product.title",
               subtitle: "subHeading",
+              productSubtitle: "product.cardSubtitle",
               media: "image",
+              productMedia: "product.image",
+            },
+            prepare({ title, productTitle, subtitle, productSubtitle, media, productMedia }) {
+              return {
+                title: title || productTitle || "Feature Item",
+                subtitle: subtitle || productSubtitle || "Feature Item",
+                media: media || productMedia,
+              };
             },
           },
         }),
@@ -119,11 +140,12 @@ export const featureSection = defineType({
   preview: {
     select: {
       title: "items.0.heading",
+      productTitle: "items.0.product.title",
       subtitle: "layout",
     },
-    prepare({ title, subtitle }) {
+    prepare({ title, productTitle, subtitle }) {
       return {
-        title: title || "Feature Section",
+        title: title || productTitle || "Feature Section",
         subtitle: subtitle ? `Layout: ${subtitle}` : "",
       };
     },

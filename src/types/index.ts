@@ -46,13 +46,6 @@ export interface TMenuLink {
   description?: string;
 }
 
-export interface TFeature {
-  _key?: string;
-  heading: string;
-  subHeading: string;
-  icon: string;
-}
-
 export interface TCtaFeature {
   _key?: string;
   format?: "standard" | "imageFeature";
@@ -107,16 +100,6 @@ export interface THeroSection {
   slides?: THeroSlide[];
   autoRotate?: boolean;
   rotationIntervalMs?: number;
-}
-
-export interface TFeaturesSection {
-  _type: "featuresSection";
-  _key: string;
-  heading: string;
-  subHeading: string;
-  description: string;
-  title: string;
-  features: TFeature[];
 }
 
 export interface TCtaFeaturesSection {
@@ -202,15 +185,12 @@ export interface TGeneralInquiryLabels {
 
 export interface TFeatureItem {
   _key: string;
-  image: TSanityImage;
-  heading: string;
+  image?: TSanityImage;
+  heading?: string;
   subHeading?: string;
-  description: string;
+  description?: string;
   link?: TLink;
-  product?: {
-    _type: "reference";
-    _ref: string;
-  };
+  product?: ({ _type: "reference"; _ref: string } | Pick<TProduct, "_id" | "title" | "slug" | "shortDescription" | "description" | "cardSubtitle" | "image">);
 }
 
 export type TFeatureLayout = "imageLeft" | "imageRight" | "imageTop";
@@ -228,7 +208,6 @@ export interface TFeatureSection {
 
 export type TLayoutBlock =
   | THeroSection
-  | TFeaturesSection
   | TCtaFeaturesSection
   | TImageWithText
   | TInfoSection

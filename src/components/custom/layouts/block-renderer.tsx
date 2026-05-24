@@ -3,7 +3,6 @@ import type { TLayoutBlock } from "@/types";
 import { BlockErrorBoundary } from "./block-error-boundary";
 import { BlockAnimationWrapper } from "./block-animation-wrapper";
 import { HeroSection } from "./hero-section";
-import { FeaturesSection } from "./features-section";
 import { CtaFeaturesSection } from "./cta-features-section";
 import { ImageWithText } from "./image-with-text";
 import { InfoSection } from "./info-section";
@@ -29,7 +28,6 @@ interface BaseBlock {
  */
 const COMPONENT_REGISTRY = {
   "heroSection": HeroSection,
-  "featuresSection": FeaturesSection,
   "ctaFeaturesSection": CtaFeaturesSection,
   "imageWithText": ImageWithText,
   "infoSection": InfoSection,

@@ -19,7 +19,7 @@ export const homePage = defineType({
       name: "blocks",
       title: "Blocks",
       type: "array",
-      of: [{ type: "heroSection" }, { type: "featuresSection" }],
+      of: [{ type: "heroSection" }, { type: "featureSection" }],
     }),
   ],
   preview: {

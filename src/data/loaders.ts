@@ -133,11 +133,10 @@ async function getHomePageData(): Promise<THomePage | null> {
       image{ asset, hotspot, crop, alt },
       link[]{ _key, href, label, isExternal },
       title,
-      features[]{ _key, heading, subHeading, icon },
       layout,
       enableCarousel,
       carouselIntervalMs,
-      items[]{ _key, image{ asset, hotspot, crop, alt }, heading, subHeading, description, link{ href, label, isExternal }, product->{ _id, title, slug, shortDescription, cardSubtitle, image{ asset, hotspot, crop, alt } } }
+      items[]{ _key, image{ asset, hotspot, crop, alt }, heading, subHeading, description, link{ href, label, isExternal }, product->{ _id, title, "slug": slug.current, shortDescription, description, cardSubtitle, image{ asset, hotspot, crop, alt } } }
     }
   }`;
   return client.fetch<THomePage | null>(query, {}, sanityFetchOptions(['homePage']));

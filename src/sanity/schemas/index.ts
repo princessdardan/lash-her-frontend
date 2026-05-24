@@ -21,7 +21,6 @@ import { contactPopupSubmission } from "./documents/contact-popup-submission";
 
 // Objects — Layout blocks
 import { heroSection } from "./objects/layout/hero-section";
-import { featuresSection } from "./objects/layout/features-section";
 import { ctaFeaturesSection } from "./objects/layout/cta-features-section";
 import { ctaSectionImage } from "./objects/layout/cta-section-image";
 import { ctaSectionVideo } from "./objects/layout/cta-section-video";
@@ -40,7 +39,6 @@ import { footer } from "./objects/layout/footer";
 // Objects — Shared sub-objects
 import { link } from "./objects/shared/link";
 import { menuLink } from "./objects/shared/menu-link";
-import { feature } from "./objects/shared/feature";
 import { ctaFeature } from "./objects/shared/cta-feature";
 import { contact } from "./objects/shared/contact";
 import { hours } from "./objects/shared/hours";
@@ -71,7 +69,6 @@ export const schemaTypes = [
   contactPopupSubmission,
   // Layout blocks
   heroSection,
-  featuresSection,
   ctaFeaturesSection,
   ctaSectionImage,
   ctaSectionVideo,
@@ -89,7 +86,6 @@ export const schemaTypes = [
   // Shared objects
   link,
   menuLink,
-  feature,
   ctaFeature,
   contact,
   hours,
