@@ -57,10 +57,10 @@ For each document type, verify the publish flow: Update content in Studio -> Pub
 
 ## Ecommerce Product Catalog Checks
 
-- [ ] Product launch scope is recorded as excluding taxes for general products, discounts, shipping, ACH, partial payments, refunds tooling, saved payment methods, and customer pre-linking.
+- [ ] Product launch scope is recorded as collecting a shipping address for fulfillment while excluding taxes for general products, discounts, shipping-rate calculation, ACH, partial payments, refunds tooling, saved payment methods, and customer pre-linking.
 - [ ] Product catalog cards show the intended availability labels, variant options, SKU-backed pricing, and fulfillment notes from the target Sanity dataset.
 - [ ] Unavailable products and unavailable variants cannot be checked out; the checkout route rebuilds line items, prices, currency, and totals from server-fetched Sanity product data only.
-- [ ] Product checkout confirmation email is sent after verified payment persistence and includes order reference, line items, quantities, totals, and fulfillment/support copy.
+- [ ] Product checkout confirmation email is sent after verified payment persistence and includes order reference, line items, quantities, totals, shipping destination, and fulfillment/support copy.
 - [ ] Product confirmation email failures are logged for follow-up and do not roll back a successfully persisted paid order.
 
 ## Live Staging Smoke Matrix

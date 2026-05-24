@@ -174,7 +174,7 @@ Ideal launch behavior:
 
 Current concerns:
 
-- First-release checkout intentionally does not include taxes, discounts, shipping, ACH, partial payments, refunds, saved payment methods, or customer pre-linking for general products. That is acceptable only if the business confirms those are not needed at launch.
+- First-release checkout collects the customer's shipping address for product order fulfillment, but it intentionally does not include taxes, discounts, shipping-rate calculation, ACH, partial payments, refunds, saved payment methods, or customer pre-linking for general products. That is acceptable only if the business confirms those are not needed at launch.
 - Product order confirmation email behavior is implemented in the current workstream, but it still requires live staging verification with Resend evidence before launch.
 
 ### Helcim Checkout And Payment Processing

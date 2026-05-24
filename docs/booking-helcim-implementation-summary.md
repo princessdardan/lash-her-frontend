@@ -76,7 +76,9 @@ Implemented surfaces:
 - `src/app/(site)/products/[slug]/page.tsx`
 - `src/app/(site)/products/confirmation/page.tsx`
 - `src/components/commerce/product-card.tsx`
-- `src/components/commerce/cart-panel.tsx`
+- `src/components/commerce/cart-sheet.tsx`
+- `src/app/(site)/checkout/page.tsx`
+- `src/app/(site)/checkout/checkout-page-client.tsx`
 - `src/components/commerce/helcim-pay-button.tsx`
 - `src/app/api/checkout/route.ts`
 - `src/app/api/checkout/validate-payment/route.ts`
@@ -98,13 +100,14 @@ Core behavior:
 - HelcimPay.js is loaded from `https://secure.helcim.app/helcim-pay/services/start.js`.
 - The client listens for `helcim-pay-js-${checkoutToken}` messages from `https://secure.helcim.app`.
 - Successful Helcim iframe payloads are forwarded to `/api/checkout/validate-payment`.
+- Product checkout collects customer contact details and a shipping address on the checkout page, persists the shipping snapshot with the private checkout order, and includes the destination in the product confirmation email.
 - Validation checks the response hash, approved status, transaction ID, amount, currency, and invoice identity.
 - Pending order secret tokens are encrypted before being stored in the private database using `CHECKOUT_SECRET_ENCRYPTION_KEY`.
 - Validated payments mark the private checkout record as `paid`; failed verification marks it as `verification_failed`.
 
 Intentional first-release non-goals remain unimplemented:
 
-- No taxes, discounts, shipping, ACH-specific flow, Fee Saver, partial payments, refunds, saved payment methods, or customer pre-linking.
+- No taxes, discounts, shipping-rate calculation, ACH-specific flow, Fee Saver, partial payments, refunds, saved payment methods, or customer pre-linking.
 
 ## Shared Integration Surfaces
 
