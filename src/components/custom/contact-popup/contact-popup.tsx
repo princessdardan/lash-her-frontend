@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
 import { X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -105,14 +106,18 @@ export function ContactPopup({ settings }: ContactPopupProps) {
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
         <Dialog.Content className="fixed left-[50%] top-[50%] z-50 grid max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto border bg-white p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg md:w-full">
+          <VisuallyHidden.Root>
+            <Dialog.Title>{heading}</Dialog.Title>
+            <Dialog.Description>{description}</Dialog.Description>
+          </VisuallyHidden.Root>
           <div className="flex flex-col items-center text-center space-y-4">
             <LashHerLogo className="h-12 w-auto text-lh-primary" />
-            <Dialog.Title className="text-2xl font-serif text-lh-primary">
+            <h2 className="text-2xl font-serif text-lh-primary">
               {heading}
-            </Dialog.Title>
-            <Dialog.Description className="text-sm text-gray-600">
+            </h2>
+            <p className="text-sm text-gray-600">
               {description}
-            </Dialog.Description>
+            </p>
           </div>
 
           {isSubmitted ? (

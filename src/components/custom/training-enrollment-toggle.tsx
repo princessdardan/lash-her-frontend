@@ -82,18 +82,15 @@ export function TrainingEnrollmentToggle({
   programTitle,
   hasPurchaseUi = false,
 }: TrainingEnrollmentToggleProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>("enrollment");
-  const [isTransitioning, setIsTransitioning] = useState(false);
-
-  // Handle anchor links on mount
-  useEffect(() => {
-    const hash = window.location.hash;
-    if (hash === "#contact") {
-      setViewMode("contact");
-    } else if (hash === "#enrollment") {
-      setViewMode("enrollment");
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    if (typeof window !== "undefined") {
+      const hash = window.location.hash;
+      if (hash === "#contact") return "contact";
+      if (hash === "#enrollment") return "enrollment";
     }
-  }, []);
+    return "enrollment";
+  });
+  const [isTransitioning, setIsTransitioning] = useState(false);
 
   // Handle hash changes while on the page
   useEffect(() => {
@@ -153,7 +150,7 @@ export function TrainingEnrollmentToggle({
               onClick={handleToggle}
               disabled={isTransitioning}
               className="relative inline-flex h-8 w-14 items-center rounded-full bg-lh-shadow transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-lh-primary focus:ring-offset-2 disabled:opacity-50"
-              aria-label={toggleText}
+              aria-label={`Toggle between enrollment and contact form. Currently showing: ${viewMode === "enrollment" ? "enrollment information" : "contact form"}`}
               role="switch"
               aria-checked={viewMode === "contact"}
             >
@@ -168,9 +165,10 @@ export function TrainingEnrollmentToggle({
 
         {/* Enrollment View */}
         <div
-          className={`transition-all duration-300 ${
-            viewMode === "enrollment" ? "opacity-100 max-h-[2000px]" : "opacity-0 max-h-0 overflow-hidden"
+          className={`transition-opacity duration-300 ${
+            viewMode === "enrollment" ? "opacity-100 relative" : "opacity-0 absolute pointer-events-none"
           }`}
+          aria-hidden={viewMode !== "enrollment"}
         >
           {hasEnrollmentData && (
             <div className="grid grid-cols-1 overflow-hidden rounded-[28px] border border-lh-line bg-lh-white shadow-[0_24px_70px_rgba(28,19,24,0.08)] lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
@@ -273,9 +271,10 @@ export function TrainingEnrollmentToggle({
 
         {/* Contact View */}
         <div
-          className={`transition-all duration-300 ${
-            viewMode === "contact" ? "opacity-100 max-h-[2000px]" : "opacity-0 max-h-0 overflow-hidden"
+          className={`transition-opacity duration-300 ${
+            viewMode === "contact" ? "opacity-100 relative" : "opacity-0 absolute pointer-events-none"
           }`}
+          aria-hidden={viewMode !== "contact"}
         >
           {showContact && <TrainingContactForm contactData={contactData} programSlug={programSlug} programTitle={programTitle} />}
         </div>
