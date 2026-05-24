@@ -256,6 +256,7 @@ export function createValidatePaymentPostHandler(
           customerName: order.customerName,
           lineItems: order.lineItems,
           orderId: order.orderId,
+          shippingAddress: order.shippingAddress,
           totalAmount: order.amount,
         });
       } catch (error) {

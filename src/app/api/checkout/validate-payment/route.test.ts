@@ -20,6 +20,13 @@ const helperScript = String.raw`
     paymentProvider: "helcim",
     secretToken: "checkout-secret-token",
     purpose: "product",
+    shippingAddress: {
+      line1: "646 Oakwood Avenue",
+      city: "Toronto",
+      province: "Ontario",
+      postalCode: "M6E 2Y4",
+      country: "Canada",
+    },
     lineItems: [
       {
         description: "Signature Lash Set",
@@ -324,6 +331,7 @@ test("checkout payment validation sends product confirmation email after persist
       customerName: "Client Name",
       lineItems: pendingOrder.lineItems,
       orderId: "lh-order-123",
+      shippingAddress: pendingOrder.shippingAddress,
       totalAmount: 1130,
     }]);
   `);
