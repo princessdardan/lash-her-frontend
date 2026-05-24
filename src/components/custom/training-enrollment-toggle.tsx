@@ -58,6 +58,15 @@ const DEFAULT_CONTACT_LABELS = {
   successMessage: "Thank you. Your training inquiry has been received.",
 };
 
+
+function getInitialViewMode(): ViewMode {
+  if (typeof window === "undefined") {
+    return "enrollment";
+  }
+
+  return window.location.hash === "#contact" ? "contact" : "enrollment";
+}
+
 function isSafeUrl(url: string | undefined | null): boolean {
   if (!url) return false;
   try {
@@ -82,18 +91,8 @@ export function TrainingEnrollmentToggle({
   programTitle,
   hasPurchaseUi = false,
 }: TrainingEnrollmentToggleProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>("enrollment");
+  const [viewMode, setViewMode] = useState<ViewMode>(getInitialViewMode);
   const [isTransitioning, setIsTransitioning] = useState(false);
-
-  // Handle anchor links on mount
-  useEffect(() => {
-    const hash = window.location.hash;
-    if (hash === "#contact") {
-      setViewMode("contact");
-    } else if (hash === "#enrollment") {
-      setViewMode("enrollment");
-    }
-  }, []);
 
   // Handle hash changes while on the page
   useEffect(() => {

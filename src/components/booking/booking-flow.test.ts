@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { startPaidOfferingCheckout } from "./booking-flow";
+import { startPaidServiceCheckout } from "./booking-flow";
 
 const bookingFlowSource = readFileSync(new URL("./booking-flow.tsx", import.meta.url), "utf8");
 const bookingPageSource = readFileSync(new URL("../../app/(site)/booking/page.tsx", import.meta.url), "utf8");
@@ -10,23 +10,22 @@ const productCardSource = readFileSync(new URL("../commerce/product-card.tsx", i
 const servicesPageSource = readFileSync(new URL("../../app/(site)/services/page.tsx", import.meta.url), "utf8");
 const bookingConfirmationSource = readFileSync(new URL("../../app/(site)/booking/confirmation/page.tsx", import.meta.url), "utf8");
 
-describe("booking offering flow contract", () => {
+describe("booking service flow contract", () => {
   it("initializes service offering redirects through the booking shim helper", () => {
     assert.match(bookingPageSource, /resolveBookingShim\(await searchParams/);
     assert.match(bookingPageSource, /if \(resolution\.kind === "redirect"\) \{/);
-    assert.match(bookingShimSource, /getBookingOfferingBySlug/);
+    assert.match(bookingShimSource, /getBookableServiceBySlug/);
     assert.match(bookingShimSource, /buildServiceBookingUrl/);
   });
 
-  it("skips the service selection step for explicit offering links", () => {
-    assert.match(bookingFlowSource, /const hasOffering = Boolean\(initialOfferingSlug\)/);
-    assert.match(bookingFlowSource, /\(hasPaidTraining \|\| hasOffering \|\| initialBookingType\) \? "datetime" : "service"/);
+  it("skips the service selection step for explicit service links", () => {
+    assert.match(bookingFlowSource, /const hasInitialService = Boolean\(initialServiceSlug\)/);
+    assert.match(bookingFlowSource, /hasInitialService \? "datetime" : "service"/);
   });
 
-  it("does not refetch availability when a non-paid booking email field changes", () => {
-    assert.match(bookingFlowSource, /const availabilityEmail = hasPaidTrainingOrder \? email : ""/);
-    assert.match(bookingFlowSource, /email: availabilityEmail/);
-    assert.match(bookingFlowSource, /\[step, currentBookingType, availabilityEmail, hasPaidTrainingOrder/);
+  it("does not refetch availability when customer fields change", () => {
+    assert.match(bookingFlowSource, /fetchAvailability\(selectedServiceSlug\)/);
+    assert.match(bookingFlowSource, /\[selectedServiceSlug, step\]/);
   });
 
   it("renders availability errors before showing the generic no-times state", () => {
@@ -36,30 +35,31 @@ describe("booking offering flow contract", () => {
     assert.ok(errorBranchIndex > -1);
     assert.ok(noTimesBranchIndex > -1);
     assert.ok(errorBranchIndex < noTimesBranchIndex);
-    assert.match(bookingFlowSource, /setSlots\(\[\]\);\s*setSelectedSlot\(""\);\s*setIsLoadingSlots\(false\);/);
+    assert.match(bookingFlowSource, /setSlots\(\[\]\);\s*setSelectedSlot\(""\);\s*setSelectedDateState\(""\);/);
+    assert.match(bookingFlowSource, /setIsLoadingSlots\(false\);/);
   });
 
   it("shows a service selection empty state when no offerings are configured", () => {
-    assert.match(bookingFlowSource, /offerings\.length === 0 \? \(/);
+    assert.match(bookingFlowSource, /services\.length === 0 \? \(/);
     assert.match(bookingFlowSource, /We are currently updating our services\. Please check back later\./);
   });
 
   it("passes only the active booking flow state to BookingFlow", () => {
-    assert.match(bookingPageSource, /initialBookingType=\{resolution\.initialBookingType\}/);
-    assert.doesNotMatch(bookingPageSource, /offeringPayment=\{offeringPayment\}/);
+    assert.doesNotMatch(bookingPageSource, /initialBookingType=/);
+    assert.doesNotMatch(bookingPageSource, /servicePayment=\{servicePayment\}/);
     assert.doesNotMatch(bookingPageSource, /paidTrainingOrderId=/);
   });
 
-  it("uses private holds and the Square hosted checkout contract for paid offerings", () => {
-    assert.match(bookingFlowSource, /startPaidOfferingCheckout\(\{/);
+  it("uses private holds and the Square hosted checkout contract for paid services", () => {
+    assert.match(bookingFlowSource, /startPaidServiceCheckout\(\{/);
     assert.match(bookingFlowSource, /fetcher\("\/api\/booking\/holds"/);
     assert.match(bookingFlowSource, /fetcher\("\/api\/booking\/checkout"/);
     assert.match(bookingFlowSource, /paymentProvider: "square"/);
     assert.match(bookingFlowSource, /checkoutUrl/);
-    assert.match(bookingFlowSource, /body: JSON\.stringify\(\{\s*holdReference,\s*\}\)/);
+    assert.match(bookingFlowSource, /body: JSON\.stringify\(\{ holdReference \}\)/);
   });
 
-  it("renders all purchaser payment options for paid offerings", () => {
+  it("renders all purchaser payment options for paid services", () => {
     assert.match(bookingFlowSource, /Pay Deposit/);
     assert.match(bookingFlowSource, /Pay in Full/);
     assert.match(bookingFlowSource, /Pay Custom Amount/);
@@ -68,10 +68,10 @@ describe("booking offering flow contract", () => {
   });
 
   it("does not collect appointment intake fields that paid offering checkout does not persist", () => {
-    assert.match(bookingFlowSource, /const isPaidOfferingCheckout = currentOfferingPayment !== undefined && Boolean\(selectedOfferingSlug\) && !hasPaidTraining/);
-    assert.match(bookingFlowSource, /const shouldCollectIntake = !isPaidOfferingCheckout/);
-    assert.match(bookingFlowSource, /\{shouldCollectIntake && activeTypeConfig\?\.questions\.map/);
-    assert.match(bookingFlowSource, /\{shouldCollectIntake && <div className="flex items-start gap-3 pt-4">/);
+    assert.match(bookingFlowSource, /const currentServicePayment = currentService/);
+    assert.match(bookingFlowSource, /const intakeQuestions = settings.intakeQuestions/);
+    assert.match(bookingFlowSource, /intakeQuestions\.map/);
+    assert.match(bookingFlowSource, /settings.marketingOptInLabel/);
   });
 
   it("does not render Helcim Pay or Google Appointment Schedule UI for service bookings", () => {
@@ -95,7 +95,7 @@ describe("booking offering flow contract", () => {
   });
 
   it("keeps service detail links discoverable outside the active offerings branch", () => {
-    const emptyOfferingsIndex = servicesPageSource.indexOf("offerings.length === 0");
+    const emptyOfferingsIndex = servicesPageSource.indexOf("bookableServices.length === 0");
     const detailServicesIndex = servicesPageSource.indexOf("detailServices.length > 0");
 
     assert.ok(emptyOfferingsIndex > -1);
@@ -103,8 +103,8 @@ describe("booking offering flow contract", () => {
     assert.match(servicesPageSource, /href=\{`\/services\/\$\{service\.slug\}`\}/);
   });
 
-  it("service listing offering links use /services/<slug>/booking", () => {
-    assert.match(servicesPageSource, /href=\{`\/services\/\$\{offering\.slug\}\/booking`\}/);
+  it("service listing booking links use /services/<slug>/booking", () => {
+    assert.match(servicesPageSource, /href=\{`\/services\/\$\{service\.slug\}\/booking`\}/);
   });
 
   it("service detail booking link uses /services/<slug>/booking", () => {
@@ -152,12 +152,14 @@ describe("booking offering flow contract", () => {
       return Response.json({ error: "Unexpected request" }, { status: 500 });
     };
 
-    const checkout = await startPaidOfferingCheckout({
-      offeringSlug: "classic-full-set",
+    const checkout = await startPaidServiceCheckout({
+      serviceSlug: "classic-full-set",
       start: "2030-06-15T16:00:00.000Z",
       name: "Test Client",
       email: "test.client@example.com",
       phone: "(555) 123-4567",
+      answers: [],
+      marketingOptIn: false,
       paymentOption: "customPartial",
       customAmount: 75,
       fetcher,
@@ -176,11 +178,13 @@ describe("booking offering flow contract", () => {
       {
         url: "/api/booking/holds",
         body: {
-          offeringSlug: "classic-full-set",
+          serviceSlug: "classic-full-set",
           start: "2030-06-15T16:00:00.000Z",
           name: "Test Client",
           email: "test.client@example.com",
           phone: "(555) 123-4567",
+          answers: [],
+          marketingOptIn: false,
           paymentOption: "customPartial",
           customAmount: 75,
         },
@@ -210,12 +214,14 @@ describe("booking offering flow contract", () => {
     };
 
     await assert.rejects(
-      startPaidOfferingCheckout({
-        offeringSlug: "classic-full-set",
+      startPaidServiceCheckout({
+        serviceSlug: "classic-full-set",
         start: "2030-06-15T16:00:00.000Z",
         name: "Test Client",
         email: "test.client@example.com",
         phone: "(555) 123-4567",
+        answers: [],
+        marketingOptIn: false,
         paymentOption: "full",
         fetcher,
       }),
@@ -232,12 +238,14 @@ describe("booking offering flow contract", () => {
     };
 
     await assert.rejects(
-      startPaidOfferingCheckout({
-        offeringSlug: "classic-full-set",
+      startPaidServiceCheckout({
+        serviceSlug: "classic-full-set",
         start: "2030-06-15T16:00:00.000Z",
         name: "Test Client",
         email: "test.client@example.com",
         phone: "(555) 123-4567",
+        answers: [],
+        marketingOptIn: false,
         paymentOption: "deposit",
         fetcher,
       }),
