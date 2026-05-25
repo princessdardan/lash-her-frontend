@@ -190,7 +190,7 @@ export function FeatureSection({ data, products }: FeatureSectionProps) {
     <section className="section-shell">
       <div
         className={cn(
-          "mx-auto",
+          "mx-auto rounded-[28px] border border-lh-line bg-white/60 p-6 shadow-[0_18px_50px_rgba(28,19,24,0.04)] md:p-10 lg:p-14",
           isImageTop ? "max-w-4xl" : "container max-w-7xl"
         )}
       >
