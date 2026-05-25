@@ -48,6 +48,18 @@ export const product = defineType({
       validation: (Rule) => Rule.required().min(0),
     }),
     defineField({
+      name: "discountPrice",
+      title: "Manual Discount Price",
+      type: "number",
+      description: "Optional sale price configured directly in Sanity. Must be lower than the regular price.",
+      validation: (Rule) => Rule.min(0).custom((value, context) => {
+        if (value === undefined) return true;
+        return typeof context.document?.price === "number" && value < context.document.price
+          ? true
+          : "Manual discount price must be lower than the regular price.";
+      }),
+    }),
+    defineField({
       name: "sku",
       title: "Merchant SKU",
       type: "string",
@@ -192,6 +204,19 @@ export const product = defineType({
               title: "Variant Price",
               type: "number",
               validation: (Rule) => Rule.required().min(0),
+            }),
+            defineField({
+              name: "discountPrice",
+              title: "Manual Discount Price",
+              type: "number",
+              description: "Optional variant sale price. Must be lower than this variant's regular price.",
+              validation: (Rule) => Rule.min(0).custom((value, context) => {
+                const parent = context.parent as { price?: number } | undefined;
+                if (value === undefined) return true;
+                return typeof parent?.price === "number" && value < parent.price
+                  ? true
+                  : "Manual discount price must be lower than the variant price.";
+              }),
             }),
             defineField({
               name: "sku",

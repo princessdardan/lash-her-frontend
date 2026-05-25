@@ -40,6 +40,7 @@ const helperScript = String.raw`
     createHelcimInvoice,
     createPendingOrder,
     getProductsByIds,
+    getPromotionCode,
     initializeHelcimPay,
   } = {}) {
     const fetchedProductIds = [];
@@ -53,6 +54,12 @@ const helperScript = String.raw`
           return getProductsByIds(ids);
         }
         return [product];
+      },
+      getPromotionCode: async (code) => {
+        if (getPromotionCode) {
+          return getPromotionCode(code);
+        }
+        return null;
       },
       createHelcimInvoice: async (input) => {
         invoices.push(input);
@@ -193,6 +200,61 @@ test("checkout route creates Helcim checkout for a valid cart", () => {
     assert.equal(orders[0].helcimInvoiceNumber, "INV-4242");
     assert.deepEqual(orders[0].shippingAddress, { ...shippingAddress, line2: "Suite 2" });
     assert.equal(orders[0].cart.amount, 48);
+  `);
+});
+
+test("checkout route keeps promotion invoice totals aligned with Helcim Pay amount", () => {
+  runRouteScenario(`
+    const { handler, invoices, orders, paySessions } = runScenario({
+      getPromotionCode: async (code) => ({
+        _id: "promo-save10",
+        code,
+        isEnabled: true,
+        discountType: "percentage",
+        amount: 10,
+        appliesTo: "products",
+      }),
+    });
+
+    const response = await handler(createRequest({
+      customer: { name: "Nataliea Lash", email: "client@example.com" },
+      shippingAddress,
+      items: [{ productId: "product-lash-cleanser", quantity: 2 }],
+      promotionCode: "SAVE10",
+    }));
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { checkoutToken: "checkout-token-4242" });
+    assert.deepEqual(invoices, [{
+      currency: "CAD",
+      type: "INVOICE",
+      status: "DUE",
+      notes: "Lash Her website checkout",
+      lineItems: [
+        {
+          sku: "product-lash-cleanser",
+          description: "Lash Cleanser",
+          quantity: 2,
+          price: 24,
+        },
+        {
+          sku: "SAVE10",
+          description: "Promotion code SAVE10",
+          quantity: 1,
+          price: -4.8,
+        },
+      ],
+    }]);
+    assert.deepEqual(paySessions, [{
+      paymentType: "purchase",
+      amount: 43.2,
+      currency: "CAD",
+      invoiceNumber: "INV-4242",
+    }]);
+    const invoiceTotal = invoices[0].lineItems.reduce((total, item) => total + item.price * item.quantity, 0);
+    assert.equal(invoiceTotal, paySessions[0].amount);
+    assert.equal(orders[0].cart.amount, paySessions[0].amount);
+    assert.equal(orders[0].cart.promotionCode, "SAVE10");
   `);
 });
 

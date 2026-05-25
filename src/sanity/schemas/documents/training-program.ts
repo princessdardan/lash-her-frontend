@@ -215,6 +215,20 @@ export const trainingProgram = defineType({
       }),
     }),
     defineField({
+      name: "discountPrice",
+      title: "Manual Discount Price",
+      type: "number",
+      group: "checkout",
+      hidden: ({ document }) => !document?.checkoutEnabled,
+      description: "Optional sale price configured directly in Sanity. Must be lower than the regular training price.",
+      validation: (Rule) => Rule.min(0).custom((value, context) => {
+        if (!context.document?.checkoutEnabled || value === undefined) return true;
+        return typeof context.document.price === "number" && value < context.document.price
+          ? true
+          : "Manual discount price must be lower than the regular training price.";
+      }),
+    }),
+    defineField({
       name: "isAvailable",
       title: "Available for checkout",
       type: "boolean",

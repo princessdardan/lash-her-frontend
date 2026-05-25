@@ -27,6 +27,13 @@ function formatDisplayPrice(value: unknown): string {
   }
 }
 
+function getDiscountedPrice(price: unknown, discountPrice: unknown): number | null {
+  if (typeof price !== "number" || !Number.isFinite(price)) return null;
+  if (typeof discountPrice !== "number" || !Number.isFinite(discountPrice)) return null;
+
+  return discountPrice < price ? discountPrice : null;
+}
+
 export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement {
   const productHref = `/products/${product.slug}`;
   const variants = useMemo(
@@ -37,6 +44,8 @@ export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement 
   const [selectedVariantId, setSelectedVariantId] = useState(availableVariants[0]?._key ?? "");
   const selectedVariant = variants.find((variant) => variant._key === selectedVariantId);
   const price = selectedVariant?.price ?? product.price;
+  const discountPrice = selectedVariant?.discountPrice ?? product.discountPrice;
+  const effectiveDiscountPrice = getDiscountedPrice(price, discountPrice);
   const canAdd = product.isAvailable && (variants.length === 0 || Boolean(selectedVariant?.isAvailable));
   const availabilityLabel = product.availabilityLabel || (product.isAvailable ? "Ready to ship" : "Unavailable");
 
@@ -127,7 +136,7 @@ export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement 
               )}
               {variants.map((variant) => (
                 <option key={variant._key} value={variant._key} disabled={!variant.isAvailable}>
-                  {variant.title} - {formatDisplayPrice(variant.price)}
+                  {variant.title} - {formatDisplayPrice(getDiscountedPrice(variant.price, variant.discountPrice) ?? variant.price)}
                   {!variant.isAvailable ? ` - ${variant.availabilityLabel || "Unavailable"}` : ""}
                 </option>
               ))}
@@ -138,7 +147,12 @@ export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement 
         <div className="mt-auto rounded-[24px] border border-lh-line bg-lh-neutral-2/70 p-4">
           <div className="mb-4 flex items-center justify-between gap-4">
             <span className="font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-muted">Price</span>
-            <span className="font-body text-xl font-bold text-lh-shadow">{formatDisplayPrice(price)}</span>
+            <span className="flex flex-col items-end gap-1 font-body text-xl font-bold text-lh-shadow">
+              {effectiveDiscountPrice !== null ? (
+                <span className="text-sm text-lh-muted line-through">{formatDisplayPrice(price)}</span>
+              ) : null}
+              <span>{formatDisplayPrice(effectiveDiscountPrice ?? price)}</span>
+            </span>
           </div>
           {onAdd ? (
             <Button

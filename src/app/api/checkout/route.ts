@@ -15,9 +15,10 @@ import {
   parseCheckoutText,
   parseOptionalCheckoutText,
 } from "@/lib/commerce/checkout-validation";
+import { parsePromotionCodeInput } from "@/lib/commerce/discounts";
 import type { HelcimGateway } from "@/lib/commerce/helcim-gateway";
 import { createPaymentMockStore } from "@/lib/payment-mocks/in-memory-store";
-import type { TProduct } from "@/types";
+import type { TProduct, TPromotionCode } from "@/types";
 
 const checkoutPaymentMockStore = createPaymentMockStore();
 
@@ -39,6 +40,7 @@ interface CheckoutRequestBody {
   customer: CheckoutCustomerInput;
   items: CartInputItem[];
   shippingAddress: CheckoutShippingAddressInput;
+  promotionCode?: string;
 }
 
 interface CheckoutResponseBody {
@@ -51,6 +53,7 @@ interface CheckoutErrorBody {
 
 interface CheckoutPostHandlerDependencies {
   getProductsByIds: (ids: string[]) => Promise<TProduct[]>;
+  getPromotionCode: (code: string) => Promise<TPromotionCode | null>;
   createHelcimInvoice: (input: CheckoutInvoiceInput) => Promise<CheckoutInvoice>;
   initializeHelcimPay: (input: CheckoutPaySessionInput) => Promise<CheckoutPaySession>;
   createPendingOrder: (input: CheckoutPendingOrderInput) => Promise<unknown>;
@@ -66,6 +69,7 @@ interface CheckoutInvoiceInput {
     description: string;
     quantity: number;
     price: number;
+    discountCode?: string;
   }>;
 }
 
@@ -99,6 +103,7 @@ interface CheckoutPendingOrderInput {
 
 export function createCheckoutPostHandler({
   getProductsByIds,
+  getPromotionCode,
   createHelcimInvoice,
   initializeHelcimPay,
   createPendingOrder,
@@ -120,21 +125,39 @@ export function createCheckoutPostHandler({
 
     try {
       const productIds = Array.from(new Set(checkoutRequest.items.map((item) => item.productId)));
-      const products = await getProductsByIds(productIds);
+      const [products, promotionCode] = await Promise.all([
+        getProductsByIds(productIds),
+        checkoutRequest.promotionCode ? getPromotionCode(checkoutRequest.promotionCode) : Promise.resolve(null),
+      ]);
       const catalogProducts = products.map(toCatalogProduct);
-      const cart = buildValidatedCart(checkoutRequest.items, catalogProducts);
+      const cart = buildValidatedCart(checkoutRequest.items, catalogProducts, { promotionCode });
+
+      if (checkoutRequest.promotionCode && cart.promotionCode !== checkoutRequest.promotionCode) {
+        return invalidPromotionCode();
+      }
+
+      const invoiceLineItems = cart.lineItems.map(({ sku, description, quantity, price }) => ({
+        sku,
+        description,
+        quantity,
+        price,
+      }));
+
+      if (cart.promotionCode && cart.promotionDiscountAmount) {
+        invoiceLineItems.push({
+          sku: cart.promotionCode,
+          description: `Promotion code ${cart.promotionCode}`,
+          quantity: 1,
+          price: -cart.promotionDiscountAmount,
+        });
+      }
 
       const invoice = await createHelcimInvoice({
         currency: "CAD",
         type: "INVOICE",
         status: "DUE",
         notes: "Lash Her website checkout",
-        lineItems: cart.lineItems.map(({ sku, description, quantity, price }) => ({
-          sku,
-          description,
-          quantity,
-          price,
-        })),
+        lineItems: invoiceLineItems,
       });
 
       const helcimPaySession = await initializeHelcimPay({
@@ -181,6 +204,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   return createCheckoutPostHandler({
     getProductsByIds: loaders.getProductsByIds,
+    getPromotionCode: loaders.getPromotionCode,
     createHelcimInvoice: gateway.createInvoice,
     initializeHelcimPay: gateway.initializePay,
     createPendingOrder,
@@ -227,8 +251,9 @@ function parseCheckoutRequest(body: unknown): CheckoutRequestBody | null {
   const name = parseCheckoutText(body.customer.name, CHECKOUT_CUSTOMER_NAME_MAX_LENGTH);
   const email = typeof body.customer.email === "string" ? body.customer.email.trim().toLowerCase() : null;
   const shippingAddress = parseShippingAddress(body.shippingAddress);
+  const promotionCode = parsePromotionCodeInput(body.promotionCode);
 
-  if (name === null || email === null || !isValidCheckoutEmail(email) || shippingAddress === null) {
+  if (name === null || email === null || !isValidCheckoutEmail(email) || shippingAddress === null || promotionCode === null) {
     return null;
   }
 
@@ -236,6 +261,7 @@ function parseCheckoutRequest(body: unknown): CheckoutRequestBody | null {
     customer: { name, email },
     items: body.items.map(toCartInputItem),
     shippingAddress,
+    ...(promotionCode ? { promotionCode } : {}),
   };
 }
 
@@ -284,6 +310,7 @@ function toCatalogProduct(product: TProduct): CatalogProduct {
     sku: product.sku,
     title: product.title,
     price: product.price,
+    discountPrice: product.discountPrice,
     currency: product.currency,
     isAvailable: product.isAvailable,
     variants: product.variants?.map((variant) => ({
@@ -291,9 +318,17 @@ function toCatalogProduct(product: TProduct): CatalogProduct {
       sku: variant.sku,
       title: variant.title,
       price: variant.price,
+      discountPrice: variant.discountPrice,
       isAvailable: variant.isAvailable,
     })),
   };
+}
+
+function invalidPromotionCode(): NextResponse<CheckoutErrorBody> {
+  return NextResponse.json<CheckoutErrorBody>(
+    { error: "Invalid promotion code" },
+    { status: 400 },
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

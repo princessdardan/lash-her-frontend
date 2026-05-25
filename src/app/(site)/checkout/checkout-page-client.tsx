@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, Suspense } from "react";
+import { useEffect, useState, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,7 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
   const buyNowProductId = searchParams.get("productId");
   const buyNowVariantId = searchParams.get("variantId");
   const buyNowQuantity = searchParams.get("quantity");
+  const initialPromotionCode = searchParams.get("promotionCode")?.toUpperCase() ?? "";
 
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
@@ -42,6 +43,12 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
   const [shippingProvince, setShippingProvince] = useState("");
   const [shippingPostalCode, setShippingPostalCode] = useState("");
   const [shippingCountry, setShippingCountry] = useState("Canada");
+  const [promotionCodeInput, setPromotionCodeInput] = useState(initialPromotionCode);
+  const [redeemedPromotionCode, setRedeemedPromotionCode] = useState<string | undefined>();
+  const [promotionPreviewCart, setPromotionPreviewCart] = useState<ValidatedCart | null>(null);
+  const [promotionPreviewCartKey, setPromotionPreviewCartKey] = useState<string | undefined>();
+  const [promotionCodeError, setPromotionCodeError] = useState<string | null>(null);
+  const [isApplyingPromotionCode, setIsApplyingPromotionCode] = useState(false);
 
   // Build checkout items: either buy-now single item or full cart
   const checkoutItems = useMemo<CartInputItem[]>(() => {
@@ -58,6 +65,8 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
     return cartItems;
   }, [isBuyNow, buyNowProductId, buyNowVariantId, buyNowQuantity, cartItems]);
 
+  const checkoutItemsKey = useMemo(() => JSON.stringify(checkoutItems), [checkoutItems]);
+
   const cart = useMemo<{ cart: ValidatedCart | null; error: string | null }>(() => {
     if (checkoutItems.length === 0) {
       return { cart: null, error: null };
@@ -69,6 +78,7 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
         sku: p.sku,
         title: p.title,
         price: p.price,
+        discountPrice: p.discountPrice,
         currency: p.currency,
         isAvailable: p.isAvailable,
         variants: p.variants?.map((variant) => ({
@@ -76,6 +86,7 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
           sku: variant.sku,
           title: variant.title,
           price: variant.price,
+          discountPrice: variant.discountPrice,
           isAvailable: variant.isAvailable,
         })),
       }));
@@ -86,6 +97,9 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
   }, [checkoutItems, products]);
 
   const totalItems = checkoutItems.reduce((sum, item) => sum + item.quantity, 0);
+  const hasPromotionPreview = promotionPreviewCartKey === checkoutItemsKey && promotionPreviewCart !== null;
+  const activeRedeemedPromotionCode = hasPromotionPreview ? redeemedPromotionCode : undefined;
+  const displayedCart = hasPromotionPreview ? promotionPreviewCart : cart.cart;
   const normalizedCustomerName = normalizeCheckoutText(customerName);
   const normalizedCustomerEmail = customerEmail.trim().toLowerCase();
   const normalizedShippingLine2 = normalizeCheckoutText(shippingLine2);
@@ -109,6 +123,120 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
     isValidCheckoutText(customerName, CHECKOUT_CUSTOMER_NAME_MAX_LENGTH) &&
     isValidCheckoutEmail(normalizedCustomerEmail),
   );
+  const cartAmount = displayedCart?.amount ?? 0;
+  const cartAmountBeforePromotion = displayedCart
+    ? Math.round((displayedCart.amount + (displayedCart.promotionDiscountAmount ?? 0)) * 100) / 100
+    : 0;
+
+  const handleApplyPromotionCode = async () => {
+    if (!cart.cart || !promotionCodeInput.trim()) return;
+
+    setPromotionCodeError(null);
+    setIsApplyingPromotionCode(true);
+
+    try {
+      const response = await fetch("/api/promotion-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetType: "product",
+          promotionCode: promotionCodeInput,
+          items: checkoutItems,
+        }),
+      });
+
+      if (!response.ok) {
+        setPromotionCodeError("This code is not valid for your order.");
+        setRedeemedPromotionCode(undefined);
+        setPromotionPreviewCart(null);
+        return;
+      }
+
+      const data = await response.json() as { promotionCode?: string; cart?: ValidatedCart };
+      if (!data.promotionCode || !data.cart) {
+        setPromotionCodeError("This code is not valid for your order.");
+        setRedeemedPromotionCode(undefined);
+        setPromotionPreviewCart(null);
+        return;
+      }
+
+      setRedeemedPromotionCode(data.promotionCode);
+      setPromotionPreviewCart(data.cart);
+      setPromotionPreviewCartKey(checkoutItemsKey);
+      setPromotionCodeInput(data.promotionCode);
+    } catch {
+      setPromotionCodeError("We could not apply this code. Please try again.");
+      setRedeemedPromotionCode(undefined);
+      setPromotionPreviewCart(null);
+    } finally {
+      setIsApplyingPromotionCode(false);
+    }
+  };
+
+  const handleRemovePromotionCode = () => {
+    setRedeemedPromotionCode(undefined);
+    setPromotionPreviewCart(null);
+    setPromotionPreviewCartKey(undefined);
+    setPromotionCodeError(null);
+  };
+
+  useEffect(() => {
+    if (!initialPromotionCode || !cart.cart || activeRedeemedPromotionCode || hasPromotionPreview || promotionCodeError || isApplyingPromotionCode) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    void (async () => {
+      setIsApplyingPromotionCode(true);
+      setPromotionCodeInput(initialPromotionCode);
+
+      try {
+        const response = await fetch("/api/promotion-code", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            targetType: "product",
+            promotionCode: initialPromotionCode,
+            items: checkoutItems,
+          }),
+        });
+
+        if (isCancelled) return;
+
+        if (!response.ok) {
+          setPromotionCodeError("This code is not valid for your order.");
+          setRedeemedPromotionCode(undefined);
+          setPromotionPreviewCart(null);
+          return;
+        }
+
+        const data = await response.json() as { promotionCode?: string; cart?: ValidatedCart };
+        if (!data.promotionCode || !data.cart) {
+          setPromotionCodeError("This code is not valid for your order.");
+          setRedeemedPromotionCode(undefined);
+          setPromotionPreviewCart(null);
+          return;
+        }
+
+        setRedeemedPromotionCode(data.promotionCode);
+        setPromotionPreviewCart(data.cart);
+        setPromotionPreviewCartKey(checkoutItemsKey);
+        setPromotionCodeInput(data.promotionCode);
+      } catch {
+        if (isCancelled) return;
+        setPromotionCodeError("We could not apply this code. Please try again.");
+        setRedeemedPromotionCode(undefined);
+        setPromotionPreviewCart(null);
+      } finally {
+        if (!isCancelled) setIsApplyingPromotionCode(false);
+      }
+    })();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [activeRedeemedPromotionCode, cart.cart, checkoutItems, checkoutItemsKey, hasPromotionPreview, initialPromotionCode, isApplyingPromotionCode, promotionCodeError]);
 
   if (checkoutItems.length === 0) {
     return (
@@ -148,7 +276,7 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
               </div>
             ) : null}
 
-            {cart.cart ? (
+            {displayedCart ? (
               <div className="flex flex-col gap-6">
                 <div className="flex items-center justify-between">
                   <span className="font-body text-sm font-bold text-lh-muted">
@@ -165,7 +293,7 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
                 </div>
 
                 <ul className="divide-y divide-lh-line">
-                  {cart.cart.lineItems.map((lineItem) => (
+                  {displayedCart.lineItems.map((lineItem) => (
                     <li
                       key={`${lineItem.productId}:${lineItem.variantId || "default"}`}
                       className="py-4 flex justify-between items-start"
@@ -174,17 +302,81 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
                         <p className="font-body font-bold text-lh-shadow">{lineItem.description}</p>
                         <p className="font-body text-sm font-bold text-lh-muted">
                           Qty: {lineItem.quantity} × {formatCad(lineItem.price)}
+                          {lineItem.originalPrice ? (
+                            <span className="ml-2 text-lh-muted line-through">
+                              {formatCad(lineItem.originalPrice)}
+                            </span>
+                          ) : null}
                         </p>
                       </div>
-                      <p className="font-body font-bold text-lh-shadow">{formatCad(lineItem.total)}</p>
+                      <div className="text-right">
+                        {lineItem.originalTotal ? (
+                          <p className="font-body text-xs font-bold text-lh-muted line-through">
+                            {formatCad(lineItem.originalTotal)}
+                          </p>
+                        ) : null}
+                        <p className="font-body font-bold text-lh-shadow">{formatCad(lineItem.total)}</p>
+                      </div>
                     </li>
                   ))}
                 </ul>
 
+                <div className="rounded-[24px] border border-lh-line bg-lh-neutral-2/60 p-4">
+                  <label htmlFor="checkout-promotion-code" className="block text-sm font-bold text-lh-primary mb-2">
+                    Promotion code
+                  </label>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Input
+                      id="checkout-promotion-code"
+                      value={promotionCodeInput}
+                      onChange={(event) => setPromotionCodeInput(event.target.value.toUpperCase())}
+                      placeholder="Enter code"
+                      disabled={isApplyingPromotionCode}
+                      autoComplete="off"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={activeRedeemedPromotionCode ? handleRemovePromotionCode : handleApplyPromotionCode}
+                      disabled={isApplyingPromotionCode || (!activeRedeemedPromotionCode && !promotionCodeInput.trim())}
+                      className="rounded-full border-lh-primary/30 px-5 font-body text-sm uppercase tracking-[0.12em] hover:bg-lh-primary-soft hover:text-lh-primary"
+                    >
+                      {isApplyingPromotionCode ? "Applying" : activeRedeemedPromotionCode ? "Remove" : "Apply"}
+                    </Button>
+                  </div>
+                  {activeRedeemedPromotionCode ? (
+                    <p className="mt-2 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-primary">
+                      Code {activeRedeemedPromotionCode} applied.
+                    </p>
+                  ) : null}
+                  {promotionCodeError ? (
+                    <p className="mt-2 font-body text-xs font-bold text-lh-accent" role="alert">
+                      {promotionCodeError}
+                    </p>
+                  ) : null}
+                </div>
+
                 <div className="border-t border-lh-line pt-4">
-                  <div className="flex justify-between items-center">
+                  {displayedCart.manualDiscountAmount ? (
+                    <div className="mb-2 flex justify-between font-body text-sm font-bold text-lh-muted">
+                      <span>Manual discounts</span>
+                      <span>-{formatCad(displayedCart.manualDiscountAmount)}</span>
+                    </div>
+                  ) : null}
+                  {activeRedeemedPromotionCode && displayedCart.promotionDiscountAmount ? (
+                    <div className="mb-2 flex justify-between font-body text-sm font-bold text-lh-primary">
+                      <span>Code {activeRedeemedPromotionCode}</span>
+                      <span>-{formatCad(displayedCart.promotionDiscountAmount)}</span>
+                    </div>
+                  ) : null}
+                  <div className="flex justify-between items-center gap-4">
                     <span className="font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-muted">Total</span>
-                    <span className="font-body text-2xl font-bold text-lh-shadow">{formatCad(cart.cart.amount)}</span>
+                    <span className="flex flex-wrap items-baseline justify-end gap-2 font-body text-2xl font-bold text-lh-shadow">
+                      {activeRedeemedPromotionCode && displayedCart.promotionDiscountAmount ? (
+                        <span className="text-sm text-lh-muted line-through">{formatCad(cartAmountBeforePromotion)}</span>
+                      ) : null}
+                      <span>{formatCad(cartAmount)}</span>
+                    </span>
                   </div>
                 </div>
 
@@ -318,10 +510,11 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
 
                 <div className="mt-2">
                   <HelcimPayButton
-                    disabled={!cart.cart || !hasValidCustomerDetails || !hasValidShippingAddress}
+                    disabled={!displayedCart || !hasValidCustomerDetails || !hasValidShippingAddress}
                     items={checkoutItems}
                     customer={{ name: normalizedCustomerName, email: normalizedCustomerEmail }}
                     shippingAddress={shippingAddress}
+                    promotionCode={activeRedeemedPromotionCode}
                     onPaid={isBuyNow ? () => undefined : clearCart}
                   />
                 </div>

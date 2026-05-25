@@ -24,17 +24,22 @@ function formatDisplayPrice(value: unknown): string | null {
   }
 }
 
-function formatProductPrice(product: { price?: number | null; variants?: Array<{ price?: number | null }> }): string {
-  const variantPrices = product.variants
-    ?.map((variant) => variant.price)
-    .filter((price): price is number => typeof price === "number" && Number.isFinite(price)) ?? [];
+interface ProductPriceDisplay {
+  currentLabel: string;
+  originalLabel?: string;
+}
 
-  if (variantPrices.length === 0) {
-    return formatDisplayPrice(product.price) ?? PRICE_UNAVAILABLE_LABEL;
-  }
+function getDiscountedPrice(price: number, discountPrice: unknown): number {
+  return typeof discountPrice === "number" && Number.isFinite(discountPrice) && discountPrice < price
+    ? discountPrice
+    : price;
+}
 
-  const lowestPrice = Math.min(...variantPrices);
-  const highestPrice = Math.max(...variantPrices);
+function formatPriceRange(prices: number[]): string | null {
+  if (prices.length === 0) return null;
+
+  const lowestPrice = Math.min(...prices);
+  const highestPrice = Math.max(...prices);
   const lowestPriceLabel = formatDisplayPrice(lowestPrice);
   const highestPriceLabel = formatDisplayPrice(highestPrice);
 
@@ -45,6 +50,43 @@ function formatProductPrice(product: { price?: number | null; variants?: Array<{
   return lowestPrice === highestPrice
     ? lowestPriceLabel
     : `${lowestPriceLabel} - ${highestPriceLabel}`;
+}
+
+function getProductPriceDisplay(product: { price?: number | null; discountPrice?: number | null; variants?: Array<{ price?: number | null; discountPrice?: number | null }> }): ProductPriceDisplay {
+  const variantPrices = product.variants
+    ?.map((variant) => {
+      if (typeof variant.price !== "number" || !Number.isFinite(variant.price)) return null;
+
+      return {
+        current: getDiscountedPrice(variant.price, variant.discountPrice),
+        original: variant.price,
+      };
+    })
+    .filter((price): price is { current: number; original: number } => price !== null) ?? [];
+
+  if (variantPrices.length > 0) {
+    const currentLabel = formatPriceRange(variantPrices.map((price) => price.current)) ?? PRICE_UNAVAILABLE_LABEL;
+    const hasManualDiscount = variantPrices.some((price) => price.current < price.original);
+    const originalLabel = hasManualDiscount ? formatPriceRange(variantPrices.map((price) => price.original)) : null;
+
+    return {
+      currentLabel,
+      ...(originalLabel ? { originalLabel } : {}),
+    };
+  }
+
+  if (typeof product.price !== "number" || !Number.isFinite(product.price)) {
+    return { currentLabel: PRICE_UNAVAILABLE_LABEL };
+  }
+
+  const currentPrice = getDiscountedPrice(product.price, product.discountPrice);
+  const currentLabel = formatDisplayPrice(currentPrice) ?? PRICE_UNAVAILABLE_LABEL;
+  const originalLabel = currentPrice < product.price ? formatDisplayPrice(product.price) : null;
+
+  return {
+    currentLabel,
+    ...(originalLabel ? { originalLabel } : {}),
+  };
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -88,6 +130,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
   const availabilityLabel = getAvailabilityLabel(product);
   const collections = product.collections?.filter((collection) => collection.title).slice(0, 3) ?? [];
   const attributes = product.filterAttributes?.filter((attribute) => attribute.label && attribute.value).slice(0, 4) ?? [];
+  const priceDisplay = getProductPriceDisplay(product);
 
   return (
     <div className="min-h-screen bg-lh-neutral-2">
@@ -158,9 +201,14 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
                     </p>
                   ) : null}
 
-                  <p className="mt-6 font-body text-2xl font-bold text-lh-shadow md:text-3xl">
-                    {formatProductPrice(product)}
-                  </p>
+                  <div className="mt-6 flex flex-wrap items-baseline gap-x-3 gap-y-1 font-body text-2xl font-bold text-lh-shadow md:text-3xl">
+                    {priceDisplay.originalLabel ? (
+                      <span className="text-base text-lh-muted line-through md:text-lg">
+                        {priceDisplay.originalLabel}
+                      </span>
+                    ) : null}
+                    <span>{priceDisplay.currentLabel}</span>
+                  </div>
                 </div>
 
                 {product.description && (

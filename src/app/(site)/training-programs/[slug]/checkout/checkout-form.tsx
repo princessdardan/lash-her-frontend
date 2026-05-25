@@ -2,12 +2,16 @@
 
 import { useState } from "react";
 import { TrainingHelcimPayButton } from "@/components/commerce/training-helcim-pay-button";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { formatCad } from "@/lib/commerce/money";
 
 interface CheckoutFormProps {
   programSlug: string;
   clientPrice: number;
+  originalSubtotal?: number;
+  manualDiscount: number;
   subtotal: number;
   tax: number;
   total: number;
@@ -17,6 +21,8 @@ interface CheckoutFormProps {
 export function CheckoutForm({
   programSlug,
   clientPrice,
+  originalSubtotal,
+  manualDiscount,
   subtotal,
   tax,
   total,
@@ -25,8 +31,86 @@ export function CheckoutForm({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [acknowledged, setAcknowledged] = useState(false);
+  const [promotionCodeInput, setPromotionCodeInput] = useState("");
+  const [redeemedPromotionCode, setRedeemedPromotionCode] = useState<string | undefined>();
+  const [promotionDiscount, setPromotionDiscount] = useState(0);
+  const [discountedSubtotal, setDiscountedSubtotal] = useState(subtotal);
+  const [discountedTax, setDiscountedTax] = useState(tax);
+  const [discountedTotal, setDiscountedTotal] = useState(total);
+  const [promotionCodeError, setPromotionCodeError] = useState<string | null>(null);
+  const [isApplyingPromotionCode, setIsApplyingPromotionCode] = useState(false);
 
   const isValid = name.trim().length > 0 && email.includes("@") && acknowledged;
+  const amountBeforePromotion = redeemedPromotionCode ? subtotal : discountedSubtotal;
+
+  const handleApplyPromotionCode = async () => {
+    if (!promotionCodeInput.trim()) return;
+
+    setPromotionCodeError(null);
+    setIsApplyingPromotionCode(true);
+
+    try {
+      const response = await fetch("/api/promotion-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetType: "trainingProgram",
+          programSlug,
+          promotionCode: promotionCodeInput,
+        }),
+      });
+
+      if (!response.ok) {
+        setPromotionCodeError("This code is not valid for this training program.");
+        setRedeemedPromotionCode(undefined);
+        setPromotionDiscount(0);
+        setDiscountedSubtotal(subtotal);
+        setDiscountedTax(tax);
+        setDiscountedTotal(total);
+        return;
+      }
+
+      const data = await response.json() as {
+        promotionCode?: string;
+        discountAmount?: number;
+        trainingQuote?: { subtotal: number; tax: number; total: number };
+      };
+      if (!data.promotionCode || !data.trainingQuote) {
+        setPromotionCodeError("This code is not valid for this training program.");
+        setRedeemedPromotionCode(undefined);
+        setPromotionDiscount(0);
+        setDiscountedSubtotal(subtotal);
+        setDiscountedTax(tax);
+        setDiscountedTotal(total);
+        return;
+      }
+
+      setRedeemedPromotionCode(data.promotionCode);
+      setPromotionCodeInput(data.promotionCode);
+      setPromotionDiscount(data.discountAmount ?? 0);
+      setDiscountedSubtotal(data.trainingQuote.subtotal);
+      setDiscountedTax(data.trainingQuote.tax);
+      setDiscountedTotal(data.trainingQuote.total);
+    } catch {
+      setPromotionCodeError("We could not apply this code. Please try again.");
+      setRedeemedPromotionCode(undefined);
+      setPromotionDiscount(0);
+      setDiscountedSubtotal(subtotal);
+      setDiscountedTax(tax);
+      setDiscountedTotal(total);
+    } finally {
+      setIsApplyingPromotionCode(false);
+    }
+  };
+
+  const handleRemovePromotionCode = () => {
+    setRedeemedPromotionCode(undefined);
+    setPromotionDiscount(0);
+    setDiscountedSubtotal(subtotal);
+    setDiscountedTax(tax);
+    setDiscountedTotal(total);
+    setPromotionCodeError(null);
+  };
 
   return (
     <div className="space-y-8">
@@ -34,18 +118,76 @@ export function CheckoutForm({
         <div className="space-y-3 mb-4">
           <div className="flex justify-between items-center text-lh-shadow/80">
             <span>Subtotal</span>
-            <span>${subtotal.toFixed(2)} {currency}</span>
+            <span className="flex items-baseline gap-2">
+              {originalSubtotal !== undefined || redeemedPromotionCode ? (
+                <span className="text-sm text-lh-shadow/50 line-through">
+                  {formatCad(redeemedPromotionCode ? amountBeforePromotion : originalSubtotal ?? amountBeforePromotion)}
+                </span>
+              ) : null}
+              <span>{formatCad(discountedSubtotal)}</span>
+            </span>
           </div>
+          {manualDiscount > 0 ? (
+            <div className="flex justify-between items-center text-sm font-bold text-lh-shadow/60">
+              <span>Manual discount</span>
+              <span>-{formatCad(manualDiscount)}</span>
+            </div>
+          ) : null}
+          {redeemedPromotionCode && promotionDiscount > 0 ? (
+            <div className="flex justify-between items-center text-sm font-bold text-lh-primary">
+              <span>Code {redeemedPromotionCode}</span>
+              <span>-{formatCad(promotionDiscount)}</span>
+            </div>
+          ) : null}
           <div className="flex justify-between items-center text-lh-shadow/80">
             <span>Ontario HST (13%)</span>
-            <span>${tax.toFixed(2)} {currency}</span>
+            <span>{formatCad(discountedTax)}</span>
           </div>
           <div className="flex justify-between items-center font-medium text-lg pt-3 border-t border-lh-neutral/10">
             <span>Total</span>
-            <span>${total.toFixed(2)} {currency}</span>
+            <span className="flex items-baseline gap-2">
+              {redeemedPromotionCode ? (
+                <span className="text-sm text-lh-shadow/50 line-through">{formatCad(total)}</span>
+              ) : null}
+              <span>{formatCad(discountedTotal)}</span>
+            </span>
           </div>
         </div>
-        <p className="text-sm text-lh-shadow/70 text-right">Taxes calculated at checkout</p>
+        <p className="text-sm text-lh-shadow/70 text-right">Taxes calculated in {currency}</p>
+      </div>
+
+      <div className="rounded-[24px] border border-lh-neutral/20 bg-white/70 p-5">
+        <Label htmlFor="training-promotion-code">Promotion code</Label>
+        <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+          <Input
+            id="training-promotion-code"
+            value={promotionCodeInput}
+            onChange={(event) => setPromotionCodeInput(event.target.value.toUpperCase())}
+            placeholder="Enter code"
+            disabled={isApplyingPromotionCode}
+            autoComplete="off"
+            className="bg-white"
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={redeemedPromotionCode ? handleRemovePromotionCode : handleApplyPromotionCode}
+            disabled={isApplyingPromotionCode || (!redeemedPromotionCode && !promotionCodeInput.trim())}
+            className="rounded-full border-lh-primary/30 px-5 font-body text-sm uppercase tracking-[0.12em] hover:bg-lh-primary-soft hover:text-lh-primary"
+          >
+            {isApplyingPromotionCode ? "Applying" : redeemedPromotionCode ? "Remove" : "Apply"}
+          </Button>
+        </div>
+        {redeemedPromotionCode ? (
+          <p className="mt-2 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-primary">
+            Code {redeemedPromotionCode} applied.
+          </p>
+        ) : null}
+        {promotionCodeError ? (
+          <p className="mt-2 font-body text-xs font-bold text-lh-accent" role="alert">
+            {promotionCodeError}
+          </p>
+        ) : null}
       </div>
 
       <div className="space-y-4">
@@ -122,6 +264,7 @@ export function CheckoutForm({
           disabled={!isValid}
           programSlug={programSlug}
           clientPrice={clientPrice}
+          promotionCode={redeemedPromotionCode}
           customer={{ name, email }}
           onPaid={() => {}}
         />

@@ -10,7 +10,6 @@ import {
   getTrainingCta,
   isTrainingPurchasable,
   TRAINING_CHECKOUT_TAX_RATE,
-  TRAINING_PAID_BOOKING_TYPE,
   TRAINING_SCHEDULING_LINK_TTL_DAYS,
   validateTrainingCheckoutRequest,
   type TrainingCheckoutRequest,
@@ -171,7 +170,9 @@ describe("training-checkout", () => {
           productTitle: "Classic Lash Training",
           productSku: "program-classic-lash-training",
           currency: "CAD",
+          manualDiscount: 0,
           subtotal: 1200,
+          promotionDiscount: 0,
           tax: 156,
           total: 1356,
           customerName: "Nataliea Tester",
@@ -226,7 +227,6 @@ describe("training-checkout", () => {
       const result = validateTrainingCheckoutRequest(buildProgram(), buildRequest());
 
       assert.strictEqual(TRAINING_SCHEDULING_LINK_TTL_DAYS, 14);
-      assert.strictEqual(TRAINING_PAID_BOOKING_TYPE, undefined);
       assert.strictEqual(result.ok, true);
       if (result.ok) {
         assert.strictEqual(result.quote.schedulingTtlDays, 14);
@@ -299,12 +299,54 @@ describe("training-checkout", () => {
       assertRejected(itemsRequest, buildProgram(), "cart_input_not_supported");
     });
 
-    it("rejects discounts and promo codes", () => {
-      const discountRequest: TrainingCheckoutRequest & { discountCode: string } = { ...buildRequest(), discountCode: "SAVE10" };
-      const promoRequest: TrainingCheckoutRequest & { promoCode: string } = { ...buildRequest(), promoCode: "SAVE10" };
+    it("applies manual training discounts before tax", () => {
+      const result = validateTrainingCheckoutRequest(
+        buildProgram({ price: 1200, discountPrice: 1000 }),
+        buildRequest({ clientPrice: 1000 }),
+      );
 
-      assertRejected(discountRequest, buildProgram(), "discounts_not_supported");
-      assertRejected(promoRequest, buildProgram(), "discounts_not_supported");
+      assert.strictEqual(result.ok, true);
+      if (result.ok) {
+        assert.strictEqual(result.quote.originalSubtotal, 1200);
+        assert.strictEqual(result.quote.manualDiscount, 200);
+        assert.strictEqual(result.quote.subtotal, 1000);
+        assert.strictEqual(result.quote.tax, 130);
+        assert.strictEqual(result.quote.total, 1130);
+      }
+    });
+
+    it("applies eligible promotion codes after manual discounts", () => {
+      const result = validateTrainingCheckoutRequest(
+        buildProgram({ price: 1200, discountPrice: 1000 }),
+        buildRequest({ clientPrice: 1000, promotionCode: "SAVE10" }),
+        {
+          _id: "promo-save10",
+          code: "SAVE10",
+          isEnabled: true,
+          discountType: "percentage",
+          amount: 10,
+          appliesTo: "trainingPrograms",
+        },
+      );
+
+      assert.strictEqual(result.ok, true);
+      if (result.ok) {
+        assert.strictEqual(result.quote.originalSubtotal, 1200);
+        assert.strictEqual(result.quote.manualDiscount, 200);
+        assert.strictEqual(result.quote.promotionCode, "SAVE10");
+        assert.strictEqual(result.quote.promotionDiscount, 100);
+        assert.strictEqual(result.quote.subtotal, 900);
+        assert.strictEqual(result.quote.tax, 117);
+        assert.strictEqual(result.quote.total, 1017);
+      }
+    });
+
+    it("rejects invalid promotion codes", () => {
+      const discountRequest: TrainingCheckoutRequest & { discountCode: string } = { ...buildRequest(), discountCode: "SAVE10" };
+      const promoRequest: TrainingCheckoutRequest & { promotionCode: string } = { ...buildRequest(), promotionCode: "SAVE10" };
+
+      assertRejected(discountRequest, buildProgram(), "invalid_promotion_code");
+      assertRejected(promoRequest, buildProgram(), "invalid_promotion_code");
     });
 
     it("normalizes customer email for strict scheduling match", () => {

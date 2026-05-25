@@ -16,6 +16,7 @@ import type {
   TProductFilterAttribute,
   TProductsPage,
   TProductsGroupedCatalog,
+  TPromotionCode,
   TService,
   TTrainingProgramCatalogItem,
 } from "@/types";
@@ -48,6 +49,7 @@ const PRODUCT_PROJECTION = groq`{
   badgeLabel,
   "slug": slug.current,
   price,
+  discountPrice,
   sku,
   currency,
   collections[]{
@@ -60,7 +62,7 @@ const PRODUCT_PROJECTION = groq`{
   },
   filterAttributes[]{ _key, label, value },
   optionGroups[]{ _key, name, values },
-  variants[]{ _key, title, sku, price, isAvailable, availabilityLabel, options[]{ _key, name, value } },
+  variants[]{ _key, title, sku, price, discountPrice, isAvailable, availabilityLabel, options[]{ _key, name, value } },
   isAvailable,
   availabilityLabel,
   fulfillmentNote,
@@ -97,6 +99,7 @@ const TRAINING_PROGRAM_CATALOG_PROJECTION = groq`{
   "slug": slug.current,
   checkoutEnabled,
   price,
+  discountPrice,
   "currency": "CAD",
   isAvailable,
   availabilityLabel,
@@ -296,6 +299,7 @@ async function getTrainingProgramBySlug(slug: string): Promise<TTrainingProgram 
     enrollmentBackgroundImage{ asset, hotspot, crop, alt },
     checkoutEnabled,
     price,
+    discountPrice,
     "currency": "CAD",
     isAvailable,
     availabilityLabel,
@@ -373,6 +377,7 @@ async function getTrainingProgramsPageData(): Promise<TTrainingProgramsPage | nu
     enrollmentBackgroundImage{ asset, hotspot, crop, alt },
       checkoutEnabled,
       price,
+      discountPrice,
       "currency": "CAD",
       isAvailable,
       availabilityLabel,
@@ -449,6 +454,7 @@ async function getAllTrainingPrograms(): Promise<TTrainingProgram[]> {
     enrollmentBackgroundImage{ asset, hotspot, crop, alt },
     checkoutEnabled,
     price,
+    discountPrice,
     "currency": "CAD",
     isAvailable,
     availabilityLabel,
@@ -614,6 +620,21 @@ async function getProductsByIds(ids: string[]): Promise<TProduct[]> {
   return client.fetch<TProduct[]>(query, { ids }, sanityFetchOptions(["product"]));
 }
 
+async function getPromotionCode(code: string): Promise<TPromotionCode | null> {
+  const query = groq`*[_type == "promotionCode" && code == $code][0]{
+    _id,
+    title,
+    code,
+    isEnabled,
+    discountType,
+    amount,
+    appliesTo,
+    products[]->{ _id },
+    trainingPrograms[]->{ _id }
+  }`;
+  return client.fetch<TPromotionCode | null>(query, { code }, sanityFetchOptions(["promotionCode", "product", "trainingProgram"]));
+}
+
 async function getServices(): Promise<TService[]> {
   const query = groq`*[_type == "service" && isAvailable == true] | order(displayOrder asc, title asc) ${SERVICE_PROJECTION}`;
   return client.fetch<TService[]>(query, {}, sanityFetchOptions(["service"]));
@@ -678,6 +699,7 @@ export const loaders = {
   getProductFilterAttributes,
   getProducts,
   getProductsByIds,
+  getPromotionCode,
   getServices,
   getTrainingProgramCatalogItems,
   getProductsGroupedCatalog,

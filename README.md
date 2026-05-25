@@ -1,88 +1,312 @@
-# Lash Her by Nataliea - Operator Runbook
+# Lash Her by Nataliea
 
-Lash Her is a beauty and lash artistry platform built with Next.js 16 and Sanity CMS. This repository contains the public storefront, an embedded Sanity Studio, and service integrations for booking and commerce.
+Lash Her is a production Next.js app for a beauty and lash artistry business. It combines the public marketing site, product and training checkout, paid service booking, webhook handling, a private operational database, and an embedded Sanity Studio in one repository.
 
-## Quick Start
+The important architectural split is deliberate:
 
-1. Install dependencies: `npm install`
-2. Configure environment: `cp .env.local.example .env.local`
-3. Start development server: `npm run dev`
-4. Open [http://localhost:3000](http://localhost:3000)
+- **Sanity stores public/editorial content**: pages, navigation, products, services, booking settings, training program content, and reusable content blocks.
+- **PostgreSQL stores private operational data**: orders, service holds, payment events, training enrollments, marketing contacts, contact submissions, consent events, and anything containing customer PII or payment history.
 
-## Core Commands
+This README explains what the codebase does, where the major pieces live, how to run and change it, and why the boundaries exist.
 
-- `npm run dev`: Start local development server
-- `npm run build`: Build for production
-- `npm run lint`: Run ESLint and type checks
-- `npm test`: Run Playwright E2E tests
-- `npm run db:generate`: Generate database migrations
-- `npm run db:migrate`: Apply database migrations
-- `node scripts/validate-sanity-env.mjs`: Validate launch environment variables
+## Table of contents
 
-## Environment Setup
+- [What this codebase contains](#what-this-codebase-contains)
+- [How the application works](#how-the-application-works)
+- [Where things live](#where-things-live)
+- [Local development](#local-development)
+- [Environment and services](#environment-and-services)
+- [Sanity CMS workflow](#sanity-cms-workflow)
+- [Booking, checkout, and private data](#booking-checkout-and-private-data)
+- [Testing and verification](#testing-and-verification)
+- [Deployment and launch checks](#deployment-and-launch-checks)
+- [Operational rules](#operational-rules)
+- [Further documentation](#further-documentation)
 
-The application requires several service integrations. See `.env.local.example` for the full list of required variables.
+## What this codebase contains
 
-### Sanity CMS
+This repository is the active root package for the Lash Her frontend and server routes. There is no separate nested `frontend/` app.
+
+Main capabilities:
+
+- **Public website**: homepage, contact, gallery, products, services, booking entry points, and training program pages.
+- **Embedded Sanity Studio**: available at `/studio` and configured from source in `src/sanity/sanity.config.ts`.
+- **Sanity-backed page rendering**: public routes load CMS content through shared loader functions and typed projections.
+- **Service booking flow**: availability lookup, hold creation, checkout handoff, payment reconciliation, and Google Calendar finalization.
+- **Product checkout**: Helcim-backed checkout for catalog purchases.
+- **Training checkout**: Helcim-backed enrollment purchase flow.
+- **Private database storage**: Drizzle/PostgreSQL persistence for sensitive and operational records.
+- **Webhook handling**: Sanity revalidation, Helcim card transaction handling, and Square service-booking webhook handling.
+- **Transactional email**: Resend-backed customer/admin notifications.
+
+## How the application works
+
+At runtime, the app has three main data planes.
+
+### 1. Public content plane
+
+Sanity contains content editors should manage: page content, menus, product/service/training copy, global settings, reusable blocks, and booking configuration.
+
+The public site reads Sanity through `src/data/loaders.ts`. Those loaders centralize GROQ queries, projections, and Next cache tags so routes do not create ad hoc CMS clients or divergent query behavior.
+
+### 2. Private operational plane
+
+Customer submissions, checkout records, payment events, consent events, enrollments, and booking holds are written to PostgreSQL through `src/lib/private-db` and domain modules under `src/lib`. This keeps sensitive data out of the CMS and gives operational flows transactional storage.
+
+### 3. External service plane
+
+The app integrates with:
+
+- **Sanity** for content and Studio.
+- **Helcim** for product and training checkout.
+- **Square** for paid service booking when `SERVICE_BOOKING_SQUARE_ENABLED=true`.
+- **Google Calendar** for final appointment creation after booking payment reconciliation.
+- **Upstash Redis/KV** for booking OAuth token persistence.
+- **Resend** for transactional email.
+- **Vercel** for hosting, analytics, speed insights, and environment-scoped deployments.
+
+## Where things live
+
+| Area | Path | Why it exists |
+| --- | --- | --- |
+| Public routes | `src/app/(site)` | Next App Router pages for the public website. |
+| API routes | `src/app/api` | Server endpoints for booking, checkout, promotion codes, revalidation, and webhooks. |
+| Global app shell | `src/app/layout.tsx`, `src/app/(site)/layout.tsx`, `src/app/globals.css` | Metadata, root layout, site shell, Tailwind v4 theme tokens, and global styling. |
+| Sanity Studio route | `src/app/studio` | Mounts the embedded Studio at `/studio`. |
+| Sanity config and schemas | `src/sanity` | Studio config, schema source, structure builder, and Sanity clients. |
+| Sanity loaders | `src/data/loaders.ts` | Centralized CMS reads, GROQ projections, and cache tagging. |
+| Shared content types | `src/types/index.ts` | TypeScript shapes for CMS-backed rendering and block unions. |
+| Components | `src/components` | Booking, commerce, custom CMS block rendering, and shared UI components. |
+| Booking domain logic | `src/lib/booking` | Availability, holds, payment-provider logic, and calendar integration helpers. |
+| Commerce domain logic | `src/lib/commerce` | Checkout/payment behavior for product and related commerce flows. |
+| Private database | `src/lib/private-db`, `drizzle/` | Drizzle schema/client plus generated migrations. |
+| Email | `src/lib/email.ts` | Transactional email integration. |
+| Environment helpers | `src/lib/env`, `src/sanity/env.ts` | Runtime configuration parsing and Sanity environment constants. |
+| Tests | `src/**/*.test.ts`, `tests/` | Node unit/route tests near source and Playwright E2E tests. |
+| Operational docs | `docs/` | Detailed runbooks, architecture notes, flowcharts, and launch checklists. |
+| Scripts | `scripts/` | Environment validation, migrations, and git remote guardrails. |
+
+## Local development
+
+### Requirements
+
+- Node.js compatible with Next.js 16.
+- npm.
+- Access to the required service credentials for the flows you need to test.
+- PostgreSQL connection string for private checkout/booking storage.
+
+### Quick start
+
+```bash
+npm install
+cp .env.local.example .env.local
+npm run dev
+```
+
+Then open:
+
+- Public site: [http://localhost:3000](http://localhost:3000)
+- Sanity Studio: [http://localhost:3000/studio](http://localhost:3000/studio)
+
+### Core commands
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Starts the Next.js development server. |
+| `npm run build` | Runs `prebuild` Sanity env validation, then creates a production build. |
+| `npm run start` | Starts the production Next server after a build. |
+| `npm run lint` | Runs ESLint. |
+| `npm test` | Runs Playwright E2E tests. |
+| `npm run test:unit` | Runs `src/**/*.test.ts` through Node's test runner via `tsx`. |
+| `npm run test:ui` | Opens the Playwright UI runner. |
+| `npm run test:headed` | Runs Playwright headed. |
+| `npm run test:debug` | Runs Playwright in debug mode. |
+| `npm run test:report` | Opens the last Playwright HTML report. |
+| `npm run db:generate` | Generates Drizzle migrations from schema changes. |
+| `npm run db:migrate` | Applies private database migrations using `DATABASE_URL`. |
+| `npm run git:verify-remote` | Verifies the `frontend` git remote points at the canonical repository. |
+| `npm run git:push-staging` | Verifies the remote, then pushes the `staging` branch to `frontend`. |
+
+## Environment and services
+
+Use `.env.local.example` as the source of truth for local variables.
+
+### Sanity
+
 - Project ID: `3auncj84`
-- Production Dataset: `production`
-- Staging Dataset: `staging-2026-05-10`
-- API Version: `2026-03-24`
+- API version: `2026-03-24`
+- Production dataset: `production`
+- Staging/preview dataset: `staging-2026-05-10`
 
-### Booking System
-Google Calendar integration requires OAuth credentials and an Upstash KV store for token persistence.
-- Visit `/api/booking/oauth/start?secret=<BOOKING_ADMIN_SETUP_SECRET>` to connect the primary calendar.
-- Treat the setup URL as sensitive because it contains a secret; do not share it in chat or ticket systems, and rotate `BOOKING_ADMIN_SETUP_SECRET` after setup if it may have been logged.
-- Configure the connected calendar ID in the Sanity `bookingSettings` singleton.
+Dataset alignment is enforced by `scripts/validate-sanity-env.mjs`:
 
-### Checkout and Private DB
-Product checkout and training checkout use Helcim. Paid service bookings use custom Lash Her holds, Square hosted checkout, and Google Calendar API finalization after server-side payment reconciliation. The private Neon/Drizzle database stores order records, service holds, payment events, training enrollments, marketing contacts, contact submissions, and consent events.
-- **PII Policy:** Never store transaction history, customer PII, form/contact submissions, marketing contacts, consent events, or payment tokens in Sanity.
-- For local payment testing only, set `PAYMENT_GATEWAY_MODE=mock` and optionally `PAYMENT_MOCK_DEFAULT_SCENARIO=success`; dev request controls are the `x-lash-payment-mock-scenario` header and `mockPaymentScenario` query parameter. Mock mode and request controls are server-only and are rejected in production.
-- Live checkout environments use `PAYMENT_GATEWAY_MODE=live` and still require the Helcim credentials listed in `.env.local.example`.
-- Database migrations live in `drizzle/`.
+- `VERCEL_ENV=preview` expects `NEXT_PUBLIC_SANITY_DATASET=staging-2026-05-10`.
+- `VERCEL_ENV=production` expects `NEXT_PUBLIC_SANITY_DATASET=production`.
+
+`npm run build` runs this validation before `next build`, so a mismatched dataset can fail the build before Next.js starts compiling.
 
 ### Email
-Transactional emails are sent via Resend. Ensure `RESEND_API_KEY`, `FROM_EMAIL`, and `ADMIN_EMAIL` are configured.
 
-## Sanity Workflow
+Transactional email uses Resend. Configure:
 
-The Sanity Studio is embedded at `/studio`.
+- `RESEND_API_KEY`
+- `FROM_EMAIL`
+- `ADMIN_EMAIL`
 
-1. **Schema Changes:** Modify code in `src/sanity/schemas/`, then deploy:
-   `npx sanity schema deploy`
-2. **Content Promotion:** Follow the guidance in `docs/sanity-staging-production-workflow.md`.
-3. **Revalidation:** The app uses a webhook at `/api/revalidate` to clear Next.js cache tags.
-   - Endpoint: `/api/revalidate`
-   - Projection: `{ _type }`
-   - Secret: `SANITY_WEBHOOK_SECRET`
-   - Behavior: `revalidateTag(tag, { expire: 0 })` for immediate updates.
+### Google Calendar and booking OAuth
 
-## Validation and Smoke Testing
+Google Calendar integration requires OAuth credentials and Upstash Redis/KV token storage:
 
-Before promoting to production, run the validation suite:
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `GOOGLE_REDIRECT_URI`
+- `BOOKING_ADMIN_SETUP_SECRET`
+- `KV_REST_API_URL`
+- `KV_REST_API_TOKEN`
+
+The booking OAuth setup URL is:
+
+```text
+/api/booking/oauth/start?secret=<BOOKING_ADMIN_SETUP_SECRET>
+```
+
+Treat that URL as sensitive. Do not paste it in tickets or chat because it contains the setup secret.
+
+### Private database
+
+Set `DATABASE_URL` to the Neon/PostgreSQL database used for private operational records. Migrations live in `drizzle/` and are applied with `npm run db:migrate`.
+
+### Payments
+
+`PAYMENT_GATEWAY_MODE` controls live vs local mock payment behavior.
+
+- Use `PAYMENT_GATEWAY_MODE=live` for real environments.
+- Use `PAYMENT_GATEWAY_MODE=mock` only for local/dev payment testing.
+- Mock mode is server-only and rejected in production.
+- Dev-only mock controls are `x-lash-payment-mock-scenario` and `mockPaymentScenario`.
+
+Product checkout and training checkout use Helcim:
+
+- `HELCIM_GENERAL_API_TOKEN`
+- `HELCIM_TRANSACTION_API_TOKEN`
+- `CHECKOUT_SECRET_ENCRYPTION_KEY`
+- `HELCIM_WEBHOOK_VERIFIER_TOKEN`
+
+Paid service bookings use Square only when enabled:
+
+- `SERVICE_BOOKING_SQUARE_ENABLED=true`
+- `SQUARE_ENVIRONMENT=sandbox` or `production`
+- `SQUARE_ACCESS_TOKEN`
+- `SQUARE_LOCATION_ID`
+- `SQUARE_WEBHOOK_SIGNATURE_KEY`
+- `SQUARE_SERVICE_BOOKING_RETURN_URL`
+- `SQUARE_SERVICE_BOOKING_WEBHOOK_URL`
+
+Helcim webhook delivery must target `/api/webhooks/card-transactions` and must not contain `helcim` in the URL.
+
+## Sanity CMS workflow
+
+The Studio is embedded at `/studio`, but schemas are source-driven from this repository.
+
+### Changing schemas
+
+1. Edit schema files in `src/sanity/schemas/**`.
+2. Update related TypeScript content shapes in `src/types/index.ts` when the public app consumes the fields.
+3. Update GROQ projections in `src/data/loaders.ts`.
+4. Update rendering components under `src/components/**` when the content appears on the site.
+5. For new CMS blocks, wire the block into `COMPONENT_REGISTRY` in `src/components/custom/layouts/block-renderer.tsx`.
+6. Deploy the schema with:
+
+```bash
+npx sanity schema deploy
+```
+
+`sanity.cli.ts` targets the `production` dataset by default, so be explicit before schema or dataset operations if you are working against staging.
+
+### Content promotion
+
+Use `docs/sanity-staging-production-workflow.md` for staging-to-production content workflow details.
+
+### Revalidation
+
+Sanity publishes should hit `/api/revalidate` with `SANITY_WEBHOOK_SECRET`.
+
+The route maps changed document types to cache tags and uses `revalidateTag(tag, { expire: 0 })` for immediate Next.js 16 cache expiry. Keep cache tags in `src/data/loaders.ts` aligned with `TYPE_TAG_MAP` in `src/app/api/revalidate/route.ts`.
+
+## Booking, checkout, and private data
+
+### Service booking
+
+Service booking is intentionally payment-reconciled. Direct booking creation is disabled; confirmed appointments are created only after secure server-side payment reconciliation.
+
+Important areas:
+
+- Public booking UI: `src/app/(site)/booking`, `src/components/booking`
+- Booking API routes: `src/app/api/booking`
+- Booking domain logic: `src/lib/booking`
+- Google OAuth: `src/app/api/booking/oauth`
+- Square service booking flow: `src/app/api/booking/square`, `src/app/api/webhooks/square`
+- Booking settings content: Sanity `bookingSettings`
+
+### Product checkout
+
+Product checkout is Helcim-backed and exposed through `src/app/api/checkout`. Product content comes from Sanity, while order/payment state is private database data.
+
+### Training checkout
+
+Training program pages live under `/training-programs`; `/training` redirects there. Training checkout is Helcim-backed through `src/app/api/training-checkout`, with enrollment/payment records stored privately.
+
+### Privacy boundary
+
+Never store these in Sanity:
+
+- Customer PII from live submissions.
+- Transaction history.
+- Payment tokens or secrets.
+- Marketing contacts.
+- Contact submissions.
+- Consent events.
+- Training enrollment records.
+- Booking holds or payment events.
+
+Write private records first, then send email as a non-blocking side effect where applicable.
+
+## Testing and verification
+
+### Routine checks
 
 ```bash
 npm run lint
-npm run build
+npm run test:unit
 npm test
+npm run build
+```
+
+Use focused commands while developing:
+
+```bash
+npx tsx --test src/path/to/file.test.ts
+npx playwright test tests/<file>.spec.ts --project=chromium
+```
+
+### Environment checks
+
+```bash
 node scripts/validate-sanity-env.mjs
 VERCEL_ENV=preview node scripts/validate-sanity-env.mjs
 VERCEL_ENV=production node scripts/validate-sanity-env.mjs
 ```
 
-The application also validates `VERCEL_ENV` to ensure environment parity.
-Use `VERCEL_ENV=preview` for staging checks, which requires `NEXT_PUBLIC_SANITY_DATASET=staging-2026-05-10`.
-Use `VERCEL_ENV=production` for production checks, which requires `NEXT_PUBLIC_SANITY_DATASET=production`.
+### Smoke matrix
 
-### Launch Smoke Matrix
-Verify these document types in the target environment:
+Before promoting content or deploying production-critical changes, verify the target environment renders the Sanity-backed pages and flows that correspond to changed content:
+
 - `homePage` -> `/`
 - `contactPage` -> `/contact`
 - `galleryPage` -> `/gallery`
-- `globalSettings` -> All pages (header/footer)
-- `mainMenu` -> All pages (navigation)
-- `trainingProgramsPage` -> `/training-programs` (canonical training listing; `/training` redirects here)
+- `globalSettings` -> all pages, especially header/footer
+- `mainMenu` -> all navigation surfaces
+- `trainingProgramsPage` -> `/training-programs`
 - `trainingProgram` -> `/training-programs/[slug]`
 - `product` -> `/products/[slug]`
 - `service` / `bookingOffering` -> `/services`, `/services/[slug]`, `/booking?offering=<slug>`
@@ -90,11 +314,54 @@ Verify these document types in the target environment:
 
 See `docs/launch-readiness-checklist.md` for full smoke evidence requirements.
 
-## Launch Stop Conditions
+## Deployment and launch checks
 
-Do not promote to production if:
-1. Production dataset or project ID cannot be verified.
-2. A production publish does not appear on the public page after signed webhook delivery.
-3. Webhook targets the wrong dataset or cache tag.
-4. Environment validation fails for any production-critical secret.
-5. Stale content from a previous dataset refresh is present in the production target.
+This app is designed for Vercel deployment with environment-scoped variables.
+
+Before production promotion:
+
+1. Confirm the deployment is using Sanity project `3auncj84` and dataset `production`.
+2. Run lint, unit tests, relevant Playwright tests, and `npm run build`.
+3. Confirm signed Sanity webhook delivery updates the public page after publishing.
+4. Confirm webhook cache tags match the changed document types.
+5. Confirm production-critical secrets are present in the production environment only.
+6. Confirm staging-only payment mocks are not enabled in production.
+7. Confirm Square production credentials are scoped only to production when service booking uses Square.
+
+Do not promote if:
+
+- Production dataset or project ID cannot be verified.
+- A production publish does not appear on the public page after signed webhook delivery.
+- A webhook targets the wrong dataset or cache tag.
+- Environment validation fails for a production-critical secret or dataset.
+- Stale content from a previous dataset refresh is present in production.
+
+## Operational rules
+
+- Run commands from the repository root.
+- Add Sanity reads through `src/data/loaders.ts`; do not create a parallel public CMS data layer.
+- Keep Sanity client purposes separate: read client, write client, and legacy/editor form client live under `src/sanity/lib`.
+- Keep private form, booking, consent, checkout, payment, marketing, and training enrollment data in PostgreSQL, not Sanity.
+- Keep `src/data/loaders.ts` cache tags aligned with `src/app/api/revalidate/route.ts`.
+- Use `parseBody()` from `next-sanity/webhook` before consuming the revalidation request body.
+- For CMS block additions, update schema, types, GROQ projection, React renderer, and `COMPONENT_REGISTRY` together.
+- Tailwind v4 is CSS-first in `src/app/globals.css`; there is no `tailwind.config.*`.
+- React Compiler is enabled in `next.config.ts`; avoid render-time mutation patterns.
+- Brand direction is quiet luxury/editorial restraint. Treat `docs/lash-her-brand-kit.html` and `src/app/globals.css` as visual sources of truth.
+- Redirects in `next.config.ts` include `/homepage` -> `/` and `/training` -> `/training-programs`.
+- Before branch push or PR work, verify the canonical remote is `https://github.com/princessdardan/lash-her-frontend.git`.
+
+## Further documentation
+
+- `docs/booking-system-architecture-reference.md` - booking architecture details.
+- `docs/booking-system-runbook.md` - booking operations runbook.
+- `docs/booking-system-setup-guide.md` - booking setup guide.
+- `docs/booking-payment-provider-split.md` - Helcim/Square provider split.
+- `docs/booking-helcim-implementation-summary.md` - historical Helcim booking implementation context.
+- `docs/google-calendar-oauth-env-setup.md` - Google Calendar OAuth setup.
+- `docs/private-checkout-storage-setup.md` - private checkout database setup.
+- `docs/private-database-migration-runbook.md` - private DB migration process.
+- `docs/sanity-staging-production-workflow.md` - Sanity dataset/content promotion workflow.
+- `docs/launch-readiness-checklist.md` - launch smoke and readiness checklist.
+- `docs/production-readiness-audit-2026-05-16.md` - production readiness audit notes.
+- `docs/lash-her-brand-kit.html` - visual and brand reference.

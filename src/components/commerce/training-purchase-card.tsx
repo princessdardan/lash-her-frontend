@@ -22,13 +22,19 @@ export function TrainingMobileTray({ program, cta }: TrainingPurchaseCardProps) 
   if (!product) return null;
 
   const priceFormatted = formatCad(product.price);
+  const originalPriceFormatted = product.originalPrice === undefined ? null : formatCad(product.originalPrice);
 
   return (
     <div className="sticky bottom-0 w-full z-50 mt-auto bg-lh-white border-t border-lh-line p-4 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] lg:hidden">
       <div className="flex items-center justify-between gap-4 max-w-md mx-auto">
         <div className="flex flex-col">
           <span className="text-sm font-medium text-lh-shadow line-clamp-1">{product.title || program.title}</span>
-          <span className="text-lg font-bold text-lh-primary">{priceFormatted}</span>
+          <span className="flex flex-col text-lg font-bold text-lh-primary">
+            {originalPriceFormatted ? (
+              <span className="text-xs text-lh-muted line-through">{originalPriceFormatted}</span>
+            ) : null}
+            <span>{priceFormatted}</span>
+          </span>
         </div>
         <Button asChild variant="dark" size="lg" className="shrink-0">
           <Link href={cta.href}>{cta.label}</Link>
@@ -48,11 +54,17 @@ export function TrainingPurchaseCard({ program, cta }: TrainingPurchaseCardProps
   if (!product) return null;
 
   const priceFormatted = formatCad(product.price);
+  const originalPriceFormatted = product.originalPrice === undefined ? null : formatCad(product.originalPrice);
 
   return (
     <div className="hidden lg:block w-full lg:w-[22rem] lg:max-h-[calc(100vh-12rem)] lg:overflow-y-auto bg-lh-white rounded-2xl p-8 shadow-xl border border-lh-line/50 pointer-events-auto">
         <h3 className="section-subheading mb-2">{product.title || program.title}</h3>
-        <div className="text-3xl font-bold text-lh-primary mb-6">{priceFormatted}</div>
+        <div className="mb-6 flex flex-col gap-1 text-3xl font-bold text-lh-primary">
+          {originalPriceFormatted ? (
+            <span className="text-base text-lh-muted line-through">{originalPriceFormatted}</span>
+          ) : null}
+          <span>{priceFormatted}</span>
+        </div>
 
         <div className="space-y-4 mb-8">
           {product.availabilityLabel && (

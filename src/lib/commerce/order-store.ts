@@ -135,6 +135,9 @@ export function createCheckoutOrderStore(
       const secretTokenCiphertext = encryptCheckoutSecret(input.secretToken);
       const checkoutTokenHash = hashCheckoutToken(input.checkoutToken);
       const amountCents = toCents(input.cart.amount);
+      const promotionDiscountCents = input.cart.promotionDiscountAmount === undefined
+        ? undefined
+        : toCents(input.cart.promotionDiscountAmount);
       const lineItems = input.cart.lineItems.map((lineItem) => ({
         productId: lineItem.productId,
         ...(lineItem.variantId ? { variantId: lineItem.variantId } : {}),
@@ -142,7 +145,12 @@ export function createCheckoutOrderStore(
         description: lineItem.description,
         quantity: lineItem.quantity,
         unitPriceCents: toCents(lineItem.price),
+        ...(lineItem.originalPrice !== undefined ? { originalUnitPriceCents: toCents(lineItem.originalPrice) } : {}),
+        ...(lineItem.manualDiscount !== undefined ? { manualDiscountCents: toCents(lineItem.manualDiscount) } : {}),
+        ...(input.cart.promotionCode ? { promotionCode: input.cart.promotionCode } : {}),
+        ...(promotionDiscountCents !== undefined ? { promotionDiscountCents } : {}),
         totalCents: toCents(lineItem.total),
+        ...(lineItem.originalTotal !== undefined ? { originalTotalCents: toCents(lineItem.originalTotal) } : {}),
       }));
 
       const createdOrder = await repository.createCheckoutOrder({

@@ -18,6 +18,7 @@ declare global {
 interface HelcimPayButtonProps {
   disabled?: boolean;
   items: CartInputItem[];
+  promotionCode?: string;
   customer: {
     name: string;
     email: string;
@@ -62,6 +63,7 @@ function parsePayloadData(value: unknown): Record<string, HelcimPayloadValue> | 
 export function HelcimPayButton({
   disabled = false,
   items,
+  promotionCode,
   customer,
   shippingAddress,
   onPaid,
@@ -205,7 +207,12 @@ export function HelcimPayButton({
       const res = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ customer, items, shippingAddress }),
+        body: JSON.stringify({
+          customer,
+          items,
+          shippingAddress,
+          ...(promotionCode ? { promotionCode } : {}),
+        }),
       });
 
       if (!res.ok) {

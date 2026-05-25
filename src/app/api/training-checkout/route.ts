@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import type { ValidatedCart } from "@/lib/commerce/cart";
+import { parsePromotionCodeInput } from "@/lib/commerce/discounts";
 import type { HelcimGateway } from "@/lib/commerce/helcim-gateway";
 import { createPaymentMockStore } from "@/lib/payment-mocks/in-memory-store";
 import {
@@ -9,6 +10,7 @@ import {
   type TrainingCheckoutQuote,
 } from "@/lib/training-checkout";
 import type { TTrainingProgram } from "@/types";
+import type { TPromotionCode } from "@/types";
 
 const trainingCheckoutPaymentMockStore = createPaymentMockStore();
 
@@ -22,6 +24,7 @@ interface TrainingCheckoutErrorBody {
 
 interface TrainingCheckoutPostHandlerDependencies {
   getTrainingProgramBySlug: (slug: string) => Promise<TTrainingProgram | null>;
+  getPromotionCode: (code: string) => Promise<TPromotionCode | null>;
   createHelcimInvoice: (input: TrainingCheckoutInvoiceInput) => Promise<TrainingCheckoutInvoice>;
   initializeHelcimPay: (input: TrainingCheckoutPaySessionInput) => Promise<TrainingCheckoutPaySession>;
   createPendingOrder: (input: TrainingCheckoutPendingOrderInput) => Promise<TrainingCheckoutPendingOrder>;
@@ -38,6 +41,7 @@ interface TrainingCheckoutInvoiceInput {
     description: string;
     quantity: number;
     price: number;
+    discountCode?: string;
     taxAmount: number;
     taxName: string;
     taxRate: number;
@@ -94,6 +98,7 @@ interface TrainingCheckoutEnrollmentInput {
 
 export function createTrainingCheckoutPostHandler({
   getTrainingProgramBySlug,
+  getPromotionCode,
   createHelcimInvoice,
   initializeHelcimPay,
   createPendingOrder,
@@ -115,8 +120,19 @@ export function createTrainingCheckoutPostHandler({
     }
 
     try {
-      const program = await getTrainingProgramBySlug(programSlug);
-      const validation = validateTrainingCheckoutRequest(program, body);
+      const requestedPromotionCode = parsePromotionCodeInput(isRecord(body) ? body.promotionCode ?? body.discountCode : undefined);
+      if (requestedPromotionCode === null) {
+        return NextResponse.json<TrainingCheckoutErrorBody>(
+          { error: "Invalid promotion code" },
+          { status: 400 },
+        );
+      }
+
+      const [program, promotionCode] = await Promise.all([
+        getTrainingProgramBySlug(programSlug),
+        requestedPromotionCode ? getPromotionCode(requestedPromotionCode) : Promise.resolve(null),
+      ]);
+      const validation = validateTrainingCheckoutRequest(program, body, promotionCode);
 
       if (!validation.ok) {
         return NextResponse.json<TrainingCheckoutErrorBody>(
@@ -137,6 +153,7 @@ export function createTrainingCheckoutPostHandler({
             description: quote.productTitle,
             quantity: 1,
             price: quote.subtotal,
+            ...(quote.promotionCode ? { discountCode: quote.promotionCode } : {}),
             taxAmount: quote.tax,
             taxName: "Ontario HST",
             taxRate: TRAINING_CHECKOUT_TAX_RATE,
@@ -209,6 +226,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   return createTrainingCheckoutPostHandler({
     getTrainingProgramBySlug: loaders.getTrainingProgramBySlug,
+    getPromotionCode: loaders.getPromotionCode,
     createHelcimInvoice: gateway.createInvoice,
     initializeHelcimPay: gateway.initializePay,
     createPendingOrder,
@@ -259,9 +277,17 @@ function parseProgramSlug(body: unknown): string | null {
 }
 
 function toTrainingCart(quote: TrainingCheckoutQuote): ValidatedCart {
+  const amountBeforePromotion = quote.subtotal + quote.promotionDiscount;
+  const originalTotal = (quote.originalSubtotal ?? amountBeforePromotion) + quote.tax;
+
   return {
     amount: quote.total,
     currency: "CAD",
+    ...(quote.promotionDiscount > 0 ? { amountBeforePromotion } : {}),
+    ...(quote.originalSubtotal !== undefined || quote.promotionDiscount > 0 ? { originalAmount: originalTotal } : {}),
+    ...(quote.manualDiscount > 0 ? { manualDiscountAmount: quote.manualDiscount } : {}),
+    ...(quote.promotionCode ? { promotionCode: quote.promotionCode } : {}),
+    ...(quote.promotionDiscount > 0 ? { promotionDiscountAmount: quote.promotionDiscount } : {}),
     lineItems: [
       {
         productId: quote.productId,
@@ -269,7 +295,10 @@ function toTrainingCart(quote: TrainingCheckoutQuote): ValidatedCart {
         description: `${quote.productTitle} — full training enrollment with Ontario HST`,
         quantity: 1,
         price: quote.total,
+        ...(quote.originalSubtotal !== undefined || quote.promotionDiscount > 0 ? { originalPrice: originalTotal } : {}),
+        ...(quote.manualDiscount > 0 ? { manualDiscount: quote.manualDiscount } : {}),
         total: quote.total,
+        ...(quote.originalSubtotal !== undefined || quote.promotionDiscount > 0 ? { originalTotal } : {}),
       },
     ],
   };

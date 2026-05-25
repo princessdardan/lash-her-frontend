@@ -321,6 +321,7 @@ export interface TTrainingProgram {
   enrollmentBackgroundImage?: TSanityImage;
   checkoutEnabled?: boolean;
   price?: number;
+  discountPrice?: number;
   currency?: "CAD";
   isAvailable?: boolean;
   availabilityLabel?: string;
@@ -408,6 +409,7 @@ export interface TProductVariant {
   title: string;
   sku?: string;
   price: number;
+  discountPrice?: number;
   isAvailable: boolean;
   availabilityLabel?: string;
   options?: TProductVariantOption[];
@@ -422,6 +424,7 @@ export interface TProduct {
   badgeLabel?: string;
   slug: string;
   price: number;
+  discountPrice?: number;
   sku?: string;
   currency: TCommerceCurrency;
   collections?: TProductCollection[];
@@ -464,6 +467,7 @@ export interface TTrainingProgramCatalogItem {
   slug: string;
   checkoutEnabled?: boolean;
   price?: number;
+  discountPrice?: number;
   currency?: TCommerceCurrency;
   isAvailable?: boolean;
   availabilityLabel?: string;
@@ -472,6 +476,21 @@ export interface TTrainingProgramCatalogItem {
   image?: TSanityImage;
   checkoutCtaLabel?: string;
   seo?: TCommerceSeo;
+}
+
+export type TPromotionDiscountType = "percentage" | "fixed";
+export type TPromotionAppliesTo = "all" | "products" | "trainingPrograms" | "specificItems";
+
+export interface TPromotionCode {
+  _id: string;
+  title?: string;
+  code: string;
+  isEnabled?: boolean;
+  discountType: TPromotionDiscountType;
+  amount: number;
+  appliesTo?: TPromotionAppliesTo;
+  products?: Array<Pick<TProduct, "_id">>;
+  trainingPrograms?: Array<Pick<TTrainingProgram, "_id">>;
 }
 
 export interface TProductsGroupedCatalog {

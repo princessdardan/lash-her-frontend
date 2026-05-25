@@ -34,6 +34,7 @@ export default async function TrainingCheckoutPage({ params }: { params: Promise
   const subtotal = product.price;
   const tax = subtotal * TRAINING_CHECKOUT_TAX_RATE;
   const total = subtotal + tax;
+  const manualDiscount = product.originalPrice === undefined ? 0 : product.originalPrice - product.price;
 
   return (
     <div className="flex flex-col min-h-screen bg-lh-neutral-2">
@@ -46,6 +47,8 @@ export default async function TrainingCheckoutPage({ params }: { params: Promise
             <CheckoutForm
               programSlug={slug}
               clientPrice={subtotal}
+              originalSubtotal={product.originalPrice}
+              manualDiscount={manualDiscount}
               subtotal={subtotal}
               tax={tax}
               total={total}

@@ -17,6 +17,7 @@ interface TrainingHelcimPayButtonProps {
   disabled?: boolean;
   programSlug: string;
   clientPrice: number;
+  promotionCode?: string;
   customer: {
     name: string;
     email: string;
@@ -50,6 +51,7 @@ export function TrainingHelcimPayButton({
   disabled = false,
   programSlug,
   clientPrice,
+  promotionCode,
   customer,
   onPaid,
 }: TrainingHelcimPayButtonProps): ReactElement {
@@ -187,6 +189,7 @@ export function TrainingHelcimPayButton({
           customerName: customer.name,
           customerEmail: customer.email,
           clientPrice,
+          ...(promotionCode ? { promotionCode } : {}),
         }),
       });
 

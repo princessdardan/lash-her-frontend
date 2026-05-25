@@ -101,7 +101,12 @@ export interface CheckoutOrderLineItemSnapshot {
   description: string;
   quantity: number;
   unitPriceCents: number;
+  originalUnitPriceCents?: number;
+  manualDiscountCents?: number;
+  promotionCode?: string;
+  promotionDiscountCents?: number;
   totalCents: number;
+  originalTotalCents?: number;
 }
 
 export interface CheckoutOrderShippingAddressSnapshot {

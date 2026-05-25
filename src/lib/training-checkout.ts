@@ -1,4 +1,12 @@
 import type { TTrainingProgram } from "@/types";
+import {
+  applyPromotionCode,
+  cadToCents,
+  getManualDiscountAmount,
+  parsePromotionCodeInput,
+  subtractCad,
+  type PromotionCode,
+} from "@/lib/commerce/discounts";
 
 export const TRAINING_CHECKOUT_TAX_RATE = 0.13;
 export const TRAINING_SCHEDULING_LINK_TTL_DAYS = 14;
@@ -10,6 +18,7 @@ export type TrainingCheckoutRequest = {
   customerEmail: string;
   acknowledged?: boolean;
   clientPrice?: number;
+  promotionCode?: string;
 };
 
 export type TrainingCheckoutErrorCode =
@@ -21,7 +30,7 @@ export type TrainingCheckoutErrorCode =
   | "invalid_price"
   | "stale_client_price"
   | "cart_input_not_supported"
-  | "discounts_not_supported"
+  | "invalid_promotion_code"
   | "invalid_customer_name"
   | "invalid_customer_email";
 
@@ -33,7 +42,11 @@ export type TrainingCheckoutQuote = {
   productTitle: string;
   productSku: string;
   currency: "CAD";
+  originalSubtotal?: number;
+  manualDiscount: number;
   subtotal: number;
+  promotionCode?: string;
+  promotionDiscount: number;
   tax: number;
   total: number;
   customerName: string;
@@ -50,6 +63,7 @@ export type TrainingCheckoutProduct = {
   title: string;
   sku: string;
   price: number;
+  originalPrice?: number;
   currency: string | undefined;
   isAvailable: boolean | undefined;
   availabilityLabel?: string;
@@ -100,11 +114,15 @@ export function getTrainingCheckoutProduct(
   if (!program?.checkoutEnabled) return null;
 
   if (!hasCompleteNativeTrainingCommerceFields(program)) return null;
+  const originalPrice = typeof program.price === "number" ? program.price : Number.NaN;
+  const discountPrice = typeof program.discountPrice === "number" ? program.discountPrice : undefined;
+  const price = discountPrice !== undefined && discountPrice < originalPrice ? discountPrice : originalPrice;
   return {
     id: program._id,
     title: program.title,
     sku: program._id,
-    price: typeof program.price === "number" ? program.price : Number.NaN,
+    price,
+    ...(price < originalPrice ? { originalPrice } : {}),
     currency: program.currency,
     isAvailable: program.isAvailable,
     ...(program.availabilityLabel ? { availabilityLabel: program.availabilityLabel } : {}),
@@ -115,6 +133,7 @@ export function getTrainingCheckoutProduct(
 export function validateTrainingCheckoutRequest(
   program: TTrainingProgram | null | undefined,
   input: unknown,
+  promotionCode?: PromotionCode | null,
 ): TrainingCheckoutValidationResult {
   if (!program) return { ok: false, code: "missing_program" };
 
@@ -126,7 +145,8 @@ export function validateTrainingCheckoutRequest(
   if (programSlug && programSlug !== program.slug) return { ok: false, code: "program_mismatch" };
 
   if (hasCartLikeInput(input)) return { ok: false, code: "cart_input_not_supported" };
-  if (hasDiscountInput(input)) return { ok: false, code: "discounts_not_supported" };
+  const requestedPromotionCode = parsePromotionCodeInput(input.promotionCode ?? input.discountCode);
+  if (requestedPromotionCode === null) return { ok: false, code: "invalid_promotion_code" };
 
   const customerNameInput = getRequiredString(input, "customerName");
   if (customerNameInput === null) return { ok: false, code: "invalid_customer_name" };
@@ -153,7 +173,23 @@ export function validateTrainingCheckoutRequest(
     return { ok: false, code: "stale_client_price" };
   }
 
-  const subtotalCents = moneyToCents(product.price);
+  const subtotalBeforePromotion = product.price;
+  const originalSubtotal = product.originalPrice;
+  const manualDiscount = getManualDiscountAmount({ price: product.price, originalPrice: product.originalPrice });
+  const promotionDiscount = requestedPromotionCode
+    ? applyPromotionCode({
+      promotionCode,
+      targetType: "trainingProgram",
+      targetIds: [program._id],
+      amount: subtotalBeforePromotion,
+    })
+    : null;
+  if (requestedPromotionCode && promotionDiscount?.code !== requestedPromotionCode) {
+    return { ok: false, code: "invalid_promotion_code" };
+  }
+
+  const subtotal = promotionDiscount ? subtractCad(subtotalBeforePromotion, promotionDiscount.amount) : subtotalBeforePromotion;
+  const subtotalCents = moneyToCents(subtotal);
   const taxCents = Math.round(subtotalCents * TRAINING_CHECKOUT_TAX_RATE);
   const totalCents = subtotalCents + taxCents;
 
@@ -167,7 +203,11 @@ export function validateTrainingCheckoutRequest(
       productTitle: product.title,
       productSku: product.sku,
       currency: "CAD",
+      ...(originalSubtotal === undefined ? {} : { originalSubtotal }),
+      manualDiscount,
       subtotal: centsToMoney(subtotalCents),
+      ...(promotionDiscount ? { promotionCode: promotionDiscount.code } : {}),
+      promotionDiscount: promotionDiscount?.amount ?? 0,
       tax: centsToMoney(taxCents),
       total: centsToMoney(totalCents),
       customerName,
@@ -196,10 +236,6 @@ function hasCartLikeInput(input: Record<string, unknown>): boolean {
   return input.quantity !== undefined || input.items !== undefined;
 }
 
-function hasDiscountInput(input: Record<string, unknown>): boolean {
-  return input.discountCode !== undefined || input.promoCode !== undefined;
-}
-
 function isValidTrainingPrice(price: number): boolean {
   return typeof price === "number" && Number.isFinite(price) && price > 0;
 }
@@ -209,7 +245,7 @@ function hasCompleteNativeTrainingCommerceFields(program: TTrainingProgram): boo
 }
 
 function moneyToCents(value: number): number {
-  return Math.round(value * 100);
+  return cadToCents(value);
 }
 
 function centsToMoney(cents: number): number {

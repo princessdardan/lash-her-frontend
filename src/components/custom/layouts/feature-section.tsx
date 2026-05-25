@@ -190,7 +190,7 @@ export function FeatureSection({ data, products }: FeatureSectionProps) {
     <section className="section-shell">
       <div
         className={cn(
-          "mx-auto rounded-[28px] border border-lh-line bg-white/60 p-6 shadow-[0_18px_50px_rgba(28,19,24,0.04)] md:p-10 lg:p-14",
+          "mx-auto rounded-[28px] border border-lh-line bg-lh-neutral p-6 shadow-[0_18px_50px_rgba(28,19,24,0.04)] md:p-10 lg:p-14",
           isImageTop ? "max-w-4xl" : "container max-w-7xl"
         )}
       >
@@ -199,7 +199,7 @@ export function FeatureSection({ data, products }: FeatureSectionProps) {
           <div className="flex items-center justify-between mb-6">
             <button
               onClick={goToPrev}
-              className="p-2 rounded-full bg-lh-neutral/50 hover:bg-lh-neutral transition-colors"
+              className="p-2 rounded-full bg-lh-primary hover:bg-lh-primary/50 transition-colors"
               aria-label="Previous feature"
             >
               <ChevronLeft className="w-5 h-5 text-lh-shadow" />
@@ -221,7 +221,7 @@ export function FeatureSection({ data, products }: FeatureSectionProps) {
             </div>
             <button
               onClick={goToNext}
-              className="p-2 rounded-full bg-lh-neutral/50 hover:bg-lh-neutral transition-colors"
+              className="p-2 rounded-full bg-lh-primary hover:bg-lh-primary/50 transition-colors"
               aria-label="Next feature"
             >
               <ChevronRight className="w-5 h-5 text-lh-shadow" />

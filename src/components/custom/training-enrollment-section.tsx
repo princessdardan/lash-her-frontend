@@ -26,6 +26,13 @@ function getFinitePrice(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function getDiscountedPrice(price: number | null, discountPrice: unknown): number | null {
+  if (price === null) return null;
+  if (typeof discountPrice !== "number" || !Number.isFinite(discountPrice)) return null;
+
+  return discountPrice < price ? discountPrice : null;
+}
+
 export function TrainingEnrollmentSection({ data }: TrainingEnrollmentSectionProps) {
   const {
     title,
@@ -39,6 +46,7 @@ export function TrainingEnrollmentSection({ data }: TrainingEnrollmentSectionPro
 
   const inclusions = factList?.filter(Boolean) ?? [];
   const price = getFinitePrice(data.price);
+  const discountPrice = getDiscountedPrice(price, data.discountPrice);
   const availabilityLabel = data.availabilityLabel;
   const isAvailable = data.isAvailable;
   const safePrimaryCta = primaryCta?.label && isSafeUrl(primaryCta.href) ? primaryCta : null;
@@ -92,7 +100,12 @@ export function TrainingEnrollmentSection({ data }: TrainingEnrollmentSectionPro
             {price !== null && (
               <div className="rounded-[24px] border border-lh-line bg-lh-neutral-2/70 p-5">
                 <p className="font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-muted">Investment</p>
-                <p className="mt-2 font-body text-2xl font-bold text-lh-primary">{formatCad(price)}</p>
+                <p className="mt-2 flex flex-col gap-1 font-body text-2xl font-bold text-lh-primary">
+                  {discountPrice !== null ? (
+                    <span className="text-sm text-lh-muted line-through">{formatCad(price)}</span>
+                  ) : null}
+                  <span>{formatCad(discountPrice ?? price)}</span>
+                </p>
               </div>
             )}
 

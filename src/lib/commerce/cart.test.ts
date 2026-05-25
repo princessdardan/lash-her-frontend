@@ -93,6 +93,163 @@ describe("commerce cart validation", () => {
     );
   });
 
+  it("applies manual product discounts before checkout totals", () => {
+    assert.deepEqual(
+      buildValidatedCart([{ productId: "product-1", quantity: 2 }], [{ ...product, discountPrice: 100 }]),
+      {
+        currency: "CAD",
+        amount: 200,
+        originalAmount: 250,
+        manualDiscountAmount: 50,
+        lineItems: [
+          {
+            productId: "product-1",
+            sku: "LASH-CLASSIC",
+            description: "Classic Lash Set",
+            quantity: 2,
+            price: 100,
+            originalPrice: 125,
+            manualDiscount: 25,
+            total: 200,
+            originalTotal: 250,
+          },
+        ],
+      },
+    );
+  });
+
+  it("applies promotion codes after manual discounts", () => {
+    assert.deepEqual(
+      buildValidatedCart(
+        [{ productId: "product-1", quantity: 2 }],
+        [{ ...product, discountPrice: 100 }],
+        {
+          promotionCode: {
+            _id: "promo-save10",
+            code: "SAVE10",
+            isEnabled: true,
+            discountType: "percentage",
+            amount: 10,
+            appliesTo: "products",
+          },
+        },
+      ),
+      {
+        currency: "CAD",
+        amount: 180,
+        amountBeforePromotion: 200,
+        originalAmount: 250,
+        manualDiscountAmount: 50,
+        promotionCode: "SAVE10",
+        promotionDiscountAmount: 20,
+        lineItems: [
+          {
+            productId: "product-1",
+            sku: "LASH-CLASSIC",
+            description: "Classic Lash Set",
+            quantity: 2,
+            price: 100,
+            originalPrice: 125,
+            manualDiscount: 25,
+            total: 200,
+            originalTotal: 250,
+          },
+        ],
+      },
+    );
+  });
+
+  it("applies specific product promotion codes only to eligible cart lines", () => {
+    assert.deepEqual(
+      buildValidatedCart(
+        [
+          { productId: "product-1", quantity: 1 },
+          { productId: "product-2", quantity: 1 },
+        ],
+        [
+          product,
+          {
+            id: "product-2",
+            title: "Volume Lash Set",
+            price: 200,
+            currency: "CAD",
+            isAvailable: true,
+          },
+        ],
+        {
+          promotionCode: {
+            _id: "promo-specific",
+            code: "CLASSIC20",
+            isEnabled: true,
+            discountType: "percentage",
+            amount: 20,
+            appliesTo: "specificItems",
+            products: [{ _id: "product-1" }],
+          },
+        },
+      ),
+      {
+        currency: "CAD",
+        amount: 300,
+        amountBeforePromotion: 325,
+        originalAmount: 325,
+        promotionCode: "CLASSIC20",
+        promotionDiscountAmount: 25,
+        lineItems: [
+          {
+            productId: "product-1",
+            sku: "LASH-CLASSIC",
+            description: "Classic Lash Set",
+            quantity: 1,
+            price: 125,
+            total: 125,
+          },
+          {
+            productId: "product-2",
+            sku: "product-2",
+            description: "Volume Lash Set",
+            quantity: 1,
+            price: 200,
+            total: 200,
+          },
+        ],
+      },
+    );
+  });
+
+  it("ignores promotion codes that do not apply to products", () => {
+    assert.deepEqual(
+      buildValidatedCart(
+        [{ productId: "product-1", quantity: 1 }],
+        [product],
+        {
+          promotionCode: {
+            _id: "promo-training",
+            code: "TRAINING10",
+            isEnabled: true,
+            discountType: "percentage",
+            amount: 10,
+            appliesTo: "trainingPrograms",
+          },
+        },
+      ),
+      {
+        currency: "CAD",
+        amount: 125,
+        lineItems: [
+          {
+            productId: "product-1",
+            sku: "LASH-CLASSIC",
+            description: "Classic Lash Set",
+            quantity: 1,
+            price: 125,
+            total: 125,
+          },
+        ],
+      },
+    );
+  });
+
   it("derives stable line item codes from IDs when products or variants have no SKU", () => {
     assert.deepEqual(
       buildValidatedCart(

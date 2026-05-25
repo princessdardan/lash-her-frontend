@@ -13,6 +13,7 @@ import { bookingMarketingOptIn } from "./documents/booking-marketing-opt-in";
 // Documents — Collections
 import { product } from "./documents/product";
 import { productCollection } from "./documents/product-collection";
+import { promotionCode } from "./documents/promotion-code";
 import { service } from "./documents/service";
 import { trainingProgram } from "./documents/training-program";
 import { contactForm } from "./documents/contact-form";
@@ -62,6 +63,7 @@ export const schemaTypes = [
   bookingMarketingOptIn,
   product,
   productCollection,
+  promotionCode,
   service,
   trainingProgram,
   contactForm,

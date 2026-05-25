@@ -69,41 +69,6 @@ docs/superpowers/
 # local git worktrees
 .worktrees/
 
-.claude/skills/ui-ux-pro-max/data/charts.csv
-.claude/skills/ui-ux-pro-max/data/colors.csv
-.claude/skills/ui-ux-pro-max/data/icons.csv
-.claude/skills/ui-ux-pro-max/data/landing.csv
-.claude/skills/ui-ux-pro-max/data/products.csv
-.claude/skills/ui-ux-pro-max/data/react-performance.csv
-.claude/skills/ui-ux-pro-max/data/styles.csv
-.claude/skills/ui-ux-pro-max/data/typography.csv
-.claude/skills/ui-ux-pro-max/data/ui-reasoning.csv
-.claude/skills/ui-ux-pro-max/data/ux-guidelines.csv
-.claude/skills/ui-ux-pro-max/data/web-interface.csv
-.claude/skills/ui-ux-pro-max/data/stacks/astro.csv
-.claude/skills/ui-ux-pro-max/data/stacks/flutter.csv
-.claude/skills/ui-ux-pro-max/data/stacks/html-tailwind.csv
-.claude/skills/ui-ux-pro-max/data/stacks/jetpack-compose.csv
-.claude/skills/ui-ux-pro-max/data/stacks/nextjs.csv
-.claude/skills/ui-ux-pro-max/data/stacks/nuxt-ui.csv
-.claude/skills/ui-ux-pro-max/data/stacks/nuxtjs.csv
-.claude/skills/ui-ux-pro-max/data/stacks/react-native.csv
-.claude/skills/ui-ux-pro-max/data/stacks/react.csv
-.claude/skills/ui-ux-pro-max/data/stacks/shadcn.csv
-.claude/skills/ui-ux-pro-max/data/stacks/svelte.csv
-.claude/skills/ui-ux-pro-max/data/stacks/swiftui.csv
-.claude/skills/ui-ux-pro-max/data/stacks/vue.csv
-.planning/codebase/ARCHITECTURE.md
-.planning/codebase/CONCERNS.md
-.planning/codebase/CONVENTIONS.md
-.planning/codebase/INTEGRATIONS.md
-.planning/codebase/STACK.md
-.planning/codebase/STRUCTURE.md
-.planning/codebase/TESTING.md
-.planning/research/ARCHITECTURE.md
-.planning/research/FEATURES.md
-.planning/research/PITFALLS.md
-.planning/research/STACK.md
-.planning/research/SUMMARY.md
+# docs for local development 
 docs/checkout-flowcharts.html
 docs/service-offering-booking-flowchart-guide.html

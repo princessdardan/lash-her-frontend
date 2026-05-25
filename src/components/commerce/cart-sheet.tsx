@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, type ReactElement } from "react";
+import { useMemo, useState, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Sheet,
   SheetContent,
@@ -22,6 +23,13 @@ interface CartSheetProps {
 export function CartSheet({ products }: CartSheetProps): ReactElement {
   const router = useRouter();
   const { items, isOpen, removeItem, updateQuantity, clearCart, closeCart } = useProductCart();
+  const [promotionCodeInput, setPromotionCodeInput] = useState("");
+  const [redeemedPromotionCode, setRedeemedPromotionCode] = useState<string | undefined>();
+  const [promotionPreviewCart, setPromotionPreviewCart] = useState<ValidatedCart | null>(null);
+  const [promotionPreviewCartKey, setPromotionPreviewCartKey] = useState<string | undefined>();
+  const [promotionCodeError, setPromotionCodeError] = useState<string | null>(null);
+  const [isApplyingPromotionCode, setIsApplyingPromotionCode] = useState(false);
+  const itemsKey = useMemo(() => JSON.stringify(items), [items]);
   const { cartError, validatedCart } = useMemo<{ cartError: string | null; validatedCart: ValidatedCart | null }>(() => {
     if (!isOpen || items.length === 0) {
       return { cartError: null, validatedCart: null };
@@ -33,6 +41,7 @@ export function CartSheet({ products }: CartSheetProps): ReactElement {
         sku: p.sku,
         title: p.title,
         price: p.price,
+        discountPrice: p.discountPrice,
         currency: p.currency,
         isAvailable: p.isAvailable,
         variants: p.variants?.map((variant) => ({
@@ -40,6 +49,7 @@ export function CartSheet({ products }: CartSheetProps): ReactElement {
           sku: variant.sku,
           title: variant.title,
           price: variant.price,
+          discountPrice: variant.discountPrice,
           isAvailable: variant.isAvailable,
         })),
       }));
@@ -55,12 +65,70 @@ export function CartSheet({ products }: CartSheetProps): ReactElement {
     closeCart();
   };
 
+  const hasPromotionPreview = promotionPreviewCartKey === itemsKey && promotionPreviewCart !== null;
+  const activeRedeemedPromotionCode = hasPromotionPreview ? redeemedPromotionCode : undefined;
+  const displayedCart = hasPromotionPreview ? promotionPreviewCart : validatedCart;
+
   const handleCheckout = () => {
     closeCart();
-    router.push("/checkout");
+    router.push(activeRedeemedPromotionCode ? `/checkout?promotionCode=${encodeURIComponent(activeRedeemedPromotionCode)}` : "/checkout");
+  };
+
+  const handleApplyPromotionCode = async () => {
+    if (!validatedCart || !promotionCodeInput.trim()) return;
+
+    setPromotionCodeError(null);
+    setIsApplyingPromotionCode(true);
+
+    try {
+      const response = await fetch("/api/promotion-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetType: "product",
+          promotionCode: promotionCodeInput,
+          items,
+        }),
+      });
+
+      if (!response.ok) {
+        setPromotionCodeError("This code is not valid for your cart.");
+        setRedeemedPromotionCode(undefined);
+        return;
+      }
+
+      const data = await response.json() as { promotionCode?: string; cart?: ValidatedCart };
+      if (!data.promotionCode || !data.cart) {
+        setPromotionCodeError("This code is not valid for your cart.");
+        setRedeemedPromotionCode(undefined);
+        setPromotionPreviewCart(null);
+        return;
+      }
+
+      setRedeemedPromotionCode(data.promotionCode);
+      setPromotionPreviewCart(data.cart);
+      setPromotionPreviewCartKey(itemsKey);
+      setPromotionCodeInput(data.promotionCode);
+    } catch {
+      setPromotionCodeError("We could not apply this code. Please try again.");
+      setRedeemedPromotionCode(undefined);
+      setPromotionPreviewCart(null);
+    } finally {
+      setIsApplyingPromotionCode(false);
+    }
+  };
+
+  const handleRemovePromotionCode = () => {
+    setRedeemedPromotionCode(undefined);
+    setPromotionPreviewCart(null);
+    setPromotionPreviewCartKey(undefined);
+    setPromotionCodeError(null);
   };
 
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
+  const cartAmountBeforePromotion = displayedCart
+    ? Math.round((displayedCart.amount + (displayedCart.promotionDiscountAmount ?? 0)) * 100) / 100
+    : 0;
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && handleClose()}>
@@ -86,10 +154,10 @@ export function CartSheet({ products }: CartSheetProps): ReactElement {
             </div>
           ) : cartError ? (
             <p className="text-lh-accent text-sm font-body font-bold">{cartError}</p>
-          ) : validatedCart ? (
+          ) : displayedCart ? (
             <div className="flex flex-col gap-4">
               <ul className="divide-y divide-lh-line">
-                {validatedCart.lineItems.map((lineItem) => (
+                {displayedCart.lineItems.map((lineItem) => (
                   <li
                     key={`${lineItem.productId}:${lineItem.variantId || "default"}`}
                     className="py-3 flex justify-between items-start"
@@ -125,10 +193,16 @@ export function CartSheet({ products }: CartSheetProps): ReactElement {
                         </button>
                         <span className="font-body text-sm font-bold text-lh-muted">
                           × {formatCad(lineItem.price)}
+                          {lineItem.originalPrice ? (
+                            <span className="ml-2 line-through">{formatCad(lineItem.originalPrice)}</span>
+                          ) : null}
                         </span>
                       </div>
                     </div>
                     <div className="text-right ml-4">
+                      {lineItem.originalTotal ? (
+                        <p className="text-xs font-bold text-lh-muted line-through">{formatCad(lineItem.originalTotal)}</p>
+                      ) : null}
                       <p className="font-bold text-lh-shadow">{formatCad(lineItem.total)}</p>
                       <button
                         aria-label={`Remove ${lineItem.description} from cart`}
@@ -143,16 +217,67 @@ export function CartSheet({ products }: CartSheetProps): ReactElement {
               </ul>
 
               <div className="border-t border-lh-line pt-4 mt-2">
-                <div className="flex justify-between items-center mb-6">
+                <div className="rounded-[22px] border border-lh-line bg-lh-neutral-2/60 p-4 mb-4">
+                  <label htmlFor="cart-promotion-code" className="block text-sm font-bold text-lh-primary mb-2">
+                    Promotion code
+                  </label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="cart-promotion-code"
+                      value={promotionCodeInput}
+                      onChange={(event) => setPromotionCodeInput(event.target.value.toUpperCase())}
+                      placeholder="Enter code"
+                      disabled={isApplyingPromotionCode}
+                      autoComplete="off"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={activeRedeemedPromotionCode ? handleRemovePromotionCode : handleApplyPromotionCode}
+                      disabled={isApplyingPromotionCode || (!activeRedeemedPromotionCode && !promotionCodeInput.trim())}
+                      className="rounded-full border-lh-primary/30 px-4 font-body text-xs uppercase tracking-[0.12em]"
+                    >
+                      {isApplyingPromotionCode ? "Applying" : activeRedeemedPromotionCode ? "Remove" : "Apply"}
+                    </Button>
+                  </div>
+                  {activeRedeemedPromotionCode ? (
+                    <p className="mt-2 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-primary">
+                      Code {activeRedeemedPromotionCode} applied.
+                    </p>
+                  ) : null}
+                  {promotionCodeError ? (
+                    <p className="mt-2 font-body text-xs font-bold text-lh-accent" role="alert">
+                      {promotionCodeError}
+                    </p>
+                  ) : null}
+                </div>
+                {displayedCart.manualDiscountAmount ? (
+                  <div className="mb-2 flex justify-between font-body text-sm font-bold text-lh-muted">
+                    <span>Manual discounts</span>
+                    <span>-{formatCad(displayedCart.manualDiscountAmount)}</span>
+                  </div>
+                ) : null}
+                {activeRedeemedPromotionCode && displayedCart.promotionDiscountAmount ? (
+                  <div className="mb-2 flex justify-between font-body text-sm font-bold text-lh-primary">
+                    <span>Code {activeRedeemedPromotionCode}</span>
+                    <span>-{formatCad(displayedCart.promotionDiscountAmount)}</span>
+                  </div>
+                ) : null}
+                <div className="flex justify-between items-center mb-6 gap-4">
                   <span className="font-bold text-xl text-lh-shadow">Total</span>
-                  <span className="font-bold text-xl text-lh-primary">{formatCad(validatedCart.amount)}</span>
+                  <span className="flex flex-wrap items-baseline justify-end gap-2 font-bold text-xl text-lh-primary">
+                    {activeRedeemedPromotionCode && displayedCart.promotionDiscountAmount ? (
+                      <span className="text-sm text-lh-muted line-through">{formatCad(cartAmountBeforePromotion)}</span>
+                    ) : null}
+                    <span>{formatCad(displayedCart.amount)}</span>
+                  </span>
                 </div>
               </div>
             </div>
           ) : null}
         </div>
 
-        {items.length > 0 && validatedCart && !cartError && (
+        {items.length > 0 && displayedCart && !cartError && (
           <div className="border-t border-lh-line pt-5 space-y-4">
             <p className="font-body text-sm font-bold leading-6 text-lh-muted">
               Review your shipping details and complete secure payment on the checkout page.

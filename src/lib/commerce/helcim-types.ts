@@ -6,6 +6,8 @@ export type HelcimInvoiceLineItem = Pick<
   ValidatedCartLineItem,
   "sku" | "description" | "quantity" | "price"
 > & {
+  discountCode?: string;
+  total?: number;
   taxAmount?: number;
   taxName?: string;
   taxRate?: number;
