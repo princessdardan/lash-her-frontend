@@ -21,16 +21,15 @@ If a record contains customer contact data, payment identifiers, hold state, or 
 
 ## Live Flows
 
-### Standard Public Booking
+### Public Booking Entry
 
 1. Customer opens `/booking`.
 2. The page loads Sanity `bookingSettings` and active `bookingOffering` records.
 3. The browser requests availability from `/api/booking/availability`.
 4. The server builds slots from configured availability marker events, Google Calendar busy intervals, private active holds, lead time, horizon, duration, intervals, and buffers.
-5. Free or internal training-call booking paths submit through `/api/booking/create` only when explicitly enabled; paid training intro-call scheduling uses the gated training schedule page and Google Appointment Schedule.
-6. The server revalidates the slot before creating or confirming the booking. Direct unpaid in-person appointment creation is rejected.
-7. A Google Calendar event is inserted or reused.
-8. Booking confirmation emails are attempted through Resend. Email failure does not undo a confirmed booking.
+5. Appointment confirmation does not happen from `/api/booking/create`; that route is intentionally disabled and returns the secure-payment-required error.
+6. Paid service booking continues through private hold creation, Square checkout, server-side payment reconciliation, and final Calendar finalization.
+7. Paid training intro-call scheduling uses the tokenized training schedule page and Google Appointment Schedule after private token eligibility passes.
 
 ### Paid Service Booking With Hold And Square Payment
 
@@ -73,13 +72,12 @@ Run these checks for staging release validation, production launch windows, and 
 - [ ] `SQUARE_ENVIRONMENT`, `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, `SQUARE_WEBHOOK_SIGNATURE_KEY`, `SQUARE_SERVICE_BOOKING_RETURN_URL`, and `SQUARE_SERVICE_BOOKING_WEBHOOK_URL` are configured only as server-side variables.
 - [ ] `RESEND_API_KEY`, `FROM_EMAIL`, and `ADMIN_EMAIL` are configured.
 
-### Booking Smoke
+### Public Booking Entry Smoke
 
 - [ ] Open `/booking` on the target environment and confirm the page renders.
 - [ ] Confirm active booking offerings appear in the intended order.
-- [ ] Confirm standard appointment availability loads from the connected calendar.
-- [ ] Create a standard test booking with a redacted customer profile and confirm one Google Calendar event exists.
-- [ ] Confirm the booking confirmation email is delivered or that any email failure is logged without rolling back the booking.
+- [ ] Confirm appointment availability loads from the connected calendar.
+- [ ] Confirm direct `/api/booking/create` requests reject with the secure-payment-required error.
 - [ ] Confirm the booking marketing opt-in and no-opt-in paths create private audit evidence and do not create Sanity submission documents.
 
 ### Paid Service Booking Smoke

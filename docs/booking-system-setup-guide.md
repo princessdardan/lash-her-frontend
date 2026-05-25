@@ -74,11 +74,10 @@ NEXT_PUBLIC_SANITY_PROJECT_ID=3auncj84
 NEXT_PUBLIC_SANITY_DATASET=<staging-2026-05-10-or-production>
 NEXT_PUBLIC_SANITY_API_VERSION=2026-03-24
 SANITY_WRITE_TOKEN=<server-only-write-token>
-SANITY_FORM_TOKEN=<server-only-form-token>
 SANITY_WEBHOOK_SECRET=<signed-webhook-secret>
 ```
 
-Only `NEXT_PUBLIC_*` values are browser-visible. Keep write/form/webhook tokens server-only.
+Only `NEXT_PUBLIC_*` values are browser-visible. Keep write and webhook tokens server-only. `SANITY_FORM_TOKEN` is not required for current private DB-backed form/contact writes; add it only for a documented legacy or conditional Sanity submission workflow.
 
 ### Email
 
@@ -233,7 +232,6 @@ In Studio, configure the `bookingSettings` singleton:
 | Booking Horizon Days | Choose how far out customers can book. |
 | Minimum Lead Time Hours | Choose the minimum notice before a slot can be booked. |
 | Booking Timezone | Use `America/Toronto` unless the business operating timezone changes. |
-| Booking Types | Configure exactly `training-call` and `in-person-appointment`. |
 | Marketing Opt-in Label | Confirm approved customer-facing consent copy. |
 
 Add availability marker events to the connected Google Calendar using the configured marker title. Busy events and active private holds will block overlapping slots.
@@ -245,7 +243,7 @@ Create active `bookingOffering` records for customer-selectable services.
 Required fields:
 
 - Title, description, slug, active status.
-- Booking type: `training-call` or `in-person-appointment`.
+- Booking type: `in-person-appointment`.
 - Duration, slot interval, buffer before, buffer after.
 - Optional minimum lead-time override.
 - Deposit amount and full price in native CAD fields.
@@ -342,13 +340,12 @@ Complete staging smoke before production handoff.
 - [ ] Helcim webhook delivery URL targets staging for product/training checkout.
 - [ ] Resend sender domain is verified.
 
-### Public Booking
+### Public Booking Entry
 
 - [ ] `/booking` loads in staging.
 - [ ] Active offerings appear from Sanity.
 - [ ] Availability loads from Google Calendar.
-- [ ] A standard booking creates one Calendar event.
-- [ ] Booking confirmation email is sent or failure is logged.
+- [ ] Direct `/api/booking/create` requests reject with the secure-payment-required error.
 - [ ] Marketing opt-in and no-opt-in booking paths write private audit evidence only.
 
 ### Paid Service Booking
@@ -415,6 +412,5 @@ Production stop conditions:
 - `docs/booking-system-architecture-reference.md`
 - `docs/booking-payment-provider-split.md`
 - `docs/google-calendar-oauth-env-setup.md`
-- `docs/private-checkout-storage-setup.md`
 - `docs/private-database-migration-runbook.md`
 - `docs/launch-readiness-checklist.md`

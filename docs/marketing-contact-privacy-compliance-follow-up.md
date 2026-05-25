@@ -2,11 +2,9 @@
 
 This document captures the compliance workstream that should follow the marketing-contact storage migration. It is technical planning support, not legal advice. Final consent wording, retention periods, jurisdiction coverage, and operating procedures should be reviewed by business ownership and qualified privacy/legal counsel.
 
-The execution checklist for this workstream lives in `docs/superpowers/plans/2026-05-17-marketing-contact-privacy-compliance-hardening.md`.
-
 ## Scope Boundary
 
-The storage migration should move marketing/contact submissions out of Sanity and into the existing private Neon/Postgres database, while preserving consent evidence needed for compliance.
+Marketing/contact submissions now belong in the private Neon/Postgres database, while Sanity remains public/editorial content plus historical submission backfill source only. The private database must preserve the consent evidence needed for compliance review and operations.
 
 Full CASL, PIPEDA, GDPR, and related privacy compliance is broader than the storage migration. It requires unsubscribe handling, consent wording approval, retention schedules, data subject request workflows, access controls, operational logging, incident response, and periodic review.
 

@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 
-This document is the durable reference for the unified Lash Her booking redesign. It complements the implementation plan in `docs/superpowers/plans/2026-05-18-unified-booking-system-redesign.md`.
+This document is the durable reference for the current Lash Her booking architecture. It records the provider boundaries, lifecycle state, and operational invariants that should stay true as the system evolves.
 
 ## Executive Decision
 
@@ -140,7 +140,6 @@ It must:
 - create the final Google Calendar event through `events.insert`,
 - store `google_event_id`,
 - mark the hold `booked`,
-- mark related training enrollment scheduled/booked when applicable,
 - send emails non-blockingly,
 - return the already-confirmed result on duplicate calls.
 
@@ -157,9 +156,9 @@ It must:
 | Calendar insert fails after payment | Mark `booking_failed` or `manual_followup`; alert/admin surface it. |
 | Email fails | Booking remains confirmed; failure is logged/reported. |
 
-## Proposed Route And Module Shape
+## Current Route And Module Shape
 
-Names can change during implementation, but keep these boundaries:
+Keep these route and module boundaries aligned with the implementation:
 
 - `GET /api/booking/availability`: offering-aware slot availability.
 - `POST /api/booking/holds`: create a 10-minute hold after server revalidation.
@@ -169,7 +168,6 @@ Names can change during implementation, but keep these boundaries:
 - `POST /api/webhooks/square`: verify Square webhook signatures, dedupe events, reconcile payment, and call the shared service booking finalizer.
 - `POST /api/checkout/validate-payment`: verify Helcim browser payment payloads for product and training checkout.
 - `POST /api/webhooks/card-transactions`: verify Helcim webhooks for product and training checkout.
-- `POST /api/booking/reconcile` or scheduled job: expire stale holds and surface recovery states.
 
 Core modules:
 
@@ -182,43 +180,6 @@ Core modules:
 - `src/lib/booking/square-payment-finalizer.ts`
 - `src/lib/commerce/verified-payment.ts`
 - `src/lib/commerce/training-enrollment-store.ts`
-
-## File Impact Map
-
-Likely replace or heavily revise:
-
-- `src/app/(site)/booking/page.tsx`
-- `src/components/booking/booking-flow.tsx`
-- `src/app/api/booking/create/route.ts`
-- `src/lib/booking/booking-service.ts`
-- `src/lib/booking/booking-validation.ts`
-- `src/lib/booking/types.ts`
-- `src/lib/booking/paid-training-context.ts`
-
-Likely extend:
-
-- `src/app/api/booking/availability/route.ts`
-- `src/lib/booking/availability.ts`
-- `src/lib/booking/google-calendar.ts`
-- `src/lib/booking/google-calendar-event-payload.ts`
-- `src/app/api/checkout/route.ts`
-- `src/app/api/checkout/validate-payment/route.ts`
-- `src/app/api/webhooks/card-transactions/route.ts`
-- `src/lib/commerce/order-store.ts`
-- `src/lib/commerce/training-enrollment-store.ts`
-- `src/lib/private-db/schema.ts`
-- `src/sanity/schemas/documents/booking-settings.ts`
-- `src/sanity/schemas/documents/booking-offering.ts`
-- `src/sanity/schemas/documents/service.ts`
-- `src/data/loaders.ts`
-- `src/types/index.ts`
-
-Likely keep:
-
-- Google OAuth routes and server-side refresh-token handling.
-- Helcim checkout primitives.
-- Resend email provider boundary.
-- Private DB PII/payment boundary.
 
 ## Operational Reconciliation
 
@@ -234,10 +195,12 @@ Minimum operator reporting must identify:
 
 ## Documentation To Keep In Sync
 
-- `docs/superpowers/plans/2026-05-18-unified-booking-system-redesign.md`
 - `docs/booking-system-architecture-reference.md`
+- `docs/booking-system-runbook.md`
+- `docs/booking-system-setup-guide.md`
 - `docs/booking-payment-provider-split.md`
-- `docs/private-checkout-storage-setup.md`
+- `docs/private-database-migration-runbook.md`
+- `docs/marketing-contact-privacy-compliance-follow-up.md`
 - `docs/launch-readiness-checklist.md`
 - `README.md`
 

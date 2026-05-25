@@ -2,7 +2,7 @@
 
 This runbook describes how to safely verify, run, and record private PostgreSQL migrations for Lash Her. The private database stores checkout/order records, appointment hold/payment lifecycle records, and marketing/contact submission records. Sanity remains the public editorial CMS and historical submission backfill source; new private data must not be written to Sanity.
 
-Use this runbook for generated Drizzle migrations in `drizzle/`, including the marketing-contact storage migration `drizzle/0002_rapid_fat_cobra.sql`.
+Use this runbook for generated Drizzle migrations in `drizzle/`.
 
 ## Scope
 
@@ -73,13 +73,7 @@ Complete this before every staging or production migration:
 - [ ] Staging migration has completed successfully before production.
 - [ ] Post-migration smoke checks are ready.
 
-For the marketing-contact migration, verify that `drizzle/0002_rapid_fat_cobra.sql` is present and creates:
-
-- `marketing_contacts`
-- `marketing_contact_submissions`
-- `marketing_consent_events`
-- `marketing_contact_submission_type`
-- `marketing_consent_event_type`
+For migrations that touch private operational data, verify the changed SQL creates or alters only the intended tables and enum values. Current private domains include `checkout_orders`, `checkout_payment_events`, `training_enrollments`, `appointment_holds`, `marketing_contacts`, `marketing_contact_submissions`, and `marketing_consent_events`.
 
 ## Staging Procedure
 
@@ -199,9 +193,7 @@ If a migration fails:
 
 ## Related Documents
 
-- `docs/private-checkout-storage-setup.md`
 - `docs/marketing-contact-privacy-compliance-follow-up.md`
-- `docs/superpowers/plans/2026-05-17-marketing-contact-privacy-compliance-hardening.md`
 - `docs/launch-readiness-checklist.md`
-- `scripts/AGENTS.md`
+- `AGENTS.md`
 - `README.md`

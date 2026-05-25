@@ -17,13 +17,7 @@ npm run git:push-staging
 
 This document describes how to use the Lash Her staging Sanity Studio and the `staging-2026-05-10` dataset to test Studio/schema/content changes, then safely promote completed work to production.
 
-The implementation worktree for this effort is:
-
-```bash
-/Users/dardan/workspace/lash-her-frontend
-```
-
-Run app and Sanity commands from:
+Run app and Sanity commands from the repository root:
 
 ```bash
 cd /Users/dardan/workspace/lash-her-frontend
@@ -41,7 +35,7 @@ cd /Users/dardan/workspace/lash-her-frontend
   - `NEXT_PUBLIC_SANITY_API_VERSION`
 - The Sanity project ID found in `sanity.cli.ts` is `3auncj84`.
 - `sanity.cli.ts` currently hardcodes the CLI dataset to `production`.
-- The implementation worktree already contains booking/Helcim schema additions, including `bookingSettings` as a singleton.
+- The source schema includes booking, commerce, and private-data boundary types, including `bookingSettings` as a singleton.
 
 Important distinction: the Sanity Studio does not contain the content. The Studio is the editing application and schema code. Content lives in a Sanity Content Lake dataset. Copying production into staging means copying the production dataset into `staging-2026-05-10`; deploying Studio/schema code is a separate step.
 
@@ -82,7 +76,7 @@ Before proceeding, confirm you have:
   - `CHECKOUT_SECRET_ENCRYPTION_KEY`
   - `DATABASE_URL`
 
-Do not put private tokens in `NEXT_PUBLIC_*` variables. `NEXT_PUBLIC_*` values are browser-visible. Checkout transaction history, customer PII, form/contact submissions, marketing contacts, and consent events must be stored in the private database, not Sanity. Sanity is public/editorial plus historical submission backfill source. See [Shared Private PII Storage Setup Guide](./private-checkout-storage-setup.md) for details.
+Do not put private tokens in `NEXT_PUBLIC_*` variables. `NEXT_PUBLIC_*` values are browser-visible. Checkout transaction history, customer PII, form/contact submissions, marketing contacts, and consent events must be stored in the private database, not Sanity. Sanity is public/editorial plus historical submission backfill source. Use `docs/private-database-migration-runbook.md` for schema changes and `docs/marketing-contact-privacy-compliance-follow-up.md` for retention/privacy operating decisions.
 
 ### Token Guardrails and Least Privilege
 
@@ -102,7 +96,7 @@ Sanity tokens must be managed with strict isolation and rotation policies. If pl
 
 ## Phase 1: Confirm Current Sanity State
 
-From the implementation worktree root directory:
+From the repository root:
 
 ```bash
 cd /Users/dardan/workspace/lash-her-frontend
@@ -192,7 +186,7 @@ Use `staging-2026-05-10` directly in app, Studio, and CLI environment variables.
 
 Because this repo defines schemas in code, production schemas should be treated as source-controlled code, not as content to pull from the Studio.
 
-Deploy the worktree schema to `staging-2026-05-10`:
+Deploy the source-controlled schema to `staging-2026-05-10`:
 
 ```bash
 cd /Users/dardan/workspace/lash-her-frontend
@@ -270,7 +264,7 @@ npx sanity cors add http://localhost:3000 \
 
 ## Phase 5: Test Studio Changes in Staging
 
-Run local validation from the implementation worktree:
+Run local validation from the repository root:
 
 ```bash
 cd /Users/dardan/workspace/lash-her-frontend
@@ -295,7 +289,7 @@ Then manually verify the actual staging surfaces:
 
 Promote code through Git and CI, not by copying staging schema documents into production.
 
-1. Complete implementation in the worktree.
+1. Complete and review the source changes.
 2. Validate against staging.
 3. Review and merge the branch into the production branch.
 4. Deploy the production app/Studio with production environment variables.
@@ -447,7 +441,7 @@ After staging refresh:
 - [ ] Confirm `staging-2026-05-10` contains the fresh production copy.
 - [ ] Confirm staging Studio targets `staging-2026-05-10`.
 - [ ] Confirm production content appears in `staging-2026-05-10`.
-- [ ] Deploy current worktree schema to `staging-2026-05-10`.
+- [ ] Deploy the current source-controlled schema to `staging-2026-05-10`.
 
 Before production release:
 
@@ -510,7 +504,7 @@ Verify the Studio environment and structure before declaring production readines
 
 ### Environment and Schema
 - [ ] **Target Dataset:** Confirm `NEXT_PUBLIC_SANITY_DATASET` matches the intended environment (`production` or `staging-2026-05-10`).
-- [ ] **Deployed Schema:** Run `npx sanity schema list` and verify it matches the current worktree.
+- [ ] **Deployed Schema:** Run `npx sanity schema list` and verify it matches the current source-controlled schema.
 - [ ] **Embedded Studio:** Confirm `/studio` loads correctly on the target domain.
 
 ### Structure and Security

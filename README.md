@@ -353,15 +353,13 @@ Do not promote if:
 
 ## Further documentation
 
-- `docs/booking-system-architecture-reference.md` - booking architecture details.
+- `docs/booking-system-architecture-reference.md` - current booking architecture and provider boundaries.
 - `docs/booking-system-runbook.md` - booking operations runbook.
-- `docs/booking-system-setup-guide.md` - booking setup guide.
+- `docs/booking-system-setup-guide.md` - environment setup for booking, payment, calendar, and email services.
 - `docs/booking-payment-provider-split.md` - Helcim/Square provider split.
-- `docs/booking-helcim-implementation-summary.md` - historical Helcim booking implementation context.
 - `docs/google-calendar-oauth-env-setup.md` - Google Calendar OAuth setup.
-- `docs/private-checkout-storage-setup.md` - private checkout database setup.
 - `docs/private-database-migration-runbook.md` - private DB migration process.
+- `docs/marketing-contact-privacy-compliance-follow-up.md` - privacy/compliance operating guidance for marketing and contact data.
 - `docs/sanity-staging-production-workflow.md` - Sanity dataset/content promotion workflow.
 - `docs/launch-readiness-checklist.md` - launch smoke and readiness checklist.
-- `docs/production-readiness-audit-2026-05-16.md` - production readiness audit notes.
 - `docs/lash-her-brand-kit.html` - visual and brand reference.
