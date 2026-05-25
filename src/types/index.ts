@@ -369,14 +369,14 @@ export interface TProductFilterAttribute {
 
 export interface TProductOptionGroup {
   _key?: string;
-  name: string;
-  values?: string[];
+  name: string | null;
+  values?: Array<string | null>;
 }
 
 export interface TProductVariantOption {
   _key?: string;
-  name: string;
-  value: string;
+  name: string | null;
+  value: string | null;
 }
 
 export interface TProductsPage {
@@ -409,7 +409,7 @@ export interface TProductVariant {
   title: string;
   sku?: string;
   price: number;
-  discountPrice?: number;
+  discountPrice?: number | null;
   isAvailable: boolean;
   availabilityLabel?: string;
   options?: TProductVariantOption[];
@@ -424,7 +424,7 @@ export interface TProduct {
   badgeLabel?: string;
   slug: string;
   price: number;
-  discountPrice?: number;
+  discountPrice?: number | null;
   sku?: string;
   currency: TCommerceCurrency;
   collections?: TProductCollection[];

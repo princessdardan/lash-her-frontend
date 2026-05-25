@@ -21,19 +21,26 @@ function clampQuantity(value: number): number {
   return Math.max(MIN_QUANTITY, Math.min(MAX_QUANTITY, Math.trunc(value)));
 }
 
+function toTrimmedString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function getRequiredOptionNames(product: TProduct, variants: TProductVariant[]): string[] {
   const names = [
     ...(product.optionGroups?.map((group) => group.name) ?? []),
     ...variants.flatMap((variant) => variant.options?.map((option) => option.name) ?? []),
   ];
 
-  return Array.from(new Set(names.map((name) => name.trim()).filter(Boolean)));
+  return Array.from(new Set(names.map(toTrimmedString).filter((name): name is string => name !== null)));
 }
 
 function variantMatchesSelectedOptions(variant: TProductVariant, selectedOptions: Readonly<Record<string, string>>): boolean {
   return Object.entries(selectedOptions).every(([name, value]) => {
     if (!value) return true;
-    return variant.options?.some((option) => option.name === name && option.value === value);
+    return variant.options?.some((option) => toTrimmedString(option.name) === name && toTrimmedString(option.value) === value);
   });
 }
 
@@ -70,7 +77,13 @@ export function ProductDetailPurchaseControls({ product }: ProductDetailPurchase
     setSelectedOptions((currentOptions) => ({
       ...currentOptions,
       ...(variant.options?.reduce<Record<string, string>>((options, option) => {
-        options[option.name] = option.value;
+        const name = toTrimmedString(option.name);
+        const value = toTrimmedString(option.value);
+
+        if (name && value) {
+          options[name] = value;
+        }
+
         return options;
       }, {}) ?? {}),
     }));

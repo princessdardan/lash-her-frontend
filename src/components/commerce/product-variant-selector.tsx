@@ -20,33 +20,53 @@ interface OptionGroupViewModel {
   readonly values: string[];
 }
 
-function getVariantOptionValue(variant: TProductVariant, groupName: string): string | undefined {
-  return variant.options?.find((option) => option.name === groupName)?.value;
+function toTrimmedString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
-function unique(values: string[]): string[] {
-  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+function getVariantOptionValue(variant: TProductVariant, groupName: string): string | undefined {
+  const value = variant.options?.find((option) => toTrimmedString(option.name) === groupName)?.value;
+  return toTrimmedString(value) ?? undefined;
+}
+
+function unique(values: Array<string | null>): string[] {
+  return Array.from(new Set(values.map(toTrimmedString).filter((value): value is string => value !== null)));
 }
 
 function getOptionGroups(product: TProduct, variants: TProductVariant[]): OptionGroupViewModel[] {
-  const definedGroups = product.optionGroups?.map((group, index) => {
+  const definedGroups = product.optionGroups?.flatMap((group, index) => {
+    if (typeof group.name !== "string") return [];
+
+    const groupName = group.name.trim();
+    if (!groupName) return [];
+
     const variantValues = variants.flatMap((variant) =>
-      variant.options?.filter((option) => option.name === group.name).map((option) => option.value) ?? [],
+      variant.options?.filter((option) => toTrimmedString(option.name) === groupName).map((option) => option.value) ?? [],
     );
 
-    return {
-      key: group._key || `${group.name}-${index}`,
-      name: group.name,
-      values: unique([...(group.values ?? []), ...variantValues]),
-    };
+    return [
+      {
+        key: group._key || `${groupName}-${index}`,
+        name: groupName,
+        values: unique([...(group.values ?? []), ...variantValues]),
+      },
+    ];
   }) ?? [];
 
   const knownGroupNames = new Set(definedGroups.map((group) => group.name));
   const inferredGroups = variants.reduce<Record<string, string[]>>((groups, variant) => {
     variant.options?.forEach((option) => {
-      if (knownGroupNames.has(option.name)) return;
-      groups[option.name] ??= [];
-      groups[option.name].push(option.value);
+      if (typeof option.name !== "string" || typeof option.value !== "string") return;
+
+      const optionName = option.name.trim();
+      const optionValue = option.value.trim();
+      if (!optionName || !optionValue || knownGroupNames.has(optionName)) return;
+
+      groups[optionName] ??= [];
+      groups[optionName].push(optionValue);
     });
 
     return groups;
@@ -59,7 +79,7 @@ function getOptionGroups(product: TProduct, variants: TProductVariant[]): Option
       name,
       values: unique(values),
     })),
-  ].filter((group) => group.name && group.values.length > 0);
+  ].filter((group) => group.values.length > 0);
 }
 
 function variantMatchesOptions(variant: TProductVariant, options: Readonly<Record<string, string>>): boolean {

@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type ReactElement } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { SanityImage } from "@/components/ui/sanity-image";
 import { cn } from "@/lib/utils";
@@ -35,6 +36,7 @@ function getDiscountedPrice(price: unknown, discountPrice: unknown): number | nu
 }
 
 export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement {
+  const router = useRouter();
   const productHref = `/products/${product.slug}`;
   const variants = useMemo(
     () => product.variants?.filter((variant) => variant.title) ?? [],
@@ -48,6 +50,22 @@ export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement 
   const effectiveDiscountPrice = getDiscountedPrice(price, discountPrice);
   const canAdd = product.isAvailable && (variants.length === 0 || Boolean(selectedVariant?.isAvailable));
   const availabilityLabel = product.availabilityLabel || (product.isAvailable ? "Ready to ship" : "Unavailable");
+
+  const handleBuyNow = () => {
+    if (!canAdd) return;
+
+    const params = new URLSearchParams({
+      buyNow: "1",
+      productId: product._id,
+      quantity: "1",
+    });
+
+    if (selectedVariant) {
+      params.set("variantId", selectedVariant._key);
+    }
+
+    router.push(`/checkout?${params.toString()}`);
+  };
 
   return (
     <article className="editorial-card group min-h-[560px] overflow-hidden p-0">
@@ -168,11 +186,26 @@ export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement 
               {canAdd ? "Add to Cart" : availabilityLabel}
             </Button>
           ) : (
-            <Button asChild className="w-full rounded-full bg-lh-primary px-6 py-3 uppercase tracking-[0.12em] text-lh-white hover:bg-lh-accent">
-              <Link href={productHref} aria-label={`View details for ${product.title}`}>
-                View Details
-              </Link>
-            </Button>
+            <div className="flex flex-col gap-2">
+              <Button asChild className="w-full rounded-full bg-lh-primary px-6 py-3 uppercase tracking-[0.12em] text-lh-white hover:bg-lh-accent">
+                <Link href={productHref} aria-label={`View details for ${product.title}`}>
+                  View Details
+                </Link>
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={handleBuyNow}
+                disabled={!canAdd}
+                aria-label={canAdd ? `Buy now: ${product.title}` : `${product.title} ${availabilityLabel}`}
+                className={cn(
+                  "w-full rounded-full border-lh-primary/30 px-6 py-3 uppercase tracking-[0.12em]",
+                  canAdd ? "hover:bg-lh-primary-soft hover:text-lh-primary" : "bg-lh-neutral text-lh-muted",
+                )}
+              >
+                Buy Now
+              </Button>
+            </div>
           )}
         </div>
       </div>

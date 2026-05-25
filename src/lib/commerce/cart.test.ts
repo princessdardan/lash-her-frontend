@@ -118,6 +118,44 @@ describe("commerce cart validation", () => {
     );
   });
 
+  it("treats null discount prices from CMS projections as no manual discount", () => {
+    assert.deepEqual(
+      buildValidatedCart(
+        [{ productId: "product-1", variantId: "classic", quantity: 1 }],
+        [
+          {
+            ...product,
+            discountPrice: null,
+            variants: [
+              {
+                id: "classic",
+                title: "Classic",
+                price: 125,
+                discountPrice: null,
+                isAvailable: true,
+              },
+            ],
+          },
+        ],
+      ),
+      {
+        currency: "CAD",
+        amount: 125,
+        lineItems: [
+          {
+            productId: "product-1",
+            variantId: "classic",
+            sku: "product-1:classic",
+            description: "Classic Lash Set — Classic",
+            quantity: 1,
+            price: 125,
+            total: 125,
+          },
+        ],
+      },
+    );
+  });
+
   it("applies promotion codes after manual discounts", () => {
     assert.deepEqual(
       buildValidatedCart(

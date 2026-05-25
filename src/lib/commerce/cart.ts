@@ -8,7 +8,7 @@ export interface CatalogProduct {
   sku?: string;
   title: string;
   price: number | string;
-  discountPrice?: number | string;
+  discountPrice?: number | string | null;
   currency: CommerceCurrency;
   isAvailable: boolean;
   variants?: CatalogProductVariant[];
@@ -19,7 +19,7 @@ export interface CatalogProductVariant {
   sku?: string;
   title: string;
   price: number | string;
-  discountPrice?: number | string;
+  discountPrice?: number | string | null;
   isAvailable: boolean;
 }
 
@@ -152,7 +152,7 @@ function resolveLineItemPrice(
 ): number {
   const price = parseCad(variant?.price ?? product.price);
   const discountPriceInput = variant?.discountPrice ?? product.discountPrice;
-  if (discountPriceInput === undefined) return price;
+  if (discountPriceInput == null) return price;
 
   const discountPrice = parseCad(discountPriceInput);
   return discountPrice < price ? discountPrice : price;
