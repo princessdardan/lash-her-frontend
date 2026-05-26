@@ -114,6 +114,7 @@ function createPaidInvoiceDetails(input: {
 
 function createHarness(input: {
   getInvoice?: TrainingSquareInvoiceFinalizerDependencies["getInvoice"];
+  getOrder?: TrainingSquareInvoiceFinalizerDependencies["getOrder"];
   order?: CheckoutOrderRow | null;
   tokenFailureCount?: number;
 } = {}) {
@@ -124,6 +125,7 @@ function createHarness(input: {
     createEnrollment: 0,
     emails: 0,
     getInvoice: 0,
+    getOrder: 0,
     markFailed: [] as Array<{ error: string; retryable: boolean }>,
     markPaid: 0,
     markStaffAlerted: 0,
@@ -175,6 +177,14 @@ function createHarness(input: {
       }
 
       return createPaidInvoiceDetails({ invoiceId, paymentId: "square-payment-123" });
+    },
+    async getOrder(orderId) {
+      calls.getOrder += 1;
+      if (input.getOrder) {
+        return input.getOrder(orderId);
+      }
+
+      return { id: orderId, reference_id: "training-correlation-123" };
     },
     async getOrIssueTrainingSchedulingTokenForPaidOrder(orderId) {
       calls.tokens += 1;
@@ -332,6 +342,42 @@ test("finalizeTrainingSquareInvoice rejects paid invoices with customer mismatch
   assert.equal(harness.calls.markPaid, 0);
   assert.deepEqual(harness.calls.markFailed, [
     { error: "Square invoice customer did not match local order", retryable: false },
+  ]);
+  assert.equal(harness.calls.createEnrollment, 0);
+  assert.equal(harness.calls.tokens, 0);
+  assert.equal(harness.calls.emails, 0);
+});
+
+test("finalizeTrainingSquareInvoice rejects paid invoices without a matching Square order correlation", async () => {
+  const harness = createHarness({
+    getInvoice: async (invoiceId) => {
+      const invoice = createPaidInvoiceDetails({ invoiceId, paymentId: "square-payment-123" });
+
+      return {
+        id: invoice.id,
+        order_id: invoice.order_id,
+        payment: invoice.payment,
+        payment_requests: invoice.payment_requests,
+        primary_recipient: invoice.primary_recipient,
+        status: invoice.status,
+      };
+    },
+    getOrder: async (orderId) => ({ id: orderId }),
+  });
+
+  const result = await harness.finalizer({
+    invoiceId: "mock-square-invoice-1",
+    origin: "https://lashher.test",
+    paymentId: "square-payment-123",
+  });
+
+  assert.equal(result.finalized, false);
+  assert.equal(result.duplicate, false);
+  assert.equal(result.reason, "Square invoice correlation did not match local order");
+  assert.equal(harness.calls.getOrder, 1);
+  assert.equal(harness.calls.markPaid, 0);
+  assert.deepEqual(harness.calls.markFailed, [
+    { error: "Square invoice correlation did not match local order", retryable: false },
   ]);
   assert.equal(harness.calls.createEnrollment, 0);
   assert.equal(harness.calls.tokens, 0);

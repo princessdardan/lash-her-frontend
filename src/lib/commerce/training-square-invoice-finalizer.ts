@@ -3,6 +3,7 @@ import type {
   SquareInvoiceProviderMetadata,
 } from "@/lib/commerce/order-store";
 import type { SquareInvoiceDetails } from "@/lib/commerce/square-invoice-client";
+import type { SquareInvoiceOrderDetails } from "@/lib/commerce/square-invoice-client";
 import type {
   CreateTrainingEnrollmentInput,
   TrainingEnrollmentRow,
@@ -30,6 +31,7 @@ export interface TrainingSquareInvoiceFinalizerDependencies {
   createTrainingEnrollment(input: CreateTrainingEnrollmentInput): Promise<TrainingEnrollmentRow>;
   findOrderBySquareInvoiceId(invoiceId: string): Promise<CheckoutOrderRow | null>;
   getInvoice(invoiceId: string): Promise<SquareInvoiceDetails>;
+  getOrder(orderId: string): Promise<SquareInvoiceOrderDetails>;
   getOrIssueTrainingSchedulingTokenForPaidOrder: typeof getOrIssueTrainingSchedulingTokenForPaidOrder;
   getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId: typeof getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId;
   markSquareInvoiceFinalizationFailed(orderId: string, error: string, retryable: boolean): Promise<void>;
@@ -57,7 +59,9 @@ export function createTrainingSquareInvoiceFinalizer(
     }
 
     const invoice = await dependencies.getInvoice(input.invoiceId);
-    const verification = verifySquareInvoice({ input, invoice, order });
+    const squareOrderId = getString(invoice.order_id) ?? order.providerOrderId;
+    const squareOrder = squareOrderId === null ? null : await dependencies.getOrder(squareOrderId);
+    const verification = verifySquareInvoice({ input, invoice, order, squareOrder });
 
     if (!verification.ok) {
       await dependencies.markSquareInvoiceFinalizationFailed(order.orderId, verification.reason, false);
@@ -137,6 +141,7 @@ export async function finalizeTrainingSquareInvoice(
     createTrainingEnrollment: enrollmentStore.createTrainingEnrollment,
     findOrderBySquareInvoiceId: orderStore.findOrderBySquareInvoiceId,
     getInvoice: client.getInvoice,
+    getOrder: client.getOrder,
     getOrIssueTrainingSchedulingTokenForPaidOrder: enrollmentStore.getOrIssueTrainingSchedulingTokenForPaidOrder,
     getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId:
       enrollmentStore.getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
@@ -167,6 +172,7 @@ function verifySquareInvoice(input: {
   input: TrainingSquareInvoiceFinalizerInput;
   invoice: SquareInvoiceDetails;
   order: CheckoutOrderRow;
+  squareOrder: SquareInvoiceOrderDetails | null;
 }): VerificationResult {
   const metadata = getValidSquareInvoiceProviderMetadata(input.order);
 
@@ -198,8 +204,12 @@ function verifySquareInvoice(input: {
     return { ok: false, reason: "Square invoice order did not match local order" };
   }
 
-  const correlationId = input.input.correlationId ?? getInvoiceCorrelationId(input.invoice);
-  if (correlationId !== undefined && correlationId !== metadata.correlationId) {
+  const invoiceCorrelationId = getInvoiceCorrelationId(input.invoice, input.squareOrder);
+  if (invoiceCorrelationId !== metadata.correlationId) {
+    return { ok: false, reason: "Square invoice correlation did not match local order" };
+  }
+
+  if (input.input.correlationId !== undefined && input.input.correlationId !== metadata.correlationId) {
     return { ok: false, reason: "Square invoice correlation did not match local order" };
   }
 
@@ -327,10 +337,14 @@ function getInvoicePaymentId(invoice: SquareInvoiceDetails): string | undefined 
   return undefined;
 }
 
-function getInvoiceCorrelationId(invoice: SquareInvoiceDetails): string | undefined {
+function getInvoiceCorrelationId(
+  invoice: SquareInvoiceDetails,
+  squareOrder: SquareInvoiceOrderDetails | null,
+): string | undefined {
   return getString(invoice.reference_id) ??
     getString(invoice.order_reference_id) ??
     getString(getRecord(invoice.order)?.reference_id) ??
+    getString(squareOrder?.reference_id) ??
     undefined;
 }
 
