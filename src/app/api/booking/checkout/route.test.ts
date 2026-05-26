@@ -53,6 +53,7 @@ const helperScript = String.raw`
   }
 
   function runScenario(overrides = {}) {
+    const releasedHolds = [];
     const squareCheckouts = [];
     const fetchedReferences = [];
     const handler = createBookingCheckoutPostHandler({
@@ -72,10 +73,14 @@ const helperScript = String.raw`
         fetchedReferences.push(reference);
         return createHold();
       },
+      releaseHeldAppointmentHold: async (input) => {
+        releasedHolds.push(input);
+        return createHold({ id: input.holdId, state: "released", releasedAt: input.now });
+      },
       ...overrides,
     });
 
-    return { fetchedReferences, handler, squareCheckouts };
+    return { fetchedReferences, handler, releasedHolds, squareCheckouts };
   }
 
   async function parseJson(response) {
@@ -198,7 +203,7 @@ test("booking checkout supports custom partial hold snapshots for Square checkou
 
 test("booking checkout rejects holds without an immutable payment selection before Square checkout", () => {
   runRouteScenario(`
-    const { handler, squareCheckouts } = runScenario({
+    const { handler, releasedHolds, squareCheckouts } = runScenario({
       getAppointmentHoldByPublicReference: async () => createHold({
         offeringSnapshot: {
           title: "Classic Fill",
@@ -214,6 +219,39 @@ test("booking checkout rejects holds without an immutable payment selection befo
     assert.equal(response.status, 400);
     assert.deepEqual(responseBody, { error: "Booking payment is not configured" });
     assert.equal(squareCheckouts.length, 0);
+    assert.equal(releasedHolds.length, 1);
+    assert.equal(releasedHolds[0].holdId, "hold-internal-1");
+    assert.ok(releasedHolds[0].now instanceof Date);
+  `);
+});
+
+test("booking checkout reuses active pending Square checkouts for quick retry", () => {
+  runRouteScenario(`
+    const { handler, squareCheckouts } = runScenario({
+      createSquareServiceBookingCheckout: async (input) => {
+        squareCheckouts.push(input);
+        return {
+          checkoutUrl: "https://square.link/u/retry-checkout",
+          holdReference: input.hold.publicReference,
+          orderId: "lh-sq-order-retry",
+          reused: true,
+          squareOrderId: "square-order-retry",
+          squarePaymentLinkId: "square-payment-link-retry",
+        };
+      },
+      getAppointmentHoldByPublicReference: async () => createHold({
+        state: "payment_pending",
+      }),
+    });
+
+    const response = await handler(createRequest({ holdReference: "hold_public_1" }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 200);
+    assert.equal(body.checkoutUrl, "https://square.link/u/retry-checkout");
+    assert.equal(body.reused, true);
+    assert.equal(squareCheckouts.length, 1);
+    assert.equal(squareCheckouts[0].hold.state, "payment_pending");
   `);
 });
 
@@ -254,7 +292,7 @@ test("booking checkout returns conflict if Square persistence loses the hold rac
 
 test("booking checkout returns generic failure when Square checkout setup fails", () => {
   runRouteScenario(`
-    const { handler, squareCheckouts } = runScenario({
+    const { handler, releasedHolds, squareCheckouts } = runScenario({
       createSquareServiceBookingCheckout: async (input) => {
         squareCheckouts.push(input);
         throw new Error("Square unavailable");
@@ -267,6 +305,9 @@ test("booking checkout returns generic failure when Square checkout setup fails"
     assert.equal(response.status, 400);
     assert.equal(squareCheckouts.length, 1);
     assert.deepEqual(body, { error: "Unable to start booking checkout" });
+    assert.equal(releasedHolds.length, 1);
+    assert.equal(releasedHolds[0].holdId, "hold-internal-1");
+    assert.ok(releasedHolds[0].now instanceof Date);
   `);
 });
 

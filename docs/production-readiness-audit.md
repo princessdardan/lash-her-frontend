@@ -62,7 +62,7 @@ This is a direct release gate failure. It also signals architectural coupling be
 
 **Remediation**
 
-Decide whether product cards should remain checkout-decoupled. If yes, move buy-now behavior out of `ProductCard`. If no, update the contract and tests deliberately, and make the rendering test provide a Next navigation mock or test through a browser surface.
+Keep Buy now as the deliberate `ProductCard` contract. Update the old checkout-decoupling test to reflect that approved behavior, while preserving coverage that booking product cards pass only the product-card data they need. Fix the rendering test by mocking Next navigation, or move that coverage to a browser test where the App Router is mounted.
 
 ### B2. Browser smoke tests are currently red
 

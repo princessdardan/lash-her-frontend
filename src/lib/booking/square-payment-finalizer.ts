@@ -40,6 +40,7 @@ export interface SquarePaymentFinalizerRepository {
   claimSquareEvent(input: SquareEventRecordInput): Promise<SquareEventClaimResult>;
   findSquareOrder(input: { localOrderId?: string; providerOrderId?: string; providerPaymentId?: string }): Promise<SquareCheckoutOrderRecord | null>;
   recordSquareEvent(input: SquareEventRecordInput): Promise<{ duplicate: boolean }>;
+  recordSquarePaymentFailed?(input: SquareFailedRecordInput): Promise<void>;
   recordSquarePaymentPendingCalendar(input: SquarePaidRecordInput): Promise<void>;
 }
 
@@ -77,6 +78,12 @@ interface SquarePaidRecordInput {
   payment: SquarePayment;
   providerOrderId?: string;
   tipAmountCents?: number;
+}
+
+interface SquareFailedRecordInput {
+  order: SquareCheckoutOrderRecord;
+  payment: SquarePayment;
+  providerOrderId?: string;
 }
 
 interface SquarePaymentFinalizerDependencies {
@@ -134,9 +141,8 @@ export function createSquarePaymentFinalizer(
       };
     }
 
-    const providerOrderId = lookup.payment.order_id ?? lookup.order?.id ?? input.orderId ?? input.event?.orderId;
+    const providerOrderId = lookup.payment.order_id ?? lookup.order?.id ?? input.event?.orderId;
     const localOrder = await dependencies.repository.findSquareOrder({
-      localOrderId: input.orderId,
       providerOrderId,
       providerPaymentId: lookup.payment.id,
     });
@@ -171,6 +177,14 @@ export function createSquarePaymentFinalizer(
         providerStatus: lookup.payment.status,
         status: "unpaid",
       });
+
+      if (isTerminalUnpaidSquarePayment(lookup.payment)) {
+        await dependencies.repository.recordSquarePaymentFailed?.({
+          order: localOrder,
+          payment: lookup.payment,
+          providerOrderId,
+        });
+      }
 
       return { duplicateEvent: false, finalized: false, orderId: localOrder.orderId, status: "unpaid" };
     }
@@ -292,22 +306,25 @@ function createDrizzleSquarePaymentFinalizerRepository(): SquarePaymentFinalizer
     },
 
     async findSquareOrder(input) {
-      const conditions = [eq(checkoutOrders.paymentProvider, "square")];
+      const identifier = input.providerOrderId
+        ? eq(checkoutOrders.providerOrderId, input.providerOrderId)
+        : input.providerPaymentId
+          ? eq(checkoutOrders.providerPaymentId, input.providerPaymentId)
+          : input.localOrderId
+            ? eq(checkoutOrders.orderId, input.localOrderId)
+            : undefined;
 
-      const identifiers = [
-        input.localOrderId ? eq(checkoutOrders.orderId, input.localOrderId) : undefined,
-        input.providerOrderId ? eq(checkoutOrders.providerOrderId, input.providerOrderId) : undefined,
-        input.providerPaymentId ? eq(checkoutOrders.providerPaymentId, input.providerPaymentId) : undefined,
-      ].filter((condition) => condition !== undefined);
-
-      if (identifiers.length === 0) {
+      if (identifier === undefined) {
         return null;
       }
 
       const [row] = await (await getSquarePaymentFinalizerDb())
         .select()
         .from(checkoutOrders)
-        .where(and(...conditions, or(...identifiers)))
+        .where(and(
+          eq(checkoutOrders.paymentProvider, "square"),
+          identifier,
+        ))
         .limit(1);
 
       return row
@@ -339,6 +356,56 @@ function createDrizzleSquarePaymentFinalizerRepository(): SquarePaymentFinalizer
         .returning({ id: checkoutPaymentEvents.id });
 
       return { duplicate: createdEvent === undefined };
+    },
+
+    async recordSquarePaymentFailed(input) {
+      const now = new Date();
+      const providerOrderId = input.providerOrderId ?? input.order.providerOrderId;
+      const providerStatus = input.payment.status ?? "unpaid";
+
+      await (await getSquarePaymentFinalizerDb()).transaction(async (tx) => {
+        await tx
+          .update(checkoutOrders)
+          .set({
+            failedAt: now,
+            providerOrderId,
+            providerPaymentId: input.payment.id,
+            providerStatus,
+            status: getFailedCheckoutOrderStatus(input.payment),
+            updatedAt: now,
+          })
+          .where(and(
+            eq(checkoutOrders.id, input.order.id),
+            eq(checkoutOrders.status, "pending"),
+          ));
+
+        await tx
+          .update(appointmentHolds)
+          .set({
+            failureMetadata: {
+              squarePayment: {
+                orderId: providerOrderId,
+                paymentId: input.payment.id,
+                status: providerStatus,
+              },
+            },
+            failureReason: `Square payment ended with status ${providerStatus}`,
+            finalizationReason: `Square payment ended with status ${providerStatus}`,
+            finalizationStatus: "failed",
+            paymentFailedAt: now,
+            squareOrderId: providerOrderId,
+            squarePaymentId: input.payment.id,
+            status: "payment_failed",
+            updatedAt: now,
+          })
+          .where(and(
+            eq(appointmentHolds.checkoutOrderId, input.order.id),
+            or(
+              eq(appointmentHolds.status, "held"),
+              eq(appointmentHolds.status, "payment_pending"),
+            ),
+          ));
+      });
     },
 
     async recordSquarePaymentPendingCalendar(input) {
@@ -427,6 +494,20 @@ async function resolveSquarePaymentLookup(
 
 function isPaidSquarePayment(payment: SquarePayment): boolean {
   return payment.status !== undefined && ["approved", "completed", "paid"].includes(payment.status.trim().toLowerCase());
+}
+
+function isTerminalUnpaidSquarePayment(payment: SquarePayment): boolean {
+  if (payment.status === undefined) {
+    return false;
+  }
+
+  return ["canceled", "cancelled", "failed"].includes(payment.status.trim().toLowerCase());
+}
+
+function getFailedCheckoutOrderStatus(payment: SquarePayment): typeof checkoutOrders.$inferInsert.status {
+  return payment.status?.trim().toLowerCase() === "canceled" || payment.status?.trim().toLowerCase() === "cancelled"
+    ? "cancelled"
+    : "verification_failed";
 }
 
 function hashPayload(payload: CheckoutPaymentEventPayload): string {

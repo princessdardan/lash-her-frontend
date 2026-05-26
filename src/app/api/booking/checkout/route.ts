@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import type { BookingHoldRecord } from "@/lib/booking/holds";
+import { isActiveHold, type BookingHoldRecord } from "@/lib/booking/holds";
 import { getBookingPaymentSelection } from "@/lib/booking/payment-policy";
 import type { SquareServiceCheckoutResult } from "@/lib/booking/square-service-checkout";
 
@@ -15,6 +15,7 @@ interface BookingCheckoutPostHandlerDependencies {
     request?: NextRequest;
   }) => Promise<SquareServiceCheckoutResult>;
   getAppointmentHoldByPublicReference: (publicReference: string) => Promise<BookingHoldRecord | null>;
+  releaseHeldAppointmentHold: (input: { holdId: string; now: Date }) => Promise<BookingHoldRecord | null>;
 }
 
 interface BookingCheckoutResponseBody {
@@ -45,17 +46,21 @@ export function createBookingCheckoutPostHandler(
       return invalidBookingCheckoutRequest();
     }
 
+    const now = new Date();
+    let hold: BookingHoldRecord | null = null;
+
     try {
-      const now = new Date();
-      const hold = await dependencies.getAppointmentHoldByPublicReference(
+      hold = await dependencies.getAppointmentHoldByPublicReference(
         checkoutRequest.holdReference,
       );
 
-      if (hold === null || hold.state !== "held" || hold.expiresAt <= now) {
+      if (hold === null || !isCheckoutStartableHold(hold, now)) {
         return unavailableBookingHoldResponse();
       }
 
       if (getBookingPaymentSelection(hold) === null) {
+        await releaseHoldAfterCheckoutFailure({ dependencies, hold, now, reason: "Booking payment is not configured" });
+
         return NextResponse.json(
           { error: "Booking payment is not configured" },
           { status: 400 },
@@ -76,6 +81,10 @@ export function createBookingCheckoutPostHandler(
     } catch (error) {
       if (isUnavailableBookingHoldError(error)) {
         return unavailableBookingHoldResponse();
+      }
+
+      if (hold !== null) {
+        await releaseHoldAfterCheckoutFailure({ dependencies, hold, now, reason: "Square checkout setup failed" });
       }
 
       console.error("[booking checkout] Unable to initialize checkout", {
@@ -99,7 +108,40 @@ export async function POST(req: NextRequest): Promise<Response> {
   return createBookingCheckoutPostHandler({
     createSquareServiceBookingCheckout: squareCheckoutModule.createSquareServiceBookingCheckout,
     getAppointmentHoldByPublicReference: holdsModule.getAppointmentHoldByPublicReference,
+    releaseHeldAppointmentHold: (input) => holdsModule.transitionAppointmentHold({
+      expiresAfter: input.now,
+      holdId: input.holdId,
+      now: input.now,
+      requiredState: "held",
+      status: "released",
+    }),
   })(req);
+}
+
+function isCheckoutStartableHold(hold: BookingHoldRecord, now: Date): boolean {
+  return (hold.state === "held" && hold.expiresAt > now) ||
+    (hold.state === "payment_pending" && isActiveHold(hold, now));
+}
+
+async function releaseHoldAfterCheckoutFailure(input: {
+  dependencies: BookingCheckoutPostHandlerDependencies;
+  hold: BookingHoldRecord;
+  now: Date;
+  reason: string;
+}): Promise<void> {
+  if (input.hold.state !== "held") {
+    return;
+  }
+
+  try {
+    await input.dependencies.releaseHeldAppointmentHold({ holdId: input.hold.id, now: input.now });
+  } catch (error) {
+    console.warn("[booking checkout] Failed to release hold after checkout failure", {
+      error: error instanceof Error ? error.message : "Unknown release error",
+      holdId: input.hold.id,
+      reason: input.reason,
+    });
+  }
 }
 
 function parseBookingCheckoutRequest(body: unknown): BookingCheckoutRequestBody | null {
