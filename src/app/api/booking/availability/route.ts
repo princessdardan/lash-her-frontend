@@ -14,6 +14,16 @@ import type {
 import type { TService } from "@/types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const BOOKING_WEEKDAYS = new Set([
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+]);
+const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export interface BookingAvailabilityGetHandlerDependencies {
   getBookableServiceBySlug: (slug: string) => Promise<TService | null>;
@@ -110,7 +120,7 @@ async function handleBookingAvailabilityRequest(
     dependencies.getBookableServiceBySlug(serviceSlug),
   ]);
 
-  if (settings === null || service === null || settings.calendarId.trim().length === 0 || settings.bookingHorizonDays <= 0) {
+  if (!isConfiguredBookingSettings(settings) || service === null) {
     return Response.json(
       { error: "Booking is not configured" },
       { status: 400 },
@@ -193,6 +203,51 @@ function getServiceSlug(searchParams: URLSearchParams): string | null {
     ?? optionalString(searchParams.get("offering"))
     ?? optionalString(searchParams.get("offeringSlug"))
     ?? null;
+}
+
+function isConfiguredBookingSettings(
+  settings: BookingSettings | null,
+): settings is BookingSettings {
+  if (settings === null) {
+    return false;
+  }
+
+  return optionalString(settings.calendarId) !== undefined &&
+    Number.isInteger(settings.bookingHorizonDays) &&
+    settings.bookingHorizonDays > 0 &&
+    Number.isInteger(settings.minimumLeadTimeHours) &&
+    settings.minimumLeadTimeHours >= 0 &&
+    optionalString(settings.timezone) !== undefined &&
+    Number.isInteger(settings.bufferMinutes) &&
+    settings.bufferMinutes >= 0 &&
+    Number.isInteger(settings.slotIntervalMinutes) &&
+    settings.slotIntervalMinutes > 0 &&
+    Array.isArray(settings.hoursOfOperation) &&
+    settings.hoursOfOperation.length === 7 &&
+    settings.hoursOfOperation.every(isConfiguredHoursWindow);
+}
+
+function isConfiguredHoursWindow(value: unknown): boolean {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as {
+    closesAt?: unknown;
+    day?: unknown;
+    isOpen?: unknown;
+    opensAt?: unknown;
+  };
+  const opensAt = optionalString(candidate.opensAt);
+  const closesAt = optionalString(candidate.closesAt);
+
+  return typeof candidate.day === "string" &&
+    BOOKING_WEEKDAYS.has(candidate.day) &&
+    typeof candidate.isOpen === "boolean" &&
+    opensAt !== undefined &&
+    TIME_PATTERN.test(opensAt) &&
+    closesAt !== undefined &&
+    TIME_PATTERN.test(closesAt);
 }
 
 function getErrorMessage(error: unknown): string {

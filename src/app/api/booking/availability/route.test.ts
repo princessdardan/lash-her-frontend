@@ -227,6 +227,36 @@ test("booking availability rejects POST bodies without a service", () => {
   `);
 });
 
+test("booking availability rejects incomplete booking settings", () => {
+  runRouteScenario(`
+    let calendarLoaded = false;
+    let holdsLoaded = false;
+    const handler = createHandler({
+      getBookingSettings: async () => createSettings({
+        bufferMinutes: null,
+        hoursOfOperation: null,
+        slotIntervalMinutes: null,
+      }),
+      listCalendarEvents: async () => {
+        calendarLoaded = true;
+        return [];
+      },
+      listActiveAppointmentHolds: async () => {
+        holdsLoaded = true;
+        return [];
+      },
+    });
+
+    const response = await handler(createRequest({ service: "classic-fill" }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 400);
+    assert.equal(calendarLoaded, false);
+    assert.equal(holdsLoaded, false);
+    assert.deepEqual(body, { error: "Booking is not configured" });
+  `);
+});
+
 test("booking availability returns retryable status when calendar provider fails", () => {
   runRouteScenario(`
     const handler = createHandler({
