@@ -45,6 +45,10 @@ test("Square invoice client creates customer, OPEN order, draft invoice, publish
         return Response.json({ invoice: { id: "invoice_123", version: 2, public_url: "https://square.test/invoice_123", status: "UNPAID" } });
       }
 
+      if (String(url).endsWith("/v2/orders/order_123")) {
+        return Response.json({ order: { id: "order_123", reference_id: "training-enrollment-123" } });
+      }
+
       return Response.json({ errors: [{ detail: "unexpected URL" }] }, { status: 404 });
     };
 
@@ -62,6 +66,7 @@ test("Square invoice client creates customer, OPEN order, draft invoice, publish
     });
     const publishedInvoice = await client.publishInvoice(draftInvoice.id, draftInvoice.version, "invoice-publish-123");
     const invoice = await client.getInvoice(publishedInvoice.id);
+    const order = await client.getOrder(orderId);
 
     assert.equal(customerId, "customer_123");
     assert.equal(orderId, "order_123");
@@ -73,6 +78,7 @@ test("Square invoice client creates customer, OPEN order, draft invoice, publish
     });
     assert.equal(invoice.id, "invoice_123");
     assert.equal(invoice.public_url, "https://square.test/invoice_123");
+    assert.deepEqual(order, { id: "order_123", reference_id: "training-enrollment-123" });
 
     const customerRequest = JSON.parse(requests[0].init.body);
     assert.deepEqual(customerRequest, {
@@ -93,12 +99,13 @@ test("Square invoice client creates customer, OPEN order, draft invoice, publish
     assert.equal(invoiceRequest.invoice.order_id, "order_123");
     assert.equal(invoiceRequest.invoice.primary_recipient.customer_id, "customer_123");
     assert.equal(invoiceRequest.invoice.delivery_method, "SHARE_MANUALLY");
+    assert.deepEqual(invoiceRequest.invoice.accepted_payment_methods, {
+      buy_now_pay_later: true,
+    });
     assert.equal(invoiceRequest.invoice.payment_requests.length, 1);
     assert.equal(invoiceRequest.invoice.payment_requests[0].request_type, "BALANCE");
     assert.equal(invoiceRequest.invoice.payment_requests[0].due_date, "2026-06-01");
-    assert.deepEqual(invoiceRequest.invoice.payment_requests[0].accepted_payment_methods, {
-      buy_now_pay_later: true,
-    });
+    assert.equal("accepted_payment_methods" in invoiceRequest.invoice.payment_requests[0], false);
 
     const publishRequest = JSON.parse(requests[3].init.body);
     assert.deepEqual(publishRequest, {
@@ -111,6 +118,32 @@ test("Square invoice client creates customer, OPEN order, draft invoice, publish
       assert.equal(request.init.headers["square-version"], "2026-05-20");
       assert.equal(request.init.cache, "no-store");
     }
+  `);
+});
+
+test("Square invoice client defaults omitted due dates to the current UTC date", () => {
+  runSquareInvoiceScenario(`
+    const requests = [];
+    globalThis.fetch = async (url, init) => {
+      requests.push({ url: String(url), init });
+      return Response.json({ invoice: { id: "invoice_123", version: 1 } });
+    };
+
+    const client = createSquareInvoiceClient({
+      ...env,
+      now: () => new Date("2026-07-04T23:30:00.000Z"),
+    });
+
+    await client.createInvoice("order_123", "customer_123", { idempotencyKey: "invoice-create-123" });
+
+    const invoiceRequest = JSON.parse(requests[0].init.body);
+    assert.deepEqual(invoiceRequest.invoice.accepted_payment_methods, {
+      buy_now_pay_later: true,
+    });
+    assert.equal(invoiceRequest.invoice.payment_requests.length, 1);
+    assert.equal(invoiceRequest.invoice.payment_requests[0].request_type, "BALANCE");
+    assert.equal(invoiceRequest.invoice.payment_requests[0].due_date, "2026-07-04");
+    assert.equal("accepted_payment_methods" in invoiceRequest.invoice.payment_requests[0], false);
   `);
 });
 

@@ -14,6 +14,7 @@ export interface SquareInvoiceClientEnv {
   accessToken: string;
   environment: "sandbox" | "production";
   enabled?: boolean;
+  now?: () => Date;
 }
 
 export interface SquareInvoiceMoney {
@@ -50,6 +51,12 @@ export interface SquareInvoiceDetails {
   [key: string]: unknown;
 }
 
+export interface SquareInvoiceOrderDetails {
+  id: string;
+  reference_id?: string;
+  [key: string]: unknown;
+}
+
 export interface SquareInvoiceClient {
   createCustomer(email: string, givenName: string, familyName: string): Promise<string>;
   createOrder(
@@ -62,6 +69,7 @@ export interface SquareInvoiceClient {
     customerId: string,
     paymentRequest: SquareInvoicePaymentRequestInput,
   ): Promise<SquareDraftInvoice>;
+  getOrder(orderId: string): Promise<SquareInvoiceOrderDetails>;
   publishInvoice(
     invoiceId: string,
     version: number,
@@ -98,6 +106,10 @@ interface SquareCreateOrderResponse {
   };
 }
 
+interface SquareGetOrderResponse {
+  order: SquareInvoiceOrderDetails;
+}
+
 interface SquareCreateInvoiceRequest {
   idempotency_key: string;
   invoice: {
@@ -106,13 +118,13 @@ interface SquareCreateInvoiceRequest {
       customer_id: string;
     };
     delivery_method: "SHARE_MANUALLY";
+    accepted_payment_methods: {
+      buy_now_pay_later: true;
+    };
     payment_requests: [
       {
         request_type: "BALANCE";
-        due_date?: string;
-        accepted_payment_methods: {
-          buy_now_pay_later: true;
-        };
+        due_date: string;
       },
     ];
   };
@@ -217,13 +229,13 @@ export function createSquareInvoiceClient(env: SquareInvoiceClientEnv): SquareIn
               customer_id: customerId,
             },
             delivery_method: "SHARE_MANUALLY",
+            accepted_payment_methods: {
+              buy_now_pay_later: true,
+            },
             payment_requests: [
               {
                 request_type: "BALANCE",
-                ...(paymentRequest.dueDate === undefined ? {} : { due_date: paymentRequest.dueDate }),
-                accepted_payment_methods: {
-                  buy_now_pay_later: true,
-                },
+                due_date: paymentRequest.dueDate ?? getSquareInvoiceDueDate(env),
               },
             ],
           },
@@ -254,6 +266,18 @@ export function createSquareInvoiceClient(env: SquareInvoiceClientEnv): SquareIn
         publicUrl: response.invoice.public_url,
         version: response.invoice.version,
       };
+    },
+
+    async getOrder(orderId) {
+      assertInvoiceClientEnabled(env);
+
+      const response = await getSquare<SquareGetOrderResponse>(
+        env,
+        `/v2/orders/${encodeURIComponent(orderId)}`,
+        isSquareGetOrderResponse,
+      );
+
+      return response.order;
     },
 
     async getInvoice(invoiceId) {
@@ -432,6 +456,10 @@ function assertCadLineItems(lineItems: SquareInvoiceLineItem[]): void {
   }
 }
 
+function getSquareInvoiceDueDate(env: SquareInvoiceClientEnv): string {
+  return (env.now?.() ?? new Date()).toISOString().slice(0, 10);
+}
+
 function isSquareCreateCustomerResponse(value: unknown): value is SquareCreateCustomerResponse {
   return isRecord(value) &&
     isRecord(value.customer) &&
@@ -439,6 +467,12 @@ function isSquareCreateCustomerResponse(value: unknown): value is SquareCreateCu
 }
 
 function isSquareCreateOrderResponse(value: unknown): value is SquareCreateOrderResponse {
+  return isRecord(value) &&
+    isRecord(value.order) &&
+    typeof value.order.id === "string";
+}
+
+function isSquareGetOrderResponse(value: unknown): value is SquareGetOrderResponse {
   return isRecord(value) &&
     isRecord(value.order) &&
     typeof value.order.id === "string";

@@ -99,6 +99,7 @@ const helperScript = String.raw`
           squareOrders.push({ locationId, lineItems, referenceId });
           return "square-order-123";
         },
+        getOrder: async (orderId) => ({ id: orderId, reference_id: "correlation-123" }),
         createInvoice: async (orderId, customerId, paymentRequest) => {
           invoices.push({ orderId, customerId, paymentRequest });
           if (createInvoice) {

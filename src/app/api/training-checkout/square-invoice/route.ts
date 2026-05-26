@@ -351,6 +351,13 @@ function createMockTrainingAfterpaySquareInvoiceClient(input: {
       } satisfies SquarePublishedInvoice;
     },
 
+    async getOrder(orderId) {
+      return {
+        id: orderId,
+        reference_id: getReferenceIdFromMockOrderId(orderId),
+      };
+    },
+
     async getInvoice(invoiceId) {
       const invoice = input.store.getSquareInvoiceRecord(invoiceId);
 
@@ -441,6 +448,12 @@ function toCents(value: number): number {
 
 function toStableId(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "unknown";
+}
+
+function getReferenceIdFromMockOrderId(orderId: string): string | undefined {
+  const prefix = "mock-square-invoice-order-";
+
+  return orderId.startsWith(prefix) ? orderId.slice(prefix.length) : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
