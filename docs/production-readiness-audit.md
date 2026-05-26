@@ -2,13 +2,25 @@
 
 Date: 2026-05-26
 
-Scope: Next.js 16 public site, Sanity Studio/content workflow, booking and checkout APIs, private PostgreSQL boundary, Vercel deployment readiness, UI/accessibility, tests, and operational documentation.
+Scope: Next.js 16 public site, Sanity Studio/content workflow, booking and checkout APIs, private PostgreSQL boundary, Vercel preview/staging readiness, UI/accessibility, tests, and operational documentation.
+
+## Scope assumption
+
+This audit evaluates whether the codebase is production-ready **assuming the approved staging Sanity dataset and schemas are the launch source of truth**.
+
+The intended release path is:
+
+1. Stabilize and verify this codebase against the staging Sanity dataset/schema.
+2. Replace the current production codebase with the approved staging codebase.
+3. Export the approved staging Sanity dataset and import it into the production Sanity dataset during a controlled cutover.
+
+Current production Sanity drift, current production content gaps, and missing production-scoped Vercel environment variables are not treated as codebase readiness blockers in this document. Those cutover tasks are tracked separately in `docs/production-readiness-migration-plan.md`.
 
 ## Executive verdict
 
-The app is **not ready for production promotion** yet. The codebase has strong foundations around private payment/booking persistence, signed webhooks, cache tags, and payment mock-mode guards, but production readiness is blocked by current failing tests, production environment validation failure, public Sanity PII exposure, deployed Sanity schema/content drift, and launch-facing UI/accessibility regressions.
+The codebase is **not ready for production promotion yet**, even under the staging-as-source assumption. The strongest blockers are current failing unit/browser tests, legacy private-submission schemas and data still present in the public Sanity boundary, and launch-facing UI/accessibility regressions.
 
-Do not promote until the blockers and critical findings below are resolved and re-verified against the actual production Vercel environment and Sanity production dataset.
+Do not promote the staging codebase or staging Sanity dataset into production until the blockers and critical/high findings below are resolved and re-verified against the staging environment. After this audit passes, complete `docs/production-readiness-migration-plan.md` for the production dataset/env cutover.
 
 ## Evidence gathered
 
@@ -17,11 +29,22 @@ Do not promote until the blockers and critical findings below are resolved and r
 - `npm run test:unit`: failed, with 494 passing and 2 failing tests.
 - Focused Playwright command `npx playwright test tests/navigation.spec.ts tests/responsive.spec.ts --project=chromium`: failed, with 62 passing and 3 failing tests.
 - `node scripts/validate-sanity-env.mjs`: passed for local environment.
-- `VERCEL_ENV=production node scripts/validate-sanity-env.mjs`: failed locally because `SANITY_WEBHOOK_SECRET` was missing and `NEXT_PUBLIC_SANITY_DATASET` was not `production`.
+- Production-env simulation evidence was excluded from this revised readiness verdict because production Vercel env alignment is a cutover task, not a staging-backed codebase-readiness finding.
 - `npm audit --audit-level=moderate`: reported 23 moderate vulnerabilities across `esbuild`, `postcss`, `qs`, `uuid`, and `ws` dependency chains.
-- Sanity project metadata was checked read-only for project `3auncj84`: production and staging datasets are public; production has submission-like documents and fewer deployed schema types than staging/source.
+- Sanity project metadata was checked read-only for project `3auncj84`: staging and production datasets are public, and staging contains submission-like legacy documents that must not be promoted into production without cleanup. Current production schema/content drift is moved to the migration plan.
 - Browser smoke checks confirmed `/contact` renders with zero `<h1>` headings, mobile sheet dialog warnings, and nested landmarks on `/booking`.
-- Earlier checkpoint evidence showed Square/training invoice changes in progress during the audit; the final working-tree verification for this report showed only this new audit document. This report does not assess unreleased work outside the evidence captured here.
+- Earlier checkpoint evidence showed Square/training invoice changes in progress during the audit. This report does not assess unreleased work outside the evidence captured here.
+
+## Findings moved to the migration plan
+
+The following original audit items were about current production environment/dataset state or one-time cutover execution. They remain important, but they are not codebase readiness blockers under the staging-as-source assumption.
+
+| Original item | New home |
+| --- | --- |
+| B3. Production environment validation fails in the local production simulation | `docs/production-readiness-migration-plan.md` |
+| C2. Production deployed Sanity schema/content is behind source and staging | `docs/production-readiness-migration-plan.md` |
+| Production-only parts of C1, including existing production submission documents | `docs/production-readiness-migration-plan.md` |
+| Production env/schema/content launch gates from the old recommended launch gate | `docs/production-readiness-migration-plan.md` |
 
 ## Blockers
 
@@ -58,55 +81,24 @@ Navigation, accessibility, and page-structure regressions are present on public 
 
 Fix the logo navigation regression, give `/contact` a real `<h1>`, add the missing sheet description, and rerun the focused Playwright specs plus the full Playwright suite.
 
-### B3. Production environment validation fails in the local production simulation
-
-**Evidence**
-
-- `scripts/validate-sanity-env.mjs` requires `SANITY_WEBHOOK_SECRET` and production dataset alignment for `VERCEL_ENV=production`.
-- `VERCEL_ENV=production node scripts/validate-sanity-env.mjs` failed locally with missing `SANITY_WEBHOOK_SECRET` and `NEXT_PUBLIC_SANITY_DATASET` not equal to `production`.
-
-**Impact**
-
-Production builds should fail before Next.js compilation if production env vars are missing or pointed at staging. That is desirable, but the current checked environment is not production-ready.
-
-**Remediation**
-
-Verify Vercel Production env vars, then run `vercel pull --environment=production` into a safe local file or inspect with Vercel dashboard/CLI. Confirm `NEXT_PUBLIC_SANITY_DATASET=production`, `SANITY_WEBHOOK_SECRET`, payment secrets, database URL, email, Google OAuth, KV, and Square production settings are scoped correctly.
-
 ## Critical findings
 
-### C1. PII/customer submissions are still modeled and present in public Sanity datasets
+### C1. Legacy private-submission schemas and staging data still cross the public Sanity boundary
 
 **Evidence**
 
 - Legacy private-data schemas remain registered/exposed: `contactForm`, `generalInquiry`, `contactPopupSubmission`, and `bookingMarketingOptIn` in `src/sanity/schemas/index.ts` and `src/sanity/structure/index.ts`.
 - These schemas include name, email, phone, Instagram, message, booking/training intent, and marketing opt-in style fields in `src/sanity/schemas/documents/contact-form.ts`, `src/sanity/schemas/documents/general-inquiry.ts`, `src/sanity/schemas/documents/contact-popup-submission.ts`, and `src/sanity/schemas/documents/booking-marketing-opt-in.ts`.
-- Read-only Sanity queries found production submission documents: `contactForm=23`, `generalInquiry=1`; staging also contains submission-like documents.
-- Both production and staging datasets are public.
+- Read-only Sanity checks found submission-like documents in the staging dataset that is intended to become the source of truth for production.
+- Both staging and production Sanity datasets are public.
 
 **Impact**
 
-This violates the repository rule that Sanity stores only public/editorial content while PostgreSQL stores private submissions, consent, contact, booking, checkout, and payment history. Even if current live forms write to Postgres, editors or scripts can still access and potentially repopulate PII in the CMS.
+This violates the repository rule that Sanity stores only public/editorial content while PostgreSQL stores private submissions, consent, contact, booking, checkout, and payment history. If the staging dataset is promoted wholesale, legacy private submission records and workflows could be carried into production unless they are cleaned up first.
 
 **Remediation**
 
-Backfill/verify private DB records, then redact/delete legacy Sanity submission documents. Remove these schemas from source and Studio, or quarantine them as archival read-only types outside live Studio workflows. Keep tests that prevent new runtime Sanity writes for customer submissions.
-
-### C2. Production deployed Sanity schema/content is behind source and staging
-
-**Evidence**
-
-- Source registers launch-critical types including `productsPage`, `bookingSettings`, `product`, `productCollection`, `promotionCode`, `service`, and `trainingProgram`.
-- Deployed schema checks showed production has fewer types than staging; staging includes commerce/booking types that production lacks.
-- Production content counts for launch-critical public types were empty in checked data (`product=0`, `service=0`, `productsPage=0`) while staging has product/service content.
-
-**Impact**
-
-Production Studio cannot reliably manage the same content model the app expects. Production public pages may render empty/incomplete commerce, services, and booking content even if code deploys cleanly.
-
-**Remediation**
-
-Deploy the current source schema to production deliberately, seed or promote approved content, then run the public smoke matrix against production dataset pages: `/`, `/contact`, `/gallery`, `/products`, `/products/[slug]`, `/services`, `/services/[slug]`, `/booking`, `/training-programs`, and `/training-programs/[slug]`.
+Backfill/verify private DB records, then redact/delete legacy Sanity submission documents from the staging source-of-truth dataset before export. Remove these schemas from source and Studio, or quarantine them as archival read-only types outside live Studio workflows. Keep tests that prevent new runtime Sanity writes for customer submissions. Use `docs/production-readiness-migration-plan.md` for the production cleanup/import sequence.
 
 ## High findings
 
@@ -180,7 +172,7 @@ Replace `bookingOffering` references with `service` in runbooks, setup guides, l
 
 **Impact**
 
-Editors must publish to inspect changes on the site. This raises the chance of broken production content, especially with the schema/content drift noted above.
+Editors must publish to inspect changes on the site. This raises the chance of broken public content when staging is used as the source of truth for production.
 
 **Remediation**
 
@@ -196,11 +188,11 @@ Add Presentation Tool or a simpler draft preview path: draft-mode enable/disable
 
 **Impact**
 
-Unqualified `npx sanity ...` operations can target production when an operator expected staging.
+Unqualified `npx sanity ...` operations can target production when an operator expected staging. This is especially risky during the planned staging-to-production dataset promotion.
 
 **Remediation**
 
-Add explicit staging/production wrapper scripts and make docs require one of them. Consider a fail-closed CLI config or environment-controlled dataset selection with validation.
+Add explicit staging/production wrapper scripts and make docs require one of them. Consider a fail-closed CLI config or environment-controlled dataset selection with validation. The migration plan also calls this out as a cutover guardrail.
 
 ### M2. Site JSON-LD still contains launch TODO placeholders
 
@@ -214,7 +206,7 @@ Local business structured data is incomplete or inaccurate, reducing SEO trust a
 
 **Remediation**
 
-Populate production values from verified business data or CMS settings. Remove fields that are not yet known rather than shipping placeholders.
+Populate verified business values from source-controlled config or CMS settings. Remove fields that are not yet known rather than shipping placeholders.
 
 ### M3. Public site layout globally loads and serializes product catalog data
 
@@ -240,7 +232,7 @@ Parallelize global layout fetches and lazy-load/minimize cart product data when 
 
 **Impact**
 
-Production users likely see the default Next.js error UI instead of the branded recovery UI.
+Users likely see the default Next.js error UI instead of the branded recovery UI on public-site failures.
 
 **Remediation**
 
@@ -250,7 +242,7 @@ Rename/move to `src/app/global-error.tsx` for root failures or add `src/app/(sit
 
 **Evidence**
 
-- The production Sanity client uses CDN outside Vercel preview.
+- The Sanity client uses CDN outside Vercel preview.
 - `/api/revalidate` uses signed `parseBody()` and `revalidateTag(tag, { expire: 0 })`, but does not use delayed webhook parsing or a CDN-bypass first fetch path.
 
 **Impact**
@@ -274,7 +266,7 @@ Operators can migrate the wrong database, and retained PII/payment-adjacent reco
 
 **Remediation**
 
-Add migration target guards for host/project/branch/environment and explicit production confirmation. Define retention windows per table and implement scheduled purge/redaction jobs.
+Add migration target guards for host/project/branch/environment and explicit production confirmation. Define retention windows per table and implement scheduled purge/redaction jobs. Use `docs/private-database-migration-runbook.md` and the cutover migration plan for production execution evidence.
 
 ### M7. Some hot-path private DB lookups lack obvious indexes
 
@@ -380,15 +372,16 @@ Use Inter variable default or restrict to weights actually used.
 - Current unit tests include valuable privacy/payment boundaries, including tests that new marketing submissions no longer write to Sanity form documents and that scheduling tokens are stored only as hashes.
 - `next.config.ts` enables React Compiler and restricts image remote patterns to Sanity CDN.
 
-## Recommended launch gate
+## Recommended codebase launch gate
 
-Before production promotion, require all of the following:
+Before declaring the staging-backed codebase production-ready, require all of the following:
 
 1. `npm run lint`, `npm run test:unit`, full `npm test`, and `npm run build` pass from a clean working tree.
-2. `VERCEL_ENV=production node scripts/validate-sanity-env.mjs` passes with production-scoped env vars.
-3. Sanity production schema matches source and production content is seeded/promoted for products, services, booking settings, global settings, menus, and training programs.
-4. Sanity production no longer contains live/private submission documents, or those documents are formally archived outside the public/editorial CMS boundary with access controls and retention policy.
-5. Signed Sanity webhook delivery is tested against production and proves page freshness after publish.
+2. `VERCEL_ENV=preview node scripts/validate-sanity-env.mjs` passes with staging-scoped variables for the approved staging deployment.
+3. The staging Sanity schema matches source and staging content is complete for products, services, booking settings, global settings, menus, and training programs.
+4. The staging Sanity dataset no longer contains live/private submission documents, or those documents are formally archived outside the public/editorial CMS boundary with access controls and retention policy.
+5. Signed Sanity webhook delivery is tested against staging and proves page freshness after publish.
 6. Product checkout, training checkout, service booking hold/checkout/return, Helcim webhook, Square webhook, contact form, and training inquiry are smoke-tested end-to-end with private DB verification.
 7. Mobile navigation, contact page heading hierarchy, booking landmarks, and checkout CTAs pass browser and accessibility smoke checks.
 8. Any in-progress Square/training invoice work is completed and verified, or kept out of the release branch if it is not part of launch.
+9. After the codebase gate passes, complete `docs/production-readiness-migration-plan.md` before replacing the production environment or production Sanity dataset.

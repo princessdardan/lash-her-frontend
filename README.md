@@ -356,6 +356,7 @@ Do not promote if:
 - `docs/booking-system-architecture-reference.md` - current booking architecture and provider boundaries.
 - `docs/booking-system-runbook.md` - booking operations runbook.
 - `docs/booking-system-setup-guide.md` - environment setup for booking, payment, calendar, and email services.
+- `docs/booking-training-calendar-configuration-guide.md` - code-derived steps for configuring service booking and training Google Appointment Schedule pages.
 - `docs/square-service-booking-setup.md` - Square service-booking environment variables and webhook setup for local, staging, and production.
 - `docs/booking-payment-provider-split.md` - Helcim/Square provider split.
 - `docs/google-calendar-oauth-env-setup.md` - Google Calendar OAuth setup.

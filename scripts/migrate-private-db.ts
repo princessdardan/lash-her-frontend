@@ -4,13 +4,11 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Pool } from "pg";
 
+import { createPrivateDbPoolConfig } from "../src/lib/private-db/pool-config";
 import * as schema from "../src/lib/private-db/schema";
 
 async function main(): Promise<void> {
-  const pool = new Pool({
-    connectionString: getCheckoutDatabaseUrl(),
-    ssl: { rejectUnauthorized: true },
-  });
+  const pool = new Pool(createPrivateDbPoolConfig(getCheckoutDatabaseUrl()));
 
   try {
     const db = drizzle({ client: pool, schema });

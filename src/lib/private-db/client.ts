@@ -5,6 +5,7 @@ import { Pool } from "pg";
 
 import { getCheckoutDatabaseUrl } from "@/lib/env/private-checkout";
 
+import { createPrivateDbPoolConfig } from "./pool-config";
 import * as schema from "./schema";
 
 let pool: Pool | null = null;
@@ -19,10 +20,7 @@ function getPool(): Pool {
     return pool;
   }
 
-  pool = new Pool({
-    connectionString: getCheckoutDatabaseUrl(),
-    ssl: { rejectUnauthorized: true },
-  });
+  pool = new Pool(createPrivateDbPoolConfig(getCheckoutDatabaseUrl()));
 
   return pool;
 }
