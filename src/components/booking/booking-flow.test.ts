@@ -39,6 +39,15 @@ describe("booking service flow contract", () => {
     assert.match(bookingFlowSource, /setIsLoadingSlots\(false\);/);
   });
 
+  it("limits the date selector to seven visible carousel dates", () => {
+    assert.match(bookingFlowSource, /const VISIBLE_DATE_COUNT = 7;/);
+    assert.match(bookingFlowSource, /availableDates\.slice\(effectiveDateWindowStart, effectiveDateWindowStart \+ VISIBLE_DATE_COUNT\)/);
+    assert.match(bookingFlowSource, /visibleDates\.map/);
+    assert.match(bookingFlowSource, /Show previous available dates/);
+    assert.match(bookingFlowSource, /Show next available dates/);
+    assert.doesNotMatch(bookingFlowSource, /availableDates\.map\(\(dateStr\)/);
+  });
+
   it("shows a service selection empty state when no offerings are configured", () => {
     assert.match(bookingFlowSource, /services\.length === 0 \? \(/);
     assert.match(bookingFlowSource, /We are currently updating our services\. Please check back later\./);

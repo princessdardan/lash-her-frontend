@@ -40,6 +40,8 @@ interface PaidServiceCheckoutResult {
 
 type SquareCheckoutStatus = "idle" | "opening" | "expired";
 
+const VISIBLE_DATE_COUNT = 7;
+
 class BookingHoldExpiredError extends Error {
   constructor() {
     super("Hold expired, choose another time.");
@@ -78,6 +80,7 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
   const [squareCheckoutStatus, setSquareCheckoutStatus] = useState<SquareCheckoutStatus>("idle");
   const [paymentOption, setPaymentOption] = useState<PaidServicePaymentOption>("full");
   const [customAmount, setCustomAmount] = useState<string>("");
+  const [dateWindowStart, setDateWindowStart] = useState(0);
 
   const currentService = useMemo(
     () => services.find((service) => service.slug === selectedServiceSlug),
@@ -117,6 +120,7 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
           setSlots(Array.isArray(data.slots) ? data.slots : []);
           setSelectedSlot("");
           setSelectedDateState("");
+          setDateWindowStart(0);
           setErrorMessage("");
         }
       } catch (error: unknown) {
@@ -124,6 +128,7 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
           setSlots([]);
           setSelectedSlot("");
           setSelectedDateState("");
+          setDateWindowStart(0);
           setErrorMessage(error instanceof Error ? error.message : "Could not load available times. Please try again later.");
         }
       } finally {
@@ -164,10 +169,15 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
     return grouped;
   }, [slots, settings.timezone]);
 
-  const availableDates = Object.keys(slotsByDate).sort();
+  const availableDates = useMemo(() => Object.keys(slotsByDate).sort(), [slotsByDate]);
   const selectedDate = availableDates.length > 0 && !availableDates.includes(selectedDateState)
     ? availableDates[0]
     : selectedDateState;
+  const maxDateWindowStart = Math.max(availableDates.length - VISIBLE_DATE_COUNT, 0);
+  const effectiveDateWindowStart = Math.min(dateWindowStart, maxDateWindowStart);
+  const visibleDates = availableDates.slice(effectiveDateWindowStart, effectiveDateWindowStart + VISIBLE_DATE_COUNT);
+  const canShowPreviousDates = effectiveDateWindowStart > 0;
+  const canShowNextDates = effectiveDateWindowStart < maxDateWindowStart;
 
   const resetSquareCheckoutState = () => {
     setSquareCheckout(null);
@@ -178,6 +188,7 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
     setSelectedServiceSlug(slug);
     setSelectedSlot("");
     setSelectedDateState("");
+    setDateWindowStart(0);
     setSlots([]);
     resetSquareCheckoutState();
   };
@@ -185,6 +196,24 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
   const handleSelectedSlotChange = (value: string) => {
     setSelectedSlot(value);
     resetSquareCheckoutState();
+  };
+
+  const handleSelectedDateChange = (dateStr: string) => {
+    setSelectedDateState(dateStr);
+    setSelectedSlot("");
+    resetSquareCheckoutState();
+  };
+
+  const moveDateWindow = (direction: "previous" | "next") => {
+    const offset = direction === "previous" ? -VISIBLE_DATE_COUNT : VISIBLE_DATE_COUNT;
+    const nextWindowStart = Math.min(Math.max(effectiveDateWindowStart + offset, 0), maxDateWindowStart);
+
+    setDateWindowStart(nextWindowStart);
+
+    const nextDate = availableDates[nextWindowStart];
+    if (nextDate) {
+      handleSelectedDateChange(nextDate);
+    }
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -260,7 +289,7 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
   if (step === "service") {
     return (
       <div className="flex flex-col gap-8 lg:flex-row">
-        <div className="flex-1">
+        <div className="min-w-0 flex-1">
           <h1 className="section-heading mb-6 text-3xl md:text-3xl lg:text-3xl">Select Service</h1>
           <div className="mb-6 flex gap-2 overflow-x-auto pb-2" role="group" aria-label="Service filters">
             <div className="rounded-full bg-lh-primary px-4 py-2 text-sm font-medium text-white whitespace-nowrap">All Services</div>
@@ -311,7 +340,7 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
   if (step === "datetime") {
     return (
       <div className="flex flex-col gap-8 lg:flex-row">
-        <div className="flex-1">
+        <div className="min-w-0 flex-1">
           <div className="mb-6 flex items-center gap-4">
             {!hasInitialService && (
               <button type="button" onClick={() => setStep("service")} className="text-lh-muted hover:text-black">← Back</button>
@@ -327,30 +356,54 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
             <div className="py-12 text-center text-lh-muted">No times available for this service.</div>
           ) : (
             <div className="space-y-6">
-              <div className="flex gap-2 overflow-x-auto pb-2">
-                {availableDates.map((dateStr) => {
-                  const firstSlot = slotsByDate[dateStr]?.[0];
-                  if (!firstSlot) return null;
+              <div
+                className="flex w-full max-w-full items-stretch gap-1 sm:gap-2"
+                aria-label={`Available appointment dates, showing ${effectiveDateWindowStart + 1}-${Math.min(effectiveDateWindowStart + VISIBLE_DATE_COUNT, availableDates.length)} of ${availableDates.length}`}
+              >
+                <button
+                  type="button"
+                  onClick={() => moveDateWindow("previous")}
+                  disabled={!canShowPreviousDates}
+                  className="flex w-8 shrink-0 items-center justify-center rounded-xl border border-lh-line bg-white text-lg text-lh-primary transition-colors hover:border-lh-primary disabled:cursor-not-allowed disabled:opacity-35 sm:w-10"
+                  aria-label="Show previous available dates"
+                >
+                  ‹
+                </button>
+                <div className="grid min-w-0 flex-1 grid-cols-7 gap-1 sm:gap-2">
+                  {visibleDates.map((dateStr) => {
+                    const firstSlot = slotsByDate[dateStr]?.[0];
+                    if (!firstSlot) return null;
 
-                  const dateObj = new Date(firstSlot.start);
-                  const dayName = new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: settings.timezone }).format(dateObj);
-                  const dayNum = new Intl.DateTimeFormat("en-US", { day: "numeric", timeZone: settings.timezone }).format(dateObj);
-                  const monthName = new Intl.DateTimeFormat("en-US", { month: "short", timeZone: settings.timezone }).format(dateObj);
-                  const isSelected = selectedDate === dateStr;
+                    const dateObj = new Date(firstSlot.start);
+                    const dayName = new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: settings.timezone }).format(dateObj);
+                    const dayNum = new Intl.DateTimeFormat("en-US", { day: "numeric", timeZone: settings.timezone }).format(dateObj);
+                    const monthName = new Intl.DateTimeFormat("en-US", { month: "short", timeZone: settings.timezone }).format(dateObj);
+                    const isSelected = selectedDate === dateStr;
 
-                  return (
-                    <button
-                      key={dateStr}
-                      type="button"
-                      onClick={() => setSelectedDateState(dateStr)}
-                      className={`flex min-w-[4.5rem] flex-col items-center justify-center rounded-xl border p-3 transition-colors ${isSelected ? "border-lh-primary bg-lh-primary text-white" : "border-lh-line bg-white text-black hover:border-lh-primary"}`}
-                    >
-                      <span className="mb-1 text-xs uppercase tracking-wider">{dayName}</span>
-                      <span className="text-xl font-medium">{dayNum}</span>
-                      <span className="text-xs">{monthName}</span>
-                    </button>
-                  );
-                })}
+                    return (
+                      <button
+                        key={dateStr}
+                        type="button"
+                        aria-pressed={isSelected}
+                        onClick={() => handleSelectedDateChange(dateStr)}
+                        className={`flex min-w-0 flex-col items-center justify-center rounded-xl border px-0.5 py-3 transition-colors sm:px-3 ${isSelected ? "border-lh-primary bg-lh-primary text-white" : "border-lh-line bg-white text-black hover:border-lh-primary"}`}
+                      >
+                        <span className="mb-1 text-[0.65rem] uppercase tracking-normal sm:text-xs sm:tracking-wider">{dayName}</span>
+                        <span className="text-xl font-medium">{dayNum}</span>
+                        <span className="text-xs">{monthName}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => moveDateWindow("next")}
+                  disabled={!canShowNextDates}
+                  className="flex w-8 shrink-0 items-center justify-center rounded-xl border border-lh-line bg-white text-lg text-lh-primary transition-colors hover:border-lh-primary disabled:cursor-not-allowed disabled:opacity-35 sm:w-10"
+                  aria-label="Show next available dates"
+                >
+                  ›
+                </button>
               </div>
 
               <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
@@ -392,7 +445,7 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
 
   return (
     <div className="flex flex-col gap-8 lg:flex-row">
-      <div className="flex-1">
+      <div className="min-w-0 flex-1">
         <div className="mb-6 flex items-center gap-4">
           <button type="button" onClick={() => setStep("datetime")} className="text-lh-muted hover:text-black">← Back</button>
           <h1 className="section-heading text-3xl md:text-3xl lg:text-3xl">Your Details</h1>
