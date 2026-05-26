@@ -517,7 +517,8 @@ async function getAllTrainingProgramSlugs(): Promise<Array<{ slug: string }>> {
 }
 
 async function getBookingSettings(): Promise<BookingSettings | null> {
-  const query = groq`*[_type == "bookingSettings"][0]{
+  const query = groq`*[_type == "bookingSettings" && !(_id in path("drafts.**"))]{
+    "singletonPriority": select(_id == "bookingSettings" => 0, 1),
     calendarId,
     bookingHorizonDays,
     minimumLeadTimeHours,
@@ -526,6 +527,16 @@ async function getBookingSettings(): Promise<BookingSettings | null> {
     slotIntervalMinutes,
     hoursOfOperation[]{ _key, day, isOpen, opensAt, closesAt },
     "intakeQuestions": coalesce(intakeQuestions[]{ _key, id, label, inputType, required, options }, []),
+    marketingOptInLabel
+  } | order(singletonPriority asc, _updatedAt desc)[0]{
+    calendarId,
+    bookingHorizonDays,
+    minimumLeadTimeHours,
+    timezone,
+    bufferMinutes,
+    slotIntervalMinutes,
+    hoursOfOperation[]{ _key, day, isOpen, opensAt, closesAt },
+    intakeQuestions,
     marketingOptInLabel
   }`;
   return client.fetch<BookingSettings | null>(query, {}, sanityFetchOptions(["bookingSettings"]));
