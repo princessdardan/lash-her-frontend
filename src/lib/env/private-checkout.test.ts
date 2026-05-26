@@ -42,6 +42,16 @@ const mockModeScript = String.raw`
   assert.equal(isPaymentMockMode(), true);
 `;
 
+const trainingAfterpaySquareInvoiceEnabledScript = String.raw`
+  import assert from "node:assert/strict";
+
+  import {
+    isTrainingAfterpaySquareInvoiceEnabled,
+  } from "./src/lib/env/private-checkout.ts";
+
+  assert.equal(isTrainingAfterpaySquareInvoiceEnabled(), EXPECTED_VALUE);
+`;
+
 const enabledSquareScript = String.raw`
   import { getSquareServiceBookingEnv } from "./src/lib/env/private-checkout.ts";
 
@@ -105,6 +115,48 @@ test("payment live mode remains server-checkable as the default", () => {
   delete env.PAYMENT_GATEWAY_MODE;
 
   const result = runTsx(liveModeScript, env);
+
+  assert.equal(result.status, 0);
+  assert.equal(result.stderr, "");
+});
+
+test("training afterpay square invoice flag defaults to disabled when absent", () => {
+  const env = { ...process.env };
+
+  delete env.TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED;
+
+  const result = runTsx(
+    trainingAfterpaySquareInvoiceEnabledScript.replace("EXPECTED_VALUE", "false"),
+    env,
+  );
+
+  assert.equal(result.status, 0);
+  assert.equal(result.stderr, "");
+});
+
+test("training afterpay square invoice flag enables only for exact true", () => {
+  const env = { ...process.env };
+
+  env.TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED = "true";
+
+  const result = runTsx(
+    trainingAfterpaySquareInvoiceEnabledScript.replace("EXPECTED_VALUE", "true"),
+    env,
+  );
+
+  assert.equal(result.status, 0);
+  assert.equal(result.stderr, "");
+});
+
+test("training afterpay square invoice flag stays false for non-true strings", () => {
+  const env = { ...process.env };
+
+  env.TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED = "yes";
+
+  const result = runTsx(
+    trainingAfterpaySquareInvoiceEnabledScript.replace("EXPECTED_VALUE", "false"),
+    env,
+  );
 
   assert.equal(result.status, 0);
   assert.equal(result.stderr, "");

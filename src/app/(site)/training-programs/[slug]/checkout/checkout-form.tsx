@@ -16,6 +16,21 @@ interface CheckoutFormProps {
   tax: number;
   total: number;
   currency: string;
+  afterpaySquareInvoiceEnabled?: boolean;
+}
+
+function getSquareInvoicePublicUrl(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+
+  const publicUrl = (value as { publicUrl?: unknown }).publicUrl;
+  if (typeof publicUrl !== "string") return null;
+
+  try {
+    const url = new URL(publicUrl);
+    return url.protocol === "https:" || url.hostname === "localhost" ? url.toString() : null;
+  } catch {
+    return null;
+  }
 }
 
 export function CheckoutForm({
@@ -27,6 +42,7 @@ export function CheckoutForm({
   tax,
   total,
   currency,
+  afterpaySquareInvoiceEnabled = false,
 }: CheckoutFormProps) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -39,9 +55,14 @@ export function CheckoutForm({
   const [discountedTotal, setDiscountedTotal] = useState(total);
   const [promotionCodeError, setPromotionCodeError] = useState<string | null>(null);
   const [isApplyingPromotionCode, setIsApplyingPromotionCode] = useState(false);
+  const [isStartingAfterpayInvoice, setIsStartingAfterpayInvoice] = useState(false);
+  const [afterpayInvoiceError, setAfterpayInvoiceError] = useState<string | null>(null);
 
   const isValid = name.trim().length > 0 && email.includes("@") && acknowledged;
   const amountBeforePromotion = redeemedPromotionCode ? subtotal : discountedSubtotal;
+  const afterpayInvoiceDescriptionIds = afterpayInvoiceError
+    ? "training-afterpay-invoice-note training-afterpay-invoice-error"
+    : "training-afterpay-invoice-note";
 
   const handleApplyPromotionCode = async () => {
     if (!promotionCodeInput.trim()) return;
@@ -110,6 +131,46 @@ export function CheckoutForm({
     setDiscountedTax(tax);
     setDiscountedTotal(total);
     setPromotionCodeError(null);
+  };
+
+  const handleStartAfterpayInvoice = async () => {
+    if (!isValid || isStartingAfterpayInvoice || !afterpaySquareInvoiceEnabled) return;
+
+    setAfterpayInvoiceError(null);
+    setIsStartingAfterpayInvoice(true);
+
+    try {
+      const response = await fetch("/api/training-checkout/square-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          programSlug,
+          customerName: name,
+          customerEmail: email,
+          clientPrice,
+          ...(redeemedPromotionCode ? { promotionCode: redeemedPromotionCode } : {}),
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null) as { error?: string } | null;
+        setAfterpayInvoiceError(errorData?.error ?? "Unable to start the invoice checkout. Please try again.");
+        setIsStartingAfterpayInvoice(false);
+        return;
+      }
+
+      const publicUrl = getSquareInvoicePublicUrl(await response.json());
+      if (!publicUrl) {
+        setAfterpayInvoiceError("Unable to open the invoice checkout. Please try again.");
+        setIsStartingAfterpayInvoice(false);
+        return;
+      }
+
+      window.location.assign(publicUrl);
+    } catch {
+      setAfterpayInvoiceError("Unable to start the invoice checkout. Please try again.");
+      setIsStartingAfterpayInvoice(false);
+    }
   };
 
   return (
@@ -268,6 +329,35 @@ export function CheckoutForm({
           customer={{ name, email }}
           onPaid={() => {}}
         />
+
+        {afterpaySquareInvoiceEnabled ? (
+          <div className="rounded-[24px] border border-lh-line bg-lh-neutral-2/60 p-5">
+            <div className="mb-4 flex items-center gap-4">
+              <div className="h-px flex-1 bg-lh-line" aria-hidden="true" />
+              <p className="font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-muted">Secondary option</p>
+              <div className="h-px flex-1 bg-lh-line" aria-hidden="true" />
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={handleStartAfterpayInvoice}
+              disabled={!isValid || isStartingAfterpayInvoice}
+              aria-busy={isStartingAfterpayInvoice}
+              aria-describedby={afterpayInvoiceDescriptionIds}
+              className="h-12 w-full rounded-full border-lh-primary/30 px-6 font-body text-sm uppercase tracking-[0.12em] text-lh-shadow hover:bg-lh-primary-soft hover:text-lh-primary"
+            >
+              {isStartingAfterpayInvoice ? "Preparing invoice..." : "Pay with Afterpay"}
+            </Button>
+            <p id="training-afterpay-invoice-note" className="mt-3 text-center font-body text-xs font-bold leading-6 text-lh-shadow/65">
+              Afterpay availability is determined by Square at checkout. Your enrollment will be activated once the invoice is paid.
+            </p>
+            {afterpayInvoiceError ? (
+              <p id="training-afterpay-invoice-error" className="mt-3 font-body text-xs font-bold text-lh-accent" role="alert">
+                {afterpayInvoiceError}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );

@@ -10,6 +10,13 @@ export const paymentMockScenarios = [
   "delayed_capture",
   "idempotency_mismatch",
   "idempotency_expired",
+  "square_invoice_success",
+  "square_invoice_afterpay_unavailable",
+  "square_invoice_publish_failed",
+  "square_invoice_unpaid",
+  "square_invoice_paid_mismatch",
+  "square_invoice_duplicate_paid",
+  "square_invoice_finalization_retry",
 ] as const;
 
 export type PaymentMockScenario = (typeof paymentMockScenarios)[number];

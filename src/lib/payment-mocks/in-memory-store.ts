@@ -35,11 +35,35 @@ export interface PaymentMockProviderOrderRecord {
   status: string;
 }
 
+export interface PaymentMockSquareInvoiceRecord {
+  createdAt: Date;
+  customerId: string;
+  invoiceId: string;
+  orderId: string;
+  provider: "square";
+  publicUrl: string;
+  scenario: PaymentMockScenario;
+  status: string;
+  version: number;
+}
+
+export interface PaymentMockSquareInvoiceWebhookRecord {
+  createdAt: Date;
+  eventId: string;
+  eventType: "invoice.payment_made" | "invoice.published" | "invoice.updated";
+  invoiceId: string;
+  payload: Record<string, unknown>;
+  provider: "square";
+  scenario: PaymentMockScenario;
+}
+
 export interface PaymentMockStore {
   readonly idempotencyRecords: PaymentMockIdempotencyRecord[];
   readonly webhookEventRecords: PaymentMockWebhookEventRecord[];
   readonly providerTransactions: PaymentMockProviderTransactionRecord[];
   readonly providerOrders: PaymentMockProviderOrderRecord[];
+  readonly squareInvoiceRecords: PaymentMockSquareInvoiceRecord[];
+  readonly squareInvoiceWebhookRecords: PaymentMockSquareInvoiceWebhookRecord[];
   now(): Date;
   nextSequence(): number;
   reset(): void;
@@ -52,6 +76,10 @@ export interface PaymentMockStore {
   getProviderTransaction(transactionId: string): PaymentMockProviderTransactionRecord | null;
   recordProviderOrder(record: PaymentMockProviderOrderRecord): PaymentMockProviderOrderRecord;
   getProviderOrder(orderId: string): PaymentMockProviderOrderRecord | null;
+  recordSquareInvoiceRecord(record: PaymentMockSquareInvoiceRecord): PaymentMockSquareInvoiceRecord;
+  getSquareInvoiceRecord(invoiceId: string): PaymentMockSquareInvoiceRecord | null;
+  recordSquareInvoiceWebhookRecord(record: PaymentMockSquareInvoiceWebhookRecord): PaymentMockSquareInvoiceWebhookRecord;
+  getSquareInvoiceWebhookRecord(eventId: string): PaymentMockSquareInvoiceWebhookRecord | null;
 }
 
 export interface PaymentMockStoreOptions {
@@ -64,6 +92,8 @@ export function createPaymentMockStore(options: PaymentMockStoreOptions = {}): P
   const webhookEventRecords: PaymentMockWebhookEventRecord[] = [];
   const providerTransactions: PaymentMockProviderTransactionRecord[] = [];
   const providerOrders: PaymentMockProviderOrderRecord[] = [];
+  const squareInvoiceRecords: PaymentMockSquareInvoiceRecord[] = [];
+  const squareInvoiceWebhookRecords: PaymentMockSquareInvoiceWebhookRecord[] = [];
   let sequence = 0;
 
   function reset(): void {
@@ -71,6 +101,8 @@ export function createPaymentMockStore(options: PaymentMockStoreOptions = {}): P
     webhookEventRecords.length = 0;
     providerTransactions.length = 0;
     providerOrders.length = 0;
+    squareInvoiceRecords.length = 0;
+    squareInvoiceWebhookRecords.length = 0;
     sequence = 0;
   }
 
@@ -142,6 +174,37 @@ export function createPaymentMockStore(options: PaymentMockStoreOptions = {}): P
     return providerOrders.find((record) => record.orderId === orderId) ?? null;
   }
 
+  function recordSquareInvoiceRecord(record: PaymentMockSquareInvoiceRecord): PaymentMockSquareInvoiceRecord {
+    const existingIndex = squareInvoiceRecords.findIndex((candidate) => candidate.invoiceId === record.invoiceId);
+    if (existingIndex >= 0) {
+      squareInvoiceRecords[existingIndex] = record;
+      return record;
+    }
+
+    squareInvoiceRecords.push(record);
+    return record;
+  }
+
+  function getSquareInvoiceRecord(invoiceId: string): PaymentMockSquareInvoiceRecord | null {
+    return squareInvoiceRecords.find((record) => record.invoiceId === invoiceId) ?? null;
+  }
+
+  function recordSquareInvoiceWebhookRecord(
+    record: PaymentMockSquareInvoiceWebhookRecord,
+  ): PaymentMockSquareInvoiceWebhookRecord {
+    const existing = getSquareInvoiceWebhookRecord(record.eventId);
+    if (existing) {
+      return existing;
+    }
+
+    squareInvoiceWebhookRecords.push(record);
+    return record;
+  }
+
+  function getSquareInvoiceWebhookRecord(eventId: string): PaymentMockSquareInvoiceWebhookRecord | null {
+    return squareInvoiceWebhookRecords.find((record) => record.eventId === eventId) ?? null;
+  }
+
   return {
     get idempotencyRecords() {
       return idempotencyRecords;
@@ -155,6 +218,12 @@ export function createPaymentMockStore(options: PaymentMockStoreOptions = {}): P
     get providerOrders() {
       return providerOrders;
     },
+    get squareInvoiceRecords() {
+      return squareInvoiceRecords;
+    },
+    get squareInvoiceWebhookRecords() {
+      return squareInvoiceWebhookRecords;
+    },
     now: clock,
     nextSequence,
     reset,
@@ -167,6 +236,10 @@ export function createPaymentMockStore(options: PaymentMockStoreOptions = {}): P
     getProviderTransaction,
     recordProviderOrder,
     getProviderOrder,
+    recordSquareInvoiceRecord,
+    getSquareInvoiceRecord,
+    recordSquareInvoiceWebhookRecord,
+    getSquareInvoiceWebhookRecord,
   };
 }
 

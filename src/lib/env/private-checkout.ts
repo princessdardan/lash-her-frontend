@@ -28,6 +28,10 @@ export function isPaymentMockMode(): boolean {
   return getPaymentGatewayMode() === "mock";
 }
 
+export function isTrainingAfterpaySquareInvoiceEnabled(): boolean {
+  return process.env.TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED === "true";
+}
+
 export function getPaymentMockRuntimeEnvironment(): PaymentMockRuntimeEnvironment {
   return {
     NODE_ENV: process.env.NODE_ENV,
@@ -79,6 +83,41 @@ export function getSquareServiceBookingEnv(): SquareServiceBookingEnv | null {
   };
 }
 
+export function getTrainingAfterpaySquareInvoiceEnv(): TrainingAfterpaySquareInvoiceEnv | null {
+  if (!isTrainingAfterpaySquareInvoiceEnabled()) {
+    return null;
+  }
+
+  const environment = assertSquareEnvironment();
+
+  return {
+    environment,
+    accessToken: assertValue(
+      process.env.SQUARE_ACCESS_TOKEN,
+      "Missing env var: SQUARE_ACCESS_TOKEN",
+    ),
+    locationId: assertValue(
+      process.env.SQUARE_LOCATION_ID,
+      "Missing env var: SQUARE_LOCATION_ID",
+    ),
+  };
+}
+
+function assertSquareEnvironment(): "sandbox" | "production" {
+  const environment = assertValue(
+    process.env.SQUARE_ENVIRONMENT,
+    "Missing env var: SQUARE_ENVIRONMENT",
+  );
+
+  if (environment !== "sandbox" && environment !== "production") {
+    throw new Error(
+      "Malformed env var: SQUARE_ENVIRONMENT must be sandbox or production",
+    );
+  }
+
+  return environment;
+}
+
 function assertValue<T>(value: T | undefined, errorMessage: string): T {
   if (value === undefined || (typeof value === "string" && value.trim().length === 0)) {
     throw new Error(errorMessage);
@@ -107,4 +146,10 @@ type SquareServiceBookingEnv = {
   serviceBookingReturnUrl: string;
   serviceBookingWebhookUrl: string;
   helcimLegacyCutoffAt: string | null;
+};
+
+type TrainingAfterpaySquareInvoiceEnv = {
+  environment: "sandbox" | "production";
+  accessToken: string;
+  locationId: string;
 };
