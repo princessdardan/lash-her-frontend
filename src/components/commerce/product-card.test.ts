@@ -2,7 +2,17 @@ import { describe, it } from "node:test";
 import assert from "node:assert";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { AppRouterContext, type AppRouterInstance } from "next/dist/shared/lib/app-router-context.shared-runtime";
 import type { TProduct } from "@/types";
+
+const router: AppRouterInstance = {
+  back: () => {},
+  forward: () => {},
+  refresh: () => {},
+  push: () => {},
+  replace: () => {},
+  prefetch: () => {},
+};
 
 describe("ProductCard", () => {
   it("renders availability label, fulfillment note, variant option title, price, and unavailable label", async () => {
@@ -38,7 +48,7 @@ describe("ProductCard", () => {
       ],
     };
 
-    const html = renderToStaticMarkup(
+    const html = renderProductCardToStaticMarkup(
       React.createElement(ProductCard, {
         product,
         onAdd: () => {},
@@ -53,4 +63,34 @@ describe("ProductCard", () => {
     assert.ok(html.includes("$150.00"), "Missing variant 2 price");
     assert.ok(html.includes("Out of Stock"), "Missing unavailable label");
   });
+
+  it("renders catalog buy-now actions with a Next app router context", async () => {
+    process.env.NEXT_PUBLIC_SANITY_DATASET = "test-dataset";
+    process.env.NEXT_PUBLIC_SANITY_PROJECT_ID = "test-project";
+
+    const { ProductCard } = await import("./product-card");
+
+    const product: TProduct = {
+      _id: "prod-1",
+      title: "Test Product",
+      description: "Test Description",
+      slug: "test-product",
+      price: 100,
+      currency: "CAD",
+      isAvailable: true,
+      availabilityLabel: "In Stock",
+    };
+
+    const html = renderProductCardToStaticMarkup(React.createElement(ProductCard, { product }));
+
+    assert.ok(html.includes("View Details"), "Missing product detail action");
+    assert.ok(html.includes("Buy Now"), "Missing buy-now action");
+    assert.ok(html.includes("aria-label=\"Buy now: Test Product\""), "Missing buy-now accessible label");
+  });
 });
+
+function renderProductCardToStaticMarkup(element: React.ReactElement): string {
+  return renderToStaticMarkup(
+    React.createElement(AppRouterContext.Provider, { value: router }, element),
+  );
+}

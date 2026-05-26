@@ -90,8 +90,11 @@ describe("booking service flow contract", () => {
     assert.doesNotMatch(bookingConfirmationSource, /squarePaymentLinkId|squareOrderId|holdReference/);
   });
 
-  it("keeps booking product cards decoupled from product checkout objects", () => {
-    assert.doesNotMatch(productCardSource, /checkout/);
+  it("keeps booking checkout decoupled while product cards support product buy-now checkout", () => {
+    assert.doesNotMatch(productCardSource, /\/api\/booking|holdReference|squareOrderId|squarePaymentLinkId/);
+    assert.match(productCardSource, /buyNow: "1"/);
+    assert.match(productCardSource, /productId: product\._id/);
+    assert.match(productCardSource, /router\.push\(`\/checkout\?\$\{params\.toString\(\)\}`\)/);
   });
 
   it("keeps service detail links discoverable outside the active offerings branch", () => {

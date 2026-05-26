@@ -76,9 +76,9 @@ export function Gallery({ data }: { data: TPhotoGallery }) {
                                         <SanityImage
                                             image={img}
                                             alt={img.alt || `Gallery image showcasing lash artistry ${index + 1}`}
-                                            className="w-full h-full object-cover pointer-events-none select-none"
-                                            width={480}
-                                            height={720}
+                                            className="object-cover pointer-events-none select-none"
+                                            fill
+                                            sizes="(min-width: 768px) 480px, min(400px, 90vw)"
                                         />
                                     </motion.div>
                                 );
