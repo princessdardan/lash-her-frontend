@@ -6,6 +6,7 @@ import {
   createSquareWebhookPostHandler,
   defaultDependencies,
   loadTrainingSquareInvoiceFinalizer,
+  resolveSquareWebhookEnv,
 } from "./route";
 import type { CheckoutOrderRow } from "@/lib/commerce/order-store";
 
@@ -33,7 +34,7 @@ function createHandler(
 ) {
   return createSquareWebhookPostHandler({
     getEnv: () => ({
-      serviceBookingWebhookUrl: webhookUrl,
+      notificationUrl: webhookUrl,
       webhookSignatureKey: signatureKey,
     }),
     finalizeSquarePayment: async (input) => {
@@ -131,7 +132,7 @@ test("Square webhook accepts valid signature and calls shared finalizer", async 
 test("Square webhook returns success for duplicate webhook finalizer results", async () => {
   const calls: unknown[] = [];
   const handler = createSquareWebhookPostHandler({
-    getEnv: () => ({ serviceBookingWebhookUrl: webhookUrl, webhookSignatureKey: signatureKey }),
+    getEnv: () => ({ notificationUrl: webhookUrl, webhookSignatureKey: signatureKey }),
     claimSquareInvoiceWebhookEvent: async () => ({ duplicate: false }),
     finalizeSquarePayment: async (input) => {
       calls.push(input);
@@ -153,7 +154,7 @@ test("Square webhook returns success for duplicate webhook finalizer results", a
 
 test("Square webhook asks Square to retry after temporary finalization errors", async () => {
   const handler = createSquareWebhookPostHandler({
-    getEnv: () => ({ serviceBookingWebhookUrl: webhookUrl, webhookSignatureKey: signatureKey }),
+    getEnv: () => ({ notificationUrl: webhookUrl, webhookSignatureKey: signatureKey }),
     claimSquareInvoiceWebhookEvent: async () => ({ duplicate: false }),
     finalizeSquarePayment: async () => {
       throw new Error("TEMPORARY_ERROR");
@@ -180,7 +181,7 @@ test("Square webhook accepts generated mock signatures in mock env and rejects i
   const calls: unknown[] = [];
   const handler = createSquareWebhookPostHandler({
     getEnv: () => ({
-      serviceBookingWebhookUrl: "http://localhost:3000/api/webhooks/square",
+      notificationUrl: "http://localhost:3000/api/webhooks/square",
       webhookSignatureKey: "mock-square-webhook-signature-key",
     }),
     claimSquareInvoiceWebhookEvent: async () => ({ duplicate: false }),
@@ -312,6 +313,51 @@ test("Square webhook skips processed duplicate paid training invoice events", as
   assert.equal(processedEvents.length, 0);
 });
 
+test("Square webhook acknowledges unknown paid invoice events without service-booking fallback", async () => {
+  const bookingFinalizerCalls: unknown[] = [];
+  const claimedEvents: unknown[] = [];
+  const trainingFinalizerCalls: unknown[] = [];
+  const handler = createHandler(bookingFinalizerCalls, {
+    findOrderBySquareInvoiceId: async () => null,
+    claimSquareInvoiceWebhookEvent: async (input) => {
+      claimedEvents.push(input);
+      return { duplicate: false };
+    },
+    finalizeTrainingSquareInvoicePayment: async (input) => {
+      trainingFinalizerCalls.push(input);
+      return { duplicateEvent: false, finalized: true, status: "paid" };
+    },
+  });
+  const response = await handler(createSignedRequest(JSON.stringify(createSquareInvoiceWebhookPayload({
+    eventId: "evt_training_unknown_invoice",
+    eventType: "invoice.payment_made",
+    invoiceId: "unknown-square-invoice",
+    orderId: "unknown-square-order",
+    paymentId: "unknown-square-payment",
+  }))));
+
+  assert.equal(response.status, 200);
+  assert.equal(bookingFinalizerCalls.length, 0);
+  assert.equal(trainingFinalizerCalls.length, 0);
+  assert.equal(claimedEvents.length, 0);
+});
+
+test("Square webhook env resolver accepts training invoice webhooks without service booking enabled", () => {
+  const env = resolveSquareWebhookEnv({
+    serviceBookingEnv: null,
+    trainingInvoiceWebhookEnv: {
+      notificationUrl: webhookUrl,
+      webhookSignatureKey: signatureKey,
+    },
+  });
+
+  assert.deepEqual(env, {
+    notificationUrl: webhookUrl,
+    serviceBookingEnabled: false,
+    webhookSignatureKey: signatureKey,
+  });
+});
+
 test("Square webhook default dependencies load the training invoice finalizer export dynamically", async () => {
   const dynamicFinalizer = await loadTrainingSquareInvoiceFinalizer();
 
@@ -366,6 +412,33 @@ test("Square webhook returns success for duplicate paid training invoice finaliz
 
   assert.equal(response.status, 200);
   assert.equal(trainingFinalizerCalls.length, 1);
+  assert.equal(bookingFinalizerCalls.length, 0);
+});
+
+test("Square webhook asks Square to retry non-finalized paid training invoice results", async () => {
+  const bookingFinalizerCalls: unknown[] = [];
+  const processedEvents: unknown[] = [];
+  const handler = createHandler(bookingFinalizerCalls, {
+    findOrderBySquareInvoiceId: async () => createTrainingSquareInvoiceOrder(),
+    finalizeTrainingSquareInvoicePayment: async () => ({
+      duplicateEvent: false,
+      finalized: false,
+      status: "Training scheduling token could not be issued",
+    }),
+    recordSquareInvoiceWebhookEventProcessed: async (input) => {
+      processedEvents.push(input);
+    },
+  });
+  const response = await handler(createSignedRequest(JSON.stringify(createSquareInvoiceWebhookPayload({
+    eventId: "evt_training_not_finalized_retry",
+    eventType: "invoice.payment_made",
+    invoiceId: "square-invoice-123",
+    orderId: "square-order-123",
+    paymentId: "square-payment-123",
+  }))));
+
+  assert.equal(response.status, 503);
+  assert.equal(processedEvents.length, 0);
   assert.equal(bookingFinalizerCalls.length, 0);
 });
 

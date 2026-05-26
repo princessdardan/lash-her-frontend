@@ -53,7 +53,18 @@ interface SquareWebhookDependencies {
 }
 
 interface SquareWebhookEnv {
+  notificationUrl: string;
+  serviceBookingEnabled?: boolean;
+  webhookSignatureKey: string;
+}
+
+interface SquareWebhookRuntimeEnv {
   serviceBookingWebhookUrl: string;
+  webhookSignatureKey: string;
+}
+
+interface TrainingSquareInvoiceWebhookRuntimeEnv {
+  notificationUrl: string;
   webhookSignatureKey: string;
 }
 
@@ -69,8 +80,15 @@ export const defaultDependencies: SquareWebhookDependencies = {
     return findOrderBySquareInvoiceId(invoiceId);
   },
   async getEnv() {
-    const { getSquareServiceBookingRuntimeEnv } = await import("@/lib/booking/square-runtime");
-    return getSquareServiceBookingRuntimeEnv();
+    const [{ getSquareServiceBookingRuntimeEnv }, { getTrainingAfterpaySquareInvoiceWebhookEnv }] = await Promise.all([
+      import("@/lib/booking/square-runtime"),
+      import("@/lib/env/private-checkout"),
+    ]);
+
+    return resolveSquareWebhookEnv({
+      serviceBookingEnv: getSquareServiceBookingRuntimeEnv(),
+      trainingInvoiceWebhookEnv: getTrainingAfterpaySquareInvoiceWebhookEnv(),
+    });
   },
   async recordSquareInvoiceWebhookEventProcessed(input) {
     const { recordSquareInvoiceWebhookEventProcessed } = await import("@/lib/commerce/order-store");
@@ -87,7 +105,7 @@ export function createSquareWebhookPostHandler(
     const env = await dependencies.getEnv();
 
     if (env === null) {
-      console.warn("[square-webhook] Square service booking is not enabled");
+      console.warn("[square-webhook] Square webhook handling is not enabled");
       return new Response(null, { status: 404 });
     }
 
@@ -100,7 +118,7 @@ export function createSquareWebhookPostHandler(
 
     const rawBody = await req.text();
     const isValidSignature = verifySquareWebhookSignature({
-      notificationUrl: env.serviceBookingWebhookUrl,
+      notificationUrl: env.notificationUrl,
       rawBody,
       signature: headers.signature,
       signatureKey: env.webhookSignatureKey,
@@ -158,12 +176,23 @@ export function createSquareWebhookPostHandler(
           }
 
           try {
-            await dependencies.finalizeTrainingSquareInvoicePayment({
+            const finalizationResult = await dependencies.finalizeTrainingSquareInvoicePayment({
               event,
               order,
               source: "webhook",
               squareInvoiceId: invoiceId,
             });
+
+            if (!finalizationResult.finalized && !finalizationResult.duplicateEvent) {
+              console.error("[square-webhook] Training Square invoice finalizer did not complete", {
+                eventId: event.eventId,
+                invoiceId,
+                orderId: order.orderId,
+                status: finalizationResult.status,
+              });
+              return new Response(null, { status: 503 });
+            }
+
             await dependencies.recordSquareInvoiceWebhookEventProcessed({
               ...squareInvoiceEvent,
               status: "processed",
@@ -180,7 +209,17 @@ export function createSquareWebhookPostHandler(
 
           return new Response(null, { status: 200 });
         }
+
+        return new Response(null, { status: 200 });
       }
+    }
+
+    if (env.serviceBookingEnabled === false) {
+      console.warn("[square-webhook] Square service booking is not enabled for payment event", {
+        eventId: event.eventId,
+        eventType: event.eventType,
+      });
+      return new Response(null, { status: 404 });
     }
 
     try {
@@ -198,6 +237,29 @@ export function createSquareWebhookPostHandler(
 
     return new Response(null, { status: 200 });
   };
+}
+
+export function resolveSquareWebhookEnv(input: {
+  serviceBookingEnv: SquareWebhookRuntimeEnv | null;
+  trainingInvoiceWebhookEnv: TrainingSquareInvoiceWebhookRuntimeEnv | null;
+}): SquareWebhookEnv | null {
+  if (input.serviceBookingEnv !== null) {
+    return {
+      notificationUrl: input.serviceBookingEnv.serviceBookingWebhookUrl,
+      serviceBookingEnabled: true,
+      webhookSignatureKey: input.serviceBookingEnv.webhookSignatureKey,
+    };
+  }
+
+  if (input.trainingInvoiceWebhookEnv !== null) {
+    return {
+      notificationUrl: input.trainingInvoiceWebhookEnv.notificationUrl,
+      serviceBookingEnabled: false,
+      webhookSignatureKey: input.trainingInvoiceWebhookEnv.webhookSignatureKey,
+    };
+  }
+
+  return null;
 }
 
 async function finalizeTrainingSquareInvoicePayment(

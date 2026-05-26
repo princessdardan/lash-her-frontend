@@ -103,6 +103,23 @@ export function getTrainingAfterpaySquareInvoiceEnv(): TrainingAfterpaySquareInv
   };
 }
 
+export function getTrainingAfterpaySquareInvoiceWebhookEnv(): TrainingAfterpaySquareInvoiceWebhookEnv | null {
+  if (!isTrainingAfterpaySquareInvoiceEnabled()) {
+    return null;
+  }
+
+  return {
+    notificationUrl: assertUrlValue(
+      process.env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL,
+      "SQUARE_SERVICE_BOOKING_WEBHOOK_URL",
+    ),
+    webhookSignatureKey: assertValue(
+      process.env.SQUARE_WEBHOOK_SIGNATURE_KEY,
+      "Missing env var: SQUARE_WEBHOOK_SIGNATURE_KEY",
+    ),
+  };
+}
+
 function assertSquareEnvironment(): "sandbox" | "production" {
   const environment = assertValue(
     process.env.SQUARE_ENVIRONMENT,
@@ -152,4 +169,9 @@ type TrainingAfterpaySquareInvoiceEnv = {
   environment: "sandbox" | "production";
   accessToken: string;
   locationId: string;
+};
+
+type TrainingAfterpaySquareInvoiceWebhookEnv = {
+  notificationUrl: string;
+  webhookSignatureKey: string;
 };
