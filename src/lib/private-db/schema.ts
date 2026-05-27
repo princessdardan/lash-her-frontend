@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   index,
   integer,
@@ -229,6 +230,9 @@ export const checkoutOrders = pgTable(
       table.providerPaymentId,
     ),
     uniqueIndex("checkout_orders_calendar_event_id_idx").on(table.calendarEventId),
+    index("checkout_orders_square_correlation_id_idx")
+      .using("btree", sql`(${table.providerMetadata}->>'correlationId')`)
+      .where(sql`${table.paymentProvider} = 'square' AND ${table.providerMetadata}->>'correlationId' IS NOT NULL`),
   ],
 );
 
@@ -340,6 +344,7 @@ export const appointmentHolds = pgTable(
   (table) => [
     uniqueIndex("appointment_holds_public_reference_idx").on(table.publicReference),
     uniqueIndex("appointment_holds_checkout_order_id_idx").on(table.checkoutOrderId),
+    index("appointment_holds_checkout_order_public_id_idx").on(table.checkoutOrderPublicId),
     uniqueIndex("appointment_holds_square_payment_link_id_idx").on(table.squarePaymentLinkId),
     uniqueIndex("appointment_holds_square_checkout_id_idx").on(table.squareCheckoutId),
     uniqueIndex("appointment_holds_square_payment_id_idx").on(table.squarePaymentId),

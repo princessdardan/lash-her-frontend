@@ -50,7 +50,7 @@ Implication: paid Lash Her service booking must be a custom app flow that uses G
 
 | System | Responsibility | Must Not Do |
 | --- | --- | --- |
-| Sanity | Public/editorial booking offering config, native payment fields, copy | Store PII, holds, payment status, booking history, transaction data |
+| Sanity | Public/editorial bookable service config, native payment fields, copy | Store PII, holds, payment status, booking history, transaction data |
 | Private Postgres | Holds, orders, payment events, booking lifecycle, training eligibility, audit/reconciliation | Act as public CMS |
 | Redis / Upstash | Google OAuth token storage and short-lived race locks | Be canonical booking/payment state |
 | Google Calendar API | Service booking busy-time source and final staff event store | Gate payment or hold Appointment Schedule slots |

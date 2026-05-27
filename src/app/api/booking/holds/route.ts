@@ -226,12 +226,12 @@ export const POST = createBookingHoldsPostHandler({
   getBookableServiceBySlug: async (slug) => {
     const { loaders } = await import("@/data/loaders");
 
-    return loaders.getBookableServiceBySlug(slug);
+    return loaders.getBookableServiceBySlug(slug, { mode: "published", stega: false });
   },
   getBookingSettings: async () => {
     const { loaders } = await import("@/data/loaders");
 
-    return loaders.getBookingSettings();
+    return loaders.getBookingSettings({ mode: "published", stega: false });
   },
   listActiveAppointmentHolds: async (input) => {
     const { listActiveAppointmentHolds } = await import("@/lib/booking/holds");

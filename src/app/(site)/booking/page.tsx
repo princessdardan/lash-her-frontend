@@ -33,13 +33,13 @@ export default async function BookingPage({
   }
 
   return (
-    <main className="min-h-screen bg-lh-neutral-2 py-12 lg:py-24">
+    <section className="min-h-screen bg-lh-neutral-2 py-12 lg:py-24" aria-label="Service booking">
       <div className="content-container max-w-5xl mx-auto">
         <BookingFlow
           settings={settings}
           services={services}
         />
       </div>
-    </main>
+    </section>
   );
 }

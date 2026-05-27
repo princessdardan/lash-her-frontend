@@ -133,7 +133,7 @@ function AppointmentScheduleCard({
         <div className="border-t border-lh-neutral/20 bg-lh-neutral-2/60 p-8 text-center md:p-10">
           <a
             href={scheduleUrl}
-            className="btn-primary-red inline-block"
+            className="inline-flex items-center justify-center rounded-full bg-lh-primary px-7 py-4 font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-white transition-colors hover:bg-lh-accent"
             target="_blank"
             rel="noopener noreferrer"
           >
@@ -191,7 +191,7 @@ function SafeErrorShell({ programTitle }: { programTitle: string }) {
                 </p>
                 <Link
                   href="/contact"
-                  className="btn-primary-red inline-block"
+                  className="inline-flex items-center justify-center rounded-full bg-lh-primary px-7 py-4 font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-white transition-colors hover:bg-lh-accent"
                 >
                   Contact Support
                 </Link>

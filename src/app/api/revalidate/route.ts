@@ -23,6 +23,7 @@ interface RevalidateWebhookDependencies {
   parseBody: <T>(
     req: NextRequest,
     secret: string,
+    waitForContentLakeEventualConsistency?: boolean,
   ) => Promise<{ body: T | null; isValidSignature: boolean | null }>;
   revalidateTag: (tag: string, profile: { expire: 0 }) => void;
 }
@@ -64,6 +65,7 @@ export function createRevalidatePostHandler(
     const { body, isValidSignature } = await dependencies.parseBody<{ _type: string }>(
       req,
       webhookSecret,
+      true,
     );
 
     // Per D-08: HTTP status codes only, no detail in response body

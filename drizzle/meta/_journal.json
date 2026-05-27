@@ -50,6 +50,13 @@
       "when": 1779661753148,
       "tag": "0007_product_shipping_address",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1779753600000,
+      "tag": "0008_hot_path_private_indexes",
+      "breakpoints": true
     }
   ]
 }

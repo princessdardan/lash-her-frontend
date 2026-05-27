@@ -144,8 +144,8 @@ test.describe('Product Detail Page', () => {
     await expect(addToCart).toBeEnabled();
     await addToCart.click();
 
-    await expect(page.getByRole('complementary', { name: 'Shopping cart' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: /review selection/i })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: /your cart/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /your cart/i })).toBeVisible();
     await expect.poll(async () => page.evaluate((key) => window.localStorage.getItem(key) ?? '', PRODUCT_CART_STORAGE_KEY)).toContain('productId');
 
     await page.reload();
@@ -155,7 +155,7 @@ test.describe('Product Detail Page', () => {
     const cartButton = page.getByRole('button', { name: /open cart with/i }).first();
     await expect(cartButton).toBeVisible();
     await cartButton.click();
-    await expect(page.getByRole('complementary', { name: 'Shopping cart' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: /your cart/i })).toBeVisible();
   });
 
   test('should send only the Buy Now selection in the checkout request', async ({ page }) => {
@@ -201,12 +201,16 @@ test.describe('Product Detail Page', () => {
     await expect(buyNow).toBeEnabled();
     await buyNow.click();
 
-    const cartAside = page.getByRole('complementary', { name: 'Shopping cart' });
-    await expect(cartAside).toContainText(/buy now/i);
-    await cartAside.getByLabel(/^Name$/i).fill('Checkout Tester');
-    await cartAside.getByLabel(/^Email$/i).fill('checkout-tester@example.com');
+    await expect(page).toHaveURL(/\/checkout\?buyNow=1/);
+    await page.getByLabel(/^Name$/i).fill('Checkout Tester');
+    await page.getByLabel(/^Email$/i).fill('checkout-tester@example.com');
+    await page.getByLabel(/^Address$/i).fill('646 Oakwood Avenue');
+    await page.getByLabel(/^City$/i).fill('Toronto');
+    await page.getByLabel(/Province/i).fill('Ontario');
+    await page.getByLabel(/Postal code/i).fill('M6E 2Y4');
+    await page.getByLabel(/^Country$/i).fill('Canada');
 
-    const checkout = cartAside.getByRole('button', { name: /checkout/i });
+    const checkout = page.getByRole('button', { name: /checkout/i });
     await expect(checkout).toBeEnabled();
     await checkout.click();
 
@@ -241,7 +245,7 @@ test.describe('Product Detail Page', () => {
     if (await addToCart.isDisabled()) await selectRequiredProductOptions(page);
 
     await addToCart.click();
-    await expect(page.getByRole('complementary', { name: 'Shopping cart' })).toContainText(/your cart/i);
+    await expect(page.getByRole('dialog', { name: /your cart/i })).toContainText(/your cart/i);
     await page.getByRole('button', { name: /^close$/i }).click();
 
     if (hrefs.length > 1) {
@@ -258,11 +262,13 @@ test.describe('Product Detail Page', () => {
     if (await buyNow.isDisabled()) await selectRequiredProductOptions(page);
 
     await buyNow.click();
-    await expect(page.getByRole('complementary', { name: 'Shopping cart' })).toContainText(/buy now/i);
-    await page.getByRole('button', { name: /^close$/i }).click();
+    await expect(page).toHaveURL(/\/checkout\?buyNow=1/);
+
+    await page.goto('/products');
+    await page.waitForLoadState('networkidle');
 
     await page.getByRole('button', { name: /open cart with/i }).first().click();
-    const cartAside = page.getByRole('complementary', { name: 'Shopping cart' });
+    const cartAside = page.getByRole('dialog', { name: /your cart/i });
     await expect(cartAside).toBeVisible();
     await expect(cartAside).toContainText(/your cart/i);
     await expect(cartAside).not.toContainText(/^Buy Now$/);

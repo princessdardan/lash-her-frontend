@@ -23,26 +23,25 @@ test.describe('Navigation', () => {
     const contactLink = page.getByRole('link', { name: /contact/i }).first();
     if (await contactLink.isVisible({ timeout: 1000 }).catch(() => false)) {
       await contactLink.click();
-      await page.waitForLoadState('networkidle');
-      expect(page.url()).toContain('/contact');
+      await expect(page).toHaveURL(/\/contact/);
       await page.goBack();
+      await expect(page).toHaveURL(/\/$/);
     }
 
     // Test navigation to Gallery page
     const galleryLink = page.getByRole('link', { name: /gallery/i }).first();
     if (await galleryLink.isVisible({ timeout: 1000 }).catch(() => false)) {
       await galleryLink.click();
-      await page.waitForLoadState('networkidle');
-      expect(page.url()).toContain('/gallery');
+      await expect(page).toHaveURL(/\/gallery/);
       await page.goBack();
+      await expect(page).toHaveURL(/\/$/);
     }
 
     // Test navigation to Training Programs page
     const trainingLink = page.getByRole('link', { name: /training|programs/i }).first();
     if (await trainingLink.isVisible({ timeout: 1000 }).catch(() => false)) {
       await trainingLink.click();
-      await page.waitForLoadState('networkidle');
-      expect(page.url()).toContain('/training-programs');
+      await expect(page).toHaveURL(/\/training-programs/);
     }
   });
 
@@ -56,10 +55,9 @@ test.describe('Navigation', () => {
 
     if (hasLogo) {
       await logoLink.click();
-      await page.waitForLoadState('networkidle');
 
       // Should navigate to homepage
-      expect(page.url()).toMatch(/\/$/);
+      await expect(page).toHaveURL(/\/$/);
 
     }
   });

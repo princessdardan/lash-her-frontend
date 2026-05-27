@@ -133,7 +133,7 @@ export default async function BookingConfirmationPage({
       const copy = SQUARE_PAYMENT_RETURN_COPY[paymentStatus];
 
       return (
-        <main className="min-h-screen bg-lh-neutral-2 py-12 lg:py-24">
+        <section className="min-h-screen bg-lh-neutral-2 py-12 lg:py-24" aria-label="Booking confirmation">
           <section className="content-container mx-auto max-w-2xl">
             <div role="status" aria-live="polite" className="soft-panel rounded-[18px] border border-lh-line bg-lh-white p-8 text-center shadow-sm md:p-12">
               <p className="eyebrow-label mb-3">{copy.eyebrow}</p>
@@ -149,7 +149,7 @@ export default async function BookingConfirmationPage({
               </div>
             </div>
           </section>
-        </main>
+        </section>
       );
     }
   }

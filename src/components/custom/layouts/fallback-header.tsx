@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type { THeader } from "@/types";
 
 import { Logo } from "@/components/ui/logo";
@@ -23,9 +22,9 @@ export function FallbackHeader({ header }: IFallbackHeaderProps) {
       <Logo data={logoText} />
       <div className={styles.actions}>
         {ctaButton.map((button, index) => (
-          <Link key={index} href={button.href}>
-            <Button variant={index === 0 ? "primary" : "outline"}>{button.label}</Button>
-          </Link>
+          <Button key={index} asChild variant={index === 0 ? "primary" : "outline"}>
+            <a href={button.href}>{button.label}</a>
+          </Button>
         ))}
       </div>
     </div>

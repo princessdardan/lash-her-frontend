@@ -319,7 +319,7 @@ export function GeneralInquiryLayout({data}:{data: IGeneralInquiryLayoutProps}) 
     <section className="section-shell">
         <div className="content-container">
             <div className="text-container">
-            <h2 className="section-heading">{data.title}</h2>
+            <h1 className="section-heading">{data.title}</h1>
             <p className="section-subheading">{data.subTitle}</p>
             <p className="section-description">{data.description}</p>
             </div>

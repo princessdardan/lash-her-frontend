@@ -1,8 +1,9 @@
 import { type ReactElement } from "react";
 import { SanityImage } from "@/components/ui/sanity-image";
 import { ProductCard } from "./product-card";
+import { ProductFilters } from "./product-filters";
 import { ProductSort } from "./product-sort";
-import type { TProductsPage, TProduct } from "@/types";
+import type { TProduct, TProductCollection, TProductFilterAttribute, TProductsPage } from "@/types";
 
 export interface ProductCatalogQueryState {
   collection?: string;
@@ -13,12 +14,16 @@ export interface ProductCatalogQueryState {
 
 interface ProductCatalogShellProps {
   pageData: TProductsPage | null;
+  collections: TProductCollection[];
+  filterAttributes: TProductFilterAttribute[];
   products: TProduct[];
   query: ProductCatalogQueryState;
 }
 
 export function ProductCatalogShell({
   pageData,
+  collections,
+  filterAttributes,
   products,
   query,
 }: ProductCatalogShellProps): ReactElement {
@@ -62,34 +67,38 @@ export function ProductCatalogShell({
 
       <section className="section-shell-soft" aria-labelledby="products-heading">
         <div className="content-container">
-          <div className="min-w-0">
-            <div className="mb-8 flex flex-col gap-5 border-b border-lh-line pb-6 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <p className="eyebrow-label mb-2">Products</p>
-                <h2 id="products-heading" className="section-heading text-4xl md:text-5xl">
-                  The Product Edit
-                </h2>
-                <p className="mt-3 font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-muted" aria-live="polite">
-                  Showing {products.length} Products
-                </p>
-              </div>
-              <ProductSort collection={query.collection} attributes={query.attributes} sort={query.sort || "default"} />
-            </div>
+          <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
+            <ProductFilters collections={collections} filterAttributes={filterAttributes} query={query} />
 
-            {products.length === 0 ? (
-              <div className="soft-panel bg-lh-white py-16 text-center">
-                <h3 className="section-subheading mb-4 text-3xl">{emptyStateTitle}</h3>
-                <p className="mx-auto max-w-md font-body text-sm font-bold leading-7 text-lh-muted md:text-base">
-                  {emptyStateDescription}
-                </p>
+            <div className="min-w-0 flex-1">
+              <div className="mb-8 flex flex-col gap-5 border-b border-lh-line pb-6 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <p className="eyebrow-label mb-2">Products</p>
+                  <h2 id="products-heading" className="section-heading text-4xl md:text-5xl">
+                    The Product Edit
+                  </h2>
+                  <p className="mt-3 font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-muted" aria-live="polite">
+                    Showing {products.length} Products
+                  </p>
+                </div>
+                <ProductSort collection={query.collection} attributes={query.attributes} sort={query.sort || "default"} />
               </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-                {products.map((product) => (
-                  <ProductCard key={product._id} product={product} />
-                ))}
-              </div>
-            )}
+
+              {products.length === 0 ? (
+                <div className="soft-panel bg-lh-white py-16 text-center">
+                  <h3 className="section-subheading mb-4 text-3xl">{emptyStateTitle}</h3>
+                  <p className="mx-auto max-w-md font-body text-sm font-bold leading-7 text-lh-muted md:text-base">
+                    {emptyStateDescription}
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+                  {products.map((product) => (
+                    <ProductCard key={product._id} product={product} />
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </section>

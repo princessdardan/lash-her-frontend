@@ -64,7 +64,7 @@ export function ProductFilters({ collections, filterAttributes, query }: Product
   const groupedAttributes = getGroupedAttributes(filterAttributes);
 
   return (
-    <aside className="w-full shrink-0 lg:w-72" aria-label="Catalog filters">
+    <aside role="complementary" className="w-full shrink-0 lg:w-72" aria-label="Catalog filters">
       <div className="soft-panel sticky top-28 space-y-10 bg-lh-white/82 p-6 backdrop-blur md:p-7">
         <div>
           <p className="eyebrow-label mb-4">Catalog filters</p>

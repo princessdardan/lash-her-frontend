@@ -126,7 +126,7 @@ export async function finalizeAppointmentPaymentForOrder(
   const operationalStoreModule = await import("./operational-store");
 
   async function getCalendarId(): Promise<string> {
-    const settings = await loadersModule.loaders.getBookingSettings();
+    const settings = await loadersModule.loaders.getBookingSettings({ mode: "published", stega: false });
 
     if (settings === null || settings.calendarId.trim().length === 0) {
       throw new BookingManualFollowupError("Booking calendar is not configured.");
@@ -160,7 +160,7 @@ export async function finalizeAppointmentPaymentForOrder(
           }
 
           try {
-            const settings = await getBookingSettingsOrThrow(loadersModule.loaders.getBookingSettings);
+            const settings = await getBookingSettingsOrThrow(() => loadersModule.loaders.getBookingSettings({ mode: "published", stega: false }));
             const calendarId = settings.calendarId.trim();
 
             if (calendarId.length === 0) {

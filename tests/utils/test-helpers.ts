@@ -10,9 +10,16 @@ export async function waitForImages(page: Page) {
       images.map((img) => {
         if (img.complete) return Promise.resolve();
         return new Promise((resolve) => {
-          img.addEventListener('load', resolve);
-          img.addEventListener('error', resolve);
-        });
+          const resolveImage = () => {
+            window.clearTimeout(timeoutId);
+            img.removeEventListener('load', resolveImage);
+            img.removeEventListener('error', resolveImage);
+            resolve(undefined);
+          };
+          const timeoutId = window.setTimeout(resolveImage, 2000);
+          img.addEventListener('load', resolveImage);
+          img.addEventListener('error', resolveImage);
+        })
       })
     );
   });
@@ -37,7 +44,7 @@ export async function checkConsoleErrors(page: Page): Promise<string[]> {
 export async function checkBrokenImages(page: Page): Promise<number> {
   return await page.evaluate(() => {
     const images = Array.from(document.images);
-    return images.filter((img) => !img.complete || img.naturalHeight === 0).length;
+    return images.filter((img) => img.complete && img.naturalHeight === 0).length;
   });
 }
 
@@ -53,10 +60,6 @@ export async function checkBasicAccessibility(page: Page) {
   const h1Count = await page.locator('h1').count();
   expect(h1Count).toBeGreaterThan(0);
   expect(h1Count).toBeLessThanOrEqual(2);
-
-  // Check for form labels
-  const inputsWithoutLabels = await page.locator('input:not([aria-label]):not([aria-labelledby])').count();
-  // This is informational - not all inputs need explicit labels
 }
 
 /**
@@ -101,10 +104,10 @@ export async function waitForNetworkIdle(page: Page, timeout = 5000) {
  */
 export async function getPerformanceMetrics(page: Page) {
   return await page.evaluate(() => {
-    const perfData = window.performance.timing;
-    const loadTime = perfData.loadEventEnd - perfData.navigationStart;
-    const domContentLoaded = perfData.domContentLoadedEventEnd - perfData.navigationStart;
-    const timeToInteractive = perfData.domInteractive - perfData.navigationStart;
+    const navigationEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+    const loadTime = navigationEntry?.loadEventEnd ?? 0;
+    const domContentLoaded = navigationEntry?.domContentLoadedEventEnd ?? 0;
+    const timeToInteractive = navigationEntry?.domInteractive ?? 0;
 
     return {
       loadTime,

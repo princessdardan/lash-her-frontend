@@ -19,13 +19,13 @@ test.describe('Product Catalog Page', () => {
       await expect(productCards.first()).toContainText(/\$[\d,]+\.\d{2}/);
         
       await expect(productCards.first().getByRole('link').first()).toBeVisible();
-      await expect(productCards.first().getByRole('button', { name: /add (to cart|option)|sold out|unavailable/i }).first()).toBeVisible();
+      await expect(productCards.first().getByRole('button', { name: /buy now|add (to cart|option)|sold out|unavailable/i }).first()).toBeVisible();
 
       const addButton = productCards.first().getByRole('button', { name: /add to cart/i });
       if (await addButton.count() > 0) {
         await addButton.click();
         await expect(page.getByRole('heading', { name: 'Your Cart' })).toBeVisible();
-        await expect(page.getByRole('complementary', { name: 'Shopping cart' })).toBeVisible();
+        await expect(page.getByRole('dialog', { name: /your cart/i })).toBeVisible();
       }
     }
 
@@ -39,7 +39,7 @@ test.describe('Product Catalog Page', () => {
     }
   });
 
-  test('should show the cart aside responsively after adding an item on mobile', async ({ page }) => {
+  test('should expose checkout controls responsively on mobile', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
     await page.goto('/products');
     await page.waitForLoadState('networkidle');
@@ -48,19 +48,11 @@ test.describe('Product Catalog Page', () => {
     const count = await productCards.count();
 
     if (count > 0) {
-      await expect(page.getByRole('heading', { name: 'Your Cart' })).toBeHidden();
+      await expect(productCards.first().getByRole('button', { name: /buy now|add to cart/i }).first()).toBeVisible();
 
-      const addButton = productCards.first().getByRole('button', { name: /add to cart/i });
-      if (await addButton.count() > 0) {
-        await addButton.click();
-
-        const cartAside = page.getByRole('complementary', { name: 'Shopping cart' });
-        await expect(cartAside).toBeVisible();
-
-        const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
-        const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
-        expect(scrollWidth).toBeLessThanOrEqual(clientWidth + 1);
-      }
+      const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+      const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
+      expect(scrollWidth).toBeLessThanOrEqual(clientWidth + 1);
     }
   });
 
@@ -83,6 +75,6 @@ test.describe('Product Catalog Page', () => {
     const firstCard = productCards.first();
     await expect(firstCard.getByRole('heading')).toBeVisible();
     await expect(firstCard.getByRole('link').first()).toBeVisible();
-    await expect(firstCard.getByRole('button', { name: /add (to cart|option)|sold out|unavailable/i }).first()).toBeVisible();
+    await expect(firstCard.getByRole('button', { name: /buy now|add (to cart|option)|sold out|unavailable/i }).first()).toBeVisible();
   });
 });

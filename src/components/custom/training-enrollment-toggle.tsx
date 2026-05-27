@@ -59,14 +59,6 @@ const DEFAULT_CONTACT_LABELS = {
 };
 
 
-function getInitialViewMode(): ViewMode {
-  if (typeof window === "undefined") {
-    return "enrollment";
-  }
-
-  return window.location.hash === "#contact" ? "contact" : "enrollment";
-}
-
 function isSafeUrl(url: string | undefined | null): boolean {
   if (!url) return false;
   try {
@@ -98,12 +90,11 @@ export function TrainingEnrollmentToggle({
   programTitle,
   hasPurchaseUi = false,
 }: TrainingEnrollmentToggleProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>(getInitialViewMode);
+  const [viewMode, setViewMode] = useState<ViewMode>("enrollment");
   const [isTransitioning, setIsTransitioning] = useState(false);
 
-  // Handle hash changes while on the page
   useEffect(() => {
-    const handleHashChange = () => {
+    const syncViewModeFromHash = () => {
       const hash = window.location.hash;
       if (hash === "#contact") {
         setViewMode("contact");
@@ -112,14 +103,19 @@ export function TrainingEnrollmentToggle({
       }
     };
 
-    window.addEventListener("hashchange", handleHashChange);
-    return () => window.removeEventListener("hashchange", handleHashChange);
+    syncViewModeFromHash();
+    window.addEventListener("hashchange", syncViewModeFromHash);
+    return () => window.removeEventListener("hashchange", syncViewModeFromHash);
   }, []);
 
   const handleToggle = () => {
     if (isTransitioning) return;
     setIsTransitioning(true);
-    setViewMode((prev) => (prev === "enrollment" ? "contact" : "enrollment"));
+    setViewMode((prev) => {
+      const next = prev === "enrollment" ? "contact" : "enrollment";
+      window.history.replaceState(null, "", `#${next}`);
+      return next;
+    });
     setTimeout(() => setIsTransitioning(false), 300);
   };
 
@@ -140,7 +136,7 @@ export function TrainingEnrollmentToggle({
   const isAvailable = data.isAvailable;
   const safePrimaryCta = primaryCta?.label && isSafeUrl(primaryCta.href) ? primaryCta : null;
   const safeSecondaryCta = secondaryCta?.label && isSafeUrl(secondaryCta.href) ? secondaryCta : null;
-  const hasEnrollmentData = enrollmentTitle || enrollmentDescription || enrollmentBackgroundImage || inclusions.length > 0 || price !== null || availabilityLabel || isAvailable !== undefined || safePrimaryCta || safeSecondaryCta;
+  const hasEnrollmentData = Boolean(enrollmentTitle || enrollmentDescription || enrollmentBackgroundImage || inclusions.length > 0 || price !== null || availabilityLabel || isAvailable !== undefined || safePrimaryCta || safeSecondaryCta);
 
   const showContact = contactData?.enabled !== false;
   const toggleText = viewMode === "enrollment" ? "I Want More Info" : "I'm Ready To Purchase";
@@ -173,15 +169,8 @@ export function TrainingEnrollmentToggle({
           </div>
         )}
 
-        <div className="grid [grid-template-areas:'stack']">
-          {/* Enrollment View */}
-          <div
-            className={`[grid-area:stack] transition-[opacity,transform] duration-300 ease-out will-change-[opacity,transform] motion-reduce:translate-y-0 motion-reduce:transition-opacity ${
-              viewMode === "enrollment" ? "pointer-events-auto translate-y-0 opacity-100" : "pointer-events-none translate-y-2 opacity-0"
-            }`}
-            aria-hidden={viewMode !== "enrollment"}
-          >
-            {hasEnrollmentData && (
+        <div>
+          {viewMode === "enrollment" && hasEnrollmentData ? (
               <div className="grid h-full grid-cols-1 overflow-hidden rounded-[28px] border border-lh-line bg-lh-white shadow-[0_24px_70px_rgba(28,19,24,0.08)] lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
                 <div className="relative min-h-[360px] overflow-hidden bg-lh-shadow p-8 text-lh-neutral-2 md:p-10 lg:min-h-[520px] lg:p-12">
                   <div className="absolute inset-0 z-0">
@@ -282,18 +271,9 @@ export function TrainingEnrollmentToggle({
                   )}
                 </div>
               </div>
-            )}
-          </div>
-
-          {/* Contact View */}
-          <div
-            className={`[grid-area:stack] transition-[opacity,transform] duration-300 ease-out will-change-[opacity,transform] motion-reduce:translate-y-0 motion-reduce:transition-opacity ${
-              viewMode === "contact" ? "pointer-events-auto translate-y-0 opacity-100" : "pointer-events-none translate-y-2 opacity-0"
-            }`}
-            aria-hidden={viewMode !== "contact"}
-          >
-            {showContact && <TrainingContactForm contactData={contactData} programSlug={programSlug} programTitle={programTitle} />}
-          </div>
+          ) : viewMode === "contact" && showContact ? (
+            <TrainingContactForm contactData={contactData} programSlug={programSlug} programTitle={programTitle} />
+          ) : null}
         </div>
       </div>
     </section>

@@ -42,7 +42,7 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
           </Link>
         </div>
 
-        <div className="max-w-5xl mx-auto card-white p-8 md:p-12 flex flex-col md:flex-row gap-8 md:gap-12">
+        <div className="mx-auto flex max-w-5xl flex-col gap-8 rounded-[28px] border border-lh-line bg-lh-white p-8 text-lh-shadow shadow-[0_24px_70px_rgba(28,19,24,0.08)] md:flex-row md:gap-12 md:p-12">
           <div className="w-full md:w-1/2 flex flex-col gap-4">
             {service.image ? (
               <div className="aspect-square relative rounded-md overflow-hidden bg-lh-primary-soft/10">
@@ -88,7 +88,7 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
             </div>
             
             {service.description && (
-              <div className="text-black font-light text-lg mb-8 space-y-4">
+              <div className="mb-8 space-y-4 font-body text-lg font-bold leading-8 text-lh-shadow/80">
                 <p>{service.description}</p>
               </div>
             )}
@@ -98,7 +98,7 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
                 {service.detailSections.map((section, idx) => (
                   <div key={section._key || idx}>
                     <h3 className="section-subheading mb-2">{section.heading}</h3>
-                    <p className="text-black font-light">{section.content}</p>
+                    <p className="font-body font-bold leading-7 text-lh-shadow/80">{section.content}</p>
                   </div>
                 ))}
               </div>
@@ -110,7 +110,7 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
                   Currently Unavailable
                 </div>
               ) : (
-                <Link href={`/services/${service.slug}/booking`} className="btn-primary-red w-full text-center block">
+                <Link href={`/services/${service.slug}/booking`} className="inline-flex w-full items-center justify-center rounded-full bg-lh-primary px-7 py-4 text-center font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-white transition-colors hover:bg-lh-accent">
                   Book Now
                 </Link>
               )}

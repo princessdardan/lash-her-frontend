@@ -204,6 +204,8 @@ test("provider-aware unique indexes guard duplicate event and calendar correlati
   ]);
 
   assert.ok(getIndexNames(checkoutOrders).includes("checkout_orders_calendar_event_id_idx"));
+  assert.ok(getIndexNames(checkoutOrders).includes("checkout_orders_square_correlation_id_idx"));
+  assert.ok(getIndexNames(appointmentHolds).includes("appointment_holds_checkout_order_public_id_idx"));
   assert.ok(getIndexNames(appointmentHolds).includes("appointment_holds_google_event_id_idx"));
 });
 

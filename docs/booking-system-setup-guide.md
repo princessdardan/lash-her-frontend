@@ -236,9 +236,9 @@ In Studio, configure the `bookingSettings` singleton:
 
 Add availability marker events to the connected Google Calendar using the configured marker title. Busy events and active private holds will block overlapping slots.
 
-### Booking Offerings
+### Bookable Services
 
-Create active `bookingOffering` records for customer-selectable services.
+Create active `service` records for customer-selectable bookable services.
 
 Required fields:
 
@@ -251,13 +251,13 @@ Required fields:
 
 Native payment field rules:
 
-- Every paid booking offering requires both a positive deposit amount and a positive full price.
+- Every paid bookable service requires both a positive deposit amount and a positive full price.
 - The deposit amount must be less than the full price.
 - Do not configure a service-level payment mode. The purchaser chooses deposit, full payment, or a custom amount at booking time.
 - Custom purchaser-entered amounts are valid only when they are greater than the deposit amount and less than the full price.
 - Legacy deposit/full product references are migration-only and must not be used for active booking checkout setup.
 
-After publishing `bookingSettings` or `bookingOffering`, verify the Sanity webhook refreshes `/booking` in the target environment.
+After publishing `bookingSettings` or `service`, verify the Sanity webhook refreshes `/booking` in the target environment.
 
 ## 8. Square Service Booking Setup
 
@@ -370,7 +370,7 @@ Complete staging smoke before production handoff.
 ### Sanity And Privacy
 
 - [ ] Publishing `bookingSettings` refreshes `/booking`.
-- [ ] Publishing `bookingOffering` refreshes `/booking`.
+- [ ] Publishing `service` refreshes `/booking`.
 - [ ] No new checkout, booking, form, marketing, consent, payment, or training private records are written to Sanity.
 - [ ] Evidence is redacted and excludes secrets, PII, payment tokens, raw webhook bodies, and full connection strings.
 

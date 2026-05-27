@@ -22,7 +22,7 @@ async function mockProductsPage(page: Page): Promise<void> {
             <main>
               <h1>Products</h1>
               <p>Discover our curated selection</p>
-              <section class="card-white">
+              <section data-testid="product-card">
                 <h3>Lash Cleanser</h3>
                 <button id="add">Add to Cart</button>
               </section>
@@ -182,7 +182,7 @@ async function addFirstProductToCart(page: Page): Promise<string> {
   const addButton = page.getByRole("button", { name: /add to cart/i }).first();
   await expect(addButton).toBeVisible();
 
-  const productCard = addButton.locator("xpath=ancestor::*[contains(@class, 'card-white')][1]");
+  const productCard = addButton.locator("xpath=ancestor::*[@data-testid='product-card'][1]");
   const productTitle = await productCard.locator("h3").innerText();
 
   await addButton.click();

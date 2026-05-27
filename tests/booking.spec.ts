@@ -161,16 +161,12 @@ test.describe('Booking route flows', () => {
     await expect(page.getByRole('heading', { name: /page not found/i })).toBeVisible();
   });
 
-  test('handles legacy service links without a test-provided redirect', async ({ page }) => {
+  test('redirects legacy service links to the canonical service booking route', async ({ page }) => {
     await page.goto(`/booking?offeringSlug=${SERVICE_SLUG}`);
 
-    if (new URL(page.url()).pathname === `/services/${SERVICE_SLUG}/booking`) {
-      await expect(page).toHaveURL(new RegExp(`/services/${SERVICE_SLUG}/booking$`));
-      return;
-    }
-
-    await expect(page).toHaveURL(`/booking?offeringSlug=${SERVICE_SLUG}`);
-    await expect(page.getByRole('heading', { name: /page not found/i })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/services/${SERVICE_SLUG}/booking$`));
+    await expect(page.getByText(/book appointment/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: /select time/i })).toBeVisible();
   });
 
   test('rejects malformed legacy booking query shapes without redirecting', async ({ page }) => {
@@ -180,10 +176,11 @@ test.describe('Booking route flows', () => {
     await expect(page.getByRole('heading', { name: /page not found/i })).toBeVisible();
   });
 
-  test('shows not found for bare legacy booking route', async ({ page }) => {
+  test('renders the canonical booking route', async ({ page }) => {
     await page.goto('/booking');
 
-    await expect(page.getByRole('heading', { name: /page not found/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /select service/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /page not found/i })).toHaveCount(0);
   });
 
   test('uses a mocked service shell to exercise booking availability, hold, and Square checkout contracts', async ({ page }) => {
@@ -209,9 +206,9 @@ test.describe('Booking route flows', () => {
       expect(url.searchParams.get('paymentId')).toBe('mock-square-payment-1');
 
       await route.fulfill({
-        status: 302,
-        headers: { location: '/booking/confirmation?payment=paid_calendar_pending' },
-        body: '',
+        status: 200,
+        contentType: 'text/html',
+        body: `<!doctype html><html><body><script>window.location.replace('/booking/confirmation?payment=paid_calendar_pending');</script></body></html>`,
       });
     });
 

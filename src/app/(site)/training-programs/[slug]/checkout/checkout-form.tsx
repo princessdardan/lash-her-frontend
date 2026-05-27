@@ -306,7 +306,7 @@ export function CheckoutForm({
             id="terms"
             checked={acknowledged}
             onChange={(e) => setAcknowledged(e.target.checked)}
-            className="mt-1 h-4 w-4 rounded border-lh-neutral/30 text-brand-red focus:ring-brand-red"
+            className="mt-1 h-4 w-4 rounded border-lh-neutral/30 text-lh-primary focus:ring-lh-primary"
           />
           <div className="grid gap-1.5 leading-none">
             <Label

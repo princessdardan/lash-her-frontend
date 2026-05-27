@@ -9,7 +9,7 @@ The Vercel staging subdomain must target the `staging` branch in the frontend re
 https://github.com/princessdardan/lash-her-frontend
 ```
 
-Do not create or push deployment branches to `https://github.com/princessdardan/lash-her`. In local checkouts, verify remotes with `git remote -v` before pushing. This workspace may contain a legacy or planning remote named `origin`; use the `frontend` remote from the repository root:
+Do not create or push deployment branches to `https://github.com/princessdardan/lash-her`. In local checkouts, verify remotes with `git remote -v` before pushing. Use the `origin` remote from the repository root:
 
 ```bash
 npm run git:push-staging
@@ -34,7 +34,7 @@ cd /Users/dardan/workspace/lash-her-frontend
   - `NEXT_PUBLIC_SANITY_DATASET`
   - `NEXT_PUBLIC_SANITY_API_VERSION`
 - The Sanity project ID found in `sanity.cli.ts` is `3auncj84`.
-- `sanity.cli.ts` currently hardcodes the CLI dataset to `production`.
+- `sanity.cli.ts` targets `NEXT_PUBLIC_SANITY_DATASET` and refuses production schema operations unless `SANITY_SCHEMA_DEPLOY_TARGET=production` is set.
 - The source schema includes booking, commerce, and private-data boundary types, including `bookingSettings` as a singleton.
 
 Important distinction: the Sanity Studio does not contain the content. The Studio is the editing application and schema code. Content lives in a Sanity Content Lake dataset. Copying production into staging means copying the production dataset into `staging-2026-05-10`; deploying Studio/schema code is a separate step.
@@ -59,6 +59,7 @@ Before proceeding, confirm you have:
   - `NEXT_PUBLIC_SANITY_PROJECT_ID`
   - `NEXT_PUBLIC_SANITY_DATASET`
   - `NEXT_PUBLIC_SANITY_API_VERSION`
+  - `SANITY_API_READ_TOKEN`
   - `SANITY_WRITE_TOKEN`
   - `SANITY_WEBHOOK_SECRET`
   - `RESEND_API_KEY`
@@ -84,6 +85,7 @@ Sanity tokens must be managed with strict isolation and rotation policies. If pl
 
 | Token | Purpose | Environment | Min. Role | Owner | Rotation |
 | :--- | :--- | :--- | :--- | :--- | :--- |
+| `SANITY_API_READ_TOKEN` | Draft preview and Presentation Tool read access | Production/Staging | Viewer | Dardan | Quarterly |
 | `SANITY_WRITE_TOKEN` | Server-side mutations and migrations | Production/Staging | Editor | Dardan | Quarterly |
 | `SANITY_FORM_TOKEN` | Legacy/conditional Sanity submission writes only, if retained | Production/Staging | Editor | Dardan | Quarterly |
 | `SANITY_WEBHOOK_SECRET` | Webhook HMAC verification | Production/Staging | N/A | Dardan | Quarterly |
@@ -231,6 +233,7 @@ Configure staging-only private secrets separately:
 
 ```env
 SANITY_WRITE_TOKEN=<staging-capable-write-token>
+SANITY_API_READ_TOKEN=<staging-capable-read-token>
 SANITY_WEBHOOK_SECRET=<staging-webhook-secret>
 GOOGLE_CLIENT_ID=<staging-google-client-id>
 GOOGLE_CLIENT_SECRET=<staging-google-client-secret>
@@ -301,6 +304,7 @@ cd /Users/dardan/workspace/lash-her-frontend
 NEXT_PUBLIC_SANITY_PROJECT_ID=3auncj84 \
 NEXT_PUBLIC_SANITY_DATASET=production \
 NEXT_PUBLIC_SANITY_API_VERSION=2026-03-24 \
+SANITY_SCHEMA_DEPLOY_TARGET=production \
 npx sanity schema deploy --workspace default
 ```
 
@@ -357,7 +361,7 @@ Example:
 ```bash
 npx sanity dataset export staging-2026-05-10 ./booking-content.tar.gz \
   --project-id 3auncj84 \
-  --types bookingSettings,bookingOffering,service,product,trainingProgram
+  --types bookingSettings,service,product,trainingProgram
 
 npx sanity dataset import ./booking-content.tar.gz production \
   --project-id 3auncj84 \
@@ -386,33 +390,18 @@ npx sanity dataset import ./staging-export.tar.gz production \
 
 ## Recommended Change to Make Before Heavy Staging Work
 
-`sanity.cli.ts` currently points CLI operations at `production` by default:
+`sanity.cli.ts` reads `NEXT_PUBLIC_SANITY_DATASET` and refuses the production dataset unless the operator also sets `SANITY_SCHEMA_DEPLOY_TARGET=production`:
 
 ```ts
 export default defineCliConfig({
   api: {
     projectId: "3auncj84",
-    dataset: "production",
+    dataset: DATASET,
   },
 });
 ```
 
-This is risky because a missed flag can operate on production.
-
-Recommended update:
-
-```ts
-import { defineCliConfig } from "sanity/cli";
-
-export default defineCliConfig({
-  api: {
-    projectId: process.env.NEXT_PUBLIC_SANITY_PROJECT_ID || "3auncj84",
-    dataset: process.env.NEXT_PUBLIC_SANITY_DATASET || "production",
-  },
-});
-```
-
-Even after this change, prefer explicit environment variables in release commands so the target dataset is visible in command history.
+Prefer explicit environment variables in release commands so the target dataset and production confirmation are visible in command history.
 
 ## Operational Guardrails
 
@@ -526,7 +515,7 @@ Configure separate webhooks for staging and production in the Sanity project man
 | Project | `3auncj84` | `3auncj84` |
 | Dataset | `staging-2026-05-10` | `production` |
 | Trigger | Published document create, update, and delete events | Published document create, update, and delete events |
-| Filter | `_type in ["homePage", "contactPage", "galleryPage", "trainingPage", "trainingProgramsPage", "trainingProgram", "product", "service", "bookingOffering", "globalSettings", "mainMenu", "bookingSettings"]` | Same as staging |
+| Filter | `_type in ["homePage", "contactPage", "galleryPage", "trainingPage", "trainingProgramsPage", "trainingProgram", "product", "service", "globalSettings", "mainMenu", "bookingSettings"]` | Same as staging |
 | Projection | `{ _type }` | `{ _type }` |
 | Method | `POST` | `POST` |
 | Secret | Staging `SANITY_WEBHOOK_SECRET` | Production `SANITY_WEBHOOK_SECRET` |
@@ -547,8 +536,7 @@ The revalidation route maps Sanity `_type` values to Next.js cache tags. Loader 
 | `trainingProgramsPage` | `trainingProgramsPage`, `trainingProgram` | `/training-programs` and training program cards (`/training` redirects here) |
 | `trainingProgram` | `trainingProgram` | `/training-programs/[slug]` and native training checkout reads |
 | `product` | `product` | `/products`, `/products/[slug]`, and canonical product checkout reads |
-| `service` | `service` | `/services`, `/services/[slug]`, and booking offering cards |
-| `bookingOffering` | `bookingOffering` | `/booking`, `/services`, and paid appointment checkout configuration |
+| `service` | `service` | `/services`, `/services/[slug]`, `/booking`, and paid appointment checkout configuration |
 | `globalSettings` | `global` | Header, footer, metadata |
 | `mainMenu` | `menu` | Navigation |
 | `bookingSettings` | `bookingSettings` | `/booking` availability configuration |

@@ -40,9 +40,11 @@ Generate a migration after intentional schema changes:
 npm run db:generate
 ```
 
-Apply migrations to the database pointed to by `DATABASE_URL`:
+Apply migrations to the database pointed to by `DATABASE_URL`, after setting the target guard variables:
 
 ```bash
+PRIVATE_DB_MIGRATION_TARGET=staging \
+PRIVATE_DB_MIGRATION_HOST=<verified-host> \
 npm run db:migrate
 ```
 
@@ -54,6 +56,8 @@ If `DATABASE_URL` is not already loaded, load it through a local `.env.local`, V
 
 - `drizzle.config.ts` for `npm run db:generate`.
 - `scripts/migrate-private-db.ts` for `npm run db:migrate`.
+
+The migration script refuses to run unless `PRIVATE_DB_MIGRATION_TARGET` is `local`, `staging`, or `production`, and `PRIVATE_DB_MIGRATION_HOST` exactly matches the parsed `DATABASE_URL` host. Production also requires `PRIVATE_DB_MIGRATION_CONFIRM=production` after backup/PITR and approval checks.
 
 Use separate staging and production database URLs. For Neon, confirm the project, branch, and host label in the Neon dashboard before running migrations. The checkout runtime expects the pooled `DATABASE_URL`; do not switch runtime code to `DATABASE_URL_UNPOOLED`.
 
@@ -82,6 +86,8 @@ For migrations that touch private operational data, verify the changed SQL creat
 3. Run:
 
    ```bash
+   PRIVATE_DB_MIGRATION_TARGET=staging \
+   PRIVATE_DB_MIGRATION_HOST=<verified-staging-host> \
    npm run db:migrate
    ```
 
@@ -118,6 +124,9 @@ Production migration can proceed only after staging has passed.
 6. Run:
 
    ```bash
+   PRIVATE_DB_MIGRATION_TARGET=production \
+   PRIVATE_DB_MIGRATION_HOST=<verified-production-host> \
+   PRIVATE_DB_MIGRATION_CONFIRM=production \
    npm run db:migrate
    ```
 

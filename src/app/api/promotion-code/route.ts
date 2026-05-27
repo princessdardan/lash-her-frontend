@@ -35,7 +35,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   return createPromotionCodePostHandler({
     getProductsByIds: loaders.getProductsByIds,
     getPromotionCode: loaders.getPromotionCode,
-    getTrainingProgramBySlug: loaders.getTrainingProgramBySlug,
+    getTrainingProgramBySlug: (slug) => loaders.getTrainingProgramBySlug(slug, { mode: "published", stega: false }),
   })(body);
 }
 

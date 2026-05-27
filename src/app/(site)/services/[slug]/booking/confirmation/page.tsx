@@ -73,7 +73,7 @@ export default async function ServiceBookingConfirmationPage({
 
               <div className="space-y-6">
                 <p className="text-lh-shadow/80">{nextSteps}</p>
-                <Link href="/services" className="btn-primary-red inline-block">
+                <Link href="/services" className="inline-flex items-center justify-center rounded-full bg-lh-primary px-7 py-4 font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-white transition-colors hover:bg-lh-accent">
                   Explore Services
                 </Link>
               </div>

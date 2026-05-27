@@ -225,7 +225,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   ]);
 
   return createTrainingCheckoutPostHandler({
-    getTrainingProgramBySlug: loaders.getTrainingProgramBySlug,
+    getTrainingProgramBySlug: (slug) => loaders.getTrainingProgramBySlug(slug, { mode: "published", stega: false }),
     getPromotionCode: loaders.getPromotionCode,
     createHelcimInvoice: gateway.createInvoice,
     initializeHelcimPay: gateway.initializePay,

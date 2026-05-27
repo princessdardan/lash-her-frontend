@@ -8,13 +8,14 @@ import { useHeaderContext } from "../custom/layouts/header-wrapper";
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
   SheetTrigger,
   SheetFooter,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LashHerLogo } from "./logo";
 import type { TMainMenuItem, TMenuDirectLink, TMenuDropdown } from "@/types";
 import { useProductCart } from "@/components/commerce/product-cart-provider";
@@ -50,6 +51,22 @@ export function MobileNavigation({ ctaButton, menuItems = [], showCartButton = t
     setExpandedItem(expandedItem === key ? null : key);
   };
 
+  useEffect(() => {
+    const desktopQuery = window.matchMedia("(min-width: 768px)");
+
+    const closeOnDesktop = () => {
+      if (!desktopQuery.matches) return;
+
+      setOpen(false);
+      setExpandedItem(null);
+    };
+
+    closeOnDesktop();
+    desktopQuery.addEventListener("change", closeOnDesktop);
+
+    return () => desktopQuery.removeEventListener("change", closeOnDesktop);
+  }, []);
+
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
@@ -67,11 +84,14 @@ export function MobileNavigation({ ctaButton, menuItems = [], showCartButton = t
       </SheetTrigger>
       <SheetContent side="right" className="w-[300px] sm:w-[400px] flex flex-col h-full">
         <SheetHeader>
-          <SheetTitle className="text-brand-red">
+          <SheetTitle className="text-lh-primary">
             <Link href="/" onClick={() => setOpen(false)}>
               <LashHerLogo className="mx-auto w-46 h-46" />
             </Link>
           </SheetTitle>
+          <SheetDescription className="sr-only">
+            Mobile navigation links, cart access, and booking shortcut.
+          </SheetDescription>
         </SheetHeader>
         <nav className="flex flex-col gap-2 flex-1 overflow-y-auto py-4" aria-label="Mobile navigation">
           {menuItems.map((item) => {
@@ -203,11 +223,11 @@ export function MobileNavigation({ ctaButton, menuItems = [], showCartButton = t
               ) : null}
             </Button>
           ) : null}
-          <Link href={ctaButton.href} className="w-full" onClick={() => setOpen(false)}>
-            <Button variant="primary" className="w-full font-sans font-bold text-base px-4 py-6">
+          <Button asChild variant="primary" className="w-full font-sans font-bold text-base px-4 py-6">
+            <Link href={ctaButton.href} onClick={() => setOpen(false)}>
               {ctaButton.label}
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         </SheetFooter>
       </SheetContent>
     </Sheet>

@@ -1,0 +1,2 @@
+CREATE INDEX "appointment_holds_checkout_order_public_id_idx" ON "appointment_holds" USING btree ("checkout_order_public_id");--> statement-breakpoint
+CREATE INDEX "checkout_orders_square_correlation_id_idx" ON "checkout_orders" USING btree (("provider_metadata"->>'correlationId')) WHERE "checkout_orders"."payment_provider" = 'square' AND "checkout_orders"."provider_metadata"->>'correlationId' IS NOT NULL;

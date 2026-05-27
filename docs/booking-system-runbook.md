@@ -8,7 +8,7 @@ Use this runbook when operating, smoke testing, or troubleshooting Lash Her book
 
 | System | Operator responsibility | Must not become |
 | --- | --- | --- |
-| Sanity | Public booking copy, booking settings, booking offerings, native payment fields, cache revalidation | Storage for PII, payment state, holds, booking history, or transaction records |
+| Sanity | Public booking copy, booking settings, bookable services, native payment fields, cache revalidation | Storage for PII, payment state, holds, booking history, or transaction records |
 | Private Postgres | Holds, checkout orders, payment events, appointment state, training enrollments, reconciliation data | Public CMS or browser-readable data source |
 | Upstash Redis | Google Calendar OAuth refresh token, calendar locks, idempotency keys, short-lived contention locks | Canonical payment or booking storage |
 | Google Calendar API | Staff source of truth for final service booking events and busy intervals | Payment gate or Appointment Schedule engine |
@@ -24,7 +24,7 @@ If a record contains customer contact data, payment identifiers, hold state, or 
 ### Public Booking Entry
 
 1. Customer opens `/booking`.
-2. The page loads Sanity `bookingSettings` and active `bookingOffering` records.
+2. The page loads Sanity `bookingSettings` and active `service` records.
 3. The browser requests availability from `/api/booking/availability`.
 4. The server builds slots from configured availability marker events, Google Calendar busy intervals, private active holds, lead time, horizon, duration, intervals, and buffers.
 5. Appointment confirmation does not happen from `/api/booking/create`; that route is intentionally disabled and returns the secure-payment-required error.
@@ -33,7 +33,7 @@ If a record contains customer contact data, payment identifiers, hold state, or 
 
 ### Paid Service Booking With Hold And Square Payment
 
-1. Customer selects a paid booking offering and slot.
+1. Customer selects a paid bookable service and slot.
 2. `/api/booking/holds` revalidates the slot and creates a private hold with an immutable snapshot of the selected deposit/full/custom-partial payment amount.
 3. `/api/booking/checkout` initializes Square hosted checkout from the hold snapshot, creates or updates a pending private order, and marks the hold `payment_pending`.
 4. The browser redirects to Square. The Square return URL is not proof of payment.
@@ -75,7 +75,7 @@ Run these checks for staging release validation, production launch windows, and 
 ### Public Booking Entry Smoke
 
 - [ ] Open `/booking` on the target environment and confirm the page renders.
-- [ ] Confirm active booking offerings appear in the intended order.
+- [ ] Confirm active bookable services appear in the intended order.
 - [ ] Confirm appointment availability loads from the connected calendar.
 - [ ] Confirm direct `/api/booking/create` requests reject with the secure-payment-required error.
 - [ ] Confirm the booking marketing opt-in and no-opt-in paths create private audit evidence and do not create Sanity submission documents.
@@ -105,7 +105,7 @@ Run these checks for staging release validation, production launch windows, and 
 - [ ] Publish a small `bookingSettings` edit in the target Studio.
 - [ ] Confirm `/api/revalidate` receives a signed webhook with projection `{ _type }`.
 - [ ] Confirm the `bookingSettings` cache tag is expired and `/booking` updates.
-- [ ] Publish or update one `bookingOffering` record and confirm `/booking` reflects the change.
+- [ ] Publish or update one `service` record and confirm `/booking` reflects the change.
 
 ## Reconciliation Watchlist
 
@@ -133,7 +133,7 @@ Check:
 
 - Sanity public env vars and dataset target.
 - `bookingSettings` singleton exists and is published.
-- At least one active `bookingOffering` exists for the expected booking type.
+- At least one active bookable `service` exists for the expected booking type.
 - Sanity webhook/revalidation logs if the content was just published.
 - Vercel logs for loader or env validation errors.
 

@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import { draftMode } from "next/headers";
 import type { ReactNode } from "react";
 import { loaders } from "@/data/loaders";
 import { Bebas_Neue, Inter } from "next/font/google";
+import { VisualEditing } from "next-sanity/visual-editing";
 import "./globals.css";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
@@ -9,7 +11,7 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],
-  weight: ["100", "200" ,"300", "400", "500", "600", "700", "800", "900"],
+  weight: ["400", "500", "600", "700"],
   display: "swap",
 });
 
@@ -61,12 +63,15 @@ export default async function RootLayout({
 }: Readonly<{
   children: ReactNode;
 }>) {
+  const { isEnabled } = await draftMode();
+
   return (
     <html lang="en">
       <body
         className={`${bebasNeue.variable} ${inter.variable} antialiased`}
       >
         {children}
+        {isEnabled && <VisualEditing />}
         <SpeedInsights />
         <Analytics />
       </body>

@@ -59,7 +59,6 @@ export const structure: StructureResolver = (S) =>
                 .title("Booking Settings")
                 .id("bookingSettings")
                 .child(S.document().schemaType("bookingSettings").documentId("bookingSettings")),
-              S.documentTypeListItem("bookingMarketingOptIn").title("Marketing Opt-ins"),
             ])
         ),
       S.divider(),
@@ -75,18 +74,6 @@ export const structure: StructureResolver = (S) =>
               S.documentTypeListItem("promotionCode").title("Promotion Codes"),
               S.documentTypeListItem("service").title("Services"),
               S.documentTypeListItem("trainingProgram").title("Training Programs"),
-            ])
-        ),
-      // ---- SUBMISSIONS ----
-      S.listItem()
-        .title("Submissions")
-        .child(
-          S.list()
-            .title("Submissions")
-            .items([
-              S.documentTypeListItem("generalInquiry").title("General Inquiries"),
-              S.documentTypeListItem("contactForm").title("Training Contact Forms"),
-              S.documentTypeListItem("contactPopupSubmission").title("Popup Submissions"),
             ])
         ),
     ]);

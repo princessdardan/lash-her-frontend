@@ -21,11 +21,11 @@
 
 - Sanity project is `3auncj84`; API version default is `2026-03-24`.
 - Dataset rules are enforced by `scripts/validate-sanity-env.mjs`: preview/staging expects `NEXT_PUBLIC_SANITY_DATASET=staging-2026-05-10`; production expects `production`.
-- `sanity.cli.ts` targets the `production` dataset by default. Be explicit before deploying schemas or operating on datasets.
+- `sanity.cli.ts` targets `NEXT_PUBLIC_SANITY_DATASET` and refuses production schema operations unless `SANITY_SCHEMA_DEPLOY_TARGET=production` is set.
 - Payment mock mode is server-only: `PAYMENT_GATEWAY_MODE=mock` is for local/dev flows and is rejected in production. Request controls are `x-lash-payment-mock-scenario` and `mockPaymentScenario` only when mock mode is enabled.
 - Service bookings use Square only when `SERVICE_BOOKING_SQUARE_ENABLED=true`; product and training checkout use Helcim. Helcim webhook URL is `/api/webhooks/card-transactions` and must not contain `helcim`.
 - Booking OAuth setup uses `/api/booking/oauth/start?secret=<BOOKING_ADMIN_SETUP_SECRET>`; treat that URL as sensitive and do not paste it in tickets or chat.
-- Before branch creation, push, or PR, verify `git remote -v`; canonical remote is `https://github.com/princessdardan/lash-her-frontend.git`. `npm run git:push-staging` expects a remote named `frontend` pointing there.
+- Before branch creation, push, or PR, verify `git remote -v`; canonical remote is `https://github.com/princessdardan/lash-her-frontend.git`. `npm run git:push-staging` expects the `origin` remote to point there.
 
 ## Code paths that matter
 

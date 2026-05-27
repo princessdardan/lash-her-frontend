@@ -57,7 +57,8 @@ describe("training schedule route contract", () => {
     assert.match(schedulePageSource, /function SafeErrorShell\(\{ programTitle \}: \{ programTitle: string \}\) \{/);
     assert.match(schedulePageSource, /<h1 className="section-heading mb-2">Scheduling Unavailable<\/h1>/);
     assert.match(schedulePageSource, /We could not verify this training scheduling link\. It may be invalid, expired, or already used\./);
-    assert.match(schedulePageSource, /<Link\s+href="\/contact"\s+className="btn-primary-red inline-block"\s*>/);
+    assert.match(schedulePageSource, /<Link\s+href="\/contact"/);
+    assert.doesNotMatch(schedulePageSource, /btn-primary-red/);
     assert.doesNotMatch(schedulePageSource, /orderId/);
     assert.doesNotMatch(schedulePageSource, /checkoutEmail/);
   });

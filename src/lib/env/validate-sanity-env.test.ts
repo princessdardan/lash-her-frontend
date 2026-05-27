@@ -17,6 +17,7 @@ const publicSanityEnv = {
 
 const launchEnv = {
   ...publicSanityEnv,
+  SANITY_API_READ_TOKEN: "sanity-api-read-token",
   SANITY_WRITE_TOKEN: "sanity-write-token",
   SANITY_WEBHOOK_SECRET: "sanity-webhook-secret",
   RESEND_API_KEY: "resend-api-key",
@@ -158,6 +159,21 @@ test("fails launch environment missing a critical variable", () => {
 
   assert.notEqual(result.status, 0);
   assert.match(result.combinedOutput, /Missing env var: RESEND_API_KEY/);
+});
+
+test("fails launch environment missing the Sanity API read token", () => {
+  const env: Record<string, string> = {
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+  };
+
+  delete env.SANITY_API_READ_TOKEN;
+
+  const result = runValidator(env);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.combinedOutput, /Missing env var: SANITY_API_READ_TOKEN/);
 });
 
 test("treats whitespace-only launch variables as missing", () => {

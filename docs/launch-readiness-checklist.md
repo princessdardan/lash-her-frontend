@@ -44,7 +44,6 @@ For each document type, verify the publish flow: Update content in Studio -> Pub
 | | | `trainingProgram` | | | `trainingProgram` | `/training-programs/[slug]` | |
 | | | `product` | | | `product` | `/products`, `/products/[slug]` | |
 | | | `service` | | | `service` | `/services`, `/services/[slug]`, `/booking?offering=<slug>` | |
-| | | `bookingOffering` | | | `bookingOffering` | `/booking?offering=<slug>` | |
 | | | `bookingSettings` | | | `bookingSettings` | `/booking` | |
 
 ## Service Integration Checks

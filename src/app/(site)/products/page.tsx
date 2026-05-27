@@ -39,14 +39,18 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps):
   const sort = getSort(params.sort);
   const page = firstParam(params.page)?.trim() || undefined;
 
-  const [pageData, products] = await Promise.all([
+  const [pageData, collections, filterAttributes, products] = await Promise.all([
     loaders.getProductsPageData(),
+    loaders.getProductsPageCollections(),
+    loaders.getProductFilterAttributes(),
     loaders.getProducts({ collection, attributes, sort }),
   ]);
 
   return (
     <ProductCatalogShell
       pageData={pageData}
+      collections={collections}
+      filterAttributes={filterAttributes}
       products={products}
       query={{ collection, attributes, sort, page }}
     />

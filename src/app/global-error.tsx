@@ -1,7 +1,8 @@
 "use client";
+
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Home, RefreshCw, AlertTriangle } from "lucide-react";
+import { AlertTriangle, Home, RefreshCw } from "lucide-react";
+
 import { FallbackHeader } from "@/components/custom/layouts/fallback-header";
 import { Button } from "@/components/ui/button";
 
@@ -33,17 +34,14 @@ const styles = {
   errorTitle: "font-bold mb-2",
 };
 
-interface IGlobalError {
+interface GlobalErrorProps {
   error: Error & { digest?: string };
   reset: () => void;
 }
 
-export default function GlobalError({ error, reset }: IGlobalError) {
-  const pathname = usePathname();
-  const isHomePage = pathname === "/";
-
+export default function GlobalError({ error, reset }: GlobalErrorProps) {
   return (
-    <html>
+    <html lang="en">
       <body>
         <FallbackHeader
           header={{
@@ -62,7 +60,6 @@ export default function GlobalError({ error, reset }: IGlobalError) {
         />
         <div className={styles.container}>
           <div className={styles.content}>
-            {/* Large Error Text */}
             <div className={styles.textSection}>
               <h1 className={styles.headingError}>Global Error</h1>
               <div className={styles.headingContainer}>
@@ -74,7 +71,6 @@ export default function GlobalError({ error, reset }: IGlobalError) {
               </div>
             </div>
 
-            {/* Illustration */}
             <div className={styles.illustrationContainer}>
               <div className={styles.illustration}>
                 <div className={styles.errorCircle}>
@@ -86,7 +82,6 @@ export default function GlobalError({ error, reset }: IGlobalError) {
               </div>
             </div>
 
-            {/* Action Buttons */}
             <div className={styles.buttonContainer}>
               <Button
                 variant="accent"
@@ -100,16 +95,14 @@ export default function GlobalError({ error, reset }: IGlobalError) {
                 </span>
               </Button>
 
-              {!isHomePage && (
-                <Button asChild variant="ghost" size="lg" className={styles.outlineButton}>
-                  <Link href="/">
-                    <span className={styles.buttonContent}>
-                      <Home className={styles.buttonIcon} />
-                      Go Home
-                    </span>
-                  </Link>
-                </Button>
-              )}
+              <Button asChild variant="ghost" size="lg" className={styles.outlineButton}>
+                <Link href="/">
+                  <span className={styles.buttonContent}>
+                    <Home className={styles.buttonIcon} />
+                    Go Home
+                  </span>
+                </Link>
+              </Button>
             </div>
 
             {process.env.NODE_ENV === "development" && (

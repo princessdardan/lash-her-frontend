@@ -236,7 +236,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   return createTrainingSquareInvoicePostHandler({
     createPendingSquareInvoiceOrder: orderStore.createPendingSquareInvoiceOrder,
     getPromotionCode: loaders.getPromotionCode,
-    getTrainingProgramBySlug: loaders.getTrainingProgramBySlug,
+    getTrainingProgramBySlug: (slug) => loaders.getTrainingProgramBySlug(slug, { mode: "published", stega: false }),
     isEnabled: envModule.isTrainingAfterpaySquareInvoiceEnabled,
     locationId: runtimeEnv.locationId,
     recordSquareInvoicePublication: orderStore.recordSquareInvoicePublication,

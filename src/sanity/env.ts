@@ -19,6 +19,13 @@ export function getWebhookSecret(): string {
   );
 }
 
+export function getSanityApiReadToken(): string {
+  return assertValue(
+    process.env.SANITY_API_READ_TOKEN,
+    "Missing env var: SANITY_API_READ_TOKEN"
+  );
+}
+
 export function getBookingEnv(): {
   googleClientId: string;
   googleClientSecret: string;

@@ -43,7 +43,7 @@ export default async function ServiceBookingPage({
   };
 
   return (
-    <main className="min-h-screen bg-lh-neutral-2 py-12 lg:py-24">
+    <section className="min-h-screen bg-lh-neutral-2 py-12 lg:py-24" aria-label="Service booking">
       <div className="content-container max-w-5xl mx-auto">
         <div className="mb-8">
           <Link href={`/services/${slug}`} className="text-lh-primary hover:underline font-medium flex items-center gap-2">
@@ -75,6 +75,6 @@ export default async function ServiceBookingPage({
           services={services}
         />
       </div>
-    </main>
+    </section>
   );
 }

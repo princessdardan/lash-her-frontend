@@ -1,8 +1,10 @@
 'use client'
 
 import { defineConfig } from "sanity";
+import { presentationTool } from "sanity/presentation";
 import { structureTool } from "sanity/structure";
 import { schemaTypes } from "./schemas";
+import { resolve } from "./presentation/resolve";
 import { structure } from "./structure";
 import { apiVersion, dataset, projectId } from "./env";
 
@@ -28,6 +30,16 @@ export default defineConfig({
   dataset,
   apiVersion,
   plugins: [
+    presentationTool({
+      resolve,
+      previewUrl: {
+        initial: "/",
+        previewMode: {
+          disable: "/api/draft-mode/disable",
+          enable: "/api/draft-mode/enable",
+        },
+      },
+    }),
     structureTool({ structure }),
   ],
   schema: {

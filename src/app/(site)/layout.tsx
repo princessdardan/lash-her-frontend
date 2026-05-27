@@ -12,16 +12,6 @@ const jsonLd = {
   "name": "Lash Her by Nataliea",
   "description": "Elevating beauty through bespoke lash artistry and professional education.",
   "url": "https://lashher.com",
-  "image": "https://lashherbynataliea.com/logo.png", // TODO: replace with actual logo URL
-  "telephone": "+1-000-000-0000", // TODO: replace with actual phone
-  "email": "info@lashherbynataliea.com", // TODO: replace with actual email
-  "address": {
-    "@type": "PostalAddress",
-    "addressLocality": "", // TODO: fill in city
-    "addressRegion": "", // TODO: fill in state
-    "addressCountry": "US",
-  },
-  "openingHoursSpecification": [], // TODO: populate from CMS schedule data
   "makesOffer": [
     {
       "@type": "Offer",
@@ -40,7 +30,7 @@ const jsonLd = {
       },
     },
   ],
-  "priceRange": "$$", // TODO: adjust as needed
+  "priceRange": "$$",
 };
 
 export default async function SiteLayout({
@@ -48,13 +38,15 @@ export default async function SiteLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const globalData = await loaders.getGlobalData();
-  const mainMenuData = await loaders.getMainMenuData();
-  const products = await loaders.getProducts();
+  const [globalData, mainMenuData] = await Promise.all([
+    loaders.getGlobalData(),
+    loaders.getMainMenuData(),
+  ]);
 
   return (
     <>
       <script
+        id="lash-her-local-business-json-ld"
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
@@ -71,7 +63,7 @@ export default async function SiteLayout({
         </MainWrapper>
         <Footer data={globalData?.footer} />
         <ContactPopup settings={globalData?.contactPopup} />
-        <CartSheet products={products} />
+        <CartSheet />
       </ProductCartProvider>
     </>
   );

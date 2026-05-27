@@ -25,26 +25,26 @@ function HeaderButton({ href, label, isPrimary }: { href: string; label: string;
   
   if (isPrimary) {
     return (
-      <Link href={href}>
-        <Button variant="primary" className={cn(
+      <Button asChild variant="primary" className={cn(
           "font-sans font-bold text-sm px-6 py-2 transition-all duration-300",
           isActive ? "border border-lh-primary shadow-[0_4px_14px_-2px_rgba(102,57,118,0.3)] hover:bg-lh-primary/90 hover:shadow-[0_6px_20px_-2px_rgba(102,57,118,0.4)]" : "border border-transparent"
         )}>
+        <Link href={href}>
           {label}
-        </Button>
-      </Link>
+        </Link>
+      </Button>
     );
   }
 
   return (
-    <Link href={href}>
-      <Button variant="ghost" className={cn(
+    <Button asChild variant="ghost" className={cn(
         "font-sans font-bold text-sm px-4 py-2 transition-all duration-300",
         isActive ? "bg-lh-neutral/50 border border-lh-line text-lh-shadow hover:bg-lh-neutral hover:border-lh-light hover:text-lh-primary shadow-sm" : "border border-transparent text-lh-white hover:text-lh-light hover:bg-white/10"
       )}>
+      <Link href={href}>
         {label}
-      </Button>
-    </Link>
+      </Link>
+    </Button>
   );
 }
 

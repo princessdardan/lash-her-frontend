@@ -26,8 +26,8 @@ const helperScript = String.raw`
     const revalidatedTags = [];
     const handler = createRevalidatePostHandler({
       getWebhookSecret,
-      parseBody: async (req, secret) => {
-        parseBodyCalls.push({ req, secret });
+      parseBody: async (req, secret, waitForContentLakeEventualConsistency) => {
+        parseBodyCalls.push({ req, secret, waitForContentLakeEventualConsistency });
         return { body, isValidSignature };
       },
       revalidateTag: (tag, profile) => {
@@ -53,6 +53,7 @@ test("Sanity revalidate route revalidates mapped tags for a valid signature", ()
     assert.equal(parseBodyCalls.length, 1);
     assert.equal(parseBodyCalls[0].req, request);
     assert.equal(parseBodyCalls[0].secret, "webhook-secret");
+    assert.equal(parseBodyCalls[0].waitForContentLakeEventualConsistency, true);
     assert.deepEqual(revalidatedTags, [{ tag: "homePage", profile: { expire: 0 } }]);
     await assertEmptyResponseBody(response);
   `);

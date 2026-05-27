@@ -6,7 +6,7 @@ const CANONICAL_URLS = new Set([
   "git@github.com:princessdardan/lash-her-frontend.git",
 ]);
 
-const remoteName = process.argv[2] ?? "frontend";
+const remoteName = process.argv[2] ?? "origin";
 
 function git(args) {
   return execFileSync("git", args, { encoding: "utf8" }).trim();

@@ -16,8 +16,8 @@
     "test:report": "playwright show-report",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate-private-db.ts",
-    "git:verify-remote": "node scripts/verify-git-remote.mjs frontend",
-    "git:push-staging": "npm run git:verify-remote && git push frontend staging"
+    "git:verify-remote": "node scripts/verify-git-remote.mjs origin",
+    "git:push-staging": "npm run git:verify-remote && git push origin staging"
   },
   "dependencies": {
     "@icons-pack/react-simple-icons": "^13.11.1",

@@ -124,8 +124,8 @@ Then open:
 | `npm run test:report` | Opens the last Playwright HTML report. |
 | `npm run db:generate` | Generates Drizzle migrations from schema changes. |
 | `npm run db:migrate` | Applies private database migrations using `DATABASE_URL`. |
-| `npm run git:verify-remote` | Verifies the `frontend` git remote points at the canonical repository. |
-| `npm run git:push-staging` | Verifies the remote, then pushes the `staging` branch to `frontend`. |
+| `npm run git:verify-remote` | Verifies the `origin` git remote points at the canonical repository. |
+| `npm run git:push-staging` | Verifies the remote, then pushes the `staging` branch to `origin`. |
 
 ## Environment and services
 
@@ -144,6 +144,8 @@ Dataset alignment is enforced by `scripts/validate-sanity-env.mjs`:
 - `VERCEL_ENV=production` expects `NEXT_PUBLIC_SANITY_DATASET=production`.
 
 `npm run build` runs this validation before `next build`, so a mismatched dataset can fail the build before Next.js starts compiling.
+
+Draft preview and the Studio Presentation tool require `SANITY_API_READ_TOKEN` so `/api/draft-mode/enable` can validate preview URLs and read draft documents. `/api/draft-mode/disable` exits preview mode.
 
 ### Email
 
@@ -215,13 +217,19 @@ The Studio is embedded at `/studio`, but schemas are source-driven from this rep
 3. Update GROQ projections in `src/data/loaders.ts`.
 4. Update rendering components under `src/components/**` when the content appears on the site.
 5. For new CMS blocks, wire the block into `COMPONENT_REGISTRY` in `src/components/custom/layouts/block-renderer.tsx`.
-6. Deploy the schema with:
+6. Deploy the schema against staging explicitly while iterating:
 
 ```bash
-npx sanity schema deploy
+NEXT_PUBLIC_SANITY_DATASET=staging-2026-05-10 npx sanity schema deploy
 ```
 
-`sanity.cli.ts` targets the `production` dataset by default, so be explicit before schema or dataset operations if you are working against staging.
+For production schema deploys, confirm intent explicitly after review and approval:
+
+```bash
+SANITY_SCHEMA_DEPLOY_TARGET=production NEXT_PUBLIC_SANITY_DATASET=production npx sanity schema deploy
+```
+
+`sanity.cli.ts` refuses to target the production dataset without `SANITY_SCHEMA_DEPLOY_TARGET=production`, so be explicit before schema or dataset operations.
 
 ### Content promotion
 
@@ -309,7 +317,7 @@ Before promoting content or deploying production-critical changes, verify the ta
 - `trainingProgramsPage` -> `/training-programs`
 - `trainingProgram` -> `/training-programs/[slug]`
 - `product` -> `/products/[slug]`
-- `service` / `bookingOffering` -> `/services`, `/services/[slug]`, `/booking?offering=<slug>`
+- `service` -> `/services`, `/services/[slug]`, `/booking?offering=<slug>`
 - `bookingSettings` -> `/booking`
 
 See `docs/launch-readiness-checklist.md` for full smoke evidence requirements.

@@ -8,7 +8,6 @@ import { productsPage } from "./documents/products-page";
 import { globalSettings } from "./documents/global-settings";
 import { mainMenu } from "./documents/main-menu";
 import { bookingSettings } from "./documents/booking-settings";
-import { bookingMarketingOptIn } from "./documents/booking-marketing-opt-in";
 
 // Documents — Collections
 import { product } from "./documents/product";
@@ -16,9 +15,6 @@ import { productCollection } from "./documents/product-collection";
 import { promotionCode } from "./documents/promotion-code";
 import { service } from "./documents/service";
 import { trainingProgram } from "./documents/training-program";
-import { contactForm } from "./documents/contact-form";
-import { generalInquiry } from "./documents/general-inquiry";
-import { contactPopupSubmission } from "./documents/contact-popup-submission";
 
 // Objects — Layout blocks
 import { heroSection } from "./objects/layout/hero-section";
@@ -60,15 +56,11 @@ export const schemaTypes = [
   globalSettings,
   mainMenu,
   bookingSettings,
-  bookingMarketingOptIn,
   product,
   productCollection,
   promotionCode,
   service,
   trainingProgram,
-  contactForm,
-  generalInquiry,
-  contactPopupSubmission,
   // Layout blocks
   heroSection,
   ctaFeaturesSection,

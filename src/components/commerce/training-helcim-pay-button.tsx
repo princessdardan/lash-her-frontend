@@ -4,6 +4,7 @@ import { useState, useEffect, type ReactElement } from "react";
 import Script from "next/script";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { getHelcimPayEventOutcome } from "@/lib/commerce/helcim-pay-events";
 import type { HelcimPayloadValue } from "@/lib/commerce/helcim-types";
 
 declare global {
@@ -24,6 +25,10 @@ interface TrainingHelcimPayButtonProps {
   };
   onPaid: () => void;
 }
+
+const PAYMENT_INCOMPLETE_ERROR = "Payment was not completed. Please try again or use another payment method.";
+const PAYMENT_SCRIPT_ERROR = "Secure payment could not load. Please retry or contact us for help.";
+const HELCIM_PAY_SCRIPT_SRC = "https://secure.helcim.app/helcim-pay/services/start.js";
 
 function isHelcimPayloadValue(value: unknown): value is HelcimPayloadValue {
   return (
@@ -57,6 +62,8 @@ export function TrainingHelcimPayButton({
 }: TrainingHelcimPayButtonProps): ReactElement {
   const router = useRouter();
   const [isScriptReady, setIsScriptReady] = useState(false);
+  const [scriptLoadFailed, setScriptLoadFailed] = useState(false);
+  const [scriptLoadAttempt, setScriptLoadAttempt] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [checkoutToken, setCheckoutToken] = useState<string | null>(null);
@@ -83,16 +90,28 @@ export function TrainingHelcimPayButton({
         return;
       }
 
-      if (dataObj.eventStatus === "ABORTED" || dataObj.eventStatus === "HIDE") {
-        if (window.removeHelcimPayIframe) {
-          window.removeHelcimPayIframe();
-        }
+      const eventOutcome = getHelcimPayEventOutcome(dataObj.eventStatus);
+
+      if (eventOutcome === "ignored") {
+        return;
+      }
+
+      if (eventOutcome === "dismissed") {
+        window.removeHelcimPayIframe?.();
         setCheckoutToken(null);
         setIsLoading(false);
         return;
       }
 
-      if (dataObj.eventStatus === "SUCCESS") {
+      if (eventOutcome === "failed") {
+        window.removeHelcimPayIframe?.();
+        setCheckoutToken(null);
+        setError(PAYMENT_INCOMPLETE_ERROR);
+        setIsLoading(false);
+        return;
+      }
+
+      if (eventOutcome === "success") {
         let eventMessage = dataObj.eventMessage;
         if (typeof eventMessage === "string") {
           try {
@@ -152,9 +171,7 @@ export function TrainingHelcimPayButton({
 
           const result = await res.json() as { orderId?: string; redirectUrl?: string };
 
-          if (window.removeHelcimPayIframe) {
-            window.removeHelcimPayIframe();
-          }
+          window.removeHelcimPayIframe?.();
 
           onPaid();
 
@@ -213,6 +230,7 @@ export function TrainingHelcimPayButton({
         window.appendHelcimPayIframe(data.checkoutToken, true);
       } else {
         setError("Unable to start checkout. Please review your details and try again.");
+        setCheckoutToken(null);
         setIsLoading(false);
       }
     } catch {
@@ -221,26 +239,72 @@ export function TrainingHelcimPayButton({
     }
   };
 
+  const handleRetryScript = () => {
+    setError(null);
+    setScriptLoadFailed(false);
+    setIsScriptReady(false);
+    setScriptLoadAttempt((attempt) => attempt + 1);
+  };
+
+  const buttonLabel = isLoading
+    ? "Processing..."
+    : scriptLoadFailed
+      ? "Payment unavailable"
+      : isScriptReady
+        ? "Secure Payment"
+        : "Loading secure payment...";
+
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
       <Script
-        src="https://secure.helcim.app/helcim-pay/services/start.js"
+        key={scriptLoadAttempt}
+        src={HELCIM_PAY_SCRIPT_SRC}
         strategy="afterInteractive"
-        onLoad={() => setIsScriptReady(true)}
+        onLoad={() => {
+          setIsScriptReady(true);
+          setScriptLoadFailed(false);
+        }}
+        onError={() => {
+          setIsScriptReady(false);
+          setScriptLoadFailed(true);
+          setError(PAYMENT_SCRIPT_ERROR);
+        }}
       />
 
       {error ? (
-        <div className="text-brand-red text-sm font-medium p-3 bg-red-50 rounded-md" role="alert">
+        <div className="rounded-[18px] border border-lh-accent/20 bg-lh-accent-soft p-3 text-sm font-bold leading-6 text-lh-accent" role="alert">
           {error}
         </div>
       ) : null}
 
+      {!isScriptReady && !scriptLoadFailed ? (
+        <p className="text-sm font-bold leading-6 text-lh-muted" role="status">
+          Loading secure payment. If this takes more than a moment, refresh or contact us for help.
+        </p>
+      ) : null}
+
+      {scriptLoadFailed ? (
+        <div className="flex flex-col gap-2 rounded-[18px] border border-lh-line bg-lh-neutral-2/70 p-3 text-sm font-bold leading-6 text-lh-muted sm:flex-row sm:items-center sm:justify-between">
+          <span>Payment is temporarily unavailable.</span>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={handleRetryScript}>
+              Retry payment
+            </Button>
+            <Button asChild variant="ghost" size="sm">
+              <a href="/contact">Contact support</a>
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       <Button
+        type="button"
         onClick={handleCheckout}
         disabled={disabled || !isScriptReady || isLoading}
-        className="btn-primary-red w-full"
+        aria-busy={isLoading || (!isScriptReady && !scriptLoadFailed)}
+        className="h-12 w-full rounded-full bg-lh-primary px-6 font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-white hover:bg-lh-accent"
       >
-        {isLoading ? "Processing..." : "Secure Payment"}
+        {buttonLabel}
       </Button>
     </div>
   );

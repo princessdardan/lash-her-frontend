@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,15 +12,19 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { formatCad } from "@/lib/commerce/money";
-import { buildValidatedCart, type ValidatedCart } from "@/lib/commerce/cart";
-import type { TProduct } from "@/types";
+import type { ValidatedCart } from "@/lib/commerce/cart";
 import { useProductCart } from "./product-cart-provider";
 
-interface CartSheetProps {
-  products: TProduct[];
+interface CartPreviewResponse {
+  cart: ValidatedCart;
 }
 
-export function CartSheet({ products }: CartSheetProps): ReactElement {
+interface CartPreviewErrorState {
+  key: string;
+  message: string;
+}
+
+export function CartSheet(): ReactElement {
   const router = useRouter();
   const { items, isOpen, removeItem, updateQuantity, clearCart, closeCart } = useProductCart();
   const [promotionCodeInput, setPromotionCodeInput] = useState("");
@@ -29,37 +33,50 @@ export function CartSheet({ products }: CartSheetProps): ReactElement {
   const [promotionPreviewCartKey, setPromotionPreviewCartKey] = useState<string | undefined>();
   const [promotionCodeError, setPromotionCodeError] = useState<string | null>(null);
   const [isApplyingPromotionCode, setIsApplyingPromotionCode] = useState(false);
+  const [cartPreview, setCartPreview] = useState<ValidatedCart | null>(null);
+  const [cartPreviewKey, setCartPreviewKey] = useState<string | undefined>();
+  const [cartPreviewError, setCartPreviewError] = useState<CartPreviewErrorState | null>(null);
   const itemsKey = useMemo(() => JSON.stringify(items), [items]);
-  const { cartError, validatedCart } = useMemo<{ cartError: string | null; validatedCart: ValidatedCart | null }>(() => {
+
+  useEffect(() => {
     if (!isOpen || items.length === 0) {
-      return { cartError: null, validatedCart: null };
+      return;
     }
 
-    try {
-      const catalogProducts = products.map((p) => ({
-        id: p._id,
-        sku: p.sku,
-        title: p.title,
-        price: p.price,
-        discountPrice: p.discountPrice,
-        currency: p.currency,
-        isAvailable: p.isAvailable,
-        variants: p.variants?.map((variant) => ({
-          id: variant._key,
-          sku: variant.sku,
-          title: variant.title,
-          price: variant.price,
-          discountPrice: variant.discountPrice,
-          isAvailable: variant.isAvailable,
-        })),
-      }));
+    const controller = new AbortController();
 
-      const cart = buildValidatedCart(items, catalogProducts);
-      return { cartError: null, validatedCart: cart };
-    } catch (err) {
-      return { cartError: err instanceof Error ? err.message : "Invalid cart", validatedCart: null };
-    }
-  }, [isOpen, items, products]);
+    void fetch("/api/cart/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items }),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null) as { error?: string } | null;
+          throw new Error(payload?.error ?? "We could not load your cart. Please try again.");
+        }
+
+        return response.json() as Promise<CartPreviewResponse>;
+      })
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        setCartPreview(data.cart);
+        setCartPreviewKey(itemsKey);
+        setCartPreviewError(null);
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setCartPreview(null);
+        setCartPreviewKey(itemsKey);
+        setCartPreviewError({
+          key: itemsKey,
+          message: error instanceof Error ? error.message : "We could not load your cart. Please try again.",
+        });
+      });
+
+    return () => controller.abort();
+  }, [isOpen, items, itemsKey]);
 
   const handleClose = () => {
     closeCart();
@@ -67,6 +84,10 @@ export function CartSheet({ products }: CartSheetProps): ReactElement {
 
   const hasPromotionPreview = promotionPreviewCartKey === itemsKey && promotionPreviewCart !== null;
   const activeRedeemedPromotionCode = hasPromotionPreview ? redeemedPromotionCode : undefined;
+  const hasCartPreview = isOpen && items.length > 0 && cartPreviewKey === itemsKey && cartPreview !== null;
+  const validatedCart = hasCartPreview ? cartPreview : null;
+  const cartError = isOpen && items.length > 0 && cartPreviewError?.key === itemsKey ? cartPreviewError.message : null;
+  const isCartPreviewLoading = isOpen && items.length > 0 && !hasCartPreview && !cartError;
   const displayedCart = hasPromotionPreview ? promotionPreviewCart : validatedCart;
 
   const handleCheckout = () => {
@@ -132,7 +153,10 @@ export function CartSheet({ products }: CartSheetProps): ReactElement {
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && handleClose()}>
-      <SheetContent side="right" className="w-full px-5 pb-5 pt-5 sm:max-w-md sm:px-6 sm:pb-6 sm:pt-6 flex flex-col gap-0">
+      <SheetContent
+        side="right"
+        className="w-full px-5 pb-5 pt-5 sm:max-w-md sm:px-6 sm:pb-6 sm:pt-6 flex flex-col gap-0"
+      >
         <SheetHeader className="space-y-2 p-0 pr-8">
           <SheetTitle className="font-heading text-2xl font-normal text-lh-shadow">
             Your Cart
@@ -153,7 +177,9 @@ export function CartSheet({ products }: CartSheetProps): ReactElement {
               </p>
             </div>
           ) : cartError ? (
-            <p className="text-lh-accent text-sm font-body font-bold">{cartError}</p>
+            <p className="text-lh-accent text-sm font-body font-bold" role="alert">{cartError}</p>
+          ) : isCartPreviewLoading && !displayedCart ? (
+            <p className="text-lh-muted text-sm font-body font-bold">Loading your cart…</p>
           ) : displayedCart ? (
             <div className="flex flex-col gap-4">
               <ul className="divide-y divide-lh-line">
@@ -287,7 +313,7 @@ export function CartSheet({ products }: CartSheetProps): ReactElement {
               <Button
                 type="button"
                 onClick={handleCheckout}
-                className="btn-primary-red w-full"
+                className="h-12 w-full rounded-full bg-lh-primary px-6 font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-white hover:bg-lh-accent"
               >
                 Checkout
               </Button>

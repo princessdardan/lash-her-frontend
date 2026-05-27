@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { checkBrokenImages, checkNoHorizontalScroll } from './utils/test-helpers';
+import { checkBrokenImages, checkNoHorizontalScroll, waitForImages } from './utils/test-helpers';
 
 /**
  * E2E tests for training program detail pages.
@@ -76,7 +76,7 @@ test.describe('Training Program Detail Page — Rich Text Rendering (MIG-03)', (
 
       const cta = page.locator('a.primary-cta');
       if (await cta.count() > 0) {
-        await expect(cta).toBeVisible();
+        await expect(cta.first()).toBeVisible();
       }
 
       const tabs = page.locator('button[role="tab"]');
@@ -154,10 +154,10 @@ test.describe('Training Program Detail Page — Rich Text Rendering (MIG-03)', (
 
   test('should keep the training contact form below all other training content', async ({ page }) => {
     const url = await getProgramUrl(page);
-    await page.goto(url);
+    await page.goto(`${url}#contact`);
     await page.waitForLoadState('networkidle');
 
-    const contactSection = page.locator('#contact[data-training-contact-section="true"]');
+    const contactSection = page.locator('#contact[data-training-enrollment-toggle="true"]');
     const structuredDetails = page.locator('[data-structured-details="true"]');
     const legacyBlocks = page.locator('[data-training-legacy-blocks="true"]');
 
@@ -230,6 +230,7 @@ test.describe('Training Program Detail Page — Rich Text Rendering (MIG-03)', (
 
     // Wait for images to settle
     await page.waitForTimeout(500);
+    await waitForImages(page);
 
     const brokenCount = await checkBrokenImages(page);
     expect(brokenCount).toBe(0);
