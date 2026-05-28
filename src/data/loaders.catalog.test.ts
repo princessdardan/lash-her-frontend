@@ -6,12 +6,13 @@ const loadersSource = readFileSync(new URL("./loaders.ts", import.meta.url), "ut
 
 describe("catalog loader contract", () => {
   it("uses canonical products for public catalog and checkout loaders", () => {
-    assert.match(loadersSource, /async function getProducts\(filters: ProductFilters = \{\}\): Promise<TProduct\[]>/);
+    assert.match(loadersSource, /async function getProducts\(sort: ProductSort = "default"\): Promise<TProduct\[]>/);
     assert.match(loadersSource, /async function getProductsByIds\(ids: string\[\]\): Promise<TProduct\[]>/);
     assert.match(loadersSource, /async function getProductBySlug\(slug: string\): Promise<TProduct \| null>/);
     assert.match(loadersSource, /async function getAllProductSlugs\(\): Promise<Array<\{ slug: string \}>>/);
     assert.doesNotMatch(loadersSource, /getLegacyProductCatalogItems/);
     assert.doesNotMatch(loadersSource, /legacyProductCatalog/);
+    assert.doesNotMatch(loadersSource, /getProductFilterAttributes|ProductFilters|filterAttributes/);
   });
 
   it("projects optional merchant SKUs without exposing generated fallback codes", () => {
@@ -25,18 +26,6 @@ describe("catalog loader contract", () => {
       productProjection,
       /variants\[\]\{ _key, title, sku, price, discountPrice, isAvailable, availabilityLabel, options\[\]\{ _key, name, value \} \}/,
     );
-  });
-
-  it("omits products without filter attribute arrays from flattened catalog filters", () => {
-    const loaderStart = loadersSource.indexOf("async function getProductFilterAttributes");
-    const filterAttributesLoader = loadersSource.slice(
-      loaderStart,
-      loadersSource.indexOf("async function getProducts(", loaderStart),
-    );
-
-    assert.match(filterAttributesLoader, /_type == "product"/);
-    assert.match(filterAttributesLoader, /defined\(filterAttributes\)/);
-    assert.match(filterAttributesLoader, /filterAttributes\[defined\(label\) && defined\(value\)\]/);
   });
 
   it("projects only native training checkout fields for training checkout shapes", () => {

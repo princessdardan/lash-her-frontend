@@ -129,7 +129,6 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
   const galleryImages = displayImages.slice(1, 5);
   const availabilityLabel = getAvailabilityLabel(product);
   const collections = product.collections?.filter((collection) => collection.title).slice(0, 3) ?? [];
-  const attributes = product.filterAttributes?.filter((attribute) => attribute.label && attribute.value).slice(0, 4) ?? [];
   const priceDisplay = getProductPriceDisplay(product);
 
   return (
@@ -217,7 +216,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
                   </p>
                 )}
 
-                {(collections.length > 0 || attributes.length > 0 || product.isAvailable) && (
+                {(collections.length > 0 || product.isAvailable) && (
                   <div className="mt-7 flex flex-wrap gap-2">
                     {product.isAvailable ? (
                       <span className="rounded-full border border-lh-line px-3 py-1.5 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-muted">
@@ -227,11 +226,6 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
                     {collections.map((collection) => (
                       <span key={collection._id} className="rounded-full border border-lh-line px-3 py-1.5 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-shadow/70">
                         {collection.title}
-                      </span>
-                    ))}
-                    {attributes.map((attribute) => (
-                      <span key={`${attribute.label}-${attribute.value}`} className="rounded-full border border-lh-line px-3 py-1.5 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-primary">
-                        {attribute.value}
                       </span>
                     ))}
                   </div>

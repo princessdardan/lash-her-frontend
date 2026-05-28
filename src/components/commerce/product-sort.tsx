@@ -1,9 +1,8 @@
 import { type ReactElement } from "react";
+import type { ProductSort as ProductSortValue } from "@/data/loaders";
 
 interface ProductSortProps {
-  collection?: string;
-  attributes: string[];
-  sort: string;
+  sort: ProductSortValue;
 }
 
 const SORT_OPTIONS = [
@@ -13,14 +12,9 @@ const SORT_OPTIONS = [
   { value: "priceDesc", label: "Price, high to low" },
 ] as const;
 
-export function ProductSort({ collection, attributes, sort }: ProductSortProps): ReactElement {
+export function ProductSort({ sort }: ProductSortProps): ReactElement {
   return (
     <form action="/products" className="flex flex-col gap-3 sm:flex-row sm:items-center" aria-label="Sort products">
-      {collection ? <input type="hidden" name="collection" value={collection} /> : null}
-      {attributes.map((attribute) => (
-        <input key={attribute} type="hidden" name="attribute" value={attribute} />
-      ))}
-
       <label htmlFor="product-sort" className="font-heading text-[11px] font-normal uppercase tracking-[0.28em] text-lh-muted">
         Sort By
       </label>

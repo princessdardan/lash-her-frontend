@@ -86,9 +86,15 @@ export const product = defineType({
     }),
     defineField({
       name: "filterAttributes",
-      title: "Filter Attributes",
+      title: "Filter Attributes (Deprecated)",
       type: "array",
-      description: "Catalog filter facts such as diameter, curl, finish, or style.",
+      description: "Deprecated catalog filter metadata. The public product catalog no longer supports filters.",
+      deprecated: {
+        reason: "Catalog filters were removed from the public product route.",
+      },
+      readOnly: true,
+      hidden: ({ value }) => value === undefined,
+      initialValue: undefined,
       of: [
         defineArrayMember({
           type: "object",

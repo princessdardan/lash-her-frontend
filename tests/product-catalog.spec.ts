@@ -6,7 +6,7 @@ test.describe('Product Catalog Page', () => {
     await page.waitForLoadState('networkidle');
 
     await expect(page.getByRole('heading', { name: 'Catalog' })).toBeVisible();
-    await expect(page.getByRole('complementary', { name: /catalog filters/i })).toBeVisible();
+    await expect(page.getByRole('complementary', { name: /catalog filters/i })).toHaveCount(0);
     await expect(page.getByLabel(/sort by/i)).toBeVisible();
     await expect(page.getByText(/showing\s+\d+\s+products/i)).toBeVisible();
     
@@ -56,12 +56,12 @@ test.describe('Product Catalog Page', () => {
     }
   });
 
-  test('should expose accessible catalog filter, sort, result count, and product card controls', async ({ page }) => {
+  test('should expose accessible sort, result count, and product card controls without catalog filters', async ({ page }) => {
     await page.goto('/products');
     await page.waitForLoadState('networkidle');
 
     await expect(page.getByRole('heading', { name: 'Catalog' })).toBeVisible();
-    await expect(page.getByRole('complementary', { name: /catalog filters/i })).toBeVisible();
+    await expect(page.getByRole('complementary', { name: /catalog filters/i })).toHaveCount(0);
     await expect(page.getByLabel(/sort by/i)).toBeVisible();
     await expect(page.getByText(/showing\s+\d+\s+products/i)).toBeVisible();
 

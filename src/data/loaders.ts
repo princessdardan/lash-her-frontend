@@ -15,8 +15,6 @@ import type {
   TMainMenu,
   TMetaData,
   TProduct,
-  TProductCollection,
-  TProductFilterAttribute,
   TProductsPage,
   TProductsGroupedCatalog,
   TPromotionCode,
@@ -47,12 +45,6 @@ const CONTROL_STRING_KEYS = new Set([
 
 export type ProductSort = "default" | "titleAsc" | "priceAsc" | "priceDesc";
 
-export interface ProductFilters {
-  collection?: string;
-  attributes?: string[];
-  sort?: ProductSort;
-}
-
 const PRODUCT_COLLECTION_PROJECTION = groq`{
   _id,
   _key,
@@ -82,7 +74,6 @@ const PRODUCT_PROJECTION = groq`{
     "description": @->description,
     "displayOrder": @->displayOrder
   },
-  filterAttributes[]{ _key, label, value },
   optionGroups[]{ _key, name, values },
   variants[]{ _key, title, sku, price, discountPrice, isAvailable, availabilityLabel, options[]{ _key, name, value } },
   isAvailable,
@@ -690,41 +681,16 @@ function getProductOrder(sort: ProductSort | undefined): string {
   }
 }
 
-function normalizeProductFilters(filters: ProductFilters): Required<ProductFilters> {
-  return {
-    collection: filters.collection?.trim() ?? "",
-    attributes: filters.attributes?.map((attribute) => attribute.trim()).filter(Boolean) ?? [],
-    sort: filters.sort ?? "default",
-  };
-}
-
-async function getProductsPageCollections(): Promise<TProductCollection[]> {
-  const query = groq`*[_type == "productCollection"] | order(displayOrder asc, title asc) ${PRODUCT_COLLECTION_PROJECTION}`;
-  return sanityFetch<TProductCollection[]>(query, {}, ["productCollection"]);
-}
-
-async function getProductFilterAttributes(): Promise<TProductFilterAttribute[]> {
+async function getProducts(sort: ProductSort = "default"): Promise<TProduct[]> {
+  const order = getProductOrder(sort);
   const query = groq`*[
     _type == "product" &&
-    isAvailable == true &&
-    defined(filterAttributes)
-  ].filterAttributes[defined(label) && defined(value)]{ _key, label, value }`;
-  return sanityFetch<TProductFilterAttribute[]>(query, {}, ["product"], { stega: false });
-}
-
-async function getProducts(filters: ProductFilters = {}): Promise<TProduct[]> {
-  const normalizedFilters = normalizeProductFilters(filters);
-  const order = getProductOrder(normalizedFilters.sort);
-  const query = groq`*[
-    _type == "product" &&
-    isAvailable == true &&
-    ($collection == "" || collections[]._ref in *[_type == "productCollection" && slug.current == $collection]._id) &&
-    (count($attributes) == 0 || count(filterAttributes[value in $attributes]) == count($attributes))
+    isAvailable == true
   ] | order(${order}) ${PRODUCT_PROJECTION}`;
 
   return sanityFetch<TProduct[]>(
     query,
-    { collection: normalizedFilters.collection, attributes: normalizedFilters.attributes },
+    {},
     ["product", "productCollection"],
   );
 }
@@ -812,8 +778,6 @@ export const loaders = {
   getBookingSettings,
   getBookableServices,
   getBookableServiceBySlug,
-  getProductsPageCollections,
-  getProductFilterAttributes,
   getProducts,
   getProductsByIds,
   getPromotionCode,

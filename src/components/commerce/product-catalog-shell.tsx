@@ -1,31 +1,20 @@
 import { type ReactElement } from "react";
 import { SanityImage } from "@/components/ui/sanity-image";
 import { ProductCard } from "./product-card";
-import { ProductFilters } from "./product-filters";
 import { ProductSort } from "./product-sort";
-import type { TProduct, TProductCollection, TProductFilterAttribute, TProductsPage } from "@/types";
-
-export interface ProductCatalogQueryState {
-  collection?: string;
-  attributes: string[];
-  sort: string;
-  page?: string;
-}
+import type { ProductSort as ProductSortValue } from "@/data/loaders";
+import type { TProduct, TProductsPage } from "@/types";
 
 interface ProductCatalogShellProps {
   pageData: TProductsPage | null;
-  collections: TProductCollection[];
-  filterAttributes: TProductFilterAttribute[];
   products: TProduct[];
-  query: ProductCatalogQueryState;
+  sort: ProductSortValue;
 }
 
 export function ProductCatalogShell({
   pageData,
-  collections,
-  filterAttributes,
   products,
-  query,
+  sort,
 }: ProductCatalogShellProps): ReactElement {
   const title = pageData?.title || "Catalog";
   const eyebrow = pageData?.eyebrow || "Lash Her Edit";
@@ -67,10 +56,8 @@ export function ProductCatalogShell({
 
       <section className="section-shell-soft" aria-labelledby="products-heading">
         <div className="content-container">
-          <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
-            <ProductFilters collections={collections} filterAttributes={filterAttributes} query={query} />
-
-            <div className="min-w-0 flex-1">
+          <div className="mx-auto max-w-7xl">
+            <div className="min-w-0">
               <div className="mb-8 flex flex-col gap-5 border-b border-lh-line pb-6 lg:flex-row lg:items-end lg:justify-between">
                 <div>
                   <p className="eyebrow-label mb-2">Products</p>
@@ -81,7 +68,7 @@ export function ProductCatalogShell({
                     Showing {products.length} Products
                   </p>
                 </div>
-                <ProductSort collection={query.collection} attributes={query.attributes} sort={query.sort || "default"} />
+                <ProductSort sort={sort} />
               </div>
 
               {products.length === 0 ? (

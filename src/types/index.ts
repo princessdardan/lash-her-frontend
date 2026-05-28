@@ -361,12 +361,6 @@ export interface TProductCollection {
   displayOrder?: number;
 }
 
-export interface TProductFilterAttribute {
-  _key?: string;
-  label: string;
-  value: string;
-}
-
 export interface TProductOptionGroup {
   _key?: string;
   name: string | null;
@@ -428,7 +422,6 @@ export interface TProduct {
   sku?: string;
   currency: TCommerceCurrency;
   collections?: TProductCollection[];
-  filterAttributes?: TProductFilterAttribute[];
   optionGroups?: TProductOptionGroup[];
   variants?: TProductVariant[];
   isAvailable: boolean;
