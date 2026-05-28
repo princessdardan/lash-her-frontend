@@ -316,11 +316,15 @@ Operational expectations:
 
 ## 10. Resend Setup
 
-1. Verify the sender domain in Resend.
-2. Add `RESEND_API_KEY`, `FROM_EMAIL`, and `ADMIN_EMAIL` to the target environment.
-3. Redeploy after changing email variables.
-4. Trigger staging emails for booking confirmation, paid training notification, product confirmation, contact, training contact, and contact popup flows.
-5. Record Resend message IDs/statuses with addresses redacted.
+Use `docs/resend-transactional-email-setup.md` for the full manual Resend runbook.
+
+1. Verify the transactional sender domain in Resend, including the DNS records Resend requires for domain authentication and the domain owner's DMARC policy.
+2. Add server-only `RESEND_API_KEY`, `FROM_EMAIL`, and `ADMIN_EMAIL` to the target Vercel environment. Do not use `NEXT_PUBLIC_` for email secrets.
+3. Scope staging/preview values to Preview/Development and production values to Production.
+4. Apply `drizzle/0009_dashing_rocket_raccoon.sql` through `docs/private-database-migration-runbook.md` before relying on payment email recovery.
+5. Redeploy after changing email variables.
+6. Trigger staging emails for booking confirmation, paid training notification, product confirmation, contact, training contact, and contact popup flows.
+7. Record Resend message IDs/statuses, verified-domain evidence, and private DB sent-state evidence with addresses redacted.
 
 Email failures should be logged for follow-up. They should not roll back a booking, payment, or private DB write that already succeeded.
 
@@ -374,7 +378,7 @@ Complete staging smoke before production handoff.
 - [ ] No new checkout, booking, form, marketing, consent, payment, or training private records are written to Sanity.
 - [ ] Evidence is redacted and excludes secrets, PII, payment tokens, raw webhook bodies, and full connection strings.
 
-## 11. Production Handoff
+## 12. Production Handoff
 
 Production setup can proceed only after staging smoke passes.
 
@@ -413,4 +417,5 @@ Production stop conditions:
 - `docs/booking-payment-provider-split.md`
 - `docs/google-calendar-oauth-env-setup.md`
 - `docs/private-database-migration-runbook.md`
+- `docs/resend-transactional-email-setup.md`
 - `docs/launch-readiness-checklist.md`

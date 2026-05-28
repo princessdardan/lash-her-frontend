@@ -18,6 +18,8 @@ export interface FormActionResult {
   fieldErrors?: Record<string, string>
 }
 
+const FORM_EMAIL_FAILURE_MESSAGE = 'Your submission was saved, but we could not send the confirmation email. Please contact us directly if you do not hear back soon.'
+
 const GENERAL_INQUIRY_VALIDATION: FieldValidationConfig = {
   name: [{ type: 'required', message: 'Name is required' }],
   email: [
@@ -106,7 +108,11 @@ export async function submitContactPopup(
     return { success: false, error: 'Something went wrong, please try again.' }
   }
 
-  await sendFormEmails('contact-popup', data)
+  const emailResult = await sendSavedFormEmails('contact-popup', data, '[submitContactPopup] Form email delivery failed')
+
+  if (!emailResult.success) {
+    return emailResult
+  }
 
   return { success: true }
 }
@@ -139,9 +145,11 @@ export async function submitGeneralInquiry(
     return { success: false, error: 'Something went wrong, please try again.' }
   }
 
-  // D-06: Email failure is non-blocking -- sendFormEmails never rejects
-  // (uses Promise.allSettled internally, logs failures, swallows errors)
-  await sendFormEmails('general-inquiry', data)
+  const emailResult = await sendSavedFormEmails('general-inquiry', data, '[submitGeneralInquiry] Form email delivery failed')
+
+  if (!emailResult.success) {
+    return emailResult
+  }
 
   return { success: true }
 }
@@ -185,8 +193,25 @@ export async function submitTrainingContact(
     return { success: false, error: 'Something went wrong, please try again.' }
   }
 
-  // D-06: Email failure is non-blocking -- sendFormEmails never rejects
-  await sendFormEmails('training-contact', data)
+  const emailResult = await sendSavedFormEmails('training-contact', data, '[submitTrainingContact] Form email delivery failed')
+
+  if (!emailResult.success) {
+    return emailResult
+  }
 
   return { success: true }
+}
+
+async function sendSavedFormEmails(
+  formType: Parameters<typeof sendFormEmails>[0],
+  data: Parameters<typeof sendFormEmails>[1],
+  logPrefix: string,
+): Promise<FormActionResult> {
+  try {
+    await sendFormEmails(formType, data)
+    return { success: true }
+  } catch (err) {
+    console.error(logPrefix, err instanceof Error ? err.message : String(err))
+    return { success: false, error: FORM_EMAIL_FAILURE_MESSAGE }
+  }
 }

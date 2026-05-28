@@ -57,6 +57,13 @@
       "when": 1779753600000,
       "tag": "0008_hot_path_private_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1779901448734,
+      "tag": "0009_dashing_rocket_raccoon",
+      "breakpoints": true
     }
   ]
 }

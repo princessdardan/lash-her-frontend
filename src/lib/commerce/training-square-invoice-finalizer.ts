@@ -6,12 +6,20 @@ import type { SquareInvoiceDetails } from "@/lib/commerce/square-invoice-client"
 import type { SquareInvoiceOrderDetails } from "@/lib/commerce/square-invoice-client";
 import type {
   CreateTrainingEnrollmentInput,
+  PendingTrainingEnrollmentRecord,
   TrainingEnrollmentRow,
+  claimTrainingPaymentEmails,
   getOrIssueTrainingSchedulingTokenForPaidOrder,
   getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
   markTrainingEnrollmentStaffAlerted,
+  markTrainingEnrollmentStudentPaymentEmailSent,
+  recordTrainingPaymentEmailFailure,
 } from "@/lib/commerce/training-enrollment-store";
-import type { sendTrainingPaymentNotificationEmails } from "@/lib/commerce/training-payment-email";
+import type {
+  sendTrainingAdminPaymentEmail,
+  sendTrainingCustomerPaymentEmail,
+} from "@/lib/commerce/training-payment-email";
+import { sendTrainingPaymentNotificationEmailsIfNeededWithDependencies } from "@/lib/commerce/training-payment-notification-service";
 import { buildTrainingScheduleUrl } from "@/lib/training-checkout";
 
 export interface TrainingSquareInvoiceFinalizerInput {
@@ -24,6 +32,7 @@ export interface TrainingSquareInvoiceFinalizerInput {
 export interface TrainingSquareInvoiceFinalizerResult {
   duplicate: boolean;
   finalized: boolean;
+  notificationFailed?: boolean;
   reason?: string;
 }
 
@@ -36,8 +45,12 @@ export interface TrainingSquareInvoiceFinalizerDependencies {
   getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId: typeof getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId;
   markSquareInvoiceFinalizationFailed(orderId: string, error: string, retryable: boolean): Promise<void>;
   markSquareInvoicePaid(orderId: string, paymentId: string): Promise<void>;
+  claimTrainingPaymentEmails: typeof claimTrainingPaymentEmails;
   markTrainingEnrollmentStaffAlerted: typeof markTrainingEnrollmentStaffAlerted;
-  sendTrainingPaymentNotificationEmails: typeof sendTrainingPaymentNotificationEmails;
+  markTrainingEnrollmentStudentPaymentEmailSent: typeof markTrainingEnrollmentStudentPaymentEmailSent;
+  recordTrainingPaymentEmailFailure: typeof recordTrainingPaymentEmailFailure;
+  sendTrainingAdminPaymentEmail: typeof sendTrainingAdminPaymentEmail;
+  sendTrainingCustomerPaymentEmail: typeof sendTrainingCustomerPaymentEmail;
 }
 
 type VerificationResult =
@@ -74,7 +87,15 @@ export function createTrainingSquareInvoiceFinalizer(
     }
 
     if (isAlreadyFinalized(order, verification.paymentId)) {
-      return { duplicate: true, finalized: false };
+      const notificationResult = await recoverTrainingPaymentNotificationForPaidOrder({
+        dependencies,
+        orderId: order.orderId,
+        origin: input.origin,
+      });
+
+      return notificationResult === undefined
+        ? { duplicate: true, finalized: false }
+        : { duplicate: true, finalized: false, notificationFailed: true, reason: notificationResult };
     }
 
     try {
@@ -92,27 +113,16 @@ export function createTrainingSquareInvoiceFinalizer(
         throw new Error("Training enrollment could not be loaded after payment");
       }
 
-      if (enrollment.staffAlertedAt === null) {
-        const alertClaimed = await dependencies.markTrainingEnrollmentStaffAlerted({
-          enrollmentId: enrollment.enrollmentId,
-        });
+      const notificationResult = await sendTrainingPaymentNotificationEmailsAfterFinalization({
+        dependencies,
+        enrollment,
+        origin: input.origin,
+        schedulingToken: schedulingToken.schedulingToken,
+      });
 
-        if (alertClaimed) {
-          await dependencies.sendTrainingPaymentNotificationEmails({
-            customerEmail: enrollment.checkoutOrder.customerEmail,
-            customerName: enrollment.checkoutOrder.customerName,
-            orderId: enrollment.checkoutOrder.orderId,
-            programTitle: enrollment.programSnapshot.title,
-            schedulingUrl: buildAbsoluteSchedulingUrl({
-              origin: resolveSchedulingOrigin(input.origin),
-              programSlug: requireProgramSlug(enrollment.programSnapshot.slug),
-              schedulingToken: schedulingToken.schedulingToken,
-            }),
-          });
-        }
-      }
-
-      return { duplicate: false, finalized: true };
+      return notificationResult === undefined
+        ? { duplicate: false, finalized: true }
+        : { duplicate: false, finalized: true, notificationFailed: true, reason: notificationResult };
     } catch (error) {
       const message = getErrorMessage(error);
       await dependencies.markSquareInvoiceFinalizationFailed(order.orderId, message, true);
@@ -124,6 +134,72 @@ export function createTrainingSquareInvoiceFinalizer(
       };
     }
   };
+}
+
+async function recoverTrainingPaymentNotificationForPaidOrder(input: {
+  dependencies: TrainingSquareInvoiceFinalizerDependencies;
+  orderId: string;
+  origin?: string;
+}): Promise<string | undefined> {
+  try {
+    const enrollment = await input.dependencies.getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId(input.orderId);
+
+    if (enrollment === null) {
+      return undefined;
+    }
+
+    if (enrollment.studentPaymentEmailSentAt !== null && enrollment.staffAlertedAt !== null) {
+      return undefined;
+    }
+
+    const schedulingToken = await input.dependencies.getOrIssueTrainingSchedulingTokenForPaidOrder(input.orderId);
+
+    if (schedulingToken === null) {
+      throw new Error("Training scheduling token could not be issued");
+    }
+
+    return sendTrainingPaymentNotificationEmailsAfterFinalization({
+      dependencies: input.dependencies,
+      enrollment,
+      origin: input.origin,
+      schedulingToken: schedulingToken.schedulingToken,
+    });
+  } catch (error) {
+    return getErrorMessage(error);
+  }
+}
+
+async function sendTrainingPaymentNotificationEmailsAfterFinalization(input: {
+  dependencies: TrainingSquareInvoiceFinalizerDependencies;
+  enrollment: PendingTrainingEnrollmentRecord;
+  origin?: string;
+  schedulingToken: string;
+}): Promise<string | undefined> {
+  try {
+    await sendTrainingPaymentNotificationEmailsIfNeededWithDependencies(
+      {
+        enrollment: input.enrollment,
+        paymentProvider: "square",
+        schedulingUrl: buildAbsoluteSchedulingUrl({
+          origin: resolveSchedulingOrigin(input.origin),
+          programSlug: requireProgramSlug(input.enrollment.programSnapshot.slug),
+          schedulingToken: input.schedulingToken,
+        }),
+      },
+      {
+        claimTrainingPaymentEmails: input.dependencies.claimTrainingPaymentEmails,
+        markTrainingEnrollmentStaffAlerted: input.dependencies.markTrainingEnrollmentStaffAlerted,
+        markTrainingEnrollmentStudentPaymentEmailSent: input.dependencies.markTrainingEnrollmentStudentPaymentEmailSent,
+        recordTrainingPaymentEmailFailure: input.dependencies.recordTrainingPaymentEmailFailure,
+        sendTrainingAdminPaymentEmail: input.dependencies.sendTrainingAdminPaymentEmail,
+        sendTrainingCustomerPaymentEmail: input.dependencies.sendTrainingCustomerPaymentEmail,
+      },
+    );
+  } catch (error) {
+    return getErrorMessage(error);
+  }
+
+  return undefined;
 }
 
 export async function finalizeTrainingSquareInvoice(
@@ -147,8 +223,12 @@ export async function finalizeTrainingSquareInvoice(
       enrollmentStore.getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
     markSquareInvoiceFinalizationFailed: orderStore.markSquareInvoiceFinalizationFailed,
     markSquareInvoicePaid: orderStore.markSquareInvoicePaid,
+    claimTrainingPaymentEmails: enrollmentStore.claimTrainingPaymentEmails,
     markTrainingEnrollmentStaffAlerted: enrollmentStore.markTrainingEnrollmentStaffAlerted,
-    sendTrainingPaymentNotificationEmails: email.sendTrainingPaymentNotificationEmails,
+    markTrainingEnrollmentStudentPaymentEmailSent: enrollmentStore.markTrainingEnrollmentStudentPaymentEmailSent,
+    recordTrainingPaymentEmailFailure: enrollmentStore.recordTrainingPaymentEmailFailure,
+    sendTrainingAdminPaymentEmail: email.sendTrainingAdminPaymentEmail,
+    sendTrainingCustomerPaymentEmail: email.sendTrainingCustomerPaymentEmail,
   })(input);
 }
 

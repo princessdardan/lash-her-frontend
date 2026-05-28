@@ -73,6 +73,7 @@ interface TrainingCheckoutPendingOrderInput {
   helcimInvoiceId: number;
   helcimInvoiceNumber: string;
   cart: ValidatedCart;
+  purpose: "training";
 }
 
 interface TrainingCheckoutPendingOrder {
@@ -176,6 +177,7 @@ export function createTrainingCheckoutPostHandler({
         helcimInvoiceId: invoice.invoiceId,
         helcimInvoiceNumber: invoice.invoiceNumber,
         cart: toTrainingCart(quote),
+        purpose: "training",
       });
 
       await createTrainingEnrollment({

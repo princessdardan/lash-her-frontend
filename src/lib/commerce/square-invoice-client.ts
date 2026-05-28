@@ -58,7 +58,7 @@ export interface SquareInvoiceOrderDetails {
 }
 
 export interface SquareInvoiceClient {
-  createCustomer(email: string, givenName: string, familyName: string): Promise<string>;
+  createCustomer(email: string, givenName: string, familyName: string, idempotencyKey: string): Promise<string>;
   createOrder(
     locationId: string,
     lineItems: SquareInvoiceLineItem[],
@@ -82,6 +82,7 @@ interface SquareCreateCustomerRequest {
   email_address: string;
   given_name: string;
   family_name: string;
+  idempotency_key: string;
 }
 
 interface SquareCreateCustomerResponse {
@@ -176,7 +177,7 @@ export class SquareInvoiceVersionConflictError extends Error {
 
 export function createSquareInvoiceClient(env: SquareInvoiceClientEnv): SquareInvoiceClient {
   return {
-    async createCustomer(email, givenName, familyName) {
+    async createCustomer(email, givenName, familyName, idempotencyKey) {
       assertInvoiceClientEnabled(env);
 
       const response = await postSquare<SquareCreateCustomerRequest, SquareCreateCustomerResponse>(
@@ -186,6 +187,7 @@ export function createSquareInvoiceClient(env: SquareInvoiceClientEnv): SquareIn
           email_address: email,
           given_name: givenName,
           family_name: familyName,
+          idempotency_key: idempotencyKey,
         },
         isSquareCreateCustomerResponse,
       );

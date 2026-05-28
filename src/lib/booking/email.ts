@@ -1,37 +1,89 @@
 import "server-only";
 
-import { Resend } from "resend";
+import {
+  claimBookingConfirmationEmailByOrderId,
+  markBookingConfirmationEmailSent,
+  recordBookingConfirmationEmailFailure,
+  type BookingConfirmationEmailClaimRecord,
+} from "./holds";
+import { escapeHtml, sendTransactionalEmail } from "@/lib/transactional-email";
 
 export interface SendBookingConfirmationInput {
-  name: string;
-  email: string;
   bookingTypeLabel: string;
+  email: string;
+  holdId: string;
+  name: string;
+  orderId: string;
+  paymentProvider: string;
   start: Date;
   timezone: string;
+}
+
+export interface SendBookingConfirmationEmailForOrderDependencies {
+  claimBookingConfirmationEmailByOrderId: typeof claimBookingConfirmationEmailByOrderId;
+  logError: typeof console.error;
+  markBookingConfirmationEmailSent: typeof markBookingConfirmationEmailSent;
+  recordBookingConfirmationEmailFailure: typeof recordBookingConfirmationEmailFailure;
+  sendBookingConfirmationEmail: typeof sendBookingConfirmationEmail;
 }
 
 export async function sendBookingConfirmationEmail(
   input: SendBookingConfirmationInput,
 ): Promise<void> {
-  const resend = new Resend(getRequiredEnv("RESEND_API_KEY"));
-  const fromEmail = getRequiredEnv("FROM_EMAIL");
   const formattedStart = new Intl.DateTimeFormat("en-CA", {
     dateStyle: "full",
     timeStyle: "short",
     timeZone: input.timezone,
   }).format(input.start);
 
-  const { error } = await resend.emails.send({
-    from: fromEmail,
-    to: input.email,
-    subject: "Your Lash Her booking is confirmed",
+  await sendTransactionalEmail({
     html: getBookingConfirmationHtml({ ...input, formattedStart }),
+    idempotencyKey: `booking-confirmation:${input.holdId}`,
+    subject: "Your Lash Her booking is confirmed",
+    tags: [
+      { name: "flow", value: "booking_confirmation" },
+      { name: "order_id", value: input.orderId },
+      { name: "payment_provider", value: input.paymentProvider },
+    ],
+    to: input.email,
   });
+}
 
-  if (error) {
-    throw new Error(`Booking confirmation email failed: ${error.message}`);
+export async function sendBookingConfirmationEmailForOrder(
+  orderId: string,
+  dependencies: SendBookingConfirmationEmailForOrderDependencies = defaultSendBookingConfirmationEmailForOrderDependencies,
+): Promise<void> {
+  const claimed = await dependencies.claimBookingConfirmationEmailByOrderId({ orderId });
+
+  if (claimed === null) {
+    return;
+  }
+
+  try {
+    await dependencies.sendBookingConfirmationEmail(toBookingConfirmationInput(claimed, orderId));
+    await dependencies.markBookingConfirmationEmailSent({ holdId: claimed.id });
+  } catch (error) {
+    const message = getErrorMessage(error);
+    await dependencies.recordBookingConfirmationEmailFailure({
+      error: message,
+      holdId: claimed.id,
+    });
+    dependencies.logError("[booking-email] Booking confirmation email failed", {
+      error: message,
+      holdId: claimed.id,
+      orderId,
+    });
+    throw new Error(message, { cause: error });
   }
 }
+
+const defaultSendBookingConfirmationEmailForOrderDependencies: SendBookingConfirmationEmailForOrderDependencies = {
+  claimBookingConfirmationEmailByOrderId,
+  logError: console.error,
+  markBookingConfirmationEmailSent,
+  recordBookingConfirmationEmailFailure,
+  sendBookingConfirmationEmail,
+};
 
 interface BookingConfirmationHtmlInput extends SendBookingConfirmationInput {
   formattedStart: string;
@@ -81,24 +133,31 @@ function getBookingConfirmationHtml(input: BookingConfirmationHtmlInput): string
   `.trim();
 }
 
-function escapeHtml(text: string): string {
-  const replacements: Record<string, string> = {
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;",
+function toBookingConfirmationInput(
+  hold: BookingConfirmationEmailClaimRecord,
+  orderId: string,
+): SendBookingConfirmationInput {
+  return {
+    bookingTypeLabel: getBookingTypeLabel(hold),
+    email: hold.customer.email,
+    holdId: hold.id,
+    name: hold.customer.name,
+    orderId,
+    paymentProvider: hold.paymentProvider ?? "unknown",
+    start: hold.selectedStart,
+    timezone: hold.timezone,
   };
-
-  return text.replace(/[&<>"']/g, (character) => replacements[character] ?? character);
 }
 
-function getRequiredEnv(name: string): string {
-  const value = process.env[name];
+function getBookingTypeLabel(hold: BookingConfirmationEmailClaimRecord): string {
+  const title = hold.offeringSnapshot.title;
+  return typeof title === "string" && title.trim().length > 0 ? title : "lash appointment";
+}
 
-  if (value === undefined || value.length === 0) {
-    throw new Error(`${name} is required`);
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
   }
 
-  return value;
+  return "Unknown email error";
 }

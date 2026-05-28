@@ -53,7 +53,7 @@ test("Square invoice client creates customer, OPEN order, draft invoice, publish
     };
 
     const client = createSquareInvoiceClient(env);
-    const customerId = await client.createCustomer("client@example.com", "Client", "Example");
+    const customerId = await client.createCustomer("client@example.com", "Client", "Example", "customer-create-123");
     const orderId = await client.createOrder("LOC123", [{
       name: "Classic Lash Training",
       quantity: "1",
@@ -85,6 +85,7 @@ test("Square invoice client creates customer, OPEN order, draft invoice, publish
       email_address: "client@example.com",
       given_name: "Client",
       family_name: "Example",
+      idempotency_key: "customer-create-123",
     });
 
     const orderRequest = JSON.parse(requests[1].init.body);
@@ -156,7 +157,7 @@ test("Square invoice client uses production base URL when configured", () => {
     };
 
     const client = createSquareInvoiceClient({ environment: "production", accessToken: "square-secret-token" });
-    await client.createCustomer("client@example.com", "Client", "Example");
+    await client.createCustomer("client@example.com", "Client", "Example", "customer-create-123");
 
     assert.equal(requestedUrl, "https://connect.squareup.com/v2/customers");
   `);
@@ -173,7 +174,7 @@ test("Square invoice client blocks API calls when explicitly disabled", () => {
     const client = createSquareInvoiceClient({ environment: "sandbox", accessToken: "square-secret-token", enabled: false });
 
     await assert.rejects(
-      () => client.createCustomer("client@example.com", "Client", "Example"),
+      () => client.createCustomer("client@example.com", "Client", "Example", "customer-create-123"),
       /Square invoice checkout is not enabled/,
     );
     assert.equal(fetchCalled, false);
@@ -238,7 +239,7 @@ test("Square invoice client sanitizes transport failures", () => {
     const client = createSquareInvoiceClient(env);
 
     await assert.rejects(
-      () => client.createCustomer("client@example.com", "Client", "Example"),
+      () => client.createCustomer("client@example.com", "Client", "Example", "customer-create-123"),
       (error) => {
         assert.equal(error.message, "Square API request failed before receiving a response");
         assert.equal(error.message.includes("square-secret-token"), false);
@@ -299,7 +300,7 @@ test("training Square invoice factory does not require service booking Square en
     delete process.env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL;
 
     const client = createTrainingAfterpaySquareInvoiceClient();
-    const customerId = await client.createCustomer("client@example.com", "Client", "Example");
+    const customerId = await client.createCustomer("client@example.com", "Client", "Example", "customer-create-123");
 
     assert.equal(customerId, "customer_123");
     assert.equal(requests[0].url, "https://connect.squareupsandbox.com/v2/customers");

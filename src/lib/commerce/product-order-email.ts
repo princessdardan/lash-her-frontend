@@ -1,11 +1,15 @@
 import "server-only";
 
-import { Resend } from "resend";
-
 import type {
   CheckoutOrderLineItemSnapshot,
   CheckoutOrderShippingAddressSnapshot,
 } from "@/lib/private-db/schema";
+import {
+  claimProductOrderConfirmationEmail,
+  markProductOrderConfirmationEmailSent,
+  recordProductOrderConfirmationEmailFailure,
+} from "@/lib/commerce/order-store";
+import { escapeHtml, sendTransactionalEmail } from "@/lib/transactional-email";
 
 export interface SendProductOrderConfirmationEmailInput {
   currency: string;
@@ -17,23 +21,64 @@ export interface SendProductOrderConfirmationEmailInput {
   totalAmount: number;
 }
 
+export interface SendProductOrderConfirmationEmailForOrderDependencies {
+  claimProductOrderConfirmationEmail: typeof claimProductOrderConfirmationEmail;
+  logError: typeof console.error;
+  markProductOrderConfirmationEmailSent: typeof markProductOrderConfirmationEmailSent;
+  recordProductOrderConfirmationEmailFailure: typeof recordProductOrderConfirmationEmailFailure;
+  sendProductOrderConfirmationEmail: typeof sendProductOrderConfirmationEmail;
+}
+
 export async function sendProductOrderConfirmationEmail(
   input: SendProductOrderConfirmationEmailInput,
 ): Promise<void> {
-  const resend = new Resend(getRequiredEnv("RESEND_API_KEY"));
-  const fromEmail = getRequiredEnv("FROM_EMAIL");
-
-  const { error } = await resend.emails.send({
-    from: fromEmail,
-    to: input.customerEmail,
-    subject: "Your Lash Her order is confirmed",
+  await sendTransactionalEmail({
     html: buildProductOrderConfirmationHtml(input),
+    idempotencyKey: `product-confirmation:${input.orderId}`,
+    subject: "Your Lash Her order is confirmed",
+    tags: [
+      { name: "flow", value: "product_confirmation" },
+      { name: "order_id", value: input.orderId },
+      { name: "payment_provider", value: "helcim" },
+    ],
+    to: input.customerEmail,
   });
+}
 
-  if (error) {
-    throw new Error(`Product order confirmation email failed: ${error.message}`);
+export async function sendProductOrderConfirmationEmailForOrder(
+  orderId: string,
+  dependencies: SendProductOrderConfirmationEmailForOrderDependencies = defaultSendProductOrderConfirmationEmailForOrderDependencies,
+): Promise<void> {
+  const claimed = await dependencies.claimProductOrderConfirmationEmail({ orderId });
+
+  if (claimed === null) {
+    return;
+  }
+
+  try {
+    await dependencies.sendProductOrderConfirmationEmail(claimed);
+    await dependencies.markProductOrderConfirmationEmailSent(orderId);
+  } catch (error) {
+    const message = getErrorMessage(error);
+    await dependencies.recordProductOrderConfirmationEmailFailure({
+      error: message,
+      orderId,
+    });
+    dependencies.logError("[checkout] Product order confirmation email failed", {
+      error: message,
+      orderId,
+    });
+    throw new Error(message, { cause: error });
   }
 }
+
+const defaultSendProductOrderConfirmationEmailForOrderDependencies: SendProductOrderConfirmationEmailForOrderDependencies = {
+  claimProductOrderConfirmationEmail,
+  logError: console.error,
+  markProductOrderConfirmationEmailSent,
+  recordProductOrderConfirmationEmailFailure,
+  sendProductOrderConfirmationEmail,
+};
 
 export function buildProductOrderConfirmationHtml(
   input: SendProductOrderConfirmationEmailInput,
@@ -130,24 +175,10 @@ function formatCurrency(amount: number, currency: string): string {
   }).format(amount);
 }
 
-function escapeHtml(text: string): string {
-  const replacements: Record<string, string> = {
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;",
-  };
-
-  return text.replace(/[&<>"']/g, (character) => replacements[character] ?? character);
-}
-
-function getRequiredEnv(name: string): string {
-  const value = process.env[name];
-
-  if (value === undefined || value.length === 0) {
-    throw new Error(`${name} is required`);
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
   }
 
-  return value;
+  return "Unknown email error";
 }

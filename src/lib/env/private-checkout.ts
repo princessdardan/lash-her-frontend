@@ -20,6 +20,13 @@ export function getHelcimWebhookVerifierToken(): string {
   );
 }
 
+export function getEmailRetrySecret(): string {
+  return assertValue(
+    process.env.EMAIL_RETRY_SECRET,
+    "Missing env var: EMAIL_RETRY_SECRET",
+  );
+}
+
 export function getPaymentGatewayMode(): PaymentGatewayMode {
   return resolvePaymentGatewayMode(getPaymentMockRuntimeEnvironment());
 }

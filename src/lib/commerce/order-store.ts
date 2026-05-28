@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash, createHmac } from "node:crypto";
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 import type {
@@ -24,6 +24,8 @@ import { getPrivateDb } from "@/lib/private-db/client";
 import type { ValidatedCart } from "./cart";
 import { decryptCheckoutSecret, encryptCheckoutSecret } from "./checkout-secret";
 import { parseCad } from "./money";
+
+const EMAIL_CLAIM_DURATION_MS = 5 * 60 * 1000;
 
 export interface CreatePendingOrderInput {
   customerName: string;
@@ -114,6 +116,28 @@ export interface HelcimWebhookEventInput {
   status?: string;
 }
 
+export interface ClaimProductOrderConfirmationEmailInput {
+  claimForMs?: number;
+  now?: Date;
+  orderId: string;
+}
+
+export interface ProductOrderConfirmationEmailRecord {
+  currency: ValidatedCart["currency"];
+  customerEmail: string;
+  customerName: string;
+  lineItems: CheckoutOrderLineItemSnapshot[];
+  orderId: string;
+  shippingAddress: CheckoutOrderShippingAddressSnapshot | null;
+  totalAmount: number;
+}
+
+export interface ProductOrderConfirmationEmailFailureInput {
+  error: string;
+  now?: Date;
+  orderId: string;
+}
+
 export interface SquareInvoiceWebhookEventInput {
   eventId: string;
   eventType: string;
@@ -181,6 +205,11 @@ export interface CheckoutOrderRepository {
   createCheckoutOrder(values: CheckoutOrderInsert): Promise<{ id: string }>;
   createSquareInvoiceWebhookEvent(values: SquareInvoiceWebhookEventInput): Promise<{ id: string } | null>;
   createWebhookEvent(values: CheckoutPaymentEventInsert): Promise<{ id: string } | null>;
+  claimProductOrderConfirmationEmail(input: {
+    claimUntil: Date;
+    now: Date;
+    orderId: string;
+  }): Promise<CheckoutOrderRow | null>;
   findSquareInvoiceWebhookEventClaim(eventId: string): Promise<SquareInvoiceWebhookEventClaimResult>;
   findOrderForWebhook(input: HelcimWebhookEventInput): Promise<CheckoutOrderRow | null>;
   findCheckoutOrderByCheckoutTokenHash(checkoutTokenHash: string): Promise<CheckoutOrderRow | null>;
@@ -188,6 +217,8 @@ export interface CheckoutOrderRepository {
   findOrderBySquareInvoiceId(invoiceId: string): Promise<CheckoutOrderRow | null>;
   markOrderPaid(orderId: string, helcimTransactionId: string): Promise<void>;
   markOrderVerificationFailed(orderId: string): Promise<void>;
+  markProductOrderConfirmationEmailSent(orderId: string, now: Date): Promise<void>;
+  recordProductOrderConfirmationEmailFailure(orderId: string, error: string, now: Date): Promise<void>;
   markSquareInvoiceFinalizationFailed(orderId: string, error: string, retryable: boolean): Promise<void>;
   markSquareInvoicePaid(orderId: string, paymentId: string): Promise<void>;
   recordSquareInvoicePublication(orderId: string, invoiceId: string, publicUrl: string, version: number): Promise<void>;
@@ -202,9 +233,12 @@ export interface CheckoutOrderStore {
   createPendingSquareInvoiceOrder(input: CreatePendingSquareInvoiceOrderInput): Promise<PendingOrderRecord>;
   findOrderByCorrelationId(correlationId: string): Promise<CheckoutOrderRow | null>;
   findOrderBySquareInvoiceId(invoiceId: string): Promise<CheckoutOrderRow | null>;
+  claimProductOrderConfirmationEmail(input: ClaimProductOrderConfirmationEmailInput): Promise<ProductOrderConfirmationEmailRecord | null>;
   getPendingOrderByCheckoutToken(checkoutToken: string): Promise<PendingOrderRecord | null>;
   markOrderPaid(orderId: string, helcimTransactionId: string): Promise<void>;
   markOrderVerificationFailed(orderId: string): Promise<void>;
+  markProductOrderConfirmationEmailSent(orderId: string, now?: Date): Promise<void>;
+  recordProductOrderConfirmationEmailFailure(input: ProductOrderConfirmationEmailFailureInput): Promise<void>;
   markSquareInvoiceFinalizationFailed(orderId: string, error: string, retryable: boolean): Promise<void>;
   markSquareInvoicePaid(orderId: string, paymentId: string): Promise<void>;
   recordSquareInvoicePublication(orderId: string, invoiceId: string, publicUrl: string, version: number): Promise<void>;
@@ -347,6 +381,18 @@ export function createCheckoutOrderStore(
       return repository.findOrderBySquareInvoiceId(invoiceId);
     },
 
+    async claimProductOrderConfirmationEmail(input) {
+      const now = input.now ?? new Date();
+      const claimUntil = new Date(now.getTime() + (input.claimForMs ?? EMAIL_CLAIM_DURATION_MS));
+      const claimedOrder = await repository.claimProductOrderConfirmationEmail({
+        claimUntil,
+        now,
+        orderId: input.orderId,
+      });
+
+      return claimedOrder === null ? null : toProductOrderConfirmationEmailRecord(claimedOrder);
+    },
+
     async findOrderByCorrelationId(correlationId) {
       return repository.findOrderByCorrelationId(correlationId);
     },
@@ -357,6 +403,18 @@ export function createCheckoutOrderStore(
 
     async markOrderVerificationFailed(orderId) {
       await repository.markOrderVerificationFailed(orderId);
+    },
+
+    async markProductOrderConfirmationEmailSent(orderId, now = new Date()) {
+      await repository.markProductOrderConfirmationEmailSent(orderId, now);
+    },
+
+    async recordProductOrderConfirmationEmailFailure(input) {
+      await repository.recordProductOrderConfirmationEmailFailure(
+        input.orderId,
+        input.error,
+        input.now ?? new Date(),
+      );
     },
 
     async getPendingOrderByCheckoutToken(checkoutToken) {
@@ -421,6 +479,19 @@ export async function markOrderVerificationFailed(orderId: string): Promise<void
   await defaultOrderStore.markOrderVerificationFailed(orderId);
 }
 
+export async function markProductOrderConfirmationEmailSent(
+  orderId: string,
+  now?: Date,
+): Promise<void> {
+  await defaultOrderStore.markProductOrderConfirmationEmailSent(orderId, now);
+}
+
+export async function recordProductOrderConfirmationEmailFailure(
+  input: ProductOrderConfirmationEmailFailureInput,
+): Promise<void> {
+  await defaultOrderStore.recordProductOrderConfirmationEmailFailure(input);
+}
+
 export async function recordSquareInvoicePublication(
   orderId: string,
   invoiceId: string,
@@ -449,6 +520,12 @@ export async function findOrderBySquareInvoiceId(
   invoiceId: string,
 ): Promise<CheckoutOrderRow | null> {
   return defaultOrderStore.findOrderBySquareInvoiceId(invoiceId);
+}
+
+export async function claimProductOrderConfirmationEmail(
+  input: ClaimProductOrderConfirmationEmailInput,
+): Promise<ProductOrderConfirmationEmailRecord | null> {
+  return defaultOrderStore.claimProductOrderConfirmationEmail(input);
 }
 
 export async function findOrderByCorrelationId(
@@ -567,6 +644,26 @@ function toMatchedCheckoutOrderRecord(order: CheckoutOrderRow): MatchedCheckoutO
   };
 }
 
+function toProductOrderConfirmationEmailRecord(
+  order: CheckoutOrderRow,
+): ProductOrderConfirmationEmailRecord {
+  const currency = order.currency.toUpperCase();
+
+  if (currency !== "CAD") {
+    throw new Error("Unsupported checkout order currency");
+  }
+
+  return {
+    currency,
+    customerEmail: order.customerEmail,
+    customerName: order.customerName,
+    lineItems: order.lineItems,
+    orderId: order.orderId,
+    shippingAddress: order.shippingAddress ?? null,
+    totalAmount: centsToCad(order.amountCents),
+  };
+}
+
 function createTrainingInvoiceLineItems(
   input: CreatePendingSquareInvoiceOrderInput,
 ): CheckoutOrderLineItemSnapshot[] {
@@ -671,6 +768,31 @@ function createDrizzleCheckoutOrderRepository(): CheckoutOrderRepository {
       return createdEvent ?? null;
     },
 
+    async claimProductOrderConfirmationEmail(input) {
+      const [claimedOrder] = await getPrivateDb()
+        .update(checkoutOrders)
+        .set({
+          productConfirmationEmailClaimedUntil: input.claimUntil,
+          productConfirmationEmailLastError: null,
+          updatedAt: input.now,
+        })
+        .where(
+          and(
+            eq(checkoutOrders.orderId, input.orderId),
+            eq(checkoutOrders.status, "paid"),
+            eq(checkoutOrders.purpose, "product"),
+            isNull(checkoutOrders.productConfirmationEmailSentAt),
+            or(
+              isNull(checkoutOrders.productConfirmationEmailClaimedUntil),
+              lte(checkoutOrders.productConfirmationEmailClaimedUntil, input.now),
+            ),
+          ),
+        )
+        .returning();
+
+      return claimedOrder ?? null;
+    },
+
     async findSquareInvoiceWebhookEventClaim(eventId) {
       const [event] = await getPrivateDb()
         .select({ processingStatus: checkoutPaymentEvents.processingStatus })
@@ -757,6 +879,29 @@ function createDrizzleCheckoutOrderRepository(): CheckoutOrderRepository {
           status: "verification_failed",
           failedAt: new Date(),
           updatedAt: new Date(),
+        })
+        .where(eq(checkoutOrders.orderId, orderId));
+    },
+
+    async markProductOrderConfirmationEmailSent(orderId, now) {
+      await getPrivateDb()
+        .update(checkoutOrders)
+        .set({
+          productConfirmationEmailClaimedUntil: null,
+          productConfirmationEmailLastError: null,
+          productConfirmationEmailSentAt: now,
+          updatedAt: now,
+        })
+        .where(eq(checkoutOrders.orderId, orderId));
+    },
+
+    async recordProductOrderConfirmationEmailFailure(orderId, error, now) {
+      await getPrivateDb()
+        .update(checkoutOrders)
+        .set({
+          productConfirmationEmailClaimedUntil: null,
+          productConfirmationEmailLastError: error,
+          updatedAt: now,
         })
         .where(eq(checkoutOrders.orderId, orderId));
     },

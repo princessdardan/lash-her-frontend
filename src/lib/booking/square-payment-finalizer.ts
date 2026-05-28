@@ -13,6 +13,7 @@ import {
 
 import {
   finalizeAppointmentPaymentForOrder as defaultFinalizeAppointmentPaymentForOrder,
+  isAppointmentCheckoutPurpose,
   type FinalizeAppointmentPaymentForOrderResult,
 } from "./finalizer";
 import type { SquareClient, SquareOrder, SquarePayment } from "./square-client";
@@ -90,6 +91,7 @@ interface SquarePaymentFinalizerDependencies {
   finalizeAppointmentPaymentForOrder: typeof defaultFinalizeAppointmentPaymentForOrder;
   getEnv: () => SquareServiceBookingEnv | null;
   repository: SquarePaymentFinalizerRepository;
+  sendBookingConfirmationEmailForOrder: (orderId: string) => Promise<void>;
   squareClientFactory: (env: SquareServiceBookingEnv) => SquareClient;
 }
 
@@ -116,6 +118,7 @@ export function createSquarePaymentFinalizer(
     const initialEventResult = await recordIncomingEvent(input, dependencies.repository);
 
     if (initialEventResult.duplicate && initialEventResult.processingStatus === "processed") {
+      await recoverProcessedDuplicateBookingConfirmation(input, dependencies);
       return { duplicateEvent: true, finalized: false, status: "duplicate" };
     }
 
@@ -234,6 +237,10 @@ export function createSquarePaymentFinalizer(
       transactionId: lookup.payment.id,
     });
 
+    if (bookingFinalization.ok) {
+      await dependencies.sendBookingConfirmationEmailForOrder(localOrder.orderId);
+    }
+
     await dependencies.repository.recordSquareEvent({
       amountCents,
       currency,
@@ -257,16 +264,37 @@ export function createSquarePaymentFinalizer(
   };
 }
 
+async function recoverProcessedDuplicateBookingConfirmation(
+  input: SquarePaymentFinalizerInput,
+  dependencies: SquarePaymentFinalizerDependencies,
+): Promise<void> {
+  const localOrder = await dependencies.repository.findSquareOrder({
+    localOrderId: input.orderId,
+    providerOrderId: input.event?.orderId,
+    providerPaymentId: input.event?.paymentId ?? input.paymentId,
+  });
+
+  if (localOrder === null || localOrder.status !== "paid" || !isAppointmentCheckoutPurpose(localOrder.purpose)) {
+    return;
+  }
+
+  await dependencies.sendBookingConfirmationEmailForOrder(localOrder.orderId);
+}
+
 export async function finalizeSquarePayment(
   input: SquarePaymentFinalizerInput,
 ): Promise<SquarePaymentFinalizerResult> {
-  const { createSquareServiceBookingClient, getSquareServiceBookingRuntimeEnv } = await import("./square-runtime");
+  const [squareRuntime, email] = await Promise.all([
+    import("./square-runtime"),
+    import("./email"),
+  ]);
 
   return createSquarePaymentFinalizer({
     finalizeAppointmentPaymentForOrder: defaultFinalizeAppointmentPaymentForOrder,
-    getEnv: getSquareServiceBookingRuntimeEnv,
+    getEnv: squareRuntime.getSquareServiceBookingRuntimeEnv,
     repository: createDrizzleSquarePaymentFinalizerRepository(),
-    squareClientFactory: (env) => createSquareServiceBookingClient({ env }),
+    sendBookingConfirmationEmailForOrder: email.sendBookingConfirmationEmailForOrder,
+    squareClientFactory: (env) => squareRuntime.createSquareServiceBookingClient({ env }),
   })(input);
 }
 

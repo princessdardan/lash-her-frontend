@@ -1,4 +1,12 @@
-import { Resend } from "resend";
+import "server-only";
+
+import {
+  escapeHtml,
+  getEmailConfig,
+  mailtoHref,
+  sendTransactionalEmail,
+  telHref,
+} from "@/lib/transactional-email";
 
 // Type definitions
 export interface GeneralInquiryData {
@@ -37,25 +45,6 @@ export interface ContactPopupData {
 }
 
 export type FormType = "general-inquiry" | "training-contact" | "contact-popup";
-
-// Resend client initialized at module level
-const resend = new Resend(process.env.RESEND_API_KEY);
-
-// HTML escape utility
-function escapeHtml(text: string): string {
-  const map: Record<string, string> = {
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;",
-  };
-  return text.replace(/[&<>"']/g, (m) => map[m]);
-}
-
-function mailtoHref(email: string): string {
-  return `mailto:${encodeURIComponent(email)}`;
-}
 
 // Subject line helpers
 function getAdminSubject(
@@ -151,7 +140,7 @@ function getGeneralInquiryAdminHtml(data: GeneralInquiryData): string {
                 <tr>
                   <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
                     <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 120px;">Phone:</strong>
-                    <a href="tel:${data.phone}" style="color: #663976; font-size: 14px; text-decoration: none;">${escapeHtml(data.phone)}</a>
+                    <a href="${escapeHtml(telHref(data.phone))}" style="color: #663976; font-size: 14px; text-decoration: none;">${escapeHtml(data.phone)}</a>
                   </td>
                 </tr>
                 `
@@ -275,7 +264,7 @@ function getTrainingContactAdminHtml(data: TrainingContactData): string {
                 <tr>
                   <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
                     <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 140px;">Phone:</strong>
-                    <a href="tel:${data.phone}" style="color: #663976; font-size: 14px; text-decoration: none;">${escapeHtml(data.phone)}</a>
+                    <a href="${escapeHtml(telHref(data.phone))}" style="color: #663976; font-size: 14px; text-decoration: none;">${escapeHtml(data.phone)}</a>
                   </td>
                 </tr>
                 <tr>
@@ -317,7 +306,7 @@ function getTrainingContactAdminHtml(data: TrainingContactData): string {
                   <a href="${escapeHtml(mailtoHref(data.email))}" style="display: inline-block; background-color: #D4B483; color: #ffffff; text-decoration: none; padding: 12px 30px; border-radius: 6px; font-weight: 500; font-size: 14px; margin: 5px;">
                   Email ${escapeHtml(data.name.split(" ")[0])}
                 </a>
-                <a href="tel:${data.phone}" style="display: inline-block; background-color: #663976; color: #ffffff; text-decoration: none; padding: 12px 30px; border-radius: 6px; font-weight: 500; font-size: 14px; margin: 5px;">
+                <a href="${escapeHtml(telHref(data.phone))}" style="display: inline-block; background-color: #663976; color: #ffffff; text-decoration: none; padding: 12px 30px; border-radius: 6px; font-weight: 500; font-size: 14px; margin: 5px;">
                   Call ${escapeHtml(data.name.split(" ")[0])}
                 </a>
               </div>
@@ -696,6 +685,7 @@ export async function sendAdminNotification(
   formType: FormType,
   formData: GeneralInquiryData | TrainingContactData | ContactPopupData
 ): Promise<void> {
+  const config = getEmailConfig();
   const subject = getAdminSubject(formType, formData);
   let html = "";
   if (formType === "general-inquiry") {
@@ -706,16 +696,14 @@ export async function sendAdminNotification(
     html = getTrainingContactAdminHtml(formData as TrainingContactData);
   }
 
-  const { error } = await resend.emails.send({
-    from: process.env.FROM_EMAIL!,
-    to: process.env.ADMIN_EMAIL!,
-    subject,
+  await sendTransactionalEmail({
     html,
+    subject,
+    tags: [
+      { name: "flow", value: `${formType}_admin` },
+    ],
+    to: config.adminEmail,
   });
-
-  if (error) {
-    throw new Error(`Admin notification failed: ${error.message}`);
-  }
 }
 
 export async function sendUserConfirmation(
@@ -732,24 +720,41 @@ export async function sendUserConfirmation(
     html = getTrainingContactUserHtml(formData as TrainingContactData);
   }
 
-  const { error } = await resend.emails.send({
-    from: process.env.FROM_EMAIL!,
-    to: formData.email,
-    subject,
+  await sendTransactionalEmail({
     html,
+    subject,
+    tags: [
+      { name: "flow", value: `${formType}_customer` },
+    ],
+    to: formData.email,
   });
-
-  if (error) {
-    throw new Error(`User confirmation failed: ${error.message}`);
-  }
 }
 
 export async function sendFormEmails(
   formType: FormType,
   formData: GeneralInquiryData | TrainingContactData | ContactPopupData
 ): Promise<void> {
-  await Promise.allSettled([
+  const results = await Promise.allSettled([
     sendAdminNotification(formType, formData),
     sendUserConfirmation(formType, formData),
   ]);
+  const failures: string[] = [];
+
+  results.forEach((result, index) => {
+    if (result.status === "rejected") {
+      const recipientType = index === 0 ? "admin" : "customer";
+      const message = result.reason instanceof Error ? result.reason.message : "Unknown email error";
+
+      failures.push(`${recipientType}: ${message}`);
+      console.error("[email] Form email failed", {
+        error: message,
+        formType,
+        recipientType,
+      });
+    }
+  });
+
+  if (failures.length > 0) {
+    throw new Error(`Form email delivery failed for ${formType}: ${failures.join("; ")}`);
+  }
 }

@@ -3,6 +3,8 @@ import {
   eq,
   gt,
   inArray,
+  isNotNull,
+  isNull,
   lte,
   lt,
   or,
@@ -151,6 +153,23 @@ export interface AppointmentHoldStore {
   ): Promise<BookingHoldRecord | null>;
 }
 
+export type BookingConfirmationEmailClaimRecord = BookingHoldRecord;
+
+export interface ClaimBookingConfirmationEmailByOrderIdInput {
+  claimForMs?: number;
+  now?: Date;
+  orderId: string;
+}
+
+export interface BookingConfirmationEmailMutationInput {
+  holdId: string;
+  now?: Date;
+}
+
+export interface BookingConfirmationEmailFailureInput extends BookingConfirmationEmailMutationInput {
+  error: string;
+}
+
 export type CreateBookingHoldResult =
   | { ok: true; hold: BookingHoldRecord }
   | { ok: false; reason: "slot_conflict"; conflictingHoldId: string };
@@ -164,6 +183,7 @@ export const ACTIVE_HOLD_STATES: readonly BookingHoldState[] = [
 
 const MINUTE_MS = 60_000;
 const PAYMENT_SUCCESS_GRACE_MS = PAYMENT_SUCCESS_GRACE_MINUTES * MINUTE_MS;
+const EMAIL_CLAIM_DURATION_MS = 5 * MINUTE_MS;
 const ACTIVE_HOLD_STATES_FOR_QUERY = [...ACTIVE_HOLD_STATES];
 const GRACE_PROTECTED_HOLD_STATES: readonly BookingHoldState[] = [
   "payment_pending",
@@ -348,6 +368,64 @@ export async function getAppointmentHoldByCheckoutOrderPublicId(
     .limit(1);
 
   return row ? toBookingHoldRecord(row) : null;
+}
+
+export async function claimBookingConfirmationEmailByOrderId(
+  input: ClaimBookingConfirmationEmailByOrderIdInput,
+): Promise<BookingConfirmationEmailClaimRecord | null> {
+  const now = input.now ?? new Date();
+  const claimUntil = new Date(now.getTime() + (input.claimForMs ?? EMAIL_CLAIM_DURATION_MS));
+  const [row] = await (await getAppointmentHoldDb())
+    .update(appointmentHolds)
+    .set({
+      bookingConfirmationEmailClaimedUntil: claimUntil,
+      bookingConfirmationEmailLastError: null,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(appointmentHolds.checkoutOrderPublicId, input.orderId),
+        eq(appointmentHolds.status, "booked"),
+        isNotNull(appointmentHolds.googleEventId),
+        isNull(appointmentHolds.bookingConfirmationEmailSentAt),
+        or(
+          isNull(appointmentHolds.bookingConfirmationEmailClaimedUntil),
+          lte(appointmentHolds.bookingConfirmationEmailClaimedUntil, now),
+        ),
+      ),
+    )
+    .returning();
+
+  return row ? toBookingHoldRecord(row) : null;
+}
+
+export async function markBookingConfirmationEmailSent(
+  input: BookingConfirmationEmailMutationInput,
+): Promise<void> {
+  const now = input.now ?? new Date();
+  await (await getAppointmentHoldDb())
+    .update(appointmentHolds)
+    .set({
+      bookingConfirmationEmailClaimedUntil: null,
+      bookingConfirmationEmailLastError: null,
+      bookingConfirmationEmailSentAt: now,
+      updatedAt: now,
+    })
+    .where(eq(appointmentHolds.id, input.holdId));
+}
+
+export async function recordBookingConfirmationEmailFailure(
+  input: BookingConfirmationEmailFailureInput,
+): Promise<void> {
+  const now = input.now ?? new Date();
+  await (await getAppointmentHoldDb())
+    .update(appointmentHolds)
+    .set({
+      bookingConfirmationEmailClaimedUntil: null,
+      bookingConfirmationEmailLastError: input.error,
+      updatedAt: now,
+    })
+    .where(eq(appointmentHolds.id, input.holdId));
 }
 
 export interface AppointmentHoldFinalizerRepositoryDependencies {

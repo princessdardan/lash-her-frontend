@@ -34,6 +34,9 @@ const pendingEnrollment: PendingTrainingEnrollmentRecord = {
     orderId: "LH-TRAINING-123",
     paidAt: new Date("2026-05-10T00:10:00.000Z"),
     paymentProvider: "helcim",
+    productConfirmationEmailClaimedUntil: null,
+    productConfirmationEmailLastError: null,
+    productConfirmationEmailSentAt: null,
     providerCheckoutId: null,
     providerMetadata: null,
     providerOrderId: null,
@@ -42,6 +45,7 @@ const pendingEnrollment: PendingTrainingEnrollmentRecord = {
     purpose: "training",
     redactedAt: null,
     secretTokenCiphertext: "v1:encrypted",
+    shippingAddress: null,
     squareLocationId: null,
     squarePaymentLinkId: null,
     squarePaymentLinkUrl: null,
@@ -63,6 +67,7 @@ const pendingEnrollment: PendingTrainingEnrollmentRecord = {
     title: "Lash Training Program",
   },
   staffAlertedAt: null,
+  studentPaymentEmailSentAt: null,
   tokenExpiresAt: new Date("2099-05-24T00:00:00.000Z"),
 };
 

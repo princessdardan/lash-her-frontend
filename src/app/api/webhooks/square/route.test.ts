@@ -284,7 +284,7 @@ test("Square webhook dispatches signed paid training invoice events to the train
   });
 });
 
-test("Square webhook skips processed duplicate paid training invoice events", async () => {
+test("Square webhook recovers processed duplicate paid training invoice events", async () => {
   const bookingFinalizerCalls: unknown[] = [];
   const trainingFinalizerCalls: unknown[] = [];
   const processedEvents: unknown[] = [];
@@ -293,7 +293,7 @@ test("Square webhook skips processed duplicate paid training invoice events", as
     claimSquareInvoiceWebhookEvent: async () => ({ duplicate: true, processingStatus: "processed" }),
     finalizeTrainingSquareInvoicePayment: async (input) => {
       trainingFinalizerCalls.push(input);
-      return { duplicateEvent: false, finalized: true, status: "paid" };
+      return { duplicateEvent: true, finalized: false, status: "duplicate" };
     },
     recordSquareInvoiceWebhookEventProcessed: async (input) => {
       processedEvents.push(input);
@@ -308,7 +308,36 @@ test("Square webhook skips processed duplicate paid training invoice events", as
   }))));
 
   assert.equal(response.status, 200);
-  assert.equal(trainingFinalizerCalls.length, 0);
+  assert.equal(trainingFinalizerCalls.length, 1);
+  assert.equal(bookingFinalizerCalls.length, 0);
+  assert.equal(processedEvents.length, 1);
+});
+
+test("Square webhook asks Square to retry processed duplicate training invoice notification failures", async () => {
+  const bookingFinalizerCalls: unknown[] = [];
+  const processedEvents: unknown[] = [];
+  const handler = createHandler(bookingFinalizerCalls, {
+    findOrderBySquareInvoiceId: async () => createTrainingSquareInvoiceOrder(),
+    claimSquareInvoiceWebhookEvent: async () => ({ duplicate: true, processingStatus: "processed" }),
+    finalizeTrainingSquareInvoicePayment: async () => ({
+      duplicateEvent: true,
+      finalized: false,
+      notificationFailed: true,
+      status: "customer: Customer training email failed",
+    }),
+    recordSquareInvoiceWebhookEventProcessed: async (input) => {
+      processedEvents.push(input);
+    },
+  });
+  const response = await handler(createSignedRequest(JSON.stringify(createSquareInvoiceWebhookPayload({
+    eventId: "evt_training_processed_duplicate_email_retry",
+    eventType: "invoice.payment_made",
+    invoiceId: "square-invoice-123",
+    orderId: "square-order-123",
+    paymentId: "square-payment-123",
+  }))));
+
+  assert.equal(response.status, 503);
   assert.equal(bookingFinalizerCalls.length, 0);
   assert.equal(processedEvents.length, 0);
 });

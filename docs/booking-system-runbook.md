@@ -236,7 +236,9 @@ Operator action:
 
 1. Do not roll back a confirmed booking only because email failed.
 2. Record the Resend message/error ID with addresses redacted.
-3. Send a manual customer follow-up if the booking or paid training instruction email failed.
+3. Check the relevant private DB email state/error field for the product order, training enrollment, or booking hold.
+4. Send a manual customer follow-up if the booking, product order, or paid training instruction email failed.
+5. Use `docs/resend-transactional-email-setup.md` for Resend sender/domain and environment troubleshooting.
 
 ### Customer Cannot Access Paid Training Schedule
 

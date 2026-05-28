@@ -3,6 +3,7 @@ import {
   finalizeAppointmentPaymentForOrder,
   isAppointmentCheckoutPurpose,
 } from "@/lib/booking/finalizer";
+import { sendBookingConfirmationEmailForOrder } from "@/lib/booking/email";
 import { getAppointmentHoldByCheckoutOrderPublicId } from "@/lib/booking/holds";
 import { isSafeServiceConfirmationSlug } from "@/lib/booking-confirmation";
 import {
@@ -10,12 +11,11 @@ import {
   markOrderPaid,
   markOrderVerificationFailed,
 } from "@/lib/commerce/order-store";
-import { sendProductOrderConfirmationEmail } from "@/lib/commerce/product-order-email";
-import { sendTrainingPaymentNotificationEmails } from "@/lib/commerce/training-payment-email";
+import { sendProductOrderConfirmationEmailForOrder } from "@/lib/commerce/product-order-email";
+import { sendTrainingPaymentNotificationEmailsIfNeeded } from "@/lib/commerce/training-payment-notifications";
 import {
   getOrIssueTrainingSchedulingTokenForPaidOrder,
   getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
-  markTrainingEnrollmentStaffAlerted,
 } from "@/lib/commerce/training-enrollment-store";
 import { persistVerifiedPayment, verifyHelcimPayment } from "@/lib/commerce/verified-payment";
 import type { VerifiablePendingOrder } from "@/lib/commerce/verified-payment";
@@ -47,10 +47,10 @@ interface ValidatePaymentPostHandlerDependencies {
   logError: typeof console.error;
   markOrderPaid: typeof markOrderPaid;
   markOrderVerificationFailed: typeof markOrderVerificationFailed;
-  markTrainingEnrollmentStaffAlerted: typeof markTrainingEnrollmentStaffAlerted;
   persistVerifiedPayment: typeof persistVerifiedPayment;
-  sendProductOrderConfirmationEmail: typeof sendProductOrderConfirmationEmail;
-  sendTrainingPaymentNotificationEmails: typeof sendTrainingPaymentNotificationEmails;
+  sendBookingConfirmationEmailForOrder: typeof sendBookingConfirmationEmailForOrder;
+  sendProductOrderConfirmationEmailForOrder: typeof sendProductOrderConfirmationEmailForOrder;
+  sendTrainingPaymentNotificationEmailsIfNeeded: typeof sendTrainingPaymentNotificationEmailsIfNeeded;
   verifyHelcimPayment: typeof verifyHelcimPayment;
 }
 
@@ -148,6 +148,15 @@ export function createValidatePaymentPostHandler(
         });
 
         if (booking.ok) {
+          try {
+            await dependencies.sendBookingConfirmationEmailForOrder(order.orderId);
+          } catch (error) {
+            dependencies.logError("[checkout] Booking confirmation email failed", {
+              error: error instanceof Error ? error.message : "Unknown email error",
+              orderId: order.orderId,
+            });
+          }
+
           return Response.json({
             bookingStatus: booking.status,
             eventId: booking.eventId,
@@ -211,24 +220,11 @@ export function createValidatePaymentPostHandler(
           schedulingToken: schedulingToken.schedulingToken,
         });
 
-        if (trainingEnrollment.staffAlertedAt === null) {
+        if (trainingEnrollment.studentPaymentEmailSentAt === null || trainingEnrollment.staffAlertedAt === null) {
           try {
-            const alertClaimed = await dependencies.markTrainingEnrollmentStaffAlerted({
-              enrollmentId: trainingEnrollment.enrollmentId,
-            });
-
-            if (!alertClaimed) {
-              return Response.json({
-                orderId: order.orderId,
-                redirectUrl,
-              });
-            }
-
-            await dependencies.sendTrainingPaymentNotificationEmails({
-              customerEmail: trainingEnrollment.checkoutOrder.customerEmail,
-              customerName: trainingEnrollment.checkoutOrder.customerName,
-              orderId: order.orderId,
-              programTitle: trainingEnrollment.programSnapshot.title,
+            await dependencies.sendTrainingPaymentNotificationEmailsIfNeeded({
+              enrollment: trainingEnrollment,
+              paymentProvider: "helcim",
               schedulingUrl: buildAbsoluteSchedulingUrl(
                 getRequestOrigin(req),
                 safeProgramSlug,
@@ -250,15 +246,7 @@ export function createValidatePaymentPostHandler(
       }
 
       try {
-        await dependencies.sendProductOrderConfirmationEmail({
-          currency: order.currency,
-          customerEmail: order.customerEmail,
-          customerName: order.customerName,
-          lineItems: order.lineItems,
-          orderId: order.orderId,
-          shippingAddress: order.shippingAddress,
-          totalAmount: order.amount,
-        });
+        await dependencies.sendProductOrderConfirmationEmailForOrder(order.orderId);
       } catch (error) {
         dependencies.logError("[checkout] Product order confirmation email failed", {
           error: error instanceof Error ? error.message : "Unknown email error",
@@ -292,10 +280,10 @@ export async function POST(req: NextRequest): Promise<Response> {
     logError: console.error,
     markOrderPaid,
     markOrderVerificationFailed,
-    markTrainingEnrollmentStaffAlerted,
     persistVerifiedPayment,
-    sendProductOrderConfirmationEmail,
-    sendTrainingPaymentNotificationEmails,
+    sendBookingConfirmationEmailForOrder,
+    sendProductOrderConfirmationEmailForOrder,
+    sendTrainingPaymentNotificationEmailsIfNeeded,
     verifyHelcimPayment,
   })(req);
 }

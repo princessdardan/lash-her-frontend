@@ -140,6 +140,7 @@ export function createTrainingSquareInvoicePostHandler({
         quote.customerEmail,
         customerName.givenName,
         customerName.familyName,
+        `${correlationId}-customer`,
       );
       const squareOrderId = await squareInvoiceClient.createOrder(
         locationId,

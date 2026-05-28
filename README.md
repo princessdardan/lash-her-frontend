@@ -369,6 +369,7 @@ Do not promote if:
 - `docs/booking-payment-provider-split.md` - Helcim/Square provider split.
 - `docs/google-calendar-oauth-env-setup.md` - Google Calendar OAuth setup.
 - `docs/private-database-migration-runbook.md` - private DB migration process.
+- `docs/resend-transactional-email-setup.md` - Resend transactional email domain, environment, and delivery recovery setup.
 - `docs/marketing-contact-privacy-compliance-follow-up.md` - privacy/compliance operating guidance for marketing and contact data.
 - `docs/sanity-staging-production-workflow.md` - Sanity dataset/content promotion workflow.
 - `docs/launch-readiness-checklist.md` - launch smoke and readiness checklist.

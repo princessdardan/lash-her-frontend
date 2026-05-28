@@ -36,13 +36,16 @@ const helperScript = String.raw`
     finalizeAppointmentPaymentForOrder,
     getCardTransaction,
     getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing,
-    issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing,
-    markTrainingEnrollmentStaffAlerted,
+    getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice,
     recordEvent,
-    sendTrainingPaymentNotificationEmails,
+    sendBookingConfirmationEmailForOrder,
+    sendProductOrderConfirmationEmailForOrder,
+    sendTrainingPaymentNotificationEmailsIfNeeded,
   }) {
     const recorded = [];
     const finalizedBookings = [];
+    const sentBookingEmails = [];
+    const sentProductEmails = [];
     const trainingNotifications = [];
     const markedStaffAlerts = [];
     const sentEmails = [];
@@ -56,9 +59,9 @@ const helperScript = String.raw`
       },
       getCardTransaction,
       getVerifierToken: () => verifierToken,
-      issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing: async (input) => {
-        if (issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing) {
-          return issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing(input);
+      getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice: async (input) => {
+        if (getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice) {
+          return getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice(input);
         }
         return null;
       },
@@ -73,13 +76,6 @@ const helperScript = String.raw`
         }
         return notification;
       },
-      markTrainingEnrollmentStaffAlerted: async (input) => {
-        markedStaffAlerts.push(input);
-        if (markTrainingEnrollmentStaffAlerted) {
-          return markTrainingEnrollmentStaffAlerted(input);
-        }
-        return true;
-      },
       recordEvent: async (event) => {
         recorded.push(event);
         if (recordEvent) {
@@ -91,15 +87,37 @@ const helperScript = String.raw`
         }
         return { matchedOrder: null, paid: false, recorded: true };
       },
-      sendTrainingPaymentNotificationEmails: async (input) => {
-        sentEmails.push(input);
-        if (sendTrainingPaymentNotificationEmails) {
-          await sendTrainingPaymentNotificationEmails(input);
+      sendBookingConfirmationEmailForOrder: async (orderId) => {
+        sentBookingEmails.push(orderId);
+        if (sendBookingConfirmationEmailForOrder) {
+          await sendBookingConfirmationEmailForOrder(orderId);
+        }
+      },
+      sendProductOrderConfirmationEmailForOrder: async (orderId) => {
+        sentProductEmails.push(orderId);
+        if (sendProductOrderConfirmationEmailForOrder) {
+          await sendProductOrderConfirmationEmailForOrder(orderId);
+        }
+      },
+      sendTrainingPaymentNotificationEmailsIfNeeded: async (input) => {
+        sentEmails.push({
+          customerEmail: input.enrollment.checkoutOrder.customerEmail,
+          customerName: input.enrollment.checkoutOrder.customerName,
+          orderId: input.enrollment.checkoutOrder.orderId,
+          paymentProvider: input.paymentProvider,
+          programTitle: input.enrollment.programSnapshot.title,
+          schedulingUrl: input.schedulingUrl,
+        });
+        if (input.enrollment.staffAlertedAt === null) {
+          markedStaffAlerts.push({ enrollmentId: input.enrollment.enrollmentId });
+        }
+        if (sendTrainingPaymentNotificationEmailsIfNeeded) {
+          await sendTrainingPaymentNotificationEmailsIfNeeded(input);
         }
       },
     });
 
-    return { finalizedBookings, handler, trainingNotifications, markedStaffAlerts, recorded, sentEmails };
+    return { finalizedBookings, handler, trainingNotifications, markedStaffAlerts, recorded, sentBookingEmails, sentEmails, sentProductEmails };
   }
 `;
 
@@ -201,13 +219,14 @@ test("Helcim webhook route uses mock gateway to enrich sparse card transaction w
       },
       getVerifierToken: () => verifierToken,
       getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing: async () => null,
-      issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing: async () => null,
-      markTrainingEnrollmentStaffAlerted: async () => true,
+      getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice: async () => null,
       recordEvent: async (event) => {
         recorded.push(event);
         return { matchedOrder: null, paid: false, recorded: true };
       },
-      sendTrainingPaymentNotificationEmails: async () => {},
+      sendBookingConfirmationEmailForOrder: async () => {},
+      sendProductOrderConfirmationEmailForOrder: async () => {},
+      sendTrainingPaymentNotificationEmailsIfNeeded: async () => {},
     });
     const response = await handler(new Request("http://localhost:3000/api/webhooks/card-transactions", {
       method: "POST",
@@ -262,6 +281,43 @@ test("Helcim webhook route rejects request mock controls in production", () => {
   `);
 });
 
+test("Helcim webhook route does not send product confirmation for training orders", () => {
+  runRouteScenario(`
+    const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });
+    const { handler, sentProductEmails } = await runScenario({
+      getCardTransaction: async () => ({
+        amount: "1499.00",
+        currency: "CAD",
+        id: 25764674,
+        invoiceNumber: "INV-TRAINING-4242",
+        status: "APPROVED",
+      }),
+      recordEvent: async () => ({
+        matchedOrder: {
+          _id: "checkout-order-training",
+          amount: 1499,
+          currency: "CAD",
+          helcimInvoiceId: 4242,
+          helcimInvoiceNumber: "INV-TRAINING-4242",
+          orderId: "lh-training-123",
+          paymentProvider: "helcim",
+          purpose: "training",
+        },
+        paid: true,
+        recorded: true,
+      }),
+      sendProductOrderConfirmationEmailForOrder: async () => {
+        throw new Error("Training orders must not send product confirmations");
+      },
+    });
+
+    const response = await handler(createRequest(body));
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(sentProductEmails, []);
+  `);
+});
+
 test("Helcim webhook route recovers missing training notification and sends payment emails", () => {
   runRouteScenario(`
     const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });
@@ -294,9 +350,10 @@ test("Helcim webhook route recovers missing training notification and sends paym
           title: "Lash Training Program",
         },
         staffAlertedAt: null,
+        studentPaymentEmailSentAt: null,
         tokenExpiresAt: null,
       }),
-      issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing: async (input) => {
+      getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice: async (input) => {
         assert.deepEqual(input, { helcimInvoiceId: undefined, helcimInvoiceNumber: "INV-TRAINING-4242" });
         return {
           checkoutEmail: "client@example.com",
@@ -306,6 +363,7 @@ test("Helcim webhook route recovers missing training notification and sends paym
           programSnapshot: { id: "program-lash-training", slug: "lash-training", title: "Lash Training Program" },
           schedulingToken: "webhook-token-123",
           staffAlertedAt: null,
+          studentPaymentEmailSentAt: null,
           tokenExpiresAt: new Date("2026-05-24T00:00:00.000Z"),
         };
       },
@@ -321,6 +379,7 @@ test("Helcim webhook route recovers missing training notification and sends paym
         customerEmail: "client@example.com",
         customerName: "Client Name",
         orderId: "lh-training-123",
+        paymentProvider: "helcim",
         programTitle: "Lash Training Program",
         schedulingUrl: "http://localhost:3000/training-programs/lash-training/schedule?token=webhook-token-123",
       },
@@ -330,7 +389,7 @@ test("Helcim webhook route recovers missing training notification and sends paym
 });
 
 
-test("Helcim webhook route skips duplicate training notification when token issuance is already claimed", () => {
+test("Helcim webhook route returns retryable status when training token issuance is unavailable", () => {
   runRouteScenario(`
     const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });
     const { handler, markedStaffAlerts, sentEmails } = await runScenario({
@@ -348,15 +407,59 @@ test("Helcim webhook route skips duplicate training notification when token issu
         productSnapshot: { currency: "CAD", id: "product-training-full", priceCents: 149900, sku: "TRAINING-FULL", title: "Lash Training Full Payment" },
         programSnapshot: { id: "program-lash-training", slug: "lash-training", title: "Lash Training Program" },
         staffAlertedAt: null,
+        studentPaymentEmailSentAt: null,
         tokenExpiresAt: new Date("2026-05-24T00:00:00.000Z"),
       }),
-      issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing: async () => null,
+      getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice: async () => null,
       recordEvent: async () => true,
     });
 
     const response = await handler(createRequest(body));
 
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 503);
+    assert.deepEqual(sentEmails, []);
+    assert.deepEqual(markedStaffAlerts, []);
+  `);
+});
+
+test("Helcim webhook route returns retryable status when training program slug is missing", () => {
+  runRouteScenario(`
+    const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });
+    const { handler, markedStaffAlerts, sentEmails } = await runScenario({
+      getCardTransaction: async () => ({
+        amount: "1499.00",
+        currency: "CAD",
+        id: 25764674,
+        invoiceNumber: "INV-TRAINING-4242",
+        status: "APPROVED",
+      }),
+      getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing: async () => ({
+        checkoutEmail: "client@example.com",
+        checkoutOrder: { customerEmail: "client@example.com", customerName: "Client Name", orderId: "lh-training-123" },
+        enrollmentId: "training-enrollment-1",
+        productSnapshot: { currency: "CAD", id: "product-training-full", priceCents: 149900, sku: "TRAINING-FULL", title: "Lash Training Full Payment" },
+        programSnapshot: { id: "program-lash-training", slug: "", title: "Lash Training Program" },
+        staffAlertedAt: null,
+        studentPaymentEmailSentAt: null,
+        tokenExpiresAt: new Date("2026-05-24T00:00:00.000Z"),
+      }),
+      getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice: async () => ({
+        checkoutEmail: "client@example.com",
+        checkoutOrder: { customerEmail: "client@example.com", customerName: "Client Name", orderId: "lh-training-123" },
+        enrollmentId: "training-enrollment-1",
+        productSnapshot: { currency: "CAD", id: "product-training-full", priceCents: 149900, sku: "TRAINING-FULL", title: "Lash Training Full Payment" },
+        programSnapshot: { id: "program-lash-training", slug: "", title: "Lash Training Program" },
+        schedulingToken: "webhook-token-123",
+        staffAlertedAt: null,
+        studentPaymentEmailSentAt: null,
+        tokenExpiresAt: new Date("2026-05-24T00:00:00.000Z"),
+      }),
+      recordEvent: async () => true,
+    });
+
+    const response = await handler(createRequest(body));
+
+    assert.equal(response.status, 503);
     assert.deepEqual(sentEmails, []);
     assert.deepEqual(markedStaffAlerts, []);
   `);

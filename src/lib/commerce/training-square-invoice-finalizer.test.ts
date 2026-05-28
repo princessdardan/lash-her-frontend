@@ -46,6 +46,9 @@ function createSquareInvoiceOrder(overrides: Partial<CheckoutOrderRow> = {}): Ch
     orderId: "lh-training-123",
     paidAt: null,
     paymentProvider: "square",
+    productConfirmationEmailClaimedUntil: null,
+    productConfirmationEmailLastError: null,
+    productConfirmationEmailSentAt: null,
     providerCheckoutId: "mock-square-invoice-1",
     providerMetadata: {
       amountCents: 249900,
@@ -113,6 +116,7 @@ function createPaidInvoiceDetails(input: {
 }
 
 function createHarness(input: {
+  customerEmailFailure?: boolean;
   getInvoice?: TrainingSquareInvoiceFinalizerDependencies["getInvoice"];
   getOrder?: TrainingSquareInvoiceFinalizerDependencies["getOrder"];
   order?: CheckoutOrderRow | null;
@@ -124,11 +128,13 @@ function createHarness(input: {
   const calls = {
     createEnrollment: 0,
     emails: 0,
+    emailFailures: [] as string[],
     getInvoice: 0,
     getOrder: 0,
     markFailed: [] as Array<{ error: string; retryable: boolean }>,
     markPaid: 0,
     markStaffAlerted: 0,
+    markStudentPaymentEmailSent: 0,
     tokens: 0,
   };
   const dependencies: TrainingSquareInvoiceFinalizerDependencies = {
@@ -162,8 +168,11 @@ function createHarness(input: {
         schedulingStatus: "pending",
         schedulingTokenHash: null,
         staffAlertedAt: null,
+        studentPaymentEmailSentAt: null,
         tokenExpiresAt: null,
         tokenUsedAt: null,
+        trainingEmailClaimedUntil: null,
+        trainingEmailLastError: null,
         updatedAt: now,
       };
     },
@@ -239,6 +248,10 @@ function createHarness(input: {
         };
       }
     },
+    async claimTrainingPaymentEmails(input) {
+      assert.equal(input.enrollmentId, "training-enrollment-id");
+      return enrollment;
+    },
     async markTrainingEnrollmentStaffAlerted(input) {
       assert.equal(input.enrollmentId, "training-enrollment-id");
       calls.markStaffAlerted += 1;
@@ -250,12 +263,42 @@ function createHarness(input: {
       }
       return true;
     },
-    async sendTrainingPaymentNotificationEmails(emailInput) {
+    async markTrainingEnrollmentStudentPaymentEmailSent(input) {
+      assert.equal(input.enrollmentId, "training-enrollment-id");
+      calls.markStudentPaymentEmailSent += 1;
+      if (enrollment) {
+        enrollment = {
+          ...enrollment,
+          studentPaymentEmailSentAt: now,
+        };
+      }
+      return true;
+    },
+    async recordTrainingPaymentEmailFailure(failureInput) {
+      assert.equal(failureInput.enrollmentId, "training-enrollment-id");
+      calls.emailFailures.push(failureInput.error);
+    },
+    async sendTrainingCustomerPaymentEmail(emailInput) {
       calls.emails += 1;
       assert.deepEqual(emailInput, {
         customerEmail: "student@example.com",
         customerName: "Student Name",
         orderId: "lh-training-123",
+        paymentProvider: "square",
+        programTitle: "Classic Lash Training",
+        schedulingUrl: "https://lashher.test/training-programs/classic-lash-training/schedule?token=tr_scheduling_token",
+      });
+      if (input.customerEmailFailure) {
+        throw new Error("Customer training email failed");
+      }
+    },
+    async sendTrainingAdminPaymentEmail(emailInput) {
+      calls.emails += 1;
+      assert.deepEqual(emailInput, {
+        customerEmail: "student@example.com",
+        customerName: "Student Name",
+        orderId: "lh-training-123",
+        paymentProvider: "square",
         programTitle: "Classic Lash Training",
         schedulingUrl: "https://lashher.test/training-programs/classic-lash-training/schedule?token=tr_scheduling_token",
       });
@@ -293,7 +336,39 @@ test("finalizeTrainingSquareInvoice verifies a paid Square invoice before enroll
   assert.equal(harness.calls.createEnrollment, 1);
   assert.equal(harness.calls.tokens, 1);
   assert.equal(harness.calls.markStaffAlerted, 1);
-  assert.equal(harness.calls.emails, 1);
+  assert.equal(harness.calls.markStudentPaymentEmailSent, 1);
+  assert.equal(harness.calls.emails, 2);
+  assert.deepEqual(harness.calls.emailFailures, []);
+});
+
+test("finalizeTrainingSquareInvoice keeps paid finalization when notification emails fail", async () => {
+  const harness = createHarness({ customerEmailFailure: true });
+
+  const result = await harness.finalizer({
+    correlationId: "training-correlation-123",
+    invoiceId: "mock-square-invoice-1",
+    origin: "https://lashher.test",
+    paymentId: "square-payment-123",
+  });
+
+  assert.deepEqual(result, {
+    duplicate: false,
+    finalized: true,
+    notificationFailed: true,
+    reason: "customer: Customer training email failed",
+  });
+  assert.equal(harness.order?.status, "paid");
+  assert.equal(harness.order?.providerStatus, "paid");
+  assert.equal(harness.order?.providerPaymentId, "square-payment-123");
+  assert.equal(harness.order?.providerMetadata?.finalizationStatus, "paid");
+  assert.deepEqual(harness.calls.markFailed, []);
+  assert.equal(harness.calls.markPaid, 1);
+  assert.equal(harness.calls.createEnrollment, 1);
+  assert.equal(harness.calls.tokens, 1);
+  assert.equal(harness.calls.markStaffAlerted, 1);
+  assert.equal(harness.calls.markStudentPaymentEmailSent, 0);
+  assert.equal(harness.calls.emails, 2);
+  assert.deepEqual(harness.calls.emailFailures, ["customer: Customer training email failed"]);
 });
 
 test("finalizeTrainingSquareInvoice rejects paid invoices with amount mismatches", async () => {
@@ -402,7 +477,89 @@ test("finalizeTrainingSquareInvoice ignores unknown invoices without fetching Sq
   assert.equal(harness.calls.markPaid, 0);
 });
 
-test("finalizeTrainingSquareInvoice returns duplicate for already finalized paid orders", async () => {
+test("finalizeTrainingSquareInvoice recovers missing emails for already finalized paid orders", async () => {
+  const paidOrder = createSquareInvoiceOrder({
+    paidAt: now,
+    providerMetadata: {
+      amountCents: 249900,
+      correlationId: "training-correlation-123",
+      currency: "CAD",
+      finalizationStatus: "paid",
+      flow: "training_square_invoice",
+      programSlug: "classic-lash-training",
+      squareCustomerId: "square-customer-123",
+      squareInvoicePublicUrl: "https://square.test/invoice/1",
+      squareInvoiceVersion: 2,
+    },
+    providerPaymentId: "square-payment-123",
+    providerStatus: "paid",
+    status: "paid",
+  });
+  const harness = createHarness({ order: paidOrder });
+  harness.enrollment = createEnrollmentRecord(paidOrder);
+
+  const result = await harness.finalizer({
+    correlationId: "training-correlation-123",
+    invoiceId: "mock-square-invoice-1",
+    origin: "https://lashher.test",
+    paymentId: "square-payment-123",
+  });
+
+  assert.deepEqual(result, { duplicate: true, finalized: false });
+  assert.equal(harness.calls.getInvoice, 1);
+  assert.equal(harness.calls.markPaid, 0);
+  assert.equal(harness.calls.createEnrollment, 0);
+  assert.equal(harness.calls.tokens, 1);
+  assert.equal(harness.calls.markStaffAlerted, 1);
+  assert.equal(harness.calls.markStudentPaymentEmailSent, 1);
+  assert.equal(harness.calls.emails, 2);
+});
+
+test("finalizeTrainingSquareInvoice reports retryable notification failures for already finalized paid orders", async () => {
+  const paidOrder = createSquareInvoiceOrder({
+    paidAt: now,
+    providerMetadata: {
+      amountCents: 249900,
+      correlationId: "training-correlation-123",
+      currency: "CAD",
+      finalizationStatus: "paid",
+      flow: "training_square_invoice",
+      programSlug: "classic-lash-training",
+      squareCustomerId: "square-customer-123",
+      squareInvoicePublicUrl: "https://square.test/invoice/1",
+      squareInvoiceVersion: 2,
+    },
+    providerPaymentId: "square-payment-123",
+    providerStatus: "paid",
+    status: "paid",
+  });
+  const harness = createHarness({ customerEmailFailure: true, order: paidOrder });
+  harness.enrollment = createEnrollmentRecord(paidOrder);
+
+  const result = await harness.finalizer({
+    correlationId: "training-correlation-123",
+    invoiceId: "mock-square-invoice-1",
+    origin: "https://lashher.test",
+    paymentId: "square-payment-123",
+  });
+
+  assert.deepEqual(result, {
+    duplicate: true,
+    finalized: false,
+    notificationFailed: true,
+    reason: "customer: Customer training email failed",
+  });
+  assert.equal(harness.calls.markPaid, 0);
+  assert.deepEqual(harness.calls.markFailed, []);
+  assert.equal(harness.calls.createEnrollment, 0);
+  assert.equal(harness.calls.tokens, 1);
+  assert.equal(harness.calls.markStaffAlerted, 1);
+  assert.equal(harness.calls.markStudentPaymentEmailSent, 0);
+  assert.equal(harness.calls.emails, 2);
+  assert.deepEqual(harness.calls.emailFailures, ["customer: Customer training email failed"]);
+});
+
+test("finalizeTrainingSquareInvoice treats already finalized paid orders without pending enrollment as duplicate complete", async () => {
   const paidOrder = createSquareInvoiceOrder({
     paidAt: now,
     providerMetadata: {
@@ -430,11 +587,9 @@ test("finalizeTrainingSquareInvoice returns duplicate for already finalized paid
   });
 
   assert.deepEqual(result, { duplicate: true, finalized: false });
-  assert.equal(harness.calls.getInvoice, 1);
-  assert.equal(harness.calls.markPaid, 0);
-  assert.equal(harness.calls.createEnrollment, 0);
   assert.equal(harness.calls.tokens, 0);
   assert.equal(harness.calls.emails, 0);
+  assert.deepEqual(harness.calls.emailFailures, []);
 });
 
 test("finalizeTrainingSquareInvoice retries after partial finalization failure without duplicating enrollment", async () => {
@@ -464,7 +619,8 @@ test("finalizeTrainingSquareInvoice retries after partial finalization failure w
   assert.equal(harness.calls.createEnrollment, 1);
   assert.equal(harness.calls.tokens, 2);
   assert.equal(harness.calls.markStaffAlerted, 1);
-  assert.equal(harness.calls.emails, 1);
+  assert.equal(harness.calls.markStudentPaymentEmailSent, 1);
+  assert.equal(harness.calls.emails, 2);
 });
 
 function createEnrollmentRecord(order: CheckoutOrderRow | null): NonNullable<EnrollmentRecord> {
@@ -487,6 +643,7 @@ function createEnrollmentRecord(order: CheckoutOrderRow | null): NonNullable<Enr
       title: "Classic Lash Training",
     },
     staffAlertedAt: null,
+    studentPaymentEmailSentAt: null,
     tokenExpiresAt: null,
   };
 }

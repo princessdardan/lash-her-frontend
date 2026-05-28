@@ -6,7 +6,6 @@ import {
 } from "@/lib/booking/square-webhook";
 import type {
   CheckoutOrderRow,
-  SquareInvoiceWebhookEventClaimResult,
   SquareInvoiceWebhookEventInput,
 } from "@/lib/commerce/order-store";
 
@@ -28,6 +27,7 @@ interface TrainingSquareInvoiceFinalizerInput {
 interface TrainingSquareInvoiceFinalizerResult {
   duplicateEvent: boolean;
   finalized: boolean;
+  notificationFailed?: boolean;
   status: string;
 }
 
@@ -39,12 +39,12 @@ type TrainingSquareInvoiceModuleFinalizer = (input: {
   correlationId?: string;
   invoiceId: string;
   paymentId?: string;
-}) => Promise<{ duplicate: boolean; finalized: boolean; reason?: string }>;
+}) => Promise<{ duplicate: boolean; finalized: boolean; notificationFailed?: boolean; reason?: string }>;
 
 interface SquareWebhookDependencies {
   claimSquareInvoiceWebhookEvent: (
     input: SquareInvoiceWebhookEventInput,
-  ) => Promise<SquareInvoiceWebhookEventClaimResult>;
+  ) => Promise<unknown>;
   finalizeSquarePayment: typeof finalizeSquarePayment;
   finalizeTrainingSquareInvoicePayment: TrainingSquareInvoiceFinalizer;
   findOrderBySquareInvoiceId: (invoiceId: string) => Promise<CheckoutOrderRow | null>;
@@ -157,10 +157,9 @@ export function createSquareWebhookPostHandler(
 
         if (order !== null && isTrainingSquareInvoiceOrder(order)) {
           const squareInvoiceEvent = toSquareInvoiceWebhookEventInput({ event, invoiceId, order });
-          let eventClaim: SquareInvoiceWebhookEventClaimResult;
 
           try {
-            eventClaim = await dependencies.claimSquareInvoiceWebhookEvent(squareInvoiceEvent);
+            await dependencies.claimSquareInvoiceWebhookEvent(squareInvoiceEvent);
           } catch (error) {
             console.error("[square-webhook] Square invoice event claim failed", {
               error: error instanceof Error ? error.message : "Unknown event claim error",
@@ -171,10 +170,6 @@ export function createSquareWebhookPostHandler(
             return new Response(null, { status: 503 });
           }
 
-          if (eventClaim.duplicate && eventClaim.processingStatus === "processed") {
-            return new Response(null, { status: 200 });
-          }
-
           try {
             const finalizationResult = await dependencies.finalizeTrainingSquareInvoicePayment({
               event,
@@ -182,6 +177,16 @@ export function createSquareWebhookPostHandler(
               source: "webhook",
               squareInvoiceId: invoiceId,
             });
+
+            if (finalizationResult.notificationFailed) {
+              console.error("[square-webhook] Training Square invoice notification recovery failed", {
+                eventId: event.eventId,
+                invoiceId,
+                orderId: order.orderId,
+                status: finalizationResult.status,
+              });
+              return new Response(null, { status: 503 });
+            }
 
             if (!finalizationResult.finalized && !finalizationResult.duplicateEvent) {
               console.error("[square-webhook] Training Square invoice finalizer did not complete", {
@@ -276,6 +281,7 @@ async function finalizeTrainingSquareInvoicePayment(
   return {
     duplicateEvent: result.duplicate,
     finalized: result.finalized,
+    notificationFailed: result.notificationFailed,
     status: result.reason ?? (result.finalized ? "paid" : "duplicate"),
   };
 }

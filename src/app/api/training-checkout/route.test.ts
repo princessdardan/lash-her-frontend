@@ -164,6 +164,7 @@ test("training checkout route creates checkout and enrollment for a valid reques
     assert.equal(orders[0].customerName, "Nataliea Lash");
     assert.equal(orders[0].customerEmail, "client@example.com");
     assert.equal(orders[0].cart.amount, 1693.87);
+    assert.equal(orders[0].purpose, "training");
     assert.deepEqual(enrollments, [{
       checkoutEmail: "client@example.com",
       checkoutOrderId: "pending-training-order-5252",

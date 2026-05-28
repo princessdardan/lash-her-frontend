@@ -91,8 +91,8 @@ const helperScript = String.raw`
         publications.push(args);
       },
       squareInvoiceClient: {
-        createCustomer: async (email, givenName, familyName) => {
-          customers.push({ email, givenName, familyName });
+        createCustomer: async (email, givenName, familyName, idempotencyKey) => {
+          customers.push({ email, givenName, familyName, idempotencyKey });
           return "square-customer-123";
         },
         createOrder: async (locationId, lineItems, referenceId) => {
@@ -241,6 +241,7 @@ test("training Square invoice route creates and publishes a BNPL invoice for a v
       email: "client@example.com",
       givenName: "Nataliea",
       familyName: "Lash",
+      idempotencyKey: "correlation-123-customer",
     }]);
     assert.deepEqual(squareOrders, [{
       locationId: "LOC123",

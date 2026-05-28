@@ -178,6 +178,7 @@ test("Square finalizer dedupes duplicate webhook event IDs before Square fetch",
     },
     getEnv: createEnv,
     repository,
+    sendBookingConfirmationEmailForOrder: async () => {},
     squareClientFactory: () => ({
       async createPaymentLink() {
         throw new Error("Not used");
@@ -226,6 +227,68 @@ test("Square finalizer dedupes duplicate webhook event IDs before Square fetch",
   assert.equal(squareFetches, 1);
   assert.equal(paidTransitions, 1);
   assert.equal(bookingFinalizations, 1);
+});
+
+test("Square finalizer retries booking confirmation email for processed duplicate webhook events", async () => {
+  const sentBookingEmails: string[] = [];
+  const repository: SquarePaymentFinalizerRepository = {
+    async claimSquareEvent() {
+      return { duplicate: true, processingStatus: "processed" };
+    },
+    async findSquareOrder() {
+      return {
+        amountCents: 5000,
+        id: "order-db-id",
+        orderId: "lh-sq-local",
+        providerOrderId: "order_123",
+        providerPaymentId: "pay_123",
+        purpose: "appointment_deposit",
+        squareLocationId: "loc_123",
+        status: "paid",
+      };
+    },
+    async recordSquareEvent() {
+      throw new Error("Processed duplicate recovery must not rewrite Square events");
+    },
+    async recordSquarePaymentPendingCalendar() {
+      throw new Error("Processed duplicate recovery must not rewrite paid state");
+    },
+  };
+  const finalizer = createSquarePaymentFinalizer({
+    finalizeAppointmentPaymentForOrder: async () => {
+      throw new Error("Processed duplicate recovery must not refinalize the booking");
+    },
+    getEnv: createEnv,
+    repository,
+    sendBookingConfirmationEmailForOrder: async (orderId) => {
+      sentBookingEmails.push(orderId);
+    },
+    squareClientFactory: () => ({
+      async createPaymentLink() {
+        throw new Error("Not used");
+      },
+      async getOrder() {
+        throw new Error("Processed duplicate recovery must not fetch Square");
+      },
+      async getPayment() {
+        throw new Error("Processed duplicate recovery must not fetch Square");
+      },
+    }),
+  });
+
+  const result = await finalizer({
+    event: {
+      eventId: "evt_processed_duplicate",
+      eventType: "payment.updated",
+      orderId: "order_123",
+      paymentId: "pay_123",
+      payloadSanitized: {},
+    },
+    source: "webhook",
+  });
+
+  assert.deepEqual(result, { duplicateEvent: true, finalized: false, status: "duplicate" });
+  assert.deepEqual(sentBookingEmails, ["lh-sq-local"]);
 });
 
 test("Square finalizer retries duplicate webhook event IDs that are not terminal processed", async () => {
@@ -278,6 +341,7 @@ test("Square finalizer retries duplicate webhook event IDs that are not terminal
     },
     getEnv: createEnv,
     repository,
+    sendBookingConfirmationEmailForOrder: async () => {},
     squareClientFactory: () => ({
       async createPaymentLink() {
         throw new Error("Not used");
@@ -333,6 +397,7 @@ test("Square finalizer handles webhook before return on the shared mock payment"
     finalizeAppointmentPaymentForOrder: harness.finalizeAppointmentPaymentForOrder,
     getEnv: createEnv,
     repository: harness.repository,
+    sendBookingConfirmationEmailForOrder: async () => {},
     squareClientFactory: () => client,
   });
 
@@ -367,6 +432,7 @@ test("Square finalizer handles return before webhook on the shared mock payment"
     finalizeAppointmentPaymentForOrder: harness.finalizeAppointmentPaymentForOrder,
     getEnv: createEnv,
     repository: harness.repository,
+    sendBookingConfirmationEmailForOrder: async () => {},
     squareClientFactory: () => client,
   });
 
@@ -427,6 +493,7 @@ test("Square browser return does not finalize an unpaid server-side payment", as
     },
     getEnv: createEnv,
     repository,
+    sendBookingConfirmationEmailForOrder: async () => {},
     squareClientFactory: () => ({
       async createPaymentLink() {
         throw new Error("Not used");
@@ -494,6 +561,7 @@ test("Square finalizer releases terminal failed payments from active hold invent
     },
     getEnv: createEnv,
     repository,
+    sendBookingConfirmationEmailForOrder: async () => {},
     squareClientFactory: () => ({
       async createPaymentLink() {
         throw new Error("Not used");
@@ -568,6 +636,7 @@ test("Square finalizer does not bind a Square payment to a mismatched local retu
     },
     getEnv: createEnv,
     repository,
+    sendBookingConfirmationEmailForOrder: async () => {},
     squareClientFactory: () => ({
       async createPaymentLink() {
         throw new Error("Not used");
@@ -641,6 +710,7 @@ test("Square finalizer updates a claimed webhook event to processed after verifi
     },
     getEnv: createEnv,
     repository,
+    sendBookingConfirmationEmailForOrder: async () => {},
     squareClientFactory: () => ({
       async createPaymentLink() {
         throw new Error("Not used");
@@ -723,6 +793,7 @@ test("Square finalizer invokes booking finalization after paid persistence", asy
     },
     getEnv: createEnv,
     repository,
+    sendBookingConfirmationEmailForOrder: async () => {},
     squareClientFactory: () => ({
       async createPaymentLink() {
         throw new Error("Not used");
@@ -780,6 +851,7 @@ test("Square finalizer surfaces paid unbookable rebooking status from booking fi
     }),
     getEnv: createEnv,
     repository,
+    sendBookingConfirmationEmailForOrder: async () => {},
     squareClientFactory: () => ({
       async createPaymentLink() {
         throw new Error("Not used");
@@ -860,6 +932,7 @@ test("Square finalizer treats mock delayed capture APPROVED payments as paid und
     },
     getEnv: createEnv,
     repository,
+    sendBookingConfirmationEmailForOrder: async () => {},
     squareClientFactory: () => client,
   });
 
@@ -934,6 +1007,7 @@ test("Square finalizer records mock Square amount and currency mismatches as ign
       },
       getEnv: createEnv,
       repository,
+      sendBookingConfirmationEmailForOrder: async () => {},
       squareClientFactory: () => client,
     });
 

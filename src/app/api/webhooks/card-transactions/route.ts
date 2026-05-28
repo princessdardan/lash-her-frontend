@@ -8,13 +8,14 @@ import {
   finalizeAppointmentPaymentForOrder,
   isAppointmentCheckoutPurpose,
 } from "@/lib/booking/finalizer";
+import { sendBookingConfirmationEmailForOrder } from "@/lib/booking/email";
 import { getHelcimCardTransaction } from "@/lib/commerce/helcim-client";
+import { sendProductOrderConfirmationEmailForOrder } from "@/lib/commerce/product-order-email";
 import { createPaymentMockStore } from "@/lib/payment-mocks/in-memory-store";
-import { sendTrainingPaymentNotificationEmails } from "@/lib/commerce/training-payment-email";
+import { sendTrainingPaymentNotificationEmailsIfNeeded } from "@/lib/commerce/training-payment-notifications";
 import {
   getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing,
-  issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing,
-  markTrainingEnrollmentStaffAlerted,
+  getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice,
 } from "@/lib/commerce/training-enrollment-store";
 import {
   getHelcimWebhookHeaders,
@@ -33,10 +34,11 @@ interface HelcimWebhookDependencies {
   getCardTransaction: (cardTransactionId: string, req: Request) => ReturnType<typeof getHelcimCardTransaction>;
   getVerifierToken: typeof getHelcimWebhookVerifierToken;
   getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing: typeof getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing;
-  issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing: typeof issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing;
-  markTrainingEnrollmentStaffAlerted: typeof markTrainingEnrollmentStaffAlerted;
+  getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice: typeof getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice;
   recordEvent: typeof recordHelcimWebhookEventWithOrder;
-  sendTrainingPaymentNotificationEmails: typeof sendTrainingPaymentNotificationEmails;
+  sendBookingConfirmationEmailForOrder: typeof sendBookingConfirmationEmailForOrder;
+  sendProductOrderConfirmationEmailForOrder: typeof sendProductOrderConfirmationEmailForOrder;
+  sendTrainingPaymentNotificationEmailsIfNeeded: typeof sendTrainingPaymentNotificationEmailsIfNeeded;
 }
 
 const defaultDependencies: HelcimWebhookDependencies = {
@@ -47,10 +49,11 @@ const defaultDependencies: HelcimWebhookDependencies = {
   },
   getVerifierToken: getHelcimWebhookVerifierToken,
   getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing: getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing,
-  issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing,
-  markTrainingEnrollmentStaffAlerted,
+  getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice,
   recordEvent: recordHelcimWebhookEventWithOrder,
-  sendTrainingPaymentNotificationEmails,
+  sendBookingConfirmationEmailForOrder,
+  sendProductOrderConfirmationEmailForOrder,
+  sendTrainingPaymentNotificationEmailsIfNeeded,
 };
 
 export const POST = createHelcimWebhookPostHandler(defaultDependencies);
@@ -112,6 +115,17 @@ export function createHelcimWebhookPostHandler(
         error: error instanceof Error ? error.message : "Unknown finalization error",
         eventId: eventForStorage.eventId,
       });
+      return new Response(null, { status: 503 });
+    }
+
+    try {
+      await recoverProductOrderConfirmationEmail(eventForStorage, recordedEvent, dependencies);
+    } catch (error) {
+      console.error("[helcim-webhook] Product confirmation email recovery failed", {
+        error: error instanceof Error ? error.message : "Unknown recovery error",
+        eventId: eventForStorage.eventId,
+      });
+      return new Response(null, { status: 503 });
     }
 
     try {
@@ -121,6 +135,7 @@ export function createHelcimWebhookPostHandler(
         error: error instanceof Error ? error.message : "Unknown recovery error",
         eventId: eventForStorage.eventId,
       });
+      return new Response(null, { status: 503 });
     }
 
     return new Response(null, { status: 200 });
@@ -132,7 +147,7 @@ type ParsedHelcimWebhook = ReturnType<typeof parseVerifiedHelcimWebhook>;
 async function finalizeAppointmentWebhookPayment(
   event: ParsedHelcimWebhook,
   recordedEvent: HelcimWebhookEventRecordResult,
-  dependencies: Pick<HelcimWebhookDependencies, "finalizeAppointmentPaymentForOrder">,
+  dependencies: Pick<HelcimWebhookDependencies, "finalizeAppointmentPaymentForOrder" | "sendBookingConfirmationEmailForOrder">,
 ): Promise<void> {
   const transactionId = event.helcimTransactionId;
 
@@ -160,6 +175,28 @@ async function finalizeAppointmentWebhookPayment(
       status: result.status,
     });
   }
+
+  if (result.ok) {
+    await dependencies.sendBookingConfirmationEmailForOrder(recordedEvent.matchedOrder.orderId);
+  }
+}
+
+async function recoverProductOrderConfirmationEmail(
+  event: ParsedHelcimWebhook,
+  recordedEvent: HelcimWebhookEventRecordResult,
+  dependencies: Pick<HelcimWebhookDependencies, "sendProductOrderConfirmationEmailForOrder">,
+): Promise<void> {
+  if (
+    !recordedEvent.paid ||
+    recordedEvent.matchedOrder === null ||
+    recordedEvent.matchedOrder.paymentProvider !== "helcim" ||
+    recordedEvent.matchedOrder.purpose !== "product" ||
+    !isApprovedWebhookPayment(event)
+  ) {
+    return;
+  }
+
+  await dependencies.sendProductOrderConfirmationEmailForOrder(recordedEvent.matchedOrder.orderId);
 }
 
 async function recoverTrainingPaymentNotification(
@@ -168,9 +205,8 @@ async function recoverTrainingPaymentNotification(
   dependencies: Pick<
     HelcimWebhookDependencies,
     | "getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing"
-    | "issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing"
-    | "markTrainingEnrollmentStaffAlerted"
-    | "sendTrainingPaymentNotificationEmails"
+    | "getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice"
+    | "sendTrainingPaymentNotificationEmailsIfNeeded"
   >,
 ): Promise<void> {
   if (!isApprovedWebhookPayment(event)) {
@@ -186,34 +222,24 @@ async function recoverTrainingPaymentNotification(
     return;
   }
 
-  const schedulingToken = await dependencies.issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing({
+  const schedulingToken = await dependencies.getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice({
     helcimInvoiceId: event.helcimInvoiceId,
     helcimInvoiceNumber: event.helcimInvoiceNumber,
   });
 
   if (!schedulingToken) {
-    return;
+    throw new Error("Training scheduling token could not be issued");
   }
 
   const programSlug = enrollment.programSnapshot.slug;
 
   if (!programSlug) {
-    return;
+    throw new Error("Training program slug is missing");
   }
 
-  const alertClaimed = await dependencies.markTrainingEnrollmentStaffAlerted({
-    enrollmentId: enrollment.enrollmentId,
-  });
-
-  if (!alertClaimed) {
-    return;
-  }
-
-  await dependencies.sendTrainingPaymentNotificationEmails({
-    customerEmail: enrollment.checkoutOrder.customerEmail,
-    customerName: enrollment.checkoutOrder.customerName,
-    orderId: enrollment.checkoutOrder.orderId,
-    programTitle: enrollment.programSnapshot.title,
+  await dependencies.sendTrainingPaymentNotificationEmailsIfNeeded({
+    enrollment,
+    paymentProvider: "helcim",
     schedulingUrl: buildAbsoluteSchedulingUrl(
       new URL(req.url).origin,
       programSlug,

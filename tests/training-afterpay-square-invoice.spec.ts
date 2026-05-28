@@ -73,8 +73,11 @@ async function setupMockTrainingAfterpayFlow(page: Page): Promise<{ apiPostPaths
         schedulingStatus: "pending",
         schedulingTokenHash: null,
         staffAlertedAt: null,
+        studentPaymentEmailSentAt: null,
         tokenExpiresAt: null,
         tokenUsedAt: null,
+        trainingEmailClaimedUntil: null,
+        trainingEmailLastError: null,
         updatedAt: new Date("2026-05-25T12:00:00.000Z"),
       };
     },
@@ -144,10 +147,38 @@ async function setupMockTrainingAfterpayFlow(page: Page): Promise<{ apiPostPaths
       }
       return true;
     },
-    async sendTrainingPaymentNotificationEmails(input) {
+    async markTrainingEnrollmentStudentPaymentEmailSent(input) {
+      expect(input.enrollmentId).toBe("training-enrollment-id");
+      if (enrollment !== null) {
+        enrollment = {
+          ...enrollment,
+          studentPaymentEmailSentAt: new Date("2026-05-25T12:02:00.000Z"),
+        };
+      }
+      return true;
+    },
+    async claimTrainingPaymentEmails(input) {
+      expect(input.enrollmentId).toBe("training-enrollment-id");
+      return enrollment;
+    },
+    async recordTrainingPaymentEmailFailure(input) {
+      expect(input.enrollmentId).toBe("training-enrollment-id");
+      expect(input.error.length).toBeGreaterThan(0);
+    },
+    async sendTrainingAdminPaymentEmail(input) {
       expect(input.customerEmail).toBe(CUSTOMER_EMAIL);
       expect(input.customerName).toBe(CUSTOMER_NAME);
       expect(input.orderId).toBe(ORDER_ID);
+      expect(input.paymentProvider).toBe("square");
+      expect(input.programTitle).toBe("Beginner Private Training");
+      expect(input.schedulingUrl).toContain(`/training-programs/${PROGRAM_SLUG}/schedule?token=${SCHEDULING_TOKEN}`);
+    },
+    async sendTrainingCustomerPaymentEmail(input) {
+      expect(input.customerEmail).toBe(CUSTOMER_EMAIL);
+      expect(input.customerName).toBe(CUSTOMER_NAME);
+      expect(input.orderId).toBe(ORDER_ID);
+      expect(input.paymentProvider).toBe("square");
+      expect(input.programTitle).toBe("Beginner Private Training");
       expect(input.schedulingUrl).toContain(`/training-programs/${PROGRAM_SLUG}/schedule?token=${SCHEDULING_TOKEN}`);
     },
   });
@@ -204,8 +235,9 @@ async function setupMockTrainingAfterpayFlow(page: Page): Promise<{ apiPostPaths
       };
     },
     squareInvoiceClient: {
-      async createCustomer(email) {
+      async createCustomer(email, _givenName, _familyName, idempotencyKey) {
         expect(email).toBe(CUSTOMER_EMAIL);
+        expect(idempotencyKey).toBe(`${CORRELATION_ID}-customer`);
         return "mock-square-customer-001";
       },
       async createOrder(_locationId, lineItems, referenceId) {
@@ -597,6 +629,9 @@ function createPendingSquareInvoiceOrder(input: {
     orderId: ORDER_ID,
     paidAt: null,
     paymentProvider: "square",
+    productConfirmationEmailClaimedUntil: null,
+    productConfirmationEmailLastError: null,
+    productConfirmationEmailSentAt: null,
     providerCheckoutId: input.squareInvoiceId,
     providerMetadata: {
       amountCents: input.amountCents,
@@ -668,6 +703,7 @@ function createEnrollmentRecord(order: CheckoutOrderRow): NonNullable<Enrollment
       title: "Beginner Private Training",
     },
     staffAlertedAt: null,
+    studentPaymentEmailSentAt: null,
     tokenExpiresAt: null,
   };
 }

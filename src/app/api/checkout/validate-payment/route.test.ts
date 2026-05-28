@@ -70,14 +70,15 @@ const helperScript = String.raw`
     getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
     markOrderPaid,
     markOrderVerificationFailed,
-    markTrainingEnrollmentStaffAlerted,
     persistVerifiedPayment,
-    sendProductOrderConfirmationEmail,
+    sendBookingConfirmationEmailForOrder,
+    sendProductOrderConfirmationEmailForOrder,
     getOrIssueTrainingSchedulingTokenForPaidOrder,
-    sendTrainingPaymentNotificationEmails,
+    sendTrainingPaymentNotificationEmailsIfNeeded,
     verifyHelcimPayment,
   } = {}) {
     const errors = [];
+    const sentBookingEmails = [];
     const finalizedBookings = [];
     const markedFailedOrders = [];
     const markedPaidOrders = [];
@@ -134,13 +135,6 @@ const helperScript = String.raw`
           await markOrderVerificationFailed(orderId);
         }
       },
-      markTrainingEnrollmentStaffAlerted: async (input) => {
-        markedStaffAlerts.push(input);
-        if (markTrainingEnrollmentStaffAlerted) {
-          return markTrainingEnrollmentStaffAlerted(input);
-        }
-        return true;
-      },
       persistVerifiedPayment: async (input) => {
         if (persistVerifiedPayment) {
           return persistVerifiedPayment(input);
@@ -149,17 +143,33 @@ const helperScript = String.raw`
         operationOrder.push("persisted");
         return true;
       },
-      sendProductOrderConfirmationEmail: async (input) => {
-        operationOrder.push("product-email");
-        sentProductEmails.push(input);
-        if (sendProductOrderConfirmationEmail) {
-          await sendProductOrderConfirmationEmail(input);
+      sendBookingConfirmationEmailForOrder: async (orderId) => {
+        sentBookingEmails.push(orderId);
+        if (sendBookingConfirmationEmailForOrder) {
+          await sendBookingConfirmationEmailForOrder(orderId);
         }
       },
-      sendTrainingPaymentNotificationEmails: async (input) => {
-        sentEmails.push(input);
-        if (sendTrainingPaymentNotificationEmails) {
-          await sendTrainingPaymentNotificationEmails(input);
+      sendProductOrderConfirmationEmailForOrder: async (orderId) => {
+        operationOrder.push("product-email");
+        sentProductEmails.push(orderId);
+        if (sendProductOrderConfirmationEmailForOrder) {
+          await sendProductOrderConfirmationEmailForOrder(orderId);
+        }
+      },
+      sendTrainingPaymentNotificationEmailsIfNeeded: async (input) => {
+        sentEmails.push({
+          customerEmail: input.enrollment.checkoutOrder.customerEmail,
+          customerName: input.enrollment.checkoutOrder.customerName,
+          orderId: input.enrollment.checkoutOrder.orderId,
+          paymentProvider: input.paymentProvider,
+          programTitle: input.enrollment.programSnapshot.title,
+          schedulingUrl: input.schedulingUrl,
+        });
+        if (input.enrollment.staffAlertedAt === null) {
+          markedStaffAlerts.push({ enrollmentId: input.enrollment.enrollmentId });
+        }
+        if (sendTrainingPaymentNotificationEmailsIfNeeded) {
+          await sendTrainingPaymentNotificationEmailsIfNeeded(input);
         }
       },
       verifyHelcimPayment: (input) => {
@@ -170,7 +180,7 @@ const helperScript = String.raw`
       },
     });
 
-    return { errors, finalizedBookings, handler, markedFailedOrders, markedPaidOrders, markedStaffAlerts, operationOrder, sentEmails, sentProductEmails };
+    return { errors, finalizedBookings, handler, markedFailedOrders, markedPaidOrders, markedStaffAlerts, operationOrder, sentBookingEmails, sentEmails, sentProductEmails };
   }
 `;
 
@@ -325,15 +335,7 @@ test("checkout payment validation sends product confirmation email after persist
     });
     assert.deepEqual(markedPaidOrders, [{ orderId: "lh-order-123", transactionId: "txn-verified-123" }]);
     assert.deepEqual(operationOrder, ["mark-paid", "persisted", "product-email"]);
-    assert.deepEqual(sentProductEmails, [{
-      currency: "CAD",
-      customerEmail: "client@example.com",
-      customerName: "Client Name",
-      lineItems: pendingOrder.lineItems,
-      orderId: "lh-order-123",
-      shippingAddress: pendingOrder.shippingAddress,
-      totalAmount: 1130,
-    }]);
+    assert.deepEqual(sentProductEmails, ["lh-order-123"]);
   `);
 });
 
@@ -379,6 +381,50 @@ test("checkout payment validation finalizes appointment payments after persisten
     assert.deepEqual(operationOrder, ["mark-paid", "persisted"]);
     assert.equal(sentProductEmails.length, 0);
     assert.equal(sentEmails.length, 0);
+  `);
+});
+
+test("checkout payment validation logs booking email failures without blocking finalized appointments", () => {
+  runRouteScenario(`
+    const appointmentOrder = {
+      ...pendingOrder,
+      purpose: "appointment_deposit",
+    };
+    const { errors, finalizedBookings, handler, sentBookingEmails, sentProductEmails } = await runScenario({
+      getPendingOrderByCheckoutToken: async () => appointmentOrder,
+      getAppointmentHoldByCheckoutOrderPublicId: async () => ({
+        offeringSnapshot: { slug: "signature-lash-set" },
+      }),
+      finalizeAppointmentPaymentForOrder: async () => ({
+        ok: true,
+        eventId: "calendar-event-appointment",
+        status: "booked",
+      }),
+      sendBookingConfirmationEmailForOrder: async () => {
+        throw new Error("Resend unavailable");
+      },
+    });
+
+    const response = await handler(createRequest({
+      checkoutToken: "checkout-token",
+      data: approvedPaymentData,
+      hash: "hash",
+    }));
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      bookingStatus: "booked",
+      eventId: "calendar-event-appointment",
+      orderId: "lh-order-123",
+      redirectUrl: "/services/signature-lash-set/booking/confirmation?order=lh-order-123",
+    });
+    assert.equal(finalizedBookings.length, 1);
+    assert.deepEqual(sentBookingEmails, ["lh-order-123"]);
+    assert.equal(sentProductEmails.length, 0);
+    assert.deepEqual(errors, [{
+      context: { error: "Resend unavailable", orderId: "lh-order-123" },
+      message: "[checkout] Booking confirmation email failed",
+    }]);
   `);
 });
 
@@ -594,7 +640,7 @@ test("checkout payment validation returns 500 when verified payment persistence 
 test("checkout payment validation logs product email failures without blocking success", () => {
   runRouteScenario(`
     const { errors, handler, sentProductEmails } = await runScenario({
-      sendProductOrderConfirmationEmail: async () => {
+      sendProductOrderConfirmationEmailForOrder: async () => {
         throw new Error("Resend unavailable");
       },
     });
@@ -642,6 +688,7 @@ test("checkout payment validation sends token-only training schedule URL", () =>
           title: "Lash Training Program",
         },
         staffAlertedAt: null,
+        studentPaymentEmailSentAt: null,
         tokenExpiresAt: null,
       }),
       getOrIssueTrainingSchedulingTokenForPaidOrder: async (orderId) => {
@@ -654,6 +701,7 @@ test("checkout payment validation sends token-only training schedule URL", () =>
           programSnapshot: { id: "program-lash-training", slug: "lash-training", title: "Lash Training Program" },
           schedulingToken: "schedule-token-123",
           staffAlertedAt: null,
+          studentPaymentEmailSentAt: null,
           tokenExpiresAt: new Date("2026-05-24T00:00:00.000Z"),
         };
       },
@@ -674,6 +722,7 @@ test("checkout payment validation sends token-only training schedule URL", () =>
       customerEmail: "client@example.com",
       customerName: "Client Name",
       orderId: "lh-order-123",
+      paymentProvider: "helcim",
       programTitle: "Lash Training Program",
       schedulingUrl: "http://localhost:3000/training-programs/lash-training/schedule?token=schedule-token-123",
     }]);
@@ -693,6 +742,7 @@ test("checkout payment validation reuses active training scheduling tokens on du
         productSnapshot: { currency: "CAD", id: "product-training-full", priceCents: 113000, sku: "TRAINING-FULL", title: "Lash Training Full Payment" },
         programSnapshot: { id: "program-lash-training", slug: "lash-training", title: "Lash Training Program" },
         staffAlertedAt: new Date("2026-05-10T00:30:00.000Z"),
+        studentPaymentEmailSentAt: new Date("2026-05-10T00:30:00.000Z"),
         tokenExpiresAt: new Date("2026-05-24T00:00:00.000Z"),
       }),
       getOrIssueTrainingSchedulingTokenForPaidOrder: async (orderId) => {
@@ -705,6 +755,7 @@ test("checkout payment validation reuses active training scheduling tokens on du
           programSnapshot: { id: "program-lash-training", slug: "lash-training", title: "Lash Training Program" },
           schedulingToken: "existing-schedule-token-123",
           staffAlertedAt: new Date("2026-05-10T00:30:00.000Z"),
+          studentPaymentEmailSentAt: new Date("2026-05-10T00:30:00.000Z"),
           tokenExpiresAt: new Date("2026-05-24T00:00:00.000Z"),
         };
       },
@@ -746,6 +797,7 @@ test("checkout payment validation logs training email failures without blocking 
           title: "Lash Training Program",
         },
         staffAlertedAt: null,
+        studentPaymentEmailSentAt: null,
         tokenExpiresAt: null,
       }),
       getOrIssueTrainingSchedulingTokenForPaidOrder: async () => ({
@@ -756,9 +808,10 @@ test("checkout payment validation logs training email failures without blocking 
         programSnapshot: { id: "program-lash-training", slug: "lash-training", title: "Lash Training Program" },
         schedulingToken: "schedule-token-123",
         staffAlertedAt: null,
+        studentPaymentEmailSentAt: null,
         tokenExpiresAt: new Date("2026-05-24T00:00:00.000Z"),
       }),
-      sendTrainingPaymentNotificationEmails: async () => {
+      sendTrainingPaymentNotificationEmailsIfNeeded: async () => {
         throw new Error("Resend unavailable");
       },
     });
@@ -779,6 +832,7 @@ test("checkout payment validation logs training email failures without blocking 
       customerEmail: "client@example.com",
       customerName: "Client Name",
       orderId: "lh-order-123",
+      paymentProvider: "helcim",
       programTitle: "Lash Training Program",
       schedulingUrl: "http://localhost:3000/training-programs/lash-training/schedule?token=schedule-token-123",
     }]);

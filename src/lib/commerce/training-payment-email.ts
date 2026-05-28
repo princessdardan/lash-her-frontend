@@ -1,11 +1,12 @@
 import "server-only";
 
-import { Resend } from "resend";
+import { escapeHtml, getEmailConfig, sendTransactionalEmail } from "@/lib/transactional-email";
 
 export interface SendTrainingPaymentNotificationEmailsInput {
   customerEmail: string;
   customerName: string;
   orderId: string;
+  paymentProvider?: "helcim" | "square";
   programTitle: string;
   schedulingUrl: string;
 }
@@ -13,27 +14,45 @@ export interface SendTrainingPaymentNotificationEmailsInput {
 export async function sendTrainingPaymentNotificationEmails(
   input: SendTrainingPaymentNotificationEmailsInput,
 ): Promise<void> {
-  const resend = new Resend(getRequiredEnv("RESEND_API_KEY"));
-  const fromEmail = getRequiredEnv("FROM_EMAIL");
-  const adminEmail = getRequiredEnv("ADMIN_EMAIL");
-
   const [customerResult, adminResult] = await Promise.allSettled([
-    resend.emails.send({
-      from: fromEmail,
-      to: input.customerEmail,
-      subject: "Your Lash Her training payment is confirmed",
-      html: getCustomerTrainingPaymentHtml(input),
-    }),
-    resend.emails.send({
-      from: fromEmail,
-      to: adminEmail,
-      subject: `Training paid — scheduling pending — ${input.orderId}`,
-      html: getAdminTrainingPaymentHtml(input),
-    }),
+    sendTrainingCustomerPaymentEmail(input),
+    sendTrainingAdminPaymentEmail(input),
   ]);
 
   handleEmailResult("customer training payment", customerResult);
   handleEmailResult("admin training payment", adminResult);
+}
+
+export async function sendTrainingCustomerPaymentEmail(
+  input: SendTrainingPaymentNotificationEmailsInput,
+): Promise<void> {
+  await sendTransactionalEmail({
+    html: getCustomerTrainingPaymentHtml(input),
+    idempotencyKey: `training-customer:${input.orderId}`,
+    subject: "Your Lash Her training payment is confirmed",
+    tags: [
+      { name: "flow", value: "training_payment_customer" },
+      { name: "order_id", value: input.orderId },
+      { name: "payment_provider", value: input.paymentProvider ?? "helcim" },
+    ],
+    to: input.customerEmail,
+  });
+}
+
+export async function sendTrainingAdminPaymentEmail(
+  input: SendTrainingPaymentNotificationEmailsInput,
+): Promise<void> {
+  await sendTransactionalEmail({
+    html: getAdminTrainingPaymentHtml(input),
+    idempotencyKey: `training-admin:${input.orderId}`,
+    subject: `Training paid — scheduling pending — ${input.orderId}`,
+    tags: [
+      { name: "flow", value: "training_payment_admin" },
+      { name: "order_id", value: input.orderId },
+      { name: "payment_provider", value: input.paymentProvider ?? "helcim" },
+    ],
+    to: getEmailConfig().adminEmail,
+  });
 }
 
 function getCustomerTrainingPaymentHtml(
@@ -108,37 +127,11 @@ function getAdminTrainingPaymentHtml(
 
 function handleEmailResult(
   label: string,
-  result: PromiseSettledResult<{ error: { message: string } | null }>,
+  result: PromiseSettledResult<void>,
 ): void {
   if (result.status === "rejected") {
     throw new Error(`${label} email failed: ${getErrorMessage(result.reason)}`);
   }
-
-  if (result.value.error !== null) {
-    throw new Error(`${label} email failed: ${result.value.error.message}`);
-  }
-}
-
-function escapeHtml(text: string): string {
-  const replacements: Record<string, string> = {
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;",
-  };
-
-  return text.replace(/[&<>"']/g, (character) => replacements[character] ?? character);
-}
-
-function getRequiredEnv(name: string): string {
-  const value = process.env[name];
-
-  if (value === undefined || value.length === 0) {
-    throw new Error(`${name} is required`);
-  }
-
-  return value;
 }
 
 function getErrorMessage(error: unknown): string {
