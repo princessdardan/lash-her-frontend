@@ -194,6 +194,9 @@ Product checkout and training checkout use Helcim:
 - `CHECKOUT_SECRET_ENCRYPTION_KEY`
 - `HELCIM_WEBHOOK_VERIFIER_TOKEN`
 
+`HELCIM_TRANSACTION_API_TOKEN` must come from a HelcimPay.js API Access Configuration with checkout integration enabled for the deployed site URL and purchase-capable Transaction Processing access.
+Quote Helcim API token values in dotenv files because Helcim tokens can contain `#`, which dotenv treats as a comment marker when unquoted.
+
 Paid service bookings use Square only when enabled:
 
 - `SERVICE_BOOKING_SQUARE_ENABLED=true`

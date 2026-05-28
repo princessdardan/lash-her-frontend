@@ -114,6 +114,12 @@ if (isLaunchEnvironment) {
     validateCheckoutSecretEncryptionKey(process.env.CHECKOUT_SECRET_ENCRYPTION_KEY);
   }
 
+  for (const name of ["HELCIM_GENERAL_API_TOKEN", "HELCIM_TRANSACTION_API_TOKEN"]) {
+    if (hasValue(process.env[name])) {
+      validateHelcimApiToken(name, process.env[name]);
+    }
+  }
+
   if (isSquareServiceBookingEnabled) {
     validateSquareEnvironment(process.env.SQUARE_ENVIRONMENT);
 
@@ -182,6 +188,26 @@ function validateCheckoutSecretEncryptionKey(value) {
   if (key.length !== 32 || key.toString("base64") !== value) {
     errors.push(
       "Malformed env var: CHECKOUT_SECRET_ENCRYPTION_KEY must be base64-encoded 32 bytes"
+    );
+  }
+}
+
+function validateHelcimApiToken(name, value) {
+  const trimmed = value.trim();
+
+  if (trimmed.length === 0) {
+    errors.push(`Missing env var: ${name}`);
+    return;
+  }
+
+  if (/\s/.test(trimmed)) {
+    errors.push(`Malformed env var: ${name} must not contain whitespace`);
+    return;
+  }
+
+  if (trimmed.length < 32) {
+    errors.push(
+      `Malformed env var: ${name} appears truncated; wrap Helcim tokens that contain # in quotes`
     );
   }
 }

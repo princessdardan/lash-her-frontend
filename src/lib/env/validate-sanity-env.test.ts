@@ -31,8 +31,8 @@ const launchEnv = {
   KV_REST_API_TOKEN: "kv-rest-api-token",
   DATABASE_URL: "postgres://user:password@example.com:5432/lashher",
   CHECKOUT_SECRET_ENCRYPTION_KEY: checkoutKey,
-  HELCIM_GENERAL_API_TOKEN: "helcim-general-api-token",
-  HELCIM_TRANSACTION_API_TOKEN: "helcim-transaction-api-token",
+  HELCIM_GENERAL_API_TOKEN: "helcim-general-api-token-with-safe-length",
+  HELCIM_TRANSACTION_API_TOKEN: "helcim-transaction-api-token-with-safe-length",
   HELCIM_WEBHOOK_VERIFIER_TOKEN: "helcim-webhook-verifier-token",
 };
 
@@ -198,6 +198,20 @@ test("fails malformed checkout encryption key", () => {
 
   assert.notEqual(result.status, 0);
   assert.match(result.combinedOutput, /CHECKOUT_SECRET_ENCRYPTION_KEY/);
+});
+
+test("fails launch environment when Helcim token appears truncated", () => {
+  const result = runValidator({
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+    HELCIM_TRANSACTION_API_TOKEN: "token-before-comment",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.combinedOutput, /HELCIM_TRANSACTION_API_TOKEN/);
+  assert.match(result.combinedOutput, /appears truncated/);
+  assert.match(result.combinedOutput, /wrap Helcim tokens that contain # in quotes/);
 });
 
 test("does not print secret values on failure", () => {

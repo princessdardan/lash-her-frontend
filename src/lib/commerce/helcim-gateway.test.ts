@@ -50,8 +50,8 @@ test("live Helcim gateway delegates to the existing client behavior", () => {
   const env = { ...process.env };
   env.NEXT_PUBLIC_SANITY_DATASET = "test";
   env.NEXT_PUBLIC_SANITY_PROJECT_ID = "test-project";
-  env.HELCIM_GENERAL_API_TOKEN = "test-general-token";
-  env.HELCIM_TRANSACTION_API_TOKEN = "test-transaction-token";
+  env.HELCIM_GENERAL_API_TOKEN = "test-general-token-with-safe-length";
+  env.HELCIM_TRANSACTION_API_TOKEN = "test-transaction-token-with-safe-length";
 
   execFileSync("./node_modules/.bin/tsx", ["--conditions=react-server", "--eval", helperScript], {
     cwd: process.cwd(),

@@ -46,17 +46,17 @@ export function getBookingEnv(): {
 
 /** Lazy — only asserts when server-side Helcim general API requests need it. */
 export function getHelcimGeneralApiToken(): string {
-  return assertValue(
+  return assertHelcimApiToken(
     process.env.HELCIM_GENERAL_API_TOKEN,
-    "Missing env var: HELCIM_GENERAL_API_TOKEN"
+    "HELCIM_GENERAL_API_TOKEN"
   );
 }
 
 /** Lazy — only asserts when server-side HelcimPay transaction requests need it. */
 export function getHelcimTransactionApiToken(): string {
-  return assertValue(
+  return assertHelcimApiToken(
     process.env.HELCIM_TRANSACTION_API_TOKEN,
-    "Missing env var: HELCIM_TRANSACTION_API_TOKEN"
+    "HELCIM_TRANSACTION_API_TOKEN"
   );
 }
 
@@ -82,4 +82,24 @@ function assertValue<T>(v: T | undefined, errorMessage: string): T {
     throw new Error(errorMessage);
   }
   return v;
+}
+
+function assertHelcimApiToken(value: string | undefined, name: string): string {
+  const token = assertValue(value, `Missing env var: ${name}`).trim();
+
+  if (token.length === 0) {
+    throw new Error(`Missing env var: ${name}`);
+  }
+
+  if (/\s/.test(token)) {
+    throw new Error(`Malformed env var: ${name} must not contain whitespace`);
+  }
+
+  if (token.length < 32) {
+    throw new Error(
+      `Malformed env var: ${name} appears truncated; wrap Helcim tokens that contain # in quotes`
+    );
+  }
+
+  return token;
 }

@@ -295,7 +295,8 @@ Helcim is used for product checkout and training checkout. New service booking c
 
 1. Confirm API access is enabled in the Helcim account.
 2. Add the general API token to `HELCIM_GENERAL_API_TOKEN`.
-3. Add the transaction-processing token to `HELCIM_TRANSACTION_API_TOKEN`.
+3. Add the HelcimPay.js transaction-processing token to `HELCIM_TRANSACTION_API_TOKEN`. The Helcim API Access Configuration for this token must have checkout integration enabled for the deployed site URL and Transaction Processing access sufficient for purchases.
+   - In dotenv files, wrap Helcim API tokens in quotes. Helcim tokens can contain `#`, and unquoted `#` truncates the value before it reaches the API.
 4. Generate a base64 32-byte `CHECKOUT_SECRET_ENCRYPTION_KEY` for encrypted secret-token storage.
 5. Configure the card-transaction webhook URL:
 

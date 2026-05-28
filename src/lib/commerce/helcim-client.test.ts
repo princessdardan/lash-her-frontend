@@ -51,12 +51,12 @@ const helperScript = String.raw`
     assert.ok(invoiceCall);
     assert.equal(String(invoiceCall.input), "https://api.helcim.com/v2/invoices/");
     assert.equal(invoiceCall.init?.method, "POST");
-    assert.equal(new Headers(invoiceCall.init?.headers).get("api-token"), "test-general-token");
+    assert.equal(new Headers(invoiceCall.init?.headers).get("api-token"), "test-general-token-with-safe-length");
 
     assert.ok(checkoutCall);
     assert.equal(String(checkoutCall.input), "https://api.helcim.com/v2/helcim-pay/initialize");
     assert.equal(checkoutCall.init?.method, "POST");
-    assert.equal(new Headers(checkoutCall.init?.headers).get("api-token"), "test-transaction-token");
+    assert.equal(new Headers(checkoutCall.init?.headers).get("api-token"), "test-transaction-token-with-safe-length");
 
     const call = calls[2];
     assert.ok(call);
@@ -65,7 +65,7 @@ const helperScript = String.raw`
     assert.equal(call.init?.cache, "no-store");
 
     const headers = new Headers(call.init?.headers);
-    assert.equal(headers.get("api-token"), "test-general-token");
+    assert.equal(headers.get("api-token"), "test-general-token-with-safe-length");
     assert.equal(headers.get("accept"), "application/json");
     assert.equal(headers.has("content-type"), false);
   } finally {
@@ -79,12 +79,70 @@ test("Helcim client uses split API tokens for general and transaction endpoints"
 
   env.NEXT_PUBLIC_SANITY_DATASET = "test";
   env.NEXT_PUBLIC_SANITY_PROJECT_ID = "test-project";
-  env.HELCIM_GENERAL_API_TOKEN = "test-general-token";
-  env.HELCIM_TRANSACTION_API_TOKEN = "test-transaction-token";
+  env.HELCIM_GENERAL_API_TOKEN = "test-general-token-with-safe-length";
+  env.HELCIM_TRANSACTION_API_TOKEN = "test-transaction-token-with-safe-length";
 
   execFileSync(
     "./node_modules/.bin/tsx",
     ["--conditions=react-server", "--eval", helperScript],
+    {
+      cwd: process.cwd(),
+      env,
+      stdio: "pipe",
+    },
+  );
+});
+
+const errorScript = String.raw`
+  import assert from "node:assert/strict";
+
+  import {
+    HelcimApiError,
+    initializeHelcimPay,
+  } from "./src/lib/commerce/helcim-client.ts";
+
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async (): Promise<Response> => Response.json(
+    { errors: "Unauthorized" },
+    { status: 401 },
+  );
+
+  void (async () => {
+  try {
+    await assert.rejects(
+      initializeHelcimPay({
+        paymentType: "purchase",
+        amount: 125,
+        currency: "CAD",
+        invoiceNumber: "INV-12345",
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof HelcimApiError);
+        assert.equal(error.status, 401);
+        assert.equal(error.path, "/helcim-pay/initialize");
+        assert.equal(error.responseError, "Unauthorized");
+        assert.match(error.message, /Helcim API request failed with status 401 for \/helcim-pay\/initialize: Unauthorized/);
+        assert.doesNotMatch(error.message, /test-transaction-token-with-safe-length/);
+        return true;
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  })();
+`;
+
+test("Helcim client includes endpoint and sanitized provider error on failures", () => {
+  const env = { ...process.env };
+
+  env.NEXT_PUBLIC_SANITY_DATASET = "test";
+  env.NEXT_PUBLIC_SANITY_PROJECT_ID = "test-project";
+  env.HELCIM_TRANSACTION_API_TOKEN = "test-transaction-token-with-safe-length";
+
+  execFileSync(
+    "./node_modules/.bin/tsx",
+    ["--conditions=react-server", "--eval", errorScript],
     {
       cwd: process.cwd(),
       env,
