@@ -55,6 +55,9 @@ interface CheckoutErrorLog {
   cause?: CheckoutErrorLogCause;
   error: string;
   errorName?: string;
+  missingFields?: string;
+  provider?: "helcim";
+  providerEndpoint?: CheckoutProviderEndpoint;
 }
 
 interface CheckoutErrorLogCause {
@@ -74,6 +77,9 @@ interface CheckoutPostHandlerDependencies {
   initializeHelcimPay: (input: CheckoutPaySessionInput) => Promise<CheckoutPaySession>;
   createPendingOrder: (input: CheckoutPendingOrderInput) => Promise<unknown>;
 }
+
+type CheckoutInitializationStage = "prepare_checkout" | "load_checkout_inputs" | "create_helcim_invoice" | "initialize_helcim_pay" | "persist_order";
+type CheckoutProviderEndpoint = "invoice" | "helcim_pay";
 
 interface CheckoutInvoiceInput {
   currency: "CAD";
@@ -126,6 +132,7 @@ export function createCheckoutPostHandler({
 }: CheckoutPostHandlerDependencies): (req: NextRequest) => Promise<Response> {
   return async function checkoutPostHandler(req: NextRequest): Promise<Response> {
     let body: unknown;
+    let stage: CheckoutInitializationStage = "prepare_checkout";
 
     try {
       body = await req.json();
@@ -141,10 +148,12 @@ export function createCheckoutPostHandler({
 
     try {
       const productIds = Array.from(new Set(checkoutRequest.items.map((item) => item.productId)));
+      stage = "load_checkout_inputs";
       const [products, promotionCode] = await Promise.all([
         getProductsByIds(productIds),
         checkoutRequest.promotionCode ? getPromotionCode(checkoutRequest.promotionCode) : Promise.resolve(null),
       ]);
+      stage = "prepare_checkout";
       const catalogProducts = products.map(toCatalogProduct);
       const cart = buildValidatedCart(checkoutRequest.items, catalogProducts, { promotionCode });
 
@@ -168,21 +177,24 @@ export function createCheckoutPostHandler({
         });
       }
 
-      const invoice = await createHelcimInvoice({
+      stage = "create_helcim_invoice";
+      const invoice = validateCheckoutInvoice(await createHelcimInvoice({
         currency: "CAD",
         type: "INVOICE",
         status: "DUE",
         notes: "Lash Her website checkout",
         lineItems: invoiceLineItems,
-      });
+      }));
 
-      const helcimPaySession = await initializeHelcimPay({
+      stage = "initialize_helcim_pay";
+      const helcimPaySession = validateCheckoutPaySession(await initializeHelcimPay({
         paymentType: "purchase",
         amount: cart.amount,
         currency: "CAD",
         invoiceNumber: invoice.invoiceNumber,
-      });
+      }));
 
+      stage = "persist_order";
       await createPendingOrder({
         customerName: checkoutRequest.customer.name,
         customerEmail: checkoutRequest.customer.email,
@@ -199,15 +211,29 @@ export function createCheckoutPostHandler({
       });
     } catch (error) {
       console.error("[checkout] Unable to initialize checkout", {
+        stage,
         ...summarizeCheckoutError(error),
       });
 
       return NextResponse.json<CheckoutErrorBody>(
         { error: "Unable to start checkout" },
-        { status: 400 },
+        { status: getCheckoutFailureStatus(stage) },
       );
     }
   };
+}
+
+class CheckoutProviderResponseError extends Error {
+  readonly missingFields: string;
+  readonly provider = "helcim";
+  readonly providerEndpoint: CheckoutProviderEndpoint;
+
+  constructor(providerEndpoint: CheckoutProviderEndpoint, missingFields: string[]) {
+    super("Checkout provider response missing required fields");
+    this.name = "CheckoutProviderResponseError";
+    this.providerEndpoint = providerEndpoint;
+    this.missingFields = missingFields.join(",");
+  }
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -340,6 +366,54 @@ function toCatalogProduct(product: TProduct): CatalogProduct {
   };
 }
 
+function validateCheckoutInvoice(invoice: unknown): CheckoutInvoice {
+  const invoiceRecord = isRecord(invoice) ? invoice : null;
+  const invoiceId = typeof invoiceRecord?.invoiceId === "number" && Number.isSafeInteger(invoiceRecord.invoiceId)
+    ? invoiceRecord.invoiceId
+    : null;
+  const invoiceNumber = isNonEmptyString(invoiceRecord?.invoiceNumber)
+    ? invoiceRecord.invoiceNumber
+    : null;
+
+  if (invoiceId === null || invoiceNumber === null) {
+    const missingFields: string[] = [];
+    if (invoiceId === null) missingFields.push("invoiceId");
+    if (invoiceNumber === null) missingFields.push("invoiceNumber");
+    throw new CheckoutProviderResponseError("invoice", missingFields);
+  }
+
+  return {
+    invoiceId,
+    invoiceNumber,
+  };
+}
+
+function validateCheckoutPaySession(session: unknown): CheckoutPaySession {
+  const sessionRecord = isRecord(session) ? session : null;
+  const checkoutToken = isNonEmptyString(sessionRecord?.checkoutToken)
+    ? sessionRecord.checkoutToken
+    : null;
+  const secretToken = isNonEmptyString(sessionRecord?.secretToken)
+    ? sessionRecord.secretToken
+    : null;
+
+  if (checkoutToken === null || secretToken === null) {
+    const missingFields: string[] = [];
+    if (checkoutToken === null) missingFields.push("checkoutToken");
+    if (secretToken === null) missingFields.push("secretToken");
+    throw new CheckoutProviderResponseError("helcim_pay", missingFields);
+  }
+
+  return {
+    checkoutToken,
+    secretToken,
+  };
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
 function summarizeCheckoutError(error: unknown): CheckoutErrorLog {
   if (!(error instanceof Error)) {
     return { error: "Unknown checkout error" };
@@ -349,9 +423,22 @@ function summarizeCheckoutError(error: unknown): CheckoutErrorLog {
   const errorName = summarizeCheckoutErrorName(error.name);
 
   return {
-    error: summarizeCheckoutErrorMessage(error.message),
+    error: summarizeCheckoutErrorMessage(error),
     ...(errorName ? { errorName } : {}),
     ...(cause ? { cause } : {}),
+    ...summarizeCheckoutProviderResponseError(error),
+  };
+}
+
+function summarizeCheckoutProviderResponseError(error: Error): Pick<CheckoutErrorLog, "missingFields" | "provider" | "providerEndpoint"> {
+  if (!(error instanceof CheckoutProviderResponseError)) {
+    return {};
+  }
+
+  return {
+    missingFields: error.missingFields,
+    provider: error.provider,
+    providerEndpoint: error.providerEndpoint,
   };
 }
 
@@ -402,12 +489,28 @@ function setSafeLogField(
   summary[key] = sanitizeCheckoutLogText(value);
 }
 
-function summarizeCheckoutErrorMessage(message: string): string {
-  if (message.includes("Failed query:")) {
+function summarizeCheckoutErrorMessage(error: Error): string {
+  if (error instanceof CheckoutProviderResponseError) {
+    return "Checkout provider response invalid";
+  }
+
+  if (error.message.includes("Failed query:")) {
     return "Database query failed";
   }
 
   return "Checkout initialization failed";
+}
+
+function getCheckoutFailureStatus(stage: CheckoutInitializationStage): number {
+  if (stage === "load_checkout_inputs" || stage === "persist_order") {
+    return 500;
+  }
+
+  if (stage === "create_helcim_invoice" || stage === "initialize_helcim_pay") {
+    return 502;
+  }
+
+  return 400;
 }
 
 function summarizeCheckoutErrorName(name: string): string | undefined {

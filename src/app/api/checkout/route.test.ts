@@ -432,6 +432,46 @@ test("checkout route rejects missing canonical products before Helcim setup", ()
   `);
 });
 
+test("checkout route returns a server failure when checkout input loading fails", () => {
+  runRouteScenario(`
+    const originalConsoleError = console.error;
+    const consoleCalls = [];
+    console.error = (...args) => {
+      consoleCalls.push(args);
+    };
+
+    try {
+      const { handler, invoices, orders, paySessions } = runScenario({
+        getProductsByIds: async () => {
+          throw new Error("Sanity unavailable for client@example.com");
+        },
+      });
+
+      const response = await handler(createRequest({
+        customer: { name: "Nataliea Lash", email: "client@example.com" },
+        shippingAddress,
+        items: [{ productId: "product-lash-cleanser", quantity: 1 }],
+      }));
+
+      assert.equal(response.status, 500);
+      assert.deepEqual(await response.json(), { error: "Unable to start checkout" });
+      assert.equal(invoices.length, 0);
+      assert.equal(paySessions.length, 0);
+      assert.equal(orders.length, 0);
+      assert.deepEqual(consoleCalls[0][1], {
+        stage: "load_checkout_inputs",
+        error: "Checkout initialization failed",
+        errorName: "Error",
+      });
+
+      assert.equal(JSON.stringify(consoleCalls).includes("client@example.com"), false);
+      assert.equal(JSON.stringify(consoleCalls).includes("Sanity unavailable"), false);
+    } finally {
+      console.error = originalConsoleError;
+    }
+  `);
+});
+
 test("checkout route returns a generic failure when downstream checkout setup fails", () => {
   runRouteScenario(`
     const { handler, invoices, orders, paySessions } = runScenario({
@@ -447,11 +487,87 @@ test("checkout route returns a generic failure when downstream checkout setup fa
     }));
     const body = await response.json();
 
-    assert.equal(response.status, 400);
+    assert.equal(response.status, 502);
     assert.deepEqual(body, { error: "Unable to start checkout" });
     assert.equal(invoices.length, 1);
     assert.equal(paySessions.length, 1);
     assert.equal(orders.length, 0);
+  `);
+});
+
+test("checkout route rejects malformed Helcim invoice success responses before payment initialization", () => {
+  runRouteScenario(`
+    const originalConsoleError = console.error;
+    const consoleCalls = [];
+    console.error = (...args) => {
+      consoleCalls.push(args);
+    };
+
+    try {
+      const { handler, invoices, orders, paySessions } = runScenario({
+        createHelcimInvoice: async () => null,
+      });
+
+      const response = await handler(createRequest({
+        customer: { name: "Nataliea Lash", email: "client@example.com" },
+        shippingAddress,
+        items: [{ productId: "product-lash-cleanser", quantity: 1 }],
+      }));
+
+      assert.equal(response.status, 502);
+      assert.deepEqual(await response.json(), { error: "Unable to start checkout" });
+      assert.equal(invoices.length, 1);
+      assert.equal(paySessions.length, 0);
+      assert.equal(orders.length, 0);
+      assert.deepEqual(consoleCalls[0][1], {
+        stage: "create_helcim_invoice",
+        error: "Checkout provider response invalid",
+        errorName: "CheckoutProviderResponseError",
+        missingFields: "invoiceId,invoiceNumber",
+        provider: "helcim",
+        providerEndpoint: "invoice",
+      });
+    } finally {
+      console.error = originalConsoleError;
+    }
+  `);
+});
+
+test("checkout route rejects malformed Helcim Pay success responses before persistence", () => {
+  runRouteScenario(`
+    const originalConsoleError = console.error;
+    const consoleCalls = [];
+    console.error = (...args) => {
+      consoleCalls.push(args);
+    };
+
+    try {
+      const { handler, invoices, orders, paySessions } = runScenario({
+        initializeHelcimPay: async () => null,
+      });
+
+      const response = await handler(createRequest({
+        customer: { name: "Nataliea Lash", email: "client@example.com" },
+        shippingAddress,
+        items: [{ productId: "product-lash-cleanser", quantity: 1 }],
+      }));
+
+      assert.equal(response.status, 502);
+      assert.deepEqual(await response.json(), { error: "Unable to start checkout" });
+      assert.equal(invoices.length, 1);
+      assert.equal(paySessions.length, 1);
+      assert.equal(orders.length, 0);
+      assert.deepEqual(consoleCalls[0][1], {
+        stage: "initialize_helcim_pay",
+        error: "Checkout provider response invalid",
+        errorName: "CheckoutProviderResponseError",
+        missingFields: "checkoutToken,secretToken",
+        provider: "helcim",
+        providerEndpoint: "helcim_pay",
+      });
+    } finally {
+      console.error = originalConsoleError;
+    }
   `);
 });
 
@@ -470,7 +586,7 @@ test("checkout route returns a generic failure when pending order persistence fa
     }));
     const body = await response.json();
 
-    assert.equal(response.status, 400);
+    assert.equal(response.status, 500);
     assert.deepEqual(body, { error: "Unable to start checkout" });
     assert.equal(invoices.length, 1);
     assert.equal(paySessions.length, 1);
@@ -513,11 +629,12 @@ test("checkout route logs database causes without leaking query params", () => {
         items: [{ productId: "product-lash-cleanser", quantity: 1 }],
       }));
 
-      assert.equal(response.status, 400);
+      assert.equal(response.status, 500);
       assert.deepEqual(await response.json(), { error: "Unable to start checkout" });
       assert.equal(consoleCalls.length, 1);
       assert.equal(consoleCalls[0][0], "[checkout] Unable to initialize checkout");
       assert.deepEqual(consoleCalls[0][1], {
+        stage: "persist_order",
         error: "Database query failed",
         errorName: "DrizzleQueryError",
         cause: {
@@ -573,11 +690,12 @@ test("checkout route logs undefined checkout order columns without raw database 
         items: [{ productId: "product-lash-cleanser", quantity: 1 }],
       }));
 
-      assert.equal(response.status, 400);
+      assert.equal(response.status, 500);
       assert.deepEqual(await response.json(), { error: "Unable to start checkout" });
       assert.equal(consoleCalls.length, 1);
       assert.equal(consoleCalls[0][0], "[checkout] Unable to initialize checkout");
       assert.deepEqual(consoleCalls[0][1], {
+        stage: "persist_order",
         error: "Database query failed",
         errorName: "DrizzleQueryError",
         cause: {
@@ -620,11 +738,12 @@ test("checkout route logs generic failure messages without leaking sensitive val
         items: [{ productId: "product-lash-cleanser", quantity: 1 }],
       }));
 
-      assert.equal(response.status, 400);
+      assert.equal(response.status, 502);
       assert.deepEqual(await response.json(), { error: "Unable to start checkout" });
       assert.equal(consoleCalls.length, 1);
       assert.equal(consoleCalls[0][0], "[checkout] Unable to initialize checkout");
       assert.deepEqual(consoleCalls[0][1], {
+        stage: "initialize_helcim_pay",
         error: "Checkout initialization failed",
         errorName: "Error",
       });
