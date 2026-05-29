@@ -51,6 +51,22 @@ interface CheckoutErrorBody {
   error: string;
 }
 
+interface CheckoutErrorLog {
+  cause?: CheckoutErrorLogCause;
+  error: string;
+  errorName?: string;
+}
+
+interface CheckoutErrorLogCause {
+  code?: string;
+  column?: string;
+  constraint?: string;
+  dataType?: string;
+  schema?: string;
+  severity?: string;
+  table?: string;
+}
+
 interface CheckoutPostHandlerDependencies {
   getProductsByIds: (ids: string[]) => Promise<TProduct[]>;
   getPromotionCode: (code: string) => Promise<TPromotionCode | null>;
@@ -183,7 +199,7 @@ export function createCheckoutPostHandler({
       });
     } catch (error) {
       console.error("[checkout] Unable to initialize checkout", {
-        error: error instanceof Error ? error.message : "Unknown checkout error",
+        ...summarizeCheckoutError(error),
       });
 
       return NextResponse.json<CheckoutErrorBody>(
@@ -322,6 +338,70 @@ function toCatalogProduct(product: TProduct): CatalogProduct {
       isAvailable: variant.isAvailable,
     })),
   };
+}
+
+function summarizeCheckoutError(error: unknown): CheckoutErrorLog {
+  if (!(error instanceof Error)) {
+    return { error: "Unknown checkout error" };
+  }
+
+  const cause = isRecord(error) ? summarizeCheckoutErrorCause(error.cause) : undefined;
+  const errorName = summarizeCheckoutErrorName(error.name);
+
+  return {
+    error: summarizeCheckoutErrorMessage(error.message),
+    ...(errorName ? { errorName } : {}),
+    ...(cause ? { cause } : {}),
+  };
+}
+
+function summarizeCheckoutErrorCause(cause: unknown): CheckoutErrorLogCause | undefined {
+  if (!isRecord(cause)) {
+    return undefined;
+  }
+
+  const summary: CheckoutErrorLogCause = {};
+  setSafeLogField(summary, "code", cause.code);
+  setSafeLogField(summary, "severity", cause.severity);
+  setSafeLogField(summary, "schema", cause.schema);
+  setSafeLogField(summary, "table", cause.table);
+  setSafeLogField(summary, "column", cause.column);
+  setSafeLogField(summary, "constraint", cause.constraint);
+  setSafeLogField(summary, "dataType", cause.dataType);
+
+  return Object.keys(summary).length > 0 ? summary : undefined;
+}
+
+function setSafeLogField(
+  summary: CheckoutErrorLogCause,
+  key: keyof CheckoutErrorLogCause,
+  value: unknown,
+): void {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return;
+  }
+
+  summary[key] = sanitizeCheckoutLogText(value);
+}
+
+function summarizeCheckoutErrorMessage(message: string): string {
+  if (message.includes("Failed query:")) {
+    return "Database query failed";
+  }
+
+  return "Checkout initialization failed";
+}
+
+function summarizeCheckoutErrorName(name: string): string | undefined {
+  const normalizedName = sanitizeCheckoutLogText(name);
+
+  return /^[A-Za-z0-9_.:-]+$/.test(normalizedName) ? normalizedName : undefined;
+}
+
+function sanitizeCheckoutLogText(value: string): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+
+  return normalized.length > 240 ? `${normalized.slice(0, 237)}...` : normalized;
 }
 
 function invalidPromotionCode(): NextResponse<CheckoutErrorBody> {

@@ -478,6 +478,107 @@ test("checkout route returns a generic failure when pending order persistence fa
   `);
 });
 
+test("checkout route logs database causes without leaking query params", () => {
+  runRouteScenario(`
+    const originalConsoleError = console.error;
+    const consoleCalls = [];
+    console.error = (...args) => {
+      consoleCalls.push(args);
+    };
+
+    try {
+      const databaseError = new Error(
+        'Failed query: insert into "checkout_orders" values ($1)\\nparams: dardemiri@gmail.com,secret-token-4242',
+      );
+      databaseError.name = "DrizzleQueryError";
+      databaseError.cause = Object.assign(
+        new Error('invalid input syntax for type uuid: "secret-token-4242" for dardemiri@gmail.com'),
+        {
+          code: "23505",
+          constraint: "checkout_orders_order_id_unique",
+          detail: "Key (customer_email)=(dardemiri@gmail.com) already exists.",
+          table: "checkout_orders",
+        },
+      );
+
+      const { handler } = runScenario({
+        createPendingOrder: async () => {
+          throw databaseError;
+        },
+      });
+
+      const response = await handler(createRequest({
+        customer: { name: "Dardan Demiri", email: "dardemiri@gmail.com" },
+        shippingAddress,
+        items: [{ productId: "product-lash-cleanser", quantity: 1 }],
+      }));
+
+      assert.equal(response.status, 400);
+      assert.deepEqual(await response.json(), { error: "Unable to start checkout" });
+      assert.equal(consoleCalls.length, 1);
+      assert.equal(consoleCalls[0][0], "[checkout] Unable to initialize checkout");
+      assert.deepEqual(consoleCalls[0][1], {
+        error: "Database query failed",
+        errorName: "DrizzleQueryError",
+        cause: {
+          code: "23505",
+          table: "checkout_orders",
+          constraint: "checkout_orders_order_id_unique",
+        },
+      });
+
+      const serializedLog = JSON.stringify(consoleCalls);
+      assert.equal(serializedLog.includes("dardemiri@gmail.com"), false);
+      assert.equal(serializedLog.includes("secret-token-4242"), false);
+      assert.equal(serializedLog.includes("params:"), false);
+      assert.equal(serializedLog.includes("detail"), false);
+      assert.equal(serializedLog.includes("invalid input syntax"), false);
+    } finally {
+      console.error = originalConsoleError;
+    }
+  `);
+});
+
+test("checkout route logs generic failure messages without leaking sensitive values", () => {
+  runRouteScenario(`
+    const originalConsoleError = console.error;
+    const consoleCalls = [];
+    console.error = (...args) => {
+      consoleCalls.push(args);
+    };
+
+    try {
+      const { handler } = runScenario({
+        initializeHelcimPay: async () => {
+          throw new Error("Helcim unavailable for dardemiri@gmail.com with secret-token-4242");
+        },
+      });
+
+      const response = await handler(createRequest({
+        customer: { name: "Dardan Demiri", email: "dardemiri@gmail.com" },
+        shippingAddress,
+        items: [{ productId: "product-lash-cleanser", quantity: 1 }],
+      }));
+
+      assert.equal(response.status, 400);
+      assert.deepEqual(await response.json(), { error: "Unable to start checkout" });
+      assert.equal(consoleCalls.length, 1);
+      assert.equal(consoleCalls[0][0], "[checkout] Unable to initialize checkout");
+      assert.deepEqual(consoleCalls[0][1], {
+        error: "Checkout initialization failed",
+        errorName: "Error",
+      });
+
+      const serializedLog = JSON.stringify(consoleCalls);
+      assert.equal(serializedLog.includes("dardemiri@gmail.com"), false);
+      assert.equal(serializedLog.includes("secret-token-4242"), false);
+      assert.equal(serializedLog.includes("Helcim unavailable"), false);
+    } finally {
+      console.error = originalConsoleError;
+    }
+  `);
+});
+
 test("product checkout route remains Helcim-only and does not import Square modules", () => {
   const routeSource = readFileSync("src/app/api/checkout/route.ts", "utf8");
 
