@@ -368,8 +368,26 @@ function summarizeCheckoutErrorCause(cause: unknown): CheckoutErrorLogCause | un
   setSafeLogField(summary, "column", cause.column);
   setSafeLogField(summary, "constraint", cause.constraint);
   setSafeLogField(summary, "dataType", cause.dataType);
+  setUndefinedColumnField(summary, cause);
 
   return Object.keys(summary).length > 0 ? summary : undefined;
+}
+
+function setUndefinedColumnField(
+  summary: CheckoutErrorLogCause,
+  cause: Record<string, unknown>,
+): void {
+  if (summary.column || cause.code !== "42703" || typeof cause.message !== "string") {
+    return;
+  }
+
+  const missingColumn = cause.message.match(/^column "([A-Za-z0-9_.]+)"(?: of relation "[A-Za-z0-9_]+")? does not exist$/);
+
+  if (!missingColumn) {
+    return;
+  }
+
+  summary.column = missingColumn[1];
 }
 
 function setSafeLogField(
