@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "sanity:backfill-home-training": "node scripts/backfill-home-training-programs-block.mjs",
     "test": "playwright test",
     "test:unit": "tsx --test \"src/**/*.test.ts\"",
     "test:ui": "playwright test --ui",

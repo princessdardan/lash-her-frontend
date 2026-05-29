@@ -1,10 +1,25 @@
+import { DocumentIcon } from "@sanity/icons";
 import { defineArrayMember, defineField, defineType } from "sanity";
 
 export const featureSection = defineType({
   name: "featureSection",
   title: "Feature Section",
   type: "object",
+  icon: DocumentIcon,
   fields: [
+    defineField({
+      name: "heading",
+      title: "Heading",
+      type: "string",
+      description: "Optional heading displayed above the featured items.",
+    }),
+    defineField({
+      name: "subHeading",
+      title: "Sub Heading",
+      type: "text",
+      rows: 2,
+      description: "Optional supporting copy displayed below the heading.",
+    }),
     defineField({
       name: "layout",
       title: "Layout",
@@ -139,14 +154,16 @@ export const featureSection = defineType({
   ],
   preview: {
     select: {
-      title: "items.0.heading",
+      title: "heading",
+      itemTitle: "items.0.heading",
       productTitle: "items.0.product.title",
-      subtitle: "layout",
+      subtitle: "subHeading",
+      layout: "layout",
     },
-    prepare({ title, productTitle, subtitle }) {
+    prepare({ title, itemTitle, productTitle, subtitle, layout }) {
       return {
-        title: title || productTitle || "Feature Section",
-        subtitle: subtitle ? `Layout: ${subtitle}` : "",
+        title: title || itemTitle || productTitle || "Feature Section",
+        subtitle: subtitle || (layout ? `Layout: ${layout}` : ""),
       };
     },
   },

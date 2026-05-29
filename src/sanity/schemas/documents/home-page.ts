@@ -1,4 +1,4 @@
-import { defineField, defineType } from "sanity";
+import { defineArrayMember, defineField, defineType } from "sanity";
 
 export const homePage = defineType({
   name: "homePage",
@@ -19,7 +19,11 @@ export const homePage = defineType({
       name: "blocks",
       title: "Blocks",
       type: "array",
-      of: [{ type: "heroSection" }, { type: "featureSection" }],
+      of: [
+        defineArrayMember({ type: "heroSection" }),
+        defineArrayMember({ type: "featureSection" }),
+        defineArrayMember({ type: "homeTrainingProgramsSection" }),
+      ],
     }),
   ],
   preview: {

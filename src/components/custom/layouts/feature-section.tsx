@@ -21,6 +21,8 @@ type ResolvedFeatureProduct = Pick<
 
 type FeatureProductReference = { _type: "reference"; _ref: string };
 
+type FeatureItemHeadingLevel = "h2" | "h3";
+
 function isFeatureProductReference(product: TFeatureItem["product"]): product is FeatureProductReference {
   return Boolean(product && "_ref" in product);
 }
@@ -113,17 +115,20 @@ function FeatureImage({
 function FeatureText({
   item,
   products,
+  headingLevel = "h2",
 }: {
   item: TFeatureItem;
   products?: TProduct[];
+  headingLevel?: FeatureItemHeadingLevel;
 }) {
   const resolved = resolveFeatureItem(item, products);
+  const FeatureHeading = headingLevel;
 
   return (
     <div className="flex flex-col justify-center">
-      <h2 className="text-3xl md:text-4xl lg:text-5xl font-heading text-lh-shadow mb-4">
+      <FeatureHeading className="text-3xl md:text-4xl lg:text-5xl font-heading text-lh-shadow mb-4">
         {resolved.heading}
-      </h2>
+      </FeatureHeading>
       {resolved.subHeading && (
         <p className="text-lg md:text-xl text-lh-primary font-heading tracking-widest uppercase mb-6">
           {resolved.subHeading}
@@ -155,7 +160,7 @@ function FeatureText({
 }
 
 export function FeatureSection({ data, products }: FeatureSectionProps) {
-  const { layout, enableCarousel, carouselIntervalMs = 5000, items } = data;
+  const { heading, subHeading, layout, enableCarousel, carouselIntervalMs = 5000, items } = data;
   const [currentIndex, setCurrentIndex] = useState(0);
 
   const hasItems = items && items.length > 0;
@@ -185,9 +190,16 @@ export function FeatureSection({ data, products }: FeatureSectionProps) {
   // Mobile always shows image on top, text below
   // Desktop respects the layout selection
   const isImageTop = layout === "imageTop";
+  const featureItemHeadingLevel: FeatureItemHeadingLevel = heading ? "h3" : "h2";
 
   return (
     <section className="section-shell">
+      {(heading || subHeading) && (
+        <div className="text-container mx-auto max-w-3xl px-6 md:px-8">
+          {heading && <h2 className="section-heading text-balance">{heading}</h2>}
+          {subHeading && <p className="section-description text-lg">{subHeading}</p>}
+        </div>
+      )}
       <div
         className={cn(
           "mx-auto rounded-[28px] border border-lh-line bg-lh-neutral p-6 shadow-[0_18px_50px_rgba(28,19,24,0.04)] md:p-10 lg:p-14",
@@ -250,7 +262,7 @@ export function FeatureSection({ data, products }: FeatureSectionProps) {
 
           {/* Text */}
           <div className={cn("w-full", isImageTop ? "" : "lg:w-1/2")}>
-            <FeatureText item={currentItem} products={products} />
+            <FeatureText item={currentItem} products={products} headingLevel={featureItemHeadingLevel} />
           </div>
         </div>
       </div>

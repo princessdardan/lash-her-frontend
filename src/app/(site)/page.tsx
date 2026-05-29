@@ -2,7 +2,6 @@ import { notFound } from "next/navigation";
 import { loaders } from "@/data/loaders";
 import { BlockRenderer } from "@/components/custom/layouts/block-renderer";
 import { ContactContent } from "@/components/custom/contact-content";
-import { TrainingProgramsSection } from "@/components/custom/training-programs-section";
 import { buildPageMetadata } from "@/lib/metadata";
 import type { THeroSection, TLayoutBlock, TLink } from "@/types";
 
@@ -44,9 +43,8 @@ function normalizeHomeBlocks(blocks: TLayoutBlock[]): TLayoutBlock[] {
 
 export default async function Home() {
   // Fetch all data in parallel to avoid sequential waterfall
-  const [homeData, trainingProgramsData, contactData] = await Promise.all([
+  const [homeData, contactData] = await Promise.all([
     loaders.getHomePageData(),
-    loaders.getTrainingProgramsPageData(),
     loaders.getContactPageData(),
   ]);
 
@@ -55,9 +53,6 @@ export default async function Home() {
   return (
     <>
       <BlockRenderer blocks={normalizeHomeBlocks(homeData.blocks)} />
-      {trainingProgramsData && (
-        <TrainingProgramsSection data={trainingProgramsData} headingLevel="h2" />
-      )}
       {contactData && (
         <ContactContent
           blocks={contactData.blocks}

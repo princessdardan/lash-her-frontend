@@ -198,10 +198,18 @@ export type TFeatureLayout = "imageLeft" | "imageRight" | "imageTop";
 export interface TFeatureSection {
   _type: "featureSection";
   _key: string;
+  heading?: string;
+  subHeading?: string;
   layout: TFeatureLayout;
   enableCarousel: boolean;
   carouselIntervalMs?: number;
   items: TFeatureItem[];
+}
+
+export interface THomeTrainingProgramsSection {
+  _type: "homeTrainingProgramsSection";
+  _key: string;
+  trainingProgramsPage?: TTrainingProgramsPage;
 }
 
 // === Block Union Types (per D-11 — moved here from page files) ===
@@ -216,7 +224,8 @@ export type TLayoutBlock =
   | TContactInfo
   | TContactFormLabels
   | TGeneralInquiryLabels
-  | TFeatureSection;
+  | TFeatureSection
+  | THomeTrainingProgramsSection;
 
 // === Navigation Types ===
 

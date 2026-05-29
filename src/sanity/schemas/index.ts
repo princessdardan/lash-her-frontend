@@ -29,6 +29,7 @@ import { contactInfo } from "./objects/layout/contact-info";
 import { contactFormLabels } from "./objects/layout/contact-form-labels";
 import { generalInquiryLabels } from "./objects/layout/general-inquiry-labels";
 import { featureSection } from "./objects/layout/feature-section";
+import { homeTrainingProgramsSection } from "./objects/layout/home-training-programs-section";
 import { trainingContactSection } from "./objects/layout/training-contact-section";
 import { header } from "./objects/layout/header";
 import { footer } from "./objects/layout/footer";
@@ -74,6 +75,7 @@ export const schemaTypes = [
   contactFormLabels,
   generalInquiryLabels,
   featureSection,
+  homeTrainingProgramsSection,
   trainingContactSection,
   header,
   footer,

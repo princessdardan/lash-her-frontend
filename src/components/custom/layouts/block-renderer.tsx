@@ -11,6 +11,7 @@ import { Schedule } from "./schedule";
 import { ContactInfo } from "./contact-info";
 import { ContactFormLabels } from "../collection/contact-components";
 import { FeatureSection } from "./feature-section";
+import { HomeTrainingProgramsSection } from "./home-training-programs-section";
 
 export type { TLayoutBlock } from "@/types";
 
@@ -36,6 +37,7 @@ const COMPONENT_REGISTRY = {
   "contactInfo": ContactInfo,
   "contactFormLabels": ContactFormLabels,
   "featureSection": FeatureSection,
+  "homeTrainingProgramsSection": HomeTrainingProgramsSection,
 } as const;
 
 /**

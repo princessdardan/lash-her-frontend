@@ -227,10 +227,54 @@ async function getHomePageData(): Promise<THomePage | null> {
       layout,
       enableCarousel,
       carouselIntervalMs,
-      items[]{ _key, image{ asset, hotspot, crop, alt }, heading, subHeading, description, link{ href, label, isExternal }, product->{ _id, title, "slug": slug.current, shortDescription, description, cardSubtitle, image{ asset, hotspot, crop, alt } } }
+      items[]{ _key, image{ asset, hotspot, crop, alt }, heading, subHeading, description, link{ href, label, isExternal }, product->{ _id, title, "slug": slug.current, shortDescription, description, cardSubtitle, image{ asset, hotspot, crop, alt } } },
+      _type == "homeTrainingProgramsSection" => {
+        trainingProgramsPage->{
+          title,
+          description,
+          trainingPrograms[]->{
+            _id,
+            title,
+            description,
+            "slug": slug.current,
+            heroImage{ asset, hotspot, crop, alt },
+            detailItems[]{ _key, eyelash, title, description },
+            factList,
+            primaryCta{ label, href },
+            checkoutEnabled,
+            availabilityLabel,
+            image{ asset, hotspot, crop, alt },
+            checkoutCtaLabel,
+            seo{ image{ asset, hotspot, crop, alt } },
+            blocks[]{
+              _type,
+              _key,
+              heading,
+              subHeading,
+              description,
+              onHomepage,
+              heroSize,
+              autoRotate,
+              rotationIntervalMs,
+              slides[]{ _key, image{ asset, hotspot, crop, alt }, heading, subHeading, description, link[]{ _key, href, label, isExternal } },
+              image{ asset, hotspot, crop, alt },
+              link[]{ _key, href, label, isExternal },
+              info,
+              name,
+              email,
+              phone,
+              location,
+              instagram,
+              experience,
+              interest,
+              clients
+            }
+          }
+        }
+      }
     }
   }`;
-  return sanityFetch<THomePage | null>(query, {}, ["homePage"]);
+  return sanityFetch<THomePage | null>(query, {}, ["homePage", "trainingProgramsPage", "trainingProgram"]);
 }
 
 async function getContactPageData(): Promise<TContactPage | null> {
