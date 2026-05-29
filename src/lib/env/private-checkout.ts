@@ -27,6 +27,13 @@ export function getEmailRetrySecret(): string {
   );
 }
 
+export function getPrivateDataRetentionCronSecret(): string {
+  return assertValue(
+    process.env.CRON_SECRET,
+    "Missing env var: CRON_SECRET",
+  );
+}
+
 export function getPaymentGatewayMode(): PaymentGatewayMode {
   return resolvePaymentGatewayMode(getPaymentMockRuntimeEnvironment());
 }

@@ -424,9 +424,7 @@ export const marketingContactSubmissions = pgTable(
 export const marketingConsentEvents = pgTable("marketing_consent_events", {
   id: uuid("id").defaultRandom().primaryKey(),
   contactId: uuid("contact_id").references(() => marketingContacts.id, { onDelete: "set null" }),
-  submissionId: uuid("submission_id")
-    .notNull()
-    .references(() => marketingContactSubmissions.id, { onDelete: "cascade" }),
+  submissionId: uuid("submission_id").references(() => marketingContactSubmissions.id, { onDelete: "set null" }),
   eventType: marketingConsentEventType("event_type").notNull(),
   email: text("email").notNull(),
   emailNormalized: text("email_normalized").notNull(),

@@ -10,6 +10,7 @@ import {
   checkoutOrders,
   checkoutPaymentEvents,
   checkoutOrderPurpose,
+  marketingConsentEvents,
   paymentEventProcessingStatus,
   paymentProvider,
 } from "./schema";
@@ -238,4 +239,14 @@ test("appointment holds schema does not define raw payment token or card fields"
   assert.equal(columnNameText.includes("cvc"), false);
   assert.equal(columnNameText.includes("token"), false);
   assert.equal(columnNameText.includes("secret"), false);
+});
+
+test("marketing consent events preserve evidence when submissions are deleted", () => {
+  const consentEventForeignKeys = getTableConfig(marketingConsentEvents).foreignKeys;
+  const submissionForeignKey = consentEventForeignKeys.find(
+    (foreignKey) => foreignKey.getName() === "marketing_consent_events_submission_id_marketing_contact_submissions_id_fk",
+  );
+
+  assert.equal(marketingConsentEvents.submissionId.notNull, false);
+  assert.equal(submissionForeignKey?.onDelete, "set null");
 });

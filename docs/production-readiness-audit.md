@@ -253,20 +253,20 @@ Next cache can be expired before Sanity CDN returns fresh content, causing stale
 
 Use delayed webhook parsing where supported, bypass CDN for the immediate post-revalidation fetch path, or validate freshness as part of the Sanity publish smoke test.
 
-### M6. Migration and private-data retention guardrails are manual
+### M6. Migration guardrails remain manual; retention automation needs production evidence
 
 **Evidence**
 
 - `drizzle.config.ts` and `scripts/migrate-private-db.ts` apply migrations to whichever `DATABASE_URL` is set.
-- Private DB schema stores PII/payment-adjacent JSON snapshots, payloads, and metadata with lifecycle fields but no automated purge/redaction job was found.
+- Private-data retention automation now lives in `src/lib/private-db/retention.ts` and is scheduled through `/api/admin/private-data-retention` in `vercel.json`, but production still needs environment, cron delivery, migration, and first-run evidence.
 
 **Impact**
 
-Operators can migrate the wrong database, and retained PII/payment-adjacent records can exceed intended retention windows.
+Operators can migrate the wrong database, and retained PII/payment-adjacent records can exceed intended retention windows if the production cron secret, schedule, or database target is misconfigured.
 
 **Remediation**
 
-Add migration target guards for host/project/branch/environment and explicit production confirmation. Define retention windows per table and implement scheduled purge/redaction jobs. Use `docs/private-database-migration-runbook.md` and the cutover migration plan for production execution evidence.
+Add migration target guards for host/project/branch/environment and explicit production confirmation. Verify the retention cron has `CRON_SECRET`, runs against the intended private database, and produces first-run execution evidence after deploying the scheduled purge/redaction job. Use `docs/private-database-migration-runbook.md` and the cutover migration plan for production execution evidence.
 
 ### M7. Some hot-path private DB lookups lack obvious indexes
 

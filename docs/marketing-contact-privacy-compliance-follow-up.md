@@ -104,14 +104,15 @@ OPC PIPEDA principles: https://www.priv.gc.ca/en/privacy-topics/privacy-laws-in-
 
 ### Retention And Redaction
 
-Define retention windows by record type:
+Retention windows are now implemented in `src/lib/private-db/retention.ts` and surfaced as static metadata by `/api/admin/private-data-retention`. The current marketing/contact windows are:
 
-- Marketing contacts: retain while consent is active or suppression evidence is needed.
-- Consent events: retain long enough to prove consent/withdrawal history and meet legal defense needs.
-- Non-consenting submissions: retain only as long as needed for operational response, support, fraud prevention, or legal obligations.
+- Marketing contacts: redact inactive profile fields after 730 days from `last_consented_at`; delete unsubscribed contacts after 2555 days from `unsubscribed_at`.
+- Consent events: delete after 2555 days from `occurred_at`; submission references are nullable with `ON DELETE SET NULL` so consent evidence survives earlier submission deletion.
+- Non-consenting submissions: delete after 180 days from `submitted_at`.
+- Consenting submissions: redact identity and payload fields after 395 days from `submitted_at`.
 - Backfilled Sanity submissions: migrate, verify, then decide whether Sanity copies are exported, redacted, hidden, or deleted.
 
-Build a future retention/redaction job once the business-approved periods are known.
+These periods are technical defaults and must still be approved or revised by the accountable business/privacy owner and qualified privacy/legal counsel. If approved periods change, update `PRIVATE_DATA_RETENTION_WINDOWS`, tests, and operational runbooks before relying on the scheduled job.
 
 References:  
 OPC limiting use, disclosure, and retention: https://www.priv.gc.ca/en/privacy-topics/privacy-laws-in-canada/the-personal-information-protection-and-electronic-documents-act-pipeda/p_principle/principles/p_use/  
@@ -191,7 +192,7 @@ https://www.priv.gc.ca/en/privacy-topics/privacy-laws-in-canada/the-personal-inf
 
 - Approve consent language for general inquiry, training/contact, popup/email-list, and booking forms.
 - Add unsubscribe/suppression implementation before any bulk marketing send workflow.
-- Define retention periods for consented contacts, non-consenting submissions, consent events, and Sanity backfill records.
+- Approve or revise the implemented retention periods for consented contacts, unsubscribed contacts, non-consenting submissions, consenting submissions, consent events, and Sanity backfill records.
 - Define DSAR export/delete/correction owner and procedure.
 - Decide whether to store IP hash and user agent for consent evidence; avoid collecting them unless counsel/business confirms necessity.
 - Confirm whether existing Sanity submission records contain production PII and export before deletion/redaction.
