@@ -7,6 +7,8 @@ export interface TransactionalEmailTag {
   value: string;
 }
 
+export const CUSTOMER_REPLY_TO_EMAIL = "lashher@outlook.com";
+
 export interface EmailConfig {
   adminEmail: string;
   environment: string;
@@ -17,6 +19,7 @@ export interface SendTransactionalEmailInput {
   from?: string;
   html: string;
   idempotencyKey?: string;
+  replyTo?: string | string[];
   subject: string;
   tags?: TransactionalEmailTag[];
   to: string | string[];
@@ -51,6 +54,7 @@ export async function sendTransactionalEmail(
   const payload = {
     from: input.from ?? config.fromEmail,
     html: input.html,
+    ...(input.replyTo === undefined ? {} : { replyTo: input.replyTo }),
     subject: input.subject,
     tags: [
       ...(input.tags ?? []),

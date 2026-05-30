@@ -1,6 +1,7 @@
 import "server-only";
 
 import {
+  CUSTOMER_REPLY_TO_EMAIL,
   escapeHtml,
   getEmailConfig,
   mailtoHref,
@@ -87,19 +88,19 @@ function getGeneralInquiryAdminHtml(data: GeneralInquiryData): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>New General Inquiry</title>
 </head>
-<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f5f5;">
+<body style="margin: 0; padding: 0; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background-color: #F5F1F5;">
   <table role="presentation" style="width: 100%; border-collapse: collapse;">
     <tr>
       <td align="center" style="padding: 40px 20px;">
-        <table role="presentation" style="max-width: 600px; width: 100%; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        <table role="presentation" style="max-width: 600px; width: 100%; background-color: #FFFFFF; border-radius: 8px; box-shadow: 0 12px 32px rgba(28, 19, 24, 0.08);">
 
           <!-- Header -->
           <tr>
-            <td style="background: linear-gradient(135deg, #1C1318 0%, #3D0B16 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
-              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">
+            <td style="background: #1C1318; padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+              <h1 style="margin: 0; color: #FFFFFF; font-size: 24px; font-weight: 600; font-family: 'Bebas Neue', 'Arial Narrow', Impact, sans-serif; letter-spacing: 0.04em; text-transform: uppercase;">
                 New General Inquiry
               </h1>
-              <p style="margin: 10px 0 0 0; color: #f0f0f0; font-size: 14px;">
+              <p style="margin: 10px 0 0 0; color: #E8E2E9; font-size: 14px;">
                 Lash Her by Nataliea
               </p>
             </td>
@@ -117,20 +118,20 @@ function getGeneralInquiryAdminHtml(data: GeneralInquiryData): string {
               </div>
 
               <!-- Customer Details -->
-              <h2 style="margin: 0 0 20px 0; color: #1f2937; font-size: 18px; font-weight: 600; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px;">
+              <h2 style="margin: 0 0 20px 0; color: #1C1318; font-size: 18px; font-weight: 600; border-bottom: 2px solid #E8E2E9; padding-bottom: 10px;">
                 Customer Details
               </h2>
 
               <table role="presentation" style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
                 <tr>
-                  <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
-                    <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 120px;">Name:</strong>
-                    <span style="color: #1f2937; font-size: 14px;">${escapeHtml(data.name)}</span>
+                  <td style="padding: 12px 0; border-bottom: 1px solid #E8E2E9;">
+                    <strong style="color: #746A72; font-size: 14px; display: inline-block; width: 120px;">Name:</strong>
+                    <span style="color: #1C1318; font-size: 14px;">${escapeHtml(data.name)}</span>
                   </td>
                 </tr>
                 <tr>
-                  <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
-                    <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 120px;">Email:</strong>
+                  <td style="padding: 12px 0; border-bottom: 1px solid #E8E2E9;">
+                    <strong style="color: #746A72; font-size: 14px; display: inline-block; width: 120px;">Email:</strong>
                     <a href="${escapeHtml(mailtoHref(data.email))}" style="color: #663976; font-size: 14px; text-decoration: none;">${escapeHtml(data.email)}</a>
                   </td>
                 </tr>
@@ -138,8 +139,8 @@ function getGeneralInquiryAdminHtml(data: GeneralInquiryData): string {
                   data.phone
                     ? `
                 <tr>
-                  <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
-                    <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 120px;">Phone:</strong>
+                  <td style="padding: 12px 0; border-bottom: 1px solid #E8E2E9;">
+                    <strong style="color: #746A72; font-size: 14px; display: inline-block; width: 120px;">Phone:</strong>
                     <a href="${escapeHtml(telHref(data.phone))}" style="color: #663976; font-size: 14px; text-decoration: none;">${escapeHtml(data.phone)}</a>
                   </td>
                 </tr>
@@ -150,9 +151,9 @@ function getGeneralInquiryAdminHtml(data: GeneralInquiryData): string {
                   data.instagram
                     ? `
                 <tr>
-                  <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
-                    <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 120px;">Instagram:</strong>
-                    <span style="color: #1f2937; font-size: 14px;">@${escapeHtml(data.instagram)}</span>
+                  <td style="padding: 12px 0; border-bottom: 1px solid #E8E2E9;">
+                    <strong style="color: #746A72; font-size: 14px; display: inline-block; width: 120px;">Instagram:</strong>
+                    <span style="color: #1C1318; font-size: 14px;">@${escapeHtml(data.instagram)}</span>
                   </td>
                 </tr>
                 `
@@ -161,16 +162,16 @@ function getGeneralInquiryAdminHtml(data: GeneralInquiryData): string {
               </table>
 
               <!-- Message -->
-              <h2 style="margin: 0 0 15px 0; color: #1f2937; font-size: 18px; font-weight: 600; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px;">
+              <h2 style="margin: 0 0 15px 0; color: #1C1318; font-size: 18px; font-weight: 600; border-bottom: 2px solid #E8E2E9; padding-bottom: 10px;">
                 Message
               </h2>
-              <div style="background-color: #f9fafb; padding: 20px; border-radius: 6px; border: 1px solid #e5e7eb; margin-bottom: 30px;">
-                <p style="margin: 0; color: #374151; font-size: 14px; line-height: 1.6; white-space: pre-wrap;">${escapeHtml(data.message)}</p>
+              <div style="background-color: #F5F1F5; padding: 20px; border-radius: 6px; border: 1px solid #E8E2E9; margin-bottom: 30px;">
+                <p style="margin: 0; color: #1C1318; font-size: 14px; line-height: 1.6; white-space: pre-wrap;">${escapeHtml(data.message)}</p>
               </div>
 
               <!-- Action Button -->
               <div style="text-align: center; margin-top: 30px;">
-                <a href="${escapeHtml(mailtoHref(data.email))}" style="display: inline-block; background-color: #663976; color: #ffffff; text-decoration: none; padding: 12px 30px; border-radius: 6px; font-weight: 500; font-size: 14px;">
+                <a href="${escapeHtml(mailtoHref(data.email))}" style="display: inline-block; background-color: #663976; color: #FFFFFF; text-decoration: none; padding: 12px 30px; border-radius: 6px; font-weight: 500; font-size: 14px;">
                   Reply to ${escapeHtml(data.name.split(" ")[0])}
                 </a>
               </div>
@@ -180,11 +181,11 @@ function getGeneralInquiryAdminHtml(data: GeneralInquiryData): string {
 
           <!-- Footer -->
           <tr>
-            <td style="background-color: #f9fafb; padding: 20px 30px; border-radius: 0 0 8px 8px; border-top: 1px solid #e5e7eb;">
-              <p style="margin: 0; color: #6b7280; font-size: 12px; text-align: center;">
+            <td style="background-color: #F5F1F5; padding: 20px 30px; border-radius: 0 0 8px 8px; border-top: 1px solid #E8E2E9;">
+              <p style="margin: 0; color: #746A72; font-size: 12px; text-align: center;">
                 Received on ${timestamp}
               </p>
-              <p style="margin: 10px 0 0 0; color: #9ca3af; font-size: 11px; text-align: center;">
+              <p style="margin: 10px 0 0 0; color: #746A72; font-size: 11px; text-align: center;">
                 This notification was sent from your Lash Her website contact form
               </p>
             </td>
@@ -214,16 +215,16 @@ function getTrainingContactAdminHtml(data: TrainingContactData): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>New Training Inquiry</title>
 </head>
-<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f5f5;">
+<body style="margin: 0; padding: 0; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background-color: #F5F1F5;">
   <table role="presentation" style="width: 100%; border-collapse: collapse;">
     <tr>
       <td align="center" style="padding: 40px 20px;">
-        <table role="presentation" style="max-width: 600px; width: 100%; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        <table role="presentation" style="max-width: 600px; width: 100%; background-color: #FFFFFF; border-radius: 8px; box-shadow: 0 12px 32px rgba(28, 19, 24, 0.08);">
 
           <!-- Header -->
           <tr>
-            <td style="background: linear-gradient(135deg, #1C1318 0%, #663976 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
-              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">
+            <td style="background: #1C1318; padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+              <h1 style="margin: 0; color: #FFFFFF; font-size: 24px; font-weight: 600; font-family: 'Bebas Neue', 'Arial Narrow', Impact, sans-serif; letter-spacing: 0.04em; text-transform: uppercase;">
                 🎓 New Training Inquiry
               </h1>
               <p style="margin: 10px 0 0 0; color: #FFFFFF; font-size: 14px;">
@@ -244,69 +245,69 @@ function getTrainingContactAdminHtml(data: TrainingContactData): string {
               </div>
 
               <!-- Student Details -->
-              <h2 style="margin: 0 0 20px 0; color: #1f2937; font-size: 18px; font-weight: 600; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px;">
+              <h2 style="margin: 0 0 20px 0; color: #1C1318; font-size: 18px; font-weight: 600; border-bottom: 2px solid #E8E2E9; padding-bottom: 10px;">
                 Student Information
               </h2>
 
               <table role="presentation" style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
                 <tr>
-                  <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
-                    <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 140px;">Name:</strong>
-                    <span style="color: #1f2937; font-size: 14px;">${escapeHtml(data.name)}</span>
+                  <td style="padding: 12px 0; border-bottom: 1px solid #E8E2E9;">
+                    <strong style="color: #746A72; font-size: 14px; display: inline-block; width: 140px;">Name:</strong>
+                    <span style="color: #1C1318; font-size: 14px;">${escapeHtml(data.name)}</span>
                   </td>
                 </tr>
                 <tr>
-                  <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
-                    <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 140px;">Email:</strong>
+                  <td style="padding: 12px 0; border-bottom: 1px solid #E8E2E9;">
+                    <strong style="color: #746A72; font-size: 14px; display: inline-block; width: 140px;">Email:</strong>
                     <a href="${escapeHtml(mailtoHref(data.email))}" style="color: #663976; font-size: 14px; text-decoration: none;">${escapeHtml(data.email)}</a>
                   </td>
                 </tr>
                 <tr>
-                  <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
-                    <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 140px;">Phone:</strong>
+                  <td style="padding: 12px 0; border-bottom: 1px solid #E8E2E9;">
+                    <strong style="color: #746A72; font-size: 14px; display: inline-block; width: 140px;">Phone:</strong>
                     <a href="${escapeHtml(telHref(data.phone))}" style="color: #663976; font-size: 14px; text-decoration: none;">${escapeHtml(data.phone)}</a>
                   </td>
                 </tr>
                 <tr>
-                  <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
-                    <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 140px;">Location:</strong>
-                    <span style="color: #1f2937; font-size: 14px;">${escapeHtml(data.location ?? "Not provided")}</span>
+                  <td style="padding: 12px 0; border-bottom: 1px solid #E8E2E9;">
+                    <strong style="color: #746A72; font-size: 14px; display: inline-block; width: 140px;">Location:</strong>
+                    <span style="color: #1C1318; font-size: 14px;">${escapeHtml(data.location ?? "Not provided")}</span>
                   </td>
                 </tr>
                 <tr>
-                  <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
-                    <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 140px;">Instagram:</strong>
-                    <span style="color: #1f2937; font-size: 14px;">${data.instagram ? `@${escapeHtml(data.instagram)}` : "Not provided"}</span>
+                  <td style="padding: 12px 0; border-bottom: 1px solid #E8E2E9;">
+                    <strong style="color: #746A72; font-size: 14px; display: inline-block; width: 140px;">Instagram:</strong>
+                    <span style="color: #1C1318; font-size: 14px;">${data.instagram ? `@${escapeHtml(data.instagram)}` : "Not provided"}</span>
                   </td>
                 </tr>
               </table>
 
               <!-- Training Details -->
-              <h2 style="margin: 0 0 20px 0; color: #1f2937; font-size: 18px; font-weight: 600; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px;">
+              <h2 style="margin: 0 0 20px 0; color: #1C1318; font-size: 18px; font-weight: 600; border-bottom: 2px solid #E8E2E9; padding-bottom: 10px;">
                 Training Program
               </h2>
 
               <table role="presentation" style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
                 <tr>
-                  <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
-                    <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 140px;">Program:</strong>
+                  <td style="padding: 12px 0; border-bottom: 1px solid #E8E2E9;">
+                    <strong style="color: #746A72; font-size: 14px; display: inline-block; width: 140px;">Program:</strong>
                     <span style="display: inline-block; background-color: #F5F1F5; color: #663976; padding: 4px 12px; border-radius: 12px; font-size: 13px; font-weight: 500;">${escapeHtml(data.programTitle)}</span>
                   </td>
                 </tr>
                 <tr>
-                  <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
-                    <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 140px;">Submitted Page:</strong>
-                    <span style="color: #1f2937; font-size: 14px;">${escapeHtml(data.sourcePath ?? `/training-programs/${data.programSlug}`)}</span>
+                  <td style="padding: 12px 0; border-bottom: 1px solid #E8E2E9;">
+                    <strong style="color: #746A72; font-size: 14px; display: inline-block; width: 140px;">Submitted Page:</strong>
+                    <span style="color: #1C1318; font-size: 14px;">${escapeHtml(data.sourcePath ?? `/training-programs/${data.programSlug}`)}</span>
                   </td>
                 </tr>
               </table>
 
               <!-- Action Buttons -->
               <div style="text-align: center; margin-top: 30px;">
-                  <a href="${escapeHtml(mailtoHref(data.email))}" style="display: inline-block; background-color: #D4B483; color: #ffffff; text-decoration: none; padding: 12px 30px; border-radius: 6px; font-weight: 500; font-size: 14px; margin: 5px;">
+                  <a href="${escapeHtml(mailtoHref(data.email))}" style="display: inline-block; background-color: #D4B483; color: #FFFFFF; text-decoration: none; padding: 12px 30px; border-radius: 6px; font-weight: 500; font-size: 14px; margin: 5px;">
                   Email ${escapeHtml(data.name.split(" ")[0])}
                 </a>
-                <a href="${escapeHtml(telHref(data.phone))}" style="display: inline-block; background-color: #663976; color: #ffffff; text-decoration: none; padding: 12px 30px; border-radius: 6px; font-weight: 500; font-size: 14px; margin: 5px;">
+                <a href="${escapeHtml(telHref(data.phone))}" style="display: inline-block; background-color: #663976; color: #FFFFFF; text-decoration: none; padding: 12px 30px; border-radius: 6px; font-weight: 500; font-size: 14px; margin: 5px;">
                   Call ${escapeHtml(data.name.split(" ")[0])}
                 </a>
               </div>
@@ -316,11 +317,11 @@ function getTrainingContactAdminHtml(data: TrainingContactData): string {
 
           <!-- Footer -->
           <tr>
-            <td style="background-color: #f9fafb; padding: 20px 30px; border-radius: 0 0 8px 8px; border-top: 1px solid #e5e7eb;">
-              <p style="margin: 0; color: #6b7280; font-size: 12px; text-align: center;">
+            <td style="background-color: #F5F1F5; padding: 20px 30px; border-radius: 0 0 8px 8px; border-top: 1px solid #E8E2E9;">
+              <p style="margin: 0; color: #746A72; font-size: 12px; text-align: center;">
                 Received on ${timestamp}
               </p>
-              <p style="margin: 10px 0 0 0; color: #9ca3af; font-size: 11px; text-align: center;">
+              <p style="margin: 10px 0 0 0; color: #746A72; font-size: 11px; text-align: center;">
                 Training inquiry from Lash Her by Nataliea website
               </p>
             </td>
@@ -345,19 +346,19 @@ function getGeneralInquiryUserHtml(data: GeneralInquiryData): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Thank You for Your Inquiry</title>
 </head>
-<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f5f5;">
+<body style="margin: 0; padding: 0; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background-color: #F5F1F5;">
   <table role="presentation" style="width: 100%; border-collapse: collapse;">
     <tr>
       <td align="center" style="padding: 40px 20px;">
-        <table role="presentation" style="max-width: 600px; width: 100%; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        <table role="presentation" style="max-width: 600px; width: 100%; background-color: #FFFFFF; border-radius: 8px; box-shadow: 0 12px 32px rgba(28, 19, 24, 0.08);">
 
           <!-- Header -->
           <tr>
-            <td style="background: linear-gradient(135deg, #1C1318 0%, #3D0B16 100%); padding: 40px 30px; text-align: center; border-radius: 8px 8px 0 0;">
-              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 600; font-family: 'Georgia', serif;">
+            <td style="background: #1C1318; padding: 40px 30px; text-align: center; border-radius: 8px 8px 0 0;">
+              <h1 style="margin: 0; color: #FFFFFF; font-size: 28px; font-weight: 600; font-family: 'Bebas Neue', 'Arial Narrow', Impact, sans-serif; letter-spacing: 0.04em; text-transform: uppercase;">
                 Lash Her by Nataliea
               </h1>
-              <p style="margin: 15px 0 0 0; color: #f0f0f0; font-size: 16px;">
+              <p style="margin: 15px 0 0 0; color: #E8E2E9; font-size: 16px;">
                 Thank you for reaching out!
               </p>
             </td>
@@ -367,11 +368,11 @@ function getGeneralInquiryUserHtml(data: GeneralInquiryData): string {
           <tr>
             <td style="padding: 40px 30px;">
 
-              <p style="margin: 0 0 20px 0; color: #1f2937; font-size: 16px; line-height: 1.6;">
+              <p style="margin: 0 0 20px 0; color: #1C1318; font-size: 16px; line-height: 1.6;">
                 Hi ${escapeHtml(data.name.split(" ")[0])},
               </p>
 
-              <p style="margin: 0 0 20px 0; color: #374151; font-size: 15px; line-height: 1.7;">
+              <p style="margin: 0 0 20px 0; color: #1C1318; font-size: 15px; line-height: 1.7;">
                 Thank you for contacting <strong style="color: #663976;">Lash Her by Nataliea</strong>. We've received your inquiry and are excited to connect with you!
               </p>
 
@@ -382,13 +383,13 @@ function getGeneralInquiryUserHtml(data: GeneralInquiryData): string {
                 </p>
               </div>
 
-              <p style="margin: 30px 0 20px 0; color: #374151; font-size: 15px; line-height: 1.7;">
+              <p style="margin: 30px 0 20px 0; color: #1C1318; font-size: 15px; line-height: 1.7;">
                 In the meantime, feel free to explore our services and follow us on social media for the latest updates, tips, and beautiful lash transformations!
               </p>
 
               <!-- Social Links Section -->
               <div style="text-align: center; margin: 30px 0; padding: 20px; background-color: #F5F1F5; border-radius: 6px;">
-                <p style="margin: 0 0 15px 0; color: #6b7280; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
+                <p style="margin: 0 0 15px 0; color: #746A72; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
                   Connect With Us
                 </p>
                 <p style="margin: 0; color: #663976; font-size: 16px; font-weight: 500;">
@@ -401,15 +402,15 @@ function getGeneralInquiryUserHtml(data: GeneralInquiryData): string {
 
           <!-- Footer -->
           <tr>
-            <td style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; border-top: 1px solid #e5e7eb; text-align: center;">
-              <p style="margin: 0 0 10px 0; color: #1f2937; font-size: 14px; font-weight: 500;">
+            <td style="background-color: #F5F1F5; padding: 30px; border-radius: 0 0 8px 8px; border-top: 1px solid #E8E2E9; text-align: center;">
+              <p style="margin: 0 0 10px 0; color: #1C1318; font-size: 14px; font-weight: 500;">
                 Lash Her by Nataliea
               </p>
-              <p style="margin: 0; color: #6b7280; font-size: 13px; line-height: 1.5;">
+              <p style="margin: 0; color: #746A72; font-size: 13px; line-height: 1.5;">
                 Professional Lash Artistry & Training
               </p>
-              <p style="margin: 15px 0 0 0; color: #9ca3af; font-size: 12px;">
-                This is an automated confirmation email. Please do not reply directly to this message.
+              <p style="margin: 15px 0 0 0; color: #746A72; font-size: 12px;">
+                Questions are welcome — reply to this email and we will help from there.
               </p>
             </td>
           </tr>
@@ -433,16 +434,16 @@ function getTrainingContactUserHtml(data: TrainingContactData): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Your Training Inquiry</title>
 </head>
-<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f5f5;">
+<body style="margin: 0; padding: 0; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background-color: #F5F1F5;">
   <table role="presentation" style="width: 100%; border-collapse: collapse;">
     <tr>
       <td align="center" style="padding: 40px 20px;">
-        <table role="presentation" style="max-width: 600px; width: 100%; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        <table role="presentation" style="max-width: 600px; width: 100%; background-color: #FFFFFF; border-radius: 8px; box-shadow: 0 12px 32px rgba(28, 19, 24, 0.08);">
 
           <!-- Header -->
           <tr>
-            <td style="background: linear-gradient(135deg, #1C1318 0%, #663976 100%); padding: 40px 30px; text-align: center; border-radius: 8px 8px 0 0;">
-              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 600; font-family: 'Georgia', serif;">
+            <td style="background: #1C1318; padding: 40px 30px; text-align: center; border-radius: 8px 8px 0 0;">
+              <h1 style="margin: 0; color: #FFFFFF; font-size: 28px; font-weight: 600; font-family: 'Bebas Neue', 'Arial Narrow', Impact, sans-serif; letter-spacing: 0.04em; text-transform: uppercase;">
                 Lash Her by Nataliea
               </h1>
               <p style="margin: 15px 0 0 0; color: #FFFFFF; font-size: 18px; font-weight: 500;">
@@ -455,11 +456,11 @@ function getTrainingContactUserHtml(data: TrainingContactData): string {
           <tr>
             <td style="padding: 40px 30px;">
 
-              <p style="margin: 0 0 20px 0; color: #1f2937; font-size: 16px; line-height: 1.6;">
+              <p style="margin: 0 0 20px 0; color: #1C1318; font-size: 16px; line-height: 1.6;">
                 Hi ${escapeHtml(data.name.split(" ")[0])},
               </p>
 
-              <p style="margin: 0 0 20px 0; color: #374151; font-size: 15px; line-height: 1.7;">
+              <p style="margin: 0 0 20px 0; color: #1C1318; font-size: 15px; line-height: 1.7;">
                 Thank you for your interest in <strong style="color: #663976;">${escapeHtml(data.programTitle)}</strong> with Lash Her by Nataliea. We're thrilled that you're considering joining our lash artistry community.
               </p>
 
@@ -486,12 +487,12 @@ function getTrainingContactUserHtml(data: TrainingContactData): string {
                 </ul>
               </div>
 
-              <p style="margin: 30px 0 20px 0; color: #374151; font-size: 15px; line-height: 1.7;">
+              <p style="margin: 30px 0 20px 0; color: #1C1318; font-size: 15px; line-height: 1.7;">
                 Training with us means joining a community of passionate lash artists dedicated to excellence. We can't wait to help you achieve your goals!
               </p>
 
               <!-- Social Section -->
-              <div style="text-align: center; margin: 30px 0; padding: 25px; background: linear-gradient(135deg, #FFFFFF 0%, #F5F1F5 100%); border-radius: 8px;">
+              <div style="text-align: center; margin: 30px 0; padding: 25px; background: #F5F1F5; border-radius: 8px;">
                 <p style="margin: 0 0 10px 0; color: #3D0B16; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
                   Follow Our Journey
                 </p>
@@ -503,9 +504,9 @@ function getTrainingContactUserHtml(data: TrainingContactData): string {
                 </p>
               </div>
 
-              <p style="margin: 30px 0 0 0; color: #6b7280; font-size: 14px; line-height: 1.6; text-align: center;">
+              <p style="margin: 30px 0 0 0; color: #746A72; font-size: 14px; line-height: 1.6; text-align: center;">
                 Questions in the meantime?<br>
-                <span style="color: #374151; font-weight: 500;">We're here to help every step of the way!</span>
+                <span style="color: #1C1318; font-weight: 500;">We're here to help every step of the way!</span>
               </p>
 
             </td>
@@ -513,15 +514,15 @@ function getTrainingContactUserHtml(data: TrainingContactData): string {
 
           <!-- Footer -->
           <tr>
-            <td style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; border-top: 1px solid #e5e7eb; text-align: center;">
-              <p style="margin: 0 0 10px 0; color: #1f2937; font-size: 14px; font-weight: 500;">
+            <td style="background-color: #F5F1F5; padding: 30px; border-radius: 0 0 8px 8px; border-top: 1px solid #E8E2E9; text-align: center;">
+              <p style="margin: 0 0 10px 0; color: #1C1318; font-size: 14px; font-weight: 500;">
                 Lash Her by Nataliea
               </p>
-              <p style="margin: 0; color: #6b7280; font-size: 13px; line-height: 1.5;">
+              <p style="margin: 0; color: #746A72; font-size: 13px; line-height: 1.5;">
                 Professional Lash Training & Artistry
               </p>
-              <p style="margin: 15px 0 0 0; color: #9ca3af; font-size: 12px;">
-                This is an automated confirmation email. Please do not reply directly to this message.
+              <p style="margin: 15px 0 0 0; color: #746A72; font-size: 12px;">
+                Questions are welcome — reply to this email and we will help from there.
               </p>
             </td>
           </tr>
@@ -550,60 +551,60 @@ function getContactPopupAdminHtml(data: ContactPopupData): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>New Popup Lead</title>
 </head>
-<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f5f5;">
+<body style="margin: 0; padding: 0; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background-color: #F5F1F5;">
   <table role="presentation" style="width: 100%; border-collapse: collapse;">
     <tr>
       <td align="center" style="padding: 40px 20px;">
-        <table role="presentation" style="max-width: 600px; width: 100%; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        <table role="presentation" style="max-width: 600px; width: 100%; background-color: #FFFFFF; border-radius: 8px; box-shadow: 0 12px 32px rgba(28, 19, 24, 0.08);">
           <tr>
-            <td style="background: linear-gradient(135deg, #1C1318 0%, #3D0B16 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
-              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">
+            <td style="background: #1C1318; padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+              <h1 style="margin: 0; color: #FFFFFF; font-size: 24px; font-weight: 600; font-family: 'Bebas Neue', 'Arial Narrow', Impact, sans-serif; letter-spacing: 0.04em; text-transform: uppercase;">
                 ✨ New Popup Lead
               </h1>
-              <p style="margin: 10px 0 0 0; color: #f0f0f0; font-size: 14px;">
+              <p style="margin: 10px 0 0 0; color: #E8E2E9; font-size: 14px;">
                 Lash Her by Nataliea
               </p>
             </td>
           </tr>
           <tr>
             <td style="padding: 40px 30px;">
-              <h2 style="margin: 0 0 20px 0; color: #1f2937; font-size: 18px; font-weight: 600; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px;">
+              <h2 style="margin: 0 0 20px 0; color: #1C1318; font-size: 18px; font-weight: 600; border-bottom: 2px solid #E8E2E9; padding-bottom: 10px;">
                 Lead Details
               </h2>
               <table role="presentation" style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
                 ${data.name ? `
                 <tr>
-                  <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
-                    <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 120px;">Name:</strong>
-                    <span style="color: #1f2937; font-size: 14px;">${escapeHtml(data.name)}</span>
+                  <td style="padding: 12px 0; border-bottom: 1px solid #E8E2E9;">
+                    <strong style="color: #746A72; font-size: 14px; display: inline-block; width: 120px;">Name:</strong>
+                    <span style="color: #1C1318; font-size: 14px;">${escapeHtml(data.name)}</span>
                   </td>
                 </tr>` : ''}
                 <tr>
-                  <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
-                    <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 120px;">Email:</strong>
+                  <td style="padding: 12px 0; border-bottom: 1px solid #E8E2E9;">
+                    <strong style="color: #746A72; font-size: 14px; display: inline-block; width: 120px;">Email:</strong>
                     <a href="${escapeHtml(mailtoHref(data.email))}" style="color: #663976; font-size: 14px; text-decoration: none;">${escapeHtml(data.email)}</a>
                   </td>
                 </tr>
                 ${data.instagram ? `
                 <tr>
-                  <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
-                    <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 120px;">Instagram:</strong>
-                    <span style="color: #1f2937; font-size: 14px;">@${escapeHtml(data.instagram)}</span>
+                  <td style="padding: 12px 0; border-bottom: 1px solid #E8E2E9;">
+                    <strong style="color: #746A72; font-size: 14px; display: inline-block; width: 120px;">Instagram:</strong>
+                    <span style="color: #1C1318; font-size: 14px;">@${escapeHtml(data.instagram)}</span>
                   </td>
                 </tr>` : ''}
                 ${data.sourcePath ? `
                 <tr>
-                  <td style="padding: 12px 0; border-bottom: 1px solid #f3f4f6;">
-                    <strong style="color: #6b7280; font-size: 14px; display: inline-block; width: 120px;">Source Page:</strong>
-                    <span style="color: #1f2937; font-size: 14px;">${escapeHtml(data.sourcePath)}</span>
+                  <td style="padding: 12px 0; border-bottom: 1px solid #E8E2E9;">
+                    <strong style="color: #746A72; font-size: 14px; display: inline-block; width: 120px;">Source Page:</strong>
+                    <span style="color: #1C1318; font-size: 14px;">${escapeHtml(data.sourcePath)}</span>
                   </td>
                 </tr>` : ''}
               </table>
             </td>
           </tr>
           <tr>
-            <td style="background-color: #f9fafb; padding: 20px 30px; border-radius: 0 0 8px 8px; border-top: 1px solid #e5e7eb;">
-              <p style="margin: 0; color: #6b7280; font-size: 12px; text-align: center;">
+            <td style="background-color: #F5F1F5; padding: 20px 30px; border-radius: 0 0 8px 8px; border-top: 1px solid #E8E2E9;">
+              <p style="margin: 0; color: #746A72; font-size: 12px; text-align: center;">
                 Received on ${timestamp}
               </p>
             </td>
@@ -627,31 +628,31 @@ function getContactPopupUserHtml(data: ContactPopupData): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Welcome to Lash Her</title>
 </head>
-<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f5f5;">
+<body style="margin: 0; padding: 0; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background-color: #F5F1F5;">
   <table role="presentation" style="width: 100%; border-collapse: collapse;">
     <tr>
       <td align="center" style="padding: 40px 20px;">
-        <table role="presentation" style="max-width: 600px; width: 100%; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        <table role="presentation" style="max-width: 600px; width: 100%; background-color: #FFFFFF; border-radius: 8px; box-shadow: 0 12px 32px rgba(28, 19, 24, 0.08);">
           <tr>
-            <td style="background: linear-gradient(135deg, #1C1318 0%, #3D0B16 100%); padding: 40px 30px; text-align: center; border-radius: 8px 8px 0 0;">
-              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 600; font-family: 'Georgia', serif;">
+            <td style="background: #1C1318; padding: 40px 30px; text-align: center; border-radius: 8px 8px 0 0;">
+              <h1 style="margin: 0; color: #FFFFFF; font-size: 28px; font-weight: 600; font-family: 'Bebas Neue', 'Arial Narrow', Impact, sans-serif; letter-spacing: 0.04em; text-transform: uppercase;">
                 Lash Her by Nataliea
               </h1>
-              <p style="margin: 15px 0 0 0; color: #f0f0f0; font-size: 16px;">
+              <p style="margin: 15px 0 0 0; color: #E8E2E9; font-size: 16px;">
                 Welcome to our community!
               </p>
             </td>
           </tr>
           <tr>
             <td style="padding: 40px 30px;">
-              <p style="margin: 0 0 20px 0; color: #1f2937; font-size: 16px; line-height: 1.6;">
+              <p style="margin: 0 0 20px 0; color: #1C1318; font-size: 16px; line-height: 1.6;">
                 Hi ${data.name ? escapeHtml(data.name.split(" ")[0]) : 'there'},
               </p>
-              <p style="margin: 0 0 20px 0; color: #374151; font-size: 15px; line-height: 1.7;">
+              <p style="margin: 0 0 20px 0; color: #1C1318; font-size: 15px; line-height: 1.7;">
                 Thank you for subscribing to <strong style="color: #663976;">Lash Her by Nataliea</strong>. We're excited to share our latest updates, tips, and beautiful lash transformations with you!
               </p>
               <div style="text-align: center; margin: 30px 0; padding: 20px; background-color: #F5F1F5; border-radius: 6px;">
-                <p style="margin: 0 0 15px 0; color: #6b7280; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
+                <p style="margin: 0 0 15px 0; color: #746A72; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
                   Connect With Us
                 </p>
                 <p style="margin: 0; color: #663976; font-size: 16px; font-weight: 500;">
@@ -661,11 +662,11 @@ function getContactPopupUserHtml(data: ContactPopupData): string {
             </td>
           </tr>
           <tr>
-            <td style="background-color: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; border-top: 1px solid #e5e7eb; text-align: center;">
-              <p style="margin: 0 0 10px 0; color: #1f2937; font-size: 14px; font-weight: 500;">
+            <td style="background-color: #F5F1F5; padding: 30px; border-radius: 0 0 8px 8px; border-top: 1px solid #E8E2E9; text-align: center;">
+              <p style="margin: 0 0 10px 0; color: #1C1318; font-size: 14px; font-weight: 500;">
                 Lash Her by Nataliea
               </p>
-              <p style="margin: 0; color: #6b7280; font-size: 13px; line-height: 1.5;">
+              <p style="margin: 0; color: #746A72; font-size: 13px; line-height: 1.5;">
                 Professional Lash Artistry & Training
               </p>
             </td>
@@ -722,6 +723,7 @@ export async function sendUserConfirmation(
 
   await sendTransactionalEmail({
     html,
+    replyTo: CUSTOMER_REPLY_TO_EMAIL,
     subject,
     tags: [
       { name: "flow", value: `${formType}_customer` },

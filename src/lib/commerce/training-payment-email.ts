@@ -1,6 +1,6 @@
 import "server-only";
 
-import { escapeHtml, getEmailConfig, sendTransactionalEmail } from "@/lib/transactional-email";
+import { CUSTOMER_REPLY_TO_EMAIL, escapeHtml, getEmailConfig, sendTransactionalEmail } from "@/lib/transactional-email";
 
 export interface SendTrainingPaymentNotificationEmailsInput {
   customerEmail: string;
@@ -29,6 +29,7 @@ export async function sendTrainingCustomerPaymentEmail(
   await sendTransactionalEmail({
     html: getCustomerTrainingPaymentHtml(input),
     idempotencyKey: `training-customer:${input.orderId}`,
+    replyTo: CUSTOMER_REPLY_TO_EMAIL,
     subject: "Your Lash Her training payment is confirmed",
     tags: [
       { name: "flow", value: "training_payment_customer" },
@@ -66,15 +67,15 @@ function getCustomerTrainingPaymentHtml(
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Your Lash Her training payment is confirmed</title>
 </head>
-<body style="margin:0;padding:0;background-color:#f9f6ee;font-family:Inter,Arial,sans-serif;color:#2b1714;">
+<body style="margin:0;padding:0;background-color:#F5F1F5;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1C1318;">
   <table role="presentation" style="width:100%;border-collapse:collapse;">
     <tr>
       <td align="center" style="padding:40px 20px;">
-        <table role="presentation" style="width:100%;max-width:600px;border-collapse:collapse;background-color:#fffaf1;border:1px solid #e8dcc8;">
+        <table role="presentation" style="width:100%;max-width:600px;border-collapse:collapse;background-color:#FFFFFF;border:1px solid #E8E2E9;">
           <tr>
-            <td style="padding:34px 32px;text-align:center;background-color:#4b1230;color:#fffaf1;">
+            <td style="padding:34px 32px;text-align:center;background-color:#1C1318;color:#FFFFFF;">
               <p style="margin:0 0 10px 0;font-size:12px;letter-spacing:0.22em;text-transform:uppercase;">Lash Her by Nataliea</p>
-              <h1 style="margin:0;font-family:Georgia,serif;font-size:30px;font-weight:500;line-height:1.2;">Training payment confirmed</h1>
+              <h1 style="margin:0;font-family:'Bebas Neue','Arial Narrow',Impact,sans-serif;letter-spacing:0.04em;text-transform:uppercase;font-size:30px;font-weight:500;line-height:1.2;">Training payment confirmed</h1>
             </td>
           </tr>
           <tr>
@@ -83,9 +84,9 @@ function getCustomerTrainingPaymentHtml(
               <p style="margin:0 0 22px 0;font-size:15px;line-height:1.7;">Your payment for <strong>${escapeHtml(input.programTitle)}</strong> is confirmed.</p>
               <p style="margin:0 0 22px 0;font-size:15px;line-height:1.7;">Please schedule your required training call using the secure booking link below.</p>
               <p style="margin:28px 0;text-align:center;">
-                <a href="${escapeHtml(input.schedulingUrl)}" style="display:inline-block;padding:14px 24px;background-color:#4b1230;color:#fffaf1;text-decoration:none;font-size:14px;letter-spacing:0.08em;text-transform:uppercase;">Schedule Training Call</a>
+                <a href="${escapeHtml(input.schedulingUrl)}" style="display:inline-block;padding:14px 24px;background-color:#1C1318;color:#FFFFFF;text-decoration:none;font-size:14px;letter-spacing:0.08em;text-transform:uppercase;">Schedule Training Call</a>
               </p>
-              <p style="margin:0;font-size:13px;line-height:1.7;color:#6f5d55;">Order ${escapeHtml(input.orderId)}</p>
+              <p style="margin:0;font-size:13px;line-height:1.7;color:#746A72;">Order ${escapeHtml(input.orderId)}</p>
             </td>
           </tr>
         </table>
@@ -108,11 +109,11 @@ function getAdminTrainingPaymentHtml(
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Training payment received</title>
 </head>
-<body style="margin:0;padding:0;background-color:#f9f6ee;font-family:Inter,Arial,sans-serif;color:#2b1714;">
+<body style="margin:0;padding:0;background-color:#F5F1F5;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1C1318;">
   <table role="presentation" style="width:100%;border-collapse:collapse;">
     <tr>
       <td style="padding:28px;">
-        <h1 style="margin:0 0 18px 0;font-family:Georgia,serif;font-size:26px;font-weight:500;">Training payment received</h1>
+        <h1 style="margin:0 0 18px 0;font-family:'Bebas Neue','Arial Narrow',Impact,sans-serif;letter-spacing:0.04em;text-transform:uppercase;font-size:26px;font-weight:500;">Training payment received</h1>
         <p style="margin:0 0 12px 0;line-height:1.6;"><strong>Status:</strong> paid — scheduling pending</p>
         <p style="margin:0 0 12px 0;line-height:1.6;"><strong>Purchaser:</strong> ${escapeHtml(input.customerName)} &lt;${escapeHtml(input.customerEmail)}&gt;</p>
         <p style="margin:0 0 12px 0;line-height:1.6;"><strong>Program:</strong> ${escapeHtml(input.programTitle)}</p>
