@@ -271,7 +271,7 @@ If the field is missing or invalid, a paid student sees the safe **Scheduling Un
 Use `introCallAppointmentScheduleEmbedMode` to decide how verified students see the appointment schedule:
 
 - `link`: renders a button labeled **Open Google Appointment Schedule** with `target="_blank"` and `rel="noopener noreferrer"`.
-- `embed`: renders an `<iframe>` using the schedule URL and a title of `Google Appointment Schedule for <program title>`.
+- `embed`: renders a larger desktop-only `<iframe>` using the schedule URL and a title of `Google Appointment Schedule for <program title>`. On mobile widths, the route avoids the cramped inline Google Calendar frame and renders Google's **Button with popup** scheduling button instead.
 
 The route normalizes any non-`embed` value to `link`:
 
@@ -362,7 +362,7 @@ Use this checklist after configuration changes.
 2. Add the program to `trainingProgramsPage.trainingPrograms` if it should appear on `/training-programs`.
 3. Complete or simulate the training payment flow so the app issues a scheduling token.
 4. Open `/training-programs/<program-slug>/schedule?token=<token>`.
-5. Confirm the page renders **Schedule Training Call** and either the link button or iframe based on `introCallAppointmentScheduleEmbedMode`.
+5. Confirm the page renders **Schedule Training Call** and either the link button or iframe based on `introCallAppointmentScheduleEmbedMode`. For `embed`, verify the iframe appears on desktop and the Google **Button with popup** appears on mobile.
 6. Open the same route without a token and confirm it shows **Scheduling Unavailable**.
 7. Open the route with an extra query parameter and confirm it 404s.
 

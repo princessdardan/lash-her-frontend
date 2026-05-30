@@ -93,18 +93,18 @@ function FeatureImage({
 
   if (!resolved.image?.asset?._ref) {
     return (
-      <div className="w-full h-full min-h-[400px] bg-lh-neutral rounded-[24px] flex items-center justify-center">
+      <div className="flex h-full min-h-[320px] w-full items-center justify-center rounded-[22px] border border-lh-white/70 bg-lh-neutral shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] sm:min-h-[400px] lg:min-h-[500px]">
         <span className="text-lh-shadow/40">No image available</span>
       </div>
     );
   }
 
   return (
-    <div className="relative w-full h-full min-h-[400px] lg:min-h-[500px]">
+    <div className="relative h-full min-h-[320px] w-full overflow-hidden rounded-[22px] border border-lh-white/70 bg-lh-white shadow-[0_24px_70px_rgba(28,19,24,0.12)] sm:min-h-[400px] lg:min-h-[500px]">
       <SanityImage
         image={resolved.image}
         alt={resolved.image.alt || resolved.heading}
-        className="object-cover rounded-[24px] shadow-sm w-full h-full"
+        className="h-full w-full object-cover"
         fill
         sizes="(max-width: 1024px) 100vw, 50vw"
       />
@@ -125,17 +125,20 @@ function FeatureText({
   const FeatureHeading = headingLevel;
 
   return (
-    <div className="flex flex-col justify-center">
-      <FeatureHeading className="text-3xl md:text-4xl lg:text-5xl font-heading text-lh-shadow mb-4">
+    <div className="flex flex-col justify-center px-1 sm:px-2 lg:px-0">
+      <FeatureHeading className="mb-4 max-w-2xl text-4xl font-heading leading-[0.95] text-lh-shadow text-balance md:text-5xl lg:text-6xl">
         {resolved.heading}
       </FeatureHeading>
       {resolved.subHeading && (
-        <p className="text-lg md:text-xl text-lh-primary font-heading tracking-widest uppercase mb-6">
+        <p className="mb-6 max-w-xl text-base font-heading uppercase tracking-[0.24em] text-lh-primary md:text-lg">
           {resolved.subHeading}
         </p>
       )}
-      <div className="w-12 h-[1px] bg-lh-light mb-6" />
-      <p className="text-lh-shadow/80 leading-relaxed mb-8 max-w-xl">
+      <div className="mb-6 flex items-center gap-3" aria-hidden="true">
+        <div className="h-px w-14 bg-lh-light" />
+        <div className="h-1.5 w-1.5 rounded-full bg-lh-primary/45" />
+      </div>
+      <p className="mb-8 max-w-xl text-base font-bold leading-8 text-lh-muted md:text-lg">
         {resolved.description}
       </p>
       {resolved.isExternal ? (
@@ -143,14 +146,14 @@ function FeatureText({
           href={resolved.linkHref}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center justify-center px-8 py-3 bg-lh-primary text-white rounded-full font-heading text-sm tracking-wider uppercase hover:bg-lh-primary/90 transition-colors w-fit"
+          className="inline-flex w-fit items-center justify-center rounded-full bg-lh-primary px-8 py-3 font-heading text-sm uppercase tracking-[0.2em] text-white shadow-[0_14px_35px_rgba(102,57,118,0.22)] transition-colors hover:bg-lh-accent"
         >
           {resolved.linkLabel}
         </a>
       ) : (
         <Link
           href={resolved.linkHref}
-          className="inline-flex items-center justify-center px-8 py-3 bg-lh-primary text-white rounded-full font-heading text-sm tracking-wider uppercase hover:bg-lh-primary/90 transition-colors w-fit"
+          className="inline-flex w-fit items-center justify-center rounded-full bg-lh-primary px-8 py-3 font-heading text-sm uppercase tracking-[0.2em] text-white shadow-[0_14px_35px_rgba(102,57,118,0.22)] transition-colors hover:bg-lh-accent"
         >
           {resolved.linkLabel}
         </Link>
@@ -193,28 +196,28 @@ export function FeatureSection({ data, products }: FeatureSectionProps) {
   const featureItemHeadingLevel: FeatureItemHeadingLevel = heading ? "h3" : "h2";
 
   return (
-    <section className="section-shell">
+    <section className="section-shell overflow-hidden px-4 sm:px-6 lg:px-8">
       {(heading || subHeading) && (
-        <div className="text-container mx-auto max-w-3xl px-6 md:px-8">
+        <div className="text-container mx-auto max-w-3xl">
           {heading && <h2 className="section-heading text-balance">{heading}</h2>}
           {subHeading && <p className="section-description text-lg">{subHeading}</p>}
         </div>
       )}
       <div
         className={cn(
-          "mx-auto rounded-[28px] border border-lh-line bg-lh-neutral p-6 shadow-[0_18px_50px_rgba(28,19,24,0.04)] md:p-10 lg:p-14",
+          "relative isolate mx-auto overflow-hidden rounded-[26px] border border-lh-line bg-[linear-gradient(135deg,var(--lh-neutral-2)_0%,var(--lh-neutral)_58%,rgba(212,180,131,0.22)_100%)] p-4 shadow-[0_24px_80px_rgba(28,19,24,0.08)] before:absolute before:inset-x-6 before:top-0 before:h-px before:bg-lh-white/80 after:absolute after:-right-20 after:-top-24 after:h-56 after:w-56 after:rounded-full after:bg-lh-light/25 after:blur-3xl sm:rounded-[32px] sm:p-6 md:p-10 lg:p-14",
           isImageTop ? "max-w-4xl" : "container max-w-7xl"
         )}
       >
         {/* Carousel Navigation (only when carousel enabled and multiple items) */}
         {enableCarousel && items.length > 1 && (
-          <div className="flex items-center justify-between mb-6">
+          <div className="relative z-10 mb-6 flex items-center justify-between">
             <button
               onClick={goToPrev}
-              className="p-2 rounded-full bg-lh-primary hover:bg-lh-primary/50 transition-colors"
+              className="rounded-full border border-lh-line bg-lh-white/80 p-2 shadow-sm transition-colors hover:bg-lh-light-soft"
               aria-label="Previous feature"
             >
-              <ChevronLeft className="w-5 h-5 text-lh-shadow" />
+              <ChevronLeft className="h-5 w-5 text-lh-shadow" />
             </button>
             <div className="flex gap-2">
               {items.map((item, index) => (
@@ -222,10 +225,10 @@ export function FeatureSection({ data, products }: FeatureSectionProps) {
                   key={item._key}
                   onClick={() => setCurrentIndex(index)}
                   className={cn(
-                    "w-2 h-2 rounded-full transition-colors",
+                    "h-2 w-2 rounded-full transition-colors",
                     index === currentIndex
                       ? "bg-lh-primary"
-                      : "bg-lh-neutral hover:bg-lh-light"
+                      : "bg-lh-white/80 hover:bg-lh-light"
                   )}
                   aria-label={`Go to feature ${index + 1}`}
                 />
@@ -233,10 +236,10 @@ export function FeatureSection({ data, products }: FeatureSectionProps) {
             </div>
             <button
               onClick={goToNext}
-              className="p-2 rounded-full bg-lh-primary hover:bg-lh-primary/50 transition-colors"
+              className="rounded-full border border-lh-line bg-lh-white/80 p-2 shadow-sm transition-colors hover:bg-lh-light-soft"
               aria-label="Next feature"
             >
-              <ChevronRight className="w-5 h-5 text-lh-shadow" />
+              <ChevronRight className="h-5 w-5 text-lh-shadow" />
             </button>
           </div>
         )}
@@ -244,7 +247,7 @@ export function FeatureSection({ data, products }: FeatureSectionProps) {
         {/* Feature Content */}
         <div
           className={cn(
-            "flex gap-8 lg:gap-16",
+            "relative z-10 flex gap-8 lg:gap-16",
             // Mobile: always image top, text bottom
             "flex-col",
             // Desktop: respect layout

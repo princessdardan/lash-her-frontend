@@ -5,6 +5,7 @@ import Link from "next/link";
 import { loaders } from "@/data/loaders";
 import { resolveTrainingIntroCallEligibility } from "@/lib/booking/paid-training-context";
 import { findPendingTrainingEnrollmentByToken } from "@/lib/commerce/training-enrollment-store";
+import { GoogleAppointmentSchedulePopupButton } from "./google-appointment-schedule-popup-button";
 
 export const revalidate = 0;
 export const dynamic = "force-dynamic";
@@ -75,17 +76,19 @@ export default async function TrainingSchedulePage({
   }
 
   const embedMode = program.introCallAppointmentScheduleEmbedMode === "embed" ? "embed" : "link";
+  const appointmentScheduleEmbedUrl = getGoogleAppointmentScheduleEmbedUrl(appointmentScheduleUrl);
 
   return (
     <div className="flex flex-col min-h-screen bg-lh-neutral-2">
       <section className="section-shell py-16 md:py-24">
-        <div className="content-container max-w-4xl mx-auto">
+        <div className="content-container mx-auto">
           <div className="mb-12 text-center">
             <h1 className="section-heading mb-2">Schedule Training Call</h1>
             <h2 className="section-subheading">{program.title}</h2>
           </div>
           
           <AppointmentScheduleCard
+            embedUrl={appointmentScheduleEmbedUrl}
             mode={embedMode}
             programTitle={program.title}
             scheduleUrl={appointmentScheduleUrl}
@@ -98,11 +101,13 @@ export default async function TrainingSchedulePage({
 }
 
 function AppointmentScheduleCard({
+  embedUrl,
   instructions,
   mode,
   programTitle,
   scheduleUrl,
 }: {
+  embedUrl: string;
   instructions?: string;
   mode: "link" | "embed";
   programTitle: string;
@@ -122,13 +127,24 @@ function AppointmentScheduleCard({
       </div>
 
       {mode === "embed" ? (
-        <div className="border-t border-lh-neutral/20 bg-lh-neutral-2/60 p-4 md:p-6">
-          <iframe
-            src={scheduleUrl}
-            title={`Google Appointment Schedule for ${programTitle}`}
-            className="h-[720px] w-full rounded-xl border border-lh-neutral/20 bg-white shadow-sm"
-          />
-        </div>
+        <>
+          <div className="border-t border-lh-neutral/20 bg-lh-neutral-2/60 p-6 text-center md:hidden">
+            <p className="mx-auto mb-6 max-w-md text-base leading-7 text-lh-shadow/75">
+              Google Calendar is easier to use from a mobile popup. Tap below to choose your intro-call time without pinching through an embedded calendar.
+            </p>
+            <GoogleAppointmentSchedulePopupButton
+              scheduleUrl={scheduleUrl}
+              label="Reserve intro call"
+            />
+          </div>
+          <div className="hidden border-t border-lh-neutral/20 bg-lh-neutral-2/60 p-6 md:block lg:p-8">
+            <iframe
+              src={embedUrl}
+              title={`Google Appointment Schedule for ${programTitle}`}
+              className="h-[980px] w-full rounded-2xl border border-lh-neutral/20 bg-white shadow-sm lg:h-[1080px]"
+            />
+          </div>
+        </>
       ) : (
         <div className="border-t border-lh-neutral/20 bg-lh-neutral-2/60 p-8 text-center md:p-10">
           <a
@@ -143,6 +159,12 @@ function AppointmentScheduleCard({
       )}
     </div>
   );
+}
+
+function getGoogleAppointmentScheduleEmbedUrl(value: string): string {
+  const url = new URL(value);
+  url.searchParams.set("gv", "true");
+  return url.toString();
 }
 
 function getGoogleAppointmentScheduleUrl(value: string | undefined): string | null {

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 const schedulePageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+const popupButtonSource = readFileSync(new URL("./google-appointment-schedule-popup-button.tsx", import.meta.url), "utf8");
 
 describe("training schedule route contract", () => {
   it("disables static caching and indexing for token-bearing schedule links", () => {
@@ -35,11 +36,26 @@ describe("training schedule route contract", () => {
     assert.match(schedulePageSource, /const eligibility = await resolveTrainingIntroCallEligibility\(/);
     assert.match(schedulePageSource, /const appointmentScheduleUrl = getGoogleAppointmentScheduleUrl\(program\.introCallAppointmentScheduleUrl\);/);
     assert.match(schedulePageSource, /<AppointmentScheduleCard/);
+    assert.match(schedulePageSource, /embedUrl=\{appointmentScheduleEmbedUrl\}/);
+    assert.match(schedulePageSource, /scheduleUrl=\{appointmentScheduleUrl\}/);
     assert.match(schedulePageSource, /Open Google Appointment Schedule/);
-    assert.match(schedulePageSource, /<iframe\s+src=\{scheduleUrl\}/);
+    assert.match(schedulePageSource, /const appointmentScheduleEmbedUrl = getGoogleAppointmentScheduleEmbedUrl\(appointmentScheduleUrl\);/);
+    assert.match(schedulePageSource, /<iframe\s+src=\{embedUrl\}/);
     assert.doesNotMatch(schedulePageSource, /BookingFlow/);
     assert.doesNotMatch(schedulePageSource, /paidSchedulingToken=\{token\}/);
     assert.doesNotMatch(schedulePageSource, /paidTrainingSlug=\{slug\}/);
+  });
+
+  it("keeps embedded Google Appointment Schedule desktop-only and uses Google's popup button on mobile", () => {
+    assert.match(schedulePageSource, /<GoogleAppointmentSchedulePopupButton/);
+    assert.match(schedulePageSource, /md:hidden/);
+    assert.match(schedulePageSource, /hidden border-t border-lh-neutral\/20 bg-lh-neutral-2\/60 p-6 md:block lg:p-8/);
+    assert.match(schedulePageSource, /h-\[980px\].*lg:h-\[1080px\]/s);
+    assert.match(schedulePageSource, /<GoogleAppointmentSchedulePopupButton\s+scheduleUrl=\{scheduleUrl\}/);
+    assert.match(popupButtonSource, /calendar\.google\.com\/calendar\/scheduling-button-script\.js/);
+    assert.match(popupButtonSource, /window\.calendar\?\.schedulingButton/);
+    assert.match(popupButtonSource, /matchMedia\(MOBILE_SCHEDULE_BUTTON_MEDIA_QUERY\)/);
+    assert.match(popupButtonSource, /label: string;/);
   });
 
   it("rejects invalid or missing schedule config without exposing the Appointment Schedule URL", () => {
