@@ -1,6 +1,7 @@
 'use client'
 
 import { defineConfig } from "sanity";
+import { vercelProtectionBypassTool } from "@sanity/vercel-protection-bypass";
 import { presentationTool } from "sanity/presentation";
 import { structureTool } from "sanity/structure";
 import { schemaTypes } from "./schemas";
@@ -40,6 +41,7 @@ export default defineConfig({
         },
       },
     }),
+    vercelProtectionBypassTool(),
     structureTool({ structure }),
   ],
   schema: {
