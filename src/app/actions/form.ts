@@ -128,7 +128,6 @@ export async function submitGeneralInquiry(
     return { success: false, error: 'Please fix the form errors and try again.', fieldErrors: errors }
   }
 
-  // D-07: Sanity write -- failure blocks email send, returns generic error
   try {
     await recordGeneralInquirySubmission({
       name: data.name,
@@ -173,7 +172,6 @@ export async function submitTrainingContact(
     return { success: false, error: 'Please fix the form errors and try again.', fieldErrors: errors }
   }
 
-  // D-07: Sanity write -- failure blocks email send, returns generic error
   try {
     await recordTrainingContactSubmission({
       name: data.name,

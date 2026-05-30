@@ -18,7 +18,7 @@ Current production Sanity drift, current production content gaps, and missing pr
 
 ## Executive verdict
 
-The codebase is **not ready for production promotion yet**, even under the staging-as-source assumption. The strongest blockers are current failing unit/browser tests, legacy private-submission schemas and data still present in the public Sanity boundary, and launch-facing UI/accessibility regressions.
+The codebase is **not ready for production promotion yet**, even under the staging-as-source assumption. The strongest blockers are current failing unit/browser tests, legacy private-submission data still present in the public Sanity boundary, and launch-facing UI/accessibility regressions.
 
 Do not promote the staging codebase or staging Sanity dataset into production until the blockers and critical/high findings below are resolved and re-verified against the staging environment. After this audit passes, complete `docs/production-readiness-migration-plan.md` for the production dataset/env cutover.
 
@@ -83,22 +83,22 @@ Fix the logo navigation regression, give `/contact` a real `<h1>`, add the missi
 
 ## Critical findings
 
-### C1. Legacy private-submission schemas and staging data still cross the public Sanity boundary
+### C1. Legacy private-submission staging data still crosses the public Sanity boundary
 
 **Evidence**
 
-- Legacy private-data schema source files remained in the repository for `contactForm`, `generalInquiry`, `contactPopupSubmission`, and `bookingMarketingOptIn`, even after the Studio stopped registering those document types.
-- Those historical schemas included name, email, phone, Instagram, message, booking/training intent, and marketing opt-in style fields.
+- Legacy private-data schema source files for `contactForm`, `generalInquiry`, `contactPopupSubmission`, and `bookingMarketingOptIn` have since been removed from the repository and remain absent from the Studio schema registration.
+- Those historical document types included name, email, phone, Instagram, message, booking/training intent, and marketing opt-in style fields.
 - Read-only Sanity checks found submission-like documents in the staging dataset that is intended to become the source of truth for production.
 - Both staging and production Sanity datasets are public.
 
 **Impact**
 
-This violates the repository rule that Sanity stores only public/editorial content while PostgreSQL stores private submissions, consent, contact, booking, checkout, and payment history. If the staging dataset is promoted wholesale, legacy private submission records and workflows could be carried into production unless they are cleaned up first.
+This violates the repository rule that Sanity stores only public/editorial content while PostgreSQL stores private submissions, consent, contact, booking, checkout, and payment history. If the staging dataset is promoted wholesale, legacy private submission records could be carried into production unless they are cleaned up first.
 
 **Remediation**
 
-Backfill/verify private DB records, then redact/delete legacy Sanity submission documents from the staging source-of-truth dataset before export. Remove these schemas from source and Studio, or quarantine them as archival read-only types outside live Studio workflows. Keep tests that prevent new runtime Sanity writes for customer submissions. Use `docs/production-readiness-migration-plan.md` for the production cleanup/import sequence.
+Backfill/verify private DB records, then redact/delete legacy Sanity submission documents from the staging source-of-truth dataset before export. Keep the removed schemas out of source and Studio, and keep tests that prevent new runtime Sanity writes for customer submissions. Use `docs/production-readiness-migration-plan.md` for the production cleanup/import sequence.
 
 ## High findings
 
