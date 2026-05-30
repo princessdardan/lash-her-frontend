@@ -46,7 +46,7 @@ interface VerifyHelcimPaymentInput {
   ) => boolean;
 }
 
-const APPROVED_TEXT_VALUES = new Set(["approved", "completed", "success", "succeeded", "true"]);
+const APPROVED_TEXT_VALUES = new Set(["approval", "approved", "completed", "success", "succeeded", "true"]);
 
 export function verifyHelcimPayment({
   data,
@@ -155,15 +155,11 @@ function invoiceMatches(
   const invoiceId = getTextValue(data.invoiceId);
   const invoiceNumber = getTextValue(data.invoiceNumber);
 
-  if (invoiceId === null || invoiceId !== String(order.helcimInvoiceId)) {
-    return false;
-  }
-
   if (invoiceNumber === null || invoiceNumber !== order.helcimInvoiceNumber) {
     return false;
   }
 
-  return true;
+  return invoiceId === null || invoiceId === String(order.helcimInvoiceId);
 }
 
 function getTextValue(value: HelcimPayloadValue | undefined): string | null {

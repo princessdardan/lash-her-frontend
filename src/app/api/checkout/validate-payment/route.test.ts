@@ -5,6 +5,7 @@ const helperScript = String.raw`
   import assert from "node:assert/strict";
 
   import { createValidatePaymentPostHandler } from "./src/app/api/checkout/validate-payment/route.ts";
+  import { createHelcimResponseHash } from "./src/lib/commerce/helcim-hash.ts";
   import { buildMockHelcimSuccessPayload } from "./src/lib/commerce/helcim-mock-gateway.ts";
   import { verifyHelcimPayment as realVerifyHelcimPayment } from "./src/lib/commerce/verified-payment.ts";
 
@@ -315,6 +316,34 @@ test("checkout payment validation rejects mock Helcim decline and cancel payload
       assert.deepEqual(markedFailedOrders, ["lh-order-123"]);
       assert.deepEqual(markedPaidOrders, []);
     }
+  `);
+});
+
+test("checkout payment validation accepts live HelcimPay payloads without invoiceId", () => {
+  runRouteScenario(`
+    const livePaymentData = {
+      amount: "1130.00",
+      currency: "CAD",
+      invoiceNumber: "INV-4242",
+      status: "APPROVAL",
+      transactionId: "txn-live-123",
+    };
+    const { handler, markedPaidOrders } = await runScenario({
+      verifyHelcimPayment: realVerifyHelcimPayment,
+    });
+
+    const response = await handler(createRequest({
+      checkoutToken: "checkout-token",
+      data: livePaymentData,
+      hash: createHelcimResponseHash(livePaymentData, pendingOrder.secretToken),
+    }));
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      orderId: "lh-order-123",
+      redirectUrl: "/products/confirmation?order=lh-order-123",
+    });
+    assert.deepEqual(markedPaidOrders, [{ orderId: "lh-order-123", transactionId: "txn-live-123" }]);
   `);
 });
 

@@ -63,6 +63,7 @@ const helperScript = String.raw`
     assert.equal(String(call.input), "https://api.helcim.com/v2/card-transactions/25764674");
     assert.equal(call.init?.method, "GET");
     assert.equal(call.init?.cache, "no-store");
+    assert.ok(call.init?.signal instanceof AbortSignal);
 
     const headers = new Headers(call.init?.headers);
     assert.equal(headers.get("api-token"), "test-general-token-with-safe-length");

@@ -159,6 +159,7 @@ test("Helcim webhook route returns retryable status when private persistence fai
         amount: "123.45",
         currency: "CAD",
         id: 25764674,
+        invoiceId: 4242,
         invoiceNumber: "INV-4242",
         status: "APPROVED",
       }),
@@ -174,10 +175,38 @@ test("Helcim webhook route returns retryable status when private persistence fai
     assert.deepEqual(recorded[0].payloadRedacted, {
       amount: "123.45",
       currency: "CAD",
+      invoiceId: 4242,
       invoiceNumber: "INV-4242",
       status: "APPROVED",
       transactionId: "25764674",
     });
+  `);
+});
+
+test("Helcim webhook route preserves enriched invoice id conflicts", () => {
+  runRouteScenario(`
+    const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });
+    const { handler, recorded, sentProductEmails } = await runScenario({
+      getCardTransaction: async () => ({
+        amount: "123.45",
+        currency: "CAD",
+        id: 25764674,
+        invoiceId: 9999,
+        invoiceNumber: "INV-4242",
+        status: "APPROVAL",
+      }),
+      recordEvent: async (event) => {
+        assert.equal(event.helcimInvoiceId, 9999);
+        return { matchedOrder: null, paid: false, recorded: true };
+      },
+    });
+
+    const response = await handler(createRequest(body));
+
+    assert.equal(response.status, 200);
+    assert.equal(recorded[0].helcimInvoiceId, 9999);
+    assert.equal(recorded[0].helcimInvoiceNumber, "INV-4242");
+    assert.deepEqual(sentProductEmails, []);
   `);
 });
 
@@ -315,6 +344,40 @@ test("Helcim webhook route does not send product confirmation for training order
 
     assert.equal(response.status, 200);
     assert.deepEqual(sentProductEmails, []);
+  `);
+});
+
+test("Helcim webhook route treats APPROVAL as an approved product payment", () => {
+  runRouteScenario(`
+    const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });
+    const { handler, sentProductEmails } = await runScenario({
+      getCardTransaction: async () => ({
+        amount: "123.45",
+        currency: "CAD",
+        id: 25764674,
+        invoiceNumber: "INV-4242",
+        status: "APPROVAL",
+      }),
+      recordEvent: async () => ({
+        matchedOrder: {
+          _id: "checkout-order-product",
+          amount: 123.45,
+          currency: "CAD",
+          helcimInvoiceId: 4242,
+          helcimInvoiceNumber: "INV-4242",
+          orderId: "lh-product-123",
+          paymentProvider: "helcim",
+          purpose: "product",
+        },
+        paid: true,
+        recorded: true,
+      }),
+    });
+
+    const response = await handler(createRequest(body));
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(sentProductEmails, ["lh-product-123"]);
   `);
 });
 

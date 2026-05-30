@@ -1048,7 +1048,7 @@ function hashPayload(payload: CheckoutPaymentEventPayload): string {
 }
 
 function isApprovedStatus(status: string | undefined): boolean {
-  return status !== undefined && ["approved", "completed", "success", "succeeded", "true"].includes(
+  return status !== undefined && ["approval", "approved", "completed", "success", "succeeded", "true"].includes(
     status.trim().toLowerCase(),
   );
 }

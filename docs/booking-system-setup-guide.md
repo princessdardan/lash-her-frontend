@@ -77,7 +77,7 @@ SANITY_WRITE_TOKEN=<server-only-write-token>
 SANITY_WEBHOOK_SECRET=<signed-webhook-secret>
 ```
 
-Only `NEXT_PUBLIC_*` values are browser-visible. Keep write and webhook tokens server-only. `SANITY_FORM_TOKEN` is not required for current private DB-backed form/contact writes; add it only for a documented legacy or conditional Sanity submission workflow.
+Only `NEXT_PUBLIC_*` values are browser-visible. Keep write and webhook tokens server-only. Current form/contact writes use the private database, not a Sanity form token.
 
 ### Email
 

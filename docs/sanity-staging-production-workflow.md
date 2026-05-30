@@ -87,7 +87,6 @@ Sanity tokens must be managed with strict isolation and rotation policies. If pl
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `SANITY_API_READ_TOKEN` | Draft preview and Presentation Tool read access | Production/Staging | Viewer | Dardan | Quarterly |
 | `SANITY_WRITE_TOKEN` | Server-side mutations and migrations | Production/Staging | Editor | Dardan | Quarterly |
-| `SANITY_FORM_TOKEN` | Legacy/conditional Sanity submission writes only, if retained | Production/Staging | Editor | Dardan | Quarterly |
 | `SANITY_WEBHOOK_SECRET` | Webhook HMAC verification | Production/Staging | N/A | Dardan | Quarterly |
 
 **Rotation Policy:**
@@ -247,7 +246,7 @@ CHECKOUT_SECRET_ENCRYPTION_KEY=<base64-encoded-32-byte-key>
 DATABASE_URL=<staging-neon-pooled-postgres-url>
 ```
 
-`SANITY_FORM_TOKEN` is not required for current private DB-backed form writes. Add it only if a documented legacy/conditional Sanity submission workflow still needs it.
+Current form/contact writes use the private database, not a Sanity form token.
 
 If the embedded Studio or frontend is served from a custom staging domain, add that origin to Sanity CORS with credentials:
 

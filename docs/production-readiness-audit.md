@@ -87,8 +87,8 @@ Fix the logo navigation regression, give `/contact` a real `<h1>`, add the missi
 
 **Evidence**
 
-- Legacy private-data schemas remain registered/exposed: `contactForm`, `generalInquiry`, `contactPopupSubmission`, and `bookingMarketingOptIn` in `src/sanity/schemas/index.ts` and `src/sanity/structure/index.ts`.
-- These schemas include name, email, phone, Instagram, message, booking/training intent, and marketing opt-in style fields in `src/sanity/schemas/documents/contact-form.ts`, `src/sanity/schemas/documents/general-inquiry.ts`, `src/sanity/schemas/documents/contact-popup-submission.ts`, and `src/sanity/schemas/documents/booking-marketing-opt-in.ts`.
+- Legacy private-data schema source files remained in the repository for `contactForm`, `generalInquiry`, `contactPopupSubmission`, and `bookingMarketingOptIn`, even after the Studio stopped registering those document types.
+- Those historical schemas included name, email, phone, Instagram, message, booking/training intent, and marketing opt-in style fields.
 - Read-only Sanity checks found submission-like documents in the staging dataset that is intended to become the source of truth for production.
 - Both staging and production Sanity datasets are public.
 

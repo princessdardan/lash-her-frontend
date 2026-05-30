@@ -538,39 +538,3 @@ export interface TMetaData {
   description: string;
   ogImageUrl: string | null;
 }
-
-// === Form Submission Types (used by Phase 4) ===
-
-export interface TGeneralInquiry {
-  _id: string;
-  name: string;
-  phone?: string;
-  email: string;
-  instagram?: string;
-  message: string;
-  _createdAt: string;
-}
-
-export interface TContactForm {
-  _id: string;
-  name: string;
-  email: string;
-  phone: string;
-  location: string;
-  instagram?: string;
-  experience: string;
-  interest: string;
-  clients?: number;
-  info?: string;
-  _createdAt: string;
-}
-
-export interface TContactPopupSubmission {
-  _id: string;
-  variant?: "fullContact" | "emailOnly";
-  name?: string;
-  email: string;
-  instagram?: string;
-  sourcePath?: string;
-  _createdAt: string;
-}

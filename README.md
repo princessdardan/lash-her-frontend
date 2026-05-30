@@ -351,7 +351,7 @@ Do not promote if:
 
 - Run commands from the repository root.
 - Add Sanity reads through `src/data/loaders.ts`; do not create a parallel public CMS data layer.
-- Keep Sanity client purposes separate: read client, write client, and legacy/editor form client live under `src/sanity/lib`.
+- Keep Sanity client purposes separate: read client and write client live under `src/sanity/lib`; private form/contact writes belong in PostgreSQL, not Sanity.
 - Keep private form, booking, consent, checkout, payment, marketing, and training enrollment data in PostgreSQL, not Sanity.
 - Keep `src/data/loaders.ts` cache tags aligned with `src/app/api/revalidate/route.ts`.
 - Use `parseBody()` from `next-sanity/webhook` before consuming the revalidation request body.

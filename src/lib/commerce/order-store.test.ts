@@ -566,7 +566,7 @@ test("private checkout store records idempotent webhook events once", () => {
       eventType: "payment.updated",
       helcimInvoiceId: 9999,
       helcimTransactionId: "txn-webhook-123",
-      status: "approved",
+      status: "APPROVAL",
     });
     const second = await store.recordHelcimWebhookEvent({
       amount: "123.45",

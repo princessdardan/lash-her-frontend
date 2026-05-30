@@ -31,7 +31,7 @@
 
 - Public routes: `src/app/(site)`. Global shell/metadata: `src/app/layout.tsx` and `src/app/(site)/layout.tsx`.
 - All Sanity reads should go through `src/data/loaders.ts`; do not add a parallel data access layer.
-- Sanity clients are purpose-specific: read client in `src/sanity/lib/client.ts`, write client in `src/sanity/lib/write-client.ts`, legacy/editor form client in `src/sanity/lib/form-client.ts`.
+- Sanity clients are purpose-specific: read client in `src/sanity/lib/client.ts`, write client in `src/sanity/lib/write-client.ts`; private form/contact writes belong in PostgreSQL, not Sanity.
 - CMS block additions must be wired across schema, TypeScript shape/union (`src/types/index.ts`), GROQ projection (`src/data/loaders.ts`), React component, and `COMPONENT_REGISTRY` in `src/components/custom/layouts/block-renderer.tsx`.
 - Cache tags in `src/data/loaders.ts` must stay aligned with `TYPE_TAG_MAP` in `src/app/api/revalidate/route.ts`.
 - Revalidation must use `parseBody()` from `next-sanity/webhook` before consuming the request body and `revalidateTag(tag, { expire: 0 })` for Next 16 immediate expiry.

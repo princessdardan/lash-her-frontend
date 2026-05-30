@@ -127,6 +127,7 @@ test("mergeHelcimCardTransactionDetails stores only minimal redacted reconciliat
     currency: "CAD",
     customerCode: "customer-secret",
     id: 25764674,
+    invoiceId: 4242,
     invoiceNumber: "INV-4242",
     status: "APPROVED",
   });
@@ -135,6 +136,7 @@ test("mergeHelcimCardTransactionDetails stores only minimal redacted reconciliat
   assert.equal(merged.status, "APPROVED");
   assert.equal(merged.amount, "123.45");
   assert.equal(merged.currency, "CAD");
+  assert.equal(merged.helcimInvoiceId, 4242);
   assert.equal(merged.helcimInvoiceNumber, "INV-4242");
   assert.equal(merged.approvalCode, "APPROVAL-123");
   assert.equal(merged.cardType, "Visa");
@@ -145,6 +147,7 @@ test("mergeHelcimCardTransactionDetails stores only minimal redacted reconciliat
     cardLast4: "1111",
     cardType: "Visa",
     currency: "CAD",
+    invoiceId: 4242,
     invoiceNumber: "INV-4242",
     status: "APPROVED",
     transactionId: "25764674",
@@ -166,6 +169,7 @@ test("normalizeHelcimCardTransactionDetails derives last4 from top-level masked 
       cardLast4: "1111",
       cardType: undefined,
       currency: undefined,
+      invoiceId: undefined,
       invoiceNumber: undefined,
       status: undefined,
       transactionId: "txn_123",
@@ -187,6 +191,7 @@ test("normalizeHelcimCardTransactionDetails derives last4 from nested card.cardN
       cardLast4: "4242",
       cardType: undefined,
       currency: undefined,
+      invoiceId: undefined,
       invoiceNumber: undefined,
       status: undefined,
       transactionId: "txn_4242",
@@ -210,6 +215,7 @@ test("normalizeHelcimCardTransactionDetails keeps explicit last4 over cardNumber
       cardLast4: "9999",
       cardType: undefined,
       currency: undefined,
+      invoiceId: undefined,
       invoiceNumber: undefined,
       status: undefined,
       transactionId: "txn_explicit",

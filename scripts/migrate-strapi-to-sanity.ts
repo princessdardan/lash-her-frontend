@@ -1202,92 +1202,6 @@ async function migrateTrainingPrograms(): Promise<void> {
   }
 }
 
-async function migrateContactForms(): Promise<void> {
-  console.log("[migrate] Migrating contactForms...");
-  try {
-    const forms = await fetchStrapiPaginated<Record<string, unknown>>(
-      "/api/contact-forms"
-    );
-
-    if (forms.length === 0) {
-      console.log("[migrate] contactForm: 0 records");
-      migrationCounts["contactForm"] = { strapi: 0, sanity: 0 };
-      return;
-    }
-
-    const transaction = client.transaction();
-
-    for (const form of forms) {
-      const doc = {
-        _id: `contactForm-${form.documentId}`,
-        _type: "contactForm",
-        name: form.name ?? "",
-        email: form.email ?? "",
-        phone: form.phone ?? "",
-        location: form.location ?? "",
-        instagram: form.instagram ?? "",
-        experience: form.experience ?? "",
-        interest: form.interest ?? "",
-        clients: typeof form.clients === "number" ? form.clients : undefined,
-        info: form.info ?? "",
-      };
-
-      transaction.createOrReplace(doc);
-    }
-
-    await transaction.commit({ visibility: "deferred" });
-    migrationCounts["contactForm"] = {
-      strapi: forms.length,
-      sanity: forms.length,
-    };
-    console.log(`[migrate] contactForm: ${forms.length} records migrated`);
-  } catch (err) {
-    console.error(`[migrate] ERROR writing contactForm: ${(err as Error).message}`);
-    migrationCounts["contactForm"] = { strapi: -1, sanity: 0 };
-  }
-}
-
-async function migrateGeneralInquiries(): Promise<void> {
-  console.log("[migrate] Migrating generalInquiries...");
-  try {
-    const inquiries = await fetchStrapiPaginated<Record<string, unknown>>(
-      "/api/general-inquiries"
-    );
-
-    if (inquiries.length === 0) {
-      console.log("[migrate] generalInquiry: 0 records");
-      migrationCounts["generalInquiry"] = { strapi: 0, sanity: 0 };
-      return;
-    }
-
-    const transaction = client.transaction();
-
-    for (const inquiry of inquiries) {
-      const doc = {
-        _id: `generalInquiry-${inquiry.documentId}`,
-        _type: "generalInquiry",
-        name: inquiry.name ?? "",
-        email: inquiry.email ?? "",
-        phone: inquiry.phone ?? "",
-        instagram: inquiry.instagram ?? "",
-        message: inquiry.message ?? "",
-      };
-
-      transaction.createOrReplace(doc);
-    }
-
-    await transaction.commit({ visibility: "deferred" });
-    migrationCounts["generalInquiry"] = {
-      strapi: inquiries.length,
-      sanity: inquiries.length,
-    };
-    console.log(`[migrate] generalInquiry: ${inquiries.length} records migrated`);
-  } catch (err) {
-    console.error(`[migrate] ERROR writing generalInquiry: ${(err as Error).message}`);
-    migrationCounts["generalInquiry"] = { strapi: -1, sanity: 0 };
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Summary report
 // ---------------------------------------------------------------------------
@@ -1338,8 +1252,6 @@ async function main(): Promise<void> {
 
   // Phase 2: Migrate collection types first (training programs needed for references)
   await migrateTrainingPrograms();
-  await migrateContactForms();
-  await migrateGeneralInquiries();
 
   // Phase 3: Migrate singleton pages
   await migrateHomePage();

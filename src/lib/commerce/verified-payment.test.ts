@@ -31,6 +31,36 @@ test("verifyHelcimPayment accepts an authenticated approved payment for the pend
   assert.deepEqual(result, { ok: true, transactionId: "txn_123" });
 });
 
+test("verifyHelcimPayment accepts HelcimPay payloads with APPROVAL status and invoice number only", () => {
+  const result = verifyHelcimPayment({
+    data: {
+      amount: "50.00",
+      currency: "CAD",
+      invoiceNumber: "INV-12345",
+      status: "APPROVAL",
+      transactionId: "txn_123",
+    },
+    hash: "valid-hash",
+    order,
+    secretToken: "secret-token",
+    validateHash: () => true,
+  });
+
+  assert.deepEqual(result, { ok: true, transactionId: "txn_123" });
+});
+
+test("verifyHelcimPayment rejects a payload with a conflicting invoice id", () => {
+  const result = verifyHelcimPayment({
+    data: { ...validData, invoiceId: 99999 },
+    hash: "valid-hash",
+    order,
+    secretToken: "secret-token",
+    validateHash: () => true,
+  });
+
+  assert.deepEqual(result, { ok: false, reason: "wrong_invoice" });
+});
+
 test("verifyHelcimPayment rejects a valid hash with an unapproved payment", () => {
   const result = verifyHelcimPayment({
     data: { ...validData, approved: false },

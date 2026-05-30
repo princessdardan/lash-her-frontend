@@ -14,6 +14,7 @@ import type {
 } from "./helcim-types";
 
 const HELCIM_API_BASE_URL = "https://api.helcim.com/v2";
+const HELCIM_API_TIMEOUT_MS = 10_000;
 
 export class HelcimApiError extends Error {
   readonly path: string;
@@ -69,7 +70,7 @@ export async function getHelcimCardTransaction(
 }
 
 async function getHelcim<TResponse>(path: string, apiToken: string): Promise<TResponse> {
-  const response = await fetch(`${HELCIM_API_BASE_URL}${path}`, {
+  const response = await fetchHelcim(`${HELCIM_API_BASE_URL}${path}`, {
     method: "GET",
     headers: {
       "api-token": apiToken,
@@ -90,7 +91,7 @@ async function postHelcim<TRequest, TResponse>(
   request: TRequest,
   apiToken: string,
 ): Promise<TResponse> {
-  const response = await fetch(`${HELCIM_API_BASE_URL}${path}`, {
+  const response = await fetchHelcim(`${HELCIM_API_BASE_URL}${path}`, {
     method: "POST",
     headers: {
       "api-token": apiToken,
@@ -106,6 +107,17 @@ async function postHelcim<TRequest, TResponse>(
   }
 
   return (await response.json()) as TResponse;
+}
+
+async function fetchHelcim(input: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), HELCIM_API_TIMEOUT_MS);
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function createHelcimApiError(path: string, response: Response): Promise<HelcimApiError> {

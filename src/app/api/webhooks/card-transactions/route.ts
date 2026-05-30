@@ -253,7 +253,7 @@ function isApprovedWebhookPayment(event: ParsedHelcimWebhook): boolean {
     return false;
   }
 
-  return event.status !== undefined && ["approved", "completed", "success", "succeeded", "true"].includes(
+  return event.status !== undefined && ["approval", "approved", "completed", "success", "succeeded", "true"].includes(
     event.status.trim().toLowerCase(),
   );
 }
