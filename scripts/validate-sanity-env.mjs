@@ -57,8 +57,9 @@ const expectedDataset = expectedDatasets[vercelEnv];
 const isLaunchEnvironment = expectedDataset !== undefined;
 const paymentGatewayMode = process.env.PAYMENT_GATEWAY_MODE ?? "live";
 const isPaymentMockMode = paymentGatewayMode === "mock";
+const serviceBookingSquareEnabled = process.env.SERVICE_BOOKING_SQUARE_ENABLED;
 const isSquareServiceBookingEnabled =
-  process.env.SERVICE_BOOKING_SQUARE_ENABLED === "true";
+  serviceBookingSquareEnabled === "true";
 const requiredEnvVars = isLaunchEnvironment
   ? [
       ...publicSanityEnvVars,
@@ -91,6 +92,14 @@ if (expectedDataset && process.env.NEXT_PUBLIC_SANITY_DATASET !== expectedDatase
 
 if (paymentGatewayMode !== "live" && paymentGatewayMode !== "mock") {
   errors.push("Malformed env var: PAYMENT_GATEWAY_MODE must be live or mock");
+}
+
+if (
+  serviceBookingSquareEnabled !== undefined
+  && serviceBookingSquareEnabled !== "true"
+  && serviceBookingSquareEnabled !== "false"
+) {
+  errors.push("Malformed env var: SERVICE_BOOKING_SQUARE_ENABLED must be true or false");
 }
 
 if (isPaymentMockMode && (process.env.NODE_ENV === "production" || vercelEnv === "production")) {

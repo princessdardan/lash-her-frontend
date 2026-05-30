@@ -80,6 +80,18 @@ test("validates preview launch environment", () => {
   assert.match(result.stdout, /Vercel preview environment validated/);
 });
 
+test("fails launch environment when Square service booking flag is blank", () => {
+  const result = runValidator({
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+    SERVICE_BOOKING_SQUARE_ENABLED: "",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.combinedOutput, /SERVICE_BOOKING_SQUARE_ENABLED must be true or false/);
+});
+
 test("validates preview mock payment environment without live payment credentials", () => {
   const env: Record<string, string> = {
     ...launchEnv,
