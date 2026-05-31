@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { loaders } from "@/data/loaders";
 import { TrainingProgramsSection } from "@/components/custom/training-programs-section";
 import { buildPageMetadata } from "@/lib/metadata";
+import { JsonLd, buildTrainingProgramCollectionJsonLd } from "@/lib/structured-data";
 
 export const revalidate = 1800;
 
@@ -15,6 +16,14 @@ export const metadata = buildPageMetadata({
 export default async function TrainingProgramsPage(): Promise<ReactElement> {
   const data = await loaders.getTrainingProgramsPageData();
   if (!data) notFound();
+  const trainingProgramCollectionJsonLd = buildTrainingProgramCollectionJsonLd(data.trainingPrograms);
 
-  return <TrainingProgramsSection data={data} />;
+  return (
+    <>
+      {trainingProgramCollectionJsonLd && (
+        <JsonLd id="lash-her-training-program-list-json-ld" data={trainingProgramCollectionJsonLd} />
+      )}
+      <TrainingProgramsSection data={data} />
+    </>
+  );
 }

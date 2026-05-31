@@ -6,6 +6,7 @@ import { SanityImage } from "@/components/ui/sanity-image";
 import { ProductDetailSections } from "@/components/commerce/product-detail-sections";
 import { ProductDetailPurchaseControls } from "@/components/commerce/product-detail-purchase-controls";
 import { formatCad } from "@/lib/commerce/money";
+import { JsonLd, buildProductJsonLd } from "@/lib/structured-data";
 import type { TProduct } from "@/types";
 
 export const revalidate = 300;
@@ -133,6 +134,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
 
   return (
     <div className="min-h-screen bg-lh-neutral-2">
+      <JsonLd id="lash-her-product-json-ld" data={buildProductJsonLd(product)} />
       <section className="section-shell-soft pt-12 md:pt-16 lg:pt-20">
         <div className="content-container">
           <Link href="/products" className="mb-8 inline-flex items-center gap-2 font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-primary transition-colors hover:text-lh-accent">

@@ -3,6 +3,7 @@ import { loaders } from "@/data/loaders";
 import { BlockRenderer } from "@/components/custom/layouts/block-renderer";
 import { ContactContent } from "@/components/custom/contact-content";
 import { buildPageMetadata } from "@/lib/metadata";
+import { JsonLd, buildOrganizationJsonLd } from "@/lib/structured-data";
 import type { THeroSection, TLayoutBlock, TLink } from "@/types";
 
 // Revalidate every 30 minutes (1800 seconds)
@@ -52,6 +53,7 @@ export default async function Home() {
 
   return (
     <>
+      <JsonLd id="lash-her-organization-json-ld" data={buildOrganizationJsonLd(homeData, contactData)} />
       <BlockRenderer blocks={normalizeHomeBlocks(homeData.blocks)} />
       {contactData && (
         <ContactContent

@@ -8,6 +8,7 @@ import { TrainingEditorialDetails } from "@/components/custom/training-editorial
 import { TrainingEnrollmentToggle } from "@/components/custom/training-enrollment-toggle";
 import { getTrainingCta, isTrainingPurchasable } from "@/lib/training-checkout";
 import { TrainingPurchaseCard, TrainingMobileTray } from "@/components/commerce/training-purchase-card";
+import { JsonLd, buildTrainingProgramJsonLd } from "@/lib/structured-data";
 import type { TLayoutBlock } from "@/types";
 
 export const revalidate = 1800;
@@ -100,6 +101,7 @@ export default async function TrainingProgramPage({ params }: { params: Promise<
 
   return (
     <div className="relative flex flex-col min-h-screen">
+      <JsonLd id="lash-her-training-program-json-ld" data={buildTrainingProgramJsonLd(data)} />
       {showPurchaseUi && (
         <div className="hidden lg:block absolute top-0 bottom-0 right-[max(2rem,calc((100vw-1380px)/2+2rem))] w-[22rem] pointer-events-none z-40 lg:pt-40">
           <div className="sticky top-40 pointer-events-auto">

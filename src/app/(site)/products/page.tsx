@@ -1,6 +1,7 @@
 import type { ReactElement } from "react";
 import { ProductCatalogShell } from "@/components/commerce/product-catalog-shell";
 import { loaders, type ProductSort } from "@/data/loaders";
+import { JsonLd, buildProductCollectionJsonLd } from "@/lib/structured-data";
 
 export const revalidate = 300;
 
@@ -32,12 +33,18 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps):
     loaders.getProductsPageData(),
     loaders.getProducts(sort),
   ]);
+  const productCollectionJsonLd = buildProductCollectionJsonLd(products);
 
   return (
-    <ProductCatalogShell
-      pageData={pageData}
-      products={products}
-      sort={sort}
-    />
+    <>
+      {productCollectionJsonLd && (
+        <JsonLd id="lash-her-product-list-json-ld" data={productCollectionJsonLd} />
+      )}
+      <ProductCatalogShell
+        pageData={pageData}
+        products={products}
+        sort={sort}
+      />
+    </>
   );
 }

@@ -3,6 +3,7 @@ import { loaders } from "@/data/loaders";
 import Link from "next/link";
 import { formatCad } from "@/lib/commerce/money";
 import { Button } from "@/components/ui/button";
+import { JsonLd, buildServiceCollectionJsonLd } from "@/lib/structured-data";
 
 export const revalidate = 300;
 
@@ -13,9 +14,14 @@ export default async function ServicesPage(): Promise<ReactElement> {
   ]);
 
   const detailServices = services.filter(s => s.showDetailPage);
+  const serviceCollectionJsonLd = buildServiceCollectionJsonLd(services);
 
   return (
-    <div className="min-h-screen bg-lh-neutral-2 py-12 lg:py-24">
+    <>
+      {serviceCollectionJsonLd && (
+        <JsonLd id="lash-her-service-list-json-ld" data={serviceCollectionJsonLd} />
+      )}
+      <div className="min-h-screen bg-lh-neutral-2 py-12 lg:py-24">
       <div className="content-container max-w-5xl mx-auto">
         <div className="text-container mb-12">
           <h1 className="section-heading text-4xl md:text-5xl lg:text-6xl mb-6 text-center">
@@ -107,6 +113,7 @@ export default async function ServicesPage(): Promise<ReactElement> {
           </div>
         )}
       </div>
-    </div>
+      </div>
+    </>
   );
 }

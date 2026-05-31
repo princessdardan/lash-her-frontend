@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { loaders } from "@/data/loaders";
 import { SanityImage } from "@/components/ui/sanity-image";
 import { formatCad } from "@/lib/commerce/money";
+import { JsonLd, buildServiceJsonLd } from "@/lib/structured-data";
 import Link from "next/link";
 
 export const revalidate = 300;
@@ -35,6 +36,7 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
 
   return (
     <div className="min-h-screen bg-lh-neutral-2 py-12 lg:py-24">
+      <JsonLd id="lash-her-service-json-ld" data={buildServiceJsonLd(service)} />
       <div className="content-container">
         <div className="mb-8 pt-8">
           <Link href="/services" className="text-lh-primary hover:underline font-medium flex items-center gap-2">
