@@ -51,7 +51,7 @@ export default async function ServiceBookingPage({
           </Link>
         </div>
         
-        <div className="mb-8 text-center">
+        <header className="mb-8 text-center">
           <span className="eyebrow-label mb-2 block">
             Book Appointment
           </span>
@@ -66,7 +66,7 @@ export default async function ServiceBookingPage({
           <p className="mt-4 font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-muted">
             Select a time, confirm your details, then continue through secure Square checkout.
           </p>
-        </div>
+        </header>
 
         <BookingFlow
           settings={settings}

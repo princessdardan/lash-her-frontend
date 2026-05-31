@@ -25,8 +25,8 @@ export default async function ConfirmationPage({
   const orderId = params.order;
 
   return (
-    <div className="container mx-auto max-w-2xl px-4 py-16 text-center">
-      <div className="rounded-[28px] border border-lh-line bg-lh-white p-8 text-lh-shadow shadow-[0_24px_70px_rgba(28,19,24,0.08)] md:p-12">
+    <section className="container mx-auto max-w-2xl px-4 py-16 text-center">
+      <article className="rounded-[28px] border border-lh-line bg-lh-white p-8 text-lh-shadow shadow-[0_24px_70px_rgba(28,19,24,0.08)] md:p-12">
         <h1 className="section-heading mb-6">
           Payment Received
         </h1>
@@ -56,7 +56,7 @@ export default async function ConfirmationPage({
             Continue Shopping
           </Link>
         </div>
-      </div>
-    </div>
+      </article>
+    </section>
   );
 }

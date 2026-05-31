@@ -32,7 +32,7 @@ export function ProductDetailSections({ sections }: ProductDetailSectionsProps):
   }
 
   return (
-    <div className="space-y-6" aria-label="Product details">
+    <section className="space-y-6" aria-label="Product details">
       {renderableSections.map((section, index) => (
         <section key={section._key || index} className="editorial-card p-6 md:p-8">
           <div className="mb-6 flex items-center gap-4 border-b border-lh-line pb-5">
@@ -54,6 +54,6 @@ export function ProductDetailSections({ sections }: ProductDetailSectionsProps):
           </div>
         </section>
       ))}
-    </div>
+    </section>
   );
 }

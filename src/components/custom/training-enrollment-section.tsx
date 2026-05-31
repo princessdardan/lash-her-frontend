@@ -57,8 +57,8 @@ export function TrainingEnrollmentSection({ data }: TrainingEnrollmentSectionPro
 
   return (
     <section className="py-8 md:py-12 lg:py-16" id="enrollment" data-training-enrollment-section="true">
-      <div className="grid grid-cols-1 overflow-hidden rounded-[28px] border border-lh-line bg-lh-white shadow-[0_24px_70px_rgba(28,19,24,0.08)] lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-        <div className="relative min-h-[360px] overflow-hidden bg-lh-shadow p-8 text-lh-neutral-2 md:p-10 lg:min-h-[520px] lg:p-12">
+      <article className="grid grid-cols-1 overflow-hidden rounded-[28px] border border-lh-line bg-lh-white shadow-[0_24px_70px_rgba(28,19,24,0.08)] lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <section className="relative min-h-[360px] overflow-hidden bg-lh-shadow p-8 text-lh-neutral-2 md:p-10 lg:min-h-[520px] lg:p-12">
           <div className="absolute inset-0 z-0">
             {enrollmentBackgroundImage ? (
               <SanityImage
@@ -75,21 +75,21 @@ export function TrainingEnrollmentSection({ data }: TrainingEnrollmentSectionPro
           </div>
 
           <div className="relative z-10 flex h-full min-h-[inherit] flex-col justify-between">
-            <div>
+            <header>
               <p className="eyebrow-label mb-4 text-lh-light">Enrollment</p>
               <h2 className="section-heading text-lh-neutral-2 text-balance">
                 {enrollmentTitle || "Reserve Your Training Place"}
               </h2>
-            </div>
+            </header>
 
             <div className="mt-10 border-t border-lh-neutral-2/20 pt-6">
               <p className="font-body text-sm font-bold uppercase tracking-[0.16em] text-lh-neutral-2/70">Program</p>
               <p className="mt-2 font-heading text-3xl font-normal leading-none text-lh-neutral-2 md:text-4xl">{title}</p>
             </div>
           </div>
-        </div>
+        </section>
 
-        <div className="flex flex-col justify-center p-8 md:p-10 lg:p-12">
+        <section className="flex flex-col justify-center p-8 md:p-10 lg:p-12">
           {enrollmentDescription && (
             <p className="body-lead text-lh-shadow">
               {enrollmentDescription}
@@ -98,7 +98,7 @@ export function TrainingEnrollmentSection({ data }: TrainingEnrollmentSectionPro
 
           <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
             {price !== null && (
-              <div className="rounded-[24px] border border-lh-line bg-lh-neutral-2/70 p-5">
+              <section className="rounded-[24px] border border-lh-line bg-lh-neutral-2/70 p-5">
                 <p className="font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-muted">Investment</p>
                 <p className="mt-2 flex flex-col gap-1 font-body text-2xl font-bold text-lh-primary [overflow-wrap:anywhere]">
                   {discountPrice !== null ? (
@@ -106,21 +106,21 @@ export function TrainingEnrollmentSection({ data }: TrainingEnrollmentSectionPro
                   ) : null}
                   <span>{formatCad(discountPrice ?? price)}</span>
                 </p>
-              </div>
+              </section>
             )}
 
             {(availabilityLabel || isAvailable !== undefined) && (
-              <div className="rounded-[24px] border border-lh-line bg-lh-neutral-2/70 p-5">
+              <section className="rounded-[24px] border border-lh-line bg-lh-neutral-2/70 p-5">
                 <p className="font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-muted">Availability</p>
                 <p className="mt-2 font-body text-lg font-bold text-lh-shadow">
                   {availabilityLabel || (isAvailable ? "Enrollment available" : "Enrollment paused")}
                 </p>
-              </div>
+              </section>
             )}
           </div>
 
           {inclusions.length > 0 && (
-            <div className="mt-8">
+            <section className="mt-8">
               <p className="mb-4 font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-primary">Included</p>
               <ul className="grid grid-cols-1 gap-3 text-lh-shadow/82 md:grid-cols-2">
                 {inclusions.map((item) => (
@@ -130,7 +130,7 @@ export function TrainingEnrollmentSection({ data }: TrainingEnrollmentSectionPro
                   </li>
                 ))}
               </ul>
-            </div>
+            </section>
           )}
 
           {(safePrimaryCta || safeSecondaryCta) && (
@@ -157,8 +157,8 @@ export function TrainingEnrollmentSection({ data }: TrainingEnrollmentSectionPro
               )}
             </div>
           )}
-        </div>
-      </div>
+        </section>
+      </article>
     </section>
   );
 }

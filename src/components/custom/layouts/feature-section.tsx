@@ -198,10 +198,10 @@ export function FeatureSection({ data, products }: FeatureSectionProps) {
   return (
     <section className="section-shell overflow-hidden px-4 sm:px-6 lg:px-8">
       {(heading || subHeading) && (
-        <div className="text-container mx-auto max-w-3xl">
+        <header className="text-container mx-auto max-w-3xl">
           {heading && <h2 className="section-heading text-balance">{heading}</h2>}
           {subHeading && <p className="section-description text-lg">{subHeading}</p>}
-        </div>
+        </header>
       )}
       <div
         className={cn(

@@ -134,8 +134,8 @@ export default async function BookingConfirmationPage({
 
       return (
         <section className="min-h-screen bg-lh-neutral-2 py-12 lg:py-24" aria-label="Booking confirmation">
-          <section className="content-container mx-auto max-w-2xl">
-            <div role="status" aria-live="polite" className="soft-panel rounded-[18px] border border-lh-line bg-lh-white p-8 text-center shadow-sm md:p-12">
+          <div className="content-container mx-auto max-w-2xl">
+            <article role="status" aria-live="polite" className="soft-panel rounded-[18px] border border-lh-line bg-lh-white p-8 text-center shadow-sm md:p-12">
               <p className="eyebrow-label mb-3">{copy.eyebrow}</p>
               <h1 className="section-heading mb-6">{copy.title}</h1>
               <div className="space-y-4 font-body text-base font-bold leading-8 text-lh-muted md:text-lg">
@@ -147,8 +147,8 @@ export default async function BookingConfirmationPage({
                   Return to services
                 </Link>
               </div>
-            </div>
-          </section>
+            </article>
+          </div>
         </section>
       );
     }

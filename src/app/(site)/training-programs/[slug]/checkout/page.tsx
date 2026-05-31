@@ -38,10 +38,10 @@ export default async function TrainingCheckoutPage({ params }: { params: Promise
   const manualDiscount = product.originalPrice === undefined ? 0 : product.originalPrice - product.price;
 
   return (
-    <div className="flex flex-col min-h-screen bg-lh-neutral-2">
+    <section className="flex flex-col min-h-screen bg-lh-neutral-2">
       <section className="section-shell py-16 md:py-24">
         <div className="content-container max-w-2xl mx-auto">
-          <div className="soft-panel p-8 md:p-12 rounded-2xl bg-white shadow-sm">
+          <article className="soft-panel p-8 md:p-12 rounded-2xl bg-white shadow-sm">
             <h1 className="section-heading mb-2 text-center">Enrollment Checkout</h1>
             <h2 className="section-subheading mb-8 text-center">{data.title}</h2>
 
@@ -56,9 +56,9 @@ export default async function TrainingCheckoutPage({ params }: { params: Promise
               currency={product.currency || "CAD"}
               afterpaySquareInvoiceEnabled={isTrainingAfterpaySquareInvoiceEnabled()}
             />
-          </div>
+          </article>
         </div>
       </section>
-    </div>
+    </section>
   );
 }

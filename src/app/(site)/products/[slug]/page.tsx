@@ -133,7 +133,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
   const priceDisplay = getProductPriceDisplay(product);
 
   return (
-    <div className="min-h-screen bg-lh-neutral-2">
+    <section className="min-h-screen bg-lh-neutral-2">
       <JsonLd id="lash-her-product-json-ld" data={buildProductJsonLd(product)} />
       <section className="section-shell-soft pt-12 md:pt-16 lg:pt-20">
         <div className="content-container">
@@ -172,7 +172,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
               </div>
 
               {galleryImages.length > 0 && (
-                <div className="grid grid-cols-2 gap-4 md:grid-cols-4" aria-label="Product gallery">
+                <section className="grid grid-cols-2 gap-4 md:grid-cols-4" aria-label="Product gallery">
                   {galleryImages.map((image, index) => (
                     <div key={`${image.asset._ref}-${index}`} className="relative min-h-36 overflow-hidden rounded-[24px] border border-lh-line bg-lh-white shadow-[0_18px_50px_rgba(28,19,24,0.05)] md:min-h-44">
                     <SanityImage
@@ -184,12 +184,12 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
                     />
                   </div>
                 ))}
-              </div>
+              </section>
             )}
             </div>
 
             <aside className="lg:sticky lg:top-28">
-              <div className="soft-panel bg-lh-white/90 p-6 backdrop-blur md:p-8 lg:p-9">
+              <section className="soft-panel bg-lh-white/90 p-6 backdrop-blur md:p-8 lg:p-9">
                 <div className="mb-7 border-b border-lh-line pb-7">
                   <p className="eyebrow-label mb-3">Product</p>
                   <h1 className="display-heading text-5xl md:text-7xl lg:text-8xl">
@@ -254,7 +254,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
                     </p>
                   </div>
                 )}
-              </div>
+              </section>
             </aside>
           </div>
         </div>
@@ -263,16 +263,16 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
       {product.detailSections && product.detailSections.length > 0 && (
         <section className="section-shell bg-lh-white py-12 md:py-16 lg:py-20" aria-labelledby="product-detail-sections-heading">
           <div className="content-container">
-            <div className="mb-10 max-w-3xl">
+            <header className="mb-10 max-w-3xl">
               <p className="eyebrow-label mb-3">Product Notes</p>
               <h2 id="product-detail-sections-heading" className="section-heading text-4xl md:text-5xl">
                 Details for a precise purchase.
               </h2>
-            </div>
+            </header>
             <ProductDetailSections sections={product.detailSections} />
           </div>
         </section>
       )}
-    </div>
+    </section>
   );
 }

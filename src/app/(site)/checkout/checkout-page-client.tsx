@@ -240,10 +240,10 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
 
   if (checkoutItems.length === 0) {
     return (
-      <div className="min-h-screen bg-lh-neutral-2">
+      <section className="min-h-screen bg-lh-neutral-2">
         <section className="section-shell-soft pt-12 md:pt-16 lg:pt-20">
           <div className="content-container max-w-2xl">
-            <div className="soft-panel bg-lh-white p-8 md:p-12 text-center">
+            <article className="soft-panel bg-lh-white p-8 md:p-12 text-center">
               <h1 className="font-heading text-3xl font-normal text-lh-shadow mb-4">Your cart is empty</h1>
               <p className="font-body text-sm font-bold text-lh-muted mb-8">
                 Add products to your cart before checking out.
@@ -251,25 +251,25 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
               <Button asChild variant="primary" className="rounded-full px-8">
                 <Link href="/products">Browse Products</Link>
               </Button>
-            </div>
+            </article>
           </div>
         </section>
-      </div>
+      </section>
     );
   }
 
   return (
-    <div className="min-h-screen bg-lh-neutral-2">
+    <section className="min-h-screen bg-lh-neutral-2">
       <section className="section-shell-soft pt-12 md:pt-16 lg:pt-20">
         <div className="content-container max-w-2xl">
-          <div className="mb-8">
+          <header className="mb-8">
             <p className="eyebrow-label mb-3">{isBuyNow ? "Buy Now" : "Checkout"}</p>
             <h1 className="display-heading text-4xl md:text-5xl">
               {isBuyNow ? "Complete Your Purchase" : "Review Your Order"}
             </h1>
-          </div>
+          </header>
 
-          <div className="soft-panel bg-lh-white p-6 md:p-8">
+          <section className="soft-panel bg-lh-white p-6 md:p-8">
             {cart.error ? (
               <div className="rounded-[18px] border border-lh-accent/30 bg-lh-accent-soft p-4 mb-6">
                 <p className="font-body text-sm font-bold text-lh-accent">{cart.error}</p>
@@ -526,10 +526,10 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
                 ) : null}
               </div>
             ) : null}
-          </div>
+          </section>
         </div>
       </section>
-    </div>
+    </section>
   );
 }
 
@@ -537,11 +537,11 @@ export default function CheckoutPageClient({ products }: CheckoutPageClientProps
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-lh-neutral-2">
+        <section className="min-h-screen bg-lh-neutral-2">
           <div className="content-container py-12">
             <p className="font-body text-lh-muted">Loading checkout...</p>
           </div>
-        </div>
+        </section>
       }
     >
       <CheckoutContent products={products} />

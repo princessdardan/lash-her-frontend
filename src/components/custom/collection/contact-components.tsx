@@ -167,15 +167,15 @@ export function ContactFormLabels({ data }: { data: TContactFormLabels }) {
   };
 
     return (
-      <div id="training-contact" className="w-full max-w-4xl mx-auto scroll-mt-40">
+      <section id="training-contact" className="w-full max-w-4xl mx-auto scroll-mt-40">
         <Suspense fallback={null}>
           <ScrollToForm formId="training-contact" />
         </Suspense>
-        <div className="soft-panel relative flex flex-col">
-          <div className="mb-10">
+        <section className="soft-panel relative flex flex-col">
+          <header className="mb-10">
               <h2 className="section-heading text-lh-primary mb-3">{data.heading}</h2>
               <p className="body-lead text-lh-shadow">{data.subHeading}</p>
-          </div>
+          </header>
 
             <form onSubmit={handleSubmit} className="space-y-6">
                 <FieldGroup className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -320,8 +320,8 @@ export function ContactFormLabels({ data }: { data: TContactFormLabels }) {
                 {isSubmitting ? "Submitting..." : "Send Application"}
                 </Button>
             </form>
-        </div>
-      </div>
+        </section>
+      </section>
   );
 }
 
@@ -342,22 +342,22 @@ export function ContactPageLayout({data}:{data: IContactPageLayoutProps}) {
   return (
     <section className="section-shell">
         <div className="content-container">
-            <div className="text-container">
+            <header className="text-container">
               <h2 className="section-heading">{data.title}</h2>
               <h3 className="section-subheading">{data.subTitle}</h3>
               <p className="section-description">{data.description}</p>
-            </div>
+            </header>
             <div className="grid grid-cols-1 lg:grid-cols-[5fr_8fr] gap-12 lg:gap-24">
                 {/* Left Column - Schedule and Contact Info */}
-                <div>
+                <aside>
                     {data.contactInfoData && <ContactInfo data={data.contactInfoData} />}
                     {data.scheduleData && <Schedule data={data.scheduleData} />}
-                </div>
+                </aside>
 
                 {/* Right Column - Contact Form */}
-                <div>
+                <section>
                     {data.contactFormData && <ContactFormLabels data={data.contactFormData} />}
-                </div>
+                </section>
             </div>
         </div>
     </section>

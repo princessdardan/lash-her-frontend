@@ -35,7 +35,7 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
   if (!service || !service.showDetailPage) notFound();
 
   return (
-    <div className="min-h-screen bg-lh-neutral-2 py-12 lg:py-24">
+    <section className="min-h-screen bg-lh-neutral-2 py-12 lg:py-24">
       <JsonLd id="lash-her-service-json-ld" data={buildServiceJsonLd(service)} />
       <div className="content-container">
         <div className="mb-8 pt-8">
@@ -44,7 +44,7 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
           </Link>
         </div>
 
-        <div className="mx-auto flex max-w-5xl flex-col gap-8 rounded-[28px] border border-lh-line bg-lh-white p-8 text-lh-shadow shadow-[0_24px_70px_rgba(28,19,24,0.08)] md:flex-row md:gap-12 md:p-12">
+        <article className="mx-auto flex max-w-5xl flex-col gap-8 rounded-[28px] border border-lh-line bg-lh-white p-8 text-lh-shadow shadow-[0_24px_70px_rgba(28,19,24,0.08)] md:flex-row md:gap-12 md:p-12">
           <div className="w-full md:w-1/2 flex flex-col gap-4">
             {service.image ? (
               <div className="aspect-square relative rounded-md overflow-hidden bg-lh-primary-soft/10">
@@ -96,14 +96,14 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
             )}
 
             {service.detailSections && service.detailSections.length > 0 && (
-              <div className="mb-8 space-y-6">
+              <section className="mb-8 space-y-6">
                 {service.detailSections.map((section, idx) => (
                   <div key={section._key || idx}>
                     <h3 className="section-subheading mb-2">{section.heading}</h3>
                     <p className="font-body font-bold leading-7 text-lh-shadow/80">{section.content}</p>
                   </div>
                 ))}
-              </div>
+              </section>
             )}
             
             <div className="mt-auto pt-6 border-t border-lh-line/30">
@@ -118,8 +118,8 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
               )}
             </div>
           </div>
-        </div>
+        </article>
       </div>
-    </div>
+    </section>
   );
 }

@@ -72,10 +72,10 @@ export default async function TrainingConfirmationPage({
   });
 
   return (
-    <div className="flex flex-col min-h-screen bg-lh-neutral-2">
+    <section className="flex flex-col min-h-screen bg-lh-neutral-2">
       <section className="section-shell py-16 md:py-24">
         <div className="content-container max-w-2xl mx-auto">
-          <div className="soft-panel p-8 md:p-12 rounded-2xl bg-white shadow-sm text-center">
+          <article className="soft-panel p-8 md:p-12 rounded-2xl bg-white shadow-sm text-center">
             <h1 className="section-heading mb-2">Enrollment Confirmed</h1>
             <h2 className="section-subheading mb-6">{program.title}</h2>
 
@@ -112,9 +112,9 @@ export default async function TrainingConfirmationPage({
                 </p>
               </div>
             </div>
-          </div>
+          </article>
         </div>
       </section>
-    </div>
+    </section>
   );
 }

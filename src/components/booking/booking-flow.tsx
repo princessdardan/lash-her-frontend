@@ -288,18 +288,20 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
 
   if (step === "service") {
     return (
-      <div className="flex flex-col gap-8 lg:flex-row">
-        <div className="min-w-0 flex-1">
-          <h1 className="section-heading mb-6 text-3xl md:text-3xl lg:text-3xl">Select Service</h1>
+      <section className="flex flex-col gap-8 lg:flex-row">
+        <section className="min-w-0 flex-1">
+          <header>
+            <h1 className="section-heading mb-6 text-3xl md:text-3xl lg:text-3xl">Select Service</h1>
+          </header>
           <div className="mb-6 flex gap-2 overflow-x-auto pb-2" role="group" aria-label="Service filters">
             <div className="rounded-full bg-lh-primary px-4 py-2 text-sm font-medium text-white whitespace-nowrap">All Services</div>
             <div className="rounded-full border border-lh-line bg-white px-4 py-2 text-sm font-medium text-lh-muted whitespace-nowrap">Nataliea</div>
           </div>
           <div className="space-y-4">
             {services.length === 0 ? (
-              <div className="rounded-xl border border-lh-line bg-white p-6 text-center text-lh-muted">
+              <section className="rounded-xl border border-lh-line bg-white p-6 text-center text-lh-muted">
                 We are currently updating our services. Please check back later.
-              </div>
+              </section>
             ) : services.map((service) => {
               const isSelected = selectedServiceSlug === service.slug;
               return (
@@ -325,28 +327,28 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
               );
             })}
           </div>
-        </div>
-        <div className="w-full shrink-0 lg:w-80">
-          <div className="sticky top-24 rounded-xl border border-lh-line bg-white p-6">
+        </section>
+        <aside className="w-full shrink-0 lg:w-80">
+          <section className="sticky top-24 rounded-xl border border-lh-line bg-white p-6">
             <h2 className="section-subheading mb-4 text-xl md:text-xl lg:text-xl">Summary</h2>
             <BookingSummary service={currentService} selectedSlot={selectedSlot} timezone={settings.timezone} />
             <Button className="mt-6 w-full" disabled={!selectedServiceSlug} onClick={() => setStep("datetime")}>Continue</Button>
-          </div>
-        </div>
-      </div>
+          </section>
+        </aside>
+      </section>
     );
   }
 
   if (step === "datetime") {
     return (
-      <div className="flex flex-col gap-8 lg:flex-row">
-        <div className="min-w-0 flex-1">
-          <div className="mb-6 flex items-center gap-4">
+      <section className="flex flex-col gap-8 lg:flex-row">
+        <section className="min-w-0 flex-1">
+          <header className="mb-6 flex items-center gap-4">
             {!hasInitialService && (
               <button type="button" onClick={() => setStep("service")} className="text-lh-muted hover:text-black">← Back</button>
             )}
             <h1 className="section-heading text-3xl md:text-3xl lg:text-3xl">Select Time</h1>
-          </div>
+          </header>
 
           {isLoadingSlots ? (
             <div className="py-12 text-center text-lh-muted">Loading available times...</div>
@@ -355,7 +357,7 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
           ) : slots.length === 0 ? (
             <div className="py-12 text-center text-lh-muted">No times available for this service.</div>
           ) : (
-            <div className="space-y-6">
+            <section className="space-y-6">
               <div
                 className="flex w-full max-w-full items-stretch gap-1 sm:gap-2"
                 aria-label={`Available appointment dates, showing ${effectiveDateWindowStart + 1}-${Math.min(effectiveDateWindowStart + VISIBLE_DATE_COUNT, availableDates.length)} of ${availableDates.length}`}
@@ -428,28 +430,28 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
                 })}
               </div>
               <p className="mt-4 text-sm text-lh-muted">All times are shown in {settings.timezone}.</p>
-            </div>
+            </section>
           )}
-        </div>
+        </section>
 
-        <div className="w-full shrink-0 lg:w-80">
-          <div className="sticky top-24 rounded-xl border border-lh-line bg-white p-6">
+        <aside className="w-full shrink-0 lg:w-80">
+          <section className="sticky top-24 rounded-xl border border-lh-line bg-white p-6">
             <h2 className="section-subheading mb-4 text-xl md:text-xl lg:text-xl">Summary</h2>
             <BookingSummary service={currentService} selectedSlot={selectedSlot} timezone={settings.timezone} />
             <Button className="mt-6 w-full" disabled={!selectedSlot} onClick={() => setStep("details")}>Continue</Button>
-          </div>
-        </div>
-      </div>
+          </section>
+        </aside>
+      </section>
     );
   }
 
   return (
-    <div className="flex flex-col gap-8 lg:flex-row">
-      <div className="min-w-0 flex-1">
-        <div className="mb-6 flex items-center gap-4">
+    <section className="flex flex-col gap-8 lg:flex-row">
+      <section className="min-w-0 flex-1">
+        <header className="mb-6 flex items-center gap-4">
           <button type="button" onClick={() => setStep("datetime")} className="text-lh-muted hover:text-black">← Back</button>
           <h1 className="section-heading text-3xl md:text-3xl lg:text-3xl">Your Details</h1>
-        </div>
+        </header>
 
         <form onSubmit={handleSubmit} className="space-y-8 rounded-xl border border-lh-line bg-white p-6">
           {squareCheckoutStatus !== "idle" && (
@@ -584,15 +586,15 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
             {isSubmitting ? "Creating private hold..." : "Continue to secure Square checkout"}
           </Button>
         </form>
-      </div>
+      </section>
 
-      <div className="w-full shrink-0 lg:w-80">
-        <div className="sticky top-24 rounded-xl border border-lh-line bg-white p-6">
+      <aside className="w-full shrink-0 lg:w-80">
+        <section className="sticky top-24 rounded-xl border border-lh-line bg-white p-6">
           <h2 className="section-subheading mb-4 text-xl md:text-xl lg:text-xl">Summary</h2>
           <BookingSummary service={currentService} selectedSlot={selectedSlot} timezone={settings.timezone} />
-        </div>
-      </div>
-    </div>
+        </section>
+      </aside>
+    </section>
   );
 }
 

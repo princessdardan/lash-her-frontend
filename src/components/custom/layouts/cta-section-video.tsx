@@ -11,7 +11,7 @@ export interface CTASectionVideoProps {
 
 export function CtaSectionVideo({ data }: { data: CTASectionVideoProps }) {
   if (!data) return null;
-  const { heading, description, image, link } = data;
+
   return (
     <div>
       {/* CTA Section Video — renders heading, description, video/image, links */}

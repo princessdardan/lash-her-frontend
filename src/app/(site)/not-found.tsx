@@ -31,10 +31,10 @@ const styles = {
 
 export default function NotFound() {
   return (
-    <div className={styles.container}>
-      <div className={styles.content}>
+    <section className={styles.container}>
+      <section className={styles.content}>
         {/* Large 404 Text */}
-        <div className={styles.textSection}>
+        <header className={styles.textSection}>
           <h1 className={styles.heading404}>404</h1>
           <div className={styles.headingContainer}>
             <h2 className={styles.pageTitle}>Page Not Found</h2>
@@ -43,7 +43,7 @@ export default function NotFound() {
               into the digital wilderness.
             </p>
           </div>
-        </div>
+        </header>
 
         {/* Illustration */}
         <div className={styles.illustrationContainer}>
@@ -58,7 +58,7 @@ export default function NotFound() {
         </div>
 
         {/* Action Buttons */}
-        <div className={styles.buttonContainer}>
+        <nav className={styles.buttonContainer} aria-label="Page not found actions">
           <Button asChild variant="primary" size="lg" className={styles.button}>
             <Link href="/" className={styles.buttonContent}>
               <Home className={styles.buttonIcon} />
@@ -77,8 +77,8 @@ export default function NotFound() {
               Go Back
             </span>
           </Button>
-        </div>
-      </div>
-    </div>
+        </nav>
+      </section>
+    </section>
   );
 }

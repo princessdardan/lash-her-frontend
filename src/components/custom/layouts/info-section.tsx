@@ -11,11 +11,11 @@ export function InfoSection({ data }: { data: TInfoSection }) {
     return (
         <section className="section-shell">
             <div className="content-container max-w-3xl mx-auto">
-                <div className="text-center mb-12">
+                <header className="text-center mb-12">
                     <h2 className="section-heading">{heading}</h2>
                     {subHeading && <p className="font-heading text-lh-primary text-xl md:text-2xl mt-4">{subHeading}</p>}
                     <div className="w-12 h-[1px] bg-lh-light mx-auto mt-6" />
-                </div>
+                </header>
                 <div className="prose prose-neutral prose-lg max-w-none text-lh-shadow/80 leading-relaxed font-body">
                     <PortableTextRenderer content={info} />
                 </div>

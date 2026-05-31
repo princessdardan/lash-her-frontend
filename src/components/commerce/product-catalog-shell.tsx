@@ -28,7 +28,7 @@ export function ProductCatalogShell({
       : "grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3";
 
   return (
-    <div className="min-h-screen bg-lh-white">
+    <section className="min-h-screen bg-lh-white">
       <section className="relative isolate overflow-hidden bg-lh-shadow text-lh-neutral-2">
         <div className="absolute inset-0 z-0">
           {pageData?.heroImage ? (
@@ -49,13 +49,13 @@ export function ProductCatalogShell({
         </div>
 
         <div className="content-container relative z-10 flex min-h-[520px] items-end py-14 md:min-h-[620px] md:py-20">
-          <div className="max-w-4xl">
+          <header className="max-w-4xl">
             <p className="eyebrow-label mb-4 text-lh-light">{eyebrow}</p>
             <h1 className="display-heading text-lh-neutral-2 text-balance">{title}</h1>
             <p className="mt-6 max-w-3xl font-body text-base font-bold leading-8 text-lh-neutral-2/85 md:text-lg lg:text-xl">
               {description}
             </p>
-          </div>
+          </header>
         </div>
       </section>
 
@@ -64,7 +64,7 @@ export function ProductCatalogShell({
           <div className="mx-auto max-w-7xl">
             <div className="min-w-0">
               <div className="mb-8 flex flex-col gap-5 border-b border-lh-line pb-6 lg:flex-row lg:items-end lg:justify-between">
-                <div>
+                <header>
                   <p className="eyebrow-label mb-2">Products</p>
                   <h2 id="products-heading" className="section-heading text-4xl md:text-5xl">
                     The Product Edit
@@ -72,17 +72,17 @@ export function ProductCatalogShell({
                   <p className="mt-3 font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-muted" aria-live="polite">
                     Showing {products.length} Products
                   </p>
-                </div>
+                </header>
                 <ProductSort sort={sort} />
               </div>
 
               {products.length === 0 ? (
-                <div className="soft-panel bg-lh-white py-16 text-center">
+                <section className="soft-panel bg-lh-white py-16 text-center">
                   <h3 className="section-subheading mb-4 text-3xl">{emptyStateTitle}</h3>
                   <p className="mx-auto max-w-md font-body text-sm font-bold leading-7 text-lh-muted md:text-base">
                     {emptyStateDescription}
                   </p>
-                </div>
+                </section>
               ) : (
                 <div className={productGridClassName}>
                   {products.map((product) => (
@@ -94,6 +94,6 @@ export function ProductCatalogShell({
           </div>
         </div>
       </section>
-    </div>
+    </section>
   );
 }

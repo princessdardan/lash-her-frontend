@@ -100,7 +100,7 @@ export default async function TrainingProgramPage({ params }: { params: Promise<
   const legacyBlocks = (data.blocks ?? []).filter(isLegacyContentBlock);
 
   return (
-    <div className="relative flex flex-col min-h-screen">
+    <section className="relative flex flex-col min-h-screen">
       <JsonLd id="lash-her-training-program-json-ld" data={buildTrainingProgramJsonLd(data)} />
       {showPurchaseUi && (
         <div className="hidden lg:block absolute top-0 bottom-0 right-[max(2rem,calc((100vw-1380px)/2+2rem))] w-[22rem] pointer-events-none z-40 lg:pt-40">
@@ -163,6 +163,6 @@ export default async function TrainingProgramPage({ params }: { params: Promise<
       {showPurchaseUi && (
         <TrainingMobileTray program={data} cta={cta} />
       )}
-    </div>
+    </section>
   );
 }

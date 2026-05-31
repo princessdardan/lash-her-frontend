@@ -100,11 +100,11 @@ export function TrainingProgramsSection({
   return (
     <section className="section-shell-soft" data-training-programs-section="true">
       <div className="content-container">
-        <div className="text-container mx-auto max-w-3xl">
+        <header className="text-container mx-auto max-w-3xl">
           <p className="eyebrow-label mb-4">Lash Education</p>
           <Heading className="section-heading mb-6">{data.title}</Heading>
           {data.description && <p className="section-description text-lg">{data.description}</p>}
-        </div>
+        </header>
 
         <div className="mx-auto grid max-w-6xl items-stretch gap-8 md:grid-cols-2 lg:grid-cols-3">
           {programs.map((program, index) => (

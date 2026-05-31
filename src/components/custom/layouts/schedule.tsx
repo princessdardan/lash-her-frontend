@@ -7,8 +7,8 @@ export function Schedule({ data }: { data: TSchedule }) {
 
     const { heading, subHeading, hours } = data;
     return (
-        <div className="w-full max-w-lg md:max-w-none mx-auto px-4 pb-4 md:px-0 md:pb-0 xl:max-w-xl">
-            <div className="soft-panel relative flex flex-col p-5 md:p-4 xl:p-6">
+        <aside className="w-full max-w-lg md:max-w-none mx-auto px-4 pb-4 md:px-0 md:pb-0 xl:max-w-xl">
+            <section className="soft-panel relative flex flex-col p-5 md:p-4 xl:p-6">
                 <h2 className="text-2xl xl:text-3xl font-heading text-lh-shadow mb-1">{heading}</h2>
                 <p className="text-lh-primary font-heading tracking-widest uppercase mb-3 xl:mb-5">{subHeading}</p>
                 <div className="space-y-0.5 xl:space-y-2">
@@ -19,7 +19,7 @@ export function Schedule({ data }: { data: TSchedule }) {
                         </div>
                     ))}
                 </div>
-            </div>
-        </div>
+            </section>
+        </aside>
     )
 }

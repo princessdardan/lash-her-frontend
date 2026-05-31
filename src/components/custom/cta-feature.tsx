@@ -24,7 +24,7 @@ export function CtaFeature({
   icon,
 }: TCtaFeature) {
   return (
-    <div className="editorial-card relative flex flex-col min-h-[480px] p-8">
+    <article className="editorial-card relative flex flex-col min-h-[480px] p-8">
       <div className="mb-6">
         <div className="flex items-start mb-6">
           <div className="rounded-full bg-lh-primary-soft p-3 inline-flex items-center justify-center text-lh-primary">
@@ -44,6 +44,6 @@ export function CtaFeature({
       <div className="flex-grow mb-8 text-lh-shadow/80 leading-relaxed">
         <PortableTextRenderer content={features} />
       </div>
-    </div>
+    </article>
   );
 }

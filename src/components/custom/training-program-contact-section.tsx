@@ -158,12 +158,12 @@ export function TrainingProgramContactSection({
   return (
     <section id="contact" className="scroll-mt-32 py-8 md:py-12 lg:py-16" data-training-contact-section="true">
       <div className={hasPurchaseUi ? "" : undefined}>
-        <div className="overflow-hidden rounded-[28px] border border-lh-line bg-lh-white shadow-[0_24px_70px_rgba(28,19,24,0.08)]">
+        <article className="overflow-hidden rounded-[28px] border border-lh-line bg-lh-white shadow-[0_24px_70px_rgba(28,19,24,0.08)]">
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
             <div className="relative overflow-hidden bg-lh-shadow p-8 text-lh-neutral-2 md:p-10 lg:p-12">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,var(--lh-light-soft),transparent_30%),linear-gradient(145deg,var(--lh-shadow),var(--lh-accent)_58%,var(--lh-primary))]" aria-hidden="true" />
               <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-lh-shadow to-transparent" aria-hidden="true" />
-              <div className="relative z-10">
+              <header className="relative z-10">
                 <p className="eyebrow-label mb-4 text-lh-light">Training Contact</p>
                 <h2 className="section-heading text-balance text-lh-neutral-2">{labels.heading}</h2>
                 {labels.subHeading && (
@@ -177,7 +177,7 @@ export function TrainingProgramContactSection({
                     {programTitle}
                   </p>
                 </div>
-              </div>
+              </header>
             </div>
 
             <form onSubmit={handleSubmit} className="p-8 md:p-10 lg:p-12">
@@ -310,7 +310,7 @@ export function TrainingProgramContactSection({
               </Button>
             </form>
           </div>
-        </div>
+        </article>
       </div>
     </section>
   );

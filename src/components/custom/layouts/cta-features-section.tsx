@@ -30,13 +30,13 @@ export async function CtaFeaturesSection({data}: { data: TCtaFeaturesSection }) 
     <section className= "section-shell">
       <div className="content-container">
         {/* Section Header */}
-        <div className="text-container text-center mb-16">
+        <header className="text-container text-center mb-16">
           <h2 className="section-heading">{data.heading}</h2>
           <p className="font-heading text-lh-primary text-xl md:text-2xl lg:text-3xl mt-4">{data.subHeading}</p>
           {data.description && (
             <p className="mx-auto mt-6 max-w-2xl text-lh-shadow/80 leading-relaxed">{data.description}</p>
           )}
-        </div>
+        </header>
 
         {/* Features Grid */}
         <div className={`grid items-stretch gap-8 max-w-6xl mx-auto ${
@@ -47,7 +47,7 @@ export async function CtaFeaturesSection({data}: { data: TCtaFeaturesSection }) 
         }`}>
           {data.features.map((item: TCtaFeature, index: number) => (
             item.format === "imageFeature" ? (
-              <div
+              <article
                 key={item._key || index}
                 className={`editorial-card relative flex h-full min-h-[480px] w-full flex-col self-stretch overflow-hidden ${
                   item.mostPopular ? "border-lh-light border-2 shadow-md" : ""
@@ -104,9 +104,9 @@ export async function CtaFeaturesSection({data}: { data: TCtaFeaturesSection }) 
                     </Link>
                   )}
                 </div>
-              </div>
+              </article>
             ) : (
-              <div
+              <article
                 key={item._key || index}
                 className={`editorial-card relative flex h-full min-h-[480px] w-full flex-col self-stretch p-8 ${
                   item.mostPopular ? "border-lh-light border-2 shadow-md" : ""
@@ -157,7 +157,7 @@ export async function CtaFeaturesSection({data}: { data: TCtaFeaturesSection }) 
                     </Button>
                   </Link>
                 )}
-              </div>
+              </article>
             )
           ))}
         </div>

@@ -38,7 +38,7 @@ export function TrainingEditorialDetails({ data }: TrainingEditorialDetailsProps
           )}
 
           {facts.length > 0 && (
-            <div className="soft-panel mt-8 bg-lh-neutral-2/70 p-6 md:p-7">
+            <aside className="soft-panel mt-8 bg-lh-neutral-2/70 p-6 md:p-7">
               <p className="mb-5 font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-primary">
                 Program Facts
               </p>
@@ -50,7 +50,7 @@ export function TrainingEditorialDetails({ data }: TrainingEditorialDetailsProps
                   </li>
                 ))}
               </ul>
-            </div>
+            </aside>
           )}
         </div>
 

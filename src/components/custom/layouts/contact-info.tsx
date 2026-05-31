@@ -8,8 +8,8 @@ export function ContactInfo({ data }: { data: TContactInfo }) {
 
     const { heading, subHeading, contact } = data;
     return (
-        <div className="w-full max-w-lg md:max-w-none mx-auto px-4 py-4 md:px-0 md:py-0 xl:max-w-xl xl:py-0">
-            <div className="dark-panel relative flex flex-col p-5 md:p-4 xl:p-6">
+        <aside className="w-full max-w-lg md:max-w-none mx-auto px-4 py-4 md:px-0 md:py-0 xl:max-w-xl xl:py-0">
+            <section className="dark-panel relative flex flex-col p-5 md:p-4 xl:p-6">
                 <h2 className="text-2xl xl:text-3xl text-lh-neutral-2 font-heading mb-1">{heading}</h2>
                 <p className="text-lh-light font-heading tracking-widest uppercase mb-3 xl:mb-5">{subHeading}</p>
                 <div className="space-y-3 xl:space-y-5">
@@ -45,7 +45,7 @@ export function ContactInfo({ data }: { data: TContactInfo }) {
                         </div>
                     ))}
                 </div>
-            </div>
-        </div>
+            </section>
+        </aside>
     );
 }

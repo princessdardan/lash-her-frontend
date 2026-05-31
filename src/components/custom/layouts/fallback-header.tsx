@@ -18,7 +18,7 @@ export function FallbackHeader({ header }: IFallbackHeaderProps) {
 
   const { logoText, ctaButton } = header;
   return (
-    <div className={styles.header}>
+    <header className={styles.header}>
       <Logo data={logoText} />
       <div className={styles.actions}>
         {ctaButton.map((button, index) => (
@@ -27,6 +27,6 @@ export function FallbackHeader({ header }: IFallbackHeaderProps) {
           </Button>
         ))}
       </div>
-    </div>
+    </header>
   );
 }

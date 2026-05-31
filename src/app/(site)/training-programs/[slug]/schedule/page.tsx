@@ -79,13 +79,13 @@ export default async function TrainingSchedulePage({
   const appointmentScheduleEmbedUrl = getGoogleAppointmentScheduleEmbedUrl(appointmentScheduleUrl);
 
   return (
-    <div className="flex flex-col min-h-screen bg-lh-neutral-2">
+    <section className="flex flex-col min-h-screen bg-lh-neutral-2">
       <section className="section-shell py-16 md:py-24">
         <div className="content-container mx-auto">
-          <div className="mb-12 text-center">
+          <header className="mb-12 text-center">
             <h1 className="section-heading mb-2">Schedule Training Call</h1>
             <h2 className="section-subheading">{program.title}</h2>
-          </div>
+          </header>
           
           <AppointmentScheduleCard
             embedUrl={appointmentScheduleEmbedUrl}
@@ -96,7 +96,7 @@ export default async function TrainingSchedulePage({
           />
         </div>
       </section>
-    </div>
+    </section>
   );
 }
 
@@ -114,7 +114,7 @@ function AppointmentScheduleCard({
   scheduleUrl: string;
 }) {
   return (
-    <div className="soft-panel overflow-hidden rounded-2xl bg-white shadow-sm">
+    <article className="soft-panel overflow-hidden rounded-2xl bg-white shadow-sm">
       <div className="space-y-6 p-8 text-center md:p-12">
         <p className="eyebrow-text">Verified enrollment</p>
         <h3 className="section-subheading text-lh-shadow">Reserve your private intro call</h3>
@@ -157,7 +157,7 @@ function AppointmentScheduleCard({
           </a>
         </div>
       )}
-    </div>
+    </article>
   );
 }
 
@@ -188,10 +188,10 @@ function getGoogleAppointmentScheduleUrl(value: string | undefined): string | nu
 
 function SafeErrorShell({ programTitle }: { programTitle: string }) {
   return (
-    <div className="flex flex-col min-h-screen bg-lh-neutral-2">
+    <section className="flex flex-col min-h-screen bg-lh-neutral-2">
       <section className="section-shell py-16 md:py-24">
         <div className="content-container max-w-2xl mx-auto">
-          <div className="soft-panel p-8 md:p-12 rounded-2xl bg-white shadow-sm text-center">
+          <article className="soft-panel p-8 md:p-12 rounded-2xl bg-white shadow-sm text-center">
             <h1 className="section-heading mb-2">Scheduling Unavailable</h1>
             <h2 className="section-subheading mb-6">{programTitle}</h2>
 
@@ -219,9 +219,9 @@ function SafeErrorShell({ programTitle }: { programTitle: string }) {
                 </Link>
               </div>
             </div>
-          </div>
+          </article>
         </div>
       </section>
-    </div>
+    </section>
   );
 }

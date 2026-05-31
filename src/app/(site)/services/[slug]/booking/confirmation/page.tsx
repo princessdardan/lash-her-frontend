@@ -53,10 +53,10 @@ export default async function ServiceBookingConfirmationPage({
       : "We have sent a confirmation email with your appointment details. We look forward to seeing you.";
 
   return (
-    <div className="flex flex-col min-h-screen bg-lh-neutral-2">
+    <section className="flex flex-col min-h-screen bg-lh-neutral-2">
       <section className="section-shell py-16 md:py-24">
         <div className="content-container max-w-2xl mx-auto">
-          <div className="soft-panel p-8 md:p-12 rounded-2xl bg-white shadow-sm text-center">
+          <article className="soft-panel p-8 md:p-12 rounded-2xl bg-white shadow-sm text-center">
             <h1 className="section-heading mb-6">{title}</h1>
 
             <div className="space-y-6 text-lh-shadow/80 text-lg mb-8">
@@ -78,9 +78,9 @@ export default async function ServiceBookingConfirmationPage({
                 </Link>
               </div>
             </div>
-          </div>
+          </article>
         </div>
       </section>
-    </div>
+    </section>
   );
 }

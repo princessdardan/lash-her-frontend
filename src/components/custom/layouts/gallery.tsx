@@ -31,13 +31,13 @@ export function Gallery({ data }: { data: TPhotoGallery }) {
     return (
         <section className="section-shell overflow-hidden">
             <div className="container mx-auto max-w-2xl">
-                <div className="text-container max-w-4xl mx-auto text-center mb-16">
+                <header className="text-container max-w-4xl mx-auto text-center mb-16">
                     <h2 className="section-heading">{heading}</h2>
                     <p className="font-heading text-lh-primary text-xl md:text-2xl lg:text-3xl mt-4">{subHeading}</p>
                     {description && (
                         <p className="mx-auto mt-6 max-w-2xl text-lh-shadow/80 leading-relaxed">{description}</p>
                     )}
-                </div>
+                </header>
             </div>
             {hasImages && (
                 <div className="container mx-auto overflow-hidden">

@@ -161,15 +161,15 @@ export function GeneralInquiryForm({data}: { data: TGeneralInquiryLabels }) {
       };
 
     return (
-      <div id="general-inquiry" className="w-full scroll-mt-40 xl:max-w-4xl xl:mx-auto">
+      <section id="general-inquiry" className="w-full scroll-mt-40 xl:max-w-4xl xl:mx-auto">
         <Suspense fallback={null}>
           <ScrollToForm formId="general-inquiry" />
         </Suspense>
-        <div className="soft-panel relative flex flex-col p-4 xl:p-6">
-          <div className="mb-4 xl:mb-6">
+        <section className="soft-panel relative flex flex-col p-4 xl:p-6">
+          <header className="mb-4 xl:mb-6">
             <h2 className="section-heading text-lh-primary mb-1.5 md:text-3xl xl:text-5xl">{data.heading}</h2>
             <p className="body-lead text-lh-shadow max-w-xl md:text-sm md:leading-6 xl:text-base xl:leading-7">{data.subHeading}</p>
-          </div>
+          </header>
 
           <form onSubmit={handleSubmit} className="space-y-3 xl:space-y-4">
             <FieldGroup className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:gap-4">
@@ -299,8 +299,8 @@ export function GeneralInquiryForm({data}: { data: TGeneralInquiryLabels }) {
               {isSubmitting ? "Submitting..." : "Send Inquiry"}
             </Button>
           </form>
-      </div>
-    </div>
+      </section>
+    </section>
   );
 
 }
@@ -318,22 +318,22 @@ export function GeneralInquiryLayout({data}:{data: IGeneralInquiryLayoutProps}) 
   return (
     <section className="section-shell">
         <div className="content-container">
-            <div className="text-container">
+            <header className="text-container">
             <h1 className="section-heading">{data.title}</h1>
             <p className="section-subheading">{data.subTitle}</p>
             <p className="section-description">{data.description}</p>
-            </div>
+            </header>
             <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(15rem,0.82fr)_minmax(0,1.35fr)] md:items-start md:gap-5 xl:grid-cols-[5fr_8fr] xl:gap-16">
                 {/* Left Column - Schedule and Contact Info */}
-                <div className="grid gap-4 md:gap-4 xl:gap-5">
+                <aside className="grid gap-4 md:gap-4 xl:gap-5">
                     {data.contactInfoData && <ContactInfo data={data.contactInfoData} />}
                     {data.scheduleData && <Schedule data={data.scheduleData} />}
-                </div>
+                </aside>
 
                 {/* Right Column - General Inquiry Form */}
-                <div>
+                <section>
                     {data.generalInquiryData && <GeneralInquiryForm data={data.generalInquiryData} />}
-                </div>
+                </section>
             </div>
         </div>
     </section>
