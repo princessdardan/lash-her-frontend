@@ -21,6 +21,11 @@ export function ProductCatalogShell({
   const description = pageData?.description || "Discover our curated selection of premium lash products, training materials, and services.";
   const emptyStateTitle = pageData?.emptyStateTitle || "Check Back Soon";
   const emptyStateDescription = pageData?.emptyStateDescription || "We are currently updating our product catalog. Please check back later for our curated selection of premium lash products.";
+  const productGridClassName = products.length === 1
+    ? "grid grid-cols-1 justify-center gap-6 md:grid-cols-[minmax(0,24.5rem)]"
+    : products.length === 2
+      ? "grid grid-cols-1 justify-center gap-6 md:grid-cols-[repeat(2,minmax(0,24.5rem))]"
+      : "grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3";
 
   return (
     <div className="min-h-screen bg-lh-white">
@@ -79,7 +84,7 @@ export function ProductCatalogShell({
                   </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+                <div className={productGridClassName}>
                   {products.map((product) => (
                     <ProductCard key={product._id} product={product} />
                   ))}
