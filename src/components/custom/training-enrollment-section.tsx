@@ -100,7 +100,7 @@ export function TrainingEnrollmentSection({ data }: TrainingEnrollmentSectionPro
             {price !== null && (
               <div className="rounded-[24px] border border-lh-line bg-lh-neutral-2/70 p-5">
                 <p className="font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-muted">Investment</p>
-                <p className="mt-2 flex flex-col gap-1 font-body text-2xl font-bold text-lh-primary">
+                <p className="mt-2 flex flex-col gap-1 font-body text-2xl font-bold text-lh-primary [overflow-wrap:anywhere]">
                   {discountPrice !== null ? (
                     <span className="text-sm text-lh-muted line-through">{formatCad(price)}</span>
                   ) : null}
