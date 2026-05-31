@@ -122,7 +122,7 @@ function getBookingConfirmationHtml(input: BookingConfirmationHtmlInput): string
           </tr>
           <tr>
             <td style="padding:24px 32px;text-align:center;background-color:#1C1318;color:#F5F1F5;">
-              <p style="margin:0;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;">Quiet luxury lash artistry</p>
+              <p style="margin:0;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;">Bespoke luxury lash artistry</p>
             </td>
           </tr>
         </table>
