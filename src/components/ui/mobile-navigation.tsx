@@ -52,7 +52,7 @@ export function MobileNavigation({ ctaButton, menuItems = [], showCartButton = t
   };
 
   useEffect(() => {
-    const desktopQuery = window.matchMedia("(min-width: 768px)");
+    const desktopQuery = window.matchMedia("(min-width: 1301px)");
 
     const closeOnDesktop = () => {
       if (!desktopQuery.matches) return;

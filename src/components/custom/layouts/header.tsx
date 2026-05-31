@@ -90,12 +90,12 @@ function HeaderContent({ data, menuItems }: IHeaderProps) {
     <>
       <div className="w-full relative flex items-center justify-center">
         {/* Mobile hamburger - top left */}
-        <div className="absolute left-4 md:hidden">
+        <div className="absolute left-4 min-[1301px]:hidden">
           <MobileNavigation ctaButton={primaryCta} menuItems={menuItems} showCartButton={showCartButton} />
         </div>
 
         {/* Desktop navigation - left */}
-        <nav className="hidden md:flex absolute left-4 items-center gap-4" aria-label="Main navigation">
+        <nav className="hidden min-[1301px]:flex absolute left-4 items-center gap-4" aria-label="Main navigation">
           <NavigationMenu>
             <NavigationMenuList>
               {menuItems && menuItems.length > 0 && (
@@ -106,7 +106,7 @@ function HeaderContent({ data, menuItems }: IHeaderProps) {
         </nav>
         
         {/* Desktop CTA buttons - right, hidden on mobile */}
-        <div className="hidden md:flex absolute right-4 gap-2">
+        <div className="hidden min-[1301px]:flex absolute right-4 gap-2">
           {ctaButton.map((button, index) => (
             <HeaderButton key={index} href={button.href} label={button.label} isPrimary={index === 0} />
           ))}
