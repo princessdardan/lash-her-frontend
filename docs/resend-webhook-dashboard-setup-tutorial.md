@@ -43,6 +43,12 @@ RESEND_TEMPLATE_TRAINING_PAYMENT_CUSTOMER_ID=<template-id>
 RESEND_EVENT_MARKETING_CONTACT_OPTED_IN=lashher.marketing_contact.opted_in
 ```
 
+Optional for the shared transactional header image:
+
+```env
+EMAIL_PROFILE_IMAGE_URL=<public-https-profile-image-url>
+```
+
 ## Step 1: Create Or Select The Resend Project
 
 1. Sign in to Resend.
@@ -121,7 +127,7 @@ Templates are optional. If a template ID is not configured, the app uses its sou
 | Training payment admin notification | `RESEND_TEMPLATE_TRAINING_PAYMENT_ADMIN_ID` |
 | Training payment customer confirmation | `RESEND_TEMPLATE_TRAINING_PAYMENT_CUSTOMER_ID` |
 
-Use uppercase variables in templates, such as `CUSTOMER_NAME`, `CUSTOMER_FIRST_NAME`, `CUSTOMER_EMAIL`, `ORDER_ID`, `PROGRAM_TITLE`, `SOURCE_PATH`, and flow-specific fields. Test in staging before setting production template IDs.
+Use uppercase variables in templates, such as `CUSTOMER_NAME`, `CUSTOMER_FIRST_NAME`, `CUSTOMER_EMAIL`, `ORDER_ID`, `PROGRAM_TITLE`, `SOURCE_PATH`, `EMAIL_PROFILE_IMAGE_HTML`, and flow-specific fields. Keep `{{{EMAIL_PROFILE_IMAGE_HTML}}}` in the header where the app-managed profile image should appear; the app fills it from `EMAIL_PROFILE_IMAGE_URL` at send time. Test in staging before setting production template IDs.
 
 ## Step 7: Create The Resend Webhook
 

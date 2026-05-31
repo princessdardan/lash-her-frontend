@@ -17,6 +17,8 @@ export interface EmailConfig {
 
 const EMAIL_PROFILE_IMAGE_URL_ENV = "EMAIL_PROFILE_IMAGE_URL";
 
+export const EMAIL_PROFILE_IMAGE_HTML_VARIABLE = "EMAIL_PROFILE_IMAGE_HTML";
+
 export interface SendTransactionalEmailInput {
   from?: string;
   html?: string;
@@ -134,6 +136,12 @@ export function getEmailProfileImageHtml(): string {
   <img src="${escapeHtml(profileImageUrl)}" width="72" height="72" alt="Lash Her by Nataliea profile picture" style="display:block;width:72px;height:72px;border:0;border-radius:999px;object-fit:cover;">
 </div>
   `.trim();
+}
+
+export function getEmailProfileImageTemplateVariables(): Record<typeof EMAIL_PROFILE_IMAGE_HTML_VARIABLE, string> {
+  return {
+    [EMAIL_PROFILE_IMAGE_HTML_VARIABLE]: getEmailProfileImageHtml(),
+  };
 }
 
 export function mailtoHref(email: string): string {

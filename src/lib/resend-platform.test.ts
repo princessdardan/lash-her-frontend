@@ -6,6 +6,7 @@ const helperScript = String.raw`
 
   import {
     buildResendMarketingContactSyncPlan,
+    getConfiguredTransactionalTemplate,
     syncResendMarketingContact,
     toResendTemplateVariables,
   } from "./src/lib/resend-platform.ts";
@@ -42,6 +43,25 @@ test("Resend template variables normalize primitive dashboard values", () => {
       objectValue: '{"source":"contact_popup"}',
       stringValue: "Lash Her",
     });
+  `);
+});
+
+test("configured transactional templates include the runtime email profile image HTML", () => {
+  runResendPlatformScenario(`
+    process.env.RESEND_TEMPLATE_BOOKING_CONFIRMATION_ID = "template-booking";
+    process.env.EMAIL_PROFILE_IMAGE_URL = " https://assets.lashher.test/logo<profile>.jpeg?size=72&theme=dark ";
+
+    const template = getConfiguredTransactionalTemplate("booking_confirmation", {
+      CUSTOMER_NAME: "Client Name",
+    });
+
+    assert.equal(template.id, "template-booking");
+    assert.equal(template.variables.CUSTOMER_NAME, "Client Name");
+    assert.match(template.variables.EMAIL_PROFILE_IMAGE_HTML, /<img/);
+    assert.equal(
+      template.variables.EMAIL_PROFILE_IMAGE_HTML.includes('src="https://assets.lashher.test/logo&lt;profile&gt;.jpeg?size=72&amp;theme=dark"'),
+      true,
+    );
   `);
 });
 
@@ -137,8 +157,10 @@ function runResendPlatformScenario(assertions: string): void {
 
   env.NEXT_PUBLIC_SANITY_DATASET = "test";
   env.NEXT_PUBLIC_SANITY_PROJECT_ID = "test-project";
+  delete env.EMAIL_PROFILE_IMAGE_URL;
   delete env.RESEND_API_KEY;
   delete env.RESEND_EVENT_MARKETING_CONTACT_OPTED_IN;
+  delete env.RESEND_TEMPLATE_BOOKING_CONFIRMATION_ID;
   delete env.RESEND_SEGMENT_CONTACT_POPUP_ID;
   delete env.RESEND_SEGMENT_MARKETING_ID;
   delete env.RESEND_SEGMENT_TRAINING_CONTACT_ID;

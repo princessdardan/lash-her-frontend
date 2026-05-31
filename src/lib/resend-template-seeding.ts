@@ -32,7 +32,12 @@ import {
   type TrainingContactData,
 } from "@/lib/email";
 import { createResendTemplate, publishResendTemplate, type ResendEmailTemplateKey } from "@/lib/resend-platform";
-import { escapeHtml } from "@/lib/transactional-email";
+import {
+  EMAIL_PROFILE_IMAGE_HTML_VARIABLE,
+  escapeHtml,
+  getEmailProfileImageHtml,
+  getEmailProfileImageTemplateVariables,
+} from "@/lib/transactional-email";
 
 export type ResendSeedTemplateVariable = NonNullable<CreateTemplateOptions["variables"]>[number];
 
@@ -96,6 +101,7 @@ const TEMPLATE_NAME_BY_KEY: Record<ResendEmailTemplateKey, string> = {
 const RESEND_TEMPLATE_SEED_REQUEST_INTERVAL_MS = 350;
 const RESEND_TEMPLATE_SEED_RATE_LIMIT_RETRY_MS = 1_500;
 const RESEND_TEMPLATE_SEED_RATE_LIMIT_RETRIES = 3;
+const RESEND_TEMPLATE_PROFILE_IMAGE_PLACEHOLDER_URL = "https://assets.lashher.test/email-profile-placeholder.jpg";
 
 const SAMPLE_GENERAL_INQUIRY: GeneralInquiryData = {
   consentText: "I agree to receive Lash Her updates.",
@@ -271,7 +277,7 @@ function waitForResendTemplateSeedRateLimit(delayMs: number): Promise<void> {
 
 function buildBookingDefinition(): ResendSeedTemplateDefinition {
   return buildDefinition({
-    html: buildBookingConfirmationFallbackHtml(SAMPLE_BOOKING_CONFIRMATION),
+    html: buildTemplateHtmlWithProfileImageVariable(() => buildBookingConfirmationFallbackHtml(SAMPLE_BOOKING_CONFIRMATION)),
     key: "booking_confirmation",
     subject: BOOKING_CONFIRMATION_EMAIL_SUBJECT,
     variables: getBookingConfirmationSeedTemplateVariables(SAMPLE_BOOKING_CONFIRMATION),
@@ -280,7 +286,7 @@ function buildBookingDefinition(): ResendSeedTemplateDefinition {
 
 function buildProductDefinition(): ResendSeedTemplateDefinition {
   return buildDefinition({
-    html: buildProductOrderConfirmationHtml(SAMPLE_PRODUCT_CONFIRMATION),
+    html: buildTemplateHtmlWithProfileImageVariable(() => buildProductOrderConfirmationHtml(SAMPLE_PRODUCT_CONFIRMATION)),
     key: "product_confirmation",
     subject: PRODUCT_ORDER_CONFIRMATION_EMAIL_SUBJECT,
     variables: getProductOrderTemplateVariables(SAMPLE_PRODUCT_CONFIRMATION),
@@ -289,7 +295,7 @@ function buildProductDefinition(): ResendSeedTemplateDefinition {
 
 function buildTrainingPaymentAdminDefinition(): ResendSeedTemplateDefinition {
   return buildDefinition({
-    html: getAdminTrainingPaymentHtml(SAMPLE_TRAINING_PAYMENT),
+    html: buildTemplateHtmlWithProfileImageVariable(() => getAdminTrainingPaymentHtml(SAMPLE_TRAINING_PAYMENT)),
     key: "training_payment_admin",
     subject: `Training paid — scheduling pending — ${SAMPLE_TRAINING_PAYMENT.orderId}`,
     variables: getTrainingPaymentTemplateVariables(SAMPLE_TRAINING_PAYMENT),
@@ -298,7 +304,7 @@ function buildTrainingPaymentAdminDefinition(): ResendSeedTemplateDefinition {
 
 function buildTrainingPaymentCustomerDefinition(): ResendSeedTemplateDefinition {
   return buildDefinition({
-    html: getCustomerTrainingPaymentHtml(SAMPLE_TRAINING_PAYMENT),
+    html: buildTemplateHtmlWithProfileImageVariable(() => getCustomerTrainingPaymentHtml(SAMPLE_TRAINING_PAYMENT)),
     key: "training_payment_customer",
     subject: TRAINING_PAYMENT_CUSTOMER_EMAIL_SUBJECT,
     variables: getTrainingPaymentTemplateVariables(SAMPLE_TRAINING_PAYMENT),
@@ -312,11 +318,29 @@ function buildFormDefinition(
   sample: GeneralInquiryData | TrainingContactData | ContactPopupData,
 ): ResendSeedTemplateDefinition {
   return buildDefinition({
-    html: buildFormEmailFallbackHtml(audience, formType, sample),
+    html: buildTemplateHtmlWithProfileImageVariable(() => buildFormEmailFallbackHtml(audience, formType, sample)),
     key,
     subject: getFormEmailSubject(audience, formType, sample),
     variables: getFormEmailTemplateVariables(formType, sample, SAMPLE_SUBMITTED_AT),
   });
+}
+
+function buildTemplateHtmlWithProfileImageVariable(buildHtml: () => string): string {
+  const previousProfileImageUrl = process.env.EMAIL_PROFILE_IMAGE_URL;
+
+  process.env.EMAIL_PROFILE_IMAGE_URL = RESEND_TEMPLATE_PROFILE_IMAGE_PLACEHOLDER_URL;
+
+  try {
+    const profileImageHtml = getEmailProfileImageHtml();
+
+    return buildHtml().split(profileImageHtml).join(`{{{${EMAIL_PROFILE_IMAGE_HTML_VARIABLE}}}}`);
+  } finally {
+    if (previousProfileImageUrl === undefined) {
+      delete process.env.EMAIL_PROFILE_IMAGE_URL;
+    } else {
+      process.env.EMAIL_PROFILE_IMAGE_URL = previousProfileImageUrl;
+    }
+  }
 }
 
 function buildDefinition(input: {
@@ -325,9 +349,13 @@ function buildDefinition(input: {
   subject: string;
   variables: Record<string, unknown>;
 }): ResendSeedTemplateDefinition {
-  const html = replaceSampleValuesWithTemplateVariables(input.html, input.variables);
-  const subject = replaceSampleValuesWithTemplateVariables(input.subject, input.variables);
-  const variables = getVariablesUsedByHtml(`${html}\n${subject}`, input.variables);
+  const templateVariables = {
+    ...input.variables,
+    ...getEmailProfileImageTemplateVariables(),
+  };
+  const html = replaceSampleValuesWithTemplateVariables(input.html, templateVariables);
+  const subject = replaceSampleValuesWithTemplateVariables(input.subject, templateVariables);
+  const variables = getVariablesUsedByHtml(`${html}\n${subject}`, templateVariables);
 
   return {
     envVar: TEMPLATE_ENV_BY_KEY[input.key],

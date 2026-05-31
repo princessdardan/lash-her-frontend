@@ -24,6 +24,7 @@ import type {
 } from "resend";
 
 import {
+  getEmailProfileImageTemplateVariables,
   getResendClient,
   type TransactionalEmailTemplate,
   type TransactionalEmailTemplateVariables,
@@ -119,7 +120,10 @@ export function getConfiguredTransactionalTemplate(
 
   return {
     id,
-    variables: toResendTemplateVariables(variables),
+    variables: toResendTemplateVariables({
+      ...variables,
+      ...getEmailProfileImageTemplateVariables(),
+    }),
   };
 }
 

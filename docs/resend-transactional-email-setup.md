@@ -63,7 +63,7 @@ RESEND_TOPIC_TRAINING_ID=<optional-topic-id>
 RESEND_EVENT_MARKETING_CONTACT_OPTED_IN=<optional-event-name>
 ```
 
-`EMAIL_PROFILE_IMAGE_URL` is optional. When set, the app renders that public HTTPS image as a small circular profile mark inside the HTML header of transactional emails. It is not a secret and must be reachable by email clients without authentication.
+`EMAIL_PROFILE_IMAGE_URL` is optional. When set, the app renders that public HTTPS image as a small circular profile mark inside the HTML header of transactional emails. It is not a secret and must be reachable by email clients without authentication. For Resend Dashboard templates, seeded templates include a `{{{EMAIL_PROFILE_IMAGE_HTML}}}` placeholder and the app sends that variable from the current runtime value of `EMAIL_PROFILE_IMAGE_URL`.
 
 Vercel setup:
 
@@ -97,7 +97,7 @@ Production stop conditions:
 
 There are two separate ways an image can appear in email:
 
-1. **Inside the email body.** Set `EMAIL_PROFILE_IMAGE_URL` to a public HTTPS image URL. The app adds it to the header area of Resend transactional email HTML. Use a square image so the circular crop looks intentional.
+1. **Inside the email body.** Set `EMAIL_PROFILE_IMAGE_URL` to a public HTTPS image URL. The app adds it to the header area of Resend transactional email HTML. Use a square image so the circular crop looks intentional. If a Resend Dashboard template ID is configured, the template must include `{{{EMAIL_PROFILE_IMAGE_HTML}}}` where that header image should appear.
 2. **As the inbox sender avatar.** Resend does not provide a send-API field that forces Gmail, Outlook, Apple Mail, or other clients to show a profile picture beside the sender. That image is controlled by the recipient's email provider.
 
 For inbox avatars, configure one or more provider/domain-level options outside the app:
@@ -149,7 +149,7 @@ Admins can manage transactional email copy in Resend Templates. The code keeps a
 | Training payment admin notification | `RESEND_TEMPLATE_TRAINING_PAYMENT_ADMIN_ID` |
 | Training payment customer confirmation | `RESEND_TEMPLATE_TRAINING_PAYMENT_CUSTOMER_ID` |
 
-Template variables are sent as uppercase keys such as `CUSTOMER_NAME`, `CUSTOMER_FIRST_NAME`, `CUSTOMER_EMAIL`, `ORDER_ID`, `PROGRAM_TITLE`, `SOURCE_PATH`, and flow-specific fields. Check the fallback HTML for each flow before editing templates so the dashboard copy preserves required operational content.
+Template variables are sent as uppercase keys such as `CUSTOMER_NAME`, `CUSTOMER_FIRST_NAME`, `CUSTOMER_EMAIL`, `ORDER_ID`, `PROGRAM_TITLE`, `SOURCE_PATH`, `EMAIL_PROFILE_IMAGE_HTML`, and flow-specific fields. Check the fallback HTML for each flow before editing templates so the dashboard copy preserves required operational content.
 
 ### Seed Dashboard Templates From Source Fallbacks
 
@@ -178,7 +178,7 @@ The apply command intentionally spaces out Resend template create/publish calls 
 
 Resend template IDs returned by the Templates API are UUIDs, for example `d9b7207a-730e-4050-9263-aa4031c3170c`. Copy the UUID exactly into the matching `RESEND_TEMPLATE_*_ID` variable. Do not prepend `tmpl_`.
 
-The seeded templates remain normal Resend Dashboard templates after creation. Admins can edit and republish copy in the dashboard as long as they keep the triple-brace variables used by the app, such as `{{{CUSTOMER_NAME}}}`, `{{{ORDER_ID}}}`, and `{{{SCHEDULING_URL}}}`.
+The seeded templates remain normal Resend Dashboard templates after creation. Admins can edit and republish copy in the dashboard as long as they keep the triple-brace variables used by the app, such as `{{{CUSTOMER_NAME}}}`, `{{{ORDER_ID}}}`, `{{{SCHEDULING_URL}}}`, and `{{{EMAIL_PROFILE_IMAGE_HTML}}}`. If an existing template was created before `EMAIL_PROFILE_IMAGE_HTML` existed, re-seed/recreate it or manually add the placeholder in the header before expecting `EMAIL_PROFILE_IMAGE_URL` to affect that template.
 
 Do not remove legal/operational details from payment, booking, or training templates. Use Resend preview/testing against staging before setting a production template ID.
 
