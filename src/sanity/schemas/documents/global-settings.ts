@@ -4,21 +4,30 @@ export const globalSettings = defineType({
   name: "globalSettings",
   title: "Global Settings",
   type: "document",
+  groups: [
+    { name: "site", title: "Site" },
+    { name: "media", title: "Media" },
+    { name: "navigation", title: "Navigation" },
+    { name: "forms", title: "Forms" },
+  ],
   fields: [
     defineField({
       name: "title",
       title: "Title",
       type: "string",
+      group: "site",
     }),
     defineField({
       name: "description",
       title: "Description",
       type: "text",
+      group: "site",
     }),
     defineField({
       name: "ogImage",
       title: "Open Graph Image",
       type: "image",
+      group: "media",
       description: "Default social sharing image (recommended: 1200 x 630px)",
       options: { hotspot: false },
     }),
@@ -26,16 +35,19 @@ export const globalSettings = defineType({
       name: "header",
       title: "Header",
       type: "header",
+      group: "navigation",
     }),
     defineField({
       name: "footer",
       title: "Footer",
       type: "footer",
+      group: "navigation",
     }),
     defineField({
       name: "contactPopup",
       title: "Contact Popup",
       type: "object",
+      group: "forms",
       fields: [
         defineField({
           name: "enabled",

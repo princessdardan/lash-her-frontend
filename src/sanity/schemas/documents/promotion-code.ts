@@ -12,17 +12,24 @@ export const promotionCode = defineType({
   title: "Promotion Code",
   type: "document",
   icon: TagIcon,
+  groups: [
+    { name: "overview", title: "Overview" },
+    { name: "discount", title: "Discount" },
+    { name: "eligibility", title: "Eligibility" },
+  ],
   fields: [
     defineField({
       name: "title",
       title: "Internal Title",
       type: "string",
+      group: "overview",
       validation: (Rule) => Rule.required(),
     }),
     defineField({
       name: "code",
       title: "Code",
       type: "string",
+      group: "overview",
       description: "Customer-facing checkout code. Use uppercase letters, numbers, dashes, or underscores.",
       validation: (Rule) => Rule.required().custom((value) => {
         const code = normalizeCode(value);
@@ -35,6 +42,7 @@ export const promotionCode = defineType({
       name: "isEnabled",
       title: "Enabled",
       type: "boolean",
+      group: "overview",
       initialValue: true,
       validation: (Rule) => Rule.required(),
     }),
@@ -42,6 +50,7 @@ export const promotionCode = defineType({
       name: "discountType",
       title: "Discount Type",
       type: "string",
+      group: "discount",
       initialValue: "percentage",
       options: {
         layout: "radio",
@@ -56,6 +65,7 @@ export const promotionCode = defineType({
       name: "amount",
       title: "Discount Amount",
       type: "number",
+      group: "discount",
       description: "Percentage value for percentage discounts, or CAD amount for fixed discounts.",
       validation: (Rule) => Rule.required().min(0.01).custom((value, context) => {
         if (typeof value !== "number") return "Discount amount is required.";
@@ -69,6 +79,7 @@ export const promotionCode = defineType({
       name: "appliesTo",
       title: "Applies To",
       type: "string",
+      group: "eligibility",
       initialValue: "all",
       options: {
         layout: "radio",
@@ -85,6 +96,7 @@ export const promotionCode = defineType({
       name: "products",
       title: "Eligible Products",
       type: "array",
+      group: "eligibility",
       hidden: ({ document }) => document?.appliesTo !== "specificItems",
       of: [defineArrayMember({ type: "reference", to: [{ type: "product" }] })],
     }),
@@ -92,6 +104,7 @@ export const promotionCode = defineType({
       name: "trainingPrograms",
       title: "Eligible Training Programs",
       type: "array",
+      group: "eligibility",
       hidden: ({ document }) => document?.appliesTo !== "specificItems",
       of: [defineArrayMember({ type: "reference", to: [{ type: "trainingProgram" }] })],
     }),

@@ -4,17 +4,29 @@ export const product = defineType({
   name: "product",
   title: "Product",
   type: "document",
+  groups: [
+    { name: "overview", title: "Overview" },
+    { name: "pricing", title: "Pricing" },
+    { name: "catalog", title: "Catalog" },
+    { name: "media", title: "Media" },
+    { name: "variants", title: "Variants" },
+    { name: "details", title: "Details" },
+    { name: "legacy", title: "Legacy Fields" },
+    { name: "seo", title: "SEO" },
+  ],
   fields: [
     defineField({
       name: "title",
       title: "Title",
       type: "string",
+      group: "overview",
       validation: (Rule) => Rule.required(),
     }),
     defineField({
       name: "slug",
       title: "Slug",
       type: "slug",
+      group: "overview",
       options: { source: "title" },
       validation: (Rule) => Rule.required(),
     }),
@@ -22,35 +34,41 @@ export const product = defineType({
       name: "description",
       title: "Description",
       type: "text",
+      group: "overview",
       validation: (Rule) => Rule.required(),
     }),
     defineField({
       name: "shortDescription",
       title: "Short Description",
       type: "text",
+      group: "overview",
     }),
     defineField({
       name: "cardSubtitle",
       title: "Card Subtitle",
       type: "string",
+      group: "overview",
       description: "Short catalog card label, such as retention or finish details.",
     }),
     defineField({
       name: "badgeLabel",
       title: "Badge Label",
       type: "string",
+      group: "catalog",
       description: "Optional merchandising label, such as Best Seller or New.",
     }),
     defineField({
       name: "price",
       title: "Price",
       type: "number",
+      group: "pricing",
       validation: (Rule) => Rule.required().min(0),
     }),
     defineField({
       name: "discountPrice",
       title: "Manual Discount Price",
       type: "number",
+      group: "pricing",
       description: "Optional sale price configured directly in Sanity. Must be lower than the regular price.",
       validation: (Rule) => Rule.min(0).custom((value, context) => {
         if (value === undefined) return true;
@@ -63,12 +81,14 @@ export const product = defineType({
       name: "sku",
       title: "Merchant SKU",
       type: "string",
+      group: "pricing",
       description: "Optional merchant-facing SKU for reconciliation. Generated fallback codes are internal and not shown to customers.",
     }),
     defineField({
       name: "currency",
       title: "Currency",
       type: "string",
+      group: "pricing",
       initialValue: "CAD",
       readOnly: true,
       validation: (Rule) => Rule.required(),
@@ -77,6 +97,7 @@ export const product = defineType({
       name: "collections",
       title: "Collections",
       type: "array",
+      group: "catalog",
       of: [
         defineArrayMember({
           type: "reference",
@@ -88,6 +109,7 @@ export const product = defineType({
       name: "filterAttributes",
       title: "Filter Attributes (Deprecated)",
       type: "array",
+      group: "legacy",
       description: "Deprecated catalog filter metadata. The public product catalog no longer supports filters.",
       deprecated: {
         reason: "Catalog filters were removed from the public product route.",
@@ -113,6 +135,7 @@ export const product = defineType({
       name: "optionGroups",
       title: "Option Groups",
       type: "array",
+      group: "variants",
       description: "Groups used by the product detail option UI, such as Curl or Diameter.",
       of: [
         defineArrayMember({
@@ -144,6 +167,7 @@ export const product = defineType({
       name: "isAvailable",
       title: "Available for checkout",
       type: "boolean",
+      group: "catalog",
       initialValue: true,
       validation: (Rule) => Rule.required(),
     }),
@@ -151,18 +175,21 @@ export const product = defineType({
       name: "availabilityLabel",
       title: "Availability Label",
       type: "string",
+      group: "catalog",
       description: "e.g., 'In Stock', 'Out of Stock', or 'Pre-order'.",
     }),
     defineField({
       name: "fulfillmentNote",
       title: "Fulfillment Note",
       type: "text",
+      group: "catalog",
       description: "e.g., pickup, delivery, digital delivery, or care instructions.",
     }),
     defineField({
       name: "displayOrder",
       title: "Display Order",
       type: "number",
+      group: "catalog",
       initialValue: 0,
       validation: (Rule) => Rule.integer(),
     }),
@@ -170,6 +197,7 @@ export const product = defineType({
       name: "image",
       title: "Image",
       type: "image",
+      group: "media",
       options: { hotspot: true },
       fields: [
         defineField({ name: "alt", title: "Alt text", type: "string" }),
@@ -179,6 +207,7 @@ export const product = defineType({
       name: "gallery",
       title: "Gallery Images",
       type: "array",
+      group: "media",
       of: [
         defineArrayMember({
           type: "image",
@@ -193,6 +222,7 @@ export const product = defineType({
       name: "variants",
       title: "Variants",
       type: "array",
+      group: "variants",
       description: "Optional purchasable choices such as size, finish, or format.",
       of: [
         defineArrayMember({
@@ -283,6 +313,7 @@ export const product = defineType({
       name: "detailSections",
       title: "Detail Sections",
       type: "array",
+      group: "details",
       of: [
         defineArrayMember({
           type: "object",
@@ -324,9 +355,6 @@ export const product = defineType({
         }),
       ],
     }),
-  ],
-  groups: [
-    { name: "seo", title: "SEO" },
   ],
   preview: {
     select: {
