@@ -15,6 +15,8 @@ export interface EmailConfig {
   fromEmail: string;
 }
 
+const EMAIL_PROFILE_IMAGE_URL_ENV = "EMAIL_PROFILE_IMAGE_URL";
+
 export interface SendTransactionalEmailInput {
   from?: string;
   html: string;
@@ -92,6 +94,20 @@ export function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (character) => replacements[character] ?? character);
 }
 
+export function getEmailProfileImageHtml(): string {
+  const profileImageUrl = getOptionalEnv(EMAIL_PROFILE_IMAGE_URL_ENV);
+
+  if (profileImageUrl === undefined) {
+    return "";
+  }
+
+  return `
+<div style="margin:0 auto 18px auto;width:72px;height:72px;border-radius:999px;overflow:hidden;border:1px solid rgba(245,241,245,0.45);">
+  <img src="${escapeHtml(profileImageUrl)}" width="72" height="72" alt="Lash Her by Nataliea profile picture" style="display:block;width:72px;height:72px;border:0;border-radius:999px;object-fit:cover;">
+</div>
+  `.trim();
+}
+
 export function mailtoHref(email: string): string {
   return `mailto:${encodeURIComponent(email)}`;
 }
@@ -110,6 +126,16 @@ function getRequiredEnv(name: string): string {
 
   if (value === undefined || value.length === 0) {
     throw new Error(`${name} is required`);
+  }
+
+  return value;
+}
+
+function getOptionalEnv(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+
+  if (value === undefined || value.length === 0) {
+    return undefined;
   }
 
   return value;

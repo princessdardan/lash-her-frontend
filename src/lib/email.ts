@@ -4,6 +4,7 @@ import {
   CUSTOMER_REPLY_TO_EMAIL,
   escapeHtml,
   getEmailConfig,
+  getEmailProfileImageHtml,
   mailtoHref,
   sendTransactionalEmail,
   telHref,
@@ -97,6 +98,7 @@ function getGeneralInquiryAdminHtml(data: GeneralInquiryData): string {
           <!-- Header -->
           <tr>
             <td style="background: #1C1318; padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+              ${getEmailProfileImageHtml()}
               <h1 style="margin: 0; color: #FFFFFF; font-size: 24px; font-weight: 600; font-family: 'Bebas Neue', 'Arial Narrow', Impact, sans-serif; letter-spacing: 0.04em; text-transform: uppercase;">
                 New General Inquiry
               </h1>
@@ -224,6 +226,7 @@ function getTrainingContactAdminHtml(data: TrainingContactData): string {
           <!-- Header -->
           <tr>
             <td style="background: #1C1318; padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+              ${getEmailProfileImageHtml()}
               <h1 style="margin: 0; color: #FFFFFF; font-size: 24px; font-weight: 600; font-family: 'Bebas Neue', 'Arial Narrow', Impact, sans-serif; letter-spacing: 0.04em; text-transform: uppercase;">
                 🎓 New Training Inquiry
               </h1>
@@ -355,6 +358,7 @@ function getGeneralInquiryUserHtml(data: GeneralInquiryData): string {
           <!-- Header -->
           <tr>
             <td style="background: #1C1318; padding: 40px 30px; text-align: center; border-radius: 8px 8px 0 0;">
+              ${getEmailProfileImageHtml()}
               <h1 style="margin: 0; color: #FFFFFF; font-size: 28px; font-weight: 600; font-family: 'Bebas Neue', 'Arial Narrow', Impact, sans-serif; letter-spacing: 0.04em; text-transform: uppercase;">
                 Lash Her by Nataliea
               </h1>
@@ -443,6 +447,7 @@ function getTrainingContactUserHtml(data: TrainingContactData): string {
           <!-- Header -->
           <tr>
             <td style="background: #1C1318; padding: 40px 30px; text-align: center; border-radius: 8px 8px 0 0;">
+              ${getEmailProfileImageHtml()}
               <h1 style="margin: 0; color: #FFFFFF; font-size: 28px; font-weight: 600; font-family: 'Bebas Neue', 'Arial Narrow', Impact, sans-serif; letter-spacing: 0.04em; text-transform: uppercase;">
                 Lash Her by Nataliea
               </h1>
@@ -558,6 +563,7 @@ function getContactPopupAdminHtml(data: ContactPopupData): string {
         <table role="presentation" style="max-width: 600px; width: 100%; background-color: #FFFFFF; border-radius: 8px; box-shadow: 0 12px 32px rgba(28, 19, 24, 0.08);">
           <tr>
             <td style="background: #1C1318; padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+              ${getEmailProfileImageHtml()}
               <h1 style="margin: 0; color: #FFFFFF; font-size: 24px; font-weight: 600; font-family: 'Bebas Neue', 'Arial Narrow', Impact, sans-serif; letter-spacing: 0.04em; text-transform: uppercase;">
                 ✨ New Popup Lead
               </h1>
@@ -635,6 +641,7 @@ function getContactPopupUserHtml(data: ContactPopupData): string {
         <table role="presentation" style="max-width: 600px; width: 100%; background-color: #FFFFFF; border-radius: 8px; box-shadow: 0 12px 32px rgba(28, 19, 24, 0.08);">
           <tr>
             <td style="background: #1C1318; padding: 40px 30px; text-align: center; border-radius: 8px 8px 0 0;">
+              ${getEmailProfileImageHtml()}
               <h1 style="margin: 0; color: #FFFFFF; font-size: 28px; font-weight: 600; font-family: 'Bebas Neue', 'Arial Narrow', Impact, sans-serif; letter-spacing: 0.04em; text-transform: uppercase;">
                 Lash Her by Nataliea
               </h1>

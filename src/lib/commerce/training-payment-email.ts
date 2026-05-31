@@ -1,6 +1,6 @@
 import "server-only";
 
-import { CUSTOMER_REPLY_TO_EMAIL, escapeHtml, getEmailConfig, sendTransactionalEmail } from "@/lib/transactional-email";
+import { CUSTOMER_REPLY_TO_EMAIL, escapeHtml, getEmailConfig, getEmailProfileImageHtml, sendTransactionalEmail } from "@/lib/transactional-email";
 
 export interface SendTrainingPaymentNotificationEmailsInput {
   customerEmail: string;
@@ -74,6 +74,7 @@ function getCustomerTrainingPaymentHtml(
         <table role="presentation" style="width:100%;max-width:600px;border-collapse:collapse;background-color:#FFFFFF;border:1px solid #E8E2E9;">
           <tr>
             <td style="padding:34px 32px;text-align:center;background-color:#1C1318;color:#FFFFFF;">
+              ${getEmailProfileImageHtml()}
               <p style="margin:0 0 10px 0;font-size:12px;letter-spacing:0.22em;text-transform:uppercase;">Lash Her by Nataliea</p>
               <h1 style="margin:0;font-family:'Bebas Neue','Arial Narrow',Impact,sans-serif;letter-spacing:0.04em;text-transform:uppercase;font-size:30px;font-weight:500;line-height:1.2;">Training payment confirmed</h1>
             </td>
@@ -113,6 +114,7 @@ function getAdminTrainingPaymentHtml(
   <table role="presentation" style="width:100%;border-collapse:collapse;">
     <tr>
       <td style="padding:28px;">
+        ${getEmailProfileImageHtml()}
         <h1 style="margin:0 0 18px 0;font-family:'Bebas Neue','Arial Narrow',Impact,sans-serif;letter-spacing:0.04em;text-transform:uppercase;font-size:26px;font-weight:500;">Training payment received</h1>
         <p style="margin:0 0 12px 0;line-height:1.6;"><strong>Status:</strong> paid — scheduling pending</p>
         <p style="margin:0 0 12px 0;line-height:1.6;"><strong>Purchaser:</strong> ${escapeHtml(input.customerName)} &lt;${escapeHtml(input.customerEmail)}&gt;</p>

@@ -6,7 +6,7 @@ import {
   recordBookingConfirmationEmailFailure,
   type BookingConfirmationEmailClaimRecord,
 } from "./holds";
-import { CUSTOMER_REPLY_TO_EMAIL, escapeHtml, sendTransactionalEmail } from "@/lib/transactional-email";
+import { CUSTOMER_REPLY_TO_EMAIL, escapeHtml, getEmailProfileImageHtml, sendTransactionalEmail } from "@/lib/transactional-email";
 
 export interface SendBookingConfirmationInput {
   bookingTypeLabel: string;
@@ -106,6 +106,7 @@ function getBookingConfirmationHtml(input: BookingConfirmationHtmlInput): string
         <table role="presentation" style="width:100%;max-width:600px;border-collapse:collapse;background-color:#FFFFFF;border:1px solid #E8E2E9;">
           <tr>
             <td style="padding:34px 32px;text-align:center;background-color:#1C1318;color:#FFFFFF;">
+              ${getEmailProfileImageHtml()}
               <p style="margin:0 0 10px 0;font-size:12px;letter-spacing:0.22em;text-transform:uppercase;">Lash Her by Nataliea</p>
               <h1 style="margin:0;font-family:'Bebas Neue','Arial Narrow',Impact,sans-serif;letter-spacing:0.04em;text-transform:uppercase;font-size:30px;font-weight:500;line-height:1.2;">Your booking is confirmed</h1>
             </td>

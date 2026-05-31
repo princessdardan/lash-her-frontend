@@ -22,7 +22,7 @@ Payment-related email delivery is intentionally idempotent:
 
 The private database stores email sent/claim/error state so browser validation and webhook retries can recover missed sends without duplicating successfully recorded emails.
 
-## Required Environment Variables
+## Resend Environment Variables
 
 All Resend variables are server-only. Never add a `NEXT_PUBLIC_` prefix.
 
@@ -30,12 +30,15 @@ All Resend variables are server-only. Never add a `NEXT_PUBLIC_` prefix.
 RESEND_API_KEY=<resend-api-key>
 FROM_EMAIL=<verified-transactional-sender-address>
 ADMIN_EMAIL=<admin-recipient-address>
+EMAIL_PROFILE_IMAGE_URL=<optional-public-https-profile-image-url>
 EMAIL_RETRY_SECRET=<long-random-manual-retry-secret>
 ```
 
+`EMAIL_PROFILE_IMAGE_URL` is optional. When set, the app renders that public HTTPS image as a small circular profile mark inside the HTML header of transactional emails. It is not a secret and must be reachable by email clients without authentication.
+
 Vercel setup:
 
-1. Add the variables in the Vercel project settings for the intended environment.
+1. Add the required variables in the Vercel project settings for the intended environment, and add `EMAIL_PROFILE_IMAGE_URL` only when the transactional header image should be enabled.
 2. Scope staging/preview values to Preview and local Development; scope production values to Production only.
 3. Use separate Resend API keys for staging and production if the Resend account policy allows it.
 4. After changes, redeploy the target environment or restart local `npm run dev`.
@@ -58,6 +61,21 @@ Production stop conditions:
 - `RESEND_API_KEY` is missing from the Production environment.
 - The production sender domain fails Resend verification.
 - DNS/authentication evidence cannot be confirmed by the domain owner/operator.
+
+## Profile Image And Sender Avatar
+
+There are two separate ways an image can appear in email:
+
+1. **Inside the email body.** Set `EMAIL_PROFILE_IMAGE_URL` to a public HTTPS image URL. The app adds it to the header area of Resend transactional email HTML. Use a square image so the circular crop looks intentional.
+2. **As the inbox sender avatar.** Resend does not provide a send-API field that forces Gmail, Outlook, Apple Mail, or other clients to show a profile picture beside the sender. That image is controlled by the recipient's email provider.
+
+For inbox avatars, configure one or more provider/domain-level options outside the app:
+
+- A profile/logo on the mailbox or workspace that owns the exact `FROM_EMAIL`, where supported.
+- Apple Branded Mail for Apple Mail inbox branding.
+- BIMI for broader domain-level brand indicators. BIMI requires DNS setup and an approved SVG logo; some mailbox providers also require a Common Mark Certificate or Verified Mark Certificate.
+
+If a specific email needs an inline image attachment instead of a hosted URL, Resend supports `cid:` inline attachments by adding an attachment with `content_id` and referencing it from the HTML. The current app uses the simpler hosted-image path for the shared transactional header.
 
 ## Sender Separation
 
