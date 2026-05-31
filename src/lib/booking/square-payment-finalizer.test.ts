@@ -381,7 +381,7 @@ test("Square finalizer retries duplicate webhook event IDs that are not terminal
   );
   const retryResult = await finalizer({ event, source: "webhook" });
 
-  assert.equal(retryResult.status, "paid_calendar_pending");
+  assert.equal(retryResult.status, "booked");
   assert.equal(retryResult.duplicateEvent, false);
   assert.equal(squareFetches, 2);
   assert.equal(paidTransitions, 1);
@@ -416,8 +416,8 @@ test("Square finalizer handles webhook before return on the shared mock payment"
     source: "return",
   });
 
-  assert.equal(webhookResult.status, "paid_calendar_pending");
-  assert.equal(returnResult.status, "paid_calendar_pending");
+  assert.equal(webhookResult.status, "booked");
+  assert.equal(returnResult.status, "booked");
   assert.equal(harness.counts.paidTransitions, 1);
   assert.equal(harness.counts.bookingFinalizations, 1);
   assert.equal(harness.counts.eventRecords, 1);
@@ -451,8 +451,8 @@ test("Square finalizer handles return before webhook on the shared mock payment"
     source: "webhook",
   });
 
-  assert.equal(returnResult.status, "paid_calendar_pending");
-  assert.equal(webhookResult.status, "paid_calendar_pending");
+  assert.equal(returnResult.status, "booked");
+  assert.equal(webhookResult.status, "booked");
   assert.equal(harness.counts.paidTransitions, 1);
   assert.equal(harness.counts.bookingFinalizations, 1);
   assert.equal(harness.counts.eventRecords, 1);
@@ -742,7 +742,7 @@ test("Square finalizer updates a claimed webhook event to processed after verifi
     source: "webhook",
   });
 
-  assert.equal(result.status, "paid_calendar_pending");
+  assert.equal(result.status, "booked");
   assert.equal(result.bookingFinalizationStatus, "booked");
   assert.deepEqual(eventStates, [
     { processingStatus: "received", status: "received" },
@@ -816,7 +816,7 @@ test("Square finalizer invokes booking finalization after paid persistence", asy
 
   const result = await finalizer({ paymentId: "pay_123", source: "return" });
 
-  assert.equal(result.status, "paid_calendar_pending");
+  assert.equal(result.status, "booked");
   assert.equal(result.bookingFinalizationStatus, "booked");
   assert.deepEqual(operationOrder, ["paid-calendar-pending", "booking-finalized", "square-event-processed"]);
 });
@@ -938,7 +938,7 @@ test("Square finalizer treats mock delayed capture APPROVED payments as paid und
 
   const result = await finalizer({ paymentId: "mock-square-payment-1", source: "return" });
 
-  assert.equal(result.status, "paid_calendar_pending");
+  assert.equal(result.status, "booked");
   assert.equal(result.bookingFinalizationStatus, "booked");
   assert.deepEqual(operationOrder, ["paid-calendar-pending", "booking-finalized", "square-event-processed"]);
   assert.deepEqual(recordedEvents, [{ providerStatus: "APPROVED", status: "paid_calendar_pending" }]);

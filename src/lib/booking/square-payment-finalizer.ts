@@ -34,7 +34,7 @@ export interface SquarePaymentFinalizerResult {
   finalized: boolean;
   orderId?: string;
   reason?: string;
-  status: "duplicate" | "ignored" | "paid_calendar_pending" | "unpaid";
+  status: "booked" | "duplicate" | "ignored" | "paid_calendar_pending" | "unpaid";
 }
 
 export interface SquarePaymentFinalizerRepository {
@@ -253,13 +253,14 @@ export function createSquarePaymentFinalizer(
       providerStatus: lookup.payment.status,
       status: "paid_calendar_pending",
     });
+    const returnStatus = bookingFinalization.status === "booked" ? "booked" : "paid_calendar_pending";
 
     return {
       bookingFinalizationStatus: bookingFinalization.status,
       duplicateEvent: false,
       finalized: true,
       orderId: localOrder.orderId,
-      status: "paid_calendar_pending",
+      status: returnStatus,
     };
   };
 }

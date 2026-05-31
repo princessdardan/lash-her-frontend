@@ -15,7 +15,7 @@ function captureRedirect(url: string): never {
 
 async function runReturnRoute(input: {
   requestUrl: string;
-  resultStatus: "duplicate" | "ignored" | "paid_calendar_pending" | "unpaid";
+  resultStatus: "booked" | "duplicate" | "ignored" | "paid_calendar_pending" | "unpaid";
 }) {
   const finalizerCalls: unknown[] = [];
   const handler = createSquareReturnGetHandler({
@@ -23,7 +23,7 @@ async function runReturnRoute(input: {
       finalizerCalls.push(finalizerInput);
       return {
         duplicateEvent: input.resultStatus === "duplicate",
-        finalized: input.resultStatus === "paid_calendar_pending",
+        finalized: input.resultStatus === "booked" || input.resultStatus === "paid_calendar_pending",
         status: input.resultStatus,
       };
     },
@@ -57,6 +57,23 @@ test("Square return passes query IDs as lookup hints and redirects with verified
   assert.equal(
     result.redirectUrl,
     "https://example.com/booking/confirmation?payment=paid_calendar_pending",
+  );
+});
+
+test("Square return redirects booked finalization with booked status", async () => {
+  const result = await runReturnRoute({
+    requestUrl: "https://example.com/api/booking/square/return?orderId=lh-sq-order&paymentId=pay_123",
+    resultStatus: "booked",
+  });
+
+  assert.deepEqual(result.finalizerCalls, [{
+    orderId: "lh-sq-order",
+    paymentId: "pay_123",
+    source: "return",
+  }]);
+  assert.equal(
+    result.redirectUrl,
+    "https://example.com/booking/confirmation?payment=booked",
   );
 });
 
