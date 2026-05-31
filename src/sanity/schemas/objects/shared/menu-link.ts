@@ -15,24 +15,6 @@ export const menuLink = defineType({
       title: "URL",
       type: "string",
     }),
-    defineField({
-      name: "description",
-      title: "Description",
-      type: "string",
-    }),
-    defineField({
-      name: "icon",
-      title: "Icon",
-      type: "image",
-      options: { hotspot: true },
-      fields: [
-        defineField({
-          name: "alt",
-          title: "Alt Text",
-          type: "string",
-        }),
-      ],
-    }),
   ],
   preview: {
     select: {

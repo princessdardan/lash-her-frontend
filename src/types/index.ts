@@ -43,7 +43,6 @@ export interface TMenuLink {
   _key?: string;
   name: string;
   url: string;
-  description?: string;
 }
 
 export interface TCtaFeature {
@@ -510,6 +509,22 @@ export interface TFooter {
   logoText: TLink;
   text: string;
   socialLink: TLink[];
+  navigationMenus?: TFooterNavigationMenu[];
+}
+
+export type TFooterNavigationLinkType = "direct" | "external";
+
+export interface TFooterNavigationItem {
+  _key?: string;
+  title: string;
+  url: string;
+  linkType?: TFooterNavigationLinkType;
+}
+
+export interface TFooterNavigationMenu {
+  _key?: string;
+  heading?: string;
+  items: TFooterNavigationItem[];
 }
 
 export interface TContactPopupSettings {

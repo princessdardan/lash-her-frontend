@@ -357,7 +357,12 @@ async function getGlobalData(): Promise<TGlobalSettings | null> {
     footer{
       logoText{ href, label, isExternal },
       text,
-      socialLink[]{ _key, href, label, isExternal }
+      socialLink[]{ _key, href, label, isExternal },
+      navigationMenus[]{
+        _key,
+        heading,
+        items[]{ _key, title, url, linkType }
+      }
     },
     contactPopup{
       enabled,
@@ -382,7 +387,7 @@ async function getMainMenuData(): Promise<TMainMenu | null> {
       _key,
       title,
       url,
-      sections[]{ _key, heading, links[]{ _key, name, url, description } }
+      sections[]{ _key, heading, links[]{ _key, name, url } }
     }
   }`;
   return sanityFetch<TMainMenu | null>(query, {}, ["menu"]);
