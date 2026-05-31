@@ -7,6 +7,7 @@ import {
 } from "@/lib/booking/holds";
 import { buildAvailabilityWindowsFromHours } from "@/lib/booking/schedule-windows";
 import { SERVICE_BOOKING_TYPE, toServiceBookingTypeConfig } from "@/lib/booking/service-config";
+import { recordBookingMarketingChoice } from "@/lib/marketing-contact/marketing-contact-store";
 import type {
   BookingAnswerInput,
   BookingSettings,
@@ -66,6 +67,7 @@ export interface BookingHoldsPostHandlerDependencies {
     timeMin: Date;
     timeMax: Date;
   }) => Promise<CalendarEventWindow[]>;
+  recordBookingMarketingChoice?: typeof recordBookingMarketingChoice;
 }
 
 export function createBookingHoldsPostHandler(
@@ -195,6 +197,23 @@ export function createBookingHoldsPostHandler(
         );
       }
 
+      if (dependencies.recordBookingMarketingChoice !== undefined) {
+        try {
+          await dependencies.recordBookingMarketingChoice({
+            answers: toBookingAnswerSnapshots(input.answers, bookingTypeConfig),
+            bookingType: SERVICE_BOOKING_TYPE,
+            consentText: input.marketingConsentText,
+            email: input.email,
+            marketingOptIn: input.marketingOptIn,
+            name: input.name,
+            phone: input.phone,
+            sourcePath: input.sourcePath,
+          });
+        } catch (error) {
+          console.error("[booking holds] Marketing consent persistence failed:", getErrorMessage(error));
+        }
+      }
+
       return Response.json(
         {
           hold: {
@@ -243,6 +262,7 @@ export const POST = createBookingHoldsPostHandler({
 
     return listCalendarEvents(input);
   },
+  recordBookingMarketingChoice,
 });
 
 function toBookingHoldRequestInput(input: unknown): BookingHoldRequestInput {
@@ -427,6 +447,21 @@ function normalizeAnswers(answers: BookingAnswerInput[]): BookingAnswerInput[] {
       answer: answer.answer.trim(),
     }))
     .filter((answer) => answer.questionId.length > 0 && answer.answer.length > 0);
+}
+
+function toBookingAnswerSnapshots(
+  answers: BookingAnswerInput[],
+  bookingTypeConfig: BookingTypeConfig,
+) {
+  const questionsById = new Map(
+    bookingTypeConfig.questions.map((question) => [question.id, question]),
+  );
+
+  return normalizeAnswers(answers).map((answer) => ({
+    answer: answer.answer,
+    questionId: answer.questionId,
+    questionLabel: questionsById.get(answer.questionId)?.label ?? answer.questionId,
+  }));
 }
 
 function toBookingAnswers(value: unknown): BookingAnswerInput[] {

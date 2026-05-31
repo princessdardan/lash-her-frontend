@@ -14,22 +14,32 @@ const helperScript = String.raw`
 
   class FakeMarketingContactRepository implements MarketingContactRepository {
     readonly records = [];
+    readonly unsubscribes = [];
 
     async recordMarketingContact(input: MarketingContactPersistenceInput): Promise<{ submissionId: string }> {
       const submissionId = "marketing-submission-" + (this.records.length + 1);
       this.records.push(input);
       return { submissionId };
     }
+
+    async recordMarketingUnsubscribe(input) {
+      const eventId = "marketing-unsubscribe-" + (this.unsubscribes.length + 1);
+      this.unsubscribes.push(input);
+      return { eventId };
+    }
   }
 
-  function createFakeStore(): {
+  function createFakeStore(dependencies = {}): {
     repository: FakeMarketingContactRepository;
     store: ReturnType<typeof createMarketingContactStore>;
   } {
     const repository = new FakeMarketingContactRepository();
     return {
       repository,
-      store: createMarketingContactStore(repository),
+      store: createMarketingContactStore(repository, {
+        syncMarketingContact: async () => {},
+        ...dependencies,
+      }),
     };
   }
 `;
@@ -162,6 +172,60 @@ test("marketing contact store records Sanity backfill consent with source docume
     });
     assert.equal(record.event.eventType, "backfill_consent");
     assert.ok(record.contact);
+  `);
+});
+
+test("marketing contact store syncs opted-in contacts to Resend after persistence", () => {
+  runMarketingContactStoreScenario(`
+    const syncedContacts = [];
+    const submittedAt = new Date("2026-05-10T12:00:00.000Z");
+    const { store } = createFakeStore({
+      syncMarketingContact: async (input) => syncedContacts.push(input),
+    });
+
+    await store.recordGeneralInquiry({
+      email: "subscriber@example.com",
+      marketingConsent: true,
+      message: "Please send updates.",
+      name: "Subscriber Name",
+      phone: "555-0100",
+      sourcePath: "/contact",
+      submittedAt,
+    });
+
+    assert.deepEqual(syncedContacts, [{
+      consentedAt: submittedAt,
+      consentText: GENERAL_INQUIRY_CONSENT_TEXT,
+      email: "subscriber@example.com",
+      instagram: undefined,
+      name: "Subscriber Name",
+      phone: "555-0100",
+      source: "general_inquiry",
+      sourcePath: "/contact",
+    }]);
+  `);
+});
+
+test("marketing contact store records Resend unsubscribe events", () => {
+  runMarketingContactStoreScenario(`
+    const { repository, store } = createFakeStore();
+    const occurredAt = new Date("2026-05-11T12:00:00.000Z");
+
+    const result = await store.recordResendUnsubscribe({
+      email: " Client@Example.COM ",
+      metadata: { resendSegmentIds: ["segment-newsletter"] },
+      occurredAt,
+      resendContactId: "contact-123",
+    });
+
+    assert.deepEqual(result, { eventId: "marketing-unsubscribe-1" });
+    assert.deepEqual(repository.unsubscribes[0], {
+      email: "Client@Example.COM",
+      emailNormalized: "client@example.com",
+      metadata: { resendSegmentIds: ["segment-newsletter"] },
+      occurredAt,
+      resendContactId: "contact-123",
+    });
   `);
 });
 

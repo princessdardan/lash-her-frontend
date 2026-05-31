@@ -9,6 +9,7 @@ import {
   markProductOrderConfirmationEmailSent,
   recordProductOrderConfirmationEmailFailure,
 } from "@/lib/commerce/order-store";
+import { getConfiguredTransactionalTemplate } from "@/lib/resend-platform";
 import { CUSTOMER_REPLY_TO_EMAIL, escapeHtml, getEmailProfileImageHtml, sendTransactionalEmail } from "@/lib/transactional-email";
 
 export interface SendProductOrderConfirmationEmailInput {
@@ -29,6 +30,8 @@ export interface SendProductOrderConfirmationEmailForOrderDependencies {
   sendProductOrderConfirmationEmail: typeof sendProductOrderConfirmationEmail;
 }
 
+export const PRODUCT_ORDER_CONFIRMATION_EMAIL_SUBJECT = "Your Lash Her order is confirmed";
+
 export async function sendProductOrderConfirmationEmail(
   input: SendProductOrderConfirmationEmailInput,
 ): Promise<void> {
@@ -36,12 +39,16 @@ export async function sendProductOrderConfirmationEmail(
     html: buildProductOrderConfirmationHtml(input),
     idempotencyKey: `product-confirmation:${input.orderId}`,
     replyTo: CUSTOMER_REPLY_TO_EMAIL,
-    subject: "Your Lash Her order is confirmed",
+    subject: PRODUCT_ORDER_CONFIRMATION_EMAIL_SUBJECT,
     tags: [
       { name: "flow", value: "product_confirmation" },
       { name: "order_id", value: input.orderId },
       { name: "payment_provider", value: "helcim" },
     ],
+    template: getConfiguredTransactionalTemplate(
+      "product_confirmation",
+      getProductOrderTemplateVariables(input),
+    ),
     to: input.customerEmail,
   });
 }
@@ -139,6 +146,24 @@ export function buildProductOrderConfirmationHtml(
 </body>
 </html>
   `.trim();
+}
+
+export function getProductOrderTemplateVariables(
+  input: SendProductOrderConfirmationEmailInput,
+): Record<string, unknown> {
+  const lineItemsHtml = input.lineItems.map((lineItem) => getLineItemRow(lineItem, input.currency)).join("");
+
+  return {
+    CURRENCY: escapeHtml(input.currency.toUpperCase()),
+    CUSTOMER_EMAIL: escapeHtml(input.customerEmail),
+    CUSTOMER_FIRST_NAME: escapeHtml(input.customerName.trim().split(/\s+/)[0] ?? ""),
+    CUSTOMER_NAME: escapeHtml(input.customerName),
+    ITEM_COUNT: input.lineItems.reduce((total, lineItem) => total + lineItem.quantity, 0),
+    LINE_ITEMS_HTML: lineItemsHtml,
+    ORDER_ID: escapeHtml(input.orderId),
+    SHIPPING_ADDRESS_HTML: input.shippingAddress ? getShippingAddressHtml(input.shippingAddress) : "",
+    TOTAL: escapeHtml(formatCurrency(input.totalAmount, input.currency)),
+  };
 }
 
 function getShippingAddressHtml(address: CheckoutOrderShippingAddressSnapshot): string {

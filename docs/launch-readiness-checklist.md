@@ -10,7 +10,7 @@ This checklist must be completed and recorded for both Staging and Production en
 - [ ] `DATABASE_URL` is reachable and migrations are up to date.
 - [ ] `KV_REST_API_URL` and tokens are valid.
 - [ ] Helcim API tokens and webhook verifier are configured.
-- [ ] Resend API key and `FROM_EMAIL` are configured.
+- [ ] `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `RESEND_SEGMENT_MARKETING_ID`, `FROM_EMAIL`, and `ADMIN_EMAIL` are configured.
 - [ ] `VERCEL_ENV=preview node scripts/validate-sanity-env.mjs` passes for staging variables.
 - [ ] `VERCEL_ENV=production node scripts/validate-sanity-env.mjs` passes for production variables.
 

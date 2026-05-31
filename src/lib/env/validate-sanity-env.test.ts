@@ -21,6 +21,8 @@ const launchEnv = {
   SANITY_WRITE_TOKEN: "sanity-write-token",
   SANITY_WEBHOOK_SECRET: "sanity-webhook-secret",
   RESEND_API_KEY: "resend-api-key",
+  RESEND_WEBHOOK_SECRET: "resend-webhook-secret",
+  RESEND_SEGMENT_MARKETING_ID: "resend-segment-marketing-id",
   FROM_EMAIL: "hello@lashher.com",
   ADMIN_EMAIL: "admin@lashher.com",
   GOOGLE_CLIENT_ID: "google-client-id",

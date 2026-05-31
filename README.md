@@ -152,8 +152,12 @@ Draft preview and the Studio Presentation tool require `SANITY_API_READ_TOKEN` s
 Transactional email uses Resend. Configure:
 
 - `RESEND_API_KEY`
+- `RESEND_WEBHOOK_SECRET`
+- `RESEND_SEGMENT_MARKETING_ID`
 - `FROM_EMAIL`
 - `ADMIN_EMAIL`
+
+Optional `RESEND_TEMPLATE_*_ID`, `RESEND_SEGMENT_*_ID`, and `RESEND_TOPIC_*_ID` variables connect website email and consent flows to Resend Dashboard templates, contact segments, topic preferences, automations, and broadcasts. See `docs/resend-transactional-email-setup.md` for the full mapping and webhook setup.
 
 ### Google Calendar and booking OAuth
 

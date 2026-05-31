@@ -10,6 +10,7 @@ import {
   type MarketingConsentEventType,
   type MarketingContactSubmissionType,
 } from "@/lib/private-db/schema";
+import { syncResendMarketingContact, type ResendMarketingContactInput } from "@/lib/resend-platform";
 
 export const GENERAL_INQUIRY_CONSENT_TEXT = "I agree to receive lash care tips, service updates, and offers from Lash Her by Nataliea.";
 export const TRAINING_CONTACT_CONSENT_TEXT = "I agree to receive training updates, program news, and offers from Lash Her by Nataliea.";
@@ -93,6 +94,13 @@ export interface RecordSanityBackfillSubmissionInput extends MarketingContactIde
   submissionType: MarketingContactSubmissionType;
 }
 
+export interface RecordResendUnsubscribeInput {
+  email: string;
+  metadata?: Record<string, unknown>;
+  occurredAt?: Date;
+  resendContactId?: string;
+}
+
 export interface MarketingContactUpsertValues extends MarketingContactIdentity {
   consentText?: string;
   emailNormalized: string;
@@ -124,6 +132,14 @@ export interface MarketingConsentEventValues extends MarketingContactIdentity {
   source: MarketingSubmissionSource;
 }
 
+export interface MarketingContactUnsubscribeValues {
+  email: string;
+  emailNormalized: string;
+  metadata?: Record<string, unknown>;
+  occurredAt: Date;
+  resendContactId?: string;
+}
+
 export interface MarketingContactPersistenceInput {
   contact: MarketingContactUpsertValues | null;
   event: MarketingConsentEventValues;
@@ -132,22 +148,51 @@ export interface MarketingContactPersistenceInput {
 
 export interface MarketingContactRepository {
   recordMarketingContact(input: MarketingContactPersistenceInput): Promise<{ submissionId: string }>;
+  recordMarketingUnsubscribe(input: MarketingContactUnsubscribeValues): Promise<{ eventId: string }>;
+}
+
+export interface MarketingContactStoreDependencies {
+  logError?: typeof console.error;
+  syncMarketingContact?: (input: ResendMarketingContactInput) => Promise<void>;
 }
 
 export interface MarketingContactStore {
   recordBookingMarketingChoice(input: RecordBookingMarketingChoiceInput): Promise<{ submissionId: string }>;
   recordContactPopup(input: RecordContactPopupInput): Promise<{ submissionId: string }>;
   recordGeneralInquiry(input: RecordGeneralInquiryInput): Promise<{ submissionId: string }>;
+  recordResendUnsubscribe(input: RecordResendUnsubscribeInput): Promise<{ eventId: string }>;
   recordSanityBackfillSubmission(input: RecordSanityBackfillSubmissionInput): Promise<{ submissionId: string }>;
   recordTrainingContact(input: RecordTrainingContactInput): Promise<{ submissionId: string }>;
 }
 
 export function createMarketingContactStore(
   repository: MarketingContactRepository,
+  dependencies: MarketingContactStoreDependencies = {},
 ): MarketingContactStore {
+  const syncMarketingContact = dependencies.syncMarketingContact ?? syncResendMarketingContact;
+  const logError = dependencies.logError ?? console.error;
+
+  async function recordContact(input: MarketingContactPersistenceInput): Promise<{ submissionId: string }> {
+    const result = await repository.recordMarketingContact(input);
+
+    if (input.contact !== null) {
+      try {
+        await syncMarketingContact(toResendMarketingContactInput(input));
+      } catch (error) {
+        logError("[marketing-contact] Resend contact sync failed", {
+          email: input.contact.emailNormalized,
+          error: error instanceof Error ? error.message : "Unknown Resend contact sync error",
+          source: input.contact.source,
+        });
+      }
+    }
+
+    return result;
+  }
+
   return {
     async recordGeneralInquiry(input) {
-      return repository.recordMarketingContact(buildPersistenceInput({
+      return recordContact(buildPersistenceInput({
         consentText: input.consentText ?? GENERAL_INQUIRY_CONSENT_TEXT,
         identity: input,
         marketingConsent: input.marketingConsent,
@@ -165,7 +210,7 @@ export function createMarketingContactStore(
     },
 
     async recordTrainingContact(input) {
-      return repository.recordMarketingContact(buildPersistenceInput({
+      return recordContact(buildPersistenceInput({
         consentText: input.consentText ?? TRAINING_CONTACT_CONSENT_TEXT,
         identity: input,
         marketingConsent: input.marketingConsent,
@@ -187,7 +232,7 @@ export function createMarketingContactStore(
     },
 
     async recordContactPopup(input) {
-      return repository.recordMarketingContact(buildPersistenceInput({
+      return recordContact(buildPersistenceInput({
         consentText: input.consentText ?? CONTACT_POPUP_CONSENT_TEXT,
         identity: input,
         marketingConsent: true,
@@ -205,7 +250,7 @@ export function createMarketingContactStore(
     },
 
     async recordBookingMarketingChoice(input) {
-      return repository.recordMarketingContact(buildPersistenceInput({
+      return recordContact(buildPersistenceInput({
         consentText: input.consentText ?? BOOKING_MARKETING_CONSENT_TEXT,
         identity: input,
         marketingConsent: input.marketingOptIn,
@@ -223,7 +268,7 @@ export function createMarketingContactStore(
     },
 
     async recordSanityBackfillSubmission(input) {
-      return repository.recordMarketingContact(buildPersistenceInput({
+      return recordContact(buildPersistenceInput({
         consentText: input.consentText,
         identity: input,
         marketingConsent: input.marketingConsent,
@@ -237,6 +282,10 @@ export function createMarketingContactStore(
         submittedAt: input.submittedAt,
         submissionType: input.submissionType,
       }));
+    },
+
+    async recordResendUnsubscribe(input) {
+      return repository.recordMarketingUnsubscribe(buildResendUnsubscribeInput(input));
     },
   };
 }
@@ -273,6 +322,12 @@ export async function recordSanityBackfillSubmission(
   input: RecordSanityBackfillSubmissionInput,
 ): Promise<{ submissionId: string }> {
   return defaultMarketingContactStore.recordSanityBackfillSubmission(input);
+}
+
+export async function recordResendUnsubscribe(
+  input: RecordResendUnsubscribeInput,
+): Promise<{ eventId: string }> {
+  return defaultMarketingContactStore.recordResendUnsubscribe(input);
 }
 
 function createDrizzleMarketingContactRepository(): MarketingContactRepository {
@@ -342,6 +397,41 @@ function createDrizzleMarketingContactRepository(): MarketingContactRepository {
         });
 
         return { submissionId: submission.id };
+      });
+    },
+
+    async recordMarketingUnsubscribe(input) {
+      return getPrivateDb().transaction(async (tx) => {
+        const [contact] = await tx
+          .update(marketingContacts)
+          .set({
+            unsubscribedAt: input.occurredAt,
+            updatedAt: input.occurredAt,
+          })
+          .where(eq(marketingContacts.emailNormalized, input.emailNormalized))
+          .returning({ id: marketingContacts.id });
+
+        const [event] = await tx
+          .insert(marketingConsentEvents)
+          .values({
+            contactId: contact?.id ?? null,
+            email: input.email,
+            emailNormalized: input.emailNormalized,
+            eventType: "unsubscribe",
+            metadata: cleanPayload({
+              ...(input.metadata ?? {}),
+              resendContactId: input.resendContactId,
+            }),
+            occurredAt: input.occurredAt,
+            source: "resend",
+          })
+          .returning({ id: marketingConsentEvents.id });
+
+        if (!event) {
+          throw new Error("Marketing unsubscribe event was not created");
+        }
+
+        return { eventId: event.id };
       });
     },
   };
@@ -424,6 +514,39 @@ function toSubmissionInsert(values: MarketingContactSubmissionValues): typeof ma
     sourceSystem: values.sourceSystem,
     submittedAt: values.submittedAt,
     submissionType: values.submissionType,
+  };
+}
+
+function toResendMarketingContactInput(input: MarketingContactPersistenceInput): ResendMarketingContactInput {
+  if (input.contact === null) {
+    throw new Error("Cannot sync a non-consenting marketing contact to Resend");
+  }
+
+  return {
+    consentedAt: input.contact.lastConsentedAt,
+    consentText: input.contact.consentText,
+    email: input.contact.email,
+    instagram: input.contact.instagram,
+    name: input.contact.name,
+    phone: input.contact.phone,
+    source: input.contact.source,
+    sourcePath: input.submission.sourcePath,
+  };
+}
+
+function buildResendUnsubscribeInput(input: RecordResendUnsubscribeInput): MarketingContactUnsubscribeValues {
+  const email = input.email.trim();
+
+  if (email.length === 0) {
+    throw new Error("Email is required for a Resend unsubscribe event");
+  }
+
+  return {
+    email,
+    emailNormalized: normalizeEmail(email),
+    metadata: input.metadata,
+    occurredAt: input.occurredAt ?? new Date(),
+    resendContactId: input.resendContactId,
   };
 }
 

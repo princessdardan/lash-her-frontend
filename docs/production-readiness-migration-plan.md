@@ -89,7 +89,7 @@ Minimum checks:
 - `SANITY_WEBHOOK_SECRET` matches the production Sanity webhook secret.
 - `DATABASE_URL` targets the verified production private database.
 - `KV_REST_API_URL` and `KV_REST_API_TOKEN` target the intended production Redis/KV resource.
-- `RESEND_API_KEY`, `FROM_EMAIL`, and `ADMIN_EMAIL` are production-approved.
+- `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `RESEND_SEGMENT_MARKETING_ID`, `FROM_EMAIL`, and `ADMIN_EMAIL` are production-approved.
 - Google OAuth variables use production callback URLs.
 - `PAYMENT_GATEWAY_MODE` is not `mock` in production.
 - Helcim production tokens and webhook verifier are present.

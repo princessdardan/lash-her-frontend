@@ -83,6 +83,8 @@ Only `NEXT_PUBLIC_*` values are browser-visible. Keep write and webhook tokens s
 
 ```env
 RESEND_API_KEY=<resend-api-key>
+RESEND_WEBHOOK_SECRET=<resend-webhook-signing-secret>
+RESEND_SEGMENT_MARKETING_ID=<all-marketing-segment-id>
 FROM_EMAIL=<verified-sender-address>
 ADMIN_EMAIL=<admin-recipient-address>
 ```
@@ -320,7 +322,7 @@ Operational expectations:
 Use `docs/resend-transactional-email-setup.md` for the full manual Resend runbook.
 
 1. Verify the transactional sender domain in Resend, including the DNS records Resend requires for domain authentication and the domain owner's DMARC policy.
-2. Add server-only `RESEND_API_KEY`, `FROM_EMAIL`, and `ADMIN_EMAIL` to the target Vercel environment. Do not use `NEXT_PUBLIC_` for email secrets.
+2. Add server-only `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `RESEND_SEGMENT_MARKETING_ID`, `FROM_EMAIL`, and `ADMIN_EMAIL` to the target Vercel environment. Do not use `NEXT_PUBLIC_` for email secrets.
 3. Scope staging/preview values to Preview/Development and production values to Production.
 4. Apply `drizzle/0009_dashing_rocket_raccoon.sql` through `docs/private-database-migration-runbook.md` before relying on payment email recovery.
 5. Redeploy after changing email variables.

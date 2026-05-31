@@ -19,12 +19,20 @@ const EMAIL_PROFILE_IMAGE_URL_ENV = "EMAIL_PROFILE_IMAGE_URL";
 
 export interface SendTransactionalEmailInput {
   from?: string;
-  html: string;
+  html?: string;
   idempotencyKey?: string;
   replyTo?: string | string[];
   subject: string;
   tags?: TransactionalEmailTag[];
+  template?: TransactionalEmailTemplate;
   to: string | string[];
+}
+
+export type TransactionalEmailTemplateVariables = Record<string, string | number>;
+
+export interface TransactionalEmailTemplate {
+  id: string;
+  variables?: TransactionalEmailTemplateVariables;
 }
 
 export interface SendTransactionalEmailResult {
@@ -53,17 +61,29 @@ export async function sendTransactionalEmail(
   input: SendTransactionalEmailInput,
 ): Promise<SendTransactionalEmailResult> {
   const config = getEmailConfig();
-  const payload = {
+  if (input.template === undefined && input.html === undefined) {
+    throw new Error("Transactional email requires html or a Resend template");
+  }
+
+  const basePayload = {
     from: input.from ?? config.fromEmail,
-    html: input.html,
     ...(input.replyTo === undefined ? {} : { replyTo: input.replyTo }),
-    subject: input.subject,
     tags: [
       ...(input.tags ?? []),
       { name: "environment", value: config.environment },
     ],
     to: input.to,
   };
+  const payload = input.template === undefined
+    ? {
+        ...basePayload,
+        html: getRequiredEmailHtml(input.html),
+        subject: input.subject,
+      }
+    : {
+        ...basePayload,
+        template: input.template,
+      };
   const options = input.idempotencyKey === undefined
     ? undefined
     : { idempotencyKey: input.idempotencyKey };
@@ -80,6 +100,14 @@ export async function sendTransactionalEmail(
   }
 
   return { id: result.data.id };
+}
+
+function getRequiredEmailHtml(html: string | undefined): string {
+  if (html === undefined) {
+    throw new Error("Transactional email requires html or a Resend template");
+  }
+
+  return html;
 }
 
 export function escapeHtml(text: string): string {

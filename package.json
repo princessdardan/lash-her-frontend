@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "resend:seed-templates": "tsx --conditions=react-server scripts/seed-resend-templates.ts",
     "sanity:backfill-home-training": "node scripts/backfill-home-training-programs-block.mjs",
     "test": "playwright test",
     "test:unit": "tsx --test \"src/**/*.test.ts\"",

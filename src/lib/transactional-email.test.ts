@@ -4,7 +4,7 @@ import test from "node:test";
 const helperScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { getEmailProfileImageHtml } from "./src/lib/transactional-email.ts";
+  import { getEmailProfileImageHtml, sendTransactionalEmail } from "./src/lib/transactional-email.ts";
 `;
 
 test("email profile image helper is empty without a configured URL", () => {
@@ -27,6 +27,49 @@ test("email profile image helper escapes the configured URL", () => {
     assert.match(html, /alt="Lash Her by Nataliea profile picture"/);
     assert.equal(html.includes('src="https://assets.lashher.com/nataliea&lt;profile&gt;.jpg?size=72&amp;theme=dark"'), true);
     assert.equal(html.includes("nataliea<profile>"), false);
+  `);
+});
+
+test("transactional email sends configured Resend templates without source-rendered HTML", () => {
+  runTransactionalEmailScenario(`
+    const requests = [];
+    globalThis.fetch = async (url, init) => {
+      requests.push({
+        body: JSON.parse(init.body),
+        url: String(url),
+      });
+
+      return new Response(JSON.stringify({ id: "email_123" }), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      });
+    };
+
+    process.env.ADMIN_EMAIL = "admin@lashher.test";
+    process.env.FROM_EMAIL = "Lash Her <hello@lashher.test>";
+    process.env.RESEND_API_KEY = "re_test";
+
+    const result = await sendTransactionalEmail({
+      html: "<p>Fallback HTML</p>",
+      subject: "Fallback subject",
+      template: {
+        id: "template_welcome",
+        variables: { CUSTOMER_NAME: "Client Name" },
+      },
+      to: "client@example.com",
+    });
+
+    assert.deepEqual(result, { id: "email_123" });
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, "https://api.resend.com/emails");
+    assert.equal(requests[0].body.html, undefined);
+    assert.equal(requests[0].body.subject, undefined);
+    assert.deepEqual(requests[0].body.template, {
+      id: "template_welcome",
+      variables: { CUSTOMER_NAME: "Client Name" },
+    });
+    assert.equal(requests[0].body.from, "Lash Her <hello@lashher.test>");
+    assert.deepEqual(requests[0].body.to, "client@example.com");
   `);
 });
 

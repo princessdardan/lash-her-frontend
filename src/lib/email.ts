@@ -9,6 +9,7 @@ import {
   sendTransactionalEmail,
   telHref,
 } from "@/lib/transactional-email";
+import { getConfiguredTransactionalTemplate, type ResendEmailTemplateKey } from "@/lib/resend-platform";
 
 // Type definitions
 export interface GeneralInquiryData {
@@ -47,6 +48,7 @@ export interface ContactPopupData {
 }
 
 export type FormType = "general-inquiry" | "training-contact" | "contact-popup";
+export type FormEmailAudience = "admin" | "customer";
 
 // Subject line helpers
 function getAdminSubject(
@@ -72,6 +74,177 @@ function getUserSubject(formType: FormType, formData: GeneralInquiryData | Train
     return "Welcome to Lash Her by Nataliea!";
   }
   return `Your ${(formData as TrainingContactData).programTitle} Inquiry - Lash Her by Nataliea`;
+}
+
+function getAdminTemplateKey(formType: FormType): ResendEmailTemplateKey {
+  if (formType === "general-inquiry") {
+    return "general_inquiry_admin";
+  }
+  if (formType === "contact-popup") {
+    return "contact_popup_admin";
+  }
+
+  return "training_contact_admin";
+}
+
+function getCustomerTemplateKey(formType: FormType): ResendEmailTemplateKey {
+  if (formType === "general-inquiry") {
+    return "general_inquiry_customer";
+  }
+  if (formType === "contact-popup") {
+    return "contact_popup_customer";
+  }
+
+  return "training_contact_customer";
+}
+
+function getFormTemplateVariables(
+  formType: FormType,
+  formData: GeneralInquiryData | TrainingContactData | ContactPopupData,
+  submittedAt: Date = new Date(),
+): Record<string, unknown> {
+  const name = "name" in formData ? formData.name : undefined;
+  const instagram = "instagram" in formData ? formData.instagram : undefined;
+  const phone = "phone" in formData ? formData.phone : undefined;
+
+  return {
+    CONSENT_TEXT: formData.consentText ?? "",
+    CUSTOMER_EMAIL: getTemplateText(formData.email, ""),
+    CUSTOMER_FIRST_NAME: getTemplateFirstName(name),
+    CUSTOMER_INSTAGRAM: getTemplateInstagram(formType, instagram),
+    CUSTOMER_NAME: getTemplateCustomerName(formType, name),
+    CUSTOMER_PHONE: getTemplateText(phone, ""),
+    CUSTOMER_PHONE_TEL_HREF: getTemplatePhoneTelHref(phone),
+    FORM_TYPE: formType,
+    LOCATION: getTemplateLocation(formType, formData),
+    MARKETING_CONSENT: "marketingConsent" in formData ? formData.marketingConsent === true : formType === "contact-popup",
+    MESSAGE: getTemplateText("message" in formData ? formData.message : undefined, ""),
+    PRIVACY_POLICY_CONSENT: "privacyPolicyConsent" in formData ? formData.privacyPolicyConsent === true : undefined,
+    PROGRAM_SLUG: getTemplateText("programSlug" in formData ? formData.programSlug : undefined, ""),
+    PROGRAM_TITLE: getTemplateText("programTitle" in formData ? formData.programTitle : undefined, ""),
+    SOURCE_PATH: getTemplateSourcePath(formType, formData),
+    SUBMITTED_AT: formatSubmittedAt(submittedAt),
+    VARIANT: "variant" in formData ? formData.variant ?? "" : "",
+  };
+}
+
+function getFirstName(name: string | undefined): string | undefined {
+  const normalized = name?.trim();
+
+  return normalized ? normalized.split(/\s+/)[0] : undefined;
+}
+
+function getTemplateCustomerName(formType: FormType, name: string | undefined): string {
+  const normalized = name?.trim();
+
+  if (normalized) {
+    return escapeHtml(normalized);
+  }
+
+  return formType === "contact-popup" ? "a visitor" : "";
+}
+
+function getTemplateFirstName(name: string | undefined): string {
+  return getTemplateText(getFirstName(name), "there");
+}
+
+function getTemplateInstagram(formType: FormType, instagram: string | undefined): string {
+  const normalized = instagram?.trim().replace(/^@+/, "");
+
+  if (normalized) {
+    return escapeHtml(`@${normalized}`);
+  }
+
+  return formType === "training-contact" ? "Not provided" : "";
+}
+
+function getTemplateLocation(
+  formType: FormType,
+  formData: GeneralInquiryData | TrainingContactData | ContactPopupData,
+): string {
+  if (formType !== "training-contact") {
+    return "";
+  }
+
+  return getTemplateText((formData as TrainingContactData).location, "Not provided");
+}
+
+function getTemplateSourcePath(
+  formType: FormType,
+  formData: GeneralInquiryData | TrainingContactData | ContactPopupData,
+): string {
+  if (formData.sourcePath !== undefined && formData.sourcePath.trim().length > 0) {
+    return escapeHtml(formData.sourcePath.trim());
+  }
+
+  if (formType === "training-contact") {
+    return escapeHtml(`/training-programs/${(formData as TrainingContactData).programSlug}`);
+  }
+
+  return "";
+}
+
+function getTemplateText(value: string | undefined, fallback: string): string {
+  const normalized = value?.trim();
+
+  return escapeHtml(normalized || fallback);
+}
+
+function getTemplatePhoneTelHref(phone: string | undefined): string {
+  const normalized = phone?.trim();
+
+  return normalized ? escapeHtml(telHref(normalized)) : "";
+}
+
+function formatSubmittedAt(submittedAt: Date): string {
+  return submittedAt.toLocaleString("en-US", {
+    dateStyle: "full",
+    timeStyle: "short",
+  });
+}
+
+export function getFormEmailSubject(
+  audience: FormEmailAudience,
+  formType: FormType,
+  formData: GeneralInquiryData | TrainingContactData | ContactPopupData,
+): string {
+  return audience === "admin" ? getAdminSubject(formType, formData) : getUserSubject(formType, formData);
+}
+
+export function getFormEmailTemplateVariables(
+  formType: FormType,
+  formData: GeneralInquiryData | TrainingContactData | ContactPopupData,
+  submittedAt?: Date,
+): Record<string, unknown> {
+  return getFormTemplateVariables(formType, formData, submittedAt);
+}
+
+export function buildFormEmailFallbackHtml(
+  audience: FormEmailAudience,
+  formType: FormType,
+  formData: GeneralInquiryData | TrainingContactData | ContactPopupData,
+): string {
+  if (audience === "admin") {
+    if (formType === "general-inquiry") {
+      return getGeneralInquiryAdminHtml(formData as GeneralInquiryData);
+    }
+
+    if (formType === "contact-popup") {
+      return getContactPopupAdminHtml(formData as ContactPopupData);
+    }
+
+    return getTrainingContactAdminHtml(formData as TrainingContactData);
+  }
+
+  if (formType === "general-inquiry") {
+    return getGeneralInquiryUserHtml(formData as GeneralInquiryData);
+  }
+
+  if (formType === "contact-popup") {
+    return getContactPopupUserHtml(formData as ContactPopupData);
+  }
+
+  return getTrainingContactUserHtml(formData as TrainingContactData);
 }
 
 // Admin notification template for general inquiry
@@ -710,6 +883,10 @@ export async function sendAdminNotification(
     tags: [
       { name: "flow", value: `${formType}_admin` },
     ],
+    template: getConfiguredTransactionalTemplate(
+      getAdminTemplateKey(formType),
+      getFormTemplateVariables(formType, formData),
+    ),
     to: config.adminEmail,
   });
 }
@@ -735,6 +912,10 @@ export async function sendUserConfirmation(
     tags: [
       { name: "flow", value: `${formType}_customer` },
     ],
+    template: getConfiguredTransactionalTemplate(
+      getCustomerTemplateKey(formType),
+      getFormTemplateVariables(formType, formData),
+    ),
     to: formData.email,
   });
 }

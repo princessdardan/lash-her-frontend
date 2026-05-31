@@ -1,5 +1,6 @@
 import "server-only";
 
+import { getConfiguredTransactionalTemplate } from "@/lib/resend-platform";
 import { CUSTOMER_REPLY_TO_EMAIL, escapeHtml, getEmailConfig, getEmailProfileImageHtml, sendTransactionalEmail } from "@/lib/transactional-email";
 
 export interface SendTrainingPaymentNotificationEmailsInput {
@@ -10,6 +11,8 @@ export interface SendTrainingPaymentNotificationEmailsInput {
   programTitle: string;
   schedulingUrl: string;
 }
+
+export const TRAINING_PAYMENT_CUSTOMER_EMAIL_SUBJECT = "Your Lash Her training payment is confirmed";
 
 export async function sendTrainingPaymentNotificationEmails(
   input: SendTrainingPaymentNotificationEmailsInput,
@@ -30,12 +33,16 @@ export async function sendTrainingCustomerPaymentEmail(
     html: getCustomerTrainingPaymentHtml(input),
     idempotencyKey: `training-customer:${input.orderId}`,
     replyTo: CUSTOMER_REPLY_TO_EMAIL,
-    subject: "Your Lash Her training payment is confirmed",
+    subject: TRAINING_PAYMENT_CUSTOMER_EMAIL_SUBJECT,
     tags: [
       { name: "flow", value: "training_payment_customer" },
       { name: "order_id", value: input.orderId },
       { name: "payment_provider", value: input.paymentProvider ?? "helcim" },
     ],
+    template: getConfiguredTransactionalTemplate(
+      "training_payment_customer",
+      getTrainingPaymentTemplateVariables(input),
+    ),
     to: input.customerEmail,
   });
 }
@@ -52,11 +59,29 @@ export async function sendTrainingAdminPaymentEmail(
       { name: "order_id", value: input.orderId },
       { name: "payment_provider", value: input.paymentProvider ?? "helcim" },
     ],
+    template: getConfiguredTransactionalTemplate(
+      "training_payment_admin",
+      getTrainingPaymentTemplateVariables(input),
+    ),
     to: getEmailConfig().adminEmail,
   });
 }
 
-function getCustomerTrainingPaymentHtml(
+export function getTrainingPaymentTemplateVariables(
+  input: SendTrainingPaymentNotificationEmailsInput,
+): Record<string, unknown> {
+  return {
+    CUSTOMER_EMAIL: escapeHtml(input.customerEmail),
+    CUSTOMER_FIRST_NAME: escapeHtml(input.customerName.trim().split(/\s+/)[0] ?? ""),
+    CUSTOMER_NAME: escapeHtml(input.customerName),
+    ORDER_ID: escapeHtml(input.orderId),
+    PAYMENT_PROVIDER: escapeHtml(input.paymentProvider ?? "helcim"),
+    PROGRAM_TITLE: escapeHtml(input.programTitle),
+    SCHEDULING_URL: escapeHtml(input.schedulingUrl),
+  };
+}
+
+export function getCustomerTrainingPaymentHtml(
   input: SendTrainingPaymentNotificationEmailsInput,
 ): string {
   return `
@@ -99,7 +124,7 @@ function getCustomerTrainingPaymentHtml(
   `.trim();
 }
 
-function getAdminTrainingPaymentHtml(
+export function getAdminTrainingPaymentHtml(
   input: SendTrainingPaymentNotificationEmailsInput,
 ): string {
   return `

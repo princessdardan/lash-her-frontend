@@ -70,7 +70,7 @@ Run these checks for staging release validation, production launch windows, and 
 - [ ] `HELCIM_GENERAL_API_TOKEN`, `HELCIM_TRANSACTION_API_TOKEN`, and `HELCIM_WEBHOOK_VERIFIER_TOKEN` are configured.
 - [ ] `SERVICE_BOOKING_SQUARE_ENABLED=true` only where service booking checkout should use Square.
 - [ ] `SQUARE_ENVIRONMENT`, `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, `SQUARE_WEBHOOK_SIGNATURE_KEY`, `SQUARE_SERVICE_BOOKING_RETURN_URL`, and `SQUARE_SERVICE_BOOKING_WEBHOOK_URL` are configured only as server-side variables.
-- [ ] `RESEND_API_KEY`, `FROM_EMAIL`, and `ADMIN_EMAIL` are configured.
+- [ ] `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `RESEND_SEGMENT_MARKETING_ID`, `FROM_EMAIL`, and `ADMIN_EMAIL` are configured.
 
 ### Public Booking Entry Smoke
 
@@ -228,7 +228,7 @@ Operator action:
 
 Check:
 
-- `RESEND_API_KEY`, `FROM_EMAIL`, and `ADMIN_EMAIL` are configured.
+- `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `RESEND_SEGMENT_MARKETING_ID`, `FROM_EMAIL`, and `ADMIN_EMAIL` are configured.
 - The sender domain is verified in Resend.
 - Vercel logs show the email error after the private state transition.
 

@@ -6,6 +6,7 @@ import {
   recordBookingConfirmationEmailFailure,
   type BookingConfirmationEmailClaimRecord,
 } from "./holds";
+import { getConfiguredTransactionalTemplate } from "@/lib/resend-platform";
 import { CUSTOMER_REPLY_TO_EMAIL, escapeHtml, getEmailProfileImageHtml, sendTransactionalEmail } from "@/lib/transactional-email";
 
 export interface SendBookingConfirmationInput {
@@ -27,6 +28,8 @@ export interface SendBookingConfirmationEmailForOrderDependencies {
   sendBookingConfirmationEmail: typeof sendBookingConfirmationEmail;
 }
 
+export const BOOKING_CONFIRMATION_EMAIL_SUBJECT = "Your Lash Her booking is confirmed";
+
 export async function sendBookingConfirmationEmail(
   input: SendBookingConfirmationInput,
 ): Promise<void> {
@@ -40,14 +43,31 @@ export async function sendBookingConfirmationEmail(
     html: getBookingConfirmationHtml({ ...input, formattedStart }),
     idempotencyKey: `booking-confirmation:${input.holdId}`,
     replyTo: CUSTOMER_REPLY_TO_EMAIL,
-    subject: "Your Lash Her booking is confirmed",
+    subject: BOOKING_CONFIRMATION_EMAIL_SUBJECT,
     tags: [
       { name: "flow", value: "booking_confirmation" },
       { name: "order_id", value: input.orderId },
       { name: "payment_provider", value: input.paymentProvider },
     ],
+    template: getConfiguredTransactionalTemplate(
+      "booking_confirmation",
+      getBookingConfirmationTemplateVariables({ ...input, formattedStart }),
+    ),
     to: input.email,
   });
+}
+
+export function buildBookingConfirmationFallbackHtml(input: SendBookingConfirmationInput): string {
+  return getBookingConfirmationHtml({
+    ...input,
+    formattedStart: formatBookingConfirmationStart(input.start, input.timezone),
+  });
+}
+
+export function getBookingConfirmationSeedTemplateVariables(input: SendBookingConfirmationInput): Record<string, unknown> {
+  const formattedStart = formatBookingConfirmationStart(input.start, input.timezone);
+
+  return getBookingConfirmationTemplateVariables({ ...input, formattedStart });
 }
 
 export async function sendBookingConfirmationEmailForOrder(
@@ -133,6 +153,28 @@ function getBookingConfirmationHtml(input: BookingConfirmationHtmlInput): string
 </body>
 </html>
   `.trim();
+}
+
+function getBookingConfirmationTemplateVariables(input: BookingConfirmationHtmlInput): Record<string, unknown> {
+  return {
+    BOOKING_TYPE_LABEL: escapeHtml(input.bookingTypeLabel),
+    CUSTOMER_EMAIL: escapeHtml(input.email),
+    CUSTOMER_FIRST_NAME: escapeHtml(input.name.trim().split(/\s+/)[0] ?? ""),
+    CUSTOMER_NAME: escapeHtml(input.name),
+    FORMATTED_START: escapeHtml(input.formattedStart),
+    HOLD_ID: escapeHtml(input.holdId),
+    ORDER_ID: escapeHtml(input.orderId),
+    PAYMENT_PROVIDER: escapeHtml(input.paymentProvider),
+    TIMEZONE: escapeHtml(input.timezone),
+  };
+}
+
+function formatBookingConfirmationStart(start: Date, timezone: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    dateStyle: "full",
+    timeStyle: "short",
+    timeZone: timezone,
+  }).format(start);
 }
 
 function toBookingConfirmationInput(
