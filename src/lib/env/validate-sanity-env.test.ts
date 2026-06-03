@@ -36,6 +36,10 @@ const launchEnv = {
   HELCIM_GENERAL_API_TOKEN: "helcim-general-api-token-with-safe-length",
   HELCIM_TRANSACTION_API_TOKEN: "helcim-transaction-api-token-with-safe-length",
   HELCIM_WEBHOOK_VERIFIER_TOKEN: "helcim-webhook-verifier-token",
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_test_admin_dashboard",
+  CLERK_SECRET_KEY: "sk_test_admin_dashboard",
+  ADMIN_OWNER_EMAILS: "owner@example.com",
+  ADMIN_OPERATOR_EMAILS: "operator@example.com",
 };
 
 test("validates local public Sanity environment", () => {

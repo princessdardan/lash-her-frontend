@@ -91,7 +91,7 @@ These gates are technical planning support, not legal advice. Final retention, c
 - [ ] Unsubscribe/suppression decision is recorded before any bulk marketing send workflow, including withdrawal events, future-send suppression, and CASL 10-business-day handling as a planning checkpoint.
 - [ ] Lawful-basis/purpose tracking decisions are pending or recorded separately for marketing emails, transactional emails, inquiry response, training follow-up, booking operational communication, suppression retention, and compliance audit evidence.
 - [ ] PII-safe logging is verified: no raw form payloads, customer PII, full connection strings, payment tokens, or raw webhook bodies in logs or launch evidence.
-- [ ] No dashboard/admin UI is added for private records until access control, audit logging, and retention policy are approved.
+- [ ] Admin dashboard access control, owner/operator allowlists, audit logging, and retention/privacy operating policy are verified with documented evidence before private records are reviewed in `/admin`.
 - [ ] Nataliea is recorded as accountable business/privacy owner for consent, retention, unsubscribe, DSAR, and record disposition decisions.
 - [ ] Dardan's role is recorded as contract technical operator/steward during active engagement, with no permanent DSAR, retention, unsubscribe, or compliance ownership unless separately contracted.
 - [ ] Post-contract owner or vendor is named for DSARs, unsubscribe checks, access reviews, retention jobs, and incident response.

@@ -1,3 +1,4 @@
+import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import { draftMode } from "next/headers";
 import type { ReactNode } from "react";
@@ -66,15 +67,17 @@ export default async function RootLayout({
   const { isEnabled } = await draftMode();
 
   return (
-    <html lang="en">
-      <body
-        className={`${bebasNeue.variable} ${inter.variable} antialiased`}
-      >
-        {children}
-        {isEnabled && <VisualEditing />}
-        <SpeedInsights />
-        <Analytics />
-      </body>
-    </html>
+    <ClerkProvider>
+      <html lang="en">
+        <body
+          className={`${bebasNeue.variable} ${inter.variable} antialiased`}
+        >
+          {children}
+          {isEnabled && <VisualEditing />}
+          <SpeedInsights />
+          <Analytics />
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }

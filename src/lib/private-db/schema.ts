@@ -95,6 +95,51 @@ export const marketingConsentEventType = pgEnum("marketing_consent_event_type", 
   "backfill_consent",
 ]);
 
+export const adminRole = pgEnum("admin_role", ["owner", "operator"]);
+
+export const adminUserStatus = pgEnum("admin_user_status", ["active", "disabled"]);
+
+export const privacyRequestType = pgEnum("privacy_request_type", [
+  "access_export",
+  "correction",
+  "deletion",
+  "redaction",
+  "privacy_inquiry",
+]);
+
+export const privacyRequestStatus = pgEnum("privacy_request_status", [
+  "open",
+  "in_review",
+  "exported",
+  "pending_technical_action",
+  "completed",
+  "cancelled",
+]);
+
+export const privacyRequestEventType = pgEnum("privacy_request_event_type", [
+  "created",
+  "note_added",
+  "records_lookup",
+  "export_requested",
+  "export_completed",
+  "export_failed",
+  "decision_recorded",
+  "status_changed",
+]);
+
+export const adminAuditAction = pgEnum("admin_audit_action", [
+  "admin_access",
+  "customer_detail_view",
+  "privacy_request_view",
+  "privacy_records_lookup",
+  "privacy_export_attempt",
+  "privacy_export_completed",
+  "privacy_export_failed",
+  "troubleshooting_panel_view",
+  "audit_log_view",
+  "privacy_event_created",
+]);
+
 export interface CheckoutOrderLineItemSnapshot {
   productId: string;
   variantId?: string;
@@ -144,6 +189,12 @@ export type TrainingEnrollmentSchedulingStatus = typeof trainingEnrollmentSchedu
 export type AppointmentHoldStatus = typeof appointmentHoldStatus.enumValues[number];
 export type MarketingContactSubmissionType = typeof marketingContactSubmissionType.enumValues[number];
 export type MarketingConsentEventType = typeof marketingConsentEventType.enumValues[number];
+export type AdminRole = typeof adminRole.enumValues[number];
+export type AdminUserStatus = typeof adminUserStatus.enumValues[number];
+export type PrivacyRequestType = typeof privacyRequestType.enumValues[number];
+export type PrivacyRequestStatus = typeof privacyRequestStatus.enumValues[number];
+export type PrivacyRequestEventType = typeof privacyRequestEventType.enumValues[number];
+export type AdminAuditAction = typeof adminAuditAction.enumValues[number];
 
 export interface AppointmentHoldOfferingSnapshot {
   [key: string]: unknown;
@@ -172,6 +223,14 @@ export interface MarketingContactSubmissionPayload {
 }
 
 export interface MarketingConsentEventMetadata {
+  [key: string]: unknown;
+}
+
+export interface AdminAuditMetadata {
+  [key: string]: unknown;
+}
+
+export interface PrivacyRequestEventMetadata {
   [key: string]: unknown;
 }
 
@@ -434,3 +493,87 @@ export const marketingConsentEvents = pgTable("marketing_consent_events", {
   occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const adminUsers = pgTable(
+  "admin_users",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    providerUserId: text("provider_user_id").notNull(),
+    email: text("email").notNull(),
+    emailNormalized: text("email_normalized").notNull(),
+    displayName: text("display_name"),
+    role: adminRole("role").notNull(),
+    status: adminUserStatus("status").notNull().default("active"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("admin_users_provider_user_id_idx").on(table.providerUserId),
+    uniqueIndex("admin_users_email_normalized_idx").on(table.emailNormalized),
+  ],
+);
+
+export const privacyRequests = pgTable(
+  "privacy_requests",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    requestType: privacyRequestType("request_type").notNull(),
+    status: privacyRequestStatus("status").notNull().default("open"),
+    subjectEmail: text("subject_email").notNull(),
+    subjectEmailNormalized: text("subject_email_normalized").notNull(),
+    requesterName: text("requester_name"),
+    requesterNotes: text("requester_notes"),
+    ownerDecision: text("owner_decision"),
+    createdByAdminUserId: uuid("created_by_admin_user_id").references(() => adminUsers.id, { onDelete: "set null" }),
+    assignedAdminUserId: uuid("assigned_admin_user_id").references(() => adminUsers.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("privacy_requests_subject_email_normalized_idx").on(table.subjectEmailNormalized),
+    index("privacy_requests_status_idx").on(table.status),
+  ],
+);
+
+export const privacyRequestEvents = pgTable(
+  "privacy_request_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    privacyRequestId: uuid("privacy_request_id")
+      .notNull()
+      .references(() => privacyRequests.id, { onDelete: "cascade" }),
+    actorAdminUserId: uuid("actor_admin_user_id").references(() => adminUsers.id, { onDelete: "set null" }),
+    eventType: privacyRequestEventType("event_type").notNull(),
+    message: text("message"),
+    metadata: jsonb("metadata").$type<PrivacyRequestEventMetadata>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("privacy_request_events_request_created_idx").on(table.privacyRequestId, table.createdAt),
+  ],
+);
+
+export const adminAuditLogs = pgTable(
+  "admin_audit_logs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    actorAdminUserId: uuid("actor_admin_user_id").references(() => adminUsers.id, { onDelete: "set null" }),
+    actorEmail: text("actor_email").notNull(),
+    actorRole: adminRole("actor_role").notNull(),
+    action: adminAuditAction("action").notNull(),
+    domain: text("domain").notNull(),
+    targetType: text("target_type"),
+    targetId: text("target_id"),
+    privacyRequestId: uuid("privacy_request_id").references(() => privacyRequests.id, { onDelete: "set null" }),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    metadata: jsonb("metadata").$type<AdminAuditMetadata>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("admin_audit_logs_actor_created_idx").on(table.actorAdminUserId, table.createdAt),
+    index("admin_audit_logs_privacy_request_idx").on(table.privacyRequestId),
+    index("admin_audit_logs_target_idx").on(table.targetType, table.targetId),
+  ],
+);

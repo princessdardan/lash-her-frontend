@@ -59,6 +59,7 @@ staging-export.tar.gz
 .planning/
 .playwright-mcp/
 .sisyphus/
+.superpowers/
 .stitch/
 
 # claude/agent files

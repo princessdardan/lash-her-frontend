@@ -4,6 +4,11 @@ import test from "node:test";
 import { getTableConfig } from "drizzle-orm/pg-core";
 
 import {
+  adminAuditAction,
+  adminAuditLogs,
+  adminRole,
+  adminUsers,
+  adminUserStatus,
   appointmentHolds,
   appointmentHoldStatus,
   calendarFinalizationStatus,
@@ -11,6 +16,11 @@ import {
   checkoutPaymentEvents,
   checkoutOrderPurpose,
   marketingConsentEvents,
+  privacyRequestEventType,
+  privacyRequestEvents,
+  privacyRequests,
+  privacyRequestStatus,
+  privacyRequestType,
   paymentEventProcessingStatus,
   paymentProvider,
 } from "./schema";
@@ -249,4 +259,107 @@ test("marketing consent events preserve evidence when submissions are deleted", 
 
   assert.equal(marketingConsentEvents.submissionId.notNull, false);
   assert.equal(submissionForeignKey?.onDelete, "set null");
+});
+
+test("admin role and status enums support owner/operator access", () => {
+  assert.deepEqual(adminRole.enumValues, ["owner", "operator"]);
+  assert.deepEqual(adminUserStatus.enumValues, ["active", "disabled"]);
+});
+
+test("privacy request enums support V1 case tracking", () => {
+  assert.deepEqual(privacyRequestType.enumValues, [
+    "access_export",
+    "correction",
+    "deletion",
+    "redaction",
+    "privacy_inquiry",
+  ]);
+  assert.deepEqual(privacyRequestStatus.enumValues, [
+    "open",
+    "in_review",
+    "exported",
+    "pending_technical_action",
+    "completed",
+    "cancelled",
+  ]);
+  assert.deepEqual(privacyRequestEventType.enumValues, [
+    "created",
+    "note_added",
+    "records_lookup",
+    "export_requested",
+    "export_completed",
+    "export_failed",
+    "decision_recorded",
+    "status_changed",
+  ]);
+});
+
+test("admin audit action enum covers sensitive access and export events", () => {
+  assert.deepEqual(adminAuditAction.enumValues, [
+    "admin_access",
+    "customer_detail_view",
+    "privacy_request_view",
+    "privacy_records_lookup",
+    "privacy_export_attempt",
+    "privacy_export_completed",
+    "privacy_export_failed",
+    "troubleshooting_panel_view",
+    "audit_log_view",
+    "privacy_event_created",
+  ]);
+});
+
+test("admin users schema stores provider identity and role", () => {
+  const columnNames = Object.keys(adminUsers);
+  assert.ok(columnNames.includes("providerUserId"));
+  assert.ok(columnNames.includes("email"));
+  assert.ok(columnNames.includes("emailNormalized"));
+  assert.ok(columnNames.includes("displayName"));
+  assert.ok(columnNames.includes("role"));
+  assert.ok(columnNames.includes("status"));
+  assert.ok(columnNames.includes("createdAt"));
+  assert.ok(columnNames.includes("updatedAt"));
+});
+
+test("privacy request schema stores subject and case status", () => {
+  const columnNames = Object.keys(privacyRequests);
+  assert.ok(columnNames.includes("requestType"));
+  assert.ok(columnNames.includes("status"));
+  assert.ok(columnNames.includes("subjectEmail"));
+  assert.ok(columnNames.includes("subjectEmailNormalized"));
+  assert.ok(columnNames.includes("requesterName"));
+  assert.ok(columnNames.includes("requesterNotes"));
+  assert.ok(columnNames.includes("ownerDecision"));
+  assert.ok(columnNames.includes("createdByAdminUserId"));
+  assert.ok(columnNames.includes("assignedAdminUserId"));
+  assert.ok(columnNames.includes("createdAt"));
+  assert.ok(columnNames.includes("updatedAt"));
+  assert.ok(columnNames.includes("completedAt"));
+});
+
+test("privacy request events schema stores append-only case history", () => {
+  const columnNames = Object.keys(privacyRequestEvents);
+  assert.ok(columnNames.includes("privacyRequestId"));
+  assert.ok(columnNames.includes("actorAdminUserId"));
+  assert.ok(columnNames.includes("eventType"));
+  assert.ok(columnNames.includes("message"));
+  assert.ok(columnNames.includes("metadata"));
+  assert.ok(columnNames.includes("createdAt"));
+});
+
+test("admin audit logs schema stores minimal sensitive-action evidence", () => {
+  const columnNames = Object.keys(adminAuditLogs);
+  assert.ok(columnNames.includes("actorAdminUserId"));
+  assert.ok(columnNames.includes("actorEmail"));
+  assert.ok(columnNames.includes("actorRole"));
+  assert.ok(columnNames.includes("action"));
+  assert.ok(columnNames.includes("domain"));
+  assert.ok(columnNames.includes("targetType"));
+  assert.ok(columnNames.includes("targetId"));
+  assert.ok(columnNames.includes("privacyRequestId"));
+  assert.equal(columnNames.includes("reason"), false);
+  assert.ok(columnNames.includes("ipAddress"));
+  assert.ok(columnNames.includes("userAgent"));
+  assert.ok(columnNames.includes("metadata"));
+  assert.ok(columnNames.includes("createdAt"));
 });

@@ -182,6 +182,19 @@ Treat that URL as sensitive. Do not paste it in tickets or chat because it conta
 
 Set `DATABASE_URL` to the Neon/PostgreSQL database used for private operational records. Migrations live in `drizzle/` and are applied with `npm run db:migrate`.
 
+### Admin dashboard
+
+The private operations dashboard lives at `/admin` and uses Clerk for managed authentication. Configure these server/runtime variables in each environment:
+
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+- `CLERK_SECRET_KEY`
+- `ADMIN_OWNER_EMAILS`
+- `ADMIN_OPERATOR_EMAILS`
+
+`ADMIN_OWNER_EMAILS` and `ADMIN_OPERATOR_EMAILS` are comma-separated allowlists. Owner access is required for privacy exports and audit-log review. Operator access can view operational records needed for day-to-day work but cannot run full exports or review sensitive audit logs.
+
+Admin roles, privacy cases, and audit entries are stored in the private PostgreSQL database. Run generated Drizzle migrations before opening `/admin` in an environment.
+
 ### Payments
 
 `PAYMENT_GATEWAY_MODE` controls live vs local mock payment behavior.
