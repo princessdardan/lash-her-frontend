@@ -84,6 +84,23 @@ describe("booking service flow contract", () => {
     assert.match(bookingFlowSource, /Custom amount must be less than the full price/);
   });
 
+  it("renders a single optional add-on picker and explains due-later balances", () => {
+    assert.match(bookingFlowSource, /selectedAddOnKey/);
+    assert.match(bookingFlowSource, /Optional add-on/);
+    assert.match(bookingFlowSource, /No add-on/);
+    assert.match(bookingFlowSource, /Only one add-on can be selected/);
+    assert.match(bookingFlowSource, /add-on balance is due later/i);
+  });
+
+  it("clears selected add-ons when the selected service changes", () => {
+    assert.match(bookingFlowSource, /setSelectedAddOnKey\(null\)/);
+  });
+
+  it("posts only the selected add-on key to private hold creation", () => {
+    assert.match(bookingFlowSource, /selectedAddOnKey: input\.selectedAddOnKey/);
+    assert.doesNotMatch(bookingFlowSource, /selectedAddOnName|selectedAddOnPrice|computedTotal/);
+  });
+
   it("does not collect appointment intake fields that paid offering checkout does not persist", () => {
     assert.match(bookingFlowSource, /const currentServicePayment = currentService/);
     assert.match(bookingFlowSource, /const intakeQuestions = settings.intakeQuestions/);
@@ -182,6 +199,7 @@ describe("booking service flow contract", () => {
       marketingOptIn: false,
       paymentOption: "customPartial",
       customAmount: 75,
+      selectedAddOnKey: "addon-lash-bath",
       fetcher,
     });
 
@@ -207,6 +225,7 @@ describe("booking service flow contract", () => {
           marketingOptIn: false,
           paymentOption: "customPartial",
           customAmount: 75,
+          selectedAddOnKey: "addon-lash-bath",
         },
       },
       {

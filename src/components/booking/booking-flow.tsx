@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import type { BookingAnswerInput, BookingSettings, BookingSlot } from "@/lib/booking/types";
-import type { TService } from "@/types";
+import type { TService, TServiceAddOn } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,6 +24,7 @@ interface PaidServiceCheckoutInput {
   paymentOption: PaidServicePaymentOption;
   phone: string;
   serviceSlug: string;
+  selectedAddOnKey?: string;
   sourcePath?: string;
   start: string;
 }
@@ -80,6 +81,7 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
   const [squareCheckoutStatus, setSquareCheckoutStatus] = useState<SquareCheckoutStatus>("idle");
   const [paymentOption, setPaymentOption] = useState<PaidServicePaymentOption>("full");
   const [customAmount, setCustomAmount] = useState<string>("");
+  const [selectedAddOnKey, setSelectedAddOnKey] = useState<string | null>(null);
   const [dateWindowStart, setDateWindowStart] = useState(0);
 
   const currentService = useMemo(
@@ -93,6 +95,11 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
         currency: currentService.currency as "CAD",
       }
     : servicePayment;
+  const currentServiceAddOns = currentService?.addOns ?? [];
+  const selectedAddOn = currentServiceAddOns.find((addOn) => addOn._key === selectedAddOnKey);
+  const displayTotal = currentService
+    ? currentService.fullPrice + (selectedAddOn?.price ?? 0)
+    : currentServicePayment?.fullPrice;
   const intakeQuestions = settings.intakeQuestions ?? [];
   const marketingConsentText = settings.marketingOptInLabel || "I would like to receive updates and offers.";
 
@@ -190,6 +197,7 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
     setSelectedDateState("");
     setDateWindowStart(0);
     setSlots([]);
+    setSelectedAddOnKey(null);
     resetSquareCheckoutState();
   };
 
@@ -265,6 +273,7 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
         paymentOption,
         phone,
         serviceSlug: selectedServiceSlug,
+        ...(selectedAddOnKey ? { selectedAddOnKey } : {}),
         sourcePath: pathname,
         start: selectedSlot,
         ...(parsedCustomAmount ? { customAmount: parsedCustomAmount } : {}),
@@ -331,7 +340,7 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
         <aside className="w-full shrink-0 lg:w-80">
           <section className="sticky top-24 rounded-xl border border-lh-line bg-white p-6">
             <h2 className="section-subheading mb-4 text-xl md:text-xl lg:text-xl">Summary</h2>
-            <BookingSummary service={currentService} selectedSlot={selectedSlot} timezone={settings.timezone} />
+            <BookingSummary service={currentService} selectedAddOn={selectedAddOn} selectedSlot={selectedSlot} timezone={settings.timezone} />
             <Button className="mt-6 w-full" disabled={!selectedServiceSlug} onClick={() => setStep("datetime")}>Continue</Button>
           </section>
         </aside>
@@ -437,7 +446,7 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
         <aside className="w-full shrink-0 lg:w-80">
           <section className="sticky top-24 rounded-xl border border-lh-line bg-white p-6">
             <h2 className="section-subheading mb-4 text-xl md:text-xl lg:text-xl">Summary</h2>
-            <BookingSummary service={currentService} selectedSlot={selectedSlot} timezone={settings.timezone} />
+            <BookingSummary service={currentService} selectedAddOn={selectedAddOn} selectedSlot={selectedSlot} timezone={settings.timezone} />
             <Button className="mt-6 w-full" disabled={!selectedSlot} onClick={() => setStep("details")}>Continue</Button>
           </section>
         </aside>
@@ -539,6 +548,48 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
             <label htmlFor="marketingOptIn" className="text-sm leading-snug text-muted-foreground">{marketingConsentText}</label>
           </div>
 
+          {currentServiceAddOns.length > 0 && (
+            <div className="border-t border-border/50 pt-4">
+              <h3 className="section-subheading mb-4 text-lg text-primary md:text-lg lg:text-lg">Optional add-on</h3>
+              <p className="mb-4 text-sm text-muted-foreground">Only one add-on can be selected for this booking. Add-ons do not change your appointment duration.</p>
+              <div className="space-y-3" role="radiogroup" aria-label="Optional add-on">
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={selectedAddOnKey === null}
+                  onClick={() => setSelectedAddOnKey(null)}
+                  className={`w-full rounded-xl border p-4 text-left transition-colors ${selectedAddOnKey === null ? "border-lh-primary ring-1 ring-lh-primary" : "border-lh-line hover:border-lh-primary"}`}
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="font-medium text-black">No add-on</span>
+                    <span className="text-sm text-lh-muted">Included</span>
+                  </div>
+                </button>
+                {currentServiceAddOns.map((addOn) => {
+                  const isSelected = selectedAddOnKey === addOn._key;
+                  return (
+                    <button
+                      key={addOn._key}
+                      type="button"
+                      role="radio"
+                      aria-checked={isSelected}
+                      onClick={() => setSelectedAddOnKey(addOn._key)}
+                      className={`w-full rounded-xl border p-4 text-left transition-colors ${isSelected ? "border-lh-primary ring-1 ring-lh-primary" : "border-lh-line hover:border-lh-primary"}`}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="font-medium text-black">{addOn.name}</p>
+                          <p className="mt-1 text-sm text-lh-muted">{addOn.description}</p>
+                        </div>
+                        <span className="shrink-0 font-medium text-black">+{formatCad(addOn.price)}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {currentServicePayment && (
             <div className="border-t border-border/50 pt-4">
               <h3 className="section-subheading mb-4 text-lg text-primary md:text-lg lg:text-lg">Payment Details</h3>
@@ -554,7 +605,7 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="deposit">Pay Deposit ({formatCad(currentServicePayment.depositAmount)})</SelectItem>
-                      <SelectItem value="full">Pay in Full ({formatCad(currentServicePayment.fullPrice)})</SelectItem>
+                      <SelectItem value="full">Pay in Full ({formatCad(displayTotal ?? currentServicePayment.fullPrice)})</SelectItem>
                       <SelectItem value="customPartial">Pay Custom Amount</SelectItem>
                     </SelectContent>
                   </Select>
@@ -576,6 +627,11 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
                     <FieldDescription>Enter an amount greater than {formatCad(currentServicePayment.depositAmount)} and less than {formatCad(currentServicePayment.fullPrice)}.</FieldDescription>
                   </Field>
                 )}
+                {selectedAddOn && paymentOption !== "full" && (
+                  <p className="text-sm text-lh-muted">
+                    Your selected add-on balance is due later unless you choose Pay in Full.
+                  </p>
+                )}
               </div>
             </div>
           )}
@@ -591,14 +647,14 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
       <aside className="w-full shrink-0 lg:w-80">
         <section className="sticky top-24 rounded-xl border border-lh-line bg-white p-6">
           <h2 className="section-subheading mb-4 text-xl md:text-xl lg:text-xl">Summary</h2>
-          <BookingSummary service={currentService} selectedSlot={selectedSlot} timezone={settings.timezone} />
+          <BookingSummary service={currentService} selectedAddOn={selectedAddOn} selectedSlot={selectedSlot} timezone={settings.timezone} />
         </section>
       </aside>
     </section>
   );
 }
 
-function BookingSummary({ service, selectedSlot, timezone }: { service?: TService; selectedSlot: string; timezone: string }) {
+function BookingSummary({ service, selectedAddOn, selectedSlot, timezone }: { service?: TService; selectedAddOn?: TServiceAddOn; selectedSlot: string; timezone: string }) {
   if (!service) {
     return <p className="text-sm text-lh-muted">Select a service to continue.</p>;
   }
@@ -610,6 +666,12 @@ function BookingSummary({ service, selectedSlot, timezone }: { service?: TServic
         <span className="text-black">{formatCad(service.fullPrice)}</span>
       </div>
       <div className="text-sm text-lh-muted">{service.durationMinutes} min</div>
+      {selectedAddOn && (
+        <div className="flex justify-between text-sm">
+          <span className="text-lh-muted">{selectedAddOn.name}</span>
+          <span className="text-black">+{formatCad(selectedAddOn.price)}</span>
+        </div>
+      )}
       {selectedSlot && (
         <div className="border-t border-lh-line pt-4">
           <p className="mb-1 text-sm font-medium text-black">Selected Time</p>
@@ -628,7 +690,7 @@ function BookingSummary({ service, selectedSlot, timezone }: { service?: TServic
       <div className="border-t border-lh-line pt-4">
         <div className="flex justify-between font-medium text-black">
           <span>Total</span>
-          <span>{formatCad(service.fullPrice)}</span>
+          <span>{formatCad(service.fullPrice + (selectedAddOn?.price ?? 0))}</span>
         </div>
       </div>
     </div>
@@ -654,6 +716,7 @@ export async function startPaidServiceCheckout(input: PaidServiceCheckoutInput):
       paymentOption: input.paymentOption,
       phone: input.phone,
       serviceSlug: input.serviceSlug,
+      ...(input.selectedAddOnKey ? { selectedAddOnKey: input.selectedAddOnKey } : {}),
       sourcePath: input.sourcePath,
       start: input.start,
       ...(input.customAmount ? { customAmount: input.customAmount } : {}),
