@@ -140,6 +140,7 @@ const SAMPLE_CONTACT_POPUP: ContactPopupData = {
 const SAMPLE_SUBMITTED_AT = new Date("2026-06-15T14:30:00.000Z");
 
 const SAMPLE_BOOKING_CONFIRMATION: SendBookingConfirmationInput = {
+  addOnPaymentCopy: "Lash Bath add-on balance is due later ($25.00).",
   bookingTypeLabel: "Volume Lash Fill",
   email: "booking.client@example.com",
   holdId: "hold_sample_123",

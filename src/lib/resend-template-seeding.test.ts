@@ -55,12 +55,18 @@ test("Resend seed payloads include template metadata, placeholders, and variable
     assert.equal(booking.payload.subject, "Your Lash Her booking is confirmed");
     assert.equal(booking.payload.html.includes("{{{CUSTOMER_NAME}}}"), true);
     assert.equal(booking.payload.html.includes("{{{BOOKING_TYPE_LABEL}}}"), true);
+    assert.equal(booking.payload.html.includes("{{{ADD_ON_PAYMENT_COPY}}}"), true);
     assert.equal(booking.payload.html.includes("{{{EMAIL_PROFILE_IMAGE_HTML}}}"), true);
     assert.equal(booking.payload.html.includes("email-profile-placeholder"), false);
     assert.equal(booking.payload.html.includes("Jordan Booking"), false);
     assert.deepEqual(findVariable(booking, "CUSTOMER_NAME"), {
       fallbackValue: "Jordan Booking",
       key: "CUSTOMER_NAME",
+      type: "string",
+    });
+    assert.deepEqual(findVariable(booking, "ADD_ON_PAYMENT_COPY"), {
+      fallbackValue: "Lash Bath add-on balance is due later ($25.00).",
+      key: "ADD_ON_PAYMENT_COPY",
       type: "string",
     });
     assert.deepEqual(findVariable(booking, "EMAIL_PROFILE_IMAGE_HTML"), {

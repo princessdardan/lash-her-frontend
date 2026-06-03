@@ -1,5 +1,7 @@
 import type { calendar_v3 } from "googleapis";
 import type { PaymentProvider } from "@/lib/private-db/schema";
+import { getBookingPaymentSelection, getBookingSelectedAddOn } from "@/lib/booking/payment-policy";
+import type { BookingHoldRecord } from "./holds";
 
 export const BOOKING_EVENT_HOLD_PROPERTY = "lashHerBookingHoldId";
 
@@ -26,6 +28,7 @@ export interface BookingEventPayloadInput {
   bookingTypeLabel: string;
   customer: BookingEventCustomerInput;
   answers: BookingEventAnswerInput[];
+  hold?: BookingHoldRecord;
   start: Date;
   end: Date;
   timezone: string;
@@ -45,6 +48,11 @@ export function buildBookingEventPayload(
     "Answers:",
     answersText.length > 0 ? answersText : "No answers provided",
   ];
+  const addOnPaymentCopy = input.hold ? getBookingAddOnPaymentCopy(input.hold) : null;
+
+  if (addOnPaymentCopy !== null) {
+    descriptionParts.push("", addOnPaymentCopy);
+  }
 
 
   descriptionParts.push(
@@ -76,6 +84,24 @@ export function buildBookingEventPayload(
       useDefault: true,
     },
   };
+}
+
+function getBookingAddOnPaymentCopy(hold: BookingHoldRecord): string | null {
+  const selectedAddOn = getBookingSelectedAddOn(hold);
+  const paymentSelection = getBookingPaymentSelection(hold);
+
+  return selectedAddOn
+    ? paymentSelection?.purpose === "appointment_full"
+      ? `${selectedAddOn.name} add-on included in payment.`
+      : `${selectedAddOn.name} add-on balance is due later (${formatCad(selectedAddOn.price)}).`
+    : null;
+}
+
+function formatCad(amount: number): string {
+  return new Intl.NumberFormat("en-CA", {
+    currency: "CAD",
+    style: "currency",
+  }).format(amount);
 }
 
 function toPrivateBookingMetadata(input: BookingEventMetadataInput): Record<string, string> {

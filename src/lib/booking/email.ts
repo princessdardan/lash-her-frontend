@@ -6,10 +6,12 @@ import {
   recordBookingConfirmationEmailFailure,
   type BookingConfirmationEmailClaimRecord,
 } from "./holds";
+import { getBookingPaymentSelection, getBookingSelectedAddOn } from "@/lib/booking/payment-policy";
 import { getConfiguredTransactionalTemplate } from "@/lib/resend-platform";
 import { CUSTOMER_REPLY_TO_EMAIL, escapeHtml, getEmailProfileImageHtml, sendTransactionalEmail } from "@/lib/transactional-email";
 
 export interface SendBookingConfirmationInput {
+  addOnPaymentCopy?: string | null;
   bookingTypeLabel: string;
   email: string;
   holdId: string;
@@ -135,6 +137,7 @@ function getBookingConfirmationHtml(input: BookingConfirmationHtmlInput): string
             <td style="padding:34px 32px;">
               <p style="margin:0 0 18px 0;font-size:16px;line-height:1.7;">Hi ${escapeHtml(input.name)},</p>
               <p style="margin:0 0 22px 0;font-size:15px;line-height:1.7;">Your ${escapeHtml(input.bookingTypeLabel)} with Lash Her is reserved for <strong>${escapeHtml(input.formattedStart)}</strong>.</p>
+              ${input.addOnPaymentCopy ? `<p style="margin:0 0 22px 0;font-size:15px;line-height:1.7;">${escapeHtml(input.addOnPaymentCopy)}</p>` : ""}
               <div style="margin:28px 0;padding:20px;border-left:4px solid #D4B483;background-color:#F5F1F5;">
                 <p style="margin:0;font-size:14px;line-height:1.7;">If you need to make a change, please contact Lash Her directly so we can help adjust your appointment.</p>
               </div>
@@ -157,6 +160,7 @@ function getBookingConfirmationHtml(input: BookingConfirmationHtmlInput): string
 
 function getBookingConfirmationTemplateVariables(input: BookingConfirmationHtmlInput): Record<string, unknown> {
   return {
+    ADD_ON_PAYMENT_COPY: escapeHtml(input.addOnPaymentCopy ?? ""),
     BOOKING_TYPE_LABEL: escapeHtml(input.bookingTypeLabel),
     CUSTOMER_EMAIL: escapeHtml(input.email),
     CUSTOMER_FIRST_NAME: escapeHtml(input.name.trim().split(/\s+/)[0] ?? ""),
@@ -182,6 +186,7 @@ function toBookingConfirmationInput(
   orderId: string,
 ): SendBookingConfirmationInput {
   return {
+    addOnPaymentCopy: getBookingAddOnPaymentCopy(hold),
     bookingTypeLabel: getBookingTypeLabel(hold),
     email: hold.customer.email,
     holdId: hold.id,
@@ -196,6 +201,24 @@ function toBookingConfirmationInput(
 function getBookingTypeLabel(hold: BookingConfirmationEmailClaimRecord): string {
   const title = hold.offeringSnapshot.title;
   return typeof title === "string" && title.trim().length > 0 ? title : "lash appointment";
+}
+
+function getBookingAddOnPaymentCopy(hold: BookingConfirmationEmailClaimRecord): string | null {
+  const selectedAddOn = getBookingSelectedAddOn(hold);
+  const paymentSelection = getBookingPaymentSelection(hold);
+
+  return selectedAddOn
+    ? paymentSelection?.purpose === "appointment_full"
+      ? `${selectedAddOn.name} add-on included in payment.`
+      : `${selectedAddOn.name} add-on balance is due later (${formatCad(selectedAddOn.price)}).`
+    : null;
+}
+
+function formatCad(amount: number): string {
+  return new Intl.NumberFormat("en-CA", {
+    currency: "CAD",
+    style: "currency",
+  }).format(amount);
 }
 
 function getErrorMessage(error: unknown): string {

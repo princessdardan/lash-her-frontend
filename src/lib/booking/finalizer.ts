@@ -193,6 +193,7 @@ export async function finalizeAppointmentPaymentForOrder(
                 bookingTypeLabel: getBookingTypeLabel(paidHold),
                 customer: paidHold.customer,
                 end: paidHold.selectedEnd,
+                hold: paidHold,
                 start: paidHold.selectedStart,
                 timezone: paidHold.timezone,
               }),
