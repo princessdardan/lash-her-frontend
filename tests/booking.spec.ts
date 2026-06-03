@@ -165,7 +165,9 @@ test.describe('Booking route flows', () => {
     await page.goto(`/booking?offeringSlug=${SERVICE_SLUG}`);
 
     await expect(page).toHaveURL(new RegExp(`/services/${SERVICE_SLUG}/booking$`));
-    await expect(page.getByText(/book appointment/i)).toBeVisible();
+    await expect(
+      page.getByRole('region', { name: /service booking/i }).getByText(/book appointment/i),
+    ).toBeVisible();
     await expect(page.getByRole('heading', { name: /select time/i })).toBeVisible();
   });
 
