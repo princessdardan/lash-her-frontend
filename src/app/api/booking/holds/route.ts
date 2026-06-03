@@ -31,6 +31,7 @@ interface BookingHoldRequestInput {
   paymentOption?: "deposit" | "full" | "customPartial";
   phone: string;
   serviceSlug: string;
+  selectedAddOnKey?: string;
   sourcePath?: string;
   start: string;
 }
@@ -41,6 +42,14 @@ interface BookingPaymentSelectionSnapshot {
   option: "deposit" | "full" | "customPartial";
   purpose: "appointment_deposit" | "appointment_full" | "appointment_custom_partial";
   sku: "BOOKING-DEPOSIT" | "BOOKING-FULL" | "BOOKING-CUSTOM-PARTIAL";
+}
+
+interface BookingAddOnSelectionSnapshot {
+  key: string;
+  name: string;
+  description: string;
+  price: number;
+  currency: "CAD";
 }
 
 export interface BookingHoldsPostHandlerDependencies {
@@ -125,6 +134,18 @@ export function createBookingHoldsPostHandler(
         );
       }
 
+      const selectedAddOn = getSelectedAddOn(service, input.selectedAddOnKey);
+
+      if (selectedAddOn === "invalid") {
+        return Response.json(
+          {
+            error: "Please fix the hold details and try again.",
+            fieldErrors: { selectedAddOnKey: "That add-on is no longer available. Please review your selection." },
+          },
+          { status: 400 },
+        );
+      }
+
       const now = new Date();
       const horizonEnd = new Date(now.getTime() + settings.bookingHorizonDays * DAY_MS);
       const selectedEnd = new Date(
@@ -145,7 +166,7 @@ export function createBookingHoldsPostHandler(
       ]);
       const availabilityWindows = buildAvailabilityWindowsFromHours({ horizonEnd, now, settings });
       const activeHoldBusyEvents = getActiveHoldBusyEvents({ holds: activeHolds, now });
-      const paymentSelection = getPaymentSelection(service, input);
+      const paymentSelection = getPaymentSelection(service, input, selectedAddOn);
 
       if (paymentSelection === null) {
         return Response.json(
@@ -180,7 +201,7 @@ export function createBookingHoldsPostHandler(
           phone: input.phone,
         },
         offeringId: service._id,
-        offeringSnapshot: toServiceSnapshot(service, input, paymentSelection),
+        offeringSnapshot: toServiceSnapshot(service, input, paymentSelection, selectedAddOn),
         selectedEnd,
         selectedStart,
         timezone: settings.timezone,
@@ -270,6 +291,7 @@ function toBookingHoldRequestInput(input: unknown): BookingHoldRequestInput {
   const customAmount = parseOptionalAmount(record.customAmount);
   const paymentOption = parsePaymentOption(record.paymentOption);
   const marketingConsentText = toOptionalStringValue(record.marketingConsentText);
+  const selectedAddOnKey = toOptionalStringValue(record.selectedAddOnKey);
   const sourcePath = toOptionalStringValue(record.sourcePath);
 
   return {
@@ -287,6 +309,7 @@ function toBookingHoldRequestInput(input: unknown): BookingHoldRequestInput {
       toStringValue(record.offeringSlug) ||
       toStringValue(record.offering)
     ).trim(),
+    ...(selectedAddOnKey ? { selectedAddOnKey } : {}),
     ...(sourcePath ? { sourcePath } : {}),
     start: toStringValue(record.start).trim(),
   };
@@ -347,13 +370,14 @@ function validateRequiredAnswers(
 function getPaymentSelection(
   service: TService,
   input: BookingHoldRequestInput,
+  selectedAddOn: BookingAddOnSelectionSnapshot | null,
 ): BookingPaymentSelectionSnapshot | null {
   if (input.paymentOption === "deposit") {
-    return resolveFixedPaymentSelection(service, "deposit");
+    return resolveFixedPaymentSelection(service, "deposit", selectedAddOn);
   }
 
   if (input.paymentOption === "full") {
-    return resolveFixedPaymentSelection(service, "full");
+    return resolveFixedPaymentSelection(service, "full", selectedAddOn);
   }
 
   if (input.paymentOption === "customPartial") {
@@ -377,7 +401,9 @@ function getPaymentSelection(
 
     return {
       amount: customAmount,
-      description: `${service.title} custom partial payment`,
+      description: selectedAddOn
+        ? `${service.title} custom partial payment; ${selectedAddOn.name} add-on balance due later`
+        : `${service.title} custom partial payment`,
       option: "customPartial",
       purpose: "appointment_custom_partial",
       sku: "BOOKING-CUSTOM-PARTIAL",
@@ -387,9 +413,31 @@ function getPaymentSelection(
   return null;
 }
 
+function getSelectedAddOn(
+  service: TService,
+  selectedAddOnKey?: string,
+): BookingAddOnSelectionSnapshot | null | "invalid" {
+  if (!selectedAddOnKey) return null;
+
+  const addOn = service.addOns?.find((candidate) => candidate._key === selectedAddOnKey);
+  if (!addOn) return "invalid";
+
+  const price = toPositiveAmount(addOn.price);
+  if (price === null) return "invalid";
+
+  return {
+    key: addOn._key,
+    name: addOn.name.trim(),
+    description: addOn.description.trim(),
+    price,
+    currency: "CAD",
+  };
+}
+
 function resolveFixedPaymentSelection(
   service: TService,
   option: "deposit" | "full",
+  selectedAddOn: BookingAddOnSelectionSnapshot | null,
 ): BookingPaymentSelectionSnapshot | null {
   if (option === "deposit") {
     const amount = toPositiveAmount(service.depositAmount);
@@ -398,20 +446,25 @@ function resolveFixedPaymentSelection(
       ? null
       : {
           amount,
-          description: `${service.title} deposit`,
+          description: selectedAddOn
+            ? `${service.title} deposit; ${selectedAddOn.name} add-on balance due later`
+            : `${service.title} deposit`,
           option: "deposit",
           purpose: "appointment_deposit",
           sku: "BOOKING-DEPOSIT",
         };
   }
 
-  const amount = toPositiveAmount(service.fullPrice);
+  const fullPrice = toPositiveAmount(service.fullPrice);
+  const amount = fullPrice === null ? null : fullPrice + (selectedAddOn?.price ?? 0);
 
   return amount === null
     ? null
     : {
         amount,
-        description: `${service.title} full payment`,
+        description: selectedAddOn
+          ? `${service.title} full payment with ${selectedAddOn.name}`
+          : `${service.title} full payment`,
         option: "full",
         purpose: "appointment_full",
         sku: "BOOKING-FULL",
@@ -422,6 +475,7 @@ function toServiceSnapshot(
   service: TService,
   input: BookingHoldRequestInput,
   paymentSelection: BookingPaymentSelectionSnapshot,
+  selectedAddOn: BookingAddOnSelectionSnapshot | null,
 ): Record<string, unknown> {
   return {
     id: service._id,
@@ -432,6 +486,7 @@ function toServiceSnapshot(
     depositAmount: service.depositAmount,
     fullPrice: service.fullPrice,
     currency: service.currency,
+    ...(selectedAddOn ? { selectedAddOn } : {}),
     selectedPayment: paymentSelection,
     answers: normalizeAnswers(input.answers),
     marketingOptIn: input.marketingOptIn,

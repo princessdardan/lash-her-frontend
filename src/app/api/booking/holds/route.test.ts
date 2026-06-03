@@ -54,6 +54,9 @@ const helperScript = String.raw`
       depositAmount: 50,
       fullPrice: 150,
       currency: "CAD",
+      addOns: [
+        { _key: "addon-lash-bath", name: "Lash Bath", description: "A gentle cleansing add-on", price: 25 },
+      ],
       isAvailable: true,
       ...overrides,
     };
@@ -301,6 +304,142 @@ test("booking hold route snapshots purchaser-selected full payments", () => {
       option: "full",
       purpose: "appointment_full",
       sku: "BOOKING-FULL",
+    });
+  `);
+});
+
+test("booking hold route snapshots full payments with selected add-ons", () => {
+  runRouteScenario(`
+    const selectedStart = createFutureDate(2, 0);
+    const createInputs = [];
+    const handler = createHoldHandler({
+      listCalendarEvents: async () => [],
+      createAppointmentHold: async (input) => {
+        createInputs.push(input);
+        return {
+          ok: true,
+          hold: {
+            publicReference: "hold_public_1",
+            expiresAt: new Date("2026-06-01T12:10:00.000Z"),
+            selectedStart: input.selectedStart,
+            selectedEnd: input.selectedEnd,
+          },
+        };
+      },
+    });
+
+    const response = await handler(createRequest({
+      serviceSlug: "classic-fill",
+      selectedAddOnKey: "addon-lash-bath",
+      start: selectedStart.toISOString(),
+      name: "Client Name",
+      email: "client@example.com",
+      phone: "555-0100",
+      paymentOption: "full",
+    }));
+
+    assert.equal(response.status, 201);
+    assert.deepEqual(createInputs[0].offeringSnapshot.selectedAddOn, {
+      key: "addon-lash-bath",
+      name: "Lash Bath",
+      description: "A gentle cleansing add-on",
+      price: 25,
+      currency: "CAD",
+    });
+    assert.deepEqual(createInputs[0].offeringSnapshot.selectedPayment, {
+      amount: 175,
+      description: "Classic Fill full payment with Lash Bath",
+      option: "full",
+      purpose: "appointment_full",
+      sku: "BOOKING-FULL",
+    });
+  `);
+});
+
+test("booking hold route keeps deposit and custom partial amounts service-only with selected add-ons", () => {
+  runRouteScenario(`
+    const selectedStart = createFutureDate(2, 0);
+    const createInputs = [];
+    const handler = createHoldHandler({
+      listCalendarEvents: async () => [],
+      createAppointmentHold: async (input) => {
+        createInputs.push(input);
+        return {
+          ok: true,
+          hold: {
+            publicReference: "hold_public_1",
+            expiresAt: new Date("2026-06-01T12:10:00.000Z"),
+            selectedStart: input.selectedStart,
+            selectedEnd: input.selectedEnd,
+          },
+        };
+      },
+    });
+
+    const depositResponse = await handler(createRequest({
+      serviceSlug: "classic-fill",
+      selectedAddOnKey: "addon-lash-bath",
+      start: selectedStart.toISOString(),
+      name: "Client Name",
+      email: "client@example.com",
+      phone: "555-0100",
+      paymentOption: "deposit",
+    }));
+
+    const customResponse = await handler(createRequest({
+      serviceSlug: "classic-fill",
+      selectedAddOnKey: "addon-lash-bath",
+      start: selectedStart.toISOString(),
+      name: "Client Name",
+      email: "client@example.com",
+      phone: "555-0100",
+      paymentOption: "customPartial",
+      customAmount: 100,
+    }));
+
+    assert.equal(depositResponse.status, 201);
+    assert.equal(customResponse.status, 201);
+    assert.equal(createInputs[0].offeringSnapshot.selectedPayment.amount, 50);
+    assert.match(createInputs[0].offeringSnapshot.selectedPayment.description, /add-on balance due later/);
+    assert.equal(createInputs[1].offeringSnapshot.selectedPayment.amount, 100);
+    assert.match(createInputs[1].offeringSnapshot.selectedPayment.description, /add-on balance due later/);
+  `);
+});
+
+test("booking hold route rejects stale selected add-on keys", () => {
+  runRouteScenario(`
+    const selectedStart = createFutureDate(2, 0);
+    const selectedEnd = new Date(selectedStart.getTime() + 60 * 60 * 1000);
+    let createCalled = false;
+    const handler = createHoldHandler({
+      listCalendarEvents: async () => [{
+        id: "available-window",
+        title: "Open",
+        start: selectedStart,
+        end: selectedEnd,
+      }],
+      createAppointmentHold: async () => {
+        createCalled = true;
+        return { ok: false, reason: "slot_conflict", conflictingHoldId: "hold-1" };
+      },
+    });
+
+    const response = await handler(createRequest({
+      serviceSlug: "classic-fill",
+      selectedAddOnKey: "addon-stale",
+      start: selectedStart.toISOString(),
+      name: "Client Name",
+      email: "client@example.com",
+      phone: "555-0100",
+      paymentOption: "full",
+    }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 400);
+    assert.equal(createCalled, false);
+    assert.deepEqual(body, {
+      error: "Please fix the hold details and try again.",
+      fieldErrors: { selectedAddOnKey: "That add-on is no longer available. Please review your selection." },
     });
   `);
 });
