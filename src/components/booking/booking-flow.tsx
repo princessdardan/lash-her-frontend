@@ -549,45 +549,57 @@ export function BookingFlow({ initialServiceSlug, servicePayment, services = [],
           </div>
 
           {currentServiceAddOns.length > 0 && (
-            <div className="border-t border-border/50 pt-4">
-              <h3 className="section-subheading mb-4 text-lg text-primary md:text-lg lg:text-lg">Optional add-on</h3>
+            <fieldset className="border-t border-border/50 pt-4">
+              <legend className="section-subheading mb-4 text-lg text-primary md:text-lg lg:text-lg">Optional add-on</legend>
               <p className="mb-4 text-sm text-muted-foreground">Only one add-on can be selected for this booking. Add-ons do not change your appointment duration.</p>
-              <div className="space-y-3" role="radiogroup" aria-label="Optional add-on">
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={selectedAddOnKey === null}
-                  onClick={() => setSelectedAddOnKey(null)}
-                  className={`w-full rounded-xl border p-4 text-left transition-colors ${selectedAddOnKey === null ? "border-lh-primary ring-1 ring-lh-primary" : "border-lh-line hover:border-lh-primary"}`}
+              <div className="space-y-3">
+                <label
+                  className={`block w-full rounded-xl border p-4 text-left transition-colors ${selectedAddOnKey === null ? "border-lh-primary ring-1 ring-lh-primary" : "border-lh-line hover:border-lh-primary"}`}
                 >
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="font-medium text-black">No add-on</span>
-                    <span className="text-sm text-lh-muted">Included</span>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="radio"
+                      name="selectedAddOnKey"
+                      value=""
+                      checked={selectedAddOnKey === null}
+                      onChange={() => setSelectedAddOnKey(null)}
+                      className="h-4 w-4 shrink-0 border-lh-line text-lh-primary focus:ring-lh-primary"
+                    />
+                    <div className="flex flex-1 items-center justify-between gap-4">
+                      <span className="font-medium text-black">No add-on</span>
+                      <span className="text-sm text-lh-muted">Included</span>
+                    </div>
                   </div>
-                </button>
+                </label>
                 {currentServiceAddOns.map((addOn) => {
                   const isSelected = selectedAddOnKey === addOn._key;
                   return (
-                    <button
+                    <label
                       key={addOn._key}
-                      type="button"
-                      role="radio"
-                      aria-checked={isSelected}
-                      onClick={() => setSelectedAddOnKey(addOn._key)}
-                      className={`w-full rounded-xl border p-4 text-left transition-colors ${isSelected ? "border-lh-primary ring-1 ring-lh-primary" : "border-lh-line hover:border-lh-primary"}`}
+                      className={`block w-full rounded-xl border p-4 text-left transition-colors ${isSelected ? "border-lh-primary ring-1 ring-lh-primary" : "border-lh-line hover:border-lh-primary"}`}
                     >
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <p className="font-medium text-black">{addOn.name}</p>
-                          <p className="mt-1 text-sm text-lh-muted">{addOn.description}</p>
+                      <div className="flex items-start gap-3">
+                        <input
+                          type="radio"
+                          name="selectedAddOnKey"
+                          value={addOn._key}
+                          checked={isSelected}
+                          onChange={() => setSelectedAddOnKey(addOn._key)}
+                          className="mt-1 h-4 w-4 shrink-0 border-lh-line text-lh-primary focus:ring-lh-primary"
+                        />
+                        <div className="flex flex-1 items-start justify-between gap-4">
+                          <div>
+                            <p className="font-medium text-black">{addOn.name}</p>
+                            <p className="mt-1 text-sm text-lh-muted">{addOn.description}</p>
+                          </div>
+                          <span className="shrink-0 font-medium text-black">+{formatCad(addOn.price)}</span>
                         </div>
-                        <span className="shrink-0 font-medium text-black">+{formatCad(addOn.price)}</span>
                       </div>
-                    </button>
+                    </label>
                   );
                 })}
               </div>
-            </div>
+            </fieldset>
           )}
 
           {currentServicePayment && (

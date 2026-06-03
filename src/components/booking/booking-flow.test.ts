@@ -90,6 +90,8 @@ describe("booking service flow contract", () => {
     assert.match(bookingFlowSource, /No add-on/);
     assert.match(bookingFlowSource, /Only one add-on can be selected/);
     assert.match(bookingFlowSource, /add-on balance is due later/i);
+    assert.match(bookingFlowSource, /type="radio"/);
+    assert.doesNotMatch(bookingFlowSource, /role="radio(?:group)?"/);
   });
 
   it("clears selected add-ons when the selected service changes", () => {
