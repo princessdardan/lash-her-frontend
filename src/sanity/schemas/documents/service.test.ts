@@ -109,4 +109,48 @@ describe("service schema payment contract", () => {
     assert.strictEqual(await validator(50, buildContext({ depositAmount: 50 })), "Full price must be greater than the deposit amount.");
     assert.strictEqual(await validator(250, buildContext({ depositAmount: 50 })), true);
   });
+
+  it("defines embedded service add-ons with required public fields", () => {
+    const addOnsField = getField("addOns") as SchemaField & {
+      type?: string;
+      of?: Array<{ type?: string; fields?: SchemaField[] }>;
+    };
+
+    assert.equal(addOnsField.type, "array");
+    assert.ok(Array.isArray(addOnsField.of));
+    assert.equal(addOnsField.of?.[0]?.type, "object");
+
+    const addOnFields = addOnsField.of?.[0]?.fields ?? [];
+    const addOnFieldNames = addOnFields.map((field) => field.name);
+
+    assert.ok(addOnFieldNames.includes("name"));
+    assert.ok(addOnFieldNames.includes("description"));
+    assert.ok(addOnFieldNames.includes("image"));
+    assert.ok(addOnFieldNames.includes("price"));
+    assert.ok(!addOnFieldNames.includes("isAvailable"));
+  });
+
+  it("requires positive add-on prices", async () => {
+    const addOnsField = getField("addOns") as SchemaField & {
+      of?: Array<{ fields?: SchemaField[] }>;
+    };
+    const priceField = addOnsField.of?.[0]?.fields?.find((field) => field.name === "price");
+
+    assert.ok(priceField, "add-on price field should be configured");
+    assert.equal(typeof priceField.validation, "function");
+
+    let capturedValidator: FieldValidator | undefined;
+    const rule: RuleStub = {
+      custom(validator) {
+        capturedValidator = validator;
+        return rule;
+      },
+    };
+
+    priceField.validation(rule);
+    assert.ok(capturedValidator, "add-on price custom validator should be registered");
+    assert.strictEqual(await capturedValidator(undefined, buildContext()), "Add-on price is required.");
+    assert.strictEqual(await capturedValidator(0, buildContext()), "Add-on price must be greater than zero.");
+    assert.strictEqual(await capturedValidator(25, buildContext()), true);
+  });
 });

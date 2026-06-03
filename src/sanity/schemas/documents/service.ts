@@ -46,6 +46,16 @@ function validateFullPrice(value: unknown, context: { document?: unknown }) {
   return true;
 }
 
+function validateAddOnPrice(value: unknown) {
+  if (typeof value !== "number") return "Add-on price is required.";
+
+  if (!Number.isFinite(value) || value <= 0) {
+    return "Add-on price must be greater than zero.";
+  }
+
+  return true;
+}
+
 export const service = defineType({
   name: "service",
   title: "Service",
@@ -70,6 +80,36 @@ export const service = defineType({
     defineField({ name: "durationMinutes", title: "Duration Minutes", type: "number", group: "booking", validation: (Rule) => Rule.required().integer().min(15).max(240) }),
     defineField({ name: "fullPrice", title: "Full Price", type: "number", group: "pricing", validation: (Rule) => Rule.custom(validateFullPrice) }),
     defineField({ name: "depositAmount", title: "Deposit Amount", type: "number", group: "pricing", validation: (Rule) => Rule.custom(validateDepositAmount) }),
+    defineField({
+      name: "addOns",
+      title: "Add-ons",
+      type: "array",
+      group: "pricing",
+      of: [
+        defineArrayMember({
+          type: "object",
+          title: "Add-on",
+          fields: [
+            defineField({ name: "name", title: "Name", type: "string", validation: (Rule) => Rule.required() }),
+            defineField({ name: "description", title: "Description", type: "text", rows: 2, validation: (Rule) => Rule.required() }),
+            defineField({
+              name: "image",
+              title: "Image",
+              type: "image",
+              options: { hotspot: true },
+              fields: [defineField({ name: "alt", title: "Alt text", type: "string" })],
+            }),
+            defineField({ name: "price", title: "Price", type: "number", validation: (Rule) => Rule.custom(validateAddOnPrice) }),
+          ],
+          preview: {
+            select: { title: "name", subtitle: "price", media: "image" },
+            prepare({ title, subtitle, media }) {
+              return { title, subtitle: typeof subtitle === "number" ? `$${subtitle.toFixed(2)} CAD` : undefined, media };
+            },
+          },
+        }),
+      ],
+    }),
     defineField({ name: "currency", title: "Currency", type: "string", group: "pricing", initialValue: "CAD", readOnly: true, validation: (Rule) => Rule.required() }),
     defineField({
       name: "image",
