@@ -65,7 +65,7 @@ test("Resend seed payloads include template metadata, placeholders, and variable
       type: "string",
     });
     assert.deepEqual(findVariable(booking, "ADD_ON_PAYMENT_COPY"), {
-      fallbackValue: "Lash Bath add-on balance is due later ($25.00).",
+      fallbackValue: '<p style="margin:0 0 22px 0;font-size:15px;line-height:1.7;">Lash Bath add-on balance is due later ($25.00).</p>',
       key: "ADD_ON_PAYMENT_COPY",
       type: "string",
     });
@@ -138,6 +138,26 @@ test("Resend template dry-run prints summaries without calling Resend", () => {
     assert.equal(logs.some((message) => message.includes("Prepared 10 Resend template payloads.")), true);
     assert.equal(logs.some((message) => message.includes("RESEND_TEMPLATE_BOOKING_CONFIRMATION_ID")), true);
     assert.equal(logs.some((message) => message.includes("Dry run only")), true);
+  `);
+});
+
+test("booking template renders no blank add-on paragraph when no add-on copy is provided", () => {
+  runResendTemplateSeedScenario(`
+    const booking = findDefinition(buildResendTemplateDefinitions(), "booking_confirmation");
+    const variables = toResendTemplateVariables(getBookingConfirmationSeedTemplateVariables({
+      bookingTypeLabel: "Volume Fill",
+      email: "booking@example.com",
+      holdId: "hold_123",
+      name: "Jordan Booking",
+      orderId: "LH-BOOKING",
+      paymentProvider: "square",
+      start: new Date("2026-06-15T15:30:00.000Z"),
+      timezone: "America/Toronto",
+    }));
+    const renderedHtml = renderTemplateHtml(booking.payload.html, variables);
+
+    assert.equal(variables.ADD_ON_PAYMENT_COPY, "");
+    assert.equal(renderedHtml.includes('style="margin:0 0 22px 0;font-size:15px;line-height:1.7;"></p>'), false);
   `);
 });
 
@@ -310,7 +330,18 @@ test("Resend template apply mode creates then publishes and prints env mappings"
 });
 
 function runResendTemplateSeedScenario(assertions: string): void {
-  const scenario = `${helperScript}\nvoid (async () => {\n${assertions}\n})()`;
+  const scenario = `${helperScript}
+function renderTemplateHtml(html, variables) {
+  let rendered = html;
+
+  for (const [key, value] of Object.entries(variables)) {
+    rendered = rendered.split("{{{" + key + "}}}").join(String(value));
+  }
+
+  return rendered;
+}
+
+void (async () => {\n${assertions}\n})()`;
   const env = { ...process.env };
 
   env.NEXT_PUBLIC_SANITY_DATASET = "test";
