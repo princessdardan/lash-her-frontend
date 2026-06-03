@@ -5,6 +5,8 @@ import { MainWrapper } from "@/components/custom/layouts/main-wrapper";
 import { ContactPopup } from "@/components/custom/contact-popup/contact-popup";
 import { CartSheet } from "@/components/commerce/cart-sheet";
 import { ProductCartProvider } from "@/components/commerce/product-cart-provider";
+import { CookieConsentBanner } from "@/components/legal/cookie-consent-banner";
+import { ConsentedAnalytics } from "@/components/analytics/consented-analytics";
 
 export default async function SiteLayout({
   children,
@@ -32,6 +34,8 @@ export default async function SiteLayout({
         <Footer data={globalData?.footer} />
         <ContactPopup settings={globalData?.contactPopup} />
         <CartSheet />
+        <CookieConsentBanner />
+        <ConsentedAnalytics />
       </ProductCartProvider>
     </>
   );

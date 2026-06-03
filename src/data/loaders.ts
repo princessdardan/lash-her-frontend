@@ -17,6 +17,7 @@ import type {
   TProduct,
   TProductsPage,
   TProductsGroupedCatalog,
+  TPolicyPage,
   TPromotionCode,
   TService,
   TTrainingProgramCatalogItem,
@@ -121,6 +122,21 @@ const TRAINING_PROGRAM_CATALOG_PROJECTION = groq`{
   image{ asset, hotspot, crop, alt },
   checkoutCtaLabel,
   seo{ title, description, image{ asset, hotspot, crop, alt } }
+}`;
+
+const POLICY_PAGE_PROJECTION = groq`{
+  _id,
+  _updatedAt,
+  title,
+  "slug": slug.current,
+  pageType,
+  summary,
+  body[]{ ..., _key },
+  "seo": {
+    "title": coalesce(seo.title, title),
+    "description": coalesce(seo.description, summary, ""),
+    "noIndex": seo.noIndex == true
+  }
 }`;
 
 function sanityFetchOptions(tags: string[]) {
@@ -415,6 +431,14 @@ async function getProductsPageData(): Promise<TProductsPage | null> {
   return sanityFetch<TProductsPage | null>(query, {}, ["productsPage", "productCollection"]);
 }
 
+async function getPolicyPageBySlug(
+  slug: string,
+  options: SanityFetchOptions = {},
+): Promise<TPolicyPage | null> {
+  const query = groq`*[_type == "policyPage" && slug.current == $slug][0]${POLICY_PAGE_PROJECTION}`;
+  return sanityFetch<TPolicyPage | null>(query, { slug }, ["policyPage"], options);
+}
+
 async function getTrainingProgramBySlug(
   slug: string,
   options: SanityFetchOptions = {},
@@ -656,6 +680,14 @@ async function getAllTrainingProgramSlugs(): Promise<Array<{ slug: string }>> {
   return sanityStaticFetch<Array<{ slug: string }>>(query, {}, ["trainingProgram"]);
 }
 
+async function getAllPolicyPageSlugs(): Promise<Array<{ slug: string }>> {
+  const query = groq`*[_type == "policyPage" && defined(slug.current)]{ "slug": slug.current }`;
+  return sanityFetch<Array<{ slug: string }>>(query, {}, ["policyPage"], {
+    mode: "published",
+    stega: false,
+  });
+}
+
 async function getBookingSettings(options: SanityFetchOptions = {}): Promise<BookingSettings | null> {
   const query = groq`*[_type == "bookingSettings" && !(_id in path("drafts.**"))]{
     "singletonPriority": select(_id == "bookingSettings" => 0, 1),
@@ -820,10 +852,12 @@ export const loaders = {
   getMainMenuData,
   getMetaData,
   getProductsPageData,
+  getPolicyPageBySlug,
   getTrainingProgramBySlug,
   getTrainingProgramsPageData,
   getAllTrainingPrograms,
   getAllTrainingProgramSlugs,
+  getAllPolicyPageSlugs,
   getBookingSettings,
   getBookableServices,
   getBookableServiceBySlug,

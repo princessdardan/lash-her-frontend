@@ -360,6 +360,31 @@ export interface TTrainingProgramsPage {
   trainingPrograms: TTrainingProgram[];
 }
 
+export type TPolicyPageType =
+  | "privacy"
+  | "cookie"
+  | "booking"
+  | "return"
+  | "refund"
+  | "faq"
+  | "terms"
+  | "general";
+
+export interface TPolicyPage {
+  _id: string;
+  _updatedAt?: string;
+  title: string;
+  slug: string;
+  pageType: TPolicyPageType;
+  summary?: string;
+  body: TPortableTextBlock[];
+  seo?: {
+    title?: string;
+    description?: string;
+    noIndex?: boolean;
+  };
+}
+
 export interface TProductCollection {
   _id: string;
   _key?: string;

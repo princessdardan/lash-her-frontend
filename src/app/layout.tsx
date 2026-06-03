@@ -5,7 +5,6 @@ import { loaders } from "@/data/loaders";
 import { Bebas_Neue, Inter } from "next/font/google";
 import { VisualEditing } from "next-sanity/visual-editing";
 import "./globals.css";
-import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
 const inter = Inter({
@@ -73,7 +72,6 @@ export default async function RootLayout({
         {children}
         {isEnabled && <VisualEditing />}
         <SpeedInsights />
-        <Analytics />
       </body>
     </html>
   );
