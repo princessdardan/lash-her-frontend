@@ -137,6 +137,69 @@ test("Square service checkout creates payment link with idempotent booking body"
   `);
 });
 
+test("Square service checkout charges selected full payment amount when an add-on is selected", () => {
+  runSquareServiceScenario(`
+    const hold = createHold({
+      offeringSnapshot: {
+        title: "Classic Fill",
+        currency: "CAD",
+        selectedAddOn: {
+          key: "addon-lash-bath",
+          name: "Lash Bath",
+          description: "A gentle cleansing add-on",
+          price: 25,
+          currency: "CAD",
+        },
+        selectedPayment: {
+          amount: 175,
+          description: "Classic Fill full payment with Lash Bath",
+          purpose: "appointment_full",
+          sku: "BOOKING-FULL",
+        },
+      },
+    });
+    const { clientRequests, dependencies } = createDependencies();
+    const checkout = createSquareServiceCheckout(dependencies);
+    await checkout({ hold, now });
+
+    const request = clientRequests[0];
+    assert.equal(request.order.line_items[0].base_price_money.amount, 17500);
+    assert.equal(request.order.line_items[0].name, "Classic Fill full payment with Lash Bath");
+  `);
+});
+
+test("Square service checkout charges only selected deposit when add-on is due later", () => {
+  runSquareServiceScenario(`
+    const hold = createHold({
+      offeringSnapshot: {
+        title: "Classic Fill",
+        currency: "CAD",
+        selectedAddOn: {
+          key: "addon-lash-bath",
+          name: "Lash Bath",
+          description: "A gentle cleansing add-on",
+          price: 25,
+          currency: "CAD",
+        },
+        selectedPayment: {
+          amount: 50,
+          description: "Classic Fill deposit; Lash Bath due at appointment",
+          purpose: "appointment_deposit",
+          sku: "BOOKING-DEPOSIT",
+        },
+      },
+    });
+    const { clientRequests, dependencies } = createDependencies();
+    const checkout = createSquareServiceCheckout(dependencies);
+    await checkout({ hold, now });
+
+    const request = clientRequests[0];
+    assert.equal(request.order.line_items[0].base_price_money.amount, 5000);
+    assert.notEqual(request.order.line_items[0].base_price_money.amount, 7500);
+    assert.equal(request.order.line_items[0].name, "Classic Fill deposit; Lash Bath due at appointment");
+  `);
+});
+
 test("Square service checkout reuses local pending checkout without a second Square call", () => {
   runSquareServiceScenario(`
     const hold = createHold();
