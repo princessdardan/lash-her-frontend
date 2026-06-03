@@ -467,6 +467,14 @@ export interface TProduct {
   seo?: TCommerceSeo;
 }
 
+export interface TServiceAddOn {
+  _key: string;
+  name: string;
+  description: string;
+  price: number;
+  image?: TSanityImage;
+}
+
 export interface TService {
   _id: string;
   title: string;
@@ -477,6 +485,7 @@ export interface TService {
   durationMinutes: number;
   fullPrice: number;
   depositAmount: number;
+  addOns?: TServiceAddOn[];
   currency: TCommerceCurrency;
   isAvailable: boolean;
   displayOrder?: number;

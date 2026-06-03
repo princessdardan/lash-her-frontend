@@ -97,6 +97,7 @@ const SERVICE_PROJECTION = groq`{
   durationMinutes,
   fullPrice,
   depositAmount,
+  addOns[]{ _key, name, description, price, image{ asset, hotspot, crop, alt } },
   currency,
   isAvailable,
   displayOrder,

@@ -9,8 +9,16 @@ const bookingShimSource = readFileSync(new URL("../../app/(site)/booking/booking
 const productCardSource = readFileSync(new URL("../commerce/product-card.tsx", import.meta.url), "utf8");
 const servicesPageSource = readFileSync(new URL("../../app/(site)/services/page.tsx", import.meta.url), "utf8");
 const bookingConfirmationSource = readFileSync(new URL("../../app/(site)/booking/confirmation/page.tsx", import.meta.url), "utf8");
+const loadersSource = readFileSync(new URL("../../data/loaders.ts", import.meta.url), "utf8");
+const typesSource = readFileSync(new URL("../../types/index.ts", import.meta.url), "utf8");
 
 describe("booking service flow contract", () => {
+  it("projects service add-ons with stable keys and image metadata", () => {
+    assert.match(typesSource, /export interface TServiceAddOn/);
+    assert.match(typesSource, /addOns\?: TServiceAddOn\[\]/);
+    assert.match(loadersSource, /addOns\[\]\{ _key, name, description, price, image\{ asset, hotspot, crop, alt \} \}/);
+  });
+
   it("initializes service offering redirects through the booking shim helper", () => {
     assert.match(bookingPageSource, /resolveBookingShim\(await searchParams/);
     assert.match(bookingPageSource, /if \(resolution\.kind === "redirect"\) \{/);
