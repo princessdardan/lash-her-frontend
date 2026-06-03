@@ -12,8 +12,17 @@ export interface BookingPaymentSelection {
   sku: "BOOKING-DEPOSIT" | "BOOKING-FULL" | "BOOKING-CUSTOM-PARTIAL";
 }
 
+export interface BookingSelectedAddOnSnapshot {
+  key: string;
+  name: string;
+  description: string;
+  price: number;
+  currency: "CAD";
+}
+
 interface BookingOfferingPaymentSnapshot {
   currency: "CAD";
+  selectedAddOn: BookingSelectedAddOnSnapshot | null;
   selectedPayment: BookingPaymentSelection;
   title: string;
 }
@@ -24,6 +33,10 @@ export function getBookingPaymentSelection(hold: BookingHoldRecord): BookingPaym
 
 export function getBookingPaymentOfferingTitle(hold: BookingHoldRecord): string {
   return toBookingOfferingPaymentSnapshot(hold.offeringSnapshot)?.title ?? hold.offeringId;
+}
+
+export function getBookingSelectedAddOn(hold: BookingHoldRecord): BookingSelectedAddOnSnapshot | null {
+  return toBookingOfferingPaymentSnapshot(hold.offeringSnapshot)?.selectedAddOn ?? null;
 }
 
 export function buildBookingPaymentCart(
@@ -52,6 +65,7 @@ export function toBookingPaymentAmountCents(paymentSelection: BookingPaymentSele
 
 function toBookingOfferingPaymentSnapshot(value: Record<string, unknown>): BookingOfferingPaymentSnapshot | null {
   const currency = value.currency;
+  const selectedAddOn = toBookingSelectedAddOn(value.selectedAddOn);
   const selectedPayment = toBookingPaymentSelection(value.selectedPayment);
   const title = typeof value.title === "string" && value.title.trim().length > 0
     ? value.title.trim()
@@ -63,6 +77,7 @@ function toBookingOfferingPaymentSnapshot(value: Record<string, unknown>): Booki
 
   return {
     currency,
+    selectedAddOn,
     selectedPayment,
     title,
   };
@@ -104,6 +119,23 @@ function toBookingPaymentSelection(value: unknown): BookingPaymentSelection | nu
     purpose: value.purpose,
     sku: value.sku,
   };
+}
+
+function toBookingSelectedAddOn(value: unknown): BookingSelectedAddOnSnapshot | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const key = typeof value.key === "string" && value.key.trim().length > 0 ? value.key.trim() : null;
+  const name = typeof value.name === "string" && value.name.trim().length > 0 ? value.name.trim() : null;
+  const description = typeof value.description === "string" && value.description.trim().length > 0 ? value.description.trim() : null;
+  const price = toPositiveAmount(value.price);
+
+  if (key === null || name === null || description === null || price === null || value.currency !== "CAD") {
+    return null;
+  }
+
+  return { key, name, description, price, currency: "CAD" };
 }
 
 function toPositiveAmount(value: unknown): number | null {
