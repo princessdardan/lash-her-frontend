@@ -18,3 +18,24 @@ describe("training program loader Appointment Schedule projection", () => {
     assert.doesNotMatch(loadersSource, /checkoutEmail/);
   });
 });
+
+describe("getTrainingProgramBySlug trainingContact projection", () => {
+  it("includes privacyPolicyText[]{ ..., _key } inside trainingContact", () => {
+    const funcStart = loadersSource.indexOf("async function getTrainingProgramBySlug");
+    assert.notStrictEqual(funcStart, -1, "getTrainingProgramBySlug function should exist");
+
+    const nextFuncStart = loadersSource.indexOf("async function", funcStart + 1);
+    const funcBody = nextFuncStart === -1
+      ? loadersSource.slice(funcStart)
+      : loadersSource.slice(funcStart, nextFuncStart);
+
+    const trainingContactStart = funcBody.indexOf("trainingContact{");
+    assert.notStrictEqual(trainingContactStart, -1, "trainingContact projection should exist in getTrainingProgramBySlug");
+
+    const trainingContactEnd = funcBody.indexOf("},", trainingContactStart);
+    assert.notStrictEqual(trainingContactEnd, -1, "trainingContact projection should have a closing brace");
+
+    const trainingContactBlock = funcBody.slice(trainingContactStart, trainingContactEnd + 1);
+    assert.match(trainingContactBlock, /privacyPolicyText\[\]\{ \.\.\., _key \}/);
+  });
+});

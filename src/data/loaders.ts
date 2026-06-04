@@ -488,7 +488,8 @@ async function getTrainingProgramBySlug(
       location,
       instagram,
       submitLabel,
-      successMessage
+      successMessage,
+      privacyPolicyText[]{ ..., _key }
     },
     seo{ title, description, image{ asset, hotspot, crop, alt } },
     blocks[]{
