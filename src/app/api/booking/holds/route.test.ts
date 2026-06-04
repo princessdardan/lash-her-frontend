@@ -444,6 +444,79 @@ test("booking hold route rejects stale selected add-on keys", () => {
   `);
 });
 
+test("booking hold route rejects settings with no parseable calendar IDs", () => {
+  runRouteScenario(`
+    const selectedStart = createFutureDate(2, 0);
+    const selectedEnd = new Date(selectedStart.getTime() + 60 * 60 * 1000);
+    let createCalled = false;
+    let calendarLoaded = false;
+    const handler = createHoldHandler({
+      getBookingSettings: async () => createSettings({
+        calendarId: "  ,  ,  ",
+      }),
+      listCalendarEvents: async () => {
+        calendarLoaded = true;
+        return [];
+      },
+      createAppointmentHold: async () => {
+        createCalled = true;
+        return { ok: false, reason: "slot_conflict", conflictingHoldId: "hold-1" };
+      },
+    });
+
+    const response = await handler(createRequest({
+      serviceSlug: "classic-fill",
+      start: selectedStart.toISOString(),
+      name: "Client Name",
+      email: "client@example.com",
+      phone: "555-0100",
+      paymentOption: "deposit",
+    }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 400);
+    assert.equal(calendarLoaded, false);
+    assert.equal(createCalled, false);
+    assert.deepEqual(body, { error: "Booking is not configured" });
+  `);
+});
+
+test("booking hold route queries multiple calendar IDs and combines busy events", () => {
+  runRouteScenario(`
+    const selectedStart = createFutureDate(2, 0);
+    const selectedEnd = new Date(selectedStart.getTime() + 60 * 60 * 1000);
+    const calendarCalls = [];
+    const handler = createHoldHandler({
+      getBookingSettings: async () => createSettings({
+        calendarId: "calendar-1, calendar-2, calendar-3",
+      }),
+      listCalendarEvents: async (input) => {
+        calendarCalls.push(input.calendarId);
+        return [];
+      },
+      createAppointmentHold: async (input) => {
+        return {
+          ok: false,
+          reason: "slot_conflict",
+          conflictingHoldId: "hold-1",
+        };
+      },
+    });
+
+    const response = await handler(createRequest({
+      serviceSlug: "classic-fill",
+      start: selectedStart.toISOString(),
+      name: "Client Name",
+      email: "client@example.com",
+      phone: "555-0100",
+      paymentOption: "deposit",
+    }));
+
+    assert.deepEqual(calendarCalls.sort(), ["calendar-1", "calendar-2", "calendar-3"]);
+    assert.equal(response.status, 409);
+  `);
+});
+
 test("booking hold route rejects slots blocked by active private holds", () => {
   runRouteScenario(`
     const selectedStart = createFutureDate(2, 0);

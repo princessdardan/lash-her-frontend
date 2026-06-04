@@ -2,9 +2,10 @@ import { nanoid } from "nanoid";
 
 import type { CheckoutOrderPurpose } from "@/lib/private-db/schema";
 import { isSlotAvailable } from "./availability";
+import { parseBookingCalendarIds } from "./calendar-ids";
 import type { BookingHoldRecord, BookingHoldState } from "./holds";
 import { PAYMENT_SUCCESS_GRACE_MINUTES } from "./payment-policy";
-import type { BookingSettings, BookingTypeConfig } from "./types";
+import type { BookingSettings, BookingTypeConfig, CalendarEventWindow } from "./types";
 import { buildAvailabilityWindowsFromHours } from "./schedule-windows";
 
 export { PAYMENT_SUCCESS_GRACE_MINUTES };
@@ -125,16 +126,6 @@ export async function finalizeAppointmentPaymentForOrder(
 
   const operationalStoreModule = await import("./operational-store");
 
-  async function getCalendarId(): Promise<string> {
-    const settings = await loadersModule.loaders.getBookingSettings({ mode: "published", stega: false });
-
-    if (settings === null || settings.calendarId.trim().length === 0) {
-      throw new BookingManualFollowupError("Booking calendar is not configured.");
-    }
-
-    return settings.calendarId;
-  }
-
   return finalizeAppointmentPaymentWithLock({
     finalize: () => finalizePaidBooking({
       calendar: {
@@ -143,10 +134,30 @@ export async function finalizeAppointmentPaymentForOrder(
             return existingHold.googleEventId;
           }
 
-          return googleCalendarModule.findBookingEventForHold({
-            calendarId: await getCalendarId(),
-            hold: existingHold,
-          });
+          const settings = await loadersModule.loaders.getBookingSettings({ mode: "published", stega: false });
+
+          if (settings === null) {
+            throw new BookingManualFollowupError("Booking calendar is not configured.");
+          }
+
+          const calendarIds = parseBookingCalendarIds(settings);
+
+          if (calendarIds.length === 0) {
+            throw new BookingManualFollowupError("Booking calendar is not configured.");
+          }
+
+          for (const calendarId of calendarIds) {
+            const eventId = await googleCalendarModule.findBookingEventForHold({
+              calendarId,
+              hold: existingHold,
+            });
+
+            if (eventId !== null) {
+              return eventId;
+            }
+          }
+
+          return null;
         },
         async insertBookingEvent(paidHold) {
           const calendarLockId = nanoid();
@@ -161,15 +172,17 @@ export async function finalizeAppointmentPaymentForOrder(
 
           try {
             const settings = await getBookingSettingsOrThrow(() => loadersModule.loaders.getBookingSettings({ mode: "published", stega: false }));
-            const calendarId = settings.calendarId.trim();
+            const calendarIds = parseBookingCalendarIds(settings);
 
-            if (calendarId.length === 0) {
+            if (calendarIds.length === 0) {
               throw new BookingManualFollowupError("Booking calendar is not configured.");
             }
 
+            const primaryCalendarId = calendarIds[0];
+
             const available = await isPaidHoldSlotStillAvailable({
-              calendarId,
-              googleCalendarModule,
+              calendarIds,
+              listCalendarEvents: (opts) => googleCalendarModule.listCalendarEvents(opts),
               hold: paidHold,
               holdsModule,
               now: input.now ?? new Date(),
@@ -181,7 +194,7 @@ export async function finalizeAppointmentPaymentForOrder(
             }
 
             return googleCalendarModule.insertBookingEvent({
-              calendarId,
+              calendarId: primaryCalendarId,
               event: googleCalendarModule.buildBookingEventPayload({
                 answers: [],
                 bookingMetadata: {
@@ -290,9 +303,13 @@ async function getBookingSettingsOrThrow(
   return settings;
 }
 
-async function isPaidHoldSlotStillAvailable(input: {
-  calendarId: string;
-  googleCalendarModule: typeof import("./google-calendar");
+export async function isPaidHoldSlotStillAvailable(input: {
+  calendarIds: string[];
+  listCalendarEvents: (opts: {
+    calendarId: string;
+    timeMin: Date;
+    timeMax: Date;
+  }) => Promise<CalendarEventWindow[]>;
   hold: BookingHoldRecord;
   holdsModule: typeof import("./holds");
   now: Date;
@@ -300,12 +317,16 @@ async function isPaidHoldSlotStillAvailable(input: {
 }): Promise<boolean> {
   const bookingTypeConfig = toPaidHoldBookingTypeConfig(input.settings, input.hold);
 
-  const [calendarEvents, activeHolds] = await Promise.all([
-    input.googleCalendarModule.listCalendarEvents({
-      calendarId: input.calendarId,
-      timeMin: input.now,
-      timeMax: input.hold.selectedEnd,
-    }),
+  const [calendarEventsArrays, activeHolds] = await Promise.all([
+    Promise.all(
+      input.calendarIds.map((calendarId) =>
+        input.listCalendarEvents({
+          calendarId,
+          timeMin: input.now,
+          timeMax: input.hold.selectedEnd,
+        })
+      )
+    ),
     input.holdsModule.listActiveAppointmentHolds({
       offeringId: input.hold.offeringId,
       timeMin: input.now,
@@ -318,7 +339,7 @@ async function isPaidHoldSlotStillAvailable(input: {
     now: input.now,
     settings: input.settings,
   });
-  const busyEvents = calendarEvents;
+  const busyEvents = calendarEventsArrays.flat();
   const activeHoldBusyEvents = input.holdsModule.getActiveHoldBusyEvents({
     holds: activeHolds.filter((hold) => hold.id !== input.hold.id),
     now: input.now,

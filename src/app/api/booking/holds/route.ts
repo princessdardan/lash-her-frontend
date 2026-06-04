@@ -1,4 +1,5 @@
 import { isSlotAvailable } from "@/lib/booking/availability";
+import { parseBookingCalendarIds } from "@/lib/booking/calendar-ids";
 import {
   createAppointmentHold,
   getActiveHoldBusyEvents,
@@ -117,7 +118,7 @@ export function createBookingHoldsPostHandler(
         dependencies.getBookableServiceBySlug(input.serviceSlug),
       ]);
 
-      if (settings === null || service === null || settings.calendarId.trim().length === 0 || settings.bookingHorizonDays <= 0) {
+      if (settings === null || service === null || parseBookingCalendarIds(settings).length === 0 || settings.bookingHorizonDays <= 0) {
         return Response.json(
           { error: "Booking is not configured" },
           { status: 400 },
@@ -151,12 +152,17 @@ export function createBookingHoldsPostHandler(
       const selectedEnd = new Date(
         selectedStart.getTime() + bookingTypeConfig.durationMinutes * MINUTE_MS,
       );
-      const [calendarEvents, activeHolds] = await Promise.all([
-        dependencies.listCalendarEvents({
-          calendarId: settings.calendarId,
-          timeMin: now,
-          timeMax: horizonEnd,
-        }),
+      const calendarIds = parseBookingCalendarIds(settings);
+      const [calendarEventsArrays, activeHolds] = await Promise.all([
+        Promise.all(
+          calendarIds.map((calendarId) =>
+            dependencies.listCalendarEvents({
+              calendarId,
+              timeMin: now,
+              timeMax: horizonEnd,
+            })
+          ),
+        ),
         dependencies.listActiveAppointmentHolds({
           offeringId: service._id,
           timeMin: now,
@@ -164,6 +170,7 @@ export function createBookingHoldsPostHandler(
           now,
         }),
       ]);
+      const calendarEvents = calendarEventsArrays.flat();
       const availabilityWindows = buildAvailabilityWindowsFromHours({ horizonEnd, now, settings });
       const activeHoldBusyEvents = getActiveHoldBusyEvents({ holds: activeHolds, now });
       const paymentSelection = getPaymentSelection(service, input, selectedAddOn);

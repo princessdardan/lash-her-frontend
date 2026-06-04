@@ -7,6 +7,7 @@ import {
   PAYMENT_SUCCESS_GRACE_MINUTES,
   finalizeAppointmentPaymentWithLock,
   finalizePaidBooking,
+  isPaidHoldSlotStillAvailable,
   type BookingCalendarGateway,
   type BookingFinalizerRepository,
 } from "./finalizer";
@@ -200,6 +201,33 @@ test("finalizePaidBooking recovers Calendar insert when markBooked failed after 
   assert.equal(repository.hold.googleEventId, "calendar-event-1");
 });
 
+test("finalizePaidBooking marks manual follow-up when calendar settings parse to zero IDs after payment", async () => {
+  const hold = createHold({ state: "payment_pending" });
+  const repository = new FakeFinalizerRepository(hold);
+  const calendar = new FakeCalendarGateway({ failFindEmptyCalendarIds: true });
+
+  const result = await finalizePaidBooking({
+    calendar,
+    holdId: hold.id,
+    now,
+    payment: { amountCents: 7500, currency: "CAD", source: "client_validation", transactionId: "txn-123" },
+    repository,
+  });
+
+  assert.equal(result.ok, false);
+
+  if (!result.ok) {
+    assert.equal(result.status, "manual_followup");
+    assert.match(result.error, /calendar is not configured/i);
+  }
+
+  assert.equal(repository.recordPaidCallCount, 1);
+  assert.equal(repository.markBookingFailedCallCount, 1);
+  assert.equal(repository.hold.finalizationStatus, "manual_review");
+  assert.equal(repository.hold.state, "manual_followup");
+  assert.equal(calendar.insertedEventCount, 0);
+});
+
 test("finalizePaidBooking marks manual follow-up when calendar configuration is missing after payment", async () => {
   const hold = createHold({ state: "payment_pending" });
   const repository = new FakeFinalizerRepository(hold);
@@ -370,6 +398,64 @@ test("finalizePaidBooking retries a Calendar insert that succeeded before correl
   assert.equal(repository.hold.googleEventId, "calendar-event-1");
 });
 
+test("isPaidHoldSlotStillAvailable queries multiple calendar IDs for busy events", async () => {
+  const calendarCalls: string[] = [];
+  const hold = createHold({
+    selectedStart: new Date("2026-05-19T14:00:00.000Z"),
+    selectedEnd: new Date("2026-05-19T15:00:00.000Z"),
+  });
+  const settings = createBookingSettings();
+
+  const available = await isPaidHoldSlotStillAvailable({
+    calendarIds: ["calendar-1", "calendar-2", "calendar-3"],
+    listCalendarEvents: async ({ calendarId }) => {
+      calendarCalls.push(calendarId);
+
+      if (calendarId === "calendar-2") {
+        return [{
+          id: "busy-1",
+          title: "Existing appointment",
+          start: new Date("2026-05-19T14:00:00.000Z"),
+          end: new Date("2026-05-19T15:00:00.000Z"),
+        }];
+      }
+
+      return [];
+    },
+    hold,
+    holdsModule: createFakeHoldsModule(),
+    now: new Date("2026-05-18T12:00:00.000Z"),
+    settings,
+  });
+
+  assert.equal(available, false);
+  assert.deepEqual(calendarCalls.sort(), ["calendar-1", "calendar-2", "calendar-3"]);
+});
+
+test("isPaidHoldSlotStillAvailable returns true when all calendars are free", async () => {
+  const calendarCalls: string[] = [];
+  const hold = createHold({
+    selectedStart: new Date("2026-05-19T14:00:00.000Z"),
+    selectedEnd: new Date("2026-05-19T15:00:00.000Z"),
+  });
+  const settings = createBookingSettings();
+
+  const available = await isPaidHoldSlotStillAvailable({
+    calendarIds: ["calendar-1", "calendar-2"],
+    listCalendarEvents: async ({ calendarId }) => {
+      calendarCalls.push(calendarId);
+      return [];
+    },
+    hold,
+    holdsModule: createFakeHoldsModule(),
+    now: new Date("2026-05-18T12:00:00.000Z"),
+    settings,
+  });
+
+  assert.equal(available, true);
+  assert.deepEqual(calendarCalls.sort(), ["calendar-1", "calendar-2"]);
+});
+
 class FakeFinalizerRepository implements BookingFinalizerRepository {
   markBookingFailedCallCount = 0;
   markPaidUnbookableCallCount = 0;
@@ -478,6 +564,7 @@ class FakeCalendarGateway implements BookingCalendarGateway {
   constructor(private readonly options: {
     existingEventId?: string;
     failFindManualFollowup?: boolean;
+    failFindEmptyCalendarIds?: boolean;
     failInsert?: boolean;
     failInsertAfterCreate?: boolean;
     failInsertRebooking?: boolean;
@@ -492,6 +579,10 @@ class FakeCalendarGateway implements BookingCalendarGateway {
       throw new BookingManualFollowupError("Booking calendar is not configured.");
     }
 
+    if (this.options.failFindEmptyCalendarIds === true) {
+      return null;
+    }
+
     return this.options.existingEventId ?? (this.options.findInsertedEvent === true && this.insertedEventCount > 0
       ? "calendar-event-1"
       : null);
@@ -504,6 +595,10 @@ class FakeCalendarGateway implements BookingCalendarGateway {
 
     if (this.options.failInsert === true) {
       throw new Error("Calendar unavailable");
+    }
+
+    if (this.options.failFindEmptyCalendarIds === true) {
+      throw new BookingManualFollowupError("Booking calendar is not configured.");
     }
 
     this.options.onInsert?.(hold);
@@ -538,4 +633,33 @@ function createHold(overrides: Partial<BookingHoldRecord> = {}): BookingHoldReco
     updatedAt: new Date("2026-05-18T12:00:00.000Z"),
     ...overrides,
   };
+}
+
+function createBookingSettings(): import("./types").BookingSettings {
+  return {
+    bookingHorizonDays: 30,
+    bufferMinutes: 0,
+    calendarId: "calendar-1",
+    hoursOfOperation: [
+      { day: "monday", isOpen: true, opensAt: "00:00", closesAt: "23:59" },
+      { day: "tuesday", isOpen: true, opensAt: "00:00", closesAt: "23:59" },
+      { day: "wednesday", isOpen: true, opensAt: "00:00", closesAt: "23:59" },
+      { day: "thursday", isOpen: true, opensAt: "00:00", closesAt: "23:59" },
+      { day: "friday", isOpen: true, opensAt: "00:00", closesAt: "23:59" },
+      { day: "saturday", isOpen: true, opensAt: "00:00", closesAt: "23:59" },
+      { day: "sunday", isOpen: true, opensAt: "00:00", closesAt: "23:59" },
+    ],
+    intakeQuestions: [],
+    marketingOptInLabel: "Send me updates",
+    minimumLeadTimeHours: 0,
+    slotIntervalMinutes: 60,
+    timezone: "UTC",
+  };
+}
+
+function createFakeHoldsModule(): typeof import("./holds") {
+  return {
+    listActiveAppointmentHolds: async () => [],
+    getActiveHoldBusyEvents: () => [],
+  } as unknown as typeof import("./holds");
 }

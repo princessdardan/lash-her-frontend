@@ -257,6 +257,77 @@ test("booking availability rejects incomplete booking settings", () => {
   `);
 });
 
+test("booking availability rejects settings with no parseable calendar IDs", () => {
+  runRouteScenario(`
+    let calendarLoaded = false;
+    let holdsLoaded = false;
+    const handler = createHandler({
+      getBookingSettings: async () => createSettings({
+        calendarId: "  ,  ,  ",
+      }),
+      listCalendarEvents: async () => {
+        calendarLoaded = true;
+        return [];
+      },
+      listActiveAppointmentHolds: async () => {
+        holdsLoaded = true;
+        return [];
+      },
+    });
+
+    const response = await handler(createRequest({ service: "classic-fill" }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 400);
+    assert.equal(calendarLoaded, false);
+    assert.equal(holdsLoaded, false);
+    assert.deepEqual(body, { error: "Booking is not configured" });
+  `);
+});
+
+test("booking availability queries multiple calendar IDs and combines busy events", () => {
+  runRouteScenario(`
+    const availabilityStart = createFutureDate(2, 0);
+    const availabilityEnd = createFutureDate(2, 3);
+    const busyStart1 = createFutureDate(2, 1);
+    const busyEnd1 = createFutureDate(2, 2);
+    const busyStart2 = createFutureDate(2, 2);
+    const busyEnd2 = createFutureDate(2, 3);
+    const calendarCalls = [];
+    const handler = createHandler({
+      getBookingSettings: async () => createSettings({
+        calendarId: "calendar-1, calendar-2, calendar-3",
+      }),
+      listCalendarEvents: async (input) => {
+        calendarCalls.push(input.calendarId);
+
+        if (input.calendarId === "calendar-1") {
+          return [{ id: "busy-1", title: "Appointment 1", start: busyStart1, end: busyEnd1 }];
+        }
+
+        if (input.calendarId === "calendar-2") {
+          return [{ id: "busy-2", title: "Appointment 2", start: busyStart2, end: busyEnd2 }];
+        }
+
+        return [];
+      },
+      buildBookingSlots: (input) => {
+        assert.deepEqual(calendarCalls.sort(), ["calendar-1", "calendar-2", "calendar-3"]);
+        assert.equal(input.busyEvents.length, 2);
+        assert.equal(input.busyEvents[0].id, "busy-1");
+        assert.equal(input.busyEvents[1].id, "busy-2");
+        return [{ start: availabilityStart.toISOString(), end: availabilityEnd.toISOString() }];
+      },
+    });
+
+    const response = await handler(createRequest({ service: "classic-fill" }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(body, { slots: [{ start: availabilityStart.toISOString(), end: availabilityEnd.toISOString() }] });
+  `);
+});
+
 test("booking availability returns retryable status when calendar provider fails", () => {
   runRouteScenario(`
     const handler = createHandler({

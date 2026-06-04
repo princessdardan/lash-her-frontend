@@ -1,4 +1,5 @@
 import { buildBookingSlots } from "@/lib/booking/availability";
+import { parseBookingCalendarIds } from "@/lib/booking/calendar-ids";
 import {
   getActiveHoldBusyEvents,
   type BookingHoldRecord,
@@ -130,12 +131,17 @@ async function handleBookingAvailabilityRequest(
   const now = new Date();
   const horizonEnd = new Date(now.getTime() + settings.bookingHorizonDays * DAY_MS);
   const bookingTypeConfig = toServiceBookingTypeConfig(settings, service);
-  const [calendarEvents, activeHolds] = await Promise.all([
-    dependencies.listCalendarEvents({
-      calendarId: settings.calendarId,
-      timeMin: now,
-      timeMax: horizonEnd,
-    }),
+  const calendarIds = parseBookingCalendarIds(settings);
+  const [calendarEventsArrays, activeHolds] = await Promise.all([
+    Promise.all(
+      calendarIds.map((calendarId) =>
+        dependencies.listCalendarEvents({
+          calendarId,
+          timeMin: now,
+          timeMax: horizonEnd,
+        })
+      ),
+    ),
     dependencies.listActiveAppointmentHolds({
       offeringId: service._id,
       timeMin: now,
@@ -143,6 +149,7 @@ async function handleBookingAvailabilityRequest(
       now,
     }),
   ]);
+  const calendarEvents = calendarEventsArrays.flat();
   const availabilityWindows = buildAvailabilityWindowsFromHours({ horizonEnd, now, settings });
   const activeHoldBusyEvents = getActiveHoldBusyEvents({ holds: activeHolds, now });
   const slots = dependencies.buildBookingSlots({
@@ -213,6 +220,7 @@ function isConfiguredBookingSettings(
   }
 
   return optionalString(settings.calendarId) !== undefined &&
+    parseBookingCalendarIds(settings).length > 0 &&
     Number.isInteger(settings.bookingHorizonDays) &&
     settings.bookingHorizonDays > 0 &&
     Number.isInteger(settings.minimumLeadTimeHours) &&
