@@ -116,7 +116,7 @@ function getDisplayImages(product: TProduct) {
 }
 
 function getAvailabilityLabel(product: TProduct): string {
-  return product.availabilityLabel || (product.isAvailable ? "Available in catalog" : "Currently unavailable");
+  return product.availabilityLabel || (product.isAvailable ? "Available now" : "Currently unavailable");
 }
 
 export default async function ProductDetailPage({ params }: { params: Promise<{ slug: string }> }) {
