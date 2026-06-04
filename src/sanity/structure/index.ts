@@ -74,6 +74,7 @@ export const structure: StructureResolver = (S) =>
               S.documentTypeListItem("promotionCode").title("Promotion Codes"),
               S.documentTypeListItem("service").title("Services"),
               S.documentTypeListItem("trainingProgram").title("Training Programs"),
+              S.documentTypeListItem("policyPage").title("Policy Pages") 
             ])
         ),
     ]);
