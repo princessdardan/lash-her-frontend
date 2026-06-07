@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { log } from "@/lib/logging/logger";
 import {
   buildValidatedCart,
   type CartInputItem,
@@ -73,12 +74,21 @@ interface CheckoutErrorLogCause {
 interface CheckoutPostHandlerDependencies {
   getProductsByIds: (ids: string[]) => Promise<TProduct[]>;
   getPromotionCode: (code: string) => Promise<TPromotionCode | null>;
-  createHelcimInvoice: (input: CheckoutInvoiceInput) => Promise<CheckoutInvoice>;
-  initializeHelcimPay: (input: CheckoutPaySessionInput) => Promise<CheckoutPaySession>;
+  createHelcimInvoice: (
+    input: CheckoutInvoiceInput,
+  ) => Promise<CheckoutInvoice>;
+  initializeHelcimPay: (
+    input: CheckoutPaySessionInput,
+  ) => Promise<CheckoutPaySession>;
   createPendingOrder: (input: CheckoutPendingOrderInput) => Promise<unknown>;
 }
 
-type CheckoutInitializationStage = "prepare_checkout" | "load_checkout_inputs" | "create_helcim_invoice" | "initialize_helcim_pay" | "persist_order";
+type CheckoutInitializationStage =
+  | "prepare_checkout"
+  | "load_checkout_inputs"
+  | "create_helcim_invoice"
+  | "initialize_helcim_pay"
+  | "persist_order";
 type CheckoutProviderEndpoint = "invoice" | "helcim_pay";
 
 interface CheckoutInvoiceInput {
@@ -130,7 +140,9 @@ export function createCheckoutPostHandler({
   initializeHelcimPay,
   createPendingOrder,
 }: CheckoutPostHandlerDependencies): (req: NextRequest) => Promise<Response> {
-  return async function checkoutPostHandler(req: NextRequest): Promise<Response> {
+  return async function checkoutPostHandler(
+    req: NextRequest,
+  ): Promise<Response> {
     let body: unknown;
     let stage: CheckoutInitializationStage = "prepare_checkout";
 
@@ -147,26 +159,37 @@ export function createCheckoutPostHandler({
     }
 
     try {
-      const productIds = Array.from(new Set(checkoutRequest.items.map((item) => item.productId)));
+      const productIds = Array.from(
+        new Set(checkoutRequest.items.map((item) => item.productId)),
+      );
       stage = "load_checkout_inputs";
       const [products, promotionCode] = await Promise.all([
         getProductsByIds(productIds),
-        checkoutRequest.promotionCode ? getPromotionCode(checkoutRequest.promotionCode) : Promise.resolve(null),
+        checkoutRequest.promotionCode
+          ? getPromotionCode(checkoutRequest.promotionCode)
+          : Promise.resolve(null),
       ]);
       stage = "prepare_checkout";
       const catalogProducts = products.map(toCatalogProduct);
-      const cart = buildValidatedCart(checkoutRequest.items, catalogProducts, { promotionCode });
+      const cart = buildValidatedCart(checkoutRequest.items, catalogProducts, {
+        promotionCode,
+      });
 
-      if (checkoutRequest.promotionCode && cart.promotionCode !== checkoutRequest.promotionCode) {
+      if (
+        checkoutRequest.promotionCode &&
+        cart.promotionCode !== checkoutRequest.promotionCode
+      ) {
         return invalidPromotionCode();
       }
 
-      const invoiceLineItems = cart.lineItems.map(({ sku, description, quantity, price }) => ({
-        sku,
-        description,
-        quantity,
-        price,
-      }));
+      const invoiceLineItems = cart.lineItems.map(
+        ({ sku, description, quantity, price }) => ({
+          sku,
+          description,
+          quantity,
+          price,
+        }),
+      );
 
       if (cart.promotionCode && cart.promotionDiscountAmount) {
         invoiceLineItems.push({
@@ -178,21 +201,25 @@ export function createCheckoutPostHandler({
       }
 
       stage = "create_helcim_invoice";
-      const invoice = validateCheckoutInvoice(await createHelcimInvoice({
-        currency: "CAD",
-        type: "INVOICE",
-        status: "DUE",
-        notes: "Lash Her website checkout",
-        lineItems: invoiceLineItems,
-      }));
+      const invoice = validateCheckoutInvoice(
+        await createHelcimInvoice({
+          currency: "CAD",
+          type: "INVOICE",
+          status: "DUE",
+          notes: "Lash Her website checkout",
+          lineItems: invoiceLineItems,
+        }),
+      );
 
       stage = "initialize_helcim_pay";
-      const helcimPaySession = validateCheckoutPaySession(await initializeHelcimPay({
-        paymentType: "purchase",
-        amount: cart.amount,
-        currency: "CAD",
-        invoiceNumber: invoice.invoiceNumber,
-      }));
+      const helcimPaySession = validateCheckoutPaySession(
+        await initializeHelcimPay({
+          paymentType: "purchase",
+          amount: cart.amount,
+          currency: "CAD",
+          invoiceNumber: invoice.invoiceNumber,
+        }),
+      );
 
       stage = "persist_order";
       await createPendingOrder({
@@ -210,7 +237,7 @@ export function createCheckoutPostHandler({
         checkoutToken: helcimPaySession.checkoutToken,
       });
     } catch (error) {
-      console.error("[checkout] Unable to initialize checkout", {
+      log("error", "[checkout] Unable to initialize checkout", {
         stage,
         ...summarizeCheckoutError(error),
       });
@@ -228,7 +255,10 @@ class CheckoutProviderResponseError extends Error {
   readonly provider = "helcim";
   readonly providerEndpoint: CheckoutProviderEndpoint;
 
-  constructor(providerEndpoint: CheckoutProviderEndpoint, missingFields: string[]) {
+  constructor(
+    providerEndpoint: CheckoutProviderEndpoint,
+    missingFields: string[],
+  ) {
     super("Checkout provider response missing required fields");
     this.name = "CheckoutProviderResponseError";
     this.providerEndpoint = providerEndpoint;
@@ -237,12 +267,11 @@ class CheckoutProviderResponseError extends Error {
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
-  const [{ loaders }, gateway, { createPendingOrder }] =
-    await Promise.all([
-      import("@/data/loaders"),
-      resolveCheckoutHelcimGatewayForRequest(req),
-      import("@/lib/commerce/order-store"),
-    ]);
+  const [{ loaders }, gateway, { createPendingOrder }] = await Promise.all([
+    import("@/data/loaders"),
+    resolveCheckoutHelcimGatewayForRequest(req),
+    import("@/lib/commerce/order-store"),
+  ]);
 
   return createCheckoutPostHandler({
     getProductsByIds: loaders.getProductsByIds,
@@ -253,13 +282,20 @@ export async function POST(req: NextRequest): Promise<Response> {
   })(req);
 }
 
-export async function resolveCheckoutHelcimGatewayForRequest(req: Request): Promise<HelcimGateway> {
+export async function resolveCheckoutHelcimGatewayForRequest(
+  req: Request,
+): Promise<HelcimGateway> {
   const runtimeControls = await import("@/lib/payment-mocks/runtime-controls");
   const runtimeEnvironment = getPaymentMockRuntimeEnvironment();
 
-  runtimeControls.assertPaymentMockAllowed({ env: runtimeEnvironment, request: req });
+  runtimeControls.assertPaymentMockAllowed({
+    env: runtimeEnvironment,
+    request: req,
+  });
 
-  if (runtimeControls.resolvePaymentGatewayMode(runtimeEnvironment) !== "mock") {
+  if (
+    runtimeControls.resolvePaymentGatewayMode(runtimeEnvironment) !== "mock"
+  ) {
     const liveGateway = await import("@/lib/commerce/helcim-gateway");
     return liveGateway.createLiveHelcimGateway();
   }
@@ -286,16 +322,33 @@ function getPaymentMockRuntimeEnvironment() {
 }
 
 function parseCheckoutRequest(body: unknown): CheckoutRequestBody | null {
-  if (!isRecord(body) || !isRecord(body.customer) || !Array.isArray(body.items) || !isRecord(body.shippingAddress)) {
+  if (
+    !isRecord(body) ||
+    !isRecord(body.customer) ||
+    !Array.isArray(body.items) ||
+    !isRecord(body.shippingAddress)
+  ) {
     return null;
   }
 
-  const name = parseCheckoutText(body.customer.name, CHECKOUT_CUSTOMER_NAME_MAX_LENGTH);
-  const email = typeof body.customer.email === "string" ? body.customer.email.trim().toLowerCase() : null;
+  const name = parseCheckoutText(
+    body.customer.name,
+    CHECKOUT_CUSTOMER_NAME_MAX_LENGTH,
+  );
+  const email =
+    typeof body.customer.email === "string"
+      ? body.customer.email.trim().toLowerCase()
+      : null;
   const shippingAddress = parseShippingAddress(body.shippingAddress);
   const promotionCode = parsePromotionCodeInput(body.promotionCode);
 
-  if (name === null || email === null || !isValidCheckoutEmail(email) || shippingAddress === null || promotionCode === null) {
+  if (
+    name === null ||
+    email === null ||
+    !isValidCheckoutEmail(email) ||
+    shippingAddress === null ||
+    promotionCode === null
+  ) {
     return null;
   }
 
@@ -307,18 +360,44 @@ function parseCheckoutRequest(body: unknown): CheckoutRequestBody | null {
   };
 }
 
-function parseShippingAddress(value: Record<string, unknown>): CheckoutShippingAddressInput | null {
-  const line1 = parseCheckoutText(value.line1, CHECKOUT_SHIPPING_LINE_MAX_LENGTH);
-  const city = parseCheckoutText(value.city, CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH);
-  const province = parseCheckoutText(value.province, CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH);
-  const postalCode = parseCheckoutText(value.postalCode, CHECKOUT_SHIPPING_POSTAL_CODE_MAX_LENGTH);
-  const country = parseCheckoutText(value.country, CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH);
+function parseShippingAddress(
+  value: Record<string, unknown>,
+): CheckoutShippingAddressInput | null {
+  const line1 = parseCheckoutText(
+    value.line1,
+    CHECKOUT_SHIPPING_LINE_MAX_LENGTH,
+  );
+  const city = parseCheckoutText(
+    value.city,
+    CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH,
+  );
+  const province = parseCheckoutText(
+    value.province,
+    CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH,
+  );
+  const postalCode = parseCheckoutText(
+    value.postalCode,
+    CHECKOUT_SHIPPING_POSTAL_CODE_MAX_LENGTH,
+  );
+  const country = parseCheckoutText(
+    value.country,
+    CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH,
+  );
 
-  if (line1 === null || city === null || province === null || postalCode === null || country === null) {
+  if (
+    line1 === null ||
+    city === null ||
+    province === null ||
+    postalCode === null ||
+    country === null
+  ) {
     return null;
   }
 
-  const line2 = parseOptionalCheckoutText(value.line2, CHECKOUT_SHIPPING_LINE_MAX_LENGTH);
+  const line2 = parseOptionalCheckoutText(
+    value.line2,
+    CHECKOUT_SHIPPING_LINE_MAX_LENGTH,
+  );
 
   if (line2 === null) {
     return null;
@@ -368,9 +447,11 @@ function toCatalogProduct(product: TProduct): CatalogProduct {
 
 function validateCheckoutInvoice(invoice: unknown): CheckoutInvoice {
   const invoiceRecord = isRecord(invoice) ? invoice : null;
-  const invoiceId = typeof invoiceRecord?.invoiceId === "number" && Number.isSafeInteger(invoiceRecord.invoiceId)
-    ? invoiceRecord.invoiceId
-    : null;
+  const invoiceId =
+    typeof invoiceRecord?.invoiceId === "number" &&
+    Number.isSafeInteger(invoiceRecord.invoiceId)
+      ? invoiceRecord.invoiceId
+      : null;
   const invoiceNumber = isNonEmptyString(invoiceRecord?.invoiceNumber)
     ? invoiceRecord.invoiceNumber
     : null;
@@ -419,7 +500,9 @@ function summarizeCheckoutError(error: unknown): CheckoutErrorLog {
     return { error: "Unknown checkout error" };
   }
 
-  const cause = isRecord(error) ? summarizeCheckoutErrorCause(error.cause) : undefined;
+  const cause = isRecord(error)
+    ? summarizeCheckoutErrorCause(error.cause)
+    : undefined;
   const errorName = summarizeCheckoutErrorName(error.name);
 
   return {
@@ -430,7 +513,9 @@ function summarizeCheckoutError(error: unknown): CheckoutErrorLog {
   };
 }
 
-function summarizeCheckoutProviderResponseError(error: Error): Pick<CheckoutErrorLog, "missingFields" | "provider" | "providerEndpoint"> {
+function summarizeCheckoutProviderResponseError(
+  error: Error,
+): Pick<CheckoutErrorLog, "missingFields" | "provider" | "providerEndpoint"> {
   if (!(error instanceof CheckoutProviderResponseError)) {
     return {};
   }
@@ -442,7 +527,9 @@ function summarizeCheckoutProviderResponseError(error: Error): Pick<CheckoutErro
   };
 }
 
-function summarizeCheckoutErrorCause(cause: unknown): CheckoutErrorLogCause | undefined {
+function summarizeCheckoutErrorCause(
+  cause: unknown,
+): CheckoutErrorLogCause | undefined {
   if (!isRecord(cause)) {
     return undefined;
   }
@@ -464,11 +551,17 @@ function setUndefinedColumnField(
   summary: CheckoutErrorLogCause,
   cause: Record<string, unknown>,
 ): void {
-  if (summary.column || cause.code !== "42703" || typeof cause.message !== "string") {
+  if (
+    summary.column ||
+    cause.code !== "42703" ||
+    typeof cause.message !== "string"
+  ) {
     return;
   }
 
-  const missingColumn = cause.message.match(/^column "([A-Za-z0-9_.]+)"(?: of relation "[A-Za-z0-9_]+")? does not exist$/);
+  const missingColumn = cause.message.match(
+    /^column "([A-Za-z0-9_.]+)"(?: of relation "[A-Za-z0-9_]+")? does not exist$/,
+  );
 
   if (!missingColumn) {
     return;
@@ -522,7 +615,9 @@ function summarizeCheckoutErrorName(name: string): string | undefined {
 function sanitizeCheckoutLogText(value: string): string {
   const normalized = value.replace(/\s+/g, " ").trim();
 
-  return normalized.length > 240 ? `${normalized.slice(0, 237)}...` : normalized;
+  return normalized.length > 240
+    ? `${normalized.slice(0, 237)}...`
+    : normalized;
 }
 
 function invalidPromotionCode(): NextResponse<CheckoutErrorBody> {

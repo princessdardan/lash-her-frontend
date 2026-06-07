@@ -1,3 +1,4 @@
+import { log } from "@/lib/logging/logger";
 import { isSlotAvailable } from "@/lib/booking/availability";
 import { parseBookingCalendarIds } from "@/lib/booking/calendar-ids";
 import {
@@ -7,7 +8,10 @@ import {
   type CreateBookingHoldResult,
 } from "@/lib/booking/holds";
 import { buildAvailabilityWindowsFromHours } from "@/lib/booking/schedule-windows";
-import { SERVICE_BOOKING_TYPE, toServiceBookingTypeConfig } from "@/lib/booking/service-config";
+import {
+  SERVICE_BOOKING_TYPE,
+  toServiceBookingTypeConfig,
+} from "@/lib/booking/service-config";
 import { recordBookingMarketingChoice } from "@/lib/marketing-contact/marketing-contact-store";
 import type {
   BookingAnswerInput,
@@ -41,7 +45,10 @@ interface BookingPaymentSelectionSnapshot {
   amount: number;
   description: string;
   option: "deposit" | "full" | "customPartial";
-  purpose: "appointment_deposit" | "appointment_full" | "appointment_custom_partial";
+  purpose:
+    | "appointment_deposit"
+    | "appointment_full"
+    | "appointment_custom_partial";
   sku: "BOOKING-DEPOSIT" | "BOOKING-FULL" | "BOOKING-CUSTOM-PARTIAL";
 }
 
@@ -83,25 +90,29 @@ export interface BookingHoldsPostHandlerDependencies {
 export function createBookingHoldsPostHandler(
   dependencies: BookingHoldsPostHandlerDependencies,
 ): (req: Request) => Promise<Response> {
-  return async function bookingHoldsPostHandler(req: Request): Promise<Response> {
+  return async function bookingHoldsPostHandler(
+    req: Request,
+  ): Promise<Response> {
     let body: unknown;
 
     try {
       body = await req.json();
     } catch (error) {
-      console.warn("[booking holds] Invalid JSON:", getErrorMessage(error));
+      log("warn", "[booking holds] Invalid JSON", {
+        error: getErrorMessage(error),
+      });
 
-      return Response.json(
-        { error: "Invalid hold request" },
-        { status: 400 },
-      );
+      return Response.json({ error: "Invalid hold request" }, { status: 400 });
     }
 
     const input = toBookingHoldRequestInput(body);
     const fieldErrors = validateHoldRequestInput(input);
     const selectedStart = new Date(input.start);
 
-    if (Object.keys(fieldErrors).length > 0 || Number.isNaN(selectedStart.getTime())) {
+    if (
+      Object.keys(fieldErrors).length > 0 ||
+      Number.isNaN(selectedStart.getTime())
+    ) {
       if (Number.isNaN(selectedStart.getTime())) {
         fieldErrors.start = "Please select a valid booking time";
       }
@@ -118,7 +129,12 @@ export function createBookingHoldsPostHandler(
         dependencies.getBookableServiceBySlug(input.serviceSlug),
       ]);
 
-      if (settings === null || service === null || parseBookingCalendarIds(settings).length === 0 || settings.bookingHorizonDays <= 0) {
+      if (
+        settings === null ||
+        service === null ||
+        parseBookingCalendarIds(settings).length === 0 ||
+        settings.bookingHorizonDays <= 0
+      ) {
         return Response.json(
           { error: "Booking is not configured" },
           { status: 400 },
@@ -126,11 +142,17 @@ export function createBookingHoldsPostHandler(
       }
 
       const bookingTypeConfig = toServiceBookingTypeConfig(settings, service);
-      const answerErrors = validateRequiredAnswers(input.answers, bookingTypeConfig);
+      const answerErrors = validateRequiredAnswers(
+        input.answers,
+        bookingTypeConfig,
+      );
 
       if (Object.keys(answerErrors).length > 0) {
         return Response.json(
-          { error: "Please fix the hold details and try again.", fieldErrors: answerErrors },
+          {
+            error: "Please fix the hold details and try again.",
+            fieldErrors: answerErrors,
+          },
           { status: 400 },
         );
       }
@@ -141,14 +163,19 @@ export function createBookingHoldsPostHandler(
         return Response.json(
           {
             error: "Please fix the hold details and try again.",
-            fieldErrors: { selectedAddOnKey: "That add-on is no longer available. Please review your selection." },
+            fieldErrors: {
+              selectedAddOnKey:
+                "That add-on is no longer available. Please review your selection.",
+            },
           },
           { status: 400 },
         );
       }
 
       const now = new Date();
-      const horizonEnd = new Date(now.getTime() + settings.bookingHorizonDays * DAY_MS);
+      const horizonEnd = new Date(
+        now.getTime() + settings.bookingHorizonDays * DAY_MS,
+      );
       const selectedEnd = new Date(
         selectedStart.getTime() + bookingTypeConfig.durationMinutes * MINUTE_MS,
       );
@@ -160,7 +187,7 @@ export function createBookingHoldsPostHandler(
               calendarId,
               timeMin: now,
               timeMax: horizonEnd,
-            })
+            }),
           ),
         ),
         dependencies.listActiveAppointmentHolds({
@@ -171,9 +198,20 @@ export function createBookingHoldsPostHandler(
         }),
       ]);
       const calendarEvents = calendarEventsArrays.flat();
-      const availabilityWindows = buildAvailabilityWindowsFromHours({ horizonEnd, now, settings });
-      const activeHoldBusyEvents = getActiveHoldBusyEvents({ holds: activeHolds, now });
-      const paymentSelection = getPaymentSelection(service, input, selectedAddOn);
+      const availabilityWindows = buildAvailabilityWindowsFromHours({
+        horizonEnd,
+        now,
+        settings,
+      });
+      const activeHoldBusyEvents = getActiveHoldBusyEvents({
+        holds: activeHolds,
+        now,
+      });
+      const paymentSelection = getPaymentSelection(
+        service,
+        input,
+        selectedAddOn,
+      );
 
       if (paymentSelection === null) {
         return Response.json(
@@ -182,18 +220,21 @@ export function createBookingHoldsPostHandler(
         );
       }
 
-      if (!isSlotAvailable({
-        bookingType: bookingTypeConfig,
-        requestedStart: selectedStart,
-        availabilityWindows,
-        busyEvents: [...calendarEvents, ...activeHoldBusyEvents],
-        now,
-        minimumLeadTimeHours: settings.minimumLeadTimeHours,
-        horizonEnd,
-      })) {
+      if (
+        !isSlotAvailable({
+          bookingType: bookingTypeConfig,
+          requestedStart: selectedStart,
+          availabilityWindows,
+          busyEvents: [...calendarEvents, ...activeHoldBusyEvents],
+          now,
+          minimumLeadTimeHours: settings.minimumLeadTimeHours,
+          horizonEnd,
+        })
+      ) {
         return Response.json(
           {
-            error: "That time is no longer available. Please choose another slot.",
+            error:
+              "That time is no longer available. Please choose another slot.",
             fieldErrors: { start: "That time is no longer available" },
           },
           { status: 409 },
@@ -208,7 +249,12 @@ export function createBookingHoldsPostHandler(
           phone: input.phone,
         },
         offeringId: service._id,
-        offeringSnapshot: toServiceSnapshot(service, input, paymentSelection, selectedAddOn),
+        offeringSnapshot: toServiceSnapshot(
+          service,
+          input,
+          paymentSelection,
+          selectedAddOn,
+        ),
         selectedEnd,
         selectedStart,
         timezone: settings.timezone,
@@ -218,7 +264,8 @@ export function createBookingHoldsPostHandler(
       if (!holdResult.ok) {
         return Response.json(
           {
-            error: "That time is no longer available. Please choose another slot.",
+            error:
+              "That time is no longer available. Please choose another slot.",
             fieldErrors: { start: "That time is no longer available" },
           },
           { status: 409 },
@@ -238,7 +285,9 @@ export function createBookingHoldsPostHandler(
             sourcePath: input.sourcePath,
           });
         } catch (error) {
-          console.error("[booking holds] Marketing consent persistence failed:", getErrorMessage(error));
+          log("error", "[booking holds] Marketing consent persistence failed", {
+            error: getErrorMessage(error),
+          });
         }
       }
 
@@ -258,7 +307,7 @@ export function createBookingHoldsPostHandler(
         { status: 201 },
       );
     } catch (error) {
-      console.error("[booking holds] Failed:", getErrorMessage(error));
+      log("error", "[booking holds] Failed", { error: getErrorMessage(error) });
 
       return Response.json(
         { error: "Booking holds are temporarily unavailable" },
@@ -273,7 +322,10 @@ export const POST = createBookingHoldsPostHandler({
   getBookableServiceBySlug: async (slug) => {
     const { loaders } = await import("@/data/loaders");
 
-    return loaders.getBookableServiceBySlug(slug, { mode: "published", stega: false });
+    return loaders.getBookableServiceBySlug(slug, {
+      mode: "published",
+      stega: false,
+    });
   },
   getBookingSettings: async () => {
     const { loaders } = await import("@/data/loaders");
@@ -286,7 +338,8 @@ export const POST = createBookingHoldsPostHandler({
     return listActiveAppointmentHolds(input);
   },
   listCalendarEvents: async (input) => {
-    const { listCalendarEvents } = await import("@/lib/booking/google-calendar");
+    const { listCalendarEvents } =
+      await import("@/lib/booking/google-calendar");
 
     return listCalendarEvents(input);
   },
@@ -297,12 +350,16 @@ function toBookingHoldRequestInput(input: unknown): BookingHoldRequestInput {
   const record = isRecord(input) ? input : {};
   const customAmount = parseOptionalAmount(record.customAmount);
   const paymentOption = parsePaymentOption(record.paymentOption);
-  const marketingConsentText = toOptionalStringValue(record.marketingConsentText);
+  const marketingConsentText = toOptionalStringValue(
+    record.marketingConsentText,
+  );
   const selectedAddOnKey = toOptionalStringValue(record.selectedAddOnKey);
   const sourcePath = toOptionalStringValue(record.sourcePath);
 
   return {
-    ...(customAmount !== undefined && customAmount !== null ? { customAmount } : {}),
+    ...(customAmount !== undefined && customAmount !== null
+      ? { customAmount }
+      : {}),
     answers: toBookingAnswers(record.answers),
     email: toStringValue(record.email).trim(),
     marketingOptIn: record.marketingOptIn === true,
@@ -322,7 +379,9 @@ function toBookingHoldRequestInput(input: unknown): BookingHoldRequestInput {
   };
 }
 
-function validateHoldRequestInput(input: BookingHoldRequestInput): Record<string, string> {
+function validateHoldRequestInput(
+  input: BookingHoldRequestInput,
+): Record<string, string> {
   const fieldErrors: Record<string, string> = {};
 
   if (input.serviceSlug.length === 0) {
@@ -426,7 +485,9 @@ function getSelectedAddOn(
 ): BookingAddOnSelectionSnapshot | null | "invalid" {
   if (!selectedAddOnKey) return null;
 
-  const addOn = service.addOns?.find((candidate) => candidate._key === selectedAddOnKey);
+  const addOn = service.addOns?.find(
+    (candidate) => candidate._key === selectedAddOnKey,
+  );
   if (!addOn) return "invalid";
 
   const price = toPositiveAmount(addOn.price);
@@ -463,7 +524,8 @@ function resolveFixedPaymentSelection(
   }
 
   const fullPrice = toPositiveAmount(service.fullPrice);
-  const amount = fullPrice === null ? null : fullPrice + (selectedAddOn?.price ?? 0);
+  const amount =
+    fullPrice === null ? null : fullPrice + (selectedAddOn?.price ?? 0);
 
   return amount === null
     ? null
@@ -497,7 +559,9 @@ function toServiceSnapshot(
     selectedPayment: paymentSelection,
     answers: normalizeAnswers(input.answers),
     marketingOptIn: input.marketingOptIn,
-    ...(input.marketingConsentText ? { marketingConsentText: input.marketingConsentText } : {}),
+    ...(input.marketingConsentText
+      ? { marketingConsentText: input.marketingConsentText }
+      : {}),
     ...(input.sourcePath ? { sourcePath: input.sourcePath } : {}),
   };
 }
@@ -508,7 +572,9 @@ function normalizeAnswers(answers: BookingAnswerInput[]): BookingAnswerInput[] {
       questionId: answer.questionId.trim(),
       answer: answer.answer.trim(),
     }))
-    .filter((answer) => answer.questionId.length > 0 && answer.answer.length > 0);
+    .filter(
+      (answer) => answer.questionId.length > 0 && answer.answer.length > 0,
+    );
 }
 
 function toBookingAnswerSnapshots(
@@ -522,7 +588,8 @@ function toBookingAnswerSnapshots(
   return normalizeAnswers(answers).map((answer) => ({
     answer: answer.answer,
     questionId: answer.questionId,
-    questionLabel: questionsById.get(answer.questionId)?.label ?? answer.questionId,
+    questionLabel:
+      questionsById.get(answer.questionId)?.label ?? answer.questionId,
   }));
 }
 
@@ -541,8 +608,12 @@ function toBookingAnswers(value: unknown): BookingAnswerInput[] {
   });
 }
 
-function parsePaymentOption(value: unknown): "deposit" | "full" | "customPartial" | null {
-  return value === "deposit" || value === "full" || value === "customPartial" ? value : null;
+function parsePaymentOption(
+  value: unknown,
+): "deposit" | "full" | "customPartial" | null {
+  return value === "deposit" || value === "full" || value === "customPartial"
+    ? value
+    : null;
 }
 
 function parseOptionalAmount(value: unknown): number | null | undefined {
