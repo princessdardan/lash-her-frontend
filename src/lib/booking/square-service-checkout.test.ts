@@ -104,7 +104,7 @@ test("Square service checkout creates payment link with idempotent booking body"
     const { clientRequests, dependencies, persisted } = createDependencies();
     const checkout = createSquareServiceCheckout(dependencies);
     const result = await checkout({ hold, now });
-    const expectedKey = buildSquareServiceCheckoutIdempotencyKey(hold, 5000);
+    const expectedKey = buildSquareServiceCheckoutIdempotencyKey(hold, 5000, 5650);
 
     assert.equal(result.checkoutUrl, "https://square.link/u/123");
     assert.equal(result.holdReference, "hold_public_1");
@@ -115,10 +115,18 @@ test("Square service checkout creates payment link with idempotent booking body"
     assert.equal(clientRequests[0].order.location_id, "LOC123");
     assert.equal(clientRequests[0].order.reference_id, result.orderId);
     assert.deepEqual(clientRequests[0].order.line_items, [{
+      applied_taxes: [{ tax_uid: "ontario-hst" }],
       name: "Classic Fill deposit",
       quantity: "1",
       base_price_money: { amount: 5000, currency: "CAD" },
       note: "Lash Her BOOKING-DEPOSIT",
+    }]);
+    assert.deepEqual(clientRequests[0].order.taxes, [{
+      name: "Ontario HST",
+      percentage: "13",
+      scope: "LINE_ITEM",
+      type: "ADDITIVE",
+      uid: "ontario-hst",
     }]);
     assert.deepEqual(clientRequests[0].order.metadata, {
       lh_hold_id: "hold-internal-1",
@@ -133,6 +141,15 @@ test("Square service checkout creates payment link with idempotent booking body"
     assert.equal(persisted.length, 1);
     assert.equal(persisted[0].idempotencyKey, expectedKey);
     assert.equal(persisted[0].locationId, "LOC123");
+    assert.equal(persisted[0].amountCents, 5650);
+    assert.deepEqual(persisted[0].taxQuote, {
+      expectedAmountCents: 5650,
+      policyVersion: "service-booking-hst-on-paid-today-v1",
+      taxAmountCents: 650,
+      taxableAmountCents: 5000,
+      taxName: "Ontario HST",
+      taxRate: 0.13,
+    });
     assert.equal(persisted[0].paymentSelection.purpose, "appointment_deposit");
   `);
 });
@@ -164,6 +181,14 @@ test("Square service checkout charges selected full payment amount when an add-o
 
     const request = clientRequests[0];
     assert.equal(request.order.line_items[0].base_price_money.amount, 17500);
+    assert.deepEqual(request.order.line_items[0].applied_taxes, [{ tax_uid: "ontario-hst" }]);
+    assert.deepEqual(request.order.taxes, [{
+      name: "Ontario HST",
+      percentage: "13",
+      scope: "LINE_ITEM",
+      type: "ADDITIVE",
+      uid: "ontario-hst",
+    }]);
     assert.equal(request.order.line_items[0].name, "Classic Fill full payment with Lash Bath");
   `);
 });

@@ -944,6 +944,197 @@ test("Square finalizer treats mock delayed capture APPROVED payments as paid und
   assert.deepEqual(recordedEvents, [{ providerStatus: "APPROVED", status: "paid_calendar_pending" }]);
 });
 
+test("Square finalizer reconciles taxed service booking amount and keeps tip separate", async () => {
+  let paidTransitionTipAmount: number | undefined;
+  const repository: SquarePaymentFinalizerRepository = {
+    async claimSquareEvent() {
+      return { duplicate: false };
+    },
+    async findSquareOrder() {
+      return {
+        amountCents: 5650,
+        id: "order-db-id",
+        orderId: "lh-sq-taxed",
+        providerOrderId: "order_taxed_123",
+        providerPaymentId: null,
+        purpose: "appointment_deposit",
+        squareLocationId: "loc_123",
+        status: "pending",
+      };
+    },
+    async recordSquareEvent() {
+      return { duplicate: false };
+    },
+    async recordSquarePaymentPendingCalendar(input) {
+      paidTransitionTipAmount = input.tipAmountCents;
+    },
+  };
+  const finalizer = createSquarePaymentFinalizer({
+    finalizeAppointmentPaymentForOrder: async () => ({ ok: true, eventId: "calendar-event-1", status: "booked" }),
+    getEnv: createEnv,
+    repository,
+    sendBookingConfirmationEmailForOrder: async () => {},
+    squareClientFactory: () => ({
+      async createPaymentLink() {
+        throw new Error("Not used");
+      },
+      async getOrder() {
+        throw new Error("Not used");
+      },
+      async getPayment() {
+        return {
+          payment: {
+            amount_money: { amount: 5650, currency: "CAD" },
+            id: "pay_taxed_123",
+            order_id: "order_taxed_123",
+            status: "COMPLETED",
+            tip_money: { amount: 1500, currency: "CAD" },
+            total_money: { amount: 7150, currency: "CAD" },
+          },
+        };
+      },
+    }),
+  });
+
+  const result = await finalizer({ paymentId: "pay_taxed_123", source: "return" });
+
+  assert.equal(result.status, "booked");
+  assert.equal(result.finalized, true);
+  assert.equal(paidTransitionTipAmount, 1500);
+});
+
+test("Square finalizer rejects no-tax payment amount for a taxed service booking order", async () => {
+  const recordedStatuses: Array<string | undefined> = [];
+  const repository: SquarePaymentFinalizerRepository = {
+    async claimSquareEvent() {
+      return { duplicate: false };
+    },
+    async findSquareOrder() {
+      return {
+        amountCents: 5650,
+        id: "order-db-id",
+        orderId: "lh-sq-taxed",
+        providerOrderId: "order_taxed_123",
+        providerPaymentId: null,
+        purpose: "appointment_deposit",
+        squareLocationId: "loc_123",
+        status: "pending",
+      };
+    },
+    async recordSquareEvent(input) {
+      recordedStatuses.push(input.status);
+      return { duplicate: false };
+    },
+    async recordSquarePaymentPendingCalendar() {
+      throw new Error("No-tax mismatch must not transition to paid");
+    },
+  };
+  const finalizer = createSquarePaymentFinalizer({
+    finalizeAppointmentPaymentForOrder: async () => {
+      throw new Error("No-tax mismatch must not finalize booking");
+    },
+    getEnv: createEnv,
+    repository,
+    sendBookingConfirmationEmailForOrder: async () => {},
+    squareClientFactory: () => ({
+      async createPaymentLink() {
+        throw new Error("Not used");
+      },
+      async getOrder() {
+        throw new Error("Not used");
+      },
+      async getPayment() {
+        return {
+          payment: {
+            amount_money: { amount: 5000, currency: "CAD" },
+            id: "pay_no_tax_123",
+            order_id: "order_taxed_123",
+            status: "COMPLETED",
+          },
+        };
+      },
+    }),
+  });
+
+  const result = await finalizer({ paymentId: "pay_no_tax_123", source: "return" });
+
+  assert.equal(result.status, "ignored");
+  assert.equal(result.reason, "Square payment amount or currency did not match local order");
+  assert.ok(recordedStatuses.includes("amount_or_currency_mismatch"));
+});
+
+test("Square finalizer rejects paid payment when amount_money is missing even if total_money matches", async () => {
+  const recordedEvents: Array<{ amountCents?: number; currency?: string; status?: string }> = [];
+  const repository: SquarePaymentFinalizerRepository = {
+    async claimSquareEvent() {
+      return { duplicate: false };
+    },
+    async findSquareOrder() {
+      return {
+        amountCents: 5000,
+        id: "order-db-id",
+        orderId: "lh-sq-local",
+        providerOrderId: "order_123",
+        providerPaymentId: null,
+        purpose: "appointment_deposit",
+        squareLocationId: "loc_123",
+        status: "pending",
+      };
+    },
+    async recordSquareEvent(input) {
+      recordedEvents.push({
+        amountCents: input.amountCents,
+        currency: input.currency,
+        status: input.status,
+      });
+      return { duplicate: false };
+    },
+    async recordSquarePaymentPendingCalendar() {
+      throw new Error("Missing amount_money must not transition to paid");
+    },
+  };
+  const finalizer = createSquarePaymentFinalizer({
+    finalizeAppointmentPaymentForOrder: async () => {
+      throw new Error("Missing amount_money must not finalize booking");
+    },
+    getEnv: createEnv,
+    repository,
+    sendBookingConfirmationEmailForOrder: async () => {},
+    squareClientFactory: () => ({
+      async createPaymentLink() {
+        throw new Error("Not used");
+      },
+      async getOrder() {
+        throw new Error("Not used");
+      },
+      async getPayment() {
+        return {
+          payment: {
+            id: "pay_missing_amount_123",
+            order_id: "order_123",
+            status: "COMPLETED",
+            tip_money: { amount: 1500, currency: "CAD" },
+            total_money: { amount: 5000, currency: "CAD" },
+          },
+        };
+      },
+    }),
+  });
+
+  const result = await finalizer({ paymentId: "pay_missing_amount_123", source: "return" });
+
+  assert.equal(result.status, "ignored");
+  assert.equal(result.finalized, false);
+  assert.equal(result.reason, "Square payment amount or currency did not match local order");
+  assert.deepEqual(recordedEvents, [
+    {
+      amountCents: undefined,
+      currency: undefined,
+      status: "amount_or_currency_mismatch",
+    },
+  ]);
+});
+
 test("Square finalizer records mock Square amount and currency mismatches as ignored failures", async () => {
   const mismatchCases = [
     { amountCents: 4900, currency: "CAD", expectedAmount: 4900, expectedCurrency: "CAD" },

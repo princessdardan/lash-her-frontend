@@ -16,6 +16,13 @@ import {
   toBookingPaymentAmountCents,
   type BookingPaymentSelection,
 } from "./payment-policy";
+import {
+  calculateServiceBookingHstQuote,
+  SERVICE_BOOKING_HST_PERCENTAGE,
+  SERVICE_BOOKING_HST_TAX_NAME,
+  SERVICE_BOOKING_HST_TAX_UID,
+  type ServiceBookingHstQuote,
+} from "./service-tax-policy";
 import type { SquareClient, SquarePaymentLink } from "./square-client";
 
 export interface SquareServiceCheckoutInput {
@@ -34,6 +41,7 @@ export interface SquareServiceCheckoutResult {
 }
 
 export interface PersistSquareServiceCheckoutInput {
+  amountCents: number;
   hold: BookingHoldRecord;
   idempotencyKey: string;
   locationId: string;
@@ -41,6 +49,7 @@ export interface PersistSquareServiceCheckoutInput {
   orderId: string;
   paymentLink: SquarePaymentLink;
   paymentSelection: BookingPaymentSelection;
+  taxQuote: ServiceBookingHstQuote;
 }
 
 export interface SquarePendingServiceCheckout {
@@ -89,7 +98,8 @@ export function createSquareServiceCheckout(
     }
 
     const amountCents = toBookingPaymentAmountCents(paymentSelection);
-    const idempotencyKey = buildSquareServiceCheckoutIdempotencyKey(input.hold, amountCents);
+    const taxQuote = calculateServiceBookingHstQuote(amountCents);
+    const idempotencyKey = buildSquareServiceCheckoutIdempotencyKey(input.hold, amountCents, taxQuote.expectedAmountCents);
     const orderId = `lh-sq-${nanoid(12)}`;
     const paymentLink = await dependencies.squareClientFactory(env).createPaymentLink({
       idempotency_key: idempotencyKey,
@@ -98,6 +108,7 @@ export function createSquareServiceCheckout(
         reference_id: orderId,
         line_items: [
           {
+            applied_taxes: [{ tax_uid: SERVICE_BOOKING_HST_TAX_UID }],
             name: paymentSelection.description,
             quantity: "1",
             base_price_money: {
@@ -107,6 +118,13 @@ export function createSquareServiceCheckout(
             note: `Lash Her ${paymentSelection.sku}`,
           },
         ],
+        taxes: [{
+          name: SERVICE_BOOKING_HST_TAX_NAME,
+          percentage: SERVICE_BOOKING_HST_PERCENTAGE,
+          scope: "LINE_ITEM",
+          type: "ADDITIVE",
+          uid: SERVICE_BOOKING_HST_TAX_UID,
+        }],
         metadata: {
           lh_hold_id: input.hold.id,
           lh_hold_reference: input.hold.publicReference,
@@ -121,6 +139,7 @@ export function createSquareServiceCheckout(
     });
 
     const persistedCheckout = await dependencies.repository.persistPendingCheckout({
+      amountCents: taxQuote.expectedAmountCents,
       hold: input.hold,
       idempotencyKey,
       locationId: env.locationId,
@@ -128,6 +147,7 @@ export function createSquareServiceCheckout(
       orderId,
       paymentLink: paymentLink.payment_link,
       paymentSelection,
+      taxQuote,
     });
 
     return toSquareServiceCheckoutResult(input.hold, persistedCheckout, false);
@@ -153,9 +173,10 @@ export async function createSquareServiceBookingCheckout(
 export function buildSquareServiceCheckoutIdempotencyKey(
   hold: Pick<BookingHoldRecord, "id" | "publicReference">,
   amountCents: number,
+  expectedAmountCents = amountCents,
 ): string {
   const digest = createHash("sha256")
-    .update(`${hold.id}:${hold.publicReference}:${amountCents}`, "utf8")
+    .update(`${hold.id}:${hold.publicReference}:${amountCents}:${expectedAmountCents}:${calculateServiceBookingHstQuote(amountCents).policyVersion}`, "utf8")
     .digest("hex")
     .slice(0, 32);
 
@@ -196,11 +217,10 @@ function createDrizzleSquareServiceCheckoutRepository(): SquareServiceCheckoutRe
           import("@/sanity/env"),
         ]);
         const cart = buildBookingPaymentCart(input.hold, input.paymentSelection);
-        const amountCents = toBookingPaymentAmountCents(input.paymentSelection);
         const [createdOrder] = await tx
           .insert(checkoutOrders)
           .values({
-            amountCents,
+            amountCents: input.amountCents,
             calendarFinalizationStatus: "pending",
             checkoutTokenHash: hashSquareCheckoutToken(
               input.idempotencyKey,
@@ -215,8 +235,8 @@ function createDrizzleSquareServiceCheckoutRepository(): SquareServiceCheckoutRe
               sku: lineItem.sku,
               description: lineItem.description,
               quantity: lineItem.quantity,
-              unitPriceCents: amountCents,
-              totalCents: amountCents,
+              unitPriceCents: input.taxQuote.taxableAmountCents,
+              totalCents: input.taxQuote.taxableAmountCents,
             })),
             orderId: input.orderId,
             paymentProvider: "square",
@@ -225,6 +245,7 @@ function createDrizzleSquareServiceCheckoutRepository(): SquareServiceCheckoutRe
               holdId: input.hold.id,
               holdReference: input.hold.publicReference,
               idempotencyKey: input.idempotencyKey,
+              tax: input.taxQuote,
             },
             providerOrderId: input.paymentLink.order_id,
             providerStatus: "payment_link_created",
@@ -248,6 +269,7 @@ function createDrizzleSquareServiceCheckoutRepository(): SquareServiceCheckoutRe
             reconciliationMetadata: {
               idempotencyKey: input.idempotencyKey,
               squareLocationId: input.locationId,
+              tax: input.taxQuote,
             },
             squareCheckoutId: input.paymentLink.id,
             squareOrderId: input.paymentLink.order_id,

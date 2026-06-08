@@ -192,8 +192,8 @@ export function createSquarePaymentFinalizer(
       return { duplicateEvent: false, finalized: false, orderId: localOrder.orderId, status: "unpaid" };
     }
 
-    const amountCents = lookup.payment.amount_money?.amount ?? lookup.payment.total_money?.amount;
-    const currency = lookup.payment.amount_money?.currency ?? lookup.payment.total_money?.currency;
+    const amountCents = lookup.payment.amount_money?.amount;
+    const currency = lookup.payment.amount_money?.currency;
 
     if (amountCents !== localOrder.amountCents || currency !== "CAD") {
       await dependencies.repository.recordSquareEvent({

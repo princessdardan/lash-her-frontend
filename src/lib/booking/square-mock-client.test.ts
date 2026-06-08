@@ -256,3 +256,45 @@ test("mock Square client can model amount and currency mismatches", async () => 
   assert.equal((await amountClient.getPayment("mock-square-payment-1")).payment.amount_money?.amount, 4900);
   assert.equal((await currencyClient.getPayment("mock-square-payment-1")).payment.amount_money?.currency, "USD");
 });
+
+test("mock Square payment link totals include applied manual line item taxes", async () => {
+  const client = createMockSquareClient({ scenario: "success" });
+  const response = await client.createPaymentLink({
+    checkout_options: {
+      allow_tipping: true,
+      redirect_url: "https://lashher.test/api/booking/square/return",
+    },
+    idempotency_key: "taxed-square-link-1",
+    order: {
+      location_id: "LOC123",
+      line_items: [
+        {
+          applied_taxes: [{ tax_uid: "ontario-hst" }],
+          base_price_money: { amount: 5000, currency: "CAD" },
+          name: "Classic Fill deposit",
+          quantity: "1",
+        },
+      ],
+      reference_id: "lh-sq-taxed",
+      taxes: [
+        {
+          name: "Ontario HST",
+          percentage: "13",
+          scope: "LINE_ITEM",
+          type: "ADDITIVE",
+          uid: "ontario-hst",
+        },
+      ],
+    },
+  });
+
+  const paymentId = new URL(response.payment_link.url).searchParams.get("paymentId");
+  assert.equal(paymentId, "mock-square-payment-1");
+
+  const payment = await client.getPayment("mock-square-payment-1");
+  const order = await client.getOrder(response.payment_link.order_id ?? "");
+
+  assert.equal(payment.payment.amount_money?.amount, 5650);
+  assert.equal(payment.payment.total_money?.amount, 5650);
+  assert.equal(order.order.total_money?.amount, 5650);
+});

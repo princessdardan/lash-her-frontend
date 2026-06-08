@@ -90,7 +90,7 @@ export function createMockSquareClient(options: MockSquareClientOptions): MockSq
       const squareOrderId = `mock-square-order-${sequence}`;
       const paymentId = `mock-square-payment-${sequence}`;
       const localOrderId = getLocalOrderId(request);
-      const amountCents = options.amountCents ?? request.order?.line_items[0]?.base_price_money.amount ?? 0;
+      const amountCents = options.amountCents ?? calculateMockOrderTotalCents(request);
       const currency = options.currency ?? request.order?.line_items[0]?.base_price_money.currency ?? "CAD";
       const response = {
         payment_link: {
@@ -289,6 +289,34 @@ function getSharedState(store: PaymentMockStore): SharedMockSquareState {
 
 function getLocalOrderId(request: SquareCreatePaymentLinkRequest): string {
   return request.order?.reference_id ?? request.order?.metadata?.lh_order_id ?? request.idempotency_key;
+}
+
+function calculateMockOrderTotalCents(request: SquareCreatePaymentLinkRequest): number {
+  const lineItems = request.order?.line_items ?? [];
+  const taxesByUid = new Map((request.order?.taxes ?? []).map((tax) => [tax.uid, tax]));
+
+  return lineItems.reduce((total, lineItem) => {
+    const quantity = Number.parseInt(lineItem.quantity, 10);
+    const safeQuantity = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+    const lineBaseAmount = lineItem.base_price_money.amount * safeQuantity;
+    const taxAmount = (lineItem.applied_taxes ?? []).reduce((taxTotal, appliedTax) => {
+      const tax = taxesByUid.get(appliedTax.tax_uid);
+
+      if (tax === undefined) {
+        return taxTotal;
+      }
+
+      const percentage = Number.parseFloat(tax.percentage);
+
+      if (!Number.isFinite(percentage)) {
+        return taxTotal;
+      }
+
+      return taxTotal + Math.round(lineBaseAmount * (percentage / 100));
+    }, 0);
+
+    return total + lineBaseAmount + taxAmount;
+  }, 0);
 }
 
 function toPaymentResponse(state: MockPaymentLinkState, status: string): SquareGetPaymentResponse {
