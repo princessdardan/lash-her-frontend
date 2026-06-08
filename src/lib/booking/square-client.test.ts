@@ -8,18 +8,31 @@ const helperScript = String.raw`
 
   function createPaymentLinkRequest() {
     return {
-      idempotency_key: "booking-square-link-hold_123",
-      order: {
-        location_id: "LOC123",
-        line_items: [{
-          name: "Classic Fill deposit",
-          quantity: "1",
-          base_price_money: { amount: 5000, currency: "CAD" },
-        }],
-      },
       checkout_options: {
         allow_tipping: true,
         redirect_url: "https://lashher.test/api/booking/square/return",
+      },
+      idempotency_key: "idempotency-key-1",
+      order: {
+        location_id: "LOC123",
+        line_items: [
+          {
+            applied_taxes: [{ tax_uid: "ontario-hst" }],
+            base_price_money: { amount: 5000, currency: "CAD" },
+            name: "Classic Fill deposit",
+            quantity: "1",
+          },
+        ],
+        reference_id: "lh-sq-order-1",
+        taxes: [
+          {
+            name: "Ontario HST",
+            percentage: "13",
+            scope: "LINE_ITEM",
+            type: "ADDITIVE",
+            uid: "ontario-hst",
+          },
+        ],
       },
       payment_note: "Lash Her booking hold hold_123 order lh-123",
     };

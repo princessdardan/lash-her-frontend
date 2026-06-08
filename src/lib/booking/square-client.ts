@@ -17,6 +17,9 @@ export interface SquareCreatePaymentLinkRequest {
   order?: {
     location_id: string;
     line_items: Array<{
+      applied_taxes?: Array<{
+        tax_uid: string;
+      }>;
       name: string;
       quantity: string;
       base_price_money: {
@@ -27,6 +30,13 @@ export interface SquareCreatePaymentLinkRequest {
     }>;
     metadata?: Record<string, string>;
     reference_id?: string;
+    taxes?: Array<{
+      name: string;
+      percentage: string;
+      scope: "LINE_ITEM";
+      type: "ADDITIVE";
+      uid: string;
+    }>;
   };
   payment_note?: string;
 }
