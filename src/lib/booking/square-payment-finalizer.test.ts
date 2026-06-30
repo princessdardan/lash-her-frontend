@@ -5,6 +5,7 @@ import { createPaymentMockStore } from "@/lib/payment-mocks/in-memory-store";
 
 import {
   createSquarePaymentFinalizer,
+  type SquareEventRecordInput,
   type SquarePaymentFinalizerRepository,
 } from "./square-payment-finalizer";
 import type {
@@ -161,7 +162,10 @@ test("Square finalizer dedupes duplicate webhook event IDs before Square fetch",
       };
     },
     async recordSquareEvent(input) {
-      if (input.eventId !== undefined && input.processingStatus === "processed") {
+      if (
+        input.eventId !== undefined &&
+        input.processingStatus === "processed"
+      ) {
         eventProcessingStatuses.set(input.eventId, "processed");
       }
 
@@ -248,15 +252,21 @@ test("Square finalizer retries booking confirmation email for processed duplicat
       };
     },
     async recordSquareEvent() {
-      throw new Error("Processed duplicate recovery must not rewrite Square events");
+      throw new Error(
+        "Processed duplicate recovery must not rewrite Square events",
+      );
     },
     async recordSquarePaymentPendingCalendar() {
-      throw new Error("Processed duplicate recovery must not rewrite paid state");
+      throw new Error(
+        "Processed duplicate recovery must not rewrite paid state",
+      );
     },
   };
   const finalizer = createSquarePaymentFinalizer({
     finalizeAppointmentPaymentForOrder: async () => {
-      throw new Error("Processed duplicate recovery must not refinalize the booking");
+      throw new Error(
+        "Processed duplicate recovery must not refinalize the booking",
+      );
     },
     getEnv: createEnv,
     repository,
@@ -287,7 +297,11 @@ test("Square finalizer retries booking confirmation email for processed duplicat
     source: "webhook",
   });
 
-  assert.deepEqual(result, { duplicateEvent: true, finalized: false, status: "duplicate" });
+  assert.deepEqual(result, {
+    duplicateEvent: true,
+    finalized: false,
+    status: "duplicate",
+  });
   assert.deepEqual(sentBookingEmails, ["lh-sq-local"]);
 });
 
@@ -324,7 +338,10 @@ test("Square finalizer retries duplicate webhook event IDs that are not terminal
       };
     },
     async recordSquareEvent(input) {
-      if (input.eventId !== undefined && input.processingStatus === "processed") {
+      if (
+        input.eventId !== undefined &&
+        input.processingStatus === "processed"
+      ) {
         eventProcessingStatuses.set(input.eventId, "processed");
       }
 
@@ -389,12 +406,15 @@ test("Square finalizer retries duplicate webhook event IDs that are not terminal
 });
 
 test("Square finalizer handles webhook before return on the shared mock payment", async () => {
-  const store = createPaymentMockStore({ now: new Date("2026-05-23T12:00:00.000Z") });
+  const store = createPaymentMockStore({
+    now: new Date("2026-05-23T12:00:00.000Z"),
+  });
   const client = createMockSquareClient({ scenario: "webhook", store });
   const created = await client.createPaymentLink(createPaymentLinkRequest());
   const harness = createStatefulSquareFinalizerRepository();
   const finalizer = createSquarePaymentFinalizer({
-    finalizeAppointmentPaymentForOrder: harness.finalizeAppointmentPaymentForOrder,
+    finalizeAppointmentPaymentForOrder:
+      harness.finalizeAppointmentPaymentForOrder,
     getEnv: createEnv,
     repository: harness.repository,
     sendBookingConfirmationEmailForOrder: async () => {},
@@ -424,12 +444,15 @@ test("Square finalizer handles webhook before return on the shared mock payment"
 });
 
 test("Square finalizer handles return before webhook on the shared mock payment", async () => {
-  const store = createPaymentMockStore({ now: new Date("2026-05-23T12:00:00.000Z") });
+  const store = createPaymentMockStore({
+    now: new Date("2026-05-23T12:00:00.000Z"),
+  });
   const client = createMockSquareClient({ scenario: "webhook", store });
   const created = await client.createPaymentLink(createPaymentLinkRequest());
   const harness = createStatefulSquareFinalizerRepository();
   const finalizer = createSquarePaymentFinalizer({
-    finalizeAppointmentPaymentForOrder: harness.finalizeAppointmentPaymentForOrder,
+    finalizeAppointmentPaymentForOrder:
+      harness.finalizeAppointmentPaymentForOrder,
     getEnv: createEnv,
     repository: harness.repository,
     sendBookingConfirmationEmailForOrder: async () => {},
@@ -582,16 +605,21 @@ test("Square finalizer releases terminal failed payments from active hold invent
     }),
   });
 
-  const result = await finalizer({ paymentId: "pay_failed_123", source: "return" });
+  const result = await finalizer({
+    paymentId: "pay_failed_123",
+    source: "return",
+  });
 
   assert.equal(result.status, "unpaid");
   assert.equal(result.finalized, false);
-  assert.deepEqual(recordedFailures, [{
-    orderId: "lh-sq-local",
-    paymentId: "pay_failed_123",
-    providerOrderId: "order_123",
-    status: "FAILED",
-  }]);
+  assert.deepEqual(recordedFailures, [
+    {
+      orderId: "lh-sq-local",
+      paymentId: "pay_failed_123",
+      providerOrderId: "order_123",
+      status: "FAILED",
+    },
+  ]);
 });
 
 test("Square finalizer does not bind a Square payment to a mismatched local return order ID", async () => {
@@ -657,9 +685,18 @@ test("Square finalizer does not bind a Square payment to a mismatched local retu
     }),
   });
 
-  const result = await finalizer({ orderId: "lh-sq-victim", paymentId: "pay_attacker_123", source: "return" });
+  const result = await finalizer({
+    orderId: "lh-sq-victim",
+    paymentId: "pay_attacker_123",
+    source: "return",
+  });
 
-  assert.deepEqual(findInputs, [{ providerOrderId: "order_attacker", providerPaymentId: "pay_attacker_123" }]);
+  assert.deepEqual(findInputs, [
+    {
+      providerOrderId: "order_attacker",
+      providerPaymentId: "pay_attacker_123",
+    },
+  ]);
   assert.equal(result.status, "ignored");
   assert.equal(result.finalized, false);
   assert.equal(result.reason, "Local Square order not found");
@@ -671,7 +708,10 @@ test("Square finalizer updates a claimed webhook event to processed after verifi
   const eventStates: Array<{ processingStatus: string; status?: string }> = [];
   const repository: SquarePaymentFinalizerRepository = {
     async claimSquareEvent(input) {
-      eventStates.push({ processingStatus: input.processingStatus, status: input.status });
+      eventStates.push({
+        processingStatus: input.processingStatus,
+        status: input.status,
+      });
       return { duplicate: false };
     },
     async findSquareOrder() {
@@ -687,7 +727,10 @@ test("Square finalizer updates a claimed webhook event to processed after verifi
       };
     },
     async recordSquareEvent(input) {
-      eventStates.push({ processingStatus: input.processingStatus, status: input.status });
+      eventStates.push({
+        processingStatus: input.processingStatus,
+        status: input.status,
+      });
       return { duplicate: false };
     },
     async recordSquarePaymentPendingCalendar() {},
@@ -818,7 +861,11 @@ test("Square finalizer invokes booking finalization after paid persistence", asy
 
   assert.equal(result.status, "booked");
   assert.equal(result.bookingFinalizationStatus, "booked");
-  assert.deepEqual(operationOrder, ["paid-calendar-pending", "booking-finalized", "square-event-processed"]);
+  assert.deepEqual(operationOrder, [
+    "paid-calendar-pending",
+    "booking-finalized",
+    "square-event-processed",
+  ]);
 });
 
 test("Square finalizer surfaces paid unbookable rebooking status from booking finalization", async () => {
@@ -875,11 +922,16 @@ test("Square finalizer surfaces paid unbookable rebooking status from booking fi
   const result = await finalizer({ paymentId: "pay_123", source: "return" });
 
   assert.equal(result.status, "paid_calendar_pending");
-  assert.equal(result.bookingFinalizationStatus, "paid_unbookable_rebooking_pending");
+  assert.equal(
+    result.bookingFinalizationStatus,
+    "paid_unbookable_rebooking_pending",
+  );
 });
 
 test("Square finalizer treats mock delayed capture APPROVED payments as paid under current rules", async () => {
-  const store = createPaymentMockStore({ now: new Date("2026-05-23T12:00:00.000Z") });
+  const store = createPaymentMockStore({
+    now: new Date("2026-05-23T12:00:00.000Z"),
+  });
   const client = createMockSquareClient({ scenario: "delayed_capture", store });
   const created = await client.createPaymentLink({
     idempotency_key: "delayed-capture-idempotency",
@@ -896,7 +948,8 @@ test("Square finalizer treats mock delayed capture APPROVED payments as paid und
     },
   });
   const operationOrder: string[] = [];
-  const recordedEvents: Array<{ providerStatus?: string; status?: string }> = [];
+  const recordedEvents: Array<{ providerStatus?: string; status?: string }> =
+    [];
   const repository: SquarePaymentFinalizerRepository = {
     async claimSquareEvent() {
       return { duplicate: false };
@@ -914,7 +967,10 @@ test("Square finalizer treats mock delayed capture APPROVED payments as paid und
       };
     },
     async recordSquareEvent(input) {
-      recordedEvents.push({ providerStatus: input.providerStatus, status: input.status });
+      recordedEvents.push({
+        providerStatus: input.providerStatus,
+        status: input.status,
+      });
       operationOrder.push("square-event-processed");
       return { duplicate: false };
     },
@@ -936,22 +992,499 @@ test("Square finalizer treats mock delayed capture APPROVED payments as paid und
     squareClientFactory: () => client,
   });
 
-  const result = await finalizer({ paymentId: "mock-square-payment-1", source: "return" });
+  const result = await finalizer({
+    paymentId: "mock-square-payment-1",
+    source: "return",
+  });
 
   assert.equal(result.status, "booked");
   assert.equal(result.bookingFinalizationStatus, "booked");
-  assert.deepEqual(operationOrder, ["paid-calendar-pending", "booking-finalized", "square-event-processed"]);
-  assert.deepEqual(recordedEvents, [{ providerStatus: "APPROVED", status: "paid_calendar_pending" }]);
+  assert.deepEqual(operationOrder, [
+    "paid-calendar-pending",
+    "booking-finalized",
+    "square-event-processed",
+  ]);
+  assert.deepEqual(recordedEvents, [
+    { providerStatus: "APPROVED", status: "paid_calendar_pending" },
+  ]);
+});
+
+test("Square finalizer reconciles taxed service booking amount and keeps tip separate", async () => {
+  let paidTransitionTipAmount: number | undefined;
+  const repository: SquarePaymentFinalizerRepository = {
+    async claimSquareEvent() {
+      return { duplicate: false };
+    },
+    async findSquareOrder() {
+      return {
+        amountCents: 5650,
+        id: "order-db-id",
+        orderId: "lh-sq-taxed",
+        providerOrderId: "order_taxed_123",
+        providerPaymentId: null,
+        purpose: "appointment_deposit",
+        squareLocationId: "loc_123",
+        status: "pending",
+      };
+    },
+    async recordSquareEvent() {
+      return { duplicate: false };
+    },
+    async recordSquarePaymentPendingCalendar(input) {
+      paidTransitionTipAmount = input.tipAmountCents;
+    },
+  };
+  const finalizer = createSquarePaymentFinalizer({
+    finalizeAppointmentPaymentForOrder: async () => ({
+      ok: true,
+      eventId: "calendar-event-1",
+      status: "booked",
+    }),
+    getEnv: createEnv,
+    repository,
+    sendBookingConfirmationEmailForOrder: async () => {},
+    squareClientFactory: () => ({
+      async createPaymentLink() {
+        throw new Error("Not used");
+      },
+      async getOrder() {
+        throw new Error("Not used");
+      },
+      async getPayment() {
+        return {
+          payment: {
+            amount_money: { amount: 5650, currency: "CAD" },
+            id: "pay_taxed_123",
+            order_id: "order_taxed_123",
+            status: "COMPLETED",
+            tip_money: { amount: 1500, currency: "CAD" },
+            total_money: { amount: 7150, currency: "CAD" },
+          },
+        };
+      },
+    }),
+  });
+
+  const result = await finalizer({
+    paymentId: "pay_taxed_123",
+    source: "return",
+  });
+
+  assert.equal(result.status, "booked");
+  assert.equal(result.finalized, true);
+  assert.equal(paidTransitionTipAmount, 1500);
+});
+
+test("Square finalizer rejects no-tax payment amount for a taxed service booking order", async () => {
+  const recordedStatuses: Array<string | undefined> = [];
+  const repository: SquarePaymentFinalizerRepository = {
+    async claimSquareEvent() {
+      return { duplicate: false };
+    },
+    async findSquareOrder() {
+      return {
+        amountCents: 5650,
+        id: "order-db-id",
+        orderId: "lh-sq-taxed",
+        providerOrderId: "order_taxed_123",
+        providerPaymentId: null,
+        purpose: "appointment_deposit",
+        squareLocationId: "loc_123",
+        status: "pending",
+      };
+    },
+    async recordSquareEvent(input) {
+      recordedStatuses.push(input.status);
+      return { duplicate: false };
+    },
+    async recordSquarePaymentPendingCalendar() {
+      throw new Error("No-tax mismatch must not transition to paid");
+    },
+  };
+  const finalizer = createSquarePaymentFinalizer({
+    finalizeAppointmentPaymentForOrder: async () => {
+      throw new Error("No-tax mismatch must not finalize booking");
+    },
+    getEnv: createEnv,
+    repository,
+    sendBookingConfirmationEmailForOrder: async () => {},
+    squareClientFactory: () => ({
+      async createPaymentLink() {
+        throw new Error("Not used");
+      },
+      async getOrder() {
+        throw new Error("Not used");
+      },
+      async getPayment() {
+        return {
+          payment: {
+            amount_money: { amount: 5000, currency: "CAD" },
+            id: "pay_no_tax_123",
+            order_id: "order_taxed_123",
+            status: "COMPLETED",
+          },
+        };
+      },
+    }),
+  });
+
+  const result = await finalizer({
+    paymentId: "pay_no_tax_123",
+    source: "return",
+  });
+
+  assert.equal(result.status, "ignored");
+  assert.equal(
+    result.reason,
+    "Square payment amount or currency did not match local order",
+  );
+  assert.ok(recordedStatuses.includes("amount_or_currency_mismatch"));
+});
+
+test("Square finalizer rejects paid payment when amount_money is missing even if total_money matches", async () => {
+  const recordedEvents: Array<{
+    amountCents?: number;
+    currency?: string;
+    status?: string;
+  }> = [];
+  const repository: SquarePaymentFinalizerRepository = {
+    async claimSquareEvent() {
+      return { duplicate: false };
+    },
+    async findSquareOrder() {
+      return {
+        amountCents: 5000,
+        id: "order-db-id",
+        orderId: "lh-sq-local",
+        providerOrderId: "order_123",
+        providerPaymentId: null,
+        purpose: "appointment_deposit",
+        squareLocationId: "loc_123",
+        status: "pending",
+      };
+    },
+    async recordSquareEvent(input) {
+      recordedEvents.push({
+        amountCents: input.amountCents,
+        currency: input.currency,
+        status: input.status,
+      });
+      return { duplicate: false };
+    },
+    async recordSquarePaymentPendingCalendar() {
+      throw new Error("Missing amount_money must not transition to paid");
+    },
+  };
+  const finalizer = createSquarePaymentFinalizer({
+    finalizeAppointmentPaymentForOrder: async () => {
+      throw new Error("Missing amount_money must not finalize booking");
+    },
+    getEnv: createEnv,
+    repository,
+    sendBookingConfirmationEmailForOrder: async () => {},
+    squareClientFactory: () => ({
+      async createPaymentLink() {
+        throw new Error("Not used");
+      },
+      async getOrder() {
+        throw new Error("Not used");
+      },
+      async getPayment() {
+        return {
+          payment: {
+            id: "pay_missing_amount_123",
+            order_id: "order_123",
+            status: "COMPLETED",
+            tip_money: { amount: 1500, currency: "CAD" },
+            total_money: { amount: 5000, currency: "CAD" },
+          },
+        };
+      },
+    }),
+  });
+
+  const result = await finalizer({
+    paymentId: "pay_missing_amount_123",
+    source: "return",
+  });
+
+  assert.equal(result.status, "ignored");
+  assert.equal(result.finalized, false);
+  assert.equal(
+    result.reason,
+    "Square payment amount or currency did not match local order",
+  );
+  assert.deepEqual(recordedEvents, [
+    {
+      amountCents: undefined,
+      currency: undefined,
+      status: "amount_or_currency_mismatch",
+    },
+  ]);
+});
+
+test("Square finalizer does not persist pending verification for missing local-looking order IDs", async () => {
+  const calledSquareOrderIds: string[] = [];
+  const recordedEvents: Array<{
+    orderId?: string;
+    processingStatus: string;
+    status: string;
+  }> = [];
+  const repository: SquarePaymentFinalizerRepository = {
+    async claimSquareEvent() {
+      return { duplicate: false };
+    },
+    async findSquareOrder(input) {
+      if (input.localOrderId === "lh-sq-missing") {
+        return null;
+      }
+
+      return null;
+    },
+    async recordSquareEvent(input) {
+      recordedEvents.push({
+        orderId: input.orderId,
+        processingStatus: input.processingStatus,
+        status: input.status ?? "unknown",
+      });
+
+      return { duplicate: false };
+    },
+    async recordSquarePaymentPendingCalendar() {
+      throw new Error("Missing local order must not transition to paid");
+    },
+  };
+  const finalizer = createSquarePaymentFinalizer({
+    finalizeAppointmentPaymentForOrder: async () => {
+      throw new Error("Missing local order must not finalize booking");
+    },
+    getEnv: createEnv,
+    repository,
+    sendBookingConfirmationEmailForOrder: async () => {},
+    squareClientFactory: () => ({
+      async createPaymentLink() {
+        throw new Error("Not used");
+      },
+      async getOrder(orderId) {
+        calledSquareOrderIds.push(orderId);
+
+        if (orderId.startsWith("lh-sq-")) {
+          throw new Error("Square getOrder must not receive a local order ID");
+        }
+
+        return { order: { id: orderId } };
+      },
+      async getPayment() {
+        throw new Error("Payment lookup must not occur without a payment ID");
+      },
+    }),
+  });
+
+  const result = await finalizer({
+    orderId: "lh-sq-missing",
+    source: "return",
+  });
+
+  assert.equal(
+    calledSquareOrderIds.some((id) => id.startsWith("lh-sq-")),
+    false,
+  );
+  assert.notEqual(result.status, "pending_verification");
+  assert.equal(result.finalized, false);
+  assert.equal(result.status, "ignored");
+  assert.equal(result.reason, "Square payment could not be resolved");
+  assert.equal(
+    recordedEvents.some((event) => event.status === "pending_verification"),
+    false,
+  );
+});
+
+test("Square finalizer returns pending verification for local order IDs without payment IDs", async () => {
+  const calledSquareOrderIds: string[] = [];
+  const recordedEvents: Array<{
+    orderId?: string;
+    processingStatus: string;
+    status: string;
+  }> = [];
+  const repository: SquarePaymentFinalizerRepository = {
+    async claimSquareEvent() {
+      return { duplicate: false };
+    },
+    async findSquareOrder(input) {
+      if (input.localOrderId === "lh-sq-local") {
+        return {
+          amountCents: 5000,
+          id: "order-db-id",
+          orderId: "lh-sq-local",
+          providerOrderId: "square-order-123",
+          providerPaymentId: null,
+          purpose: "appointment_deposit",
+          squareLocationId: "loc_123",
+          status: "pending",
+        };
+      }
+
+      return null;
+    },
+    async recordSquareEvent(input) {
+      recordedEvents.push({
+        orderId: input.orderId,
+        processingStatus: input.processingStatus,
+        status: input.status ?? "unknown",
+      });
+
+      return { duplicate: false };
+    },
+    async recordSquarePaymentPendingCalendar() {
+      throw new Error("Unresolved local order must not transition to paid");
+    },
+  };
+  const finalizer = createSquarePaymentFinalizer({
+    finalizeAppointmentPaymentForOrder: async () => {
+      throw new Error("Unresolved local order must not finalize booking");
+    },
+    getEnv: createEnv,
+    repository,
+    sendBookingConfirmationEmailForOrder: async () => {},
+    squareClientFactory: () => ({
+      async createPaymentLink() {
+        throw new Error("Not used");
+      },
+      async getOrder(orderId) {
+        calledSquareOrderIds.push(orderId);
+
+        if (orderId === "lh-sq-local") {
+          throw new Error("Square getOrder must not receive a local order ID");
+        }
+
+        return { order: { id: orderId } };
+      },
+      async getPayment() {
+        throw new Error("Payment lookup must not occur without a payment ID");
+      },
+    }),
+  });
+
+  const result = await finalizer({ orderId: "lh-sq-local", source: "return" });
+
+  assert.equal(calledSquareOrderIds.includes("lh-sq-local"), false);
+  assert.equal(result.finalized, false);
+  assert.equal(result.status, "pending_verification");
+  assert.deepEqual(recordedEvents, [
+    {
+      orderId: "lh-sq-local",
+      processingStatus: "ignored",
+      status: "pending_verification",
+    },
+  ]);
+});
+
+test("Square finalizer deduplicates eventless pending verification records by deterministic idempotency key", async () => {
+  const insertedEventInputs: unknown[] = [];
+  let insertDuplicateCount = 0;
+  const repository: SquarePaymentFinalizerRepository = {
+    async claimSquareEvent() {
+      return { duplicate: false };
+    },
+    async findSquareOrder(input) {
+      if (input.localOrderId === "lh-sq-local") {
+        return {
+          amountCents: 5000,
+          id: "order-db-id",
+          orderId: "lh-sq-local",
+          providerOrderId: "square-order-123",
+          providerPaymentId: null,
+          purpose: "appointment_deposit",
+          squareLocationId: "loc_123",
+          status: "pending",
+        };
+      }
+
+      return null;
+    },
+    async recordSquareEvent(input) {
+      insertedEventInputs.push(input);
+
+      if (input.idempotencyKey === undefined) {
+        return { duplicate: false };
+      }
+
+      if (
+        insertedEventInputs.filter(
+          (i) =>
+            (i as SquareEventRecordInput).idempotencyKey ===
+            input.idempotencyKey,
+        ).length > 1
+      ) {
+        insertDuplicateCount += 1;
+        return { duplicate: true };
+      }
+
+      return { duplicate: false };
+    },
+    async recordSquarePaymentPendingCalendar() {
+      throw new Error("Unresolved local order must not transition to paid");
+    },
+  };
+  const finalizer = createSquarePaymentFinalizer({
+    finalizeAppointmentPaymentForOrder: async () => {
+      throw new Error("Unresolved local order must not finalize booking");
+    },
+    getEnv: createEnv,
+    repository,
+    sendBookingConfirmationEmailForOrder: async () => {},
+    squareClientFactory: () => ({
+      async createPaymentLink() {
+        throw new Error("Not used");
+      },
+      async getOrder() {
+        throw new Error("Square getOrder must not receive a local order ID");
+      },
+      async getPayment() {
+        throw new Error("Payment lookup must not occur without a payment ID");
+      },
+    }),
+  });
+
+  const firstResult = await finalizer({
+    orderId: "lh-sq-local",
+    source: "return",
+  });
+  const secondResult = await finalizer({
+    orderId: "lh-sq-local",
+    source: "return",
+  });
+
+  assert.equal(firstResult.status, "pending_verification");
+  assert.equal(secondResult.status, "pending_verification");
+  assert.equal(insertedEventInputs.length, 2);
+  assert.equal(insertDuplicateCount, 1);
+  assert.equal(
+    (insertedEventInputs[0] as SquareEventRecordInput).idempotencyKey,
+    "square:return:pending_verification:287c1475c915572e42e9984d1cf15978",
+  );
 });
 
 test("Square finalizer records mock Square amount and currency mismatches as ignored failures", async () => {
   const mismatchCases = [
-    { amountCents: 4900, currency: "CAD", expectedAmount: 4900, expectedCurrency: "CAD" },
-    { amountCents: 5000, currency: "USD", expectedAmount: 5000, expectedCurrency: "USD" },
+    {
+      amountCents: 4900,
+      currency: "CAD",
+      expectedAmount: 4900,
+      expectedCurrency: "CAD",
+    },
+    {
+      amountCents: 5000,
+      currency: "USD",
+      expectedAmount: 5000,
+      expectedCurrency: "USD",
+    },
   ];
 
   for (const mismatchCase of mismatchCases) {
-    const store = createPaymentMockStore({ now: new Date("2026-05-23T12:00:00.000Z") });
+    const store = createPaymentMockStore({
+      now: new Date("2026-05-23T12:00:00.000Z"),
+    });
     const client = createMockSquareClient({
       amountCents: mismatchCase.amountCents,
       currency: mismatchCase.currency,
@@ -972,7 +1505,11 @@ test("Square finalizer records mock Square amount and currency mismatches as ign
         reference_id: "lh-sq-local",
       },
     });
-    const recordedEvents: Array<{ amountCents?: number; currency?: string; status?: string }> = [];
+    const recordedEvents: Array<{
+      amountCents?: number;
+      currency?: string;
+      status?: string;
+    }> = [];
     const repository: SquarePaymentFinalizerRepository = {
       async claimSquareEvent() {
         return { duplicate: false };
@@ -998,12 +1535,16 @@ test("Square finalizer records mock Square amount and currency mismatches as ign
         return { duplicate: false };
       },
       async recordSquarePaymentPendingCalendar() {
-        throw new Error("Mismatched Square payments must not be persisted as paid");
+        throw new Error(
+          "Mismatched Square payments must not be persisted as paid",
+        );
       },
     };
     const finalizer = createSquarePaymentFinalizer({
       finalizeAppointmentPaymentForOrder: async () => {
-        throw new Error("Mismatched Square payments must not finalize bookings");
+        throw new Error(
+          "Mismatched Square payments must not finalize bookings",
+        );
       },
       getEnv: createEnv,
       repository,
@@ -1011,10 +1552,16 @@ test("Square finalizer records mock Square amount and currency mismatches as ign
       squareClientFactory: () => client,
     });
 
-    const result = await finalizer({ paymentId: "mock-square-payment-1", source: "return" });
+    const result = await finalizer({
+      paymentId: "mock-square-payment-1",
+      source: "return",
+    });
 
     assert.equal(result.status, "ignored");
-    assert.equal(result.reason, "Square payment amount or currency did not match local order");
+    assert.equal(
+      result.reason,
+      "Square payment amount or currency did not match local order",
+    );
     assert.deepEqual(recordedEvents, [
       {
         amountCents: mismatchCase.expectedAmount,

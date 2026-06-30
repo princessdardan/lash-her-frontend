@@ -2,11 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Historical / legacy fallback note:** This plan was written when the service booking payment path used **Square hosted checkout / Square Payment Links**. That integration is now **legacy/fallback only**; the current production-readiness service booking flow uses **Square card-on-file intake** and **Square invoice-based no-show enforcement**. Add-on pricing and snapshot logic in this plan remain valid, but the Payment Links checkout stack should only be used deliberately as a fallback.
+
 **Goal:** Add one optional Sanity-managed service add-on to booking flows, with full payment including the add-on and deposit/custom partial payments remaining service-only.
 
 **Architecture:** Add-ons are embedded objects on each Sanity `service` document and projected through the existing service loader. The booking client sends only `selectedAddOnKey`; `/api/booking/holds` reloads the published service, validates the key, snapshots selected add-on/payment data into the private hold, and Square checkout continues to use one line item from the private payment snapshot.
 
-**Tech Stack:** Next.js 16 App Router, React, Sanity Studio schemas/GROQ, TypeScript, Node test runner via `tsx`, private PostgreSQL/Drizzle hold snapshots, Square hosted checkout.
+**Tech Stack:** Next.js 16 App Router, React, Sanity Studio schemas/GROQ, TypeScript, Node test runner via `tsx`, private PostgreSQL/Drizzle hold snapshots, Square hosted checkout (legacy/fallback).
 
 ---
 
@@ -30,6 +32,7 @@
 ### Task 1: Add Sanity service add-on schema
 
 **Files:**
+
 - Modify: `src/sanity/schemas/documents/service.test.ts`
 - Modify: `src/sanity/schemas/documents/service.ts`
 
@@ -38,49 +41,60 @@
 Append these tests inside the existing `describe("service schema payment contract", () => { ... })` block in `src/sanity/schemas/documents/service.test.ts`:
 
 ```ts
-  it("defines embedded service add-ons with required public fields", () => {
-    const addOnsField = getField("addOns") as SchemaField & {
-      type?: string;
-      of?: Array<{ type?: string; fields?: SchemaField[] }>;
-    };
+it("defines embedded service add-ons with required public fields", () => {
+  const addOnsField = getField("addOns") as SchemaField & {
+    type?: string;
+    of?: Array<{ type?: string; fields?: SchemaField[] }>;
+  };
 
-    assert.equal(addOnsField.type, "array");
-    assert.ok(Array.isArray(addOnsField.of));
-    assert.equal(addOnsField.of?.[0]?.type, "object");
+  assert.equal(addOnsField.type, "array");
+  assert.ok(Array.isArray(addOnsField.of));
+  assert.equal(addOnsField.of?.[0]?.type, "object");
 
-    const addOnFields = addOnsField.of?.[0]?.fields ?? [];
-    const addOnFieldNames = addOnFields.map((field) => field.name);
+  const addOnFields = addOnsField.of?.[0]?.fields ?? [];
+  const addOnFieldNames = addOnFields.map((field) => field.name);
 
-    assert.ok(addOnFieldNames.includes("name"));
-    assert.ok(addOnFieldNames.includes("description"));
-    assert.ok(addOnFieldNames.includes("image"));
-    assert.ok(addOnFieldNames.includes("price"));
-    assert.ok(!addOnFieldNames.includes("isAvailable"));
-  });
+  assert.ok(addOnFieldNames.includes("name"));
+  assert.ok(addOnFieldNames.includes("description"));
+  assert.ok(addOnFieldNames.includes("image"));
+  assert.ok(addOnFieldNames.includes("price"));
+  assert.ok(!addOnFieldNames.includes("isAvailable"));
+});
 
-  it("requires positive add-on prices", async () => {
-    const addOnsField = getField("addOns") as SchemaField & {
-      of?: Array<{ fields?: SchemaField[] }>;
-    };
-    const priceField = addOnsField.of?.[0]?.fields?.find((field) => field.name === "price");
+it("requires positive add-on prices", async () => {
+  const addOnsField = getField("addOns") as SchemaField & {
+    of?: Array<{ fields?: SchemaField[] }>;
+  };
+  const priceField = addOnsField.of?.[0]?.fields?.find(
+    (field) => field.name === "price",
+  );
 
-    assert.ok(priceField, "add-on price field should be configured");
-    assert.equal(typeof priceField.validation, "function");
+  assert.ok(priceField, "add-on price field should be configured");
+  assert.equal(typeof priceField.validation, "function");
 
-    let capturedValidator: FieldValidator | undefined;
-    const rule: RuleStub = {
-      custom(validator) {
-        capturedValidator = validator;
-        return rule;
-      },
-    };
+  let capturedValidator: FieldValidator | undefined;
+  const rule: RuleStub = {
+    custom(validator) {
+      capturedValidator = validator;
+      return rule;
+    },
+  };
 
-    priceField.validation(rule);
-    assert.ok(capturedValidator, "add-on price custom validator should be registered");
-    assert.strictEqual(await capturedValidator(undefined, buildContext()), "Add-on price is required.");
-    assert.strictEqual(await capturedValidator(0, buildContext()), "Add-on price must be greater than zero.");
-    assert.strictEqual(await capturedValidator(25, buildContext()), true);
-  });
+  priceField.validation(rule);
+  assert.ok(
+    capturedValidator,
+    "add-on price custom validator should be registered",
+  );
+  assert.strictEqual(
+    await capturedValidator(undefined, buildContext()),
+    "Add-on price is required.",
+  );
+  assert.strictEqual(
+    await capturedValidator(0, buildContext()),
+    "Add-on price must be greater than zero.",
+  );
+  assert.strictEqual(await capturedValidator(25, buildContext()), true);
+});
 ```
 
 - [ ] **Step 2: Run the schema test and verify it fails**
@@ -168,6 +182,7 @@ git commit -m "feat: add service add-on schema"
 ### Task 2: Project add-ons through service data contracts
 
 **Files:**
+
 - Modify: `src/types/index.ts`
 - Modify: `src/data/loaders.ts`
 - Modify: `src/components/booking/booking-flow.test.ts`
@@ -177,18 +192,27 @@ git commit -m "feat: add service add-on schema"
 In `src/components/booking/booking-flow.test.ts`, add this import near the existing `readFileSync` constants:
 
 ```ts
-const loadersSource = readFileSync(new URL("../../data/loaders.ts", import.meta.url), "utf8");
-const typesSource = readFileSync(new URL("../../types/index.ts", import.meta.url), "utf8");
+const loadersSource = readFileSync(
+  new URL("../../data/loaders.ts", import.meta.url),
+  "utf8",
+);
+const typesSource = readFileSync(
+  new URL("../../types/index.ts", import.meta.url),
+  "utf8",
+);
 ```
 
 Add this test inside `describe("booking service flow contract", () => { ... })`:
 
 ```ts
-  it("projects service add-ons with stable keys and image metadata", () => {
-    assert.match(typesSource, /export interface TServiceAddOn/);
-    assert.match(typesSource, /addOns\?: TServiceAddOn\[\]/);
-    assert.match(loadersSource, /addOns\[\]\{ _key, name, description, price, image\{ asset, hotspot, crop, alt \} \}/);
-  });
+it("projects service add-ons with stable keys and image metadata", () => {
+  assert.match(typesSource, /export interface TServiceAddOn/);
+  assert.match(typesSource, /addOns\?: TServiceAddOn\[\]/);
+  assert.match(
+    loadersSource,
+    /addOns\[\]\{ _key, name, description, price, image\{ asset, hotspot, crop, alt \} \}/,
+  );
+});
 ```
 
 - [ ] **Step 2: Run the booking flow contract test and verify it fails**
@@ -256,6 +280,7 @@ git commit -m "feat: project service add-ons"
 ### Task 3: Add client-side add-on selection and request contract
 
 **Files:**
+
 - Modify: `src/components/booking/booking-flow.test.ts`
 - Modify: `src/components/booking/booking-flow.tsx`
 
@@ -264,22 +289,25 @@ git commit -m "feat: project service add-ons"
 Append these assertions to `src/components/booking/booking-flow.test.ts` inside the existing `describe` block:
 
 ```ts
-  it("renders a single optional add-on picker and explains due-later balances", () => {
-    assert.match(bookingFlowSource, /selectedAddOnKey/);
-    assert.match(bookingFlowSource, /Optional add-on/);
-    assert.match(bookingFlowSource, /No add-on/);
-    assert.match(bookingFlowSource, /Only one add-on can be selected/);
-    assert.match(bookingFlowSource, /add-on balance is due later/i);
-  });
+it("renders a single optional add-on picker and explains due-later balances", () => {
+  assert.match(bookingFlowSource, /selectedAddOnKey/);
+  assert.match(bookingFlowSource, /Optional add-on/);
+  assert.match(bookingFlowSource, /No add-on/);
+  assert.match(bookingFlowSource, /Only one add-on can be selected/);
+  assert.match(bookingFlowSource, /add-on balance is due later/i);
+});
 
-  it("clears selected add-ons when the selected service changes", () => {
-    assert.match(bookingFlowSource, /setSelectedAddOnKey\(null\)/);
-  });
+it("clears selected add-ons when the selected service changes", () => {
+  assert.match(bookingFlowSource, /setSelectedAddOnKey\(null\)/);
+});
 
-  it("posts only the selected add-on key to private hold creation", () => {
-    assert.match(bookingFlowSource, /selectedAddOnKey: input\.selectedAddOnKey/);
-    assert.doesNotMatch(bookingFlowSource, /selectedAddOnName|selectedAddOnPrice|computedTotal/);
-  });
+it("posts only the selected add-on key to private hold creation", () => {
+  assert.match(bookingFlowSource, /selectedAddOnKey: input\.selectedAddOnKey/);
+  assert.doesNotMatch(
+    bookingFlowSource,
+    /selectedAddOnName|selectedAddOnPrice|computedTotal/,
+  );
+});
 ```
 
 Extend the `starts paid offering checkout with hold and checkout requests` test call to include `selectedAddOnKey: "addon-lash-bath"` and extend the expected hold body with `selectedAddOnKey: "addon-lash-bath"`.
@@ -311,23 +339,25 @@ Then extend `PaidServiceCheckoutInput` after `serviceSlug: string;`:
 Inside `BookingFlow`, add state after `customAmount`:
 
 ```ts
-  const [selectedAddOnKey, setSelectedAddOnKey] = useState<string | null>(null);
+const [selectedAddOnKey, setSelectedAddOnKey] = useState<string | null>(null);
 ```
 
 Add these derived values after `currentServicePayment`:
 
 ```ts
-  const currentServiceAddOns = currentService?.addOns ?? [];
-  const selectedAddOn = currentServiceAddOns.find((addOn) => addOn._key === selectedAddOnKey);
-  const displayTotal = currentService
-    ? currentService.fullPrice + (selectedAddOn?.price ?? 0)
-    : currentServicePayment?.fullPrice;
+const currentServiceAddOns = currentService?.addOns ?? [];
+const selectedAddOn = currentServiceAddOns.find(
+  (addOn) => addOn._key === selectedAddOnKey,
+);
+const displayTotal = currentService
+  ? currentService.fullPrice + (selectedAddOn?.price ?? 0)
+  : currentServicePayment?.fullPrice;
 ```
 
 In `handleServiceSelect`, add this line after `setSlots([]);`:
 
 ```ts
-    setSelectedAddOnKey(null);
+setSelectedAddOnKey(null);
 ```
 
 - [ ] **Step 4: Render the add-on picker before payment options**
@@ -335,47 +365,58 @@ In `handleServiceSelect`, add this line after `setSlots([]);`:
 In `src/components/booking/booking-flow.tsx`, insert this block immediately before `{currentServicePayment && (` in the details form:
 
 ```tsx
-          {currentServiceAddOns.length > 0 && (
-            <div className="border-t border-border/50 pt-4">
-              <h3 className="section-subheading mb-4 text-lg text-primary md:text-lg lg:text-lg">Optional add-on</h3>
-              <p className="mb-4 text-sm text-muted-foreground">Only one add-on can be selected for this booking. Add-ons do not change your appointment duration.</p>
-              <div className="space-y-3" role="radiogroup" aria-label="Optional add-on">
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={selectedAddOnKey === null}
-                  onClick={() => setSelectedAddOnKey(null)}
-                  className={`w-full rounded-xl border p-4 text-left transition-colors ${selectedAddOnKey === null ? "border-lh-primary ring-1 ring-lh-primary" : "border-lh-line hover:border-lh-primary"}`}
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="font-medium text-black">No add-on</span>
-                    <span className="text-sm text-lh-muted">Included</span>
-                  </div>
-                </button>
-                {currentServiceAddOns.map((addOn) => {
-                  const isSelected = selectedAddOnKey === addOn._key;
-                  return (
-                    <button
-                      key={addOn._key}
-                      type="button"
-                      role="radio"
-                      aria-checked={isSelected}
-                      onClick={() => setSelectedAddOnKey(addOn._key)}
-                      className={`w-full rounded-xl border p-4 text-left transition-colors ${isSelected ? "border-lh-primary ring-1 ring-lh-primary" : "border-lh-line hover:border-lh-primary"}`}
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <p className="font-medium text-black">{addOn.name}</p>
-                          <p className="mt-1 text-sm text-lh-muted">{addOn.description}</p>
-                        </div>
-                        <span className="shrink-0 font-medium text-black">+{formatCad(addOn.price)}</span>
-                      </div>
-                    </button>
-                  );
-                })}
+{
+  currentServiceAddOns.length > 0 && (
+    <div className="border-t border-border/50 pt-4">
+      <h3 className="section-subheading mb-4 text-lg text-primary md:text-lg lg:text-lg">
+        Optional add-on
+      </h3>
+      <p className="mb-4 text-sm text-muted-foreground">
+        Only one add-on can be selected for this booking. Add-ons do not change
+        your appointment duration.
+      </p>
+      <div className="space-y-3" role="radiogroup" aria-label="Optional add-on">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={selectedAddOnKey === null}
+          onClick={() => setSelectedAddOnKey(null)}
+          className={`w-full rounded-xl border p-4 text-left transition-colors ${selectedAddOnKey === null ? "border-lh-primary ring-1 ring-lh-primary" : "border-lh-line hover:border-lh-primary"}`}
+        >
+          <div className="flex items-center justify-between gap-4">
+            <span className="font-medium text-black">No add-on</span>
+            <span className="text-sm text-lh-muted">Included</span>
+          </div>
+        </button>
+        {currentServiceAddOns.map((addOn) => {
+          const isSelected = selectedAddOnKey === addOn._key;
+          return (
+            <button
+              key={addOn._key}
+              type="button"
+              role="radio"
+              aria-checked={isSelected}
+              onClick={() => setSelectedAddOnKey(addOn._key)}
+              className={`w-full rounded-xl border p-4 text-left transition-colors ${isSelected ? "border-lh-primary ring-1 ring-lh-primary" : "border-lh-line hover:border-lh-primary"}`}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="font-medium text-black">{addOn.name}</p>
+                  <p className="mt-1 text-sm text-lh-muted">
+                    {addOn.description}
+                  </p>
+                </div>
+                <span className="shrink-0 font-medium text-black">
+                  +{formatCad(addOn.price)}
+                </span>
               </div>
-            </div>
-          )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 ```
 
 - [ ] **Step 5: Update payment labels and checkout request**
@@ -389,17 +430,21 @@ Change the submit call object in `handleSubmit` to include the selected key:
 Change the full payment option label to:
 
 ```tsx
-                      <SelectItem value="full">Pay in Full ({formatCad(displayTotal ?? currentServicePayment.fullPrice)})</SelectItem>
+<SelectItem value="full">
+  Pay in Full ({formatCad(displayTotal ?? currentServicePayment.fullPrice)})
+</SelectItem>
 ```
 
 After the custom amount field block and before `</div>` for payment options, add:
 
 ```tsx
-                {selectedAddOn && paymentOption !== "full" && (
-                  <p className="text-sm text-lh-muted">
-                    Your selected add-on balance is due later unless you choose Pay in Full.
-                  </p>
-                )}
+{
+  selectedAddOn && paymentOption !== "full" && (
+    <p className="text-sm text-lh-muted">
+      Your selected add-on balance is due later unless you choose Pay in Full.
+    </p>
+  );
+}
 ```
 
 In `startPaidServiceCheckout`, add this property to the `/api/booking/holds` body after `serviceSlug`:
@@ -421,18 +466,20 @@ function BookingSummary({ service, selectedAddOn, selectedSlot, timezone }: { se
 Inside the summary, after the duration line, add:
 
 ```tsx
-      {selectedAddOn && (
-        <div className="flex justify-between text-sm">
-          <span className="text-lh-muted">{selectedAddOn.name}</span>
-          <span className="text-black">+{formatCad(selectedAddOn.price)}</span>
-        </div>
-      )}
+{
+  selectedAddOn && (
+    <div className="flex justify-between text-sm">
+      <span className="text-lh-muted">{selectedAddOn.name}</span>
+      <span className="text-black">+{formatCad(selectedAddOn.price)}</span>
+    </div>
+  );
+}
 ```
 
 Change the total amount line to:
 
 ```tsx
-          <span>{formatCad(service.fullPrice + (selectedAddOn?.price ?? 0))}</span>
+<span>{formatCad(service.fullPrice + (selectedAddOn?.price ?? 0))}</span>
 ```
 
 - [ ] **Step 7: Run the client contract test and verify it passes**
@@ -459,6 +506,7 @@ git commit -m "feat: add booking add-on selection"
 ### Task 4: Validate and snapshot selected add-ons in hold creation
 
 **Files:**
+
 - Modify: `src/app/api/booking/holds/route.test.ts`
 - Modify: `src/app/api/booking/holds/route.ts`
 
@@ -640,7 +688,7 @@ interface BookingAddOnSelectionSnapshot {
 In `toBookingHoldRequestInput`, add:
 
 ```ts
-  const selectedAddOnKey = toOptionalStringValue(record.selectedAddOnKey);
+const selectedAddOnKey = toOptionalStringValue(record.selectedAddOnKey);
 ```
 
 Then include in the returned object after `serviceSlug`:
@@ -660,7 +708,9 @@ function getSelectedAddOn(
 ): BookingAddOnSelectionSnapshot | null | "invalid" {
   if (!selectedAddOnKey) return null;
 
-  const addOn = service.addOns?.find((candidate) => candidate._key === selectedAddOnKey);
+  const addOn = service.addOns?.find(
+    (candidate) => candidate._key === selectedAddOnKey,
+  );
   if (!addOn) return "invalid";
 
   const price = toPositiveAmount(addOn.price);
@@ -679,19 +729,22 @@ function getSelectedAddOn(
 After `const paymentSelection = getPaymentSelection(service, input);`, replace that line with:
 
 ```ts
-      const selectedAddOn = getSelectedAddOn(service, input.selectedAddOnKey);
+const selectedAddOn = getSelectedAddOn(service, input.selectedAddOnKey);
 
-      if (selectedAddOn === "invalid") {
-        return Response.json(
-          {
-            error: "Please fix the hold details and try again.",
-            fieldErrors: { selectedAddOnKey: "That add-on is no longer available. Please review your selection." },
-          },
-          { status: 400 },
-        );
-      }
+if (selectedAddOn === "invalid") {
+  return Response.json(
+    {
+      error: "Please fix the hold details and try again.",
+      fieldErrors: {
+        selectedAddOnKey:
+          "That add-on is no longer available. Please review your selection.",
+      },
+    },
+    { status: 400 },
+  );
+}
 
-      const paymentSelection = getPaymentSelection(service, input, selectedAddOn);
+const paymentSelection = getPaymentSelection(service, input, selectedAddOn);
 ```
 
 - [ ] **Step 6: Update payment selection calculations**
@@ -709,11 +762,11 @@ function getPaymentSelection(
 Change calls to `resolveFixedPaymentSelection` so they pass `selectedAddOn`:
 
 ```ts
-    return resolveFixedPaymentSelection(service, "deposit", selectedAddOn);
+return resolveFixedPaymentSelection(service, "deposit", selectedAddOn);
 ```
 
 ```ts
-    return resolveFixedPaymentSelection(service, "full", selectedAddOn);
+return resolveFixedPaymentSelection(service, "full", selectedAddOn);
 ```
 
 Change the custom partial return description to:
@@ -745,8 +798,9 @@ In the deposit branch, change description to:
 In the full branch, compute amount as:
 
 ```ts
-  const serviceAmount = toPositiveAmount(service.fullPrice);
-  const amount = serviceAmount === null ? null : serviceAmount + (selectedAddOn?.price ?? 0);
+const serviceAmount = toPositiveAmount(service.fullPrice);
+const amount =
+  serviceAmount === null ? null : serviceAmount + (selectedAddOn?.price ?? 0);
 ```
 
 and change description to:
@@ -806,6 +860,7 @@ git commit -m "feat: snapshot booking add-ons"
 ### Task 5: Centralize selected add-on snapshot parsing
 
 **Files:**
+
 - Create: `src/lib/booking/payment-policy.test.ts`
 - Modify: `src/lib/booking/payment-policy.ts`
 
@@ -817,15 +872,24 @@ Create `src/lib/booking/payment-policy.test.ts`:
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { getBookingPaymentSelection, getBookingSelectedAddOn } from "./payment-policy";
+import {
+  getBookingPaymentSelection,
+  getBookingSelectedAddOn,
+} from "./payment-policy";
 import type { BookingHoldRecord } from "./holds";
 
-function createHold(offeringSnapshot: Record<string, unknown>): BookingHoldRecord {
+function createHold(
+  offeringSnapshot: Record<string, unknown>,
+): BookingHoldRecord {
   return {
     id: "hold-1",
     publicReference: "hold_public_1",
     bookingType: "in-person-appointment",
-    customer: { name: "Client", email: "client@example.com", phone: "555-0100" },
+    customer: {
+      name: "Client",
+      email: "client@example.com",
+      phone: "555-0100",
+    },
     offeringId: "service-classic-fill",
     offeringSnapshot,
     selectedStart: new Date("2030-06-15T16:00:00.000Z"),
@@ -876,7 +940,13 @@ test("payment policy tolerates missing or malformed selected add-on snapshots", 
   const hold = createHold({
     title: "Classic Fill",
     currency: "CAD",
-    selectedAddOn: { key: "addon-lash-bath", name: "", description: "", price: -1, currency: "CAD" },
+    selectedAddOn: {
+      key: "addon-lash-bath",
+      name: "",
+      description: "",
+      price: -1,
+      currency: "CAD",
+    },
     selectedPayment: {
       amount: 50,
       description: "Classic Fill deposit",
@@ -917,21 +987,26 @@ export interface BookingSelectedAddOnSnapshot {
 Add to `BookingOfferingPaymentSnapshot`:
 
 ```ts
-  selectedAddOn: BookingSelectedAddOnSnapshot | null;
+selectedAddOn: BookingSelectedAddOnSnapshot | null;
 ```
 
 Add this export after `getBookingPaymentOfferingTitle`:
 
 ```ts
-export function getBookingSelectedAddOn(hold: BookingHoldRecord): BookingSelectedAddOnSnapshot | null {
-  return toBookingOfferingPaymentSnapshot(hold.offeringSnapshot)?.selectedAddOn ?? null;
+export function getBookingSelectedAddOn(
+  hold: BookingHoldRecord,
+): BookingSelectedAddOnSnapshot | null {
+  return (
+    toBookingOfferingPaymentSnapshot(hold.offeringSnapshot)?.selectedAddOn ??
+    null
+  );
 }
 ```
 
 In `toBookingOfferingPaymentSnapshot`, add:
 
 ```ts
-  const selectedAddOn = toBookingSelectedAddOn(value.selectedAddOn);
+const selectedAddOn = toBookingSelectedAddOn(value.selectedAddOn);
 ```
 
 and include `selectedAddOn` in the returned object.
@@ -939,17 +1014,34 @@ and include `selectedAddOn` in the returned object.
 Add this helper before `toPositiveAmount`:
 
 ```ts
-function toBookingSelectedAddOn(value: unknown): BookingSelectedAddOnSnapshot | null {
+function toBookingSelectedAddOn(
+  value: unknown,
+): BookingSelectedAddOnSnapshot | null {
   if (!isRecord(value)) {
     return null;
   }
 
-  const key = typeof value.key === "string" && value.key.trim().length > 0 ? value.key.trim() : null;
-  const name = typeof value.name === "string" && value.name.trim().length > 0 ? value.name.trim() : null;
-  const description = typeof value.description === "string" && value.description.trim().length > 0 ? value.description.trim() : null;
+  const key =
+    typeof value.key === "string" && value.key.trim().length > 0
+      ? value.key.trim()
+      : null;
+  const name =
+    typeof value.name === "string" && value.name.trim().length > 0
+      ? value.name.trim()
+      : null;
+  const description =
+    typeof value.description === "string" && value.description.trim().length > 0
+      ? value.description.trim()
+      : null;
   const price = toPositiveAmount(value.price);
 
-  if (key === null || name === null || description === null || price === null || value.currency !== "CAD") {
+  if (
+    key === null ||
+    name === null ||
+    description === null ||
+    price === null ||
+    value.currency !== "CAD"
+  ) {
     return null;
   }
 
@@ -981,6 +1073,7 @@ git commit -m "feat: parse booking add-on snapshots"
 ### Task 6: Verify Square checkout uses snapshotted payment amounts
 
 **Files:**
+
 - Modify: `src/lib/booking/square-service-checkout.test.ts`
 
 - [ ] **Step 1: Add Square checkout regression tests**
@@ -1011,7 +1104,10 @@ Assert the fake Square client receives:
 
 ```ts
 assert.equal(request.order.line_items[0].base_price_money.amount, 17500);
-assert.equal(request.order.line_items[0].name, "Classic Fill full payment with Lash Bath");
+assert.equal(
+  request.order.line_items[0].name,
+  "Classic Fill full payment with Lash Bath",
+);
 ```
 
 Add a second scenario with deposit + add-on due later and assert `5000` cents, not `7500`.
@@ -1040,6 +1136,7 @@ git commit -m "test: cover add-on Square checkout amounts"
 ### Task 7: Add confirmation/staff add-on copy
 
 **Files:**
+
 - Inspect and modify one or more of:
   - `src/lib/booking/email.ts`
   - `src/lib/booking/finalizer.ts`
@@ -1088,7 +1185,10 @@ Expected: FAIL because selected add-on details are not rendered yet.
 In the located booking copy builder, import:
 
 ```ts
-import { getBookingSelectedAddOn, getBookingPaymentSelection } from "@/lib/booking/payment-policy";
+import {
+  getBookingSelectedAddOn,
+  getBookingPaymentSelection,
+} from "@/lib/booking/payment-policy";
 ```
 
 Build copy like this from the hold:
@@ -1127,6 +1227,7 @@ If `git add` reports a pathspec that did not change, remove that unchanged path 
 ### Task 8: Run focused and full verification
 
 **Files:**
+
 - No source files expected unless verification exposes failures.
 
 - [ ] **Step 1: Run focused unit tests**

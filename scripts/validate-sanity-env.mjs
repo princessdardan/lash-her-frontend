@@ -35,6 +35,8 @@ const launchEnvVars = [
   "HELCIM_GENERAL_API_TOKEN",
   "HELCIM_TRANSACTION_API_TOKEN",
   "HELCIM_WEBHOOK_VERIFIER_TOKEN",
+  "PAYMENT_RECONCILIATION_CRON_SECRET",
+  "CRON_SECRET",
 ];
 
 const squareLaunchEnvVars = [
@@ -139,7 +141,7 @@ if (isLaunchEnvironment) {
       "SQUARE_SERVICE_BOOKING_WEBHOOK_URL",
     ]) {
       if (hasValue(process.env[name])) {
-        validateUrl(name, process.env[name]);
+        validateHttpsUrl(name, process.env[name]);
       }
     }
   }
@@ -228,6 +230,20 @@ function validateSquareEnvironment(value) {
     errors.push(
       "Malformed env var: SQUARE_ENVIRONMENT must be sandbox or production"
     );
+  }
+}
+
+function validateHttpsUrl(name, value) {
+  validateUrl(name, value);
+
+  try {
+    const parsed = new URL(value);
+
+    if (parsed.protocol !== "https:") {
+      errors.push(`Malformed env var: ${name} must use https`);
+    }
+  } catch {
+    // validateUrl already records the error.
   }
 }
 

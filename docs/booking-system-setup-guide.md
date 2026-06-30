@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 
-This guide sets up the Lash Her provider split for booking and checkout in a staging or production environment. It covers Sanity booking content, private storage, Upstash Redis, Google Calendar OAuth, Square hosted checkout for services, Helcim product/training checkout, Resend, and smoke tests.
+This guide sets up the Lash Her provider split for booking and checkout in a staging or production environment. It covers Sanity booking content, private storage, Upstash Redis, Google Calendar OAuth, Square card-on-file/no-show invoice for services (primary) with Square hosted checkout as legacy/fallback, Helcim product/training checkout, Resend, and smoke tests.
 
 Run commands from the repository root: `/Users/dardan/workspace/lash-her-frontend`.
 
@@ -26,16 +26,16 @@ Do not run private database migrations until the target database, approval, back
 
 Before adding secrets or running setup flows, record:
 
-| Field | Staging | Production |
-| --- | --- | --- |
-| App URL | `https://<staging-domain>` | `https://<production-domain>` |
-| Sanity dataset | `staging-2026-05-10` | `production` |
-| Private DB provider/project | | |
-| Upstash Redis database | | |
-| Google OAuth client | | |
-| Square mode/account | | |
-| Helcim mode/account | | |
-| Resend sender domain | | |
+| Field                       | Staging                    | Production                    |
+| --------------------------- | -------------------------- | ----------------------------- |
+| App URL                     | `https://<staging-domain>` | `https://<production-domain>` |
+| Sanity dataset              | `staging-2026-05-10`       | `production`                  |
+| Private DB provider/project |                            |                               |
+| Upstash Redis database      |                            |                               |
+| Google OAuth client         |                            |                               |
+| Square mode/account         |                            |                               |
+| Helcim mode/account         |                            |                               |
+| Resend sender domain        |                            |                               |
 
 Use separate staging and production credentials wherever the provider supports it.
 
@@ -203,11 +203,7 @@ Setup steps:
 4. Add the exact redirect URI for that environment.
 5. Add `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` to Vercel.
 6. Confirm `BOOKING_ADMIN_SETUP_SECRET` and Upstash Redis vars are present.
-7. Visit the protected setup URL in the target environment:
-
-```text
-https://<domain>/api/booking/oauth/start?secret=<BOOKING_ADMIN_SETUP_SECRET>
-```
+7. Run the protected internal OAuth setup flow in the target environment using `BOOKING_ADMIN_SETUP_SECRET` from the secure secret manager (do not share the setup URL or include it in documentation).
 
 Expected result:
 
@@ -227,14 +223,14 @@ Sanity stores public booking configuration only. It must not store customer PII,
 
 In Studio, configure the `bookingSettings` singleton:
 
-| Field | Setup guidance |
-| --- | --- |
-| Google Calendar ID | Use `primary` or the exact connected calendar ID. |
+| Field                     | Setup guidance                                                               |
+| ------------------------- | ---------------------------------------------------------------------------- |
+| Google Calendar ID        | Use `primary` or the exact connected calendar ID.                            |
 | Availability Marker Title | Must match the title used for availability marker events in Google Calendar. |
-| Booking Horizon Days | Choose how far out customers can book. |
-| Minimum Lead Time Hours | Choose the minimum notice before a slot can be booked. |
-| Booking Timezone | Use `America/Toronto` unless the business operating timezone changes. |
-| Marketing Opt-in Label | Confirm approved customer-facing consent copy. |
+| Booking Horizon Days      | Choose how far out customers can book.                                       |
+| Minimum Lead Time Hours   | Choose the minimum notice before a slot can be booked.                       |
+| Booking Timezone          | Use `America/Toronto` unless the business operating timezone changes.        |
+| Marketing Opt-in Label    | Confirm approved customer-facing consent copy.                               |
 
 Add availability marker events to the connected Google Calendar using the configured marker title. Busy events and active private holds will block overlapping slots.
 
@@ -263,13 +259,13 @@ After publishing `bookingSettings` or `service`, verify the Sanity webhook refre
 
 ## 8. Square Service Booking Setup
 
-Square is used only for paid service booking checkout. Do not configure Square as a global checkout provider.
+Square is used only for paid service booking checkout. The current production-readiness focus is Square card-on-file intake plus Square invoice-based no-show enforcement. Square hosted checkout remains as a legacy/fallback path. Do not configure Square as a global checkout provider.
 
 1. Confirm the Square application, location, and environment for the target deployment.
-2. Add `SERVICE_BOOKING_SQUARE_ENABLED=true` only in environments where service booking checkout should redirect to Square.
+2. Add `SERVICE_BOOKING_SQUARE_ENABLED=true` only in environments where service booking checkout should use Square.
 3. Add `SQUARE_ENVIRONMENT` as `sandbox` for local/preview or `production` for live production.
 4. Add `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, and `SQUARE_WEBHOOK_SIGNATURE_KEY` as server-only variables.
-5. Configure the service booking return URL:
+5. Configure the service booking return URL for the legacy/fallback hosted checkout path:
 
 ```text
 https://<domain>/api/booking/square/return
@@ -286,9 +282,11 @@ https://<domain>/api/webhooks/square
 
 Operational expectations:
 
-- The customer keeps the custom Lash Her booking UI until the private hold exists, then redirects to Square hosted checkout.
-- Square browser return is not proof of payment. The return route must reconcile server-side before finalization.
-- Verified Square payment finalizes through private DB state and the Google Calendar API.
+- Primary path: the customer keeps the custom Lash Her booking UI until the private hold exists, then tokenizes a card through Square Web Payments SDK and saves a Square card-on-file. A Square order and DRAFT invoice are created for the maximum authorized no-show amount; no-show enforcement publishes the invoice and charges the saved card only after staff confirmation or an approved automated rule.
+- Legacy/fallback path: when card-on-file intake is unavailable, the customer redirects to Square hosted checkout after the private hold exists.
+- Square browser return or invoice state alone is not proof of payment. Return routes and webhooks must reconcile server-side before finalization.
+- Verified Square payment or invoice finalization moves private order and hold state into paid Calendar-pending status.
+- The shared finalizer creates or finds exactly one Google Calendar API event.
 - Expired or conflicting paid service holds enter rebooking-first manual review. Verify a replacement slot before creating a Calendar event, and refund only after rebooking fails or staff chooses refund.
 
 ## 9. Helcim Setup
@@ -357,6 +355,20 @@ Complete staging smoke before production handoff.
 
 ### Paid Service Booking
 
+Production-readiness focus (card-on-file / no-show invoice):
+
+- [ ] A hold is created for the selected paid service slot.
+- [ ] Square Web Payments SDK tokenizes a card and saves a Square card-on-file.
+- [ ] A Square order and DRAFT invoice are created for the maximum authorized no-show amount.
+- [ ] No-show invoice publish and card charge are gated by staff confirmation or an approved automated rule.
+- [ ] Square webhook or API reconciliation verifies invoice/payment state before finalization.
+- [ ] Square sandbox/test payment marks the private order paid.
+- [ ] The hold is booked or moved to `paid_unbookable_rebooking_pending`.
+- [ ] The Calendar event exists exactly once.
+- [ ] Webhook retry or duplicate processing does not create duplicate bookings.
+
+Legacy/fallback smoke (Square hosted checkout):
+
 - [ ] A hold is created for the selected paid service slot.
 - [ ] Square hosted checkout initializes for the hold.
 - [ ] Square return alone does not finalize until server-side reconciliation verifies payment.
@@ -387,20 +399,20 @@ Production setup can proceed only after staging smoke passes.
 
 Record:
 
-| Evidence | Status |
-| --- | --- |
-| Staging smoke completed | |
-| Production Sanity dataset verified | |
-| Production private DB identity verified | |
-| Production backup/PITR verified | |
-| Production migration approval recorded if needed | |
-| Production Upstash Redis verified | |
-| Production Google OAuth connected | |
-| Production Square service booking return and webhook configured if enabled | |
-| Production Helcim product/training webhook configured | |
-| Production Resend sender verified | |
-| Business/privacy owner confirmed | |
-| Post-contract operator/vendor recorded | |
+| Evidence                                                                   | Status |
+| -------------------------------------------------------------------------- | ------ |
+| Staging smoke completed                                                    |        |
+| Production Sanity dataset verified                                         |        |
+| Production private DB identity verified                                    |        |
+| Production backup/PITR verified                                            |        |
+| Production migration approval recorded if needed                           |        |
+| Production Upstash Redis verified                                          |        |
+| Production Google OAuth connected                                          |        |
+| Production Square service booking return and webhook configured if enabled |        |
+| Production Helcim product/training webhook configured                      |        |
+| Production Resend sender verified                                          |        |
+| Business/privacy owner confirmed                                           |        |
+| Post-contract operator/vendor recorded                                     |        |
 
 Production stop conditions:
 

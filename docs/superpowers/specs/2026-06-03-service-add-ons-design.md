@@ -22,10 +22,10 @@ Once a customer starts checkout, the selected add-on and computed payment amount
 
 Given a service with `fullPrice`, `depositAmount`, and an optional selected add-on price:
 
-| Payment option | Amount charged now |
-| --- | ---: |
-| Pay Deposit | Service `depositAmount` only |
-| Pay in Full | Service `fullPrice` plus selected add-on price |
+| Payment option    |                                                                             Amount charged now |
+| ----------------- | ---------------------------------------------------------------------------------------------: |
+| Pay Deposit       |                                                                   Service `depositAmount` only |
+| Pay in Full       |                                                 Service `fullPrice` plus selected add-on price |
 | Pay Custom Amount | Customer-entered amount greater than service `depositAmount` and less than service `fullPrice` |
 
 If an add-on is selected with deposit or custom partial payment, the customer-facing copy must say that the add-on balance is due later.
@@ -95,6 +95,8 @@ selectedAddOn?: {
 The snapshot also includes `selectedPayment` with the due-now amount and description computed from the payment rules. Once the hold exists, checkout and reconciliation use this private snapshot rather than Sanity.
 
 ## Square Checkout Design
+
+> **Historical / superseded note:** This spec originally described the Payment Link/hosted checkout path as the active service-booking checkout design. The current production-readiness path uses Square card-on-file intake and Square invoice-based no-show enforcement instead. The Payment Link/hosted checkout flow (`src/lib/booking/square-service-checkout.ts`) remains only as a legacy/fallback for environments where card-on-file is not enabled.
 
 Keep the existing one-line-item Square checkout model. `src/lib/booking/square-service-checkout.ts` continues to create a Square payment link from the snapshotted booking payment selection.
 

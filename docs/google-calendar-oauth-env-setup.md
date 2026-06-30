@@ -159,11 +159,7 @@ Keep staging and production values separate when using separate OAuth clients.
 
 ## Step 7: Connect The Calendar
 
-After deploying the env vars, run the one-time protected setup flow in the target environment:
-
-```text
-https://<domain>/api/booking/oauth/start?secret=<BOOKING_ADMIN_SETUP_SECRET>
-```
+After deploying the env vars, run the protected internal OAuth setup flow in the target environment using `BOOKING_ADMIN_SETUP_SECRET` from the secure secret manager (do not share the setup URL or include it in documentation).
 
 Expected flow:
 
@@ -228,5 +224,5 @@ When rotating Google credentials:
 1. Create a new OAuth client secret, or create a new OAuth client.
 2. Update `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` as needed.
 3. Redeploy the app.
-4. Re-run `/api/booking/oauth/start?secret=<BOOKING_ADMIN_SETUP_SECRET>`.
+4. Re-run the protected internal OAuth setup flow using `BOOKING_ADMIN_SETUP_SECRET` from the secure secret manager (do not share the setup URL or include it in documentation).
 5. Confirm the callback succeeds and booking availability still loads.

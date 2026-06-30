@@ -1,0 +1,1 @@
+CREATE INDEX "booking_no_show_charge_records_square_order_id_idx" ON "booking_no_show_charge_records" USING btree ("square_order_id");

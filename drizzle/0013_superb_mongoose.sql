@@ -1,0 +1,2 @@
+ALTER TABLE "appointment_holds" ADD CONSTRAINT "appointment_holds_policy_acceptance_id_booking_policy_acceptances_id_fk" FOREIGN KEY ("policy_acceptance_id") REFERENCES "public"."booking_policy_acceptances"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "appointment_holds" ADD CONSTRAINT "appointment_holds_no_show_charge_record_id_booking_no_show_charge_records_id_fk" FOREIGN KEY ("no_show_charge_record_id") REFERENCES "public"."booking_no_show_charge_records"("id") ON DELETE set null ON UPDATE no action;

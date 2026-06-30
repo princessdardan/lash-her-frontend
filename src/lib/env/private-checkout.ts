@@ -7,10 +7,7 @@ import {
 } from "@/lib/payment-mocks/runtime-controls";
 
 export function getCheckoutDatabaseUrl(): string {
-  return assertValue(
-    process.env.DATABASE_URL,
-    "Missing env var: DATABASE_URL",
-  );
+  return assertValue(process.env.DATABASE_URL, "Missing env var: DATABASE_URL");
 }
 
 export function getHelcimWebhookVerifierToken(): string {
@@ -28,10 +25,38 @@ export function getEmailRetrySecret(): string {
 }
 
 export function getPrivateDataRetentionCronSecret(): string {
-  return assertValue(
-    process.env.CRON_SECRET,
-    "Missing env var: CRON_SECRET",
-  );
+  return assertValue(process.env.CRON_SECRET, "Missing env var: CRON_SECRET");
+}
+
+export function getPaymentReconciliationCronSecret(): string | null {
+  const secrets = getPaymentReconciliationCronSecretsInternal();
+
+  return secrets[0] ?? null;
+}
+
+export function getPaymentReconciliationCronSecrets(): string[] {
+  return getPaymentReconciliationCronSecretsInternal();
+}
+
+function getPaymentReconciliationCronSecretsInternal(): string[] {
+  const routeSpecific = process.env.PAYMENT_RECONCILIATION_CRON_SECRET;
+  const cronSecret = process.env.CRON_SECRET;
+
+  // Fail closed: the route-specific secret is required to enable the route.
+  const primary = assertValue(
+    routeSpecific,
+    "Missing env var: PAYMENT_RECONCILIATION_CRON_SECRET",
+  ).trim();
+
+  const secrets = [primary];
+
+  // Vercel scheduled cron sends CRON_SECRET; accept it as a secondary bearer
+  // when the route is explicitly enabled and CRON_SECRET is configured.
+  if (cronSecret !== undefined && cronSecret.trim().length > 0) {
+    secrets.push(cronSecret.trim());
+  }
+
+  return secrets;
 }
 
 export function getPaymentGatewayMode(): PaymentGatewayMode {
@@ -46,6 +71,54 @@ export function isTrainingAfterpaySquareInvoiceEnabled(): boolean {
   return process.env.TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED === "true";
 }
 
+export function isSquareCardOnFileServiceBookingEnabled(): boolean {
+  return process.env.SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED === "true";
+}
+
+export function isSquareCardOnFileServiceBookingLocalInvoiceFallbackEnabled(): boolean {
+  if (
+    process.env
+      .SERVICE_BOOKING_SQUARE_CARD_ON_FILE_LOCAL_INVOICE_FALLBACK_ENABLED !==
+    "true"
+  ) {
+    return false;
+  }
+
+  if (process.env.VERCEL_ENV === "production") {
+    return false;
+  }
+
+  const squareEnvironment = process.env.SQUARE_ENVIRONMENT;
+  if (squareEnvironment === "production") {
+    return false;
+  }
+
+  return true;
+}
+
+export function getSquareCardOnFileServiceBookingConfig(): SquareCardOnFileServiceBookingConfig | null {
+  if (!isSquareCardOnFileServiceBookingEnabled()) return null;
+  const serviceEnv = getSquareServiceBookingEnv();
+  if (serviceEnv === null) return null;
+
+  // The card-on-file POST needs DATABASE_URL to persist the secure token.
+  // Hide the public config so the browser form is not shown when the DB is unavailable.
+  try {
+    getCheckoutDatabaseUrl();
+  } catch {
+    return null;
+  }
+
+  return {
+    environment: serviceEnv.environment,
+    applicationId: assertValue(
+      process.env.SQUARE_APPLICATION_ID,
+      "Missing env var: SQUARE_APPLICATION_ID",
+    ),
+    locationId: serviceEnv.locationId,
+  };
+}
+
 export function getPaymentMockRuntimeEnvironment(): PaymentMockRuntimeEnvironment {
   return {
     NODE_ENV: process.env.NODE_ENV,
@@ -53,6 +126,19 @@ export function getPaymentMockRuntimeEnvironment(): PaymentMockRuntimeEnvironmen
     PAYMENT_MOCK_DEFAULT_SCENARIO: process.env.PAYMENT_MOCK_DEFAULT_SCENARIO,
     VERCEL_ENV: process.env.VERCEL_ENV,
   };
+}
+
+export function getBookingAdminPaymentActionSecret(): string | null {
+  const value = process.env.BOOKING_ADMIN_PAYMENT_ACTION_SECRET;
+
+  if (value === undefined) {
+    return null;
+  }
+
+  return assertValue(
+    value,
+    "Missing env var: BOOKING_ADMIN_PAYMENT_ACTION_SECRET",
+  ).trim();
 }
 
 export function getSquareServiceBookingEnv(): SquareServiceBookingEnv | null {
@@ -93,7 +179,8 @@ export function getSquareServiceBookingEnv(): SquareServiceBookingEnv | null {
       process.env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL,
       "SQUARE_SERVICE_BOOKING_WEBHOOK_URL",
     ),
-    helcimLegacyCutoffAt: process.env.SERVICE_BOOKING_HELCIM_LEGACY_CUTOFF_AT ?? null,
+    helcimLegacyCutoffAt:
+      process.env.SERVICE_BOOKING_HELCIM_LEGACY_CUTOFF_AT ?? null,
   };
 }
 
@@ -150,7 +237,10 @@ function assertSquareEnvironment(): "sandbox" | "production" {
 }
 
 function assertValue<T>(value: T | undefined, errorMessage: string): T {
-  if (value === undefined || (typeof value === "string" && value.trim().length === 0)) {
+  if (
+    value === undefined ||
+    (typeof value === "string" && value.trim().length === 0)
+  ) {
     throw new Error(errorMessage);
   }
 
@@ -168,6 +258,12 @@ function assertUrlValue(value: string | undefined, name: string): string {
 
   return url;
 }
+
+export type SquareCardOnFileServiceBookingConfig = {
+  environment: "sandbox" | "production";
+  applicationId: string;
+  locationId: string;
+};
 
 type SquareServiceBookingEnv = {
   environment: "sandbox" | "production";

@@ -20,30 +20,30 @@ This runbook assumes option A is approved: the frozen `staging-2026-05-10` Sanit
 - Do not use `PAYMENT_GATEWAY_MODE=mock` in production.
 - Do not run production Sanity schema operations unless `SANITY_SCHEMA_DEPLOY_TARGET=production` is set.
 - Do not run production private DB migrations unless the production DB identity, backup/PITR, and migration approval are verified.
-- Do not paste the Google OAuth setup URL (`/api/booking/oauth/start?secret=<BOOKING_ADMIN_SETUP_SECRET>`) in tickets, chat, or evidence.
+- Do not paste the Google OAuth setup URL or any URL containing `BOOKING_ADMIN_SETUP_SECRET` in tickets, chat, or evidence. Use the internal OAuth setup runbook and the secret from the secure secret manager.
 
 ## Roles and Evidence Template
 
-| Field | Value |
-| --- | --- |
-| Launch window | |
-| Approved Git branch/commit | |
-| Staging dataset source | `staging-2026-05-10` |
-| Production dataset target | `production` |
-| Production DB provider/host label | |
-| Production backup/PITR status | |
-| Operator | |
-| Verifier | |
-| Business approver | |
-| Production backup file | |
-| Staging export file | |
-| DB migration result | |
-| Schema deploy result | |
-| App deploy result | |
-| Webhook smoke result | |
-| Public page smoke result | |
-| Private-flow smoke result | |
-| Rollback/failure notes | |
+| Field                             | Value                |
+| --------------------------------- | -------------------- |
+| Launch window                     |                      |
+| Approved Git branch/commit        |                      |
+| Staging dataset source            | `staging-2026-05-10` |
+| Production dataset target         | `production`         |
+| Production DB provider/host label |                      |
+| Production backup/PITR status     |                      |
+| Operator                          |                      |
+| Verifier                          |                      |
+| Business approver                 |                      |
+| Production backup file            |                      |
+| Staging export file               |                      |
+| DB migration result               |                      |
+| Schema deploy result              |                      |
+| App deploy result                 |                      |
+| Webhook smoke result              |                      |
+| Public page smoke result          |                      |
+| Private-flow smoke result         |                      |
+| Rollback/failure notes            |                      |
 
 Evidence may include sanitized timestamps, command names, dashboard labels, redacted transaction references, Resend message IDs, webhook delivery statuses, Vercel log references, and redacted query results.
 
@@ -85,11 +85,18 @@ git rev-parse HEAD
 - [ ] Confirm staging public/editorial content is approved as the complete production source of truth.
 - [ ] Record staging smoke evidence from `docs/launch-readiness-checklist.md`.
 - [ ] Verify no new Sanity private submission documents are created by staging forms, checkout, or booking flows.
+- [ ] If `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true`, `npm run check:square-card-on-file-env` passes against staging variables.
 
 ```bash
 NEXT_PUBLIC_SANITY_DATASET=staging-2026-05-10 \
 npx sanity dataset list --project-id 3auncj84
 VERCEL_ENV=preview NEXT_PUBLIC_SANITY_DATASET=staging-2026-05-10 node scripts/validate-sanity-env.mjs
+```
+
+If `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true`, also run:
+
+```bash
+npm run check:square-card-on-file-env
 ```
 
 ## Phase 2: Production Environment Variables and Secrets Inventory
@@ -158,6 +165,10 @@ Verify production-scoped values in Vercel/provider dashboards. Record presence, 
 - [ ] `SQUARE_ACCESS_TOKEN`
 - [ ] `SQUARE_LOCATION_ID`
 - [ ] `SQUARE_WEBHOOK_SIGNATURE_KEY`
+- [ ] `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true` only when the Square card-on-file service booking flow is intended.
+- [ ] `SQUARE_APPLICATION_ID` (public-safe application ID for the Square Web Payments SDK config route) when card-on-file is enabled.
+- [ ] `BOOKING_ADMIN_PAYMENT_ACTION_SECRET` for protected admin payment actions such as no-show charges.
+- [ ] `PAYMENT_RECONCILIATION_CRON_SECRET` for the payment reconciliation route, distinct from the generic `CRON_SECRET` used by Vercel scheduled cron. The route accepts either bearer when both are configured, but the route-specific secret must be present to enable the route or for manual/staff checks.
 - [ ] `SQUARE_SERVICE_BOOKING_RETURN_URL=https://<production-domain>/api/booking/square/return`
 - [ ] `SQUARE_SERVICE_BOOKING_WEBHOOK_URL=https://<production-domain>/api/webhooks/square`
 - [ ] Optional `SERVICE_BOOKING_HELCIM_LEGACY_CUTOFF_AT` only if intentionally used.
@@ -294,10 +305,17 @@ diff -u /tmp/staging-cutover-documents.json /tmp/production-cutover-documents.js
 - [ ] Deploy production app through the approved Vercel/Git path.
 - [ ] Deploy source-controlled Sanity schema to `production` with the production guard.
 - [ ] Open production `/studio` and verify the Studio targets `production`.
+- [ ] If `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true`, `npm run check:square-card-on-file-env` passes against production variables.
 
 ```bash
 cd /Users/dardan/workspace/lash-her-frontend
 VERCEL_ENV=production NEXT_PUBLIC_SANITY_DATASET=production node scripts/validate-sanity-env.mjs
+```
+
+If `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true`, also run:
+
+```bash
+npm run check:square-card-on-file-env
 ```
 
 ```bash
@@ -329,18 +347,18 @@ npx sanity schema deploy --workspace default
 
 ### Public Pages
 
-| Page | Check | Result |
-| --- | --- | --- |
-| `/` | Home content, nav, global settings | |
-| `/contact` | Contact page content and form renders | |
-| `/gallery` | Gallery content and images | |
-| `/products` | Product cards, availability, pricing | |
-| `/products/[slug]` | Product detail, variants, checkout CTA | |
-| `/services` | Service listing | |
-| `/services/[slug]` | Service detail | |
-| `/booking` | Booking settings and slots | |
-| `/training-programs` | Training listing; `/training` redirects here | |
-| `/training-programs/[slug]` | Training detail and checkout/schedule gates | |
+| Page                        | Check                                        | Result |
+| --------------------------- | -------------------------------------------- | ------ |
+| `/`                         | Home content, nav, global settings           |        |
+| `/contact`                  | Contact page content and form renders        |        |
+| `/gallery`                  | Gallery content and images                   |        |
+| `/products`                 | Product cards, availability, pricing         |        |
+| `/products/[slug]`          | Product detail, variants, checkout CTA       |        |
+| `/services`                 | Service listing                              |        |
+| `/services/[slug]`          | Service detail                               |        |
+| `/booking`                  | Booking settings and slots                   |        |
+| `/training-programs`        | Training listing; `/training` redirects here |        |
+| `/training-programs/[slug]` | Training detail and checkout/schedule gates  |        |
 
 ### Private Flows
 

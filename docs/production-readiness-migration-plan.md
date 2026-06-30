@@ -10,13 +10,13 @@ The readiness audit now evaluates whether the codebase is launch-ready when it i
 
 ## Findings moved from the readiness audit
 
-| Audit item | Why it moved here | Migration outcome required |
-| --- | --- | --- |
-| B3. Production environment validation fails in local production simulation | This is a production Vercel configuration/cutover check, not evidence that the staging-backed codebase is unfit. | Production Vercel env vars pass `VERCEL_ENV=production node scripts/validate-sanity-env.mjs` before production deployment. |
-| C2. Production deployed Sanity schema/content is behind source and staging | The planned release replaces production with staging/source, so current production drift is the migration target rather than a codebase-readiness defect. | Production schema and content are intentionally replaced or promoted from the approved staging source of truth. |
-| M1. `sanity.cli.ts` defaults unqualified Sanity CLI operations to production | This is a cutover/operator guardrail for schema and dataset commands. | Production/staging Sanity commands are run with explicit target env vars or wrapper scripts so the target dataset is visible. |
-| Production portions of C1. Legacy submission documents exist in public Sanity datasets | Historical production/staging Sanity submission cleanup is a data migration/privacy step. The source/schema privacy boundary remains a readiness finding. | Legacy submission records are backfilled/verified privately, then redacted, deleted, or excluded before production import. |
-| Production gates in the old launch checklist | Those gates verify the target production deployment after the codebase is already ready. | Complete the cutover checklist below before replacing production. |
+| Audit item                                                                             | Why it moved here                                                                                                                                         | Migration outcome required                                                                                                    |
+| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| B3. Production environment validation fails in local production simulation             | This is a production Vercel configuration/cutover check, not evidence that the staging-backed codebase is unfit.                                          | Production Vercel env vars pass `VERCEL_ENV=production node scripts/validate-sanity-env.mjs` before production deployment.    |
+| C2. Production deployed Sanity schema/content is behind source and staging             | The planned release replaces production with staging/source, so current production drift is the migration target rather than a codebase-readiness defect. | Production schema and content are intentionally replaced or promoted from the approved staging source of truth.               |
+| M1. `sanity.cli.ts` defaults unqualified Sanity CLI operations to production           | This is a cutover/operator guardrail for schema and dataset commands.                                                                                     | Production/staging Sanity commands are run with explicit target env vars or wrapper scripts so the target dataset is visible. |
+| Production portions of C1. Legacy submission documents exist in public Sanity datasets | Historical production/staging Sanity submission cleanup is a data migration/privacy step. The source/schema privacy boundary remains a readiness finding. | Legacy submission records are backfilled/verified privately, then redacted, deleted, or excluded before production import.    |
+| Production gates in the old launch checklist                                           | Those gates verify the target production deployment after the codebase is already ready.                                                                  | Complete the cutover checklist below before replacing production.                                                             |
 
 ## Preconditions
 
@@ -93,12 +93,14 @@ Minimum checks:
 - Google OAuth variables use production callback URLs.
 - `PAYMENT_GATEWAY_MODE` is not `mock` in production.
 - Helcim production tokens and webhook verifier are present.
+- `PAYMENT_RECONCILIATION_CRON_SECRET` is configured and is required to enable the payment reconciliation route; it is distinct from the generic `CRON_SECRET` used by Vercel scheduled cron. The route accepts either bearer when both secrets are configured, but the route-specific secret must be present to enable the route or for manual/staff checks.
 - If Square service booking is enabled, Square production environment, access token, location, webhook signature key, return URL, and webhook URL all point to the same production Square application.
 
-Validation command after loading production-scoped variables safely:
+Validation commands after loading production-scoped variables safely:
 
 ```bash
 VERCEL_ENV=production node scripts/validate-sanity-env.mjs
+npm run check:square-card-on-file-env
 ```
 
 Do not record secret values in launch evidence. Record only presence, scope, owner/verifier, and sanitized validation output.
@@ -131,15 +133,15 @@ If only public/editorial launch content should replace production, use selected 
 
 Configure a production Sanity webhook for the `production` dataset:
 
-| Setting | Production value |
-| --- | --- |
-| URL | `https://<production-domain>/api/revalidate` |
-| Project | `3auncj84` |
-| Dataset | `production` |
-| Trigger | Published document create, update, and delete events |
-| Projection | `{ _type }` |
-| Method | `POST` |
-| Secret | Production `SANITY_WEBHOOK_SECRET` |
+| Setting    | Production value                                     |
+| ---------- | ---------------------------------------------------- |
+| URL        | `https://<production-domain>/api/revalidate`         |
+| Project    | `3auncj84`                                           |
+| Dataset    | `production`                                         |
+| Trigger    | Published document create, update, and delete events |
+| Projection | `{ _type }`                                          |
+| Method     | `POST`                                               |
+| Secret     | Production `SANITY_WEBHOOK_SECRET`                   |
 
 Use the current cache-tag map in `src/app/api/revalidate/route.ts` as the source of truth for the filter. Update docs that still reference stale public types before relying on webhook smoke evidence.
 
@@ -187,21 +189,21 @@ Run production-safe private-flow smoke checks with approved test data only:
 
 ## Evidence template
 
-| Field | Value |
-| --- | --- |
-| Approved Git commit | |
-| Staging dataset export file | |
-| Production backup file | |
-| Production env validation result | |
-| Production schema deploy result | |
-| Production dataset import result | |
-| Production webhook smoke result | |
-| Public page smoke result | |
-| Private-flow smoke result | |
-| PII/Sanity submission cleanup result | |
-| Operator | |
-| Verifier | |
-| Approval | |
+| Field                                | Value |
+| ------------------------------------ | ----- |
+| Approved Git commit                  |       |
+| Staging dataset export file          |       |
+| Production backup file               |       |
+| Production env validation result     |       |
+| Production schema deploy result      |       |
+| Production dataset import result     |       |
+| Production webhook smoke result      |       |
+| Public page smoke result             |       |
+| Private-flow smoke result            |       |
+| PII/Sanity submission cleanup result |       |
+| Operator                             |       |
+| Verifier                             |       |
+| Approval                             |       |
 
 ## Related documents
 
