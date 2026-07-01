@@ -294,7 +294,12 @@ export function createBookingHoldsPostHandler(
       return Response.json(
         {
           hold: {
-            reference: holdResult.hold.publicReference,
+            paymentSessionReference: holdResult.hold.paymentSessionReference,
+            paymentPageUrl: `/services/${service.slug}/booking/payment?${new URLSearchParams(
+              {
+                session: holdResult.hold.paymentSessionReference,
+              },
+            ).toString()}`,
             expiresAt: holdResult.hold.expiresAt.toISOString(),
             start: holdResult.hold.selectedStart.toISOString(),
             end: holdResult.hold.selectedEnd.toISOString(),

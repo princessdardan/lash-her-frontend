@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import type {
   BookingAnswerInput,
@@ -25,13 +25,11 @@ import {
   FieldDescription,
 } from "@/components/ui/field";
 import { formatCad } from "@/lib/commerce/money";
-import { SquareCardOnFileForm } from "./square-card-on-file-form";
 import {
   confirmCardOnFileBooking,
   fetchSquareCardOnFileConfig,
   BookingHoldExpiredError,
 } from "./square-card-on-file-form";
-import type { CardOnFileConfirmationResult } from "./square-card-on-file-form";
 
 export { confirmCardOnFileBooking, fetchSquareCardOnFileConfig };
 
@@ -61,23 +59,6 @@ interface PaidServiceCheckoutResult {
   reused: boolean;
   squareOrderId?: string;
   squarePaymentLinkId?: string;
-}
-
-type SquareCheckoutStatus = "idle" | "opening" | "expired" | "card_on_file";
-
-export interface CardOnFileConfirmationInput {
-  cardholderName: string;
-  fetcher?: typeof fetch;
-  holdReference: string;
-  idempotencyKey: string;
-  policy: {
-    accepted: true;
-    maxChargeCents: number;
-    policyTextHash: string;
-    policyVersion: string;
-  };
-  sourceId: string;
-  verificationToken?: string;
 }
 
 const VISIBLE_DATE_COUNT = 7;
@@ -118,13 +99,6 @@ export function BookingFlow({
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [squareCheckout, setSquareCheckout] =
-    useState<PaidServiceCheckoutResult | null>(null);
-  const [squareCheckoutStatus, setSquareCheckoutStatus] =
-    useState<SquareCheckoutStatus>("idle");
-  const [cardOnFileHoldReference, setCardOnFileHoldReference] = useState<
-    string | null
-  >(null);
   const [paymentOption, setPaymentOption] =
     useState<PaidServicePaymentOption>("full");
   const [customAmount, setCustomAmount] = useState<string>("");
@@ -258,12 +232,6 @@ export function BookingFlow({
   const canShowPreviousDates = effectiveDateWindowStart > 0;
   const canShowNextDates = effectiveDateWindowStart < maxDateWindowStart;
 
-  const resetSquareCheckoutState = () => {
-    setSquareCheckout(null);
-    setSquareCheckoutStatus("idle");
-    setCardOnFileHoldReference(null);
-  };
-
   const handleServiceSelect = (slug: string) => {
     setSelectedServiceSlug(slug);
     setSelectedSlot("");
@@ -271,18 +239,15 @@ export function BookingFlow({
     setDateWindowStart(0);
     setSlots([]);
     setSelectedAddOnKey(null);
-    resetSquareCheckoutState();
   };
 
   const handleSelectedSlotChange = (value: string) => {
     setSelectedSlot(value);
-    resetSquareCheckoutState();
   };
 
   const handleSelectedDateChange = (dateStr: string) => {
     setSelectedDateState(dateStr);
     setSelectedSlot("");
-    resetSquareCheckoutState();
   };
 
   const moveDateWindow = (direction: "previous" | "next") => {
@@ -354,7 +319,7 @@ export function BookingFlow({
     setErrorMessage("");
 
     try {
-      const { holdReference } = await createBookingHold({
+      const { paymentPageUrl } = await createBookingHold({
         answers: Object.entries(answers).map(([questionId, answer]) => ({
           questionId,
           answer,
@@ -372,14 +337,11 @@ export function BookingFlow({
         ...(parsedCustomAmount ? { customAmount: parsedCustomAmount } : {}),
       });
 
-      setCardOnFileHoldReference(holdReference);
-      setSquareCheckoutStatus("card_on_file");
+      window.location.assign(paymentPageUrl);
     } catch (error: unknown) {
       if (error instanceof BookingHoldExpiredError) {
-        setSquareCheckoutStatus("expired");
         setErrorMessage(error.message);
       } else {
-        setSquareCheckoutStatus("idle");
         setErrorMessage(
           error instanceof Error
             ? error.message
@@ -390,52 +352,6 @@ export function BookingFlow({
       setIsSubmitting(false);
     }
   };
-
-  const handleCardOnFileSuccess = useCallback(
-    (result: CardOnFileConfirmationResult) => {
-      const status =
-        result.bookingStatus === "booked" ? "booked" : "manual_followup";
-      window.location.assign(`/booking/confirmation?payment=${status}`);
-    },
-    [],
-  );
-
-  const handleCardOnFileError = useCallback((message: string) => {
-    setErrorMessage(message);
-  }, []);
-
-  const handleCardOnFileHoldExpired = useCallback(() => {
-    setSquareCheckoutStatus("expired");
-    setErrorMessage("Hold expired, choose another time.");
-  }, []);
-
-  const handleCardOnFileConfigUnavailable = useCallback(() => {
-    if (cardOnFileHoldReference === null) {
-      setSquareCheckoutStatus("idle");
-      setErrorMessage("Unable to start checkout. Please try again.");
-      return;
-    }
-
-    startLegacySquareCheckout(cardOnFileHoldReference)
-      .then((checkout) => {
-        setSquareCheckout(checkout);
-        setSquareCheckoutStatus("opening");
-        window.location.assign(checkout.checkoutUrl);
-      })
-      .catch((error: unknown) => {
-        if (error instanceof BookingHoldExpiredError) {
-          setSquareCheckoutStatus("expired");
-          setErrorMessage(error.message);
-        } else {
-          setSquareCheckoutStatus("idle");
-          setErrorMessage(
-            error instanceof Error
-              ? error.message
-              : "Failed to start checkout. Please try again.",
-          );
-        }
-      });
-  }, [cardOnFileHoldReference]);
 
   if (step === "service") {
     return (
@@ -692,70 +608,6 @@ export function BookingFlow({
           onSubmit={handleSubmit}
           className="space-y-8 rounded-xl border border-lh-line bg-white p-6"
         >
-          {squareCheckoutStatus !== "idle" && (
-            <div
-              role="status"
-              aria-live="polite"
-              className="rounded-[18px] border border-lh-line bg-lh-neutral-2 p-5 shadow-sm"
-            >
-              {squareCheckoutStatus === "expired" ? (
-                <div className="space-y-3 text-center">
-                  <p className="font-heading text-lg uppercase tracking-[0.12em] text-lh-accent">
-                    Hold expired, choose another time
-                  </p>
-                  <p className="font-body text-sm font-bold leading-6 text-lh-muted">
-                    That private hold closed before secure checkout opened.
-                    Please choose a fresh appointment time and we will create a
-                    new hold before payment.
-                  </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setStep("datetime");
-                      resetSquareCheckoutState();
-                      setErrorMessage("");
-                    }}
-                  >
-                    Choose another time
-                  </Button>
-                </div>
-              ) : squareCheckoutStatus === "card_on_file" &&
-                cardOnFileHoldReference ? (
-                <SquareCardOnFileForm
-                  holdReference={cardOnFileHoldReference}
-                  cardholderName={name}
-                  maxChargeCents={Math.round(
-                    (displayTotal ?? currentServicePayment?.fullPrice ?? 0) *
-                      100,
-                  )}
-                  onSuccess={handleCardOnFileSuccess}
-                  onError={handleCardOnFileError}
-                  onHoldExpired={handleCardOnFileHoldExpired}
-                  onConfigUnavailable={handleCardOnFileConfigUnavailable}
-                />
-              ) : (
-                <div className="space-y-3 text-center">
-                  <p className="font-heading text-lg uppercase tracking-[0.12em] text-lh-primary">
-                    Opening secure Square checkout
-                  </p>
-                  <p className="font-body text-sm font-bold leading-6 text-lh-muted">
-                    Your appointment time is privately held while Square opens
-                    in this tab. If it does not open automatically, use the
-                    secure checkout link below.
-                  </p>
-                  {squareCheckout && (
-                    <Button asChild type="button" variant="dark">
-                      <a href={squareCheckout.checkoutUrl}>
-                        Continue to secure Square checkout
-                      </a>
-                    </Button>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             <Field>
               <FieldLabel htmlFor="name">Full Name</FieldLabel>
@@ -1004,11 +856,7 @@ export function BookingFlow({
           <Button
             type="submit"
             className="w-full"
-            disabled={
-              isSubmitting ||
-              !currentServicePayment ||
-              squareCheckoutStatus !== "idle"
-            }
+            disabled={isSubmitting || !currentServicePayment}
           >
             {isSubmitting
               ? "Creating private hold..."
@@ -1100,7 +948,7 @@ function fetchAvailability(serviceSlug: string): Promise<Response> {
 
 export async function createBookingHold(
   input: PaidServiceCheckoutInput,
-): Promise<{ holdReference: string }> {
+): Promise<{ paymentPageUrl: string; paymentSessionReference: string }> {
   const fetcher = input.fetcher ?? fetch;
   const holdRes = await fetcher("/api/booking/holds", {
     method: "POST",
@@ -1128,14 +976,25 @@ export async function createBookingHold(
     throw new Error(readResponseError(data, "Failed to hold appointment time"));
   }
 
-  const holdData = (await holdRes.json()) as { hold?: { reference?: unknown } };
-  const holdReference = holdData.hold?.reference;
+  const holdData = (await holdRes.json()) as {
+    hold?: {
+      paymentPageUrl?: unknown;
+      paymentSessionReference?: unknown;
+    };
+  };
+  const paymentPageUrl = holdData.hold?.paymentPageUrl;
+  const paymentSessionReference = holdData.hold?.paymentSessionReference;
 
-  if (typeof holdReference !== "string" || holdReference.length === 0) {
+  if (
+    typeof paymentPageUrl !== "string" ||
+    paymentPageUrl.length === 0 ||
+    typeof paymentSessionReference !== "string" ||
+    paymentSessionReference.length === 0
+  ) {
     throw new Error("Failed to hold appointment time");
   }
 
-  return { holdReference };
+  return { paymentPageUrl, paymentSessionReference };
 }
 
 export async function startLegacySquareCheckout(
@@ -1186,13 +1045,6 @@ export async function startLegacySquareCheckout(
       ? { squarePaymentLinkId: checkoutData.squarePaymentLinkId }
       : {}),
   };
-}
-
-export async function startPaidServiceCheckout(
-  input: PaidServiceCheckoutInput,
-): Promise<PaidServiceCheckoutResult> {
-  const { holdReference } = await createBookingHold(input);
-  return startLegacySquareCheckout(holdReference, input.fetcher ?? fetch);
 }
 
 function readResponseError(data: unknown, fallback: string): string {

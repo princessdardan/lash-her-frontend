@@ -78,7 +78,7 @@ const helperScript = String.raw`
   }
 `;
 
-test("booking hold route revalidates a slot and returns a public hold reference", () => {
+test("booking hold route revalidates a slot and returns payment page handoff", () => {
   runRouteScenario(`
     const selectedStart = createFutureDate(2, 0);
     const selectedEnd = new Date(selectedStart.getTime() + 60 * 60 * 1000);
@@ -99,6 +99,7 @@ test("booking hold route revalidates a slot and returns a public hold reference"
           ok: true,
           hold: {
             publicReference: "hold_public_1",
+            paymentSessionReference: "pay_sess_test_1",
             expiresAt,
             selectedStart: input.selectedStart,
             selectedEnd: input.selectedEnd,
@@ -142,9 +143,16 @@ test("booking hold route revalidates a slot and returns a public hold reference"
       answers: [],
       marketingOptIn: false,
     });
+    assert.equal(body.hold.paymentSessionReference, "pay_sess_test_1");
+    assert.equal(
+      body.hold.paymentPageUrl,
+      "/services/classic-fill/booking/payment?session=pay_sess_test_1",
+    );
+    assert.equal(body.hold.reference, undefined);
     assert.deepEqual(body, {
       hold: {
-        reference: "hold_public_1",
+        paymentSessionReference: "pay_sess_test_1",
+        paymentPageUrl: "/services/classic-fill/booking/payment?session=pay_sess_test_1",
         expiresAt: expiresAt.toISOString(),
         start: selectedStart.toISOString(),
         end: selectedEnd.toISOString(),
@@ -170,7 +178,8 @@ test("booking hold route snapshots a validated custom partial payment choice", (
         return {
           ok: true,
           hold: {
-            publicReference: "hold_public_1",
+            publicReference: "hold_public_2",
+            paymentSessionReference: "pay_sess_custom_partial",
             expiresAt: new Date("2026-06-01T12:10:00.000Z"),
             selectedStart: input.selectedStart,
             selectedEnd: input.selectedEnd,
@@ -190,6 +199,10 @@ test("booking hold route snapshots a validated custom partial payment choice", (
     }));
 
     assert.equal(response.status, 201);
+    assert.doesNotMatch(response.headers.get("location") ?? "", /undefined/);
+    const body = await parseJson(response);
+    assert.equal(body.hold.paymentSessionReference, "pay_sess_custom_partial");
+    assert.match(body.hold.paymentPageUrl, /session=pay_sess_custom_partial/);
     assert.deepEqual(createInputs[0].offeringSnapshot.selectedPayment, {
       amount: 100,
       description: "Classic Fill custom partial payment",
@@ -279,7 +292,8 @@ test("booking hold route snapshots purchaser-selected full payments", () => {
         return {
           ok: true,
           hold: {
-            publicReference: "hold_public_1",
+            publicReference: "hold_public_3",
+            paymentSessionReference: "pay_sess_full",
             expiresAt: new Date("2026-06-01T12:10:00.000Z"),
             selectedStart: input.selectedStart,
             selectedEnd: input.selectedEnd,
@@ -298,6 +312,9 @@ test("booking hold route snapshots purchaser-selected full payments", () => {
     }));
 
     assert.equal(response.status, 201);
+    const body = await parseJson(response);
+    assert.equal(body.hold.paymentSessionReference, "pay_sess_full");
+    assert.doesNotMatch(body.hold.paymentPageUrl, /undefined/);
     assert.deepEqual(createInputs[0].offeringSnapshot.selectedPayment, {
       amount: 150,
       description: "Classic Fill full payment",
@@ -319,7 +336,8 @@ test("booking hold route snapshots full payments with selected add-ons", () => {
         return {
           ok: true,
           hold: {
-            publicReference: "hold_public_1",
+            publicReference: "hold_public_4",
+            paymentSessionReference: "pay_sess_addon_full",
             expiresAt: new Date("2026-06-01T12:10:00.000Z"),
             selectedStart: input.selectedStart,
             selectedEnd: input.selectedEnd,
@@ -339,6 +357,9 @@ test("booking hold route snapshots full payments with selected add-ons", () => {
     }));
 
     assert.equal(response.status, 201);
+    const body = await parseJson(response);
+    assert.equal(body.hold.paymentSessionReference, "pay_sess_addon_full");
+    assert.match(body.hold.paymentPageUrl, /session=pay_sess_addon_full/);
     assert.deepEqual(createInputs[0].offeringSnapshot.selectedAddOn, {
       key: "addon-lash-bath",
       name: "Lash Bath",
@@ -367,7 +388,8 @@ test("booking hold route keeps deposit and custom partial amounts service-only w
         return {
           ok: true,
           hold: {
-            publicReference: "hold_public_1",
+            publicReference: "hold_public_5",
+            paymentSessionReference: "pay_sess_deposit_addon",
             expiresAt: new Date("2026-06-01T12:10:00.000Z"),
             selectedStart: input.selectedStart,
             selectedEnd: input.selectedEnd,
@@ -396,6 +418,12 @@ test("booking hold route keeps deposit and custom partial amounts service-only w
       paymentOption: "customPartial",
       customAmount: 100,
     }));
+
+    const depositBody = await parseJson(depositResponse);
+    const customBody = await parseJson(customResponse);
+    assert.equal(depositBody.hold.paymentSessionReference, "pay_sess_deposit_addon");
+    assert.match(depositBody.hold.paymentPageUrl, /session=pay_sess_deposit_addon/);
+    assert.doesNotMatch(customBody.hold.paymentPageUrl, /undefined/);
 
     assert.equal(depositResponse.status, 201);
     assert.equal(customResponse.status, 201);
