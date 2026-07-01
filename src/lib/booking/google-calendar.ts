@@ -21,11 +21,14 @@ interface CalendarEventWithWindow {
 export function createOAuthClient(): InstanceType<typeof google.auth.OAuth2> {
   const env = getBookingEnv();
 
-  return new google.auth.OAuth2(
-    env.googleClientId,
-    env.googleClientSecret,
-    env.googleRedirectUri,
-  );
+  return new google.auth.OAuth2({
+    clientId: env.googleClientId,
+    clientSecret: env.googleClientSecret,
+    redirectUri: env.googleRedirectUri,
+    transporterOptions: {
+      fetchImplementation: globalThis.fetch,
+    },
+  });
 }
 
 export function getOAuthConsentUrl(state: string): string {
@@ -84,9 +87,9 @@ export async function findBookingEventForHold(input: {
     timeMax: input.hold.selectedEnd.toISOString(),
     timeMin: input.hold.selectedStart.toISOString(),
   });
-  const event = response.data.items?.find((candidate) => (
-    typeof candidate.id === "string" && candidate.id.length > 0
-  ));
+  const event = response.data.items?.find(
+    (candidate) => typeof candidate.id === "string" && candidate.id.length > 0,
+  );
 
   return event?.id ?? null;
 }

@@ -1,8 +1,34 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { buildBookingEventPayload } from "./google-calendar-event-payload";
 import type { BookingHoldRecord } from "./holds";
+
+const googleCalendarSource = readFileSync(
+  new URL("./google-calendar.ts", import.meta.url),
+  "utf8",
+);
+
+test("createOAuthClient configures the OAuth transporter to use globalThis.fetch", () => {
+  const createOAuthClientMatch = googleCalendarSource.match(
+    /function createOAuthClient\(\)[^{]*\{([\s\S]*?)\n\}/,
+  );
+
+  assert.ok(createOAuthClientMatch, "expected createOAuthClient function body");
+  const functionBody = createOAuthClientMatch[1];
+
+  assert.match(
+    functionBody,
+    /new google\.auth\.OAuth2\(/,
+    "expected createOAuthClient to construct google.auth.OAuth2",
+  );
+  assert.match(
+    functionBody,
+    /transporterOptions\s*:\s*\{[\s\S]*?fetchImplementation\s*:\s*globalThis\.fetch/,
+    "expected createOAuthClient to pass transporterOptions.fetchImplementation: globalThis.fetch to google.auth.OAuth2",
+  );
+});
 
 test("buildBookingEventPayload creates the booking event without conference data", () => {
   const event = buildBookingEventPayload({

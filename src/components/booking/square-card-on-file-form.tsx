@@ -337,10 +337,12 @@ export function SquareCardOnFileForm({
           </p>
         )}
 
-        <section
+        {/* Square card.attach() only accepts div or span containers, not section. */}
+        <div
           id={cardContainerId}
-          className="min-h-[120px] rounded-xl border border-lh-line bg-white p-4"
+          role="region"
           aria-label="Secure card entry"
+          className="min-h-[120px] rounded-xl border border-lh-line bg-white p-4"
         />
 
         <div className="flex items-start gap-3">

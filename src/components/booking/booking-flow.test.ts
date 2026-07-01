@@ -423,6 +423,27 @@ describe("booking service flow contract", () => {
     );
   });
 
+  it("renders the Square card container as a div or span, not a section", () => {
+    const containerMatch = cardOnFileFormSource.match(
+      /<(section|div|span)\b[^>]*\sid=\{cardContainerId\}/,
+    );
+
+    assert.ok(
+      containerMatch,
+      "expected a section/div/span element with id={cardContainerId}",
+    );
+    assert.notEqual(
+      containerMatch[1],
+      "section",
+      "Square card container must not be a <section>; card.attach() only accepts DIV or SPAN containers",
+    );
+    assert.match(
+      containerMatch[1],
+      /^(div|span)$/,
+      "Square card container must be a <div> or <span>",
+    );
+  });
+
   it("cleans up a created Square card when attach fails", () => {
     // The attach call must be wrapped so a rejection destroys the card instance
     // before the error propagates; otherwise Square iframes/state may leak.
