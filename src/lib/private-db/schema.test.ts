@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { getTableConfig } from "drizzle-orm/pg-core";
@@ -272,6 +273,22 @@ test("Square provider indexes guard duplicate checkout, order, and payment IDs",
     getIndexNames(appointmentHolds).includes(
       "appointment_holds_square_order_id_idx",
     ),
+  );
+});
+
+test("appointment holds expose opaque payment session handoff reference", () => {
+  const schemaSource = readFileSync(
+    new URL("./schema.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    schemaSource,
+    /paymentSessionReference:\s*text\("payment_session_reference"\)\.notNull\(\)/,
+  );
+  assert.match(
+    schemaSource,
+    /uniqueIndex\("appointment_holds_payment_session_reference_idx"\)\.on\(\s*table\.paymentSessionReference,?\s*\)/,
   );
 });
 

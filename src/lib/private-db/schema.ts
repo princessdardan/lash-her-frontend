@@ -403,6 +403,7 @@ export const appointmentHolds = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     publicReference: text("public_reference").notNull(),
+    paymentSessionReference: text("payment_session_reference").notNull(),
     checkoutOrderId: uuid("checkout_order_id").references(
       () => checkoutOrders.id,
       { onDelete: "set null" },
@@ -492,6 +493,9 @@ export const appointmentHolds = pgTable(
   (table) => [
     uniqueIndex("appointment_holds_public_reference_idx").on(
       table.publicReference,
+    ),
+    uniqueIndex("appointment_holds_payment_session_reference_idx").on(
+      table.paymentSessionReference,
     ),
     uniqueIndex("appointment_holds_checkout_order_id_idx").on(
       table.checkoutOrderId,
