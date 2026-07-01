@@ -554,12 +554,17 @@ function toServiceSnapshot(
   return {
     id: service._id,
     slug: service.slug,
+    serviceSlug: service.slug,
     title: service.title,
     bookingType: SERVICE_BOOKING_TYPE,
     durationMinutes: service.durationMinutes,
     depositAmount: service.depositAmount,
     fullPrice: service.fullPrice,
     currency: service.currency,
+    payment: {
+      amount: paymentSelection.amount,
+      currency: service.currency,
+    },
     ...(selectedAddOn ? { selectedAddOn } : {}),
     selectedPayment: paymentSelection,
     answers: normalizeAnswers(input.answers),

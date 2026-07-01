@@ -127,12 +127,17 @@ test("booking hold route revalidates a slot and returns payment page handoff", (
     assert.deepEqual(createInputs[0].offeringSnapshot, {
       id: "service-classic-fill",
       slug: "classic-fill",
+      serviceSlug: "classic-fill",
       title: "Classic Fill",
       bookingType: "in-person-appointment",
       durationMinutes: 60,
       depositAmount: 50,
       fullPrice: 150,
       currency: "CAD",
+      payment: {
+        amount: 50,
+        currency: "CAD",
+      },
       selectedPayment: {
         amount: 50,
         description: "Classic Fill deposit",
@@ -209,6 +214,10 @@ test("booking hold route snapshots a validated custom partial payment choice", (
       option: "customPartial",
       purpose: "appointment_custom_partial",
       sku: "BOOKING-CUSTOM-PARTIAL",
+    });
+    assert.deepEqual(createInputs[0].offeringSnapshot.payment, {
+      amount: 100,
+      currency: "CAD",
     });
   `);
 });
@@ -322,6 +331,10 @@ test("booking hold route snapshots purchaser-selected full payments", () => {
       purpose: "appointment_full",
       sku: "BOOKING-FULL",
     });
+    assert.deepEqual(createInputs[0].offeringSnapshot.payment, {
+      amount: 150,
+      currency: "CAD",
+    });
   `);
 });
 
@@ -373,6 +386,10 @@ test("booking hold route snapshots full payments with selected add-ons", () => {
       option: "full",
       purpose: "appointment_full",
       sku: "BOOKING-FULL",
+    });
+    assert.deepEqual(createInputs[0].offeringSnapshot.payment, {
+      amount: 175,
+      currency: "CAD",
     });
   `);
 });
