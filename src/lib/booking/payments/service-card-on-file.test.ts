@@ -40,6 +40,7 @@ function createHold(
   return {
     id: "hold-internal-1",
     publicReference: "hold_public_1",
+    paymentSessionReference: "pay_sess_1",
     state: "held",
     expiresAt: new Date(Date.now() + 10 * 60 * 1000),
     selectedStart,

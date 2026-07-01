@@ -82,6 +82,7 @@ export interface BookingHoldRecord {
   paymentProvider?: PaymentProvider | null;
   paymentFailedAt?: Date | null;
   publicReference: string;
+  paymentSessionReference: string;
   reconciliationMetadata?: AppointmentHoldMetadata | null;
   releasedAt?: Date | null;
   selectedEnd: Date;
@@ -102,6 +103,7 @@ export interface CreateBookingHoldRecordInput {
   expiresAt: Date;
   offeringId: string;
   offeringSnapshot: Record<string, unknown>;
+  paymentSessionReference?: string;
   selectedEnd: Date;
   selectedStart: Date;
   timezone: string;
@@ -109,7 +111,12 @@ export interface CreateBookingHoldRecordInput {
 }
 
 export interface BookingHoldRepository {
-  createConflictSafeHold(input: CreateBookingHoldRecordInput): Promise<CreateBookingHoldResult>;
+  createConflictSafeHold(
+    input: CreateBookingHoldRecordInput,
+  ): Promise<CreateBookingHoldResult>;
+  getByPaymentSessionReference?(
+    paymentSessionReference: string,
+  ): Promise<BookingHoldRecord | null>;
 }
 
 export interface TransitionAppointmentHoldInput {
@@ -140,14 +147,24 @@ export interface TransitionAppointmentHoldInput {
 }
 
 export interface AppointmentHoldLifecycleRepository extends BookingHoldRepository {
-  transitionHold(input: TransitionAppointmentHoldInput): Promise<BookingHoldRecord | null>;
+  transitionHold(
+    input: TransitionAppointmentHoldInput,
+  ): Promise<BookingHoldRecord | null>;
 }
 
-export type CreateAppointmentHoldInput = Omit<Parameters<typeof createBookingHold>[0], "repository">;
+export type CreateAppointmentHoldInput = Omit<
+  Parameters<typeof createBookingHold>[0],
+  "repository"
+>;
 
 export interface AppointmentHoldStore {
-  createHold(input: CreateAppointmentHoldInput): Promise<CreateBookingHoldResult>;
-  releaseHold(input: { holdId: string; now?: Date }): Promise<BookingHoldRecord | null>;
+  createHold(
+    input: CreateAppointmentHoldInput,
+  ): Promise<CreateBookingHoldResult>;
+  releaseHold(input: {
+    holdId: string;
+    now?: Date;
+  }): Promise<BookingHoldRecord | null>;
   transitionHold(
     input: Omit<TransitionAppointmentHoldInput, "now"> & { now?: Date },
   ): Promise<BookingHoldRecord | null>;
@@ -190,7 +207,8 @@ const GRACE_PROTECTED_HOLD_STATES: readonly BookingHoldState[] = [
   "paid_pending_booking",
 ];
 const GRACE_PROTECTED_HOLD_STATES_FOR_QUERY = [...GRACE_PROTECTED_HOLD_STATES];
-const SENSITIVE_METADATA_KEY_PATTERN = /card|checkouttoken|checkout_token|cvc|cvv|pan|rawwebhook|raw_webhook|secret|token/i;
+const SENSITIVE_METADATA_KEY_PATTERN =
+  /card|checkouttoken|checkout_token|cvc|cvv|pan|rawwebhook|raw_webhook|secret|token/i;
 
 export function createAppointmentHoldStore(
   repository: AppointmentHoldLifecycleRepository,
@@ -270,7 +288,9 @@ export async function markAppointmentHoldManualRebooked(input: {
     finalizationStatus: "manual_rebooked",
     googleEventId: input.googleEventId,
     holdId: input.holdId,
-    manualReviewReason: input.manualReviewReason ?? "Manual rebooking availability validated before Calendar correlation.",
+    manualReviewReason:
+      input.manualReviewReason ??
+      "Manual rebooking availability validated before Calendar correlation.",
     manualReviewStatus: "availability_validated",
     now,
     reconciliationMetadata: {
@@ -293,11 +313,15 @@ function assertManualRebookingAvailabilityValidated(input: {
   }
 
   if (Number.isNaN(input.availabilityValidatedAt.getTime())) {
-    throw new Error("Manual rebooking requires a valid availability validation timestamp.");
+    throw new Error(
+      "Manual rebooking requires a valid availability validation timestamp.",
+    );
   }
 
   if (input.availabilityValidatedAt.getTime() > input.now.getTime()) {
-    throw new Error("Manual rebooking availability validation cannot be in the future.");
+    throw new Error(
+      "Manual rebooking availability validation cannot be in the future.",
+    );
   }
 }
 
@@ -308,7 +332,9 @@ export async function listActiveAppointmentHolds(input: {
   now?: Date;
 }): Promise<BookingHoldRecord[]> {
   const now = input.now ?? new Date();
-  const rows = await (await getAppointmentHoldDb())
+  const rows = await (
+    await getAppointmentHoldDb()
+  )
     .select()
     .from(appointmentHolds)
     .where(
@@ -336,11 +362,40 @@ export async function getAppointmentHoldByPublicReference(
   return row ? toBookingHoldRecord(row) : null;
 }
 
+export async function getAppointmentHoldByPaymentSessionReference(
+  paymentSessionReference: string,
+  repository: AppointmentHoldLifecycleRepository = createDrizzleAppointmentHoldRepository(),
+): Promise<BookingHoldRecord | null> {
+  if (repository.getByPaymentSessionReference !== undefined) {
+    return repository.getByPaymentSessionReference(paymentSessionReference);
+  }
+
+  return getAppointmentHoldByPaymentSessionReferenceFromDb(
+    paymentSessionReference,
+  );
+}
+
+async function getAppointmentHoldByPaymentSessionReferenceFromDb(
+  paymentSessionReference: string,
+): Promise<BookingHoldRecord | null> {
+  const [row] = await (await getAppointmentHoldDb())
+    .select()
+    .from(appointmentHolds)
+    .where(
+      eq(appointmentHolds.paymentSessionReference, paymentSessionReference),
+    )
+    .limit(1);
+
+  return row === undefined ? null : toBookingHoldRecord(row);
+}
+
 export async function getAppointmentHoldByCheckoutOrder(input: {
   checkoutOrderId: string;
   checkoutOrderPublicId: string;
 }): Promise<BookingHoldRecord | null> {
-  const [row] = await (await getAppointmentHoldDb())
+  const [row] = await (
+    await getAppointmentHoldDb()
+  )
     .select()
     .from(appointmentHolds)
     .where(
@@ -374,8 +429,12 @@ export async function claimBookingConfirmationEmailByOrderId(
   input: ClaimBookingConfirmationEmailByOrderIdInput,
 ): Promise<BookingConfirmationEmailClaimRecord | null> {
   const now = input.now ?? new Date();
-  const claimUntil = new Date(now.getTime() + (input.claimForMs ?? EMAIL_CLAIM_DURATION_MS));
-  const [row] = await (await getAppointmentHoldDb())
+  const claimUntil = new Date(
+    now.getTime() + (input.claimForMs ?? EMAIL_CLAIM_DURATION_MS),
+  );
+  const [row] = await (
+    await getAppointmentHoldDb()
+  )
     .update(appointmentHolds)
     .set({
       bookingConfirmationEmailClaimedUntil: claimUntil,
@@ -403,7 +462,9 @@ export async function markBookingConfirmationEmailSent(
   input: BookingConfirmationEmailMutationInput,
 ): Promise<void> {
   const now = input.now ?? new Date();
-  await (await getAppointmentHoldDb())
+  await (
+    await getAppointmentHoldDb()
+  )
     .update(appointmentHolds)
     .set({
       bookingConfirmationEmailClaimedUntil: null,
@@ -418,7 +479,9 @@ export async function recordBookingConfirmationEmailFailure(
   input: BookingConfirmationEmailFailureInput,
 ): Promise<void> {
   const now = input.now ?? new Date();
-  await (await getAppointmentHoldDb())
+  await (
+    await getAppointmentHoldDb()
+  )
     .update(appointmentHolds)
     .set({
       bookingConfirmationEmailClaimedUntil: null,
@@ -430,7 +493,9 @@ export async function recordBookingConfirmationEmailFailure(
 
 export interface AppointmentHoldFinalizerRepositoryDependencies {
   getHoldById(holdId: string): Promise<BookingHoldRecord | null>;
-  transitionHold(input: Omit<TransitionAppointmentHoldInput, "now"> & { now?: Date }): Promise<BookingHoldRecord | null>;
+  transitionHold(
+    input: Omit<TransitionAppointmentHoldInput, "now"> & { now?: Date },
+  ): Promise<BookingHoldRecord | null>;
   updateCheckoutOrderCalendarFinalization?(input: {
     calendarEventId?: string;
     checkoutOrderId: string;
@@ -489,10 +554,12 @@ export function createAppointmentHoldFinalizerRepository(
         status: "paid_pending_booking",
       });
 
-      const hold = updated ?? await dependencies.getHoldById(input.holdId);
+      const hold = updated ?? (await dependencies.getHoldById(input.holdId));
 
       if (hold === null) {
-        throw new Error("Booking hold could not be left pending Calendar retry.");
+        throw new Error(
+          "Booking hold could not be left pending Calendar retry.",
+        );
       }
 
       if (updated !== null) {
@@ -541,7 +608,8 @@ export function createAppointmentHoldFinalizerRepository(
         failureMetadata: { error: input.error },
         failureReason: input.error,
         finalizationReason: input.error,
-        finalizationStatus: input.state === "manual_followup" ? "manual_review" : "failed",
+        finalizationStatus:
+          input.state === "manual_followup" ? "manual_review" : "failed",
         holdId: input.holdId,
         now: input.now,
         status: input.state,
@@ -562,7 +630,10 @@ export function createAppointmentHoldFinalizerRepository(
 
     async markPaidUnbookableForRebooking(input) {
       const updated = await dependencies.transitionHold({
-        failureMetadata: { error: input.reason, manualReview: "rebooking_first" },
+        failureMetadata: {
+          error: input.reason,
+          manualReview: "rebooking_first",
+        },
         failureReason: input.reason,
         finalizationReason: input.reason,
         finalizationStatus: "paid_unbookable_rebooking_pending",
@@ -574,10 +645,12 @@ export function createAppointmentHoldFinalizerRepository(
         status: "paid_unbookable_rebooking_pending",
       });
 
-      const hold = updated ?? await dependencies.getHoldById(input.holdId);
+      const hold = updated ?? (await dependencies.getHoldById(input.holdId));
 
       if (hold === null) {
-        throw new Error("Booking hold could not be marked for manual rebooking.");
+        throw new Error(
+          "Booking hold could not be marked for manual rebooking.",
+        );
       }
 
       if (updated !== null) {
@@ -655,6 +728,7 @@ export async function createBookingHold(input: {
     ),
     offeringId: input.offeringId,
     offeringSnapshot: input.offeringSnapshot,
+    paymentSessionReference: generatePaymentSessionReference(),
     selectedEnd: input.selectedEnd,
     selectedStart: input.selectedStart,
     timezone: input.timezone,
@@ -680,10 +754,15 @@ export function isActiveHold(
   hold: Pick<BookingHoldRecord, "expiresAt" | "state">,
   now: Date,
 ): boolean {
-  return ACTIVE_HOLD_STATES.includes(hold.state) && getActiveHoldExpiresAt(hold) > now;
+  return (
+    ACTIVE_HOLD_STATES.includes(hold.state) &&
+    getActiveHoldExpiresAt(hold) > now
+  );
 }
 
-function getActiveHoldExpiresAt(hold: Pick<BookingHoldRecord, "expiresAt" | "state">): Date {
+function getActiveHoldExpiresAt(
+  hold: Pick<BookingHoldRecord, "expiresAt" | "state">,
+): Date {
   if (GRACE_PROTECTED_HOLD_STATES.includes(hold.state)) {
     return new Date(hold.expiresAt.getTime() + PAYMENT_SUCCESS_GRACE_MS);
   }
@@ -695,7 +774,9 @@ export function createDrizzleAppointmentHoldRepository(): AppointmentHoldLifecyc
   return {
     async createConflictSafeHold(input) {
       return (await getAppointmentHoldDb()).transaction(async (tx) => {
-        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${input.offeringId}))`);
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtext(${input.offeringId}))`,
+        );
 
         await tx
           .update(appointmentHolds)
@@ -745,6 +826,9 @@ export function createDrizzleAppointmentHoldRepository(): AppointmentHoldLifecyc
             expiresAt: input.expiresAt,
             offeringId: input.offeringId,
             offeringSnapshot: input.offeringSnapshot,
+            paymentSessionReference:
+              input.paymentSessionReference ??
+              generatePaymentSessionReference(),
             publicReference: generateAppointmentHoldReference(),
             selectedEnd: input.selectedEnd,
             selectedStart: input.selectedStart,
@@ -769,13 +853,21 @@ export function createDrizzleAppointmentHoldRepository(): AppointmentHoldLifecyc
         conditions.push(gt(appointmentHolds.expiresAt, input.expiresAfter));
       }
 
-      const [updatedHold] = await (await getAppointmentHoldDb())
+      const [updatedHold] = await (
+        await getAppointmentHoldDb()
+      )
         .update(appointmentHolds)
         .set(toAppointmentHoldUpdate(input))
         .where(and(...conditions))
         .returning();
 
       return updatedHold ? toBookingHoldRecord(updatedHold) : null;
+    },
+
+    async getByPaymentSessionReference(paymentSessionReference) {
+      return getAppointmentHoldByPaymentSessionReferenceFromDb(
+        paymentSessionReference,
+      );
     },
   };
 }
@@ -785,7 +877,10 @@ function isDrizzleActiveHold(now: Date) {
     gt(appointmentHolds.expiresAt, now),
     and(
       inArray(appointmentHolds.status, GRACE_PROTECTED_HOLD_STATES_FOR_QUERY),
-      gt(sql`${appointmentHolds.expiresAt} + interval '${sql.raw(String(PAYMENT_SUCCESS_GRACE_MINUTES))} minutes'`, now),
+      gt(
+        sql`${appointmentHolds.expiresAt} + interval '${sql.raw(String(PAYMENT_SUCCESS_GRACE_MINUTES))} minutes'`,
+        now,
+      ),
     ),
   );
 }
@@ -794,7 +889,10 @@ function isDrizzleExpiredActiveHold(now: Date) {
   return or(
     and(
       inArray(appointmentHolds.status, GRACE_PROTECTED_HOLD_STATES_FOR_QUERY),
-      lte(sql`${appointmentHolds.expiresAt} + interval '${sql.raw(String(PAYMENT_SUCCESS_GRACE_MINUTES))} minutes'`, now),
+      lte(
+        sql`${appointmentHolds.expiresAt} + interval '${sql.raw(String(PAYMENT_SUCCESS_GRACE_MINUTES))} minutes'`,
+        now,
+      ),
     ),
     and(
       sql`${appointmentHolds.status} not in ('payment_pending', 'paid_pending_booking')`,
@@ -862,6 +960,7 @@ function toBookingHoldRecord(row: AppointmentHoldRow): BookingHoldRecord {
     payment: null,
     paymentProvider: row.paymentProvider,
     paymentFailedAt: row.paymentFailedAt,
+    paymentSessionReference: row.paymentSessionReference,
     publicReference: row.publicReference,
     reconciliationMetadata: row.reconciliationMetadata,
     releasedAt: row.releasedAt,
@@ -878,7 +977,9 @@ function toBookingHoldRecord(row: AppointmentHoldRow): BookingHoldRecord {
   };
 }
 
-function toAppointmentHoldUpdate(input: TransitionAppointmentHoldInput): AppointmentHoldUpdate {
+function toAppointmentHoldUpdate(
+  input: TransitionAppointmentHoldInput,
+): AppointmentHoldUpdate {
   const update: AppointmentHoldUpdate = {
     status: input.status,
     updatedAt: input.now,
@@ -994,13 +1095,20 @@ function applyStatusTimestamp(
     update.bookingFailedAt = timestamp;
   }
 
-  if (status === "manual_followup" || status === "paid_unbookable_rebooking_pending") {
+  if (
+    status === "manual_followup" ||
+    status === "paid_unbookable_rebooking_pending"
+  ) {
     update.manualFollowupAt = timestamp;
   }
 }
 
 function generateAppointmentHoldReference(): string {
   return `hold_${nanoid(12)}`;
+}
+
+function generatePaymentSessionReference(): string {
+  return `pay_sess_${nanoid(16)}`;
 }
 
 function redactHoldMetadata(
@@ -1019,12 +1127,14 @@ function redactMetadataValue(value: unknown): unknown {
   }
 
   if (value !== null && typeof value === "object") {
-    const redactedEntries = Object.entries(value as Record<string, unknown>).map(
-      ([key, nestedValue]) => [
-        key,
-        isSensitiveMetadataKey(key) ? "[redacted]" : redactMetadataValue(nestedValue),
-      ],
-    );
+    const redactedEntries = Object.entries(
+      value as Record<string, unknown>,
+    ).map(([key, nestedValue]) => [
+      key,
+      isSensitiveMetadataKey(key)
+        ? "[redacted]"
+        : redactMetadataValue(nestedValue),
+    ]);
 
     return Object.fromEntries(redactedEntries);
   }

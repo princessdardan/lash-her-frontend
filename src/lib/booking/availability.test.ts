@@ -163,13 +163,18 @@ test("buildBookingSlots treats active private holds as busy intervals", () => {
   const activeHold: BookingHoldRecord = {
     bookingType: "in-person-appointment",
     createdAt: now,
-    customer: { email: "client@example.com", name: "Client Name", phone: "555-555-5555" },
+    customer: {
+      email: "client@example.com",
+      name: "Client Name",
+      phone: "555-555-5555",
+    },
     expiresAt: new Date("2026-05-09T12:10:00.000Z"),
     googleEventId: null,
     id: "hold-1",
     offeringId: "service-classic-fill",
     offeringSnapshot: { title: "Classic Fill" },
     payment: null,
+    paymentSessionReference: "pay_sess_1",
     publicReference: "hold_1",
     selectedEnd: new Date("2026-05-10T14:45:00.000Z"),
     selectedStart: new Date("2026-05-10T14:15:00.000Z"),
@@ -188,6 +193,12 @@ test("buildBookingSlots treats active private holds as busy intervals", () => {
     horizonEnd,
   });
 
-  assert.equal(slots.some((slot) => slot.start === "2026-05-10T14:15:00.000Z"), false);
-  assert.equal(slots.some((slot) => slot.start === "2026-05-10T14:45:00.000Z"), true);
+  assert.equal(
+    slots.some((slot) => slot.start === "2026-05-10T14:15:00.000Z"),
+    false,
+  );
+  assert.equal(
+    slots.some((slot) => slot.start === "2026-05-10T14:45:00.000Z"),
+    true,
+  );
 });

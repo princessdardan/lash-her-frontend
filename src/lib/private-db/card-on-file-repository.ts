@@ -1199,6 +1199,7 @@ function toBookingHoldRecord(
   return {
     id: row.id,
     publicReference: row.publicReference,
+    paymentSessionReference: row.paymentSessionReference,
     state: row.status as BookingHoldState,
     expiresAt: row.expiresAt,
     selectedStart: row.selectedStart,

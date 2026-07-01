@@ -23,7 +23,10 @@ test("buildBookingEventPayload creates the booking event without conference data
     timezone: "America/New_York",
   });
 
-  assert.equal(event.summary, "Lash Her booking: Training sign-up call — Jane Client");
+  assert.equal(
+    event.summary,
+    "Lash Her booking: Training sign-up call — Jane Client",
+  );
   assert.deepEqual(event.attendees, [
     { email: "jane@example.com", displayName: "Jane Client" },
   ]);
@@ -40,7 +43,6 @@ test("buildBookingEventPayload creates the booking event without conference data
   });
   assert.deepEqual(event.reminders, { useDefault: true });
 });
-
 
 test("buildBookingEventPayload includes deterministic private booking metadata", () => {
   const event = buildBookingEventPayload({
@@ -88,7 +90,9 @@ test("buildBookingEventPayload includes selected add-on balance copy for staff o
     },
     answers: [],
     hold: createHold({
-      offeringSnapshot: createOfferingSnapshot({ purpose: "appointment_deposit" }),
+      offeringSnapshot: createOfferingSnapshot({
+        purpose: "appointment_deposit",
+      }),
     }),
     start: new Date("2026-05-10T14:00:00.000Z"),
     end: new Date("2026-05-10T14:30:00.000Z"),
@@ -125,7 +129,9 @@ test("buildBookingEventPayload includes selected add-on included copy for staff 
   assert.match(event.description ?? "", /add-on included in payment/i);
 });
 
-function createOfferingSnapshot(input: { purpose: "appointment_deposit" | "appointment_full" }): Record<string, unknown> {
+function createOfferingSnapshot(input: {
+  purpose: "appointment_deposit" | "appointment_full";
+}): Record<string, unknown> {
   return {
     currency: "CAD",
     selectedAddOn: {
@@ -137,27 +143,42 @@ function createOfferingSnapshot(input: { purpose: "appointment_deposit" | "appoi
     },
     selectedPayment: {
       amount: input.purpose === "appointment_full" ? 125 : 50,
-      description: input.purpose === "appointment_full" ? "Lash Fill full payment" : "Lash Fill deposit",
+      description:
+        input.purpose === "appointment_full"
+          ? "Lash Fill full payment"
+          : "Lash Fill deposit",
       purpose: input.purpose,
-      sku: input.purpose === "appointment_full" ? "BOOKING-FULL" : "BOOKING-DEPOSIT",
+      sku:
+        input.purpose === "appointment_full"
+          ? "BOOKING-FULL"
+          : "BOOKING-DEPOSIT",
     },
     title: "Lash Fill",
   };
 }
 
-function createHold(overrides: Partial<BookingHoldRecord> = {}): BookingHoldRecord {
+function createHold(
+  overrides: Partial<BookingHoldRecord> = {},
+): BookingHoldRecord {
   return {
     bookingType: "in-person-appointment",
     createdAt: new Date("2026-05-18T12:00:00.000Z"),
-    customer: { email: "client@example.com", name: "Client Name", phone: "555-555-5555" },
+    customer: {
+      email: "client@example.com",
+      name: "Client Name",
+      phone: "555-555-5555",
+    },
     expiresAt: new Date("2026-05-18T12:10:00.000Z"),
     finalizationStatus: "pending",
     googleEventId: null,
     id: "hold-1",
     offeringId: "lash-fill",
-    offeringSnapshot: createOfferingSnapshot({ purpose: "appointment_deposit" }),
+    offeringSnapshot: createOfferingSnapshot({
+      purpose: "appointment_deposit",
+    }),
     payment: null,
     paymentProvider: "square",
+    paymentSessionReference: "pay_sess_1",
     publicReference: "hold_1",
     selectedEnd: new Date("2026-05-19T14:30:00.000Z"),
     selectedStart: new Date("2026-05-19T14:00:00.000Z"),
