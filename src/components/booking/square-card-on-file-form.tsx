@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import {
   SERVICE_NO_SHOW_POLICY_TEXT,
@@ -8,9 +8,9 @@ import {
 } from "@/lib/booking/payments/service-no-show-policy-copy";
 
 interface SquareCardOnFileFormProps {
-  holdReference: string;
   cardholderName: string;
   maxChargeCents: number;
+  paymentSessionReference: string;
   onSuccess: (result: CardOnFileConfirmationResult) => void;
   onError: (message: string) => void;
   onHoldExpired?: () => void;
@@ -99,17 +99,20 @@ export async function fetchSquareCardOnFileConfig(
 }
 
 export function SquareCardOnFileForm({
-  holdReference,
   cardholderName,
   maxChargeCents,
+  paymentSessionReference,
   onSuccess,
   onError,
   onHoldExpired,
   onConfigUnavailable,
 }: SquareCardOnFileFormProps) {
+  const reactId = useId();
+  const cardContainerId = `square-card-container-${reactId.replace(/:/g, "")}`;
   const [isConfigLoading, setIsConfigLoading] = useState(true);
   const [isInitializing, setIsInitializing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCardReady, setIsCardReady] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [policyAccepted, setPolicyAccepted] = useState(false);
   const [config, setConfig] = useState<SquareConfigResponse | null>(null);
@@ -170,6 +173,7 @@ export function SquareCardOnFileForm({
 
     async function initializeSquare() {
       setIsInitializing(true);
+      setIsCardReady(false);
       setErrorMessage("");
 
       try {
@@ -190,7 +194,12 @@ export function SquareCardOnFileForm({
           return;
         }
 
-        await card.attach("#square-card-container");
+        try {
+          await card.attach(`#${cardContainerId}`);
+        } catch (attachError: unknown) {
+          card.destroy();
+          throw attachError;
+        }
 
         if (isCancelled) {
           card.destroy();
@@ -198,12 +207,14 @@ export function SquareCardOnFileForm({
         }
 
         cardRef.current = card;
+        setIsCardReady(true);
         setIsInitializing(false);
       } catch (error: unknown) {
         if (isCancelled) {
           return;
         }
 
+        setIsCardReady(false);
         setIsInitializing(false);
         setErrorMessage(
           error instanceof Error
@@ -220,7 +231,7 @@ export function SquareCardOnFileForm({
       cardRef.current?.destroy();
       cardRef.current = null;
     };
-  }, [config]);
+  }, [config, cardContainerId]);
 
   const handleSaveCard = async () => {
     if (!policyAccepted) {
@@ -269,7 +280,7 @@ export function SquareCardOnFileForm({
       }
 
       const result = await confirmCardOnFileBooking({
-        holdReference,
+        paymentSessionReference,
         cardholderName,
         sourceId: tokenizeResult.token,
         verificationToken: tokenizeResult.verificationToken,
@@ -299,17 +310,9 @@ export function SquareCardOnFileForm({
     }
   };
 
-  if (isConfigLoading || isInitializing) {
-    return (
-      <div className="rounded-[18px] border border-lh-line bg-lh-neutral-2 p-5 text-center shadow-sm">
-        <p className="font-body text-sm font-bold leading-6 text-lh-muted">
-          Loading secure card form...
-        </p>
-      </div>
-    );
-  }
+  const isConfigUnavailable = config === null && !isConfigLoading;
 
-  if (config === null) {
+  if (isConfigUnavailable) {
     return null;
   }
 
@@ -328,8 +331,14 @@ export function SquareCardOnFileForm({
       </div>
 
       <div className="space-y-5">
+        {(isConfigLoading || isInitializing) && (
+          <p className="text-center font-body text-sm font-bold leading-6 text-lh-muted">
+            Loading secure card form...
+          </p>
+        )}
+
         <section
-          id="square-card-container"
+          id={cardContainerId}
           className="min-h-[120px] rounded-xl border border-lh-line bg-white p-4"
           aria-label="Secure card entry"
         />
@@ -362,7 +371,9 @@ export function SquareCardOnFileForm({
 
         <button
           type="button"
-          disabled={isSubmitting}
+          disabled={
+            isSubmitting || isConfigLoading || isInitializing || !isCardReady
+          }
           onClick={handleSaveCard}
           className="w-full rounded-full bg-lh-primary px-7 py-4 font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-white transition-colors hover:bg-lh-accent disabled:cursor-not-allowed disabled:opacity-60"
         >
@@ -460,8 +471,8 @@ export class BookingHoldExpiredError extends Error {
 interface CardOnFileBookingRequestBody {
   cardholderName: string;
   fetcher?: typeof fetch;
-  holdReference: string;
   idempotencyKey: string;
+  paymentSessionReference: string;
   policy: {
     accepted: true;
     maxChargeCents: number;
@@ -477,7 +488,7 @@ export async function confirmCardOnFileBooking(
 ): Promise<CardOnFileConfirmationResult> {
   const fetcher = input.fetcher ?? fetch;
   const body = {
-    holdReference: input.holdReference,
+    paymentSessionReference: input.paymentSessionReference,
     cardholderName: input.cardholderName,
     sourceId: input.sourceId,
     verificationToken: input.verificationToken,

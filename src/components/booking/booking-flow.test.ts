@@ -5,10 +5,10 @@ import { describe, it } from "node:test";
 import {
   confirmCardOnFileBooking,
   fetchSquareCardOnFileConfig,
-  startLegacySquareCheckout,
-  createBookingHold,
-} from "./booking-flow";
-import { loadSquareScript } from "./square-card-on-file-form";
+  loadSquareScript,
+} from "./square-card-on-file-form";
+import { createBookingHold } from "./booking-flow";
+import { startLegacySquareCheckout } from "./service-booking-payment-client";
 
 const bookingFlowSource = readFileSync(
   new URL("./booking-flow.tsx", import.meta.url),
@@ -16,6 +16,14 @@ const bookingFlowSource = readFileSync(
 );
 const cardOnFileFormSource = readFileSync(
   new URL("./square-card-on-file-form.tsx", import.meta.url),
+  "utf8",
+);
+const serviceBookingPaymentShellSource = readFileSync(
+  new URL("./service-booking-payment-shell.tsx", import.meta.url),
+  "utf8",
+);
+const serviceBookingPaymentClientSource = readFileSync(
+  new URL("./service-booking-payment-client.ts", import.meta.url),
   "utf8",
 );
 const bookingPageSource = readFileSync(
@@ -393,6 +401,46 @@ describe("booking service flow contract", () => {
     assert.match(cardOnFileFormSource, /maxChargeCents/);
   });
 
+  it("keeps the Square card container mounted while initializing", () => {
+    assert.doesNotMatch(
+      cardOnFileFormSource,
+      /if \(isConfigLoading \|\| isInitializing\) \{[\s\S]*?return \(/,
+    );
+    assert.match(cardOnFileFormSource, /cardContainerId/);
+    assert.match(
+      cardOnFileFormSource,
+      /await card\.attach\(`#\$\{cardContainerId\}`\)/,
+    );
+
+    const cardContainerIndex = cardOnFileFormSource.indexOf("cardContainerId");
+    const earlyConfigNullReturn = cardOnFileFormSource.indexOf(
+      "if (config === null) return null",
+    );
+    assert.ok(
+      earlyConfigNullReturn === -1 ||
+        cardContainerIndex < earlyConfigNullReturn,
+      "card container must be rendered before any config-unavailable early return",
+    );
+  });
+
+  it("cleans up a created Square card when attach fails", () => {
+    // The attach call must be wrapped so a rejection destroys the card instance
+    // before the error propagates; otherwise Square iframes/state may leak.
+    assert.match(
+      cardOnFileFormSource,
+      /try \{\s*await card\.attach\(`#\$\{cardContainerId\}`\);\s*\} catch \(attachError: unknown\) \{\s*card\.destroy\(\);\s*throw attachError;\s*\}/,
+    );
+  });
+
+  it("starts legacy checkout at most once when Square config is unavailable", () => {
+    assert.match(serviceBookingPaymentShellSource, /isStartingFallbackRef/);
+    assert.match(
+      serviceBookingPaymentShellSource,
+      /if \(isStartingFallbackRef\.current\) return;/,
+    );
+    assert.match(serviceBookingPaymentShellSource, /isMountedRef\.current/);
+  });
+
   it("does not nest a form inside the parent booking form", () => {
     assert.doesNotMatch(cardOnFileFormSource, /<form\b/);
     assert.doesNotMatch(cardOnFileFormSource, /<form\s/);
@@ -410,10 +458,13 @@ describe("booking service flow contract", () => {
 
   it("keeps legacy Square checkout fallback exported for payment shell reuse", () => {
     assert.match(
-      bookingFlowSource,
+      serviceBookingPaymentClientSource,
       /export async function startLegacySquareCheckout/,
     );
-    assert.match(bookingFlowSource, /fetcher\("\/api\/booking\/checkout"/);
+    assert.match(
+      serviceBookingPaymentClientSource,
+      /\("\/api\/booking\/checkout"/,
+    );
   });
 
   it("fetches Square card-on-file config and returns null when disabled", async () => {
@@ -476,7 +527,7 @@ describe("booking service flow contract", () => {
     };
 
     const result = await confirmCardOnFileBooking({
-      holdReference: "hold_public_1",
+      paymentSessionReference: "pay_sess_test_1",
       cardholderName: "Client Name",
       sourceId: "cnon:card-token",
       verificationToken: "verf-token",
@@ -500,7 +551,7 @@ describe("booking service flow contract", () => {
       {
         url: "/api/booking/card-on-file",
         body: {
-          holdReference: "hold_public_1",
+          paymentSessionReference: "pay_sess_test_1",
           cardholderName: "Client Name",
           sourceId: "cnon:card-token",
           verificationToken: "verf-token",
@@ -526,7 +577,7 @@ describe("booking service flow contract", () => {
 
     await assert.rejects(
       confirmCardOnFileBooking({
-        holdReference: "hold_public_1",
+        paymentSessionReference: "pay_sess_test_1",
         cardholderName: "Client Name",
         sourceId: "cnon:card-token",
         verificationToken: "verf-token",
@@ -603,8 +654,12 @@ describe("booking service flow contract", () => {
   });
 
   it("starts legacy Square checkout as fallback when card-on-file is unavailable", async () => {
-    const fetcher: typeof fetch = async (input) => {
-      if (input.toString() === "/api/booking/checkout") {
+    const requests: Array<{ url: string; body: unknown }> = [];
+    const fetcher: typeof fetch = async (input, init) => {
+      const url = input.toString();
+      requests.push({ url, body: parseJsonBody(init?.body) });
+
+      if (url === "/api/booking/checkout") {
         return Response.json({
           checkoutUrl: "https://square.link/u/fallback",
           holdReference: "hold_public_fallback",
@@ -618,13 +673,19 @@ describe("booking service flow contract", () => {
     };
 
     const checkout = await startLegacySquareCheckout(
-      "hold_public_fallback",
+      "pay_sess_fallback_1",
       fetcher,
     );
 
     assert.equal(checkout.checkoutUrl, "https://square.link/u/fallback");
     assert.equal(checkout.holdReference, "hold_public_fallback");
     assert.equal(checkout.reused, true);
+    assert.deepEqual(requests, [
+      {
+        url: "/api/booking/checkout",
+        body: { paymentSessionReference: "pay_sess_fallback_1" },
+      },
+    ]);
   });
 });
 

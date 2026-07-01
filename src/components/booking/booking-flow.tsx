@@ -51,16 +51,6 @@ interface PaidServiceCheckoutInput {
   start: string;
 }
 
-interface PaidServiceCheckoutResult {
-  checkoutUrl: string;
-  holdReference: string;
-  orderId: string;
-  paymentProvider: "square";
-  reused: boolean;
-  squareOrderId?: string;
-  squarePaymentLinkId?: string;
-}
-
 const VISIBLE_DATE_COUNT = 7;
 
 interface BookingFlowProps {
@@ -995,56 +985,6 @@ export async function createBookingHold(
   }
 
   return { paymentPageUrl, paymentSessionReference };
-}
-
-export async function startLegacySquareCheckout(
-  holdReference: string,
-  fetcher: typeof fetch = fetch,
-): Promise<PaidServiceCheckoutResult> {
-  const checkoutRes = await fetcher("/api/booking/checkout", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ holdReference }),
-  });
-
-  if (!checkoutRes.ok) {
-    const data = await checkoutRes.json();
-
-    if (checkoutRes.status === 409) {
-      throw new BookingHoldExpiredError();
-    }
-
-    throw new Error(readResponseError(data, "Failed to start checkout"));
-  }
-
-  const checkoutData = (await checkoutRes.json()) as Record<string, unknown>;
-
-  if (
-    checkoutData.paymentProvider !== "square" ||
-    typeof checkoutData.checkoutUrl !== "string" ||
-    checkoutData.checkoutUrl.length === 0 ||
-    typeof checkoutData.holdReference !== "string" ||
-    checkoutData.holdReference.length === 0 ||
-    typeof checkoutData.orderId !== "string" ||
-    checkoutData.orderId.length === 0 ||
-    typeof checkoutData.reused !== "boolean"
-  ) {
-    throw new Error("Failed to start checkout");
-  }
-
-  return {
-    checkoutUrl: checkoutData.checkoutUrl,
-    holdReference: checkoutData.holdReference,
-    orderId: checkoutData.orderId,
-    paymentProvider: "square",
-    reused: checkoutData.reused,
-    ...(typeof checkoutData.squareOrderId === "string"
-      ? { squareOrderId: checkoutData.squareOrderId }
-      : {}),
-    ...(typeof checkoutData.squarePaymentLinkId === "string"
-      ? { squarePaymentLinkId: checkoutData.squarePaymentLinkId }
-      : {}),
-  };
 }
 
 function readResponseError(data: unknown, fallback: string): string {
