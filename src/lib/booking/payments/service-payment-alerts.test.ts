@@ -168,3 +168,33 @@ test("service payment alerts redact source-related context keys while keeping sq
   assert.equal(payload.context.paymentSourceId, "[redacted]");
   assert.equal(payload.context.cardSourceId, "[redacted]");
 });
+
+test("service payment alerts redact payment session references", async () => {
+  const calls: unknown[] = [];
+  const alerts = createServicePaymentAlertLogger({
+    logError: (...args: unknown[]) => calls.push(args),
+  });
+
+  await alerts.alert({
+    category: "square_card_save_failed",
+    severity: "error",
+    message: "Card-on-file lookup failed",
+    context: {
+      paymentSessionReference: "pay_sess_do_not_log",
+      sessionReference: "pay_sess_nested_do_not_log",
+      squarePaymentId: "square-payment-visible",
+    },
+  });
+
+  assert.equal(calls.length, 1);
+  const payload = (calls[0] as unknown[])[1] as {
+    context: {
+      paymentSessionReference: unknown;
+      sessionReference: unknown;
+      squarePaymentId: unknown;
+    };
+  };
+  assert.equal(payload.context.paymentSessionReference, "[redacted]");
+  assert.equal(payload.context.sessionReference, "[redacted]");
+  assert.equal(payload.context.squarePaymentId, "square-payment-visible");
+});

@@ -44,7 +44,8 @@ export interface ServicePaymentAlertLogger {
   alert(input: ServicePaymentAlertInput): void;
 }
 
-const SENSITIVE_KEY_PATTERN = /card|token|secret|cvv|cvc|pan|raw|source/i;
+const SENSITIVE_KEY_PATTERN =
+  /card|token|secret|cvv|cvc|pan|raw|source|paymentSessionReference|sessionReference/i;
 
 // Provider reference identifiers may contain substrings like "card" or "payment"
 // but are not secret values. Keep them visible in alerts for reconciliation.
