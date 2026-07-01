@@ -130,7 +130,8 @@ interface FakeRepositoryState {
   calendarCalls: unknown[];
   noShowInstrumentCalls: unknown[];
   beginCardOnFileConfirmationCalls: Array<{
-    publicReference: string;
+    publicReference?: string;
+    paymentSessionReference?: string;
     idempotencyKey: string;
     now: Date;
   }>;
@@ -160,7 +161,11 @@ function createFakeRepository(
     async beginCardOnFileConfirmation(input) {
       state.beginCardOnFileConfirmationCalls.push(input);
       const hold = state.holds.find(
-        (h) => h.publicReference === input.publicReference,
+        (h) =>
+          (input.paymentSessionReference !== undefined &&
+            h.paymentSessionReference === input.paymentSessionReference) ||
+          (input.publicReference !== undefined &&
+            h.publicReference === input.publicReference),
       );
       if (!hold) return { status: "unavailable" };
 
@@ -779,6 +784,61 @@ test("rejects missing policy acceptance", async () => {
   }
 });
 
+test("rejects blank, non-string, or both reference values", async (t) => {
+  const invalidCases: Array<{
+    label: string;
+    overrides: Partial<CardOnFileBookingRequestBody>;
+  }> = [
+    { label: "missing both", overrides: { holdReference: undefined } },
+    { label: "empty holdReference", overrides: { holdReference: "" } },
+    {
+      label: "blank holdReference",
+      overrides: { holdReference: "   " },
+    },
+    {
+      label: "empty paymentSessionReference",
+      overrides: { holdReference: undefined, paymentSessionReference: "" },
+    },
+    {
+      label: "blank paymentSessionReference",
+      overrides: { holdReference: undefined, paymentSessionReference: "   " },
+    },
+    {
+      label: "non-string holdReference",
+      overrides: { holdReference: 12345 as unknown as string },
+    },
+    {
+      label: "non-string paymentSessionReference",
+      overrides: {
+        holdReference: undefined,
+        paymentSessionReference: 12345 as unknown as string,
+      },
+    },
+    {
+      label: "both references",
+      overrides: {
+        holdReference: "hold_public_1",
+        paymentSessionReference: "pay_sess_1",
+      },
+    },
+  ];
+
+  for (const { label, overrides } of invalidCases) {
+    await t.test(label, async () => {
+      const { result } = await runSaga(createRequest(overrides));
+
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.equal(result.error, "invalid_request");
+        assert.equal(
+          result.message,
+          "A valid booking payment session is required",
+        );
+      }
+    });
+  }
+});
+
 test("rejects expired hold", async () => {
   const { result } = await runSaga(createRequest(), {
     initialHolds: [
@@ -836,6 +896,70 @@ test("creates Square customer, card, policy, no-show record, finalizes Calendar,
   const hold = state.holds[0];
   assert.equal(hold.state, "booked");
   assert.equal(hold.googleEventId, "event-hold-internal-1");
+});
+
+test("resolves hold by paymentSessionReference without passing holdReference to repository", async () => {
+  const { repository, state } = createFakeRepository();
+
+  repository.beginCardOnFileConfirmation = async (input) => {
+    state.beginCardOnFileConfirmationCalls.push(input);
+    assert.equal(input.paymentSessionReference, "pay_sess_1");
+    assert.equal(input.publicReference, undefined);
+
+    const hold = state.holds.find(
+      (h) => h.paymentSessionReference === input.paymentSessionReference,
+    );
+    if (!hold) return { status: "unavailable" };
+
+    const metadata = (hold.reconciliationMetadata ?? {}) as Record<
+      string,
+      unknown
+    >;
+    const confirmation = metadata.cardOnFileConfirmation as
+      | ExistingCardOnFileConfirmation
+      | undefined;
+    if (confirmation !== undefined) {
+      return { status: "confirmed", confirmation };
+    }
+
+    const inProgress = metadata.cardOnFileInProgress as
+      | { startedAt?: string; idempotencyKey?: string }
+      | undefined;
+    if (isActiveMarker(inProgress, input.now)) {
+      return { status: "in_progress" };
+    }
+
+    hold.reconciliationMetadata = {
+      ...hold.reconciliationMetadata,
+      cardOnFileInProgress: {
+        startedAt: input.now.toISOString(),
+        idempotencyKey: input.idempotencyKey,
+      },
+    };
+
+    return { status: "available", hold: { ...hold } };
+  };
+
+  const { result } = await runSaga(
+    createRequest({
+      holdReference: undefined,
+      paymentSessionReference: "pay_sess_1",
+    }),
+    { repository },
+  );
+
+  const success = assertSuccess(result);
+  assert.equal(success.bookingStatus, "booked");
+  assert.equal(success.holdReference, "hold_public_1");
+  assert.equal(state.beginCardOnFileConfirmationCalls.length, 1);
+  assert.equal(
+    state.beginCardOnFileConfirmationCalls[0].paymentSessionReference,
+    "pay_sess_1",
+  );
+  assert.equal(
+    state.beginCardOnFileConfirmationCalls[0].publicReference,
+    undefined,
+  );
 });
 
 test("persists server-computed policy evidence even when client includes tampered hash/version", async () => {

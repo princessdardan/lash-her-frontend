@@ -71,7 +71,17 @@ export async function createCardOnFileDrizzleRepository(
         const [row] = await tx
           .select()
           .from(appointmentHolds)
-          .where(eq(appointmentHolds.publicReference, input.publicReference))
+          .where(
+            input.paymentSessionReference !== undefined
+              ? eq(
+                  appointmentHolds.paymentSessionReference,
+                  input.paymentSessionReference,
+                )
+              : eq(
+                  appointmentHolds.publicReference,
+                  input.publicReference ?? "",
+                ),
+          )
           .limit(1)
           .for("update");
 

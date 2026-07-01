@@ -19,6 +19,13 @@ interface CardOnFilePostHandlerDependencies {
   ) => Promise<CardOnFileBookingResult>;
 }
 
+class CardOnFileRouteValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CardOnFileRouteValidationError";
+  }
+}
+
 export function createCardOnFilePostHandler(
   dependencies: CardOnFilePostHandlerDependencies,
 ): (req: NextRequest) => Promise<Response> {
@@ -37,6 +44,10 @@ export function createCardOnFilePostHandler(
 
     if (request === null) {
       return invalidRequestResponse("Invalid booking confirmation request");
+    }
+
+    if (request instanceof CardOnFileRouteValidationError) {
+      return invalidRequestResponse(request.message);
     }
 
     const result = await dependencies.runCardOnFileBooking(request);
@@ -179,19 +190,30 @@ async function createDefaultCardOnFileBookingRunner(
 function parseCardOnFileBookingRequest(
   req: NextRequest,
   body: unknown,
-): CardOnFileBookingRequestBody | null {
+): CardOnFileBookingRequestBody | null | CardOnFileRouteValidationError {
   if (!isRecord(body)) {
     return null;
   }
 
-  const holdReference = parseRequiredString(body.holdReference);
+  const holdReference = parseOptionalString(body.holdReference);
+  const paymentSessionReference = parseOptionalString(
+    body.paymentSessionReference,
+  );
   const cardholderName = parseRequiredString(body.cardholderName);
   const idempotencyKey = parseRequiredString(body.idempotencyKey);
   const sourceId = parseRequiredString(body.sourceId);
   const policy = parsePolicy(body.policy);
 
   if (
-    holdReference === null ||
+    (holdReference === undefined) ===
+    (paymentSessionReference === undefined)
+  ) {
+    return new CardOnFileRouteValidationError(
+      "A valid booking payment session is required",
+    );
+  }
+
+  if (
     cardholderName === null ||
     idempotencyKey === null ||
     sourceId === null ||
@@ -209,6 +231,7 @@ function parseCardOnFileBookingRequest(
     holdReference,
     idempotencyKey,
     ipAddress,
+    paymentSessionReference,
     policy,
     sourceId,
     userAgent,

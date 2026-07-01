@@ -362,6 +362,130 @@ test("factory ignores client-supplied billingPostalCode", async () => {
   assert.equal("billingPostalCode" in (capturedInput ?? {}), false);
 });
 
+test("factory accepts paymentSessionReference without holdReference", async () => {
+  let capturedInput: CardOnFileBookingRequestBody | undefined;
+
+  const { handler } = createHandler({
+    runCardOnFileBooking: async (input) => {
+      capturedInput = input;
+      return {
+        ok: true,
+        bookingStatus: "booked",
+        card: { brand: "VISA", expMonth: 12, expYear: 2030, last4: "4242" },
+        holdReference: "hold_public_1",
+        noShowChargeStatus: "ready",
+      };
+    },
+  });
+
+  const response = await handler(
+    new NextRequest("http://localhost:3000/api/booking/card-on-file", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        cardholderName: "Client Name",
+        paymentSessionReference: "pay_sess_1",
+        idempotencyKey: "idem-key-1",
+        policy: { accepted: true, maxChargeCents: 15000 },
+        sourceId: "cnon:card-token",
+      }),
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(capturedInput?.paymentSessionReference, "pay_sess_1");
+  assert.equal(capturedInput?.holdReference, undefined);
+});
+
+const sharedReferenceValidationBody = {
+  cardholderName: "Client Name",
+  idempotencyKey: "idem-key-1",
+  policy: { accepted: true, maxChargeCents: 15000 },
+  sourceId: "cnon:card-token",
+};
+
+test("factory returns 400 when neither holdReference nor paymentSessionReference is provided", async () => {
+  const { handler, alertCalls } = createHandler();
+
+  const response = await handler(
+    new NextRequest("http://localhost:3000/api/booking/card-on-file", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(sharedReferenceValidationBody),
+    }),
+  );
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: "A valid booking payment session is required",
+  });
+  assert.equal(alertCalls.length, 0);
+});
+
+test("factory returns 400 when both holdReference and paymentSessionReference are provided", async () => {
+  const { handler, alertCalls } = createHandler();
+
+  const response = await handler(
+    new NextRequest("http://localhost:3000/api/booking/card-on-file", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ...sharedReferenceValidationBody,
+        holdReference: "hold_public_1",
+        paymentSessionReference: "pay_sess_1",
+      }),
+    }),
+  );
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: "A valid booking payment session is required",
+  });
+  assert.equal(alertCalls.length, 0);
+});
+
+test("factory returns 400 when holdReference is empty and paymentSessionReference is missing", async () => {
+  const { handler, alertCalls } = createHandler();
+
+  const response = await handler(
+    new NextRequest("http://localhost:3000/api/booking/card-on-file", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ...sharedReferenceValidationBody,
+        holdReference: "   ",
+      }),
+    }),
+  );
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: "A valid booking payment session is required",
+  });
+  assert.equal(alertCalls.length, 0);
+});
+
+test("factory returns 400 when paymentSessionReference is empty and holdReference is missing", async () => {
+  const { handler, alertCalls } = createHandler();
+
+  const response = await handler(
+    new NextRequest("http://localhost:3000/api/booking/card-on-file", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ...sharedReferenceValidationBody,
+        paymentSessionReference: "",
+      }),
+    }),
+  );
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: "A valid booking payment session is required",
+  });
+  assert.equal(alertCalls.length, 0);
+});
+
 function createHandler(
   overrides: Partial<{
     runCardOnFileBooking: (

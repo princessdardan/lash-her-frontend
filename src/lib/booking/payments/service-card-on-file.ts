@@ -41,7 +41,8 @@ export class CardOnFileSquareApiError extends Error {
 
 export interface CardOnFileBookingRequestBody {
   cardholderName: string;
-  holdReference: string;
+  holdReference?: string;
+  paymentSessionReference?: string;
   idempotencyKey: string;
   ipAddress?: string;
   policy: {
@@ -134,7 +135,8 @@ export type BeginCardOnFileConfirmationResult =
 
 export interface CardOnFileRepository extends NoShowInvoiceRepository {
   beginCardOnFileConfirmation(input: {
-    publicReference: string;
+    publicReference?: string;
+    paymentSessionReference?: string;
     idempotencyKey: string;
     now: Date;
   }): Promise<BeginCardOnFileConfirmationResult>;
@@ -289,6 +291,7 @@ export async function confirmCardOnFileBooking(
   try {
     beginResult = await dependencies.repository.beginCardOnFileConfirmation({
       publicReference: input.holdReference,
+      paymentSessionReference: input.paymentSessionReference,
       idempotencyKey: input.idempotencyKey,
       now,
     });
@@ -299,6 +302,7 @@ export async function confirmCardOnFileBooking(
       {
         error: getErrorMessage(error),
         holdReference: input.holdReference,
+        paymentSessionReference: input.paymentSessionReference,
       },
     );
 
@@ -1104,11 +1108,15 @@ function validateCardOnFileBookingRequest(
     return "Cardholder name is required";
   }
 
-  if (
-    typeof body.holdReference !== "string" ||
-    body.holdReference.trim().length === 0
-  ) {
-    return "Hold reference is required";
+  const hasHoldReference =
+    typeof body.holdReference === "string" &&
+    body.holdReference.trim().length > 0;
+  const hasPaymentSessionReference =
+    typeof body.paymentSessionReference === "string" &&
+    body.paymentSessionReference.trim().length > 0;
+
+  if (hasHoldReference === hasPaymentSessionReference) {
+    return "A valid booking payment session is required";
   }
 
   if (
