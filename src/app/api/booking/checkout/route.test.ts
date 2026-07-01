@@ -56,6 +56,7 @@ const helperScript = String.raw`
     const releasedHolds = [];
     const squareCheckouts = [];
     const fetchedReferences = [];
+    const fetchedPaymentSessionReferences = [];
     const handler = createBookingCheckoutPostHandler({
       createSquareServiceBookingCheckout: async (input) => {
         squareCheckouts.push(input);
@@ -69,6 +70,10 @@ const helperScript = String.raw`
           squarePaymentLinkId: "square-payment-link-1",
         };
       },
+      getAppointmentHoldByPaymentSessionReference: async (reference) => {
+        fetchedPaymentSessionReferences.push(reference);
+        return null;
+      },
       getAppointmentHoldByPublicReference: async (reference) => {
         fetchedReferences.push(reference);
         return createHold();
@@ -80,13 +85,36 @@ const helperScript = String.raw`
       ...overrides,
     });
 
-    return { fetchedReferences, handler, releasedHolds, squareCheckouts };
+    return { fetchedPaymentSessionReferences, fetchedReferences, handler, releasedHolds, squareCheckouts };
   }
 
   async function parseJson(response) {
     return response.json();
   }
 `;
+
+test("booking checkout starts from payment session reference", () => {
+  runRouteScenario(`
+    const fetchedPaymentSessionReferences = [];
+    const { fetchedReferences, handler, squareCheckouts } = runScenario({
+      getAppointmentHoldByPaymentSessionReference: async (reference) => {
+        fetchedPaymentSessionReferences.push(reference);
+        return createHold({ paymentSessionReference: "pay_sess_1" });
+      },
+      getAppointmentHoldByPublicReference: async () => null,
+    });
+
+    const response = await handler(createRequest({ paymentSessionReference: "pay_sess_1" }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 200);
+    assert.equal(body.checkoutUrl, "https://square.link/u/service-checkout");
+    assert.deepEqual(fetchedPaymentSessionReferences, ["pay_sess_1"]);
+    assert.deepEqual(fetchedReferences, []);
+    assert.equal(squareCheckouts.length, 1);
+    assert.equal(squareCheckouts[0].hold.paymentSessionReference, "pay_sess_1");
+  `);
+});
 
 test("booking checkout returns a Square hosted checkout URL for a held deposit appointment", () => {
   runRouteScenario(`
@@ -318,13 +346,9 @@ function runRouteScenario(assertions: string): void {
   env.NEXT_PUBLIC_SANITY_DATASET = "test";
   env.NEXT_PUBLIC_SANITY_PROJECT_ID = "test-project";
 
-  execFileSync(
-    "./node_modules/.bin/tsx",
-    ["--eval", scenario],
-    {
-      cwd: process.cwd(),
-      env,
-      stdio: "pipe",
-    },
-  );
+  execFileSync("./node_modules/.bin/tsx", ["--eval", scenario], {
+    cwd: process.cwd(),
+    env,
+    stdio: "pipe",
+  });
 }
