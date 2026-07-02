@@ -392,12 +392,6 @@ export function ServiceBookingPaymentForm({
           <p className="mb-2 text-sm font-medium text-black">
             No-show &amp; late cancellation policy
           </p>
-          <p className="text-sm text-lh-muted">
-            Maximum no-show amount:{" "}
-            {isPaymentSelectionValid
-              ? formatCad(selectedPayment.payment.amountCents / 100)
-              : "—"}
-          </p>
           <p className="mt-2 text-sm leading-snug text-lh-muted">
             {SERVICE_NO_SHOW_POLICY_TEXT}
           </p>
@@ -468,9 +462,7 @@ function generateIdempotencyKey(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function isCardDisplay(
-  value: unknown,
-): value is {
+function isCardDisplay(value: unknown): value is {
   brand?: string;
   expMonth?: number;
   expYear?: number;
