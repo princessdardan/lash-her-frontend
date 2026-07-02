@@ -256,6 +256,19 @@ test("getCanonicalServiceNoShowPolicyEvidence uses server policy text and versio
   assert.equal(result.userAgentHash, sha256Hex(userAgent));
 });
 
+test("SERVICE_NO_SHOW_POLICY_TEXT does not say no payment will be taken today", () => {
+  assert.equal(
+    /No payment will be taken today/i.test(SERVICE_NO_SHOW_POLICY_TEXT),
+    false,
+  );
+});
+
+test("SERVICE_NO_SHOW_POLICY_TEXT states today's booking payment is charged and card is stored", () => {
+  assert.match(SERVICE_NO_SHOW_POLICY_TEXT, /today['’]s booking payment/i);
+  assert.match(SERVICE_NO_SHOW_POLICY_TEXT, /charge/i);
+  assert.match(SERVICE_NO_SHOW_POLICY_TEXT, /store/i);
+});
+
 test("getCanonicalServiceNoShowPolicyEvidence omits hashes when IP/UA are absent", () => {
   const result = getCanonicalServiceNoShowPolicyEvidence({
     acceptedAt: new Date("2026-06-19T12:00:00.000Z"),

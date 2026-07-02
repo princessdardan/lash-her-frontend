@@ -106,6 +106,121 @@ test("Square payments client uses production base URL when configured", () => {
   `);
 });
 
+test("createCardOnFilePayment posts verification_token, autocomplete false, and source_id", () => {
+  runPaymentsClientScenario(`
+    const requests = [];
+    globalThis.fetch = async (url, init) => {
+      requests.push({ url, init });
+      return new Response(JSON.stringify({
+        payment: {
+          id: "payment-id",
+          status: "COMPLETED",
+          amount_money: { amount: 5000, currency: "CAD" },
+          card_details: { card: { id: "ccof:test" } },
+        },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    };
+
+    const client = createSquarePaymentsClient({ environment: "sandbox", accessToken: "square-secret-token" });
+    const response = await client.createCardOnFilePayment({
+      idempotency_key: "payment-key-1",
+      source_id: "cnon:test",
+      customer_id: "customer_123",
+      amount_money: { amount: 5000, currency: "CAD" },
+      autocomplete: false,
+      verification_token: "verf:test",
+      reference_id: "ref-1",
+      note: "Test payment",
+    });
+
+    const body = JSON.parse(requests[0].init.body);
+    assert.equal(body.autocomplete, false);
+    assert.equal(body.verification_token, "verf:test");
+    assert.equal(body.source_id, "cnon:test");
+
+    assert.equal(response.payment.id, "payment-id");
+    assert.equal(response.payment.status, "COMPLETED");
+    assert.equal(response.payment.amount_money.amount, 5000);
+    assert.equal(response.payment.card_details.card.id, "ccof:test");
+  `);
+});
+
+test("completePayment posts to /v2/payments/{id}/complete", () => {
+  runPaymentsClientScenario(`
+    const requests = [];
+    globalThis.fetch = async (url, init) => {
+      requests.push({ url, init });
+      return new Response(JSON.stringify({
+        payment: {
+          id: "payment-id",
+          status: "COMPLETED",
+          amount_money: { amount: 5000, currency: "CAD" },
+          card_details: { card: { id: "ccof:test" } },
+        },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    };
+
+    const client = createSquarePaymentsClient({ environment: "sandbox", accessToken: "square-secret-token" });
+    const response = await client.completePayment("payment-id", "version-token-1");
+
+    assert.equal(requests[0].url, "https://connect.squareupsandbox.com/v2/payments/payment-id/complete?version_token=version-token-1");
+    assert.equal(requests[0].init.method, "POST");
+    assert.deepEqual(JSON.parse(requests[0].init.body), {});
+
+    assert.equal(response.payment.id, "payment-id");
+    assert.equal(response.payment.status, "COMPLETED");
+  `);
+});
+
+test("completePayment posts without version_token query when omitted", () => {
+  runPaymentsClientScenario(`
+    const requests = [];
+    globalThis.fetch = async (url, init) => {
+      requests.push({ url, init });
+      return new Response(JSON.stringify({
+        payment: {
+          id: "payment-id",
+          status: "COMPLETED",
+          amount_money: { amount: 5000, currency: "CAD" },
+          card_details: { card: { id: "ccof:test" } },
+        },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    };
+
+    const client = createSquarePaymentsClient({ environment: "sandbox", accessToken: "square-secret-token" });
+    await client.completePayment("payment-id");
+
+    assert.equal(requests[0].url, "https://connect.squareupsandbox.com/v2/payments/payment-id/complete");
+  `);
+});
+
+test("cancelPayment posts to /v2/payments/{id}/cancel", () => {
+  runPaymentsClientScenario(`
+    const requests = [];
+    globalThis.fetch = async (url, init) => {
+      requests.push({ url, init });
+      return new Response(JSON.stringify({
+        payment: {
+          id: "payment-id",
+          status: "CANCELED",
+          amount_money: { amount: 5000, currency: "CAD" },
+          card_details: { card: { id: "ccof:test" } },
+        },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    };
+
+    const client = createSquarePaymentsClient({ environment: "sandbox", accessToken: "square-secret-token" });
+    const response = await client.cancelPayment("payment-id");
+
+    assert.equal(requests[0].url, "https://connect.squareupsandbox.com/v2/payments/payment-id/cancel");
+    assert.equal(requests[0].init.method, "POST");
+    assert.deepEqual(JSON.parse(requests[0].init.body), {});
+
+    assert.equal(response.payment.id, "payment-id");
+    assert.equal(response.payment.status, "CANCELED");
+  `);
+});
+
 test("Square payments client errors are sanitized for non-2xx responses", () => {
   runPaymentsClientScenario(`
     globalThis.fetch = async () => new Response(JSON.stringify({ errors: [{ detail: "square-secret-token leaked" }] }), { status: 401 });
@@ -407,6 +522,96 @@ test("getSquarePayment throws when card_details.card.id is present but not a str
 
     await assert.rejects(
       () => client.getPayment("pay-1"),
+      (error) => {
+        assert.equal(error.message, "Square API response was malformed");
+        return true;
+      },
+    );
+  `);
+});
+
+test("createCardOnFilePayment throws when amount_money is missing", () => {
+  runPaymentsClientScenario(`
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      payment: { id: "payment_123", status: "COMPLETED" },
+    }), { status: 200, headers: { "content-type": "application/json" } });
+
+    const client = createSquarePaymentsClient({ environment: "sandbox", accessToken: "square-secret-token" });
+
+    await assert.rejects(
+      () => client.createCardOnFilePayment(createPaymentRequest()),
+      (error) => {
+        assert.equal(error.message, "Square API response was malformed");
+        return true;
+      },
+    );
+  `);
+});
+
+test("createCardOnFilePayment throws when amount_money.amount is not a number", () => {
+  runPaymentsClientScenario(`
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      payment: { id: "payment_123", status: "COMPLETED", amount_money: { amount: "5000", currency: "CAD" } },
+    }), { status: 200, headers: { "content-type": "application/json" } });
+
+    const client = createSquarePaymentsClient({ environment: "sandbox", accessToken: "square-secret-token" });
+
+    await assert.rejects(
+      () => client.createCardOnFilePayment(createPaymentRequest()),
+      (error) => {
+        assert.equal(error.message, "Square API response was malformed");
+        return true;
+      },
+    );
+  `);
+});
+
+test("createCardOnFilePayment throws when amount_money.currency is not a string", () => {
+  runPaymentsClientScenario(`
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      payment: { id: "payment_123", status: "COMPLETED", amount_money: { amount: 5000, currency: 124 } },
+    }), { status: 200, headers: { "content-type": "application/json" } });
+
+    const client = createSquarePaymentsClient({ environment: "sandbox", accessToken: "square-secret-token" });
+
+    await assert.rejects(
+      () => client.createCardOnFilePayment(createPaymentRequest()),
+      (error) => {
+        assert.equal(error.message, "Square API response was malformed");
+        return true;
+      },
+    );
+  `);
+});
+
+test("completePayment throws when amount_money is missing", () => {
+  runPaymentsClientScenario(`
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      payment: { id: "payment-id", status: "COMPLETED" },
+    }), { status: 200, headers: { "content-type": "application/json" } });
+
+    const client = createSquarePaymentsClient({ environment: "sandbox", accessToken: "square-secret-token" });
+
+    await assert.rejects(
+      () => client.completePayment("payment-id"),
+      (error) => {
+        assert.equal(error.message, "Square API response was malformed");
+        return true;
+      },
+    );
+  `);
+});
+
+test("cancelPayment throws when amount_money is missing", () => {
+  runPaymentsClientScenario(`
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      payment: { id: "payment-id", status: "CANCELED" },
+    }), { status: 200, headers: { "content-type": "application/json" } });
+
+    const client = createSquarePaymentsClient({ environment: "sandbox", accessToken: "square-secret-token" });
+
+    await assert.rejects(
+      () => client.cancelPayment("payment-id"),
       (error) => {
         assert.equal(error.message, "Square API response was malformed");
         return true;

@@ -13,15 +13,26 @@ export interface PaymentSessionRepository {
 
 export interface ServiceBookingPaymentSessionDisplay {
   currency: "CAD";
-  customerName: string;
   expiresAt: string;
   paymentSessionReference: string;
+  pricing: {
+    addOnPriceCents: number;
+    customAmountMaximumCents: number;
+    customAmountMinimumCents: number;
+    depositAmountCents: number;
+    fullPriceCents: number;
+  };
+  selectedAddOn?: {
+    description: string;
+    key: string;
+    name: string;
+    priceCents: number;
+  };
   selectedEnd: string;
   selectedStart: string;
   serviceSlug: string;
   serviceTitle: string;
   timezone: string;
-  totalCents: number;
 }
 
 export type ServiceBookingPaymentSessionResult =
@@ -85,15 +96,15 @@ export async function resolveServiceBookingPaymentSession(
     status: "active",
     session: {
       currency: "CAD",
-      customerName: hold.customer.name,
       expiresAt: hold.expiresAt.toISOString(),
       paymentSessionReference: hold.paymentSessionReference,
+      pricing: service.pricing,
+      selectedAddOn: service.selectedAddOn,
       selectedEnd: hold.selectedEnd.toISOString(),
       selectedStart: hold.selectedStart.toISOString(),
       serviceSlug: service.serviceSlug,
       serviceTitle: service.serviceTitle,
       timezone: hold.timezone,
-      totalCents: service.totalCents,
     },
   };
 }
@@ -101,7 +112,8 @@ export async function resolveServiceBookingPaymentSession(
 interface ServiceBookingPaymentSnapshot {
   serviceSlug: string;
   serviceTitle: string;
-  totalCents: number;
+  pricing: ServiceBookingPaymentSessionDisplay["pricing"];
+  selectedAddOn?: ServiceBookingPaymentSessionDisplay["selectedAddOn"];
 }
 
 function readServiceSnapshot(
@@ -117,25 +129,108 @@ function readServiceSnapshot(
     typeof snapshot.title === "string" && snapshot.title.trim().length > 0
       ? snapshot.title.trim()
       : "Service";
-  const payment = isRecord(snapshot.payment) ? snapshot.payment : null;
-  const paymentAmount =
-    payment !== null && payment.currency === "CAD"
-      ? toPositiveAmount(payment.amount)
-      : null;
+  const pricing = readPricing(snapshot);
 
-  if (serviceSlug === null || paymentAmount === null) {
+  if (serviceSlug === null || pricing === null) {
+    return null;
+  }
+
+  const selectedAddOn = readSelectedAddOn(snapshot, pricing.addOnPriceCents);
+
+  // A malformed add-on is always rejected; a positive add-on price requires a
+  // matching, valid add-on.
+  if (
+    selectedAddOn === null ||
+    (pricing.addOnPriceCents > 0 && selectedAddOn === undefined)
+  ) {
     return null;
   }
 
   return {
     serviceSlug,
     serviceTitle,
-    totalCents: Math.round(paymentAmount * 100),
+    pricing,
+    selectedAddOn,
+  };
+}
+
+function readPricing(
+  snapshot: Record<string, unknown>,
+): ServiceBookingPaymentSessionDisplay["pricing"] | null {
+  const pricing = isRecord(snapshot.pricing) ? snapshot.pricing : null;
+  if (pricing === null || pricing.currency !== "CAD") {
+    return null;
+  }
+
+  const depositAmount = toPositiveAmount(pricing.depositAmount);
+  const fullPrice = toPositiveAmount(pricing.fullPrice);
+  const customAmountMinimum = toPositiveAmount(pricing.customAmountMinimum);
+  const customAmountMaximum = toPositiveAmount(pricing.customAmountMaximum);
+  const addOnPrice = toNonNegativeAmount(pricing.addOnPrice);
+
+  if (
+    depositAmount === null ||
+    fullPrice === null ||
+    customAmountMinimum === null ||
+    customAmountMaximum === null ||
+    addOnPrice === null
+  ) {
+    return null;
+  }
+
+  return {
+    addOnPriceCents: Math.round(addOnPrice * 100),
+    customAmountMaximumCents: Math.round(customAmountMaximum * 100),
+    customAmountMinimumCents: Math.round(customAmountMinimum * 100),
+    depositAmountCents: Math.round(depositAmount * 100),
+    fullPriceCents: Math.round(fullPrice * 100),
+  };
+}
+
+function readSelectedAddOn(
+  snapshot: Record<string, unknown>,
+  expectedPriceCents: number,
+): ServiceBookingPaymentSessionDisplay["selectedAddOn"] | null {
+  const addOn = isRecord(snapshot.selectedAddOn)
+    ? snapshot.selectedAddOn
+    : null;
+  if (addOn === null) return undefined;
+
+  const price = toPositiveAmount(addOn.price);
+  const priceCents = price === null ? null : Math.round(price * 100);
+  const key = typeof addOn.key === "string" ? addOn.key.trim() : "";
+  const name = typeof addOn.name === "string" ? addOn.name.trim() : "";
+  const description =
+    typeof addOn.description === "string" ? addOn.description.trim() : "";
+
+  if (
+    key.length === 0 ||
+    name.length === 0 ||
+    description.length === 0 ||
+    priceCents !== expectedPriceCents ||
+    addOn.currency !== "CAD"
+  ) {
+    return null;
+  }
+
+  return {
+    description,
+    key,
+    name,
+    priceCents,
   };
 }
 
 function toPositiveAmount(value: unknown): number | null {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+
+  return Math.round(value * 100) / 100;
+}
+
+function toNonNegativeAmount(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
     return null;
   }
 

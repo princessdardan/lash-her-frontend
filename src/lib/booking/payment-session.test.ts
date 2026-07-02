@@ -27,8 +27,19 @@ function createHold(
     offeringSnapshot: {
       serviceSlug: "classic-fill",
       title: "Classic Fill",
-      payment: {
-        amount: 130,
+      pricing: {
+        depositAmount: 50,
+        fullPrice: 130,
+        currency: "CAD",
+        customAmountMinimum: 50,
+        customAmountMaximum: 130,
+        addOnPrice: 25,
+      },
+      selectedAddOn: {
+        key: "addon-removal",
+        name: "Removal",
+        description: "Gentle removal before fill",
+        price: 25,
         currency: "CAD",
       },
     },
@@ -71,18 +82,64 @@ test("resolves active payment sessions into safe display data", async () => {
 
   const expected: ServiceBookingPaymentSessionDisplay = {
     currency: "CAD",
-    customerName: "Client Name",
     expiresAt: "2030-01-01T18:10:00.000Z",
     paymentSessionReference: "pay_sess_1",
+    pricing: {
+      addOnPriceCents: 2500,
+      customAmountMaximumCents: 13000,
+      customAmountMinimumCents: 5000,
+      depositAmountCents: 5000,
+      fullPriceCents: 13000,
+    },
+    selectedAddOn: {
+      description: "Gentle removal before fill",
+      key: "addon-removal",
+      name: "Removal",
+      priceCents: 2500,
+    },
     selectedEnd: "2030-01-02T20:00:00.000Z",
     selectedStart: "2030-01-02T19:00:00.000Z",
     serviceSlug: "classic-fill",
     serviceTitle: "Classic Fill",
     timezone: "America/Toronto",
-    totalCents: 13000,
   };
 
   assert.deepEqual(result.session, expected);
+});
+
+test("resolves active provisional sessions with no add-on and zero addOnPrice", async () => {
+  const hold = createHold({
+    offeringSnapshot: {
+      serviceSlug: "classic-fill",
+      title: "Classic Fill",
+      pricing: {
+        currency: "CAD",
+        depositAmount: 50,
+        fullPrice: 130,
+        customAmountMinimum: 50,
+        customAmountMaximum: 130,
+        addOnPrice: 0,
+      },
+    },
+  });
+
+  const result = await resolveServiceBookingPaymentSession(
+    {
+      paymentSessionReference: "pay_sess_1",
+      serviceSlug: "classic-fill",
+      now,
+    },
+    createFakeRepository(hold),
+  );
+
+  assert.equal(result.status, "active");
+
+  if (result.status !== "active") {
+    throw new Error("Expected active session result");
+  }
+
+  assert.equal(result.session.pricing.addOnPriceCents, 0);
+  assert.equal(result.session.selectedAddOn, undefined);
 });
 
 test("rejects slug mismatches with not_found", async () => {
@@ -91,6 +148,50 @@ test("rejects slug mismatches with not_found", async () => {
     {
       paymentSessionReference: "pay_sess_1",
       serviceSlug: "volume-fill",
+      now,
+    },
+    createFakeRepository(hold),
+  );
+
+  assert.deepEqual(result, { status: "not_found" });
+});
+
+test("rejects active sessions without pricing bounds", async () => {
+  const hold = createHold({
+    offeringSnapshot: {
+      serviceSlug: "classic-fill",
+      title: "Classic Fill",
+      pricing: {
+        currency: "CAD",
+        depositAmount: 50,
+        fullPrice: 130,
+        addOnPrice: 25,
+      },
+    },
+  });
+  const result = await resolveServiceBookingPaymentSession(
+    {
+      paymentSessionReference: "pay_sess_1",
+      serviceSlug: "classic-fill",
+      now,
+    },
+    createFakeRepository(hold),
+  );
+
+  assert.deepEqual(result, { status: "not_found" });
+});
+
+test("rejects active sessions when pricing is missing entirely", async () => {
+  const hold = createHold({
+    offeringSnapshot: {
+      serviceSlug: "classic-fill",
+      title: "Classic Fill",
+    },
+  });
+  const result = await resolveServiceBookingPaymentSession(
+    {
+      paymentSessionReference: "pay_sess_1",
+      serviceSlug: "classic-fill",
       now,
     },
     createFakeRepository(hold),
@@ -189,4 +290,167 @@ test("returns confirmed for already booked sessions", async () => {
   );
 
   assert.deepEqual(result, { status: "confirmed", paymentStatus: "booked" });
+});
+
+test("rejects active sessions with positive addOnPrice but missing selectedAddOn", async () => {
+  const hold = createHold({
+    offeringSnapshot: {
+      serviceSlug: "classic-fill",
+      title: "Classic Fill",
+      pricing: {
+        currency: "CAD",
+        depositAmount: 50,
+        fullPrice: 130,
+        customAmountMinimum: 50,
+        customAmountMaximum: 130,
+        addOnPrice: 25,
+      },
+    },
+  });
+  const result = await resolveServiceBookingPaymentSession(
+    {
+      paymentSessionReference: "pay_sess_1",
+      serviceSlug: "classic-fill",
+      now,
+    },
+    createFakeRepository(hold),
+  );
+
+  assert.deepEqual(result, { status: "not_found" });
+});
+
+test("rejects active sessions when selectedAddOn price mismatches pricing.addOnPrice", async () => {
+  const hold = createHold({
+    offeringSnapshot: {
+      serviceSlug: "classic-fill",
+      title: "Classic Fill",
+      pricing: {
+        currency: "CAD",
+        depositAmount: 50,
+        fullPrice: 130,
+        customAmountMinimum: 50,
+        customAmountMaximum: 130,
+        addOnPrice: 25,
+      },
+      selectedAddOn: {
+        key: "addon-removal",
+        name: "Removal",
+        description: "Gentle removal before fill",
+        price: 30,
+        currency: "CAD",
+      },
+    },
+  });
+  const result = await resolveServiceBookingPaymentSession(
+    {
+      paymentSessionReference: "pay_sess_1",
+      serviceSlug: "classic-fill",
+      now,
+    },
+    createFakeRepository(hold),
+  );
+
+  assert.deepEqual(result, { status: "not_found" });
+});
+
+test("rejects active sessions when selectedAddOn currency is not CAD", async () => {
+  const hold = createHold({
+    offeringSnapshot: {
+      serviceSlug: "classic-fill",
+      title: "Classic Fill",
+      pricing: {
+        currency: "CAD",
+        depositAmount: 50,
+        fullPrice: 130,
+        customAmountMinimum: 50,
+        customAmountMaximum: 130,
+        addOnPrice: 25,
+      },
+      selectedAddOn: {
+        key: "addon-removal",
+        name: "Removal",
+        description: "Gentle removal before fill",
+        price: 25,
+        currency: "USD",
+      },
+    },
+  });
+  const result = await resolveServiceBookingPaymentSession(
+    {
+      paymentSessionReference: "pay_sess_1",
+      serviceSlug: "classic-fill",
+      now,
+    },
+    createFakeRepository(hold),
+  );
+
+  assert.deepEqual(result, { status: "not_found" });
+});
+
+test("rejects active sessions when selectedAddOn has blank key", async () => {
+  const hold = createHold({
+    offeringSnapshot: {
+      serviceSlug: "classic-fill",
+      title: "Classic Fill",
+      pricing: {
+        currency: "CAD",
+        depositAmount: 50,
+        fullPrice: 130,
+        customAmountMinimum: 50,
+        customAmountMaximum: 130,
+        addOnPrice: 25,
+      },
+      selectedAddOn: {
+        key: "   ",
+        name: "Removal",
+        description: "Gentle removal before fill",
+        price: 25,
+        currency: "CAD",
+      },
+    },
+  });
+  const result = await resolveServiceBookingPaymentSession(
+    {
+      paymentSessionReference: "pay_sess_1",
+      serviceSlug: "classic-fill",
+      now,
+    },
+    createFakeRepository(hold),
+  );
+
+  assert.deepEqual(result, { status: "not_found" });
+});
+
+test("rejects zero addOnPrice sessions with malformed selectedAddOn", async () => {
+  const hold = createHold({
+    offeringSnapshot: {
+      serviceSlug: "classic-fill",
+      title: "Classic Fill",
+      pricing: {
+        currency: "CAD",
+        depositAmount: 50,
+        fullPrice: 130,
+        customAmountMinimum: 50,
+        customAmountMaximum: 130,
+        addOnPrice: 0,
+      },
+      selectedAddOn: {
+        key: "addon-removal",
+        name: "Removal",
+        description: "Gentle removal before fill",
+        price: 25,
+        currency: "CAD",
+      },
+    },
+  });
+  const result = await resolveServiceBookingPaymentSession(
+    {
+      paymentSessionReference: "pay_sess_1",
+      serviceSlug: "classic-fill",
+      now,
+    },
+    createFakeRepository(hold),
+  );
+
+  assert.deepEqual(result, { status: "not_found" });
 });

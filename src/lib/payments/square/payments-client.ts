@@ -17,6 +17,7 @@ export interface SquareCreatePaymentRequest {
   customer_id: string;
   amount_money: SquareMoney;
   autocomplete?: boolean;
+  verification_token?: string;
   reference_id?: string;
   note?: string;
 }
@@ -27,8 +28,9 @@ export interface SquarePayment {
   order_id?: string;
   customer_id?: string;
   source_type?: string;
-  card_details?: { card?: { id: string } };
-  amount_money?: SquareMoney;
+  version_token?: string;
+  card_details?: { card?: { id?: string } };
+  amount_money: SquareMoney;
 }
 
 export interface SquareCreatePaymentResponse {
@@ -49,6 +51,11 @@ export interface SquarePaymentsClient {
     request: SquareCreatePaymentRequest,
   ): Promise<SquareCreatePaymentResponse>;
   getPayment(paymentId: string): Promise<SquareGetPaymentResponse>;
+  completePayment(
+    paymentId: string,
+    versionToken?: string,
+  ): Promise<SquareGetPaymentResponse>;
+  cancelPayment(paymentId: string): Promise<SquareGetPaymentResponse>;
 }
 
 export function createSquarePaymentsClient(
@@ -65,6 +72,25 @@ export function createSquarePaymentsClient(
       return getSquare<SquareGetPaymentResponse>(
         env,
         `/v2/payments/${encodeURIComponent(paymentId)}`,
+        isSquareGetPaymentResponse,
+      );
+    },
+    async completePayment(paymentId, versionToken) {
+      const query = versionToken
+        ? `?version_token=${encodeURIComponent(versionToken)}`
+        : "";
+      return postSquare<Record<string, never>, SquareGetPaymentResponse>(
+        env,
+        `/v2/payments/${encodeURIComponent(paymentId)}/complete${query}`,
+        {},
+        isSquareGetPaymentResponse,
+      );
+    },
+    async cancelPayment(paymentId) {
+      return postSquare<Record<string, never>, SquareGetPaymentResponse>(
+        env,
+        `/v2/payments/${encodeURIComponent(paymentId)}/cancel`,
+        {},
         isSquareGetPaymentResponse,
       );
     },
@@ -164,79 +190,87 @@ async function getSquare<TResponse>(
 function isSquareCreatePaymentResponse(
   value: unknown,
 ): value is SquareCreatePaymentResponse {
-  return (
-    isRecord(value) &&
-    isRecord(value.payment) &&
-    typeof value.payment.id === "string" &&
-    typeof value.payment.status === "string"
-  );
+  return isSquarePaymentResponse(value);
 }
 
 function isSquareGetPaymentResponse(
   value: unknown,
 ): value is SquareGetPaymentResponse {
-  if (!isRecord(value) || !isRecord(value.payment)) {
+  return isSquarePaymentResponse(value);
+}
+
+function isSquarePaymentResponse(
+  value: unknown,
+): value is { payment: SquarePayment } {
+  return isRecord(value) && isSquarePayment(value.payment);
+}
+
+function isSquarePayment(value: unknown): value is SquarePayment {
+  if (!isRecord(value)) {
     return false;
   }
 
-  const payment = value.payment;
-
-  if (typeof payment.id !== "string" || typeof payment.status !== "string") {
+  if (typeof value.id !== "string" || typeof value.status !== "string") {
     return false;
   }
 
-  if (!isRecord(payment.amount_money)) {
+  if (!isRecord(value.amount_money)) {
     return false;
   }
 
   if (
-    typeof payment.amount_money.amount !== "number" ||
-    typeof payment.amount_money.currency !== "string"
+    typeof value.amount_money.amount !== "number" ||
+    typeof value.amount_money.currency !== "string"
   ) {
     return false;
   }
 
   if (
-    "customer_id" in payment &&
-    payment.customer_id !== undefined &&
-    typeof payment.customer_id !== "string"
+    "customer_id" in value &&
+    value.customer_id !== undefined &&
+    typeof value.customer_id !== "string"
   ) {
     return false;
   }
 
   if (
-    "order_id" in payment &&
-    payment.order_id !== undefined &&
-    typeof payment.order_id !== "string"
+    "order_id" in value &&
+    value.order_id !== undefined &&
+    typeof value.order_id !== "string"
   ) {
     return false;
   }
 
   if (
-    "source_type" in payment &&
-    payment.source_type !== undefined &&
-    typeof payment.source_type !== "string"
+    "source_type" in value &&
+    value.source_type !== undefined &&
+    typeof value.source_type !== "string"
   ) {
     return false;
   }
 
-  if ("card_details" in payment && payment.card_details !== undefined) {
-    if (!isRecord(payment.card_details)) {
+  if (
+    "version_token" in value &&
+    value.version_token !== undefined &&
+    typeof value.version_token !== "string"
+  ) {
+    return false;
+  }
+
+  if ("card_details" in value && value.card_details !== undefined) {
+    if (!isRecord(value.card_details)) {
       return false;
     }
 
-    if (
-      "card" in payment.card_details &&
-      payment.card_details.card !== undefined
-    ) {
-      if (!isRecord(payment.card_details.card)) {
+    if ("card" in value.card_details && value.card_details.card !== undefined) {
+      if (!isRecord(value.card_details.card)) {
         return false;
       }
 
       if (
-        "id" in payment.card_details.card &&
-        payment.card_details.card.id !== undefined &&
-        typeof payment.card_details.card.id !== "string"
+        "id" in value.card_details.card &&
+        value.card_details.card.id !== undefined &&
+        typeof value.card_details.card.id !== "string"
       ) {
         return false;
       }

@@ -12,7 +12,6 @@ import {
   SERVICE_BOOKING_TYPE,
   toServiceBookingTypeConfig,
 } from "@/lib/booking/service-config";
-import { recordBookingMarketingChoice } from "@/lib/marketing-contact/marketing-contact-store";
 import type {
   BookingAnswerInput,
   BookingSettings,
@@ -24,32 +23,20 @@ import type { TService } from "@/types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MINUTE_MS = 60 * 1000;
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const PENDING_CUSTOMER = {
+  email: "pending-service-booking@example.invalid",
+  name: "Pending service booking customer",
+  phone: "0000000000",
+} as const;
 
 interface BookingHoldRequestInput {
   answers: BookingAnswerInput[];
-  customAmount?: number;
-  email: string;
-  marketingConsentText?: string;
-  marketingOptIn: boolean;
-  name: string;
-  paymentOption?: "deposit" | "full" | "customPartial";
-  phone: string;
+  rejectedStepFields: Record<string, string>;
   serviceSlug: string;
   selectedAddOnKey?: string;
   sourcePath?: string;
   start: string;
-}
-
-interface BookingPaymentSelectionSnapshot {
-  amount: number;
-  description: string;
-  option: "deposit" | "full" | "customPartial";
-  purpose:
-    | "appointment_deposit"
-    | "appointment_full"
-    | "appointment_custom_partial";
-  sku: "BOOKING-DEPOSIT" | "BOOKING-FULL" | "BOOKING-CUSTOM-PARTIAL";
 }
 
 interface BookingAddOnSelectionSnapshot {
@@ -84,7 +71,6 @@ export interface BookingHoldsPostHandlerDependencies {
     timeMin: Date;
     timeMax: Date;
   }) => Promise<CalendarEventWindow[]>;
-  recordBookingMarketingChoice?: typeof recordBookingMarketingChoice;
 }
 
 export function createBookingHoldsPostHandler(
@@ -108,6 +94,16 @@ export function createBookingHoldsPostHandler(
     const input = toBookingHoldRequestInput(body);
     const fieldErrors = validateHoldRequestInput(input);
     const selectedStart = new Date(input.start);
+
+    if (Object.keys(input.rejectedStepFields).length > 0) {
+      return Response.json(
+        {
+          error: "Contact and payment details belong on the payment step.",
+          fieldErrors,
+        },
+        { status: 400 },
+      );
+    }
 
     if (
       Object.keys(fieldErrors).length > 0 ||
@@ -207,18 +203,6 @@ export function createBookingHoldsPostHandler(
         holds: activeHolds,
         now,
       });
-      const paymentSelection = getPaymentSelection(
-        service,
-        input,
-        selectedAddOn,
-      );
-
-      if (paymentSelection === null) {
-        return Response.json(
-          { error: "Booking payment is not configured" },
-          { status: 400 },
-        );
-      }
 
       if (
         !isSlotAvailable({
@@ -243,18 +227,9 @@ export function createBookingHoldsPostHandler(
 
       const holdResult = await dependencies.createAppointmentHold({
         bookingType: SERVICE_BOOKING_TYPE,
-        customer: {
-          email: input.email,
-          name: input.name,
-          phone: input.phone,
-        },
+        customer: PENDING_CUSTOMER,
         offeringId: service._id,
-        offeringSnapshot: toServiceSnapshot(
-          service,
-          input,
-          paymentSelection,
-          selectedAddOn,
-        ),
+        offeringSnapshot: toServiceSnapshot(service, input, selectedAddOn),
         selectedEnd,
         selectedStart,
         timezone: settings.timezone,
@@ -270,25 +245,6 @@ export function createBookingHoldsPostHandler(
           },
           { status: 409 },
         );
-      }
-
-      if (dependencies.recordBookingMarketingChoice !== undefined) {
-        try {
-          await dependencies.recordBookingMarketingChoice({
-            answers: toBookingAnswerSnapshots(input.answers, bookingTypeConfig),
-            bookingType: SERVICE_BOOKING_TYPE,
-            consentText: input.marketingConsentText,
-            email: input.email,
-            marketingOptIn: input.marketingOptIn,
-            name: input.name,
-            phone: input.phone,
-            sourcePath: input.sourcePath,
-          });
-        } catch (error) {
-          log("error", "[booking holds] Marketing consent persistence failed", {
-            error: getErrorMessage(error),
-          });
-        }
       }
 
       return Response.json(
@@ -348,30 +304,56 @@ export const POST = createBookingHoldsPostHandler({
 
     return listCalendarEvents(input);
   },
-  recordBookingMarketingChoice,
 });
 
 function toBookingHoldRequestInput(input: unknown): BookingHoldRequestInput {
   const record = isRecord(input) ? input : {};
-  const customAmount = parseOptionalAmount(record.customAmount);
-  const paymentOption = parsePaymentOption(record.paymentOption);
-  const marketingConsentText = toOptionalStringValue(
-    record.marketingConsentText,
-  );
+  const rejectedStepFields: Record<string, string> = {};
+
+  if (
+    record.name !== undefined &&
+    (typeof record.name !== "string" || record.name.trim().length > 0)
+  ) {
+    rejectedStepFields.name = "Enter contact details on the payment page";
+  }
+
+  if (
+    record.email !== undefined &&
+    (typeof record.email !== "string" || record.email.trim().length > 0)
+  ) {
+    rejectedStepFields.email = "Enter contact details on the payment page";
+  }
+
+  if (
+    record.phone !== undefined &&
+    (typeof record.phone !== "string" || record.phone.trim().length > 0)
+  ) {
+    rejectedStepFields.phone = "Enter contact details on the payment page";
+  }
+
+  if (
+    record.paymentOption !== undefined ||
+    record.customAmount !== undefined ||
+    record.selectedPayment !== undefined
+  ) {
+    rejectedStepFields.paymentOption =
+      "Choose payment amount on the payment page";
+  }
+
+  if (
+    record.marketingOptIn !== undefined ||
+    record.marketingConsentText !== undefined
+  ) {
+    rejectedStepFields.marketingOptIn =
+      "Choose marketing preferences on the payment page";
+  }
+
   const selectedAddOnKey = toOptionalStringValue(record.selectedAddOnKey);
-  const sourcePath = toOptionalStringValue(record.sourcePath);
+  const sourcePath = toSafeSourcePath(record.sourcePath);
 
   return {
-    ...(customAmount !== undefined && customAmount !== null
-      ? { customAmount }
-      : {}),
     answers: toBookingAnswers(record.answers),
-    email: toStringValue(record.email).trim(),
-    marketingOptIn: record.marketingOptIn === true,
-    ...(marketingConsentText ? { marketingConsentText } : {}),
-    name: toStringValue(record.name).trim(),
-    ...(paymentOption ? { paymentOption } : {}),
-    phone: toStringValue(record.phone).trim(),
+    rejectedStepFields,
     serviceSlug: (
       toStringValue(record.serviceSlug) ||
       toStringValue(record.service) ||
@@ -397,19 +379,7 @@ function validateHoldRequestInput(
     fieldErrors.start = "Please select a booking time";
   }
 
-  if (input.name.length === 0) {
-    fieldErrors.name = "Name is required";
-  }
-
-  if (input.phone.length === 0) {
-    fieldErrors.phone = "Phone number is required";
-  }
-
-  if (input.email.length === 0) {
-    fieldErrors.email = "Email is required";
-  } else if (!EMAIL_PATTERN.test(input.email)) {
-    fieldErrors.email = "Please enter a valid email address";
-  }
+  Object.assign(fieldErrors, input.rejectedStepFields);
 
   return fieldErrors;
 }
@@ -438,52 +408,6 @@ function validateRequiredAnswers(
   return fieldErrors;
 }
 
-function getPaymentSelection(
-  service: TService,
-  input: BookingHoldRequestInput,
-  selectedAddOn: BookingAddOnSelectionSnapshot | null,
-): BookingPaymentSelectionSnapshot | null {
-  if (input.paymentOption === "deposit") {
-    return resolveFixedPaymentSelection(service, "deposit", selectedAddOn);
-  }
-
-  if (input.paymentOption === "full") {
-    return resolveFixedPaymentSelection(service, "full", selectedAddOn);
-  }
-
-  if (input.paymentOption === "customPartial") {
-    if (input.customAmount === undefined) {
-      return null;
-    }
-
-    const depositAmount = toPositiveAmount(service.depositAmount);
-    const fullPrice = toPositiveAmount(service.fullPrice);
-    const customAmount = toPositiveAmount(input.customAmount);
-
-    if (
-      customAmount === null ||
-      depositAmount === null ||
-      fullPrice === null ||
-      customAmount <= depositAmount ||
-      customAmount >= fullPrice
-    ) {
-      return null;
-    }
-
-    return {
-      amount: customAmount,
-      description: selectedAddOn
-        ? `${service.title} custom partial payment; ${selectedAddOn.name} add-on balance due later`
-        : `${service.title} custom partial payment`,
-      option: "customPartial",
-      purpose: "appointment_custom_partial",
-      sku: "BOOKING-CUSTOM-PARTIAL",
-    };
-  }
-
-  return null;
-}
-
 function getSelectedAddOn(
   service: TService,
   selectedAddOnKey?: string,
@@ -507,48 +431,9 @@ function getSelectedAddOn(
   };
 }
 
-function resolveFixedPaymentSelection(
-  service: TService,
-  option: "deposit" | "full",
-  selectedAddOn: BookingAddOnSelectionSnapshot | null,
-): BookingPaymentSelectionSnapshot | null {
-  if (option === "deposit") {
-    const amount = toPositiveAmount(service.depositAmount);
-
-    return amount === null
-      ? null
-      : {
-          amount,
-          description: selectedAddOn
-            ? `${service.title} deposit; ${selectedAddOn.name} add-on balance due later`
-            : `${service.title} deposit`,
-          option: "deposit",
-          purpose: "appointment_deposit",
-          sku: "BOOKING-DEPOSIT",
-        };
-  }
-
-  const fullPrice = toPositiveAmount(service.fullPrice);
-  const amount =
-    fullPrice === null ? null : fullPrice + (selectedAddOn?.price ?? 0);
-
-  return amount === null
-    ? null
-    : {
-        amount,
-        description: selectedAddOn
-          ? `${service.title} full payment with ${selectedAddOn.name}`
-          : `${service.title} full payment`,
-        option: "full",
-        purpose: "appointment_full",
-        sku: "BOOKING-FULL",
-      };
-}
-
 function toServiceSnapshot(
   service: TService,
   input: BookingHoldRequestInput,
-  paymentSelection: BookingPaymentSelectionSnapshot,
   selectedAddOn: BookingAddOnSelectionSnapshot | null,
 ): Record<string, unknown> {
   return {
@@ -558,20 +443,18 @@ function toServiceSnapshot(
     title: service.title,
     bookingType: SERVICE_BOOKING_TYPE,
     durationMinutes: service.durationMinutes,
-    depositAmount: service.depositAmount,
-    fullPrice: service.fullPrice,
-    currency: service.currency,
-    payment: {
-      amount: paymentSelection.amount,
+    customerStatus: "pending",
+    paymentStatus: "pending",
+    pricing: {
+      depositAmount: service.depositAmount,
+      fullPrice: service.fullPrice,
       currency: service.currency,
+      customAmountMinimum: service.depositAmount,
+      customAmountMaximum: service.fullPrice,
+      addOnPrice: selectedAddOn?.price ?? 0,
     },
     ...(selectedAddOn ? { selectedAddOn } : {}),
-    selectedPayment: paymentSelection,
     answers: normalizeAnswers(input.answers),
-    marketingOptIn: input.marketingOptIn,
-    ...(input.marketingConsentText
-      ? { marketingConsentText: input.marketingConsentText }
-      : {}),
     ...(input.sourcePath ? { sourcePath: input.sourcePath } : {}),
   };
 }
@@ -587,22 +470,6 @@ function normalizeAnswers(answers: BookingAnswerInput[]): BookingAnswerInput[] {
     );
 }
 
-function toBookingAnswerSnapshots(
-  answers: BookingAnswerInput[],
-  bookingTypeConfig: BookingTypeConfig,
-) {
-  const questionsById = new Map(
-    bookingTypeConfig.questions.map((question) => [question.id, question]),
-  );
-
-  return normalizeAnswers(answers).map((answer) => ({
-    answer: answer.answer,
-    questionId: answer.questionId,
-    questionLabel:
-      questionsById.get(answer.questionId)?.label ?? answer.questionId,
-  }));
-}
-
 function toBookingAnswers(value: unknown): BookingAnswerInput[] {
   if (!Array.isArray(value)) {
     return [];
@@ -616,22 +483,6 @@ function toBookingAnswers(value: unknown): BookingAnswerInput[] {
       answer: toStringValue(record.answer),
     };
   });
-}
-
-function parsePaymentOption(
-  value: unknown,
-): "deposit" | "full" | "customPartial" | null {
-  return value === "deposit" || value === "full" || value === "customPartial"
-    ? value
-    : null;
-}
-
-function parseOptionalAmount(value: unknown): number | null | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  return toPositiveAmount(value);
 }
 
 function toPositiveAmount(value: unknown): number | null {
@@ -657,6 +508,21 @@ function toOptionalStringValue(value: unknown): string | undefined {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function toSafeSourcePath(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  const pathOnly = trimmed.split(/[?#]/, 1)[0];
+
+  if (!pathOnly.startsWith("/") || pathOnly.length === 0) {
+    return undefined;
+  }
+
+  return pathOnly;
 }
 
 function getErrorMessage(error: unknown): string {

@@ -2,28 +2,23 @@ import assert from "node:assert";
 import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import {
-  confirmCardOnFileBooking,
-  fetchSquareCardOnFileConfig,
-  loadSquareScript,
-} from "./square-card-on-file-form";
+import { loadSquareScript } from "./square-card-on-file-form";
 import { createBookingHold } from "./booking-flow";
-import { startLegacySquareCheckout } from "./service-booking-payment-client";
 
 const bookingFlowSource = readFileSync(
   new URL("./booking-flow.tsx", import.meta.url),
   "utf8",
 );
-const cardOnFileFormSource = readFileSync(
-  new URL("./square-card-on-file-form.tsx", import.meta.url),
+const serviceBookingPaymentFormSource = readFileSync(
+  new URL("./service-booking-payment-form.tsx", import.meta.url),
   "utf8",
 );
 const serviceBookingPaymentShellSource = readFileSync(
   new URL("./service-booking-payment-shell.tsx", import.meta.url),
   "utf8",
 );
-const serviceBookingPaymentClientSource = readFileSync(
-  new URL("./service-booking-payment-client.ts", import.meta.url),
+const chargeAndStoreSource = readFileSync(
+  new URL("./square-charge-and-store-form.tsx", import.meta.url),
   "utf8",
 );
 const bookingPageSource = readFileSync(
@@ -142,26 +137,11 @@ describe("booking service flow contract", () => {
     assert.doesNotMatch(bookingFlowSource, /cardOnFileHoldReference/);
   });
 
-  it("renders all purchaser payment options for paid services", () => {
-    assert.match(bookingFlowSource, /Pay Deposit/);
-    assert.match(bookingFlowSource, /Pay in Full/);
-    assert.match(bookingFlowSource, /Pay Custom Amount/);
-    assert.match(
-      bookingFlowSource,
-      /Custom amount must be greater than the deposit/,
-    );
-    assert.match(
-      bookingFlowSource,
-      /Custom amount must be less than the full price/,
-    );
-  });
-
-  it("renders a single optional add-on picker and explains due-later balances", () => {
+  it("renders a single optional add-on picker", () => {
     assert.match(bookingFlowSource, /selectedAddOnKey/);
     assert.match(bookingFlowSource, /Optional add-on/);
     assert.match(bookingFlowSource, /No add-on/);
     assert.match(bookingFlowSource, /Only one add-on can be selected/);
-    assert.match(bookingFlowSource, /add-on balance is due later/i);
     assert.match(bookingFlowSource, /type="radio"/);
     assert.doesNotMatch(bookingFlowSource, /role="radio(?:group)?"/);
   });
@@ -181,17 +161,31 @@ describe("booking service flow contract", () => {
     );
   });
 
-  it("does not collect appointment intake fields that paid offering checkout does not persist", () => {
-    assert.match(
-      bookingFlowSource,
-      /const currentServicePayment = currentService/,
-    );
-    assert.match(
-      bookingFlowSource,
-      /const intakeQuestions = settings.intakeQuestions/,
-    );
+  it("booking page collects service details only before payment", () => {
+    assert.match(bookingFlowSource, /Appointment Details/);
+    assert.match(bookingFlowSource, /Optional add-on/);
     assert.match(bookingFlowSource, /intakeQuestions\.map/);
-    assert.match(bookingFlowSource, /settings.marketingOptInLabel/);
+    assert.doesNotMatch(bookingFlowSource, /Full Name/);
+    assert.doesNotMatch(bookingFlowSource, /Email Address/);
+    assert.doesNotMatch(bookingFlowSource, /Phone Number/);
+    assert.doesNotMatch(bookingFlowSource, /Payment Details/);
+    assert.doesNotMatch(bookingFlowSource, /marketingOptIn/);
+  });
+
+  it("booking hold creation posts no contact, marketing, or payment amount fields", () => {
+    assert.match(
+      bookingFlowSource,
+      /selectedAddOnKey: input\.selectedAddOnKey/,
+    );
+    assert.doesNotMatch(bookingFlowSource, /email: input\.email/);
+    assert.doesNotMatch(bookingFlowSource, /name: input\.name/);
+    assert.doesNotMatch(bookingFlowSource, /phone: input\.phone/);
+    assert.doesNotMatch(
+      bookingFlowSource,
+      /paymentOption: input\.paymentOption/,
+    );
+    assert.doesNotMatch(bookingFlowSource, /customAmount: input\.customAmount/);
+    assert.doesNotMatch(bookingFlowSource, /marketingConsentText/);
   });
 
   it("does not render Helcim Pay or Google Appointment Schedule UI for service bookings", () => {
@@ -203,7 +197,7 @@ describe("booking service flow contract", () => {
       bookingFlowSource,
       /<iframe|iframe|Appointment Schedule|appointments\.google\.com/i,
     );
-    assert.match(bookingFlowSource, /Continue to secure Square checkout/);
+    assert.match(bookingFlowSource, /Continue to payment/);
   });
 
   it("shows Square return status copy without private identifiers", () => {
@@ -311,13 +305,7 @@ describe("booking service flow contract", () => {
     const result = await createBookingHold({
       serviceSlug: "classic-fill",
       start: "2030-06-15T16:00:00.000Z",
-      name: "Test Client",
-      email: "test.client@example.com",
-      phone: "(555) 123-4567",
       answers: [],
-      marketingOptIn: false,
-      paymentOption: "customPartial",
-      customAmount: 75,
       selectedAddOnKey: "addon-lash-bath",
       fetcher,
     });
@@ -333,13 +321,7 @@ describe("booking service flow contract", () => {
         body: {
           serviceSlug: "classic-fill",
           start: "2030-06-15T16:00:00.000Z",
-          name: "Test Client",
-          email: "test.client@example.com",
-          phone: "(555) 123-4567",
           answers: [],
-          marketingOptIn: false,
-          paymentOption: "customPartial",
-          customAmount: 75,
           selectedAddOnKey: "addon-lash-bath",
         },
       },
@@ -360,12 +342,7 @@ describe("booking service flow contract", () => {
       createBookingHold({
         serviceSlug: "classic-fill",
         start: "2030-06-15T16:00:00.000Z",
-        name: "Test Client",
-        email: "test.client@example.com",
-        phone: "(555) 123-4567",
         answers: [],
-        marketingOptIn: false,
-        paymentOption: "deposit",
         fetcher,
       }),
       /Selected time is no longer available\./,
@@ -373,20 +350,156 @@ describe("booking service flow contract", () => {
     assert.deepEqual(requests, ["/api/booking/holds"]);
   });
 
-  it("initializes Square card-on-file form from config and Web Payments SDK", () => {
-    assert.match(cardOnFileFormSource, /\/api\/booking\/square\/config/);
-    assert.match(cardOnFileFormSource, /window\.Square\.payments/);
-    assert.match(cardOnFileFormSource, /square-card-container/);
-    assert.match(cardOnFileFormSource, /intent:\s*"STORE"/);
-    assert.match(cardOnFileFormSource, /customerInitiated:\s*true/);
-    assert.match(cardOnFileFormSource, /sellerKeyedIn:\s*false/);
-    assert.match(cardOnFileFormSource, /currencyCode:\s*"CAD"/);
-    assert.match(cardOnFileFormSource, /\/api\/booking\/card-on-file/);
+  it("booking page copy sends customers to payment after service details", () => {
+    const serviceBookingPageSource = readFileSync(
+      new URL(
+        "../../app/(site)/services/[slug]/booking/page.tsx",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+
+    assert.match(
+      serviceBookingPageSource,
+      /Select your appointment time, add-ons, and service details before payment\./,
+    );
+    assert.doesNotMatch(serviceBookingPageSource, /confirm your details/i);
   });
 
-  it("card-on-file form passes verificationDetails directly to Square tokenize", async () => {
+  it("payment page owns contact, marketing, payment, consent, and Square card entry", () => {
+    assert.match(serviceBookingPaymentFormSource, /Full Name/);
+    assert.match(serviceBookingPaymentFormSource, /Email Address/);
+    assert.match(serviceBookingPaymentFormSource, /Phone Number/);
+    assert.match(serviceBookingPaymentFormSource, /Marketing/);
+    assert.match(serviceBookingPaymentFormSource, /Payment Option/);
+    assert.match(
+      serviceBookingPaymentFormSource,
+      /SERVICE_NO_SHOW_POLICY_TEXT/,
+    );
+    assert.match(chargeAndStoreSource, /intent: "CHARGE_AND_STORE"/);
+    assert.match(chargeAndStoreSource, /countryCode: "CA"/);
+    assert.match(chargeAndStoreSource, /billingContact/);
+    assert.doesNotMatch(chargeAndStoreSource, /intent: "STORE"/);
+  });
+
+  it("renders the canonical no-show policy text and max charge amount before consent", () => {
+    assert.match(
+      serviceBookingPaymentFormSource,
+      /SERVICE_NO_SHOW_POLICY_TEXT/,
+    );
+    assert.match(serviceBookingPaymentFormSource, /Maximum no-show amount/);
+    assert.match(
+      serviceBookingPaymentFormSource,
+      /No-show &amp; late cancellation policy/,
+    );
+  });
+
+  it("payment copy does not promise that no payment is taken today", () => {
+    assert.doesNotMatch(
+      serviceBookingPaymentShellSource,
+      /No payment is taken today/i,
+    );
+    assert.match(
+      serviceBookingPaymentShellSource,
+      /Pay and confirm your booking/,
+    );
+    assert.match(
+      serviceBookingPaymentShellSource,
+      /Today’s payment secures your appointment/,
+    );
+  });
+
+  it("posts the Task 5 confirm body shape from the payment form", () => {
+    assert.match(
+      serviceBookingPaymentFormSource,
+      /"\/api\/booking\/payment\/confirm"/,
+    );
+    assert.match(
+      serviceBookingPaymentFormSource,
+      /paymentSessionReference:\s*session\.paymentSessionReference/,
+    );
+    assert.match(serviceBookingPaymentFormSource, /customer:\s*\{/);
+    assert.match(serviceBookingPaymentFormSource, /marketingOptIn/);
+    assert.match(serviceBookingPaymentFormSource, /payment:\s*\{/);
+    assert.match(serviceBookingPaymentFormSource, /expectedAmountCents/);
+    assert.match(serviceBookingPaymentFormSource, /policy:\s*\{/);
+    assert.match(serviceBookingPaymentFormSource, /policyTextHash/);
+    assert.match(
+      serviceBookingPaymentFormSource,
+      /policyVersion:\s*SERVICE_NO_SHOW_POLICY_VERSION/,
+    );
+    assert.match(
+      serviceBookingPaymentFormSource,
+      /sourceId:\s*token\.sourceId/,
+    );
+    assert.match(
+      serviceBookingPaymentFormSource,
+      /verificationToken:\s*token\.verificationToken/,
+    );
+    assert.match(serviceBookingPaymentFormSource, /idempotencyKey/);
+  });
+
+  it("guards against duplicate submit before React state updates", () => {
+    assert.match(serviceBookingPaymentFormSource, /submissionInFlightRef/);
+    assert.match(
+      serviceBookingPaymentFormSource,
+      /if \(submissionInFlightRef\.current\) \{/,
+    );
+    assert.match(
+      serviceBookingPaymentFormSource,
+      /submissionInFlightRef\.current = true/,
+    );
+    assert.match(
+      serviceBookingPaymentFormSource,
+      /submissionInFlightRef\.current = false/,
+    );
+  });
+
+  it("hardens the card display type guard to typed optional fields", () => {
+    const guardSource = serviceBookingPaymentFormSource.match(
+      /function isCardDisplay\([\s\S]*?\n\}/,
+    )?.[0];
+
+    assert.ok(guardSource, "expected isCardDisplay function in payment form");
+    assert.match(
+      guardSource,
+      /record\.brand !== undefined[\s\S]*?typeof record\.brand !== "string"/,
+      "brand must be a string when present",
+    );
+    assert.match(
+      guardSource,
+      /record\.last4 !== undefined[\s\S]*?typeof record\.last4 !== "string"/,
+      "last4 must be a string when present",
+    );
+    assert.match(
+      guardSource,
+      /record\.expMonth !== undefined[\s\S]*?typeof record\.expMonth !== "number"/,
+      "expMonth must be a number when present",
+    );
+    assert.match(
+      guardSource,
+      /record\.expYear !== undefined[\s\S]*?typeof record\.expYear !== "number"/,
+      "expYear must be a number when present",
+    );
+  });
+
+  it("initializes Square charge-and-store form from config and Web Payments SDK", () => {
+    assert.match(chargeAndStoreSource, /fetchSquareCardOnFileConfig/);
+    assert.match(
+      chargeAndStoreSource,
+      /window as unknown as \{ Square\?: SquareGlobal \}/,
+    );
+    assert.match(chargeAndStoreSource, /square-charge-card-container/);
+    assert.match(chargeAndStoreSource, /intent:\s*"CHARGE_AND_STORE"/);
+    assert.match(chargeAndStoreSource, /customerInitiated:\s*true/);
+    assert.match(chargeAndStoreSource, /sellerKeyedIn:\s*false/);
+    assert.match(chargeAndStoreSource, /currencyCode:\s*"CAD"/);
+    assert.doesNotMatch(chargeAndStoreSource, /intent:\s*"STORE"/);
+  });
+
+  it("charge-and-store form passes verificationDetails directly to Square tokenize", async () => {
     const source = await readFile(
-      new URL("./square-card-on-file-form.tsx", import.meta.url),
+      new URL("./square-charge-and-store-form.tsx", import.meta.url),
       "utf8",
     );
 
@@ -394,26 +507,19 @@ describe("booking service flow contract", () => {
     assert.doesNotMatch(source, /tokenize\(\{\s*verificationDetails\s*\}\)/);
   });
 
-  it("requires policy acceptance before card-on-file submission", () => {
-    assert.match(cardOnFileFormSource, /type="checkbox"/);
-    assert.match(cardOnFileFormSource, /policy/i);
-    assert.match(cardOnFileFormSource, /accepted/);
-    assert.match(cardOnFileFormSource, /maxChargeCents/);
-  });
-
   it("keeps the Square card container mounted while initializing", () => {
     assert.doesNotMatch(
-      cardOnFileFormSource,
+      chargeAndStoreSource,
       /if \(isConfigLoading \|\| isInitializing\) \{[\s\S]*?return \(/,
     );
-    assert.match(cardOnFileFormSource, /cardContainerId/);
+    assert.match(chargeAndStoreSource, /cardContainerId/);
     assert.match(
-      cardOnFileFormSource,
+      chargeAndStoreSource,
       /await card\.attach\(`#\$\{cardContainerId\}`\)/,
     );
 
-    const cardContainerIndex = cardOnFileFormSource.indexOf("cardContainerId");
-    const earlyConfigNullReturn = cardOnFileFormSource.indexOf(
+    const cardContainerIndex = chargeAndStoreSource.indexOf("cardContainerId");
+    const earlyConfigNullReturn = chargeAndStoreSource.indexOf(
       "if (config === null) return null",
     );
     assert.ok(
@@ -424,7 +530,7 @@ describe("booking service flow contract", () => {
   });
 
   it("renders the Square card container as a div or span, not a section", () => {
-    const containerMatch = cardOnFileFormSource.match(
+    const containerMatch = chargeAndStoreSource.match(
       /<(section|div|span)\b[^>]*\sid=\{cardContainerId\}/,
     );
 
@@ -448,186 +554,27 @@ describe("booking service flow contract", () => {
     // The attach call must be wrapped so a rejection destroys the card instance
     // before the error propagates; otherwise Square iframes/state may leak.
     assert.match(
-      cardOnFileFormSource,
+      chargeAndStoreSource,
       /try \{\s*await card\.attach\(`#\$\{cardContainerId\}`\);\s*\} catch \(attachError: unknown\) \{\s*card\.destroy\(\);\s*throw attachError;\s*\}/,
     );
   });
 
-  it("starts legacy checkout at most once when Square config is unavailable", () => {
-    assert.match(serviceBookingPaymentShellSource, /isStartingFallbackRef/);
-    assert.match(
-      serviceBookingPaymentShellSource,
-      /if \(isStartingFallbackRef\.current\) return;/,
-    );
-    assert.match(serviceBookingPaymentShellSource, /isMountedRef\.current/);
-  });
-
   it("does not nest a form inside the parent booking form", () => {
-    assert.doesNotMatch(cardOnFileFormSource, /<form\b/);
-    assert.doesNotMatch(cardOnFileFormSource, /<form\s/);
-    assert.match(cardOnFileFormSource, /type="button"/);
-    assert.doesNotMatch(cardOnFileFormSource, /type="submit"/);
+    assert.doesNotMatch(chargeAndStoreSource, /<form\b/);
+    assert.doesNotMatch(chargeAndStoreSource, /<form\s/);
+    assert.doesNotMatch(chargeAndStoreSource, /type="submit"/);
   });
 
-  it("does not expose Square identifiers or raw tokens in card-on-file UI", () => {
-    assert.doesNotMatch(cardOnFileFormSource, /squareCardId/);
-    assert.doesNotMatch(cardOnFileFormSource, /squareCustomerId/);
-    assert.doesNotMatch(cardOnFileFormSource, /cnon:/);
-    assert.doesNotMatch(cardOnFileFormSource, /squareInvoiceId/);
-    assert.doesNotMatch(cardOnFileFormSource, /squareOrderId/);
+  it("does not expose Square identifiers or raw tokens in charge-and-store UI", () => {
+    assert.doesNotMatch(chargeAndStoreSource, /squareCardId/);
+    assert.doesNotMatch(chargeAndStoreSource, /squareCustomerId/);
+    assert.doesNotMatch(chargeAndStoreSource, /cnon:/);
+    assert.doesNotMatch(chargeAndStoreSource, /squareInvoiceId/);
+    assert.doesNotMatch(chargeAndStoreSource, /squareOrderId/);
   });
 
-  it("keeps legacy Square checkout fallback exported for payment shell reuse", () => {
-    assert.match(
-      serviceBookingPaymentClientSource,
-      /export async function startLegacySquareCheckout/,
-    );
-    assert.match(
-      serviceBookingPaymentClientSource,
-      /\("\/api\/booking\/checkout"/,
-    );
-  });
-
-  it("fetches Square card-on-file config and returns null when disabled", async () => {
-    const fetcher: typeof fetch = async (input) => {
-      if (input.toString() === "/api/booking/square/config") {
-        return Response.json(
-          { error: "Square card-on-file booking is not enabled" },
-          { status: 404 },
-        );
-      }
-
-      return Response.json({ error: "Unexpected request" }, { status: 500 });
-    };
-
-    const config = await fetchSquareCardOnFileConfig(fetcher);
-
-    assert.equal(config, null);
-  });
-
-  it("returns card-on-file config when enabled", async () => {
-    const fetcher: typeof fetch = async (input) => {
-      if (input.toString() === "/api/booking/square/config") {
-        return Response.json({
-          applicationId: "sq0idp-test",
-          environment: "sandbox",
-          locationId: "LTEST",
-          scriptUrl: "https://sandbox.web.squarecdn.com/v1/square.js",
-        });
-      }
-
-      return Response.json({ error: "Unexpected request" }, { status: 500 });
-    };
-
-    const config = await fetchSquareCardOnFileConfig(fetcher);
-
-    assert.deepEqual(config, {
-      applicationId: "sq0idp-test",
-      environment: "sandbox",
-      locationId: "LTEST",
-      scriptUrl: "https://sandbox.web.squarecdn.com/v1/square.js",
-    });
-  });
-
-  it("confirms card-on-file booking with a safe response only", async () => {
-    const requests: Array<{ url: string; body: unknown }> = [];
-    const fetcher: typeof fetch = async (input, init) => {
-      const url = input.toString();
-      requests.push({ url, body: parseJsonBody(init?.body) });
-
-      if (url === "/api/booking/card-on-file") {
-        return Response.json({
-          bookingStatus: "booked",
-          card: { brand: "VISA", expMonth: 12, expYear: 2030, last4: "4242" },
-          holdReference: "hold_public_1",
-          noShowChargeStatus: "ready",
-        });
-      }
-
-      return Response.json({ error: "Unexpected request" }, { status: 500 });
-    };
-
-    const result = await confirmCardOnFileBooking({
-      paymentSessionReference: "pay_sess_test_1",
-      cardholderName: "Client Name",
-      sourceId: "cnon:card-token",
-      verificationToken: "verf-token",
-      policy: {
-        accepted: true,
-        maxChargeCents: 15000,
-        policyTextHash: "policy-hash",
-        policyVersion: "service-no-show-full-amount-v1",
-      },
-      idempotencyKey: "idem-key-1",
-      fetcher,
-    });
-
-    assert.deepEqual(result, {
-      bookingStatus: "booked",
-      card: { brand: "VISA", expMonth: 12, expYear: 2030, last4: "4242" },
-      holdReference: "hold_public_1",
-      noShowChargeStatus: "ready",
-    });
-    assert.deepEqual(requests, [
-      {
-        url: "/api/booking/card-on-file",
-        body: {
-          paymentSessionReference: "pay_sess_test_1",
-          cardholderName: "Client Name",
-          sourceId: "cnon:card-token",
-          verificationToken: "verf-token",
-          policy: {
-            accepted: true,
-            maxChargeCents: 15000,
-            policyTextHash: "policy-hash",
-            policyVersion: "service-no-show-full-amount-v1",
-          },
-          idempotencyKey: "idem-key-1",
-        },
-      },
-    ]);
-  });
-
-  it("surfaces expired holds during card-on-file confirmation", async () => {
-    const fetcher: typeof fetch = async () => {
-      return Response.json(
-        { error: "Booking hold is no longer available" },
-        { status: 409 },
-      );
-    };
-
-    await assert.rejects(
-      confirmCardOnFileBooking({
-        paymentSessionReference: "pay_sess_test_1",
-        cardholderName: "Client Name",
-        sourceId: "cnon:card-token",
-        verificationToken: "verf-token",
-        policy: {
-          accepted: true,
-          maxChargeCents: 15000,
-          policyTextHash: "policy-hash",
-          policyVersion: "service-no-show-full-amount-v1",
-        },
-        idempotencyKey: "idem-key-1",
-        fetcher,
-      }),
-      /Hold expired, choose another time\./,
-    );
-  });
-
-  it("implements a promise-backed Square script loader with error cleanup", () => {
-    assert.match(
-      cardOnFileFormSource,
-      /const scriptPromises = new Map<string, Promise<void>>/,
-    );
-    assert.match(cardOnFileFormSource, /scriptPromises\.get\(scriptUrl\)/);
-    assert.match(
-      cardOnFileFormSource,
-      /scriptPromises\.set\(scriptUrl, promise\)/,
-    );
-    assert.match(cardOnFileFormSource, /scriptPromises\.delete\(scriptUrl\)/);
-    assert.match(cardOnFileFormSource, /script\.remove\(\)/);
-    assert.match(cardOnFileFormSource, /export function loadSquareScript/);
+  it("loads Square script through the shared helper for charge-and-store", () => {
+    assert.match(chargeAndStoreSource, /loadSquareScript/);
   });
 
   it("shares a single loading promise per Square script URL", async () => {
@@ -672,41 +619,6 @@ describe("booking service flow contract", () => {
     existing.dispatchEvent("load");
 
     await assert.doesNotReject(p);
-  });
-
-  it("starts legacy Square checkout as fallback when card-on-file is unavailable", async () => {
-    const requests: Array<{ url: string; body: unknown }> = [];
-    const fetcher: typeof fetch = async (input, init) => {
-      const url = input.toString();
-      requests.push({ url, body: parseJsonBody(init?.body) });
-
-      if (url === "/api/booking/checkout") {
-        return Response.json({
-          checkoutUrl: "https://square.link/u/fallback",
-          holdReference: "hold_public_fallback",
-          orderId: "lh-fallback-1",
-          paymentProvider: "square",
-          reused: true,
-        });
-      }
-
-      return Response.json({ error: "Unexpected request" }, { status: 500 });
-    };
-
-    const checkout = await startLegacySquareCheckout(
-      "pay_sess_fallback_1",
-      fetcher,
-    );
-
-    assert.equal(checkout.checkoutUrl, "https://square.link/u/fallback");
-    assert.equal(checkout.holdReference, "hold_public_fallback");
-    assert.equal(checkout.reused, true);
-    assert.deepEqual(requests, [
-      {
-        url: "/api/booking/checkout",
-        body: { paymentSessionReference: "pay_sess_fallback_1" },
-      },
-    ]);
   });
 });
 

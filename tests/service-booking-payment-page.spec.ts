@@ -9,6 +9,7 @@ config({ path: [".env.local", ".env"] });
 declare global {
   interface Window {
     __squareAttachedSelector?: string;
+    __squareVerificationDetails?: unknown;
   }
 }
 
@@ -103,7 +104,16 @@ test("service booking redirects to dedicated payment page and mounts Square cont
         JSON.stringify({
           serviceSlug: SERVICE_SLUG,
           title: "Lash Fill",
-          payment: { amount: 130, currency: "CAD" },
+          customerStatus: "pending",
+          paymentStatus: "pending",
+          pricing: {
+            depositAmount: 50,
+            fullPrice: 130,
+            currency: "CAD",
+            customAmountMinimum: 50,
+            customAmountMaximum: 130,
+            addOnPrice: 0,
+          },
         }),
         "in-person-appointment",
         JSON.stringify({
@@ -142,6 +152,12 @@ test("service booking redirects to dedicated payment page and mounts Square cont
   });
 
   await page.route("**/api/booking/holds", async (route) => {
+    const body = await route.request().postDataJSON();
+    expect(body.name).toBeUndefined();
+    expect(body.email).toBeUndefined();
+    expect(body.phone).toBeUndefined();
+    expect(body.paymentOption).toBeUndefined();
+
     await route.fulfill({
       status: 201,
       contentType: "application/json",
@@ -171,6 +187,27 @@ test("service booking redirects to dedicated payment page and mounts Square cont
     });
   });
 
+  await page.route("**/api/booking/payment/confirm", async (route) => {
+    const body = await route.request().postDataJSON();
+    expect(body.customer.name).toBe("Playwright Test");
+    expect(body.customer.email).toBe("client@example.test");
+    expect(body.customer.phone).toBe("5550100000");
+    expect(body.customer.marketingOptIn).toBe(true);
+    expect(body.policy.accepted).toBe(true);
+    expect(body.sourceId).toBe("cnon:test");
+    expect(body.verificationToken).toBe("verf:test");
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        bookingStatus: "booked",
+        card: { last4: "1111" },
+        holdReference: publicReference,
+        paymentStatus: "captured",
+      }),
+    });
+  });
+
   await page.route(
     "**/sandbox.web.squarecdn.com/v1/square.js",
     async (route) => {
@@ -178,6 +215,7 @@ test("service booking redirects to dedicated payment page and mounts Square cont
         status: 200,
         contentType: "application/javascript",
         body: `
+        window.__squareVerificationDetails = null;
         window.Square = {
           payments: function () {
             return {
@@ -190,7 +228,8 @@ test("service booking redirects to dedicated payment page and mounts Square cont
                     window.__squareAttachedSelector = selector;
                   },
                   destroy: function () {},
-                  tokenize: async function () {
+                  tokenize: async function (verificationDetails) {
+                    window.__squareVerificationDetails = verificationDetails;
                     return { status: "OK", token: "cnon:test", verificationToken: "verf:test" };
                   },
                 };
@@ -215,20 +254,13 @@ test("service booking redirects to dedicated payment page and mounts Square cont
 
     await page.getByRole("button", { name: /continue$/i }).click();
 
-    await page.getByLabel(/Full Name/i).fill("Playwright Test");
-    await page.getByLabel(/Email Address/i).fill("client@example.test");
-    await page.getByLabel(/Phone Number/i).fill("5550100000");
-    await page
-      .getByRole("button", { name: /Continue to secure Square checkout/i })
-      .click();
-
     await expect(page).toHaveURL(
       new RegExp(
         `/services/${SERVICE_SLUG}/booking/payment\\?session=${paymentSessionReference}`,
       ),
     );
 
-    const container = page.locator("[id^='square-card-container']");
+    const container = page.locator("[id^='square-charge-card-container']");
     await expect(container).toBeVisible();
 
     const attachedSelector = await page.evaluate(async () => {
@@ -241,15 +273,49 @@ test("service booking redirects to dedicated payment page and mounts Square cont
       return null;
     });
 
-    expect(attachedSelector).toMatch(/^#square-card-container-/);
+    expect(attachedSelector).toMatch(/^#square-charge-card-container-/);
 
     const containerId = await container.getAttribute("id");
     expect(`#${containerId}`).toBe(attachedSelector);
 
+    await page.getByLabel(/Full Name/i).fill("Playwright Test");
+    await page.getByLabel(/Email Address/i).fill("client@example.test");
+    await page.getByLabel(/Phone Number/i).fill("5550100000");
+    await page.getByLabel(/Marketing/i).check();
+    await page
+      .getByLabel(/I authorize Lash Her to charge today.s booking payment/i)
+      .check();
+
+    await expect(page.getByText(/No payment is taken today/i)).toHaveCount(0);
+    await expect(page.getByText(/postal code/i)).toBeVisible();
+    await expect(page.getByText(/ZIP/i)).toHaveCount(0);
+
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().includes("/api/booking/payment/confirm") &&
+          response.status() === 200,
+      ),
+      page.getByRole("button", { name: /Pay and confirm booking/i }).click(),
+    ]);
+
+    const verificationDetails = await page.evaluate(
+      () => window.__squareVerificationDetails,
+    );
+    expect(verificationDetails).toMatchObject({
+      intent: "CHARGE_AND_STORE",
+      currencyCode: "CAD",
+      billingContact: {
+        countryCode: "CA",
+        email: "client@example.test",
+      },
+    });
+
     expect(pageErrors).toEqual([]);
     await expect(
-      page.getByText(/Missing #square-card-container|was not found/i),
+      page.getByText(/Missing #square-charge-card-container|was not found/i),
     ).toHaveCount(0);
+    await expect(page).toHaveURL(/\/booking\/confirmation/);
   } finally {
     try {
       await pool.query(

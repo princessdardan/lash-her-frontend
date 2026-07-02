@@ -1,226 +1,253 @@
-# Service Booking Dedicated Payment Page Design
+# Service Booking Payment and Charge-and-Store Design
 
 ## Summary
 
-Staging currently fails to load the Square card-on-file iframe during service booking with the message `The element #square-card-container was not found`. The payment UI also appears away from the user's current context, forcing scrolling and creating confusion. This design moves payment into a dedicated page at `/services/[slug]/booking/payment`, transfers state through a server-backed opaque payment session, fixes Square iframe initialization, and includes a focused trace for the `/api/booking/availability` `DEP0169` deprecation warning.
+The service booking funnel should split service selection from customer/payment completion. `/services/[slug]/booking` should collect only service-related choices: appointment time, optional add-ons, and existing intake questions. `/services/[slug]/booking/payment` should collect customer details, payment amount, policy consent, and Square card details in one focused payment step.
+
+The payment step must use Square's Web Payments SDK charge-and-store flow so the customer enters card details once. A booking is confirmed only after all required business conditions are satisfied: the customer has accepted the booking/no-show/card-storage policy before payment capture begins, the required payment/deposit has been captured, the card has been saved for no-show protection, and booking finalization has completed or reached an explicitly accepted manual-follow-up state.
 
 ## Goals
 
-- Reliably render the Square card-on-file iframe after a service booking hold is created.
-- Prevent `card.attach()` from running before the Square container exists in the DOM.
-- Replace the current inline payment placement with a focused dedicated payment step.
-- Avoid putting raw hold references, Square identifiers, source tokens, payment tokens, or PII in URLs or Sanity.
-- Preserve existing card-on-file confirmation and legacy Square hosted checkout fallback behavior.
-- Keep `/api/booking/availability` logs clean of app-owned deprecated URL parsing.
+- Remove name, email, phone, marketing opt-in, and payment amount selection from `/services/[slug]/booking`.
+- Keep existing service intake questions on `/services/[slug]/booking` because they are service-related details.
+- Create a provisional private appointment hold from service/time/add-on/intake selections before the payment page.
+- Move customer details, payment/deposit amount, no-show/card-storage consent, and Square card entry to `/services/[slug]/booking/payment`.
+- Fix Square tokenization by providing a valid `verificationDetails.billingContact` object.
+- Support Canadian postal-code validation through Square card-field behavior and Canadian billing context.
+- Replace misleading “No payment is taken today” copy with accurate charge-and-store language.
+- Ensure no PII, raw payment tokens, card data, provider secrets, or private payment records are stored in Sanity.
 
 ## Non-goals
 
-- Changing payment provider selection.
-- Storing payment tokens, transaction history, or private booking state in Sanity.
-- Re-enabling direct booking creation without secure payment/card-on-file reconciliation.
-- Redesigning the entire service booking experience beyond the handoff to payment.
+- Changing service catalog pricing/content in Sanity.
+- Storing raw card numbers, CVV, Square source tokens, verification tokens, or live payment submissions in Sanity.
+- Re-enabling direct booking confirmation without secure payment and card-on-file reconciliation.
+- Replacing Square as the service booking provider.
+- Redesigning unrelated product/training checkout flows.
 
-## Approved Approach
+## Approved User Flow
 
-Use a dedicated payment page with a private, server-backed payment session:
+1. Customer opens `/services/[slug]/booking`.
+2. Customer selects appointment time.
+3. Customer chooses optional add-on, if available.
+4. Customer answers existing service intake questions, if required.
+5. Submit creates a provisional appointment hold with an opaque payment session reference.
+6. Browser navigates to `/services/[slug]/booking/payment?session=<opaque-reference>`.
+7. Payment page resolves the session server-side and displays service/time/add-on/pricing summary.
+8. Customer enters name, email, phone, payment amount choice, and optional marketing opt-in if retained.
+9. Customer checks one consent box authorizing both today’s payment and saved-card/no-show policy terms.
+10. Customer enters Square card details once.
+11. Client tokenizes with Square `CHARGE_AND_STORE` and submits the token plus customer/payment/consent data to the booking payment API.
+12. Server validates and persists policy evidence before payment capture, then completes Square payment/card storage and booking finalization.
+13. Success redirects to booking confirmation only after the booking success conditions are met.
 
-```text
-/services/[slug]/booking/payment?session=<opaque-payment-session-reference>
-```
+## Route Responsibilities
 
-The details page creates a booking hold and receives an opaque session reference. The payment page resolves that reference server-side, validates the service slug and hold state, and renders only safe display data plus the Square payment shell.
+### `/services/[slug]/booking`
 
-This approach was chosen over a popup/modal and over passing the raw hold reference in the URL because it is clearer for customers, more resilient on mobile and refresh, and safer for logs/referrers/history.
+This route is the service-selection/reservation step.
 
-## User Flow
+It collects:
 
-1. Customer selects service, date, and time.
-2. Customer enters details on the existing booking page.
-3. Submit creates a private booking hold through `/api/booking/holds`.
-4. The hold creation response includes an opaque payment session reference and expiry information.
-5. The client navigates to `/services/[slug]/booking/payment?session=<reference>`.
-6. The payment page resolves and validates the session server-side.
-7. If valid, the page renders a safe booking summary and Square card-on-file form.
-8. Customer accepts the no-show/cancellation authorization and saves a card.
-9. The card-on-file confirmation API finalizes the booking state.
-10. Success redirects to the existing confirmation destination, such as `/booking/confirmation?payment=booked` or `?payment=manual_followup`.
+- appointment date/time;
+- optional add-on;
+- existing intake questions.
 
-## Architecture
+It must not collect:
 
-### Existing Booking Page
+- full name;
+- email address;
+- phone number;
+- marketing opt-in;
+- payment/deposit amount;
+- no-show or card-storage consent;
+- Square card details.
 
-`src/app/(site)/services/[slug]/booking/page.tsx` continues to render the service booking intake flow.
+Submitting this page calls the hold API with only service-related data and receives a payment page URL.
 
-`src/components/booking/booking-flow.tsx` should become responsible for:
+### `/services/[slug]/booking/payment`
 
-- service selection when applicable;
-- date/time selection;
-- customer details and intake answers;
-- creating the booking hold;
-- navigating to the dedicated payment page.
+This route is the customer and payment completion step.
 
-It should no longer own the Square SDK lifecycle or render the card-on-file form inline.
+It collects:
 
-### Payment Session
+- full name;
+- email address;
+- phone number;
+- payment/deposit amount selection;
+- marketing opt-in if the business still wants it in the service booking flow;
+- one booking/no-show/card-storage consent checkbox;
+- Square card details.
 
-A payment session is a short-lived, private DB-backed extension of existing `appointment_holds` state. Add a distinct opaque `paymentSessionReference` for the payment page handoff instead of reusing `appointment_holds.public_reference` in the URL. The reference maps server-side to the existing hold row and safe display information, with a unique index for lookup and the existing hold `expiresAt` remaining the authoritative expiry.
+It displays:
 
-The browser may receive:
+- selected service;
+- selected add-on;
+- selected appointment time;
+- amount due today;
+- no-show/card-storage policy summary;
+- hold/session expiration state.
 
-- opaque session reference;
-- expiry timestamp;
-- payment page URL.
+## Data Flow and State Model
 
-The browser must not receive in the URL:
+### Provisional Hold Creation
 
-- raw Square source token;
-- verification token;
-- Square customer/card/order/payment-link IDs;
-- internal DB IDs;
-- raw payment provider secrets;
-- PII beyond what is already entered into the page UI.
+The hold API should create a private `appointment_holds` row from:
 
-### Dedicated Payment Route
+- service slug / offering id;
+- selected start/end time;
+- selected add-on snapshot;
+- service intake answers;
+- immutable pricing bounds such as deposit amount, full price, currency, add-on price, and permitted custom amount range.
 
-Add:
+The hold should not yet contain real customer contact details or selected payment amount. If the current database schema requires `customerSnapshot`, use an explicit pending placeholder and mark the hold metadata as customer/payment pending. Downstream finalization must reject any hold that still has pending/blank customer or payment details.
 
-```text
-src/app/(site)/services/[slug]/booking/payment/page.tsx
-```
+### Payment Session Resolution
 
-The route should be dynamic/no-store because it depends on private, short-lived state.
+The payment page should resolve the opaque payment session server-side. The session display data should include:
 
-Responsibilities:
+- service slug/title;
+- selected start/end/timezone;
+- selected add-on;
+- pricing bounds and currency;
+- hold expiration timestamp;
+- safe display summary.
 
-- read `params.slug` and `searchParams.session`;
-- resolve the payment session from private DB/server-side services;
-- verify session exists;
-- verify session belongs to the requested service slug;
-- verify the related hold is active and not expired;
-- detect already confirmed sessions;
-- render active, expired, invalid, or already-confirmed states.
+The resolver must not require a previously selected payment amount because payment amount selection now happens on the payment page.
 
-### Payment Client Shell
+### Payment Completion
 
-Create or adapt a client component for the payment page, for example:
+The charge-and-store API should accept:
 
-```text
-src/components/booking/service-booking-payment-shell.tsx
-```
+- payment session reference;
+- validated contact details;
+- selected payment option and custom amount, if applicable;
+- policy acceptance flag/version/hash evidence;
+- Square source token and verification token;
+- idempotency key.
 
-Responsibilities:
+The server must recompute and validate amount due from the hold’s immutable pricing snapshot. Client-supplied amount is only a request/selection, never a source of truth.
 
-- display safe booking summary;
-- show secure card-on-file copy;
-- render `SquareCardOnFileForm`;
-- provide back/edit and choose-another-time actions;
-- display expired/retry states;
-- invoke legacy Square hosted checkout fallback if card-on-file config is unavailable.
+## Square Charge-and-Store Requirements
 
-### Card-on-file API
-
-The card-on-file confirmation API should accept a payment session reference, or support it alongside the current hold reference during migration. The server should derive the hold and client details from private state instead of relying on raw hold state in the route URL.
-
-The API response must remain safe and must not expose Square customer IDs, card IDs, source tokens, or invoice/payment provider identifiers in UI-visible data.
-
-## Square Iframe Initialization Fix
-
-The current failure happens because `SquareCardOnFileForm` calls:
+The client should tokenize once with Square Web Payments SDK using `verificationDetails` shaped for a Canadian charge-and-store booking:
 
 ```ts
-card.attach("#square-card-container");
+{
+  amount: "<server-rendered amount due today>",
+  currencyCode: "CAD",
+  intent: "CHARGE_AND_STORE",
+  customerInitiated: true,
+  sellerKeyedIn: false,
+  billingContact: {
+    givenName: "...",
+    familyName: "...",
+    email: "...",
+    phone: "...",
+    countryCode: "CA"
+  }
+}
 ```
 
-while the component is still returning a loading branch that does not include the target container.
+If a postal code is collected or made available by Square card fields, Canadian postal codes must be accepted. The UI should refer to the field as postal code rather than ZIP-only language. Square documentation states the embedded card form adapts postal-code labels and validation to the card issuing country; passing Canadian billing context prevents a US-only assumption.
 
-The fix is to make the Square container a stable DOM boundary:
+## Consent and Payment Ordering
 
-- Render the card container before initialization attempts to attach.
-- Do not replace the container with the loading UI during config or SDK initialization.
-- Show loading/error states around or above the container, not instead of it.
-- Prefer a component-owned ref or generated unique container ID over a global static selector.
-- Attach only after config is loaded, the Square script is available, and the container DOM node exists.
-- Destroy the Square card instance on unmount, session change, config change, or expiration.
-- Keep initialization idempotent for React Strict Mode remounts.
+The customer must check the booking/no-show/card-storage policy box before payment starts. If unchecked, no tokenization, Square payment, card storage, or booking finalization should occur.
 
-## Back, Retry, Expiration, and Fallback Behavior
+The server-side order is:
 
-### Back/Edit
+1. Lock/claim the hold with idempotency.
+2. Validate hold is active and belongs to the requested service/session.
+3. Validate customer details and selected payment option.
+4. Validate consent is present and policy version/hash matches the UI.
+5. Persist policy acceptance evidence in private DB before payment capture begins.
+6. Create/reuse Square customer.
+7. Authorize payment for amount due today, using delayed capture if Square supports this cleanly for the flow.
+8. Save card-on-file from the Square payment/card flow.
+9. Capture payment after card storage succeeds.
+10. Persist safe payment/card metadata, selected payment details, no-show charge record, and hold links.
+11. Finalize calendar booking.
+12. Return safe confirmation response.
 
-The payment page should offer a clear way to return to details or choose another time. For the first implementation, if no explicit release/cancel path exists, the current hold may expire naturally. If an existing safe release path exists, use it for explicit "choose another time" actions.
+If Square’s exact charge-and-store API path requires immediate capture before card storage can be completed, the implementation must explicitly handle captured-payment/card-save failure as a non-confirmed recovery state, such as refund-required/manual-follow-up, and alert staff. The preferred design is authorization first, card storage second, capture third.
 
-### Retry
+## Booking Success Conditions
 
-Card/tokenization failures keep the customer on the payment page with a clear, non-technical error. Retrying must not create a new hold. Network ambiguity or duplicate submits should be protected by server-side idempotency tied to the session/hold.
+A booking may be shown as confirmed only when all are true:
 
-### Expiration
+- policy/card-storage consent evidence has been recorded;
+- required payment/deposit has been captured;
+- card-on-file has been saved for no-show protection;
+- selected appointment has been finalized in the booking/calendar system, or a deliberately supported manual-follow-up state has been reached.
 
-Client UI should show the expired state and disable confirmation when the session/hold expires. Server APIs remain authoritative and return a conflict for expired or unavailable holds. Expired states should route the user back to choose another time.
+If any required condition is missing, the customer must not see a normal confirmed-booking success state.
 
-### Already Confirmed
+## Customer-Facing Copy
 
-If the same session is completed in another tab, the payment page should not render Square again. It should redirect to confirmation or show a safe already-confirmed status.
+Remove all copy that says no payment is taken today.
 
-### Legacy Square Hosted Checkout Fallback
+Recommended heading and copy direction:
 
-If card-on-file configuration is unavailable, the payment page preserves the existing hosted Square checkout fallback. The fallback should be started through the payment session rather than exposing raw hold data.
+- Heading: `Pay and confirm your booking`
+- Intro: `Today’s payment secures your appointment. Your card will also be stored for no-show and late-cancellation protection according to the booking policy.`
+- Checkbox: `I authorize Lash Her to charge today’s booking payment and store my card for no-show or late-cancellation protection according to the booking policy.`
+- Button: `Pay and confirm booking`
 
-## Availability Deprecation Warning
+Copy must stay consistent across the page header, card form, checkbox, summary, and submit button.
 
-The visible warning is:
+## Failure and Recovery States
 
-```text
-[DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead.
-```
-
-The current availability route already uses `new URL(req.url)` for request parsing. Implementation should still trace the warning source by searching app-owned code and, if needed, running with trace deprecation in a staging-like environment.
-
-Acceptance for this item:
-
-- If app-owned code uses deprecated `url.parse()`, replace it with WHATWG `URL`.
-- If the warning originates from Next.js, tests, or a transitive dependency while app code uses `new URL`, document the source and do not make unrelated route changes.
-- Preserve existing `/api/booking/availability` behavior and validation.
+- **Validation failure:** show field-level errors; do not call Square.
+- **Consent missing:** block submission before tokenization/payment.
+- **Expired hold:** disable payment and prompt the customer to choose another time.
+- **Payment declined/authorization failed:** do not save card or confirm booking; allow retry while hold is active.
+- **Card storage fails before capture:** cancel/void authorization where supported; do not confirm booking.
+- **Capture fails after card storage:** keep recoverable state, retry/cancel according to provider capability, and do not confirm until capture succeeds.
+- **Payment captured but card storage/finalization fails:** mark refund-required/manual-follow-up, alert staff, and avoid normal confirmation copy.
+- **Duplicate submit:** use hold-scoped idempotency and return existing terminal/in-progress state without duplicate payment, card, or calendar booking.
 
 ## Testing Strategy
 
 ### Unit and Route Tests
 
-- Payment session creation and lookup.
-- Missing/invalid session.
-- Session/service slug mismatch.
-- Expired session.
-- Already-confirmed session.
-- Card-on-file confirmation using session reference.
-- Safe response shape excluding Square/provider secrets.
-- Legacy fallback resolving through session state.
-- Availability route behavior unchanged after warning investigation.
+- Hold creation accepts service/time/add-on/intake answers without contact/payment fields.
+- Hold creation rejects invalid service time, invalid add-on, and missing required intake answers.
+- Booking page source no longer renders name/email/phone/payment amount fields.
+- Payment session resolves provisional holds without selected payment amount.
+- Payment session rejects expired, mismatched, booked, or unavailable holds.
+- Charge-and-store API rejects missing contact details, invalid payment selection, unchecked consent, and expired holds before Square calls.
+- Server recomputes amount due from hold snapshot and rejects client mismatch.
+- Policy evidence is persisted before Square payment/capture calls.
+- Successful orchestration creates/reuses Square customer, records payment, saves card, persists policy/no-show records, and finalizes booking.
+- Failure states do not produce normal booking confirmation.
 
 ### Component and Browser Tests
 
-- Booking details submit creates a hold/session and navigates to `/services/[slug]/booking/payment?session=...`.
-- Payment URL does not include raw hold reference, Square source token, or provider identifiers.
-- Square `attach()` is only called after the target container exists.
-- Payment page renders the iframe area at the active payment step without requiring scroll back to the top of the details form.
-- Config unavailable path starts the legacy Square checkout fallback.
-- Expired session disables payment and prompts the customer to choose another time.
-- Reloading the payment page works because state is server-backed, not sessionStorage-only.
+- `/services/[slug]/booking` shows time, add-ons, and intake questions only.
+- `/services/[slug]/booking/payment` shows contact fields, payment amount selector, policy checkbox, and Square card entry.
+- Payment copy contains no `No payment is taken today` language.
+- Square tokenization receives `CHARGE_AND_STORE`, `currencyCode: "CAD"`, and `billingContact.countryCode: "CA"`.
+- Canadian postal-code-capable card entry is not constrained to US ZIP wording.
+- Successful payment redirects to confirmation.
+- Declined/failed payment stays on the payment page with retry messaging.
 
 ## Acceptance Criteria
 
-- Staging no longer shows `The element #square-card-container was not found` during service booking payment.
-- Service booking payment uses `/services/[slug]/booking/payment?session=<opaque-reference>`.
-- The card iframe is visible in the dedicated payment step and usable on desktop and mobile.
-- No raw Square tokens, Square IDs, payment provider secrets, or raw hold internals appear in the payment URL or UI.
-- Successful card save confirms booking through the existing secure card-on-file flow.
-- Retry, expired, and config-unavailable paths show clear customer-facing states.
-- `/api/booking/availability` has no app-owned deprecated `url.parse()` usage; any external source is documented.
-- Relevant unit and focused browser tests pass.
+- Booking page collects only service-related details: appointment time, optional add-ons, and existing intake questions.
+- Payment page collects contact details, payment amount, policy consent, and Square card details once.
+- The customer must consent before payment/card storage begins.
+- The Square error `verificationDetails.billingContact is required and must be a(n) object.` no longer occurs for valid submissions.
+- Canadian postal codes are accepted by the payment field experience.
+- The UI accurately states that today’s payment is charged to finalize the booking and the card is stored for no-show protection.
+- A booking is confirmed only after consent, captured payment, saved card, and booking finalization requirements are met.
+- No raw card data, Square source tokens, verification tokens, provider secrets, or private payment records are stored in Sanity or exposed in URLs/UI.
 
 ## Risks and Mitigations
 
-- **Session reference leakage:** Use opaque, short-lived references and avoid raw hold/provider IDs.
-- **Hold expires during payment:** Show countdown/expired UI and enforce expiry server-side.
-- **Duplicate submits or multi-tab completion:** Use session/hold-level idempotency.
-- **Strict Mode duplicate Square initialization:** Keep stable container, cancellation guards, and cleanup.
-- **Fallback coupling to hold reference:** Move fallback to resolve from payment session.
-- **External deprecation warning source:** Trace before changing route code; document if not app-owned.
+- **Hold expires while completing payment:** show expiry state/countdown and consider increasing hold TTL if completion rates drop.
+- **Placeholder customer data reaches finalization:** require captured customer/payment status before any calendar/email finalization.
+- **Square API does not support the preferred delayed-capture sequence for this exact flow:** implement explicit captured-but-card-save-failed recovery with alerts/refund-required state.
+- **Duplicate submissions:** use hold/session-level idempotency and progress checkpoints.
+- **Pricing drift:** use immutable hold snapshots and server recomputation rather than current Sanity values at payment time.
+- **Policy evidence without payment from abandoned attempts:** keep evidence attached to the hold/attempt and expire according to private-data retention rules.

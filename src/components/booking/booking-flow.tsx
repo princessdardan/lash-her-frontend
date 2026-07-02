@@ -18,12 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Field,
-  FieldLabel,
-  FieldError,
-  FieldDescription,
-} from "@/components/ui/field";
+import { Field, FieldLabel, FieldError } from "@/components/ui/field";
 import { formatCad } from "@/lib/commerce/money";
 import {
   confirmCardOnFileBooking,
@@ -33,18 +28,9 @@ import {
 
 export { confirmCardOnFileBooking, fetchSquareCardOnFileConfig };
 
-type PaidServicePaymentOption = "deposit" | "full" | "customPartial";
-
-interface PaidServiceCheckoutInput {
+interface ServiceHoldInput {
   answers: BookingAnswerInput[];
-  customAmount?: number;
-  email: string;
   fetcher?: typeof fetch;
-  marketingConsentText?: string;
-  marketingOptIn: boolean;
-  name: string;
-  paymentOption: PaidServicePaymentOption;
-  phone: string;
   serviceSlug: string;
   selectedAddOnKey?: string;
   sourcePath?: string;
@@ -55,18 +41,12 @@ const VISIBLE_DATE_COUNT = 7;
 
 interface BookingFlowProps {
   initialServiceSlug?: string;
-  servicePayment?: {
-    depositAmount: number;
-    fullPrice: number;
-    currency: "CAD";
-  };
   services?: TService[];
   settings: BookingSettings;
 }
 
 export function BookingFlow({
   initialServiceSlug,
-  servicePayment,
   services = [],
   settings,
 }: BookingFlowProps) {
@@ -81,17 +61,10 @@ export function BookingFlow({
   const [slots, setSlots] = useState<BookingSlot[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<string>("");
   const [selectedDateState, setSelectedDateState] = useState<string>("");
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [marketingOptIn, setMarketingOptIn] = useState(false);
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [paymentOption, setPaymentOption] =
-    useState<PaidServicePaymentOption>("full");
-  const [customAmount, setCustomAmount] = useState<string>("");
   const [selectedAddOnKey, setSelectedAddOnKey] = useState<string | null>(null);
   const [dateWindowStart, setDateWindowStart] = useState(0);
 
@@ -99,24 +72,11 @@ export function BookingFlow({
     () => services.find((service) => service.slug === selectedServiceSlug),
     [services, selectedServiceSlug],
   );
-  const currentServicePayment = currentService
-    ? {
-        depositAmount: currentService.depositAmount,
-        fullPrice: currentService.fullPrice,
-        currency: currentService.currency as "CAD",
-      }
-    : servicePayment;
   const currentServiceAddOns = currentService?.addOns ?? [];
   const selectedAddOn = currentServiceAddOns.find(
     (addOn) => addOn._key === selectedAddOnKey,
   );
-  const displayTotal = currentService
-    ? currentService.fullPrice + (selectedAddOn?.price ?? 0)
-    : currentServicePayment?.fullPrice;
   const intakeQuestions = settings.intakeQuestions ?? [];
-  const marketingConsentText =
-    settings.marketingOptInLabel ||
-    "I would like to receive updates and offers.";
 
   useEffect(() => {
     if (step !== "datetime" || selectedServiceSlug.length === 0) {
@@ -259,20 +219,8 @@ export function BookingFlow({
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
-    if (
-      !selectedServiceSlug ||
-      !currentServicePayment ||
-      !selectedSlot ||
-      !name.trim() ||
-      !email.trim() ||
-      !phone.trim()
-    ) {
-      setErrorMessage("Please fill in all required fields.");
-      return;
-    }
-
-    if (!isLikelyEmail(email)) {
-      setErrorMessage("Please enter a valid email address.");
+    if (!selectedServiceSlug || !selectedSlot) {
+      setErrorMessage("Please select an appointment time.");
       return;
     }
 
@@ -284,27 +232,6 @@ export function BookingFlow({
       return;
     }
 
-    let parsedCustomAmount: number | undefined;
-    if (paymentOption === "customPartial") {
-      parsedCustomAmount = Number.parseFloat(customAmount);
-      if (!Number.isFinite(parsedCustomAmount) || parsedCustomAmount <= 0) {
-        setErrorMessage("Please enter a valid custom amount.");
-        return;
-      }
-      if (parsedCustomAmount <= currentServicePayment.depositAmount) {
-        setErrorMessage(
-          `Custom amount must be greater than the deposit of ${formatCad(currentServicePayment.depositAmount)}.`,
-        );
-        return;
-      }
-      if (parsedCustomAmount >= currentServicePayment.fullPrice) {
-        setErrorMessage(
-          `Custom amount must be less than the full price of ${formatCad(currentServicePayment.fullPrice)}.`,
-        );
-        return;
-      }
-    }
-
     setIsSubmitting(true);
     setErrorMessage("");
 
@@ -314,17 +241,10 @@ export function BookingFlow({
           questionId,
           answer,
         })),
-        email,
-        marketingConsentText,
-        marketingOptIn,
-        name,
-        paymentOption,
-        phone,
         serviceSlug: selectedServiceSlug,
         ...(selectedAddOnKey ? { selectedAddOnKey } : {}),
         sourcePath: pathname,
         start: selectedSlot,
-        ...(parsedCustomAmount ? { customAmount: parsedCustomAmount } : {}),
       });
 
       window.location.assign(paymentPageUrl);
@@ -590,7 +510,7 @@ export function BookingFlow({
             ← Back
           </button>
           <h1 className="section-heading text-3xl md:text-3xl lg:text-3xl">
-            Your Details
+            Appointment Details
           </h1>
         </header>
 
@@ -598,42 +518,6 @@ export function BookingFlow({
           onSubmit={handleSubmit}
           className="space-y-8 rounded-xl border border-lh-line bg-white p-6"
         >
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-            <Field>
-              <FieldLabel htmlFor="name">Full Name</FieldLabel>
-              <Input
-                id="name"
-                required
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="Jane Doe"
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="email">Email Address</FieldLabel>
-              <Input
-                id="email"
-                type="email"
-                required
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="jane@example.com"
-              />
-            </Field>
-          </div>
-
-          <Field>
-            <FieldLabel htmlFor="phone">Phone Number</FieldLabel>
-            <Input
-              id="phone"
-              type="tel"
-              required
-              value={phone}
-              onChange={(event) => setPhone(event.target.value)}
-              placeholder="(555) 123-4567"
-            />
-          </Field>
-
           {intakeQuestions.map((question) => (
             <Field key={question._key ?? question.id}>
               <FieldLabel htmlFor={question.id}>{question.label}</FieldLabel>
@@ -682,22 +566,6 @@ export function BookingFlow({
               )}
             </Field>
           ))}
-
-          <div className="flex items-start gap-3 pt-4">
-            <input
-              type="checkbox"
-              id="marketingOptIn"
-              checked={marketingOptIn}
-              onChange={(event) => setMarketingOptIn(event.target.checked)}
-              className="mt-1 h-4 w-4 rounded border-input text-primary focus:ring-primary"
-            />
-            <label
-              htmlFor="marketingOptIn"
-              className="text-sm leading-snug text-muted-foreground"
-            >
-              {marketingConsentText}
-            </label>
-          </div>
 
           {currentServiceAddOns.length > 0 && (
             <fieldset className="border-t border-border/50 pt-4">
@@ -764,93 +632,14 @@ export function BookingFlow({
             </fieldset>
           )}
 
-          {currentServicePayment && (
-            <div className="border-t border-border/50 pt-4">
-              <h3 className="section-subheading mb-4 text-lg text-primary md:text-lg lg:text-lg">
-                Payment Details
-              </h3>
-              <p className="mb-4 text-muted-foreground">
-                Choose the amount you would like to pay now. Your appointment is
-                valid with the deposit, the full price, or any amount between
-                them.
-              </p>
-              <div className="space-y-4">
-                <Field>
-                  <FieldLabel>Payment Option</FieldLabel>
-                  <Select
-                    value={paymentOption}
-                    onValueChange={(value) =>
-                      setPaymentOption(value as PaidServicePaymentOption)
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select payment option" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="deposit">
-                        Pay Deposit (
-                        {formatCad(currentServicePayment.depositAmount)})
-                      </SelectItem>
-                      <SelectItem value="full">
-                        Pay in Full (
-                        {formatCad(
-                          displayTotal ?? currentServicePayment.fullPrice,
-                        )}
-                        )
-                      </SelectItem>
-                      <SelectItem value="customPartial">
-                        Pay Custom Amount
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-                {paymentOption === "customPartial" && (
-                  <Field>
-                    <FieldLabel htmlFor="customAmount">
-                      Custom Amount (CAD)
-                    </FieldLabel>
-                    <Input
-                      id="customAmount"
-                      type="number"
-                      step="0.01"
-                      min={currentServicePayment.depositAmount}
-                      max={currentServicePayment.fullPrice}
-                      value={customAmount}
-                      onChange={(event) => setCustomAmount(event.target.value)}
-                      placeholder={`Between ${formatCad(currentServicePayment.depositAmount)} and ${formatCad(currentServicePayment.fullPrice)}`}
-                      required
-                    />
-                    <FieldDescription>
-                      Enter an amount greater than{" "}
-                      {formatCad(currentServicePayment.depositAmount)} and less
-                      than {formatCad(currentServicePayment.fullPrice)}.
-                    </FieldDescription>
-                  </Field>
-                )}
-                {selectedAddOn && paymentOption !== "full" && (
-                  <p className="text-sm text-lh-muted">
-                    Your selected add-on balance is due later unless you choose
-                    Pay in Full.
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-
           {errorMessage && (
             <FieldError role="alert" className="text-center">
               {errorMessage}
             </FieldError>
           )}
 
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={isSubmitting || !currentServicePayment}
-          >
-            {isSubmitting
-              ? "Creating private hold..."
-              : "Continue to secure Square checkout"}
+          <Button type="submit" className="w-full" disabled={isSubmitting}>
+            {isSubmitting ? "Creating private hold..." : "Continue to payment"}
           </Button>
         </form>
       </section>
@@ -937,7 +726,7 @@ function fetchAvailability(serviceSlug: string): Promise<Response> {
 }
 
 export async function createBookingHold(
-  input: PaidServiceCheckoutInput,
+  input: ServiceHoldInput,
 ): Promise<{ paymentPageUrl: string; paymentSessionReference: string }> {
   const fetcher = input.fetcher ?? fetch;
   const holdRes = await fetcher("/api/booking/holds", {
@@ -945,19 +734,12 @@ export async function createBookingHold(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       answers: input.answers,
-      email: input.email,
-      marketingConsentText: input.marketingConsentText,
-      marketingOptIn: input.marketingOptIn,
-      name: input.name,
-      paymentOption: input.paymentOption,
-      phone: input.phone,
       serviceSlug: input.serviceSlug,
       ...(input.selectedAddOnKey
         ? { selectedAddOnKey: input.selectedAddOnKey }
         : {}),
       sourcePath: input.sourcePath,
       start: input.start,
-      ...(input.customAmount ? { customAmount: input.customAmount } : {}),
     }),
   });
 
@@ -996,8 +778,4 @@ function readResponseError(data: unknown, fallback: string): string {
   }
 
   return fallback;
-}
-
-function isLikelyEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
