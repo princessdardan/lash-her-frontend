@@ -1,15 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { getBookingPaymentSelection, getBookingSelectedAddOn } from "./payment-policy";
+import {
+  getBookingPaymentSelection,
+  getBookingSelectedAddOn,
+} from "./payment-policy";
 import type { BookingHoldRecord } from "./holds";
 
-function createHold(offeringSnapshot: Record<string, unknown>): BookingHoldRecord {
+function createHold(
+  offeringSnapshot: Record<string, unknown>,
+): BookingHoldRecord {
   return {
     id: "hold-1",
     publicReference: "hold_public_1",
+    paymentSessionReference: "pay_sess_1",
     bookingType: "in-person-appointment",
-    customer: { name: "Client", email: "client@example.com", phone: "555-0100" },
+    customer: {
+      name: "Client",
+      email: "client@example.com",
+      phone: "555-0100",
+    },
     googleEventId: null,
     offeringId: "service-classic-fill",
     offeringSnapshot,
@@ -62,7 +72,13 @@ test("payment policy tolerates missing or malformed selected add-on snapshots", 
   const hold = createHold({
     title: "Classic Fill",
     currency: "CAD",
-    selectedAddOn: { key: "addon-lash-bath", name: "", description: "", price: -1, currency: "CAD" },
+    selectedAddOn: {
+      key: "addon-lash-bath",
+      name: "",
+      description: "",
+      price: -1,
+      currency: "CAD",
+    },
     selectedPayment: {
       amount: 50,
       description: "Classic Fill deposit",

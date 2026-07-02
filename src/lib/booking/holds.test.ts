@@ -7,6 +7,7 @@ import {
   createAppointmentHoldStore,
   createBookingHold,
   getActiveHoldBusyEvents,
+  getAppointmentHoldByPaymentSessionReference,
   isActiveHold,
   markAppointmentHoldManualRebooked,
   type AppointmentHoldLifecycleRepository,
@@ -26,7 +27,11 @@ test("createBookingHold creates a held lifecycle record that expires in 10 minut
 
   const result = await createBookingHold({
     bookingType: "in-person-appointment",
-    customer: { email: "client@example.com", name: "Client Name", phone: "555-555-5555" },
+    customer: {
+      email: "client@example.com",
+      name: "Client Name",
+      phone: "555-555-5555",
+    },
     offeringId: "lash-fill",
     offeringSnapshot: { title: "Lash Fill" },
     repository,
@@ -40,7 +45,10 @@ test("createBookingHold creates a held lifecycle record that expires in 10 minut
 
   if (result.ok) {
     assert.equal(result.hold.state, "held");
-    assert.equal(result.hold.expiresAt.toISOString(), "2026-05-18T12:10:00.000Z");
+    assert.equal(
+      result.hold.expiresAt.toISOString(),
+      "2026-05-18T12:10:00.000Z",
+    );
     assert.equal(result.hold.offeringId, "lash-fill");
     assert.match(result.hold.publicReference, /^hold_/);
   }
@@ -57,7 +65,11 @@ test("createBookingHold expires stale conflicting holds before creating a replac
 
   const result = await createBookingHold({
     bookingType: "in-person-appointment",
-    customer: { email: "client@example.com", name: "Client Name", phone: "555-555-5555" },
+    customer: {
+      email: "client@example.com",
+      name: "Client Name",
+      phone: "555-555-5555",
+    },
     offeringId: "lash-fill",
     offeringSnapshot: { title: "Lash Fill" },
     repository,
@@ -69,7 +81,70 @@ test("createBookingHold expires stale conflicting holds before creating a replac
 
   assert.equal(result.ok, true);
   assert.equal(repository.findHold("stale-hold")?.state, "expired");
-  assert.equal(repository.records.filter((record) => record.state === "held").length, 1);
+  assert.equal(
+    repository.records.filter((record) => record.state === "held").length,
+    1,
+  );
+});
+
+test("createBookingHold creates an opaque payment session reference", async () => {
+  const repository = new FakeLifecycleHoldRepository();
+  const result = await createBookingHold({
+    bookingType: "in-person-appointment",
+    customer: {
+      email: "client@example.com",
+      name: "Client Name",
+      phone: "5551234567",
+    },
+    offeringId: "service-1",
+    offeringSnapshot: { title: "Lash Fill" },
+    repository,
+    selectedStart: new Date("2030-01-01T18:00:00.000Z"),
+    selectedEnd: new Date("2030-01-01T19:00:00.000Z"),
+    timezone: "America/Toronto",
+    now: new Date("2030-01-01T17:00:00.000Z"),
+  });
+
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.match(
+      result.hold.paymentSessionReference,
+      /^pay_sess_[A-Za-z0-9_-]{16}$/,
+    );
+    assert.notEqual(
+      result.hold.paymentSessionReference,
+      result.hold.publicReference,
+    );
+  }
+});
+
+test("getAppointmentHoldByPaymentSessionReference resolves payment sessions", async () => {
+  const repository = new FakeLifecycleHoldRepository();
+  const created = await createBookingHold({
+    bookingType: "in-person-appointment",
+    customer: {
+      email: "client@example.com",
+      name: "Client Name",
+      phone: "5551234567",
+    },
+    offeringId: "service-1",
+    offeringSnapshot: { title: "Lash Fill" },
+    repository,
+    selectedStart: new Date("2030-01-01T18:00:00.000Z"),
+    selectedEnd: new Date("2030-01-01T19:00:00.000Z"),
+    timezone: "America/Toronto",
+    now: new Date("2030-01-01T17:00:00.000Z"),
+  });
+
+  assert.equal(created.ok, true);
+  if (!created.ok) throw new Error("Expected hold creation to succeed");
+
+  const resolved = await getAppointmentHoldByPaymentSessionReference(
+    created.hold.paymentSessionReference,
+    repository,
+  );
+
+  assert.equal(resolved?.id, created.hold.id);
 });
 
 test("createBookingHold rejects a second active hold for the same offering and time", async () => {
@@ -79,7 +154,11 @@ test("createBookingHold rejects a second active hold for the same offering and t
 
   const result = await createBookingHold({
     bookingType: "in-person-appointment",
-    customer: { email: "second@example.com", name: "Second Client", phone: "555-555-5556" },
+    customer: {
+      email: "second@example.com",
+      name: "Second Client",
+      phone: "555-555-5556",
+    },
     offeringId: "lash-fill",
     offeringSnapshot: { title: "Lash Fill" },
     repository,
@@ -150,7 +229,13 @@ test("payment-progress holds remain active through the payment success grace win
   assert.equal(isActiveHold(paidPendingAfterGrace, now), false);
   assert.deepEqual(
     getActiveHoldBusyEvents({
-      holds: [expiredHeld, gracePending, stalePending, paidPendingInGrace, paidPendingAfterGrace],
+      holds: [
+        expiredHeld,
+        gracePending,
+        stalePending,
+        paidPendingInGrace,
+        paidPendingAfterGrace,
+      ],
       now,
     }).map((event) => event.id),
     ["hold:pending-in-grace", "hold:paid-pending-in-grace"],
@@ -168,7 +253,11 @@ test("createBookingHold rejects paid in-progress conflicts during payment grace"
 
   const result = await createBookingHold({
     bookingType: "in-person-appointment",
-    customer: { email: "second@example.com", name: "Second Client", phone: "555-555-5556" },
+    customer: {
+      email: "second@example.com",
+      name: "Second Client",
+      phone: "555-555-5556",
+    },
     offeringId: "lash-fill",
     offeringSnapshot: { title: "Lash Fill" },
     repository,
@@ -191,7 +280,11 @@ test("appointment hold store creates holds through the conflict-safe contract", 
 
   const result = await store.createHold({
     bookingType: "in-person-appointment",
-    customer: { email: "client@example.com", name: "Client Name", phone: "555-555-5555" },
+    customer: {
+      email: "client@example.com",
+      name: "Client Name",
+      phone: "555-555-5555",
+    },
     offeringId: "lash-fill",
     offeringSnapshot: { title: "Lash Fill" },
     selectedEnd: slotEnd,
@@ -301,22 +394,31 @@ test("appointment hold transitions redact token and card metadata before persist
     rawWebhookBody: "[redacted]",
     helcimTransactionId: "txn_123",
   });
-  assert.equal(repository.findHold("failed-hold")?.paymentFailedAt?.toISOString(), now.toISOString());
+  assert.equal(
+    repository.findHold("failed-hold")?.paymentFailedAt?.toISOString(),
+    now.toISOString(),
+  );
 });
 
-
 test("appointment hold finalizer repository maps payment and booking transitions", async () => {
-  const hold = createHoldRecord({ id: "finalizer-hold", state: "payment_pending" });
+  const hold = createHoldRecord({
+    id: "finalizer-hold",
+    state: "payment_pending",
+  });
   const lifecycleRepository = new FakeLifecycleHoldRepository([hold]);
   const repository = createAppointmentHoldFinalizerRepository({
     getHoldById: async (holdId) => lifecycleRepository.findHold(holdId) ?? null,
-    transitionHold: async (input) => lifecycleRepository.transitionHold({
-      ...input,
-      now: input.now ?? now,
-    }),
+    transitionHold: async (input) =>
+      lifecycleRepository.transitionHold({
+        ...input,
+        now: input.now ?? now,
+      }),
   });
 
-  assert.equal((await repository.lockHold("finalizer-hold"))?.id, "finalizer-hold");
+  assert.equal(
+    (await repository.lockHold("finalizer-hold"))?.id,
+    "finalizer-hold",
+  );
 
   await repository.recordPaidPendingBooking({
     holdId: "finalizer-hold",
@@ -349,14 +451,18 @@ test("appointment hold finalizer repository maps payment and booking transitions
 });
 
 test("appointment hold finalizer repository preserves payment when booking fails", async () => {
-  const hold = createHoldRecord({ id: "failed-finalizer-hold", state: "payment_pending" });
+  const hold = createHoldRecord({
+    id: "failed-finalizer-hold",
+    state: "payment_pending",
+  });
   const lifecycleRepository = new FakeLifecycleHoldRepository([hold]);
   const repository = createAppointmentHoldFinalizerRepository({
     getHoldById: async (holdId) => lifecycleRepository.findHold(holdId) ?? null,
-    transitionHold: async (input) => lifecycleRepository.transitionHold({
-      ...input,
-      now: input.now ?? now,
-    }),
+    transitionHold: async (input) =>
+      lifecycleRepository.transitionHold({
+        ...input,
+        now: input.now ?? now,
+      }),
   });
 
   await repository.recordPaidPendingBooking({
@@ -436,7 +542,9 @@ class FakeHoldRepository implements BookingHoldRepository {
     this.records = [...records];
   }
 
-  async createConflictSafeHold(input: CreateBookingHoldRecordInput): Promise<
+  async createConflictSafeHold(
+    input: CreateBookingHoldRecordInput,
+  ): Promise<
     | { ok: true; hold: BookingHoldRecord }
     | { ok: false; reason: "slot_conflict"; conflictingHoldId: string }
   > {
@@ -453,21 +561,28 @@ class FakeHoldRepository implements BookingHoldRepository {
       }
     }
 
-    const conflict = this.records.find((record) => (
-      record.offeringId === input.offeringId &&
-      isActiveHold(record, input.now) &&
-      record.selectedStart < input.selectedEnd &&
-      input.selectedStart < record.selectedEnd &&
-      ACTIVE_HOLD_STATES.includes(record.state)
-    ));
+    const conflict = this.records.find(
+      (record) =>
+        record.offeringId === input.offeringId &&
+        isActiveHold(record, input.now) &&
+        record.selectedStart < input.selectedEnd &&
+        input.selectedStart < record.selectedEnd &&
+        ACTIVE_HOLD_STATES.includes(record.state),
+    );
 
     if (conflict !== undefined) {
-      return { ok: false, reason: "slot_conflict", conflictingHoldId: conflict.id };
+      return {
+        ok: false,
+        reason: "slot_conflict",
+        conflictingHoldId: conflict.id,
+      };
     }
 
     const record = createHoldRecord({
       id: `hold-${this.records.length + 1}`,
       publicReference: `hold_${this.records.length + 1}`,
+      paymentSessionReference:
+        input.paymentSessionReference ?? `pay_sess_${this.records.length + 1}`,
       state: "held",
       ...input,
     });
@@ -479,12 +594,27 @@ class FakeHoldRepository implements BookingHoldRepository {
   findHold(id: string): BookingHoldRecord | undefined {
     return this.records.find((record) => record.id === id);
   }
+
+  async getByPaymentSessionReference(
+    paymentSessionReference: string,
+  ): Promise<BookingHoldRecord | null> {
+    return (
+      this.records.find(
+        (record) => record.paymentSessionReference === paymentSessionReference,
+      ) ?? null
+    );
+  }
 }
 
-class FakeLifecycleHoldRepository extends FakeHoldRepository implements AppointmentHoldLifecycleRepository {
+class FakeLifecycleHoldRepository
+  extends FakeHoldRepository
+  implements AppointmentHoldLifecycleRepository
+{
   readonly transitions: TransitionAppointmentHoldInput[] = [];
 
-  async transitionHold(input: TransitionAppointmentHoldInput): Promise<BookingHoldRecord | null> {
+  async transitionHold(
+    input: TransitionAppointmentHoldInput,
+  ): Promise<BookingHoldRecord | null> {
     this.transitions.push(input);
 
     const record = this.findHold(input.holdId);
@@ -493,29 +623,43 @@ class FakeLifecycleHoldRepository extends FakeHoldRepository implements Appointm
       return null;
     }
 
-    if (input.requiredState !== undefined && record.state !== input.requiredState) {
+    if (
+      input.requiredState !== undefined &&
+      record.state !== input.requiredState
+    ) {
       return null;
     }
 
-    if (input.expiresAfter !== undefined && record.expiresAt <= input.expiresAfter) {
+    if (
+      input.expiresAfter !== undefined &&
+      record.expiresAt <= input.expiresAfter
+    ) {
       return null;
     }
 
     record.state = input.status;
     record.updatedAt = input.now;
     record.checkoutOrderId = input.checkoutOrderId ?? record.checkoutOrderId;
-    record.checkoutOrderPublicId = input.checkoutOrderPublicId ?? record.checkoutOrderPublicId;
+    record.checkoutOrderPublicId =
+      input.checkoutOrderPublicId ?? record.checkoutOrderPublicId;
     record.helcimInvoiceId = input.helcimInvoiceId ?? record.helcimInvoiceId;
-    record.helcimInvoiceNumber = input.helcimInvoiceNumber ?? record.helcimInvoiceNumber;
-    record.helcimTransactionId = input.helcimTransactionId ?? record.helcimTransactionId;
+    record.helcimInvoiceNumber =
+      input.helcimInvoiceNumber ?? record.helcimInvoiceNumber;
+    record.helcimTransactionId =
+      input.helcimTransactionId ?? record.helcimTransactionId;
     record.googleEventId = input.googleEventId ?? record.googleEventId;
     record.failureReason = input.failureReason ?? record.failureReason;
     record.failureMetadata = input.failureMetadata ?? record.failureMetadata;
-    record.finalizationReason = input.finalizationReason ?? record.finalizationReason;
-    record.finalizationStatus = input.finalizationStatus ?? record.finalizationStatus;
-    record.manualReviewReason = input.manualReviewReason ?? record.manualReviewReason;
-    record.manualReviewStatus = input.manualReviewStatus ?? record.manualReviewStatus;
-    record.reconciliationMetadata = input.reconciliationMetadata ?? record.reconciliationMetadata;
+    record.finalizationReason =
+      input.finalizationReason ?? record.finalizationReason;
+    record.finalizationStatus =
+      input.finalizationStatus ?? record.finalizationStatus;
+    record.manualReviewReason =
+      input.manualReviewReason ?? record.manualReviewReason;
+    record.manualReviewStatus =
+      input.manualReviewStatus ?? record.manualReviewStatus;
+    record.reconciliationMetadata =
+      input.reconciliationMetadata ?? record.reconciliationMetadata;
     applyTransitionTimestamp(record, input.status, input.now);
 
     return record;
@@ -551,7 +695,10 @@ function applyTransitionTimestamp(
     record.bookingFailedAt = timestamp;
   }
 
-  if (status === "manual_followup" || status === "paid_unbookable_rebooking_pending") {
+  if (
+    status === "manual_followup" ||
+    status === "paid_unbookable_rebooking_pending"
+  ) {
     record.manualFollowupAt = timestamp;
   }
 }
@@ -562,7 +709,11 @@ function createHoldRecord(
   return {
     bookingType: "in-person-appointment",
     createdAt: now,
-    customer: { email: "client@example.com", name: "Client Name", phone: "555-555-5555" },
+    customer: {
+      email: "client@example.com",
+      name: "Client Name",
+      phone: "555-555-5555",
+    },
     expiresAt: new Date("2026-05-18T12:10:00.000Z"),
     finalizationStatus: "pending",
     googleEventId: null,
@@ -570,6 +721,7 @@ function createHoldRecord(
     offeringId: "lash-fill",
     offeringSnapshot: { title: "Lash Fill" },
     payment: null,
+    paymentSessionReference: "pay_sess_1",
     publicReference: "hold_1",
     selectedEnd: slotEnd,
     selectedStart: slotStart,

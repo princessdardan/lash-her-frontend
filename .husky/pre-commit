@@ -1,0 +1,14 @@
+npx lint-staged
+
+# Block files larger than 1MB
+LARGE_FILES=$(git diff --cached --name-only --diff-filter=ACM | while read file; do
+  if [ -f "$file" ] && [ "$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null)" -gt 1048576 ]; then
+    echo "$file"
+  fi
+done)
+
+if [ -n "$LARGE_FILES" ]; then
+  echo "Error: Files larger than 1MB detected:"
+  echo "$LARGE_FILES"
+  exit 1
+fi

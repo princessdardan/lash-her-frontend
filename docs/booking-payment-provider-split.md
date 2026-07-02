@@ -2,19 +2,33 @@
 
 Date: 2026-05-23
 
-Use this reference when checking whether a booking, checkout, or scheduling change is using the right provider boundary.
+Use this reference when checking whether a booking, checkout, or scheduling change is using the right provider boundary. Paid service bookings currently use Square card-on-file intake plus Square invoice-based no-show enforcement as the primary path; Square hosted checkout is retained only as a legacy/fallback path.
 
 ## Provider Map
 
-| Flow | Payment provider | Scheduling or calendar provider | Private state owner |
-| --- | --- | --- | --- |
-| Paid service booking | Square hosted checkout | Lash Her slot UI plus Google Calendar API event creation | Private Postgres |
-| Product checkout | Helcim | Not applicable | Private Postgres |
-| Training checkout | Helcim | Paid token gate, then Google Appointment Schedule link or embed for intro-call scheduling | Private Postgres |
+| Flow                 | Payment provider                                                                                                          | Scheduling or calendar provider                                                           | Private state owner |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------- |
+| Paid service booking | Square card-on-file intake + Square invoice-based no-show enforcement (primary); Square hosted checkout (legacy/fallback) | Lash Her slot UI plus Google Calendar API event creation                                  | Private Postgres    |
+| Product checkout     | Helcim                                                                                                                    | Not applicable                                                                            | Private Postgres    |
+| Training checkout    | Helcim                                                                                                                    | Paid token gate, then Google Appointment Schedule link or embed for intro-call scheduling | Private Postgres    |
 
-Square is not a global payment provider. Helcim remains the provider for product checkout and training checkout. Google Appointment Schedule is not used for service bookings.
+Square is not a global payment provider. The primary service-booking path uses Square card-on-file and invoice APIs; the Square hosted checkout path is a legacy/fallback. Helcim remains the provider for product checkout and training checkout. Google Appointment Schedule is not used for service bookings.
 
-## Paid Service Booking Flow
+## Current Primary Paid Service Booking Flow (Card-on-File / No-Show Invoice)
+
+1. Customer selects a service and slot in the custom Lash Her booking UI.
+2. The app revalidates availability against Google Calendar busy time and active private holds.
+3. The app creates a private Postgres hold with the selected payment snapshot.
+4. The app tokenizes the customer's card through Square Web Payments SDK and saves a Square card-on-file.
+5. The app creates a Square order and a DRAFT invoice for the maximum authorized no-show amount against the saved card.
+6. No-show enforcement publishes the invoice and charges the saved card through Square only after staff confirmation or an approved automated rule.
+7. Square webhook or API reconciliation verifies the invoice/payment state server-side before finalization.
+8. The shared finalizer creates or finds exactly one Google Calendar API event.
+9. Private Postgres records the provider, payment, hold, card-on-file, invoice, and Calendar state. Sanity receives none of it.
+
+Square invoice state and card-on-file state are not proof of payment until server-side reconciliation confirms a terminal state. The app must verify payment with Square and private DB state before finalization.
+
+## Legacy Paid Service Booking Flow (Square Hosted Checkout)
 
 1. Customer selects a service and slot in the custom Lash Her booking UI.
 2. The app revalidates availability against Google Calendar busy time and active private holds.

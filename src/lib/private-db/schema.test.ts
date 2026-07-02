@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { getTableConfig } from "drizzle-orm/pg-core";
@@ -6,17 +7,28 @@ import { getTableConfig } from "drizzle-orm/pg-core";
 import {
   appointmentHolds,
   appointmentHoldStatus,
+  bookingNoShowChargeAttempts,
+  bookingNoShowChargeRecords,
+  bookingPolicyAcceptances,
+  bookingSavedPaymentMethods,
+  bookingSquareCustomers,
   calendarFinalizationStatus,
   checkoutOrders,
   checkoutPaymentEvents,
   checkoutOrderPurpose,
   marketingConsentEvents,
+  noShowChargeStatus,
   paymentEventProcessingStatus,
   paymentProvider,
+  savedPaymentMethodStatus,
 } from "./schema";
 
 function getIndexNames(
-  table: typeof appointmentHolds | typeof checkoutOrders | typeof checkoutPaymentEvents,
+  table:
+    | typeof appointmentHolds
+    | typeof bookingNoShowChargeRecords
+    | typeof checkoutOrders
+    | typeof checkoutPaymentEvents,
 ): string[] {
   const names: string[] = [];
 
@@ -204,47 +216,184 @@ test("provider-aware unique indexes guard duplicate event and calendar correlati
     "checkout_payment_events_provider_event_idx",
   ]);
 
-  assert.ok(getIndexNames(checkoutOrders).includes("checkout_orders_calendar_event_id_idx"));
-  assert.ok(getIndexNames(checkoutOrders).includes("checkout_orders_square_correlation_id_idx"));
-  assert.ok(getIndexNames(appointmentHolds).includes("appointment_holds_checkout_order_public_id_idx"));
-  assert.ok(getIndexNames(appointmentHolds).includes("appointment_holds_google_event_id_idx"));
+  assert.ok(
+    getIndexNames(checkoutOrders).includes(
+      "checkout_orders_calendar_event_id_idx",
+    ),
+  );
+  assert.ok(
+    getIndexNames(checkoutOrders).includes(
+      "checkout_orders_square_correlation_id_idx",
+    ),
+  );
+  assert.ok(
+    getIndexNames(appointmentHolds).includes(
+      "appointment_holds_checkout_order_public_id_idx",
+    ),
+  );
+  assert.ok(
+    getIndexNames(appointmentHolds).includes(
+      "appointment_holds_google_event_id_idx",
+    ),
+  );
 });
 
 test("Square provider indexes guard duplicate checkout, order, and payment IDs", () => {
-  assert.ok(getIndexNames(checkoutOrders).includes("checkout_orders_provider_checkout_idx"));
-  assert.ok(getIndexNames(checkoutOrders).includes("checkout_orders_provider_order_idx"));
-  assert.ok(getIndexNames(checkoutOrders).includes("checkout_orders_provider_payment_idx"));
-  assert.ok(getIndexNames(appointmentHolds).includes("appointment_holds_square_payment_link_id_idx"));
-  assert.ok(getIndexNames(appointmentHolds).includes("appointment_holds_square_checkout_id_idx"));
-  assert.ok(getIndexNames(appointmentHolds).includes("appointment_holds_square_payment_id_idx"));
-  assert.ok(getIndexNames(appointmentHolds).includes("appointment_holds_square_order_id_idx"));
+  assert.ok(
+    getIndexNames(checkoutOrders).includes(
+      "checkout_orders_provider_checkout_idx",
+    ),
+  );
+  assert.ok(
+    getIndexNames(checkoutOrders).includes(
+      "checkout_orders_provider_order_idx",
+    ),
+  );
+  assert.ok(
+    getIndexNames(checkoutOrders).includes(
+      "checkout_orders_provider_payment_idx",
+    ),
+  );
+  assert.ok(
+    getIndexNames(appointmentHolds).includes(
+      "appointment_holds_square_payment_link_id_idx",
+    ),
+  );
+  assert.ok(
+    getIndexNames(appointmentHolds).includes(
+      "appointment_holds_square_checkout_id_idx",
+    ),
+  );
+  assert.ok(
+    getIndexNames(appointmentHolds).includes(
+      "appointment_holds_square_payment_id_idx",
+    ),
+  );
+  assert.ok(
+    getIndexNames(appointmentHolds).includes(
+      "appointment_holds_square_order_id_idx",
+    ),
+  );
+});
+
+test("appointment holds expose opaque payment session handoff reference", () => {
+  const schemaSource = readFileSync(
+    new URL("./schema.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    schemaSource,
+    /paymentSessionReference:\s*text\("payment_session_reference"\)\.notNull\(\)/,
+  );
+  assert.match(
+    schemaSource,
+    /uniqueIndex\("appointment_holds_payment_session_reference_idx"\)\.on\(\s*table\.paymentSessionReference,?\s*\)/,
+  );
 });
 
 test("rebooking-first hold state can be represented before Calendar correlation", () => {
-  const rebookingState = "paid_unbookable_rebooking_pending" satisfies
-    typeof appointmentHoldStatus.enumValues[number];
-  const finalizationState = "paid_unbookable_rebooking_pending" satisfies
-    typeof calendarFinalizationStatus.enumValues[number];
+  const rebookingState =
+    "paid_unbookable_rebooking_pending" satisfies (typeof appointmentHoldStatus.enumValues)[number];
+  const finalizationState =
+    "paid_unbookable_rebooking_pending" satisfies (typeof calendarFinalizationStatus.enumValues)[number];
 
   assert.equal(rebookingState, "paid_unbookable_rebooking_pending");
   assert.equal(finalizationState, "paid_unbookable_rebooking_pending");
   assert.ok(Object.keys(appointmentHolds).includes("googleEventId"));
 });
 
-test("appointment holds schema does not define raw payment token or card fields", () => {
+test("saved payment method status enum supports active, replaced, disabled, and failure states", () => {
+  assert.ok(savedPaymentMethodStatus.enumValues.includes("active"));
+  assert.ok(savedPaymentMethodStatus.enumValues.includes("disabled"));
+});
+
+test("no-show charge status enum supports ready and charge_failed states", () => {
+  assert.ok(noShowChargeStatus.enumValues.includes("ready"));
+  assert.ok(noShowChargeStatus.enumValues.includes("charge_failed"));
+});
+
+test("saved cards, policy acceptance, and no-show tables are exported", () => {
+  assert.ok(bookingSquareCustomers);
+  assert.ok(bookingSavedPaymentMethods);
+  assert.ok(bookingPolicyAcceptances);
+  assert.ok(bookingNoShowChargeRecords);
+  assert.ok(bookingNoShowChargeAttempts);
+});
+
+test("appointment holds schema exposes card-on-file and no-show correlation fields", () => {
+  const columnNames = Object.keys(appointmentHolds);
+
+  assert.ok(columnNames.includes("savedPaymentMethodId"));
+  assert.ok(columnNames.includes("policyAcceptanceId"));
+  assert.ok(columnNames.includes("noShowChargeRecordId"));
+  assert.ok(columnNames.includes("squareCustomerId"));
+  assert.ok(columnNames.includes("squareCardId"));
+  assert.ok(columnNames.includes("cardOnFileStatus"));
+  assert.ok(columnNames.includes("noShowInvoiceId"));
+  assert.ok(columnNames.includes("noShowInvoiceOrderId"));
+  assert.ok(columnNames.includes("noShowInvoiceStatus"));
+});
+
+test("appointment hold policy and no-show links are foreign-key backed", () => {
+  const foreignKeyNames = getTableConfig(appointmentHolds)
+    .foreignKeys.map((foreignKey) => foreignKey.getName())
+    .sort();
+
+  assert.ok(
+    foreignKeyNames.includes(
+      "appointment_holds_policy_acceptance_id_booking_policy_acceptances_id_fk",
+    ),
+    "policy acceptance foreign key is configured",
+  );
+  assert.ok(
+    foreignKeyNames.includes(
+      "appointment_holds_no_show_charge_record_id_booking_no_show_charge_records_id_fk",
+    ),
+    "no-show charge record foreign key is configured",
+  );
+});
+
+test("checkout payment events schema can correlate to a no-show charge record", () => {
+  assert.ok(
+    Object.keys(checkoutPaymentEvents).includes("noShowChargeRecordId"),
+  );
+});
+
+test("no-show charge records index square order id for delayed invoice webhook correlation", () => {
+  assert.ok(
+    getIndexNames(bookingNoShowChargeRecords).includes(
+      "booking_no_show_charge_records_square_order_id_idx",
+    ),
+  );
+});
+
+test("no-show charge records expose admin audit fields", () => {
+  assert.ok(bookingNoShowChargeRecords.adminActionAt);
+  assert.ok(bookingNoShowChargeRecords.adminOperatorId);
+  assert.ok(bookingNoShowChargeRecords.adminReason);
+  assert.ok(bookingNoShowChargeRecords.adminEligibilityCheckedAt);
+});
+
+test("appointment holds schema does not define raw card numbers, CVV, tokens, or secrets", () => {
   const columnNameText = Object.keys(appointmentHolds).join(" ").toLowerCase();
 
-  assert.equal(columnNameText.includes("card"), false);
+  assert.equal(columnNameText.includes("cardnumber"), false);
   assert.equal(columnNameText.includes("cvv"), false);
   assert.equal(columnNameText.includes("cvc"), false);
+  assert.equal(columnNameText.includes("pan"), false);
   assert.equal(columnNameText.includes("token"), false);
   assert.equal(columnNameText.includes("secret"), false);
 });
 
 test("marketing consent events preserve evidence when submissions are deleted", () => {
-  const consentEventForeignKeys = getTableConfig(marketingConsentEvents).foreignKeys;
+  const consentEventForeignKeys = getTableConfig(
+    marketingConsentEvents,
+  ).foreignKeys;
   const submissionForeignKey = consentEventForeignKeys.find(
-    (foreignKey) => foreignKey.getName() === "marketing_consent_events_submission_id_marketing_contact_submissions_id_fk",
+    (foreignKey) =>
+      foreignKey.getName() ===
+      "marketing_consent_events_submission_id_marketing_contact_submissions_id_fk",
   );
 
   assert.equal(marketingConsentEvents.submissionId.notNull, false);

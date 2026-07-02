@@ -4,8 +4,12 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 
 import { createTrainingSquareInvoicePostHandler } from "../src/app/api/training-checkout/square-invoice/route";
 import { createSquareWebhookPostHandler } from "../src/app/api/webhooks/square/route";
+import { createServicePaymentAlertLogger } from "../src/lib/booking/payments/service-payment-alerts";
 import type { CheckoutOrderRow } from "../src/lib/commerce/order-store";
-import type { SquareInvoiceDetails, SquareInvoiceOrderDetails } from "../src/lib/commerce/square-invoice-client";
+import type {
+  SquareInvoiceDetails,
+  SquareInvoiceOrderDetails,
+} from "../src/lib/commerce/square-invoice-client";
 import { createTrainingSquareInvoiceFinalizer } from "../src/lib/commerce/training-square-invoice-finalizer";
 
 const PROGRAM_SLUG = "beginner-private-training";
@@ -26,10 +30,26 @@ const CONFIRMATION_PATH = `/training-programs/${PROGRAM_SLUG}/confirmation?order
 const CONFIRMATION_URL = `http://localhost:3000${CONFIRMATION_PATH}`;
 const WEBHOOK_URL = "http://localhost:3000/api/webhooks/square";
 const WEBHOOK_SIGNATURE_KEY = "mock-square-webhook-signature-key";
-const FORBIDDEN_PAYMENT_HOSTS = new Set(["api.helcim.com", "connect.squareup.com", "connect.squareupsandbox.com"]);
+const FORBIDDEN_PAYMENT_HOSTS = new Set([
+  "api.helcim.com",
+  "connect.squareup.com",
+  "connect.squareupsandbox.com",
+]);
 
-type EnrollmentRecord = Awaited<ReturnType<Parameters<typeof createTrainingSquareInvoiceFinalizer>[0]["getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId"]>>;
-type SchedulingTokenRecord = Awaited<ReturnType<Parameters<typeof createTrainingSquareInvoiceFinalizer>[0]["getOrIssueTrainingSchedulingTokenForPaidOrder"]>>;
+type EnrollmentRecord = Awaited<
+  ReturnType<
+    Parameters<
+      typeof createTrainingSquareInvoiceFinalizer
+    >[0]["getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId"]
+  >
+>;
+type SchedulingTokenRecord = Awaited<
+  ReturnType<
+    Parameters<
+      typeof createTrainingSquareInvoiceFinalizer
+    >[0]["getOrIssueTrainingSchedulingTokenForPaidOrder"]
+  >
+>;
 
 function collectForbiddenPaymentHosts(page: Page): string[] {
   const hosts: string[] = [];
@@ -45,7 +65,9 @@ function collectForbiddenPaymentHosts(page: Page): string[] {
   return hosts;
 }
 
-async function setupMockTrainingAfterpayFlow(page: Page): Promise<{ apiPostPaths: string[]; webhookEvents: string[] }> {
+async function setupMockTrainingAfterpayFlow(
+  page: Page,
+): Promise<{ apiPostPaths: string[]; webhookEvents: string[] }> {
   let invoicePaid = false;
   let squareInvoice = createSquareInvoiceDetails("PUBLISHED");
   let squareOrder = createSquareOrderDetails();
@@ -82,7 +104,9 @@ async function setupMockTrainingAfterpayFlow(page: Page): Promise<{ apiPostPaths
       };
     },
     async findOrderBySquareInvoiceId(invoiceId) {
-      return pendingOrder?.providerCheckoutId === invoiceId ? pendingOrder : null;
+      return pendingOrder?.providerCheckoutId === invoiceId
+        ? pendingOrder
+        : null;
     },
     async getInvoice(invoiceId) {
       expect(invoiceId).toBe(INVOICE_ID);
@@ -171,7 +195,9 @@ async function setupMockTrainingAfterpayFlow(page: Page): Promise<{ apiPostPaths
       expect(input.orderId).toBe(ORDER_ID);
       expect(input.paymentProvider).toBe("square");
       expect(input.programTitle).toBe("Beginner Private Training");
-      expect(input.schedulingUrl).toContain(`/training-programs/${PROGRAM_SLUG}/schedule?token=${SCHEDULING_TOKEN}`);
+      expect(input.schedulingUrl).toContain(
+        `/training-programs/${PROGRAM_SLUG}/schedule?token=${SCHEDULING_TOKEN}`,
+      );
     },
     async sendTrainingCustomerPaymentEmail(input) {
       expect(input.customerEmail).toBe(CUSTOMER_EMAIL);
@@ -179,7 +205,9 @@ async function setupMockTrainingAfterpayFlow(page: Page): Promise<{ apiPostPaths
       expect(input.orderId).toBe(ORDER_ID);
       expect(input.paymentProvider).toBe("square");
       expect(input.programTitle).toBe("Beginner Private Training");
-      expect(input.schedulingUrl).toContain(`/training-programs/${PROGRAM_SLUG}/schedule?token=${SCHEDULING_TOKEN}`);
+      expect(input.schedulingUrl).toContain(
+        `/training-programs/${PROGRAM_SLUG}/schedule?token=${SCHEDULING_TOKEN}`,
+      );
     },
   });
 
@@ -220,7 +248,12 @@ async function setupMockTrainingAfterpayFlow(page: Page): Promise<{ apiPostPaths
     },
     isEnabled: () => true,
     locationId: "mock-square-location",
-    recordSquareInvoicePublication: async (orderId, invoiceId, publicUrl, version) => {
+    recordSquareInvoicePublication: async (
+      orderId,
+      invoiceId,
+      publicUrl,
+      version,
+    ) => {
       expect(orderId).toBe(ORDER_ID);
       expect(invoiceId).toBe(INVOICE_ID);
       expect(publicUrl).toBe(SQUARE_INVOICE_URL);
@@ -243,7 +276,10 @@ async function setupMockTrainingAfterpayFlow(page: Page): Promise<{ apiPostPaths
       async createOrder(_locationId, lineItems, referenceId) {
         expect(referenceId).toBe(CORRELATION_ID);
         expect(lineItems).toHaveLength(1);
-        expect(lineItems[0]?.base_price_money).toEqual({ amount: TOTAL_CENTS, currency: "CAD" });
+        expect(lineItems[0]?.base_price_money).toEqual({
+          amount: TOTAL_CENTS,
+          currency: "CAD",
+        });
         squareOrder = createSquareOrderDetails(referenceId);
         return SQUARE_ORDER_ID;
       },
@@ -273,6 +309,16 @@ async function setupMockTrainingAfterpayFlow(page: Page): Promise<{ apiPostPaths
   });
 
   const webhookHandler = createSquareWebhookPostHandler({
+    alerts: createServicePaymentAlertLogger({
+      logWarn: () => undefined,
+      logError: () => undefined,
+    }),
+    finalizeNoShowCharge: async () => ({
+      duplicateEvent: false,
+      finalized: false,
+      retryable: false,
+      status: "ignored",
+    }),
     claimSquareInvoiceWebhookEvent: async (input) => {
       if (processedWebhookEvents.has(input.eventId)) {
         return { duplicate: true, processingStatus: "processed" };
@@ -280,7 +326,9 @@ async function setupMockTrainingAfterpayFlow(page: Page): Promise<{ apiPostPaths
       return { duplicate: false };
     },
     finalizeSquarePayment: async () => {
-      throw new Error("Service booking finalizer should not receive training invoice events");
+      throw new Error(
+        "Service booking finalizer should not receive training invoice events",
+      );
     },
     finalizeTrainingSquareInvoicePayment: async (input) => {
       const result = await finalizer({
@@ -296,8 +344,13 @@ async function setupMockTrainingAfterpayFlow(page: Page): Promise<{ apiPostPaths
         status: result.reason ?? (result.finalized ? "paid" : "duplicate"),
       };
     },
-    findOrderBySquareInvoiceId: async (invoiceId) => pendingOrder?.providerCheckoutId === invoiceId ? pendingOrder : null,
-    getEnv: () => ({ notificationUrl: WEBHOOK_URL, serviceBookingEnabled: false, webhookSignatureKey: WEBHOOK_SIGNATURE_KEY }),
+    findOrderBySquareInvoiceId: async (invoiceId) =>
+      pendingOrder?.providerCheckoutId === invoiceId ? pendingOrder : null,
+    getEnv: () => ({
+      notificationUrl: WEBHOOK_URL,
+      serviceBookingEnabled: false,
+      webhookSignatureKey: WEBHOOK_SIGNATURE_KEY,
+    }),
     recordSquareInvoiceWebhookEventProcessed: async (input) => {
       processedWebhookEvents.add(input.eventId);
     },
@@ -306,15 +359,21 @@ async function setupMockTrainingAfterpayFlow(page: Page): Promise<{ apiPostPaths
   page.on("request", (request) => {
     if (request.method() !== "POST") return;
     const url = new URL(request.url());
-    if (url.origin !== "http://localhost:3000" || !url.pathname.startsWith("/api/")) return;
+    if (
+      url.origin !== "http://localhost:3000" ||
+      !url.pathname.startsWith("/api/")
+    )
+      return;
     apiPostPaths.push(url.pathname);
   });
 
-  await page.route(new RegExp(`/training-programs/${PROGRAM_SLUG}/checkout(?:$|\\?)`), async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "text/html",
-      body: `<!doctype html>
+  await page.route(
+    new RegExp(`/training-programs/${PROGRAM_SLUG}/checkout(?:$|\\?)`),
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/html",
+        body: `<!doctype html>
         <html>
           <head><title>Training Checkout | Lash Her</title></head>
           <body>
@@ -383,27 +442,35 @@ async function setupMockTrainingAfterpayFlow(page: Page): Promise<{ apiPostPaths
             </main>
           </body>
         </html>`,
-    });
-  });
+      });
+    },
+  );
 
-  await page.route(/\/api\/training-checkout\/square-invoice(?:\?.*)?$/, async (route) => {
-    expect(route.request().method()).toBe("POST");
-    expect(route.request().headers()["x-lash-payment-mock-scenario"]).toBe("square_invoice_unpaid");
-    expect(route.request().postDataJSON()).toEqual({
-      programSlug: PROGRAM_SLUG,
-      customerName: CUSTOMER_NAME,
-      customerEmail: CUSTOMER_EMAIL,
-      clientPrice: CLIENT_PRICE,
-    });
+  await page.route(
+    /\/api\/training-checkout\/square-invoice(?:\?.*)?$/,
+    async (route) => {
+      expect(route.request().method()).toBe("POST");
+      expect(route.request().headers()["x-lash-payment-mock-scenario"]).toBe(
+        "square_invoice_unpaid",
+      );
+      expect(route.request().postDataJSON()).toEqual({
+        programSlug: PROGRAM_SLUG,
+        customerName: CUSTOMER_NAME,
+        customerEmail: CUSTOMER_EMAIL,
+        clientPrice: CLIENT_PRICE,
+      });
 
-    await fulfillWithHandlerResponse(route, checkoutHandler);
-  });
+      await fulfillWithHandlerResponse(route, checkoutHandler);
+    },
+  );
 
-  await page.route(new RegExp(`${SQUARE_INVOICE_PATH}(?:$|\\?)`), async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "text/html",
-      body: `<!doctype html>
+  await page.route(
+    new RegExp(`${SQUARE_INVOICE_PATH}(?:$|\\?)`),
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/html",
+        body: `<!doctype html>
         <html>
           <head><title>Square Invoice Mock</title></head>
           <body>
@@ -448,12 +515,15 @@ async function setupMockTrainingAfterpayFlow(page: Page): Promise<{ apiPostPaths
             </main>
           </body>
         </html>`,
-    });
-  });
+      });
+    },
+  );
 
   await page.route(/\/api\/webhooks\/square(?:\?.*)?$/, async (route) => {
     expect(route.request().method()).toBe("POST");
-    expect(route.request().headers()["x-lash-payment-mock-scenario"]).toBe("square_invoice_success");
+    expect(route.request().headers()["x-lash-payment-mock-scenario"]).toBe(
+      "square_invoice_success",
+    );
     expect(route.request().postDataJSON()).toMatchObject({
       event_id: "evt_training_invoice_paid",
       type: "invoice.payment_made",
@@ -465,20 +535,24 @@ async function setupMockTrainingAfterpayFlow(page: Page): Promise<{ apiPostPaths
     await fulfillWithSignedWebhookHandlerResponse(route, webhookHandler);
   });
 
-  await page.route(new RegExp(`/training-programs/${PROGRAM_SLUG}/confirmation\\?order=${ORDER_ID}$`), async (route) => {
-    if (!invoicePaid) {
-      await route.fulfill({
-        status: 404,
-        contentType: "text/html",
-        body: "<!doctype html><main><h1>Not Found</h1><p>Enrollment is not confirmed until payment is finalized.</p></main>",
-      });
-      return;
-    }
+  await page.route(
+    new RegExp(
+      `/training-programs/${PROGRAM_SLUG}/confirmation\\?order=${ORDER_ID}$`,
+    ),
+    async (route) => {
+      if (!invoicePaid) {
+        await route.fulfill({
+          status: 404,
+          contentType: "text/html",
+          body: "<!doctype html><main><h1>Not Found</h1><p>Enrollment is not confirmed until payment is finalized.</p></main>",
+        });
+        return;
+      }
 
-    await route.fulfill({
-      status: 200,
-      contentType: "text/html",
-      body: `<!doctype html>
+      await route.fulfill({
+        status: 200,
+        contentType: "text/html",
+        body: `<!doctype html>
         <html>
           <head><title>Enrollment Confirmed | Lash Her</title></head>
           <body>
@@ -492,8 +566,9 @@ async function setupMockTrainingAfterpayFlow(page: Page): Promise<{ apiPostPaths
             </main>
           </body>
         </html>`,
-    });
-  });
+      });
+    },
+  );
 
   function requirePendingOrder(): CheckoutOrderRow {
     expect(pendingOrder).not.toBeNull();
@@ -504,42 +579,78 @@ async function setupMockTrainingAfterpayFlow(page: Page): Promise<{ apiPostPaths
 }
 
 test.describe("Training Afterpay Square Invoice checkout", () => {
-  test("shows pending invoice first and confirms enrollment only after paid finalization", async ({ page }) => {
+  test("shows pending invoice first and confirms enrollment only after paid finalization", async ({
+    page,
+  }) => {
     const forbiddenPaymentHosts = collectForbiddenPaymentHosts(page);
-    const { apiPostPaths, webhookEvents } = await setupMockTrainingAfterpayFlow(page);
+    const { apiPostPaths, webhookEvents } =
+      await setupMockTrainingAfterpayFlow(page);
 
     await page.goto(CHECKOUT_URL);
 
-    await expect(page.getByRole("heading", { name: "Enrollment Checkout" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Enrollment Checkout" }),
+    ).toBeVisible();
     const paymentOptions = page.getByTestId("training-payment-options");
-    await expect(paymentOptions.getByRole("button", { name: /Secure Payment/i })).toBeVisible();
-    await expect(paymentOptions.getByRole("button", { name: /Pay with Afterpay/i })).toBeVisible();
-    await expect(page.locator("#training-afterpay-invoice-note")).toContainText(/enrollment will be activated once the invoice is paid/i);
+    await expect(
+      paymentOptions.getByRole("button", { name: /Secure Payment/i }),
+    ).toBeVisible();
+    await expect(
+      paymentOptions.getByRole("button", { name: /Pay with Afterpay/i }),
+    ).toBeVisible();
+    await expect(page.locator("#training-afterpay-invoice-note")).toContainText(
+      /enrollment will be activated once the invoice is paid/i,
+    );
 
     await page.getByLabel("Full Name").fill(CUSTOMER_NAME);
     await page.getByLabel("Email Address").fill(CUSTOMER_EMAIL);
     await page.getByLabel(/I acknowledge the terms/i).check();
 
-    await expect(paymentOptions.getByRole("button", { name: /Secure Payment/i })).toBeEnabled();
-    await expect(paymentOptions.getByRole("button", { name: /Pay with Afterpay/i })).toBeEnabled();
+    await expect(
+      paymentOptions.getByRole("button", { name: /Secure Payment/i }),
+    ).toBeEnabled();
+    await expect(
+      paymentOptions.getByRole("button", { name: /Pay with Afterpay/i }),
+    ).toBeEnabled();
     await page.getByRole("button", { name: /Pay with Afterpay/i }).click();
 
     await expect(page).toHaveURL(SQUARE_INVOICE_URL);
-    await expect(page.getByRole("heading", { name: /square invoice pending/i })).toBeVisible();
-    await expect(page.getByRole("status")).toHaveText(/invoice pending payment/i);
-    await expect(page.getByText(/enrollment will not be activated until this invoice is paid/i)).toBeVisible();
-    await expect(page.getByRole("heading", { name: /enrollment confirmed/i })).toHaveCount(0);
-    await expect(page.getByRole("link", { name: /schedule training call/i })).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", { name: /square invoice pending/i }),
+    ).toBeVisible();
+    await expect(page.getByRole("status")).toHaveText(
+      /invoice pending payment/i,
+    );
+    await expect(
+      page.getByText(
+        /enrollment will not be activated until this invoice is paid/i,
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /enrollment confirmed/i }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("link", { name: /schedule training call/i }),
+    ).toHaveCount(0);
     expect(apiPostPaths).toEqual(["/api/training-checkout/square-invoice"]);
     expect(webhookEvents).toEqual([]);
 
-    await page.getByRole("button", { name: /mock paid webhook and finalizer/i }).click();
+    await page
+      .getByRole("button", { name: /mock paid webhook and finalizer/i })
+      .click();
 
     await expect(page).toHaveURL(CONFIRMATION_URL);
-    await expect(page.getByRole("heading", { name: "Enrollment Confirmed" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Enrollment Confirmed" }),
+    ).toBeVisible();
     await expect(page.getByText(ORDER_ID)).toBeVisible();
-    await expect(page.getByRole("link", { name: "Schedule Training Call" })).toBeVisible();
-    expect(apiPostPaths).toEqual(["/api/training-checkout/square-invoice", "/api/webhooks/square"]);
+    await expect(
+      page.getByRole("link", { name: "Schedule Training Call" }),
+    ).toBeVisible();
+    expect(apiPostPaths).toEqual([
+      "/api/training-checkout/square-invoice",
+      "/api/webhooks/square",
+    ]);
     expect(webhookEvents).toEqual(["invoice.payment_made"]);
     expect(forbiddenPaymentHosts).toEqual([]);
   });
@@ -550,11 +661,13 @@ async function fulfillWithHandlerResponse(
   handler: (request: Request) => Promise<Response>,
 ): Promise<void> {
   const request = route.request();
-  const response = await handler(new Request(request.url(), {
-    body: request.postData(),
-    headers: request.headers(),
-    method: request.method(),
-  }));
+  const response = await handler(
+    new Request(request.url(), {
+      body: request.postData(),
+      headers: request.headers(),
+      method: request.method(),
+    }),
+  );
 
   await fulfillRouteWithResponse(route, response);
 }
@@ -567,19 +680,24 @@ async function fulfillWithSignedWebhookHandlerResponse(
   const signature = createHmac("sha256", WEBHOOK_SIGNATURE_KEY)
     .update(`${WEBHOOK_URL}${rawBody}`, "utf8")
     .digest("base64");
-  const response = await handler(new Request(WEBHOOK_URL, {
-    body: rawBody,
-    headers: {
-      "content-type": "application/json",
-      "x-square-hmacsha256-signature": signature,
-    },
-    method: "POST",
-  }));
+  const response = await handler(
+    new Request(WEBHOOK_URL, {
+      body: rawBody,
+      headers: {
+        "content-type": "application/json",
+        "x-square-hmacsha256-signature": signature,
+      },
+      method: "POST",
+    }),
+  );
 
   await fulfillRouteWithResponse(route, response);
 }
 
-async function fulfillRouteWithResponse(route: Route, response: Response): Promise<void> {
+async function fulfillRouteWithResponse(
+  route: Route,
+  response: Response,
+): Promise<void> {
   const headers: Record<string, string> = {};
   response.headers.forEach((value, key) => {
     headers[key] = value;
@@ -618,14 +736,16 @@ function createPendingSquareInvoiceOrder(input: {
     helcimInvoiceNumber: null,
     helcimTransactionId: null,
     id: "checkout-order-db-id",
-    lineItems: [{
-      description: "Beginner Private Training",
-      productId: input.programSlug,
-      quantity: 1,
-      sku: `TRAINING-${input.programSlug.toUpperCase()}`,
-      totalCents: input.amountCents,
-      unitPriceCents: input.amountCents,
-    }],
+    lineItems: [
+      {
+        description: "Beginner Private Training",
+        productId: input.programSlug,
+        quantity: 1,
+        sku: `TRAINING-${input.programSlug.toUpperCase()}`,
+        totalCents: input.amountCents,
+        unitPriceCents: input.amountCents,
+      },
+    ],
     orderId: ORDER_ID,
     paidAt: null,
     paymentProvider: "square",
@@ -660,15 +780,21 @@ function createPendingSquareInvoiceOrder(input: {
   };
 }
 
-function createSquareInvoiceDetails(status: string, version = 2, paymentId?: string): SquareInvoiceDetails {
+function createSquareInvoiceDetails(
+  status: string,
+  version = 2,
+  paymentId?: string,
+): SquareInvoiceDetails {
   return {
     id: INVOICE_ID,
     order_id: SQUARE_ORDER_ID,
-    payment_requests: [{
-      computed_amount_money: { amount: TOTAL_CENTS, currency: "CAD" },
-      payment_ids: paymentId ? [paymentId] : [],
-      request_type: "BALANCE",
-    }],
+    payment_requests: [
+      {
+        computed_amount_money: { amount: TOTAL_CENTS, currency: "CAD" },
+        payment_ids: paymentId ? [paymentId] : [],
+        request_type: "BALANCE",
+      },
+    ],
     primary_recipient: {
       customer_id: "mock-square-customer-001",
     },
@@ -678,14 +804,18 @@ function createSquareInvoiceDetails(status: string, version = 2, paymentId?: str
   };
 }
 
-function createSquareOrderDetails(referenceId = CORRELATION_ID): SquareInvoiceOrderDetails {
+function createSquareOrderDetails(
+  referenceId = CORRELATION_ID,
+): SquareInvoiceOrderDetails {
   return {
     id: SQUARE_ORDER_ID,
     reference_id: referenceId,
   };
 }
 
-function createEnrollmentRecord(order: CheckoutOrderRow): NonNullable<EnrollmentRecord> {
+function createEnrollmentRecord(
+  order: CheckoutOrderRow,
+): NonNullable<EnrollmentRecord> {
   return {
     checkoutEmail: CUSTOMER_EMAIL,
     checkoutOrder: order,
@@ -708,22 +838,33 @@ function createEnrollmentRecord(order: CheckoutOrderRow): NonNullable<Enrollment
   };
 }
 
-function getProviderMetadata(order: CheckoutOrderRow): NonNullable<CheckoutOrderRow["providerMetadata"]> {
+function getProviderMetadata(
+  order: CheckoutOrderRow,
+): NonNullable<CheckoutOrderRow["providerMetadata"]> {
   expect(order.providerMetadata).not.toBeNull();
-  return order.providerMetadata ?? failTest("Expected Square invoice provider metadata");
+  return (
+    order.providerMetadata ??
+    failTest("Expected Square invoice provider metadata")
+  );
 }
 
-function getWebhookCorrelationId(payload: Record<string, unknown>): string | undefined {
+function getWebhookCorrelationId(
+  payload: Record<string, unknown>,
+): string | undefined {
   const data = getRecord(payload.data);
   const object = getRecord(data?.object);
   const invoice = getRecord(object?.invoice);
 
-  return getText(invoice?.reference_id) ?? getText(invoice?.order_reference_id) ?? undefined;
+  return (
+    getText(invoice?.reference_id) ??
+    getText(invoice?.order_reference_id) ??
+    undefined
+  );
 }
 
 function getRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
+    ? (value as Record<string, unknown>)
     : null;
 }
 

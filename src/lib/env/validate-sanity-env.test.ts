@@ -36,6 +36,8 @@ const launchEnv = {
   HELCIM_GENERAL_API_TOKEN: "helcim-general-api-token-with-safe-length",
   HELCIM_TRANSACTION_API_TOKEN: "helcim-transaction-api-token-with-safe-length",
   HELCIM_WEBHOOK_VERIFIER_TOKEN: "helcim-webhook-verifier-token",
+  PAYMENT_RECONCILIATION_CRON_SECRET: "payment-reconciliation-cron-secret",
+  CRON_SECRET: "vercel-cron-secret",
 };
 
 test("validates local public Sanity environment", () => {
@@ -91,7 +93,10 @@ test("fails launch environment when Square service booking flag is blank", () =>
   });
 
   assert.notEqual(result.status, 0);
-  assert.match(result.combinedOutput, /SERVICE_BOOKING_SQUARE_ENABLED must be true or false/);
+  assert.match(
+    result.combinedOutput,
+    /SERVICE_BOOKING_SQUARE_ENABLED must be true or false/,
+  );
 });
 
 test("validates preview mock payment environment without live payment credentials", () => {
@@ -131,8 +136,14 @@ test("fails preview live payment environment without Helcim credentials", () => 
   const result = runValidator(env);
 
   assert.notEqual(result.status, 0);
-  assert.match(result.combinedOutput, /Missing env var: HELCIM_GENERAL_API_TOKEN/);
-  assert.match(result.combinedOutput, /Missing env var: HELCIM_TRANSACTION_API_TOKEN/);
+  assert.match(
+    result.combinedOutput,
+    /Missing env var: HELCIM_GENERAL_API_TOKEN/,
+  );
+  assert.match(
+    result.combinedOutput,
+    /Missing env var: HELCIM_TRANSACTION_API_TOKEN/,
+  );
 });
 
 test("fails production environment when payment mock mode is enabled", () => {
@@ -144,7 +155,10 @@ test("fails production environment when payment mock mode is enabled", () => {
   });
 
   assert.notEqual(result.status, 0);
-  assert.match(result.combinedOutput, /Payment mock mode is not allowed in production/);
+  assert.match(
+    result.combinedOutput,
+    /Payment mock mode is not allowed in production/,
+  );
 });
 
 test("fails production launch environment with wrong dataset", () => {
@@ -190,6 +204,89 @@ test("fails launch environment missing the Sanity API read token", () => {
   assert.match(result.combinedOutput, /Missing env var: SANITY_API_READ_TOKEN/);
 });
 
+test("fails launch environment missing the payment reconciliation cron secret", () => {
+  const env: Record<string, string> = {
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+  };
+
+  delete env.PAYMENT_RECONCILIATION_CRON_SECRET;
+
+  const result = runValidator(env);
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.combinedOutput,
+    /Missing env var: PAYMENT_RECONCILIATION_CRON_SECRET/,
+  );
+});
+
+test("fails launch environment missing the Vercel cron secret", () => {
+  const env: Record<string, string> = {
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+  };
+
+  delete env.CRON_SECRET;
+
+  const result = runValidator(env);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.combinedOutput, /Missing env var: CRON_SECRET/);
+});
+
+test("fails launch environment when Square service booking URL does not use HTTPS", () => {
+  const env: Record<string, string> = {
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+    SERVICE_BOOKING_SQUARE_ENABLED: "true",
+    SQUARE_ENVIRONMENT: "sandbox",
+    SQUARE_ACCESS_TOKEN: "square-access-token",
+    SQUARE_LOCATION_ID: "square-location-id",
+    SQUARE_WEBHOOK_SIGNATURE_KEY: "square-webhook-signature-key",
+    SQUARE_SERVICE_BOOKING_RETURN_URL:
+      "http://lashher.com/api/booking/square/return",
+    SQUARE_SERVICE_BOOKING_WEBHOOK_URL:
+      "https://lashher.com/api/webhooks/square",
+  };
+
+  const result = runValidator(env);
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.combinedOutput,
+    /SQUARE_SERVICE_BOOKING_RETURN_URL must use https/,
+  );
+});
+
+test("fails launch environment when Square service booking webhook URL does not use HTTPS", () => {
+  const env: Record<string, string> = {
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+    SERVICE_BOOKING_SQUARE_ENABLED: "true",
+    SQUARE_ENVIRONMENT: "sandbox",
+    SQUARE_ACCESS_TOKEN: "square-access-token",
+    SQUARE_LOCATION_ID: "square-location-id",
+    SQUARE_WEBHOOK_SIGNATURE_KEY: "square-webhook-signature-key",
+    SQUARE_SERVICE_BOOKING_RETURN_URL:
+      "https://lashher.com/api/booking/square/return",
+    SQUARE_SERVICE_BOOKING_WEBHOOK_URL:
+      "http://lashher.com/api/webhooks/square",
+  };
+
+  const result = runValidator(env);
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.combinedOutput,
+    /SQUARE_SERVICE_BOOKING_WEBHOOK_URL must use https/,
+  );
+});
+
 test("treats whitespace-only launch variables as missing", () => {
   const result = runValidator({
     ...launchEnv,
@@ -225,7 +322,10 @@ test("fails launch environment when Helcim token appears truncated", () => {
   assert.notEqual(result.status, 0);
   assert.match(result.combinedOutput, /HELCIM_TRANSACTION_API_TOKEN/);
   assert.match(result.combinedOutput, /appears truncated/);
-  assert.match(result.combinedOutput, /wrap Helcim tokens that contain # in quotes/);
+  assert.match(
+    result.combinedOutput,
+    /wrap Helcim tokens that contain # in quotes/,
+  );
 });
 
 test("does not print secret values on failure", () => {
@@ -242,7 +342,10 @@ test("does not print secret values on failure", () => {
   assert.doesNotMatch(result.combinedOutput, new RegExp(secretValue));
 });
 
-function runValidator(env: Record<string, string>, cwd = mkdtempSync(join(tmpdir(), "lash-her-env-"))) {
+function runValidator(
+  env: Record<string, string>,
+  cwd = mkdtempSync(join(tmpdir(), "lash-her-env-")),
+) {
   const shouldRemoveCwd = arguments.length === 1;
   const result = spawnSync(process.execPath, [scriptPath], {
     cwd,

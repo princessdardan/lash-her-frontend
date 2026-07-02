@@ -78,7 +78,116 @@ const helperScript = String.raw`
   }
 `;
 
-test("booking hold route revalidates a slot and returns a public hold reference", () => {
+test("hold creation accepts service data without contact or payment selection", () => {
+  runRouteScenario(`
+    const selectedStart = createFutureDate(2, 0);
+    const createInputs = [];
+    const handler = createHoldHandler({
+      listCalendarEvents: async () => [],
+      createAppointmentHold: async (input) => {
+        createInputs.push(input);
+
+        return {
+          ok: true,
+          hold: {
+            publicReference: "hold_public_service_only",
+            paymentSessionReference: "pay_sess_service_only",
+            expiresAt: new Date("2026-06-01T12:10:00.000Z"),
+            selectedStart: input.selectedStart,
+            selectedEnd: input.selectedEnd,
+          },
+        };
+      },
+    });
+
+    const response = await handler(createRequest({
+      serviceSlug: "classic-fill",
+      start: selectedStart.toISOString(),
+      selectedAddOnKey: "addon-lash-bath",
+      answers: [{ questionId: "allergies", answer: "No known allergies" }],
+    }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 201);
+    assert.equal(createInputs.length, 1);
+    assert.deepEqual(createInputs[0].customer, {
+      email: "pending-service-booking@example.invalid",
+      name: "Pending service booking customer",
+      phone: "0000000000",
+    });
+    assert.equal(createInputs[0].offeringSnapshot.customerStatus, "pending");
+    assert.equal(createInputs[0].offeringSnapshot.paymentStatus, "pending");
+    assert.equal(createInputs[0].offeringSnapshot.selectedPayment, undefined);
+    assert.deepEqual(createInputs[0].offeringSnapshot.pricing, {
+      depositAmount: 50,
+      fullPrice: 150,
+      currency: "CAD",
+      customAmountMinimum: 50,
+      customAmountMaximum: 150,
+      addOnPrice: 25,
+    });
+    assert.equal(body.hold.paymentSessionReference, "pay_sess_service_only");
+  `);
+});
+
+test("hold creation rejects contact and payment fields on the provisional endpoint", () => {
+  runRouteScenario(`
+    const selectedStart = createFutureDate(2, 0);
+    const handler = createHoldHandler({
+      listCalendarEvents: async () => [],
+      createAppointmentHold: async () => ({ ok: false, reason: "slot_conflict", conflictingHoldId: "x" }),
+    });
+
+    const response = await handler(createRequest({
+      serviceSlug: "classic-fill",
+      start: selectedStart.toISOString(),
+      name: "Client Name",
+      email: "client@example.com",
+      phone: "555-0100",
+      paymentOption: "full",
+    }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(body, {
+      error: "Contact and payment details belong on the payment step.",
+      fieldErrors: {
+        email: "Enter contact details on the payment page",
+        name: "Enter contact details on the payment page",
+        paymentOption: "Choose payment amount on the payment page",
+        phone: "Enter contact details on the payment page",
+      },
+    });
+  `);
+});
+
+test("hold creation rejects marketing fields on the provisional endpoint", () => {
+  runRouteScenario(`
+    const selectedStart = createFutureDate(2, 0);
+    const handler = createHoldHandler({
+      listCalendarEvents: async () => [],
+      createAppointmentHold: async () => ({ ok: false, reason: "slot_conflict", conflictingHoldId: "x" }),
+    });
+
+    const response = await handler(createRequest({
+      serviceSlug: "classic-fill",
+      start: selectedStart.toISOString(),
+      marketingOptIn: true,
+      marketingConsentText: "Send me updates",
+    }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(body, {
+      error: "Contact and payment details belong on the payment step.",
+      fieldErrors: {
+        marketingOptIn: "Choose marketing preferences on the payment page",
+      },
+    });
+  `);
+});
+
+test("booking hold route revalidates a slot and returns payment page handoff", () => {
   runRouteScenario(`
     const selectedStart = createFutureDate(2, 0);
     const selectedEnd = new Date(selectedStart.getTime() + 60 * 60 * 1000);
@@ -99,6 +208,7 @@ test("booking hold route revalidates a slot and returns a public hold reference"
           ok: true,
           hold: {
             publicReference: "hold_public_1",
+            paymentSessionReference: "pay_sess_test_1",
             expiresAt,
             selectedStart: input.selectedStart,
             selectedEnd: input.selectedEnd,
@@ -110,41 +220,50 @@ test("booking hold route revalidates a slot and returns a public hold reference"
     const response = await handler(createRequest({
       serviceSlug: " classic-fill ",
       start: selectedStart.toISOString(),
-      name: " Client Name ",
-      email: " client@example.com ",
-      phone: " 555-0100 ",
-      paymentOption: "deposit",
+      sourcePath: "/services/classic-fill/booking",
     }));
     const body = await parseJson(response);
 
     assert.equal(response.status, 201);
     assert.equal(createInputs.length, 1);
     assert.equal(createInputs[0].offeringId, "service-classic-fill");
-    assert.equal(createInputs[0].customer.email, "client@example.com");
+    assert.deepEqual(createInputs[0].customer, {
+      email: "pending-service-booking@example.invalid",
+      name: "Pending service booking customer",
+      phone: "0000000000",
+    });
     assert.equal(createInputs[0].selectedStart.toISOString(), selectedStart.toISOString());
     assert.equal(createInputs[0].selectedEnd.toISOString(), selectedEnd.toISOString());
     assert.deepEqual(createInputs[0].offeringSnapshot, {
       id: "service-classic-fill",
       slug: "classic-fill",
+      serviceSlug: "classic-fill",
       title: "Classic Fill",
       bookingType: "in-person-appointment",
       durationMinutes: 60,
-      depositAmount: 50,
-      fullPrice: 150,
-      currency: "CAD",
-      selectedPayment: {
-        amount: 50,
-        description: "Classic Fill deposit",
-        option: "deposit",
-        purpose: "appointment_deposit",
-        sku: "BOOKING-DEPOSIT",
+      customerStatus: "pending",
+      paymentStatus: "pending",
+      pricing: {
+        depositAmount: 50,
+        fullPrice: 150,
+        currency: "CAD",
+        customAmountMinimum: 50,
+        customAmountMaximum: 150,
+        addOnPrice: 0,
       },
       answers: [],
-      marketingOptIn: false,
+      sourcePath: "/services/classic-fill/booking",
     });
+    assert.equal(body.hold.paymentSessionReference, "pay_sess_test_1");
+    assert.equal(
+      body.hold.paymentPageUrl,
+      "/services/classic-fill/booking/payment?session=pay_sess_test_1",
+    );
+    assert.equal(body.hold.reference, undefined);
     assert.deepEqual(body, {
       hold: {
-        reference: "hold_public_1",
+        paymentSessionReference: "pay_sess_test_1",
+        paymentPageUrl: "/services/classic-fill/booking/payment?session=pay_sess_test_1",
         expiresAt: expiresAt.toISOString(),
         start: selectedStart.toISOString(),
         end: selectedEnd.toISOString(),
@@ -157,10 +276,9 @@ test("booking hold route revalidates a slot and returns a public hold reference"
   `);
 });
 
-test("booking hold route snapshots a validated custom partial payment choice", () => {
+test("booking hold route snapshots immutable pricing bounds with a selected add-on", () => {
   runRouteScenario(`
     const selectedStart = createFutureDate(2, 0);
-    const selectedEnd = new Date(selectedStart.getTime() + 60 * 60 * 1000);
     const createInputs = [];
     const handler = createHoldHandler({
       listCalendarEvents: async () => [],
@@ -170,156 +288,8 @@ test("booking hold route snapshots a validated custom partial payment choice", (
         return {
           ok: true,
           hold: {
-            publicReference: "hold_public_1",
-            expiresAt: new Date("2026-06-01T12:10:00.000Z"),
-            selectedStart: input.selectedStart,
-            selectedEnd: input.selectedEnd,
-          },
-        };
-      },
-    });
-
-    const response = await handler(createRequest({
-      serviceSlug: "classic-fill",
-      start: selectedStart.toISOString(),
-      name: "Client Name",
-      email: "client@example.com",
-      phone: "555-0100",
-      paymentOption: "customPartial",
-      customAmount: 100,
-    }));
-
-    assert.equal(response.status, 201);
-    assert.deepEqual(createInputs[0].offeringSnapshot.selectedPayment, {
-      amount: 100,
-      description: "Classic Fill custom partial payment",
-      option: "customPartial",
-      purpose: "appointment_custom_partial",
-      sku: "BOOKING-CUSTOM-PARTIAL",
-    });
-  `);
-});
-
-test("booking hold route rejects invalid custom partial payment choices before creating a hold", () => {
-  runRouteScenario(`
-    const selectedStart = createFutureDate(2, 0);
-    const selectedEnd = new Date(selectedStart.getTime() + 60 * 60 * 1000);
-    let createCalled = false;
-    const handler = createHoldHandler({
-      listCalendarEvents: async () => [{
-        id: "available-window",
-        title: "Open",
-        start: selectedStart,
-        end: selectedEnd,
-      }],
-      createAppointmentHold: async () => {
-        createCalled = true;
-        return { ok: false, reason: "slot_conflict", conflictingHoldId: "hold-1" };
-      },
-    });
-
-    const response = await handler(createRequest({
-      serviceSlug: "classic-fill",
-      start: selectedStart.toISOString(),
-      name: "Client Name",
-      email: "client@example.com",
-      phone: "555-0100",
-      paymentOption: "customPartial",
-      customAmount: 50,
-    }));
-    const body = await parseJson(response);
-
-    assert.equal(response.status, 400);
-    assert.equal(createCalled, false);
-    assert.deepEqual(body, { error: "Booking payment is not configured" });
-  `);
-});
-
-test("booking hold route rejects missing purchaser payment choices before creating a hold", () => {
-  runRouteScenario(`
-    const selectedStart = createFutureDate(2, 0);
-    const selectedEnd = new Date(selectedStart.getTime() + 60 * 60 * 1000);
-    let createCalled = false;
-    const handler = createHoldHandler({
-      listCalendarEvents: async () => [{
-        id: "available-window",
-        title: "Open",
-        start: selectedStart,
-        end: selectedEnd,
-      }],
-      createAppointmentHold: async () => {
-        createCalled = true;
-        return { ok: false, reason: "slot_conflict", conflictingHoldId: "hold-1" };
-      },
-    });
-
-    const response = await handler(createRequest({
-      serviceSlug: "classic-fill",
-      start: selectedStart.toISOString(),
-      name: "Client Name",
-      email: "client@example.com",
-      phone: "555-0100",
-    }));
-    const body = await parseJson(response);
-
-    assert.equal(response.status, 400);
-    assert.equal(createCalled, false);
-    assert.deepEqual(body, { error: "Booking payment is not configured" });
-  `);
-});
-
-test("booking hold route snapshots purchaser-selected full payments", () => {
-  runRouteScenario(`
-    const selectedStart = createFutureDate(2, 0);
-    const createInputs = [];
-    const handler = createHoldHandler({
-      listCalendarEvents: async () => [],
-      createAppointmentHold: async (input) => {
-        createInputs.push(input);
-        return {
-          ok: true,
-          hold: {
-            publicReference: "hold_public_1",
-            expiresAt: new Date("2026-06-01T12:10:00.000Z"),
-            selectedStart: input.selectedStart,
-            selectedEnd: input.selectedEnd,
-          },
-        };
-      },
-    });
-
-    const response = await handler(createRequest({
-      serviceSlug: "classic-fill",
-      start: selectedStart.toISOString(),
-      name: "Client Name",
-      email: "client@example.com",
-      phone: "555-0100",
-      paymentOption: "full",
-    }));
-
-    assert.equal(response.status, 201);
-    assert.deepEqual(createInputs[0].offeringSnapshot.selectedPayment, {
-      amount: 150,
-      description: "Classic Fill full payment",
-      option: "full",
-      purpose: "appointment_full",
-      sku: "BOOKING-FULL",
-    });
-  `);
-});
-
-test("booking hold route snapshots full payments with selected add-ons", () => {
-  runRouteScenario(`
-    const selectedStart = createFutureDate(2, 0);
-    const createInputs = [];
-    const handler = createHoldHandler({
-      listCalendarEvents: async () => [],
-      createAppointmentHold: async (input) => {
-        createInputs.push(input);
-        return {
-          ok: true,
-          hold: {
-            publicReference: "hold_public_1",
+            publicReference: "hold_public_addon",
+            paymentSessionReference: "pay_sess_addon",
             expiresAt: new Date("2026-06-01T12:10:00.000Z"),
             selectedStart: input.selectedStart,
             selectedEnd: input.selectedEnd,
@@ -332,11 +302,8 @@ test("booking hold route snapshots full payments with selected add-ons", () => {
       serviceSlug: "classic-fill",
       selectedAddOnKey: "addon-lash-bath",
       start: selectedStart.toISOString(),
-      name: "Client Name",
-      email: "client@example.com",
-      phone: "555-0100",
-      paymentOption: "full",
     }));
+    const body = await parseJson(response);
 
     assert.equal(response.status, 201);
     assert.deepEqual(createInputs[0].offeringSnapshot.selectedAddOn, {
@@ -346,63 +313,110 @@ test("booking hold route snapshots full payments with selected add-ons", () => {
       price: 25,
       currency: "CAD",
     });
-    assert.deepEqual(createInputs[0].offeringSnapshot.selectedPayment, {
-      amount: 175,
-      description: "Classic Fill full payment with Lash Bath",
-      option: "full",
-      purpose: "appointment_full",
-      sku: "BOOKING-FULL",
+    assert.deepEqual(createInputs[0].offeringSnapshot.pricing, {
+      depositAmount: 50,
+      fullPrice: 150,
+      currency: "CAD",
+      customAmountMinimum: 50,
+      customAmountMaximum: 150,
+      addOnPrice: 25,
+    });
+    assert.equal(createInputs[0].offeringSnapshot.selectedPayment, undefined);
+    assert.match(body.hold.paymentPageUrl, /session=pay_sess_addon/);
+  `);
+});
+
+test("booking hold route rejects payment amount selection on the provisional endpoint", () => {
+  runRouteScenario(`
+    const selectedStart = createFutureDate(2, 0);
+    let createCalled = false;
+    const handler = createHoldHandler({
+      listCalendarEvents: async () => [],
+      createAppointmentHold: async () => {
+        createCalled = true;
+        return { ok: false, reason: "slot_conflict", conflictingHoldId: "hold-1" };
+      },
+    });
+
+    const response = await handler(createRequest({
+      serviceSlug: "classic-fill",
+      start: selectedStart.toISOString(),
+      paymentOption: "customPartial",
+      customAmount: 100,
+    }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 400);
+    assert.equal(createCalled, false);
+    assert.deepEqual(body, {
+      error: "Contact and payment details belong on the payment step.",
+      fieldErrors: {
+        paymentOption: "Choose payment amount on the payment page",
+      },
     });
   `);
 });
 
-test("booking hold route keeps deposit and custom partial amounts service-only with selected add-ons", () => {
+test("booking hold route rejects selectedPayment on the provisional endpoint", () => {
   runRouteScenario(`
     const selectedStart = createFutureDate(2, 0);
-    const createInputs = [];
+    let createCalled = false;
     const handler = createHoldHandler({
       listCalendarEvents: async () => [],
-      createAppointmentHold: async (input) => {
-        createInputs.push(input);
-        return {
-          ok: true,
-          hold: {
-            publicReference: "hold_public_1",
-            expiresAt: new Date("2026-06-01T12:10:00.000Z"),
-            selectedStart: input.selectedStart,
-            selectedEnd: input.selectedEnd,
-          },
-        };
+      createAppointmentHold: async () => {
+        createCalled = true;
+        return { ok: false, reason: "slot_conflict", conflictingHoldId: "hold-1" };
       },
     });
 
-    const depositResponse = await handler(createRequest({
+    const response = await handler(createRequest({
       serviceSlug: "classic-fill",
-      selectedAddOnKey: "addon-lash-bath",
       start: selectedStart.toISOString(),
-      name: "Client Name",
-      email: "client@example.com",
-      phone: "555-0100",
-      paymentOption: "deposit",
+      selectedPayment: "full",
     }));
+    const body = await parseJson(response);
 
-    const customResponse = await handler(createRequest({
+    assert.equal(response.status, 400);
+    assert.equal(createCalled, false);
+    assert.deepEqual(body, {
+      error: "Contact and payment details belong on the payment step.",
+      fieldErrors: {
+        paymentOption: "Choose payment amount on the payment page",
+      },
+    });
+  `);
+});
+
+test("booking hold route rejects missing required intake answers", () => {
+  runRouteScenario(`
+    const selectedStart = createFutureDate(2, 0);
+    let createCalled = false;
+    const handler = createHoldHandler({
+      getBookingSettings: async () => createSettings({
+        intakeQuestions: [
+          { id: "allergies", label: "Allergies", inputType: "text", required: true },
+        ],
+      }),
+      listCalendarEvents: async () => [],
+      createAppointmentHold: async () => {
+        createCalled = true;
+        return { ok: false, reason: "slot_conflict", conflictingHoldId: "hold-1" };
+      },
+    });
+
+    const response = await handler(createRequest({
       serviceSlug: "classic-fill",
-      selectedAddOnKey: "addon-lash-bath",
       start: selectedStart.toISOString(),
-      name: "Client Name",
-      email: "client@example.com",
-      phone: "555-0100",
-      paymentOption: "customPartial",
-      customAmount: 100,
+      answers: [],
     }));
+    const body = await parseJson(response);
 
-    assert.equal(depositResponse.status, 201);
-    assert.equal(customResponse.status, 201);
-    assert.equal(createInputs[0].offeringSnapshot.selectedPayment.amount, 50);
-    assert.match(createInputs[0].offeringSnapshot.selectedPayment.description, /add-on balance due later/);
-    assert.equal(createInputs[1].offeringSnapshot.selectedPayment.amount, 100);
-    assert.match(createInputs[1].offeringSnapshot.selectedPayment.description, /add-on balance due later/);
+    assert.equal(response.status, 400);
+    assert.equal(createCalled, false);
+    assert.deepEqual(body, {
+      error: "Please fix the hold details and try again.",
+      fieldErrors: { "answers.allergies": "Allergies is required" },
+    });
   `);
 });
 
@@ -428,10 +442,6 @@ test("booking hold route rejects stale selected add-on keys", () => {
       serviceSlug: "classic-fill",
       selectedAddOnKey: "addon-stale",
       start: selectedStart.toISOString(),
-      name: "Client Name",
-      email: "client@example.com",
-      phone: "555-0100",
-      paymentOption: "full",
     }));
     const body = await parseJson(response);
 
@@ -467,10 +477,6 @@ test("booking hold route rejects settings with no parseable calendar IDs", () =>
     const response = await handler(createRequest({
       serviceSlug: "classic-fill",
       start: selectedStart.toISOString(),
-      name: "Client Name",
-      email: "client@example.com",
-      phone: "555-0100",
-      paymentOption: "deposit",
     }));
     const body = await parseJson(response);
 
@@ -506,10 +512,6 @@ test("booking hold route queries multiple calendar IDs and combines busy events"
     const response = await handler(createRequest({
       serviceSlug: "classic-fill",
       start: selectedStart.toISOString(),
-      name: "Client Name",
-      email: "client@example.com",
-      phone: "555-0100",
-      paymentOption: "deposit",
     }));
 
     assert.deepEqual(calendarCalls.sort(), ["calendar-1", "calendar-2", "calendar-3"]);
@@ -545,10 +547,6 @@ test("booking hold route rejects slots blocked by active private holds", () => {
     const response = await handler(createRequest({
       serviceSlug: "classic-fill",
       start: selectedStart.toISOString(),
-      name: "Client Name",
-      email: "client@example.com",
-      phone: "555-0100",
-      paymentOption: "deposit",
     }));
     const body = await parseJson(response);
 
@@ -582,10 +580,6 @@ test("booking hold route maps conflict-safe hold rejection to a slot conflict", 
     const response = await handler(createRequest({
       serviceSlug: "classic-fill",
       start: selectedStart.toISOString(),
-      name: "Client Name",
-      email: "client@example.com",
-      phone: "555-0100",
-      paymentOption: "deposit",
     }));
     const body = await parseJson(response);
 
@@ -593,6 +587,75 @@ test("booking hold route maps conflict-safe hold rejection to a slot conflict", 
     assert.deepEqual(body, {
       error: "That time is no longer available. Please choose another slot.",
       fieldErrors: { start: "That time is no longer available" },
+    });
+  `);
+});
+
+test("booking hold route sanitizes sourcePath to pathname-only and drops query or hash", () => {
+  runRouteScenario(`
+    const selectedStart = createFutureDate(2, 0);
+    const createInputs = [];
+    const handler = createHoldHandler({
+      listCalendarEvents: async () => [],
+      createAppointmentHold: async (input) => {
+        createInputs.push(input);
+
+        return {
+          ok: true,
+          hold: {
+            publicReference: "hold_public_source_path",
+            paymentSessionReference: "pay_sess_source_path",
+            expiresAt: new Date("2026-06-01T12:10:00.000Z"),
+            selectedStart: input.selectedStart,
+            selectedEnd: input.selectedEnd,
+          },
+        };
+      },
+    });
+
+    const response = await handler(createRequest({
+      serviceSlug: "classic-fill",
+      start: selectedStart.toISOString(),
+      sourcePath: "/services/lash-fill/booking?email=client@example.test#payment",
+    }));
+    const body = await parseJson(response);
+    const snapshot = createInputs[0].offeringSnapshot;
+
+    assert.equal(response.status, 201);
+    assert.equal(snapshot.sourcePath, "/services/lash-fill/booking");
+    const snapshotJson = JSON.stringify(snapshot);
+    assert.equal(snapshotJson.includes("client@example.test"), false);
+    assert.equal(snapshotJson.includes("email="), false);
+    assert.equal(snapshotJson.includes("#payment"), false);
+    assert.equal(body.hold.paymentPageUrl, "/services/classic-fill/booking/payment?session=pay_sess_source_path");
+  `);
+});
+
+test("booking hold route rejects non-string contact values on the provisional endpoint", () => {
+  runRouteScenario(`
+    const selectedStart = createFutureDate(2, 0);
+    const handler = createHoldHandler({
+      listCalendarEvents: async () => [],
+      createAppointmentHold: async () => ({ ok: false, reason: "slot_conflict", conflictingHoldId: "x" }),
+    });
+
+    const response = await handler(createRequest({
+      serviceSlug: "classic-fill",
+      start: selectedStart.toISOString(),
+      name: 123,
+      email: { value: "client@example.test" },
+      phone: ["555"],
+    }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(body, {
+      error: "Contact and payment details belong on the payment step.",
+      fieldErrors: {
+        name: "Enter contact details on the payment page",
+        email: "Enter contact details on the payment page",
+        phone: "Enter contact details on the payment page",
+      },
     });
   `);
 });

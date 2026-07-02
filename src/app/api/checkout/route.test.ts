@@ -434,9 +434,9 @@ test("checkout route rejects missing canonical products before Helcim setup", ()
 
 test("checkout route returns a server failure when checkout input loading fails", () => {
   runRouteScenario(`
-    const originalConsoleError = console.error;
+    const originalConsoleLog = console.log;
     const consoleCalls = [];
-    console.error = (...args) => {
+    console.log = (...args) => {
       consoleCalls.push(args);
     };
 
@@ -458,16 +458,17 @@ test("checkout route returns a server failure when checkout input loading fails"
       assert.equal(invoices.length, 0);
       assert.equal(paySessions.length, 0);
       assert.equal(orders.length, 0);
-      assert.deepEqual(consoleCalls[0][1], {
-        stage: "load_checkout_inputs",
-        error: "Checkout initialization failed",
-        errorName: "Error",
-      });
+      const logEntry = JSON.parse(consoleCalls[0][0]);
+      assert.equal(logEntry.level, "error");
+      assert.equal(logEntry.message, "[checkout] Unable to initialize checkout");
+      assert.equal(logEntry.stage, "load_checkout_inputs");
+      assert.equal(logEntry.error, "Checkout initialization failed");
+      assert.equal(logEntry.errorName, "Error");
 
       assert.equal(JSON.stringify(consoleCalls).includes("client@example.com"), false);
       assert.equal(JSON.stringify(consoleCalls).includes("Sanity unavailable"), false);
     } finally {
-      console.error = originalConsoleError;
+      console.log = originalConsoleLog;
     }
   `);
 });
@@ -497,9 +498,9 @@ test("checkout route returns a generic failure when downstream checkout setup fa
 
 test("checkout route rejects malformed Helcim invoice success responses before payment initialization", () => {
   runRouteScenario(`
-    const originalConsoleError = console.error;
+    const originalConsoleLog = console.log;
     const consoleCalls = [];
-    console.error = (...args) => {
+    console.log = (...args) => {
       consoleCalls.push(args);
     };
 
@@ -519,25 +520,26 @@ test("checkout route rejects malformed Helcim invoice success responses before p
       assert.equal(invoices.length, 1);
       assert.equal(paySessions.length, 0);
       assert.equal(orders.length, 0);
-      assert.deepEqual(consoleCalls[0][1], {
-        stage: "create_helcim_invoice",
-        error: "Checkout provider response invalid",
-        errorName: "CheckoutProviderResponseError",
-        missingFields: "invoiceId,invoiceNumber",
-        provider: "helcim",
-        providerEndpoint: "invoice",
-      });
+      const logEntry = JSON.parse(consoleCalls[0][0]);
+      assert.equal(logEntry.level, "error");
+      assert.equal(logEntry.message, "[checkout] Unable to initialize checkout");
+      assert.equal(logEntry.stage, "create_helcim_invoice");
+      assert.equal(logEntry.error, "Checkout provider response invalid");
+      assert.equal(logEntry.errorName, "CheckoutProviderResponseError");
+      assert.equal(logEntry.missingFields, "invoiceId,invoiceNumber");
+      assert.equal(logEntry.provider, "helcim");
+      assert.equal(logEntry.providerEndpoint, "invoice");
     } finally {
-      console.error = originalConsoleError;
+      console.log = originalConsoleLog;
     }
   `);
 });
 
 test("checkout route rejects malformed Helcim Pay success responses before persistence", () => {
   runRouteScenario(`
-    const originalConsoleError = console.error;
+    const originalConsoleLog = console.log;
     const consoleCalls = [];
-    console.error = (...args) => {
+    console.log = (...args) => {
       consoleCalls.push(args);
     };
 
@@ -557,16 +559,17 @@ test("checkout route rejects malformed Helcim Pay success responses before persi
       assert.equal(invoices.length, 1);
       assert.equal(paySessions.length, 1);
       assert.equal(orders.length, 0);
-      assert.deepEqual(consoleCalls[0][1], {
-        stage: "initialize_helcim_pay",
-        error: "Checkout provider response invalid",
-        errorName: "CheckoutProviderResponseError",
-        missingFields: "checkoutToken,secretToken",
-        provider: "helcim",
-        providerEndpoint: "helcim_pay",
-      });
+      const logEntry = JSON.parse(consoleCalls[0][0]);
+      assert.equal(logEntry.level, "error");
+      assert.equal(logEntry.message, "[checkout] Unable to initialize checkout");
+      assert.equal(logEntry.stage, "initialize_helcim_pay");
+      assert.equal(logEntry.error, "Checkout provider response invalid");
+      assert.equal(logEntry.errorName, "CheckoutProviderResponseError");
+      assert.equal(logEntry.missingFields, "checkoutToken,secretToken");
+      assert.equal(logEntry.provider, "helcim");
+      assert.equal(logEntry.providerEndpoint, "helcim_pay");
     } finally {
-      console.error = originalConsoleError;
+      console.log = originalConsoleLog;
     }
   `);
 });
@@ -596,9 +599,9 @@ test("checkout route returns a generic failure when pending order persistence fa
 
 test("checkout route logs database causes without leaking query params", () => {
   runRouteScenario(`
-    const originalConsoleError = console.error;
+    const originalConsoleLog = console.log;
     const consoleCalls = [];
-    console.error = (...args) => {
+    console.log = (...args) => {
       consoleCalls.push(args);
     };
 
@@ -632,16 +635,16 @@ test("checkout route logs database causes without leaking query params", () => {
       assert.equal(response.status, 500);
       assert.deepEqual(await response.json(), { error: "Unable to start checkout" });
       assert.equal(consoleCalls.length, 1);
-      assert.equal(consoleCalls[0][0], "[checkout] Unable to initialize checkout");
-      assert.deepEqual(consoleCalls[0][1], {
-        stage: "persist_order",
-        error: "Database query failed",
-        errorName: "DrizzleQueryError",
-        cause: {
-          code: "23505",
-          table: "checkout_orders",
-          constraint: "checkout_orders_order_id_unique",
-        },
+      const logEntry = JSON.parse(consoleCalls[0][0]);
+      assert.equal(logEntry.level, "error");
+      assert.equal(logEntry.message, "[checkout] Unable to initialize checkout");
+      assert.equal(logEntry.stage, "persist_order");
+      assert.equal(logEntry.error, "Database query failed");
+      assert.equal(logEntry.errorName, "DrizzleQueryError");
+      assert.deepEqual(logEntry.cause, {
+        code: "23505",
+        table: "checkout_orders",
+        constraint: "checkout_orders_order_id_unique",
       });
 
       const serializedLog = JSON.stringify(consoleCalls);
@@ -651,16 +654,16 @@ test("checkout route logs database causes without leaking query params", () => {
       assert.equal(serializedLog.includes("detail"), false);
       assert.equal(serializedLog.includes("invalid input syntax"), false);
     } finally {
-      console.error = originalConsoleError;
+      console.log = originalConsoleLog;
     }
   `);
 });
 
 test("checkout route logs undefined checkout order columns without raw database messages", () => {
   runRouteScenario(`
-    const originalConsoleError = console.error;
+    const originalConsoleLog = console.log;
     const consoleCalls = [];
-    console.error = (...args) => {
+    console.log = (...args) => {
       consoleCalls.push(args);
     };
 
@@ -693,16 +696,16 @@ test("checkout route logs undefined checkout order columns without raw database 
       assert.equal(response.status, 500);
       assert.deepEqual(await response.json(), { error: "Unable to start checkout" });
       assert.equal(consoleCalls.length, 1);
-      assert.equal(consoleCalls[0][0], "[checkout] Unable to initialize checkout");
-      assert.deepEqual(consoleCalls[0][1], {
-        stage: "persist_order",
-        error: "Database query failed",
-        errorName: "DrizzleQueryError",
-        cause: {
-          code: "42703",
-          severity: "ERROR",
-          column: "product_confirmation_email_sent_at",
-        },
+      const logEntry = JSON.parse(consoleCalls[0][0]);
+      assert.equal(logEntry.level, "error");
+      assert.equal(logEntry.message, "[checkout] Unable to initialize checkout");
+      assert.equal(logEntry.stage, "persist_order");
+      assert.equal(logEntry.error, "Database query failed");
+      assert.equal(logEntry.errorName, "DrizzleQueryError");
+      assert.deepEqual(logEntry.cause, {
+        code: "42703",
+        severity: "ERROR",
+        column: "product_confirmation_email_sent_at",
       });
 
       const serializedLog = JSON.stringify(consoleCalls);
@@ -712,16 +715,16 @@ test("checkout route logs undefined checkout order columns without raw database 
       assert.equal(serializedLog.includes("detail"), false);
       assert.equal(serializedLog.includes("does not exist"), false);
     } finally {
-      console.error = originalConsoleError;
+      console.log = originalConsoleLog;
     }
   `);
 });
 
 test("checkout route logs generic failure messages without leaking sensitive values", () => {
   runRouteScenario(`
-    const originalConsoleError = console.error;
+    const originalConsoleLog = console.log;
     const consoleCalls = [];
-    console.error = (...args) => {
+    console.log = (...args) => {
       consoleCalls.push(args);
     };
 
@@ -741,19 +744,19 @@ test("checkout route logs generic failure messages without leaking sensitive val
       assert.equal(response.status, 502);
       assert.deepEqual(await response.json(), { error: "Unable to start checkout" });
       assert.equal(consoleCalls.length, 1);
-      assert.equal(consoleCalls[0][0], "[checkout] Unable to initialize checkout");
-      assert.deepEqual(consoleCalls[0][1], {
-        stage: "initialize_helcim_pay",
-        error: "Checkout initialization failed",
-        errorName: "Error",
-      });
+      const logEntry = JSON.parse(consoleCalls[0][0]);
+      assert.equal(logEntry.level, "error");
+      assert.equal(logEntry.message, "[checkout] Unable to initialize checkout");
+      assert.equal(logEntry.stage, "initialize_helcim_pay");
+      assert.equal(logEntry.error, "Checkout initialization failed");
+      assert.equal(logEntry.errorName, "Error");
 
       const serializedLog = JSON.stringify(consoleCalls);
       assert.equal(serializedLog.includes("dardemiri@gmail.com"), false);
       assert.equal(serializedLog.includes("secret-token-4242"), false);
       assert.equal(serializedLog.includes("Helcim unavailable"), false);
     } finally {
-      console.error = originalConsoleError;
+      console.log = originalConsoleLog;
     }
   `);
 });
@@ -766,7 +769,9 @@ test("product checkout route remains Helcim-only and does not import Square modu
 
 function assertNoSquareImports(routeSource: string): void {
   if (/square|Square|SQUARE/.test(routeSource)) {
-    throw new Error("Helcim-only checkout route must not import or reference Square");
+    throw new Error(
+      "Helcim-only checkout route must not import or reference Square",
+    );
   }
 }
 
@@ -786,13 +791,9 @@ function runRouteScenario(assertions: string): void {
   delete env.SQUARE_SERVICE_BOOKING_RETURN_URL;
   delete env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL;
 
-  execFileSync(
-    "./node_modules/.bin/tsx",
-    ["--eval", scenario],
-    {
-      cwd: process.cwd(),
-      env,
-      stdio: "pipe",
-    },
-  );
+  execFileSync("./node_modules/.bin/tsx", ["--eval", scenario], {
+    cwd: process.cwd(),
+    env,
+    stdio: "pipe",
+  });
 }

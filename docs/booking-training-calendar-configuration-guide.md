@@ -4,7 +4,7 @@ This guide is based on the current code implementation, schemas, and tests in th
 
 The app has two separate scheduling paths:
 
-1. **Service booking** uses the app's own slot picker, Sanity booking settings, private PostgreSQL holds, Square checkout, and Google Calendar event creation after payment reconciliation.
+1. **Service booking** uses the app's own slot picker, Sanity booking settings, private PostgreSQL holds, Square card-on-file intake, Square Invoices no-show enforcement, and Google Calendar event creation after card-on-file reconciliation. A legacy hosted Square checkout fallback exists for environments where card-on-file is not enabled.
 2. **Training intro-call scheduling** uses paid training enrollment records and one-time scheduling tokens. After a token is verified, the app shows a Google Calendar Appointment Schedule URL configured on the Sanity `trainingProgram` document.
 
 Do not mix the two paths. The training schedule route does not use `BookingFlow`, `/api/booking/availability`, or app-owned holds.
@@ -17,10 +17,13 @@ Use these files as the source of truth when changing or verifying this flow:
 - Service schema: `src/sanity/schemas/documents/service.ts`
 - Booking settings and training projections: `src/data/loaders.ts`
 - Booking public pages: `src/app/(site)/booking/page.tsx`, `src/app/(site)/services/[slug]/booking/page.tsx`
-- Booking client flow: `src/components/booking/booking-flow.tsx`
-- Booking API routes: `src/app/api/booking/availability/route.ts`, `src/app/api/booking/holds/route.ts`, `src/app/api/booking/checkout/route.ts`
-- Google Calendar OAuth and events: `src/app/api/booking/oauth/start/route.ts`, `src/app/api/booking/oauth/callback/route.ts`, `src/lib/booking/google-calendar.ts`
-- Service booking Square checkout: `src/lib/booking/square-service-checkout.ts`, `src/lib/env/private-checkout.ts`
+- Booking client flow: `src/components/booking/booking-flow.tsx`, `src/components/booking/square-card-on-file-form.tsx`
+- Booking API routes: `src/app/api/booking/availability/route.ts`, `src/app/api/booking/holds/route.ts`, `src/app/api/booking/card-on-file/route.ts`, `src/app/api/booking/square/config/route.ts`, and the legacy/fallback `src/app/api/booking/checkout/route.ts`
+- Google Calendar OAuth and events: the protected internal OAuth setup flow/source module, `src/app/api/booking/oauth/callback/route.ts`, `src/lib/booking/google-calendar.ts`
+- Service booking Square card-on-file and no-show invoice modules: `src/lib/booking/payments/service-card-on-file.ts`, `src/lib/booking/payments/service-card-on-file-calendar-finalizer.ts`, `src/lib/booking/payments/service-no-show-invoice.ts`, `src/lib/booking/payments/service-no-show-charge-finalizer.ts`, `src/lib/booking/payments/service-no-show-policy.ts`, `src/lib/private-db/card-on-file-repository.ts`
+- Service booking legacy/fallback hosted Square checkout: `src/lib/booking/square-service-checkout.ts`, `src/app/api/booking/square/return/route.ts`
+- Square webhook handler: `src/app/api/webhooks/square/route.ts`
+- Service booking environment checks: `src/lib/env/private-checkout.ts`
 - Training program schema: `src/sanity/schemas/documents/training-program.ts`
 - Training programs overview schema: `src/sanity/schemas/documents/training-programs-page.ts`
 - Training schedule route: `src/app/(site)/training-programs/[slug]/schedule/page.tsx`
@@ -31,7 +34,7 @@ Use these files as the source of truth when changing or verifying this flow:
 
 ## Configure service booking
 
-The current implementation intentionally blocks direct appointment creation. `src/app/api/booking/create/route.ts` always returns `Appointments require secure payment before Calendar confirmation.` for valid JSON requests. Configure and test the hold -> checkout -> reconciliation path instead.
+The current implementation intentionally blocks direct appointment creation. `src/app/api/booking/create/route.ts` always returns `Appointments require secure payment before Calendar confirmation.` for valid JSON requests. Configure and test the hold → card-on-file confirmation → calendar finalization path instead. The legacy `hold → /api/booking/checkout → Square checkout URL → return` flow remains available as a fallback when card-on-file is not enabled.
 
 ### 1. Run from the repository root
 
@@ -59,7 +62,7 @@ Implementation notes from the repo:
 
 ### 2. Configure required environment variables
 
-Service booking needs private database access, Google Calendar OAuth, Square service-booking checkout, and email/payment support.
+Service booking needs private database access, Google Calendar OAuth, Square service-booking card-on-file or checkout, and email/payment support.
 
 Set these server-side variables where the booking flow should run:
 
@@ -74,7 +77,9 @@ KV_REST_API_URL=
 KV_REST_API_TOKEN=
 
 SERVICE_BOOKING_SQUARE_ENABLED=true
+SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true
 SQUARE_ENVIRONMENT=sandbox | production
+SQUARE_APPLICATION_ID=
 SQUARE_ACCESS_TOKEN=
 SQUARE_LOCATION_ID=
 SQUARE_WEBHOOK_SIGNATURE_KEY=
@@ -95,7 +100,9 @@ Implementation notes from the code:
 - `src/sanity/env.ts` requires the Google OAuth and KV variables through `getBookingEnv()`.
 - `src/lib/env/private-checkout.ts` returns `null` from `getSquareServiceBookingEnv()` unless `SERVICE_BOOKING_SQUARE_ENABLED=true`.
 - When Square service booking is enabled, `SQUARE_ENVIRONMENT` must be exactly `sandbox` or `production`.
-- `SQUARE_SERVICE_BOOKING_RETURN_URL` and `SQUARE_SERVICE_BOOKING_WEBHOOK_URL` must parse as valid URLs.
+- Card-on-file booking requires `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true` and `SQUARE_APPLICATION_ID`. The UI falls back to the hosted checkout path when card-on-file is unavailable.
+- `SQUARE_SERVICE_BOOKING_RETURN_URL` is used by the legacy/fallback hosted checkout path.
+- `SQUARE_SERVICE_BOOKING_WEBHOOK_URL` must parse as a valid URL; it receives Square webhook events for both the card-on-file no-show invoice finalizer and the legacy hosted checkout reconciler.
 - `PAYMENT_GATEWAY_MODE=mock` is for local/dev mock payment flows only. Keep production on `live`.
 - Product checkout and standard training checkout are Helcim-backed; do not add `NEXT_PUBLIC_SQUARE_*` variables.
 
@@ -104,11 +111,7 @@ Implementation notes from the code:
 The service booking flow reads and writes Google Calendar events with OAuth.
 
 1. Ensure the Google and KV variables above are present.
-2. Open the setup route in the target environment:
-
-   ```text
-   /api/booking/oauth/start?secret=<BOOKING_ADMIN_SETUP_SECRET>
-   ```
+2. Run the protected internal OAuth setup flow in the target environment using `BOOKING_ADMIN_SETUP_SECRET` from the secure secret manager (do not share the setup URL or include it in documentation).
 
 3. Complete Google consent with the calendar account that should own booking events.
 4. The callback route stores the Google refresh token through `saveGoogleRefreshToken()`.
@@ -191,8 +194,9 @@ At runtime:
 2. It renders `BookingFlow` with `initialServiceSlug`, `servicePayment`, and `services`.
 3. The UI fetches `/api/booking/availability` for slots.
 4. The UI posts to `/api/booking/holds` with customer details, selected slot, selected service, intake answers, and payment selection.
-5. The UI posts to `/api/booking/checkout` with the returned hold reference.
-6. `/api/booking/checkout` creates or reuses a Square payment link and returns `checkoutUrl`.
+5. In the primary card-on-file flow, the UI renders the Square Web Payments SDK card form and posts to `/api/booking/card-on-file` with the hold reference, card source id, cardholder name, accepted no-show policy, and idempotency key.
+6. `/api/booking/card-on-file` saves the card on file, records policy acceptance, creates the no-show charge instrument (Square Invoice draft or ready record), and finalizes the Google Calendar event. It returns `bookingStatus`, masked `card` details, and `noShowChargeStatus`.
+7. If card-on-file is unavailable, the UI falls back to the legacy hosted checkout: it posts to `/api/booking/checkout`, which creates or reuses a Square payment link and returns `checkoutUrl`.
 
 ### 7. Confirm booking API behavior
 
@@ -201,8 +205,9 @@ Use these implementation checks when diagnosing configuration:
 - `/api/booking/availability` returns `{ error: "A valid service is required" }` when no service slug is supplied.
 - `/api/booking/availability` returns `{ error: "Booking is not configured" }` when settings, service, calendar ID, or horizon are invalid.
 - `/api/booking/holds` validates name, email, phone, service slug, selected start time, required intake answers, and final slot availability.
-- `/api/booking/checkout` requires a held, unexpired appointment hold and a configured payment selection.
-- Square checkout throws `Square service booking checkout is not enabled` when `SERVICE_BOOKING_SQUARE_ENABLED` is not `true`.
+- `/api/booking/card-on-file` requires a held, unexpired appointment hold, a valid Square card source, and accepted no-show policy terms. It returns `404` with `{ error: "Card-on-file booking is not enabled" }` when `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED` is not `true`.
+- The legacy/fallback `/api/booking/checkout` requires a held, unexpired appointment hold and a configured payment selection.
+- The legacy Square checkout throws `Square service booking checkout is not enabled` when `SERVICE_BOOKING_SQUARE_ENABLED` is not `true`.
 
 ## Add Google Calendar booking pages to training programs
 
@@ -355,8 +360,9 @@ Use this checklist after configuration changes.
 3. Confirm availability loads from `/api/booking/availability?service=<slug>`.
 4. Select a slot and fill required customer/intake fields.
 5. Submit the hold step and confirm `/api/booking/holds` returns a hold reference.
-6. Continue to checkout and confirm `/api/booking/checkout` returns a Square checkout URL.
-7. After payment reconciliation, verify the appointment is finalized into the configured Google Calendar.
+6. In the primary card-on-file flow, enter test card details and confirm `/api/booking/card-on-file` returns `bookingStatus: "booked"` (or `"manual_followup"` on calendar failure), masked card details, and `noShowChargeStatus`.
+7. Verify the appointment is finalized into the configured Google Calendar and a Square no-show charge instrument exists for the hold.
+8. If card-on-file is disabled, confirm the UI falls back to the legacy hosted checkout and `/api/booking/checkout` returns a Square checkout URL, then verify the appointment after return/webhook reconciliation.
 
 ### Training intro-call schedule
 
@@ -377,4 +383,5 @@ Use this checklist after configuration changes.
 - Missing the singleton `bookingSettings` document, which makes public booking pages unavailable.
 - Enabling Square service booking without all required server-only Square variables.
 - Setting service `depositAmount` greater than or equal to `fullPrice`; those services are not bookable.
+- Treating `/api/booking/checkout` as the primary service booking path; it is the legacy/fallback hosted checkout when card-on-file is unavailable.
 - Treating Sanity as storage for private booking, payment, enrollment, or customer submission data. The repo stores those records in PostgreSQL.

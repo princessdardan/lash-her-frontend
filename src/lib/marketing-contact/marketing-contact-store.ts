@@ -10,14 +10,24 @@ import {
   type MarketingConsentEventType,
   type MarketingContactSubmissionType,
 } from "@/lib/private-db/schema";
-import { syncResendMarketingContact, type ResendMarketingContactInput } from "@/lib/resend-platform";
+import {
+  syncResendMarketingContact,
+  type ResendMarketingContactInput,
+} from "@/lib/resend-platform";
 
-export const GENERAL_INQUIRY_CONSENT_TEXT = "I agree to receive lash care tips, service updates, and offers from Lash Her by Nataliea.";
-export const TRAINING_CONTACT_CONSENT_TEXT = "I agree to receive training updates, program news, and offers from Lash Her by Nataliea.";
-export const CONTACT_POPUP_CONSENT_TEXT = "I agree to receive updates and offers from Lash Her by Nataliea.";
-export const BOOKING_MARKETING_CONSENT_TEXT = "I would like to receive updates and offers from Lash Her by Nataliea.";
+export const GENERAL_INQUIRY_CONSENT_TEXT =
+  "I agree to receive lash care tips, service updates, and offers from Lash Her by Nataliea.";
+export const TRAINING_CONTACT_CONSENT_TEXT =
+  "I agree to receive training updates, program news, and offers from Lash Her by Nataliea.";
+export const CONTACT_POPUP_CONSENT_TEXT =
+  "I agree to receive updates and offers from Lash Her by Nataliea.";
+export const BOOKING_MARKETING_CONSENT_TEXT =
+  "I would like to receive updates and offers from Lash Her by Nataliea.";
 
-export type MarketingConsentChoice = "opted_in" | "not_opted_in" | "unsubscribed";
+export type MarketingConsentChoice =
+  | "opted_in"
+  | "not_opted_in"
+  | "unsubscribed";
 export type MarketingSubmissionSource =
   | "general_inquiry"
   | "training_contact"
@@ -27,7 +37,7 @@ export type MarketingSubmissionSource =
 
 export interface BookingAnswerSnapshot {
   questionId: string;
-  questionLabel: string;
+  questionLabel?: string;
   answer: string;
 }
 
@@ -147,8 +157,12 @@ export interface MarketingContactPersistenceInput {
 }
 
 export interface MarketingContactRepository {
-  recordMarketingContact(input: MarketingContactPersistenceInput): Promise<{ submissionId: string }>;
-  recordMarketingUnsubscribe(input: MarketingContactUnsubscribeValues): Promise<{ eventId: string }>;
+  recordMarketingContact(
+    input: MarketingContactPersistenceInput,
+  ): Promise<{ submissionId: string }>;
+  recordMarketingUnsubscribe(
+    input: MarketingContactUnsubscribeValues,
+  ): Promise<{ eventId: string }>;
 }
 
 export interface MarketingContactStoreDependencies {
@@ -157,22 +171,37 @@ export interface MarketingContactStoreDependencies {
 }
 
 export interface MarketingContactStore {
-  recordBookingMarketingChoice(input: RecordBookingMarketingChoiceInput): Promise<{ submissionId: string }>;
-  recordContactPopup(input: RecordContactPopupInput): Promise<{ submissionId: string }>;
-  recordGeneralInquiry(input: RecordGeneralInquiryInput): Promise<{ submissionId: string }>;
-  recordResendUnsubscribe(input: RecordResendUnsubscribeInput): Promise<{ eventId: string }>;
-  recordSanityBackfillSubmission(input: RecordSanityBackfillSubmissionInput): Promise<{ submissionId: string }>;
-  recordTrainingContact(input: RecordTrainingContactInput): Promise<{ submissionId: string }>;
+  recordBookingMarketingChoice(
+    input: RecordBookingMarketingChoiceInput,
+  ): Promise<{ submissionId: string }>;
+  recordContactPopup(
+    input: RecordContactPopupInput,
+  ): Promise<{ submissionId: string }>;
+  recordGeneralInquiry(
+    input: RecordGeneralInquiryInput,
+  ): Promise<{ submissionId: string }>;
+  recordResendUnsubscribe(
+    input: RecordResendUnsubscribeInput,
+  ): Promise<{ eventId: string }>;
+  recordSanityBackfillSubmission(
+    input: RecordSanityBackfillSubmissionInput,
+  ): Promise<{ submissionId: string }>;
+  recordTrainingContact(
+    input: RecordTrainingContactInput,
+  ): Promise<{ submissionId: string }>;
 }
 
 export function createMarketingContactStore(
   repository: MarketingContactRepository,
   dependencies: MarketingContactStoreDependencies = {},
 ): MarketingContactStore {
-  const syncMarketingContact = dependencies.syncMarketingContact ?? syncResendMarketingContact;
+  const syncMarketingContact =
+    dependencies.syncMarketingContact ?? syncResendMarketingContact;
   const logError = dependencies.logError ?? console.error;
 
-  async function recordContact(input: MarketingContactPersistenceInput): Promise<{ submissionId: string }> {
+  async function recordContact(
+    input: MarketingContactPersistenceInput,
+  ): Promise<{ submissionId: string }> {
     const result = await repository.recordMarketingContact(input);
 
     if (input.contact !== null) {
@@ -181,7 +210,10 @@ export function createMarketingContactStore(
       } catch (error) {
         logError("[marketing-contact] Resend contact sync failed", {
           email: input.contact.emailNormalized,
-          error: error instanceof Error ? error.message : "Unknown Resend contact sync error",
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unknown Resend contact sync error",
           source: input.contact.source,
         });
       }
@@ -192,100 +224,112 @@ export function createMarketingContactStore(
 
   return {
     async recordGeneralInquiry(input) {
-      return recordContact(buildPersistenceInput({
-        consentText: input.consentText ?? GENERAL_INQUIRY_CONSENT_TEXT,
-        identity: input,
-        marketingConsent: input.marketingConsent,
-        payload: {
-          message: input.message,
-          phone: cleanOptionalText(input.phone),
-          instagram: cleanOptionalText(input.instagram),
-        },
-        source: "general_inquiry",
-        sourceDocument: input.sourceDocument,
-        sourcePath: input.sourcePath,
-        submittedAt: input.submittedAt,
-        submissionType: "general_inquiry",
-      }));
+      return recordContact(
+        buildPersistenceInput({
+          consentText: input.consentText ?? GENERAL_INQUIRY_CONSENT_TEXT,
+          identity: input,
+          marketingConsent: input.marketingConsent,
+          payload: {
+            message: input.message,
+            phone: cleanOptionalText(input.phone),
+            instagram: cleanOptionalText(input.instagram),
+          },
+          source: "general_inquiry",
+          sourceDocument: input.sourceDocument,
+          sourcePath: input.sourcePath,
+          submittedAt: input.submittedAt,
+          submissionType: "general_inquiry",
+        }),
+      );
     },
 
     async recordTrainingContact(input) {
-      return recordContact(buildPersistenceInput({
-        consentText: input.consentText ?? TRAINING_CONTACT_CONSENT_TEXT,
-        identity: input,
-        marketingConsent: input.marketingConsent,
-        payload: {
-          instagram: cleanOptionalText(input.instagram),
-          location: cleanOptionalText(input.location),
-          phone: input.phone,
-          privacyPolicyConsent: input.privacyPolicyConsent ?? false,
-          programSlug: input.programSlug,
-          programTitle: input.programTitle,
-          sourcePath: cleanOptionalText(input.sourcePath),
-        },
-        source: "training_contact",
-        sourceDocument: input.sourceDocument,
-        sourcePath: input.sourcePath,
-        submittedAt: input.submittedAt,
-        submissionType: "training_contact",
-      }));
+      return recordContact(
+        buildPersistenceInput({
+          consentText: input.consentText ?? TRAINING_CONTACT_CONSENT_TEXT,
+          identity: input,
+          marketingConsent: input.marketingConsent,
+          payload: {
+            instagram: cleanOptionalText(input.instagram),
+            location: cleanOptionalText(input.location),
+            phone: input.phone,
+            privacyPolicyConsent: input.privacyPolicyConsent ?? false,
+            programSlug: input.programSlug,
+            programTitle: input.programTitle,
+            sourcePath: cleanOptionalText(input.sourcePath),
+          },
+          source: "training_contact",
+          sourceDocument: input.sourceDocument,
+          sourcePath: input.sourcePath,
+          submittedAt: input.submittedAt,
+          submissionType: "training_contact",
+        }),
+      );
     },
 
     async recordContactPopup(input) {
-      return recordContact(buildPersistenceInput({
-        consentText: input.consentText ?? CONTACT_POPUP_CONSENT_TEXT,
-        identity: input,
-        marketingConsent: true,
-        payload: {
-          instagram: cleanOptionalText(input.instagram),
-          sourcePath: cleanOptionalText(input.sourcePath),
-          variant: input.variant,
-        },
-        source: "contact_popup",
-        sourceDocument: input.sourceDocument,
-        sourcePath: input.sourcePath,
-        submittedAt: input.submittedAt,
-        submissionType: "contact_popup",
-      }));
+      return recordContact(
+        buildPersistenceInput({
+          consentText: input.consentText ?? CONTACT_POPUP_CONSENT_TEXT,
+          identity: input,
+          marketingConsent: true,
+          payload: {
+            instagram: cleanOptionalText(input.instagram),
+            sourcePath: cleanOptionalText(input.sourcePath),
+            variant: input.variant,
+          },
+          source: "contact_popup",
+          sourceDocument: input.sourceDocument,
+          sourcePath: input.sourcePath,
+          submittedAt: input.submittedAt,
+          submissionType: "contact_popup",
+        }),
+      );
     },
 
     async recordBookingMarketingChoice(input) {
-      return recordContact(buildPersistenceInput({
-        consentText: input.consentText ?? BOOKING_MARKETING_CONSENT_TEXT,
-        identity: input,
-        marketingConsent: input.marketingOptIn,
-        payload: {
-          answers: input.answers,
-          bookingType: input.bookingType,
-          marketingOptIn: input.marketingOptIn,
-          phone: input.phone,
-        },
-        source: "booking",
-        sourcePath: input.sourcePath,
-        submittedAt: input.submittedAt,
-        submissionType: "booking_marketing_choice",
-      }));
+      return recordContact(
+        buildPersistenceInput({
+          consentText: input.consentText ?? BOOKING_MARKETING_CONSENT_TEXT,
+          identity: input,
+          marketingConsent: input.marketingOptIn,
+          payload: {
+            answers: input.answers,
+            bookingType: input.bookingType,
+            marketingOptIn: input.marketingOptIn,
+            phone: input.phone,
+          },
+          source: "booking",
+          sourcePath: input.sourcePath,
+          submittedAt: input.submittedAt,
+          submissionType: "booking_marketing_choice",
+        }),
+      );
     },
 
     async recordSanityBackfillSubmission(input) {
-      return recordContact(buildPersistenceInput({
-        consentText: input.consentText,
-        identity: input,
-        marketingConsent: input.marketingConsent,
-        payload: input.payload,
-        source: input.source,
-        sourceDocument: {
-          sourceDocumentId: input.originalDocumentId,
-          sourceDocumentType: input.originalDocumentType,
-          sourceSystem: "sanity",
-        },
-        submittedAt: input.submittedAt,
-        submissionType: input.submissionType,
-      }));
+      return recordContact(
+        buildPersistenceInput({
+          consentText: input.consentText,
+          identity: input,
+          marketingConsent: input.marketingConsent,
+          payload: input.payload,
+          source: input.source,
+          sourceDocument: {
+            sourceDocumentId: input.originalDocumentId,
+            sourceDocumentType: input.originalDocumentType,
+            sourceSystem: "sanity",
+          },
+          submittedAt: input.submittedAt,
+          submissionType: input.submissionType,
+        }),
+      );
     },
 
     async recordResendUnsubscribe(input) {
-      return repository.recordMarketingUnsubscribe(buildResendUnsubscribeInput(input));
+      return repository.recordMarketingUnsubscribe(
+        buildResendUnsubscribeInput(input),
+      );
     },
   };
 }
@@ -376,9 +420,18 @@ function createDrizzleMarketingContactRepository(): MarketingContactRepository {
             .from(marketingContactSubmissions)
             .where(
               and(
-                eq(marketingContactSubmissions.sourceSystem, sourceDocument.sourceSystem),
-                eq(marketingContactSubmissions.sourceDocumentType, sourceDocument.sourceDocumentType),
-                eq(marketingContactSubmissions.sourceDocumentId, sourceDocument.sourceDocumentId),
+                eq(
+                  marketingContactSubmissions.sourceSystem,
+                  sourceDocument.sourceSystem,
+                ),
+                eq(
+                  marketingContactSubmissions.sourceDocumentType,
+                  sourceDocument.sourceDocumentType,
+                ),
+                eq(
+                  marketingContactSubmissions.sourceDocumentId,
+                  sourceDocument.sourceDocumentId,
+                ),
               ),
             )
             .limit(1);
@@ -449,12 +502,18 @@ interface BuildPersistenceInputOptions {
   submissionType: MarketingContactSubmissionType;
 }
 
-function buildPersistenceInput(options: BuildPersistenceInputOptions): MarketingContactPersistenceInput {
+function buildPersistenceInput(
+  options: BuildPersistenceInputOptions,
+): MarketingContactPersistenceInput {
   const now = options.submittedAt ?? new Date();
   const identity = normalizeIdentity(options.identity);
-  const consentChoice: MarketingConsentChoice = options.marketingConsent ? "opted_in" : "not_opted_in";
+  const consentChoice: MarketingConsentChoice = options.marketingConsent
+    ? "opted_in"
+    : "not_opted_in";
   const eventType: MarketingConsentEventType = options.marketingConsent
-    ? options.sourceDocument?.sourceSystem === "sanity" ? "backfill_consent" : "opt_in"
+    ? options.sourceDocument?.sourceSystem === "sanity"
+      ? "backfill_consent"
+      : "opt_in"
     : "no_opt_in";
   const consentText = cleanOptionalText(options.consentText);
   const submission: MarketingContactSubmissionValues = {
@@ -497,7 +556,9 @@ function buildPersistenceInput(options: BuildPersistenceInputOptions): Marketing
   };
 }
 
-function toSubmissionInsert(values: MarketingContactSubmissionValues): typeof marketingContactSubmissions.$inferInsert {
+function toSubmissionInsert(
+  values: MarketingContactSubmissionValues,
+): typeof marketingContactSubmissions.$inferInsert {
   return {
     consentChoice: values.consentChoice,
     consentText: values.consentText,
@@ -517,7 +578,9 @@ function toSubmissionInsert(values: MarketingContactSubmissionValues): typeof ma
   };
 }
 
-function toResendMarketingContactInput(input: MarketingContactPersistenceInput): ResendMarketingContactInput {
+function toResendMarketingContactInput(
+  input: MarketingContactPersistenceInput,
+): ResendMarketingContactInput {
   if (input.contact === null) {
     throw new Error("Cannot sync a non-consenting marketing contact to Resend");
   }
@@ -534,7 +597,9 @@ function toResendMarketingContactInput(input: MarketingContactPersistenceInput):
   };
 }
 
-function buildResendUnsubscribeInput(input: RecordResendUnsubscribeInput): MarketingContactUnsubscribeValues {
+function buildResendUnsubscribeInput(
+  input: RecordResendUnsubscribeInput,
+): MarketingContactUnsubscribeValues {
   const email = input.email.trim();
 
   if (email.length === 0) {
@@ -550,7 +615,9 @@ function buildResendUnsubscribeInput(input: RecordResendUnsubscribeInput): Marke
   };
 }
 
-function normalizeIdentity(identity: MarketingContactIdentity): MarketingContactIdentity & { emailNormalized: string } {
+function normalizeIdentity(
+  identity: MarketingContactIdentity,
+): MarketingContactIdentity & { emailNormalized: string } {
   const email = identity.email.trim();
   return {
     email,
@@ -570,7 +637,9 @@ function cleanOptionalText(value: string | undefined): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
-function cleanPayload(payload: Record<string, unknown>): Record<string, unknown> {
+function cleanPayload(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(payload).filter(([, value]) => value !== undefined),
   );

@@ -15,7 +15,13 @@ function captureRedirect(url: string): never {
 
 async function runReturnRoute(input: {
   requestUrl: string;
-  resultStatus: "booked" | "duplicate" | "ignored" | "paid_calendar_pending" | "unpaid";
+  resultStatus:
+    | "booked"
+    | "duplicate"
+    | "ignored"
+    | "paid_calendar_pending"
+    | "pending_verification"
+    | "unpaid";
 }) {
   const finalizerCalls: unknown[] = [];
   const handler = createSquareReturnGetHandler({
@@ -23,7 +29,9 @@ async function runReturnRoute(input: {
       finalizerCalls.push(finalizerInput);
       return {
         duplicateEvent: input.resultStatus === "duplicate",
-        finalized: input.resultStatus === "booked" || input.resultStatus === "paid_calendar_pending",
+        finalized:
+          input.resultStatus === "booked" ||
+          input.resultStatus === "paid_calendar_pending",
         status: input.resultStatus,
       };
     },
@@ -45,15 +53,18 @@ async function runReturnRoute(input: {
 
 test("Square return passes query IDs as lookup hints and redirects with verified status", async () => {
   const result = await runReturnRoute({
-    requestUrl: "https://example.com/api/booking/square/return?order_id=lh-sq-order&payment_id=pay_123",
+    requestUrl:
+      "https://example.com/api/booking/square/return?order_id=lh-sq-order&payment_id=pay_123",
     resultStatus: "paid_calendar_pending",
   });
 
-  assert.deepEqual(result.finalizerCalls, [{
-    orderId: "lh-sq-order",
-    paymentId: "pay_123",
-    source: "return",
-  }]);
+  assert.deepEqual(result.finalizerCalls, [
+    {
+      orderId: "lh-sq-order",
+      paymentId: "pay_123",
+      source: "return",
+    },
+  ]);
   assert.equal(
     result.redirectUrl,
     "https://example.com/booking/confirmation?payment=paid_calendar_pending",
@@ -62,32 +73,58 @@ test("Square return passes query IDs as lookup hints and redirects with verified
 
 test("Square return redirects booked finalization with booked status", async () => {
   const result = await runReturnRoute({
-    requestUrl: "https://example.com/api/booking/square/return?orderId=lh-sq-order&paymentId=pay_123",
+    requestUrl:
+      "https://example.com/api/booking/square/return?orderId=lh-sq-order&paymentId=pay_123",
     resultStatus: "booked",
   });
 
-  assert.deepEqual(result.finalizerCalls, [{
-    orderId: "lh-sq-order",
-    paymentId: "pay_123",
-    source: "return",
-  }]);
+  assert.deepEqual(result.finalizerCalls, [
+    {
+      orderId: "lh-sq-order",
+      paymentId: "pay_123",
+      source: "return",
+    },
+  ]);
   assert.equal(
     result.redirectUrl,
     "https://example.com/booking/confirmation?payment=booked",
   );
 });
 
+test("Square return redirects pending verification status from local order-only return", async () => {
+  const result = await runReturnRoute({
+    requestUrl:
+      "https://example.com/api/booking/square/return?orderId=lh-sq-local",
+    resultStatus: "pending_verification",
+  });
+
+  assert.deepEqual(result.finalizerCalls, [
+    {
+      orderId: "lh-sq-local",
+      paymentId: undefined,
+      source: "return",
+    },
+  ]);
+  assert.equal(
+    result.redirectUrl,
+    "https://example.com/booking/confirmation?payment=pending_verification",
+  );
+});
+
 test("Square return redirects idempotent already-processed results without payment proof assumptions", async () => {
   const result = await runReturnRoute({
-    requestUrl: "https://example.com/api/booking/square/return?reference_id=lh-sq-order&transaction_id=pay_123",
+    requestUrl:
+      "https://example.com/api/booking/square/return?reference_id=lh-sq-order&transaction_id=pay_123",
     resultStatus: "duplicate",
   });
 
-  assert.deepEqual(result.finalizerCalls, [{
-    orderId: "lh-sq-order",
-    paymentId: "pay_123",
-    source: "return",
-  }]);
+  assert.deepEqual(result.finalizerCalls, [
+    {
+      orderId: "lh-sq-order",
+      paymentId: "pay_123",
+      source: "return",
+    },
+  ]);
   assert.equal(
     result.redirectUrl,
     "https://example.com/booking/confirmation?payment=duplicate",
@@ -96,15 +133,18 @@ test("Square return redirects idempotent already-processed results without payme
 
 test("Square mock return keeps local order/payment query names and redirects with unpaid status", async () => {
   const result = await runReturnRoute({
-    requestUrl: "http://localhost:3000/api/booking/square/return?orderId=lh-sq-local&paymentId=mock-square-payment-1",
+    requestUrl:
+      "http://localhost:3000/api/booking/square/return?orderId=lh-sq-local&paymentId=mock-square-payment-1",
     resultStatus: "unpaid",
   });
 
-  assert.deepEqual(result.finalizerCalls, [{
-    orderId: "lh-sq-local",
-    paymentId: "mock-square-payment-1",
-    source: "return",
-  }]);
+  assert.deepEqual(result.finalizerCalls, [
+    {
+      orderId: "lh-sq-local",
+      paymentId: "mock-square-payment-1",
+      source: "return",
+    },
+  ]);
   assert.equal(
     result.redirectUrl,
     "http://localhost:3000/booking/confirmation?payment=unpaid",

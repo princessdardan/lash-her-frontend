@@ -5,7 +5,8 @@ import { getBookingPaymentSelection } from "@/lib/booking/payment-policy";
 import type { SquareServiceCheckoutResult } from "@/lib/booking/square-service-checkout";
 
 interface BookingCheckoutRequestBody {
-  holdReference: string;
+  holdReference?: string;
+  paymentSessionReference?: string;
 }
 
 interface BookingCheckoutPostHandlerDependencies {
@@ -14,8 +15,16 @@ interface BookingCheckoutPostHandlerDependencies {
     now?: Date;
     request?: NextRequest;
   }) => Promise<SquareServiceCheckoutResult>;
-  getAppointmentHoldByPublicReference: (publicReference: string) => Promise<BookingHoldRecord | null>;
-  releaseHeldAppointmentHold: (input: { holdId: string; now: Date }) => Promise<BookingHoldRecord | null>;
+  getAppointmentHoldByPaymentSessionReference: (
+    paymentSessionReference: string,
+  ) => Promise<BookingHoldRecord | null>;
+  getAppointmentHoldByPublicReference: (
+    publicReference: string,
+  ) => Promise<BookingHoldRecord | null>;
+  releaseHeldAppointmentHold: (input: {
+    holdId: string;
+    now: Date;
+  }) => Promise<BookingHoldRecord | null>;
 }
 
 interface BookingCheckoutResponseBody {
@@ -31,7 +40,9 @@ interface BookingCheckoutResponseBody {
 export function createBookingCheckoutPostHandler(
   dependencies: BookingCheckoutPostHandlerDependencies,
 ): (req: NextRequest) => Promise<Response> {
-  return async function bookingCheckoutPostHandler(req: NextRequest): Promise<Response> {
+  return async function bookingCheckoutPostHandler(
+    req: NextRequest,
+  ): Promise<Response> {
     let body: unknown;
 
     try {
@@ -50,16 +61,26 @@ export function createBookingCheckoutPostHandler(
     let hold: BookingHoldRecord | null = null;
 
     try {
-      hold = await dependencies.getAppointmentHoldByPublicReference(
-        checkoutRequest.holdReference,
-      );
+      hold =
+        checkoutRequest.paymentSessionReference !== undefined
+          ? await dependencies.getAppointmentHoldByPaymentSessionReference(
+              checkoutRequest.paymentSessionReference,
+            )
+          : await dependencies.getAppointmentHoldByPublicReference(
+              checkoutRequest.holdReference ?? "",
+            );
 
       if (hold === null || !isCheckoutStartableHold(hold, now)) {
         return unavailableBookingHoldResponse();
       }
 
       if (getBookingPaymentSelection(hold) === null) {
-        await releaseHoldAfterCheckoutFailure({ dependencies, hold, now, reason: "Booking payment is not configured" });
+        await releaseHoldAfterCheckoutFailure({
+          dependencies,
+          hold,
+          now,
+          reason: "Booking payment is not configured",
+        });
 
         return NextResponse.json(
           { error: "Booking payment is not configured" },
@@ -67,7 +88,11 @@ export function createBookingCheckoutPostHandler(
         );
       }
 
-      const checkout = await dependencies.createSquareServiceBookingCheckout({ hold, now, request: req });
+      const checkout = await dependencies.createSquareServiceBookingCheckout({
+        hold,
+        now,
+        request: req,
+      });
 
       return NextResponse.json<BookingCheckoutResponseBody>({
         checkoutUrl: checkout.checkoutUrl,
@@ -75,7 +100,9 @@ export function createBookingCheckoutPostHandler(
         orderId: checkout.orderId,
         paymentProvider: "square",
         reused: checkout.reused,
-        ...(checkout.squareOrderId ? { squareOrderId: checkout.squareOrderId } : {}),
+        ...(checkout.squareOrderId
+          ? { squareOrderId: checkout.squareOrderId }
+          : {}),
         squarePaymentLinkId: checkout.squarePaymentLinkId,
       });
     } catch (error) {
@@ -84,11 +111,17 @@ export function createBookingCheckoutPostHandler(
       }
 
       if (hold !== null) {
-        await releaseHoldAfterCheckoutFailure({ dependencies, hold, now, reason: "Square checkout setup failed" });
+        await releaseHoldAfterCheckoutFailure({
+          dependencies,
+          hold,
+          now,
+          reason: "Square checkout setup failed",
+        });
       }
 
       console.error("[booking checkout] Unable to initialize checkout", {
-        error: error instanceof Error ? error.message : "Unknown checkout error",
+        error:
+          error instanceof Error ? error.message : "Unknown checkout error",
       });
 
       return NextResponse.json(
@@ -106,21 +139,28 @@ export async function POST(req: NextRequest): Promise<Response> {
   ]);
 
   return createBookingCheckoutPostHandler({
-    createSquareServiceBookingCheckout: squareCheckoutModule.createSquareServiceBookingCheckout,
-    getAppointmentHoldByPublicReference: holdsModule.getAppointmentHoldByPublicReference,
-    releaseHeldAppointmentHold: (input) => holdsModule.transitionAppointmentHold({
-      expiresAfter: input.now,
-      holdId: input.holdId,
-      now: input.now,
-      requiredState: "held",
-      status: "released",
-    }),
+    createSquareServiceBookingCheckout:
+      squareCheckoutModule.createSquareServiceBookingCheckout,
+    getAppointmentHoldByPaymentSessionReference:
+      holdsModule.getAppointmentHoldByPaymentSessionReference,
+    getAppointmentHoldByPublicReference:
+      holdsModule.getAppointmentHoldByPublicReference,
+    releaseHeldAppointmentHold: (input) =>
+      holdsModule.transitionAppointmentHold({
+        expiresAfter: input.now,
+        holdId: input.holdId,
+        now: input.now,
+        requiredState: "held",
+        status: "released",
+      }),
   })(req);
 }
 
 function isCheckoutStartableHold(hold: BookingHoldRecord, now: Date): boolean {
-  return (hold.state === "held" && hold.expiresAt > now) ||
-    (hold.state === "payment_pending" && isActiveHold(hold, now));
+  return (
+    (hold.state === "held" && hold.expiresAt > now) ||
+    (hold.state === "payment_pending" && isActiveHold(hold, now))
+  );
 }
 
 async function releaseHoldAfterCheckoutFailure(input: {
@@ -134,31 +174,50 @@ async function releaseHoldAfterCheckoutFailure(input: {
   }
 
   try {
-    await input.dependencies.releaseHeldAppointmentHold({ holdId: input.hold.id, now: input.now });
-  } catch (error) {
-    console.warn("[booking checkout] Failed to release hold after checkout failure", {
-      error: error instanceof Error ? error.message : "Unknown release error",
+    await input.dependencies.releaseHeldAppointmentHold({
       holdId: input.hold.id,
-      reason: input.reason,
+      now: input.now,
     });
+  } catch (error) {
+    console.warn(
+      "[booking checkout] Failed to release hold after checkout failure",
+      {
+        error: error instanceof Error ? error.message : "Unknown release error",
+        holdId: input.hold.id,
+        reason: input.reason,
+      },
+    );
   }
 }
 
-function parseBookingCheckoutRequest(body: unknown): BookingCheckoutRequestBody | null {
+function parseBookingCheckoutRequest(
+  body: unknown,
+): BookingCheckoutRequestBody | null {
   if (!isRecord(body)) {
     return null;
   }
 
-  const holdReference = parseRequiredString(body.holdReference);
+  const holdReference = parseOptionalString(body.holdReference);
+  const paymentSessionReference = parseOptionalString(
+    body.paymentSessionReference,
+  );
 
-  if (holdReference === null) {
+  // A checkout must be started by exactly one reference type.
+  if (
+    (holdReference === null && paymentSessionReference === null) ||
+    (holdReference !== null && paymentSessionReference !== null)
+  ) {
     return null;
   }
 
-  return { holdReference };
+  if (holdReference !== null) {
+    return { holdReference };
+  }
+
+  return { paymentSessionReference: paymentSessionReference as string };
 }
 
-function parseRequiredString(value: unknown): string | null {
+function parseOptionalString(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
   }
@@ -187,5 +246,8 @@ function unavailableBookingHoldResponse(): NextResponse<{ error: string }> {
 }
 
 function isUnavailableBookingHoldError(error: unknown): boolean {
-  return error instanceof Error && error.message === "Booking hold is no longer available";
+  return (
+    error instanceof Error &&
+    error.message === "Booking hold is no longer available"
+  );
 }

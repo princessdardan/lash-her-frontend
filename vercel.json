@@ -3,6 +3,14 @@
     {
       "path": "/api/admin/private-data-retention",
       "schedule": "17 8 * * *"
+    },
+    {
+      "path": "/api/cron/backup-validation",
+      "schedule": "0 6 * * 1"
+    },
+    {
+      "path": "/api/admin/payment-reconciliation",
+      "schedule": "*/30 * * * *"
     }
   ]
 }

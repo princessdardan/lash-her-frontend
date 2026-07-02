@@ -67,24 +67,24 @@ The app integrates with:
 
 ## Where things live
 
-| Area | Path | Why it exists |
-| --- | --- | --- |
-| Public routes | `src/app/(site)` | Next App Router pages for the public website. |
-| API routes | `src/app/api` | Server endpoints for booking, checkout, promotion codes, revalidation, and webhooks. |
-| Global app shell | `src/app/layout.tsx`, `src/app/(site)/layout.tsx`, `src/app/globals.css` | Metadata, root layout, site shell, Tailwind v4 theme tokens, and global styling. |
-| Sanity Studio route | `src/app/studio` | Mounts the embedded Studio at `/studio`. |
-| Sanity config and schemas | `src/sanity` | Studio config, schema source, structure builder, and Sanity clients. |
-| Sanity loaders | `src/data/loaders.ts` | Centralized CMS reads, GROQ projections, and cache tagging. |
-| Shared content types | `src/types/index.ts` | TypeScript shapes for CMS-backed rendering and block unions. |
-| Components | `src/components` | Booking, commerce, custom CMS block rendering, and shared UI components. |
-| Booking domain logic | `src/lib/booking` | Availability, holds, payment-provider logic, and calendar integration helpers. |
-| Commerce domain logic | `src/lib/commerce` | Checkout/payment behavior for product and related commerce flows. |
-| Private database | `src/lib/private-db`, `drizzle/` | Drizzle schema/client plus generated migrations. |
-| Email | `src/lib/email.ts` | Transactional email integration. |
-| Environment helpers | `src/lib/env`, `src/sanity/env.ts` | Runtime configuration parsing and Sanity environment constants. |
-| Tests | `src/**/*.test.ts`, `tests/` | Node unit/route tests near source and Playwright E2E tests. |
-| Operational docs | `docs/` | Detailed runbooks, architecture notes, flowcharts, and launch checklists. |
-| Scripts | `scripts/` | Environment validation, migrations, and git remote guardrails. |
+| Area                      | Path                                                                     | Why it exists                                                                        |
+| ------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| Public routes             | `src/app/(site)`                                                         | Next App Router pages for the public website.                                        |
+| API routes                | `src/app/api`                                                            | Server endpoints for booking, checkout, promotion codes, revalidation, and webhooks. |
+| Global app shell          | `src/app/layout.tsx`, `src/app/(site)/layout.tsx`, `src/app/globals.css` | Metadata, root layout, site shell, Tailwind v4 theme tokens, and global styling.     |
+| Sanity Studio route       | `src/app/studio`                                                         | Mounts the embedded Studio at `/studio`.                                             |
+| Sanity config and schemas | `src/sanity`                                                             | Studio config, schema source, structure builder, and Sanity clients.                 |
+| Sanity loaders            | `src/data/loaders.ts`                                                    | Centralized CMS reads, GROQ projections, and cache tagging.                          |
+| Shared content types      | `src/types/index.ts`                                                     | TypeScript shapes for CMS-backed rendering and block unions.                         |
+| Components                | `src/components`                                                         | Booking, commerce, custom CMS block rendering, and shared UI components.             |
+| Booking domain logic      | `src/lib/booking`                                                        | Availability, holds, payment-provider logic, and calendar integration helpers.       |
+| Commerce domain logic     | `src/lib/commerce`                                                       | Checkout/payment behavior for product and related commerce flows.                    |
+| Private database          | `src/lib/private-db`, `drizzle/`                                         | Drizzle schema/client plus generated migrations.                                     |
+| Email                     | `src/lib/email.ts`                                                       | Transactional email integration.                                                     |
+| Environment helpers       | `src/lib/env`, `src/sanity/env.ts`                                       | Runtime configuration parsing and Sanity environment constants.                      |
+| Tests                     | `src/**/*.test.ts`, `tests/`                                             | Node unit/route tests near source and Playwright E2E tests.                          |
+| Operational docs          | `docs/`                                                                  | Detailed runbooks, architecture notes, flowcharts, and launch checklists.            |
+| Scripts                   | `scripts/`                                                               | Environment validation, migrations, and git remote guardrails.                       |
 
 ## Local development
 
@@ -110,22 +110,22 @@ Then open:
 
 ### Core commands
 
-| Command | What it does |
-| --- | --- |
-| `npm run dev` | Starts the Next.js development server. |
-| `npm run build` | Runs `prebuild` Sanity env validation, then creates a production build. |
-| `npm run start` | Starts the production Next server after a build. |
-| `npm run lint` | Runs ESLint. |
-| `npm test` | Runs Playwright E2E tests. |
-| `npm run test:unit` | Runs `src/**/*.test.ts` through Node's test runner via `tsx`. |
-| `npm run test:ui` | Opens the Playwright UI runner. |
-| `npm run test:headed` | Runs Playwright headed. |
-| `npm run test:debug` | Runs Playwright in debug mode. |
-| `npm run test:report` | Opens the last Playwright HTML report. |
-| `npm run db:generate` | Generates Drizzle migrations from schema changes. |
-| `npm run db:migrate` | Applies private database migrations using `DATABASE_URL`. |
-| `npm run git:verify-remote` | Verifies the `origin` git remote points at the canonical repository. |
-| `npm run git:push-staging` | Verifies the remote, then pushes the `staging` branch to `origin`. |
+| Command                     | What it does                                                            |
+| --------------------------- | ----------------------------------------------------------------------- |
+| `npm run dev`               | Starts the Next.js development server.                                  |
+| `npm run build`             | Runs `prebuild` Sanity env validation, then creates a production build. |
+| `npm run start`             | Starts the production Next server after a build.                        |
+| `npm run lint`              | Runs ESLint.                                                            |
+| `npm test`                  | Runs Playwright E2E tests.                                              |
+| `npm run test:unit`         | Runs `src/**/*.test.ts` through Node's test runner via `tsx`.           |
+| `npm run test:ui`           | Opens the Playwright UI runner.                                         |
+| `npm run test:headed`       | Runs Playwright headed.                                                 |
+| `npm run test:debug`        | Runs Playwright in debug mode.                                          |
+| `npm run test:report`       | Opens the last Playwright HTML report.                                  |
+| `npm run db:generate`       | Generates Drizzle migrations from schema changes.                       |
+| `npm run db:migrate`        | Applies private database migrations using `DATABASE_URL`.               |
+| `npm run git:verify-remote` | Verifies the `origin` git remote points at the canonical repository.    |
+| `npm run git:push-staging`  | Verifies the remote, then pushes the `staging` branch to `origin`.      |
 
 ## Environment and services
 
@@ -170,13 +170,7 @@ Google Calendar integration requires OAuth credentials and Upstash Redis/KV toke
 - `KV_REST_API_URL`
 - `KV_REST_API_TOKEN`
 
-The booking OAuth setup URL is:
-
-```text
-/api/booking/oauth/start?secret=<BOOKING_ADMIN_SETUP_SECRET>
-```
-
-Treat that URL as sensitive. Do not paste it in tickets or chat because it contains the setup secret.
+Run the protected internal OAuth setup flow in the target environment using `BOOKING_ADMIN_SETUP_SECRET` from the secure secret manager. Do not share the setup URL or include it in documentation, tickets, or chat.
 
 ### Private database
 

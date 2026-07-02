@@ -30,26 +30,43 @@ test("finalizePaidBooking is idempotent for browser return and webhook duplicate
     calendar,
     holdId: hold.id,
     now,
-    payment: { amountCents: 7500, currency: "CAD", source: "return", transactionId: "txn-123" },
+    payment: {
+      amountCents: 7500,
+      currency: "CAD",
+      source: "return",
+      transactionId: "txn-123",
+    },
     repository,
   });
   const duplicate = await finalizePaidBooking({
     calendar,
     holdId: hold.id,
     now: new Date("2026-05-18T12:16:00.000Z"),
-    payment: { amountCents: 7500, currency: "CAD", source: "webhook", transactionId: "txn-123" },
+    payment: {
+      amountCents: 7500,
+      currency: "CAD",
+      source: "webhook",
+      transactionId: "txn-123",
+    },
     repository,
   });
 
-  assert.deepEqual(first, { ok: true, eventId: "calendar-event-1", status: "booked" });
-  assert.deepEqual(duplicate, { ok: true, eventId: "calendar-event-1", status: "booked" });
+  assert.deepEqual(first, {
+    ok: true,
+    eventId: "calendar-event-1",
+    status: "booked",
+  });
+  assert.deepEqual(duplicate, {
+    ok: true,
+    eventId: "calendar-event-1",
+    status: "booked",
+  });
   assert.equal(calendar.insertedEventCount, 1);
   assert.equal(repository.recordPaidCallCount, 1);
   assert.equal(repository.hold.googleEventId, "calendar-event-1");
   assert.equal(repository.hold.finalizationStatus, "booked");
   assert.equal(repository.hold.state, "booked");
 });
-
 
 test("finalizePaidBooking continues paid calendar-pending holds through one Calendar insert", async () => {
   const hold = createHold({
@@ -64,11 +81,20 @@ test("finalizePaidBooking continues paid calendar-pending holds through one Cale
     calendar,
     holdId: hold.id,
     now,
-    payment: { amountCents: 7500, currency: "CAD", source: "webhook", transactionId: "txn-123" },
+    payment: {
+      amountCents: 7500,
+      currency: "CAD",
+      source: "webhook",
+      transactionId: "txn-123",
+    },
     repository,
   });
 
-  assert.deepEqual(result, { ok: true, eventId: "calendar-event-1", status: "booked" });
+  assert.deepEqual(result, {
+    ok: true,
+    eventId: "calendar-event-1",
+    status: "booked",
+  });
   assert.equal(calendar.insertedEventCount, 1);
   assert.equal(repository.recordPaidCallCount, 0);
   assert.equal(repository.markBookingFailedCallCount, 0);
@@ -80,17 +106,28 @@ test("finalizePaidBooking continues paid calendar-pending holds through one Cale
 test("finalizePaidBooking recovers paid in-progress holds with existing Calendar metadata", async () => {
   const hold = createHold({ state: "paid_pending_booking" });
   const repository = new FakeFinalizerRepository(hold);
-  const calendar = new FakeCalendarGateway({ existingEventId: "calendar-event-existing" });
+  const calendar = new FakeCalendarGateway({
+    existingEventId: "calendar-event-existing",
+  });
 
   const result = await finalizePaidBooking({
     calendar,
     holdId: hold.id,
     now,
-    payment: { amountCents: 7500, currency: "CAD", source: "webhook", transactionId: "txn-123" },
+    payment: {
+      amountCents: 7500,
+      currency: "CAD",
+      source: "webhook",
+      transactionId: "txn-123",
+    },
     repository,
   });
 
-  assert.deepEqual(result, { ok: true, eventId: "calendar-event-existing", status: "booked" });
+  assert.deepEqual(result, {
+    ok: true,
+    eventId: "calendar-event-existing",
+    status: "booked",
+  });
   assert.equal(calendar.findExistingEventCallCount, 1);
   assert.equal(calendar.insertedEventCount, 0);
   assert.equal(repository.recordPaidCallCount, 0);
@@ -107,7 +144,12 @@ test("finalizePaidBooking does not auto-book explicit refund states", async () =
     calendar,
     holdId: hold.id,
     now,
-    payment: { amountCents: 7500, currency: "CAD", source: "webhook", transactionId: "txn-123" },
+    payment: {
+      amountCents: 7500,
+      currency: "CAD",
+      source: "webhook",
+      transactionId: "txn-123",
+    },
     repository,
   });
 
@@ -151,27 +193,40 @@ test("finalizeAppointmentPaymentWithLock releases ownership after finalization",
   const lock = new FakeFinalizationLock({ acquire: true });
 
   const result = await finalizeAppointmentPaymentWithLock({
-    finalize: async () => ({ ok: true, eventId: "calendar-event-1", status: "booked" }),
+    finalize: async () => ({
+      ok: true,
+      eventId: "calendar-event-1",
+      status: "booked",
+    }),
     holdId: "hold-1",
     lock,
   });
 
-  assert.deepEqual(result, { ok: true, eventId: "calendar-event-1", status: "booked" });
+  assert.deepEqual(result, {
+    ok: true,
+    eventId: "calendar-event-1",
+    status: "booked",
+  });
   assert.equal(lock.releaseCount, 1);
 });
 
-
-
 test("finalizePaidBooking recovers Calendar insert when markBooked failed after event creation", async () => {
   const hold = createHold({ state: "payment_pending" });
-  const repository = new FakeFinalizerRepository(hold, { failNextMarkBooked: true });
+  const repository = new FakeFinalizerRepository(hold, {
+    failNextMarkBooked: true,
+  });
   const calendar = new FakeCalendarGateway({ findInsertedEvent: true });
 
   const first = await finalizePaidBooking({
     calendar,
     holdId: hold.id,
     now,
-    payment: { amountCents: 7500, currency: "CAD", source: "client_validation", transactionId: "txn-123" },
+    payment: {
+      amountCents: 7500,
+      currency: "CAD",
+      source: "client_validation",
+      transactionId: "txn-123",
+    },
     repository,
   });
 
@@ -190,11 +245,20 @@ test("finalizePaidBooking recovers Calendar insert when markBooked failed after 
     calendar,
     holdId: hold.id,
     now,
-    payment: { amountCents: 7500, currency: "CAD", source: "webhook", transactionId: "txn-123" },
+    payment: {
+      amountCents: 7500,
+      currency: "CAD",
+      source: "webhook",
+      transactionId: "txn-123",
+    },
     repository,
   });
 
-  assert.deepEqual(retry, { ok: true, eventId: "calendar-event-1", status: "booked" });
+  assert.deepEqual(retry, {
+    ok: true,
+    eventId: "calendar-event-1",
+    status: "booked",
+  });
   assert.equal(calendar.insertedEventCount, 1);
   assert.equal(calendar.findExistingEventCallCount, 2);
   assert.equal(repository.recordCalendarRetryCallCount, 1);
@@ -210,7 +274,12 @@ test("finalizePaidBooking marks manual follow-up when calendar settings parse to
     calendar,
     holdId: hold.id,
     now,
-    payment: { amountCents: 7500, currency: "CAD", source: "client_validation", transactionId: "txn-123" },
+    payment: {
+      amountCents: 7500,
+      currency: "CAD",
+      source: "client_validation",
+      transactionId: "txn-123",
+    },
     repository,
   });
 
@@ -237,7 +306,12 @@ test("finalizePaidBooking marks manual follow-up when calendar configuration is 
     calendar,
     holdId: hold.id,
     now,
-    payment: { amountCents: 7500, currency: "CAD", source: "client_validation", transactionId: "txn-123" },
+    payment: {
+      amountCents: 7500,
+      currency: "CAD",
+      source: "client_validation",
+      transactionId: "txn-123",
+    },
     repository,
   });
 
@@ -271,7 +345,12 @@ test("finalizePaidBooking sends unavailable paid slots to rebooking review befor
     calendar,
     holdId: hold.id,
     now,
-    payment: { amountCents: 7500, currency: "CAD", source: "client_validation", transactionId: "txn-123" },
+    payment: {
+      amountCents: 7500,
+      currency: "CAD",
+      source: "client_validation",
+      transactionId: "txn-123",
+    },
     repository,
   });
 
@@ -285,12 +364,14 @@ test("finalizePaidBooking sends unavailable paid slots to rebooking review befor
   assert.equal(repository.recordPaidCallCount, 1);
   assert.equal(repository.markBookingFailedCallCount, 0);
   assert.equal(repository.markPaidUnbookableCallCount, 1);
-  assert.equal(repository.hold.finalizationStatus, "paid_unbookable_rebooking_pending");
+  assert.equal(
+    repository.hold.finalizationStatus,
+    "paid_unbookable_rebooking_pending",
+  );
   assert.equal(repository.hold.manualReviewStatus, "rebooking_pending");
   assert.equal(repository.hold.state, "paid_unbookable_rebooking_pending");
   assert.equal(calendar.insertedEventCount, 0);
 });
-
 
 test("finalizePaidBooking sends late payments beyond grace to rebooking review", async () => {
   const hold = createHold({ state: "payment_pending" });
@@ -304,7 +385,12 @@ test("finalizePaidBooking sends late payments beyond grace to rebooking review",
     calendar,
     holdId: hold.id,
     now: lateNow,
-    payment: { amountCents: 7500, currency: "CAD", source: "webhook", transactionId: "txn-late" },
+    payment: {
+      amountCents: 7500,
+      currency: "CAD",
+      source: "webhook",
+      transactionId: "txn-late",
+    },
     repository,
   });
 
@@ -318,7 +404,10 @@ test("finalizePaidBooking sends late payments beyond grace to rebooking review",
   assert.equal(repository.recordPaidCallCount, 1);
   assert.equal(repository.markBookingFailedCallCount, 0);
   assert.equal(repository.markPaidUnbookableCallCount, 1);
-  assert.equal(repository.hold.finalizationStatus, "paid_unbookable_rebooking_pending");
+  assert.equal(
+    repository.hold.finalizationStatus,
+    "paid_unbookable_rebooking_pending",
+  );
   assert.equal(repository.hold.state, "paid_unbookable_rebooking_pending");
   assert.deepEqual(repository.hold.payment, {
     amountCents: 7500,
@@ -340,7 +429,12 @@ test("finalizePaidBooking leaves Calendar insert failures retryable after paid p
     calendar,
     holdId: hold.id,
     now,
-    payment: { amountCents: 7500, currency: "CAD", source: "webhook", transactionId: "txn-123" },
+    payment: {
+      amountCents: 7500,
+      currency: "CAD",
+      source: "webhook",
+      transactionId: "txn-123",
+    },
     repository,
   });
 
@@ -368,13 +462,21 @@ test("finalizePaidBooking leaves Calendar insert failures retryable after paid p
 test("finalizePaidBooking retries a Calendar insert that succeeded before correlation was persisted", async () => {
   const hold = createHold({ state: "payment_pending" });
   const repository = new FakeFinalizerRepository(hold);
-  const calendar = new FakeCalendarGateway({ failInsertAfterCreate: true, findInsertedEvent: true });
+  const calendar = new FakeCalendarGateway({
+    failInsertAfterCreate: true,
+    findInsertedEvent: true,
+  });
 
   const first = await finalizePaidBooking({
     calendar,
     holdId: hold.id,
     now,
-    payment: { amountCents: 7500, currency: "CAD", source: "webhook", transactionId: "txn-123" },
+    payment: {
+      amountCents: 7500,
+      currency: "CAD",
+      source: "webhook",
+      transactionId: "txn-123",
+    },
     repository,
   });
 
@@ -388,11 +490,20 @@ test("finalizePaidBooking retries a Calendar insert that succeeded before correl
     calendar,
     holdId: hold.id,
     now: new Date("2026-05-18T12:16:00.000Z"),
-    payment: { amountCents: 7500, currency: "CAD", source: "return", transactionId: "txn-123" },
+    payment: {
+      amountCents: 7500,
+      currency: "CAD",
+      source: "return",
+      transactionId: "txn-123",
+    },
     repository,
   });
 
-  assert.deepEqual(retry, { ok: true, eventId: "calendar-event-1", status: "booked" });
+  assert.deepEqual(retry, {
+    ok: true,
+    eventId: "calendar-event-1",
+    status: "booked",
+  });
   assert.equal(calendar.insertedEventCount, 1);
   assert.equal(calendar.findExistingEventCallCount, 2);
   assert.equal(repository.hold.googleEventId, "calendar-event-1");
@@ -412,12 +523,14 @@ test("isPaidHoldSlotStillAvailable queries multiple calendar IDs for busy events
       calendarCalls.push(calendarId);
 
       if (calendarId === "calendar-2") {
-        return [{
-          id: "busy-1",
-          title: "Existing appointment",
-          start: new Date("2026-05-19T14:00:00.000Z"),
-          end: new Date("2026-05-19T15:00:00.000Z"),
-        }];
+        return [
+          {
+            id: "busy-1",
+            title: "Existing appointment",
+            start: new Date("2026-05-19T14:00:00.000Z"),
+            end: new Date("2026-05-19T15:00:00.000Z"),
+          },
+        ];
       }
 
       return [];
@@ -429,7 +542,11 @@ test("isPaidHoldSlotStillAvailable queries multiple calendar IDs for busy events
   });
 
   assert.equal(available, false);
-  assert.deepEqual(calendarCalls.sort(), ["calendar-1", "calendar-2", "calendar-3"]);
+  assert.deepEqual(calendarCalls.sort(), [
+    "calendar-1",
+    "calendar-2",
+    "calendar-3",
+  ]);
 });
 
 test("isPaidHoldSlotStillAvailable returns true when all calendars are free", async () => {
@@ -472,7 +589,9 @@ class FakeFinalizerRepository implements BookingFinalizerRepository {
   }
 
   async recordPaidPendingBooking(
-    input: Parameters<BookingFinalizerRepository["recordPaidPendingBooking"]>[0],
+    input: Parameters<
+      BookingFinalizerRepository["recordPaidPendingBooking"]
+    >[0],
   ): Promise<BookingHoldRecord> {
     this.recordPaidCallCount += 1;
     this.hold.state = "paid_pending_booking";
@@ -489,7 +608,9 @@ class FakeFinalizerRepository implements BookingFinalizerRepository {
   }
 
   async recordCalendarRetryPending(
-    input: Parameters<BookingFinalizerRepository["recordCalendarRetryPending"]>[0],
+    input: Parameters<
+      BookingFinalizerRepository["recordCalendarRetryPending"]
+    >[0],
   ): Promise<BookingHoldRecord> {
     this.recordCalendarRetryCallCount += 1;
     this.hold.failureReason = input.error;
@@ -521,14 +642,17 @@ class FakeFinalizerRepository implements BookingFinalizerRepository {
     this.markBookingFailedCallCount += 1;
     this.hold.failureReason = input.error;
     this.hold.finalizationReason = input.error;
-    this.hold.finalizationStatus = input.state === "manual_followup" ? "manual_review" : "failed";
+    this.hold.finalizationStatus =
+      input.state === "manual_followup" ? "manual_review" : "failed";
     this.hold.state = input.state;
     this.hold.updatedAt = input.now;
     return this.hold;
   }
 
   async markPaidUnbookableForRebooking(
-    input: Parameters<BookingFinalizerRepository["markPaidUnbookableForRebooking"]>[0],
+    input: Parameters<
+      BookingFinalizerRepository["markPaidUnbookableForRebooking"]
+    >[0],
   ): Promise<BookingHoldRecord> {
     this.markPaidUnbookableCallCount += 1;
     this.hold.failureReason = input.reason;
@@ -541,7 +665,6 @@ class FakeFinalizerRepository implements BookingFinalizerRepository {
     return this.hold;
   }
 }
-
 
 class FakeFinalizationLock {
   releaseCount = 0;
@@ -561,36 +684,45 @@ class FakeCalendarGateway implements BookingCalendarGateway {
   findExistingEventCallCount = 0;
   insertedEventCount = 0;
 
-  constructor(private readonly options: {
-    existingEventId?: string;
-    failFindManualFollowup?: boolean;
-    failFindEmptyCalendarIds?: boolean;
-    failInsert?: boolean;
-    failInsertAfterCreate?: boolean;
-    failInsertRebooking?: boolean;
-    findInsertedEvent?: boolean;
-    onInsert?: (hold: BookingHoldRecord) => void;
-  } = {}) {}
+  constructor(
+    private readonly options: {
+      existingEventId?: string;
+      failFindManualFollowup?: boolean;
+      failFindEmptyCalendarIds?: boolean;
+      failInsert?: boolean;
+      failInsertAfterCreate?: boolean;
+      failInsertRebooking?: boolean;
+      findInsertedEvent?: boolean;
+      onInsert?: (hold: BookingHoldRecord) => void;
+    } = {},
+  ) {}
 
   async findExistingEventForHold(): Promise<string | null> {
     this.findExistingEventCallCount += 1;
 
     if (this.options.failFindManualFollowup === true) {
-      throw new BookingManualFollowupError("Booking calendar is not configured.");
+      throw new BookingManualFollowupError(
+        "Booking calendar is not configured.",
+      );
     }
 
     if (this.options.failFindEmptyCalendarIds === true) {
       return null;
     }
 
-    return this.options.existingEventId ?? (this.options.findInsertedEvent === true && this.insertedEventCount > 0
-      ? "calendar-event-1"
-      : null);
+    return (
+      this.options.existingEventId ??
+      (this.options.findInsertedEvent === true && this.insertedEventCount > 0
+        ? "calendar-event-1"
+        : null)
+    );
   }
 
   async insertBookingEvent(hold: BookingHoldRecord): Promise<string> {
     if (this.options.failInsertRebooking === true) {
-      throw new BookingRebookingRequiredError("The selected appointment time became unavailable after payment.");
+      throw new BookingRebookingRequiredError(
+        "The selected appointment time became unavailable after payment.",
+      );
     }
 
     if (this.options.failInsert === true) {
@@ -598,7 +730,9 @@ class FakeCalendarGateway implements BookingCalendarGateway {
     }
 
     if (this.options.failFindEmptyCalendarIds === true) {
-      throw new BookingManualFollowupError("Booking calendar is not configured.");
+      throw new BookingManualFollowupError(
+        "Booking calendar is not configured.",
+      );
     }
 
     this.options.onInsert?.(hold);
@@ -613,11 +747,17 @@ class FakeCalendarGateway implements BookingCalendarGateway {
   }
 }
 
-function createHold(overrides: Partial<BookingHoldRecord> = {}): BookingHoldRecord {
+function createHold(
+  overrides: Partial<BookingHoldRecord> = {},
+): BookingHoldRecord {
   return {
     bookingType: "in-person-appointment",
     createdAt: new Date("2026-05-18T12:00:00.000Z"),
-    customer: { email: "client@example.com", name: "Client Name", phone: "555-555-5555" },
+    customer: {
+      email: "client@example.com",
+      name: "Client Name",
+      phone: "555-555-5555",
+    },
     expiresAt: new Date("2026-05-18T12:10:00.000Z"),
     finalizationStatus: "pending",
     googleEventId: null,
@@ -625,6 +765,7 @@ function createHold(overrides: Partial<BookingHoldRecord> = {}): BookingHoldReco
     offeringId: "lash-fill",
     offeringSnapshot: { title: "Lash Fill" },
     payment: null,
+    paymentSessionReference: "pay_sess_1",
     publicReference: "hold_1",
     selectedEnd: new Date("2026-05-19T14:30:00.000Z"),
     selectedStart: new Date("2026-05-19T14:00:00.000Z"),
