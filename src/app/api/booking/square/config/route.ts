@@ -32,6 +32,7 @@ export function createSquareConfigGetHandler(
       applicationId: config.applicationId,
       environment: config.environment,
       locationId: config.locationId,
+      locale: config.locale,
       scriptUrl: getSquareWebPaymentsScriptUrl(config.environment),
     });
   };

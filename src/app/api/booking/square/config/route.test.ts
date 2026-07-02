@@ -34,6 +34,7 @@ const enabledSandboxRouteScript = String.raw`
       applicationId: "sandbox-sq0idb-test",
       environment: "sandbox",
       locationId: "LOC123",
+      locale: "en-CA",
       scriptUrl: "https://sandbox.web.squarecdn.com/v1/square.js",
     });
     const bodyText = JSON.stringify(body);
@@ -59,6 +60,7 @@ const enabledProductionRouteScript = String.raw`
       applicationId: "sq0idp-test",
       environment: "production",
       locationId: "LOC456",
+      locale: "en-CA",
       scriptUrl: "https://web.squarecdn.com/v1/square.js",
     });
   })().catch((error) => {
@@ -78,6 +80,7 @@ const factoryScript = String.raw`
         applicationId: "sandbox-sq0idb-factory",
         environment: "sandbox",
         locationId: "LOC-FACTORY",
+        locale: "en-CA",
       }),
     });
 
@@ -88,6 +91,7 @@ const factoryScript = String.raw`
       applicationId: "sandbox-sq0idb-factory",
       environment: "sandbox",
       locationId: "LOC-FACTORY",
+      locale: "en-CA",
       scriptUrl: "https://sandbox.web.squarecdn.com/v1/square.js",
     });
   })().catch((error) => {

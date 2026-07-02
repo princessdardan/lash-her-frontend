@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 
 import type { BookingHoldRecord } from "@/lib/booking/holds";
+import type {
+  SquareCard,
+  SquareCardsClient,
+  SquareCreateCardRequest,
+} from "@/lib/payments/square/cards-client";
 import type {
   SquareCreateCustomerRequest,
   SquareCreateCustomerResponse,
@@ -33,6 +39,14 @@ const selectedStart = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
 selectedStart.setUTCHours(14, 0, 0, 0);
 const selectedEnd = new Date(selectedStart.getTime() + 60 * 60 * 1000);
 const now = new Date();
+
+function expectedSquareIdempotencyKey(scope: string, holdId: string): string {
+  const hash = createHash("sha256")
+    .update(`${scope}:${holdId}`)
+    .digest("hex")
+    .slice(0, 32);
+  return `cs:${scope}:${hash}`;
+}
 
 function createHold(
   overrides: Partial<BookingHoldRecord> = {},
@@ -176,6 +190,7 @@ interface FakeState {
   squarePaymentCancels: string[];
   squarePaymentCompletes: string[];
   squarePaymentGets: string[];
+  squareCardCreates: Array<SquareCreateCardRequest>;
   squareCustomerCreates: Array<SquareCreateCustomerRequest>;
   calendarFinalizeCalls: Array<{ holdId: string }>;
   alertCalls: Array<{ category: string; severity: string; message: string }>;
@@ -189,6 +204,9 @@ interface FakeState {
   throwCompletePayment: boolean;
   throwGetPayment: boolean;
   throwCancelPayment: boolean;
+  throwCreateCard: boolean;
+  createPaymentId: string;
+  createCardResponse?: SquareCard;
   cardBrand?: string;
   cardLast4?: string;
   cardExpMonth?: number;
@@ -206,6 +224,10 @@ interface FakeSquarePaymentsClient extends SquarePaymentsClient {
   events: string[];
 }
 
+interface FakeSquareCardsClient extends SquareCardsClient {
+  events: string[];
+}
+
 interface FakeCalendarFinalizer extends CardOnFileCalendarFinalizer {
   events: string[];
 }
@@ -217,6 +239,7 @@ interface FakeAlertLogger extends ServicePaymentAlertLogger {
 function createFakes(initialHolds: BookingHoldRecord[] = [createHold()]): {
   repository: ChargeAndStoreRepository;
   squarePayments: FakeSquarePaymentsClient;
+  squareCards: FakeSquareCardsClient;
   squareCustomers: FakeSquareCustomersClient;
   calendarFinalizer: FakeCalendarFinalizer;
   alerts: FakeAlertLogger;
@@ -238,6 +261,7 @@ function createFakes(initialHolds: BookingHoldRecord[] = [createHold()]): {
     squarePaymentCancels: [],
     squarePaymentCompletes: [],
     squarePaymentGets: [],
+    squareCardCreates: [],
     squareCustomerCreates: [],
     calendarFinalizeCalls: [],
     alertCalls: [],
@@ -251,6 +275,8 @@ function createFakes(initialHolds: BookingHoldRecord[] = [createHold()]): {
     throwCompletePayment: false,
     throwGetPayment: false,
     throwCancelPayment: false,
+    throwCreateCard: false,
+    createPaymentId: "pay_1",
   };
 
   const repository: ChargeAndStoreRepository = {
@@ -430,10 +456,29 @@ function createFakes(initialHolds: BookingHoldRecord[] = [createHold()]): {
       state.sagaOrderEvents.push("markHoldPaymentFailed");
       state.markHoldPaymentFailedCalls.push(input);
       const hold = state.holds.find((h) => h.id === input.holdId);
-      if (hold) {
-        hold.state = "payment_failed";
-        hold.failureReason = input.reason;
+      if (!hold) return;
+
+      // Terminal-safety mirror of the real repository: a stale failure/cancel
+      // path must not overwrite an already-finalized hold state.
+      const terminalStatuses = new Set([
+        "booked",
+        "manual_followup",
+        "refund_required",
+      ]);
+      const metadata = (hold.reconciliationMetadata ?? {}) as Record<
+        string,
+        unknown
+      >;
+      if (
+        terminalStatuses.has(hold.state) ||
+        metadata.chargeAndStoreConfirmation !== undefined ||
+        metadata.chargeAndStoreRefundRequired !== undefined
+      ) {
+        return;
       }
+
+      hold.state = "payment_failed";
+      hold.failureReason = input.reason;
     },
 
     async markHoldRefundRequired(input) {
@@ -472,9 +517,10 @@ function createFakes(initialHolds: BookingHoldRecord[] = [createHold()]): {
       state.sagaOrderEvents.push("createPayment");
       squarePayments.events.push("createPayment");
       state.squarePaymentCreates.push(request);
+      const paymentId = state.createPaymentId;
       return {
         payment: {
-          id: "pay_1",
+          id: paymentId,
           status: state.createPaymentStatus,
           amount_money: request.amount_money,
           version_token: "vt-1",
@@ -554,6 +600,30 @@ function createFakes(initialHolds: BookingHoldRecord[] = [createHold()]): {
     },
   };
 
+  const squareCards: FakeSquareCardsClient = {
+    events: [],
+    async createCard(
+      request: SquareCreateCardRequest,
+    ): Promise<{ card: SquareCard }> {
+      state.events.push("createCard");
+      state.sagaOrderEvents.push("createCard");
+      squareCards.events.push("createCard");
+      state.squareCardCreates.push(request);
+      if (state.throwCreateCard) {
+        state.throwCreateCard = false;
+        throw new Error("Square CreateCard failed");
+      }
+      const response = state.createCardResponse ?? {
+        id: `ccof:${request.source_id.replace(/:/g, "_")}`,
+        card_brand: state.cardBrand ?? "VISA",
+        last_4: state.cardLast4 ?? "0000",
+        exp_month: state.cardExpMonth ?? 12,
+        exp_year: state.cardExpYear ?? 2030,
+      };
+      return { card: response };
+    },
+  };
+
   const calendarFinalizer: FakeCalendarFinalizer = {
     events: [],
     async finalize({ hold }) {
@@ -574,6 +644,7 @@ function createFakes(initialHolds: BookingHoldRecord[] = [createHold()]): {
   return {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -585,6 +656,7 @@ test("persists consent before creating Square payment", async () => {
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -594,6 +666,7 @@ test("persists consent before creating Square payment", async () => {
   const result = await confirmChargeAndStoreBooking(createRequest(), {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -613,6 +686,7 @@ test("persists consent before creating Square payment", async () => {
     "persistPolicyAcceptance",
     "createSquareCustomer",
     "createPayment",
+    "createCard",
     "persistSavedPaymentMethod",
     "createNoShowChargeRecord",
     "completePayment",
@@ -620,10 +694,11 @@ test("persists consent before creating Square payment", async () => {
   ]);
 });
 
-test("captures payment only after Square card id is available", async () => {
+test("captures payment only after Square card is created", async () => {
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -633,6 +708,7 @@ test("captures payment only after Square card id is available", async () => {
   await confirmChargeAndStoreBooking(createRequest(), {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -640,12 +716,14 @@ test("captures payment only after Square card id is available", async () => {
   });
 
   const createIndex = state.events.indexOf("createPayment");
+  const createCardIndex = state.events.indexOf("createCard");
   const saveCardIndex = state.events.indexOf("persistSavedPaymentMethod");
   const noShowIndex = state.events.indexOf("createNoShowChargeRecord");
   const completeIndex = state.events.indexOf("completePayment");
 
   assert.ok(createIndex > -1);
-  assert.ok(saveCardIndex > createIndex);
+  assert.ok(createCardIndex > createIndex);
+  assert.ok(saveCardIndex > createCardIndex);
   assert.ok(noShowIndex > saveCardIndex);
   assert.ok(completeIndex > noShowIndex);
 });
@@ -654,6 +732,7 @@ test("returns booked only after payment, card, no-show record, and calendar fina
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -663,6 +742,7 @@ test("returns booked only after payment, card, no-show record, and calendar fina
   const result = await confirmChargeAndStoreBooking(createRequest(), {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -691,6 +771,7 @@ test("records marketing choice after customer details are persisted", async () =
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -709,6 +790,7 @@ test("records marketing choice after customer details are persisted", async () =
     {
       repository,
       squarePayments,
+      squareCards,
       squareCustomers,
       calendarFinalizer,
       alerts,
@@ -746,6 +828,7 @@ test("does not block confirmation when marketing choice persistence fails", asyn
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -764,6 +847,7 @@ test("does not block confirmation when marketing choice persistence fails", asyn
     {
       repository,
       squarePayments,
+      squareCards,
       squareCustomers,
       calendarFinalizer,
       alerts,
@@ -790,6 +874,7 @@ test("continues to success before a slow marketing choice promise resolves", asy
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -814,6 +899,7 @@ test("continues to success before a slow marketing choice promise resolves", asy
     {
       repository,
       squarePayments,
+      squareCards,
       squareCustomers,
       calendarFinalizer,
       alerts,
@@ -846,6 +932,7 @@ test("logs asynchronous marketing choice persistence failures without blocking",
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -876,6 +963,7 @@ test("logs asynchronous marketing choice persistence failures without blocking",
       {
         repository,
         squarePayments,
+        squareCards,
         squareCustomers,
         calendarFinalizer,
         alerts,
@@ -917,6 +1005,7 @@ test("rejects unchecked consent before Square calls", async () => {
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -934,6 +1023,7 @@ test("rejects unchecked consent before Square calls", async () => {
     {
       repository,
       squarePayments,
+      squareCards,
       squareCustomers,
       calendarFinalizer,
       alerts,
@@ -952,6 +1042,7 @@ test("rejects mismatched policy version before Square calls", async () => {
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -971,6 +1062,7 @@ test("rejects mismatched policy version before Square calls", async () => {
     {
       repository,
       squarePayments,
+      squareCards,
       squareCustomers,
       calendarFinalizer,
       alerts,
@@ -990,6 +1082,7 @@ test("rejects mismatched policy text hash before Square calls", async () => {
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1007,6 +1100,7 @@ test("rejects mismatched policy text hash before Square calls", async () => {
     {
       repository,
       squarePayments,
+      squareCards,
       squareCustomers,
       calendarFinalizer,
       alerts,
@@ -1026,6 +1120,7 @@ test("rejects client amount mismatch before Square calls", async () => {
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1039,6 +1134,7 @@ test("rejects client amount mismatch before Square calls", async () => {
     {
       repository,
       squarePayments,
+      squareCards,
       squareCustomers,
       calendarFinalizer,
       alerts,
@@ -1053,10 +1149,11 @@ test("rejects client amount mismatch before Square calls", async () => {
   assert.equal(state.events.includes("createPayment"), false);
 });
 
-test("cancels authorization when card id is missing before capture", async () => {
+test("continues to success when Square payment response omits card details", async () => {
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1067,24 +1164,24 @@ test("cancels authorization when card id is missing before capture", async () =>
   const result = await confirmChargeAndStoreBooking(createRequest(), {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
     now,
   });
 
-  assert.equal(result.ok, false);
-  if (result.ok) return;
-  assert.equal(result.error, "square_api_error");
-  assert.equal(state.squarePaymentCancels.length, 1);
-  assert.equal(state.squarePaymentCompletes.length, 0);
-  assert.equal(state.savedPaymentMethods.length, 0);
+  assert.equal(result.ok, true);
+  assert.equal(state.squarePaymentCancels.length, 0);
+  assert.equal(state.squarePaymentCompletes.length, 1);
+  assert.equal(state.savedPaymentMethods.length, 1);
 });
 
-test("marks refund required when a completed payment lacks card storage", async () => {
+test("marks refund required when Square capture throws and payment is completed", async () => {
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1095,6 +1192,7 @@ test("marks refund required when a completed payment lacks card storage", async 
   const result = await confirmChargeAndStoreBooking(createRequest(), {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1111,6 +1209,7 @@ test("returns existing terminal confirmation for duplicate submits", async () =>
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1120,6 +1219,7 @@ test("returns existing terminal confirmation for duplicate submits", async () =>
   const first = await confirmChargeAndStoreBooking(createRequest(), {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1131,6 +1231,7 @@ test("returns existing terminal confirmation for duplicate submits", async () =>
   const second = await confirmChargeAndStoreBooking(createRequest(), {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1146,6 +1247,7 @@ test("marks manual follow-up when calendar finalization fails after capture", as
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1164,6 +1266,7 @@ test("marks manual follow-up when calendar finalization fails after capture", as
   const result = await confirmChargeAndStoreBooking(createRequest(), {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1186,6 +1289,7 @@ test("marks refund required when calendar failure and manual follow-up marker bo
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1208,6 +1312,7 @@ test("marks refund required when calendar failure and manual follow-up marker bo
   const result = await confirmChargeAndStoreBooking(createRequest(), {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1230,6 +1335,7 @@ test("falls back to manual follow-up when booking finalization fails after calen
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1243,6 +1349,7 @@ test("falls back to manual follow-up when booking finalization fails after calen
   const result = await confirmChargeAndStoreBooking(createRequest(), {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1265,6 +1372,7 @@ test("marks refund required when booking and manual follow-up markers both fail 
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1282,6 +1390,7 @@ test("marks refund required when booking and manual follow-up markers both fail 
   const result = await confirmChargeAndStoreBooking(createRequest(), {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1304,6 +1413,7 @@ test("returns payment_declined when Square create payment status is not APPROVED
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1314,6 +1424,7 @@ test("returns payment_declined when Square create payment status is not APPROVED
   const result = await confirmChargeAndStoreBooking(createRequest(), {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1334,6 +1445,7 @@ test("sends delayed capture payload to Square with request values", async () => 
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1348,6 +1460,7 @@ test("sends delayed capture payload to Square with request values", async () => 
   await confirmChargeAndStoreBooking(request, {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1370,10 +1483,205 @@ test("sends delayed capture payload to Square with request values", async () => 
   assert.equal(paymentRequest.idempotency_key, request.idempotencyKey);
 });
 
+test("sends CreateCard request with payment id source and Canadian billing details", async () => {
+  const {
+    repository,
+    squarePayments,
+    squareCards,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    state,
+  } = createFakes();
+
+  const request = createRequest({
+    sourceId: "cnon:provided-token",
+    verificationToken: "verf-provided",
+  });
+
+  await confirmChargeAndStoreBooking(request, {
+    repository,
+    squarePayments,
+    squareCards,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    now,
+  });
+
+  assert.equal(state.squareCardCreates.length, 1);
+  const cardRequest = state.squareCardCreates[0];
+  assert.ok(cardRequest);
+  assert.equal(cardRequest.source_id, "pay_1");
+  assert.equal(cardRequest.verification_token, request.verificationToken);
+  assert.equal(
+    cardRequest.idempotency_key,
+    expectedSquareIdempotencyKey("card", "pay_1"),
+  );
+  assert.equal(
+    cardRequest.card.customer_id,
+    state.squareCustomers[0]?.squareCustomerId,
+  );
+  assert.equal(cardRequest.card.cardholder_name, request.customer.name);
+  assert.equal(cardRequest.card.reference_id, "hold_public_1");
+  assert.equal(cardRequest.card.billing_address?.country, "CA");
+});
+
+test("keeps Square customer and card idempotency keys within 45 characters for UUID hold IDs", async () => {
+  const uuidHoldId = "550e8400-e29b-41d4-a716-446655440000";
+  const {
+    repository,
+    squarePayments,
+    squareCards,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    state,
+  } = createFakes([createHold({ id: uuidHoldId })]);
+
+  const request = createRequest();
+
+  await confirmChargeAndStoreBooking(request, {
+    repository,
+    squarePayments,
+    squareCards,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    now,
+  });
+
+  const customerRequest = state.squareCustomerCreates[0];
+  const cardRequest = state.squareCardCreates[0];
+  assert.ok(customerRequest);
+  assert.ok(cardRequest);
+
+  const customerKey = customerRequest.idempotency_key;
+  const cardKey = cardRequest.idempotency_key;
+
+  assert.equal(
+    customerKey,
+    expectedSquareIdempotencyKey("customer", uuidHoldId),
+  );
+  assert.equal(cardKey, expectedSquareIdempotencyKey("card", "pay_1"));
+  assert.ok(
+    customerKey.length <= 45,
+    `customer key length ${customerKey.length}`,
+  );
+  assert.ok(cardKey.length <= 45, `card key length ${cardKey.length}`);
+  assert.notEqual(
+    cardKey,
+    expectedSquareIdempotencyKey("card", uuidHoldId),
+    "CreateCard idempotency key must be derived from the Square payment id, not the hold id",
+  );
+});
+
+test("derives CreateCard idempotency key from the actual Square payment id when retry produces a different payment", async () => {
+  const {
+    repository,
+    squarePayments,
+    squareCards,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    state,
+  } = createFakes();
+
+  state.createPaymentId = "pay_retry_abc123";
+
+  await confirmChargeAndStoreBooking(createRequest(), {
+    repository,
+    squarePayments,
+    squareCards,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    now,
+  });
+
+  const cardRequest = state.squareCardCreates[0];
+  assert.ok(cardRequest);
+  assert.equal(cardRequest.source_id, "pay_retry_abc123");
+  assert.equal(
+    cardRequest.idempotency_key,
+    expectedSquareIdempotencyKey("card", "pay_retry_abc123"),
+  );
+  assert.ok(
+    cardRequest.idempotency_key.length <= 45,
+    `card key length ${cardRequest.idempotency_key.length}`,
+  );
+});
+
+test("repository fake does not overwrite a booked terminal state with a stale payment failed marker", async () => {
+  const { repository, state } = createFakes();
+
+  state.holds[0] = {
+    ...state.holds[0]!,
+    state: "booked",
+    reconciliationMetadata: {
+      chargeAndStoreConfirmation: {
+        ok: true,
+        bookingStatus: "booked",
+        holdReference: "hold_public_1",
+        paymentStatus: "captured",
+        card: { last4: "4242" },
+      },
+    },
+  };
+
+  await repository.markHoldPaymentFailed({
+    holdId: "hold-internal-1",
+    reason: "stale failure after booking",
+    now,
+  });
+
+  assert.equal(state.holds[0]?.state, "booked");
+  assert.equal(state.holds[0]?.failureReason, undefined);
+});
+
+test("repository fake does not overwrite refund_required terminal state with a stale payment failed marker", async () => {
+  const { repository, state } = createFakes();
+
+  state.holds[0] = {
+    ...state.holds[0]!,
+    state: "refund_required",
+    reconciliationMetadata: {
+      chargeAndStoreRefundRequired: {
+        squarePaymentId: "pay_1",
+        reason: "Capture failed",
+        markedAt: now.toISOString(),
+      },
+    },
+  };
+
+  await repository.markHoldPaymentFailed({
+    holdId: "hold-internal-1",
+    reason: "stale failure after refund required",
+    now,
+  });
+
+  assert.equal(state.holds[0]?.state, "refund_required");
+  assert.equal(state.holds[0]?.failureReason, undefined);
+});
+
+test("repository fake still marks non-terminal holds as payment failed", async () => {
+  const { repository, state } = createFakes();
+
+  await repository.markHoldPaymentFailed({
+    holdId: "hold-internal-1",
+    reason: "declined",
+    now,
+  });
+
+  assert.equal(state.holds[0]?.state, "payment_failed");
+  assert.equal(state.holds[0]?.failureReason, "declined");
+});
+
 test("reuses existing Square customer instead of creating a new one", async () => {
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1391,6 +1699,7 @@ test("reuses existing Square customer instead of creating a new one", async () =
   const result = await confirmChargeAndStoreBooking(createRequest(), {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1412,6 +1721,7 @@ test("uses injected now when persisting new Square customer", async () => {
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1421,6 +1731,7 @@ test("uses injected now when persisting new Square customer", async () => {
   const result = await confirmChargeAndStoreBooking(createRequest(), {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1436,6 +1747,7 @@ test("marks refund required when capture throws and Square status lookup fails",
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1447,6 +1759,7 @@ test("marks refund required when capture throws and Square status lookup fails",
   const result = await confirmChargeAndStoreBooking(createRequest(), {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1471,6 +1784,7 @@ test("cancels authorization and marks payment failed when capture throws with no
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1482,6 +1796,7 @@ test("cancels authorization and marks payment failed when capture throws with no
   const result = await confirmChargeAndStoreBooking(createRequest(), {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1506,6 +1821,7 @@ test("marks refund required when capture throws with non-completed status but ca
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1518,6 +1834,7 @@ test("marks refund required when capture throws with non-completed status but ca
   const result = await confirmChargeAndStoreBooking(createRequest(), {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1541,6 +1858,7 @@ test("cancels authorization and marks payment failed when Square capture returns
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1551,6 +1869,7 @@ test("cancels authorization and marks payment failed when Square capture returns
   const result = await confirmChargeAndStoreBooking(createRequest(), {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1574,6 +1893,7 @@ test("marks refund required when Square capture returns non-completed and cancel
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1585,6 +1905,7 @@ test("marks refund required when Square capture returns non-completed and cancel
   const result = await confirmChargeAndStoreBooking(createRequest(), {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1614,6 +1935,7 @@ test("duplicate submit after capture uncertainty does not return an authorized c
   const first = await confirmChargeAndStoreBooking(createRequest(), {
     repository: fakes.repository,
     squarePayments: fakes.squarePayments,
+    squareCards: fakes.squareCards,
     squareCustomers: fakes.squareCustomers,
     calendarFinalizer: fakes.calendarFinalizer,
     alerts: fakes.alerts,
@@ -1626,6 +1948,7 @@ test("duplicate submit after capture uncertainty does not return an authorized c
   const second = await confirmChargeAndStoreBooking(createRequest(), {
     repository: fakes.repository,
     squarePayments: fakes.squarePayments,
+    squareCards: fakes.squareCards,
     squareCustomers: fakes.squareCustomers,
     calendarFinalizer: fakes.calendarFinalizer,
     alerts: fakes.alerts,
@@ -1643,6 +1966,7 @@ test("marks payment failed when hold state is invalid after claim", async () => 
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1660,6 +1984,7 @@ test("marks payment failed when hold state is invalid after claim", async () => 
   const result = await confirmChargeAndStoreBooking(createRequest(), {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1676,6 +2001,7 @@ test("marks payment failed when customer status is not pending after claim", asy
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1692,6 +2018,7 @@ test("marks payment failed when customer status is not pending after claim", asy
   const result = await confirmChargeAndStoreBooking(createRequest(), {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1708,6 +2035,7 @@ test("marks payment failed when amount mismatch is detected after claim", async 
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1721,6 +2049,7 @@ test("marks payment failed when amount mismatch is detected after claim", async 
     {
       repository,
       squarePayments,
+      squareCards,
       squareCustomers,
       calendarFinalizer,
       alerts,
@@ -1738,6 +2067,7 @@ test("marks payment failed when Square create payment throws", async () => {
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1750,6 +2080,7 @@ test("marks payment failed when Square create payment throws", async () => {
   const result = await confirmChargeAndStoreBooking(createRequest(), {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1762,20 +2093,22 @@ test("marks payment failed when Square create payment throws", async () => {
   assert.equal(state.markHoldPaymentFailedCalls.length, 1);
 });
 
-test("cancels authorization and marks payment failed when card id is missing", async () => {
+test("cancels authorization and marks payment failed when CreateCard fails", async () => {
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
     state,
   } = createFakes();
-  state.missingCardIdOnCreate = true;
+  state.throwCreateCard = true;
 
   const result = await confirmChargeAndStoreBooking(createRequest(), {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1785,28 +2118,35 @@ test("cancels authorization and marks payment failed when card id is missing", a
   assert.equal(result.ok, false);
   if (result.ok) return;
   assert.equal(result.error, "square_api_error");
+  assert.equal(result.message, "Unable to save card with payment provider");
   assert.equal(state.squarePaymentCancels.length, 1);
+  assert.equal(state.squarePaymentCompletes.length, 0);
   assert.equal(state.markHoldPaymentFailedCalls.length, 1);
   assert.equal(state.savedPaymentMethods.length, 0);
 });
 
-test("persists card display fields only when present", async () => {
+test("persists card display fields from CreateCard response", async () => {
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
     state,
   } = createFakes();
-  state.cardBrand = "VISA";
-  state.cardLast4 = "4242";
-  state.cardExpMonth = 12;
-  state.cardExpYear = 2030;
+  state.createCardResponse = {
+    id: "ccof:create-card-id",
+    card_brand: "VISA",
+    last_4: "4242",
+    exp_month: 12,
+    exp_year: 2030,
+  };
 
   await confirmChargeAndStoreBooking(createRequest(), {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1815,25 +2155,36 @@ test("persists card display fields only when present", async () => {
 
   assert.equal(state.savedPaymentMethods.length, 1);
   const saved = state.savedPaymentMethods[0];
+  assert.equal(saved?.squareCardId, "ccof:create-card-id");
   assert.equal(saved?.brand, "VISA");
   assert.equal(saved?.last4, "4242");
   assert.equal(saved?.expMonth, 12);
   assert.equal(saved?.expYear, 2030);
 });
 
-test("does not fabricate card display fields when Square omits them", async () => {
+test("persists card display fields from CreateCard response when payment omits card details", async () => {
   const {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
     state,
   } = createFakes();
+  state.missingCardIdOnCreate = true;
+  state.createCardResponse = {
+    id: "ccof:create-card-id",
+    card_brand: "VISA",
+    last_4: "4242",
+    exp_month: 12,
+    exp_year: 2030,
+  };
 
   await confirmChargeAndStoreBooking(createRequest(), {
     repository,
     squarePayments,
+    squareCards,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1842,8 +2193,9 @@ test("does not fabricate card display fields when Square omits them", async () =
 
   assert.equal(state.savedPaymentMethods.length, 1);
   const saved = state.savedPaymentMethods[0];
-  assert.equal(saved?.brand, undefined);
-  assert.equal(saved?.last4, undefined);
-  assert.equal(saved?.expMonth, undefined);
-  assert.equal(saved?.expYear, undefined);
+  assert.equal(saved?.squareCardId, "ccof:create-card-id");
+  assert.equal(saved?.brand, "VISA");
+  assert.equal(saved?.last4, "4242");
+  assert.equal(saved?.expMonth, 12);
+  assert.equal(saved?.expYear, 2030);
 });

@@ -4,6 +4,10 @@ import type {
   SquareCreateCustomerResponse,
 } from "@/lib/payments/square/customers-client";
 import type {
+  SquareCard,
+  SquareCardsClient,
+} from "@/lib/payments/square/cards-client";
+import type {
   SquareCreatePaymentResponse,
   SquareGetPaymentResponse,
   SquarePaymentsClient,
@@ -178,6 +182,8 @@ export interface SquareCustomerGateway {
   ): Promise<SquareCreateCustomerResponse>;
 }
 
+import { createHash } from "node:crypto";
+
 import type { BookingAnswerInput } from "@/lib/booking/types";
 import { log } from "@/lib/logging/logger";
 
@@ -198,6 +204,7 @@ export interface ConfirmChargeAndStoreBookingDependencies {
   now?: Date;
   recordMarketingChoice?: (input: RecordMarketingChoiceInput) => Promise<void>;
   repository: ChargeAndStoreRepository;
+  squareCards: SquareCardsClient;
   squareCustomers: SquareCustomerGateway;
   squarePayments: SquarePaymentsClient;
 }
@@ -570,14 +577,42 @@ export async function confirmChargeAndStoreBooking(
     };
   }
 
-  const cardDetails = (paymentResponse.payment as SquarePaymentWithCardDetails)
-    .card_details?.card;
+  let cardResponse: { card: SquareCard };
 
-  if (
-    cardDetails === undefined ||
-    cardDetails.id === undefined ||
-    cardDetails.id.length === 0
-  ) {
+  try {
+    // Derive the CreateCard idempotency key from the actual Square payment
+    // identity, not the hold id. If a retry produces a different Square payment
+    // for the same hold, reusing a hold-scoped key would conflict with Square
+    // idempotency because the request body (source_id) has changed.
+    cardResponse = await dependencies.squareCards.createCard({
+      idempotency_key: makeSquareIdempotencyKey(
+        "card",
+        paymentResponse.payment.id,
+      ),
+      source_id: paymentResponse.payment.id,
+      verification_token: input.verificationToken,
+      card: {
+        customer_id: squareCustomer.squareCustomerId,
+        cardholder_name: input.customer.name,
+        reference_id: hold.publicReference,
+        billing_address: {
+          country: "CA",
+        },
+      },
+    });
+  } catch (error) {
+    await dependencies.alerts.alert({
+      category: "square_card_save_failed",
+      severity: "warning",
+      message: "Square CreateCard failed for charge-and-store booking",
+      context: {
+        holdId: hold.id,
+        holdReference: hold.publicReference,
+        squarePaymentId: paymentResponse.payment.id,
+        error: getErrorMessage(error),
+      },
+    });
+
     try {
       await dependencies.squarePayments.cancelPayment(
         paymentResponse.payment.id,
@@ -587,7 +622,7 @@ export async function confirmChargeAndStoreBooking(
         category: "square_webhook_retryable_failure",
         severity: "warning",
         message:
-          "Failed to cancel Square payment after missing card id for charge-and-store booking",
+          "Failed to cancel Square payment after CreateCard failure for charge-and-store booking",
         context: {
           holdId: hold.id,
           holdReference: hold.publicReference,
@@ -595,20 +630,23 @@ export async function confirmChargeAndStoreBooking(
         },
       });
     }
+
     await markHoldPaymentFailedSafe(
       dependencies,
       hold.id,
-      "Payment provider did not return a stored card identifier",
+      "Unable to save card with payment provider",
       now,
     );
+
     return {
       ok: false,
       error: "square_api_error",
-      message: "Payment provider did not return a stored card identifier",
+      message: "Unable to save card with payment provider",
     };
   }
 
-  const squareCardId = cardDetails.id;
+  const squareCardId = cardResponse.card.id;
+  const cardDetails = cardResponse.card;
 
   let savedPaymentMethod: {
     id: string;
@@ -1032,7 +1070,15 @@ async function safeFindSquareCustomerByEmail(
 }
 
 function makeSquareIdempotencyKey(scope: string, holdId: string): string {
-  return `charge-and-store:${scope}:${holdId}`;
+  // Square idempotency keys are capped at 45 characters. Real hold IDs are
+  // UUIDs, so a plain scope + holdId string would exceed the limit. Use a
+  // short prefix plus a deterministic hash slice so keys stay stable, unique
+  // per scope+hold, and within Square's bound.
+  const hash = createHash("sha256")
+    .update(`${scope}:${holdId}`)
+    .digest("hex")
+    .slice(0, 32);
+  return `cs:${scope}:${hash}`;
 }
 
 function buildSuccessResult(
@@ -1366,16 +1412,4 @@ function readBookingAnswers(value: unknown): BookingAnswerInput[] {
       answer: typeof item.answer === "string" ? item.answer : "",
     }))
     .filter((item) => item.questionId.length > 0);
-}
-
-interface SquarePaymentWithCardDetails {
-  card_details?: {
-    card?: {
-      id?: string;
-      card_brand?: string;
-      last_4?: string;
-      exp_month?: number;
-      exp_year?: number;
-    };
-  };
 }

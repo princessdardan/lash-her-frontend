@@ -118,6 +118,7 @@ async function createDefaultChargeAndStoreConfirm(
     { getSquareServiceBookingRuntimeEnv },
     { createSquarePaymentsClient },
     { createSquareCustomersClient },
+    { createSquareCardsClient },
     { createCardOnFileCalendarFinalizer },
     { createServiceBookingPaymentRepository },
     { recordBookingMarketingChoice },
@@ -125,6 +126,7 @@ async function createDefaultChargeAndStoreConfirm(
     import("@/lib/booking/square-runtime"),
     import("@/lib/payments/square/payments-client"),
     import("@/lib/payments/square/customers-client"),
+    import("@/lib/payments/square/cards-client"),
     import("@/lib/booking/payments/service-card-on-file-calendar-finalizer"),
     import("@/lib/private-db/service-booking-payment-repository"),
     import("@/lib/marketing-contact/marketing-contact-store"),
@@ -150,6 +152,10 @@ async function createDefaultChargeAndStoreConfirm(
     accessToken: env.accessToken,
     environment: env.environment,
   });
+  const squareCards = createSquareCardsClient({
+    accessToken: env.accessToken,
+    environment: env.environment,
+  });
   const repository = await createServiceBookingPaymentRepository();
   const calendarFinalizer = createCardOnFileCalendarFinalizer();
 
@@ -163,6 +169,7 @@ async function createDefaultChargeAndStoreConfirm(
         recordBookingMarketingChoice,
       ),
       repository,
+      squareCards,
       squareCustomers,
       squarePayments,
     });

@@ -361,7 +361,7 @@ describe("booking service flow contract", () => {
 
     assert.match(
       serviceBookingPageSource,
-      /Select your appointment time, add-ons, and service details before payment\./,
+      /Select your appointment time, add-ons, and service details before\s*payment\./,
     );
     assert.doesNotMatch(serviceBookingPageSource, /confirm your details/i);
   });
@@ -457,7 +457,7 @@ describe("booking service flow contract", () => {
 
   it("hardens the card display type guard to typed optional fields", () => {
     const guardSource = serviceBookingPaymentFormSource.match(
-      /function isCardDisplay\([\s\S]*?\n\}/,
+      /function isCardDisplay\([\s\S]*?\n\}\s*$/,
     )?.[0];
 
     assert.ok(guardSource, "expected isCardDisplay function in payment form");

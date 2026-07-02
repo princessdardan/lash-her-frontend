@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type { BookingHoldRecord } from "@/lib/booking/holds";
 import type { NoShowChargeStatus } from "@/lib/private-db/schema";
 import type {
@@ -1023,7 +1025,18 @@ async function resolveNoShowChargeRecordSummary(
 }
 
 function makeSquareIdempotencyKey(scope: string, holdId: string): string {
-  return `card-on-file:${scope}:${holdId}`;
+  // Square caps idempotency keys at 45 characters. Use a short, deterministic
+  // hash of scope + holdId, trimming the hash to 32 characters when possible
+  // and shrinking it for longer scopes so the final key always stays under
+  // the limit (e.g. card -> 41 chars, instrument -> 45 chars).
+  const prefix = `cof:${scope}:`;
+  const hashLength = Math.min(32, Math.max(0, 45 - prefix.length));
+  const hash = createHash("sha256")
+    .update(`${scope}:${holdId}`)
+    .digest("hex")
+    .slice(0, hashLength);
+
+  return `${prefix}${hash}`;
 }
 
 async function loadCheckpoint(

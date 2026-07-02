@@ -28,11 +28,13 @@ interface SquareConfigResponse {
   applicationId: string;
   environment: "sandbox" | "production";
   locationId: string;
+  locale: string;
   scriptUrl: string;
 }
 
 interface SquarePaymentsInstance {
   card(): Promise<SquareCard>;
+  setLocale?(locale: string): void | Promise<void>;
 }
 
 interface SquareCard {
@@ -168,7 +170,7 @@ export function SquareCardOnFileForm({
       return;
     }
 
-    const { applicationId, locationId, scriptUrl } = currentConfig;
+    const { applicationId, locationId, locale, scriptUrl } = currentConfig;
     let isCancelled = false;
 
     async function initializeSquare() {
@@ -187,6 +189,7 @@ export function SquareCardOnFileForm({
           applicationId,
           locationId,
         );
+        await payments.setLocale?.(locale);
         const card = await payments.card();
 
         if (isCancelled) {

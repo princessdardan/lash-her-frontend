@@ -116,6 +116,7 @@ export function getSquareCardOnFileServiceBookingConfig(): SquareCardOnFileServi
       "Missing env var: SQUARE_APPLICATION_ID",
     ),
     locationId: serviceEnv.locationId,
+    locale: "en-CA",
   };
 }
 
@@ -263,6 +264,7 @@ export type SquareCardOnFileServiceBookingConfig = {
   environment: "sandbox" | "production";
   applicationId: string;
   locationId: string;
+  locale: string;
 };
 
 type SquareServiceBookingEnv = {

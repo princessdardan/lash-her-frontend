@@ -490,15 +490,53 @@ export async function createServiceBookingPaymentRepository(
     },
 
     async markHoldPaymentFailed(input) {
-      await db
-        .update(appointmentHolds)
-        .set({
-          status: "payment_failed",
-          paymentFailedAt: input.now,
-          failureReason: input.reason,
-          updatedAt: input.now,
-        })
-        .where(eq(appointmentHolds.id, input.holdId));
+      return db.transaction(async (tx) => {
+        const [locked] = await tx
+          .select({
+            status: appointmentHolds.status,
+            reconciliationMetadata: appointmentHolds.reconciliationMetadata,
+          })
+          .from(appointmentHolds)
+          .where(eq(appointmentHolds.id, input.holdId))
+          .limit(1)
+          .for("update");
+
+        if (locked === undefined) {
+          return;
+        }
+
+        const metadata = (locked.reconciliationMetadata ?? {}) as Record<
+          string,
+          unknown
+        >;
+
+        // Terminal charge-and-store states must never be overwritten by a
+        // stale retry or a late failure/cancel path. Checking both the status
+        // and the reconciliation metadata protects against races where one
+        // path updates the status and another path updates metadata.
+        const terminalStatuses = new Set([
+          "booked",
+          "manual_followup",
+          "refund_required",
+        ]);
+        if (
+          terminalStatuses.has(locked.status) ||
+          metadata.chargeAndStoreConfirmation !== undefined ||
+          metadata.chargeAndStoreRefundRequired !== undefined
+        ) {
+          return;
+        }
+
+        await tx
+          .update(appointmentHolds)
+          .set({
+            status: "payment_failed",
+            paymentFailedAt: input.now,
+            failureReason: input.reason,
+            updatedAt: input.now,
+          })
+          .where(eq(appointmentHolds.id, input.holdId));
+      });
     },
 
     async markHoldRefundRequired(input) {

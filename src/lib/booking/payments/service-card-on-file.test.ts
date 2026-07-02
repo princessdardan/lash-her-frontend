@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 
 import type { BookingHoldRecord } from "@/lib/booking/holds";
@@ -91,6 +92,17 @@ function createRequest(
 
 let retryIdempotencyCounter = 0;
 const now = new Date();
+
+function expectedSquareIdempotencyKey(scope: string, holdId: string): string {
+  const prefix = `cof:${scope}:`;
+  const hashLength = Math.min(32, Math.max(0, 45 - prefix.length));
+  const hash = createHash("sha256")
+    .update(`${scope}:${holdId}`)
+    .digest("hex")
+    .slice(0, hashLength);
+
+  return `${prefix}${hash}`;
+}
 
 interface FakeRepositoryState {
   holds: BookingHoldRecord[];
@@ -880,7 +892,7 @@ test("creates Square customer, card, policy, no-show record, finalizes Calendar,
   assert.equal(state.customers.length, 1);
   assert.equal(
     state.customers[0].squareCustomerId,
-    "square-cust-card-on-file:customer:hold-internal-1",
+    `square-cust-${expectedSquareIdempotencyKey("customer", "hold-internal-1")}`,
   );
 
   assert.equal(state.paymentMethods.length, 1);
@@ -1645,14 +1657,52 @@ test("uses hold-scoped Square idempotency keys derived from hold id", async () =
 
   assert.equal(
     customerRequest.idempotency_key,
-    "card-on-file:customer:hold-internal-1",
+    expectedSquareIdempotencyKey("customer", "hold-internal-1"),
   );
   assert.equal(
     cardRequest.idempotency_key,
-    "card-on-file:card:hold-internal-1",
+    expectedSquareIdempotencyKey("card", "hold-internal-1"),
   );
   assert.ok(!customerRequest.idempotency_key.includes("idem-key-1"));
   assert.ok(!cardRequest.idempotency_key.includes("idem-key-1"));
+});
+
+test("keeps Square CreateCard idempotency key within 45 characters for a UUID hold id", async () => {
+  const uuidHoldId = "550e8400-e29b-41d4-a716-446655440000";
+  const squareCardCalls: unknown[] = [];
+
+  const trackingSquareCards: SquareCardGateway = {
+    async createCard(request) {
+      squareCardCalls.push(request);
+      return {
+        card: {
+          id: "ccof:test-card",
+          card_brand: "VISA",
+          last_4: "4242",
+          exp_month: 12,
+          exp_year: 2030,
+        },
+      };
+    },
+  };
+
+  const { result } = await runSaga(createRequest(), {
+    initialHolds: [createHold({ id: uuidHoldId })],
+    squareCards: trackingSquareCards,
+  });
+
+  assert.equal(assertSuccess(result).bookingStatus, "booked");
+  assert.equal(squareCardCalls.length, 1);
+
+  const cardRequest = squareCardCalls[0] as { idempotency_key: string };
+  const expectedKey = expectedSquareIdempotencyKey("card", uuidHoldId);
+
+  assert.equal(cardRequest.idempotency_key, expectedKey);
+  assert.ok(
+    expectedKey.length <= 45,
+    `card idempotency key length ${expectedKey.length}`,
+  );
+  assert.ok(expectedKey.startsWith("cof:card:"));
 });
 
 test("stores real Square card id and recovers it on retry with a different client idempotency key", async () => {
@@ -1706,7 +1756,7 @@ test("checkpoint does not store sensitive card input tokens", async () => {
   assert.equal(checkpoint.squareCardId, "ccof:test-card");
   assert.equal(
     checkpoint.squareCustomerId,
-    "square-cust-card-on-file:customer:hold-internal-1",
+    `square-cust-${expectedSquareIdempotencyKey("customer", "hold-internal-1")}`,
   );
 });
 
