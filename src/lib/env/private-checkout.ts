@@ -38,6 +38,27 @@ export function getPaymentReconciliationCronSecrets(): string[] {
   return getPaymentReconciliationCronSecretsInternal();
 }
 
+export function getResendMarketingSyncCronSecrets(): string[] {
+  const routeSpecific = process.env.RESEND_MARKETING_SYNC_CRON_SECRET;
+
+  // Fail closed: the route-specific secret is required to enable the route.
+  const primary = assertValue(
+    routeSpecific,
+    "Missing env var: RESEND_MARKETING_SYNC_CRON_SECRET",
+  ).trim();
+
+  const secrets = [primary];
+  const cronSecret = process.env.CRON_SECRET;
+
+  // Vercel scheduled cron sends CRON_SECRET; accept it as a secondary bearer
+  // when the route is explicitly enabled and CRON_SECRET is configured.
+  if (cronSecret !== undefined && cronSecret.trim().length > 0) {
+    secrets.push(cronSecret.trim());
+  }
+
+  return secrets;
+}
+
 function getPaymentReconciliationCronSecretsInternal(): string[] {
   const routeSpecific = process.env.PAYMENT_RECONCILIATION_CRON_SECRET;
   const cronSecret = process.env.CRON_SECRET;

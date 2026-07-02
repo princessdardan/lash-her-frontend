@@ -23,6 +23,7 @@ import {
   marketingConsentEvents,
   marketingContacts,
   marketingContactSubmissions,
+  marketingContactSyncJobs,
   trainingEnrollments,
   type AppointmentHoldStatus,
   type CalendarFinalizationStatus,
@@ -39,7 +40,9 @@ const CHECKOUT_ORDER_TERMINAL_STATUSES = [
   "cancelled",
   "refunded",
 ] as const satisfies readonly CheckoutOrderStatus[];
-const CHECKOUT_ORDER_TERMINAL_STATUSES_FOR_QUERY = [...CHECKOUT_ORDER_TERMINAL_STATUSES];
+const CHECKOUT_ORDER_TERMINAL_STATUSES_FOR_QUERY = [
+  ...CHECKOUT_ORDER_TERMINAL_STATUSES,
+];
 
 const RESOLVED_CALENDAR_FINALIZATION_STATUSES = [
   "not_required",
@@ -48,7 +51,9 @@ const RESOLVED_CALENDAR_FINALIZATION_STATUSES = [
   "refunded",
   "failed",
 ] as const satisfies readonly CalendarFinalizationStatus[];
-const RESOLVED_CALENDAR_FINALIZATION_STATUSES_FOR_QUERY = [...RESOLVED_CALENDAR_FINALIZATION_STATUSES];
+const RESOLVED_CALENDAR_FINALIZATION_STATUSES_FOR_QUERY = [
+  ...RESOLVED_CALENDAR_FINALIZATION_STATUSES,
+];
 
 const APPOINTMENT_HOLD_ABANDONED_STATUSES = [
   "held",
@@ -57,7 +62,9 @@ const APPOINTMENT_HOLD_ABANDONED_STATUSES = [
   "payment_failed",
   "released",
 ] as const satisfies readonly AppointmentHoldStatus[];
-const APPOINTMENT_HOLD_ABANDONED_STATUSES_FOR_QUERY = [...APPOINTMENT_HOLD_ABANDONED_STATUSES];
+const APPOINTMENT_HOLD_ABANDONED_STATUSES_FOR_QUERY = [
+  ...APPOINTMENT_HOLD_ABANDONED_STATUSES,
+];
 
 const APPOINTMENT_HOLD_TERMINAL_STATUSES = [
   "booked",
@@ -68,13 +75,17 @@ const APPOINTMENT_HOLD_TERMINAL_STATUSES = [
   "refunded",
   "released",
 ] as const satisfies readonly AppointmentHoldStatus[];
-const APPOINTMENT_HOLD_TERMINAL_STATUSES_FOR_QUERY = [...APPOINTMENT_HOLD_TERMINAL_STATUSES];
+const APPOINTMENT_HOLD_TERMINAL_STATUSES_FOR_QUERY = [
+  ...APPOINTMENT_HOLD_TERMINAL_STATUSES,
+];
 
 const TRAINING_ENROLLMENT_TERMINAL_STATUSES = [
   "expired",
   "scheduled",
 ] as const satisfies readonly TrainingEnrollmentSchedulingStatus[];
-const TRAINING_ENROLLMENT_TERMINAL_STATUSES_FOR_QUERY = [...TRAINING_ENROLLMENT_TERMINAL_STATUSES];
+const TRAINING_ENROLLMENT_TERMINAL_STATUSES_FOR_QUERY = [
+  ...TRAINING_ENROLLMENT_TERMINAL_STATUSES,
+];
 
 const REDACTED_APPOINTMENT_CUSTOMER = {
   email: REDACTED_TEXT,
@@ -133,104 +144,148 @@ export const PRIVATE_DATA_RETENTION_WINDOWS = {
   marketingConsentEvents: {
     deleteAfterDays: 2555,
   },
+  marketingContactSyncJobs: {
+    redactPayloadAfterDays: 395,
+    deleteTerminalAfterDays: 2555,
+  },
 } as const;
 
 export const PRIVATE_DATA_RETENTION_TABLE_WINDOWS = [
   {
     table: "checkout_orders",
-    action: "redact customer identity, checkout tokens, shipping address, and provider metadata",
+    action:
+      "redact customer identity, checkout tokens, shipping address, and provider metadata",
     windowDays: PRIVATE_DATA_RETENTION_WINDOWS.checkoutOrders.redactAfterDays,
     basis: "terminal order timestamp",
   },
   {
     table: "checkout_orders",
     action: "soft-delete redacted terminal orders",
-    windowDays: PRIVATE_DATA_RETENTION_WINDOWS.checkoutOrders.softDeleteAfterDays,
+    windowDays:
+      PRIVATE_DATA_RETENTION_WINDOWS.checkoutOrders.softDeleteAfterDays,
     basis: "terminal order timestamp",
   },
   {
     table: "checkout_orders",
     action: "purge soft-deleted orders after a grace period",
-    windowDays: PRIVATE_DATA_RETENTION_WINDOWS.checkoutOrders.purgeAfterDeletedDays,
+    windowDays:
+      PRIVATE_DATA_RETENTION_WINDOWS.checkoutOrders.purgeAfterDeletedDays,
     basis: "deleted_at",
   },
   {
     table: "checkout_payment_events",
     action: "scrub stored webhook payload fields",
-    windowDays: PRIVATE_DATA_RETENTION_WINDOWS.checkoutPaymentEvents.scrubPayloadAfterDays,
+    windowDays:
+      PRIVATE_DATA_RETENTION_WINDOWS.checkoutPaymentEvents
+        .scrubPayloadAfterDays,
     basis: "created_at",
   },
   {
     table: "checkout_payment_events",
     action: "delete old payment-event rows",
-    windowDays: PRIVATE_DATA_RETENTION_WINDOWS.checkoutPaymentEvents.deleteAfterDays,
+    windowDays:
+      PRIVATE_DATA_RETENTION_WINDOWS.checkoutPaymentEvents.deleteAfterDays,
     basis: "created_at",
   },
   {
     table: "appointment_holds",
     action: "delete abandoned holds with no checkout order",
-    windowDays: PRIVATE_DATA_RETENTION_WINDOWS.appointmentHolds.deleteAbandonedAfterDays,
+    windowDays:
+      PRIVATE_DATA_RETENTION_WINDOWS.appointmentHolds.deleteAbandonedAfterDays,
     basis: "expires_at",
   },
   {
     table: "appointment_holds",
-    action: "redact customer snapshot and operational free-text fields on terminal holds",
-    windowDays: PRIVATE_DATA_RETENTION_WINDOWS.appointmentHolds.redactTerminalAfterDays,
+    action:
+      "redact customer snapshot and operational free-text fields on terminal holds",
+    windowDays:
+      PRIVATE_DATA_RETENTION_WINDOWS.appointmentHolds.redactTerminalAfterDays,
     basis: "terminal hold timestamp",
   },
   {
     table: "appointment_holds",
     action: "delete old terminal holds",
-    windowDays: PRIVATE_DATA_RETENTION_WINDOWS.appointmentHolds.deleteTerminalAfterDays,
+    windowDays:
+      PRIVATE_DATA_RETENTION_WINDOWS.appointmentHolds.deleteTerminalAfterDays,
     basis: "terminal hold timestamp",
   },
   {
     table: "training_enrollments",
     action: "expire unused scheduling tokens",
-    windowDays: PRIVATE_DATA_RETENTION_WINDOWS.trainingEnrollments.expireSchedulingTokensAfterDays,
+    windowDays:
+      PRIVATE_DATA_RETENTION_WINDOWS.trainingEnrollments
+        .expireSchedulingTokensAfterDays,
     basis: "token_expires_at",
   },
   {
     table: "training_enrollments",
     action: "redact checkout email, scheduling token, and retry error details",
-    windowDays: PRIVATE_DATA_RETENTION_WINDOWS.trainingEnrollments.redactAfterDays,
+    windowDays:
+      PRIVATE_DATA_RETENTION_WINDOWS.trainingEnrollments.redactAfterDays,
     basis: "terminal enrollment timestamp",
   },
   {
     table: "training_enrollments",
     action: "delete old terminal enrollment rows",
-    windowDays: PRIVATE_DATA_RETENTION_WINDOWS.trainingEnrollments.deleteAfterDays,
+    windowDays:
+      PRIVATE_DATA_RETENTION_WINDOWS.trainingEnrollments.deleteAfterDays,
     basis: "terminal enrollment timestamp",
   },
   {
     table: "marketing_contacts",
-    action: "redact inactive contact profile fields while keeping email for active consent/suppression",
-    windowDays: PRIVATE_DATA_RETENTION_WINDOWS.marketingContacts.redactProfileAfterInactiveDays,
+    action:
+      "redact inactive contact profile fields while keeping email for active consent/suppression",
+    windowDays:
+      PRIVATE_DATA_RETENTION_WINDOWS.marketingContacts
+        .redactProfileAfterInactiveDays,
     basis: "last_consented_at",
   },
   {
     table: "marketing_contacts",
     action: "delete old unsubscribed contacts",
-    windowDays: PRIVATE_DATA_RETENTION_WINDOWS.marketingContacts.deleteUnsubscribedAfterDays,
+    windowDays:
+      PRIVATE_DATA_RETENTION_WINDOWS.marketingContacts
+        .deleteUnsubscribedAfterDays,
     basis: "unsubscribed_at",
   },
   {
     table: "marketing_contact_submissions",
     action: "delete non-consenting submissions",
-    windowDays: PRIVATE_DATA_RETENTION_WINDOWS.marketingContactSubmissions.deleteNonConsentingAfterDays,
+    windowDays:
+      PRIVATE_DATA_RETENTION_WINDOWS.marketingContactSubmissions
+        .deleteNonConsentingAfterDays,
     basis: "submitted_at",
   },
   {
     table: "marketing_contact_submissions",
     action: "redact consenting submission identity and payload fields",
-    windowDays: PRIVATE_DATA_RETENTION_WINDOWS.marketingContactSubmissions.redactConsentingAfterDays,
+    windowDays:
+      PRIVATE_DATA_RETENTION_WINDOWS.marketingContactSubmissions
+        .redactConsentingAfterDays,
     basis: "submitted_at",
   },
   {
     table: "marketing_consent_events",
     action: "delete old consent-event evidence",
-    windowDays: PRIVATE_DATA_RETENTION_WINDOWS.marketingConsentEvents.deleteAfterDays,
+    windowDays:
+      PRIVATE_DATA_RETENTION_WINDOWS.marketingConsentEvents.deleteAfterDays,
     basis: "occurred_at",
+  },
+  {
+    table: "marketing_contact_sync_jobs",
+    action: "redact payload and last error context",
+    windowDays:
+      PRIVATE_DATA_RETENTION_WINDOWS.marketingContactSyncJobs
+        .redactPayloadAfterDays,
+    basis: "created_at",
+  },
+  {
+    table: "marketing_contact_sync_jobs",
+    action: "delete terminal sync jobs",
+    windowDays:
+      PRIVATE_DATA_RETENTION_WINDOWS.marketingContactSyncJobs
+        .deleteTerminalAfterDays,
+    basis: "created_at",
   },
 ] as const;
 
@@ -248,6 +303,8 @@ export type PrivateDataRetentionOperation =
   | "marketingContactsUnsubscribedDeleted"
   | "marketingContactSubmissionsConsentingRedacted"
   | "marketingContactSubmissionsNonConsentingDeleted"
+  | "marketingContactSyncJobsDeleted"
+  | "marketingContactSyncJobsRedacted"
   | "trainingEnrollmentsDeleted"
   | "trainingEnrollmentsRedacted"
   | "trainingSchedulingTokensExpired";
@@ -269,18 +326,36 @@ export interface PrivateDataRetentionCleanupRepository {
   deleteAbandonedAppointmentHolds(input: RetentionCutoffInput): Promise<number>;
   deleteCheckoutPaymentEvents(input: RetentionCutoffInput): Promise<number>;
   deleteMarketingConsentEvents(input: RetentionCutoffInput): Promise<number>;
-  deleteNonConsentingMarketingSubmissions(input: RetentionCutoffInput): Promise<number>;
+  deleteNonConsentingMarketingSubmissions(
+    input: RetentionCutoffInput,
+  ): Promise<number>;
   deleteTerminalAppointmentHolds(input: RetentionCutoffInput): Promise<number>;
-  deleteTerminalTrainingEnrollments(input: RetentionCutoffInput): Promise<number>;
-  deleteUnsubscribedMarketingContacts(input: RetentionCutoffInput): Promise<number>;
+  deleteTerminalMarketingContactSyncJobs(
+    input: RetentionCutoffInput,
+  ): Promise<number>;
+  deleteTerminalTrainingEnrollments(
+    input: RetentionCutoffInput,
+  ): Promise<number>;
+  deleteUnsubscribedMarketingContacts(
+    input: RetentionCutoffInput,
+  ): Promise<number>;
   expireTrainingSchedulingTokens(input: RetentionCutoffInput): Promise<number>;
   purgeSoftDeletedCheckoutOrders(input: RetentionCutoffInput): Promise<number>;
   redactCheckoutOrders(input: RetentionCutoffInput): Promise<number>;
-  redactConsentingMarketingSubmissions(input: RetentionCutoffInput): Promise<number>;
+  redactConsentingMarketingSubmissions(
+    input: RetentionCutoffInput,
+  ): Promise<number>;
   redactInactiveMarketingContacts(input: RetentionCutoffInput): Promise<number>;
+  redactMarketingContactSyncJobPayloads(
+    input: RetentionCutoffInput,
+  ): Promise<number>;
   redactTerminalAppointmentHolds(input: RetentionCutoffInput): Promise<number>;
-  redactTerminalTrainingEnrollments(input: RetentionCutoffInput): Promise<number>;
-  scrubCheckoutPaymentEventPayloads(input: RetentionCutoffInput): Promise<number>;
+  redactTerminalTrainingEnrollments(
+    input: RetentionCutoffInput,
+  ): Promise<number>;
+  scrubCheckoutPaymentEventPayloads(
+    input: RetentionCutoffInput,
+  ): Promise<number>;
   softDeleteCheckoutOrders(input: RetentionCutoffInput): Promise<number>;
 }
 
@@ -293,6 +368,8 @@ export interface PrivateDataRetentionCutoffs {
   checkoutOrderSoftDeleteCutoff: Date;
   marketingConsentEventDeleteCutoff: Date;
   marketingContactProfileRedactCutoff: Date;
+  marketingContactSyncJobDeleteCutoff: Date;
+  marketingContactSyncJobRedactCutoff: Date;
   marketingContactUnsubscribedDeleteCutoff: Date;
   marketingSubmissionConsentingRedactCutoff: Date;
   marketingSubmissionNonConsentingDeleteCutoff: Date;
@@ -315,7 +392,9 @@ interface RetentionStep {
   table: string;
 }
 
-export function getPrivateDataRetentionCutoffs(now: Date): PrivateDataRetentionCutoffs {
+export function getPrivateDataRetentionCutoffs(
+  now: Date,
+): PrivateDataRetentionCutoffs {
   return {
     appointmentHoldAbandonedDeleteCutoff: subtractDays(
       now,
@@ -347,19 +426,33 @@ export function getPrivateDataRetentionCutoffs(now: Date): PrivateDataRetentionC
     ),
     marketingContactProfileRedactCutoff: subtractDays(
       now,
-      PRIVATE_DATA_RETENTION_WINDOWS.marketingContacts.redactProfileAfterInactiveDays,
+      PRIVATE_DATA_RETENTION_WINDOWS.marketingContacts
+        .redactProfileAfterInactiveDays,
+    ),
+    marketingContactSyncJobDeleteCutoff: subtractDays(
+      now,
+      PRIVATE_DATA_RETENTION_WINDOWS.marketingContactSyncJobs
+        .deleteTerminalAfterDays,
+    ),
+    marketingContactSyncJobRedactCutoff: subtractDays(
+      now,
+      PRIVATE_DATA_RETENTION_WINDOWS.marketingContactSyncJobs
+        .redactPayloadAfterDays,
     ),
     marketingContactUnsubscribedDeleteCutoff: subtractDays(
       now,
-      PRIVATE_DATA_RETENTION_WINDOWS.marketingContacts.deleteUnsubscribedAfterDays,
+      PRIVATE_DATA_RETENTION_WINDOWS.marketingContacts
+        .deleteUnsubscribedAfterDays,
     ),
     marketingSubmissionConsentingRedactCutoff: subtractDays(
       now,
-      PRIVATE_DATA_RETENTION_WINDOWS.marketingContactSubmissions.redactConsentingAfterDays,
+      PRIVATE_DATA_RETENTION_WINDOWS.marketingContactSubmissions
+        .redactConsentingAfterDays,
     ),
     marketingSubmissionNonConsentingDeleteCutoff: subtractDays(
       now,
-      PRIVATE_DATA_RETENTION_WINDOWS.marketingContactSubmissions.deleteNonConsentingAfterDays,
+      PRIVATE_DATA_RETENTION_WINDOWS.marketingContactSubmissions
+        .deleteNonConsentingAfterDays,
     ),
     paymentEventDeleteCutoff: subtractDays(
       now,
@@ -367,7 +460,8 @@ export function getPrivateDataRetentionCutoffs(now: Date): PrivateDataRetentionC
     ),
     paymentEventPayloadScrubCutoff: subtractDays(
       now,
-      PRIVATE_DATA_RETENTION_WINDOWS.checkoutPaymentEvents.scrubPayloadAfterDays,
+      PRIVATE_DATA_RETENTION_WINDOWS.checkoutPaymentEvents
+        .scrubPayloadAfterDays,
     ),
     trainingEnrollmentDeleteCutoff: subtractDays(
       now,
@@ -379,7 +473,8 @@ export function getPrivateDataRetentionCutoffs(now: Date): PrivateDataRetentionC
     ),
     trainingTokenExpiryCutoff: subtractDays(
       now,
-      PRIVATE_DATA_RETENTION_WINDOWS.trainingEnrollments.expireSchedulingTokensAfterDays,
+      PRIVATE_DATA_RETENTION_WINDOWS.trainingEnrollments
+        .expireSchedulingTokensAfterDays,
     ),
   };
 }
@@ -387,7 +482,9 @@ export function getPrivateDataRetentionCutoffs(now: Date): PrivateDataRetentionC
 export function createPrivateDataRetentionCleanup(
   repository: PrivateDataRetentionCleanupRepository,
 ): (input?: { now?: Date }) => Promise<PrivateDataRetentionCleanupSummary> {
-  return async function runPrivateDataRetentionCleanupWithRepository(input = {}) {
+  return async function runPrivateDataRetentionCleanupWithRepository(
+    input = {},
+  ) {
     const now = input.now ?? new Date();
     const cutoffs = getPrivateDataRetentionCutoffs(now);
     const steps = getRetentionSteps(repository, cutoffs);
@@ -406,7 +503,10 @@ export function createPrivateDataRetentionCleanup(
     return {
       operations,
       runAt: now.toISOString(),
-      totalAffected: operations.reduce((sum, operation) => sum + operation.count, 0),
+      totalAffected: operations.reduce(
+        (sum, operation) => sum + operation.count,
+        0,
+      ),
     };
   };
 }
@@ -420,7 +520,10 @@ export function getSoftDeletedCheckoutOrderPurgePredicate(
   return and(
     isNotNull(checkoutOrders.deletedAt),
     lte(checkoutOrders.deletedAt, cutoff),
-    inArray(checkoutOrders.calendarFinalizationStatus, RESOLVED_CALENDAR_FINALIZATION_STATUSES_FOR_QUERY),
+    inArray(
+      checkoutOrders.calendarFinalizationStatus,
+      RESOLVED_CALENDAR_FINALIZATION_STATUSES_FOR_QUERY,
+    ),
     notExists(sql`
       (select 1
       from ${checkoutPaymentEvents}
@@ -454,23 +557,39 @@ export function getSoftDeletedCheckoutOrderPurgePredicate(
 
 export function getTerminalAppointmentHoldDeletePredicate(cutoff: Date) {
   return and(
-    inArray(appointmentHolds.status, APPOINTMENT_HOLD_TERMINAL_STATUSES_FOR_QUERY),
-    inArray(appointmentHolds.finalizationStatus, RESOLVED_CALENDAR_FINALIZATION_STATUSES_FOR_QUERY),
+    inArray(
+      appointmentHolds.status,
+      APPOINTMENT_HOLD_TERMINAL_STATUSES_FOR_QUERY,
+    ),
+    inArray(
+      appointmentHolds.finalizationStatus,
+      RESOLVED_CALENDAR_FINALIZATION_STATUSES_FOR_QUERY,
+    ),
     lte(terminalAppointmentHoldTimestamp(), cutoff),
   );
 }
 
 export function getTerminalAppointmentHoldRedactionPredicate(cutoff: Date) {
   return and(
-    inArray(appointmentHolds.status, APPOINTMENT_HOLD_TERMINAL_STATUSES_FOR_QUERY),
-    inArray(appointmentHolds.finalizationStatus, RESOLVED_CALENDAR_FINALIZATION_STATUSES_FOR_QUERY),
+    inArray(
+      appointmentHolds.status,
+      APPOINTMENT_HOLD_TERMINAL_STATUSES_FOR_QUERY,
+    ),
+    inArray(
+      appointmentHolds.finalizationStatus,
+      RESOLVED_CALENDAR_FINALIZATION_STATUSES_FOR_QUERY,
+    ),
     ne(sql`${appointmentHolds.customerSnapshot}->>'email'`, REDACTED_TEXT),
     lte(terminalAppointmentHoldTimestamp(), cutoff),
   );
 }
 
-export async function runPrivateDataRetentionCleanup(input: { now?: Date } = {}): Promise<PrivateDataRetentionCleanupSummary> {
-  return createPrivateDataRetentionCleanup(createDrizzlePrivateDataRetentionRepository())(input);
+export async function runPrivateDataRetentionCleanup(
+  input: { now?: Date } = {},
+): Promise<PrivateDataRetentionCleanupSummary> {
+  return createPrivateDataRetentionCleanup(
+    createDrizzlePrivateDataRetentionRepository(),
+  )(input);
 }
 
 function createDrizzlePrivateDataRetentionRepository(): PrivateDataRetentionCleanupRepository {
@@ -480,7 +599,10 @@ function createDrizzlePrivateDataRetentionRepository(): PrivateDataRetentionClea
         .delete(appointmentHolds)
         .where(
           and(
-            inArray(appointmentHolds.status, APPOINTMENT_HOLD_ABANDONED_STATUSES_FOR_QUERY),
+            inArray(
+              appointmentHolds.status,
+              APPOINTMENT_HOLD_ABANDONED_STATUSES_FOR_QUERY,
+            ),
             isNull(appointmentHolds.checkoutOrderId),
             lte(appointmentHolds.expiresAt, cutoff),
           ),
@@ -536,11 +658,32 @@ function createDrizzlePrivateDataRetentionRepository(): PrivateDataRetentionClea
         .delete(trainingEnrollments)
         .where(
           and(
-            inArray(trainingEnrollments.schedulingStatus, TRAINING_ENROLLMENT_TERMINAL_STATUSES_FOR_QUERY),
+            inArray(
+              trainingEnrollments.schedulingStatus,
+              TRAINING_ENROLLMENT_TERMINAL_STATUSES_FOR_QUERY,
+            ),
             lte(terminalTrainingEnrollmentTimestamp(), cutoff),
           ),
         )
         .returning({ id: trainingEnrollments.id });
+
+      return deleted.length;
+    },
+
+    async deleteTerminalMarketingContactSyncJobs({ cutoff }) {
+      const deleted = await getPrivateDb()
+        .delete(marketingContactSyncJobs)
+        .where(
+          and(
+            inArray(marketingContactSyncJobs.status, [
+              "succeeded",
+              "dead_letter",
+              "skipped_unconfigured",
+            ]),
+            lte(marketingContactSyncJobs.createdAt, cutoff),
+          ),
+        )
+        .returning({ id: marketingContactSyncJobs.id });
 
       return deleted.length;
     },
@@ -589,9 +732,21 @@ function createDrizzlePrivateDataRetentionRepository(): PrivateDataRetentionClea
         .where(
           getSoftDeletedCheckoutOrderPurgePredicate(
             cutoff,
-            subtractDays(now, PRIVATE_DATA_RETENTION_WINDOWS.checkoutPaymentEvents.deleteAfterDays),
-            subtractDays(now, PRIVATE_DATA_RETENTION_WINDOWS.trainingEnrollments.deleteAfterDays),
-            subtractDays(now, PRIVATE_DATA_RETENTION_WINDOWS.appointmentHolds.deleteTerminalAfterDays),
+            subtractDays(
+              now,
+              PRIVATE_DATA_RETENTION_WINDOWS.checkoutPaymentEvents
+                .deleteAfterDays,
+            ),
+            subtractDays(
+              now,
+              PRIVATE_DATA_RETENTION_WINDOWS.trainingEnrollments
+                .deleteAfterDays,
+            ),
+            subtractDays(
+              now,
+              PRIVATE_DATA_RETENTION_WINDOWS.appointmentHolds
+                .deleteTerminalAfterDays,
+            ),
           ),
         )
         .returning({ id: checkoutOrders.id });
@@ -618,8 +773,14 @@ function createDrizzlePrivateDataRetentionRepository(): PrivateDataRetentionClea
         .where(
           and(
             isNull(checkoutOrders.redactedAt),
-            inArray(checkoutOrders.status, CHECKOUT_ORDER_TERMINAL_STATUSES_FOR_QUERY),
-            inArray(checkoutOrders.calendarFinalizationStatus, RESOLVED_CALENDAR_FINALIZATION_STATUSES_FOR_QUERY),
+            inArray(
+              checkoutOrders.status,
+              CHECKOUT_ORDER_TERMINAL_STATUSES_FOR_QUERY,
+            ),
+            inArray(
+              checkoutOrders.calendarFinalizationStatus,
+              RESOLVED_CALENDAR_FINALIZATION_STATUSES_FOR_QUERY,
+            ),
             lte(terminalCheckoutOrderTimestamp(), cutoff),
           ),
         )
@@ -648,6 +809,33 @@ function createDrizzlePrivateDataRetentionRepository(): PrivateDataRetentionClea
           ),
         )
         .returning({ id: marketingContactSubmissions.id });
+
+      return updated.length;
+    },
+
+    async redactMarketingContactSyncJobPayloads({ cutoff, now }) {
+      const updated = await getPrivateDb()
+        .update(marketingContactSyncJobs)
+        .set({
+          lastError: null,
+          lastErrorContext: null,
+          payload: sql`jsonb_build_object('redacted', true, 'redactedBy', 'private-data-retention')`,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            lte(marketingContactSyncJobs.createdAt, cutoff),
+            or(
+              isNotNull(marketingContactSyncJobs.lastError),
+              isNotNull(marketingContactSyncJobs.lastErrorContext),
+              ne(
+                sql`coalesce(${marketingContactSyncJobs.payload}->>'redacted', 'false')`,
+                "true",
+              ),
+            ),
+          ),
+        )
+        .returning({ id: marketingContactSyncJobs.id });
 
       return updated.length;
     },
@@ -698,7 +886,10 @@ function createDrizzlePrivateDataRetentionRepository(): PrivateDataRetentionClea
         })
         .where(
           and(
-            inArray(trainingEnrollments.schedulingStatus, TRAINING_ENROLLMENT_TERMINAL_STATUSES_FOR_QUERY),
+            inArray(
+              trainingEnrollments.schedulingStatus,
+              TRAINING_ENROLLMENT_TERMINAL_STATUSES_FOR_QUERY,
+            ),
             ne(trainingEnrollments.checkoutEmail, REDACTED_TEXT),
             lte(terminalTrainingEnrollmentTimestamp(), cutoff),
           ),
@@ -742,8 +933,14 @@ function createDrizzlePrivateDataRetentionRepository(): PrivateDataRetentionClea
           and(
             isNull(checkoutOrders.deletedAt),
             isNotNull(checkoutOrders.redactedAt),
-            inArray(checkoutOrders.status, CHECKOUT_ORDER_TERMINAL_STATUSES_FOR_QUERY),
-            inArray(checkoutOrders.calendarFinalizationStatus, RESOLVED_CALENDAR_FINALIZATION_STATUSES_FOR_QUERY),
+            inArray(
+              checkoutOrders.status,
+              CHECKOUT_ORDER_TERMINAL_STATUSES_FOR_QUERY,
+            ),
+            inArray(
+              checkoutOrders.calendarFinalizationStatus,
+              RESOLVED_CALENDAR_FINALIZATION_STATUSES_FOR_QUERY,
+            ),
             lte(terminalCheckoutOrderTimestamp(), cutoff),
           ),
         )
@@ -838,6 +1035,12 @@ function getRetentionSteps(
       table: "marketing_contact_submissions",
     },
     {
+      cutoff: cutoffs.marketingContactSyncJobRedactCutoff,
+      operation: "marketingContactSyncJobsRedacted",
+      run: repository.redactMarketingContactSyncJobPayloads,
+      table: "marketing_contact_sync_jobs",
+    },
+    {
       cutoff: cutoffs.marketingContactProfileRedactCutoff,
       operation: "marketingContactsProfileRedacted",
       run: repository.redactInactiveMarketingContacts,
@@ -854,6 +1057,12 @@ function getRetentionSteps(
       operation: "marketingContactsUnsubscribedDeleted",
       run: repository.deleteUnsubscribedMarketingContacts,
       table: "marketing_contacts",
+    },
+    {
+      cutoff: cutoffs.marketingContactSyncJobDeleteCutoff,
+      operation: "marketingContactSyncJobsDeleted",
+      run: repository.deleteTerminalMarketingContactSyncJobs,
+      table: "marketing_contact_sync_jobs",
     },
   ];
 }

@@ -6,6 +6,7 @@ const helperScript = String.raw`
 
   import {
     buildResendMarketingContactSyncPlan,
+    checkResendMarketingContactConfig,
     getConfiguredTransactionalTemplate,
     syncResendMarketingContact,
     toResendTemplateVariables,
@@ -13,6 +14,14 @@ const helperScript = String.raw`
 
   function ok(data) {
     return { data, error: null, headers: null };
+  }
+
+  function fail(message, name = "api_error", statusCode = 500) {
+    return {
+      data: null,
+      error: { message, name, statusCode },
+      headers: null,
+    };
   }
 
   function notFound(message = "not found") {
@@ -148,6 +157,137 @@ test("Resend marketing contact sync creates missing contacts and adds missing se
 
     assert.deepEqual(calls.map((call) => call.type), ["update", "create", "list-segments", "add-segment", "event"]);
     assert.deepEqual(calls[3].input, { email: "student@example.com", segmentId: "segment-training" });
+  `);
+});
+
+test("Resend marketing contact sync returns early without instantiating default client when API key is missing", () => {
+  runResendPlatformScenario(`
+    delete process.env.RESEND_API_KEY;
+
+    let defaultClientCreated = false;
+    const dependencies = {
+      addContactSegment: async () => {
+        throw new Error("addContactSegment should not be called");
+      },
+      createContact: async () => {
+        throw new Error("createContact should not be called");
+      },
+      listContactSegments: async () => {
+        throw new Error("listContactSegments should not be called");
+      },
+      sendEvent: async () => {
+        throw new Error("sendEvent should not be called");
+      },
+      updateContact: async () => {
+        throw new Error("updateContact should not be called");
+      },
+      updateContactTopics: async () => {
+        throw new Error("updateContactTopics should not be called");
+      },
+    };
+
+    await syncResendMarketingContact({
+      consentedAt: new Date("2026-05-10T12:00:00.000Z"),
+      email: "student@example.com",
+      source: "training_contact",
+    }, dependencies);
+
+    assert.equal(defaultClientCreated, false);
+  `);
+});
+
+test("Resend marketing contact sync reports step-specific failures", () => {
+  runResendPlatformScenario(`
+    process.env.RESEND_API_KEY = "re_test";
+    process.env.RESEND_SEGMENT_MARKETING_ID = "segment-all";
+    process.env.RESEND_TOPIC_MARKETING_ID = "topic-marketing";
+
+    const stepNames = {
+      addContactSegment: "add_segment",
+      createContact: "create_contact",
+      listContactSegments: "list_segments",
+      sendEvent: "send_event",
+      updateContact: "update_contact",
+      updateContactTopics: "update_topics",
+    };
+
+    for (const [dependencyName, expectedStep] of Object.entries(stepNames)) {
+      const dependencies = {
+        addContactSegment: async () => ok({ id: "segment-added" }),
+        createContact: async () => ok({ id: "contact-1" }),
+        listContactSegments: async () => ok({ data: [] }),
+        sendEvent: async () => ok({ event: "lashher.marketing_contact.opted_in", object: "event" }),
+        updateContact: async () => notFound(),
+        updateContactTopics: async () => ok({ id: "contact-1" }),
+      };
+
+      dependencies[dependencyName] = async () => fail(dependencyName + " failed", "api_error", 500);
+
+      try {
+        await syncResendMarketingContact({
+          consentedAt: new Date("2026-05-10T12:00:00.000Z"),
+          email: "student@example.com",
+          source: "training_contact",
+        }, dependencies);
+        throw new Error("Expected sync to throw for " + dependencyName);
+      } catch (error) {
+        assert.equal(error.name, "ResendContactSyncError", dependencyName);
+        assert.equal(error.step, expectedStep, dependencyName);
+      }
+    }
+  `);
+});
+
+test("Resend marketing contact config check reports missing API key", () => {
+  runResendPlatformScenario(`
+    delete process.env.RESEND_API_KEY;
+
+    const result = await checkResendMarketingContactConfig({
+      listSegments: async () => ({ data: [] }),
+      listTopics: async () => ({ data: [] }),
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.apiKeyConfigured, false);
+    assert.deepEqual(result.missingSegmentIds, []);
+    assert.deepEqual(result.missingTopicIds, []);
+  `);
+});
+
+test("Resend marketing contact config check verifies configured segment and topic IDs", () => {
+  runResendPlatformScenario(`
+    process.env.RESEND_API_KEY = "re_test";
+    process.env.RESEND_SEGMENT_MARKETING_ID = "segment-all";
+    process.env.RESEND_SEGMENT_CONTACT_POPUP_ID = "segment-popup";
+    process.env.RESEND_TOPIC_MARKETING_ID = "topic-marketing";
+    process.env.RESEND_TOPIC_NEWSLETTER_ID = "topic-newsletter";
+
+    const result = await checkResendMarketingContactConfig({
+      listSegments: async () => ({ data: [{ id: "segment-all" }] }),
+      listTopics: async () => ({ data: [{ id: "topic-marketing" }] }),
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.apiKeyConfigured, true);
+    assert.deepEqual(result.missingSegmentIds, ["segment-popup"]);
+    assert.deepEqual(result.missingTopicIds, ["topic-newsletter"]);
+  `);
+});
+
+test("Resend marketing contact config check succeeds when all configured IDs exist", () => {
+  runResendPlatformScenario(`
+    process.env.RESEND_API_KEY = "re_test";
+    process.env.RESEND_SEGMENT_MARKETING_ID = "segment-all";
+    process.env.RESEND_TOPIC_MARKETING_ID = "topic-marketing";
+
+    const result = await checkResendMarketingContactConfig({
+      listSegments: async () => ({ data: [{ id: "segment-all" }] }),
+      listTopics: async () => ({ data: [{ id: "topic-marketing" }] }),
+    });
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.missingSegmentIds, []);
+    assert.deepEqual(result.missingTopicIds, []);
   `);
 });
 

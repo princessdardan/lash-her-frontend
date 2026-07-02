@@ -1,19 +1,18 @@
 import "server-only";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import { getPrivateDb } from "@/lib/private-db/client";
 import {
   marketingConsentEvents,
   marketingContacts,
   marketingContactSubmissions,
+  marketingContactSyncJobs,
   type MarketingConsentEventType,
   type MarketingContactSubmissionType,
+  type MarketingContactSyncJobPayload,
 } from "@/lib/private-db/schema";
-import {
-  syncResendMarketingContact,
-  type ResendMarketingContactInput,
-} from "@/lib/resend-platform";
+import { type ResendMarketingContactInput } from "@/lib/resend-platform";
 
 export const GENERAL_INQUIRY_CONSENT_TEXT =
   "I agree to receive lash care tips, service updates, and offers from Lash Her by Nataliea.";
@@ -159,7 +158,7 @@ export interface MarketingContactPersistenceInput {
 export interface MarketingContactRepository {
   recordMarketingContact(
     input: MarketingContactPersistenceInput,
-  ): Promise<{ submissionId: string }>;
+  ): Promise<{ submissionId: string; syncJobId?: string }>;
   recordMarketingUnsubscribe(
     input: MarketingContactUnsubscribeValues,
   ): Promise<{ eventId: string }>;
@@ -167,59 +166,43 @@ export interface MarketingContactRepository {
 
 export interface MarketingContactStoreDependencies {
   logError?: typeof console.error;
+  // Deprecated: Resend sync is now handled by the durable outbox worker.
   syncMarketingContact?: (input: ResendMarketingContactInput) => Promise<void>;
 }
 
 export interface MarketingContactStore {
   recordBookingMarketingChoice(
     input: RecordBookingMarketingChoiceInput,
-  ): Promise<{ submissionId: string }>;
+  ): Promise<{ submissionId: string; syncJobId?: string }>;
   recordContactPopup(
     input: RecordContactPopupInput,
-  ): Promise<{ submissionId: string }>;
+  ): Promise<{ submissionId: string; syncJobId?: string }>;
   recordGeneralInquiry(
     input: RecordGeneralInquiryInput,
-  ): Promise<{ submissionId: string }>;
+  ): Promise<{ submissionId: string; syncJobId?: string }>;
   recordResendUnsubscribe(
     input: RecordResendUnsubscribeInput,
   ): Promise<{ eventId: string }>;
   recordSanityBackfillSubmission(
     input: RecordSanityBackfillSubmissionInput,
-  ): Promise<{ submissionId: string }>;
+  ): Promise<{ submissionId: string; syncJobId?: string }>;
   recordTrainingContact(
     input: RecordTrainingContactInput,
-  ): Promise<{ submissionId: string }>;
+  ): Promise<{ submissionId: string; syncJobId?: string }>;
 }
 
 export function createMarketingContactStore(
   repository: MarketingContactRepository,
-  dependencies: MarketingContactStoreDependencies = {},
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _dependencies: MarketingContactStoreDependencies = {},
 ): MarketingContactStore {
-  const syncMarketingContact =
-    dependencies.syncMarketingContact ?? syncResendMarketingContact;
-  const logError = dependencies.logError ?? console.error;
-
   async function recordContact(
     input: MarketingContactPersistenceInput,
-  ): Promise<{ submissionId: string }> {
-    const result = await repository.recordMarketingContact(input);
-
-    if (input.contact !== null) {
-      try {
-        await syncMarketingContact(toResendMarketingContactInput(input));
-      } catch (error) {
-        logError("[marketing-contact] Resend contact sync failed", {
-          email: input.contact.emailNormalized,
-          error:
-            error instanceof Error
-              ? error.message
-              : "Unknown Resend contact sync error",
-          source: input.contact.source,
-        });
-      }
-    }
-
-    return result;
+  ): Promise<{ submissionId: string; syncJobId?: string }> {
+    // The durable outbox worker handles Resend sync; do not call it directly
+    // from the request path. Failures during repository persistence are thrown
+    // so the caller can retry.
+    return repository.recordMarketingContact(input);
   }
 
   return {
@@ -340,31 +323,31 @@ const defaultMarketingContactStore = createMarketingContactStore(
 
 export async function recordGeneralInquirySubmission(
   input: RecordGeneralInquiryInput,
-): Promise<{ submissionId: string }> {
+): Promise<{ submissionId: string; syncJobId?: string }> {
   return defaultMarketingContactStore.recordGeneralInquiry(input);
 }
 
 export async function recordTrainingContactSubmission(
   input: RecordTrainingContactInput,
-): Promise<{ submissionId: string }> {
+): Promise<{ submissionId: string; syncJobId?: string }> {
   return defaultMarketingContactStore.recordTrainingContact(input);
 }
 
 export async function recordContactPopupSubmission(
   input: RecordContactPopupInput,
-): Promise<{ submissionId: string }> {
+): Promise<{ submissionId: string; syncJobId?: string }> {
   return defaultMarketingContactStore.recordContactPopup(input);
 }
 
 export async function recordBookingMarketingChoice(
   input: RecordBookingMarketingChoiceInput,
-): Promise<{ submissionId: string }> {
+): Promise<{ submissionId: string; syncJobId?: string }> {
   return defaultMarketingContactStore.recordBookingMarketingChoice(input);
 }
 
 export async function recordSanityBackfillSubmission(
   input: RecordSanityBackfillSubmissionInput,
-): Promise<{ submissionId: string }> {
+): Promise<{ submissionId: string; syncJobId?: string }> {
   return defaultMarketingContactStore.recordSanityBackfillSubmission(input);
 }
 
@@ -443,11 +426,50 @@ function createDrizzleMarketingContactRepository(): MarketingContactRepository {
           return { submissionId: existingSubmission.id };
         }
 
-        await tx.insert(marketingConsentEvents).values({
-          ...input.event,
-          contactId,
-          submissionId: submission.id,
-        });
+        const [event] = await tx
+          .insert(marketingConsentEvents)
+          .values({
+            ...input.event,
+            contactId,
+            submissionId: submission.id,
+          })
+          .returning({ id: marketingConsentEvents.id });
+
+        if (input.contact !== null) {
+          const idempotencyKey = `mc-sync:${submission.id}`;
+          const payload = buildMarketingContactSyncJobPayload(
+            input,
+            contactId,
+            submission.id,
+            event.id,
+          );
+
+          const [job] = await tx
+            .insert(marketingContactSyncJobs)
+            .values({
+              idempotencyKey,
+              contactId,
+              submissionId: submission.id,
+              consentEventId: event.id,
+              email: input.contact.email,
+              emailNormalized: input.contact.emailNormalized,
+              source: input.contact.source,
+              payload,
+              status: "queued",
+              attempts: 0,
+              maxAttempts: 5,
+              nextRunAt: new Date(),
+            })
+            .onConflictDoUpdate({
+              target: marketingContactSyncJobs.idempotencyKey,
+              set: {
+                updatedAt: new Date(),
+              },
+            })
+            .returning({ id: marketingContactSyncJobs.id });
+
+          return { submissionId: submission.id, syncJobId: job?.id };
+        }
 
         return { submissionId: submission.id };
       });
@@ -483,6 +505,33 @@ function createDrizzleMarketingContactRepository(): MarketingContactRepository {
         if (!event) {
           throw new Error("Marketing unsubscribe event was not created");
         }
+
+        // Prevent any queued or in-flight marketing sync jobs for this contact
+        // from re-opting the contact in after they have unsubscribed.
+        await tx
+          .update(marketingContactSyncJobs)
+          .set({
+            lockedBy: null,
+            lockedUntil: null,
+            status: "skipped_unconfigured",
+            skippedAt: input.occurredAt,
+            lastAttemptedAt: input.occurredAt,
+            lastError: "Contact unsubscribed before marketing sync",
+            updatedAt: input.occurredAt,
+          })
+          .where(
+            and(
+              eq(
+                marketingContactSyncJobs.emailNormalized,
+                input.emailNormalized,
+              ),
+              inArray(marketingContactSyncJobs.status, [
+                "queued",
+                "processing",
+                "retryable_failed",
+              ]),
+            ),
+          );
 
         return { eventId: event.id };
       });
@@ -578,22 +627,30 @@ function toSubmissionInsert(
   };
 }
 
-function toResendMarketingContactInput(
+function buildMarketingContactSyncJobPayload(
   input: MarketingContactPersistenceInput,
-): ResendMarketingContactInput {
+  contactId: string | null,
+  submissionId: string,
+  consentEventId: string,
+): MarketingContactSyncJobPayload {
   if (input.contact === null) {
-    throw new Error("Cannot sync a non-consenting marketing contact to Resend");
+    throw new Error(
+      "Cannot build sync job payload for a non-consenting marketing contact",
+    );
   }
 
   return {
-    consentedAt: input.contact.lastConsentedAt,
     consentText: input.contact.consentText,
+    consentedAt: input.contact.lastConsentedAt.toISOString(),
     email: input.contact.email,
     instagram: input.contact.instagram,
     name: input.contact.name,
     phone: input.contact.phone,
     source: input.contact.source,
     sourcePath: input.submission.sourcePath,
+    ...(contactId !== null ? { contactId } : {}),
+    submissionId,
+    consentEventId,
   };
 }
 

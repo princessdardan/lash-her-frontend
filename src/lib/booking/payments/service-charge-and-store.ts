@@ -192,7 +192,6 @@ export interface SquareCustomerGateway {
 import { createHash } from "node:crypto";
 
 import type { BookingAnswerInput } from "@/lib/booking/types";
-import { log } from "@/lib/logging/logger";
 
 export interface RecordMarketingChoiceInput {
   answers: BookingAnswerInput[];
@@ -449,11 +448,12 @@ export async function confirmChargeAndStoreBooking(
   };
 
   // Persist the marketing choice as a private contact side effect after real
-  // customer details are on the hold. Failures are logged but must not block
-  // payment confirmation, so schedule the promise without awaiting it.
+  // customer details are on the hold. The durable outbox worker handles Resend
+  // sync; failures here are infrastructure errors because the marketing consent
+  // record must be durably persisted before payment proceeds.
   if (dependencies.recordMarketingChoice !== undefined) {
-    dependencies
-      .recordMarketingChoice({
+    try {
+      await dependencies.recordMarketingChoice({
         answers: readBookingAnswers(hold.offeringSnapshot.answers),
         bookingType: hold.bookingType,
         consentText:
@@ -466,15 +466,25 @@ export async function confirmChargeAndStoreBooking(
           typeof hold.offeringSnapshot.sourcePath === "string"
             ? hold.offeringSnapshot.sourcePath
             : undefined,
-      })
-      .catch((error) => {
-        log("error", "[booking payment] Marketing consent persistence failed", {
-          error: error instanceof Error ? error.message : "Unknown error",
-          holdId: hold.id,
-          holdReference: hold.publicReference,
-          marketingOptIn: input.customer.marketingOptIn,
-        });
       });
+    } catch (error) {
+      await alertInfrastructureError(
+        dependencies,
+        "Failed to persist marketing choice",
+        { error: getErrorMessage(error), holdId: hold.id },
+      );
+      await markHoldPaymentFailedSafe(
+        dependencies,
+        hold.id,
+        "Unable to persist marketing consent",
+        now,
+      );
+      return {
+        ok: false,
+        error: "infrastructure_error",
+        message: "Unable to persist marketing consent",
+      };
+    }
   }
 
   const policyEvidence = getCanonicalServiceNoShowPolicyEvidence({

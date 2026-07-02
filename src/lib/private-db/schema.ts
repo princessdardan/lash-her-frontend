@@ -93,6 +93,18 @@ export const marketingConsentEventType = pgEnum(
   ["opt_in", "no_opt_in", "unsubscribe", "backfill_consent"],
 );
 
+export const marketingContactSyncJobStatus = pgEnum(
+  "marketing_contact_sync_job_status",
+  [
+    "queued",
+    "processing",
+    "succeeded",
+    "retryable_failed",
+    "dead_letter",
+    "skipped_unconfigured",
+  ],
+);
+
 export const savedPaymentMethodStatus = pgEnum("saved_payment_method_status", [
   "active",
   "replaced",
@@ -172,6 +184,8 @@ export type MarketingContactSubmissionType =
   (typeof marketingContactSubmissionType.enumValues)[number];
 export type MarketingConsentEventType =
   (typeof marketingConsentEventType.enumValues)[number];
+export type MarketingContactSyncJobStatus =
+  (typeof marketingContactSyncJobStatus.enumValues)[number];
 export type SavedPaymentMethodStatus =
   (typeof savedPaymentMethodStatus.enumValues)[number];
 export type NoShowChargeStatus = (typeof noShowChargeStatus.enumValues)[number];
@@ -614,6 +628,80 @@ export const marketingConsentEvents = pgTable("marketing_consent_events", {
     .notNull()
     .defaultNow(),
 });
+
+export interface MarketingContactSyncJobPayload {
+  consentText?: string;
+  consentedAt: string;
+  email: string;
+  instagram?: string;
+  name?: string;
+  phone?: string;
+  source: string;
+  sourcePath?: string;
+  contactId?: string;
+  submissionId?: string;
+  consentEventId?: string;
+}
+
+export const marketingContactSyncJobs = pgTable(
+  "marketing_contact_sync_jobs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    idempotencyKey: text("idempotency_key").notNull().unique(),
+    contactId: uuid("contact_id").references(() => marketingContacts.id, {
+      onDelete: "set null",
+    }),
+    submissionId: uuid("submission_id").references(
+      () => marketingContactSubmissions.id,
+      { onDelete: "set null" },
+    ),
+    consentEventId: uuid("consent_event_id").references(
+      () => marketingConsentEvents.id,
+      { onDelete: "set null" },
+    ),
+    email: text("email").notNull(),
+    emailNormalized: text("email_normalized").notNull(),
+    source: text("source").notNull(),
+    payload: jsonb("payload").$type<MarketingContactSyncJobPayload>().notNull(),
+    status: marketingContactSyncJobStatus("status").notNull().default("queued"),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(5),
+    nextRunAt: timestamp("next_run_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lockedBy: text("locked_by"),
+    lockedUntil: timestamp("locked_until", { withTimezone: true }),
+    lastAttemptedAt: timestamp("last_attempted_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    lastErrorContext:
+      jsonb("last_error_context").$type<Record<string, unknown>>(),
+    succeededAt: timestamp("succeeded_at", { withTimezone: true }),
+    skippedAt: timestamp("skipped_at", { withTimezone: true }),
+    deadLetteredAt: timestamp("dead_lettered_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("marketing_contact_sync_jobs_status_next_run_at_idx").on(
+      table.status,
+      table.nextRunAt,
+    ),
+    index("marketing_contact_sync_jobs_email_normalized_idx").on(
+      table.emailNormalized,
+    ),
+    index("marketing_contact_sync_jobs_created_at_idx").on(table.createdAt),
+    uniqueIndex("marketing_contact_sync_jobs_submission_id_idx").on(
+      table.submissionId,
+    ),
+    uniqueIndex("marketing_contact_sync_jobs_consent_event_id_idx").on(
+      table.consentEventId,
+    ),
+  ],
+);
 
 export const bookingSquareCustomers = pgTable(
   "booking_square_customers",

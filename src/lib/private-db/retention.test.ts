@@ -29,17 +29,19 @@ const helperScript = String.raw`
       deleteMarketingConsentEvents: 3,
       deleteNonConsentingMarketingSubmissions: 4,
       deleteTerminalAppointmentHolds: 5,
-      deleteTerminalTrainingEnrollments: 6,
-      deleteUnsubscribedMarketingContacts: 7,
-      expireTrainingSchedulingTokens: 8,
-      purgeSoftDeletedCheckoutOrders: 9,
-      redactCheckoutOrders: 10,
-      redactConsentingMarketingSubmissions: 11,
-      redactInactiveMarketingContacts: 12,
-      redactTerminalAppointmentHolds: 13,
-      redactTerminalTrainingEnrollments: 14,
-      scrubCheckoutPaymentEventPayloads: 15,
-      softDeleteCheckoutOrders: 16,
+      deleteTerminalMarketingContactSyncJobs: 6,
+      deleteTerminalTrainingEnrollments: 7,
+      deleteUnsubscribedMarketingContacts: 8,
+      expireTrainingSchedulingTokens: 9,
+      purgeSoftDeletedCheckoutOrders: 10,
+      redactCheckoutOrders: 11,
+      redactConsentingMarketingSubmissions: 12,
+      redactInactiveMarketingContacts: 13,
+      redactMarketingContactSyncJobPayloads: 14,
+      redactTerminalAppointmentHolds: 15,
+      redactTerminalTrainingEnrollments: 16,
+      scrubCheckoutPaymentEventPayloads: 17,
+      softDeleteCheckoutOrders: 18,
       ...overrides,
     };
 
@@ -58,6 +60,7 @@ const helperScript = String.raw`
         deleteMarketingConsentEvents: operation("deleteMarketingConsentEvents"),
         deleteNonConsentingMarketingSubmissions: operation("deleteNonConsentingMarketingSubmissions"),
         deleteTerminalAppointmentHolds: operation("deleteTerminalAppointmentHolds"),
+        deleteTerminalMarketingContactSyncJobs: operation("deleteTerminalMarketingContactSyncJobs"),
         deleteTerminalTrainingEnrollments: operation("deleteTerminalTrainingEnrollments"),
         deleteUnsubscribedMarketingContacts: operation("deleteUnsubscribedMarketingContacts"),
         expireTrainingSchedulingTokens: operation("expireTrainingSchedulingTokens"),
@@ -65,6 +68,7 @@ const helperScript = String.raw`
         redactCheckoutOrders: operation("redactCheckoutOrders"),
         redactConsentingMarketingSubmissions: operation("redactConsentingMarketingSubmissions"),
         redactInactiveMarketingContacts: operation("redactInactiveMarketingContacts"),
+        redactMarketingContactSyncJobPayloads: operation("redactMarketingContactSyncJobPayloads"),
         redactTerminalAppointmentHolds: operation("redactTerminalAppointmentHolds"),
         redactTerminalTrainingEnrollments: operation("redactTerminalTrainingEnrollments"),
         scrubCheckoutPaymentEventPayloads: operation("scrubCheckoutPaymentEventPayloads"),
@@ -90,6 +94,7 @@ test("private data retention windows define every scheduled table action", () =>
       "checkout_payment_events",
       "marketing_consent_events",
       "marketing_contact_submissions",
+      "marketing_contact_sync_jobs",
       "marketing_contacts",
       "training_enrollments",
     ]);
@@ -122,6 +127,8 @@ test("private data retention cutoffs subtract configured UTC windows", () => {
     assert.equal(cutoffs.appointmentHoldAbandonedDeleteCutoff.toISOString(), "2026-04-28T12:00:00.000Z");
     assert.equal(cutoffs.paymentEventPayloadScrubCutoff.toISOString(), "2026-02-27T12:00:00.000Z");
     assert.equal(cutoffs.marketingSubmissionNonConsentingDeleteCutoff.toISOString(), "2025-11-29T12:00:00.000Z");
+    assert.equal(cutoffs.marketingContactSyncJobRedactCutoff.toISOString(), "2025-04-28T12:00:00.000Z");
+    assert.equal(cutoffs.marketingContactSyncJobDeleteCutoff.toISOString(), "2019-05-30T12:00:00.000Z");
     assert.equal(cutoffs.checkoutOrderRedactCutoff.toISOString(), "2025-04-28T12:00:00.000Z");
     assert.equal(cutoffs.checkoutOrderSoftDeleteCutoff.toISOString(), "2019-05-30T12:00:00.000Z");
   `);
@@ -147,24 +154,26 @@ test("private data retention cleanup runs in dependency-safe order", () => {
       "purgeSoftDeletedCheckoutOrders",
       "deleteNonConsentingMarketingSubmissions",
       "redactConsentingMarketingSubmissions",
+      "redactMarketingContactSyncJobPayloads",
       "redactInactiveMarketingContacts",
       "deleteMarketingConsentEvents",
       "deleteUnsubscribedMarketingContacts",
+      "deleteTerminalMarketingContactSyncJobs",
     ]);
     assert.equal(summary.runAt, "2026-05-28T12:00:00.000Z");
-    assert.equal(summary.totalAffected, 136);
-    assert.equal(summary.operations.length, 16);
+    assert.equal(summary.totalAffected, 171);
+    assert.equal(summary.operations.length, 18);
     assert.deepEqual(summary.operations[0], {
-      count: 8,
+      count: 9,
       cutoff: "2026-05-28T12:00:00.000Z",
       operation: "trainingSchedulingTokensExpired",
       table: "training_enrollments",
     });
     assert.deepEqual(summary.operations.at(-1), {
-      count: 7,
+      count: 6,
       cutoff: "2019-05-30T12:00:00.000Z",
-      operation: "marketingContactsUnsubscribedDeleted",
-      table: "marketing_contacts",
+      operation: "marketingContactSyncJobsDeleted",
+      table: "marketing_contact_sync_jobs",
     });
   `);
 });
@@ -340,6 +349,22 @@ test("private data retention redacts appointment email retry state", () => {
     assert.equal(redactionValues.reconciliationMetadata, null);
     assert.equal(redactionValues.squarePaymentLinkUrl, null);
     assert.equal(redactionValues.updatedAt, now);
+  `);
+});
+
+test("private data retention redacts and eventually deletes marketing contact sync jobs", () => {
+  runRetentionScenario(`
+    assert.equal(PRIVATE_DATA_RETENTION_WINDOWS.marketingContactSyncJobs.redactPayloadAfterDays, 395);
+    assert.equal(PRIVATE_DATA_RETENTION_WINDOWS.marketingContactSyncJobs.deleteTerminalAfterDays, 2555);
+
+    const syncJobWindows = PRIVATE_DATA_RETENTION_TABLE_WINDOWS.filter(
+      (window) => window.table === "marketing_contact_sync_jobs"
+    );
+    assert.equal(syncJobWindows.length, 2);
+    assert.equal(syncJobWindows[0].action, "redact payload and last error context");
+    assert.equal(syncJobWindows[0].windowDays, 395);
+    assert.equal(syncJobWindows[1].action, "delete terminal sync jobs");
+    assert.equal(syncJobWindows[1].windowDays, 2555);
   `);
 });
 
