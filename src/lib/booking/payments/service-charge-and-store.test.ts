@@ -904,6 +904,7 @@ test("records marketing choice after customer details are persisted", async () =
     squareCustomers,
     calendarFinalizer,
     alerts,
+    state,
   } = createFakes([hold]);
 
   const marketingChoices: RecordMarketingChoiceInput[] = [];
@@ -945,9 +946,14 @@ test("records marketing choice after customer details are persisted", async () =
     phone: "+14165550123",
     sourcePath: "/services/lash-fill/booking",
   });
+  assert.ok(
+    state.sagaOrderEvents.indexOf("persistCustomerAndSelection") <
+      state.sagaOrderEvents.indexOf("persistPolicyAcceptance"),
+    "Marketing choice must be persisted before policy acceptance",
+  );
 });
 
-test("does not block confirmation when marketing choice persistence fails", async () => {
+test("returns infrastructure error when marketing choice persistence fails", async () => {
   const baseHold = createHold();
   const hold = createHold({
     offeringSnapshot: {
@@ -992,11 +998,14 @@ test("does not block confirmation when marketing choice persistence fails", asyn
     },
   );
 
-  assert.equal(result.ok, true);
-  assert.equal(state.markHoldBookedCalls.length, 1);
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.error, "infrastructure_error");
+  assert.equal(state.markHoldPaymentFailedCalls.length, 1);
+  assert.equal(state.events.includes("persistPolicyAcceptance"), false);
 });
 
-test("continues to success before a slow marketing choice promise resolves", async () => {
+test("returns infrastructure error when opt-out marketing choice persistence fails", async () => {
   const baseHold = createHold();
   const hold = createHold({
     offeringSnapshot: {
@@ -1016,17 +1025,11 @@ test("continues to success before a slow marketing choice promise resolves", asy
     state,
   } = createFakes([hold]);
 
-  let resolveMarketing: (() => void) | undefined;
-  const marketingPromise = new Promise<void>((resolve) => {
-    resolveMarketing = resolve;
-  });
-  let marketingCalled = false;
-
   const result = await confirmChargeAndStoreBooking(
     createRequest({
       customer: {
         email: "client@example.com",
-        marketingOptIn: true,
+        marketingOptIn: false,
         name: "Client Name",
         phone: "+14165550123",
       },
@@ -1042,103 +1045,16 @@ test("continues to success before a slow marketing choice promise resolves", asy
       locationId: "LOC123",
       now,
       recordMarketingChoice: async () => {
-        marketingCalled = true;
-        await marketingPromise;
+        throw new Error("Marketing store unavailable");
       },
     },
   );
 
-  assert.equal(result.ok, true);
-  assert.equal(state.markHoldBookedCalls.length, 1);
-  assert.equal(marketingCalled, true);
-  assert.equal(resolveMarketing !== undefined, true);
-
-  resolveMarketing?.();
-  await marketingPromise;
-});
-
-test("logs asynchronous marketing choice persistence failures without blocking", async () => {
-  const baseHold = createHold();
-  const hold = createHold({
-    offeringSnapshot: {
-      ...baseHold.offeringSnapshot,
-      answers: [{ questionId: "allergies", answer: "No allergies" }],
-      sourcePath: "/services/lash-fill/booking",
-    },
-  });
-  const {
-    repository,
-    squarePayments,
-    squareCards,
-    squareInvoices,
-    squareCustomers,
-    calendarFinalizer,
-    alerts,
-    state,
-  } = createFakes([hold]);
-
-  const logged: unknown[] = [];
-  const originalLog = console.log;
-  console.log = (...args: unknown[]) => {
-    logged.push(args);
-  };
-
-  let rejectMarketing: ((reason: Error) => void) | undefined;
-  const marketingPromise = new Promise<void>((_, reject) => {
-    rejectMarketing = reject;
-  });
-
-  try {
-    const result = await confirmChargeAndStoreBooking(
-      createRequest({
-        customer: {
-          email: "client@example.com",
-          marketingOptIn: true,
-          name: "Client Name",
-          phone: "+14165550123",
-        },
-      }),
-      {
-        repository,
-        squarePayments,
-        squareCards,
-        squareInvoices,
-        squareCustomers,
-        calendarFinalizer,
-        alerts,
-        locationId: "LOC123",
-        now,
-        recordMarketingChoice: async () => marketingPromise,
-      },
-    );
-
-    assert.equal(result.ok, true);
-    assert.equal(state.markHoldBookedCalls.length, 1);
-
-    rejectMarketing?.(new Error("Async marketing store unavailable"));
-    await new Promise<void>((resolve) => setImmediate(resolve));
-
-    assert.ok(
-      logged.some(
-        (args) =>
-          Array.isArray(args) &&
-          args.some(
-            (arg: unknown) =>
-              typeof arg === "string" &&
-              arg.includes(
-                "[booking payment] Marketing consent persistence failed",
-              ),
-          ),
-      ),
-    );
-
-    await marketingPromise.catch(() => {
-      // The production catch handler is responsible for logging; consume the
-      // rejection in the test so it is not reported as unhandled.
-    });
-  } finally {
-    console.log = originalLog;
-  }
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.error, "infrastructure_error");
+  assert.equal(state.markHoldPaymentFailedCalls.length, 1);
+  assert.equal(state.events.includes("persistPolicyAcceptance"), false);
 });
 
 test("rejects unchecked consent before Square calls", async () => {

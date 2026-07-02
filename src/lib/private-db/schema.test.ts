@@ -17,6 +17,7 @@ import {
   checkoutPaymentEvents,
   checkoutOrderPurpose,
   marketingConsentEvents,
+  marketingContactSyncJobs,
   noShowChargeStatus,
   paymentEventProcessingStatus,
   paymentProvider,
@@ -28,7 +29,8 @@ function getIndexNames(
     | typeof appointmentHolds
     | typeof bookingNoShowChargeRecords
     | typeof checkoutOrders
-    | typeof checkoutPaymentEvents,
+    | typeof checkoutPaymentEvents
+    | typeof marketingContactSyncJobs,
 ): string[] {
   const names: string[] = [];
 
@@ -398,4 +400,16 @@ test("marketing consent events preserve evidence when submissions are deleted", 
 
   assert.equal(marketingConsentEvents.submissionId.notNull, false);
   assert.equal(submissionForeignKey?.onDelete, "set null");
+});
+
+test("marketing contact sync jobs enforce idempotent consent outbox entries", () => {
+  const indexes = getIndexNames(marketingContactSyncJobs);
+
+  assert.ok(indexes.includes("marketing_contact_sync_jobs_submission_id_idx"));
+  assert.ok(
+    indexes.includes("marketing_contact_sync_jobs_consent_event_id_idx"),
+  );
+  assert.ok(
+    indexes.includes("marketing_contact_sync_jobs_status_next_run_at_idx"),
+  );
 });

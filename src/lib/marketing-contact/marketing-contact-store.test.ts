@@ -15,16 +15,36 @@ const helperScript = String.raw`
   class FakeMarketingContactRepository implements MarketingContactRepository {
     readonly records = [];
     readonly unsubscribes = [];
+    readonly syncJobs = [];
 
-    async recordMarketingContact(input: MarketingContactPersistenceInput): Promise<{ submissionId: string }> {
+    async recordMarketingContact(input: MarketingContactPersistenceInput): Promise<{ submissionId: string; syncJobId?: string }> {
       const submissionId = "marketing-submission-" + (this.records.length + 1);
       this.records.push(input);
+
+      if (input.contact !== null) {
+        const syncJobId = "marketing-sync-" + (this.syncJobs.length + 1);
+        this.syncJobs.push({ id: syncJobId, input, status: "queued" });
+        return { submissionId, syncJobId };
+      }
+
       return { submissionId };
     }
 
     async recordMarketingUnsubscribe(input) {
       const eventId = "marketing-unsubscribe-" + (this.unsubscribes.length + 1);
       this.unsubscribes.push(input);
+
+      for (const job of this.syncJobs) {
+        if (
+          job.input.contact?.emailNormalized === input.emailNormalized &&
+          ["queued", "processing", "retryable_failed"].includes(job.status)
+        ) {
+          job.status = "skipped_unconfigured";
+          job.lastError = "Contact unsubscribed before marketing sync";
+          job.skippedAt = input.occurredAt;
+        }
+      }
+
       return { eventId };
     }
   }
@@ -61,7 +81,7 @@ test("marketing contact store normalizes general inquiry submissions and records
     });
     const record = repository.records[0];
 
-    assert.deepEqual(result, { submissionId: "marketing-submission-1" });
+    assert.deepEqual(result, { submissionId: "marketing-submission-1", syncJobId: "marketing-sync-1" });
     assert.equal(record.submission.submissionType, "general_inquiry");
     assert.equal(record.submission.consentChoice, "opted_in");
     assert.equal(record.submission.email, "Client@Example.COM");
@@ -175,15 +195,15 @@ test("marketing contact store records Sanity backfill consent with source docume
   `);
 });
 
-test("marketing contact store syncs opted-in contacts to Resend after persistence", () => {
+test("marketing contact store enqueues a sync job for opted-in contacts and does not call Resend directly", () => {
   runMarketingContactStoreScenario(`
     const syncedContacts = [];
     const submittedAt = new Date("2026-05-10T12:00:00.000Z");
-    const { store } = createFakeStore({
+    const { repository, store } = createFakeStore({
       syncMarketingContact: async (input) => syncedContacts.push(input),
     });
 
-    await store.recordGeneralInquiry({
+    const result = await store.recordGeneralInquiry({
       email: "subscriber@example.com",
       marketingConsent: true,
       message: "Please send updates.",
@@ -193,16 +213,26 @@ test("marketing contact store syncs opted-in contacts to Resend after persistenc
       submittedAt,
     });
 
-    assert.deepEqual(syncedContacts, [{
-      consentedAt: submittedAt,
-      consentText: GENERAL_INQUIRY_CONSENT_TEXT,
-      email: "subscriber@example.com",
-      instagram: undefined,
-      name: "Subscriber Name",
-      phone: "555-0100",
-      source: "general_inquiry",
-      sourcePath: "/contact",
-    }]);
+    assert.deepEqual(result, { submissionId: "marketing-submission-1", syncJobId: "marketing-sync-1" });
+    assert.equal(repository.syncJobs.length, 1);
+    assert.equal(repository.syncJobs[0].input.contact.emailNormalized, "subscriber@example.com");
+    assert.deepEqual(syncedContacts, []);
+  `);
+});
+
+test("marketing contact store does not enqueue a sync job for non-consenting submissions", () => {
+  runMarketingContactStoreScenario(`
+    const { repository, store } = createFakeStore();
+
+    const result = await store.recordGeneralInquiry({
+      email: "client@example.com",
+      marketingConsent: false,
+      message: "Question about pricing.",
+      name: "Client Name",
+    });
+
+    assert.deepEqual(result, { submissionId: "marketing-submission-1" });
+    assert.equal(repository.syncJobs.length, 0);
   `);
 });
 
@@ -226,6 +256,56 @@ test("marketing contact store records Resend unsubscribe events", () => {
       occurredAt,
       resendContactId: "contact-123",
     });
+  `);
+});
+
+test("marketing contact store skips pending sync jobs when recording unsubscribe", () => {
+  runMarketingContactStoreScenario(`
+    const { repository, store } = createFakeStore();
+    const occurredAt = new Date("2026-05-11T12:00:00.000Z");
+
+    await store.recordGeneralInquiry({
+      email: "Client@Example.COM",
+      marketingConsent: true,
+      message: "Please send updates.",
+      name: "Client Name",
+    });
+    assert.equal(repository.syncJobs.length, 1);
+    assert.equal(repository.syncJobs[0].status, "queued");
+
+    const result = await store.recordResendUnsubscribe({
+      email: "Client@Example.COM",
+      occurredAt,
+    });
+
+    assert.deepEqual(result, { eventId: "marketing-unsubscribe-1" });
+    assert.equal(repository.syncJobs[0].status, "skipped_unconfigured");
+    assert.equal(repository.syncJobs[0].lastError, "Contact unsubscribed before marketing sync");
+    assert.equal(repository.syncJobs[0].skippedAt, occurredAt);
+  `);
+});
+
+test("marketing contact store does not skip already-succeeded sync jobs on unsubscribe", () => {
+  runMarketingContactStoreScenario(`
+    const { repository, store } = createFakeStore();
+    const occurredAt = new Date("2026-05-11T12:00:00.000Z");
+
+    await store.recordGeneralInquiry({
+      email: "Client@Example.COM",
+      marketingConsent: true,
+      message: "Please send updates.",
+      name: "Client Name",
+    });
+    repository.syncJobs[0].status = "succeeded";
+
+    const result = await store.recordResendUnsubscribe({
+      email: "Client@Example.COM",
+      occurredAt,
+    });
+
+    assert.deepEqual(result, { eventId: "marketing-unsubscribe-1" });
+    assert.equal(repository.syncJobs[0].status, "succeeded");
+    assert.equal(repository.syncJobs[0].lastError, undefined);
   `);
 });
 
