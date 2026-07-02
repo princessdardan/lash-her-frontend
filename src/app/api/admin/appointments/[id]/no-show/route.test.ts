@@ -38,6 +38,7 @@ const helperScript = String.raw`
       chargeStatus: "provider_draft_created",
       hasSavedCard: true,
       maxChargeCents: 15000,
+      allowedChargeAmountCents: 15000,
       selectedEnd: new Date("2026-06-20T13:00:00Z"),
     };
   }
@@ -291,6 +292,7 @@ test("admin no-show route reaches charge command for stale publish_pending retry
         updatedAt: new Date("2026-06-20T10:00:00Z"),
         hasSavedCard: true,
         maxChargeCents: 15000,
+        allowedChargeAmountCents: 15000,
         selectedEnd: new Date("2026-06-20T11:00:00Z"),
       }),
       chargeNoShow: async (input) => ({
@@ -367,6 +369,7 @@ test("admin no-show route returns 400 with stable code and allowed amount for lo
         chargeStatus: "provider_draft_created",
         hasSavedCard: true,
         maxChargeCents: 15000,
+        allowedChargeAmountCents: 15000,
         selectedEnd: new Date("2026-06-20T13:00:00Z"),
       }),
     });
@@ -383,7 +386,7 @@ test("admin no-show route returns 400 with stable code and allowed amount for lo
     assert.equal(response.status, 400);
     assert.deepEqual(body, {
       error: "Invalid no-show charge amount",
-      code: "NO_SHOW_AMOUNT_MUST_EQUAL_MAX_CHARGE",
+      code: "NO_SHOW_AMOUNT_MUST_EQUAL_REMAINING_BALANCE",
       allowedAmountCents: 15000,
     });
     assert.deepEqual(chargeCalls, []);
@@ -400,6 +403,7 @@ test("admin no-show route returns 400 with stable code and allowed amount for hi
         chargeStatus: "provider_draft_created",
         hasSavedCard: true,
         maxChargeCents: 15000,
+        allowedChargeAmountCents: 15000,
         selectedEnd: new Date("2026-06-20T13:00:00Z"),
       }),
     });
@@ -416,7 +420,7 @@ test("admin no-show route returns 400 with stable code and allowed amount for hi
     assert.equal(response.status, 400);
     assert.deepEqual(body, {
       error: "Invalid no-show charge amount",
-      code: "NO_SHOW_AMOUNT_MUST_EQUAL_MAX_CHARGE",
+      code: "NO_SHOW_AMOUNT_MUST_EQUAL_REMAINING_BALANCE",
       allowedAmountCents: 15000,
     });
     assert.deepEqual(chargeCalls, []);
@@ -433,6 +437,7 @@ test("admin no-show route maps chargeNoShow amount error to 400 stable response"
         chargeStatus: "provider_draft_created",
         hasSavedCard: true,
         maxChargeCents: 15000,
+        allowedChargeAmountCents: 15000,
         selectedEnd: new Date("2026-06-20T13:00:00Z"),
       }),
       chargeNoShow: async () => {
@@ -455,10 +460,78 @@ test("admin no-show route maps chargeNoShow amount error to 400 stable response"
     assert.equal(response.status, 400);
     assert.deepEqual(body, {
       error: "Invalid no-show charge amount",
-      code: "NO_SHOW_AMOUNT_MUST_EQUAL_MAX_CHARGE",
+      code: "NO_SHOW_AMOUNT_MUST_EQUAL_REMAINING_BALANCE",
       allowedAmountCents: 15000,
     });
     assert.deepEqual(chargeCalls.length, 1);
+  `);
+});
+
+test("admin no-show route exposes the tax-inclusive remaining balance as the allowed charge amount", () => {
+  runRouteScenario(`
+    const { handler, chargeCalls } = runScenario({
+      findBookedAppointmentWithNoShowRecord: async () => ({
+        appointmentId: "appt-123",
+        holdId: "hold-123",
+        noShowChargeRecordId: "nsr-123",
+        chargeStatus: "provider_draft_created",
+        hasSavedCard: true,
+        maxChargeCents: 15500,
+        allowedChargeAmountCents: 11865,
+        selectedEnd: new Date("2026-06-20T13:00:00Z"),
+      }),
+    });
+
+    const response = await handler(createRequest("appt-123", {
+      amountCents: 15500,
+      confirmPolicyCharge: true,
+      idempotencyKey: "idem-1",
+      operatorId: "staff-nataliea",
+      reason: "Client did not attend",
+    }));
+
+    const body = await response.json();
+    assert.equal(response.status, 400);
+    assert.deepEqual(body, {
+      error: "Invalid no-show charge amount",
+      code: "NO_SHOW_AMOUNT_MUST_EQUAL_REMAINING_BALANCE",
+      allowedAmountCents: 11865,
+    });
+    assert.deepEqual(chargeCalls, []);
+  `);
+});
+
+test("admin no-show route rejects full-payment booking with zero remaining balance", () => {
+  runRouteScenario(`
+    const { handler, chargeCalls } = runScenario({
+      findBookedAppointmentWithNoShowRecord: async () => ({
+        appointmentId: "appt-123",
+        holdId: "hold-123",
+        noShowChargeRecordId: "nsr-123",
+        chargeStatus: "ready",
+        hasSavedCard: true,
+        maxChargeCents: 15500,
+        allowedChargeAmountCents: 0,
+        selectedEnd: new Date("2026-06-20T13:00:00Z"),
+      }),
+    });
+
+    const response = await handler(createRequest("appt-123", {
+      amountCents: 100,
+      confirmPolicyCharge: true,
+      idempotencyKey: "idem-1",
+      operatorId: "staff-nataliea",
+      reason: "Client did not attend",
+    }));
+
+    const body = await response.json();
+    assert.equal(response.status, 400);
+    assert.deepEqual(body, {
+      error: "Invalid no-show charge amount",
+      code: "NO_SHOW_AMOUNT_MUST_EQUAL_REMAINING_BALANCE",
+      allowedAmountCents: 0,
+    });
+    assert.deepEqual(chargeCalls, []);
   `);
 });
 

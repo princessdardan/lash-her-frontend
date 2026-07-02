@@ -11,6 +11,7 @@ import type {
 import {
   NoShowInvoiceAmountError,
   STALE_CHARGE_PENDING_MS,
+  getNoShowAllowedChargeAmountCents,
 } from "@/lib/booking/payments/service-no-show-invoice";
 import {
   appointmentHolds,
@@ -685,10 +686,17 @@ export async function createCardOnFileDrizzleRepository(
           };
         }
 
-        if (input.amountCents !== record.maxChargeCents) {
+        const recordDetail = toNoShowChargeRecordDetail(record);
+
+        if (
+          input.amountCents !== getNoShowAllowedChargeAmountCents(recordDetail)
+        ) {
           throw new NoShowInvoiceAmountError(
-            `Amount ${input.amountCents} does not match max charge ${record.maxChargeCents} ${record.currency}`,
-            { allowedAmountCents: record.maxChargeCents },
+            `Amount ${input.amountCents} does not match allowed charge ${getNoShowAllowedChargeAmountCents(recordDetail)} ${record.currency}`,
+            {
+              allowedAmountCents:
+                getNoShowAllowedChargeAmountCents(recordDetail),
+            },
           );
         }
 

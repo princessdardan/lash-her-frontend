@@ -59,11 +59,11 @@ export default async function ServicesPage(): Promise<ReactElement> {
                         {service.description}
                       </p>
                     </div>
-                    <div className="flex w-full flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <span className="font-medium text-black sm:shrink-0">
+                    <div className="flex w-full flex-col items-start gap-3">
+                      <span className="font-medium text-black">
                         {formatCad(service.fullPrice)}
                       </span>
-                      <div className="grid w-full grid-cols-2 gap-3 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
+                      <div className="grid w-full grid-cols-2 gap-3">
                         <Button
                           asChild
                           size="lg"

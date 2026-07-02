@@ -302,6 +302,49 @@ export async function createServiceBookingPaymentRepository(
       };
     },
 
+    async updateNoShowChargeRecord(input) {
+      const set: Record<string, unknown> = {
+        updatedAt: input.updatedAt ?? new Date(),
+      };
+
+      if (input.status !== undefined) {
+        set.status = input.status;
+      }
+      if (input.squareInvoiceId !== undefined) {
+        set.squareInvoiceId = input.squareInvoiceId;
+      }
+      if (input.squareOrderId !== undefined) {
+        set.squareOrderId = input.squareOrderId;
+      }
+      if (input.squarePaymentId !== undefined) {
+        set.squarePaymentId = input.squarePaymentId;
+      }
+      if (input.providerStatus !== undefined) {
+        set.providerStatus = input.providerStatus;
+      }
+      if (input.providerFailureReason !== undefined) {
+        set.providerFailureReason = input.providerFailureReason;
+      }
+      if (input.providerMetadata !== undefined) {
+        set.providerMetadata = input.providerMetadata;
+      }
+      if (input.chargedAt !== undefined) {
+        set.chargedAt = input.chargedAt;
+      }
+
+      const [row] = await db
+        .update(bookingNoShowChargeRecords)
+        .set(set)
+        .where(eq(bookingNoShowChargeRecords.id, input.noShowChargeRecordId))
+        .returning();
+
+      if (row === undefined) {
+        throw new Error("No-show charge record not found");
+      }
+
+      return { id: row.id, status: row.status };
+    },
+
     async createNoShowChargeRecord(input) {
       return db.transaction(async (tx) => {
         // Atomic upsert: on conflict by holdId, align the no-show record with
@@ -318,6 +361,7 @@ export async function createServiceBookingPaymentRepository(
             maxChargeCents: input.maxChargeCents,
             currency: input.currency,
             status: input.status,
+            providerMetadata: input.providerMetadata,
             createdAt: input.now,
             updatedAt: input.now,
           })
@@ -331,6 +375,7 @@ export async function createServiceBookingPaymentRepository(
               maxChargeCents: input.maxChargeCents,
               currency: input.currency,
               status: input.status,
+              providerMetadata: input.providerMetadata,
               updatedAt: input.now,
             },
           })

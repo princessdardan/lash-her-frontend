@@ -12,6 +12,7 @@ import type {
   SquareGetPaymentResponse,
   SquarePaymentsClient,
 } from "@/lib/payments/square/payments-client";
+import type { SquareInvoicesClient } from "@/lib/payments/square/invoice-client";
 import { calculateServiceBookingHstQuote } from "@/lib/booking/service-tax-policy";
 
 import type { CardOnFileCalendarFinalizer } from "./service-card-on-file";
@@ -27,6 +28,10 @@ import {
   type ResolvedServicePaymentSelection,
   type ServicePaymentPricingSnapshot,
 } from "./service-payment-selection";
+import {
+  createDraftNoShowInvoice,
+  type CreateDraftNoShowInvoiceRepository,
+} from "./service-no-show-invoice";
 
 export interface ChargeAndStoreBookingRequestBody {
   customer: {
@@ -77,7 +82,7 @@ export type ChargeAndStoreBookingResult =
       message: string;
     };
 
-export interface ChargeAndStoreRepository {
+export interface ChargeAndStoreRepository extends CreateDraftNoShowInvoiceRepository {
   claimPaymentAttempt(input: {
     paymentSessionReference: string;
     idempotencyKey: string;
@@ -150,6 +155,7 @@ export interface ChargeAndStoreRepository {
     maxChargeCents: number;
     currency: "CAD";
     status: "ready";
+    providerMetadata?: Record<string, unknown>;
     now: Date;
   }): Promise<{ id: string; status: "ready" }>;
   markHoldBooked(input: {
@@ -202,11 +208,13 @@ export interface RecordMarketingChoiceInput {
 export interface ConfirmChargeAndStoreBookingDependencies {
   alerts: ServicePaymentAlertLogger;
   calendarFinalizer: CardOnFileCalendarFinalizer;
+  locationId: string;
   now?: Date;
   recordMarketingChoice?: (input: RecordMarketingChoiceInput) => Promise<void>;
   repository: ChargeAndStoreRepository;
   squareCards: SquareCardsClient;
   squareCustomers: SquareCustomerGateway;
+  squareInvoices: SquareInvoicesClient;
   squarePayments: SquarePaymentsClient;
 }
 
@@ -373,6 +381,25 @@ export async function confirmChargeAndStoreBooking(
     };
   }
 
+  // The policy max and no-show charge record must reflect the full booked
+  // service value, not the amount paid at booking time. This lets admin
+  // no-show charges collect the remaining balance for deposit or custom
+  // partial bookings.
+  const fullBookedServiceAmountCents =
+    pricing.fullPriceCents + pricing.addOnPriceCents;
+  const paidAtBookingCents = resolvedPayment.amountCents;
+  const remainingBalanceCents = Math.max(
+    0,
+    fullBookedServiceAmountCents - paidAtBookingCents,
+  );
+  const fullBookedTaxQuote = calculateServiceBookingHstQuote(
+    fullBookedServiceAmountCents,
+  );
+  const remainingBalanceTaxQuote =
+    remainingBalanceCents > 0
+      ? calculateServiceBookingHstQuote(remainingBalanceCents)
+      : undefined;
+
   // The client contract keeps expectedAmountCents as the pre-tax service
   // amount. Tax is computed server-side from the trusted resolved amount and
   // charged to Square so Ontario HST is actually collected, not just displayed.
@@ -455,7 +482,7 @@ export async function confirmChargeAndStoreBooking(
     customerEmail: input.customer.email,
     customerName: input.customer.name,
     ipAddress: input.ipAddress,
-    maxChargeCents: resolvedPayment.amountCents,
+    maxChargeCents: fullBookedServiceAmountCents,
     userAgent: input.userAgent,
   });
 
@@ -716,18 +743,38 @@ export async function confirmChargeAndStoreBooking(
     };
   }
 
+  const noShowAmountSnapshot = {
+    fullBookedServiceAmountCents,
+    fullBookedServiceTaxCents: fullBookedTaxQuote.taxAmountCents,
+    fullBookedServiceTotalCents: fullBookedTaxQuote.expectedAmountCents,
+    paidAtBookingCents,
+    paidAtBookingTaxCents: taxQuote.taxAmountCents,
+    paidAtBookingTotalCents: taxQuote.expectedAmountCents,
+    remainingBalanceCents,
+    remainingBalanceTaxCents: remainingBalanceTaxQuote?.taxAmountCents ?? 0,
+    remainingBalanceWithTaxCents:
+      remainingBalanceTaxQuote?.expectedAmountCents ?? 0,
+  };
+
+  let noShowChargeRecord: { id: string; status: "ready" };
+
   try {
-    await dependencies.repository.createNoShowChargeRecord({
-      holdId: hold.id,
-      savedPaymentMethodId: savedPaymentMethod.id,
-      policyAcceptanceId: policyAcceptance.id,
-      squareCustomerId: squareCustomer.squareCustomerId,
-      squareCardId: savedPaymentMethod.squareCardId,
-      maxChargeCents: resolvedPayment.amountCents,
-      currency: "CAD",
-      status: "ready",
-      now,
-    });
+    noShowChargeRecord = await dependencies.repository.createNoShowChargeRecord(
+      {
+        holdId: hold.id,
+        savedPaymentMethodId: savedPaymentMethod.id,
+        policyAcceptanceId: policyAcceptance.id,
+        squareCustomerId: squareCustomer.squareCustomerId,
+        squareCardId: savedPaymentMethod.squareCardId,
+        maxChargeCents: fullBookedServiceAmountCents,
+        currency: "CAD",
+        status: "ready",
+        providerMetadata: {
+          amountSnapshot: noShowAmountSnapshot,
+        },
+        now,
+      },
+    );
   } catch (error) {
     await alertInfrastructureError(
       dependencies,
@@ -765,6 +812,84 @@ export async function confirmChargeAndStoreBooking(
       error: "infrastructure_error",
       message: "Unable to initialize no-show charge record",
     };
+  }
+
+  // If the customer did not pay the full service amount up front, create a
+  // Square draft no-show invoice for the remaining balance so the admin
+  // no-show path can charge it later without storing additional card details.
+  if (remainingBalanceCents > 0) {
+    try {
+      await createDraftNoShowInvoice(
+        {
+          cardId: savedPaymentMethod.squareCardId,
+          customerEmail: input.customer.email,
+          customerId: squareCustomer.squareCustomerId,
+          holdId: hold.id,
+          idempotencyKey: makeSquareIdempotencyKey("noshow-invoice", hold.id),
+          maxChargeCents: fullBookedServiceAmountCents,
+          chargeableAmountCents: remainingBalanceCents,
+          noShowChargeRecordId: noShowChargeRecord.id,
+          providerMetadata: {
+            amountSnapshot: noShowAmountSnapshot,
+          },
+          serviceDescription: resolvedPayment.description,
+        },
+        {
+          locationId: dependencies.locationId,
+          repository: dependencies.repository,
+          squareInvoices: dependencies.squareInvoices,
+        },
+      );
+    } catch (error) {
+      const reason =
+        error instanceof Error
+          ? error.message
+          : "Unknown no-show invoice failure";
+
+      await dependencies.alerts.alert({
+        category: "no_show_charge_failed",
+        severity: "warning",
+        message:
+          "Square no-show draft invoice creation failed for charge-and-store booking",
+        context: {
+          holdId: hold.id,
+          holdReference: hold.publicReference,
+          squarePaymentId: paymentResponse.payment.id,
+          reason,
+        },
+      });
+
+      try {
+        await dependencies.squarePayments.cancelPayment(
+          paymentResponse.payment.id,
+        );
+      } catch {
+        await dependencies.alerts.alert({
+          category: "square_webhook_retryable_failure",
+          severity: "warning",
+          message:
+            "Failed to cancel Square payment after no-show draft invoice creation failed",
+          context: {
+            holdId: hold.id,
+            holdReference: hold.publicReference,
+            squarePaymentId: paymentResponse.payment.id,
+          },
+        });
+      }
+
+      await markHoldPaymentFailedSafe(
+        dependencies,
+        hold.id,
+        "Unable to secure remaining balance for no-show protection",
+        now,
+      );
+
+      return {
+        ok: false,
+        error: "square_api_error",
+        message: "Unable to secure remaining balance for no-show protection",
+      };
+    }
   }
 
   const squarePaymentId = paymentResponse.payment.id;

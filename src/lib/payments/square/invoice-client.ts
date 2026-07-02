@@ -18,10 +18,25 @@ export interface SquareCreateOrderRequest {
     reference_id?: string;
     source?: { name?: string };
     metadata?: Record<string, string>;
+    discounts?: Array<{
+      amount_money: SquareMoney;
+      name: string;
+      scope: "ORDER";
+      type: "FIXED_AMOUNT";
+      uid: string;
+    }>;
     line_items: Array<{
+      applied_taxes?: Array<{ tax_uid: string }>;
       name: string;
       quantity: string;
       base_price_money: SquareMoney;
+    }>;
+    taxes?: Array<{
+      name: string;
+      percentage: string;
+      scope: "LINE_ITEM";
+      type: "ADDITIVE";
+      uid: string;
     }>;
   };
 }

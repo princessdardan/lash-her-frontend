@@ -258,7 +258,7 @@ export function ServiceBookingPaymentForm({
             autoComplete="name"
             value={fullName}
             onChange={(event) => setFullName(event.target.value)}
-            placeholder="Jane Doe"
+            placeholder="Your Name"
           />
           {fullNameError && (
             <p className="text-sm font-medium text-red-600">{fullNameError}</p>
@@ -273,7 +273,7 @@ export function ServiceBookingPaymentForm({
             autoComplete="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            placeholder="jane@example.com"
+            placeholder="youremail@email.com"
           />
           {emailError && (
             <p className="text-sm font-medium text-red-600">{emailError}</p>

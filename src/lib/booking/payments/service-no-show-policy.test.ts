@@ -163,7 +163,7 @@ test("buildServiceNoShowPolicyAcceptance rejects missing max charge amount", () 
         accepted: true,
         acceptedAt: new Date("2026-06-19T12:00:00.000Z"),
         customerEmail: "client@example.com",
-        customerName: "Jane Doe",
+        customerName: "Your Name",
         maxChargeCents: undefined as unknown as number,
         policyText: "Policy text",
       }),
@@ -178,7 +178,7 @@ test("buildServiceNoShowPolicyAcceptance rejects zero max charge amount", () => 
         accepted: true,
         acceptedAt: new Date("2026-06-19T12:00:00.000Z"),
         customerEmail: "client@example.com",
-        customerName: "Jane Doe",
+        customerName: "Your Name",
         maxChargeCents: 0,
         policyText: "Policy text",
       }),
@@ -193,7 +193,7 @@ test("buildServiceNoShowPolicyAcceptance rejects negative max charge amount", ()
         accepted: true,
         acceptedAt: new Date("2026-06-19T12:00:00.000Z"),
         customerEmail: "client@example.com",
-        customerName: "Jane Doe",
+        customerName: "Your Name",
         maxChargeCents: -100,
         policyText: "Policy text",
       }),
@@ -211,7 +211,7 @@ test("buildServiceNoShowPolicyAcceptance returns normalized audit metadata witho
     accepted: true,
     acceptedAt,
     customerEmail: "client@example.com",
-    customerName: "Jane Doe",
+    customerName: "Your Name",
     ipAddress,
     maxChargeCents: 14_500,
     policyText,
@@ -224,7 +224,7 @@ test("buildServiceNoShowPolicyAcceptance returns normalized audit metadata witho
   assert.equal(result.maxChargeCents, 14_500);
   assert.equal(result.currency, "CAD");
   assert.equal(result.customerEmail, "client@example.com");
-  assert.equal(result.customerName, "Jane Doe");
+  assert.equal(result.customerName, "Your Name");
   assert.equal(result.ipAddressHash, sha256Hex(ipAddress));
   assert.equal(result.userAgentHash, sha256Hex(userAgent));
   assert.equal("ipAddress" in result, false);
@@ -239,7 +239,7 @@ test("getCanonicalServiceNoShowPolicyEvidence uses server policy text and versio
   const result = getCanonicalServiceNoShowPolicyEvidence({
     acceptedAt,
     customerEmail: "client@example.com",
-    customerName: "Jane Doe",
+    customerName: "Your Name",
     ipAddress,
     maxChargeCents: 14_500,
     userAgent,
@@ -273,7 +273,7 @@ test("getCanonicalServiceNoShowPolicyEvidence omits hashes when IP/UA are absent
   const result = getCanonicalServiceNoShowPolicyEvidence({
     acceptedAt: new Date("2026-06-19T12:00:00.000Z"),
     customerEmail: "client@example.com",
-    customerName: "Jane Doe",
+    customerName: "Your Name",
     maxChargeCents: 10_000,
   });
 

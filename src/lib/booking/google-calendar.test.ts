@@ -35,7 +35,7 @@ test("buildBookingEventPayload creates the booking event without conference data
     bookingTypeLabel: "Training sign-up call",
     customer: {
       name: "Jane Client",
-      email: "jane@example.com",
+      email: "youremail@email.com",
       phone: "555-555-5555",
     },
     answers: [
@@ -54,7 +54,7 @@ test("buildBookingEventPayload creates the booking event without conference data
     "Lash Her booking: Training sign-up call — Jane Client",
   );
   assert.deepEqual(event.attendees, [
-    { email: "jane@example.com", displayName: "Jane Client" },
+    { email: "youremail@email.com", displayName: "Jane Client" },
   ]);
   assert.equal(Object.hasOwn(event, "conferenceData"), false);
   assert.match(event.description ?? "", /555-555-5555/);
@@ -81,7 +81,7 @@ test("buildBookingEventPayload includes deterministic private booking metadata",
     bookingTypeLabel: "Lash fill",
     customer: {
       name: "Jane Client",
-      email: "jane@example.com",
+      email: "youremail@email.com",
       phone: "555-555-5555",
     },
     answers: [],
@@ -111,7 +111,7 @@ test("buildBookingEventPayload includes selected add-on balance copy for staff o
     bookingTypeLabel: "Lash fill",
     customer: {
       name: "Jane Client",
-      email: "jane@example.com",
+      email: "youremail@email.com",
       phone: "555-555-5555",
     },
     answers: [],
@@ -137,7 +137,7 @@ test("buildBookingEventPayload includes selected add-on included copy for staff 
     bookingTypeLabel: "Lash fill",
     customer: {
       name: "Jane Client",
-      email: "jane@example.com",
+      email: "youremail@email.com",
       phone: "555-555-5555",
     },
     answers: [],

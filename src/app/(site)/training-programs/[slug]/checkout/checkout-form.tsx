@@ -27,7 +27,9 @@ function getSquareInvoicePublicUrl(value: unknown): string | null {
 
   try {
     const url = new URL(publicUrl);
-    return url.protocol === "https:" || url.hostname === "localhost" ? url.toString() : null;
+    return url.protocol === "https:" || url.hostname === "localhost"
+      ? url.toString()
+      : null;
   } catch {
     return null;
   }
@@ -48,18 +50,27 @@ export function CheckoutForm({
   const [email, setEmail] = useState("");
   const [acknowledged, setAcknowledged] = useState(false);
   const [promotionCodeInput, setPromotionCodeInput] = useState("");
-  const [redeemedPromotionCode, setRedeemedPromotionCode] = useState<string | undefined>();
+  const [redeemedPromotionCode, setRedeemedPromotionCode] = useState<
+    string | undefined
+  >();
   const [promotionDiscount, setPromotionDiscount] = useState(0);
   const [discountedSubtotal, setDiscountedSubtotal] = useState(subtotal);
   const [discountedTax, setDiscountedTax] = useState(tax);
   const [discountedTotal, setDiscountedTotal] = useState(total);
-  const [promotionCodeError, setPromotionCodeError] = useState<string | null>(null);
+  const [promotionCodeError, setPromotionCodeError] = useState<string | null>(
+    null,
+  );
   const [isApplyingPromotionCode, setIsApplyingPromotionCode] = useState(false);
-  const [isStartingAfterpayInvoice, setIsStartingAfterpayInvoice] = useState(false);
-  const [afterpayInvoiceError, setAfterpayInvoiceError] = useState<string | null>(null);
+  const [isStartingAfterpayInvoice, setIsStartingAfterpayInvoice] =
+    useState(false);
+  const [afterpayInvoiceError, setAfterpayInvoiceError] = useState<
+    string | null
+  >(null);
 
   const isValid = name.trim().length > 0 && email.includes("@") && acknowledged;
-  const amountBeforePromotion = redeemedPromotionCode ? subtotal : discountedSubtotal;
+  const amountBeforePromotion = redeemedPromotionCode
+    ? subtotal
+    : discountedSubtotal;
   const afterpayInvoiceDescriptionIds = afterpayInvoiceError
     ? "training-afterpay-invoice-note training-afterpay-invoice-error"
     : "training-afterpay-invoice-note";
@@ -82,7 +93,9 @@ export function CheckoutForm({
       });
 
       if (!response.ok) {
-        setPromotionCodeError("This code is not valid for this training program.");
+        setPromotionCodeError(
+          "This code is not valid for this training program.",
+        );
         setRedeemedPromotionCode(undefined);
         setPromotionDiscount(0);
         setDiscountedSubtotal(subtotal);
@@ -91,13 +104,15 @@ export function CheckoutForm({
         return;
       }
 
-      const data = await response.json() as {
+      const data = (await response.json()) as {
         promotionCode?: string;
         discountAmount?: number;
         trainingQuote?: { subtotal: number; tax: number; total: number };
       };
       if (!data.promotionCode || !data.trainingQuote) {
-        setPromotionCodeError("This code is not valid for this training program.");
+        setPromotionCodeError(
+          "This code is not valid for this training program.",
+        );
         setRedeemedPromotionCode(undefined);
         setPromotionDiscount(0);
         setDiscountedSubtotal(subtotal);
@@ -134,7 +149,8 @@ export function CheckoutForm({
   };
 
   const handleStartAfterpayInvoice = async () => {
-    if (!isValid || isStartingAfterpayInvoice || !afterpaySquareInvoiceEnabled) return;
+    if (!isValid || isStartingAfterpayInvoice || !afterpaySquareInvoiceEnabled)
+      return;
 
     setAfterpayInvoiceError(null);
     setIsStartingAfterpayInvoice(true);
@@ -148,27 +164,38 @@ export function CheckoutForm({
           customerName: name,
           customerEmail: email,
           clientPrice,
-          ...(redeemedPromotionCode ? { promotionCode: redeemedPromotionCode } : {}),
+          ...(redeemedPromotionCode
+            ? { promotionCode: redeemedPromotionCode }
+            : {}),
         }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => null) as { error?: string } | null;
-        setAfterpayInvoiceError(errorData?.error ?? "Unable to start the invoice checkout. Please try again.");
+        const errorData = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        setAfterpayInvoiceError(
+          errorData?.error ??
+            "Unable to start the invoice checkout. Please try again.",
+        );
         setIsStartingAfterpayInvoice(false);
         return;
       }
 
       const publicUrl = getSquareInvoicePublicUrl(await response.json());
       if (!publicUrl) {
-        setAfterpayInvoiceError("Unable to open the invoice checkout. Please try again.");
+        setAfterpayInvoiceError(
+          "Unable to open the invoice checkout. Please try again.",
+        );
         setIsStartingAfterpayInvoice(false);
         return;
       }
 
       window.location.assign(publicUrl);
     } catch {
-      setAfterpayInvoiceError("Unable to start the invoice checkout. Please try again.");
+      setAfterpayInvoiceError(
+        "Unable to start the invoice checkout. Please try again.",
+      );
       setIsStartingAfterpayInvoice(false);
     }
   };
@@ -182,7 +209,11 @@ export function CheckoutForm({
             <span className="flex items-baseline gap-2">
               {originalSubtotal !== undefined || redeemedPromotionCode ? (
                 <span className="text-sm text-lh-shadow/50 line-through">
-                  {formatCad(redeemedPromotionCode ? amountBeforePromotion : originalSubtotal ?? amountBeforePromotion)}
+                  {formatCad(
+                    redeemedPromotionCode
+                      ? amountBeforePromotion
+                      : (originalSubtotal ?? amountBeforePromotion),
+                  )}
                 </span>
               ) : null}
               <span>{formatCad(discountedSubtotal)}</span>
@@ -208,13 +239,17 @@ export function CheckoutForm({
             <span>Total</span>
             <span className="flex items-baseline gap-2">
               {redeemedPromotionCode ? (
-                <span className="text-sm text-lh-shadow/50 line-through">{formatCad(total)}</span>
+                <span className="text-sm text-lh-shadow/50 line-through">
+                  {formatCad(total)}
+                </span>
               ) : null}
               <span>{formatCad(discountedTotal)}</span>
             </span>
           </div>
         </div>
-        <p className="text-sm text-lh-shadow/70 text-right">Taxes calculated in {currency}</p>
+        <p className="text-sm text-lh-shadow/70 text-right">
+          Taxes calculated in {currency}
+        </p>
       </div>
 
       <div className="rounded-[24px] border border-lh-neutral/20 bg-white/70 p-5">
@@ -223,7 +258,9 @@ export function CheckoutForm({
           <Input
             id="training-promotion-code"
             value={promotionCodeInput}
-            onChange={(event) => setPromotionCodeInput(event.target.value.toUpperCase())}
+            onChange={(event) =>
+              setPromotionCodeInput(event.target.value.toUpperCase())
+            }
             placeholder="Enter code"
             disabled={isApplyingPromotionCode}
             autoComplete="off"
@@ -232,11 +269,22 @@ export function CheckoutForm({
           <Button
             type="button"
             variant="ghost"
-            onClick={redeemedPromotionCode ? handleRemovePromotionCode : handleApplyPromotionCode}
-            disabled={isApplyingPromotionCode || (!redeemedPromotionCode && !promotionCodeInput.trim())}
+            onClick={
+              redeemedPromotionCode
+                ? handleRemovePromotionCode
+                : handleApplyPromotionCode
+            }
+            disabled={
+              isApplyingPromotionCode ||
+              (!redeemedPromotionCode && !promotionCodeInput.trim())
+            }
             className="rounded-full border-lh-primary/30 px-5 font-body text-sm uppercase tracking-[0.12em] hover:bg-lh-primary-soft hover:text-lh-primary"
           >
-            {isApplyingPromotionCode ? "Applying" : redeemedPromotionCode ? "Remove" : "Apply"}
+            {isApplyingPromotionCode
+              ? "Applying"
+              : redeemedPromotionCode
+                ? "Remove"
+                : "Apply"}
           </Button>
         </div>
         {redeemedPromotionCode ? (
@@ -245,14 +293,19 @@ export function CheckoutForm({
           </p>
         ) : null}
         {promotionCodeError ? (
-          <p className="mt-2 font-body text-xs font-bold text-lh-accent" role="alert">
+          <p
+            className="mt-2 font-body text-xs font-bold text-lh-accent"
+            role="alert"
+          >
             {promotionCodeError}
           </p>
         ) : null}
       </div>
 
       <div className="space-y-4">
-        <h3 className="section-subheading text-lg md:text-lg lg:text-lg">Your Details</h3>
+        <h3 className="section-subheading text-lg md:text-lg lg:text-lg">
+          Your Details
+        </h3>
         <div className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="name">Full Name</Label>
@@ -261,7 +314,7 @@ export function CheckoutForm({
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Jane Doe"
+              placeholder="Your Name"
               required
               className="bg-white"
             />
@@ -273,7 +326,7 @@ export function CheckoutForm({
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="jane@example.com"
+              placeholder="youremail@email.com"
               required
               className="bg-white"
             />
@@ -282,7 +335,9 @@ export function CheckoutForm({
       </div>
 
       <div className="space-y-4">
-        <h3 className="section-subheading text-lg md:text-lg lg:text-lg">What happens next?</h3>
+        <h3 className="section-subheading text-lg md:text-lg lg:text-lg">
+          What happens next?
+        </h3>
         <ul className="space-y-3 text-lh-shadow/80">
           <li className="flex items-start gap-3">
             <span className="text-lh-shadow mt-1">•</span>
@@ -290,11 +345,17 @@ export function CheckoutForm({
           </li>
           <li className="flex items-start gap-3">
             <span className="text-lh-shadow mt-1">•</span>
-            <span>Receive an email with a 14-day link to schedule your training call.</span>
+            <span>
+              Receive an email with a 14-day link to schedule your training
+              call.
+            </span>
           </li>
           <li className="flex items-start gap-3">
             <span className="text-lh-shadow mt-1">•</span>
-            <span>Any training dates or program details after that call are coordinated manually.</span>
+            <span>
+              Any training dates or program details after that call are
+              coordinated manually.
+            </span>
           </li>
         </ul>
       </div>
@@ -316,7 +377,8 @@ export function CheckoutForm({
               I acknowledge the terms
             </Label>
             <p className="text-sm text-lh-shadow/70">
-              I understand that this payment is non-refundable and secures my enrollment in the training program.
+              I understand that this payment is non-refundable and secures my
+              enrollment in the training program.
             </p>
           </div>
         </div>
@@ -334,7 +396,9 @@ export function CheckoutForm({
           <div className="rounded-[24px] border border-lh-line bg-lh-neutral-2/60 p-5">
             <div className="mb-4 flex items-center gap-4">
               <div className="h-px flex-1 bg-lh-line" aria-hidden="true" />
-              <p className="font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-muted">Secondary option</p>
+              <p className="font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-muted">
+                Secondary option
+              </p>
               <div className="h-px flex-1 bg-lh-line" aria-hidden="true" />
             </div>
             <Button
@@ -346,13 +410,23 @@ export function CheckoutForm({
               aria-describedby={afterpayInvoiceDescriptionIds}
               className="h-12 w-full rounded-full border-lh-primary/30 px-6 font-body text-sm uppercase tracking-[0.12em] text-lh-shadow hover:bg-lh-primary-soft hover:text-lh-primary"
             >
-              {isStartingAfterpayInvoice ? "Preparing invoice..." : "Pay with Afterpay"}
+              {isStartingAfterpayInvoice
+                ? "Preparing invoice..."
+                : "Pay with Afterpay"}
             </Button>
-            <p id="training-afterpay-invoice-note" className="mt-3 text-center font-body text-xs font-bold leading-6 text-lh-shadow/65">
-              Afterpay availability is determined by Square at checkout. Your enrollment will be activated once the invoice is paid.
+            <p
+              id="training-afterpay-invoice-note"
+              className="mt-3 text-center font-body text-xs font-bold leading-6 text-lh-shadow/65"
+            >
+              Afterpay availability is determined by Square at checkout. Your
+              enrollment will be activated once the invoice is paid.
             </p>
             {afterpayInvoiceError ? (
-              <p id="training-afterpay-invoice-error" className="mt-3 font-body text-xs font-bold text-lh-accent" role="alert">
+              <p
+                id="training-afterpay-invoice-error"
+                className="mt-3 font-body text-xs font-bold text-lh-accent"
+                role="alert"
+              >
                 {afterpayInvoiceError}
               </p>
             ) : null}

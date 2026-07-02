@@ -2,6 +2,12 @@ import type {
   BookingNoShowProviderMetadata,
   NoShowChargeStatus,
 } from "@/lib/private-db/schema";
+import {
+  calculateServiceBookingHstQuote,
+  SERVICE_BOOKING_HST_PERCENTAGE,
+  SERVICE_BOOKING_HST_TAX_NAME,
+  SERVICE_BOOKING_HST_TAX_UID,
+} from "@/lib/booking/service-tax-policy";
 import type {
   SquareCreateInvoiceRequest,
   SquareCreateInvoiceResponse,
@@ -17,12 +23,14 @@ import { type ServicePaymentAlertLogger } from "./service-payment-alerts";
 
 export interface CreateDraftNoShowInvoiceInput {
   cardId: string;
+  chargeableAmountCents?: number;
   customerEmail: string;
   customerId: string;
   holdId: string;
   idempotencyKey: string;
   maxChargeCents: number;
   noShowChargeRecordId: string;
+  providerMetadata?: BookingNoShowProviderMetadata;
   serviceDescription: string;
 }
 
@@ -282,11 +290,67 @@ export function validateNoShowAdminAction(input: {
   return { operatorId, reason };
 }
 
+export interface NoShowChargeAmountSnapshot {
+  fullBookedServiceAmountCents: number;
+  fullBookedServiceTaxCents?: number;
+  fullBookedServiceTotalCents?: number;
+  paidAtBookingCents: number;
+  paidAtBookingTaxCents?: number;
+  paidAtBookingTotalCents?: number;
+  remainingBalanceCents: number;
+  remainingBalanceTaxCents?: number;
+  remainingBalanceWithTaxCents?: number;
+}
+
+export function getNoShowAllowedChargeAmountCents(
+  record: Pick<NoShowChargeRecordDetail, "maxChargeCents" | "providerMetadata">,
+): number {
+  const snapshot = record.providerMetadata?.amountSnapshot as
+    | NoShowChargeAmountSnapshot
+    | undefined;
+
+  if (
+    snapshot !== undefined &&
+    typeof snapshot === "object" &&
+    snapshot !== null &&
+    typeof snapshot.remainingBalanceWithTaxCents === "number" &&
+    Number.isInteger(snapshot.remainingBalanceWithTaxCents) &&
+    snapshot.remainingBalanceWithTaxCents >= 0
+  ) {
+    return snapshot.remainingBalanceWithTaxCents;
+  }
+
+  if (
+    snapshot !== undefined &&
+    typeof snapshot === "object" &&
+    snapshot !== null &&
+    typeof snapshot.remainingBalanceCents === "number" &&
+    Number.isInteger(snapshot.remainingBalanceCents) &&
+    snapshot.remainingBalanceCents >= 0
+  ) {
+    return snapshot.remainingBalanceCents;
+  }
+
+  return record.maxChargeCents;
+}
+
 export async function createDraftNoShowInvoice(
   input: CreateDraftNoShowInvoiceInput,
   dependencies: CreateDraftNoShowInvoiceDependencies,
 ): Promise<CreateDraftNoShowInvoiceResult> {
-  const orderRequest = buildOrderRequest(input, dependencies.locationId);
+  const amountSnapshot = buildNoShowChargeAmountSnapshot(input);
+  const providerMetadata = {
+    ...input.providerMetadata,
+    amountSnapshot,
+  } satisfies BookingNoShowProviderMetadata;
+  const enrichedInput = {
+    ...input,
+    providerMetadata,
+  };
+  const orderRequest = buildOrderRequest(
+    enrichedInput,
+    dependencies.locationId,
+  );
 
   let orderResponse: SquareCreateOrderResponse;
   try {
@@ -298,7 +362,7 @@ export async function createDraftNoShowInvoice(
   }
 
   const invoiceRequest = buildInvoiceRequest(
-    input,
+    enrichedInput,
     dependencies.locationId,
     orderResponse.order.id,
   );
@@ -371,6 +435,7 @@ export async function createDraftNoShowInvoice(
     squareOrderId: orderResponse.order.id,
     providerStatus: invoiceResponse.invoice.status,
     providerMetadata: {
+      ...enrichedInput.providerMetadata,
       squareInvoiceVersion: invoiceResponse.invoice.version,
     } satisfies BookingNoShowProviderMetadata,
   };
@@ -424,11 +489,13 @@ export async function chargeNoShowInvoice(
     throw new NoShowInvoiceChargeError("No-show charge record not found");
   }
 
-  // v1 automated charge only supports the exact prebuilt draft invoice amount.
-  if (input.amountCents !== record.maxChargeCents) {
+  // v1 automated charge supports only the exact remaining balance (or the
+  // original max charge for legacy records without an amount snapshot).
+  const allowedAmountCents = getNoShowAllowedChargeAmountCents(record);
+  if (input.amountCents !== allowedAmountCents) {
     throw new NoShowInvoiceAmountError(
-      `Amount ${input.amountCents} does not match max charge ${record.maxChargeCents} ${record.currency}`,
-      { allowedAmountCents: record.maxChargeCents },
+      `Amount ${input.amountCents} does not match allowed charge ${allowedAmountCents} ${record.currency}`,
+      { allowedAmountCents },
     );
   }
 
@@ -1200,10 +1267,65 @@ function getInvoiceVersion(
   return undefined;
 }
 
+function buildNoShowChargeAmountSnapshot(
+  input: CreateDraftNoShowInvoiceInput,
+): NoShowChargeAmountSnapshot {
+  const existingSnapshot = input.providerMetadata?.amountSnapshot as
+    | NoShowChargeAmountSnapshot
+    | undefined;
+  const chargeableAmountCents =
+    input.chargeableAmountCents ?? input.maxChargeCents;
+  const fullBookedQuote = calculateServiceBookingHstQuote(input.maxChargeCents);
+  const paidAtBookingCents = Math.max(
+    0,
+    input.maxChargeCents - chargeableAmountCents,
+  );
+  const paidAtBookingTaxCents =
+    paidAtBookingCents > 0
+      ? calculateServiceBookingHstQuote(paidAtBookingCents).taxAmountCents
+      : 0;
+  const remainingQuote = calculateServiceBookingHstQuote(chargeableAmountCents);
+
+  return {
+    ...existingSnapshot,
+    fullBookedServiceAmountCents: input.maxChargeCents,
+    paidAtBookingCents,
+    remainingBalanceCents: chargeableAmountCents,
+    fullBookedServiceTaxCents: fullBookedQuote.taxAmountCents,
+    fullBookedServiceTotalCents: fullBookedQuote.expectedAmountCents,
+    paidAtBookingTaxCents,
+    paidAtBookingTotalCents: paidAtBookingCents + paidAtBookingTaxCents,
+    remainingBalanceTaxCents: remainingQuote.taxAmountCents,
+    remainingBalanceWithTaxCents: remainingQuote.expectedAmountCents,
+  };
+}
+
 function buildOrderRequest(
   input: CreateDraftNoShowInvoiceInput,
   locationId: string,
 ): SquareCreateOrderRequest {
+  const chargeableAmountCents =
+    input.chargeableAmountCents ?? input.maxChargeCents;
+  const paidAtBookingCents = Math.max(
+    0,
+    input.maxChargeCents - chargeableAmountCents,
+  );
+  const discounts =
+    paidAtBookingCents > 0
+      ? [
+          {
+            amount_money: {
+              amount: paidAtBookingCents,
+              currency: "CAD",
+            },
+            name: "Paid at booking",
+            scope: "ORDER" as const,
+            type: "FIXED_AMOUNT" as const,
+            uid: "paid-at-booking",
+          },
+        ]
+      : undefined;
+
   return {
     idempotency_key: input.idempotencyKey,
     order: {
@@ -1214,14 +1336,25 @@ function buildOrderRequest(
         noShowChargeRecordId: input.noShowChargeRecordId,
         holdId: input.holdId,
       },
+      ...(discounts !== undefined ? { discounts } : {}),
       line_items: [
         {
+          applied_taxes: [{ tax_uid: SERVICE_BOOKING_HST_TAX_UID }],
           name: input.serviceDescription,
           quantity: "1",
           base_price_money: {
             amount: input.maxChargeCents,
             currency: "CAD",
           },
+        },
+      ],
+      taxes: [
+        {
+          name: SERVICE_BOOKING_HST_TAX_NAME,
+          percentage: SERVICE_BOOKING_HST_PERCENTAGE,
+          scope: "LINE_ITEM",
+          type: "ADDITIVE",
+          uid: SERVICE_BOOKING_HST_TAX_UID,
         },
       ],
     },

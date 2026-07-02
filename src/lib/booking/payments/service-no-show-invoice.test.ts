@@ -13,6 +13,7 @@ import type { ServicePaymentAlertLogger } from "./service-payment-alerts";
 import {
   chargeNoShowInvoice,
   createDraftNoShowInvoice,
+  getNoShowAllowedChargeAmountCents,
   NoShowInvoiceAmountError,
   STALE_CHARGE_PENDING_MS,
   type CreateDraftNoShowInvoiceInput,
@@ -172,7 +173,7 @@ function createFakeSquareInvoices(
   };
 }
 
-test("creates Square order for full authorized no-show amount", async () => {
+test("creates Square order for full authorized no-show amount plus HST", async () => {
   const { repository } = createFakeRepository();
   const { client, orderCalls } = createFakeSquareInvoices();
 
@@ -195,6 +196,54 @@ test("creates Square order for full authorized no-show amount", async () => {
     amount: 15000,
     currency: "CAD",
   });
+  assert.deepEqual(orderRequest.order.line_items[0].applied_taxes, [
+    { tax_uid: "ontario-hst" },
+  ]);
+  assert.deepEqual(orderRequest.order.taxes, [
+    {
+      name: "Ontario HST",
+      percentage: "13",
+      scope: "LINE_ITEM",
+      type: "ADDITIVE",
+      uid: "ontario-hst",
+    },
+  ]);
+});
+
+test("creates Square order for the full service price with paid-at-booking discount", async () => {
+  const { repository } = createFakeRepository();
+  const { client, orderCalls } = createFakeSquareInvoices();
+
+  await createDraftNoShowInvoice(
+    {
+      ...input,
+      chargeableAmountCents: 10500,
+      maxChargeCents: 15500,
+    },
+    {
+      locationId: "LOC123",
+      repository,
+      squareInvoices: client,
+    },
+  );
+
+  const orderRequest = orderCalls[0];
+  assert.equal(
+    orderRequest.order.line_items[0]?.base_price_money.amount,
+    15500,
+  );
+  assert.deepEqual(orderRequest.order.discounts, [
+    {
+      amount_money: {
+        amount: 5000,
+        currency: "CAD",
+      },
+      name: "Paid at booking",
+      scope: "ORDER",
+      type: "FIXED_AMOUNT",
+      uid: "paid-at-booking",
+    },
+  ]);
 });
 
 test("creates Square invoice with EMAIL delivery method", async () => {
@@ -826,10 +875,11 @@ function createChargeRepository(
           return { attempt: existing, isOwner: false, record };
         }
 
-        if (input.amountCents !== record.maxChargeCents) {
+        const allowedAmountCents = getNoShowAllowedChargeAmountCents(record);
+        if (input.amountCents !== allowedAmountCents) {
           throw new NoShowInvoiceAmountError(
             `Amount ${input.amountCents} does not match max charge ${record.maxChargeCents} ${record.currency}`,
-            { allowedAmountCents: record.maxChargeCents },
+            { allowedAmountCents },
           );
         }
 
@@ -1990,6 +2040,136 @@ test("rejects higher amount with no Square call and no attempt; exposes allowed 
   assert.equal(publishCalls.length, 0);
   assert.equal(attempts.length, 0);
   assert.equal(records[0].status, "provider_draft_created");
+});
+
+test("uses remaining balance from amount snapshot as allowed charge amount", async () => {
+  const { repository, records, attempts } = createChargeRepository({
+    id: "nsr-local-1",
+    status: "provider_draft_created",
+    squareInvoiceId: "invoice_123",
+    maxChargeCents: 15500,
+    currency: "CAD",
+    providerMetadata: {
+      squareInvoiceVersion: 2,
+      amountSnapshot: {
+        fullBookedServiceAmountCents: 15500,
+        fullBookedServiceTaxCents: 2015,
+        fullBookedServiceTotalCents: 17515,
+        paidAtBookingCents: 5000,
+        paidAtBookingTaxCents: 650,
+        paidAtBookingTotalCents: 5650,
+        remainingBalanceCents: 10500,
+        remainingBalanceTaxCents: 1365,
+        remainingBalanceWithTaxCents: 11865,
+      },
+    },
+  });
+  const { client, publishCalls } = createChargeSquareInvoices({
+    publishStatus: "PAID",
+  });
+  const alerts = createChargeAlerts();
+
+  await assert.rejects(
+    async () =>
+      chargeNoShowInvoice(
+        { ...chargeInputBase, amountCents: 15000 },
+        { repository, squareInvoices: client, alerts },
+      ),
+    (error: Error) => {
+      assert.equal(error.name, "NoShowInvoiceAmountError");
+      const amountError = error as NoShowInvoiceAmountError;
+      assert.equal(amountError.context?.allowedAmountCents, 11865);
+      return true;
+    },
+  );
+
+  assert.equal(publishCalls.length, 0);
+  assert.equal(attempts.length, 0);
+  assert.equal(records[0].status, "provider_draft_created");
+});
+
+test("allows charging the exact remaining balance from amount snapshot", async () => {
+  const { repository, attempts } = createChargeRepository({
+    id: "nsr-local-1",
+    status: "provider_draft_created",
+    squareInvoiceId: "invoice_123",
+    maxChargeCents: 15500,
+    currency: "CAD",
+    providerMetadata: {
+      squareInvoiceVersion: 2,
+      amountSnapshot: {
+        fullBookedServiceAmountCents: 15500,
+        fullBookedServiceTaxCents: 2015,
+        fullBookedServiceTotalCents: 17515,
+        paidAtBookingCents: 5000,
+        paidAtBookingTaxCents: 650,
+        paidAtBookingTotalCents: 5650,
+        remainingBalanceCents: 10500,
+        remainingBalanceTaxCents: 1365,
+        remainingBalanceWithTaxCents: 11865,
+      },
+    },
+  });
+  const { client, publishCalls } = createChargeSquareInvoices({
+    publishStatus: "PAID",
+    paymentId: "pay_123",
+  });
+  const alerts = createChargeAlerts();
+
+  const result = await chargeNoShowInvoice(
+    { ...chargeInputBase, amountCents: 11865 },
+    { repository, squareInvoices: client, alerts },
+  );
+
+  assert.equal(result.chargeStatus, "charged");
+  assert.equal(result.squarePaymentId, "pay_123");
+  assert.equal(publishCalls.length, 1);
+  assert.equal(attempts.length, 1);
+});
+
+test("rejects positive charge amount when remaining balance snapshot is zero", async () => {
+  const { repository, records, attempts } = createChargeRepository({
+    id: "nsr-local-1",
+    status: "ready",
+    squareInvoiceId: undefined,
+    maxChargeCents: 15500,
+    currency: "CAD",
+    providerMetadata: {
+      amountSnapshot: {
+        fullBookedServiceAmountCents: 15500,
+        fullBookedServiceTaxCents: 2015,
+        fullBookedServiceTotalCents: 17515,
+        paidAtBookingCents: 15500,
+        paidAtBookingTaxCents: 2015,
+        paidAtBookingTotalCents: 17515,
+        remainingBalanceCents: 0,
+        remainingBalanceTaxCents: 0,
+        remainingBalanceWithTaxCents: 0,
+      },
+    },
+  });
+  const { client, publishCalls } = createChargeSquareInvoices({
+    publishStatus: "PAID",
+  });
+  const alerts = createChargeAlerts();
+
+  await assert.rejects(
+    async () =>
+      chargeNoShowInvoice(
+        { ...chargeInputBase, amountCents: 100 },
+        { repository, squareInvoices: client, alerts },
+      ),
+    (error: Error) => {
+      assert.equal(error.name, "NoShowInvoiceAmountError");
+      const amountError = error as NoShowInvoiceAmountError;
+      assert.equal(amountError.context?.allowedAmountCents, 0);
+      return true;
+    },
+  );
+
+  assert.equal(publishCalls.length, 0);
+  assert.equal(attempts.length, 0);
+  assert.equal(records[0].status, "ready");
 });
 
 test("repository atomic claim rejects amount mismatch against locked record", async () => {

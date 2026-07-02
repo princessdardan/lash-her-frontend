@@ -4,9 +4,10 @@ import type { SquareGetInvoiceResponse } from "@/lib/payments/square/invoice-cli
 import type { SquareGetPaymentResponse } from "@/lib/payments/square/payments-client";
 
 import type { VerifiedSquareWebhookEvent } from "../square-webhook";
-import type {
-  NoShowChargeRecordDetail,
-  NoShowInvoiceRepository,
+import {
+  getNoShowAllowedChargeAmountCents,
+  type NoShowChargeRecordDetail,
+  type NoShowInvoiceRepository,
 } from "./service-no-show-invoice";
 import type { ServicePaymentAlertLogger } from "./service-payment-alerts";
 
@@ -757,7 +758,7 @@ function validateFinancialProviderMatch(
     return { ok: false, reason: "missing_amount" };
   }
 
-  if (facts.amountCents !== record.maxChargeCents) {
+  if (facts.amountCents !== getNoShowAllowedChargeAmountCents(record)) {
     return { ok: false, reason: "amount_mismatch" };
   }
 

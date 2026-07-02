@@ -5,6 +5,7 @@ import { timingSafeEqual } from "node:crypto";
 import {
   chargeNoShowInvoice,
   CONTROL_CHARACTER_PATTERN,
+  getNoShowAllowedChargeAmountCents,
   isStaleChargePending,
   NO_SHOW_REASON_MAX_LENGTH,
   NoShowInvoiceAmountError,
@@ -48,12 +49,14 @@ export interface AdminNoShowResponseBody {
 }
 
 export interface BookedAppointmentWithNoShowRecord {
+  allowedChargeAmountCents: number;
   appointmentId: string;
   chargeStatus: NoShowChargeStatus;
   hasSavedCard: boolean;
   holdId: string;
   maxChargeCents: number;
   noShowChargeRecordId: string;
+  providerMetadata?: Record<string, unknown>;
   providerStatus?: string;
   selectedEnd: Date;
   updatedAt?: Date;
@@ -207,12 +210,12 @@ export function createAdminNoShowPostHandler(
       }
     }
 
-    if (parsedBody.amountCents !== appointment.maxChargeCents) {
+    if (parsedBody.amountCents !== appointment.allowedChargeAmountCents) {
       return Response.json(
         {
           error: "Invalid no-show charge amount",
-          code: "NO_SHOW_AMOUNT_MUST_EQUAL_MAX_CHARGE",
-          allowedAmountCents: appointment.maxChargeCents,
+          code: "NO_SHOW_AMOUNT_MUST_EQUAL_REMAINING_BALANCE",
+          allowedAmountCents: appointment.allowedChargeAmountCents,
         },
         { status: 400 },
       );
@@ -238,7 +241,7 @@ export function createAdminNoShowPostHandler(
         return Response.json(
           {
             error: "Invalid no-show charge amount",
-            code: "NO_SHOW_AMOUNT_MUST_EQUAL_MAX_CHARGE",
+            code: "NO_SHOW_AMOUNT_MUST_EQUAL_REMAINING_BALANCE",
             allowedAmountCents:
               error instanceof NoShowInvoiceAmountError
                 ? error.context?.allowedAmountCents
@@ -417,6 +420,7 @@ async function defaultFindBookedAppointmentWithNoShowRecord(
     let maxChargeCents = 0;
     let providerStatus: string | undefined;
     let updatedAt: Date | undefined;
+    let providerMetadata: Record<string, unknown> | undefined;
 
     if (noShowChargeRecordId.length > 0) {
       const [noShowRecord] = await db
@@ -424,6 +428,7 @@ async function defaultFindBookedAppointmentWithNoShowRecord(
           status: bookingNoShowChargeRecords.status,
           maxChargeCents: bookingNoShowChargeRecords.maxChargeCents,
           providerStatus: bookingNoShowChargeRecords.providerStatus,
+          providerMetadata: bookingNoShowChargeRecords.providerMetadata,
           updatedAt: bookingNoShowChargeRecords.updatedAt,
         })
         .from(bookingNoShowChargeRecords)
@@ -434,15 +439,27 @@ async function defaultFindBookedAppointmentWithNoShowRecord(
       maxChargeCents = noShowRecord?.maxChargeCents ?? 0;
       providerStatus = noShowRecord?.providerStatus ?? undefined;
       updatedAt = noShowRecord?.updatedAt ?? undefined;
+      providerMetadata =
+        (noShowRecord?.providerMetadata as
+          | Record<string, unknown>
+          | null
+          | undefined) ?? undefined;
     }
 
+    const allowedChargeAmountCents = getNoShowAllowedChargeAmountCents({
+      maxChargeCents,
+      providerMetadata,
+    });
+
     return {
+      allowedChargeAmountCents,
       appointmentId: row.id,
       chargeStatus,
       hasSavedCard,
       holdId: row.id,
       maxChargeCents,
       noShowChargeRecordId,
+      providerMetadata,
       providerStatus,
       selectedEnd: row.selectedEnd,
       updatedAt,

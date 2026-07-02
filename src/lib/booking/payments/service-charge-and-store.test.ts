@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 
+import type { NoShowChargeStatus } from "@/lib/private-db/schema";
 import type { BookingHoldRecord } from "@/lib/booking/holds";
+import type { SquareInvoicesClient } from "@/lib/payments/square/invoice-client";
 import type {
   SquareCard,
   SquareCardsClient,
@@ -168,7 +170,10 @@ interface FakeState {
     squareCardId: string;
     maxChargeCents: number;
     currency: "CAD";
-    status: "ready";
+    status: NoShowChargeStatus;
+    squareInvoiceId?: string;
+    squareOrderId?: string;
+    providerMetadata?: Record<string, unknown>;
   }>;
   markHoldBookedCalls: Array<{
     holdId: string;
@@ -192,12 +197,31 @@ interface FakeState {
   squarePaymentGets: string[];
   squareCardCreates: Array<SquareCreateCardRequest>;
   squareCustomerCreates: Array<SquareCreateCustomerRequest>;
+  squareOrderCreates: Array<{
+    appliedTaxUid?: string;
+    discountAmountCents?: number;
+    orderId: string;
+    amountCents: number;
+    taxPercentage?: string;
+  }>;
+  noShowInvoiceCreates: Array<{
+    cardId: string;
+    chargeableAmountCents?: number;
+    customerEmail: string;
+    customerId: string;
+    holdId: string;
+    idempotencyKey: string;
+    maxChargeCents: number;
+    noShowChargeRecordId: string;
+    serviceDescription: string;
+  }>;
   calendarFinalizeCalls: Array<{ holdId: string }>;
   alertCalls: Array<{ category: string; severity: string; message: string }>;
   sagaOrderEvents: string[];
   failPersistSavedPaymentMethodOnce: boolean;
   completePaymentReturnsNoCardId: boolean;
   missingCardIdOnCreate: boolean;
+  throwCreateNoShowInvoice: boolean;
   createPaymentStatus: string;
   completePaymentStatus: string;
   getPaymentStatus: string;
@@ -228,6 +252,10 @@ interface FakeSquareCardsClient extends SquareCardsClient {
   events: string[];
 }
 
+interface FakeSquareInvoicesClient extends SquareInvoicesClient {
+  events: string[];
+}
+
 interface FakeCalendarFinalizer extends CardOnFileCalendarFinalizer {
   events: string[];
 }
@@ -240,6 +268,7 @@ function createFakes(initialHolds: BookingHoldRecord[] = [createHold()]): {
   repository: ChargeAndStoreRepository;
   squarePayments: FakeSquarePaymentsClient;
   squareCards: FakeSquareCardsClient;
+  squareInvoices: FakeSquareInvoicesClient;
   squareCustomers: FakeSquareCustomersClient;
   calendarFinalizer: FakeCalendarFinalizer;
   alerts: FakeAlertLogger;
@@ -263,12 +292,15 @@ function createFakes(initialHolds: BookingHoldRecord[] = [createHold()]): {
     squarePaymentGets: [],
     squareCardCreates: [],
     squareCustomerCreates: [],
+    squareOrderCreates: [],
+    noShowInvoiceCreates: [],
     calendarFinalizeCalls: [],
     alertCalls: [],
     sagaOrderEvents: [],
     failPersistSavedPaymentMethodOnce: false,
     completePaymentReturnsNoCardId: false,
     missingCardIdOnCreate: false,
+    throwCreateNoShowInvoice: false,
     createPaymentStatus: "APPROVED",
     completePaymentStatus: "COMPLETED",
     getPaymentStatus: "COMPLETED",
@@ -418,8 +450,30 @@ function createFakes(initialHolds: BookingHoldRecord[] = [createHold()]): {
         maxChargeCents: input.maxChargeCents,
         currency: input.currency,
         status: input.status,
+        providerMetadata: input.providerMetadata,
       });
       return { id, status: input.status };
+    },
+
+    async updateNoShowChargeRecord(input) {
+      state.events.push("updateNoShowChargeRecord");
+      const record = state.noShowRecords.find(
+        (r) => r.id === input.noShowChargeRecordId,
+      );
+      if (record === undefined) {
+        throw new Error("No-show charge record not found");
+      }
+      if (input.status !== undefined) record.status = input.status;
+      if (input.squareInvoiceId !== undefined) {
+        record.squareInvoiceId = input.squareInvoiceId;
+      }
+      if (input.squareOrderId !== undefined) {
+        record.squareOrderId = input.squareOrderId;
+      }
+      if (input.providerMetadata !== undefined) {
+        record.providerMetadata = input.providerMetadata;
+      }
+      return { id: record.id, status: record.status };
     },
 
     async markHoldBooked(input) {
@@ -624,6 +678,70 @@ function createFakes(initialHolds: BookingHoldRecord[] = [createHold()]): {
     },
   };
 
+  const squareInvoices: FakeSquareInvoicesClient = {
+    events: [],
+    async createOrder(request) {
+      squareInvoices.events.push("createOrder");
+      const orderId = `order_noshow_${state.squareOrderCreates.length + 1}`;
+      const amountCents =
+        request.order.line_items[0]?.base_price_money?.amount ?? 0;
+      state.squareOrderCreates.push({
+        appliedTaxUid: request.order.line_items[0]?.applied_taxes?.[0]?.tax_uid,
+        discountAmountCents: request.order.discounts?.[0]?.amount_money.amount,
+        orderId,
+        amountCents,
+        taxPercentage: request.order.taxes?.[0]?.percentage,
+      });
+      return {
+        order: {
+          id: orderId,
+          location_id: request.order.location_id,
+        },
+      };
+    },
+    async createInvoice(request) {
+      squareInvoices.events.push("createInvoice");
+      const order = state.squareOrderCreates.find(
+        (o) => o.orderId === request.invoice.order_id,
+      );
+      const paymentRequest = request.invoice.payment_requests[0];
+      const amountCents =
+        (order?.amountCents ?? 0) - (order?.discountAmountCents ?? 0);
+      state.noShowInvoiceCreates.push({
+        cardId: paymentRequest?.card_id ?? "",
+        chargeableAmountCents: amountCents,
+        customerEmail: "",
+        customerId: request.invoice.primary_recipient.customer_id,
+        holdId: request.invoice.order_id ?? "",
+        idempotencyKey: request.idempotency_key,
+        maxChargeCents: amountCents,
+        noShowChargeRecordId: "",
+        serviceDescription: "",
+      });
+      if (state.throwCreateNoShowInvoice) {
+        state.throwCreateNoShowInvoice = false;
+        throw new Error("Square no-show invoice creation failed");
+      }
+      return {
+        invoice: {
+          id: "invoice_noshow_1",
+          status: "DRAFT",
+          order_id: request.invoice.order_id,
+          version: 1,
+        },
+      };
+    },
+    async publishInvoice() {
+      throw new Error("Publish not expected in charge-and-store");
+    },
+    async getInvoice() {
+      throw new Error("Get invoice not expected in charge-and-store");
+    },
+    async deleteInvoice() {
+      squareInvoices.events.push("deleteInvoice");
+    },
+  };
+
   const calendarFinalizer: FakeCalendarFinalizer = {
     events: [],
     async finalize({ hold }) {
@@ -645,6 +763,7 @@ function createFakes(initialHolds: BookingHoldRecord[] = [createHold()]): {
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -657,6 +776,7 @@ test("persists consent before creating Square payment", async () => {
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -667,9 +787,11 @@ test("persists consent before creating Square payment", async () => {
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -699,6 +821,7 @@ test("captures payment only after Square card is created", async () => {
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -709,9 +832,11 @@ test("captures payment only after Square card is created", async () => {
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -733,6 +858,7 @@ test("returns booked only after payment, card, no-show record, and calendar fina
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -743,9 +869,11 @@ test("returns booked only after payment, card, no-show record, and calendar fina
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -772,6 +900,7 @@ test("records marketing choice after customer details are persisted", async () =
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -791,9 +920,11 @@ test("records marketing choice after customer details are persisted", async () =
       repository,
       squarePayments,
       squareCards,
+      squareInvoices,
       squareCustomers,
       calendarFinalizer,
       alerts,
+      locationId: "LOC123",
       now,
       recordMarketingChoice: async (input) => {
         marketingChoices.push(input);
@@ -829,6 +960,7 @@ test("does not block confirmation when marketing choice persistence fails", asyn
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -848,9 +980,11 @@ test("does not block confirmation when marketing choice persistence fails", asyn
       repository,
       squarePayments,
       squareCards,
+      squareInvoices,
       squareCustomers,
       calendarFinalizer,
       alerts,
+      locationId: "LOC123",
       now,
       recordMarketingChoice: async () => {
         throw new Error("Marketing store unavailable");
@@ -875,6 +1009,7 @@ test("continues to success before a slow marketing choice promise resolves", asy
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -900,9 +1035,11 @@ test("continues to success before a slow marketing choice promise resolves", asy
       repository,
       squarePayments,
       squareCards,
+      squareInvoices,
       squareCustomers,
       calendarFinalizer,
       alerts,
+      locationId: "LOC123",
       now,
       recordMarketingChoice: async () => {
         marketingCalled = true;
@@ -933,6 +1070,7 @@ test("logs asynchronous marketing choice persistence failures without blocking",
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -964,9 +1102,11 @@ test("logs asynchronous marketing choice persistence failures without blocking",
         repository,
         squarePayments,
         squareCards,
+        squareInvoices,
         squareCustomers,
         calendarFinalizer,
         alerts,
+        locationId: "LOC123",
         now,
         recordMarketingChoice: async () => marketingPromise,
       },
@@ -1006,6 +1146,7 @@ test("rejects unchecked consent before Square calls", async () => {
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1024,9 +1165,11 @@ test("rejects unchecked consent before Square calls", async () => {
       repository,
       squarePayments,
       squareCards,
+      squareInvoices,
       squareCustomers,
       calendarFinalizer,
       alerts,
+      locationId: "LOC123",
       now,
     },
   );
@@ -1043,6 +1186,7 @@ test("rejects mismatched policy version before Square calls", async () => {
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1063,9 +1207,11 @@ test("rejects mismatched policy version before Square calls", async () => {
       repository,
       squarePayments,
       squareCards,
+      squareInvoices,
       squareCustomers,
       calendarFinalizer,
       alerts,
+      locationId: "LOC123",
       now,
     },
   );
@@ -1083,6 +1229,7 @@ test("rejects mismatched policy text hash before Square calls", async () => {
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1101,9 +1248,11 @@ test("rejects mismatched policy text hash before Square calls", async () => {
       repository,
       squarePayments,
       squareCards,
+      squareInvoices,
       squareCustomers,
       calendarFinalizer,
       alerts,
+      locationId: "LOC123",
       now,
     },
   );
@@ -1121,6 +1270,7 @@ test("rejects client amount mismatch before Square calls", async () => {
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1135,9 +1285,11 @@ test("rejects client amount mismatch before Square calls", async () => {
       repository,
       squarePayments,
       squareCards,
+      squareInvoices,
       squareCustomers,
       calendarFinalizer,
       alerts,
+      locationId: "LOC123",
       now,
     },
   );
@@ -1154,6 +1306,7 @@ test("continues to success when Square payment response omits card details", asy
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1165,9 +1318,11 @@ test("continues to success when Square payment response omits card details", asy
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -1182,6 +1337,7 @@ test("marks refund required when Square capture throws and payment is completed"
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1193,9 +1349,11 @@ test("marks refund required when Square capture throws and payment is completed"
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -1210,6 +1368,7 @@ test("returns existing terminal confirmation for duplicate submits", async () =>
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1220,9 +1379,11 @@ test("returns existing terminal confirmation for duplicate submits", async () =>
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -1232,9 +1393,11 @@ test("returns existing terminal confirmation for duplicate submits", async () =>
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -1248,6 +1411,7 @@ test("marks manual follow-up when calendar finalization fails after capture", as
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1267,9 +1431,11 @@ test("marks manual follow-up when calendar finalization fails after capture", as
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -1290,6 +1456,7 @@ test("marks refund required when calendar failure and manual follow-up marker bo
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1313,9 +1480,11 @@ test("marks refund required when calendar failure and manual follow-up marker bo
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -1336,6 +1505,7 @@ test("falls back to manual follow-up when booking finalization fails after calen
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1350,9 +1520,11 @@ test("falls back to manual follow-up when booking finalization fails after calen
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -1373,6 +1545,7 @@ test("marks refund required when booking and manual follow-up markers both fail 
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1391,9 +1564,11 @@ test("marks refund required when booking and manual follow-up markers both fail 
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -1414,6 +1589,7 @@ test("returns payment_declined when Square create payment status is not APPROVED
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1425,9 +1601,11 @@ test("returns payment_declined when Square create payment status is not APPROVED
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -1446,6 +1624,7 @@ test("sends delayed capture payload to Square with request values", async () => 
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1461,9 +1640,11 @@ test("sends delayed capture payload to Square with request values", async () => 
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -1492,6 +1673,7 @@ test("charges Ontario HST on the trusted server-side payment amount while keepin
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1502,9 +1684,11 @@ test("charges Ontario HST on the trusted server-side payment amount while keepin
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -1516,17 +1700,179 @@ test("charges Ontario HST on the trusted server-side payment amount while keepin
     "Square payment note should disclose Ontario HST",
   );
 
-  // The client contract remains pre-tax, and persisted service/no-show amounts
-  // stay tied to the selected service amount (not the tax-inclusive total).
-  assert.equal(state.persistCustomerAndSelectionCalls.length, 1);
-  assert.equal(
-    state.persistCustomerAndSelectionCalls[0]?.payment.amountCents,
-    5000,
-  );
+  // For a deposit booking the no-show policy cap is the full pre-tax service
+  // amount, while the invoice captures only the remaining balance.
   assert.equal(state.policyAcceptances.length, 1);
-  assert.equal(state.policyAcceptances[0]?.maxChargeCents, 5000);
+  assert.equal(state.policyAcceptances[0]?.maxChargeCents, 15500);
   assert.equal(state.noShowRecords.length, 1);
-  assert.equal(state.noShowRecords[0]?.maxChargeCents, 5000);
+  assert.equal(state.noShowRecords[0]?.maxChargeCents, 15500);
+  assert.equal(state.noShowRecords[0]?.status, "provider_draft_created");
+  assert.equal(state.noShowRecords[0]?.squareInvoiceId, "invoice_noshow_1");
+  assert.equal(
+    state.noShowRecords[0]?.squareOrderId,
+    state.squareOrderCreates[0]?.orderId,
+  );
+  assert.deepEqual(state.noShowRecords[0]?.providerMetadata?.amountSnapshot, {
+    fullBookedServiceAmountCents: 15500,
+    fullBookedServiceTaxCents: 2015,
+    fullBookedServiceTotalCents: 17515,
+    paidAtBookingCents: 5000,
+    paidAtBookingTaxCents: 650,
+    paidAtBookingTotalCents: 5650,
+    remainingBalanceCents: 10500,
+    remainingBalanceTaxCents: 1365,
+    remainingBalanceWithTaxCents: 11865,
+  });
+
+  assert.equal(state.squareOrderCreates.length, 1);
+  assert.equal(state.squareOrderCreates[0]?.amountCents, 15500);
+  assert.equal(state.squareOrderCreates[0]?.discountAmountCents, 5000);
+  assert.equal(state.squareOrderCreates[0]?.appliedTaxUid, "ontario-hst");
+  assert.equal(state.squareOrderCreates[0]?.taxPercentage, "13");
+  assert.equal(state.noShowInvoiceCreates.length, 1);
+  assert.equal(state.noShowInvoiceCreates[0]?.chargeableAmountCents, 10500);
+});
+
+test("does not create a Square no-show draft invoice when the full service amount is paid at booking", async () => {
+  const {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    state,
+  } = createFakes();
+
+  const result = await confirmChargeAndStoreBooking(
+    createRequest({
+      payment: { option: "full", expectedAmountCents: 15500 },
+    }),
+    {
+      repository,
+      squarePayments,
+      squareCards,
+      squareInvoices,
+      squareCustomers,
+      calendarFinalizer,
+      alerts,
+      locationId: "LOC123",
+      now,
+    },
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(state.noShowRecords.length, 1);
+  assert.equal(state.noShowRecords[0]?.maxChargeCents, 15500);
+  assert.equal(state.noShowRecords[0]?.status, "ready");
+  assert.deepEqual(state.noShowRecords[0]?.providerMetadata?.amountSnapshot, {
+    fullBookedServiceAmountCents: 15500,
+    fullBookedServiceTaxCents: 2015,
+    fullBookedServiceTotalCents: 17515,
+    paidAtBookingCents: 15500,
+    paidAtBookingTaxCents: 2015,
+    paidAtBookingTotalCents: 17515,
+    remainingBalanceCents: 0,
+    remainingBalanceTaxCents: 0,
+    remainingBalanceWithTaxCents: 0,
+  });
+  assert.equal(state.squareOrderCreates.length, 0);
+  assert.equal(state.noShowInvoiceCreates.length, 0);
+});
+
+test("creates a Square no-show draft invoice for the remaining balance on a custom partial payment", async () => {
+  const {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    state,
+  } = createFakes();
+
+  const result = await confirmChargeAndStoreBooking(
+    createRequest({
+      payment: {
+        option: "customPartial",
+        expectedAmountCents: 9000,
+        customAmountCents: 9000,
+      },
+    }),
+    {
+      repository,
+      squarePayments,
+      squareCards,
+      squareInvoices,
+      squareCustomers,
+      calendarFinalizer,
+      alerts,
+      locationId: "LOC123",
+      now,
+    },
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(state.noShowRecords.length, 1);
+  assert.equal(state.noShowRecords[0]?.maxChargeCents, 15500);
+  assert.deepEqual(state.noShowRecords[0]?.providerMetadata?.amountSnapshot, {
+    fullBookedServiceAmountCents: 15500,
+    fullBookedServiceTaxCents: 2015,
+    fullBookedServiceTotalCents: 17515,
+    paidAtBookingCents: 9000,
+    paidAtBookingTaxCents: 1170,
+    paidAtBookingTotalCents: 10170,
+    remainingBalanceCents: 6500,
+    remainingBalanceTaxCents: 845,
+    remainingBalanceWithTaxCents: 7345,
+  });
+  assert.equal(state.squareOrderCreates.length, 1);
+  assert.equal(state.squareOrderCreates[0]?.amountCents, 15500);
+  assert.equal(state.squareOrderCreates[0]?.discountAmountCents, 9000);
+  assert.equal(state.squareOrderCreates[0]?.appliedTaxUid, "ontario-hst");
+  assert.equal(state.squareOrderCreates[0]?.taxPercentage, "13");
+  assert.equal(state.noShowInvoiceCreates.length, 1);
+  assert.equal(state.noShowInvoiceCreates[0]?.chargeableAmountCents, 6500);
+});
+
+test("cancels Square authorization and marks payment failed when no-show draft invoice creation fails", async () => {
+  const {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    state,
+  } = createFakes();
+  state.throwCreateNoShowInvoice = true;
+
+  const result = await confirmChargeAndStoreBooking(createRequest(), {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    locationId: "LOC123",
+    now,
+  });
+
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.error, "square_api_error");
+  assert.equal(state.squarePaymentCancels.length, 1);
+  assert.equal(state.squarePaymentCancels[0], "pay_1");
+  assert.equal(state.markHoldPaymentFailedCalls.length, 1);
+  assert.equal(
+    state.markHoldPaymentFailedCalls[0]?.reason,
+    "Unable to secure remaining balance for no-show protection",
+  );
+  assert.equal(state.noShowInvoiceCreates.length, 1);
 });
 
 test("sends CreateCard request with payment id source and Canadian billing details", async () => {
@@ -1534,6 +1880,7 @@ test("sends CreateCard request with payment id source and Canadian billing detai
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1549,9 +1896,11 @@ test("sends CreateCard request with payment id source and Canadian billing detai
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -1579,6 +1928,7 @@ test("keeps Square customer and card idempotency keys within 45 characters for U
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1591,9 +1941,11 @@ test("keeps Square customer and card idempotency keys within 45 characters for U
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -1627,6 +1979,7 @@ test("derives CreateCard idempotency key from the actual Square payment id when 
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1639,9 +1992,11 @@ test("derives CreateCard idempotency key from the actual Square payment id when 
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -1728,6 +2083,7 @@ test("reuses existing Square customer instead of creating a new one", async () =
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1746,9 +2102,11 @@ test("reuses existing Square customer instead of creating a new one", async () =
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -1768,6 +2126,7 @@ test("uses injected now when persisting new Square customer", async () => {
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1778,9 +2137,11 @@ test("uses injected now when persisting new Square customer", async () => {
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now: fixedNow,
   });
 
@@ -1794,6 +2155,7 @@ test("marks refund required when capture throws and Square status lookup fails",
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1806,9 +2168,11 @@ test("marks refund required when capture throws and Square status lookup fails",
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -1831,6 +2195,7 @@ test("cancels authorization and marks payment failed when capture throws with no
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1843,9 +2208,11 @@ test("cancels authorization and marks payment failed when capture throws with no
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -1868,6 +2235,7 @@ test("marks refund required when capture throws with non-completed status but ca
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1881,9 +2249,11 @@ test("marks refund required when capture throws with non-completed status but ca
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -1905,6 +2275,7 @@ test("cancels authorization and marks payment failed when Square capture returns
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1916,9 +2287,11 @@ test("cancels authorization and marks payment failed when Square capture returns
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -1940,6 +2313,7 @@ test("marks refund required when Square capture returns non-completed and cancel
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -1952,9 +2326,11 @@ test("marks refund required when Square capture returns non-completed and cancel
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -1982,9 +2358,11 @@ test("duplicate submit after capture uncertainty does not return an authorized c
     repository: fakes.repository,
     squarePayments: fakes.squarePayments,
     squareCards: fakes.squareCards,
+    squareInvoices: fakes.squareInvoices,
     squareCustomers: fakes.squareCustomers,
     calendarFinalizer: fakes.calendarFinalizer,
     alerts: fakes.alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -1995,9 +2373,11 @@ test("duplicate submit after capture uncertainty does not return an authorized c
     repository: fakes.repository,
     squarePayments: fakes.squarePayments,
     squareCards: fakes.squareCards,
+    squareInvoices: fakes.squareInvoices,
     squareCustomers: fakes.squareCustomers,
     calendarFinalizer: fakes.calendarFinalizer,
     alerts: fakes.alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -2013,6 +2393,7 @@ test("marks payment failed when hold state is invalid after claim", async () => 
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -2031,9 +2412,11 @@ test("marks payment failed when hold state is invalid after claim", async () => 
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -2048,6 +2431,7 @@ test("marks payment failed when customer status is not pending after claim", asy
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -2065,9 +2449,11 @@ test("marks payment failed when customer status is not pending after claim", asy
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -2082,6 +2468,7 @@ test("marks payment failed when amount mismatch is detected after claim", async 
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -2096,9 +2483,11 @@ test("marks payment failed when amount mismatch is detected after claim", async 
       repository,
       squarePayments,
       squareCards,
+      squareInvoices,
       squareCustomers,
       calendarFinalizer,
       alerts,
+      locationId: "LOC123",
       now,
     },
   );
@@ -2114,6 +2503,7 @@ test("marks payment failed when Square create payment throws", async () => {
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -2127,9 +2517,11 @@ test("marks payment failed when Square create payment throws", async () => {
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -2144,6 +2536,7 @@ test("cancels authorization and marks payment failed when CreateCard fails", asy
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -2155,9 +2548,11 @@ test("cancels authorization and marks payment failed when CreateCard fails", asy
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -2176,6 +2571,7 @@ test("persists card display fields from CreateCard response", async () => {
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -2193,9 +2589,11 @@ test("persists card display fields from CreateCard response", async () => {
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
@@ -2213,6 +2611,7 @@ test("persists card display fields from CreateCard response when payment omits c
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
@@ -2231,9 +2630,11 @@ test("persists card display fields from CreateCard response when payment omits c
     repository,
     squarePayments,
     squareCards,
+    squareInvoices,
     squareCustomers,
     calendarFinalizer,
     alerts,
+    locationId: "LOC123",
     now,
   });
 
