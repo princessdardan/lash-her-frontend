@@ -409,6 +409,22 @@ describe("booking service flow contract", () => {
     );
   });
 
+  it("displays an Ontario HST breakdown for the selected payment option before submission", () => {
+    assert.match(serviceBookingPaymentFormSource, /SERVICE_BOOKING_HST_RATE/);
+    assert.match(serviceBookingPaymentFormSource, /Ontario HST/);
+    assert.match(serviceBookingPaymentFormSource, /13%/);
+    assert.match(serviceBookingPaymentFormSource, /Total due today/);
+    assert.match(serviceBookingPaymentFormSource, /Amount paid today/);
+  });
+
+  it("notes in the summary aside that HST is added to the selected payment amount", () => {
+    assert.match(serviceBookingPaymentShellSource, /before HST/);
+    assert.match(
+      serviceBookingPaymentShellSource,
+      /Ontario HST \(13%\) is added/,
+    );
+  });
+
   it("posts the Task 5 confirm body shape from the payment form", () => {
     assert.match(
       serviceBookingPaymentFormSource,

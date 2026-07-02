@@ -127,18 +127,22 @@ export function ServiceBookingPaymentShell({
             </div>
             <div className="border-t border-lh-line pt-4">
               <p className="mb-2 text-sm font-medium text-black">
-                Amount due today is selected below
+                Payment amount options
               </p>
               <div className="flex justify-between text-sm text-lh-muted">
-                <span>Deposit</span>
+                <span>Deposit (before HST)</span>
                 <span>
                   {formatCad(session.pricing.depositAmountCents / 100)}
                 </span>
               </div>
               <div className="flex justify-between text-sm text-lh-muted">
-                <span>Full price</span>
+                <span>Full price (before HST)</span>
                 <span>{formatCad(session.pricing.fullPriceCents / 100)}</span>
               </div>
+              <p className="mt-2 text-xs leading-snug text-lh-muted">
+                Ontario HST (13%) is added to the selected payment amount at
+                checkout.
+              </p>
             </div>
             <div className="border-t border-lh-line pt-4">
               <div className="flex justify-between text-sm text-lh-muted">

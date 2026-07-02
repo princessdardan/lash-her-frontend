@@ -12,6 +12,7 @@ import type {
   SquareGetPaymentResponse,
   SquarePaymentsClient,
 } from "@/lib/payments/square/payments-client";
+import { calculateServiceBookingHstQuote } from "@/lib/booking/service-tax-policy";
 
 import type { CardOnFileCalendarFinalizer } from "./service-card-on-file";
 import type { ServicePaymentAlertLogger } from "./service-payment-alerts";
@@ -372,6 +373,11 @@ export async function confirmChargeAndStoreBooking(
     };
   }
 
+  // The client contract keeps expectedAmountCents as the pre-tax service
+  // amount. Tax is computed server-side from the trusted resolved amount and
+  // charged to Square so Ontario HST is actually collected, not just displayed.
+  const taxQuote = calculateServiceBookingHstQuote(resolvedPayment.amountCents);
+
   try {
     await dependencies.repository.persistCustomerAndSelection({
       holdId: hold.id,
@@ -534,13 +540,13 @@ export async function confirmChargeAndStoreBooking(
         source_id: input.sourceId,
         customer_id: squareCustomer.squareCustomerId,
         amount_money: {
-          amount: resolvedPayment.amountCents,
+          amount: taxQuote.expectedAmountCents,
           currency: "CAD",
         },
         autocomplete: false,
         verification_token: input.verificationToken,
         reference_id: hold.publicReference,
-        note: resolvedPayment.description,
+        note: `${resolvedPayment.description} (includes ${taxQuote.taxName})`,
       },
     );
   } catch {

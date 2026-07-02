@@ -1477,10 +1477,56 @@ test("sends delayed capture payload to Square with request values", async () => 
     state.squareCustomers[0]?.squareCustomerId,
   );
   assert.deepEqual(paymentRequest.amount_money, {
-    amount: 5000,
+    amount: 5650,
     currency: "CAD",
   });
+  assert.ok(
+    paymentRequest.note?.includes("Ontario HST"),
+    "Square payment note should disclose Ontario HST",
+  );
   assert.equal(paymentRequest.idempotency_key, request.idempotencyKey);
+});
+
+test("charges Ontario HST on the trusted server-side payment amount while keeping no-show max on the pre-tax service amount", async () => {
+  const {
+    repository,
+    squarePayments,
+    squareCards,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    state,
+  } = createFakes();
+
+  const result = await confirmChargeAndStoreBooking(createRequest(), {
+    repository,
+    squarePayments,
+    squareCards,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    now,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(state.squarePaymentCreates.length, 1);
+  assert.equal(state.squarePaymentCreates[0]?.amount_money.amount, 5650);
+  assert.ok(
+    state.squarePaymentCreates[0]?.note?.includes("Ontario HST"),
+    "Square payment note should disclose Ontario HST",
+  );
+
+  // The client contract remains pre-tax, and persisted service/no-show amounts
+  // stay tied to the selected service amount (not the tax-inclusive total).
+  assert.equal(state.persistCustomerAndSelectionCalls.length, 1);
+  assert.equal(
+    state.persistCustomerAndSelectionCalls[0]?.payment.amountCents,
+    5000,
+  );
+  assert.equal(state.policyAcceptances.length, 1);
+  assert.equal(state.policyAcceptances[0]?.maxChargeCents, 5000);
+  assert.equal(state.noShowRecords.length, 1);
+  assert.equal(state.noShowRecords[0]?.maxChargeCents, 5000);
 });
 
 test("sends CreateCard request with payment id source and Canadian billing details", async () => {

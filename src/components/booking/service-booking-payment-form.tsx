@@ -14,6 +14,7 @@ import {
   SERVICE_NO_SHOW_POLICY_TEXT,
   SERVICE_NO_SHOW_POLICY_VERSION,
 } from "@/lib/booking/payments/service-no-show-policy-copy";
+import { SERVICE_BOOKING_HST_RATE } from "@/lib/booking/service-tax-policy";
 import { validateField } from "@/lib/form-validation";
 
 import {
@@ -116,10 +117,19 @@ export function ServiceBookingPaymentForm({
     ? selectedPayment.payment.amountCents
     : 0;
 
+  const selectedHstCents = isPaymentSelectionValid
+    ? Math.round(selectedAmountCents * SERVICE_BOOKING_HST_RATE)
+    : 0;
+  const selectedTotalCents = isPaymentSelectionValid
+    ? selectedAmountCents + selectedHstCents
+    : 0;
+
   const buyerDetails =
     isCustomerValid && isPaymentSelectionValid
       ? {
-          amountCents: selectedAmountCents,
+          // Square verification and the backend authorization must both see the
+          // HST-inclusive total so the verified/charged amount matches.
+          amountCents: selectedTotalCents,
           email,
           fullName,
           phone,
@@ -317,11 +327,12 @@ export function ServiceBookingPaymentForm({
           <span className="flex-1 text-sm font-medium text-black">
             Full payment
           </span>
-          <span className="text-sm text-lh-muted">
+          <span className="text-right text-sm text-lh-muted">
             {formatCad(session.pricing.fullPriceCents / 100)}
             {session.pricing.addOnPriceCents > 0
               ? ` + ${formatCad(session.pricing.addOnPriceCents / 100)} add-on`
               : ""}
+            <span className="block text-xs">before HST</span>
           </span>
         </label>
 
@@ -337,8 +348,9 @@ export function ServiceBookingPaymentForm({
           <span className="flex-1 text-sm font-medium text-black">
             Deposit only
           </span>
-          <span className="text-sm text-lh-muted">
+          <span className="text-right text-sm text-lh-muted">
             {formatCad(session.pricing.depositAmountCents / 100)}
+            <span className="block text-xs">before HST</span>
           </span>
         </label>
 
@@ -353,6 +365,9 @@ export function ServiceBookingPaymentForm({
           />
           <span className="flex-1 text-sm font-medium text-black">
             Custom partial payment
+            <span className="block text-xs font-normal text-lh-muted">
+              before HST
+            </span>
           </span>
         </label>
 
@@ -365,7 +380,9 @@ export function ServiceBookingPaymentForm({
               onChange={(event) => setCustomAmount(event.target.value)}
               placeholder={`Between ${formatCad(
                 session.pricing.depositAmountCents / 100,
-              )} and ${formatCad(session.pricing.fullPriceCents / 100)}`}
+              )} and ${formatCad(
+                session.pricing.fullPriceCents / 100,
+              )} before HST`}
               aria-label="Custom payment amount"
             />
             {!isPaymentSelectionValid && selectedPayment.error && (
@@ -373,6 +390,28 @@ export function ServiceBookingPaymentForm({
                 {selectedPayment.error}
               </p>
             )}
+          </div>
+        )}
+
+        {isPaymentSelectionValid && (
+          <div className="rounded-xl border border-lh-line bg-white p-4">
+            <p className="mb-3 text-sm font-medium text-black">
+              Today&apos;s payment breakdown
+            </p>
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm text-lh-muted">
+                <span>Amount paid today</span>
+                <span>{formatCad(selectedAmountCents / 100)}</span>
+              </div>
+              <div className="flex justify-between text-sm text-lh-muted">
+                <span>Ontario HST (13%)</span>
+                <span>{formatCad(selectedHstCents / 100)}</span>
+              </div>
+              <div className="flex justify-between border-t border-lh-line pt-2 text-sm font-bold text-black">
+                <span>Total due today</span>
+                <span>{formatCad(selectedTotalCents / 100)}</span>
+              </div>
+            </div>
           </div>
         )}
       </div>
