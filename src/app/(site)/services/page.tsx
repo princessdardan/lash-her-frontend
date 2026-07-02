@@ -69,35 +69,16 @@ export default async function ServicesPage(): Promise<ReactElement> {
                           Book
                         </Link>
                       </Button>
+                      <Button
+                        asChild
+                        variant="outline"
+                        className="px-6 py-2 text-sm"
+                      >
+                        <Link href={`/services/${service.slug}`}>
+                          View details
+                        </Link>
+                      </Button>
                     </div>
-                  </article>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {detailServices.length > 0 && (
-            <section className="mt-16">
-              <h2 className="section-subheading mb-6">
-                Learn More About Our Services
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {detailServices.map((service) => (
-                  <article
-                    key={service._id}
-                    className="soft-panel p-6 flex flex-col h-full"
-                  >
-                    <h3 className="section-subheading mb-2 text-lg md:text-lg lg:text-lg">
-                      {service.title}
-                    </h3>
-                    <p className="text-sm text-black font-light mb-6 flex-1">
-                      {service.shortDescription || service.description}
-                    </p>
-                    <Button asChild variant="outline" className="w-full">
-                      <Link href={`/services/${service.slug}`}>
-                        View details
-                      </Link>
-                    </Button>
                   </article>
                 ))}
               </div>
