@@ -13,7 +13,6 @@ export default async function ServicesPage(): Promise<ReactElement> {
     loaders.getServices(),
   ]);
 
-  const detailServices = services.filter((s) => s.showDetailPage);
   const serviceCollectionJsonLd = buildServiceCollectionJsonLd(services);
 
   return (
@@ -42,42 +41,49 @@ export default async function ServicesPage(): Promise<ReactElement> {
               </p>
             </section>
           ) : (
-            <section className="max-w-3xl mx-auto">
-              <div className="space-y-4">
+            <section className="mx-auto max-w-4xl">
+              <div className="space-y-3">
                 {bookableServices.map((service) => (
                   <article
                     key={service._id}
-                    className="editorial-card p-6 flex justify-between items-center"
+                    className="editorial-card items-start gap-4 p-5 text-left md:p-6"
                   >
-                    <div>
+                    <div className="w-full">
                       <h3 className="section-subheading mb-1 text-lg md:text-lg lg:text-lg">
                         {service.title}
                       </h3>
                       <p className="text-sm text-lh-muted mb-2">
                         {service.durationMinutes} min
                       </p>
-                      <p className="text-sm text-black font-light max-w-md">
+                      <p className="max-w-3xl text-sm font-light leading-relaxed text-black">
                         {service.description}
                       </p>
                     </div>
-                    <div className="flex flex-col items-end gap-3">
-                      <span className="font-medium text-black">
+                    <div className="flex w-full flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="font-medium text-black sm:shrink-0">
                         {formatCad(service.fullPrice)}
                       </span>
-                      <Button asChild className="px-6 py-2 text-sm">
-                        <Link href={`/services/${service.slug}/booking`}>
-                          Book
-                        </Link>
-                      </Button>
-                      <Button
-                        asChild
-                        variant="outline"
-                        className="px-6 py-2 text-sm"
-                      >
-                        <Link href={`/services/${service.slug}`}>
-                          View details
-                        </Link>
-                      </Button>
+                      <div className="grid w-full grid-cols-2 gap-3 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
+                        <Button
+                          asChild
+                          size="lg"
+                          className="w-full rounded-full px-5 text-sm sm:min-w-28 sm:px-7"
+                        >
+                          <Link href={`/services/${service.slug}/booking`}>
+                            Book
+                          </Link>
+                        </Button>
+                        <Button
+                          asChild
+                          size="lg"
+                          variant="outline"
+                          className="w-full rounded-full px-5 text-sm sm:min-w-36 sm:px-7"
+                        >
+                          <Link href={`/services/${service.slug}`}>
+                            View details
+                          </Link>
+                        </Button>
+                      </div>
                     </div>
                   </article>
                 ))}
