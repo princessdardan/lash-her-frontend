@@ -233,3 +233,198 @@ test("allows zero add-on price for full payment", () => {
     },
   );
 });
+
+test("full payment uses discounted base and still charges add-on", () => {
+  const discounted: ServicePaymentPricingSnapshot = {
+    ...pricing,
+    discountedBasePriceCents: 10000,
+    promotionCode: "SAVE30",
+    promotionDiscountCents: 3000,
+  };
+
+  assert.deepEqual(
+    resolveServicePaymentSelection({
+      pricing: discounted,
+      selection: { option: "full" },
+    }),
+    {
+      ok: true,
+      payment: {
+        amountCents: 12500,
+        currency: "CAD",
+        description: "Classic Fill full payment with Removal",
+        option: "full",
+        purpose: "appointment_full",
+        sku: "BOOKING-FULL",
+      },
+    },
+  );
+});
+
+test("deposit is capped at discounted base price", () => {
+  const discounted: ServicePaymentPricingSnapshot = {
+    ...pricing,
+    discountedBasePriceCents: 4000,
+    promotionCode: "SAVE90",
+    promotionDiscountCents: 9000,
+  };
+
+  assert.deepEqual(
+    resolveServicePaymentSelection({
+      pricing: discounted,
+      selection: { option: "deposit" },
+    }),
+    {
+      ok: true,
+      payment: {
+        amountCents: 4000,
+        currency: "CAD",
+        description: "Classic Fill deposit; Removal add-on balance due later",
+        option: "deposit",
+        purpose: "appointment_deposit",
+        sku: "BOOKING-DEPOSIT",
+      },
+    },
+  );
+});
+
+test("custom partial uses discounted base as upper bound", () => {
+  const discounted: ServicePaymentPricingSnapshot = {
+    ...pricing,
+    discountedBasePriceCents: 10000,
+    promotionCode: "SAVE30",
+    promotionDiscountCents: 3000,
+  };
+
+  // Below the discounted base should still work.
+  assert.deepEqual(
+    resolveServicePaymentSelection({
+      pricing: discounted,
+      selection: { option: "customPartial", customAmountCents: 9000 },
+    }),
+    {
+      ok: true,
+      payment: {
+        amountCents: 9000,
+        currency: "CAD",
+        description:
+          "Classic Fill custom partial payment; Removal add-on balance due later",
+        option: "customPartial",
+        purpose: "appointment_custom_partial",
+        sku: "BOOKING-CUSTOM-PARTIAL",
+      },
+    },
+  );
+
+  // At the discounted base is rejected, same as at full price without discount.
+  assert.deepEqual(
+    resolveServicePaymentSelection({
+      pricing: discounted,
+      selection: { option: "customPartial", customAmountCents: 10000 },
+    }),
+    {
+      ok: false,
+      error: "Custom amount must be less than the full service price.",
+    },
+  );
+});
+
+test("malicious discounted base above full price is clamped to full price", () => {
+  const tampered: ServicePaymentPricingSnapshot = {
+    ...pricing,
+    discountedBasePriceCents: 20000,
+  };
+
+  assert.deepEqual(
+    resolveServicePaymentSelection({
+      pricing: tampered,
+      selection: { option: "full" },
+    }),
+    {
+      ok: true,
+      payment: {
+        amountCents: 15500,
+        currency: "CAD",
+        description: "Classic Fill full payment with Removal",
+        option: "full",
+        purpose: "appointment_full",
+        sku: "BOOKING-FULL",
+      },
+    },
+  );
+});
+
+test("zero discounted base is accepted and full payment still charges add-ons", () => {
+  const zeroBase: ServicePaymentPricingSnapshot = {
+    ...pricing,
+    discountedBasePriceCents: 0,
+    promotionCode: "FREE",
+    promotionDiscountCents: 13000,
+  };
+
+  assert.deepEqual(
+    resolveServicePaymentSelection({
+      pricing: zeroBase,
+      selection: { option: "full" },
+    }),
+    {
+      ok: true,
+      payment: {
+        amountCents: 2500,
+        currency: "CAD",
+        description: "Classic Fill full payment with Removal",
+        option: "full",
+        purpose: "appointment_full",
+        sku: "BOOKING-FULL",
+      },
+    },
+  );
+});
+
+test("deposit becomes zero when the service base is fully discounted", () => {
+  const zeroBase: ServicePaymentPricingSnapshot = {
+    ...pricing,
+    discountedBasePriceCents: 0,
+    promotionCode: "FREE",
+    promotionDiscountCents: 13000,
+  };
+
+  assert.deepEqual(
+    resolveServicePaymentSelection({
+      pricing: zeroBase,
+      selection: { option: "deposit" },
+    }),
+    {
+      ok: true,
+      payment: {
+        amountCents: 0,
+        currency: "CAD",
+        description: "Classic Fill deposit; Removal add-on balance due later",
+        option: "deposit",
+        purpose: "appointment_deposit",
+        sku: "BOOKING-DEPOSIT",
+      },
+    },
+  );
+});
+
+test("custom partial is invalid when the discounted base is zero", () => {
+  const zeroBase: ServicePaymentPricingSnapshot = {
+    ...pricing,
+    discountedBasePriceCents: 0,
+    promotionCode: "FREE",
+    promotionDiscountCents: 13000,
+  };
+
+  assert.deepEqual(
+    resolveServicePaymentSelection({
+      pricing: zeroBase,
+      selection: { option: "customPartial", customAmountCents: 1000 },
+    }),
+    {
+      ok: false,
+      error:
+        "Custom partial payment is not available when the service is fully discounted.",
+    },
+  );
+});

@@ -4,6 +4,7 @@ import {
   type BookingHoldRecord,
   type BookingHoldState,
 } from "./holds";
+import { readServicePromotionSnapshot } from "./payments/service-promotion";
 
 export interface PaymentSessionRepository {
   getByPaymentSessionReference(
@@ -20,7 +21,13 @@ export interface ServiceBookingPaymentSessionDisplay {
     customAmountMaximumCents: number;
     customAmountMinimumCents: number;
     depositAmountCents: number;
+    // When a service promotion is active, this is the discounted pretax base
+    // price. If absent, fullPriceCents is used for backward compatibility.
+    discountedBasePriceCents?: number;
     fullPriceCents: number;
+    // Optional promotion metadata for display on the payment page.
+    promotionCode?: string;
+    promotionDiscountCents?: number;
   };
   selectedAddOn?: {
     description: string;
@@ -178,12 +185,29 @@ function readPricing(
     return null;
   }
 
+  const fullPriceCents = Math.round(fullPrice * 100);
+  const promotionSnapshot = readServicePromotionSnapshot(
+    snapshot,
+    fullPriceCents,
+  );
+  const discountedBasePriceCents =
+    promotionSnapshot?.discountedBasePriceCents ?? fullPriceCents;
+
   return {
     addOnPriceCents: Math.round(addOnPrice * 100),
     customAmountMaximumCents: Math.round(customAmountMaximum * 100),
     customAmountMinimumCents: Math.round(customAmountMinimum * 100),
     depositAmountCents: Math.round(depositAmount * 100),
-    fullPriceCents: Math.round(fullPrice * 100),
+    ...(discountedBasePriceCents !== fullPriceCents
+      ? { discountedBasePriceCents }
+      : {}),
+    fullPriceCents,
+    ...(promotionSnapshot !== null
+      ? {
+          promotionCode: promotionSnapshot.code,
+          promotionDiscountCents: promotionSnapshot.discountCents,
+        }
+      : {}),
   };
 }
 

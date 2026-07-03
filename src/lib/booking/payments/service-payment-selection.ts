@@ -8,7 +8,16 @@ export interface ServicePaymentPricingSnapshot {
   customAmountMaximumCents: number;
   customAmountMinimumCents: number;
   depositAmountCents: number;
+  // When a service promotion is applied, this is the discounted pretax base
+  // service price. If undefined, fullPriceCents is used for backward
+  // compatibility with holds created before service discounts.
+  discountedBasePriceCents?: number;
   fullPriceCents: number;
+  // Optional promotion metadata so the payment form can display the applied
+  // code and discount amount. These are authoritative only in the private hold
+  // snapshot; the selection logic uses discountedBasePriceCents.
+  promotionCode?: string;
+  promotionDiscountCents?: number;
   selectedAddOnName?: string;
   serviceTitle: string;
 }
@@ -47,11 +56,32 @@ export function resolveServicePaymentSelection(input: {
     return { ok: false, error: "Booking pricing is not configured." };
   }
 
+  // The discounted base price is the authority for service-level discounts.
+  // Add-ons are never discounted and are added on top of this base. Invalid
+  // values (non-integers, negative, or above the original full price) are
+  // ignored so a tampered or malformed snapshot cannot reduce the price. A
+  // zero discounted base is valid for 100% (or over-base fixed) promotions.
+  const rawDiscountedBase = pricing.discountedBasePriceCents;
+  const discountedBasePriceCents =
+    typeof rawDiscountedBase === "number" &&
+    Number.isInteger(rawDiscountedBase) &&
+    rawDiscountedBase >= 0 &&
+    rawDiscountedBase <= pricing.fullPriceCents
+      ? rawDiscountedBase
+      : pricing.fullPriceCents;
+
   if (selection.option === "deposit") {
+    // Deposit cannot exceed the discounted base price; this also prevents a
+    // deposit larger than the amount owed for the service.
+    const amountCents = Math.min(
+      pricing.depositAmountCents,
+      discountedBasePriceCents,
+    );
+
     return {
       ok: true,
       payment: {
-        amountCents: pricing.depositAmountCents,
+        amountCents,
         currency: "CAD",
         description: pricing.selectedAddOnName
           ? `${pricing.serviceTitle} deposit; ${pricing.selectedAddOnName} add-on balance due later`
@@ -65,7 +95,7 @@ export function resolveServicePaymentSelection(input: {
 
   if (selection.option === "full") {
     // addOnPriceCents was validated as a non-negative integer above.
-    const amountCents = pricing.fullPriceCents + pricing.addOnPriceCents;
+    const amountCents = discountedBasePriceCents + pricing.addOnPriceCents;
     return {
       ok: true,
       payment: {
@@ -85,16 +115,27 @@ export function resolveServicePaymentSelection(input: {
   if (!isPositiveInteger(customAmountCents)) {
     return { ok: false, error: "Custom amount is required." };
   }
-  // Enforce against the real deposit and full price from the snapshot, not the
-  // configurable min/max bounds, so a misconfigured snapshot cannot widen the
-  // acceptable custom range.
+
+  // There is no payable range when the service base has been discounted to
+  // zero; a custom partial would either be zero or exceed the discounted base.
+  if (discountedBasePriceCents === 0) {
+    return {
+      ok: false,
+      error:
+        "Custom partial payment is not available when the service is fully discounted.",
+    };
+  }
+
+  // Enforce against the real deposit and discounted base price from the
+  // snapshot, not the configurable min/max bounds, so a misconfigured snapshot
+  // cannot widen the acceptable custom range.
   if (customAmountCents <= pricing.depositAmountCents) {
     return {
       ok: false,
       error: "Custom amount must be greater than the deposit.",
     };
   }
-  if (customAmountCents >= pricing.fullPriceCents) {
+  if (customAmountCents >= discountedBasePriceCents) {
     return {
       ok: false,
       error: "Custom amount must be less than the full service price.",

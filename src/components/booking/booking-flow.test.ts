@@ -414,7 +414,12 @@ describe("booking service flow contract", () => {
     assert.match(serviceBookingPaymentFormSource, /Ontario HST/);
     assert.match(serviceBookingPaymentFormSource, /13%/);
     assert.match(serviceBookingPaymentFormSource, /Total due today/);
-    assert.match(serviceBookingPaymentFormSource, /Amount paid today/);
+    assert.match(serviceBookingPaymentFormSource, /Paid today/);
+    assert.match(serviceBookingPaymentFormSource, /Original booked total/);
+    assert.match(
+      serviceBookingPaymentFormSource,
+      /Booked total after discount/,
+    );
   });
 
   it("notes in the summary aside that HST is added to the selected payment amount", () => {
