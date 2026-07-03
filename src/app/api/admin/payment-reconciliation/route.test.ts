@@ -238,10 +238,39 @@ test("payment reconciliation route returns retryable failure when monitor fails"
     assert.equal(response.status, 503);
     assert.deepEqual(await response.json(), { error: "Payment reconciliation failed" });
     assert.deepEqual(monitorCalls, [{ now: new Date("2026-06-19T12:00:00.000Z") }]);
-    assert.deepEqual(errors, [{
-      context: { error: "database unavailable" },
-      message: "[payment-reconciliation] Monitor failed",
-    }]);
+    assert.equal(errors.length, 1);
+    assert.equal(errors[0].message, "[payment-reconciliation] Monitor failed");
+    assert.equal(errors[0].context.message, "database unavailable");
+    assert.equal(errors[0].context.name, "Error");
+  `);
+});
+
+test("payment reconciliation route logs nested error cause without PII", () => {
+  runRouteScenario(`
+    const { errors, handler } = runScenario({
+      runMonitor: async () => {
+        const cause = new Error("connection reset for client@example.com with token=abc123");
+        cause.name = "ConnectionError";
+        cause.code = "ECONNRESET";
+        const error = new Error("database unavailable", { cause });
+        error.code = "DB_503";
+        throw error;
+      },
+    });
+
+    const response = await handler(createRequest());
+
+    assert.equal(response.status, 503);
+    assert.equal(errors[0].context.message, "database unavailable");
+    assert.equal(errors[0].context.name, "Error");
+    assert.equal(errors[0].context.code, "DB_503");
+    assert.equal(
+      errors[0].context.cause.message,
+      "connection reset for [redacted-email] with token=[redacted]",
+    );
+    assert.equal(errors[0].context.cause.name, "ConnectionError");
+    assert.equal(errors[0].context.cause.code, "ECONNRESET");
+    assert.equal("stack" in errors[0].context, false);
   `);
 });
 

@@ -53,12 +53,10 @@ export function createPaymentReconciliationGetHandler(
     try {
       summary = await dependencies.runMonitor({ now: dependencies.getNow() });
     } catch (error) {
-      dependencies.logError("[payment-reconciliation] Monitor failed", {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unknown reconciliation error",
-      });
+      dependencies.logError(
+        "[payment-reconciliation] Monitor failed",
+        buildReconciliationErrorContext(error),
+      );
 
       return Response.json(
         { error: "Payment reconciliation failed" },
@@ -96,6 +94,52 @@ function timingSafeStringEqual(expected: string, received: string): boolean {
   }
 
   return timingSafeEqual(expectedBuffer, receivedBuffer);
+}
+
+function buildReconciliationErrorContext(
+  error: unknown,
+  depth = 0,
+): Record<string, unknown> {
+  const context: Record<string, unknown> = {};
+  const maxCauseDepth = 3;
+
+  if (error instanceof Error) {
+    context.message = sanitizeReconciliationLogValue(error.message);
+    context.name = error.name;
+
+    if ("code" in error && typeof error.code === "string") {
+      context.code = error.code;
+    }
+
+    if (error.cause !== undefined) {
+      context.cause =
+        depth >= maxCauseDepth
+          ? { message: "Nested error cause omitted" }
+          : buildReconciliationErrorContext(error.cause, depth + 1);
+    }
+  } else {
+    context.error = sanitizeReconciliationLogValue(String(error));
+  }
+
+  return context;
+}
+
+function sanitizeReconciliationLogValue(value: string): string {
+  const maxLength = 2_000;
+  const sanitized = value
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[redacted-email]")
+    .replace(/(postgres(?:ql)?:\/\/[^:\s]+:)[^@\s]+(@)/gi, "$1[redacted]$2")
+    .replace(
+      /((?:password|secret|token|authorization|api[_-]?key)=)[^&\s]+/gi,
+      "$1[redacted]",
+    )
+    .replace(/(Bearer\s+)[A-Za-z0-9._~+/-]+=*/g, "$1[redacted]");
+
+  if (sanitized.length <= maxLength) {
+    return sanitized;
+  }
+
+  return `${sanitized.slice(0, maxLength)}…`;
 }
 
 function getConfiguredPaymentReconciliationCronSecrets(): string[] {

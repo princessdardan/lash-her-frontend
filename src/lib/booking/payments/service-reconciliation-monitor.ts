@@ -86,18 +86,14 @@ export interface ServiceReconciliationRepository {
   findBookedAppointmentsWithoutNoShowChargeRecord(
     now: Date,
   ): Promise<Array<{ holdId: string }>>;
-  findNoShowChargeFailedNotAlerted(
-    now: Date,
-  ): Promise<
+  findNoShowChargeFailedNotAlerted(now: Date): Promise<
     Array<{
       holdId: string;
       noShowChargeRecordId: string;
       status: NoShowChargeStatus;
     }>
   >;
-  findNoShowChargesPendingTooLong(
-    now: Date,
-  ): Promise<
+  findNoShowChargesPendingTooLong(now: Date): Promise<
     Array<{
       holdId: string;
       noShowChargeRecordId: string;
@@ -144,6 +140,19 @@ const APPOINTMENT_CHECKOUT_ORDER_PURPOSES: CheckoutOrderPurpose[] = [
   "appointment_custom_partial",
 ];
 
+async function runReconciliationCheck<T>(
+  checkName: keyof ServiceReconciliationRepository,
+  fn: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    throw new Error(`Reconciliation check "${String(checkName)}" failed`, {
+      cause: error,
+    });
+  }
+}
+
 function handledNoShowPaymentEventExists(): SQL {
   return sql`
     (select 1
@@ -175,25 +184,59 @@ export function createServiceReconciliationMonitor(
         squareInvoicePaymentEventsNotReconciled,
         amountCurrencyCustomerMismatches,
       ] = await Promise.all([
-        dependencies.repository.findConfirmedBookingsWithoutNoShowInvoice(now),
-        dependencies.repository.findSquarePaymentsPendingTooLong(now),
-        dependencies.repository.findPaidBookingsNotBooked(now),
-        dependencies.repository.findFailedNoShowCharges(now),
-        dependencies.repository.findBookedAppointmentsWithoutSavedPaymentMethod(
-          now,
+        runReconciliationCheck(
+          "findConfirmedBookingsWithoutNoShowInvoice",
+          () =>
+            dependencies.repository.findConfirmedBookingsWithoutNoShowInvoice(
+              now,
+            ),
         ),
-        dependencies.repository.findBookedAppointmentsWithoutPolicyAcceptance(
-          now,
+        runReconciliationCheck("findSquarePaymentsPendingTooLong", () =>
+          dependencies.repository.findSquarePaymentsPendingTooLong(now),
         ),
-        dependencies.repository.findBookedAppointmentsWithoutNoShowChargeRecord(
-          now,
+        runReconciliationCheck("findPaidBookingsNotBooked", () =>
+          dependencies.repository.findPaidBookingsNotBooked(now),
         ),
-        dependencies.repository.findNoShowChargeFailedNotAlerted(now),
-        dependencies.repository.findNoShowChargesPendingTooLong(now),
-        dependencies.repository.findSquareInvoicePaymentEventsNotReconciled(
-          now,
+        runReconciliationCheck("findFailedNoShowCharges", () =>
+          dependencies.repository.findFailedNoShowCharges(now),
         ),
-        dependencies.repository.findAmountCurrencyCustomerMismatches(now),
+        runReconciliationCheck(
+          "findBookedAppointmentsWithoutSavedPaymentMethod",
+          () =>
+            dependencies.repository.findBookedAppointmentsWithoutSavedPaymentMethod(
+              now,
+            ),
+        ),
+        runReconciliationCheck(
+          "findBookedAppointmentsWithoutPolicyAcceptance",
+          () =>
+            dependencies.repository.findBookedAppointmentsWithoutPolicyAcceptance(
+              now,
+            ),
+        ),
+        runReconciliationCheck(
+          "findBookedAppointmentsWithoutNoShowChargeRecord",
+          () =>
+            dependencies.repository.findBookedAppointmentsWithoutNoShowChargeRecord(
+              now,
+            ),
+        ),
+        runReconciliationCheck("findNoShowChargeFailedNotAlerted", () =>
+          dependencies.repository.findNoShowChargeFailedNotAlerted(now),
+        ),
+        runReconciliationCheck("findNoShowChargesPendingTooLong", () =>
+          dependencies.repository.findNoShowChargesPendingTooLong(now),
+        ),
+        runReconciliationCheck(
+          "findSquareInvoicePaymentEventsNotReconciled",
+          () =>
+            dependencies.repository.findSquareInvoicePaymentEventsNotReconciled(
+              now,
+            ),
+        ),
+        runReconciliationCheck("findAmountCurrencyCustomerMismatches", () =>
+          dependencies.repository.findAmountCurrencyCustomerMismatches(now),
+        ),
       ]);
 
       const findings: ServiceReconciliationFinding[] = [
