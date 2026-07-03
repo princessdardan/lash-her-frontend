@@ -12,7 +12,12 @@ export interface TPortableTextBlock {
   _type: "block";
   _key: string;
   style?: string;
-  children: Array<{ _type: "span"; _key: string; text: string; marks?: string[] }>;
+  children: Array<{
+    _type: "span";
+    _key: string;
+    text: string;
+    marks?: string[];
+  }>;
   markDefs?: Array<{ _type: string; _key: string; [key: string]: unknown }>;
   listItem?: string;
   level?: number;
@@ -189,7 +194,18 @@ export interface TFeatureItem {
   subHeading?: string;
   description?: string;
   link?: TLink;
-  product?: ({ _type: "reference"; _ref: string } | Pick<TProduct, "_id" | "title" | "slug" | "shortDescription" | "description" | "cardSubtitle" | "image">);
+  product?:
+    | { _type: "reference"; _ref: string }
+    | Pick<
+        TProduct,
+        | "_id"
+        | "title"
+        | "slug"
+        | "shortDescription"
+        | "description"
+        | "cardSubtitle"
+        | "image"
+      >;
 }
 
 export type TFeatureLayout = "imageLeft" | "imageRight" | "imageTop";
@@ -514,7 +530,12 @@ export interface TTrainingProgramCatalogItem {
 }
 
 export type TPromotionDiscountType = "percentage" | "fixed";
-export type TPromotionAppliesTo = "all" | "products" | "trainingPrograms" | "specificItems";
+export type TPromotionAppliesTo =
+  | "all"
+  | "products"
+  | "trainingPrograms"
+  | "services"
+  | "specificItems";
 
 export interface TPromotionCode {
   _id: string;
@@ -526,6 +547,7 @@ export interface TPromotionCode {
   appliesTo?: TPromotionAppliesTo;
   products?: Array<Pick<TProduct, "_id">>;
   trainingPrograms?: Array<Pick<TTrainingProgram, "_id">>;
+  services?: Array<Pick<TService, "_id">>;
 }
 
 export interface TProductsGroupedCatalog {

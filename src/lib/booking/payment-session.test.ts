@@ -454,3 +454,158 @@ test("rejects zero addOnPrice sessions with malformed selectedAddOn", async () =
 
   assert.deepEqual(result, { status: "not_found" });
 });
+
+test("exposes service promotion discount in active session pricing", async () => {
+  const hold = createHold({
+    offeringSnapshot: {
+      serviceSlug: "classic-fill",
+      title: "Classic Fill",
+      pricing: {
+        currency: "CAD",
+        depositAmount: 50,
+        fullPrice: 130,
+        customAmountMinimum: 50,
+        customAmountMaximum: 130,
+        addOnPrice: 25,
+      },
+      selectedAddOn: {
+        key: "addon-removal",
+        name: "Removal",
+        description: "Gentle removal before fill",
+        price: 25,
+        currency: "CAD",
+      },
+      promotionSnapshot: {
+        code: "SAVE30",
+        discountType: "percentage",
+        discountAmount: 30,
+        discountCents: 3900,
+        originalBasePriceCents: 13000,
+        discountedBasePriceCents: 9100,
+      },
+    },
+  });
+
+  const result = await resolveServiceBookingPaymentSession(
+    {
+      paymentSessionReference: "pay_sess_1",
+      serviceSlug: "classic-fill",
+      now,
+    },
+    createFakeRepository(hold),
+  );
+
+  assert.equal(result.status, "active");
+
+  if (result.status !== "active") {
+    throw new Error("Expected active session result");
+  }
+
+  assert.equal(result.session.pricing.fullPriceCents, 13000);
+  assert.equal(result.session.pricing.discountedBasePriceCents, 9100);
+  assert.equal(result.session.pricing.promotionCode, "SAVE30");
+  assert.equal(result.session.pricing.promotionDiscountCents, 3900);
+});
+
+test("exposes fully discounted service base as zero in active session pricing", async () => {
+  const hold = createHold({
+    offeringSnapshot: {
+      serviceSlug: "classic-fill",
+      title: "Classic Fill",
+      pricing: {
+        currency: "CAD",
+        depositAmount: 50,
+        fullPrice: 130,
+        customAmountMinimum: 50,
+        customAmountMaximum: 130,
+        addOnPrice: 25,
+      },
+      selectedAddOn: {
+        key: "addon-removal",
+        name: "Removal",
+        description: "Gentle removal before fill",
+        price: 25,
+        currency: "CAD",
+      },
+      promotionSnapshot: {
+        code: "FREE",
+        discountType: "percentage",
+        discountAmount: 100,
+        discountCents: 13000,
+        originalBasePriceCents: 13000,
+        discountedBasePriceCents: 0,
+      },
+    },
+  });
+
+  const result = await resolveServiceBookingPaymentSession(
+    {
+      paymentSessionReference: "pay_sess_1",
+      serviceSlug: "classic-fill",
+      now,
+    },
+    createFakeRepository(hold),
+  );
+
+  assert.equal(result.status, "active");
+
+  if (result.status !== "active") {
+    throw new Error("Expected active session result");
+  }
+
+  assert.equal(result.session.pricing.fullPriceCents, 13000);
+  assert.equal(result.session.pricing.discountedBasePriceCents, 0);
+  assert.equal(result.session.pricing.promotionCode, "FREE");
+  assert.equal(result.session.pricing.promotionDiscountCents, 13000);
+});
+
+test("ignores malformed promotion snapshot and falls back to full price", async () => {
+  const hold = createHold({
+    offeringSnapshot: {
+      serviceSlug: "classic-fill",
+      title: "Classic Fill",
+      pricing: {
+        currency: "CAD",
+        depositAmount: 50,
+        fullPrice: 130,
+        customAmountMinimum: 50,
+        customAmountMaximum: 130,
+        addOnPrice: 25,
+      },
+      selectedAddOn: {
+        key: "addon-removal",
+        name: "Removal",
+        description: "Gentle removal before fill",
+        price: 25,
+        currency: "CAD",
+      },
+      promotionSnapshot: {
+        code: "SAVE30",
+        discountType: "percentage",
+        discountAmount: 30,
+        discountCents: 3900,
+        originalBasePriceCents: 13000,
+        // discountedBasePriceCents is missing, so snapshot is invalid.
+      },
+    },
+  });
+
+  const result = await resolveServiceBookingPaymentSession(
+    {
+      paymentSessionReference: "pay_sess_1",
+      serviceSlug: "classic-fill",
+      now,
+    },
+    createFakeRepository(hold),
+  );
+
+  assert.equal(result.status, "active");
+
+  if (result.status !== "active") {
+    throw new Error("Expected active session result");
+  }
+
+  assert.equal(result.session.pricing.fullPriceCents, 13000);
+  assert.equal(result.session.pricing.discountedBasePriceCents, undefined);
+  assert.equal(result.session.pricing.promotionCode, undefined);
+});

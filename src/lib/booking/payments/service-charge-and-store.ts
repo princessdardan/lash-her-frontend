@@ -13,7 +13,12 @@ import type {
   SquarePaymentsClient,
 } from "@/lib/payments/square/payments-client";
 import type { SquareInvoicesClient } from "@/lib/payments/square/invoice-client";
-import { calculateServiceBookingHstQuote } from "@/lib/booking/service-tax-policy";
+import {
+  calculateServiceBookingHstQuote,
+  SERVICE_BOOKING_HST_POLICY_VERSION,
+  SERVICE_BOOKING_HST_RATE,
+  SERVICE_BOOKING_HST_TAX_NAME,
+} from "@/lib/booking/service-tax-policy";
 
 import type { CardOnFileCalendarFinalizer } from "./service-card-on-file";
 import type { ServicePaymentAlertLogger } from "./service-payment-alerts";
@@ -32,6 +37,7 @@ import {
   createDraftNoShowInvoice,
   type CreateDraftNoShowInvoiceRepository,
 } from "./service-no-show-invoice";
+import { readServicePromotionSnapshot } from "./service-promotion";
 
 export interface ChargeAndStoreBookingRequestBody {
   customer: {
@@ -380,20 +386,36 @@ export async function confirmChargeAndStoreBooking(
     };
   }
 
+  // The card-on-file flow requires a positive amount to authorize, store the
+  // card, and complete the booking. A zero-total confirmation is only possible
+  // when add-ons remain to be charged; otherwise the online flow cannot
+  // proceed.
+  if (resolvedPayment.amountCents <= 0) {
+    return {
+      ok: false,
+      error: "invalid_request",
+      message:
+        "This booking has no remaining balance to pay online. Please choose an option that covers the total, or contact us to book.",
+    };
+  }
+
   // The policy max and no-show charge record must reflect the full booked
   // service value, not the amount paid at booking time. This lets admin
   // no-show charges collect the remaining balance for deposit or custom
-  // partial bookings.
+  // partial bookings. When a service promotion is active, the booked total
+  // uses the discounted pretax base price, not the original full price.
   const fullBookedServiceAmountCents =
-    pricing.fullPriceCents + pricing.addOnPriceCents;
+    (pricing.discountedBasePriceCents ?? pricing.fullPriceCents) +
+    pricing.addOnPriceCents;
   const paidAtBookingCents = resolvedPayment.amountCents;
   const remainingBalanceCents = Math.max(
     0,
     fullBookedServiceAmountCents - paidAtBookingCents,
   );
-  const fullBookedTaxQuote = calculateServiceBookingHstQuote(
-    fullBookedServiceAmountCents,
-  );
+  const fullBookedTaxQuote =
+    fullBookedServiceAmountCents > 0
+      ? calculateServiceBookingHstQuote(fullBookedServiceAmountCents)
+      : zeroTaxQuote();
   const remainingBalanceTaxQuote =
     remainingBalanceCents > 0
       ? calculateServiceBookingHstQuote(remainingBalanceCents)
@@ -1309,9 +1331,9 @@ function validateChargeAndStoreBookingRequest(body: unknown): string | null {
   if (
     typeof body.payment.expectedAmountCents !== "number" ||
     !Number.isInteger(body.payment.expectedAmountCents) ||
-    body.payment.expectedAmountCents <= 0
+    body.payment.expectedAmountCents < 0
   ) {
-    return "Expected payment amount must be a positive integer";
+    return "Expected payment amount must be a non-negative integer";
   }
 
   const customAmountCents = body.payment.customAmountCents;
@@ -1405,6 +1427,13 @@ function readPricingSnapshot(
       : undefined
     : undefined;
 
+  const promotionSnapshot = readServicePromotionSnapshot(
+    snapshot,
+    fullPriceCents,
+  );
+  const discountedBasePriceCents =
+    promotionSnapshot?.discountedBasePriceCents ?? fullPriceCents;
+
   return {
     addOnPriceCents,
     currency: "CAD",
@@ -1415,7 +1444,16 @@ function readPricingSnapshot(
       ? customAmountMinimumCents
       : depositAmountCents,
     depositAmountCents,
+    ...(discountedBasePriceCents !== fullPriceCents
+      ? { discountedBasePriceCents }
+      : {}),
     fullPriceCents,
+    ...(promotionSnapshot !== null
+      ? {
+          promotionCode: promotionSnapshot.code,
+          promotionDiscountCents: promotionSnapshot.discountCents,
+        }
+      : {}),
     selectedAddOnName,
     serviceTitle: title,
   };
@@ -1535,6 +1573,17 @@ async function markRefundRequiredAndReturnFailure(
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
+}
+
+function zeroTaxQuote(): ReturnType<typeof calculateServiceBookingHstQuote> {
+  return {
+    expectedAmountCents: 0,
+    policyVersion: SERVICE_BOOKING_HST_POLICY_VERSION,
+    taxAmountCents: 0,
+    taxableAmountCents: 0,
+    taxName: SERVICE_BOOKING_HST_TAX_NAME,
+    taxRate: SERVICE_BOOKING_HST_RATE,
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

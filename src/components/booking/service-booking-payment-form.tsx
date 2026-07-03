@@ -24,6 +24,7 @@ import {
 
 export interface ServiceBookingPaymentFormProps {
   onExpired: () => void;
+  onSessionUpdate: (session: ServiceBookingPaymentSessionDisplay) => void;
   onSuccess: (result: ServiceBookingPaymentConfirmation) => void;
   session: ServiceBookingPaymentSessionDisplay;
 }
@@ -41,6 +42,7 @@ export interface ServiceBookingPaymentConfirmation {
 
 export function ServiceBookingPaymentForm({
   onExpired,
+  onSessionUpdate,
   onSuccess,
   session,
 }: ServiceBookingPaymentFormProps) {
@@ -54,6 +56,8 @@ export function ServiceBookingPaymentForm({
   const [policyAccepted, setPolicyAccepted] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [promotionCodeInput, setPromotionCodeInput] = useState("");
+  const [isApplyingPromotion, setIsApplyingPromotion] = useState(false);
   const squareFormRef = useRef<SquareChargeAndStoreFormHandle>(null);
   // Synchronous guard to prevent a fast double-click from tokenizing twice
   // before React has a chance to flip isSubmitting.
@@ -66,7 +70,10 @@ export function ServiceBookingPaymentForm({
       customAmountMaximumCents: session.pricing.customAmountMaximumCents,
       customAmountMinimumCents: session.pricing.customAmountMinimumCents,
       depositAmountCents: session.pricing.depositAmountCents,
+      discountedBasePriceCents: session.pricing.discountedBasePriceCents,
       fullPriceCents: session.pricing.fullPriceCents,
+      promotionCode: session.pricing.promotionCode,
+      promotionDiscountCents: session.pricing.promotionDiscountCents,
       serviceTitle: session.serviceTitle,
       selectedAddOnName: session.selectedAddOn?.name,
     }),
@@ -124,8 +131,19 @@ export function ServiceBookingPaymentForm({
     ? selectedAmountCents + selectedHstCents
     : 0;
 
+  const originalBookedTotalCents =
+    session.pricing.fullPriceCents + session.pricing.addOnPriceCents;
+  const bookedTotalAfterDiscountCents =
+    (session.pricing.discountedBasePriceCents ??
+      session.pricing.fullPriceCents) + session.pricing.addOnPriceCents;
+  const serviceDiscountCents = session.pricing.promotionDiscountCents ?? 0;
+
+  // The card-on-file provider cannot authorize or store a card for a zero
+  // total. Allow the user to see the breakdown, but block submission.
+  const isPaymentAmountPositive = selectedAmountCents > 0;
+
   const buyerDetails =
-    isCustomerValid && isPaymentSelectionValid
+    isCustomerValid && isPaymentSelectionValid && isPaymentAmountPositive
       ? {
           // Square verification and the backend authorization must both see the
           // HST-inclusive total so the verified/charged amount matches.
@@ -137,7 +155,114 @@ export function ServiceBookingPaymentForm({
       : null;
 
   const isSquareFormDisabled =
-    !isCustomerValid || !isPaymentSelectionValid || isSubmitting;
+    !isCustomerValid ||
+    !isPaymentSelectionValid ||
+    !isPaymentAmountPositive ||
+    isSubmitting ||
+    isApplyingPromotion;
+
+  const handleApplyPromotion = async () => {
+    const code = promotionCodeInput.trim();
+    if (code.length === 0) return;
+
+    setIsApplyingPromotion(true);
+    setErrorMessage("");
+
+    try {
+      const response = await fetch("/api/booking/payment/promotion-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "apply",
+          code,
+          paymentSessionReference: session.paymentSessionReference,
+        }),
+      });
+
+      if (response.status === 409) {
+        onExpired();
+        return;
+      }
+
+      const data = (await response.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      >;
+
+      if (!response.ok) {
+        throw new Error(
+          typeof data.error === "string"
+            ? data.error
+            : "Unable to apply promotion code.",
+        );
+      }
+
+      const updatedSession = parseSessionResponse(data.session);
+      if (updatedSession !== null) {
+        onSessionUpdate(updatedSession);
+        setPromotionCodeInput("");
+      } else {
+        throw new Error("Invalid session response from server.");
+      }
+    } catch (error: unknown) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to apply promotion code.",
+      );
+    } finally {
+      setIsApplyingPromotion(false);
+    }
+  };
+
+  const handleRemovePromotion = async () => {
+    setIsApplyingPromotion(true);
+    setErrorMessage("");
+
+    try {
+      const response = await fetch("/api/booking/payment/promotion-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "remove",
+          paymentSessionReference: session.paymentSessionReference,
+        }),
+      });
+
+      if (response.status === 409) {
+        onExpired();
+        return;
+      }
+
+      const data = (await response.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      >;
+
+      if (!response.ok) {
+        throw new Error(
+          typeof data.error === "string"
+            ? data.error
+            : "Unable to remove promotion code.",
+        );
+      }
+
+      const updatedSession = parseSessionResponse(data.session);
+      if (updatedSession !== null) {
+        onSessionUpdate(updatedSession);
+      } else {
+        throw new Error("Invalid session response from server.");
+      }
+    } catch (error: unknown) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to remove promotion code.",
+      );
+    } finally {
+      setIsApplyingPromotion(false);
+    }
+  };
 
   const handleTokenized = async (token: {
     sourceId: string;
@@ -213,7 +338,11 @@ export function ServiceBookingPaymentForm({
   };
 
   const handleSubmit = async () => {
-    if (!isCustomerValid || !isPaymentSelectionValid) {
+    if (
+      !isCustomerValid ||
+      !isPaymentSelectionValid ||
+      !isPaymentAmountPositive
+    ) {
       setErrorMessage(
         "Please complete all required fields, choose a payment amount, and accept the booking policy.",
       );
@@ -313,6 +442,65 @@ export function ServiceBookingPaymentForm({
       </div>
 
       <div className="space-y-3">
+        <Label>Promotion Code</Label>
+        {session.pricing.promotionCode ? (
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-lh-line bg-white p-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-black">
+                {session.pricing.promotionCode}
+              </p>
+              {session.pricing.promotionDiscountCents ? (
+                <p className="text-xs text-lh-muted">
+                  -{formatCad(session.pricing.promotionDiscountCents / 100)}{" "}
+                  service discount applied
+                </p>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={handleRemovePromotion}
+              disabled={isApplyingPromotion || isSubmitting}
+              className="shrink-0 text-sm font-medium text-red-600 hover:text-red-700 disabled:opacity-60"
+            >
+              Remove
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <Input
+              type="text"
+              value={promotionCodeInput}
+              onChange={(event) => setPromotionCodeInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  if (!isSubmitting) {
+                    void handleApplyPromotion();
+                  }
+                }
+              }}
+              placeholder="Enter code"
+              className="uppercase"
+              aria-label="Promotion code"
+              disabled={isApplyingPromotion || isSubmitting}
+            />
+            <button
+              type="button"
+              onClick={() => void handleApplyPromotion()}
+              disabled={
+                isApplyingPromotion ||
+                isSubmitting ||
+                promotionCodeInput.trim().length === 0
+              }
+              className="shrink-0 rounded-full bg-lh-primary px-5 py-2 font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-white transition-colors hover:bg-lh-accent disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isApplyingPromotion ? "Applying..." : "Apply"}
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-3">
         <Label>Payment Option</Label>
 
         <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-lh-line bg-white p-4">
@@ -328,10 +516,8 @@ export function ServiceBookingPaymentForm({
             Full payment
           </span>
           <span className="text-right text-sm text-lh-muted">
-            {formatCad(session.pricing.fullPriceCents / 100)}
-            {session.pricing.addOnPriceCents > 0
-              ? ` + ${formatCad(session.pricing.addOnPriceCents / 100)} add-on`
-              : ""}
+            {formatCad(bookedTotalAfterDiscountCents / 100)}
+            {session.pricing.addOnPriceCents > 0 ? " (includes add-on)" : ""}
             <span className="block text-xs">before HST</span>
           </span>
         </label>
@@ -349,7 +535,13 @@ export function ServiceBookingPaymentForm({
             Deposit only
           </span>
           <span className="text-right text-sm text-lh-muted">
-            {formatCad(session.pricing.depositAmountCents / 100)}
+            {formatCad(
+              Math.min(
+                session.pricing.depositAmountCents,
+                session.pricing.discountedBasePriceCents ??
+                  session.pricing.fullPriceCents,
+              ) / 100,
+            )}
             <span className="block text-xs">before HST</span>
           </span>
         </label>
@@ -378,11 +570,17 @@ export function ServiceBookingPaymentForm({
               inputMode="decimal"
               value={customAmount}
               onChange={(event) => setCustomAmount(event.target.value)}
-              placeholder={`Between ${formatCad(
-                session.pricing.depositAmountCents / 100,
-              )} and ${formatCad(
-                session.pricing.fullPriceCents / 100,
-              )} before HST`}
+              placeholder={
+                (session.pricing.discountedBasePriceCents ??
+                  session.pricing.fullPriceCents) === 0
+                  ? "Not available when the service is fully discounted"
+                  : `Between ${formatCad(
+                      session.pricing.depositAmountCents / 100,
+                    )} and ${formatCad(
+                      (session.pricing.discountedBasePriceCents ??
+                        session.pricing.fullPriceCents) / 100,
+                    )} before HST`
+              }
               aria-label="Custom payment amount"
             />
             {!isPaymentSelectionValid && selectedPayment.error && (
@@ -400,7 +598,32 @@ export function ServiceBookingPaymentForm({
             </p>
             <div className="space-y-2">
               <div className="flex justify-between text-sm text-lh-muted">
-                <span>Amount paid today</span>
+                <span>Original booked total</span>
+                <span>{formatCad(originalBookedTotalCents / 100)}</span>
+              </div>
+              {serviceDiscountCents > 0 ? (
+                <div className="flex justify-between text-sm text-lh-muted">
+                  <span>
+                    Service discount
+                    {session.pricing.promotionCode
+                      ? ` (${session.pricing.promotionCode})`
+                      : ""}
+                  </span>
+                  <span>-{formatCad(serviceDiscountCents / 100)}</span>
+                </div>
+              ) : null}
+              <div className="flex justify-between text-sm text-black">
+                <span>Booked total after discount</span>
+                <span>{formatCad(bookedTotalAfterDiscountCents / 100)}</span>
+              </div>
+              {session.pricing.addOnPriceCents > 0 && (
+                <p className="text-xs leading-snug text-lh-muted">
+                  Add-ons are included in the booked total and are not
+                  discounted.
+                </p>
+              )}
+              <div className="flex justify-between border-t border-lh-line pt-2 text-sm text-lh-muted">
+                <span>Paid today</span>
                 <span>{formatCad(selectedAmountCents / 100)}</span>
               </div>
               <div className="flex justify-between text-sm text-lh-muted">
@@ -412,6 +635,12 @@ export function ServiceBookingPaymentForm({
                 <span>{formatCad(selectedTotalCents / 100)}</span>
               </div>
             </div>
+            {!isPaymentAmountPositive && (
+              <p className="mt-3 text-sm font-medium text-red-600">
+                This booking has no remaining balance to pay online. Please
+                choose an option that covers the total, or contact us to book.
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -533,4 +762,134 @@ function isCardDisplay(value: unknown): value is {
   const keys = Object.keys(record);
 
   return keys.every((key) => allowedKeys.includes(key));
+}
+
+function parseSessionResponse(
+  value: unknown,
+): ServiceBookingPaymentSessionDisplay | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+
+  const currency = record.currency;
+  const expiresAt =
+    typeof record.expiresAt === "string" ? record.expiresAt : "";
+  const paymentSessionReference =
+    typeof record.paymentSessionReference === "string"
+      ? record.paymentSessionReference
+      : "";
+  const serviceSlug =
+    typeof record.serviceSlug === "string" ? record.serviceSlug : "";
+  const serviceTitle =
+    typeof record.serviceTitle === "string" ? record.serviceTitle : "";
+  const timezone = typeof record.timezone === "string" ? record.timezone : "";
+  const selectedStart =
+    typeof record.selectedStart === "string" ? record.selectedStart : "";
+  const selectedEnd =
+    typeof record.selectedEnd === "string" ? record.selectedEnd : "";
+
+  if (
+    currency !== "CAD" ||
+    expiresAt.length === 0 ||
+    paymentSessionReference.length === 0 ||
+    serviceSlug.length === 0 ||
+    serviceTitle.length === 0 ||
+    timezone.length === 0 ||
+    selectedStart.length === 0 ||
+    selectedEnd.length === 0 ||
+    !isRecord(record.pricing)
+  ) {
+    return null;
+  }
+
+  const pricingRecord = record.pricing as Record<string, unknown>;
+  const addOnPriceCents =
+    typeof pricingRecord.addOnPriceCents === "number"
+      ? pricingRecord.addOnPriceCents
+      : null;
+  const customAmountMaximumCents =
+    typeof pricingRecord.customAmountMaximumCents === "number"
+      ? pricingRecord.customAmountMaximumCents
+      : null;
+  const customAmountMinimumCents =
+    typeof pricingRecord.customAmountMinimumCents === "number"
+      ? pricingRecord.customAmountMinimumCents
+      : null;
+  const depositAmountCents =
+    typeof pricingRecord.depositAmountCents === "number"
+      ? pricingRecord.depositAmountCents
+      : null;
+  const fullPriceCents =
+    typeof pricingRecord.fullPriceCents === "number"
+      ? pricingRecord.fullPriceCents
+      : null;
+
+  if (
+    addOnPriceCents === null ||
+    customAmountMaximumCents === null ||
+    customAmountMinimumCents === null ||
+    depositAmountCents === null ||
+    fullPriceCents === null
+  ) {
+    return null;
+  }
+
+  const pricing: ServiceBookingPaymentSessionDisplay["pricing"] = {
+    addOnPriceCents,
+    customAmountMaximumCents,
+    customAmountMinimumCents,
+    depositAmountCents,
+    fullPriceCents,
+  };
+
+  if (typeof pricingRecord.discountedBasePriceCents === "number") {
+    pricing.discountedBasePriceCents = pricingRecord.discountedBasePriceCents;
+  }
+  if (typeof pricingRecord.promotionCode === "string") {
+    pricing.promotionCode = pricingRecord.promotionCode;
+  }
+  if (typeof pricingRecord.promotionDiscountCents === "number") {
+    pricing.promotionDiscountCents = pricingRecord.promotionDiscountCents;
+  }
+
+  return {
+    currency: "CAD",
+    expiresAt,
+    paymentSessionReference,
+    pricing,
+    selectedAddOn: parseSelectedAddOn(record.selectedAddOn),
+    selectedEnd,
+    selectedStart,
+    serviceSlug,
+    serviceTitle,
+    timezone,
+  };
+}
+
+function parseSelectedAddOn(
+  value: unknown,
+): ServiceBookingPaymentSessionDisplay["selectedAddOn"] {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+
+  const description =
+    typeof record.description === "string" ? record.description : "";
+  const key = typeof record.key === "string" ? record.key : "";
+  const name = typeof record.name === "string" ? record.name : "";
+  const priceCents =
+    typeof record.priceCents === "number" ? record.priceCents : null;
+
+  if (
+    description.length === 0 ||
+    key.length === 0 ||
+    name.length === 0 ||
+    priceCents === null
+  ) {
+    return undefined;
+  }
+
+  return { description, key, name, priceCents };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -1697,6 +1697,207 @@ test("does not create a Square no-show draft invoice when the full service amoun
   assert.equal(state.noShowInvoiceCreates.length, 0);
 });
 
+test("uses discounted service base for no-show max and full booked total", async () => {
+  const {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    state,
+  } = createFakes([
+    createHold({
+      offeringSnapshot: {
+        ...createHold().offeringSnapshot,
+        pricing: {
+          depositAmount: 50,
+          fullPrice: 130,
+          currency: "CAD",
+          customAmountMinimum: 50,
+          customAmountMaximum: 130,
+          addOnPrice: 25,
+        },
+        promotionSnapshot: {
+          code: "SAVE30",
+          discountType: "percentage",
+          discountAmount: 30,
+          discountCents: 3900,
+          originalBasePriceCents: 13000,
+          discountedBasePriceCents: 9100,
+        },
+      },
+    }),
+  ]);
+
+  const result = await confirmChargeAndStoreBooking(
+    createRequest({
+      payment: { option: "full", expectedAmountCents: 11600 },
+    }),
+    {
+      repository,
+      squarePayments,
+      squareCards,
+      squareInvoices,
+      squareCustomers,
+      calendarFinalizer,
+      alerts,
+      locationId: "LOC123",
+      now,
+    },
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(state.squarePaymentCreates[0]?.amount_money.amount, 13108);
+  assert.equal(state.noShowRecords[0]?.maxChargeCents, 11600);
+  assert.deepEqual(state.noShowRecords[0]?.providerMetadata?.amountSnapshot, {
+    fullBookedServiceAmountCents: 11600,
+    fullBookedServiceTaxCents: 1508,
+    fullBookedServiceTotalCents: 13108,
+    paidAtBookingCents: 11600,
+    paidAtBookingTaxCents: 1508,
+    paidAtBookingTotalCents: 13108,
+    remainingBalanceCents: 0,
+    remainingBalanceTaxCents: 0,
+    remainingBalanceWithTaxCents: 0,
+  });
+});
+
+test("rejects zero-total confirmation without calling Square or tax quote", async () => {
+  const {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    state,
+  } = createFakes([
+    createHold({
+      offeringSnapshot: {
+        ...createHold().offeringSnapshot,
+        pricing: {
+          depositAmount: 50,
+          fullPrice: 130,
+          currency: "CAD",
+          customAmountMinimum: 50,
+          customAmountMaximum: 130,
+          addOnPrice: 25,
+        },
+        promotionSnapshot: {
+          code: "FREE",
+          discountType: "percentage",
+          discountAmount: 100,
+          discountCents: 13000,
+          originalBasePriceCents: 13000,
+          discountedBasePriceCents: 0,
+        },
+      },
+    }),
+  ]);
+
+  const result = await confirmChargeAndStoreBooking(
+    createRequest({
+      payment: { option: "deposit", expectedAmountCents: 0 },
+    }),
+    {
+      repository,
+      squarePayments,
+      squareCards,
+      squareInvoices,
+      squareCustomers,
+      calendarFinalizer,
+      alerts,
+      locationId: "LOC123",
+      now,
+    },
+  );
+
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.error, "invalid_request");
+  assert.equal(
+    result.message,
+    "This booking has no remaining balance to pay online. Please choose an option that covers the total, or contact us to book.",
+  );
+  assert.equal(state.events.includes("createPayment"), false);
+  assert.equal(state.events.includes("createSquareCustomer"), false);
+  assert.equal(state.markHoldPaymentFailedCalls.length, 0);
+});
+
+test("full payment charges add-ons when service base is fully discounted", async () => {
+  const {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    state,
+  } = createFakes([
+    createHold({
+      offeringSnapshot: {
+        ...createHold().offeringSnapshot,
+        pricing: {
+          depositAmount: 50,
+          fullPrice: 130,
+          currency: "CAD",
+          customAmountMinimum: 50,
+          customAmountMaximum: 130,
+          addOnPrice: 25,
+        },
+        promotionSnapshot: {
+          code: "FREE",
+          discountType: "percentage",
+          discountAmount: 100,
+          discountCents: 13000,
+          originalBasePriceCents: 13000,
+          discountedBasePriceCents: 0,
+        },
+      },
+    }),
+  ]);
+
+  const result = await confirmChargeAndStoreBooking(
+    createRequest({
+      payment: { option: "full", expectedAmountCents: 2500 },
+    }),
+    {
+      repository,
+      squarePayments,
+      squareCards,
+      squareInvoices,
+      squareCustomers,
+      calendarFinalizer,
+      alerts,
+      locationId: "LOC123",
+      now,
+    },
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(state.squarePaymentCreates.length, 1);
+  assert.equal(state.squarePaymentCreates[0]?.amount_money.amount, 2825);
+  assert.equal(state.noShowRecords.length, 1);
+  assert.equal(state.noShowRecords[0]?.maxChargeCents, 2500);
+  assert.deepEqual(state.noShowRecords[0]?.providerMetadata?.amountSnapshot, {
+    fullBookedServiceAmountCents: 2500,
+    fullBookedServiceTaxCents: 325,
+    fullBookedServiceTotalCents: 2825,
+    paidAtBookingCents: 2500,
+    paidAtBookingTaxCents: 325,
+    paidAtBookingTotalCents: 2825,
+    remainingBalanceCents: 0,
+    remainingBalanceTaxCents: 0,
+    remainingBalanceWithTaxCents: 0,
+  });
+  assert.equal(state.squareOrderCreates.length, 0);
+  assert.equal(state.noShowInvoiceCreates.length, 0);
+});
+
 test("creates a Square no-show draft invoice for the remaining balance on a custom partial payment", async () => {
   const {
     repository,

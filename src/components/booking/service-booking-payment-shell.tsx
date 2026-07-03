@@ -11,10 +11,11 @@ import { ServiceBookingPaymentForm } from "./service-booking-payment-form";
 import type { ServiceBookingPaymentConfirmation } from "./service-booking-payment-form";
 
 export function ServiceBookingPaymentShell({
-  session,
+  session: initialSession,
 }: {
   session: ServiceBookingPaymentSessionDisplay;
 }) {
+  const [session, setSession] = useState(initialSession);
   const [errorMessage, setErrorMessage] = useState("");
   const [isExpired, setIsExpired] = useState(false);
   const isMountedRef = useRef(true);
@@ -33,6 +34,14 @@ export function ServiceBookingPaymentShell({
     setIsExpired(true);
     setErrorMessage("Hold expired, choose another time.");
   }, []);
+
+  const handleSessionUpdate = useCallback(
+    (updatedSession: ServiceBookingPaymentSessionDisplay) => {
+      if (!isMountedRef.current) return;
+      setSession(updatedSession);
+    },
+    [],
+  );
 
   // Avoid state updates if the promise resolves/rejects after navigation/unmount.
   useEffect(() => {
@@ -89,6 +98,7 @@ export function ServiceBookingPaymentShell({
         ) : (
           <ServiceBookingPaymentForm
             session={session}
+            onSessionUpdate={handleSessionUpdate}
             onSuccess={handleSuccess}
             onExpired={handleExpired}
           />
@@ -119,6 +129,19 @@ export function ServiceBookingPaymentShell({
                 <span>{formatCad(session.selectedAddOn.priceCents / 100)}</span>
               </div>
             )}
+            {session.pricing.promotionDiscountCents ? (
+              <div className="flex justify-between text-sm text-lh-muted">
+                <span>
+                  Discount{" "}
+                  {session.pricing.promotionCode
+                    ? `(${session.pricing.promotionCode})`
+                    : ""}
+                </span>
+                <span>
+                  -{formatCad(session.pricing.promotionDiscountCents / 100)}
+                </span>
+              </div>
+            ) : null}
             <div className="border-t border-lh-line pt-4">
               <p className="mb-1 text-sm font-medium text-black">
                 Selected Time
@@ -132,12 +155,23 @@ export function ServiceBookingPaymentShell({
               <div className="flex justify-between text-sm text-lh-muted">
                 <span>Deposit (before HST)</span>
                 <span>
-                  {formatCad(session.pricing.depositAmountCents / 100)}
+                  {formatCad(
+                    Math.min(
+                      session.pricing.depositAmountCents,
+                      session.pricing.discountedBasePriceCents ??
+                        session.pricing.fullPriceCents,
+                    ) / 100,
+                  )}
                 </span>
               </div>
               <div className="flex justify-between text-sm text-lh-muted">
                 <span>Full price (before HST)</span>
-                <span>{formatCad(session.pricing.fullPriceCents / 100)}</span>
+                <span>
+                  {formatCad(
+                    (session.pricing.discountedBasePriceCents ??
+                      session.pricing.fullPriceCents) / 100,
+                  )}
+                </span>
               </div>
               <p className="mt-2 text-xs leading-snug text-lh-muted">
                 Ontario HST (13%) is added to the selected payment amount at

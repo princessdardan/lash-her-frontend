@@ -302,7 +302,9 @@ function parsePayment(
     return null;
   }
 
-  const expectedAmountCents = parsePositiveInteger(value.expectedAmountCents);
+  const expectedAmountCents = parseNonNegativeInteger(
+    value.expectedAmountCents,
+  );
 
   if (expectedAmountCents === null) {
     return null;
@@ -322,6 +324,19 @@ function parsePayment(
   }
 
   return result;
+}
+
+function parseNonNegativeInteger(value: unknown): number | null {
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    value < 0 ||
+    !Number.isInteger(value)
+  ) {
+    return null;
+  }
+
+  return value;
 }
 
 function parsePolicy(
