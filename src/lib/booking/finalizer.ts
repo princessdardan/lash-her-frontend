@@ -5,7 +5,11 @@ import { isSlotAvailable } from "./availability";
 import { parseBookingCalendarIds } from "./calendar-ids";
 import type { BookingHoldRecord, BookingHoldState } from "./holds";
 import { PAYMENT_SUCCESS_GRACE_MINUTES } from "./payment-policy";
-import type { BookingSettings, BookingTypeConfig, CalendarEventWindow } from "./types";
+import type {
+  BookingSettings,
+  BookingTypeConfig,
+  CalendarEventWindow,
+} from "./types";
 import { buildAvailabilityWindowsFromHours } from "./schedule-windows";
 
 export { PAYMENT_SUCCESS_GRACE_MINUTES };
@@ -81,6 +85,21 @@ export type FinalizePaidBookingResult =
         | "paid_unbookable_rebooking_pending";
     };
 
+/**
+ * Returns true when a failed finalization status represents a condition that
+ * requires staff intervention and an admin alert. Transient states such as
+ * `finalization_pending` or `hold_not_found` can resolve on a later retry and
+ * must not trigger "action required" emails.
+ */
+export function isBookingFinalizationStatusAlertable(
+  status: FinalizePaidBookingResult["status"],
+): boolean {
+  return (
+    status === "manual_followup" ||
+    status === "paid_unbookable_rebooking_pending"
+  );
+}
+
 export interface AppointmentFinalizerOrderInput {
   _id: string;
   amount: number;
@@ -90,7 +109,11 @@ export interface AppointmentFinalizerOrderInput {
 }
 
 export interface BookingFinalizationLock {
-  acquire(input: { holdId: string; lockId: string; ttlSeconds: number }): Promise<boolean>;
+  acquire(input: {
+    holdId: string;
+    lockId: string;
+    ttlSeconds: number;
+  }): Promise<boolean>;
   release(input: { holdId: string; lockId: string }): Promise<void>;
 }
 
@@ -101,7 +124,8 @@ export interface FinalizeAppointmentPaymentForOrderInput {
   transactionId: string;
 }
 
-export type FinalizeAppointmentPaymentForOrderResult = FinalizePaidBookingResult;
+export type FinalizeAppointmentPaymentForOrderResult =
+  FinalizePaidBookingResult;
 
 export async function finalizeAppointmentPaymentForOrder(
   input: FinalizeAppointmentPaymentForOrderInput,
@@ -127,116 +151,141 @@ export async function finalizeAppointmentPaymentForOrder(
   const operationalStoreModule = await import("./operational-store");
 
   return finalizeAppointmentPaymentWithLock({
-    finalize: () => finalizePaidBooking({
-      calendar: {
-        async findExistingEventForHold(existingHold) {
-          if (existingHold.googleEventId !== null) {
-            return existingHold.googleEventId;
-          }
+    finalize: () =>
+      finalizePaidBooking({
+        calendar: {
+          async findExistingEventForHold(existingHold) {
+            if (existingHold.googleEventId !== null) {
+              return existingHold.googleEventId;
+            }
 
-          const settings = await loadersModule.loaders.getBookingSettings({ mode: "published", stega: false });
-
-          if (settings === null) {
-            throw new BookingManualFollowupError("Booking calendar is not configured.");
-          }
-
-          const calendarIds = parseBookingCalendarIds(settings);
-
-          if (calendarIds.length === 0) {
-            throw new BookingManualFollowupError("Booking calendar is not configured.");
-          }
-
-          for (const calendarId of calendarIds) {
-            const eventId = await googleCalendarModule.findBookingEventForHold({
-              calendarId,
-              hold: existingHold,
+            const settings = await loadersModule.loaders.getBookingSettings({
+              mode: "published",
+              stega: false,
             });
 
-            if (eventId !== null) {
-              return eventId;
+            if (settings === null) {
+              throw new BookingManualFollowupError(
+                "Booking calendar is not configured.",
+              );
             }
-          }
 
-          return null;
-        },
-        async insertBookingEvent(paidHold) {
-          const calendarLockId = nanoid();
-          const calendarLockAcquired = await operationalStoreModule.acquireCalendarLock(
-            calendarLockId,
-            20,
-          );
-
-          if (!calendarLockAcquired) {
-            throw new BookingManualFollowupError("Booking calendar is busy. Staff will confirm this appointment manually.");
-          }
-
-          try {
-            const settings = await getBookingSettingsOrThrow(() => loadersModule.loaders.getBookingSettings({ mode: "published", stega: false }));
             const calendarIds = parseBookingCalendarIds(settings);
 
             if (calendarIds.length === 0) {
-              throw new BookingManualFollowupError("Booking calendar is not configured.");
+              throw new BookingManualFollowupError(
+                "Booking calendar is not configured.",
+              );
             }
 
-            const primaryCalendarId = calendarIds[0];
+            for (const calendarId of calendarIds) {
+              const eventId =
+                await googleCalendarModule.findBookingEventForHold({
+                  calendarId,
+                  hold: existingHold,
+                });
 
-            const available = await isPaidHoldSlotStillAvailable({
-              calendarIds,
-              listCalendarEvents: (opts) => googleCalendarModule.listCalendarEvents(opts),
-              hold: paidHold,
-              holdsModule,
-              now: input.now ?? new Date(),
-              settings,
-            });
-
-            if (!available) {
-              throw new BookingRebookingRequiredError("The selected appointment time became unavailable after payment.");
+              if (eventId !== null) {
+                return eventId;
+              }
             }
 
-            return googleCalendarModule.insertBookingEvent({
-              calendarId: primaryCalendarId,
-              event: googleCalendarModule.buildBookingEventPayload({
-                answers: [],
-                bookingMetadata: {
-                  checkoutOrderId: paidHold.checkoutOrderId ?? undefined,
-                  checkoutOrderPublicId: paidHold.checkoutOrderPublicId ?? undefined,
-                  holdId: paidHold.id,
-                  paymentProvider: paidHold.paymentProvider ?? "helcim",
-                },
-                bookingTypeLabel: getBookingTypeLabel(paidHold),
-                customer: paidHold.customer,
-                end: paidHold.selectedEnd,
+            return null;
+          },
+          async insertBookingEvent(paidHold) {
+            const calendarLockId = nanoid();
+            const calendarLockAcquired =
+              await operationalStoreModule.acquireCalendarLock(
+                calendarLockId,
+                20,
+              );
+
+            if (!calendarLockAcquired) {
+              throw new BookingManualFollowupError(
+                "Booking calendar is busy. Staff will confirm this appointment manually.",
+              );
+            }
+
+            try {
+              const settings = await getBookingSettingsOrThrow(() =>
+                loadersModule.loaders.getBookingSettings({
+                  mode: "published",
+                  stega: false,
+                }),
+              );
+              const calendarIds = parseBookingCalendarIds(settings);
+
+              if (calendarIds.length === 0) {
+                throw new BookingManualFollowupError(
+                  "Booking calendar is not configured.",
+                );
+              }
+
+              const primaryCalendarId = calendarIds[0];
+
+              const available = await isPaidHoldSlotStillAvailable({
+                calendarIds,
+                listCalendarEvents: (opts) =>
+                  googleCalendarModule.listCalendarEvents(opts),
                 hold: paidHold,
-                start: paidHold.selectedStart,
-                timezone: paidHold.timezone,
-              }),
-            });
-          } finally {
-            await operationalStoreModule.releaseCalendarLock(calendarLockId);
-          }
+                holdsModule,
+                now: input.now ?? new Date(),
+                settings,
+              });
+
+              if (!available) {
+                throw new BookingRebookingRequiredError(
+                  "The selected appointment time became unavailable after payment.",
+                );
+              }
+
+              return googleCalendarModule.insertBookingEvent({
+                calendarId: primaryCalendarId,
+                event: googleCalendarModule.buildBookingEventPayload({
+                  answers: [],
+                  bookingMetadata: {
+                    checkoutOrderId: paidHold.checkoutOrderId ?? undefined,
+                    checkoutOrderPublicId:
+                      paidHold.checkoutOrderPublicId ?? undefined,
+                    holdId: paidHold.id,
+                    paymentProvider: paidHold.paymentProvider ?? "helcim",
+                  },
+                  bookingTypeLabel: getBookingTypeLabel(paidHold),
+                  customer: paidHold.customer,
+                  end: paidHold.selectedEnd,
+                  hold: paidHold,
+                  start: paidHold.selectedStart,
+                  timezone: paidHold.timezone,
+                }),
+              });
+            } finally {
+              await operationalStoreModule.releaseCalendarLock(calendarLockId);
+            }
+          },
         },
-      },
-      holdId: hold.id,
-      now: input.now ?? new Date(),
-      payment: {
-        amountCents: Math.round(input.order.amount * 100),
-        currency: input.order.currency,
-        source: input.source,
-        transactionId: input.transactionId,
-      },
-      repository: holdsModule.createDrizzleBookingFinalizerRepository(),
-    }),
+        holdId: hold.id,
+        now: input.now ?? new Date(),
+        payment: {
+          amountCents: Math.round(input.order.amount * 100),
+          currency: input.order.currency,
+          source: input.source,
+          transactionId: input.transactionId,
+        },
+        repository: holdsModule.createDrizzleBookingFinalizerRepository(),
+      }),
     holdId: hold.id,
     lock: {
-      acquire: ({ holdId, lockId, ttlSeconds }) => operationalStoreModule.acquireScopedBookingLock({
-        key: `appointment-finalizer:${holdId}`,
-        lockId,
-        ttlSeconds,
-      }),
-      release: ({ holdId, lockId }) => operationalStoreModule.releaseScopedBookingLock({
-        key: `appointment-finalizer:${holdId}`,
-        lockId,
-      }),
+      acquire: ({ holdId, lockId, ttlSeconds }) =>
+        operationalStoreModule.acquireScopedBookingLock({
+          key: `appointment-finalizer:${holdId}`,
+          lockId,
+          ttlSeconds,
+        }),
+      release: ({ holdId, lockId }) =>
+        operationalStoreModule.releaseScopedBookingLock({
+          key: `appointment-finalizer:${holdId}`,
+          lockId,
+        }),
     },
   });
 }
@@ -315,7 +364,10 @@ export async function isPaidHoldSlotStillAvailable(input: {
   now: Date;
   settings: BookingSettings;
 }): Promise<boolean> {
-  const bookingTypeConfig = toPaidHoldBookingTypeConfig(input.settings, input.hold);
+  const bookingTypeConfig = toPaidHoldBookingTypeConfig(
+    input.settings,
+    input.hold,
+  );
 
   const [calendarEventsArrays, activeHolds] = await Promise.all([
     Promise.all(
@@ -324,8 +376,8 @@ export async function isPaidHoldSlotStillAvailable(input: {
           calendarId,
           timeMin: input.now,
           timeMax: input.hold.selectedEnd,
-        })
-      )
+        }),
+      ),
     ),
     input.holdsModule.listActiveAppointmentHolds({
       offeringId: input.hold.offeringId,
@@ -362,8 +414,12 @@ function toPaidHoldBookingTypeConfig(
   return {
     type: hold.bookingType,
     label: getBookingTypeLabel(hold),
-    description: getSnapshotString(hold.offeringSnapshot.description) ?? "Lash appointment",
-    durationMinutes: getSnapshotNumber(hold.offeringSnapshot.durationMinutes) ?? getHoldDurationMinutes(hold),
+    description:
+      getSnapshotString(hold.offeringSnapshot.description) ??
+      "Lash appointment",
+    durationMinutes:
+      getSnapshotNumber(hold.offeringSnapshot.durationMinutes) ??
+      getHoldDurationMinutes(hold),
     slotIntervalMinutes: settings.slotIntervalMinutes,
     bufferMinutes: settings.bufferMinutes,
     questions: settings.intakeQuestions,
@@ -371,23 +427,37 @@ function toPaidHoldBookingTypeConfig(
 }
 
 function getSnapshotString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+  return typeof value === "string" && value.trim().length > 0
+    ? value
+    : undefined;
 }
 
 function getSnapshotNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 function getHoldDurationMinutes(hold: BookingHoldRecord): number {
-  return Math.max(1, Math.round((hold.selectedEnd.getTime() - hold.selectedStart.getTime()) / MINUTE_MS));
+  return Math.max(
+    1,
+    Math.round(
+      (hold.selectedEnd.getTime() - hold.selectedStart.getTime()) / MINUTE_MS,
+    ),
+  );
 }
 
 export function isAppointmentCheckoutPurpose(
   purpose: CheckoutOrderPurpose,
-): purpose is Extract<CheckoutOrderPurpose, "appointment_deposit" | "appointment_full" | "appointment_custom_partial"> {
-  return purpose === "appointment_deposit" ||
+): purpose is Extract<
+  CheckoutOrderPurpose,
+  "appointment_deposit" | "appointment_full" | "appointment_custom_partial"
+> {
+  return (
+    purpose === "appointment_deposit" ||
     purpose === "appointment_full" ||
-    purpose === "appointment_custom_partial";
+    purpose === "appointment_custom_partial"
+  );
 }
 
 function getBookingTypeLabel(hold: BookingHoldRecord): string {
@@ -426,7 +496,10 @@ export async function finalizePaidBooking(input: {
   if (lockedHold.state === "paid_unbookable_rebooking_pending") {
     return {
       ok: false,
-      error: lockedHold.manualReviewReason ?? lockedHold.failureReason ?? "Paid booking requires manual rebooking review.",
+      error:
+        lockedHold.manualReviewReason ??
+        lockedHold.failureReason ??
+        "Paid booking requires manual rebooking review.",
       status: "paid_unbookable_rebooking_pending",
     };
   }
@@ -439,13 +512,14 @@ export async function finalizePaidBooking(input: {
     };
   }
 
-  const paidHold = lockedHold.state === "paid_pending_booking"
-    ? lockedHold
-    : await input.repository.recordPaidPendingBooking({
-      holdId: lockedHold.id,
-      now: input.now,
-      payment: input.payment,
-    });
+  const paidHold =
+    lockedHold.state === "paid_pending_booking"
+      ? lockedHold
+      : await input.repository.recordPaidPendingBooking({
+          holdId: lockedHold.id,
+          now: input.now,
+          payment: input.payment,
+        });
 
   return finalizePaidCalendarBooking({
     calendar: input.calendar,
@@ -462,8 +536,9 @@ async function finalizePaidCalendarBooking(input: {
   repository: BookingFinalizerRepository;
 }): Promise<FinalizePaidBookingResult> {
   try {
-    const existingEventId = input.paidHold.googleEventId ??
-      await input.calendar.findExistingEventForHold(input.paidHold);
+    const existingEventId =
+      input.paidHold.googleEventId ??
+      (await input.calendar.findExistingEventForHold(input.paidHold));
 
     if (existingEventId !== null) {
       const bookedHold = await input.repository.markBooked({
@@ -568,20 +643,30 @@ async function markPaidUnbookableForRebooking(input: {
   };
 }
 
-function isCalendarCorrelatedHold(hold: BookingHoldRecord): hold is BookingHoldRecord & { googleEventId: string } {
-  return hold.googleEventId !== null && (hold.state === "booked" || hold.state === "manual_rebooked");
+function isCalendarCorrelatedHold(
+  hold: BookingHoldRecord,
+): hold is BookingHoldRecord & { googleEventId: string } {
+  return (
+    hold.googleEventId !== null &&
+    (hold.state === "booked" || hold.state === "manual_rebooked")
+  );
 }
 
 function isPaidBookingFinalizableState(state: BookingHoldState): boolean {
-  return state === "held" ||
+  return (
+    state === "held" ||
     state === "payment_pending" ||
     state === "paid_pending_booking" ||
     state === "expired" ||
     state === "booking_failed" ||
-    state === "manual_followup";
+    state === "manual_followup"
+  );
 }
 
-function isPastPaymentSuccessGrace(input: { hold: BookingHoldRecord; now: Date }): boolean {
+function isPastPaymentSuccessGrace(input: {
+  hold: BookingHoldRecord;
+  now: Date;
+}): boolean {
   const graceExpiresAt = new Date(
     input.hold.expiresAt.getTime() + PAYMENT_SUCCESS_GRACE_MINUTES * MINUTE_MS,
   );

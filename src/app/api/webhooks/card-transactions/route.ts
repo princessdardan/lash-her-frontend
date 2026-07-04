@@ -8,8 +8,12 @@ import {
 import {
   finalizeAppointmentPaymentForOrder,
   isAppointmentCheckoutPurpose,
+  isBookingFinalizationStatusAlertable,
 } from "@/lib/booking/finalizer";
-import { sendBookingConfirmationEmailForOrder } from "@/lib/booking/email";
+import {
+  sendBookingConfirmationEmailForOrder,
+  sendBookingSchedulingFailureAdminEmail,
+} from "@/lib/booking/email";
 import { getHelcimCardTransaction } from "@/lib/commerce/helcim-client";
 import { sendProductOrderConfirmationEmailForOrder } from "@/lib/commerce/product-order-email";
 import { createPaymentMockStore } from "@/lib/payment-mocks/in-memory-store";
@@ -32,6 +36,7 @@ const webhookPaymentMockStore = createPaymentMockStore();
 
 interface HelcimWebhookDependencies {
   finalizeAppointmentPaymentForOrder: typeof finalizeAppointmentPaymentForOrder;
+  getAppointmentHoldByCheckoutOrderPublicId?: typeof import("@/lib/booking/holds").getAppointmentHoldByCheckoutOrderPublicId;
   getCardTransaction: (
     cardTransactionId: string,
     req: Request,
@@ -41,12 +46,16 @@ interface HelcimWebhookDependencies {
   getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice: typeof getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice;
   recordEvent: typeof recordHelcimWebhookEventWithOrder;
   sendBookingConfirmationEmailForOrder: typeof sendBookingConfirmationEmailForOrder;
+  sendBookingSchedulingFailureAdminEmail?: (
+    input: import("@/lib/booking/email").SendBookingSchedulingFailureAdminEmailInput,
+  ) => Promise<void>;
   sendProductOrderConfirmationEmailForOrder: typeof sendProductOrderConfirmationEmailForOrder;
   sendTrainingPaymentNotificationEmailsIfNeeded: typeof sendTrainingPaymentNotificationEmailsIfNeeded;
 }
 
 const defaultDependencies: HelcimWebhookDependencies = {
   finalizeAppointmentPaymentForOrder,
+  getAppointmentHoldByCheckoutOrderPublicId: undefined,
   getCardTransaction: async (cardTransactionId, req) => {
     const gateway = await resolveHelcimWebhookGatewayForRequest(req);
     return gateway.getCardTransaction(cardTransactionId);
@@ -57,6 +66,7 @@ const defaultDependencies: HelcimWebhookDependencies = {
   getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice,
   recordEvent: recordHelcimWebhookEventWithOrder,
   sendBookingConfirmationEmailForOrder,
+  sendBookingSchedulingFailureAdminEmail,
   sendProductOrderConfirmationEmailForOrder,
   sendTrainingPaymentNotificationEmailsIfNeeded,
 };
@@ -188,7 +198,9 @@ async function finalizeAppointmentWebhookPayment(
   dependencies: Pick<
     HelcimWebhookDependencies,
     | "finalizeAppointmentPaymentForOrder"
+    | "getAppointmentHoldByCheckoutOrderPublicId"
     | "sendBookingConfirmationEmailForOrder"
+    | "sendBookingSchedulingFailureAdminEmail"
   >,
 ): Promise<void> {
   const transactionId = event.helcimTransactionId;
@@ -220,6 +232,32 @@ async function finalizeAppointmentWebhookPayment(
         status: result.status,
       },
     );
+
+    if (
+      isBookingFinalizationStatusAlertable(result.status) &&
+      dependencies.sendBookingSchedulingFailureAdminEmail !== undefined
+    ) {
+      try {
+        await dependencies.sendBookingSchedulingFailureAdminEmail({
+          amountCents: Math.round(recordedEvent.matchedOrder.amount * 100),
+          currency: recordedEvent.matchedOrder.currency,
+          currentBookingStatus: result.status,
+          failureReason: result.error,
+          orderId: recordedEvent.matchedOrder.orderId,
+          paymentProvider: "helcim",
+          paymentReference: transactionId,
+          paymentStatus: event.status ?? "unknown",
+        });
+      } catch (emailError) {
+        log("error", "[helcim-webhook] Admin scheduling failure alert failed", {
+          error:
+            emailError instanceof Error
+              ? emailError.message
+              : "Unknown email error",
+          orderId: recordedEvent.matchedOrder.orderId,
+        });
+      }
+    }
   }
 
   if (result.ok) {

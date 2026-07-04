@@ -22,6 +22,7 @@ import {
 
 import type { CardOnFileCalendarFinalizer } from "./service-card-on-file";
 import type { ServicePaymentAlertLogger } from "./service-payment-alerts";
+import type { SendBookingSchedulingFailureAdminEmailInput } from "@/lib/booking/email";
 import {
   getCanonicalServiceNoShowPolicyEvidence,
   hashServiceNoShowPolicyText,
@@ -217,6 +218,9 @@ export interface ConfirmChargeAndStoreBookingDependencies {
   now?: Date;
   recordMarketingChoice?: (input: RecordMarketingChoiceInput) => Promise<void>;
   repository: ChargeAndStoreRepository;
+  sendBookingSchedulingFailureAdminEmail?: (
+    input: SendBookingSchedulingFailureAdminEmailInput,
+  ) => Promise<void>;
   squareCards: SquareCardsClient;
   squareCustomers: SquareCustomerGateway;
   squareInvoices: SquareInvoicesClient;
@@ -1085,8 +1089,6 @@ export async function confirmChargeAndStoreBooking(
         reason: calendarResult.error,
         now,
       });
-
-      return successResult;
     } catch (error) {
       await alertInfrastructureError(
         dependencies,
@@ -1103,6 +1105,19 @@ export async function confirmChargeAndStoreBooking(
         "infrastructure_error",
       );
     }
+
+    await sendBookingSchedulingFailureAdminEmailSafe(dependencies, {
+      amountCents: capturedPayment.payment.amount_money?.amount ?? 0,
+      currency: capturedPayment.payment.amount_money?.currency ?? "CAD",
+      currentBookingStatus: calendarResult.status,
+      failureReason: calendarResult.error,
+      hold,
+      paymentProvider: "square",
+      paymentReference: squarePaymentId,
+      paymentStatus: capturedPayment.payment.status ?? "unknown",
+    });
+
+    return successResult;
   }
 
   try {
@@ -1569,6 +1584,30 @@ async function markRefundRequiredAndReturnFailure(
     error: errorCode,
     message,
   };
+}
+
+async function sendBookingSchedulingFailureAdminEmailSafe(
+  dependencies: ConfirmChargeAndStoreBookingDependencies,
+  input: SendBookingSchedulingFailureAdminEmailInput,
+): Promise<void> {
+  if (dependencies.sendBookingSchedulingFailureAdminEmail === undefined) {
+    return;
+  }
+
+  try {
+    await dependencies.sendBookingSchedulingFailureAdminEmail(input);
+  } catch (emailError) {
+    dependencies.alerts.alert({
+      category: "stuck_payment_state",
+      severity: "error",
+      message: "Failed to send admin alert for booking scheduling failure",
+      context: {
+        error: getErrorMessage(emailError),
+        holdId: input.hold?.id,
+        reason: input.failureReason,
+      },
+    });
+  }
 }
 
 function getErrorMessage(error: unknown): string {
