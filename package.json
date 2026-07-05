@@ -21,6 +21,7 @@
     "test:report": "playwright show-report",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate-private-db.ts",
+    "db:create-payment-reconciliation-indexes": "tsx scripts/create-payment-reconciliation-indexes.ts",
     "git:verify-remote": "node scripts/verify-git-remote.mjs origin",
     "git:push-staging": "npm run git:verify-remote && git push origin staging",
     "prepare": "husky"

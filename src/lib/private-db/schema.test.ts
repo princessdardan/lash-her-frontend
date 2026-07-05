@@ -402,6 +402,48 @@ test("marketing consent events preserve evidence when submissions are deleted", 
   assert.equal(submissionForeignKey?.onDelete, "set null");
 });
 
+test("payment reconciliation indexes support paid Square appointment order scans", () => {
+  const migrationSql = readFileSync(
+    new URL("../../../drizzle/0017_big_hulk.sql", import.meta.url),
+    "utf8",
+  );
+
+  assert.ok(
+    getIndexNames(checkoutOrders).includes(
+      "checkout_orders_paid_square_appointment_not_booked_idx",
+    ),
+  );
+  assert.ok(
+    getIndexNames(appointmentHolds).includes(
+      "appointment_holds_square_cof_checkout_order_id_idx",
+    ),
+  );
+  assert.match(
+    migrationSql,
+    /CREATE INDEX IF NOT EXISTS "checkout_orders_paid_square_appointment_not_booked_idx" ON "checkout_orders" USING btree \("paid_at","id","order_id"\)/,
+  );
+  assert.match(
+    migrationSql,
+    /"checkout_orders"\."status" = 'paid' AND "checkout_orders"\."payment_provider" = 'square'/,
+  );
+  assert.match(
+    migrationSql,
+    /"checkout_orders"\."purpose" IN \('appointment_deposit', 'appointment_full', 'appointment_custom_partial'\)/,
+  );
+  assert.match(
+    migrationSql,
+    /"checkout_orders"\."calendar_finalization_status" NOT IN \('not_required', 'booked', 'manual_rebooked'\)/,
+  );
+  assert.match(
+    migrationSql,
+    /CREATE INDEX IF NOT EXISTS "appointment_holds_square_cof_checkout_order_id_idx" ON "appointment_holds" USING btree \("checkout_order_id","id"\)/,
+  );
+  assert.match(
+    migrationSql,
+    /"appointment_holds"\."card_on_file_status" IS NOT NULL/,
+  );
+});
+
 test("marketing contact sync jobs enforce idempotent consent outbox entries", () => {
   const indexes = getIndexNames(marketingContactSyncJobs);
 

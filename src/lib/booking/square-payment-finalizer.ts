@@ -14,11 +14,13 @@ import {
 import {
   finalizeAppointmentPaymentForOrder as defaultFinalizeAppointmentPaymentForOrder,
   isAppointmentCheckoutPurpose,
+  isBookingFinalizationStatusAlertable,
   type FinalizeAppointmentPaymentForOrderResult,
 } from "./finalizer";
 import { classifySquareReturnOrderId } from "./payments/service-square-id-resolution";
 import type { SquareClient, SquareOrder, SquarePayment } from "./square-client";
 import type { VerifiedSquareWebhookEvent } from "./square-webhook";
+import type { SendBookingSchedulingFailureAdminEmailInput } from "./email";
 
 export type SquareFinalizerSource = "return" | "webhook";
 
@@ -112,9 +114,13 @@ interface SquareFailedRecordInput {
 
 interface SquarePaymentFinalizerDependencies {
   finalizeAppointmentPaymentForOrder: typeof defaultFinalizeAppointmentPaymentForOrder;
+  getAppointmentHoldByCheckoutOrderPublicId?: typeof import("./holds").getAppointmentHoldByCheckoutOrderPublicId;
   getEnv: () => SquareServiceBookingEnv | null;
   repository: SquarePaymentFinalizerRepository;
   sendBookingConfirmationEmailForOrder: (orderId: string) => Promise<void>;
+  sendBookingSchedulingFailureAdminEmail?: (
+    input: SendBookingSchedulingFailureAdminEmailInput,
+  ) => Promise<void>;
   squareClientFactory: (env: SquareServiceBookingEnv) => SquareClient;
 }
 
@@ -306,23 +312,53 @@ export function createSquarePaymentFinalizer(
       providerOrderId,
       tipAmountCents: lookup.payment.tip_money?.amount,
     });
-    const bookingFinalization =
-      await dependencies.finalizeAppointmentPaymentForOrder({
-        order: {
-          _id: localOrder.id,
-          amount: localOrder.amountCents / 100,
-          currency,
-          orderId: localOrder.orderId,
-          purpose: localOrder.purpose,
-        },
-        source: input.source,
-        transactionId: lookup.payment.id,
-      });
+    let bookingFinalization:
+      | FinalizeAppointmentPaymentForOrderResult
+      | undefined;
+    if (isAppointmentCheckoutPurpose(localOrder.purpose)) {
+      bookingFinalization =
+        await dependencies.finalizeAppointmentPaymentForOrder({
+          order: {
+            _id: localOrder.id,
+            amount: localOrder.amountCents / 100,
+            currency,
+            orderId: localOrder.orderId,
+            purpose: localOrder.purpose,
+          },
+          source: input.source,
+          transactionId: lookup.payment.id,
+        });
 
-    if (bookingFinalization.ok) {
-      await dependencies.sendBookingConfirmationEmailForOrder(
-        localOrder.orderId,
-      );
+      if (bookingFinalization.ok) {
+        await dependencies.sendBookingConfirmationEmailForOrder(
+          localOrder.orderId,
+        );
+      } else if (
+        isBookingFinalizationStatusAlertable(bookingFinalization.status) &&
+        dependencies.sendBookingSchedulingFailureAdminEmail !== undefined
+      ) {
+        try {
+          await dependencies.sendBookingSchedulingFailureAdminEmail({
+            amountCents,
+            currency,
+            currentBookingStatus: bookingFinalization.status,
+            failureReason: bookingFinalization.error,
+            orderId: localOrder.orderId,
+            paymentProvider: "square",
+            paymentReference: lookup.payment.id,
+            paymentStatus: lookup.payment.status ?? "unknown",
+          });
+        } catch (emailError) {
+          console.error(
+            "[square-finalizer] Failed to send admin scheduling failure alert",
+            {
+              error: getErrorMessage(emailError),
+              orderId: localOrder.orderId,
+              paymentId: lookup.payment.id,
+            },
+          );
+        }
+      }
     }
 
     await dependencies.repository.recordSquareEvent({
@@ -338,12 +374,12 @@ export function createSquarePaymentFinalizer(
       status: "paid_calendar_pending",
     });
     const returnStatus =
-      bookingFinalization.status === "booked"
+      bookingFinalization?.status === "booked"
         ? "booked"
         : "paid_calendar_pending";
 
     return {
-      bookingFinalizationStatus: bookingFinalization.status,
+      bookingFinalizationStatus: bookingFinalization?.status,
       duplicateEvent: false,
       finalized: true,
       orderId: localOrder.orderId,
@@ -370,24 +406,43 @@ async function recoverProcessedDuplicateBookingConfirmation(
     return;
   }
 
+  if (dependencies.getAppointmentHoldByCheckoutOrderPublicId !== undefined) {
+    const hold = await dependencies.getAppointmentHoldByCheckoutOrderPublicId(
+      localOrder.orderId,
+    );
+
+    if (
+      hold === null ||
+      (hold.state !== "booked" && hold.state !== "manual_rebooked") ||
+      hold.googleEventId === null
+    ) {
+      return;
+    }
+  }
+
   await dependencies.sendBookingConfirmationEmailForOrder(localOrder.orderId);
 }
 
 export async function finalizeSquarePayment(
   input: SquarePaymentFinalizerInput,
 ): Promise<SquarePaymentFinalizerResult> {
-  const [squareRuntime, email] = await Promise.all([
+  const [squareRuntime, email, holds] = await Promise.all([
     import("./square-runtime"),
     import("./email"),
+    import("./holds"),
   ]);
 
   return createSquarePaymentFinalizer({
     finalizeAppointmentPaymentForOrder:
       defaultFinalizeAppointmentPaymentForOrder,
+    getAppointmentHoldByCheckoutOrderPublicId:
+      holds.getAppointmentHoldByCheckoutOrderPublicId,
     getEnv: squareRuntime.getSquareServiceBookingRuntimeEnv,
     repository: createDrizzleSquarePaymentFinalizerRepository(),
     sendBookingConfirmationEmailForOrder:
       email.sendBookingConfirmationEmailForOrder,
+    sendBookingSchedulingFailureAdminEmail:
+      email.sendBookingSchedulingFailureAdminEmail,
     squareClientFactory: (env) =>
       squareRuntime.createSquareServiceBookingClient({ env }),
   })(input);
@@ -776,4 +831,8 @@ function toSquareEventUpdate(
     providerStatus: input.providerStatus,
     status: input.status,
   };
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Unknown error";
 }

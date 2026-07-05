@@ -217,6 +217,9 @@ interface FakeState {
   }>;
   calendarFinalizeCalls: Array<{ holdId: string }>;
   alertCalls: Array<{ category: string; severity: string; message: string }>;
+  schedulingFailureAdminEmails: Array<
+    import("@/lib/booking/email").SendBookingSchedulingFailureAdminEmailInput
+  >;
   sagaOrderEvents: string[];
   failPersistSavedPaymentMethodOnce: boolean;
   completePaymentReturnsNoCardId: boolean;
@@ -272,6 +275,9 @@ function createFakes(initialHolds: BookingHoldRecord[] = [createHold()]): {
   squareCustomers: FakeSquareCustomersClient;
   calendarFinalizer: FakeCalendarFinalizer;
   alerts: FakeAlertLogger;
+  sendBookingSchedulingFailureAdminEmail: (
+    input: import("@/lib/booking/email").SendBookingSchedulingFailureAdminEmailInput,
+  ) => Promise<void>;
   state: FakeState;
 } {
   const state: FakeState = {
@@ -296,6 +302,7 @@ function createFakes(initialHolds: BookingHoldRecord[] = [createHold()]): {
     noShowInvoiceCreates: [],
     calendarFinalizeCalls: [],
     alertCalls: [],
+    schedulingFailureAdminEmails: [],
     sagaOrderEvents: [],
     failPersistSavedPaymentMethodOnce: false,
     completePaymentReturnsNoCardId: false,
@@ -759,6 +766,13 @@ function createFakes(initialHolds: BookingHoldRecord[] = [createHold()]): {
     },
   };
 
+  const sendBookingSchedulingFailureAdminEmail = async (
+    input: import("@/lib/booking/email").SendBookingSchedulingFailureAdminEmailInput,
+  ) => {
+    state.sagaOrderEvents.push("sendBookingSchedulingFailureAdminEmail");
+    state.schedulingFailureAdminEmails.push(input);
+  };
+
   return {
     repository,
     squarePayments,
@@ -767,6 +781,7 @@ function createFakes(initialHolds: BookingHoldRecord[] = [createHold()]): {
     squareCustomers,
     calendarFinalizer,
     alerts,
+    sendBookingSchedulingFailureAdminEmail,
     state,
   };
 }
@@ -1331,6 +1346,7 @@ test("marks manual follow-up when calendar finalization fails after capture", as
     squareCustomers,
     calendarFinalizer,
     alerts,
+    sendBookingSchedulingFailureAdminEmail,
     state,
   } = createFakes();
 
@@ -1353,6 +1369,7 @@ test("marks manual follow-up when calendar finalization fails after capture", as
     alerts,
     locationId: "LOC123",
     now,
+    sendBookingSchedulingFailureAdminEmail,
   });
 
   assert.equal(result.ok, true);
@@ -1365,6 +1382,76 @@ test("marks manual follow-up when calendar finalization fails after capture", as
     "captured",
   );
   assert.equal(state.markHoldBookedCalls.length, 0);
+  assert.equal(state.schedulingFailureAdminEmails.length, 1);
+  assert.ok(
+    state.sagaOrderEvents.indexOf("markHoldManualFollowup") <
+      state.sagaOrderEvents.indexOf("sendBookingSchedulingFailureAdminEmail"),
+    "Admin scheduling email must be sent only after manual follow-up is persisted",
+  );
+  assert.equal(
+    state.schedulingFailureAdminEmails[0]?.paymentProvider,
+    "square",
+  );
+  assert.equal(
+    state.schedulingFailureAdminEmails[0]?.failureReason,
+    "Calendar booking failed.",
+  );
+  assert.equal(
+    state.schedulingFailureAdminEmails[0]?.currentBookingStatus,
+    "manual_followup",
+  );
+});
+
+test("returns manual follow-up success even when admin scheduling email fails", async () => {
+  const {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    state,
+  } = createFakes();
+
+  calendarFinalizer.finalize = async ({ hold }) => {
+    state.calendarFinalizeCalls.push({ holdId: hold.id });
+    return {
+      ok: false,
+      status: "manual_followup",
+      error: "Calendar booking failed.",
+    };
+  };
+
+  const result = await confirmChargeAndStoreBooking(createRequest(), {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    locationId: "LOC123",
+    now,
+    sendBookingSchedulingFailureAdminEmail: async () => {
+      throw new Error("Email transport unavailable");
+    },
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.bookingStatus, "manual_followup");
+  assert.equal(result.paymentStatus, "captured");
+  assert.equal(state.markHoldManualFollowupCalls.length, 1);
+  assert.equal(state.schedulingFailureAdminEmails.length, 0);
+  assert.ok(
+    state.alertCalls.some(
+      (call) =>
+        call.category === "stuck_payment_state" &&
+        call.message.includes("Failed to send admin alert"),
+    ),
+    "Expected an alert about the failed admin email",
+  );
 });
 
 test("marks refund required when calendar failure and manual follow-up marker both fail", async () => {
@@ -1376,6 +1463,7 @@ test("marks refund required when calendar failure and manual follow-up marker bo
     squareCustomers,
     calendarFinalizer,
     alerts,
+    sendBookingSchedulingFailureAdminEmail,
     state,
   } = createFakes();
 
@@ -1402,6 +1490,7 @@ test("marks refund required when calendar failure and manual follow-up marker bo
     alerts,
     locationId: "LOC123",
     now,
+    sendBookingSchedulingFailureAdminEmail,
   });
 
   assert.equal(result.ok, false);
@@ -1410,6 +1499,7 @@ test("marks refund required when calendar failure and manual follow-up marker bo
   assert.equal(state.markHoldRefundRequiredCalls.length, 1);
   assert.equal(state.markHoldRefundRequiredCalls[0]?.squarePaymentId, "pay_1");
   assert.equal(state.markHoldManualFollowupCalls.length, 0);
+  assert.equal(state.schedulingFailureAdminEmails.length, 0);
   assert.equal(
     state.holds[0]?.reconciliationMetadata?.chargeAndStoreConfirmation,
     undefined,

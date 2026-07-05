@@ -311,6 +311,11 @@ export const checkoutOrders = pgTable(
       .where(
         sql`${table.paymentProvider} = 'square' AND ${table.providerMetadata}->>'correlationId' IS NOT NULL`,
       ),
+    index("checkout_orders_paid_square_appointment_not_booked_idx")
+      .using("btree", table.paidAt, table.id, table.orderId)
+      .where(
+        sql`${table.status} = 'paid' AND ${table.paymentProvider} = 'square' AND ${table.purpose} IN ('appointment_deposit', 'appointment_full', 'appointment_custom_partial') AND ${table.calendarFinalizationStatus} NOT IN ('not_required', 'booked', 'manual_rebooked')`,
+      ),
   ],
 );
 
@@ -539,6 +544,11 @@ export const appointmentHolds = pgTable(
       table.status,
       table.expiresAt,
     ),
+    index("appointment_holds_square_cof_checkout_order_id_idx")
+      .on(table.checkoutOrderId, table.id)
+      .where(
+        sql`${table.paymentProvider} = 'square' AND ${table.cardOnFileStatus} IS NOT NULL AND ${table.squarePaymentLinkId} IS NULL`,
+      ),
   ],
 );
 

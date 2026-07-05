@@ -6,6 +6,7 @@ const helperScript = String.raw`
 
   import {
     buildBookingConfirmationFallbackHtml,
+    buildBookingSchedulingFailureAdminHtml,
     sendBookingConfirmationEmailForOrder,
   } from "./src/lib/booking/email.ts";
 `;
@@ -52,6 +53,39 @@ test("booking confirmation email includes selected add-on included copy for full
 
     assert.match(renderedHtml, /Lash Bath/);
     assert.match(renderedHtml, /add-on included in payment/i);
+  `);
+});
+
+test("booking scheduling failure admin email includes customer, appointment, payment and failure details", () => {
+  runBookingEmailScenario(`
+    const hold = createHold({
+      state: "manual_followup",
+      customer: { name: "Nataliea Client", email: "client@example.com", phone: "+14165550123" },
+    });
+
+    const html = buildBookingSchedulingFailureAdminHtml({
+      amountCents: 5650,
+      currency: "CAD",
+      currentBookingStatus: "manual_followup",
+      failureReason: "Calendar booking failed.",
+      hold,
+      orderId: "LH-BOOKING-1",
+      paymentProvider: "square",
+      paymentReference: "pay_123",
+      paymentStatus: "COMPLETED",
+    });
+
+    assert.match(html, /Nataliea Client/);
+    assert.match(html, /client@example.com/);
+    assert.match(html, /\\+14165550123/);
+    assert.match(html, /Lash Fill/);
+    assert.match(html, /LH-BOOKING-1/);
+    assert.match(html, /pay_123/);
+    assert.match(html, /COMPLETED/);
+    assert.match(html, /Calendar booking failed\\./);
+    assert.match(html, /manual_followup/);
+    assert.match(html, /Action required/);
+    assert.ok(html.includes("$56.50 CAD"));
   `);
 });
 

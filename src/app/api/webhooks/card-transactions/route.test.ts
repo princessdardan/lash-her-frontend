@@ -40,6 +40,7 @@ const helperScript = String.raw`
     recordEvent,
     sendBookingConfirmationEmailForOrder,
     sendProductOrderConfirmationEmailForOrder,
+    sendSchedulingFailureAdminEmail,
     sendTrainingPaymentNotificationEmailsIfNeeded,
   }) {
     const recorded = [];
@@ -49,6 +50,7 @@ const helperScript = String.raw`
     const trainingNotifications = [];
     const markedStaffAlerts = [];
     const sentEmails = [];
+    const sentSchedulingFailureAlerts = [];
     const handler = createHelcimWebhookPostHandler({
       finalizeAppointmentPaymentForOrder: async (input) => {
         finalizedBookings.push(input);
@@ -99,6 +101,12 @@ const helperScript = String.raw`
           await sendProductOrderConfirmationEmailForOrder(orderId);
         }
       },
+      sendBookingSchedulingFailureAdminEmail: async (input) => {
+        sentSchedulingFailureAlerts.push(input);
+        if (sendSchedulingFailureAdminEmail) {
+          await sendSchedulingFailureAdminEmail(input);
+        }
+      },
       sendTrainingPaymentNotificationEmailsIfNeeded: async (input) => {
         sentEmails.push({
           customerEmail: input.enrollment.checkoutOrder.customerEmail,
@@ -117,7 +125,7 @@ const helperScript = String.raw`
       },
     });
 
-    return { finalizedBookings, handler, trainingNotifications, markedStaffAlerts, recorded, sentBookingEmails, sentEmails, sentProductEmails };
+    return { finalizedBookings, handler, trainingNotifications, markedStaffAlerts, recorded, sentBookingEmails, sentEmails, sentProductEmails, sentSchedulingFailureAlerts };
   }
 `;
 
@@ -451,7 +459,6 @@ test("Helcim webhook route recovers missing training notification and sends paym
   `);
 });
 
-
 test("Helcim webhook route returns retryable status when training token issuance is unavailable", () => {
   runRouteScenario(`
     const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });
@@ -710,6 +717,94 @@ test("Helcim webhook route does not send duplicate training emails when notifica
     assert.equal(trainingNotifications.length, 0);
     assert.equal(sentEmails.length, 0);
     assert.equal(markedStaffAlerts.length, 0);
+  `);
+});
+
+test("Helcim webhook route sends admin alert when appointment finalization fails after approved payment", () => {
+  runRouteScenario(`
+    const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });
+    const { handler, sentBookingEmails, sentSchedulingFailureAlerts } = await runScenario({
+      getCardTransaction: async () => ({
+        amount: "75.00",
+        currency: "CAD",
+        id: 25764674,
+        invoiceNumber: "INV-APPT-4242",
+        status: "APPROVED",
+      }),
+      recordEvent: async () => ({
+        matchedOrder: {
+          _id: "checkout-order-row-1",
+          amount: 75,
+          currency: "CAD",
+          helcimInvoiceId: 4242,
+          helcimInvoiceNumber: "INV-APPT-4242",
+          orderId: "lh-appointment-123",
+          paymentProvider: "helcim",
+          purpose: "appointment_deposit",
+        },
+        paid: true,
+        recorded: true,
+      }),
+      finalizeAppointmentPaymentForOrder: async () => ({
+        ok: false,
+        error: "Calendar booking failed.",
+        status: "manual_followup",
+      }),
+    });
+
+    const response = await handler(createRequest(body));
+
+    assert.equal(response.status, 200);
+    assert.equal(sentBookingEmails.length, 0);
+    assert.equal(sentSchedulingFailureAlerts.length, 1);
+    assert.equal(sentSchedulingFailureAlerts[0].orderId, "lh-appointment-123");
+    assert.equal(sentSchedulingFailureAlerts[0].paymentProvider, "helcim");
+    assert.equal(sentSchedulingFailureAlerts[0].paymentReference, "25764674");
+    assert.equal(sentSchedulingFailureAlerts[0].paymentStatus, "APPROVED");
+    assert.equal(sentSchedulingFailureAlerts[0].amountCents, 7500);
+    assert.equal(sentSchedulingFailureAlerts[0].currency, "CAD");
+    assert.equal(sentSchedulingFailureAlerts[0].failureReason, "Calendar booking failed.");
+    assert.equal(sentSchedulingFailureAlerts[0].currentBookingStatus, "manual_followup");
+  `);
+});
+
+test("Helcim webhook route does not alert admin or confirm customer for finalization_pending", () => {
+  runRouteScenario(`
+    const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });
+    const { handler, sentBookingEmails, sentSchedulingFailureAlerts } = await runScenario({
+      getCardTransaction: async () => ({
+        amount: "75.00",
+        currency: "CAD",
+        id: 25764674,
+        invoiceNumber: "INV-APPT-4242",
+        status: "APPROVED",
+      }),
+      recordEvent: async () => ({
+        matchedOrder: {
+          _id: "checkout-order-row-1",
+          amount: 75,
+          currency: "CAD",
+          helcimInvoiceId: 4242,
+          helcimInvoiceNumber: "INV-APPT-4242",
+          orderId: "lh-appointment-123",
+          paymentProvider: "helcim",
+          purpose: "appointment_deposit",
+        },
+        paid: true,
+        recorded: true,
+      }),
+      finalizeAppointmentPaymentForOrder: async () => ({
+        ok: false,
+        error: "Booking finalization is already in progress.",
+        status: "finalization_pending",
+      }),
+    });
+
+    const response = await handler(createRequest(body));
+
+    assert.equal(response.status, 200);
+    assert.equal(sentBookingEmails.length, 0);
+    assert.equal(sentSchedulingFailureAlerts.length, 0);
   `);
 });
 

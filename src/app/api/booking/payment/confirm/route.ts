@@ -123,6 +123,7 @@ async function createDefaultChargeAndStoreConfirm(
     { createCardOnFileCalendarFinalizer },
     { createServiceBookingPaymentRepository },
     { recordBookingMarketingChoice },
+    { sendBookingSchedulingFailureAdminEmail },
   ] = await Promise.all([
     import("@/lib/booking/square-runtime"),
     import("@/lib/payments/square/payments-client"),
@@ -132,6 +133,7 @@ async function createDefaultChargeAndStoreConfirm(
     import("@/lib/booking/payments/service-card-on-file-calendar-finalizer"),
     import("@/lib/private-db/service-booking-payment-repository"),
     import("@/lib/marketing-contact/marketing-contact-store"),
+    import("@/lib/booking/email"),
   ]);
 
   const env = getSquareServiceBookingRuntimeEnv();
@@ -176,6 +178,7 @@ async function createDefaultChargeAndStoreConfirm(
         recordBookingMarketingChoice,
       ),
       repository,
+      sendBookingSchedulingFailureAdminEmail,
       squareCards,
       squareCustomers,
       squareInvoices,

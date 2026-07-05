@@ -316,6 +316,31 @@ test("reconciliation monitor is not ok when any finding is present", () => {
   `);
 });
 
+test("reconciliation monitor wraps individual check failures with check name and original cause", () => {
+  runMonitorScenario(`
+    const monitor = createMonitor({
+      findPaidBookingsNotBooked: async () => {
+        const dbError = new Error("relation missing");
+        dbError.code = "42P01";
+        throw dbError;
+      },
+    });
+
+    let caught = null;
+    try {
+      await monitor.run({ now: new Date() });
+    } catch (e) {
+      caught = e;
+    }
+
+    assert.ok(caught instanceof Error);
+    assert.equal(caught.message, 'Reconciliation check "findPaidBookingsNotBooked" failed');
+    assert.ok(caught.cause instanceof Error);
+    assert.equal(caught.cause.message, "relation missing");
+    assert.equal(caught.cause.code, "42P01");
+  `);
+});
+
 test("reconciliation monitor defaults now to current date", () => {
   runMonitorScenario(`
     const before = new Date();

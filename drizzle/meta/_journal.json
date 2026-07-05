@@ -120,6 +120,13 @@
       "when": 1783023767006,
       "tag": "0016_bitter_yellow_claw",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1783115272208,
+      "tag": "0017_big_hulk",
+      "breakpoints": true
     }
   ]
 }
