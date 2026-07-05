@@ -19,10 +19,17 @@ function getProgramFacts(program: TTrainingProgram): string[] {
   return program.detailItems?.map((item) => item.title).filter(Boolean) ?? [];
 }
 
-function TrainingProgramCard({ program, index }: { program: TTrainingProgram; index: number }): ReactElement {
+function TrainingProgramCard({
+  program,
+  index,
+}: {
+  program: TTrainingProgram;
+  index: number;
+}): ReactElement {
   const facts = getProgramFacts(program).slice(0, 3);
   const image = program.image ?? program.heroImage ?? program.seo?.image;
-  const ctaLabel = program.primaryCta?.label ?? program.checkoutCtaLabel ?? "View Details";
+  const ctaLabel =
+    program.primaryCta?.label ?? program.checkoutCtaLabel ?? "View Details";
 
   return (
     <article className="editorial-card group min-h-[520px] overflow-hidden p-0 transition-transform duration-300 hover:-translate-y-1">
@@ -78,7 +85,11 @@ function TrainingProgramCard({ program, index }: { program: TTrainingProgram; in
           </ul>
         )}
 
-        <Button asChild variant={program.checkoutEnabled ? "primary" : "outline"} className="mt-auto w-full">
+        <Button
+          asChild
+          variant={program.checkoutEnabled ? "primary" : "outline"}
+          className="mt-auto w-full"
+        >
           <Link href={`/training-programs/${program.slug}`}>{ctaLabel}</Link>
         </Button>
       </div>
@@ -90,25 +101,42 @@ export function TrainingProgramsSection({
   data,
   headingLevel = "h1",
 }: TrainingProgramsSectionProps): ReactElement | null {
-  const programs = data.trainingPrograms.filter((program) => Boolean(program.slug));
+  const programs = data.trainingPrograms.filter((program) =>
+    Boolean(program.slug),
+  );
   const Heading = headingLevel;
+  const trainingProgramsGridClassName =
+    programs.length === 1
+      ? "mx-auto grid grid-cols-1 items-stretch justify-center gap-8 md:grid-cols-[minmax(0,24.5rem)]"
+      : programs.length === 2
+        ? "mx-auto grid grid-cols-1 items-stretch justify-center gap-8 md:grid-cols-[repeat(2,minmax(0,24.5rem))]"
+        : "mx-auto grid max-w-6xl grid-cols-1 items-stretch gap-8 md:grid-cols-2 lg:grid-cols-3";
 
   if (programs.length === 0) {
     return null;
   }
 
   return (
-    <section className="section-shell-soft" data-training-programs-section="true">
+    <section
+      className="section-shell-soft"
+      data-training-programs-section="true"
+    >
       <div className="content-container">
         <header className="text-container mx-auto max-w-3xl">
           <p className="eyebrow-label mb-4">Lash Education</p>
           <Heading className="section-heading mb-6">{data.title}</Heading>
-          {data.description && <p className="section-description text-lg">{data.description}</p>}
+          {data.description && (
+            <p className="section-description text-lg">{data.description}</p>
+          )}
         </header>
 
-        <div className="mx-auto grid max-w-6xl items-stretch gap-8 md:grid-cols-2 lg:grid-cols-3">
+        <div className={trainingProgramsGridClassName}>
           {programs.map((program, index) => (
-            <TrainingProgramCard key={program._id} program={program} index={index} />
+            <TrainingProgramCard
+              key={program._id}
+              program={program}
+              index={index}
+            />
           ))}
         </div>
       </div>
