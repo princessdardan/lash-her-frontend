@@ -14,9 +14,9 @@ function validateGoogleAppointmentScheduleUrl(value: string | undefined) {
   try {
     const url = new URL(value);
     if (
-      url.protocol === "https:"
-      && url.hostname === "calendar.google.com"
-      && url.pathname.startsWith("/calendar/appointments/schedules/")
+      url.protocol === "https:" &&
+      url.hostname === "calendar.google.com" &&
+      url.pathname.startsWith("/calendar/appointments/schedules/")
     ) {
       return true;
     }
@@ -32,7 +32,6 @@ export const trainingProgram = defineType({
   title: "Training Program",
   type: "document",
   fields: [
-
     defineField({
       name: "slug",
       title: "Slug",
@@ -66,9 +65,7 @@ export const trainingProgram = defineType({
       type: "image",
       group: "overview",
       options: { hotspot: true },
-      fields: [
-        defineField({ name: "alt", title: "Alt text", type: "string" }),
-      ],
+      fields: [defineField({ name: "alt", title: "Alt text", type: "string" })],
     }),
     defineField({
       name: "heroBadges",
@@ -91,9 +88,7 @@ export const trainingProgram = defineType({
       type: "image",
       group: "overview",
       options: { hotspot: true },
-      fields: [
-        defineField({ name: "alt", title: "Alt text", type: "string" }),
-      ],
+      fields: [defineField({ name: "alt", title: "Alt text", type: "string" })],
     }),
     defineField({
       name: "detailEyebrow",
@@ -122,9 +117,34 @@ export const trainingProgram = defineType({
         defineArrayMember({
           type: "object",
           fields: [
-            defineField({ name: "eyelash", title: "Eyelash Label", type: "string" }),
+            defineField({
+              name: "eyelash",
+              title: "Eyelash Label",
+              type: "string",
+            }),
             defineField({ name: "title", title: "Title", type: "string" }),
-            defineField({ name: "description", title: "Description", type: "text" }),
+            defineField({
+              name: "description",
+              title: "Description",
+              type: "array",
+              of: [
+                defineArrayMember({
+                  type: "block",
+                  styles: [{ title: "Normal", value: "normal" }],
+                  lists: [
+                    { title: "Bullet", value: "bullet" },
+                    { title: "Numbered", value: "number" },
+                  ],
+                  marks: {
+                    decorators: [
+                      { title: "Strong", value: "strong" },
+                      { title: "Emphasis", value: "em" },
+                    ],
+                    annotations: [],
+                  },
+                }),
+              ],
+            }),
           ],
         }),
       ],
@@ -184,16 +204,15 @@ export const trainingProgram = defineType({
       type: "image",
       group: "enrollment",
       options: { hotspot: true },
-      fields: [
-        defineField({ name: "alt", title: "Alt text", type: "string" }),
-      ],
+      fields: [defineField({ name: "alt", title: "Alt text", type: "string" })],
     }),
     defineField({
       name: "trainingContact",
       title: "Training Contact Section",
       type: "trainingContactSection",
       group: "enrollment",
-      description: "Structured contact section rendered at #contact on the training detail page.",
+      description:
+        "Structured contact section rendered at #contact on the training detail page.",
     }),
     defineField({
       name: "checkoutEnabled",
@@ -208,11 +227,13 @@ export const trainingProgram = defineType({
       type: "number",
       group: "checkout",
       hidden: ({ document }) => !document?.checkoutEnabled,
-      validation: (Rule) => Rule.custom((value, context) => {
-        if (!context.document?.checkoutEnabled) return true;
-        if (typeof value === "number" && Number.isFinite(value) && value > 0) return true;
-        return "Training checkout requires a positive native price.";
-      }),
+      validation: (Rule) =>
+        Rule.custom((value, context) => {
+          if (!context.document?.checkoutEnabled) return true;
+          if (typeof value === "number" && Number.isFinite(value) && value > 0)
+            return true;
+          return "Training checkout requires a positive native price.";
+        }),
     }),
     defineField({
       name: "discountPrice",
@@ -220,13 +241,17 @@ export const trainingProgram = defineType({
       type: "number",
       group: "checkout",
       hidden: ({ document }) => !document?.checkoutEnabled,
-      description: "Optional sale price configured directly in Sanity. Must be lower than the regular training price.",
-      validation: (Rule) => Rule.min(0).custom((value, context) => {
-        if (!context.document?.checkoutEnabled || value === undefined) return true;
-        return typeof context.document.price === "number" && value < context.document.price
-          ? true
-          : "Manual discount price must be lower than the regular training price.";
-      }),
+      description:
+        "Optional sale price configured directly in Sanity. Must be lower than the regular training price.",
+      validation: (Rule) =>
+        Rule.min(0).custom((value, context) => {
+          if (!context.document?.checkoutEnabled || value === undefined)
+            return true;
+          return typeof context.document.price === "number" &&
+            value < context.document.price
+            ? true
+            : "Manual discount price must be lower than the regular training price.";
+        }),
     }),
     defineField({
       name: "isAvailable",
@@ -235,10 +260,13 @@ export const trainingProgram = defineType({
       group: "checkout",
       initialValue: true,
       hidden: ({ document }) => !document?.checkoutEnabled,
-      validation: (Rule) => Rule.custom((value, context) => {
-        if (!context.document?.checkoutEnabled) return true;
-        return typeof value === "boolean" ? true : "Set whether this training program is available for checkout.";
-      }),
+      validation: (Rule) =>
+        Rule.custom((value, context) => {
+          if (!context.document?.checkoutEnabled) return true;
+          return typeof value === "boolean"
+            ? true
+            : "Set whether this training program is available for checkout.";
+        }),
     }),
     defineField({
       name: "availabilityLabel",
@@ -271,15 +299,21 @@ export const trainingProgram = defineType({
       group: "checkout",
       hidden: ({ document }) => !!document?.checkoutEnabled,
       fields: [
-        defineField({ name: "label", title: "Label", type: "string", initialValue: "Book a Call" }),
+        defineField({
+          name: "label",
+          title: "Label",
+          type: "string",
+          initialValue: "Book a Call",
+        }),
         defineField({
           name: "href",
           title: "URL",
           type: "string",
           initialValue: "#contact",
-          validation: (Rule) => Rule.custom((value) => {
-            return validateSafeHref(value);
-          })
+          validation: (Rule) =>
+            Rule.custom((value) => {
+              return validateSafeHref(value);
+            }),
         }),
       ],
     }),
@@ -296,7 +330,8 @@ export const trainingProgram = defineType({
       type: "url",
       group: "checkout",
       hidden: ({ document }) => !document?.checkoutEnabled,
-      description: "Public Google Calendar Appointment Schedule URL shown only after a paid training scheduling token is verified.",
+      description:
+        "Public Google Calendar Appointment Schedule URL shown only after a paid training scheduling token is verified.",
       validation: (Rule) => Rule.custom(validateGoogleAppointmentScheduleUrl),
     }),
     defineField({
@@ -305,7 +340,8 @@ export const trainingProgram = defineType({
       type: "string",
       group: "checkout",
       hidden: ({ document }) => !document?.checkoutEnabled,
-      description: "Choose whether verified students see an embedded scheduler or a button to open the Google Appointment Schedule.",
+      description:
+        "Choose whether verified students see an embedded scheduler or a button to open the Google Appointment Schedule.",
       initialValue: "link",
       options: {
         layout: "radio",
@@ -314,10 +350,12 @@ export const trainingProgram = defineType({
           { title: "Embed on page", value: "embed" },
         ],
       },
-      validation: (Rule) => Rule.custom((value) => {
-        if (value === undefined || value === "link" || value === "embed") return true;
-        return "Choose link or embed display mode.";
-      }),
+      validation: (Rule) =>
+        Rule.custom((value) => {
+          if (value === undefined || value === "link" || value === "embed")
+            return true;
+          return "Choose link or embed display mode.";
+        }),
     }),
     defineField({
       name: "introCallSchedulingInstructions",
@@ -325,7 +363,8 @@ export const trainingProgram = defineType({
       type: "text",
       group: "checkout",
       hidden: ({ document }) => !document?.checkoutEnabled,
-      description: "Optional public guidance shown above the Google Appointment Schedule after paid token verification.",
+      description:
+        "Optional public guidance shown above the Google Appointment Schedule after paid token verification.",
     }),
     defineField({
       name: "blocks",
@@ -333,13 +372,12 @@ export const trainingProgram = defineType({
       type: "array",
       group: "legacy",
       deprecated: {
-        reason: "Training detail contact forms now use the Training Contact Section field.",
+        reason:
+          "Training detail contact forms now use the Training Contact Section field.",
       },
       readOnly: true,
       hidden: ({ value }) => value === undefined,
-      of: [
-        { type: "contactFormLabels" },
-      ],
+      of: [{ type: "contactFormLabels" }],
     }),
     defineField({
       name: "seo",
@@ -348,7 +386,11 @@ export const trainingProgram = defineType({
       group: "seo",
       fields: [
         defineField({ name: "title", title: "SEO Title", type: "string" }),
-        defineField({ name: "description", title: "SEO Description", type: "text" }),
+        defineField({
+          name: "description",
+          title: "SEO Description",
+          type: "text",
+        }),
         defineField({
           name: "image",
           title: "SEO Image",
