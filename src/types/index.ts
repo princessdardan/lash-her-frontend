@@ -301,7 +301,7 @@ export interface TTrainingProgramDetailItem {
   _key?: string;
   eyelash?: string;
   title: string;
-  description: string;
+  description?: string | TPortableTextBlock[];
 }
 
 export interface TTrainingContactSection {

@@ -35,7 +35,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isSchemaField(value: unknown): value is SchemaField {
-  return isRecord(value) && (value.name === undefined || typeof value.name === "string");
+  return (
+    isRecord(value) &&
+    (value.name === undefined || typeof value.name === "string")
+  );
 }
 
 function getFieldValidator(name: string): FieldValidator {
@@ -71,7 +74,9 @@ function getSchemaField(name: string): SchemaField {
   return schemaField;
 }
 
-function buildContext(document: { checkoutEnabled?: boolean } = { checkoutEnabled: true }): ValidationContextStub {
+function buildContext(
+  document: { checkoutEnabled?: boolean } = { checkoutEnabled: true },
+): ValidationContextStub {
   return { document };
 }
 
@@ -79,16 +84,28 @@ describe("trainingProgram native commerce validation", () => {
   it("requires native price only when checkout is enabled", async () => {
     const validator = getFieldValidator("price");
 
-    assert.strictEqual(await validator(undefined, buildContext()), "Training checkout requires a positive native price.");
-    assert.strictEqual(await validator(0, buildContext()), "Training checkout requires a positive native price.");
+    assert.strictEqual(
+      await validator(undefined, buildContext()),
+      "Training checkout requires a positive native price.",
+    );
+    assert.strictEqual(
+      await validator(0, buildContext()),
+      "Training checkout requires a positive native price.",
+    );
     assert.strictEqual(await validator(1200, buildContext()), true);
-    assert.strictEqual(await validator(undefined, buildContext({ checkoutEnabled: false })), true);
+    assert.strictEqual(
+      await validator(undefined, buildContext({ checkoutEnabled: false })),
+      true,
+    );
   });
 
   it("requires availability only when checkout is enabled", async () => {
     const validator = getFieldValidator("isAvailable");
 
-    assert.strictEqual(await validator(undefined, buildContext()), "Set whether this training program is available for checkout.");
+    assert.strictEqual(
+      await validator(undefined, buildContext()),
+      "Set whether this training program is available for checkout.",
+    );
     assert.strictEqual(await validator(true, buildContext()), true);
     assert.strictEqual(await validator(false, buildContext()), true);
   });
@@ -98,15 +115,24 @@ describe("trainingProgram native commerce validation", () => {
 
     assert.strictEqual(await validator(undefined, buildContext()), true);
     assert.strictEqual(
-      await validator("https://calendar.google.com/calendar/appointments/schedules/AcZssZ_example", buildContext()),
+      await validator(
+        "https://calendar.google.com/calendar/appointments/schedules/AcZssZ_example",
+        buildContext(),
+      ),
       true,
     );
     assert.strictEqual(
-      await validator("https://calendar.google.com/calendar/u/0/r/eventedit", buildContext()),
+      await validator(
+        "https://calendar.google.com/calendar/u/0/r/eventedit",
+        buildContext(),
+      ),
       "Use the public Google Appointment Schedule URL from calendar.google.com/calendar/appointments/schedules/.",
     );
     assert.strictEqual(
-      await validator("https://example.com/calendar/appointments/schedules/AcZssZ_example", buildContext()),
+      await validator(
+        "https://example.com/calendar/appointments/schedules/AcZssZ_example",
+        buildContext(),
+      ),
       "Use the public Google Appointment Schedule URL from calendar.google.com/calendar/appointments/schedules/.",
     );
   });
@@ -115,7 +141,7 @@ describe("trainingProgram native commerce validation", () => {
 describe("trainingProgram detail content schema", () => {
   it("configures native checkout commerce fields without exposing an editor currency field", () => {
     const schemaFieldNames = trainingProgram.fields
-      .map((field: unknown) => isSchemaField(field) ? field.name : undefined)
+      .map((field: unknown) => (isSchemaField(field) ? field.name : undefined))
       .filter((name): name is string => typeof name === "string");
 
     for (const fieldName of [
@@ -127,38 +153,64 @@ describe("trainingProgram detail content schema", () => {
       "introCallAppointmentScheduleEmbedMode",
       "introCallSchedulingInstructions",
     ]) {
-      assert.strictEqual(getSchemaField(fieldName).group, "checkout", `${fieldName} should be in the checkout group`);
+      assert.strictEqual(
+        getSchemaField(fieldName).group,
+        "checkout",
+        `${fieldName} should be in the checkout group`,
+      );
     }
 
     assert.ok(!schemaFieldNames.includes("currency"));
     assert.ok(
-      !trainingProgram.fields.some((field: unknown) => isSchemaField(field) && field.group === "checkout" && field.type === "reference"),
+      !trainingProgram.fields.some(
+        (field: unknown) =>
+          isSchemaField(field) &&
+          field.group === "checkout" &&
+          field.type === "reference",
+      ),
       "checkout fields should be native training fields, not catalog references",
     );
   });
 
   it("configures paid intro-call Appointment Schedule as editorial public fields", () => {
     const urlField = getSchemaField("introCallAppointmentScheduleUrl");
-    const modeField = getSchemaField("introCallAppointmentScheduleEmbedMode") as SchemaField & {
-      options?: { layout?: string; list?: Array<{ title?: string; value?: string }> };
+    const modeField = getSchemaField(
+      "introCallAppointmentScheduleEmbedMode",
+    ) as SchemaField & {
+      options?: {
+        layout?: string;
+        list?: Array<{ title?: string; value?: string }>;
+      };
     };
     const instructionsField = getSchemaField("introCallSchedulingInstructions");
 
     assert.strictEqual(urlField.type, "url");
     assert.strictEqual(modeField.type, "string");
     assert.strictEqual(modeField.options?.layout, "radio");
-    assert.deepStrictEqual(modeField.options?.list?.map((item) => item.value), ["link", "embed"]);
+    assert.deepStrictEqual(
+      modeField.options?.list?.map((item) => item.value),
+      ["link", "embed"],
+    );
     assert.strictEqual(instructionsField.type, "text");
   });
 
   it("does not include removed detail image or enrollment inclusion fields", () => {
     const schemaFieldNames = trainingProgram.fields
-      .map((field: unknown) => isSchemaField(field) ? field.name : undefined)
+      .map((field: unknown) => (isSchemaField(field) ? field.name : undefined))
       .filter((name): name is string => typeof name === "string");
 
-    assert.ok(!schemaFieldNames.includes("detailHeroImage"), "detailHeroImage should be removed");
-    assert.ok(!schemaFieldNames.includes("detailMainImage"), "detailMainImage should be removed");
-    assert.ok(!schemaFieldNames.includes("enrollmentInclusions"), "enrollmentInclusions should be removed");
+    assert.ok(
+      !schemaFieldNames.includes("detailHeroImage"),
+      "detailHeroImage should be removed",
+    );
+    assert.ok(
+      !schemaFieldNames.includes("detailMainImage"),
+      "detailMainImage should be removed",
+    );
+    assert.ok(
+      !schemaFieldNames.includes("enrollmentInclusions"),
+      "enrollmentInclusions should be removed",
+    );
   });
 
   it("configures detail items with eyelash field and without image", () => {
@@ -167,15 +219,44 @@ describe("trainingProgram detail content schema", () => {
 
     assert.ok(memberFields, "detailItems member should have fields");
     const fieldNames = memberFields?.map((f) => f.name);
-    assert.ok(fieldNames?.includes("eyelash"), "detailItems should have eyelash field");
-    assert.ok(fieldNames?.includes("title"), "detailItems should have title field");
-    assert.ok(fieldNames?.includes("description"), "detailItems should have description field");
-    assert.ok(!fieldNames?.includes("image"), "detailItems should not have image field");
+    assert.ok(
+      fieldNames?.includes("eyelash"),
+      "detailItems should have eyelash field",
+    );
+    assert.ok(
+      fieldNames?.includes("title"),
+      "detailItems should have title field",
+    );
+    const descriptionField = memberFields?.find(
+      (f) => f.name === "description",
+    );
+    assert.ok(descriptionField, "detailItems should have description field");
+    assert.strictEqual(descriptionField.type, "array");
+    const descriptionBlock = descriptionField.of?.[0];
+    assert.strictEqual(descriptionBlock?.type, "block");
+    assert.deepStrictEqual(descriptionBlock?.styles, [
+      { title: "Normal", value: "normal" },
+    ]);
+    assert.deepStrictEqual(descriptionBlock?.lists, [
+      { title: "Bullet", value: "bullet" },
+      { title: "Numbered", value: "number" },
+    ]);
+    assert.ok(
+      !fieldNames?.includes("image"),
+      "detailItems should not have image field",
+    );
   });
 
   it("groups fields into overview, curriculum, enrollment, checkout, legacy, and seo", () => {
     const groupNames = trainingProgram.groups?.map((g) => g.name) ?? [];
-    assert.deepStrictEqual(groupNames, ["overview", "curriculum", "enrollment", "checkout", "legacy", "seo"]);
+    assert.deepStrictEqual(groupNames, [
+      "overview",
+      "curriculum",
+      "enrollment",
+      "checkout",
+      "legacy",
+      "seo",
+    ]);
 
     assert.strictEqual(getSchemaField("title").group, "overview");
     assert.strictEqual(getSchemaField("heroImage").group, "overview");
