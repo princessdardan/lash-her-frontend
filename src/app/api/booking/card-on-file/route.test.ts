@@ -8,12 +8,12 @@ import type {
   CardOnFileBookingResult,
 } from "@/lib/booking/payments/service-card-on-file";
 
-import { createCardOnFilePostHandler } from "./route";
+import { createCardOnFilePostHandler } from "./handler";
 
 const defaultPostScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { POST } from "./src/app/api/booking/card-on-file/route.ts";
+  import { POST } from "./src/app/api/booking/card-on-file/handler.ts";
 
   (async () => {
     const request = new Request("http://localhost:3000/api/booking/card-on-file", {

@@ -226,11 +226,15 @@ interface FakeState {
   missingCardIdOnCreate: boolean;
   throwCreateNoShowInvoice: boolean;
   createPaymentStatus: string;
+  createPaymentTeamMemberIdOverride?: string | null;
+  observedSquareTeamMemberId?: string;
   completePaymentStatus: string;
   getPaymentStatus: string;
   throwCompletePayment: boolean;
   throwGetPayment: boolean;
   throwCancelPayment: boolean;
+  cancelPaymentIdOverride?: string;
+  cancelPaymentStatus: string;
   throwCreateCard: boolean;
   createPaymentId: string;
   createCardResponse?: SquareCard;
@@ -314,6 +318,7 @@ function createFakes(initialHolds: BookingHoldRecord[] = [createHold()]): {
     throwCompletePayment: false,
     throwGetPayment: false,
     throwCancelPayment: false,
+    cancelPaymentStatus: "CANCELED",
     throwCreateCard: false,
     createPaymentId: "pay_1",
   };
@@ -579,10 +584,15 @@ function createFakes(initialHolds: BookingHoldRecord[] = [createHold()]): {
       squarePayments.events.push("createPayment");
       state.squarePaymentCreates.push(request);
       const paymentId = state.createPaymentId;
+      state.observedSquareTeamMemberId =
+        state.createPaymentTeamMemberIdOverride === undefined
+          ? request.team_member_id
+          : (state.createPaymentTeamMemberIdOverride ?? undefined);
       return {
         payment: {
           id: paymentId,
           status: state.createPaymentStatus,
+          team_member_id: state.observedSquareTeamMemberId,
           amount_money: request.amount_money,
           version_token: "vt-1",
           card_details: state.missingCardIdOnCreate
@@ -611,6 +621,7 @@ function createFakes(initialHolds: BookingHoldRecord[] = [createHold()]): {
         payment: {
           id: paymentId,
           status: state.getPaymentStatus,
+          team_member_id: state.observedSquareTeamMemberId,
           amount_money: { amount: 5000, currency: "CAD" },
           card_details: {
             card: { id: "ccof:card-token" },
@@ -635,6 +646,7 @@ function createFakes(initialHolds: BookingHoldRecord[] = [createHold()]): {
         payment: {
           id: paymentId,
           status: state.completePaymentStatus,
+          team_member_id: state.observedSquareTeamMemberId,
           amount_money: { amount: 5000, currency: "CAD" },
           card_details: state.completePaymentReturnsNoCardId
             ? undefined
@@ -653,8 +665,9 @@ function createFakes(initialHolds: BookingHoldRecord[] = [createHold()]): {
       }
       return {
         payment: {
-          id: paymentId,
-          status: "CANCELED",
+          id: state.cancelPaymentIdOverride ?? paymentId,
+          status: state.cancelPaymentStatus,
+          team_member_id: state.observedSquareTeamMemberId,
           amount_money: { amount: 5000, currency: "CAD" },
         },
       };
@@ -829,6 +842,121 @@ test("persists consent before creating Square payment", async () => {
     "completePayment",
     "markHoldBooked",
   ]);
+});
+
+test("V2 direct payments carry and verify the immutable Square team-member snapshot", async () => {
+  const hold = createHold({
+    bookingModelVersion: 2,
+    squareTeamMemberId: "team-member-1",
+  });
+  const {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    state,
+  } = createFakes([hold]);
+  repository.recordAuthorizedOperationalPayment = async () => ({
+    bookingModelVersion: 2,
+  });
+  repository.recordCapturedOperationalPayment = async () => undefined;
+
+  const result = await confirmChargeAndStoreBooking(createRequest(), {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    locationId: "LOC123",
+    now,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(
+    state.squarePaymentCreates[0]?.team_member_id,
+    "team-member-1",
+  );
+  assert.equal(state.squarePaymentCompletes.length, 1);
+});
+
+test("V2 cancels an uncaptured authorization when Square omits or changes team attribution", async () => {
+  const hold = createHold({
+    bookingModelVersion: 2,
+    squareTeamMemberId: "team-member-1",
+  });
+  const {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    state,
+  } = createFakes([hold]);
+  state.createPaymentTeamMemberIdOverride = "different-team-member";
+
+  const result = await confirmChargeAndStoreBooking(createRequest(), {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    locationId: "LOC123",
+    now,
+  });
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(state.squarePaymentCancels, ["pay_1"]);
+  assert.equal(state.squarePaymentCompletes.length, 0);
+  assert.equal(state.calendarFinalizeCalls.length, 0);
+  assert.ok(
+    state.alertCalls.some((alert) =>
+      alert.message.includes("team attribution"),
+    ),
+  );
+});
+
+test("V2 marks manual refund follow-up when attribution mismatch cancellation cannot be confirmed", async () => {
+  const hold = createHold({
+    bookingModelVersion: 2,
+    squareTeamMemberId: "team-member-1",
+  });
+  const {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    state,
+  } = createFakes([hold]);
+  state.createPaymentTeamMemberIdOverride = null;
+  state.throwCancelPayment = true;
+
+  const result = await confirmChargeAndStoreBooking(createRequest(), {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    locationId: "LOC123",
+    now,
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(state.markHoldRefundRequiredCalls.length, 1);
+  assert.equal(state.calendarFinalizeCalls.length, 0);
 });
 
 test("captures payment only after Square card is created", async () => {
@@ -1263,7 +1391,7 @@ test("continues to success when Square payment response omits card details", asy
   assert.equal(state.savedPaymentMethods.length, 1);
 });
 
-test("marks refund required when Square capture throws and payment is completed", async () => {
+test("persists and finalizes a completed payment when the capture response is ambiguous", async () => {
   const {
     repository,
     squarePayments,
@@ -1288,10 +1416,9 @@ test("marks refund required when Square capture throws and payment is completed"
     now,
   });
 
-  assert.equal(result.ok, false);
-  if (result.ok) return;
-  assert.equal(result.error, "square_api_error");
-  assert.equal(state.markHoldRefundRequiredCalls.length, 1);
+  assert.equal(result.ok, true);
+  assert.equal(state.markHoldRefundRequiredCalls.length, 0);
+  assert.equal(state.markHoldBookedCalls.length, 1);
 });
 
 test("returns existing terminal confirmation for duplicate submits", async () => {
@@ -1400,6 +1527,127 @@ test("marks manual follow-up when calendar finalization fails after capture", as
     state.schedulingFailureAdminEmails[0]?.currentBookingStatus,
     "manual_followup",
   );
+});
+
+test("a stale calendar-failure worker returns the already-booked terminal outcome", async () => {
+  const {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    sendBookingSchedulingFailureAdminEmail,
+    state,
+  } = createFakes();
+
+  calendarFinalizer.finalize = async () => ({
+    error: "Stale worker saw a Calendar timeout.",
+    ok: false,
+    status: "manual_followup",
+  });
+  repository.markHoldManualFollowup = async (input) => {
+    const hold = state.holds.find((candidate) => candidate.id === input.holdId);
+    assert.ok(hold);
+    const bookedConfirmation = {
+      ...input.confirmation,
+      bookingStatus: "booked" as const,
+    };
+    hold.state = "booked";
+    hold.googleEventId = "existing-booked-event";
+    hold.reconciliationMetadata = {
+      ...hold.reconciliationMetadata,
+      chargeAndStoreConfirmation: bookedConfirmation,
+    };
+    return { ...hold };
+  };
+
+  const result = await confirmChargeAndStoreBooking(createRequest(), {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    locationId: "LOC123",
+    now,
+    sendBookingSchedulingFailureAdminEmail,
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.bookingStatus, "booked");
+  assert.equal(state.schedulingFailureAdminEmails.length, 0);
+  assert.equal(state.markHoldRefundRequiredCalls.length, 0);
+  assert.equal(
+    state.alertCalls.filter(
+      (call) => call.category === "booking_calendar_finalization_failed",
+    ).length,
+    0,
+  );
+});
+
+test("an ambiguous manual terminal commit still sends admin and customer outcome notifications", async () => {
+  const {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    sendBookingSchedulingFailureAdminEmail,
+    state,
+  } = createFakes();
+  const customerEmailHoldIds: string[] = [];
+  let committedConfirmation:
+    | Extract<ChargeAndStoreBookingResult, { ok: true }>
+    | undefined;
+
+  calendarFinalizer.finalize = async () => ({
+    error: "Calendar timed out during an ambiguous commit.",
+    ok: false,
+    status: "manual_followup",
+  });
+  repository.markHoldManualFollowup = async (input) => {
+    committedConfirmation = input.confirmation;
+    const hold = state.holds.find((candidate) => candidate.id === input.holdId);
+    assert.ok(hold);
+    hold.state = "manual_followup";
+    hold.reconciliationMetadata = {
+      ...hold.reconciliationMetadata,
+      chargeAndStoreConfirmation: input.confirmation,
+    };
+    throw new Error("Commit acknowledgement was lost");
+  };
+  repository.markHoldRefundRequired = async () => ({
+    confirmation: committedConfirmation,
+    status: "booking_outcome_preserved",
+  });
+
+  const result = await confirmChargeAndStoreBooking(createRequest(), {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    locationId: "LOC123",
+    now,
+    sendBookingConfirmationEmailForHold: async (holdId) => {
+      customerEmailHoldIds.push(holdId);
+    },
+    sendBookingSchedulingFailureAdminEmail,
+  });
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.bookingStatus, "manual_followup");
+  assert.equal(state.schedulingFailureAdminEmails.length, 1);
+  assert.deepEqual(customerEmailHoldIds, ["hold-internal-1"]);
 });
 
 test("returns manual follow-up success even when admin scheduling email fails", async () => {
@@ -2475,6 +2723,86 @@ test("marks refund required when capture throws with non-completed status but ca
     state.holds[0]?.reconciliationMetadata?.chargeAndStoreConfirmation,
     undefined,
   );
+});
+
+test("a non-CANCELED Square cancellation response preserves V2 authorization recovery", async () => {
+  const {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    state,
+  } = createFakes([createHold({ bookingModelVersion: 2 })]);
+  state.completePaymentStatus = "APPROVED";
+  state.cancelPaymentStatus = "COMPLETED";
+  repository.recordAuthorizedOperationalPayment = async () => ({
+    bookingModelVersion: 2,
+  });
+  repository.markHoldRefundRequired = async (input) => {
+    state.markHoldRefundRequiredCalls.push(input);
+    return { status: "booking_outcome_preserved" };
+  };
+
+  const result = await confirmChargeAndStoreBooking(createRequest(), {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    locationId: "LOC123",
+    now,
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(state.markHoldPaymentFailedCalls.length, 0);
+  assert.equal(state.markHoldRefundRequiredCalls.length, 1);
+  assert.notEqual(state.holds[0]?.state, "refund_required");
+  assert.ok(
+    state.alertCalls.some(
+      (call) =>
+        call.category === "stuck_payment_state" &&
+        call.message.includes("CANCELED evidence"),
+    ),
+  );
+});
+
+test("V2 does not capture when hold eligibility is lost before authorization persistence", async () => {
+  const {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    state,
+  } = createFakes([createHold({ bookingModelVersion: 2 })]);
+  repository.recordAuthorizedOperationalPayment = async () => {
+    throw new Error("Hold became refund terminal before authorization");
+  };
+
+  const result = await confirmChargeAndStoreBooking(createRequest(), {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    locationId: "LOC123",
+    now,
+  });
+
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.error, "infrastructure_error");
+  assert.equal(state.squarePaymentCompletes.length, 0);
+  assert.deepEqual(state.squarePaymentCancels, ["pay_1"]);
 });
 
 test("cancels authorization and marks payment failed when Square capture returns non-completed", async () => {

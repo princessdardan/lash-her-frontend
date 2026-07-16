@@ -20,6 +20,7 @@ const helperScript = String.raw`
 
   function createFakeRepository(overrides = {}) {
     return {
+      findCapturedPaymentsWithoutOperationalAppointment: async () => [],
       findAmountCurrencyCustomerMismatches: async () => [],
       findBookedAppointmentsWithoutNoShowChargeRecord: async () => [],
       findBookedAppointmentsWithoutPolicyAcceptance: async () => [],
@@ -28,6 +29,8 @@ const helperScript = String.raw`
       findFailedNoShowCharges: async () => [],
       findNoShowChargeFailedNotAlerted: async () => [],
       findNoShowChargesPendingTooLong: async () => [],
+      findOperationalAppointmentsPendingCalendar: async () => [],
+      findOperationalAppointmentsWithoutCapturedPayment: async () => [],
       findPaidBookingsNotBooked: async () => [],
       findSquareInvoicePaymentEventsNotReconciled: async () => [],
       findSquarePaymentsPendingTooLong: async () => [],
@@ -103,6 +106,37 @@ test("reconciliation monitor surfaces paid booking not booked", () => {
     assert.equal(finding.holdId, "hold-4");
     assert.equal(finding.orderId, "order-4");
     assert.equal(finding.severity, "error");
+  `);
+});
+
+test("reconciliation monitor surfaces V2 appointment and payment ledger gaps", () => {
+  runMonitorScenario(`
+    const monitor = createMonitor({
+      findCapturedPaymentsWithoutOperationalAppointment: async () => [
+        { holdId: "hold-v2-orphan", paymentAttemptId: "attempt-v2-orphan" },
+      ],
+      findOperationalAppointmentsPendingCalendar: async () => [
+        { appointmentId: "appointment-v2-pending", holdId: "hold-v2-pending" },
+      ],
+      findOperationalAppointmentsWithoutCapturedPayment: async () => [
+        { appointmentId: "appointment-v2-unpaid", holdId: "hold-v2-unpaid" },
+      ],
+    });
+
+    const summary = await monitor.run({ now: new Date() });
+
+    assert.ok(summary.findings.some((finding) =>
+      finding.category === "captured_payment_without_operational_appointment" &&
+      finding.paymentAttemptId === "attempt-v2-orphan"
+    ));
+    assert.ok(summary.findings.some((finding) =>
+      finding.category === "operational_appointment_calendar_pending_too_long" &&
+      finding.appointmentId === "appointment-v2-pending"
+    ));
+    assert.ok(summary.findings.some((finding) =>
+      finding.category === "operational_appointment_without_captured_payment" &&
+      finding.appointmentId === "appointment-v2-unpaid"
+    ));
   `);
 });
 
@@ -417,6 +451,7 @@ const repositoryHelperScript = String.raw`
   async function createHold(tx, overrides = {}) {
     const [row] = await tx.insert(appointmentHolds).values({
       publicReference: "hold-" + nanoid(),
+      paymentSessionReference: "session-" + nanoid(),
       offeringId: "offering-test",
       offeringSnapshot: {},
       bookingType: "appointment",

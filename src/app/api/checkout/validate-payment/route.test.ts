@@ -4,7 +4,7 @@ import test from "node:test";
 const helperScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { createValidatePaymentPostHandler } from "./src/app/api/checkout/validate-payment/route.ts";
+  import { createValidatePaymentPostHandler } from "./src/app/api/checkout/validate-payment/handler.ts";
   import { createHelcimResponseHash } from "./src/lib/commerce/helcim-hash.ts";
   import { buildMockHelcimSuccessPayload } from "./src/lib/commerce/helcim-mock-gateway.ts";
   import { verifyHelcimPayment as realVerifyHelcimPayment } from "./src/lib/commerce/verified-payment.ts";

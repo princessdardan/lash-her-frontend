@@ -11,12 +11,15 @@ const helperScript = String.raw`
     getTerminalAppointmentHoldDeletePredicate,
     getTerminalAppointmentHoldRedactionPredicate,
     getTerminalAppointmentHoldRedactionValues,
+    getTerminalAppointmentRedactionPredicate,
+    getTerminalAppointmentRedactionValues,
     PRIVATE_DATA_RETENTION_TABLE_WINDOWS,
     PRIVATE_DATA_RETENTION_WINDOWS,
   } from "./src/lib/private-db/retention.ts";
   import { PgDialect } from "drizzle-orm/pg-core";
   import {
     appointmentHoldStatus,
+    appointmentStatus,
     calendarFinalizationStatus,
     trainingEnrollmentSchedulingStatus,
   } from "./src/lib/private-db/schema.ts";
@@ -39,9 +42,10 @@ const helperScript = String.raw`
       redactInactiveMarketingContacts: 13,
       redactMarketingContactSyncJobPayloads: 14,
       redactTerminalAppointmentHolds: 15,
-      redactTerminalTrainingEnrollments: 16,
-      scrubCheckoutPaymentEventPayloads: 17,
-      softDeleteCheckoutOrders: 18,
+      redactTerminalAppointments: 16,
+      redactTerminalTrainingEnrollments: 17,
+      scrubCheckoutPaymentEventPayloads: 18,
+      softDeleteCheckoutOrders: 19,
       ...overrides,
     };
 
@@ -70,6 +74,7 @@ const helperScript = String.raw`
         redactInactiveMarketingContacts: operation("redactInactiveMarketingContacts"),
         redactMarketingContactSyncJobPayloads: operation("redactMarketingContactSyncJobPayloads"),
         redactTerminalAppointmentHolds: operation("redactTerminalAppointmentHolds"),
+        redactTerminalAppointments: operation("redactTerminalAppointments"),
         redactTerminalTrainingEnrollments: operation("redactTerminalTrainingEnrollments"),
         scrubCheckoutPaymentEventPayloads: operation("scrubCheckoutPaymentEventPayloads"),
         softDeleteCheckoutOrders: operation("softDeleteCheckoutOrders"),
@@ -84,12 +89,14 @@ test("private data retention windows define every scheduled table action", () =>
     assert.equal(PRIVATE_DATA_RETENTION_WINDOWS.checkoutOrders.softDeleteAfterDays, 2555);
     assert.equal(PRIVATE_DATA_RETENTION_WINDOWS.checkoutPaymentEvents.scrubPayloadAfterDays, 90);
     assert.equal(PRIVATE_DATA_RETENTION_WINDOWS.appointmentHolds.deleteAbandonedAfterDays, 30);
+    assert.equal(PRIVATE_DATA_RETENTION_WINDOWS.appointments.redactAfterDays, 395);
     assert.equal(PRIVATE_DATA_RETENTION_WINDOWS.trainingEnrollments.expireSchedulingTokensAfterDays, 0);
     assert.equal(PRIVATE_DATA_RETENTION_WINDOWS.marketingContactSubmissions.deleteNonConsentingAfterDays, 180);
 
     const tables = new Set(PRIVATE_DATA_RETENTION_TABLE_WINDOWS.map((window) => window.table));
     assert.deepEqual([...tables].sort(), [
       "appointment_holds",
+      "appointments",
       "checkout_orders",
       "checkout_payment_events",
       "marketing_consent_events",
@@ -106,6 +113,8 @@ test("private data retention preserves unresolved follow-up states", () => {
     assert.ok(appointmentHoldStatus.enumValues.includes("manual_followup"));
     assert.ok(appointmentHoldStatus.enumValues.includes("paid_unbookable_rebooking_pending"));
     assert.ok(appointmentHoldStatus.enumValues.includes("refund_required"));
+    assert.ok(appointmentStatus.enumValues.includes("rebooking_pending"));
+    assert.ok(appointmentStatus.enumValues.includes("manual_followup"));
     assert.ok(calendarFinalizationStatus.enumValues.includes("paid_calendar_pending"));
     assert.ok(calendarFinalizationStatus.enumValues.includes("paid_unbookable_rebooking_pending"));
     assert.ok(calendarFinalizationStatus.enumValues.includes("refund_required"));
@@ -125,6 +134,7 @@ test("private data retention cutoffs subtract configured UTC windows", () => {
 
     assert.equal(cutoffs.trainingTokenExpiryCutoff.toISOString(), "2026-05-28T12:00:00.000Z");
     assert.equal(cutoffs.appointmentHoldAbandonedDeleteCutoff.toISOString(), "2026-04-28T12:00:00.000Z");
+    assert.equal(cutoffs.appointmentRedactCutoff.toISOString(), "2025-04-28T12:00:00.000Z");
     assert.equal(cutoffs.paymentEventPayloadScrubCutoff.toISOString(), "2026-02-27T12:00:00.000Z");
     assert.equal(cutoffs.marketingSubmissionNonConsentingDeleteCutoff.toISOString(), "2025-11-29T12:00:00.000Z");
     assert.equal(cutoffs.marketingContactSyncJobRedactCutoff.toISOString(), "2025-04-28T12:00:00.000Z");
@@ -144,6 +154,7 @@ test("private data retention cleanup runs in dependency-safe order", () => {
       "expireTrainingSchedulingTokens",
       "deleteAbandonedAppointmentHolds",
       "redactTerminalAppointmentHolds",
+      "redactTerminalAppointments",
       "redactCheckoutOrders",
       "softDeleteCheckoutOrders",
       "scrubCheckoutPaymentEventPayloads",
@@ -161,8 +172,8 @@ test("private data retention cleanup runs in dependency-safe order", () => {
       "deleteTerminalMarketingContactSyncJobs",
     ]);
     assert.equal(summary.runAt, "2026-05-28T12:00:00.000Z");
-    assert.equal(summary.totalAffected, 171);
-    assert.equal(summary.operations.length, 18);
+    assert.equal(summary.totalAffected, 190);
+    assert.equal(summary.operations.length, 19);
     assert.deepEqual(summary.operations[0], {
       count: 9,
       cutoff: "2026-05-28T12:00:00.000Z",
@@ -349,6 +360,59 @@ test("private data retention redacts appointment email retry state", () => {
     assert.equal(redactionValues.reconciliationMetadata, null);
     assert.equal(redactionValues.squarePaymentLinkUrl, null);
     assert.equal(redactionValues.updatedAt, now);
+  `);
+});
+
+test("private data retention redacts only terminal appointments", () => {
+  runRetentionScenario(`
+    const dialect = new PgDialect();
+    const query = dialect.sqlToQuery(
+      getTerminalAppointmentRedactionPredicate(new Date("2025-04-28T12:00:00.000Z")),
+    );
+    const normalizedParams = query.params.map((param) => param instanceof Date ? param.toISOString() : param);
+
+    assert.equal(query.sql.includes('"appointments"."status" in'), true);
+    assert.equal(query.sql.includes('"appointments"."redacted_at" is null'), true);
+    assert.equal(
+      query.sql.includes('coalesce("appointments"."completed_at", "appointments"."cancelled_at", "appointments"."no_show_at", "appointments"."updated_at", "appointments"."created_at") <='),
+      true,
+    );
+    for (const expectedParam of [
+      "cancelled",
+      "completed",
+      "no_show",
+      "2025-04-28T12:00:00.000Z",
+    ]) {
+      assert.equal(normalizedParams.includes(expectedParam), true);
+    }
+    for (const unresolvedParam of [
+      "confirmed",
+      "rebooking_pending",
+      "manual_followup",
+    ]) {
+      assert.equal(normalizedParams.includes(unresolvedParam), false);
+    }
+  `);
+});
+
+test("private data retention removes terminal appointment PII", () => {
+  runRetentionScenario(`
+    const now = new Date("2026-05-28T12:00:00.000Z");
+    const dialect = new PgDialect();
+    const redactionValues = getTerminalAppointmentRedactionValues(now);
+    const normalizedEmail = dialect.sqlToQuery(redactionValues.customerEmailNormalized);
+
+    assert.equal(redactionValues.customerEmail, "[redacted]");
+    assert.equal(redactionValues.customerName, "[redacted]");
+    assert.equal(redactionValues.customerPhone, null);
+    assert.equal(redactionValues.intakeSnapshot, null);
+    assert.equal(redactionValues.cancellationReason, null);
+    assert.equal(redactionValues.bookingConfirmationEmailClaimedUntil, null);
+    assert.equal(redactionValues.bookingConfirmationEmailLastError, null);
+    assert.equal(redactionValues.redactedAt, now);
+    assert.equal(redactionValues.updatedAt, now);
+    assert.equal(normalizedEmail.sql.includes("'redacted:'"), true);
+    assert.equal(normalizedEmail.sql.includes('"appointments"."id"'), true);
   `);
 });
 

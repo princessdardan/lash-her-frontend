@@ -147,10 +147,15 @@ describe("service schema payment contract", () => {
       },
     };
 
-    priceField.validation(rule);
-    assert.ok(capturedValidator, "add-on price custom validator should be registered");
-    assert.strictEqual(await capturedValidator(undefined, buildContext()), "Add-on price is required.");
-    assert.strictEqual(await capturedValidator(0, buildContext()), "Add-on price must be greater than zero.");
-    assert.strictEqual(await capturedValidator(25, buildContext()), true);
+    const validation = priceField.validation;
+    if (typeof validation !== "function") {
+      assert.fail("add-on price validation should be configured");
+    }
+    validation(rule);
+    const validator = capturedValidator;
+    assert.ok(validator, "add-on price custom validator should be registered");
+    assert.strictEqual(await validator(undefined, buildContext()), "Add-on price is required.");
+    assert.strictEqual(await validator(0, buildContext()), "Add-on price must be greater than zero.");
+    assert.strictEqual(await validator(25, buildContext()), true);
   });
 });

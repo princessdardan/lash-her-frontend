@@ -1,0 +1,1 @@
+ALTER TABLE "appointment_holds" ADD CONSTRAINT "appointment_holds_booking_model_version_check" CHECK ("appointment_holds"."booking_model_version" IN (1, 2));

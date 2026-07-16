@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import { resolveBookingModelVersion } from "@/lib/booking/booking-model-version";
 import type { BookingHoldRecord } from "@/lib/booking/holds";
 import type { NoShowChargeStatus } from "@/lib/private-db/schema";
 import type {
@@ -346,6 +347,14 @@ export async function confirmCardOnFileBooking(
   }
 
   const hold = beginResult.hold;
+
+  if (resolveBookingModelVersion(hold) === 2) {
+    return {
+      ok: false,
+      error: "invalid_request",
+      message: "This booking requires online payment confirmation",
+    };
+  }
 
   if (!isCardOnFileHoldAvailable(hold, now)) {
     return {

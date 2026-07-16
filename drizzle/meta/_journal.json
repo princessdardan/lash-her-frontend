@@ -127,6 +127,34 @@
       "when": 1783115272208,
       "tag": "0017_big_hulk",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1783723634797,
+      "tag": "0018_grey_xorn",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1783727563549,
+      "tag": "0019_rainy_lorna_dane",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1783728714883,
+      "tag": "0020_eager_stark_industries",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1784075126626,
+      "tag": "0021_grey_professor_monster",
+      "breakpoints": true
     }
   ]
 }

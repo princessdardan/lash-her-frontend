@@ -9,7 +9,7 @@ import type {
 
 import type { ServicePaymentAlertInput } from "@/lib/booking/payments/service-payment-alerts";
 
-import { createServiceBookingPaymentConfirmPostHandler, POST } from "./route";
+import { createServiceBookingPaymentConfirmPostHandler, POST } from "./handler";
 
 const VALID_CONFIRM_BODY = {
   paymentSessionReference: "pay_sess_1",

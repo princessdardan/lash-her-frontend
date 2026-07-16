@@ -1,10 +1,12 @@
 import { notFound } from "next/navigation";
 import { loaders } from "@/data/loaders";
 import { BookingFlow } from "@/components/booking/booking-flow";
+import { loadPublicOperationalOfferings } from "@/lib/booking/operations/public-offerings";
 import Link from "next/link";
 import type { Metadata } from "next";
 
-export const revalidate = 1800;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function generateMetadata({
   params,
@@ -30,13 +32,22 @@ export default async function ServiceBookingPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const [settings, service, services] = await Promise.all([
+  const service = await loaders.getBookableServiceBySlug(slug);
+
+  if (!service) {
+    notFound();
+  }
+
+  const [settings, services, offerings] = await Promise.all([
     loaders.getBookingSettings(),
-    loaders.getBookableServiceBySlug(slug),
     loaders.getBookableServices(),
+    loadPublicOperationalOfferings({
+      sanityServiceId: service._id,
+      servicePublicSlug: service.slug,
+    }),
   ]);
 
-  if (!settings || !service) {
+  if (!settings) {
     notFound();
   }
 
@@ -70,6 +81,7 @@ export default async function ServiceBookingPage({
         </header>
 
         <BookingFlow
+          offerings={offerings}
           settings={settings}
           initialServiceSlug={service.slug}
           services={services}

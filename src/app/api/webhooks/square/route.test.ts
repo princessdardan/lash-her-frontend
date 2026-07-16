@@ -7,7 +7,7 @@ import {
   defaultDependencies,
   loadTrainingSquareInvoiceFinalizer,
   resolveSquareWebhookEnv,
-} from "./route";
+} from "./handler";
 import { createServicePaymentAlertLogger } from "@/lib/booking/payments/service-payment-alerts";
 import type { CheckoutOrderRow } from "@/lib/commerce/order-store";
 

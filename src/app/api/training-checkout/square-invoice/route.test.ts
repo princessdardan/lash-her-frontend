@@ -4,7 +4,7 @@ import test from "node:test";
 const helperScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { createTrainingSquareInvoicePostHandler } from "./src/app/api/training-checkout/square-invoice/route.ts";
+  import { createTrainingSquareInvoicePostHandler } from "./src/app/api/training-checkout/square-invoice/handler.ts";
 
   class SquareInvoiceBNPLUnavailableError extends Error {
     constructor() {

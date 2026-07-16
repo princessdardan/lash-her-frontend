@@ -663,6 +663,15 @@ export function ServiceBookingPaymentForm({
           <p className="mt-2 text-sm leading-snug text-lh-muted">
             {SERVICE_NO_SHOW_POLICY_TEXT}
           </p>
+          <div className="mt-3 flex items-center justify-between gap-4 border-t border-lh-line pt-3 text-sm">
+            <span className="font-medium text-black">
+              Maximum no-show amount
+            </span>
+            <span className="text-right text-lh-muted">
+              {formatCad(bookedTotalAfterDiscountCents / 100)}
+              <span className="block text-xs">before applicable HST</span>
+            </span>
+          </div>
         </div>
 
         <div className="flex items-start gap-3">

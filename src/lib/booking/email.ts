@@ -1,8 +1,10 @@
 import "server-only";
 
 import {
+  claimBookingConfirmationEmailByHoldId,
   claimBookingConfirmationEmailByOrderId,
   getAppointmentHoldByCheckoutOrderPublicId,
+  listRetryableOperationalBookingOutcomeEmailHoldIds,
   markBookingConfirmationEmailSent,
   recordBookingConfirmationEmailFailure,
   type BookingConfirmationEmailClaimRecord,
@@ -31,6 +33,7 @@ export interface SendBookingConfirmationInput {
   paymentProvider: string;
   start: Date;
   timezone: string;
+  bookingStatus?: "booked" | "manual_followup";
 }
 
 export interface SendBookingConfirmationEmailForOrderDependencies {
@@ -41,12 +44,35 @@ export interface SendBookingConfirmationEmailForOrderDependencies {
   sendBookingConfirmationEmail: typeof sendBookingConfirmationEmail;
 }
 
+export interface SendBookingConfirmationEmailForHoldDependencies {
+  claimBookingConfirmationEmailByHoldId: typeof claimBookingConfirmationEmailByHoldId;
+  logError: typeof console.error;
+  markBookingConfirmationEmailSent: typeof markBookingConfirmationEmailSent;
+  recordBookingConfirmationEmailFailure: typeof recordBookingConfirmationEmailFailure;
+  sendBookingConfirmationEmail: typeof sendBookingConfirmationEmail;
+}
+
+export interface RetryOperationalBookingOutcomeEmailsDependencies {
+  listHoldIds: typeof listRetryableOperationalBookingOutcomeEmailHoldIds;
+  logError: typeof console.error;
+  sendForHold: typeof sendBookingConfirmationEmailForHold;
+}
+
+export interface RetryOperationalBookingOutcomeEmailsSummary {
+  attempted: number;
+  failed: number;
+  processed: number;
+}
+
 export const BOOKING_CONFIRMATION_EMAIL_SUBJECT =
   "Your Lash Her booking is confirmed";
+export const BOOKING_MANUAL_FOLLOWUP_EMAIL_SUBJECT =
+  "We received your Lash Her booking";
 
 export async function sendBookingConfirmationEmail(
   input: SendBookingConfirmationInput,
 ): Promise<void> {
+  const bookingStatus = input.bookingStatus ?? "booked";
   const formattedStart = new Intl.DateTimeFormat("en-CA", {
     dateStyle: "full",
     timeStyle: "short",
@@ -55,20 +81,42 @@ export async function sendBookingConfirmationEmail(
 
   await sendTransactionalEmail({
     html: getBookingConfirmationHtml({ ...input, formattedStart }),
-    idempotencyKey: `booking-confirmation:${input.holdId}`,
+    idempotencyKey: getBookingConfirmationEmailIdempotencyKey(
+      input.holdId,
+      bookingStatus,
+    ),
     replyTo: CUSTOMER_REPLY_TO_EMAIL,
-    subject: BOOKING_CONFIRMATION_EMAIL_SUBJECT,
+    subject:
+      bookingStatus === "booked"
+        ? BOOKING_CONFIRMATION_EMAIL_SUBJECT
+        : BOOKING_MANUAL_FOLLOWUP_EMAIL_SUBJECT,
     tags: [
       { name: "flow", value: "booking_confirmation" },
       { name: "order_id", value: input.orderId },
       { name: "payment_provider", value: input.paymentProvider },
     ],
-    template: getConfiguredTransactionalTemplate(
-      "booking_confirmation",
-      getBookingConfirmationTemplateVariables({ ...input, formattedStart }),
-    ),
+    template:
+      bookingStatus === "booked"
+        ? getConfiguredTransactionalTemplate(
+            "booking_confirmation",
+            getBookingConfirmationTemplateVariables({
+              ...input,
+              formattedStart,
+            }),
+          )
+        : undefined,
     to: input.email,
   });
+}
+
+export function getBookingConfirmationEmailIdempotencyKey(
+  holdId: string,
+  bookingStatus: "booked" | "manual_followup" = "booked",
+): string {
+  const legacyKey = `booking-confirmation:${holdId}`;
+  return bookingStatus === "booked"
+    ? legacyKey
+    : `${legacyKey}:manual_followup`;
 }
 
 export function buildBookingConfirmationFallbackHtml(
@@ -103,11 +151,16 @@ export async function sendBookingConfirmationEmailForOrder(
     return;
   }
 
+  let correctionRequired = false;
   try {
     await dependencies.sendBookingConfirmationEmail(
       toBookingConfirmationInput(claimed, orderId),
     );
-    await dependencies.markBookingConfirmationEmailSent({ holdId: claimed.id });
+    const sent = await dependencies.markBookingConfirmationEmailSent({
+      bookingStatus: claimed.bookingConfirmationStatus ?? "booked",
+      holdId: claimed.id,
+    });
+    correctionRequired = sent?.correctionRequired === true;
   } catch (error) {
     const message = getErrorMessage(error);
     await dependencies.recordBookingConfirmationEmailFailure({
@@ -121,11 +174,96 @@ export async function sendBookingConfirmationEmailForOrder(
     });
     throw new Error(message, { cause: error });
   }
+
+  if (correctionRequired) {
+    await sendBookingConfirmationEmailForOrder(orderId, dependencies);
+  }
+}
+
+export async function sendBookingConfirmationEmailForHold(
+  holdId: string,
+  dependencies: SendBookingConfirmationEmailForHoldDependencies = defaultSendBookingConfirmationEmailForHoldDependencies,
+): Promise<void> {
+  const claimed = await dependencies.claimBookingConfirmationEmailByHoldId({
+    holdId,
+  });
+
+  if (claimed === null) {
+    return;
+  }
+
+  const orderReference =
+    claimed.checkoutOrderPublicId ?? claimed.publicReference;
+
+  let correctionRequired = false;
+  try {
+    await dependencies.sendBookingConfirmationEmail(
+      toBookingConfirmationInput(claimed, orderReference),
+    );
+    const sent = await dependencies.markBookingConfirmationEmailSent({
+      bookingStatus: claimed.bookingConfirmationStatus ?? "booked",
+      holdId: claimed.id,
+    });
+    correctionRequired = sent?.correctionRequired === true;
+  } catch (error) {
+    const message = getErrorMessage(error);
+    await dependencies.recordBookingConfirmationEmailFailure({
+      error: message,
+      holdId: claimed.id,
+    });
+    dependencies.logError("[booking-email] Booking outcome email failed", {
+      error: message,
+      holdId: claimed.id,
+      orderId: orderReference,
+    });
+    throw new Error(message, { cause: error });
+  }
+
+  if (correctionRequired) {
+    await sendBookingConfirmationEmailForHold(holdId, dependencies);
+  }
+}
+
+export async function retryOperationalBookingOutcomeEmails(
+  input: { limit?: number; now?: Date } = {},
+  dependencies: RetryOperationalBookingOutcomeEmailsDependencies = {
+    listHoldIds: listRetryableOperationalBookingOutcomeEmailHoldIds,
+    logError: console.error,
+    sendForHold: sendBookingConfirmationEmailForHold,
+  },
+): Promise<RetryOperationalBookingOutcomeEmailsSummary> {
+  const holdIds = await dependencies.listHoldIds(input);
+  let failed = 0;
+  let processed = 0;
+
+  for (const holdId of holdIds) {
+    try {
+      await dependencies.sendForHold(holdId);
+      processed += 1;
+    } catch (error) {
+      failed += 1;
+      dependencies.logError(
+        "[booking-email] Scheduled booking outcome retry failed",
+        { error: getErrorMessage(error), holdId },
+      );
+    }
+  }
+
+  return { attempted: holdIds.length, failed, processed };
 }
 
 const defaultSendBookingConfirmationEmailForOrderDependencies: SendBookingConfirmationEmailForOrderDependencies =
   {
     claimBookingConfirmationEmailByOrderId,
+    logError: console.error,
+    markBookingConfirmationEmailSent,
+    recordBookingConfirmationEmailFailure,
+    sendBookingConfirmationEmail,
+  };
+
+const defaultSendBookingConfirmationEmailForHoldDependencies: SendBookingConfirmationEmailForHoldDependencies =
+  {
+    claimBookingConfirmationEmailByHoldId,
     logError: console.error,
     markBookingConfirmationEmailSent,
     recordBookingConfirmationEmailFailure,
@@ -139,6 +277,15 @@ interface BookingConfirmationHtmlInput extends SendBookingConfirmationInput {
 function getBookingConfirmationHtml(
   input: BookingConfirmationHtmlInput,
 ): string {
+  const bookingStatus = input.bookingStatus ?? "booked";
+  const heading =
+    bookingStatus === "booked"
+      ? "Your booking is confirmed"
+      : "We received your booking";
+  const statusCopy =
+    bookingStatus === "booked"
+      ? `Your ${escapeHtml(input.bookingTypeLabel)} with Lash Her is reserved for <strong>${escapeHtml(input.formattedStart)}</strong>.`
+      : `We received your payment and requested ${escapeHtml(input.bookingTypeLabel)} time for <strong>${escapeHtml(input.formattedStart)}</strong>. We could not complete the calendar confirmation automatically, so our team will contact you to confirm or adjust the appointment.`;
   return `
 <!DOCTYPE html>
 <html lang="en">
@@ -156,13 +303,13 @@ function getBookingConfirmationHtml(
             <td style="padding:34px 32px;text-align:center;background-color:#1C1318;color:#FFFFFF;">
               ${getEmailProfileImageHtml()}
               <p style="margin:0 0 10px 0;font-size:12px;letter-spacing:0.22em;text-transform:uppercase;">Lash Her by Nataliea</p>
-              <h1 style="margin:0;font-family:'Bebas Neue','Arial Narrow',Impact,sans-serif;letter-spacing:0.04em;text-transform:uppercase;font-size:30px;font-weight:500;line-height:1.2;">Your booking is confirmed</h1>
+              <h1 style="margin:0;font-family:'Bebas Neue','Arial Narrow',Impact,sans-serif;letter-spacing:0.04em;text-transform:uppercase;font-size:30px;font-weight:500;line-height:1.2;">${heading}</h1>
             </td>
           </tr>
           <tr>
             <td style="padding:34px 32px;">
               <p style="margin:0 0 18px 0;font-size:16px;line-height:1.7;">Hi ${escapeHtml(input.name)},</p>
-              <p style="margin:0 0 22px 0;font-size:15px;line-height:1.7;">Your ${escapeHtml(input.bookingTypeLabel)} with Lash Her is reserved for <strong>${escapeHtml(input.formattedStart)}</strong>.</p>
+              <p style="margin:0 0 22px 0;font-size:15px;line-height:1.7;">${statusCopy}</p>
               ${getBookingAddOnPaymentParagraphHtml(input.addOnPaymentCopy)}
               <div style="margin:28px 0;padding:20px;border-left:4px solid #D4B483;background-color:#F5F1F5;">
                 <p style="margin:0;font-size:14px;line-height:1.7;">If you need to make a change, please contact Lash Her directly so we can help adjust your appointment.</p>
@@ -217,6 +364,7 @@ function toBookingConfirmationInput(
 ): SendBookingConfirmationInput {
   return {
     addOnPaymentCopy: getBookingAddOnPaymentCopy(hold),
+    bookingStatus: hold.bookingConfirmationStatus ?? "booked",
     bookingTypeLabel: getBookingTypeLabel(hold),
     email: hold.customer.email,
     holdId: hold.id,

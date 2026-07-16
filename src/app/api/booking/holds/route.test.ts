@@ -4,12 +4,12 @@ import test from "node:test";
 const helperScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { createBookingHoldsPostHandler } from "./src/app/api/booking/holds/route.ts";
+  import { createBookingHoldsPostHandler } from "./src/app/api/booking/holds/handler.ts";
 
-  function createRequest(body) {
+  function createRequest(body, headers = {}) {
     return new Request("http://localhost:3000/api/booking/holds", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...headers },
       body: JSON.stringify(body),
     });
   }
@@ -62,6 +62,104 @@ const helperScript = String.raw`
     };
   }
 
+  const OPERATIONAL_OFFERING_ID = "00000000-0000-4000-8000-000000000001";
+
+  function createOperationalOffering(overrides = {}) {
+    return {
+      addOns: [
+        {
+          description: "Extended lash bath",
+          durationDeltaMinutes: 30,
+          key: "lash-bath",
+          name: "Lash bath",
+          priceCents: 1500,
+          status: "active",
+        },
+      ],
+      bookingType: "in-person-appointment",
+      bufferAfterMinutes: 15,
+      bufferBeforeMinutes: 15,
+      calendar: {
+        assignmentId: "assignment-server",
+        calendarId: "provider-calendar@example.com",
+        connectionId: "connection-server",
+      },
+      currency: "CAD",
+      depositAmountCents: 5000,
+      durationMinutes: 60,
+      fullPriceCents: 15000,
+      horizonDays: 10,
+      id: OPERATIONAL_OFFERING_ID,
+      minimumLeadTimeHours: 0,
+      offeringKey: "classic-fill-nataliea",
+      provider: {
+        displayName: "Nataliea",
+        id: "provider-server",
+        providerKey: "nataliea",
+        publicSlug: "nataliea",
+        status: "active",
+      },
+      resource: {
+        id: "resource-server",
+        name: "Nataliea",
+        resourceKey: "provider-nataliea",
+        status: "active",
+        timezone: "UTC",
+      },
+      service: {
+        displayTitle: "Classic Fill",
+        id: "service-server",
+        publicSlug: "classic-fill",
+        serviceKey: "classic-fill",
+        status: "active",
+      },
+      slotIntervalMinutes: 30,
+      status: "active",
+      version: 3,
+      ...overrides,
+    };
+  }
+
+  function createOperationalAvailabilityDependencies(offering, overrides = {}) {
+    return {
+      findActiveOfferingById: async ({ id }) => id === offering.id ? offering : null,
+      getOfferingAvailabilityConfiguration: async ({ offeringId, primaryResourceId }) => {
+        assert.equal(offeringId, offering.id);
+        assert.equal(primaryResourceId, "resource-server");
+        return {
+          requiredResourceIds: ["resource-server"],
+          resources: [{
+            busyCalendarAssignments: [{
+              calendarId: "provider-calendar@example.com",
+              connectionId: "connection-server",
+              id: "assignment-server",
+            }],
+            exceptions: [],
+            recurringWindows: [{
+              effectiveFrom: "2030-01-01",
+              endsAt: "17:00",
+              isoWeekday: 1,
+              startsAt: "09:00",
+              timezone: "UTC",
+            }],
+            resourceId: "resource-server",
+            timezone: "UTC",
+          }],
+        };
+      },
+      listConnectionCalendarEvents: async (input) => {
+        assert.equal(input.calendarId, "provider-calendar@example.com");
+        assert.equal(input.connectionId, "connection-server");
+        return [];
+      },
+      listReservationBusyWindows: async ({ resourceId }) => {
+        assert.equal(resourceId, "resource-server");
+        return [];
+      },
+      ...overrides,
+    };
+  }
+
   function createHoldHandler(overrides = {}) {
     return createBookingHoldsPostHandler({
       createAppointmentHold: async () => ({ ok: false, reason: "slot_conflict", conflictingHoldId: "default" }),
@@ -77,6 +175,234 @@ const helperScript = String.raw`
     return response.json();
   }
 `;
+
+test("V2 hold resolves offering, add-on, resources, and calendar server-side", () => {
+  runRouteScenario(`
+    const now = new Date("2030-06-03T08:00:00.000Z");
+    const selectedStart = new Date("2030-06-03T10:00:00.000Z");
+    const offering = createOperationalOffering();
+    const createInputs = [];
+    let legacyServiceLoaded = false;
+    const handler = createHoldHandler({
+      createOperationalHold: async (input) => {
+        createInputs.push(input);
+        return {
+          ok: true,
+          resourceIds: [input.booking.resourceId],
+          hold: {
+            expiresAt: input.expiresAt,
+            paymentSessionReference: "pay_sess_v2",
+            selectedEnd: input.booking.selectedEnd,
+            selectedStart: input.booking.selectedStart,
+          },
+        };
+      },
+      getBookableServiceBySlug: async () => {
+        legacyServiceLoaded = true;
+        return createService();
+      },
+      getNow: () => now,
+      operationalAvailability: createOperationalAvailabilityDependencies(offering),
+    });
+
+    const response = await handler(createRequest({
+      answers: [{ questionId: " notes ", answer: " Sensitive eyes " }],
+      offeringId: OPERATIONAL_OFFERING_ID,
+      selectedAddOnKey: "lash-bath",
+      start: selectedStart.toISOString(),
+    }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 201);
+    assert.equal(legacyServiceLoaded, false);
+    assert.equal(createInputs.length, 1);
+    assert.deepEqual(createInputs[0].answers, [
+      { questionId: "notes", answer: "Sensitive eyes" },
+    ]);
+    assert.equal(createInputs[0].booking.offeringId, OPERATIONAL_OFFERING_ID);
+    assert.equal(createInputs[0].booking.providerId, "provider-server");
+    assert.equal(createInputs[0].booking.resourceId, "resource-server");
+    assert.deepEqual(createInputs[0].booking.calendar, {
+      assignmentId: "assignment-server",
+      calendarId: "provider-calendar@example.com",
+      connectionId: "connection-server",
+    });
+    assert.equal(createInputs[0].booking.durationMinutes, 90);
+    assert.equal(createInputs[0].booking.pricing.addOnPriceCents, 1500);
+    assert.equal(
+      createInputs[0].booking.occupiedStart.toISOString(),
+      "2030-06-03T09:45:00.000Z",
+    );
+    assert.equal(
+      createInputs[0].booking.occupiedEnd.toISOString(),
+      "2030-06-03T11:45:00.000Z",
+    );
+    assert.deepEqual(body, {
+      hold: {
+        paymentSessionReference: "pay_sess_v2",
+        paymentPageUrl: "/services/classic-fill/booking/payment?session=pay_sess_v2",
+        expiresAt: "2030-06-03T08:10:00.000Z",
+        start: "2030-06-03T10:00:00.000Z",
+        end: "2030-06-03T11:30:00.000Z",
+        service: { slug: "classic-fill", title: "Classic Fill" },
+      },
+    });
+  `);
+});
+
+test("V2 hold rejects client-selected operational routing identifiers", () => {
+  runRouteScenario(`
+    let operationalRead = false;
+    const offering = createOperationalOffering();
+    const operationalAvailability = createOperationalAvailabilityDependencies(offering, {
+      findActiveOfferingById: async () => {
+        operationalRead = true;
+        return offering;
+      },
+    });
+    const handler = createHoldHandler({
+      getNow: () => new Date("2030-06-03T08:00:00.000Z"),
+      operationalAvailability,
+    });
+
+    const response = await handler(createRequest({
+      calendarId: "attacker-calendar@example.com",
+      connectionId: "attacker-connection",
+      offeringId: OPERATIONAL_OFFERING_ID,
+      providerId: "attacker-provider",
+      resourceId: "attacker-resource",
+      start: "2030-06-03T10:00:00.000Z",
+    }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 400);
+    assert.equal(operationalRead, false);
+    assert.equal(body.error, "Booking resources are selected by the server.");
+    assert.deepEqual(Object.keys(body.fieldErrors).sort(), [
+      "calendarId",
+      "connectionId",
+      "providerId",
+      "resourceId",
+    ]);
+  `);
+});
+
+test("V2 hold rejects an add-on removed from the active offering", () => {
+  runRouteScenario(`
+    const offering = createOperationalOffering();
+    let createCalled = false;
+    const handler = createHoldHandler({
+      createOperationalHold: async () => {
+        createCalled = true;
+        throw new Error("must not create");
+      },
+      getNow: () => new Date("2030-06-03T08:00:00.000Z"),
+      operationalAvailability: createOperationalAvailabilityDependencies(offering),
+    });
+
+    const response = await handler(createRequest({
+      offeringId: OPERATIONAL_OFFERING_ID,
+      selectedAddOnKey: "removed-addon",
+      start: "2030-06-03T10:00:00.000Z",
+    }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 400);
+    assert.equal(createCalled, false);
+    assert.deepEqual(body.fieldErrors, {
+      selectedAddOnKey: "That add-on is no longer available. Please review your selection.",
+    });
+  `);
+});
+
+test("operational rollout rejects new V1 holds without reading Sanity", () => {
+  runRouteScenario(`
+    let legacyLoaded = false;
+    const handler = createHoldHandler({
+      getBookingModelMode: () => "operational",
+      getBookableServiceBySlug: async () => {
+        legacyLoaded = true;
+        return createService();
+      },
+    });
+
+    const response = await handler(createRequest({
+      serviceSlug: "classic-fill",
+      start: createFutureDate(2).toISOString(),
+    }));
+
+    assert.equal(response.status, 400);
+    assert.equal(legacyLoaded, false);
+    assert.deepEqual(await parseJson(response), {
+      error: "Booking is not configured",
+    });
+  `);
+});
+
+test("legacy rollout rejects new V2 holds before operational reads", () => {
+  runRouteScenario(`
+    let operationalLoaded = false;
+    const offering = createOperationalOffering();
+    const handler = createHoldHandler({
+      getBookingModelMode: () => "legacy",
+      operationalAvailability: createOperationalAvailabilityDependencies(offering, {
+        findActiveOfferingById: async () => {
+          operationalLoaded = true;
+          return offering;
+        },
+      }),
+    });
+
+    const response = await handler(createRequest({
+      offeringId: OPERATIONAL_OFFERING_ID,
+      start: createFutureDate(2).toISOString(),
+    }));
+
+    assert.equal(response.status, 400);
+    assert.equal(operationalLoaded, false);
+    assert.deepEqual(await parseJson(response), {
+      error: "Booking is not configured",
+    });
+  `);
+});
+
+test("dual rollout blocks crafted V1 holds for a migrated service", () => {
+  runRouteScenario(`
+    let legacyCalendarLoaded = false;
+    let legacyHoldCreated = false;
+    const handler = createHoldHandler({
+      getNow: () => new Date("2030-06-03T08:00:00.000Z"),
+      hasOperationalOfferingIntent: async ({
+        sanityServiceId,
+        servicePublicSlug,
+      }) => {
+        assert.equal(sanityServiceId, "service-classic-fill");
+        assert.equal(servicePublicSlug, "classic-fill");
+        return true;
+      },
+      listCalendarEvents: async () => {
+        legacyCalendarLoaded = true;
+        return [];
+      },
+      createAppointmentHold: async () => {
+        legacyHoldCreated = true;
+        throw new Error("must not create");
+      },
+    });
+
+    const response = await handler(createRequest({
+      serviceSlug: "classic-fill",
+      start: "2030-06-03T10:00:00.000Z",
+    }));
+
+    assert.equal(response.status, 400);
+    assert.equal(legacyCalendarLoaded, false);
+    assert.equal(legacyHoldCreated, false);
+    assert.deepEqual(await parseJson(response), {
+      error: "Booking is not configured",
+    });
+  `);
+});
 
 test("hold creation accepts service data without contact or payment selection", () => {
   runRouteScenario(`
@@ -657,6 +983,220 @@ test("booking hold route rejects non-string contact values on the provisional en
         phone: "Enter contact details on the payment page",
       },
     });
+  `);
+});
+
+test("booking hold route returns 429 with Retry-After before booking fan-out", () => {
+  runRouteScenario(`
+    let settingsRead = false;
+    let capturedKey = "";
+    const handler = createHoldHandler({
+      checkRateLimit: async ({ key }) => {
+        capturedKey = key;
+        return { allowed: false, retryAfterSeconds: 43 };
+      },
+      getBookingSettings: async () => {
+        settingsRead = true;
+        return createSettings();
+      },
+    });
+
+    const response = await handler(createRequest({
+      serviceSlug: "classic-fill",
+      start: createFutureDate(2).toISOString(),
+    }, { "x-vercel-forwarded-for": "203.0.113.8" }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 429);
+    assert.equal(response.headers.get("Retry-After"), "43");
+    assert.equal(response.headers.get("Cache-Control"), "no-store");
+    assert.equal(settingsRead, false);
+    assert.equal(capturedKey.includes("203.0.113.8"), false);
+    assert.deepEqual(body, {
+      error: "Too many hold requests. Please wait before trying again.",
+    });
+  `);
+});
+
+test("booking hold route fails closed when durable limiter storage fails", () => {
+  runRouteScenario(`
+    let settingsRead = false;
+    const handler = createHoldHandler({
+      checkRateLimit: async () => {
+        throw new Error("Redis unavailable");
+      },
+      getBookingSettings: async () => {
+        settingsRead = true;
+        return createSettings();
+      },
+    });
+
+    const response = await handler(createRequest({
+      serviceSlug: "classic-fill",
+      start: createFutureDate(2).toISOString(),
+    }, { "x-vercel-forwarded-for": "203.0.113.8" }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 503);
+    assert.equal(settingsRead, false);
+    assert.deepEqual(body, { error: "Booking holds are temporarily unavailable" });
+  `);
+});
+
+test("booking hold attempts use one IP bucket across arbitrary service identifiers", () => {
+  runRouteScenario(`
+    const keys = [];
+    const handler = createHoldHandler({
+      checkRateLimit: async ({ key }) => {
+        keys.push(key);
+        return { allowed: false, retryAfterSeconds: 10 };
+      },
+    });
+    const headers = { "x-vercel-forwarded-for": "203.0.113.8" };
+
+    const first = await handler(createRequest({
+      serviceSlug: "classic-fill",
+      start: createFutureDate(2).toISOString(),
+    }, headers));
+    const second = await handler(createRequest({
+      offeringId: "attacker-rotated-offering-id",
+      start: createFutureDate(2).toISOString(),
+    }, headers));
+
+    assert.equal(first.status, 429);
+    assert.equal(second.status, 429);
+    assert.equal(keys.length, 2);
+    assert.equal(keys[0], keys[1]);
+  `);
+});
+
+test("booking holds fail closed when Vercel trusted IP is absent", () => {
+  runRouteScenario(`
+    process.env.VERCEL = "1";
+    let limiterCalled = false;
+    const handler = createHoldHandler({
+      checkRateLimit: async () => {
+        limiterCalled = true;
+        return { allowed: true, remaining: 4 };
+      },
+    });
+
+    const response = await handler(createRequest({
+      serviceSlug: "classic-fill",
+      start: createFutureDate(2).toISOString(),
+    }, { "x-forwarded-for": "203.0.113.8" }));
+
+    assert.equal(response.status, 503);
+    assert.equal(limiterCalled, false);
+  `);
+});
+
+test("booking hold route enforces the active-hold quota before creation", () => {
+  runRouteScenario(`
+    let holdCreated = false;
+    const handler = createHoldHandler({
+      acquireActiveHoldQuota: async () => ({
+        allowed: false,
+        retryAfterSeconds: 120,
+      }),
+      checkRateLimit: async () => ({ allowed: true, remaining: 4 }),
+      createAppointmentHold: async () => {
+        holdCreated = true;
+        return { ok: false, reason: "slot_conflict", conflictingHoldId: "x" };
+      },
+    });
+
+    const response = await handler(createRequest({
+      serviceSlug: "classic-fill",
+      start: createFutureDate(2).toISOString(),
+    }, { "x-vercel-forwarded-for": "203.0.113.8" }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 429);
+    assert.equal(response.headers.get("Retry-After"), "120");
+    assert.equal(holdCreated, false);
+    assert.deepEqual(body, {
+      error: "You already have the maximum number of active holds for this service.",
+    });
+  `);
+});
+
+test("booking hold route releases an active-hold lease after a slot conflict", () => {
+  runRouteScenario(`
+    const released = [];
+    const handler = createHoldHandler({
+      acquireActiveHoldQuota: async () => ({
+        allowed: true,
+        leaseId: "lease-conflict",
+        remaining: 1,
+      }),
+      checkRateLimit: async () => ({ allowed: true, remaining: 4 }),
+      createAppointmentHold: async () => ({
+        ok: false,
+        reason: "slot_conflict",
+        conflictingHoldId: "x",
+      }),
+      releaseActiveHoldQuota: async (input) => released.push(input),
+    });
+
+    const response = await handler(createRequest({
+      serviceSlug: "classic-fill",
+      start: createFutureDate(2).toISOString(),
+    }, { "x-vercel-forwarded-for": "203.0.113.8" }));
+
+    assert.equal(response.status, 409);
+    assert.equal(released.length, 1);
+    assert.equal(released[0].leaseId, "lease-conflict");
+    assert.equal(released[0].key.includes("203.0.113.8"), false);
+  `);
+});
+
+test("booking hold route rejects excessive intake count before rate limiting", () => {
+  runRouteScenario(`
+    let limiterCalled = false;
+    const handler = createHoldHandler({
+      checkRateLimit: async () => {
+        limiterCalled = true;
+        return { allowed: true, remaining: 4 };
+      },
+    });
+
+    const response = await handler(createRequest({
+      answers: Array.from({ length: 21 }, (_, index) => ({
+        answer: "No",
+        questionId: "question-" + index,
+      })),
+      serviceSlug: "classic-fill",
+      start: createFutureDate(2).toISOString(),
+    }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 413);
+    assert.equal(limiterCalled, false);
+    assert.deepEqual(body, { error: "Too many intake answers were submitted." });
+  `);
+});
+
+test("booking hold route rejects oversized JSON before rate limiting", () => {
+  runRouteScenario(`
+    let limiterCalled = false;
+    const handler = createHoldHandler({
+      checkRateLimit: async () => {
+        limiterCalled = true;
+        return { allowed: true, remaining: 4 };
+      },
+    });
+
+    const response = await handler(createRequest({
+      padding: "x".repeat(25 * 1024),
+      serviceSlug: "classic-fill",
+      start: createFutureDate(2).toISOString(),
+    }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 413);
+    assert.equal(limiterCalled, false);
+    assert.deepEqual(body, { error: "Hold request is too large" });
   `);
 });
 

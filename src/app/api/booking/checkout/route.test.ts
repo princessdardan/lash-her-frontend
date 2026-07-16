@@ -4,7 +4,7 @@ import test from "node:test";
 const helperScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { createBookingCheckoutPostHandler } from "./src/app/api/booking/checkout/route.ts";
+  import { createBookingCheckoutPostHandler } from "./src/app/api/booking/checkout/handler.ts";
 
   const selectedStart = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
   selectedStart.setUTCHours(14, 0, 0, 0);

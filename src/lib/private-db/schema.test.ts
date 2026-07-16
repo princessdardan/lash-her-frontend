@@ -5,12 +5,37 @@ import test from "node:test";
 import { getTableConfig } from "drizzle-orm/pg-core";
 
 import {
+  adminAuditLogs,
+  adminAuditOutcome,
+  adminRole,
+  adminUserResources,
+  adminUsers,
+  adminUserStatus,
+  appointmentCalendarEvents,
+  appointmentCalendarSyncStatus,
+  appointmentEvents,
   appointmentHolds,
   appointmentHoldStatus,
+  appointments,
+  appointmentStatus,
+  bookingBusinessSettings,
+  bookingCalendarConnections,
+  bookingConfigurationStatus,
   bookingNoShowChargeAttempts,
   bookingNoShowChargeRecords,
+  bookingPaymentAttempts,
   bookingPolicyAcceptances,
+  bookingProviders,
+  bookingResourceCalendarAssignments,
+  bookingResourceReservations,
+  bookingResourceScheduleExceptions,
+  bookingResourceSchedules,
+  bookingResources,
   bookingSavedPaymentMethods,
+  bookingServices,
+  bookingServiceOfferingAddOns,
+  bookingServiceOfferingResources,
+  bookingServiceOfferings,
   bookingSquareCustomers,
   calendarFinalizationStatus,
   checkoutOrders,
@@ -22,11 +47,23 @@ import {
   paymentEventProcessingStatus,
   paymentProvider,
   savedPaymentMethodStatus,
+  squareTeamMemberMappingStatus,
 } from "./schema";
 
 function getIndexNames(
   table:
     | typeof appointmentHolds
+    | typeof appointments
+    | typeof appointmentCalendarEvents
+    | typeof adminUsers
+    | typeof adminUserResources
+    | typeof adminAuditLogs
+    | typeof bookingResources
+    | typeof bookingProviders
+    | typeof bookingCalendarConnections
+    | typeof bookingResourceCalendarAssignments
+    | typeof bookingResourceReservations
+    | typeof bookingPaymentAttempts
     | typeof bookingNoShowChargeRecords
     | typeof checkoutOrders
     | typeof checkoutPaymentEvents
@@ -453,5 +490,360 @@ test("marketing contact sync jobs enforce idempotent consent outbox entries", ()
   );
   assert.ok(
     indexes.includes("marketing_contact_sync_jobs_status_next_run_at_idx"),
+  );
+});
+
+test("admin roles support owner, admin, and resource-scoped employee access", () => {
+  assert.deepEqual(adminRole.enumValues, ["owner", "admin", "employee"]);
+  assert.deepEqual(adminUserStatus.enumValues, ["active", "disabled"]);
+  assert.deepEqual(adminAuditOutcome.enumValues, [
+    "success",
+    "denied",
+    "failure",
+  ]);
+
+  assert.deepEqual(
+    [
+      "providerUserId",
+      "email",
+      "emailNormalized",
+      "displayName",
+      "role",
+      "status",
+      "lastSignedInAt",
+    ].every((column) => Object.keys(adminUsers).includes(column)),
+    true,
+  );
+  assert.ok(Object.keys(adminUserResources).includes("bookingResourceId"));
+  assert.ok(
+    getIndexNames(adminUserResources).includes(
+      "admin_user_resources_user_resource_idx",
+    ),
+  );
+});
+
+test("admin audit logs store hashed request evidence without raw network fields", () => {
+  const columns = Object.keys(adminAuditLogs);
+
+  for (const column of [
+    "actorAdminUserId",
+    "actorRole",
+    "action",
+    "domain",
+    "outcome",
+    "targetType",
+    "targetId",
+    "correlationId",
+    "ipHash",
+    "userAgentHash",
+    "metadata",
+  ]) {
+    assert.ok(columns.includes(column));
+  }
+
+  assert.equal(columns.includes("ipAddress"), false);
+  assert.equal(columns.includes("userAgent"), false);
+});
+
+test("booking configuration schema separates resources, providers, services, and offerings", () => {
+  assert.deepEqual(bookingConfigurationStatus.enumValues, [
+    "draft",
+    "active",
+    "disabled",
+    "archived",
+  ]);
+
+  for (const table of [
+    bookingResources,
+    bookingProviders,
+    bookingServices,
+    bookingServiceOfferings,
+    bookingServiceOfferingAddOns,
+    bookingServiceOfferingResources,
+    bookingBusinessSettings,
+  ]) {
+    assert.ok(table);
+  }
+
+  assert.ok(Object.keys(bookingProviders).includes("primaryResourceId"));
+  assert.ok(Object.keys(bookingServiceOfferings).includes("providerId"));
+  assert.ok(
+    Object.keys(bookingServiceOfferings).includes("bufferBeforeMinutes"),
+  );
+  assert.ok(
+    Object.keys(bookingServiceOfferings).includes("bufferAfterMinutes"),
+  );
+});
+
+test("resource schedules support recurring windows and absolute exceptions", () => {
+  for (const column of [
+    "resourceId",
+    "weekday",
+    "startsAt",
+    "endsAt",
+    "timezone",
+    "effectiveFrom",
+    "effectiveUntil",
+  ]) {
+    assert.ok(Object.keys(bookingResourceSchedules).includes(column));
+  }
+
+  for (const column of [
+    "resourceId",
+    "kind",
+    "status",
+    "startsAt",
+    "endsAt",
+    "timezone",
+  ]) {
+    assert.ok(Object.keys(bookingResourceScheduleExceptions).includes(column));
+  }
+});
+
+test("calendar connections keep credentials private and assignments select one write calendar", () => {
+  const connectionColumns = Object.keys(bookingCalendarConnections);
+  const assignmentChecks = getTableConfig(
+    bookingResourceCalendarAssignments,
+  ).checks.map((check) => check.name);
+
+  assert.ok(connectionColumns.includes("credentialCiphertext"));
+  assert.ok(connectionColumns.includes("credentialSecretRef"));
+  assert.equal(connectionColumns.includes("refreshToken"), false);
+  assert.ok(
+    getIndexNames(bookingResourceCalendarAssignments).includes(
+      "booking_resource_calendar_assignments_write_idx",
+    ),
+  );
+  assert.ok(
+    assignmentChecks.includes(
+      "booking_resource_calendar_assignments_has_role_check",
+    ),
+  );
+});
+
+test("offering add-ons enforce positive price and nonnegative duration", () => {
+  const checkNames = getTableConfig(bookingServiceOfferingAddOns).checks.map(
+    (check) => check.name,
+  );
+
+  assert.ok(
+    checkNames.includes("booking_service_offering_add_ons_price_check"),
+  );
+  assert.ok(
+    checkNames.includes("booking_service_offering_add_ons_duration_check"),
+  );
+});
+
+test("appointment holds preserve V1 fields and add nullable V2 routing fields", () => {
+  const columns = Object.keys(appointmentHolds);
+  const checkNames = getTableConfig(appointmentHolds).checks.map(
+    (check) => check.name,
+  );
+
+  for (const column of [
+    "bookingModelVersion",
+    "serviceOfferingId",
+    "providerId",
+    "primaryResourceId",
+    "providerSnapshot",
+    "configurationVersion",
+    "occupiedStart",
+    "occupiedEnd",
+    "calendarAssignmentId",
+    "googleCalendarId",
+  ]) {
+    assert.ok(columns.includes(column));
+  }
+
+  assert.ok(columns.includes("offeringId"));
+  assert.ok(columns.includes("googleEventId"));
+  assert.equal(appointmentHolds.serviceOfferingId.notNull, false);
+  assert.equal(appointmentHolds.primaryResourceId.notNull, false);
+  assert.ok(
+    checkNames.includes("appointment_holds_booking_model_version_check"),
+  );
+  assert.ok(checkNames.includes("appointment_holds_booking_model_v2_check"));
+});
+
+test("durable appointments own operational, payment, and calendar-sync state", () => {
+  assert.deepEqual(appointmentStatus.enumValues, [
+    "confirmed",
+    "cancelled",
+    "completed",
+    "no_show",
+    "rebooking_pending",
+    "manual_followup",
+  ]);
+  assert.deepEqual(appointmentCalendarSyncStatus.enumValues, [
+    "not_required",
+    "pending",
+    "synced",
+    "retryable_failed",
+    "manual_followup",
+  ]);
+
+  for (const column of [
+    "sourceHoldId",
+    "serviceOfferingId",
+    "providerId",
+    "primaryResourceId",
+    "customerEmailNormalized",
+    "selectedStart",
+    "selectedEnd",
+    "occupiedStart",
+    "occupiedEnd",
+    "paymentStatus",
+    "calendarSyncStatus",
+  ]) {
+    assert.ok(Object.keys(appointments).includes(column));
+  }
+
+  assert.ok(
+    getIndexNames(appointments).includes("appointments_source_hold_idx"),
+  );
+  assert.ok(appointmentEvents);
+});
+
+test("calendar event identity is scoped to its assignment", () => {
+  assert.ok(
+    getIndexNames(appointmentCalendarEvents).includes(
+      "appointment_calendar_events_assignment_event_idx",
+    ),
+  );
+  assert.ok(
+    Object.keys(appointmentCalendarEvents).includes("providerCalendarId"),
+  );
+});
+
+test("resource reservations expose one unified occupancy ledger", () => {
+  const columns = Object.keys(bookingResourceReservations);
+
+  for (const column of [
+    "resourceId",
+    "holdId",
+    "appointmentId",
+    "scheduleExceptionId",
+    "kind",
+    "state",
+    "occupiedStart",
+    "occupiedEnd",
+    "expiresAt",
+  ]) {
+    assert.ok(columns.includes(column));
+  }
+
+  assert.ok(
+    getIndexNames(bookingResourceReservations).includes(
+      "booking_resource_reservations_active_lookup_idx",
+    ),
+  );
+});
+
+test("booking payment attempts support payment saga correlation", () => {
+  const columns = Object.keys(bookingPaymentAttempts);
+
+  for (const column of [
+    "holdId",
+    "appointmentId",
+    "checkoutOrderId",
+    "operation",
+    "status",
+    "paymentProvider",
+    "idempotencyKey",
+    "providerPaymentId",
+    "squareTeamMemberId",
+    "amountCents",
+  ]) {
+    assert.ok(columns.includes(column));
+  }
+
+  assert.ok(
+    getIndexNames(bookingPaymentAttempts).includes(
+      "booking_payment_attempts_idempotency_idx",
+    ),
+  );
+});
+
+test("Square team attribution fields are nullable and migration-safe", () => {
+  assert.deepEqual(squareTeamMemberMappingStatus.enumValues, [
+    "active",
+    "inactive",
+    "missing",
+  ]);
+
+  for (const column of [
+    "squareTeamMemberId",
+    "squareTeamMemberDisplayLabel",
+    "squareTeamMemberStatus",
+    "squareTeamMemberVerifiedAt",
+  ]) {
+    assert.ok(Object.keys(bookingProviders).includes(column));
+  }
+  assert.equal(bookingProviders.squareTeamMemberId.notNull, false);
+  assert.ok(
+    getIndexNames(bookingProviders).includes(
+      "booking_providers_square_team_member_idx",
+    ),
+  );
+  assert.equal(
+    bookingBusinessSettings.requireSquareTeamAttribution.notNull,
+    true,
+  );
+  assert.equal(
+    bookingBusinessSettings.requireSquareTeamAttribution.default,
+    false,
+  );
+});
+
+test("calendar credential ownership and immutable attribution snapshots are stored", () => {
+  assert.ok(
+    Object.keys(bookingCalendarConnections).includes(
+      "credentialOwnerAdminUserId",
+    ),
+  );
+  assert.equal(
+    bookingCalendarConnections.credentialOwnerAdminUserId.notNull,
+    false,
+  );
+  assert.ok(Object.keys(appointmentHolds).includes("squareTeamMemberId"));
+  assert.ok(Object.keys(appointments).includes("squareTeamMemberId"));
+
+  const migrationSql = readFileSync(
+    new URL(
+      "../../../drizzle/0021_grey_professor_monster.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  assert.match(
+    migrationSql,
+    /require_square_team_attribution" boolean DEFAULT false NOT NULL/,
+  );
+  assert.match(
+    migrationSql,
+    /credential_owner_admin_user_id" uuid/,
+  );
+});
+
+test("policy and no-show evidence can link to durable appointments", () => {
+  assert.ok(Object.keys(bookingPolicyAcceptances).includes("appointmentId"));
+  assert.ok(Object.keys(bookingNoShowChargeRecords).includes("appointmentId"));
+
+  const policyForeignKeys = getTableConfig(
+    bookingPolicyAcceptances,
+  ).foreignKeys.map((foreignKey) => foreignKey.getName());
+  const noShowForeignKeys = getTableConfig(
+    bookingNoShowChargeRecords,
+  ).foreignKeys.map((foreignKey) => foreignKey.getName());
+
+  assert.ok(
+    policyForeignKeys.includes(
+      "booking_policy_acceptances_appointment_id_appointments_id_fk",
+    ),
+  );
+  assert.ok(
+    noShowForeignKeys.includes(
+      "booking_no_show_charge_records_appointment_id_appointments_id_fk",
+    ),
   );
 });

@@ -3,7 +3,13 @@ import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { loadSquareScript } from "./square-card-on-file-form";
-import { createBookingHold } from "./booking-flow";
+import type { PublicBookingOffering } from "@/lib/booking/operations/offering";
+import {
+  createBookingHold,
+  fetchOfferingAvailability,
+  getInitialOfferingSelection,
+  getServiceBookingModel,
+} from "./booking-flow";
 
 const bookingFlowSource = readFileSync(
   new URL("./booking-flow.tsx", import.meta.url),
@@ -83,7 +89,85 @@ describe("booking service flow contract", () => {
 
   it("does not refetch availability when customer fields change", () => {
     assert.match(bookingFlowSource, /fetchAvailability\(selectedServiceSlug\)/);
-    assert.match(bookingFlowSource, /\[selectedServiceSlug, step\]/);
+    assert.match(
+      bookingFlowSource,
+      /isOfferingFlow,\s*selectedAddOnKey,\s*selectedOfferingId,\s*selectedServiceSlug,\s*step,/,
+    );
+  });
+
+  it("auto-selects a sole provider offering and requires a choice for multiple", () => {
+    const firstOffering = createPublicOffering();
+
+    assert.deepEqual(
+      getInitialOfferingSelection([firstOffering], "classic-fill"),
+      {
+        offeringId: "offering-1",
+        requiresProviderSelection: false,
+      },
+    );
+    assert.deepEqual(
+      getInitialOfferingSelection(
+        [
+          firstOffering,
+          {
+            ...firstOffering,
+            id: "offering-2",
+            offeringKey: "classic-fill-amara",
+            provider: { displayName: "Amara", publicSlug: "amara" },
+          },
+        ],
+        "classic-fill",
+      ),
+      { offeringId: "", requiresProviderSelection: true },
+    );
+    assert.match(bookingFlowSource, /if \(step === "provider"\)/);
+    assert.match(bookingFlowSource, /offering\.provider\.displayName/);
+  });
+
+  it("selects the booking model per service in a mixed dual-mode catalog", () => {
+    const serviceBookingModels = {
+      "classic-fill": "operational",
+      "volume-fill": "legacy",
+    } as const;
+
+    assert.equal(
+      getServiceBookingModel({
+        offerings: [createPublicOffering()],
+        serviceBookingModels,
+        serviceSlug: "classic-fill",
+      }),
+      "operational",
+    );
+    assert.equal(
+      getServiceBookingModel({
+        offerings: [createPublicOffering()],
+        serviceBookingModels,
+        serviceSlug: "volume-fill",
+      }),
+      "legacy",
+    );
+  });
+
+  it("resets time, date, slot results, and add-on when an offering changes", () => {
+    const resetHandler = bookingFlowSource.match(
+      /const resetSlotSelectionState = \(\) => \{[\s\S]*?\n  \};/,
+    )?.[0];
+    const dependentResetHandler = bookingFlowSource.match(
+      /const resetDependentBookingState = \(\) => \{[\s\S]*?\n  \};/,
+    )?.[0];
+    const offeringHandler = bookingFlowSource.match(
+      /const handleOfferingSelect = \(offeringId: string\) => \{[\s\S]*?\n  \};/,
+    )?.[0];
+
+    assert.ok(resetHandler);
+    assert.match(resetHandler, /setSlots\(\[\]\)/);
+    assert.match(resetHandler, /setSelectedSlot\(""\)/);
+    assert.match(resetHandler, /setSelectedDateState\(""\)/);
+    assert.match(resetHandler, /setDateWindowStart\(0\)/);
+    assert.ok(dependentResetHandler);
+    assert.match(dependentResetHandler, /setSelectedAddOnKey\(null\)/);
+    assert.ok(offeringHandler);
+    assert.match(offeringHandler, /resetDependentBookingState\(\)/);
   });
 
   it("renders availability errors before showing the generic no-times state", () => {
@@ -278,6 +362,85 @@ describe("booking service flow contract", () => {
     assert.doesNotMatch(servicesPageSource, /\/booking\?offering=/);
     assert.doesNotMatch(productCardSource, /\/booking\?offering=/);
     assert.doesNotMatch(serviceDetailPageSource, /\/booking\?offering=/);
+  });
+
+  it("requests V2 availability with only the public offering identifier", async () => {
+    const requests: Array<{ url: string; cache?: RequestCache }> = [];
+    const fetcher: typeof fetch = async (input, init) => {
+      requests.push({
+        url: input.toString(),
+        ...(init?.cache ? { cache: init.cache } : {}),
+      });
+      return Response.json({ slots: [] });
+    };
+
+    const response = await fetchOfferingAvailability(
+      "offering-1",
+      null,
+      fetcher,
+    );
+
+    assert.equal(response.ok, true);
+    assert.deepEqual(requests, [
+      {
+        url: "/api/booking/availability?offeringId=offering-1",
+        cache: "no-store",
+      },
+    ]);
+    const requestUrl = new URL(requests[0].url, "https://example.test");
+    assert.deepEqual([...requestUrl.searchParams.keys()], ["offeringId"]);
+  });
+
+  it("refetches V2 availability for a duration-changing add-on choice", async () => {
+    const requests: string[] = [];
+    const fetcher: typeof fetch = async (input) => {
+      requests.push(input.toString());
+      return Response.json({ slots: [] });
+    };
+
+    await fetchOfferingAvailability("offering-1", "lash-bath", fetcher);
+
+    assert.deepEqual(requests, [
+      "/api/booking/availability?offeringId=offering-1&selectedAddOnKey=lash-bath",
+    ]);
+    assert.match(bookingFlowSource, /handleAddOnSelect/);
+    assert.match(bookingFlowSource, /resetSlotSelectionState\(\)/);
+  });
+
+  it("posts a V2 hold with only offering selection and customer choices", async () => {
+    const requests: Array<{ url: string; body: unknown }> = [];
+    const fetcher: typeof fetch = async (input, init) => {
+      requests.push({
+        url: input.toString(),
+        body: parseJsonBody(init?.body),
+      });
+      return Response.json({
+        hold: {
+          paymentPageUrl: "/services/classic-fill/booking/payment?session=v2",
+          paymentSessionReference: "v2",
+        },
+      });
+    };
+
+    await createBookingHold({
+      answers: [{ questionId: "notes", answer: "Sensitive eyes" }],
+      fetcher,
+      offeringId: "offering-1",
+      selectedAddOnKey: "lash-bath",
+      start: "2030-06-15T16:00:00.000Z",
+    });
+
+    assert.deepEqual(requests, [
+      {
+        url: "/api/booking/holds",
+        body: {
+          answers: [{ questionId: "notes", answer: "Sensitive eyes" }],
+          offeringId: "offering-1",
+          selectedAddOnKey: "lash-bath",
+          start: "2030-06-15T16:00:00.000Z",
+        },
+      },
+    ]);
   });
 
   it("returns payment page handoff from a successful hold", async () => {
@@ -642,6 +805,28 @@ describe("booking service flow contract", () => {
     await assert.doesNotReject(p);
   });
 });
+
+function createPublicOffering(): PublicBookingOffering {
+  return {
+    addOns: [
+      {
+        description: "Extended lash bath",
+        durationDeltaMinutes: 15,
+        key: "lash-bath",
+        name: "Lash bath",
+        priceCents: 1500,
+      },
+    ],
+    depositAmountCents: 5000,
+    durationMinutes: 60,
+    fullPriceCents: 15000,
+    id: "offering-1",
+    offeringKey: "classic-fill-nataliea",
+    provider: { displayName: "Nataliea", publicSlug: "nataliea" },
+    serviceSlug: "classic-fill",
+    serviceTitle: "Classic Fill",
+  };
+}
 
 function parseJsonBody(body: BodyInit | null | undefined): unknown {
   if (typeof body !== "string") {

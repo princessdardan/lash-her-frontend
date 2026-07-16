@@ -2000,7 +2000,7 @@ test("Square finalizer records mock Square amount and currency mismatches as ign
   }
 });
 
-test("Square finalizer sends admin alert and skips confirmation when booking finalization fails after payment", async () => {
+test("Square finalizer sends the manual-follow-up customer outcome and admin alert when booking finalization fails after payment", async () => {
   const adminAlerts: import("@/lib/booking/email").SendBookingSchedulingFailureAdminEmailInput[] =
     [];
   const sentBookingEmails: string[] = [];
@@ -2063,7 +2063,7 @@ test("Square finalizer sends admin alert and skips confirmation when booking fin
 
   assert.equal(result.status, "paid_calendar_pending");
   assert.equal(result.bookingFinalizationStatus, "manual_followup");
-  assert.deepEqual(sentBookingEmails, []);
+  assert.deepEqual(sentBookingEmails, ["lh-sq-local"]);
   assert.equal(adminAlerts.length, 1);
   assert.equal(adminAlerts[0]?.orderId, "lh-sq-local");
   assert.equal(adminAlerts[0]?.paymentProvider, "square");

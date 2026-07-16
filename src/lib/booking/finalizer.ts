@@ -1,5 +1,6 @@
 import { nanoid } from "nanoid";
 
+import { resolveBookingModelVersion } from "./booking-model-version";
 import type { CheckoutOrderPurpose } from "@/lib/private-db/schema";
 import { isSlotAvailable } from "./availability";
 import { parseBookingCalendarIds } from "./calendar-ids";
@@ -159,6 +160,18 @@ export async function finalizeAppointmentPaymentForOrder(
               return existingHold.googleEventId;
             }
 
+            if (resolveBookingModelVersion(existingHold) === 2) {
+              const routing = await loadOperationalAppointmentCalendarRouting(
+                existingHold.id,
+              );
+
+              return googleCalendarModule.findConnectionBookingEventForHold({
+                calendarId: routing.writeCalendar.calendarId,
+                connectionId: routing.writeCalendar.connectionId,
+                hold: existingHold,
+              });
+            }
+
             const settings = await loadersModule.loaders.getBookingSettings({
               mode: "published",
               stega: false,
@@ -193,6 +206,104 @@ export async function finalizeAppointmentPaymentForOrder(
             return null;
           },
           async insertBookingEvent(paidHold) {
+            if (resolveBookingModelVersion(paidHold) === 2) {
+              const routing = await loadOperationalAppointmentCalendarRouting(
+                paidHold.id,
+              );
+              const calendarLockId = nanoid();
+              const calendarLockKey = `calendar-assignment:${routing.writeCalendar.assignmentId}`;
+              const calendarLockAcquired =
+                await operationalStoreModule.acquireScopedBookingLock({
+                  key: calendarLockKey,
+                  lockId: calendarLockId,
+                  ttlSeconds: 20,
+                });
+
+              if (!calendarLockAcquired) {
+                throw new BookingManualFollowupError(
+                  "The assigned booking calendar is busy. Staff will confirm this appointment manually.",
+                );
+              }
+
+              try {
+                const existingEventId =
+                  await googleCalendarModule.findConnectionBookingEventForHold({
+                    calendarId: routing.writeCalendar.calendarId,
+                    connectionId: routing.writeCalendar.connectionId,
+                    hold: paidHold,
+                  });
+                if (existingEventId !== null) {
+                  return existingEventId;
+                }
+
+                const occupiedStart =
+                  paidHold.occupiedStart ?? paidHold.selectedStart;
+                const occupiedEnd =
+                  paidHold.occupiedEnd ?? paidHold.selectedEnd;
+                const externalBusyWindows = (
+                  await Promise.all(
+                    routing.busyCalendars.map((calendar) =>
+                      googleCalendarModule.listConnectionCalendarEvents({
+                        calendarId: calendar.calendarId,
+                        connectionId: calendar.connectionId,
+                        timeMax: occupiedEnd,
+                        timeMin: occupiedStart,
+                      }),
+                    ),
+                  )
+                ).flat();
+                const becameExternallyBusy = externalBusyWindows.some(
+                  (event) =>
+                    event.start < occupiedEnd && event.end > occupiedStart,
+                );
+
+                if (becameExternallyBusy) {
+                  throw new BookingRebookingRequiredError(
+                    "The selected appointment time became unavailable on an assigned calendar after payment.",
+                  );
+                }
+
+                return googleCalendarModule.insertConnectionBookingEvent({
+                  calendarId: routing.writeCalendar.calendarId,
+                  connectionId: routing.writeCalendar.connectionId,
+                  event: googleCalendarModule.buildBookingEventPayload({
+                    answers: readCalendarAnswers(
+                      paidHold.offeringSnapshot.answers,
+                    ),
+                    bookingMetadata: {
+                      checkoutOrderId: paidHold.checkoutOrderId ?? undefined,
+                      checkoutOrderPublicId:
+                        paidHold.checkoutOrderPublicId ?? undefined,
+                      holdId: paidHold.id,
+                      paymentProvider: paidHold.paymentProvider ?? "square",
+                    },
+                    bookingTypeLabel: getBookingTypeLabel(paidHold),
+                    customer: paidHold.customer,
+                    end: paidHold.selectedEnd,
+                    hold: paidHold,
+                    start: paidHold.selectedStart,
+                    timezone: paidHold.timezone,
+                  }),
+                });
+              } finally {
+                try {
+                  await operationalStoreModule.releaseScopedBookingLock({
+                    key: calendarLockKey,
+                    lockId: calendarLockId,
+                  });
+                } catch (error) {
+                  console.warn(
+                    "[booking-finalizer] Assigned Calendar lock release failed",
+                    {
+                      assignmentId: routing.writeCalendar.assignmentId,
+                      error: getErrorMessage(error),
+                      holdId: paidHold.id,
+                    },
+                  );
+                }
+              }
+            }
+
             const calendarLockId = nanoid();
             const calendarLockAcquired =
               await operationalStoreModule.acquireCalendarLock(
@@ -466,6 +577,41 @@ function getBookingTypeLabel(hold: BookingHoldRecord): string {
   return typeof title === "string" && title.trim().length > 0
     ? title
     : "Lash appointment";
+}
+
+async function loadOperationalAppointmentCalendarRouting(holdId: string) {
+  const { getOperationalAppointmentCalendarRouting } =
+    await import("@/lib/private-db/operational-calendar-routing-repository");
+
+  return getOperationalAppointmentCalendarRouting(holdId);
+}
+
+function readCalendarAnswers(
+  value: unknown,
+): Array<{ answer: string; questionLabel: string }> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((answer) => {
+    if (answer === null || typeof answer !== "object") {
+      return [];
+    }
+
+    const record = answer as Record<string, unknown>;
+    const questionLabel =
+      typeof record.questionLabel === "string"
+        ? record.questionLabel.trim()
+        : typeof record.questionId === "string"
+          ? record.questionId.trim()
+          : "";
+    const answerText =
+      typeof record.answer === "string" ? record.answer.trim() : "";
+
+    return questionLabel.length > 0 && answerText.length > 0
+      ? [{ answer: answerText, questionLabel }]
+      : [];
+  });
 }
 
 export async function finalizePaidBooking(input: {

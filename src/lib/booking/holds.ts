@@ -1,5 +1,6 @@
 import {
   and,
+  asc,
   eq,
   gt,
   inArray,
@@ -14,12 +15,14 @@ import { nanoid } from "nanoid";
 
 import {
   appointmentHolds,
+  appointments,
   checkoutOrders,
   type CalendarFinalizationStatus,
   type AppointmentHoldMetadata,
   type PaymentProvider,
 } from "@/lib/private-db/schema";
 import type { BookingFinalizerRepository } from "./finalizer";
+import { resolveBookingModelVersion } from "./booking-model-version";
 import { PAYMENT_SUCCESS_GRACE_MINUTES } from "./payment-policy";
 
 import type { BookingType, CalendarEventWindow } from "./types";
@@ -54,11 +57,13 @@ export interface BookingHoldPaymentSnapshot {
 }
 
 export interface BookingHoldRecord {
+  bookingModelVersion?: number | null;
   bookingType: BookingType;
   bookedAt?: Date | null;
   bookingFailedAt?: Date | null;
   checkoutOrderId?: string | null;
   checkoutOrderPublicId?: string | null;
+  calendarAssignmentId?: string | null;
   createdAt: Date;
   customer: BookingHoldCustomerSnapshot;
   expiresAt: Date;
@@ -68,6 +73,7 @@ export interface BookingHoldRecord {
   finalizationReason?: string | null;
   finalizationStatus?: CalendarFinalizationStatus | null;
   googleEventId: string | null;
+  googleCalendarId?: string | null;
   helcimInvoiceId?: number | null;
   helcimInvoiceNumber?: string | null;
   helcimTransactionId?: string | null;
@@ -77,10 +83,14 @@ export interface BookingHoldRecord {
   manualReviewStatus?: string | null;
   offeringId: string;
   offeringSnapshot: Record<string, unknown>;
+  occupiedEnd?: Date | null;
+  occupiedStart?: Date | null;
   paidAt?: Date | null;
   payment: BookingHoldPaymentSnapshot | null;
   paymentProvider?: PaymentProvider | null;
   paymentFailedAt?: Date | null;
+  primaryResourceId?: string | null;
+  providerId?: string | null;
   publicReference: string;
   paymentSessionReference: string;
   reconciliationMetadata?: AppointmentHoldMetadata | null;
@@ -92,6 +102,7 @@ export interface BookingHoldRecord {
   squarePaymentId?: string | null;
   squarePaymentLinkId?: string | null;
   squarePaymentLinkUrl?: string | null;
+  squareTeamMemberId?: string | null;
   state: BookingHoldState;
   timezone: string;
   updatedAt: Date;
@@ -170,7 +181,9 @@ export interface AppointmentHoldStore {
   ): Promise<BookingHoldRecord | null>;
 }
 
-export type BookingConfirmationEmailClaimRecord = BookingHoldRecord;
+export type BookingConfirmationEmailClaimRecord = BookingHoldRecord & {
+  bookingConfirmationStatus?: "booked" | "manual_followup";
+};
 
 export interface ClaimBookingConfirmationEmailByOrderIdInput {
   claimForMs?: number;
@@ -178,7 +191,14 @@ export interface ClaimBookingConfirmationEmailByOrderIdInput {
   orderId: string;
 }
 
+export interface ClaimBookingConfirmationEmailByHoldIdInput {
+  claimForMs?: number;
+  holdId: string;
+  now?: Date;
+}
+
 export interface BookingConfirmationEmailMutationInput {
+  bookingStatus?: "booked" | "manual_followup";
   holdId: string;
   now?: Date;
 }
@@ -427,68 +447,281 @@ export async function getAppointmentHoldByCheckoutOrderPublicId(
 
 export async function claimBookingConfirmationEmailByOrderId(
   input: ClaimBookingConfirmationEmailByOrderIdInput,
+  db?: AppointmentHoldDb,
+): Promise<BookingConfirmationEmailClaimRecord | null> {
+  return claimBookingConfirmationEmail(
+    {
+      claimForMs: input.claimForMs,
+      lookup: { orderId: input.orderId },
+      now: input.now,
+    },
+    db,
+  );
+}
+
+export async function claimBookingConfirmationEmailByHoldId(
+  input: ClaimBookingConfirmationEmailByHoldIdInput,
+  db?: AppointmentHoldDb,
+): Promise<BookingConfirmationEmailClaimRecord | null> {
+  return claimBookingConfirmationEmail(
+    {
+      claimForMs: input.claimForMs,
+      lookup: { holdId: input.holdId },
+      now: input.now,
+      operationalOnly: true,
+    },
+    db,
+  );
+}
+
+export async function listRetryableOperationalBookingOutcomeEmailHoldIds(
+  input: { limit?: number; now?: Date } = {},
+  db?: AppointmentHoldDb,
+): Promise<string[]> {
+  const now = input.now ?? new Date();
+  const limit = Math.min(100, Math.max(1, input.limit ?? 50));
+  const rows = await (db ?? (await getAppointmentHoldDb()))
+    .select({ holdId: appointmentHolds.id })
+    .from(appointments)
+    .innerJoin(
+      appointmentHolds,
+      eq(appointmentHolds.id, appointments.sourceHoldId),
+    )
+    .where(
+      and(
+        eq(appointmentHolds.bookingModelVersion, 2),
+        inArray(appointments.status, ["confirmed", "rebooking_pending"]),
+        inArray(appointments.calendarSyncStatus, [
+          "synced",
+          "manual_followup",
+        ]),
+        or(
+          isNull(appointments.bookingConfirmationEmailClaimedUntil),
+          lte(appointments.bookingConfirmationEmailClaimedUntil, now),
+        ),
+        or(
+          isNull(appointments.bookingConfirmationEmailSentAt),
+          and(
+            eq(appointments.status, "confirmed"),
+            eq(appointments.calendarSyncStatus, "synced"),
+            sql`${appointmentHolds.reconciliationMetadata}->>'bookingConfirmationEmailOutcome' = 'manual_followup'`,
+          ),
+        ),
+      ),
+    )
+    .orderBy(asc(appointments.updatedAt), asc(appointments.id))
+    .limit(limit);
+
+  return rows.map((row) => row.holdId);
+}
+
+async function claimBookingConfirmationEmail(
+  input: {
+    claimForMs?: number;
+    lookup: { holdId: string } | { orderId: string };
+    now?: Date;
+    operationalOnly?: boolean;
+  },
+  db?: AppointmentHoldDb,
 ): Promise<BookingConfirmationEmailClaimRecord | null> {
   const now = input.now ?? new Date();
   const claimUntil = new Date(
     now.getTime() + (input.claimForMs ?? EMAIL_CLAIM_DURATION_MS),
   );
-  const [row] = await (
-    await getAppointmentHoldDb()
-  )
-    .update(appointmentHolds)
-    .set({
-      bookingConfirmationEmailClaimedUntil: claimUntil,
-      bookingConfirmationEmailLastError: null,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(appointmentHolds.checkoutOrderPublicId, input.orderId),
-        eq(appointmentHolds.status, "booked"),
-        isNotNull(appointmentHolds.googleEventId),
-        isNull(appointmentHolds.bookingConfirmationEmailSentAt),
-        or(
-          isNull(appointmentHolds.bookingConfirmationEmailClaimedUntil),
-          lte(appointmentHolds.bookingConfirmationEmailClaimedUntil, now),
-        ),
-      ),
-    )
-    .returning();
+  return (db ?? (await getAppointmentHoldDb())).transaction(async (tx) => {
+    const [hold] = await tx
+      .select()
+      .from(appointmentHolds)
+      .where(
+        "holdId" in input.lookup
+          ? eq(appointmentHolds.id, input.lookup.holdId)
+          : eq(appointmentHolds.checkoutOrderPublicId, input.lookup.orderId),
+      )
+      .limit(1)
+      .for("update");
 
-  return row ? toBookingHoldRecord(row) : null;
+    if (hold === undefined) {
+      return null;
+    }
+
+    if (resolveBookingModelVersion(hold) === 2) {
+      const previousEmailOutcome = (
+        hold.reconciliationMetadata as
+          | { bookingConfirmationEmailOutcome?: unknown }
+          | null
+      )?.bookingConfirmationEmailOutcome;
+      const sentEligibility =
+        previousEmailOutcome === "manual_followup"
+          ? or(
+              isNull(appointments.bookingConfirmationEmailSentAt),
+              and(
+                eq(appointments.status, "confirmed"),
+                eq(appointments.calendarSyncStatus, "synced"),
+              ),
+            )
+          : isNull(appointments.bookingConfirmationEmailSentAt);
+      const [appointment] = await tx
+        .update(appointments)
+        .set({
+          bookingConfirmationEmailClaimedUntil: claimUntil,
+          bookingConfirmationEmailLastError: null,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(appointments.sourceHoldId, hold.id),
+            inArray(appointments.status, ["confirmed", "rebooking_pending"]),
+            inArray(appointments.calendarSyncStatus, [
+              "synced",
+              "manual_followup",
+            ]),
+            sentEligibility,
+            or(
+              isNull(appointments.bookingConfirmationEmailClaimedUntil),
+              lte(appointments.bookingConfirmationEmailClaimedUntil, now),
+            ),
+          ),
+        )
+        .returning({
+          calendarSyncStatus: appointments.calendarSyncStatus,
+          status: appointments.status,
+        });
+
+      if (appointment === undefined) {
+        return null;
+      }
+
+      return {
+        ...toBookingHoldRecord(hold),
+        bookingConfirmationStatus:
+          appointment.calendarSyncStatus === "synced" &&
+          appointment.status === "confirmed"
+            ? "booked"
+            : "manual_followup",
+      };
+    }
+
+    if (input.operationalOnly) {
+      return null;
+    }
+
+    const [claimedHold] = await tx
+      .update(appointmentHolds)
+      .set({
+        bookingConfirmationEmailClaimedUntil: claimUntil,
+        bookingConfirmationEmailLastError: null,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(appointmentHolds.id, hold.id),
+          eq(appointmentHolds.status, "booked"),
+          isNotNull(appointmentHolds.googleEventId),
+          isNull(appointmentHolds.bookingConfirmationEmailSentAt),
+          or(
+            isNull(appointmentHolds.bookingConfirmationEmailClaimedUntil),
+            lte(appointmentHolds.bookingConfirmationEmailClaimedUntil, now),
+          ),
+        ),
+      )
+      .returning();
+
+    return claimedHold
+      ? {
+          ...toBookingHoldRecord(claimedHold),
+          bookingConfirmationStatus: "booked",
+        }
+      : null;
+  });
 }
 
 export async function markBookingConfirmationEmailSent(
   input: BookingConfirmationEmailMutationInput,
-): Promise<void> {
+  db?: AppointmentHoldDb,
+): Promise<{ correctionRequired: boolean }> {
   const now = input.now ?? new Date();
-  await (
-    await getAppointmentHoldDb()
-  )
-    .update(appointmentHolds)
-    .set({
-      bookingConfirmationEmailClaimedUntil: null,
-      bookingConfirmationEmailLastError: null,
-      bookingConfirmationEmailSentAt: now,
-      updatedAt: now,
-    })
-    .where(eq(appointmentHolds.id, input.holdId));
+  return (db ?? (await getAppointmentHoldDb())).transaction(async (tx) => {
+    const [hold] = await tx
+      .select({
+        reconciliationMetadata: appointmentHolds.reconciliationMetadata,
+      })
+      .from(appointmentHolds)
+      .where(eq(appointmentHolds.id, input.holdId))
+      .limit(1)
+      .for("update");
+    const [appointment] = await tx
+      .select({
+        calendarSyncStatus: appointments.calendarSyncStatus,
+        status: appointments.status,
+      })
+      .from(appointments)
+      .where(eq(appointments.sourceHoldId, input.holdId))
+      .limit(1)
+      .for("update");
+    const sentOutcome = input.bookingStatus ?? "booked";
+    const previousSentOutcome = (
+      hold?.reconciliationMetadata as
+        | { bookingConfirmationEmailOutcome?: unknown }
+        | null
+    )?.bookingConfirmationEmailOutcome;
+    const effectiveSentOutcome =
+      previousSentOutcome === "booked" ? "booked" : sentOutcome;
+    const correctionRequired =
+      sentOutcome === "manual_followup" &&
+      previousSentOutcome !== "booked" &&
+      appointment?.status === "confirmed" &&
+      appointment.calendarSyncStatus === "synced";
+
+    await tx
+      .update(appointmentHolds)
+      .set({
+        bookingConfirmationEmailClaimedUntil: null,
+        bookingConfirmationEmailLastError: null,
+        bookingConfirmationEmailSentAt: now,
+        reconciliationMetadata: {
+          ...(hold?.reconciliationMetadata ?? {}),
+          bookingConfirmationEmailOutcome: effectiveSentOutcome,
+        },
+        updatedAt: now,
+      })
+      .where(eq(appointmentHolds.id, input.holdId));
+    await tx
+      .update(appointments)
+      .set({
+        bookingConfirmationEmailClaimedUntil: null,
+        bookingConfirmationEmailLastError: null,
+        bookingConfirmationEmailSentAt: now,
+        updatedAt: now,
+      })
+      .where(eq(appointments.sourceHoldId, input.holdId));
+
+    return { correctionRequired };
+  });
 }
 
 export async function recordBookingConfirmationEmailFailure(
   input: BookingConfirmationEmailFailureInput,
+  db?: AppointmentHoldDb,
 ): Promise<void> {
   const now = input.now ?? new Date();
-  await (
-    await getAppointmentHoldDb()
-  )
-    .update(appointmentHolds)
-    .set({
-      bookingConfirmationEmailClaimedUntil: null,
-      bookingConfirmationEmailLastError: input.error,
-      updatedAt: now,
-    })
-    .where(eq(appointmentHolds.id, input.holdId));
+  await (db ?? (await getAppointmentHoldDb())).transaction(async (tx) => {
+    await tx
+      .update(appointmentHolds)
+      .set({
+        bookingConfirmationEmailClaimedUntil: null,
+        bookingConfirmationEmailLastError: input.error,
+        updatedAt: now,
+      })
+      .where(eq(appointmentHolds.id, input.holdId));
+    await tx
+      .update(appointments)
+      .set({
+        bookingConfirmationEmailClaimedUntil: null,
+        bookingConfirmationEmailLastError: input.error,
+        updatedAt: now,
+      })
+      .where(eq(appointments.sourceHoldId, input.holdId));
+  });
 }
 
 export interface AppointmentHoldFinalizerRepositoryDependencies {
@@ -692,7 +925,7 @@ async function syncCheckoutOrderCalendarFinalization(
 }
 
 export function createDrizzleBookingFinalizerRepository(): BookingFinalizerRepository {
-  return createAppointmentHoldFinalizerRepository({
+  const baseRepository = createAppointmentHoldFinalizerRepository({
     async getHoldById(holdId) {
       const [row] = await (await getAppointmentHoldDb())
         .select()
@@ -707,6 +940,126 @@ export function createDrizzleBookingFinalizerRepository(): BookingFinalizerRepos
       await updateCheckoutOrderCalendarFinalization(input);
     },
   });
+
+  return {
+    ...baseRepository,
+    async recordPaidPendingBooking(input) {
+      const hold = await baseRepository.lockHold(input.holdId);
+      if (hold === null) {
+        throw new Error("Booking hold could not be marked paid.");
+      }
+
+      const paymentProvider = hold.paymentProvider ?? "helcim";
+      await confirmOperationalAppointment({
+        calendar: { status: "pending" },
+        holdId: hold.id,
+        holdOutcome: "paid_pending_booking",
+        now: input.now,
+        payment: {
+          amountCents: input.payment.amountCents,
+          checkoutOrderId: hold.checkoutOrderId ?? undefined,
+          currency: input.payment.currency,
+          idempotencyKey: `${paymentProvider}:hosted:${input.payment.transactionId}`,
+          operation: `${paymentProvider}_hosted_checkout`,
+          paymentProvider,
+          providerOrderId:
+            paymentProvider === "square"
+              ? (hold.squareOrderId ?? undefined)
+              : (hold.helcimInvoiceNumber ?? undefined),
+          providerPaymentId: input.payment.transactionId,
+        },
+        source: `${paymentProvider}_hosted_checkout`,
+      });
+
+      return baseRepository.recordPaidPendingBooking(input);
+    },
+    async recordCalendarRetryPending(input) {
+      await confirmOperationalAppointment({
+        calendar: { status: "pending" },
+        holdId: input.holdId,
+        holdOutcome: "paid_pending_booking",
+        now: input.now,
+        source: "calendar_retry",
+      });
+
+      return baseRepository.recordCalendarRetryPending(input);
+    },
+    async markBooked(input) {
+      await confirmOperationalAppointment({
+        calendar: {
+          providerEventId: input.googleEventId,
+          status: "synced",
+        },
+        holdId: input.holdId,
+        holdOutcome: "booked",
+        now: input.now,
+        source: "hosted_checkout_calendar",
+      });
+      const hold = await baseRepository.markBooked(input);
+
+      if (hold.checkoutOrderId !== null && hold.checkoutOrderId !== undefined) {
+        await updateCheckoutOrderCalendarFinalization({
+          calendarEventId: input.googleEventId,
+          checkoutOrderId: hold.checkoutOrderId,
+          now: input.now,
+          status: "booked",
+        });
+      }
+
+      return hold;
+    },
+    async markBookingFailed(input) {
+      if (input.state === "manual_followup") {
+        await confirmOperationalAppointment({
+          calendar: {
+            errorCode: "calendar_manual_followup",
+            reason: input.error,
+            status: "manual_followup",
+          },
+          holdId: input.holdId,
+          holdOutcome: "manual_followup",
+          now: input.now,
+          source: "hosted_checkout_calendar",
+        });
+      }
+
+      return baseRepository.markBookingFailed(input);
+    },
+    async markPaidUnbookableForRebooking(input) {
+      await confirmOperationalAppointment({
+        calendar: {
+          errorCode: "paid_slot_unavailable",
+          reason: input.reason,
+          status: "manual_followup",
+        },
+        holdId: input.holdId,
+        holdOutcome: "paid_unbookable_rebooking_pending",
+        now: input.now,
+        source: "hosted_checkout_calendar",
+      });
+      const hold = await baseRepository.markPaidUnbookableForRebooking(input);
+
+      if (hold.checkoutOrderId !== null && hold.checkoutOrderId !== undefined) {
+        await updateCheckoutOrderCalendarFinalization({
+          checkoutOrderId: hold.checkoutOrderId,
+          now: input.now,
+          status: "paid_unbookable_rebooking_pending",
+        });
+      }
+
+      return hold;
+    },
+  };
+}
+
+async function confirmOperationalAppointment(
+  input: import("@/lib/private-db/appointment-finalization-repository").ConfirmOperationalAppointmentInput,
+): Promise<void> {
+  const { createAppointmentFinalizationRepository } =
+    await import("@/lib/private-db/appointment-finalization-repository");
+  await createAppointmentFinalizationRepository(
+    await getAppointmentHoldDb(),
+  ).confirmOperationalAppointment(input);
 }
 
 export async function createBookingHold(input: {
@@ -906,6 +1259,8 @@ async function getAppointmentHoldDb() {
   return getPrivateDb();
 }
 
+type AppointmentHoldDb = Awaited<ReturnType<typeof getAppointmentHoldDb>>;
+
 async function updateCheckoutOrderCalendarFinalization(input: {
   calendarEventId?: string;
   checkoutOrderId: string;
@@ -933,9 +1288,11 @@ type AppointmentHoldUpdate = Partial<typeof appointmentHolds.$inferInsert>;
 
 function toBookingHoldRecord(row: AppointmentHoldRow): BookingHoldRecord {
   return {
+    bookingModelVersion: row.bookingModelVersion,
     bookedAt: row.bookedAt,
     bookingFailedAt: row.bookingFailedAt,
     bookingType: row.bookingType as BookingType,
+    calendarAssignmentId: row.calendarAssignmentId,
     checkoutOrderId: row.checkoutOrderId,
     checkoutOrderPublicId: row.checkoutOrderPublicId,
     createdAt: row.createdAt,
@@ -946,6 +1303,7 @@ function toBookingHoldRecord(row: AppointmentHoldRow): BookingHoldRecord {
     failureReason: row.failureReason,
     finalizationReason: row.finalizationReason,
     finalizationStatus: row.finalizationStatus,
+    googleCalendarId: row.googleCalendarId,
     googleEventId: row.googleEventId,
     helcimInvoiceId: row.helcimInvoiceId,
     helcimInvoiceNumber: row.helcimInvoiceNumber,
@@ -956,12 +1314,16 @@ function toBookingHoldRecord(row: AppointmentHoldRow): BookingHoldRecord {
     manualReviewStatus: row.manualReviewStatus,
     offeringId: row.offeringId,
     offeringSnapshot: row.offeringSnapshot,
+    occupiedEnd: row.occupiedEnd,
+    occupiedStart: row.occupiedStart,
     paidAt: row.paidAt,
     payment: null,
     paymentProvider: row.paymentProvider,
     paymentFailedAt: row.paymentFailedAt,
+    primaryResourceId: row.primaryResourceId,
     paymentSessionReference: row.paymentSessionReference,
     publicReference: row.publicReference,
+    providerId: row.providerId,
     reconciliationMetadata: row.reconciliationMetadata,
     releasedAt: row.releasedAt,
     selectedEnd: row.selectedEnd,
@@ -971,6 +1333,7 @@ function toBookingHoldRecord(row: AppointmentHoldRow): BookingHoldRecord {
     squarePaymentId: row.squarePaymentId,
     squarePaymentLinkId: row.squarePaymentLinkId,
     squarePaymentLinkUrl: row.squarePaymentLinkUrl,
+    squareTeamMemberId: row.squareTeamMemberId,
     state: row.status,
     timezone: row.timezone,
     updatedAt: row.updatedAt,

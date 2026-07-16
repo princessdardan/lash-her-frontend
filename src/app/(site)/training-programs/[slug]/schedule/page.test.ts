@@ -50,7 +50,7 @@ describe("training schedule route contract", () => {
     assert.match(schedulePageSource, /<GoogleAppointmentSchedulePopupButton/);
     assert.match(schedulePageSource, /md:hidden/);
     assert.match(schedulePageSource, /hidden border-t border-lh-neutral\/20 bg-lh-neutral-2\/60 p-6 md:block lg:p-8/);
-    assert.match(schedulePageSource, /h-\[980px\].*lg:h-\[1080px\]/s);
+    assert.match(schedulePageSource, /h-\[980px\][\s\S]*lg:h-\[1080px\]/);
     assert.match(schedulePageSource, /<GoogleAppointmentSchedulePopupButton\s+scheduleUrl=\{scheduleUrl\}/);
     assert.match(popupButtonSource, /calendar\.google\.com\/calendar\/scheduling-button-script\.js/);
     assert.match(popupButtonSource, /window\.calendar\?\.schedulingButton/);

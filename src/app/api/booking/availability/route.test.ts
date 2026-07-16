@@ -8,22 +8,22 @@ const helperScript = String.raw`
   import {
     createBookingAvailabilityGetHandler,
     createBookingAvailabilityPostHandler,
-  } from "./src/app/api/booking/availability/route.ts";
+  } from "./src/app/api/booking/availability/handler.ts";
 
-  function createRequest(searchParams) {
+  function createRequest(searchParams, headers = {}) {
     const url = new URL("http://localhost:3000/api/booking/availability");
 
     for (const [key, value] of Object.entries(searchParams)) {
       url.searchParams.set(key, value);
     }
 
-    return new Request(url);
+    return new Request(url, { headers });
   }
 
-  function createPostRequest(body) {
+  function createPostRequest(body, headers = {}) {
     return new Request("http://localhost:3000/api/booking/availability", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...headers },
       body: JSON.stringify(body),
     });
   }
@@ -67,6 +67,102 @@ const helperScript = String.raw`
     };
   }
 
+  const OPERATIONAL_OFFERING_ID = "00000000-0000-4000-8000-000000000001";
+
+  function createOperationalOffering() {
+    return {
+      addOns: [{
+        description: "Extended lash bath",
+        durationDeltaMinutes: 30,
+        key: "lash-bath",
+        name: "Lash bath",
+        priceCents: 1500,
+        status: "active",
+      }],
+      bookingType: "in-person-appointment",
+      bufferAfterMinutes: 15,
+      bufferBeforeMinutes: 15,
+      calendar: {
+        assignmentId: "assignment-server",
+        calendarId: "provider-calendar@example.com",
+        connectionId: "connection-server",
+      },
+      currency: "CAD",
+      depositAmountCents: 5000,
+      durationMinutes: 60,
+      fullPriceCents: 15000,
+      horizonDays: 1,
+      id: OPERATIONAL_OFFERING_ID,
+      minimumLeadTimeHours: 0,
+      offeringKey: "classic-fill-nataliea",
+      provider: {
+        displayName: "Nataliea",
+        id: "provider-server",
+        providerKey: "nataliea",
+        publicSlug: "nataliea",
+        status: "active",
+      },
+      resource: {
+        id: "resource-server",
+        name: "Nataliea",
+        resourceKey: "provider-nataliea",
+        status: "active",
+        timezone: "UTC",
+      },
+      service: {
+        displayTitle: "Classic Fill",
+        id: "service-server",
+        publicSlug: "classic-fill",
+        serviceKey: "classic-fill",
+        status: "active",
+      },
+      slotIntervalMinutes: 30,
+      status: "active",
+      version: 3,
+    };
+  }
+
+  function createOperationalAvailabilityDependencies(overrides = {}) {
+    const offering = createOperationalOffering();
+    return {
+      findActiveOfferingById: async ({ id }) => id === offering.id ? offering : null,
+      getOfferingAvailabilityConfiguration: async ({ offeringId, primaryResourceId }) => {
+        assert.equal(offeringId, OPERATIONAL_OFFERING_ID);
+        assert.equal(primaryResourceId, "resource-server");
+        return {
+          requiredResourceIds: ["resource-server"],
+          resources: [{
+            busyCalendarAssignments: [{
+              calendarId: "provider-calendar@example.com",
+              connectionId: "connection-server",
+              id: "assignment-server",
+            }],
+            exceptions: [],
+            recurringWindows: [{
+              effectiveFrom: "2030-01-01",
+              endsAt: "17:00",
+              isoWeekday: 1,
+              startsAt: "09:00",
+              timezone: "UTC",
+            }],
+            resourceId: "resource-server",
+            timezone: "UTC",
+          }],
+        };
+      },
+      listConnectionCalendarEvents: async (input) => {
+        assert.equal(input.calendarId, "provider-calendar@example.com");
+        assert.equal(input.connectionId, "connection-server");
+        return [];
+      },
+      listReservationBusyWindows: async ({ resourceId }) => {
+        assert.equal(resourceId, "resource-server");
+        return [];
+      },
+      ...overrides,
+    };
+  }
+
   function createFutureDate(dayOffset, hourOffset = 0) {
     const date = new Date(Date.now() + dayOffset * 24 * 60 * 60 * 1000);
     date.setUTCHours(10 + hourOffset, 0, 0, 0);
@@ -99,6 +195,195 @@ const helperScript = String.raw`
     });
   }
 `;
+
+test("V2 availability resolves schedules, reservations, and calendar connection by offeringId", () => {
+  runRouteScenario(`
+    const now = new Date("2030-06-03T08:00:00.000Z");
+    let legacyServiceLoaded = false;
+    const handler = createHandler({
+      getBookableServiceBySlug: async () => {
+        legacyServiceLoaded = true;
+        return createService();
+      },
+      getNow: () => now,
+      operationalAvailability: createOperationalAvailabilityDependencies({
+        listReservationBusyWindows: async ({ resourceId }) => {
+          assert.equal(resourceId, "resource-server");
+          return [{
+            end: new Date("2030-06-03T13:00:00.000Z"),
+            id: "reservation-server",
+            start: new Date("2030-06-03T12:00:00.000Z"),
+          }];
+        },
+      }),
+    });
+
+    const response = await handler(createRequest({
+      offeringId: OPERATIONAL_OFFERING_ID,
+      selectedAddOnKey: "lash-bath",
+      resourceId: "attacker-selected-resource",
+      calendarId: "attacker-calendar@example.com",
+    }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 200);
+    assert.equal(legacyServiceLoaded, false);
+    assert.ok(body.slots.length > 0);
+    assert.equal(body.slots[0].start, "2030-06-03T09:30:00.000Z");
+    assert.equal(body.slots[0].end, "2030-06-03T11:00:00.000Z");
+    assert.equal(
+      body.slots.some((slot) => slot.start === "2030-06-03T12:00:00.000Z"),
+      false,
+    );
+  `);
+});
+
+test("V2 availability fails closed for an unknown or inactive offering", () => {
+  runRouteScenario(`
+    let resourceConfigurationLoaded = false;
+    const handler = createHandler({
+      getNow: () => new Date("2030-06-03T08:00:00.000Z"),
+      operationalAvailability: createOperationalAvailabilityDependencies({
+        findActiveOfferingById: async () => null,
+        getOfferingAvailabilityConfiguration: async () => {
+          resourceConfigurationLoaded = true;
+          throw new Error("must not load");
+        },
+      }),
+    });
+
+    const response = await handler(createRequest({
+      offeringId: OPERATIONAL_OFFERING_ID,
+    }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 400);
+    assert.equal(resourceConfigurationLoaded, false);
+    assert.deepEqual(body, { error: "Booking is not configured" });
+  `);
+});
+
+test("V2 availability rejects a stale add-on key before returning slots", () => {
+  runRouteScenario(`
+    const handler = createHandler({
+      getNow: () => new Date("2030-06-03T08:00:00.000Z"),
+      operationalAvailability: createOperationalAvailabilityDependencies(),
+    });
+
+    const response = await handler(createRequest({
+      offeringId: OPERATIONAL_OFFERING_ID,
+      selectedAddOnKey: "removed-addon",
+    }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(body, {
+      error: "Invalid availability request",
+      fieldErrors: {
+        selectedAddOnKey: "That add-on is no longer available",
+      },
+    });
+  `);
+});
+
+test("V2 availability fails closed for malformed active add-on configuration", () => {
+  runRouteScenario(`
+    const offering = createOperationalOffering();
+    offering.addOns[0].durationDeltaMinutes = -30;
+    const handler = createHandler({
+      getNow: () => new Date("2030-06-03T08:00:00.000Z"),
+      operationalAvailability: createOperationalAvailabilityDependencies({
+        findActiveOfferingById: async ({ id }) =>
+          id === OPERATIONAL_OFFERING_ID ? offering : null,
+      }),
+    });
+
+    const response = await handler(createRequest({
+      offeringId: OPERATIONAL_OFFERING_ID,
+      selectedAddOnKey: "lash-bath",
+    }));
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await parseJson(response), {
+      error: "Booking is not configured",
+    });
+  `);
+});
+
+test("operational rollout rejects new V1 availability requests", () => {
+  runRouteScenario(`
+    let legacyLoaded = false;
+    const handler = createHandler({
+      getBookingModelMode: () => "operational",
+      getBookableServiceBySlug: async () => {
+        legacyLoaded = true;
+        return createService();
+      },
+    });
+
+    const response = await handler(createRequest({ service: "classic-fill" }));
+
+    assert.equal(response.status, 400);
+    assert.equal(legacyLoaded, false);
+    assert.deepEqual(await parseJson(response), {
+      error: "Booking is not configured",
+    });
+  `);
+});
+
+test("legacy rollout rejects new V2 availability requests", () => {
+  runRouteScenario(`
+    let operationalLoaded = false;
+    const handler = createHandler({
+      getBookingModelMode: () => "legacy",
+      operationalAvailability: createOperationalAvailabilityDependencies({
+        findActiveOfferingById: async () => {
+          operationalLoaded = true;
+          return createOperationalOffering();
+        },
+      }),
+    });
+
+    const response = await handler(createRequest({
+      offeringId: OPERATIONAL_OFFERING_ID,
+    }));
+
+    assert.equal(response.status, 400);
+    assert.equal(operationalLoaded, false);
+    assert.deepEqual(await parseJson(response), {
+      error: "Booking is not configured",
+    });
+  `);
+});
+
+test("dual rollout blocks crafted V1 availability for a migrated service", () => {
+  runRouteScenario(`
+    let legacyCalendarLoaded = false;
+    const handler = createHandler({
+      getNow: () => new Date("2030-06-03T08:00:00.000Z"),
+      hasOperationalOfferingIntent: async ({
+        sanityServiceId,
+        servicePublicSlug,
+      }) => {
+        assert.equal(sanityServiceId, "service-classic-fill");
+        assert.equal(servicePublicSlug, "classic-fill");
+        return true;
+      },
+      listCalendarEvents: async () => {
+        legacyCalendarLoaded = true;
+        return [];
+      },
+    });
+
+    const response = await handler(createRequest({ service: "classic-fill" }));
+
+    assert.equal(response.status, 400);
+    assert.equal(legacyCalendarLoaded, false);
+    assert.deepEqual(await parseJson(response), {
+      error: "Booking is not configured",
+    });
+  `);
+});
 
 test("booking availability returns slots for a configured service", () => {
   runRouteScenario(`
@@ -341,6 +626,129 @@ test("booking availability returns retryable status when calendar provider fails
 
     assert.equal(response.status, 503);
     assert.deepEqual(body, { error: "Availability is temporarily unavailable" });
+  `);
+});
+
+test("booking availability returns 429 with Retry-After before provider fan-out", () => {
+  runRouteScenario(`
+    let settingsRead = false;
+    let capturedKey = "";
+    const handler = createHandler({
+      checkRateLimit: async ({ key }) => {
+        capturedKey = key;
+        return { allowed: false, retryAfterSeconds: 17 };
+      },
+      getBookingSettings: async () => {
+        settingsRead = true;
+        return createSettings();
+      },
+    });
+
+    const response = await handler(createRequest(
+      { service: "classic-fill" },
+      { "x-vercel-forwarded-for": "203.0.113.8" },
+    ));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 429);
+    assert.equal(response.headers.get("Retry-After"), "17");
+    assert.equal(response.headers.get("Cache-Control"), "no-store");
+    assert.equal(settingsRead, false);
+    assert.equal(capturedKey.includes("203.0.113.8"), false);
+    assert.deepEqual(body, {
+      error: "Too many availability requests. Please wait and try again.",
+    });
+  `);
+});
+
+test("booking availability returns 503 when durable limiter storage fails", () => {
+  runRouteScenario(`
+    let settingsRead = false;
+    const handler = createHandler({
+      checkRateLimit: async () => {
+        throw new Error("Redis unavailable");
+      },
+      getBookingSettings: async () => {
+        settingsRead = true;
+        return createSettings();
+      },
+    });
+
+    const response = await handler(createRequest(
+      { service: "classic-fill" },
+      { "x-vercel-forwarded-for": "203.0.113.8" },
+    ));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 503);
+    assert.equal(settingsRead, false);
+    assert.deepEqual(body, { error: "Availability is temporarily unavailable" });
+  `);
+});
+
+test("booking availability uses one IP bucket across arbitrary service identifiers", () => {
+  runRouteScenario(`
+    const keys = [];
+    const handler = createHandler({
+      checkRateLimit: async ({ key }) => {
+        keys.push(key);
+        return { allowed: false, retryAfterSeconds: 10 };
+      },
+    });
+    const headers = { "x-vercel-forwarded-for": "203.0.113.8" };
+
+    const first = await handler(createRequest({ service: "classic-fill" }, headers));
+    const second = await handler(createRequest({
+      offeringId: "attacker-rotated-offering-id",
+    }, headers));
+
+    assert.equal(first.status, 429);
+    assert.equal(second.status, 429);
+    assert.equal(keys.length, 2);
+    assert.equal(keys[0], keys[1]);
+  `);
+});
+
+test("booking availability fails closed when Vercel trusted IP is absent", () => {
+  runRouteScenario(`
+    process.env.VERCEL = "1";
+    let limiterCalled = false;
+    const handler = createHandler({
+      checkRateLimit: async () => {
+        limiterCalled = true;
+        return { allowed: true, remaining: 29 };
+      },
+    });
+
+    const response = await handler(createRequest(
+      { service: "classic-fill" },
+      { "x-forwarded-for": "203.0.113.8" },
+    ));
+
+    assert.equal(response.status, 503);
+    assert.equal(limiterCalled, false);
+  `);
+});
+
+test("booking availability POST rejects oversized JSON before rate limiting", () => {
+  runRouteScenario(`
+    let limiterCalled = false;
+    const handler = createPostHandler({
+      checkRateLimit: async () => {
+        limiterCalled = true;
+        return { allowed: true, remaining: 29 };
+      },
+    });
+
+    const response = await handler(createPostRequest({
+      padding: "x".repeat(9 * 1024),
+      service: "classic-fill",
+    }));
+    const body = await parseJson(response);
+
+    assert.equal(response.status, 413);
+    assert.equal(limiterCalled, false);
+    assert.deepEqual(body, { error: "Availability request is too large" });
   `);
 });
 

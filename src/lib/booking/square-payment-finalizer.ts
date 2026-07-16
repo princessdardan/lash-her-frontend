@@ -21,6 +21,7 @@ import { classifySquareReturnOrderId } from "./payments/service-square-id-resolu
 import type { SquareClient, SquareOrder, SquarePayment } from "./square-client";
 import type { VerifiedSquareWebhookEvent } from "./square-webhook";
 import type { SendBookingSchedulingFailureAdminEmailInput } from "./email";
+import { resolveBookingModelVersion } from "./booking-model-version";
 
 export type SquareFinalizerSource = "return" | "webhook";
 
@@ -267,7 +268,7 @@ export function createSquarePaymentFinalizer(
         await dependencies.repository.recordSquarePaymentFailed?.({
           order: localOrder,
           payment: lookup.payment,
-          providerOrderId,
+          providerOrderId: providerOrderId ?? undefined,
         });
       }
 
@@ -329,11 +330,18 @@ export function createSquarePaymentFinalizer(
           transactionId: lookup.payment.id,
         });
 
-      if (bookingFinalization.ok) {
+      if (
+        bookingFinalization.ok ||
+        bookingFinalization.status === "manual_followup" ||
+        bookingFinalization.status === "paid_unbookable_rebooking_pending"
+      ) {
         await dependencies.sendBookingConfirmationEmailForOrder(
           localOrder.orderId,
         );
-      } else if (
+      }
+
+      if (
+        !bookingFinalization.ok &&
         isBookingFinalizationStatusAlertable(bookingFinalization.status) &&
         dependencies.sendBookingSchedulingFailureAdminEmail !== undefined
       ) {
@@ -411,8 +419,20 @@ async function recoverProcessedDuplicateBookingConfirmation(
       localOrder.orderId,
     );
 
-    if (
-      hold === null ||
+    if (hold === null) {
+      return;
+    }
+
+    if (resolveBookingModelVersion(hold) === 2) {
+      if (
+        hold.state !== "booked" &&
+        hold.state !== "manual_followup" &&
+        hold.state !== "paid_unbookable_rebooking_pending" &&
+        hold.state !== "manual_rebooked"
+      ) {
+        return;
+      }
+    } else if (
       (hold.state !== "booked" && hold.state !== "manual_rebooked") ||
       hold.googleEventId === null
     ) {
@@ -564,10 +584,9 @@ function createDrizzleSquarePaymentFinalizerRepository(): SquarePaymentFinalizer
       const providerOrderId =
         input.providerOrderId ?? input.order.providerOrderId;
       const providerStatus = input.payment.status ?? "unpaid";
+      const db = await getSquarePaymentFinalizerDb();
 
-      await (
-        await getSquarePaymentFinalizerDb()
-      ).transaction(async (tx) => {
+      await db.transaction(async (tx) => {
         await tx
           .update(checkoutOrders)
           .set({
@@ -614,13 +633,46 @@ function createDrizzleSquarePaymentFinalizerRepository(): SquarePaymentFinalizer
             ),
           );
       });
+
+      const amountCents = input.payment.amount_money?.amount;
+      const [hold] = await db
+        .select({ id: appointmentHolds.id })
+        .from(appointmentHolds)
+        .where(eq(appointmentHolds.checkoutOrderId, input.order.id))
+        .limit(1);
+      if (
+        hold !== undefined &&
+        typeof amountCents === "number" &&
+        Number.isInteger(amountCents) &&
+        amountCents >= 0
+      ) {
+        const { createAppointmentFinalizationRepository } =
+          await import("@/lib/private-db/appointment-finalization-repository");
+        await createAppointmentFinalizationRepository(db).recordPaymentAttempt({
+          amountCents,
+          currency: input.payment.amount_money?.currency ?? "CAD",
+          failedAt: now,
+          failureCode: providerStatus,
+          holdId: hold.id,
+          idempotencyKey: buildHostedPaymentAttemptIdempotencyKey(
+            input.payment.id,
+          ),
+          now,
+          operation: "square_hosted_checkout",
+          paymentProvider: "square",
+          providerOrderId: providerOrderId ?? undefined,
+          providerPaymentId: input.payment.id,
+          status: isCancelledSquarePayment(input.payment)
+            ? "cancelled"
+            : "failed",
+        });
+      }
     },
 
     async recordSquarePaymentPendingCalendar(input) {
       const now = new Date();
-      await (
-        await getSquarePaymentFinalizerDb()
-      ).transaction(async (tx) => {
+      const db = await getSquarePaymentFinalizerDb();
+      await db.transaction(async (tx) => {
         await tx
           .update(checkoutOrders)
           .set({
@@ -655,6 +707,41 @@ function createDrizzleSquarePaymentFinalizerRepository(): SquarePaymentFinalizer
             updatedAt: now,
           })
           .where(eq(appointmentHolds.checkoutOrderId, input.order.id));
+      });
+
+      const [hold] = await db
+        .select({ id: appointmentHolds.id })
+        .from(appointmentHolds)
+        .where(eq(appointmentHolds.checkoutOrderId, input.order.id))
+        .limit(1);
+      if (hold === undefined) {
+        throw new Error("Booking hold was not found after Square payment");
+      }
+
+      const { createAppointmentFinalizationRepository } =
+        await import("@/lib/private-db/appointment-finalization-repository");
+      await createAppointmentFinalizationRepository(
+        db,
+      ).confirmOperationalAppointment({
+        calendar: { status: "pending" },
+        holdId: hold.id,
+        holdOutcome: "paid_pending_booking",
+        now,
+        payment: {
+          amountCents: input.amountCents,
+          capturedAt: now,
+          checkoutOrderId: input.order.id,
+          currency: input.payment.amount_money?.currency ?? "CAD",
+          idempotencyKey: buildHostedPaymentAttemptIdempotencyKey(
+            input.payment.id,
+          ),
+          operation: "square_hosted_checkout",
+          paymentProvider: "square",
+          providerOrderId:
+            input.providerOrderId ?? input.order.providerOrderId ?? undefined,
+          providerPaymentId: input.payment.id,
+        },
+        source: "square_hosted_checkout",
       });
     },
   };
@@ -780,6 +867,15 @@ function getFailedCheckoutOrderStatus(
     payment.status?.trim().toLowerCase() === "cancelled"
     ? "cancelled"
     : "verification_failed";
+}
+
+function isCancelledSquarePayment(payment: SquarePayment): boolean {
+  const status = payment.status?.trim().toLowerCase();
+  return status === "canceled" || status === "cancelled";
+}
+
+function buildHostedPaymentAttemptIdempotencyKey(paymentId: string): string {
+  return `square:hosted:${paymentId}`;
 }
 
 function hashPayload(payload: CheckoutPaymentEventPayload): string {

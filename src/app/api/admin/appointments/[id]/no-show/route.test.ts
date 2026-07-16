@@ -19,7 +19,7 @@ const helperScript = String.raw`
   import {
     createAdminNoShowPostHandler,
     defaultChargeNoShowCommand,
-  } from "./src/app/api/admin/appointments/[id]/no-show/route.ts";
+  } from "./src/app/api/admin/appointments/[id]/no-show/handler.ts";
 
   function createRequest(appointmentId, body, headers) {
     const authHeaders = headers === null ? undefined : (headers || { authorization: "Bearer admin-secret" });

@@ -1,7 +1,8 @@
 import "server-only";
 
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 
+import { resolveBookingModelVersion } from "@/lib/booking/booking-model-version";
 import type { BookingHoldRecord, BookingHoldState } from "@/lib/booking/holds";
 import type {
   ChargeAndStoreRepository,
@@ -9,12 +10,15 @@ import type {
 } from "@/lib/booking/payments/service-charge-and-store";
 import {
   appointmentHolds,
+  appointments,
   bookingNoShowChargeRecords,
+  bookingPaymentAttempts,
   bookingPolicyAcceptances,
   bookingSavedPaymentMethods,
   bookingSquareCustomers,
 } from "@/lib/private-db/schema";
 
+import { createAppointmentFinalizationRepository } from "./appointment-finalization-repository";
 import { getPrivateDb } from "./client";
 
 const IN_PROGRESS_MARKER_TTL_MS = 30_000;
@@ -47,6 +51,8 @@ function isActiveInProgressMarker(
 export async function createServiceBookingPaymentRepository(
   db: ReturnType<typeof getPrivateDb> = getPrivateDb(),
 ): Promise<ChargeAndStoreRepository> {
+  const appointmentFinalization = createAppointmentFinalizationRepository(db);
+
   return {
     async claimPaymentAttempt(input) {
       return db.transaction(async (tx) => {
@@ -66,6 +72,8 @@ export async function createServiceBookingPaymentRepository(
           return { status: "unavailable" };
         }
 
+        const bookingModelVersion = resolveBookingModelVersion(row);
+
         const metadata = (row.reconciliationMetadata ?? {}) as Record<
           string,
           unknown
@@ -75,7 +83,7 @@ export async function createServiceBookingPaymentRepository(
           | Extract<ChargeAndStoreBookingResult, { ok: true }>
           | undefined;
         if (confirmation !== undefined) {
-          return { status: "confirmed", confirmation };
+          return { status: "confirmed", confirmation, holdId: row.id };
         }
 
         // Refund-required is a terminal state: subsequent confirmation attempts
@@ -93,6 +101,222 @@ export async function createServiceBookingPaymentRepository(
         );
         if (markerCheck.active) {
           return { status: "in_progress" };
+        }
+
+        // A V2 capture is committed atomically with the authoritative
+        // appointment before Calendar finalization. If the process exits in
+        // that gap, derive a recovery claim from those durable rows instead
+        // of returning the hold to the provider-payment path. This prevents a
+        // retry from creating or capturing another Square payment.
+        if (
+          bookingModelVersion === 2 &&
+          row.status !== "refund_required" &&
+          row.finalizationStatus !== "refund_required"
+        ) {
+          const [appointment] = await tx
+            .select({ id: appointments.id })
+            .from(appointments)
+            .where(eq(appointments.sourceHoldId, row.id))
+            .limit(1);
+
+          const [capturedAttempt] =
+            appointment === undefined
+              ? []
+              : await tx
+                  .select({
+                    amountCents: bookingPaymentAttempts.amountCents,
+                    currency: bookingPaymentAttempts.currency,
+                    providerOrderId: bookingPaymentAttempts.providerOrderId,
+                    providerPaymentId: bookingPaymentAttempts.providerPaymentId,
+                  })
+                  .from(bookingPaymentAttempts)
+                  .where(
+                    and(
+                      eq(bookingPaymentAttempts.holdId, row.id),
+                      eq(bookingPaymentAttempts.appointmentId, appointment.id),
+                      eq(bookingPaymentAttempts.paymentProvider, "square"),
+                      eq(bookingPaymentAttempts.status, "captured"),
+                    ),
+                  )
+                  .orderBy(desc(bookingPaymentAttempts.createdAt))
+                  .limit(1);
+
+          if (capturedAttempt?.providerPaymentId != null) {
+            const [savedCard] =
+              row.savedPaymentMethodId === null
+                ? []
+                : await tx
+                    .select({
+                      brand: bookingSavedPaymentMethods.cardBrand,
+                      expMonth: bookingSavedPaymentMethods.cardExpMonth,
+                      expYear: bookingSavedPaymentMethods.cardExpYear,
+                      last4: bookingSavedPaymentMethods.cardLast4,
+                    })
+                    .from(bookingSavedPaymentMethods)
+                    .where(
+                      eq(
+                        bookingSavedPaymentMethods.id,
+                        row.savedPaymentMethodId,
+                      ),
+                    )
+                    .limit(1);
+
+            const [updated] = await tx
+              .update(appointmentHolds)
+              .set({
+                reconciliationMetadata: {
+                  ...metadata,
+                  chargeAndStoreInProgress: {
+                    startedAt: input.now.toISOString(),
+                    idempotencyKey: input.idempotencyKey,
+                  },
+                },
+                updatedAt: input.now,
+              })
+              .where(eq(appointmentHolds.id, row.id))
+              .returning();
+
+            if (updated === undefined) {
+              throw new Error(
+                "Hold not found when claiming captured charge-and-store finalization",
+              );
+            }
+
+            return {
+              status: "captured_pending_finalization",
+              card: {
+                brand: savedCard?.brand ?? undefined,
+                expMonth: savedCard?.expMonth ?? undefined,
+                expYear: savedCard?.expYear ?? undefined,
+                last4: savedCard?.last4 ?? undefined,
+              },
+              hold: toBookingHoldRecord(updated),
+              payment: {
+                amountCents: capturedAttempt.amountCents,
+                currency: capturedAttempt.currency,
+                squareOrderId: capturedAttempt.providerOrderId ?? undefined,
+                squarePaymentId: capturedAttempt.providerPaymentId,
+                status: "COMPLETED",
+              },
+            };
+          }
+        }
+
+        if (
+          bookingModelVersion === 2 &&
+          row.status !== "refund_required" &&
+          row.finalizationStatus !== "refund_required"
+        ) {
+          const [authorizedAttempt] = await tx
+            .select({
+              amountCents: bookingPaymentAttempts.amountCents,
+              currency: bookingPaymentAttempts.currency,
+              idempotencyKey: bookingPaymentAttempts.idempotencyKey,
+              providerMetadata: bookingPaymentAttempts.providerMetadata,
+              providerOrderId: bookingPaymentAttempts.providerOrderId,
+              providerPaymentId: bookingPaymentAttempts.providerPaymentId,
+              squareTeamMemberId: bookingPaymentAttempts.squareTeamMemberId,
+            })
+            .from(bookingPaymentAttempts)
+            .where(
+              and(
+                eq(bookingPaymentAttempts.holdId, row.id),
+                eq(
+                  bookingPaymentAttempts.operation,
+                  "square_charge_and_store",
+                ),
+                eq(bookingPaymentAttempts.paymentProvider, "square"),
+                eq(bookingPaymentAttempts.status, "authorized"),
+              ),
+            )
+            .orderBy(desc(bookingPaymentAttempts.createdAt))
+            .limit(1);
+
+          if (authorizedAttempt?.providerPaymentId != null) {
+            const prerequisitesAreDurable =
+              row.savedPaymentMethodId !== null &&
+              row.policyAcceptanceId !== null &&
+              row.noShowChargeRecordId !== null &&
+              row.squareCustomerId !== null &&
+              row.squareCardId !== null &&
+              row.cardOnFileStatus === "ready";
+
+            // Authorization is only written immediately before capture, after
+            // every card/no-show prerequisite. If that invariant is ever
+            // violated, fail closed instead of returning to CreatePayment.
+            if (!prerequisitesAreDurable) {
+              return { status: "unavailable" };
+            }
+
+            const [savedCard] = await tx
+              .select({
+                brand: bookingSavedPaymentMethods.cardBrand,
+                expMonth: bookingSavedPaymentMethods.cardExpMonth,
+                expYear: bookingSavedPaymentMethods.cardExpYear,
+                last4: bookingSavedPaymentMethods.cardLast4,
+              })
+              .from(bookingSavedPaymentMethods)
+              .where(
+                eq(
+                  bookingSavedPaymentMethods.id,
+                  row.savedPaymentMethodId!,
+                ),
+              )
+              .limit(1);
+
+            if (savedCard === undefined) {
+              return { status: "unavailable" };
+            }
+
+            const [updated] = await tx
+              .update(appointmentHolds)
+              .set({
+                reconciliationMetadata: {
+                  ...metadata,
+                  chargeAndStoreInProgress: {
+                    startedAt: input.now.toISOString(),
+                    idempotencyKey: input.idempotencyKey,
+                  },
+                },
+                updatedAt: input.now,
+              })
+              .where(eq(appointmentHolds.id, row.id))
+              .returning();
+
+            if (updated === undefined) {
+              throw new Error(
+                "Hold not found when claiming authorized charge-and-store payment",
+              );
+            }
+
+            const versionToken =
+              typeof authorizedAttempt.providerMetadata?.squareVersionToken ===
+              "string"
+                ? authorizedAttempt.providerMetadata.squareVersionToken
+                : undefined;
+
+            return {
+              status: "authorized_pending_capture",
+              card: {
+                brand: savedCard.brand ?? undefined,
+                expMonth: savedCard.expMonth ?? undefined,
+                expYear: savedCard.expYear ?? undefined,
+                last4: savedCard.last4 ?? undefined,
+              },
+              hold: toBookingHoldRecord(updated),
+              payment: {
+                amountCents: authorizedAttempt.amountCents,
+                currency: authorizedAttempt.currency,
+                idempotencyKey: authorizedAttempt.idempotencyKey,
+                squareOrderId: authorizedAttempt.providerOrderId ?? undefined,
+                squarePaymentId: authorizedAttempt.providerPaymentId,
+                status: "APPROVED",
+                squareTeamMemberId:
+                  authorizedAttempt.squareTeamMemberId ?? undefined,
+                versionToken,
+              },
+            };
+          }
         }
 
         const [updated] = await tx
@@ -404,17 +628,72 @@ export async function createServiceBookingPaymentRepository(
       });
     },
 
+    async recordCapturedOperationalPayment(input) {
+      await appointmentFinalization.confirmOperationalAppointment({
+        calendar: { status: "pending" },
+        holdId: input.holdId,
+        holdOutcome: "paid_pending_booking",
+        now: input.now,
+        payment: {
+          amountCents: input.amountCents,
+          currency: input.currency,
+          idempotencyKey: input.idempotencyKey,
+          operation: "square_charge_and_store",
+          paymentProvider: "square",
+          providerOrderId: input.squareOrderId,
+          providerPaymentId: input.squarePaymentId,
+        },
+        source: "square_charge_and_store",
+      });
+    },
+
+    async recordAuthorizedOperationalPayment(input) {
+      const result = await appointmentFinalization.recordPaymentAttempt({
+        amountCents: input.amountCents,
+        authorizationEligibility: "square_charge_and_store_pre_capture",
+        authorizedAt: input.now,
+        currency: input.currency,
+        holdId: input.holdId,
+        idempotencyKey: input.idempotencyKey,
+        now: input.now,
+        operation: "square_charge_and_store",
+        paymentProvider: "square",
+        providerMetadata:
+          input.versionToken === undefined
+            ? undefined
+            : { squareVersionToken: input.versionToken },
+        providerOrderId: input.squareOrderId,
+        providerPaymentId: input.squarePaymentId,
+        status: "authorized",
+      });
+
+      return { bookingModelVersion: result.bookingModelVersion };
+    },
+
     async markHoldBooked(input) {
+      const finalization =
+        await appointmentFinalization.confirmOperationalAppointment({
+          calendar: {
+            providerEventId: input.googleEventId,
+            status: "synced",
+          },
+          holdId: input.holdId,
+          holdOutcome: "booked",
+          now: input.now,
+          source: "square_charge_and_store",
+          terminal: {
+            confirmation: input.confirmation,
+            kind: "charge_and_store",
+          },
+        });
+
+      if (finalization.bookingModelVersion === 2) {
+        return toBookingHoldRecord(finalization.hold);
+      }
+
       return db.transaction(async (tx) => {
         const [locked] = await tx
-          .select({
-            reconciliationMetadata: appointmentHolds.reconciliationMetadata,
-            savedPaymentMethodId: appointmentHolds.savedPaymentMethodId,
-            policyAcceptanceId: appointmentHolds.policyAcceptanceId,
-            noShowChargeRecordId: appointmentHolds.noShowChargeRecordId,
-            squareCustomerId: appointmentHolds.squareCustomerId,
-            squareCardId: appointmentHolds.squareCardId,
-          })
+          .select()
           .from(appointmentHolds)
           .where(eq(appointmentHolds.id, input.holdId))
           .limit(1)
@@ -433,9 +712,7 @@ export async function createServiceBookingPaymentRepository(
           | { ok: true }
           | undefined;
         if (existingConfirmation !== undefined) {
-          throw new Error(
-            "Terminal charge-and-store confirmation already exists",
-          );
+          return toBookingHoldRecord(locked);
         }
 
         const [row] = await tx
@@ -470,16 +747,30 @@ export async function createServiceBookingPaymentRepository(
     },
 
     async markHoldManualFollowup(input) {
+      const finalization =
+        await appointmentFinalization.confirmOperationalAppointment({
+          calendar: {
+            errorCode: "calendar_finalization_failed",
+            reason: input.reason,
+            status: "manual_followup",
+          },
+          holdId: input.holdId,
+          holdOutcome: "manual_followup",
+          now: input.now,
+          source: "square_charge_and_store",
+          terminal: {
+            confirmation: input.confirmation,
+            kind: "charge_and_store",
+          },
+        });
+
+      if (finalization.bookingModelVersion === 2) {
+        return toBookingHoldRecord(finalization.hold);
+      }
+
       return db.transaction(async (tx) => {
         const [locked] = await tx
-          .select({
-            reconciliationMetadata: appointmentHolds.reconciliationMetadata,
-            savedPaymentMethodId: appointmentHolds.savedPaymentMethodId,
-            policyAcceptanceId: appointmentHolds.policyAcceptanceId,
-            noShowChargeRecordId: appointmentHolds.noShowChargeRecordId,
-            squareCustomerId: appointmentHolds.squareCustomerId,
-            squareCardId: appointmentHolds.squareCardId,
-          })
+          .select()
           .from(appointmentHolds)
           .where(eq(appointmentHolds.id, input.holdId))
           .limit(1)
@@ -498,9 +789,7 @@ export async function createServiceBookingPaymentRepository(
           | { ok: true }
           | undefined;
         if (existingConfirmation !== undefined) {
-          throw new Error(
-            "Terminal charge-and-store confirmation already exists",
-          );
+          return toBookingHoldRecord(locked);
         }
 
         const [row] = await tx
@@ -534,6 +823,76 @@ export async function createServiceBookingPaymentRepository(
       });
     },
 
+    async markAuthorizedOperationalPaymentTerminated(input) {
+      return db.transaction(async (tx) => {
+        const [hold] = await tx
+          .select({
+            bookingModelVersion: appointmentHolds.bookingModelVersion,
+            id: appointmentHolds.id,
+          })
+          .from(appointmentHolds)
+          .where(eq(appointmentHolds.id, input.holdId))
+          .limit(1)
+          .for("update");
+
+        if (hold === undefined || resolveBookingModelVersion(hold) === 1) {
+          return "not_found" as const;
+        }
+
+        const [attempt] = await tx
+          .select()
+          .from(bookingPaymentAttempts)
+          .where(
+            and(
+              eq(bookingPaymentAttempts.holdId, input.holdId),
+              eq(
+                bookingPaymentAttempts.operation,
+                "square_charge_and_store",
+              ),
+              eq(bookingPaymentAttempts.paymentProvider, "square"),
+              eq(
+                bookingPaymentAttempts.providerPaymentId,
+                input.squarePaymentId,
+              ),
+            ),
+          )
+          .limit(1)
+          .for("update");
+
+        if (attempt === undefined) {
+          return "not_found" as const;
+        }
+        if (attempt.status === "captured" || attempt.status === "refunded") {
+          return "capture_preserved" as const;
+        }
+        if (attempt.status === input.status) {
+          return input.status;
+        }
+        if (attempt.status !== "authorized") {
+          return "not_found" as const;
+        }
+
+        const [terminated] = await tx
+          .update(bookingPaymentAttempts)
+          .set({
+            failedAt: input.status === "failed" ? input.now : undefined,
+            status: input.status,
+            updatedAt: input.now,
+          })
+          .where(
+            and(
+              eq(bookingPaymentAttempts.id, attempt.id),
+              eq(bookingPaymentAttempts.status, "authorized"),
+            ),
+          )
+          .returning({ id: bookingPaymentAttempts.id });
+
+        return terminated === undefined
+          ? ("capture_preserved" as const)
+          : input.status;
+      });
+    },
+
     async markHoldPaymentFailed(input) {
       return db.transaction(async (tx) => {
         const [locked] = await tx
@@ -555,6 +914,23 @@ export async function createServiceBookingPaymentRepository(
           unknown
         >;
 
+        const [authorizedAttempt] = await tx
+          .select({ id: bookingPaymentAttempts.id })
+          .from(bookingPaymentAttempts)
+          .where(
+            and(
+              eq(bookingPaymentAttempts.holdId, input.holdId),
+              eq(
+                bookingPaymentAttempts.operation,
+                "square_charge_and_store",
+              ),
+              eq(bookingPaymentAttempts.paymentProvider, "square"),
+              eq(bookingPaymentAttempts.status, "authorized"),
+            ),
+          )
+          .limit(1)
+          .for("update");
+
         // Terminal charge-and-store states must never be overwritten by a
         // stale retry or a late failure/cancel path. Checking both the status
         // and the reconciliation metadata protects against races where one
@@ -562,12 +938,21 @@ export async function createServiceBookingPaymentRepository(
         const terminalStatuses = new Set([
           "booked",
           "manual_followup",
+          // V2 sets this only in the same transaction that creates the
+          // authoritative appointment and captured payment attempt. A stale
+          // failure path must never make that already-paid hold retryable.
+          "paid_pending_booking",
           "refund_required",
+          "refunded",
+          "manual_rebooked",
+          "paid_unbookable_rebooking_pending",
         ]);
         if (
           terminalStatuses.has(locked.status) ||
+          authorizedAttempt !== undefined ||
           metadata.chargeAndStoreConfirmation !== undefined ||
-          metadata.chargeAndStoreRefundRequired !== undefined
+          metadata.chargeAndStoreRefundRequired !== undefined ||
+          metadata.authoritativeAppointment !== undefined
         ) {
           return;
         }
@@ -588,7 +973,9 @@ export async function createServiceBookingPaymentRepository(
       return db.transaction(async (tx) => {
         const [hold] = await tx
           .select({
+            finalizationStatus: appointmentHolds.finalizationStatus,
             reconciliationMetadata: appointmentHolds.reconciliationMetadata,
+            status: appointmentHolds.status,
           })
           .from(appointmentHolds)
           .where(eq(appointmentHolds.id, input.holdId))
@@ -603,6 +990,54 @@ export async function createServiceBookingPaymentRepository(
           string,
           unknown
         >;
+
+        const [authorizedAttempt] = await tx
+          .select({ id: bookingPaymentAttempts.id })
+          .from(bookingPaymentAttempts)
+          .where(
+            and(
+              eq(bookingPaymentAttempts.holdId, input.holdId),
+              eq(
+                bookingPaymentAttempts.operation,
+                "square_charge_and_store",
+              ),
+              eq(bookingPaymentAttempts.paymentProvider, "square"),
+              eq(bookingPaymentAttempts.status, "authorized"),
+            ),
+          )
+          .limit(1)
+          .for("update");
+
+        const confirmation = metadata.chargeAndStoreConfirmation as
+          | Extract<ChargeAndStoreBookingResult, { ok: true }>
+          | undefined;
+        if (
+          hold.status === "booked" ||
+          hold.status === "manual_followup" ||
+          hold.status === "paid_pending_booking" ||
+          hold.status === "manual_rebooked" ||
+          hold.status === "paid_unbookable_rebooking_pending" ||
+          hold.status === "refunded" ||
+          hold.finalizationStatus === "booked" ||
+          hold.finalizationStatus === "manual_review" ||
+          hold.finalizationStatus === "paid_calendar_pending" ||
+          hold.finalizationStatus === "manual_rebooked" ||
+          hold.finalizationStatus ===
+            "paid_unbookable_rebooking_pending" ||
+          hold.finalizationStatus === "refunded" ||
+          authorizedAttempt !== undefined ||
+          confirmation !== undefined ||
+          metadata.authoritativeAppointment !== undefined
+        ) {
+          return {
+            status: "booking_outcome_preserved",
+            ...(confirmation === undefined ? {} : { confirmation }),
+          } as const;
+        }
+
+        if (metadata.chargeAndStoreRefundRequired !== undefined) {
+          return { status: "refund_required" } as const;
+        }
 
         await tx
           .update(appointmentHolds)
@@ -628,6 +1063,8 @@ export async function createServiceBookingPaymentRepository(
             updatedAt: input.now,
           })
           .where(eq(appointmentHolds.id, input.holdId));
+
+        return { status: "refund_required" } as const;
       });
     },
   };
@@ -637,6 +1074,7 @@ function toBookingHoldRecord(
   row: typeof appointmentHolds.$inferSelect,
 ): BookingHoldRecord {
   return {
+    bookingModelVersion: row.bookingModelVersion,
     id: row.id,
     publicReference: row.publicReference,
     paymentSessionReference: row.paymentSessionReference,
@@ -653,6 +1091,12 @@ function toBookingHoldRecord(
     updatedAt: row.updatedAt,
     timezone: row.timezone,
     bookingType: row.bookingType as "in-person-appointment",
+    calendarAssignmentId: row.calendarAssignmentId,
+    googleCalendarId: row.googleCalendarId,
+    occupiedEnd: row.occupiedEnd,
+    occupiedStart: row.occupiedStart,
+    primaryResourceId: row.primaryResourceId,
+    providerId: row.providerId,
     reconciliationMetadata: row.reconciliationMetadata,
     bookedAt: row.bookedAt,
     bookingFailedAt: row.bookingFailedAt,
@@ -678,5 +1122,6 @@ function toBookingHoldRecord(
     squarePaymentId: row.squarePaymentId,
     squarePaymentLinkId: row.squarePaymentLinkId,
     squarePaymentLinkUrl: row.squarePaymentLinkUrl,
+    squareTeamMemberId: row.squareTeamMemberId,
   };
 }

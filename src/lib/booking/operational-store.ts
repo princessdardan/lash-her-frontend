@@ -3,6 +3,18 @@ import "server-only";
 import { Redis } from "@upstash/redis";
 
 import { getBookingEnv } from "@/sanity/env";
+import {
+  consumeBookingCalendarOAuthState as consumeCalendarOAuthState,
+  saveBookingCalendarOAuthState as saveCalendarOAuthState,
+  type BookingCalendarOAuthState,
+  type BookingCalendarOAuthStateStorage,
+} from "./calendar-oauth-state";
+
+export {
+  isBookingCalendarOAuthState,
+  type BookingCalendarOAuthState,
+  type BookingCalendarOAuthStateStorage,
+} from "./calendar-oauth-state";
 
 const TOKEN_KEY = "booking:google-refresh-token";
 const CALENDAR_LOCK_KEY = "booking:calendar-lock";
@@ -90,6 +102,21 @@ export async function claimIdempotencyKey(
   );
 
   return result === "OK";
+}
+
+export async function saveBookingCalendarOAuthState(input: {
+  state: string;
+  payload: BookingCalendarOAuthState;
+  ttlSeconds: number;
+}, storage: BookingCalendarOAuthStateStorage = getRedis()): Promise<boolean> {
+  return saveCalendarOAuthState(input, storage);
+}
+
+export async function consumeBookingCalendarOAuthState(
+  state: string,
+  storage: BookingCalendarOAuthStateStorage = getRedis(),
+): Promise<BookingCalendarOAuthState | null> {
+  return consumeCalendarOAuthState(state, storage);
 }
 
 function toScopedBookingLockKey(key: string): string {

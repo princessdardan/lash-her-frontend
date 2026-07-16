@@ -4,7 +4,7 @@ import test from "node:test";
 const helperScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { createPaymentReconciliationGetHandler } from "./src/app/api/admin/payment-reconciliation/route.ts";
+  import { createPaymentReconciliationGetHandler } from "./src/app/api/admin/payment-reconciliation/handler.ts";
   import { getPaymentReconciliationCronSecrets } from "./src/lib/env/private-checkout.ts";
 
   function getConfiguredPaymentReconciliationCronSecrets() {
@@ -22,8 +22,9 @@ const helperScript = String.raw`
     });
   }
 
-  function runScenario({ getCronSecrets, runMonitor } = {}) {
+  function runScenario({ getCronSecrets, retryBookingOutcomeEmails, runMonitor } = {}) {
     const errors = [];
+    const emailRetryCalls = [];
     const warnings = [];
     const monitorCalls = [];
     const handler = createPaymentReconciliationGetHandler({
@@ -31,6 +32,12 @@ const helperScript = String.raw`
       getNow: () => new Date("2026-06-19T12:00:00.000Z"),
       logError: (message, context) => errors.push({ context, message }),
       logWarn: (message) => warnings.push(message),
+      retryBookingOutcomeEmails: async (input) => {
+        emailRetryCalls.push(input);
+        return retryBookingOutcomeEmails
+          ? retryBookingOutcomeEmails(input)
+          : { attempted: 0, failed: 0, processed: 0 };
+      },
       runMonitor: async (input) => {
         monitorCalls.push(input);
         if (runMonitor) {
@@ -44,7 +51,7 @@ const helperScript = String.raw`
       },
     });
 
-    return { errors, handler, monitorCalls, warnings };
+    return { emailRetryCalls, errors, handler, monitorCalls, warnings };
   }
 `;
 
@@ -133,7 +140,7 @@ test("payment reconciliation route returns not found when cron secret is missing
 
 test("payment reconciliation route runs monitor for an authorized cron request", () => {
   runRouteScenario(`
-    const { handler, monitorCalls } = runScenario();
+    const { emailRetryCalls, handler, monitorCalls } = runScenario();
 
     const response = await handler(createRequest());
     const body = await response.json();
@@ -143,6 +150,45 @@ test("payment reconciliation route runs monitor for an authorized cron request",
     assert.equal(body.checkedAt, "2026-06-19T12:00:00.000Z");
     assert.deepEqual(body.findings, []);
     assert.deepEqual(monitorCalls, [{ now: new Date("2026-06-19T12:00:00.000Z") }]);
+    assert.deepEqual(emailRetryCalls, [{ now: new Date("2026-06-19T12:00:00.000Z") }]);
+  `);
+});
+
+test("payment reconciliation route logs partial booking outcome email retry failures", () => {
+  runRouteScenario(`
+    const { handler, warnings } = runScenario({
+      retryBookingOutcomeEmails: async () => ({ attempted: 2, failed: 1, processed: 1 }),
+    });
+
+    const response = await handler(createRequest());
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(warnings, [
+      "[payment-reconciliation] Some booking outcome emails remain retryable",
+    ]);
+  `);
+});
+
+test("payment reconciliation route isolates booking outcome email retry failures", () => {
+  runRouteScenario(`
+    const { errors, handler, monitorCalls } = runScenario({
+      retryBookingOutcomeEmails: async () => {
+        throw new Error("email repository unavailable");
+      },
+    });
+
+    const response = await handler(createRequest());
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.deepEqual(monitorCalls, [{ now: new Date("2026-06-19T12:00:00.000Z") }]);
+    assert.equal(errors.length, 1);
+    assert.equal(
+      errors[0].message,
+      "[payment-reconciliation] Booking outcome email retry failed",
+    );
+    assert.equal(errors[0].context.message, "email repository unavailable");
   `);
 });
 
@@ -227,7 +273,7 @@ test("payment reconciliation route returns hold_record_link mismatch findings wi
 
 test("payment reconciliation route returns retryable failure when monitor fails", () => {
   runRouteScenario(`
-    const { errors, handler, monitorCalls } = runScenario({
+    const { emailRetryCalls, errors, handler, monitorCalls } = runScenario({
       runMonitor: async () => {
         throw new Error("database unavailable");
       },
@@ -238,6 +284,7 @@ test("payment reconciliation route returns retryable failure when monitor fails"
     assert.equal(response.status, 503);
     assert.deepEqual(await response.json(), { error: "Payment reconciliation failed" });
     assert.deepEqual(monitorCalls, [{ now: new Date("2026-06-19T12:00:00.000Z") }]);
+    assert.deepEqual(emailRetryCalls, [{ now: new Date("2026-06-19T12:00:00.000Z") }]);
     assert.equal(errors.length, 1);
     assert.equal(errors[0].message, "[payment-reconciliation] Monitor failed");
     assert.equal(errors[0].context.message, "database unavailable");

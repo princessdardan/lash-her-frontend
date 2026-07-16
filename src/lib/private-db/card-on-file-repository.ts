@@ -2,6 +2,7 @@ import "server-only";
 
 import { and, eq, isNull, lt, notInArray } from "drizzle-orm";
 
+import { resolveBookingModelVersion } from "@/lib/booking/booking-model-version";
 import type { BookingHoldRecord, BookingHoldState } from "@/lib/booking/holds";
 import type {
   NoShowChargeAttempt,
@@ -32,6 +33,7 @@ import type {
   ExistingCardOnFileConfirmation,
 } from "../booking/payments/service-card-on-file";
 import type { NoShowChargeFinalizerRepository } from "../booking/payments/service-no-show-charge-finalizer";
+import { createAppointmentFinalizationRepository } from "./appointment-finalization-repository";
 import { getPrivateDb } from "./client";
 
 const IN_PROGRESS_MARKER_TTL_MS = 30_000;
@@ -64,6 +66,8 @@ function isActiveInProgressMarker(
 export async function createCardOnFileDrizzleRepository(
   db: ReturnType<typeof getPrivateDb> = getPrivateDb(),
 ): Promise<CardOnFileRepository & NoShowChargeFinalizerRepository> {
+  const appointmentFinalization = createAppointmentFinalizationRepository(db);
+
   return {
     async beginCardOnFileConfirmation(
       input,
@@ -87,6 +91,13 @@ export async function createCardOnFileDrizzleRepository(
           .for("update");
 
         if (row === undefined) {
+          return { status: "unavailable" };
+        }
+
+        // The operational V2 public flow requires an actual captured booking
+        // payment. This legacy endpoint only stores a card for future no-show
+        // collection, so reject before writing an in-progress marker.
+        if (resolveBookingModelVersion(row) === 2) {
           return { status: "unavailable" };
         }
 
@@ -879,6 +890,17 @@ export async function createCardOnFileDrizzleRepository(
     },
 
     async markHoldBookedWithConfirmation(input) {
+      await appointmentFinalization.confirmOperationalAppointment({
+        calendar: {
+          providerEventId: input.googleEventId,
+          status: "synced",
+        },
+        holdId: input.holdId,
+        holdOutcome: "booked",
+        now: input.now,
+        source: "square_card_on_file",
+      });
+
       return db.transaction(async (tx) => {
         const [locked] = await tx
           .select({
@@ -953,6 +975,18 @@ export async function createCardOnFileDrizzleRepository(
     },
 
     async markHoldManualFollowupWithConfirmation(input) {
+      await appointmentFinalization.confirmOperationalAppointment({
+        calendar: {
+          errorCode: "calendar_finalization_failed",
+          reason: input.reason,
+          status: "manual_followup",
+        },
+        holdId: input.holdId,
+        holdOutcome: "manual_followup",
+        now: input.now,
+        source: "square_card_on_file",
+      });
+
       return db.transaction(async (tx) => {
         const [locked] = await tx
           .select({
@@ -1215,6 +1249,7 @@ function toBookingHoldRecord(
   row: typeof appointmentHolds.$inferSelect,
 ): BookingHoldRecord {
   return {
+    bookingModelVersion: row.bookingModelVersion,
     id: row.id,
     publicReference: row.publicReference,
     paymentSessionReference: row.paymentSessionReference,
@@ -1231,6 +1266,12 @@ function toBookingHoldRecord(
     updatedAt: row.updatedAt,
     timezone: row.timezone,
     bookingType: row.bookingType as "in-person-appointment",
+    calendarAssignmentId: row.calendarAssignmentId,
+    googleCalendarId: row.googleCalendarId,
+    occupiedEnd: row.occupiedEnd,
+    occupiedStart: row.occupiedStart,
+    primaryResourceId: row.primaryResourceId,
+    providerId: row.providerId,
     reconciliationMetadata: row.reconciliationMetadata,
     bookedAt: row.bookedAt,
     bookingFailedAt: row.bookingFailedAt,

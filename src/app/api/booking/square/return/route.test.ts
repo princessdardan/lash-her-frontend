@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createSquareReturnGetHandler } from "./route";
+import { createSquareReturnGetHandler } from "./handler";
 
 class RedirectCapture extends Error {
   constructor(readonly url: string) {

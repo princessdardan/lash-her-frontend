@@ -4,7 +4,7 @@ import test from "node:test";
 const helperScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { createResendWebhookPostHandler } from "./src/app/api/webhooks/resend/route.ts";
+  import { createResendWebhookPostHandler } from "./src/app/api/webhooks/resend/handler.ts";
 
   const webhookUrl = "http://localhost:3000/api/webhooks/resend";
 

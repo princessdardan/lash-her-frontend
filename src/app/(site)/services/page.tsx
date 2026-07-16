@@ -14,6 +14,13 @@ export default async function ServicesPage(): Promise<ReactElement> {
   ]);
 
   const serviceCollectionJsonLd = buildServiceCollectionJsonLd(services);
+  const bookableServiceIds = new Set(
+    bookableServices.map((service) => service._id),
+  );
+  const detailServices = services.filter(
+    (service) =>
+      service.showDetailPage && !bookableServiceIds.has(service._id),
+  );
 
   return (
     <>
@@ -85,6 +92,36 @@ export default async function ServicesPage(): Promise<ReactElement> {
                         </Button>
                       </div>
                     </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {detailServices.length > 0 && (
+            <section className="mx-auto mt-10 max-w-4xl">
+              <h2 className="section-subheading mb-4 text-xl md:text-xl lg:text-xl">
+                Explore Services
+              </h2>
+              <div className="space-y-3">
+                {detailServices.map((service) => (
+                  <article
+                    key={service._id}
+                    className="editorial-card items-start gap-4 p-5 text-left md:p-6"
+                  >
+                    <div className="w-full">
+                      <h3 className="section-subheading mb-1 text-lg md:text-lg lg:text-lg">
+                        {service.title}
+                      </h3>
+                      <p className="max-w-3xl text-sm font-light leading-relaxed text-black">
+                        {service.description}
+                      </p>
+                    </div>
+                    <Button asChild size="lg" variant="outline">
+                      <Link href={`/services/${service.slug}`}>
+                        View details
+                      </Link>
+                    </Button>
                   </article>
                 ))}
               </div>

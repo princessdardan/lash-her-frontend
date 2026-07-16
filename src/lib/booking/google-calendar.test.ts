@@ -30,6 +30,17 @@ test("createOAuthClient configures the OAuth transporter to use globalThis.fetch
   );
 });
 
+test("calendar setup lists canonical IDs from the active connection", () => {
+  assert.match(
+    googleCalendarSource,
+    /export async function listConnectionGoogleCalendars/,
+  );
+  assert.match(googleCalendarSource, /calendar\.calendarList\.list/);
+  assert.match(googleCalendarSource, /getActiveGoogleCredential/);
+  assert.match(googleCalendarSource, /id === "primary"/);
+  assert.match(googleCalendarSource, /summaryOverride/);
+});
+
 test("buildBookingEventPayload creates the booking event without conference data", () => {
   const event = buildBookingEventPayload({
     bookingTypeLabel: "Training sign-up call",

@@ -21,7 +21,9 @@ import { getPrivateDb } from "@/lib/private-db/client";
 import { STALE_CHARGE_PENDING_MS } from "@/lib/booking/payments/service-no-show-invoice";
 import {
   appointmentHolds,
+  appointments,
   bookingNoShowChargeRecords,
+  bookingPaymentAttempts,
   bookingPolicyAcceptances,
   bookingSavedPaymentMethods,
   bookingSquareCustomers,
@@ -45,7 +47,12 @@ export interface ServiceReconciliationFinding {
     | "no_show_charge_failed_not_alerted"
     | "square_invoice_payment_event_not_reconciled"
     | "payment_amount_currency_customer_mismatch"
-    | "no_show_charge_pending_too_long";
+    | "no_show_charge_pending_too_long"
+    | "operational_appointment_calendar_pending_too_long"
+    | "operational_appointment_without_captured_payment"
+    | "captured_payment_without_operational_appointment";
+  appointmentId?: string;
+  paymentAttemptId?: string;
   holdId?: string;
   orderId?: string;
   noShowChargeRecordId?: string;
@@ -65,6 +72,9 @@ export interface ServiceReconciliationSummary {
 }
 
 export interface ServiceReconciliationRepository {
+  findCapturedPaymentsWithoutOperationalAppointment(
+    now: Date,
+  ): Promise<Array<{ holdId?: string; paymentAttemptId: string }>>;
   findConfirmedBookingsWithoutNoShowInvoice(
     now: Date,
   ): Promise<Array<{ holdId: string }>>;
@@ -74,6 +84,12 @@ export interface ServiceReconciliationRepository {
   findPaidBookingsNotBooked(
     now: Date,
   ): Promise<Array<{ holdId: string; orderId?: string }>>;
+  findOperationalAppointmentsPendingCalendar(
+    now: Date,
+  ): Promise<Array<{ appointmentId: string; holdId?: string }>>;
+  findOperationalAppointmentsWithoutCapturedPayment(
+    now: Date,
+  ): Promise<Array<{ appointmentId: string; holdId?: string }>>;
   findFailedNoShowCharges(
     now: Date,
   ): Promise<Array<{ holdId: string; orderId?: string }>>;
@@ -183,6 +199,9 @@ export function createServiceReconciliationMonitor(
         noShowChargesPendingTooLong,
         squareInvoicePaymentEventsNotReconciled,
         amountCurrencyCustomerMismatches,
+        operationalAppointmentsPendingCalendar,
+        operationalAppointmentsWithoutCapturedPayment,
+        capturedPaymentsWithoutOperationalAppointment,
       ] = await Promise.all([
         runReconciliationCheck(
           "findConfirmedBookingsWithoutNoShowInvoice",
@@ -236,6 +255,27 @@ export function createServiceReconciliationMonitor(
         ),
         runReconciliationCheck("findAmountCurrencyCustomerMismatches", () =>
           dependencies.repository.findAmountCurrencyCustomerMismatches(now),
+        ),
+        runReconciliationCheck(
+          "findOperationalAppointmentsPendingCalendar",
+          () =>
+            dependencies.repository.findOperationalAppointmentsPendingCalendar(
+              now,
+            ),
+        ),
+        runReconciliationCheck(
+          "findOperationalAppointmentsWithoutCapturedPayment",
+          () =>
+            dependencies.repository.findOperationalAppointmentsWithoutCapturedPayment(
+              now,
+            ),
+        ),
+        runReconciliationCheck(
+          "findCapturedPaymentsWithoutOperationalAppointment",
+          () =>
+            dependencies.repository.findCapturedPaymentsWithoutOperationalAppointment(
+              now,
+            ),
         ),
       ]);
 
@@ -330,6 +370,30 @@ export function createServiceReconciliationMonitor(
             severity: "error",
           }),
         ),
+        ...operationalAppointmentsPendingCalendar.map(
+          (row): ServiceReconciliationFinding => ({
+            appointmentId: row.appointmentId,
+            category: "operational_appointment_calendar_pending_too_long",
+            holdId: row.holdId,
+            severity: "error",
+          }),
+        ),
+        ...operationalAppointmentsWithoutCapturedPayment.map(
+          (row): ServiceReconciliationFinding => ({
+            appointmentId: row.appointmentId,
+            category: "operational_appointment_without_captured_payment",
+            holdId: row.holdId,
+            severity: "error",
+          }),
+        ),
+        ...capturedPaymentsWithoutOperationalAppointment.map(
+          (row): ServiceReconciliationFinding => ({
+            category: "captured_payment_without_operational_appointment",
+            holdId: row.holdId,
+            paymentAttemptId: row.paymentAttemptId,
+            severity: "error",
+          }),
+        ),
       ];
 
       return {
@@ -355,6 +419,27 @@ export function createDrizzleServiceReconciliationRepository(
   db: ReturnType<typeof getPrivateDb> = getPrivateDb(),
 ): ServiceReconciliationRepository {
   return {
+    async findCapturedPaymentsWithoutOperationalAppointment(now) {
+      const threshold = new Date(now.getTime() - PAID_NOT_BOOKED_THRESHOLD_MS);
+      const rows = await db
+        .select({
+          holdId: bookingPaymentAttempts.holdId,
+          paymentAttemptId: bookingPaymentAttempts.id,
+        })
+        .from(bookingPaymentAttempts)
+        .where(
+          and(
+            eq(bookingPaymentAttempts.status, "captured"),
+            isNull(bookingPaymentAttempts.appointmentId),
+            lt(bookingPaymentAttempts.updatedAt, threshold),
+          ),
+        );
+
+      return rows.map((row) => ({
+        holdId: row.holdId ?? undefined,
+        paymentAttemptId: row.paymentAttemptId,
+      }));
+    },
     // Phase 1 schema additions (saved Square card, no-show invoice) will populate these checks.
     async findConfirmedBookingsWithoutNoShowInvoice() {
       const rows = await db
@@ -442,6 +527,65 @@ export function createDrizzleServiceReconciliationRepository(
       return rows.map((row) => ({
         holdId: row.holdId,
         orderId: row.orderId ?? undefined,
+      }));
+    },
+
+    async findOperationalAppointmentsPendingCalendar(now) {
+      const threshold = new Date(now.getTime() - PAID_NOT_BOOKED_THRESHOLD_MS);
+      const rows = await db
+        .select({
+          appointmentId: appointments.id,
+          holdId: appointments.sourceHoldId,
+        })
+        .from(appointments)
+        .where(
+          and(
+            eq(appointments.origin, "online"),
+            inArray(appointments.paymentStatus, ["paid", "partially_paid"]),
+            inArray(appointments.calendarSyncStatus, [
+              "pending",
+              "retryable_failed",
+            ]),
+            lt(appointments.updatedAt, threshold),
+          ),
+        );
+
+      return rows.map((row) => ({
+        appointmentId: row.appointmentId,
+        holdId: row.holdId ?? undefined,
+      }));
+    },
+
+    async findOperationalAppointmentsWithoutCapturedPayment(now) {
+      const threshold = new Date(now.getTime() - PAID_NOT_BOOKED_THRESHOLD_MS);
+      const rows = await db
+        .select({
+          appointmentId: appointments.id,
+          holdId: appointments.sourceHoldId,
+        })
+        .from(appointments)
+        .where(
+          and(
+            eq(appointments.origin, "online"),
+            inArray(appointments.paymentStatus, ["paid", "partially_paid"]),
+            lt(appointments.updatedAt, threshold),
+            notExists(
+              db
+                .select({ id: bookingPaymentAttempts.id })
+                .from(bookingPaymentAttempts)
+                .where(
+                  and(
+                    eq(bookingPaymentAttempts.appointmentId, appointments.id),
+                    eq(bookingPaymentAttempts.status, "captured"),
+                  ),
+                ),
+            ),
+          ),
+        );
+
+      return rows.map((row) => ({
+        appointmentId: row.appointmentId,
+        holdId: row.holdId ?? undefined,
       }));
     },
 

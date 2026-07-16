@@ -1,6 +1,6 @@
 # Booking System Runbook
 
-Date: 2026-05-23
+Last updated: 2026-07-10
 
 Use this runbook when operating, smoke testing, or troubleshooting Lash Her booking flows in staging or production. It assumes the provider split is live: service booking customers select slots in the Lash Her app, paid service bookings store a Square card on file behind a feature flag before finalizing the Google Calendar event, product checkout and training checkout remain on Helcim by default, and verified service bookings create events on the connected Google Calendar through the Google Calendar API. When card-on-file is disabled or unavailable, paid service bookings fall back to the legacy Square hosted checkout (Payment Link) flow. Training checkout may optionally use a Square Afterpay Invoice when `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true`; see `docs/training-afterpay-square-invoice.md` for the launch gate and operational rules.
 
@@ -10,7 +10,7 @@ Use this runbook when operating, smoke testing, or troubleshooting Lash Her book
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Sanity                      | Public booking copy, booking settings, bookable services, native payment fields, cache revalidation                                                                                                                       | Storage for PII, payment state, holds, booking history, or transaction records                                                                         |
 | Private Postgres            | Holds, checkout orders, payment events, appointment state, training enrollments, reconciliation data                                                                                                                      | Public CMS or browser-readable data source                                                                                                             |
-| Upstash Redis               | Google Calendar OAuth refresh token, calendar locks, idempotency keys, short-lived contention locks                                                                                                                       | Canonical payment or booking storage                                                                                                                   |
+| Upstash Redis               | Google Calendar OAuth refresh token, calendar locks, idempotency keys, short-lived contention locks, public booking rate windows, and expiring active-hold quotas                                                         | Canonical payment or booking storage                                                                                                                   |
 | Google Calendar API         | Staff source of truth for final service booking events and busy intervals                                                                                                                                                 | Payment gate or Appointment Schedule engine                                                                                                            |
 | Google Appointment Schedule | Paid training intro-call scheduling after private token eligibility passes                                                                                                                                                | Service booking engine or paid-status verifier                                                                                                         |
 | Square                      | Card-on-file storage, hosted checkout fallback, return reconciliation, and webhook payment source for service bookings; also training Afterpay Square Invoice source when `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true` | Product checkout, default training checkout, or sole proof of booking success                                                                          |
@@ -74,6 +74,31 @@ The Square webhook route is shared with service booking; training invoice events
 
 Google Appointment Schedule is only for paid training intro-call scheduling after the app token gate. Do not use it for service bookings.
 
+## Public Booking Abuse Controls
+
+The shared V1/V2 availability and hold endpoints use atomic Upstash Redis sorted-set scripts. Availability and hold-attempt windows are global per one-way client-IP digest, so rotating arbitrary service or offering identifiers cannot create fresh buckets or unbounded Redis keys. The active-hold quota additionally includes a one-way offering ID or service-slug digest. Raw IP addresses are never written into rate-limit keys or application logs.
+
+| Endpoint/control | Limit | Response when exceeded |
+| --- | ---: | --- |
+| `GET` or `POST /api/booking/availability` | 30 requests per rolling 60 seconds for each client IP across all service/offering identifiers | `429` with `Retry-After` |
+| `POST /api/booking/holds` attempt window | 5 requests per rolling 10 minutes for each client IP across all service/offering identifiers | `429` with `Retry-After` |
+| Active hold quota | 2 concurrent 10-minute hold leases for each client IP and offering/service | `429` with `Retry-After` based on the earliest lease expiry |
+
+Vercel launch environments accept client identity only from `x-vercel-forwarded-for`. If that trusted header is missing or malformed, the endpoints return `503`; they do not fall back to a shared unknown-client bucket or client-supplied forwarding headers. Local and test environments retain the existing `x-forwarded-for`, then `x-real-ip`, fallback for development only.
+
+Limiter storage is fail-safe: hold creation returns `503` before booking work when Upstash cannot be read or written, and availability returns `503` before Sanity/Postgres/Google Calendar fan-out. A failed or conflicting hold creation releases its active-hold lease; a successful hold retains the lease until the normal ten-minute expiry. A release failure is conservatively safe because the lease expires automatically.
+
+Request bounds are applied before booking processing:
+
+- Availability POST JSON: 8 KiB maximum.
+- Hold POST JSON: 24 KiB maximum.
+- Hold intake answers: at most 20 entries.
+- Intake question identifier: at most 128 characters.
+- Individual intake answer: at most 2,000 characters.
+- Combined UTF-8 size of question identifiers and answers: 8 KiB maximum.
+
+Oversized requests return `413`; structurally invalid answer lists return `400`. Do not raise these limits to address ordinary customer errors. Investigate the client payload first.
+
 ## Routine Operator Checks
 
 Run these checks for staging release validation, production launch windows, and after changes to booking settings, payment, or calendar configuration.
@@ -96,6 +121,7 @@ Run these checks for staging release validation, production launch windows, and 
 - [ ] If `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true`, the public-safe `SQUARE_APPLICATION_ID` is also configured for the Square Web Payments SDK config route. `SQUARE_APPLICATION_ID` is not a secret and must not be treated as one.
 - [ ] If `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true`, the code-required Square environment values are configured as server-side variables: `SQUARE_ENVIRONMENT`, `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, `SQUARE_WEBHOOK_SIGNATURE_KEY`, and `SQUARE_SERVICE_BOOKING_WEBHOOK_URL`. Training Square Invoice alone does not require `SQUARE_SERVICE_BOOKING_RETURN_URL` or `SQUARE_APPLICATION_ID`.
 - [ ] `PAYMENT_RECONCILIATION_CRON_SECRET` is required to enable and manually protect `GET /api/admin/payment-reconciliation`; `CRON_SECRET` is accepted for Vercel scheduled cron authorization only when `PAYMENT_RECONCILIATION_CRON_SECRET` is also configured. Both are stored server-only.
+- [ ] Confirm the payment-reconciliation cron remains scheduled every 30 minutes. Its payment monitor and booking-outcome email retry are isolated so either task can run and report failure without suppressing the other.
 - [ ] `BOOKING_ADMIN_PAYMENT_ACTION_SECRET` is configured for `POST /api/admin/appointments/[id]/no-show` and stored server-only.
 - [ ] `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `RESEND_SEGMENT_MARKETING_ID`, `FROM_EMAIL`, and `ADMIN_EMAIL` are configured.
 
@@ -106,6 +132,10 @@ Run these checks for staging release validation, production launch windows, and 
 - [ ] Confirm appointment availability loads from the connected calendar.
 - [ ] Confirm direct `/api/booking/create` requests reject with the secure-payment-required error.
 - [ ] Confirm the booking marketing opt-in and no-opt-in paths create private audit evidence and do not create Sanity submission documents.
+- [ ] Confirm repeated availability requests eventually return `429` with an integer `Retry-After` header and do not call Google Calendar after the limit is reached.
+- [ ] Confirm the sixth hold attempt for one test client/service within ten minutes returns `429`, and a third concurrent active hold returns `429` until the earliest hold expires.
+- [ ] Confirm oversized availability and hold JSON return `413` before booking dependencies are called.
+- [ ] Confirm production requests missing `x-vercel-forwarded-for` fail closed with `503`; never record or paste the raw test IP in evidence.
 
 ### Paid Service Booking Smoke
 
@@ -267,6 +297,23 @@ Operator action:
 2. If service payment succeeded but the slot is no longer available, keep the record in `paid_unbookable_rebooking_pending`, offer a new slot first, verify replacement availability before Calendar event creation, and refund only after rebooking fails or staff chooses refund.
 3. If Calendar insertion may have succeeded but the response was lost, search for the existing event before creating anything manually.
 
+### Availability Or Holds Return 429 Or 503
+
+Check:
+
+- `Retry-After` on a `429` response before asking the customer to retry.
+- Upstash availability, latency, and command errors for `503` responses.
+- `KV_REST_API_URL` and `KV_REST_API_TOKEN` point to the intended environment.
+- Vercel is supplying a valid `x-vercel-forwarded-for` header in preview/production.
+- The browser is not polling availability repeatedly because of a client retry loop.
+
+Operator action:
+
+1. For `429`, wait for `Retry-After`; do not bypass or delete Redis keys for one customer.
+2. For `503`, verify Upstash and trusted-header delivery before reopening booking traffic. Hold creation intentionally fails closed.
+3. Use only hashed limiter-key evidence. Never log, copy into tickets, or expose the raw client IP.
+4. Do not disable the limiter to compensate for Google Calendar latency or an application polling bug.
+
 ### Square Service Payment Verification Fails
 
 Check:
@@ -305,14 +352,17 @@ Check:
 - `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `RESEND_SEGMENT_MARKETING_ID`, `FROM_EMAIL`, and `ADMIN_EMAIL` are configured.
 - The sender domain is verified in Resend.
 - Vercel logs show the email error after the private state transition.
+- The 30-minute `/api/admin/payment-reconciliation` cron is running and its booking-outcome retry summary is not reporting persistent failures.
 
 Operator action:
 
 1. Do not roll back a confirmed booking only because email failed.
 2. Record the Resend message/error ID with addresses redacted.
 3. Check the relevant private DB email state/error field for the product order, training enrollment, or booking hold.
-4. Send a manual customer follow-up if the booking, product order, or paid training instruction email failed.
-5. Use `docs/resend-transactional-email-setup.md` for Resend sender/domain and environment troubleshooting.
+4. For V2 bookings, also inspect `bookingConfirmationEmailOutcome`. A `manual_followup` outcome on an appointment that is now booked remains eligible for one booked correction; missing legacy outcome metadata is not treated as a correction request.
+5. Let the scheduled retry reclaim expired claims oldest-first. Do not change either the booked key (`booking-confirmation:<holdId>`) or manual key (`booking-confirmation:<holdId>:manual_followup`) when retrying.
+6. Send a manual customer follow-up if the booking, product order, or paid training instruction email still fails after the scheduled retry.
+7. Use `docs/resend-transactional-email-setup.md` for Resend sender/domain and environment troubleshooting.
 
 ### Customer Cannot Access Paid Training Schedule
 

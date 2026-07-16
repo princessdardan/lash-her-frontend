@@ -4,7 +4,7 @@ import test from "node:test";
 const helperScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { createRevalidatePostHandler } from "./src/app/api/revalidate/route.ts";
+  import { createRevalidatePostHandler } from "./src/app/api/revalidate/handler.ts";
 
   function createRequest(body = JSON.stringify({ _type: "homePage" })) {
     return new Request("http://localhost:3000/api/revalidate", {

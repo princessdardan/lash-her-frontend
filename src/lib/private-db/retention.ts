@@ -18,6 +18,7 @@ import { getPrivateDb } from "@/lib/private-db/client";
 
 import {
   appointmentHolds,
+  appointments,
   checkoutOrders,
   checkoutPaymentEvents,
   marketingConsentEvents,
@@ -26,6 +27,7 @@ import {
   marketingContactSyncJobs,
   trainingEnrollments,
   type AppointmentHoldStatus,
+  type AppointmentStatus,
   type CalendarFinalizationStatus,
   type CheckoutOrderStatus,
   type TrainingEnrollmentSchedulingStatus,
@@ -79,6 +81,15 @@ const APPOINTMENT_HOLD_TERMINAL_STATUSES_FOR_QUERY = [
   ...APPOINTMENT_HOLD_TERMINAL_STATUSES,
 ];
 
+const APPOINTMENT_TERMINAL_STATUSES = [
+  "cancelled",
+  "completed",
+  "no_show",
+] as const satisfies readonly AppointmentStatus[];
+const APPOINTMENT_TERMINAL_STATUSES_FOR_QUERY = [
+  ...APPOINTMENT_TERMINAL_STATUSES,
+];
+
 const TRAINING_ENROLLMENT_TERMINAL_STATUSES = [
   "expired",
   "scheduled",
@@ -108,6 +119,21 @@ export function getTerminalAppointmentHoldRedactionValues(now: Date) {
   };
 }
 
+export function getTerminalAppointmentRedactionValues(now: Date) {
+  return {
+    bookingConfirmationEmailClaimedUntil: null,
+    bookingConfirmationEmailLastError: null,
+    cancellationReason: null,
+    customerEmail: REDACTED_TEXT,
+    customerEmailNormalized: sql`'redacted:' || ${appointments.id}::text`,
+    customerName: REDACTED_TEXT,
+    customerPhone: null,
+    intakeSnapshot: null,
+    redactedAt: now,
+    updatedAt: now,
+  };
+}
+
 const REDACTED_MARKETING_SUBMISSION_PAYLOAD = {
   redacted: true,
   redactedBy: "private-data-retention",
@@ -127,6 +153,9 @@ export const PRIVATE_DATA_RETENTION_WINDOWS = {
     deleteAbandonedAfterDays: 30,
     redactTerminalAfterDays: 180,
     deleteTerminalAfterDays: 730,
+  },
+  appointments: {
+    redactAfterDays: 395,
   },
   trainingEnrollments: {
     expireSchedulingTokensAfterDays: 0,
@@ -193,6 +222,13 @@ export const PRIVATE_DATA_RETENTION_TABLE_WINDOWS = [
     windowDays:
       PRIVATE_DATA_RETENTION_WINDOWS.appointmentHolds.deleteAbandonedAfterDays,
     basis: "expires_at",
+  },
+  {
+    table: "appointments",
+    action:
+      "redact customer identity, intake details, and operational free-text fields on terminal appointments",
+    windowDays: PRIVATE_DATA_RETENTION_WINDOWS.appointments.redactAfterDays,
+    basis: "terminal appointment timestamp",
   },
   {
     table: "appointment_holds",
@@ -293,6 +329,7 @@ export type PrivateDataRetentionOperation =
   | "appointmentHoldsAbandonedDeleted"
   | "appointmentHoldsDeleted"
   | "appointmentHoldsRedacted"
+  | "appointmentsRedacted"
   | "checkoutOrdersPurged"
   | "checkoutOrdersRedacted"
   | "checkoutOrdersSoftDeleted"
@@ -350,6 +387,7 @@ export interface PrivateDataRetentionCleanupRepository {
     input: RetentionCutoffInput,
   ): Promise<number>;
   redactTerminalAppointmentHolds(input: RetentionCutoffInput): Promise<number>;
+  redactTerminalAppointments(input: RetentionCutoffInput): Promise<number>;
   redactTerminalTrainingEnrollments(
     input: RetentionCutoffInput,
   ): Promise<number>;
@@ -363,6 +401,7 @@ export interface PrivateDataRetentionCutoffs {
   appointmentHoldAbandonedDeleteCutoff: Date;
   appointmentHoldDeleteCutoff: Date;
   appointmentHoldRedactCutoff: Date;
+  appointmentRedactCutoff: Date;
   checkoutOrderPurgeCutoff: Date;
   checkoutOrderRedactCutoff: Date;
   checkoutOrderSoftDeleteCutoff: Date;
@@ -407,6 +446,10 @@ export function getPrivateDataRetentionCutoffs(
     appointmentHoldRedactCutoff: subtractDays(
       now,
       PRIVATE_DATA_RETENTION_WINDOWS.appointmentHolds.redactTerminalAfterDays,
+    ),
+    appointmentRedactCutoff: subtractDays(
+      now,
+      PRIVATE_DATA_RETENTION_WINDOWS.appointments.redactAfterDays,
     ),
     checkoutOrderPurgeCutoff: subtractDays(
       now,
@@ -581,6 +624,14 @@ export function getTerminalAppointmentHoldRedactionPredicate(cutoff: Date) {
     ),
     ne(sql`${appointmentHolds.customerSnapshot}->>'email'`, REDACTED_TEXT),
     lte(terminalAppointmentHoldTimestamp(), cutoff),
+  );
+}
+
+export function getTerminalAppointmentRedactionPredicate(cutoff: Date) {
+  return and(
+    inArray(appointments.status, APPOINTMENT_TERMINAL_STATUSES_FOR_QUERY),
+    isNull(appointments.redactedAt),
+    lte(terminalAppointmentTimestamp(), cutoff),
   );
 }
 
@@ -874,6 +925,16 @@ function createDrizzlePrivateDataRetentionRepository(): PrivateDataRetentionClea
       return updated.length;
     },
 
+    async redactTerminalAppointments({ cutoff, now }) {
+      const updated = await getPrivateDb()
+        .update(appointments)
+        .set(getTerminalAppointmentRedactionValues(now))
+        .where(getTerminalAppointmentRedactionPredicate(cutoff))
+        .returning({ id: appointments.id });
+
+      return updated.length;
+    },
+
     async redactTerminalTrainingEnrollments({ cutoff, now }) {
       const updated = await getPrivateDb()
         .update(trainingEnrollments)
@@ -975,6 +1036,12 @@ function getRetentionSteps(
       table: "appointment_holds",
     },
     {
+      cutoff: cutoffs.appointmentRedactCutoff,
+      operation: "appointmentsRedacted",
+      run: repository.redactTerminalAppointments,
+      table: "appointments",
+    },
+    {
       cutoff: cutoffs.checkoutOrderRedactCutoff,
       operation: "checkoutOrdersRedacted",
       run: repository.redactCheckoutOrders,
@@ -1073,6 +1140,10 @@ function terminalCheckoutOrderTimestamp() {
 
 function terminalAppointmentHoldTimestamp() {
   return sql<Date>`coalesce(${appointmentHolds.bookedAt}, ${appointmentHolds.releasedAt}, ${appointmentHolds.expiredAt}, ${appointmentHolds.paymentFailedAt}, ${appointmentHolds.bookingFailedAt}, ${appointmentHolds.manualFollowupAt}, ${appointmentHolds.paidAt}, ${appointmentHolds.updatedAt}, ${appointmentHolds.createdAt})`;
+}
+
+function terminalAppointmentTimestamp() {
+  return sql<Date>`coalesce(${appointments.completedAt}, ${appointments.cancelledAt}, ${appointments.noShowAt}, ${appointments.updatedAt}, ${appointments.createdAt})`;
 }
 
 function terminalTrainingEnrollmentTimestamp() {

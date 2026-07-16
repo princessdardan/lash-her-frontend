@@ -20,6 +20,7 @@ export interface SquareCreatePaymentRequest {
   verification_token?: string;
   reference_id?: string;
   note?: string;
+  team_member_id?: string;
 }
 
 export interface SquarePayment {
@@ -28,6 +29,7 @@ export interface SquarePayment {
   order_id?: string;
   customer_id?: string;
   source_type?: string;
+  team_member_id?: string;
   version_token?: string;
   card_details?: { card?: { id?: string } };
   amount_money: SquareMoney;
@@ -253,6 +255,14 @@ function isSquarePayment(value: unknown): value is SquarePayment {
     "version_token" in value &&
     value.version_token !== undefined &&
     typeof value.version_token !== "string"
+  ) {
+    return false;
+  }
+
+  if (
+    "team_member_id" in value &&
+    value.team_member_id !== undefined &&
+    typeof value.team_member_id !== "string"
   ) {
     return false;
   }

@@ -5,7 +5,7 @@ import test from "node:test";
 const helperScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { createCheckoutPostHandler, resolveCheckoutHelcimGatewayForRequest } from "./src/app/api/checkout/route.ts";
+  import { createCheckoutPostHandler, resolveCheckoutHelcimGatewayForRequest } from "./src/app/api/checkout/handler.ts";
   import {
     CHECKOUT_CUSTOMER_NAME_MAX_LENGTH,
     CHECKOUT_EMAIL_MAX_LENGTH,
@@ -762,7 +762,7 @@ test("checkout route logs generic failure messages without leaking sensitive val
 });
 
 test("product checkout route remains Helcim-only and does not import Square modules", () => {
-  const routeSource = readFileSync("src/app/api/checkout/route.ts", "utf8");
+  const routeSource = readFileSync("src/app/api/checkout/handler.ts", "utf8");
 
   assertNoSquareImports(routeSource);
 });

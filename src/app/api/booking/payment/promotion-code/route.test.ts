@@ -5,7 +5,7 @@ import {
   createServiceBookingPromotionCodePostHandler,
   createInMemoryRateLimiter,
   type ServiceBookingPromotionCodeHandlerDependencies,
-} from "./route";
+} from "./handler";
 import type { ServiceBookingPaymentSessionDisplay } from "@/lib/booking/payment-session";
 import type { PromotionCode } from "@/lib/commerce/discounts";
 
