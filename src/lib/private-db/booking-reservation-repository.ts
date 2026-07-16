@@ -3,12 +3,14 @@ import "server-only";
 import {
   and,
   eq,
+  exists,
   gt,
   inArray,
   isNotNull,
   lt,
   lte,
   ne,
+  notExists,
   or,
   sql,
 } from "drizzle-orm";
@@ -20,6 +22,7 @@ import type { BookingAnswerInput } from "@/lib/booking/types";
 import { getPrivateDb } from "./client";
 import {
   appointmentHolds,
+  bookingPaymentAttempts,
   bookingBusinessSettings,
   bookingProviders,
   bookingResourceReservations,
@@ -165,6 +168,44 @@ export function createDrizzleBookingReservationRepository(
                 isNotNull(bookingResourceReservations.holdId),
                 isNotNull(bookingResourceReservations.expiresAt),
                 lte(bookingResourceReservations.expiresAt, input.now),
+                notExists(
+                  tx
+                    .select({ id: appointmentHolds.id })
+                    .from(appointmentHolds)
+                    .where(
+                      and(
+                        eq(
+                          appointmentHolds.id,
+                          bookingResourceReservations.holdId,
+                        ),
+                        gt(
+                          appointmentHolds.captureLeaseExpiresAt,
+                          input.now,
+                        ),
+                      ),
+                    ),
+                ),
+                notExists(
+                  tx
+                    .select({ id: bookingPaymentAttempts.id })
+                    .from(bookingPaymentAttempts)
+                    .where(
+                      and(
+                        eq(
+                          bookingPaymentAttempts.holdId,
+                          bookingResourceReservations.holdId,
+                        ),
+                        eq(
+                          bookingPaymentAttempts.operation,
+                          "square_charge_and_store",
+                        ),
+                        inArray(bookingPaymentAttempts.status, [
+                          "authorized",
+                          "captured",
+                        ]),
+                      ),
+                    ),
+                ),
               ),
             );
           const expiredHoldIds = sortUniqueResourceIds(
@@ -294,6 +335,44 @@ export function createDrizzleBookingReservationRepository(
             or(
               ne(bookingResourceReservations.kind, "hold"),
               gt(bookingResourceReservations.expiresAt, input.now),
+              exists(
+                db
+                  .select({ id: appointmentHolds.id })
+                  .from(appointmentHolds)
+                  .where(
+                    and(
+                      eq(
+                        appointmentHolds.id,
+                        bookingResourceReservations.holdId,
+                      ),
+                      gt(
+                        appointmentHolds.captureLeaseExpiresAt,
+                        input.now,
+                      ),
+                    ),
+                  ),
+              ),
+              exists(
+                db
+                  .select({ id: bookingPaymentAttempts.id })
+                  .from(bookingPaymentAttempts)
+                  .where(
+                    and(
+                      eq(
+                        bookingPaymentAttempts.holdId,
+                        bookingResourceReservations.holdId,
+                      ),
+                      eq(
+                        bookingPaymentAttempts.operation,
+                        "square_charge_and_store",
+                      ),
+                      inArray(bookingPaymentAttempts.status, [
+                        "authorized",
+                        "captured",
+                      ]),
+                    ),
+                  ),
+              ),
             ),
           ),
         );

@@ -1,0 +1,81 @@
+{
+  "recordedAt": "2026-07-15T21:00:00-04:00",
+  "baseBranch": "staging",
+  "baseCommit": "0818297805d6d95a669b3f78c7859d5464d5e1cf",
+  "recoveryBranch": "codex/booking-operations-dashboard-recovery",
+  "recoveryStatus": "recovered_and_locally_verified",
+  "productionEnablementStatus": "external_gates_pending",
+  "checks": [
+    {
+      "command": "npx tsc --noEmit",
+      "result": "passed"
+    },
+    {
+      "command": "npm run lint",
+      "result": "passed_with_baseline_warnings",
+      "errors": 0,
+      "warnings": 7
+    },
+    {
+      "command": "npm run test:unit",
+      "result": "passed",
+      "sourceTests": 1396,
+      "scriptTests": 19,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "command": "TEST_DATABASE_URL=<disposable-local-db> npm run test:unit:db",
+      "result": "passed",
+      "tests": 99,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "command": "npm run db:generate",
+      "result": "passed_no_schema_drift",
+      "tables": 32
+    },
+    {
+      "command": "DATABASE_URL=<new-disposable-local-db> PRIVATE_DB_MIGRATION_TARGET=local PRIVATE_DB_MIGRATION_HOST=127.0.0.1 npm run db:migrate",
+      "result": "passed",
+      "journalEntries": 23,
+      "verifiedColumns": [
+        "appointment_holds.capture_lease_id",
+        "appointment_holds.capture_lease_expires_at"
+      ]
+    },
+    {
+      "command": "npm run build",
+      "result": "passed",
+      "bundler": "webpack",
+      "reactCompiler": true,
+      "runtime": "node 22.21.0",
+      "staticPages": 45
+    },
+    {
+      "command": "npx playwright test tests/booking.spec.ts tests/booking-card-on-file-config.spec.ts tests/service-booking-payment-page.spec.ts tests/admin-calendar-self-service.spec.ts --project=chromium",
+      "result": "passed_with_fixture_gates",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 3,
+      "skipReason": "employee and owner Auth.js storage states plus an isolated live Google Calendar fixture were not provided"
+    },
+    {
+      "command": "git diff --check",
+      "result": "passed"
+    }
+  ],
+  "knownWarnings": [
+    "The seven ESLint warnings are in files unchanged from staging.",
+    "The production build reports the existing optional @opentelemetry/winston-transport resolution warning; compilation, type checking, page generation, and trace collection complete successfully.",
+    "Next 16 Turbopack repeatedly entered an all-worker wait in the linked worktree on Node 22 and Node 26. The canonical production build now uses webpack; React Compiler remains enabled."
+  ],
+  "pendingExternalGates": [
+    "Inspect migrations 0018 through 0022 on every shared or production-like database target; repository evidence establishes only new local databases.",
+    "Apply the migration chain to an approved staging clone after backup/PITR approval.",
+    "Run the gated owner and employee Auth.js/Google Calendar browser fixture, including live callback completion.",
+    "Run Square sandbox payment, webhook, ambiguous-outcome, cancellation, reconciliation, refund-required, and no-show certification with real provider credentials.",
+    "Complete target-environment public V1/V2 and admin role smoke checks with owner, admin, employee, disabled, and unassigned identities."
+  ]
+}

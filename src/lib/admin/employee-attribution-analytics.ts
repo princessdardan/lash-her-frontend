@@ -6,12 +6,12 @@ import { getPrivateDb } from "@/lib/private-db/client";
 import {
   appointments,
   bookingBusinessSettings,
-  bookingNoShowChargeRecords,
   bookingPaymentAttempts,
   checkoutOrders,
 } from "@/lib/private-db/schema";
 
 import { requirePermission } from "./auth";
+import { queryEmployeeNoShowAttribution } from "./employee-attribution-query";
 import {
   aggregateEmployeeAttributionRows,
   resolveEmployeeAttributionReportingRange,
@@ -67,24 +67,7 @@ export async function getEmployeeAttributionAnalytics(input: {
           lt(bookingPaymentAttempts.capturedAt, range.endExclusive),
         ),
       ),
-    db
-      .select({
-        amountCents: bookingNoShowChargeRecords.maxChargeCents,
-        providerSnapshot: appointments.providerSnapshot,
-        squareTeamMemberId: appointments.squareTeamMemberId,
-      })
-      .from(bookingNoShowChargeRecords)
-      .innerJoin(
-        appointments,
-        eq(appointments.id, bookingNoShowChargeRecords.appointmentId),
-      )
-      .where(
-        and(
-          eq(bookingNoShowChargeRecords.status, "charged"),
-          gte(bookingNoShowChargeRecords.chargedAt, range.start),
-          lt(bookingNoShowChargeRecords.chargedAt, range.endExclusive),
-        ),
-      ),
+    queryEmployeeNoShowAttribution(db, range),
     db
       .select({
         amountCents: checkoutOrders.amountCents,

@@ -16,8 +16,8 @@ import {
 import { createDrizzleServiceReconciliationRepository } from "@/lib/booking/payments/service-reconciliation-monitor";
 import {
   confirmChargeAndStoreBooking,
-  getChargeAndStoreSquarePaymentIdempotencyKey,
   type ChargeAndStoreBookingRequestBody,
+  type ChargeAndStoreRepository,
 } from "@/lib/booking/payments/service-charge-and-store";
 import {
   hashServiceNoShowPolicyText,
@@ -998,6 +998,9 @@ test(
         async cancelPayment() {
           throw new Error("Completed payment must not be cancelled");
         },
+        async cancelPaymentByIdempotencyKey() {
+          throw new Error("Completed payment intent must not be cancelled");
+        },
         async completePayment() {
           return {
             payment: {
@@ -1033,10 +1036,6 @@ test(
     assert.equal("squarePaymentId" in result, false);
     assert.deepEqual(emailHoldIds, [seeded.holdId]);
     assert.notEqual(providerIdempotencyKey, request.idempotencyKey);
-    assert.equal(
-      providerIdempotencyKey,
-      getChargeAndStoreSquarePaymentIdempotencyKey(seeded.holdId),
-    );
     assert.match(providerIdempotencyKey, /^cs:payment:[a-f0-9]{32}$/);
 
     const [appointment] = await requireDb()
@@ -1167,6 +1166,12 @@ test(
       squareCustomerId: squareCustomer.squareCustomerId,
       status: "ready",
     });
+    await prepareOperationalPaymentIntentForTest(repository, {
+      holdId: seeded.holdId,
+      idempotencyKey: providerKey,
+      now: authorizedAt,
+      squareCustomerId: squareCustomer.squareCustomerId,
+    });
     const recordAuthorized = repository.recordAuthorizedOperationalPayment;
     assert.ok(recordAuthorized);
     await recordAuthorized({
@@ -1249,6 +1254,10 @@ test(
       squarePayments: {
         async cancelPayment() {
           providerCalls.push("payments.cancel");
+          throw new Error("Authorized recovery must not cancel the payment");
+        },
+        async cancelPaymentByIdempotencyKey() {
+          providerCalls.push("payments.cancel-by-idempotency-key");
           throw new Error("Authorized recovery must not cancel the payment");
         },
         async completePayment() {
@@ -1476,15 +1485,22 @@ test(
     const seeded = await seedOperationalHold({ leavePaymentPending: true });
     const repository = await createServiceBookingPaymentRepository(requireDb());
     const paymentId = `${TEST_PREFIX}cancelled-auth-${randomUUID()}`;
+    const providerKey = `${TEST_PREFIX}cancelled-key-${randomUUID()}`;
     const recordAuthorized = repository.recordAuthorizedOperationalPayment;
     const terminate = repository.markAuthorizedOperationalPaymentTerminated;
     assert.ok(recordAuthorized);
     assert.ok(terminate);
+    await prepareOperationalPaymentIntentForTest(repository, {
+      holdId: seeded.holdId,
+      idempotencyKey: providerKey,
+      now: new Date("2032-01-01T12:05:00.000Z"),
+      squareCustomerId: `${TEST_PREFIX}cancelled-customer`,
+    });
     await recordAuthorized({
       amountCents: 13560,
       currency: "CAD",
       holdId: seeded.holdId,
-      idempotencyKey: `${TEST_PREFIX}cancelled-key-${randomUUID()}`,
+      idempotencyKey: providerKey,
       now: new Date("2032-01-01T12:05:00.000Z"),
       squarePaymentId: paymentId,
     });
@@ -1633,6 +1649,10 @@ for (const expectedBookingStatus of ["booked", "manual_followup"] as const) {
         squarePayments: {
           async cancelPayment() {
             providerCalls.push("payments.cancel");
+            throw new Error("Recovery must not cancel a Square payment");
+          },
+          async cancelPaymentByIdempotencyKey() {
+            providerCalls.push("payments.cancel-by-idempotency-key");
             throw new Error("Recovery must not cancel a Square payment");
           },
           async completePayment() {
@@ -2145,6 +2165,37 @@ function requireDb() {
   }
 
   return db;
+}
+
+async function prepareOperationalPaymentIntentForTest(
+  repository: ChargeAndStoreRepository,
+  input: {
+    holdId: string;
+    idempotencyKey: string;
+    now: Date;
+    squareCustomerId: string;
+  },
+): Promise<void> {
+  const prepare = repository.prepareOperationalPaymentIntent;
+  assert.ok(prepare);
+  const [hold] = await requireDb()
+    .select({ publicReference: appointmentHolds.publicReference })
+    .from(appointmentHolds)
+    .where(eq(appointmentHolds.id, input.holdId));
+  assert.ok(hold);
+  const result = await prepare({
+    amountCents: 13560,
+    currency: "CAD",
+    holdId: input.holdId,
+    idempotencyKeyCandidate: input.idempotencyKey,
+    leaseExpiresAt: new Date(input.now.getTime() + 5 * 60 * 1000),
+    now: input.now,
+    referenceId: hold.publicReference,
+    requestBodyHash: `${TEST_PREFIX}request-body-hash`,
+    sourceIdHash: `${TEST_PREFIX}source-id-hash`,
+    squareCustomerId: input.squareCustomerId,
+  });
+  assert.equal(result.status, "ready");
 }
 
 async function cleanupTestRows(): Promise<void> {

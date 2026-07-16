@@ -20,6 +20,7 @@ const helperScript = String.raw`
 
   function createFakeRepository(overrides = {}) {
     return {
+      findAuthorizedOperationalPayments: async () => [],
       findCapturedPaymentsWithoutOperationalAppointment: async () => [],
       findAmountCurrencyCustomerMismatches: async () => [],
       findBookedAppointmentsWithoutNoShowChargeRecord: async () => [],
@@ -34,6 +35,7 @@ const helperScript = String.raw`
       findPaidBookingsNotBooked: async () => [],
       findSquareInvoicePaymentEventsNotReconciled: async () => [],
       findSquarePaymentsPendingTooLong: async () => [],
+      recordProviderCompletedOperationalPayment: async () => {},
       ...overrides,
     };
   }
@@ -136,6 +138,90 @@ test("reconciliation monitor surfaces V2 appointment and payment ledger gaps", (
     assert.ok(summary.findings.some((finding) =>
       finding.category === "operational_appointment_without_captured_payment" &&
       finding.appointmentId === "appointment-v2-unpaid"
+    ));
+  `);
+});
+
+test("reconciliation persists provider-completed authorized payments", () => {
+  runMonitorScenario(`
+    const completedWrites = [];
+    const repository = createFakeRepository({
+      findAuthorizedOperationalPayments: async () => [{
+        amountCents: 13560,
+        currency: "CAD",
+        holdId: "hold-authorized",
+        idempotencyKey: "provider-key",
+        paymentAttemptId: "attempt-authorized",
+        referenceId: "booking-reference",
+        squareCustomerId: "customer-1",
+        squarePaymentId: "payment-1",
+        squareTeamMemberId: "team-1",
+      }],
+      recordProviderCompletedOperationalPayment: async (input) => {
+        completedWrites.push(input);
+      },
+    });
+    const monitor = createServiceReconciliationMonitor({
+      providerPayments: {
+        async getPayment() {
+          return { payment: {
+            amount_money: { amount: 13560, currency: "CAD" },
+            customer_id: "customer-1",
+            id: "payment-1",
+            reference_id: "booking-reference",
+            status: "COMPLETED",
+            team_member_id: "team-1",
+          } };
+        },
+      },
+      repository,
+    });
+
+    const summary = await monitor.run({ now: new Date("2026-06-19T12:00:00.000Z") });
+    assert.equal(completedWrites.length, 1);
+    assert.equal(completedWrites[0].holdId, "hold-authorized");
+    assert.equal(summary.findings.some((finding) =>
+      finding.paymentAttemptId === "attempt-authorized"
+    ), false);
+  `);
+});
+
+test("reconciliation alerts when provider completion cannot project an appointment", () => {
+  runMonitorScenario(`
+    const repository = createFakeRepository({
+      findAuthorizedOperationalPayments: async () => [{
+        amountCents: 13560,
+        currency: "CAD",
+        holdId: "hold-authorized",
+        idempotencyKey: "provider-key",
+        paymentAttemptId: "attempt-authorized",
+        referenceId: "booking-reference",
+        squareCustomerId: "customer-1",
+        squarePaymentId: "payment-1",
+      }],
+      recordProviderCompletedOperationalPayment: async () => {
+        throw new Error("reservation ownership lost");
+      },
+    });
+    const monitor = createServiceReconciliationMonitor({
+      providerPayments: {
+        async getPayment() {
+          return { payment: {
+            amount_money: { amount: 13560, currency: "CAD" },
+            customer_id: "customer-1",
+            id: "payment-1",
+            reference_id: "booking-reference",
+            status: "COMPLETED",
+          } };
+        },
+      },
+      repository,
+    });
+
+    const summary = await monitor.run({ now: new Date() });
+    assert.ok(summary.findings.some((finding) =>
+      finding.category === "provider_completed_payment_without_operational_appointment" &&
+      finding.paymentAttemptId === "attempt-authorized"
     ));
   `);
 });

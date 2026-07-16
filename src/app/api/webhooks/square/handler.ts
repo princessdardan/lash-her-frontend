@@ -16,13 +16,11 @@ import type {
   CheckoutOrderRow,
   SquareInvoiceWebhookEventInput,
 } from "@/lib/commerce/order-store";
+import type { SquarePayment } from "@/lib/payments/square/payments-client";
 
 export const runtime = "nodejs";
 
 const SQUARE_INVOICE_PAID_EVENT_TYPES = ["invoice.payment_made"] as const;
-const TRAINING_SQUARE_INVOICE_FINALIZER_MODULE =
-  "@/lib/commerce/training-square-invoice-finalizer";
-
 type SquareInvoicePaidEventType =
   (typeof SQUARE_INVOICE_PAID_EVENT_TYPES)[number];
 type VerifiedSquareWebhookEvent = ReturnType<typeof parseVerifiedSquareWebhook>;
@@ -76,6 +74,10 @@ interface SquareWebhookDependencies {
   isKnownNoShowChargeEvent?: (
     event: VerifiedSquareWebhookEvent,
   ) => Promise<boolean>;
+  observeOperationalPayment?: (input: {
+    now: Date;
+    payment: SquarePayment;
+  }) => Promise<{ status: "not_operational" | "observed" }>;
   recordSquareInvoiceWebhookEventProcessed: (
     input: SquareInvoiceWebhookEventInput,
   ) => Promise<void>;
@@ -180,6 +182,12 @@ export const defaultDependencies: SquareWebhookDependencies = {
       recordByPayment !== null ||
       recordByOrder !== null
     );
+  },
+  async observeOperationalPayment(input) {
+    const { observeOperationalSquarePayment } = await import(
+      "@/lib/private-db/operational-square-payment-observer"
+    );
+    return observeOperationalSquarePayment(input.payment, input.now);
   },
   async getEnv() {
     const [
@@ -380,6 +388,36 @@ export function createSquareWebhookPostHandler(
       return noShowResponse;
     }
 
+    const operationalPayment = getSquarePayment(event);
+    if (
+      operationalPayment !== null &&
+      dependencies.observeOperationalPayment !== undefined
+    ) {
+      try {
+        const observation = await dependencies.observeOperationalPayment({
+          now: event.createdAt ? new Date(event.createdAt) : new Date(),
+          payment: operationalPayment,
+        });
+        if (observation.status === "observed") {
+          return new Response(null, { status: 200 });
+        }
+      } catch (error) {
+        await dependencies.alerts.alert({
+          category: "square_webhook_retryable_failure",
+          severity: "error",
+          message: "Operational Square payment observation failed",
+          context: {
+            error:
+              error instanceof Error ? error.message : "Unknown observation error",
+            eventId: event.eventId,
+            eventType: event.eventType,
+            paymentId: event.paymentId,
+          },
+        });
+        return new Response(null, { status: 503 });
+      }
+    }
+
     try {
       const result = await dependencies.finalizeSquarePayment({
         event,
@@ -530,7 +568,7 @@ async function finalizeTrainingSquareInvoicePayment(
 
 export async function loadTrainingSquareInvoiceFinalizer(): Promise<TrainingSquareInvoiceModuleFinalizer> {
   const finalizerModule = (await import(
-    TRAINING_SQUARE_INVOICE_FINALIZER_MODULE
+    "@/lib/commerce/training-square-invoice-finalizer"
   )) as {
     finalizeTrainingSquareInvoice: TrainingSquareInvoiceModuleFinalizer;
   };
@@ -584,6 +622,39 @@ function getSquareInvoiceId(event: VerifiedSquareWebhookEvent): string | null {
   const invoice = getRecord(object?.invoice);
 
   return getText(invoice?.id) ?? getText(data?.id);
+}
+
+function getSquarePayment(
+  event: VerifiedSquareWebhookEvent,
+): SquarePayment | null {
+  if (!event.eventType.startsWith("payment.")) return null;
+  const data = getRecord(event.payloadSanitized.data);
+  const object = getRecord(data?.object);
+  const payment = getRecord(object?.payment) ?? object;
+  const money = getRecord(payment?.amount_money);
+  const id = getText(payment?.id);
+  const status = getText(payment?.status);
+  const currency = getText(money?.currency);
+  const amount = money?.amount;
+  if (
+    id === null ||
+    status === null ||
+    currency === null ||
+    typeof amount !== "number"
+  ) {
+    return null;
+  }
+
+  return {
+    amount_money: { amount, currency },
+    customer_id: getText(payment?.customer_id) ?? undefined,
+    id,
+    order_id: getText(payment?.order_id) ?? undefined,
+    reference_id: getText(payment?.reference_id) ?? undefined,
+    status,
+    team_member_id: getText(payment?.team_member_id) ?? undefined,
+    version_token: getText(payment?.version_token) ?? undefined,
+  };
 }
 
 function isTrainingSquareInvoiceOrder(order: CheckoutOrderRow): boolean {

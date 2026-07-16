@@ -14,6 +14,7 @@ import {
 import type { BookingHoldRecord } from "@/lib/booking/holds";
 
 import { createDrizzleBookingReservationRepository } from "./booking-reservation-repository";
+import { createServiceBookingPaymentRepository } from "./service-booking-payment-repository";
 import { createPrivateDbPoolConfig } from "./pool-config";
 import {
   appointmentHolds,
@@ -279,6 +280,83 @@ test(
     assert.deepEqual(
       oldReservations.map((row) => row.state),
       ["released"],
+    );
+  },
+);
+
+test(
+  "capture lease prevents expiry between Square authorization and capture",
+  { skip: skipReason },
+  async () => {
+    const fixture = await seedFixture();
+    const reservationRepository =
+      createDrizzleBookingReservationRepository(requireDb());
+    const paymentRepository =
+      await createServiceBookingPaymentRepository(requireDb());
+    const initialNow = new Date("2031-04-10T12:00:00.000Z");
+    const start = new Date("2031-04-12T15:00:00.000Z");
+    const first = await reservationRepository.createV2Hold({
+      ...createHoldInput(fixture, start, initialNow),
+      expiresAt: new Date("2031-04-10T12:10:00.000Z"),
+    });
+    assert.equal(first.ok, true);
+    if (!first.ok) return;
+
+    const prepare = paymentRepository.prepareOperationalPaymentIntent;
+    const recordAuthorized =
+      paymentRepository.recordAuthorizedOperationalPayment;
+    const validateLease = paymentRepository.validateOperationalCaptureLease;
+    assert.ok(prepare);
+    assert.ok(recordAuthorized);
+    assert.ok(validateLease);
+    const providerKey = `${TEST_PREFIX}capture-key-${randomUUID()}`;
+    const paymentId = `${TEST_PREFIX}capture-payment-${randomUUID()}`;
+    const authorizedAt = new Date("2031-04-10T12:01:00.000Z");
+    const leaseExpiresAt = new Date("2031-04-10T12:20:00.000Z");
+    const prepared = await prepare({
+      amountCents: 13560,
+      currency: "CAD",
+      holdId: first.hold.id,
+      idempotencyKeyCandidate: providerKey,
+      leaseExpiresAt,
+      now: authorizedAt,
+      referenceId: first.hold.publicReference,
+      requestBodyHash: `${TEST_PREFIX}capture-request-hash`,
+      sourceIdHash: `${TEST_PREFIX}capture-source-hash`,
+      squareCustomerId: `${TEST_PREFIX}capture-customer`,
+    });
+    assert.equal(prepared.status, "ready");
+    if (prepared.status !== "ready") return;
+    await recordAuthorized({
+      amountCents: 13560,
+      currency: "CAD",
+      holdId: first.hold.id,
+      idempotencyKey: providerKey,
+      now: authorizedAt,
+      squarePaymentId: paymentId,
+    });
+
+    // This transaction runs after the original hold expiry but during the
+    // capture lease. It must neither release the reservation nor acquire it.
+    const competing = await reservationRepository.createV2Hold(
+      createHoldInput(
+        fixture,
+        start,
+        new Date("2031-04-10T12:11:00.000Z"),
+      ),
+    );
+    assert.deepEqual(competing, { ok: false, reason: "slot_conflict" });
+
+    assert.equal(
+      await validateLease({
+        captureLeaseId: prepared.captureLeaseId,
+        holdId: first.hold.id,
+        idempotencyKey: providerKey,
+        leaseExpiresAt: new Date("2031-04-10T12:25:00.000Z"),
+        now: new Date("2031-04-10T12:12:00.000Z"),
+        squarePaymentId: paymentId,
+      }),
+      true,
     );
   },
 );

@@ -117,7 +117,9 @@ Then open:
 | `npm run start`             | Starts the production Next server after a build.                        |
 | `npm run lint`              | Runs ESLint.                                                            |
 | `npm test`                  | Runs Playwright E2E tests.                                              |
-| `npm run test:unit`         | Runs `src/**/*.test.ts` through Node's test runner via `tsx`.           |
+| `npm run test:unit`         | Runs every DB-disabled source test plus script tests.                  |
+| `npm run test:unit:db`      | Runs every registered DB-backed source test serially; requires `TEST_DATABASE_URL`. |
+| `npm run test:unit:all`     | Runs the DB-disabled, script, and registered DB-backed suites.         |
 | `npm run test:ui`           | Opens the Playwright UI runner.                                         |
 | `npm run test:headed`       | Runs Playwright headed.                                                 |
 | `npm run test:debug`        | Runs Playwright in debug mode.                                          |

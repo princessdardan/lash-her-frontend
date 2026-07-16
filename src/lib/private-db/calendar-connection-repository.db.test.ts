@@ -8,6 +8,7 @@ import { Pool } from "pg";
 
 import { createPrivateDbPoolConfig } from "./pool-config";
 import {
+  adminUserResources,
   adminUsers,
   bookingCalendarConnections,
   bookingResourceCalendarAssignments,
@@ -231,6 +232,171 @@ test(
   },
 );
 
+test(
+  "shared Google credential resolution disables duplicates and preserves account ownership",
+  { skip: skipReason },
+  async () => {
+    const database = requireDb();
+    const suffix = randomUUID();
+    const [actor, otherActor] = await database
+      .insert(adminUsers)
+      .values([
+        {
+          email: `${TEST_PREFIX}actor-${suffix}@example.com`,
+          emailNormalized: `${TEST_PREFIX}actor-${suffix}@example.com`,
+          providerUserId: `${TEST_PREFIX}actor-${suffix}`,
+          role: "owner",
+          status: "active",
+        },
+        {
+          email: `${TEST_PREFIX}other-${suffix}@example.com`,
+          emailNormalized: `${TEST_PREFIX}other-${suffix}@example.com`,
+          providerUserId: `${TEST_PREFIX}other-${suffix}`,
+          role: "employee",
+          status: "active",
+        },
+      ])
+      .returning();
+    const providerAccountId = `${TEST_PREFIX}google-${suffix}`;
+    await database.insert(bookingCalendarConnections).values({
+      accountEmail: `${TEST_PREFIX}other-calendar-${suffix}@example.com`,
+      connectedByAdminUserId: otherActor.id,
+      credentialCiphertext: `${TEST_PREFIX}existing-ciphertext`,
+      credentialOwnerAdminUserId: otherActor.id,
+      provider: "google",
+      providerAccountId,
+      status: "active",
+    });
+    const [provisional] = await database
+      .insert(bookingCalendarConnections)
+      .values({
+        connectedByAdminUserId: actor.id,
+        credentialOwnerAdminUserId: actor.id,
+        provider: "google",
+        status: "reconnect_required",
+      })
+      .returning();
+    const { resolveAndSaveGoogleCalendarCredential } = await import(
+      "@/lib/admin/google-calendar-credential-resolution"
+    );
+
+    const outcome = await database.transaction((tx) =>
+      resolveAndSaveGoogleCalendarCredential(tx, {
+        accountEmail: `${TEST_PREFIX}new-${suffix}@example.com`,
+        actorAdminUserId: actor.id,
+        connectionId: provisional.id,
+        credentialCiphertext: `${TEST_PREFIX}ciphertext`,
+        now: new Date("2032-01-01T12:00:00.000Z"),
+        providerAccountId,
+        scopes: ["calendar"],
+      }),
+    );
+
+    assert.deepEqual(outcome, { status: "owned_elsewhere" });
+    const [disabled] = await database
+      .select({ status: bookingCalendarConnections.status })
+      .from(bookingCalendarConnections)
+      .where(eq(bookingCalendarConnections.id, provisional.id));
+    assert.equal(disabled.status, "disabled");
+  },
+);
+
+test(
+  "staff resource assignment remains valid while removal protects an employee-owned active calendar",
+  { skip: skipReason },
+  async () => {
+    const database = requireDb();
+    const suffix = randomUUID();
+    const now = new Date("2032-02-01T12:00:00.000Z");
+    const [employee] = await database
+      .insert(adminUsers)
+      .values({
+        email: `${TEST_PREFIX}employee-${suffix}@example.com`,
+        emailNormalized: `${TEST_PREFIX}employee-${suffix}@example.com`,
+        providerUserId: `${TEST_PREFIX}employee-identity-${suffix}`,
+        role: "employee",
+        status: "active",
+      })
+      .returning();
+    const [resource] = await database
+      .insert(bookingResources)
+      .values({
+        kind: "provider",
+        name: `Employee calendar resource ${suffix}`,
+        resourceKey: `${TEST_PREFIX}employee-resource-${suffix}`,
+        status: "active",
+        timezone: "America/Toronto",
+      })
+      .returning();
+
+    await database.insert(adminUserResources).values({
+      adminUserId: employee.id,
+      bookingResourceId: resource.id,
+    });
+
+    const [{ assertStaffResourceMutationAllowed }, { createDrizzleCalendarConnectionRepository }] =
+      await Promise.all([
+        import("@/lib/admin/staff-resource-authorization"),
+        import("./calendar-connection-repository"),
+      ]);
+    const repository = createDrizzleCalendarConnectionRepository(database);
+    const connection = await repository.createGoogleConnection({
+      actorAdminUserId: employee.id,
+      now,
+    });
+    await repository.saveGoogleCredential({
+      accountEmail: `employee-${suffix}@example.com`,
+      actorAdminUserId: employee.id,
+      connectionId: connection.id,
+      now,
+      providerAccountId: `${TEST_PREFIX}employee-account-${suffix}`,
+      refreshToken: `${TEST_PREFIX}employee-refresh-${suffix}`,
+      scopes: ["scope-a"],
+    });
+    await repository.upsertAssignment({
+      acceptsBookings: true,
+      actorAdminUserId: employee.id,
+      connectionId: connection.id,
+      contributesBusy: true,
+      now,
+      providerCalendarId: `${TEST_PREFIX}employee-calendar-${suffix}`,
+      resourceId: resource.id,
+    });
+
+    await database.transaction((tx) =>
+      assertStaffResourceMutationAllowed(tx, {
+        operation: "assign",
+        resourceId: resource.id,
+        userId: employee.id,
+      }),
+    );
+
+    await assert.rejects(
+      database.transaction((tx) =>
+        assertStaffResourceMutationAllowed(tx, {
+          operation: "unassign",
+          resourceId: resource.id,
+          userId: employee.id,
+        }),
+      ),
+      /Transfer or disconnect the employee's active calendar assignment/,
+    );
+
+    await repository.disableConnection({
+      connectionId: connection.id,
+      now: new Date("2032-02-01T12:05:00.000Z"),
+    });
+
+    await database.transaction((tx) =>
+      assertStaffResourceMutationAllowed(tx, {
+        operation: "unassign",
+        resourceId: resource.id,
+        userId: employee.id,
+      }),
+    );
+  },
+);
+
 function requireDb(): NonNullable<typeof db> {
   assert.ok(db, skipReason);
   return db;
@@ -249,6 +415,12 @@ async function cleanupTestRows(): Promise<void> {
     .from(adminUsers)
     .where(like(adminUsers.emailNormalized, `${TEST_PREFIX}%`));
   const adminIds = prefixedAdmins.map((admin) => admin.id);
+
+  if (adminIds.length > 0) {
+    await db
+      .delete(adminUserResources)
+      .where(inArray(adminUserResources.adminUserId, adminIds));
+  }
 
   if (resourceIds.length > 0) {
     await db

@@ -31,6 +31,10 @@ const pool = testDatabaseUrl
   : null;
 const db = pool ? drizzle({ client: pool, schema }) : null;
 let insertedSettings = false;
+let previousSettings: {
+  bookingHorizonDays: number;
+  timezone: string;
+} | null = null;
 
 afterEach(async () => {
   await cleanupTestRows();
@@ -48,16 +52,29 @@ test(
     const suffix = randomUUID();
     const providerSlug = `${TEST_PREFIX}${suffix}`;
     const serviceSlug = `${TEST_PREFIX}service-${suffix}`;
-    const inserted = await database
+    const [existingSettings] = await database
+      .select({
+        bookingHorizonDays: bookingBusinessSettings.bookingHorizonDays,
+        timezone: bookingBusinessSettings.timezone,
+      })
+      .from(bookingBusinessSettings)
+      .where(eq(bookingBusinessSettings.singletonKey, "default"));
+    previousSettings = existingSettings ?? null;
+    insertedSettings = existingSettings === undefined;
+    await database
       .insert(bookingBusinessSettings)
       .values({
         bookingHorizonDays: 77,
         singletonKey: "default",
         timezone: "America/St_Johns",
       })
-      .onConflictDoNothing()
-      .returning({ singletonKey: bookingBusinessSettings.singletonKey });
-    insertedSettings = inserted.length === 1;
+      .onConflictDoUpdate({
+        target: bookingBusinessSettings.singletonKey,
+        set: {
+          bookingHorizonDays: 77,
+          timezone: "America/St_Johns",
+        },
+      });
     const plan = buildPlan({
       addOnPriceCad: 25,
       fullPriceCad: 120,
@@ -263,5 +280,11 @@ async function cleanupTestRows(): Promise<void> {
       .delete(bookingBusinessSettings)
       .where(eq(bookingBusinessSettings.singletonKey, "default"));
     insertedSettings = false;
+  } else if (previousSettings !== null) {
+    await db
+      .update(bookingBusinessSettings)
+      .set(previousSettings)
+      .where(eq(bookingBusinessSettings.singletonKey, "default"));
   }
+  previousSettings = null;
 }

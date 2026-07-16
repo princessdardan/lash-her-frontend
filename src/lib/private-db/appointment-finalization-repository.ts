@@ -172,7 +172,7 @@ export function createAppointmentFinalizationRepository(
           input.authorizationEligibility ===
           "square_charge_and_store_pre_capture"
         ) {
-          assertSquareAuthorizationEligibility(hold);
+          assertSquareAuthorizationEligibility(hold, input.now);
         }
 
         const persisted = await upsertPaymentAttempt(tx, {
@@ -1001,6 +1001,8 @@ function createHoldFinalizationPatch(input: {
     updatedAt: now.toISOString(),
   };
   const common: Partial<typeof appointmentHolds.$inferInsert> = {
+    captureLeaseExpiresAt: null,
+    captureLeaseId: null,
     ...(payment?.paymentProvider === "helcim"
       ? { helcimTransactionId: payment.providerPaymentId }
       : {}),
@@ -1096,6 +1098,7 @@ function assertOperationalHoldIsComplete(
 
 function assertSquareAuthorizationEligibility(
   hold: typeof appointmentHolds.$inferSelect,
+  now: Date,
 ): void {
   const metadata = (hold.reconciliationMetadata ?? {}) as Record<
     string,
@@ -1104,6 +1107,9 @@ function assertSquareAuthorizationEligibility(
   if (
     hold.status !== "held" ||
     hold.finalizationStatus !== "pending" ||
+    hold.captureLeaseId === null ||
+    hold.captureLeaseExpiresAt === null ||
+    hold.captureLeaseExpiresAt <= now ||
     metadata.chargeAndStoreConfirmation !== undefined ||
     metadata.chargeAndStoreRefundRequired !== undefined ||
     metadata.authoritativeAppointment !== undefined

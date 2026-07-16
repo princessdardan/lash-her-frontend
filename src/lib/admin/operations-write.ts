@@ -43,9 +43,22 @@ import { localDateTimeToUtc } from "./local-time";
 import { getCalendarAssignmentAccessError } from "./calendar-capabilities";
 import { getCalendarOwnershipTransferError } from "./calendar-self-service-policy";
 import {
+  resolveAndSaveGoogleCalendarCredential,
+  type GoogleCalendarCredentialResolution,
+} from "./google-calendar-credential-resolution";
+import {
   getOfferingActivationBlockers,
   isPublicAddOnReady,
 } from "./offering-readiness";
+import {
+  assignOfferingResourceInTransaction,
+  removeOfferingResourceInTransaction,
+} from "./offering-resource-admin";
+import {
+  assertSquareOfferingActivationAllowed,
+  lockSquareAttributionInvariant,
+} from "./square-attribution-invariant";
+import { assertStaffResourceMutationAllowed } from "./staff-resource-authorization";
 
 const EMAIL_PATTERN = /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/;
 const KEY_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -151,35 +164,11 @@ export async function assignStaffResource(input: {
     domain: "staff",
     metadata: { resourceId: input.resourceId },
     mutate: async (tx) => {
-      const [ownedActiveAssignment] = await tx
-        .select({ id: bookingResourceCalendarAssignments.id })
-        .from(bookingResourceCalendarAssignments)
-        .innerJoin(
-          bookingCalendarConnections,
-          eq(
-            bookingCalendarConnections.id,
-            bookingResourceCalendarAssignments.calendarConnectionId,
-          ),
-        )
-        .where(
-          and(
-            eq(
-              bookingCalendarConnections.credentialOwnerAdminUserId,
-              input.userId,
-            ),
-            eq(
-              bookingResourceCalendarAssignments.resourceId,
-              input.resourceId,
-            ),
-            eq(bookingResourceCalendarAssignments.status, "active"),
-          ),
-        )
-        .limit(1);
-      if (ownedActiveAssignment) {
-        throw new Error(
-          "Transfer or disconnect the employee's active calendar assignment before removing this resource",
-        );
-      }
+      await assertStaffResourceMutationAllowed(tx, {
+        operation: "assign",
+        resourceId: input.resourceId,
+        userId: input.userId,
+      });
       await tx
         .insert(adminUserResources)
         .values({
@@ -205,6 +194,11 @@ export async function unassignStaffResource(input: {
     domain: "staff",
     metadata: { resourceId: input.resourceId },
     mutate: async (tx) => {
+      await assertStaffResourceMutationAllowed(tx, {
+        operation: "unassign",
+        resourceId: input.resourceId,
+        userId: input.userId,
+      });
       await tx
         .delete(adminUserResources)
         .where(and(
@@ -281,6 +275,7 @@ export async function setBookingResourceStatus(input: {
     domain: "booking_setup",
     metadata: { status: input.status },
     mutate: async (tx) => {
+      await lockSquareAttributionInvariant(tx);
       if (input.status === "active") {
         const [[provider], [settings]] = await Promise.all([
           tx
@@ -653,6 +648,44 @@ export async function updateServiceOffering(input: {
   });
 }
 
+export async function assignOfferingResource(input: {
+  isRequired: boolean;
+  offeringId: string;
+  resourceId: string;
+}): Promise<void> {
+  const actor = await requirePermission("offerings:manage");
+  if (actor.user.role !== "owner") throw new AdminAuthError("forbidden");
+  await runAuditedAdminMutation({
+    action: "service_offering_resource_assigned",
+    actor,
+    domain: "offerings",
+    metadata: { isRequired: input.isRequired, resourceId: input.resourceId },
+    mutate: (tx) => assignOfferingResourceInTransaction(tx, input),
+    targetId: input.offeringId,
+    targetType: "service_offering",
+  });
+}
+
+export async function removeOfferingResource(input: {
+  offeringId: string;
+  resourceId: string;
+}): Promise<void> {
+  const actor = await requirePermission("offerings:manage");
+  if (actor.user.role !== "owner") throw new AdminAuthError("forbidden");
+  await runAuditedAdminMutation({
+    action: "service_offering_resource_removed",
+    actor,
+    domain: "offerings",
+    metadata: {
+      resourceId: input.resourceId,
+      snapshotSemantics: "existing_reservations_preserved",
+    },
+    mutate: (tx) => removeOfferingResourceInTransaction(tx, input),
+    targetId: input.offeringId,
+    targetType: "service_offering",
+  });
+}
+
 export async function setServiceOfferingStatus(input: {
   offeringId: string;
   status: Exclude<BookingConfigurationStatus, "archived">;
@@ -669,9 +702,11 @@ export async function setServiceOfferingStatus(input: {
     domain: "offerings",
     metadata: { status: input.status },
     mutate: async (tx) => {
+      await lockSquareAttributionInvariant(tx);
       if (input.status === "active") {
         const [configuration] = await tx
           .select({
+            providerId: bookingProviders.id,
             providerDisplayName: bookingProviders.displayName,
             providerPrimaryResourceId: bookingProviders.primaryResourceId,
             providerPublicSlug: bookingProviders.publicSlug,
@@ -704,6 +739,10 @@ export async function setServiceOfferingStatus(input: {
           .limit(1);
 
         if (!configuration) throw new Error("Service offering not found");
+        await assertSquareOfferingActivationAllowed(
+          tx,
+          configuration.providerId,
+        );
         const [settings] = await tx
           .select({
             required: bookingBusinessSettings.requireSquareTeamAttribution,
@@ -1228,6 +1267,7 @@ export async function createCalendarConnection() {
         .insert(bookingCalendarConnections)
         .values({
           connectedByAdminUserId: actor.user.id,
+          credentialOwnerAdminUserId: actor.user.id,
           provider: "google",
           status: "reconnect_required",
         })
@@ -1245,7 +1285,7 @@ export async function saveAdminGoogleCalendarCredential(input: {
   providerAccountId: string;
   refreshToken: string;
   scopes: string[];
-}) {
+}): Promise<GoogleCalendarCredentialResolution> {
   const actor = await requirePermission("calendar-connections:manage");
   const credentialCiphertext = encryptCalendarCredential(input.refreshToken);
   const accountEmail = input.accountEmail.trim().toLowerCase();
@@ -1261,34 +1301,22 @@ export async function saveAdminGoogleCalendarCredential(input: {
     .filter(Boolean)
     .sort();
 
-  await runAuditedAdminMutation({
+  return runAuditedAdminMutation({
     action: "calendar_connection_authorized",
     actor,
     domain: "calendar",
     metadata: { provider: "google", scopeCount: scopes.length },
     mutate: async (tx) => {
       const now = new Date();
-      const rows = await tx
-        .update(bookingCalendarConnections)
-        .set({
-          accountEmail,
-          connectedByAdminUserId: actor.user.id,
-          credentialCiphertext,
-          credentialSecretRef: null,
-          disabledAt: null,
-          lastErrorCode: null,
-          lastVerifiedAt: now,
-          providerAccountId,
-          scopes,
-          status: "active",
-          updatedAt: now,
-        })
-        .where(and(
-          eq(bookingCalendarConnections.id, input.connectionId),
-          eq(bookingCalendarConnections.provider, "google"),
-        ))
-        .returning({ id: bookingCalendarConnections.id });
-      if (rows.length === 0) throw new Error("Calendar connection was not found");
+      return resolveAndSaveGoogleCalendarCredential(tx, {
+        accountEmail,
+        actorAdminUserId: actor.user.id,
+        connectionId: input.connectionId,
+        credentialCiphertext,
+        now,
+        providerAccountId,
+        scopes,
+      });
     },
     targetId: input.connectionId,
     targetType: "calendar_connection",

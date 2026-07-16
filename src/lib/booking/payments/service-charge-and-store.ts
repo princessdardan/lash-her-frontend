@@ -9,6 +9,7 @@ import type {
   SquareCardsClient,
 } from "@/lib/payments/square/cards-client";
 import type {
+  SquareCreatePaymentRequest,
   SquareCreatePaymentResponse,
   SquareGetPaymentResponse,
   SquarePaymentsClient,
@@ -93,6 +94,7 @@ export type ChargeAndStoreBookingResult =
 export interface CapturedChargeAndStorePaymentEvidence {
   amountCents: number;
   currency: string;
+  idempotencyKey: string;
   squareOrderId?: string;
   squarePaymentId: string;
   status: "COMPLETED";
@@ -100,6 +102,7 @@ export interface CapturedChargeAndStorePaymentEvidence {
 
 export interface AuthorizedChargeAndStorePaymentEvidence {
   amountCents: number;
+  captureLeaseId: string;
   currency: string;
   idempotencyKey: string;
   squareOrderId?: string;
@@ -233,6 +236,43 @@ export interface ChargeAndStoreRepository extends CreateDraftNoShowInvoiceReposi
     squarePaymentId: string;
     versionToken?: string;
   }): Promise<{ bookingModelVersion: 1 | 2 }>;
+  prepareOperationalPaymentIntent?(input: {
+    amountCents: number;
+    currency: string;
+    holdId: string;
+    idempotencyKeyCandidate: string;
+    leaseExpiresAt: Date;
+    now: Date;
+    referenceId: string;
+    requestBodyHash: string;
+    sourceIdHash: string;
+    squareCustomerId: string;
+    squareTeamMemberId?: string;
+    verificationTokenHash?: string;
+  }): Promise<
+    | {
+        captureLeaseId: string;
+        idempotencyKey: string;
+        reused: boolean;
+        status: "ready";
+      }
+    | { idempotencyKey: string; status: "changed_request" }
+    | { status: "unavailable" }
+  >;
+  terminateOperationalPaymentIntent?(input: {
+    holdId: string;
+    idempotencyKey: string;
+    now: Date;
+    status: "cancelled" | "failed";
+  }): Promise<boolean>;
+  validateOperationalCaptureLease?(input: {
+    captureLeaseId: string;
+    holdId: string;
+    idempotencyKey: string;
+    leaseExpiresAt: Date;
+    now: Date;
+    squarePaymentId: string;
+  }): Promise<boolean>;
   markHoldBooked(input: {
     holdId: string;
     confirmation: Extract<ChargeAndStoreBookingResult, { ok: true }>;
@@ -279,7 +319,7 @@ export interface SquareCustomerGateway {
   ): Promise<SquareCreateCustomerResponse>;
 }
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import type { BookingAnswerInput } from "@/lib/booking/types";
 
@@ -310,6 +350,8 @@ export interface ConfirmChargeAndStoreBookingDependencies {
   squareInvoices: SquareInvoicesClient;
   squarePayments: SquarePaymentsClient;
 }
+
+export const OPERATIONAL_CAPTURE_LEASE_MS = 5 * 60 * 1000;
 
 export async function confirmChargeAndStoreBooking(
   input: ChargeAndStoreBookingRequestBody,
@@ -398,6 +440,41 @@ export async function confirmChargeAndStoreBooking(
   }
 
   if (claimResult.status === "captured_pending_finalization") {
+    if (
+      dependencies.repository.recordCapturedOperationalPayment === undefined
+    ) {
+      return {
+        ok: false,
+        error: "infrastructure_error",
+        message: "Payment was captured and is being reconciled",
+      };
+    }
+    try {
+      await dependencies.repository.recordCapturedOperationalPayment({
+        amountCents: claimResult.payment.amountCents,
+        currency: claimResult.payment.currency,
+        holdId: claimResult.hold.id,
+        idempotencyKey: claimResult.payment.idempotencyKey,
+        now,
+        squareOrderId: claimResult.payment.squareOrderId,
+        squarePaymentId: claimResult.payment.squarePaymentId,
+      });
+    } catch (error) {
+      await alertInfrastructureError(
+        dependencies,
+        "Failed to resume captured operational appointment projection",
+        {
+          error: getErrorMessage(error),
+          holdId: claimResult.hold.id,
+          squarePaymentId: claimResult.payment.squarePaymentId,
+        },
+      );
+      return {
+        ok: false,
+        error: "infrastructure_error",
+        message: "Payment was captured and is being reconciled",
+      };
+    }
     return finalizeCapturedChargeAndStoreBooking({
       card: claimResult.card,
       dependencies,
@@ -418,6 +495,7 @@ export async function confirmChargeAndStoreBooking(
   }
 
   let hold = claimResult.hold;
+  const operationalBooking = resolveBookingModelVersion(hold) === 2;
 
   if (!isChargeAndStoreHoldAvailable(hold, now)) {
     await markHoldPaymentFailedSafe(
@@ -433,7 +511,13 @@ export async function confirmChargeAndStoreBooking(
     };
   }
 
-  if (hold.offeringSnapshot.customerStatus !== "pending") {
+  if (
+    hold.offeringSnapshot.customerStatus !== "pending" &&
+    !(
+      operationalBooking &&
+      hold.offeringSnapshot.customerStatus === "captured"
+    )
+  ) {
     await markHoldPaymentFailedSafe(
       dependencies,
       hold.id,
@@ -704,32 +788,153 @@ export async function confirmChargeAndStoreBooking(
     };
   }
 
-  // The browser key identifies the HTTP submission only. Provider and ledger
-  // idempotency are stable for the hold so a re-tokenized retry cannot create
-  // a second Square payment for the same booking.
-  const operationalBooking = resolveBookingModelVersion(hold) === 2;
-  const providerPaymentIdempotencyKey = operationalBooking
-    ? getChargeAndStoreSquarePaymentIdempotencyKey(hold.id)
-    : input.idempotencyKey;
+  const paymentRequestWithoutIdempotency: Omit<
+    SquareCreatePaymentRequest,
+    "idempotency_key"
+  > = {
+    source_id: input.sourceId,
+    customer_id: squareCustomer.squareCustomerId,
+    amount_money: {
+      amount: taxQuote.expectedAmountCents,
+      currency: "CAD",
+    },
+    autocomplete: false,
+    verification_token: input.verificationToken,
+    reference_id: hold.publicReference,
+    note: `${resolvedPayment.description} (includes ${taxQuote.taxName})`,
+    team_member_id: operationalBooking
+      ? (hold.squareTeamMemberId ?? undefined)
+      : undefined,
+  };
+  let providerPaymentIdempotencyKey = input.idempotencyKey;
+  let captureLeaseId: string | undefined;
+
+  if (operationalBooking) {
+    const prepareIntent =
+      dependencies.repository.prepareOperationalPaymentIntent;
+    const terminateIntent =
+      dependencies.repository.terminateOperationalPaymentIntent;
+
+    if (prepareIntent === undefined || terminateIntent === undefined) {
+      await alertInfrastructureError(
+        dependencies,
+        "Operational payment repository cannot persist Square request intent",
+        { holdId: hold.id },
+      );
+      return {
+        ok: false,
+        error: "infrastructure_error",
+        message: "Unable to secure payment request",
+      };
+    }
+
+    const intentInput = {
+      amountCents: taxQuote.expectedAmountCents,
+      currency: "CAD",
+      holdId: hold.id,
+      idempotencyKeyCandidate: makeSquareIdempotencyKey(
+        "payment",
+        randomUUID(),
+      ),
+      leaseExpiresAt: new Date(now.getTime() + OPERATIONAL_CAPTURE_LEASE_MS),
+      now,
+      referenceId: hold.publicReference,
+      requestBodyHash: hashSquarePaymentRequestIntent(
+        paymentRequestWithoutIdempotency,
+      ),
+      sourceIdHash: hashProviderToken(input.sourceId),
+      squareCustomerId: squareCustomer.squareCustomerId,
+      squareTeamMemberId: hold.squareTeamMemberId ?? undefined,
+      verificationTokenHash:
+        input.verificationToken === undefined
+          ? undefined
+          : hashProviderToken(input.verificationToken),
+    };
+
+    let prepared: Awaited<ReturnType<typeof prepareIntent>>;
+    try {
+      prepared = await prepareIntent(intentInput);
+    } catch (error) {
+      await alertInfrastructureError(
+        dependencies,
+        "Failed to persist Square request intent and capture lease",
+        { error: getErrorMessage(error), holdId: hold.id },
+      );
+      return {
+        ok: false,
+        error: "infrastructure_error",
+        message: "Unable to secure payment request",
+      };
+    }
+
+    if (prepared.status === "changed_request") {
+      try {
+        await dependencies.squarePayments.cancelPaymentByIdempotencyKey(
+          prepared.idempotencyKey,
+        );
+      } catch {
+        return {
+          ok: false,
+          error: "infrastructure_error",
+          message: "Payment status is being reconciled. Please try again.",
+        };
+      }
+
+      const terminated = await terminateIntent({
+        holdId: hold.id,
+        idempotencyKey: prepared.idempotencyKey,
+        now,
+        status: "cancelled",
+      });
+      if (!terminated) {
+        return {
+          ok: false,
+          error: "infrastructure_error",
+          message: "Payment status is being reconciled. Please try again.",
+        };
+      }
+
+      try {
+        prepared = await prepareIntent({
+          ...intentInput,
+          idempotencyKeyCandidate: makeSquareIdempotencyKey(
+            "payment",
+            randomUUID(),
+          ),
+        });
+      } catch (error) {
+        await alertInfrastructureError(
+          dependencies,
+          "Failed to replace a cancelled Square request intent",
+          { error: getErrorMessage(error), holdId: hold.id },
+        );
+        return {
+          ok: false,
+          error: "infrastructure_error",
+          message: "Payment status is being reconciled. Please try again.",
+        };
+      }
+    }
+
+    if (prepared.status !== "ready") {
+      return {
+        ok: false,
+        error: "hold_unavailable",
+        message: "Booking hold is no longer available",
+      };
+    }
+
+    providerPaymentIdempotencyKey = prepared.idempotencyKey;
+    captureLeaseId = prepared.captureLeaseId;
+  }
+
   let paymentResponse: SquareCreatePaymentResponse;
 
   try {
     paymentResponse = await dependencies.squarePayments.createCardOnFilePayment(
       {
         idempotency_key: providerPaymentIdempotencyKey,
-        source_id: input.sourceId,
-        customer_id: squareCustomer.squareCustomerId,
-        amount_money: {
-          amount: taxQuote.expectedAmountCents,
-          currency: "CAD",
-        },
-        autocomplete: false,
-        verification_token: input.verificationToken,
-        reference_id: hold.publicReference,
-        note: `${resolvedPayment.description} (includes ${taxQuote.taxName})`,
-        team_member_id: operationalBooking
-          ? (hold.squareTeamMemberId ?? undefined)
-          : undefined,
+        ...paymentRequestWithoutIdempotency,
       },
     );
   } catch {
@@ -739,6 +944,13 @@ export async function confirmChargeAndStoreBooking(
       message: "Square payment creation failed for charge-and-store booking",
       context: { holdId: hold.id, holdReference: hold.publicReference },
     });
+    if (operationalBooking) {
+      return {
+        ok: false,
+        error: "infrastructure_error",
+        message: "Payment status is being reconciled. Please try again.",
+      };
+    }
     await markHoldPaymentFailedSafe(
       dependencies,
       hold.id,
@@ -1113,6 +1325,44 @@ export async function confirmChargeAndStoreBooking(
     });
   }
 
+  if (operationalBooking) {
+    const validateLease =
+      dependencies.repository.validateOperationalCaptureLease;
+    const captureNow = dependencies.now ?? new Date();
+    let leaseIsValid = false;
+
+    if (validateLease !== undefined && captureLeaseId !== undefined) {
+      try {
+        leaseIsValid = await validateLease({
+          captureLeaseId,
+          holdId: hold.id,
+          idempotencyKey: providerPaymentIdempotencyKey,
+          leaseExpiresAt: new Date(
+            captureNow.getTime() + OPERATIONAL_CAPTURE_LEASE_MS,
+          ),
+          now: captureNow,
+          squarePaymentId,
+        });
+      } catch (error) {
+        await alertInfrastructureError(
+          dependencies,
+          "Failed to revalidate operational capture lease",
+          { error: getErrorMessage(error), holdId: hold.id, squarePaymentId },
+        );
+      }
+    }
+
+    if (!leaseIsValid) {
+      return cancelAuthorizationAndReturnFailure({
+        dependencies,
+        hold,
+        message: "Booking reservation changed before payment capture",
+        now: captureNow,
+        squarePaymentId,
+      });
+    }
+  }
+
   let capturedPayment: SquareGetPaymentResponse | undefined;
 
   try {
@@ -1417,6 +1667,45 @@ async function resumeAuthorizedChargeAndStorePayment(input: {
     };
   }
 
+  const validateLease =
+    input.dependencies.repository.validateOperationalCaptureLease;
+  const captureNow = input.dependencies.now ?? new Date();
+  let leaseIsValid = false;
+  if (validateLease !== undefined) {
+    try {
+      leaseIsValid = await validateLease({
+        captureLeaseId: input.payment.captureLeaseId,
+        holdId: input.hold.id,
+        idempotencyKey: input.payment.idempotencyKey,
+        leaseExpiresAt: new Date(
+          captureNow.getTime() + OPERATIONAL_CAPTURE_LEASE_MS,
+        ),
+        now: captureNow,
+        squarePaymentId: input.payment.squarePaymentId,
+      });
+    } catch (error) {
+      await alertInfrastructureError(
+        input.dependencies,
+        "Failed to revalidate recovered operational capture lease",
+        {
+          error: getErrorMessage(error),
+          holdId: input.hold.id,
+          squarePaymentId: input.payment.squarePaymentId,
+        },
+      );
+    }
+  }
+
+  if (!leaseIsValid) {
+    return cancelAuthorizationAndReturnFailure({
+      dependencies: input.dependencies,
+      hold: input.hold,
+      message: "Booking reservation changed before payment capture",
+      now: captureNow,
+      squarePaymentId: input.payment.squarePaymentId,
+    });
+  }
+
   let completed: SquareGetPaymentResponse | undefined;
   try {
     completed = await input.dependencies.squarePayments.completePayment(
@@ -1572,6 +1861,7 @@ async function persistCapturedPaymentAndFinalize(input: {
     payment: {
       amountCents: payment.amount_money.amount,
       currency: payment.amount_money.currency,
+      idempotencyKey: input.idempotencyKey,
       squareOrderId: payment.order_id,
       squarePaymentId: payment.id,
       status: "COMPLETED",
@@ -1960,6 +2250,29 @@ function makeSquareIdempotencyKey(scope: string, holdId: string): string {
     .digest("hex")
     .slice(0, 32);
   return `cs:${scope}:${hash}`;
+}
+
+function hashProviderToken(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function hashSquarePaymentRequestIntent(
+  request: Omit<SquareCreatePaymentRequest, "idempotency_key">,
+): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        amountMoney: request.amount_money,
+        autocomplete: request.autocomplete ?? true,
+        customerId: request.customer_id,
+        note: request.note ?? null,
+        referenceId: request.reference_id ?? null,
+        sourceId: request.source_id,
+        teamMemberId: request.team_member_id ?? null,
+        verificationToken: request.verification_token ?? null,
+      }),
+    )
+    .digest("hex");
 }
 
 export function getChargeAndStoreSquarePaymentIdempotencyKey(

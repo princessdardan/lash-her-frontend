@@ -27,6 +27,7 @@ export interface SquarePayment {
   id: string;
   status: string;
   order_id?: string;
+  reference_id?: string;
   customer_id?: string;
   source_type?: string;
   team_member_id?: string;
@@ -58,6 +59,7 @@ export interface SquarePaymentsClient {
     versionToken?: string,
   ): Promise<SquareGetPaymentResponse>;
   cancelPayment(paymentId: string): Promise<SquareGetPaymentResponse>;
+  cancelPaymentByIdempotencyKey(idempotencyKey: string): Promise<void>;
 }
 
 export function createSquarePaymentsClient(
@@ -94,6 +96,17 @@ export function createSquarePaymentsClient(
         `/v2/payments/${encodeURIComponent(paymentId)}/cancel`,
         {},
         isSquareGetPaymentResponse,
+      );
+    },
+    async cancelPaymentByIdempotencyKey(idempotencyKey) {
+      await postSquare<
+        { idempotency_key: string },
+        Record<string, never>
+      >(
+        env,
+        "/v2/payments/cancel",
+        { idempotency_key: idempotencyKey },
+        isSquareEmptyResponse,
       );
     },
   };
@@ -201,6 +214,12 @@ function isSquareGetPaymentResponse(
   return isSquarePaymentResponse(value);
 }
 
+function isSquareEmptyResponse(
+  value: unknown,
+): value is Record<string, never> {
+  return isRecord(value) && Object.keys(value).length === 0;
+}
+
 function isSquarePaymentResponse(
   value: unknown,
 ): value is { payment: SquarePayment } {
@@ -239,6 +258,14 @@ function isSquarePayment(value: unknown): value is SquarePayment {
     "order_id" in value &&
     value.order_id !== undefined &&
     typeof value.order_id !== "string"
+  ) {
+    return false;
+  }
+
+  if (
+    "reference_id" in value &&
+    value.reference_id !== undefined &&
+    typeof value.reference_id !== "string"
   ) {
     return false;
   }

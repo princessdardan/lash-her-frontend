@@ -18,6 +18,10 @@ import {
 } from "drizzle-orm";
 
 import { getPrivateDb } from "@/lib/private-db/client";
+import type {
+  SquareGetPaymentResponse,
+  SquarePaymentsClient,
+} from "@/lib/payments/square/payments-client";
 import { STALE_CHARGE_PENDING_MS } from "@/lib/booking/payments/service-no-show-invoice";
 import {
   appointmentHolds,
@@ -50,7 +54,12 @@ export interface ServiceReconciliationFinding {
     | "no_show_charge_pending_too_long"
     | "operational_appointment_calendar_pending_too_long"
     | "operational_appointment_without_captured_payment"
-    | "captured_payment_without_operational_appointment";
+    | "captured_payment_without_operational_appointment"
+    | "authorized_payment_pending_capture"
+    | "authorized_payment_provider_state_unverified"
+    | "authorized_payment_provider_terminal_mismatch"
+    | "provider_completed_payment_evidence_mismatch"
+    | "provider_completed_payment_without_operational_appointment";
   appointmentId?: string;
   paymentAttemptId?: string;
   holdId?: string;
@@ -62,6 +71,7 @@ export interface ServiceReconciliationFinding {
   savedPaymentMethodId?: string;
   policyAcceptanceId?: string;
   mismatchType?: "amount_currency" | "customer" | "card" | "hold_record_link";
+  providerStatus?: string;
   severity: "warning" | "error";
 }
 
@@ -72,6 +82,29 @@ export interface ServiceReconciliationSummary {
 }
 
 export interface ServiceReconciliationRepository {
+  findAuthorizedOperationalPayments(now: Date): Promise<
+    Array<{
+      amountCents: number;
+      currency: string;
+      holdId: string;
+      idempotencyKey: string;
+      paymentAttemptId: string;
+      referenceId: string;
+      squareCustomerId: string;
+      squareOrderId?: string;
+      squarePaymentId: string;
+      squareTeamMemberId?: string;
+    }>
+  >;
+  recordProviderCompletedOperationalPayment(input: {
+    amountCents: number;
+    currency: string;
+    holdId: string;
+    idempotencyKey: string;
+    now: Date;
+    squareOrderId?: string;
+    squarePaymentId: string;
+  }): Promise<void>;
   findCapturedPaymentsWithoutOperationalAppointment(
     now: Date,
   ): Promise<Array<{ holdId?: string; paymentAttemptId: string }>>;
@@ -139,6 +172,7 @@ export interface ServiceReconciliationRepository {
 }
 
 export interface ServiceReconciliationMonitorDependencies {
+  providerPayments?: Pick<SquarePaymentsClient, "getPayment">;
   repository: ServiceReconciliationRepository;
 }
 
@@ -188,6 +222,7 @@ export function createServiceReconciliationMonitor(
       const now = input?.now ?? new Date();
 
       const [
+        authorizedOperationalPayments,
         confirmedWithoutNoShowInvoice,
         squarePaymentsPendingTooLong,
         paidBookingsNotBooked,
@@ -203,6 +238,9 @@ export function createServiceReconciliationMonitor(
         operationalAppointmentsWithoutCapturedPayment,
         capturedPaymentsWithoutOperationalAppointment,
       ] = await Promise.all([
+        runReconciliationCheck("findAuthorizedOperationalPayments", () =>
+          dependencies.repository.findAuthorizedOperationalPayments(now),
+        ),
         runReconciliationCheck(
           "findConfirmedBookingsWithoutNoShowInvoice",
           () =>
@@ -279,7 +317,15 @@ export function createServiceReconciliationMonitor(
         ),
       ]);
 
+      const authorizedPaymentFindings =
+        await reconcileAuthorizedOperationalPayments({
+          attempts: authorizedOperationalPayments,
+          dependencies,
+          now,
+        });
+
       const findings: ServiceReconciliationFinding[] = [
+        ...authorizedPaymentFindings,
         ...confirmedWithoutNoShowInvoice.map(
           (row): ServiceReconciliationFinding => ({
             category: "confirmed_booking_without_no_show_invoice",
@@ -405,10 +451,146 @@ export function createServiceReconciliationMonitor(
   };
 }
 
+async function reconcileAuthorizedOperationalPayments(input: {
+  attempts: Awaited<
+    ReturnType<ServiceReconciliationRepository["findAuthorizedOperationalPayments"]>
+  >;
+  dependencies: ServiceReconciliationMonitorDependencies;
+  now: Date;
+}): Promise<ServiceReconciliationFinding[]> {
+  const findings: ServiceReconciliationFinding[] = [];
+
+  for (const attempt of input.attempts) {
+    if (input.dependencies.providerPayments === undefined) {
+      findings.push({
+        category: "authorized_payment_provider_state_unverified",
+        holdId: attempt.holdId,
+        paymentAttemptId: attempt.paymentAttemptId,
+        severity: "error",
+      });
+      continue;
+    }
+
+    let providerResponse: SquareGetPaymentResponse;
+    try {
+      providerResponse = await input.dependencies.providerPayments.getPayment(
+        attempt.squarePaymentId,
+      );
+    } catch {
+      findings.push({
+        category: "authorized_payment_provider_state_unverified",
+        holdId: attempt.holdId,
+        paymentAttemptId: attempt.paymentAttemptId,
+        severity: "error",
+      });
+      continue;
+    }
+
+    const payment = providerResponse.payment;
+    const providerStatus = payment.status.trim().toUpperCase();
+    if (providerStatus === "COMPLETED") {
+      if (!providerPaymentMatchesAuthorizedAttempt(payment, attempt)) {
+        findings.push({
+          category: "provider_completed_payment_evidence_mismatch",
+          holdId: attempt.holdId,
+          paymentAttemptId: attempt.paymentAttemptId,
+          providerStatus,
+          severity: "error",
+        });
+        continue;
+      }
+
+      try {
+        await input.dependencies.repository.recordProviderCompletedOperationalPayment(
+          {
+            amountCents: attempt.amountCents,
+            currency: attempt.currency,
+            holdId: attempt.holdId,
+            idempotencyKey: attempt.idempotencyKey,
+            now: input.now,
+            squareOrderId: payment.order_id ?? attempt.squareOrderId,
+            squarePaymentId: payment.id,
+          },
+        );
+      } catch {
+        findings.push({
+          category:
+            "provider_completed_payment_without_operational_appointment",
+          holdId: attempt.holdId,
+          paymentAttemptId: attempt.paymentAttemptId,
+          providerStatus,
+          severity: "error",
+        });
+      }
+      continue;
+    }
+
+    if (["CANCELED", "FAILED", "DECLINED"].includes(providerStatus)) {
+      findings.push({
+        category: "authorized_payment_provider_terminal_mismatch",
+        holdId: attempt.holdId,
+        paymentAttemptId: attempt.paymentAttemptId,
+        providerStatus,
+        severity: "error",
+      });
+      continue;
+    }
+
+    findings.push({
+      category: "authorized_payment_pending_capture",
+      holdId: attempt.holdId,
+      paymentAttemptId: attempt.paymentAttemptId,
+      providerStatus,
+      severity: "error",
+    });
+  }
+
+  return findings;
+}
+
+function providerPaymentMatchesAuthorizedAttempt(
+  payment: SquareGetPaymentResponse["payment"],
+  attempt: Awaited<
+    ReturnType<ServiceReconciliationRepository["findAuthorizedOperationalPayments"]>
+  >[number],
+): boolean {
+  return (
+    payment.id === attempt.squarePaymentId &&
+    payment.amount_money.amount === attempt.amountCents &&
+    payment.amount_money.currency.trim().toUpperCase() ===
+      attempt.currency.trim().toUpperCase() &&
+    payment.customer_id === attempt.squareCustomerId &&
+    payment.reference_id === attempt.referenceId &&
+    (payment.team_member_id ?? undefined) === attempt.squareTeamMemberId
+  );
+}
+
+function readSquareRequestIntent(value: unknown): {
+  squareCustomerId: string;
+} | null {
+  if (!isRecord(value) || !isRecord(value.squareRequestIntent)) return null;
+  const squareCustomerId = value.squareRequestIntent.squareCustomerId;
+  return typeof squareCustomerId === "string" && squareCustomerId.length > 0
+    ? { squareCustomerId }
+    : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export default async function runServiceReconciliationMonitor(input?: {
   now?: Date;
 }): Promise<ServiceReconciliationSummary> {
+  const [{ createSquarePaymentsClient }, { getSquareServiceBookingRuntimeEnv }] =
+    await Promise.all([
+      import("@/lib/payments/square/payments-client"),
+      import("@/lib/booking/square-runtime"),
+    ]);
+  const squareEnv = getSquareServiceBookingRuntimeEnv();
   const monitor = createServiceReconciliationMonitor({
+    providerPayments:
+      squareEnv === null ? undefined : createSquarePaymentsClient(squareEnv),
     repository: createDrizzleServiceReconciliationRepository(),
   });
 
@@ -418,7 +600,72 @@ export default async function runServiceReconciliationMonitor(input?: {
 export function createDrizzleServiceReconciliationRepository(
   db: ReturnType<typeof getPrivateDb> = getPrivateDb(),
 ): ServiceReconciliationRepository {
+  let paymentRepositoryPromise:
+    | ReturnType<
+        typeof import("@/lib/private-db/service-booking-payment-repository")["createServiceBookingPaymentRepository"]
+      >
+    | undefined;
   return {
+    async findAuthorizedOperationalPayments() {
+      const rows = await db
+        .select({
+          amountCents: bookingPaymentAttempts.amountCents,
+          currency: bookingPaymentAttempts.currency,
+          holdId: bookingPaymentAttempts.holdId,
+          idempotencyKey: bookingPaymentAttempts.idempotencyKey,
+          paymentAttemptId: bookingPaymentAttempts.id,
+          providerMetadata: bookingPaymentAttempts.providerMetadata,
+          referenceId: appointmentHolds.publicReference,
+          squareOrderId: bookingPaymentAttempts.providerOrderId,
+          squarePaymentId: bookingPaymentAttempts.providerPaymentId,
+          squareTeamMemberId: bookingPaymentAttempts.squareTeamMemberId,
+        })
+        .from(bookingPaymentAttempts)
+        .innerJoin(
+          appointmentHolds,
+          eq(appointmentHolds.id, bookingPaymentAttempts.holdId),
+        )
+        .where(
+          and(
+            eq(bookingPaymentAttempts.operation, "square_charge_and_store"),
+            eq(bookingPaymentAttempts.paymentProvider, "square"),
+            eq(bookingPaymentAttempts.status, "authorized"),
+            isNull(bookingPaymentAttempts.appointmentId),
+            isNotNull(bookingPaymentAttempts.providerPaymentId),
+          ),
+        );
+
+      return rows.flatMap((row) => {
+        if (row.holdId === null || row.squarePaymentId === null) return [];
+        const intent = readSquareRequestIntent(row.providerMetadata);
+        if (intent === null) return [];
+        return [{
+          amountCents: row.amountCents,
+          currency: row.currency,
+          holdId: row.holdId,
+          idempotencyKey: row.idempotencyKey,
+          paymentAttemptId: row.paymentAttemptId,
+          referenceId: row.referenceId,
+          squareCustomerId: intent.squareCustomerId,
+          squareOrderId: row.squareOrderId ?? undefined,
+          squarePaymentId: row.squarePaymentId,
+          squareTeamMemberId: row.squareTeamMemberId ?? undefined,
+        }];
+      });
+    },
+    async recordProviderCompletedOperationalPayment(input) {
+      if (paymentRepositoryPromise === undefined) {
+        const { createServiceBookingPaymentRepository } = await import(
+          "@/lib/private-db/service-booking-payment-repository"
+        );
+        paymentRepositoryPromise = createServiceBookingPaymentRepository(db);
+      }
+      const paymentRepository = await paymentRepositoryPromise;
+      if (paymentRepository.recordCapturedOperationalPayment === undefined) {
+        throw new Error("Operational captured-payment writer is unavailable");
+      }
+      await paymentRepository.recordCapturedOperationalPayment(input);
+    },
     async findCapturedPaymentsWithoutOperationalAppointment(now) {
       const threshold = new Date(now.getTime() - PAID_NOT_BOOKED_THRESHOLD_MS);
       const rows = await db

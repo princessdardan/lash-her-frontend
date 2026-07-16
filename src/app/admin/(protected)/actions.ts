@@ -10,6 +10,7 @@ import {
   saveEmployeeBusyAssignment,
 } from "@/lib/admin/employee-calendar";
 import {
+  assignOfferingResource,
   assignStaffResource,
   cancelScheduleException,
   createBookingResource,
@@ -23,6 +24,7 @@ import {
   disableCalendarAssignment,
   disableCalendarConnection,
   disableResourceSchedule,
+  removeOfferingResource,
   saveCalendarAssignment,
   setAppointmentAttendanceStatus,
   setBookingResourceStatus,
@@ -321,6 +323,33 @@ export async function updateServiceOfferingAction(formData: FormData) {
       offeringId: getString(formData, "offeringId"),
       slotIntervalMinutes: getInteger(formData, "slotIntervalMinutes"),
     }),
+  });
+}
+
+export async function assignOfferingResourceAction(formData: FormData) {
+  return runAdminAction({
+    destination: "/admin/offerings",
+    revalidatePaths: ["/admin/offerings", "/admin/setup"],
+    success: "Offering resource saved.",
+    task: () =>
+      assignOfferingResource({
+        isRequired: getString(formData, "isRequired") === "true",
+        offeringId: getString(formData, "offeringId"),
+        resourceId: getString(formData, "resourceId"),
+      }),
+  });
+}
+
+export async function removeOfferingResourceAction(formData: FormData) {
+  return runAdminAction({
+    destination: "/admin/offerings",
+    revalidatePaths: ["/admin/offerings", "/admin/setup"],
+    success: "Offering resource removed for future holds.",
+    task: () =>
+      removeOfferingResource({
+        offeringId: getString(formData, "offeringId"),
+        resourceId: getString(formData, "resourceId"),
+      }),
   });
 }
 

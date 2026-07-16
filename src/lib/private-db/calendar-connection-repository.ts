@@ -106,6 +106,7 @@ export function createDrizzleCalendarConnectionRepository(
         .insert(bookingCalendarConnections)
         .values({
           connectedByAdminUserId: input.actorAdminUserId,
+          credentialOwnerAdminUserId: input.actorAdminUserId,
           createdAt: input.now,
           provider: "google",
           status: "reconnect_required",
@@ -199,6 +200,7 @@ export function createDrizzleCalendarConnectionRepository(
           accountEmail: input.accountEmail.trim().toLowerCase(),
           connectedByAdminUserId: input.actorAdminUserId,
           credentialCiphertext,
+          credentialOwnerAdminUserId: input.actorAdminUserId,
           credentialSecretRef: null,
           disabledAt: null,
           lastErrorCode: null,

@@ -163,6 +163,55 @@ test("Square webhook accepts valid signature and calls shared finalizer", async 
   });
 });
 
+test("Square webhook records an operational payment before the HTTP response is available", async () => {
+  const finalizerCalls: unknown[] = [];
+  const observationCalls: unknown[] = [];
+  const handler = createHandler(finalizerCalls, {
+    observeOperationalPayment: async (input) => {
+      observationCalls.push(input);
+      return { status: "observed" };
+    },
+  });
+  const response = await handler(
+    createSignedRequest(
+      JSON.stringify({
+        created_at: "2026-07-15T12:00:00.000Z",
+        event_id: "evt_operational_created",
+        type: "payment.created",
+        data: {
+          object: {
+            payment: {
+              amount_money: { amount: 13560, currency: "CAD" },
+              customer_id: "customer-1",
+              id: "payment-1",
+              reference_id: "booking-reference",
+              status: "APPROVED",
+              team_member_id: "team-1",
+            },
+          },
+        },
+      }),
+    ),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(observationCalls.length, 1);
+  assert.equal(finalizerCalls.length, 0);
+  assert.deepEqual(observationCalls[0], {
+    now: new Date("2026-07-15T12:00:00.000Z"),
+    payment: {
+      amount_money: { amount: 13560, currency: "CAD" },
+      customer_id: "customer-1",
+      id: "payment-1",
+      order_id: undefined,
+      reference_id: "booking-reference",
+      status: "APPROVED",
+      team_member_id: "team-1",
+      version_token: undefined,
+    },
+  });
+});
+
 test("Square webhook returns success for duplicate webhook finalizer results", async () => {
   const calls: unknown[] = [];
   const handler = createSquareWebhookPostHandler({

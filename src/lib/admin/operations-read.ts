@@ -237,7 +237,7 @@ export async function listAdminStaffAndResources() {
 export async function listAdminOfferings() {
   await requirePermission("offerings:view");
   const db = getPrivateDb();
-  const [services, providers, resources, offerings, addOns] = await Promise.all([
+  const [services, providers, resources, offerings, addOns, offeringResources] = await Promise.all([
     db.select().from(bookingServices).orderBy(asc(bookingServices.displayOrder)),
     db.select().from(bookingProviders).orderBy(asc(bookingProviders.displayOrder)),
     db.select().from(bookingResources).orderBy(asc(bookingResources.name)),
@@ -279,9 +279,37 @@ export async function listAdminOfferings() {
         asc(bookingServiceOfferingAddOns.offeringId),
         asc(bookingServiceOfferingAddOns.displayOrder),
       ),
+    db
+      .select({
+        id: bookingServiceOfferingResources.id,
+        isRequired: bookingServiceOfferingResources.isRequired,
+        offeringId: bookingServiceOfferingResources.offeringId,
+        resourceId: bookingServiceOfferingResources.resourceId,
+        resourceKind: bookingResources.kind,
+        resourceName: bookingResources.name,
+        resourceStatus: bookingResources.status,
+        role: bookingServiceOfferingResources.role,
+      })
+      .from(bookingServiceOfferingResources)
+      .innerJoin(
+        bookingResources,
+        eq(bookingResources.id, bookingServiceOfferingResources.resourceId),
+      )
+      .orderBy(
+        asc(bookingServiceOfferingResources.offeringId),
+        asc(bookingServiceOfferingResources.displayOrder),
+        asc(bookingResources.name),
+      ),
   ]);
 
-  return { addOns, offerings, providers, resources, services };
+  return {
+    addOns,
+    offeringResources,
+    offerings,
+    providers,
+    resources,
+    services,
+  };
 }
 
 export async function listAdminSchedules() {

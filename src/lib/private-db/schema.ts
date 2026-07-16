@@ -1250,6 +1250,10 @@ export const appointmentHolds = pgTable(
     timezone: text("timezone").notNull(),
     status: appointmentHoldStatus("status").notNull().default("held"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    captureLeaseId: uuid("capture_lease_id"),
+    captureLeaseExpiresAt: timestamp("capture_lease_expires_at", {
+      withTimezone: true,
+    }),
     helcimInvoiceId: integer("helcim_invoice_id"),
     helcimInvoiceNumber: text("helcim_invoice_number"),
     helcimTransactionId: text("helcim_transaction_id"),
@@ -1362,6 +1366,9 @@ export const appointmentHolds = pgTable(
       table.occupiedEnd,
       table.status,
       table.expiresAt,
+    ),
+    index("appointment_holds_capture_lease_idx").on(
+      table.captureLeaseExpiresAt,
     ),
     index("appointment_holds_service_offering_idx").on(
       table.serviceOfferingId,

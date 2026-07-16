@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, inArray, isNotNull } from "drizzle-orm";
+import { eq, inArray, isNotNull } from "drizzle-orm";
 
 import {
   createSquareTeamClient,
@@ -20,6 +20,11 @@ import {
   type AdminWriteTransaction,
 } from "./admin-transaction";
 import { requirePermission } from "./auth";
+import {
+  assertSquareAttributionCanBeRequired,
+  assertSquareMappingRemovalAllowed,
+  lockSquareAttributionInvariant,
+} from "./square-attribution-invariant";
 
 export interface SquareAttributionProviderReadiness {
   displayName: string;
@@ -51,6 +56,7 @@ export async function refreshSquareTeamMappings(): Promise<{
     domain: "square_attribution",
     metadata: { eligibleMemberCount: members.length },
     mutate: async (tx) => {
+      await lockSquareAttributionInvariant(tx);
       const now = new Date();
       const mappedProviders = await tx
         .select({
@@ -61,6 +67,35 @@ export async function refreshSquareTeamMappings(): Promise<{
         })
         .from(bookingProviders)
         .where(isNotNull(bookingProviders.squareTeamMemberId));
+
+      const [settings] = await tx
+        .select({
+          required: bookingBusinessSettings.requireSquareTeamAttribution,
+        })
+        .from(bookingBusinessSettings)
+        .where(eq(bookingBusinessSettings.singletonKey, "default"))
+        .limit(1);
+
+      if (settings?.required === true) {
+        const activeProviderRows = await tx
+          .selectDistinct({ providerId: bookingServiceOfferings.providerId })
+          .from(bookingServiceOfferings)
+          .where(eq(bookingServiceOfferings.status, "active"));
+        const activeProviderIds = new Set(
+          activeProviderRows.map((row) => row.providerId),
+        );
+        const invalidatedProviders = mappedProviders.filter(
+          (provider) =>
+            activeProviderIds.has(provider.id) &&
+            !memberById.has(provider.squareTeamMemberId!),
+        );
+
+        if (invalidatedProviders.length > 0) {
+          throw new Error(
+            "Square Team refresh would invalidate a required mapping for an active offering",
+          );
+        }
+      }
 
       for (const provider of mappedProviders) {
         const member = memberById.get(provider.squareTeamMemberId!);
@@ -116,6 +151,7 @@ export async function setProviderSquareTeamMember(input: {
         mappingPresent: requestedMemberId !== null,
       },
       mutate: async (tx) => {
+        await lockSquareAttributionInvariant(tx);
         const [provider] = await tx
           .select({ id: bookingProviders.id })
           .from(bookingProviders)
@@ -127,30 +163,7 @@ export async function setProviderSquareTeamMember(input: {
         }
 
         if (requestedMemberId === null) {
-          const [settings] = await tx
-            .select({
-              required: bookingBusinessSettings.requireSquareTeamAttribution,
-            })
-            .from(bookingBusinessSettings)
-            .where(eq(bookingBusinessSettings.singletonKey, "default"))
-            .limit(1);
-          if (settings?.required === true) {
-            const [activeOffering] = await tx
-              .select({ id: bookingServiceOfferings.id })
-              .from(bookingServiceOfferings)
-              .where(
-                and(
-                  eq(bookingServiceOfferings.providerId, providerId),
-                  eq(bookingServiceOfferings.status, "active"),
-                ),
-              )
-              .limit(1);
-            if (activeOffering) {
-              throw new Error(
-                "Disable the provider's active offerings or assign another active Square team member before removing this mapping",
-              );
-            }
-          }
+          await assertSquareMappingRemovalAllowed(tx, providerId);
         }
 
         const now = new Date();
@@ -190,7 +203,9 @@ export async function setSquareAttributionRequirement(
     domain: "square_attribution",
     metadata: { required },
     mutate: async (tx) => {
+      await lockSquareAttributionInvariant(tx);
       if (required) {
+        await assertSquareAttributionCanBeRequired(tx);
         const readiness = await listRequiredProviderReadiness(tx);
         const notReady = readiness.filter((provider) => !provider.ready);
         if (notReady.length > 0) {

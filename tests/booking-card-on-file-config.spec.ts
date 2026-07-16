@@ -3,9 +3,8 @@ import { expect, test, type Page } from "@playwright/test";
 const SERVICE_SLUG = "lash-fill";
 const SLOT_START = "2030-06-15T16:00:00.000Z";
 const SLOT_END = "2030-06-15T17:30:00.000Z";
-const HOLD_REFERENCE = "hold-card-on-file-unavailable";
-const ORDER_ID = "lh-card-on-file-fallback-order";
-const CHECKOUT_URL = `http://localhost:3000/api/booking/square/return?orderId=${ORDER_ID}&paymentId=mock-square-payment-1`;
+const PAYMENT_SESSION_REFERENCE = "pay_sess_card_on_file_handoff";
+const PAYMENT_PAGE_URL = `/services/${SERVICE_SLUG}/booking/payment?session=${PAYMENT_SESSION_REFERENCE}`;
 const FORBIDDEN_PAYMENT_HOSTS = new Set([
   "api.helcim.com",
   "connect.squareup.com",
@@ -43,14 +42,31 @@ function collectForbiddenPaymentHosts(page: Page): string[] {
   return hosts;
 }
 
-test("booking page falls back to legacy checkout when card-on-file config is unavailable", async ({
+test("booking flow hands off to the dedicated payment page before provider configuration", async ({
   page,
 }) => {
+  await page.context().addCookies([
+    {
+      domain: "localhost",
+      name: "lh_contact_popup_dismissed",
+      path: "/",
+      value: "true",
+    },
+  ]);
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "lh_cookie_consent",
+      JSON.stringify({
+        analytics: false,
+        decidedAt: "2030-01-01T00:00:00.000Z",
+        required: true,
+        version: 1,
+      }),
+    );
+  });
   const apiRequests = collectApiRequests(page);
   const forbiddenPaymentHosts = collectForbiddenPaymentHosts(page);
-  let configRequestCount = 0;
   const holdRequests: Array<Record<string, unknown>> = [];
-  const checkoutRequests: Array<Record<string, unknown>> = [];
 
   await page.route("**/api/booking/availability**", async (route) => {
     const url = new URL(route.request().url());
@@ -72,54 +88,26 @@ test("booking page falls back to legacy checkout when card-on-file config is una
     );
 
     await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ hold: { reference: HOLD_REFERENCE } }),
-    });
-  });
-
-  await page.route("**/api/booking/square/config", async (route) => {
-    expect(route.request().method()).toBe("GET");
-    configRequestCount++;
-
-    await route.fulfill({
-      status: 404,
+      status: 201,
       contentType: "application/json",
       body: JSON.stringify({
-        error: "Square card-on-file booking is not enabled",
+        hold: {
+          end: SLOT_END,
+          expiresAt: "2030-06-15T15:10:00.000Z",
+          paymentPageUrl: PAYMENT_PAGE_URL,
+          paymentSessionReference: PAYMENT_SESSION_REFERENCE,
+          service: { slug: SERVICE_SLUG, title: "Lash Fill" },
+          start: SLOT_START,
+        },
       }),
     });
   });
 
-  await page.route(/\/api\/booking\/checkout(?:\?.*)?$/, async (route) => {
-    expect(route.request().method()).toBe("POST");
-    checkoutRequests.push(
-      route.request().postDataJSON() as Record<string, unknown>,
-    );
-
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        checkoutUrl: CHECKOUT_URL,
-        holdReference: HOLD_REFERENCE,
-        orderId: ORDER_ID,
-        paymentProvider: "square",
-        reused: false,
-        squarePaymentLinkId: "square-payment-link-fallback",
-      }),
-    });
-  });
-
-  await page.route("**/api/booking/square/return**", async (route) => {
-    const url = new URL(route.request().url());
-    expect(url.searchParams.get("orderId")).toBe(ORDER_ID);
-    expect(url.searchParams.get("paymentId")).toBe("mock-square-payment-1");
-
+  await page.route(`**${PAYMENT_PAGE_URL}`, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "text/html",
-      body: "<!doctype html><html><body>Mock Square checkout return</body></html>",
+      body: "<!doctype html><html><body><h1>Dedicated payment handoff</h1></body></html>",
     });
   });
 
@@ -138,62 +126,43 @@ test("booking page falls back to legacy checkout when card-on-file config is una
   await page.getByRole("button", { name: /continue$/i }).click();
 
   await expect(
-    page.getByRole("heading", { name: /your details/i }),
+    page.getByRole("heading", { name: /appointment details/i }),
+  ).toBeVisible();
+  await expect(page.getByLabel(/full name/i)).toHaveCount(0);
+  await expect(page.getByLabel(/email address/i)).toHaveCount(0);
+  await expect(page.getByLabel(/phone number/i)).toHaveCount(0);
+
+  const paymentNavigation = page.waitForRequest(`**${PAYMENT_PAGE_URL}`);
+  await page.getByRole("button", { name: /continue to payment/i }).click();
+  const paymentNavigationRequest = await paymentNavigation;
+  expect(new URL(paymentNavigationRequest.url()).pathname).toBe(
+    `/services/${SERVICE_SLUG}/booking/payment`,
+  );
+  await expect(page).toHaveURL(PAYMENT_PAGE_URL);
+  await expect(
+    page.getByRole("heading", { name: "Dedicated payment handoff" }),
   ).toBeVisible();
 
-  await page.getByLabel(/full name/i).fill("Service Client");
-  await page.getByLabel(/email address/i).fill("service.client@example.com");
-  await page.getByLabel(/phone number/i).fill("(555) 123-4567");
-
-  await page
-    .getByRole("button", { name: /continue to secure square checkout/i })
-    .click();
-
-  // The card-on-file form mounts and loads config before falling back.
-  await expect(page.getByRole("status")).toContainText(
-    /loading secure card form/i,
-  );
-
-  // Wait for the legacy checkout navigation to be initiated instead of waiting
-  // for the full page 'load' event, which can race with React re-renders and
-  // abort with "net::ERR_ABORTED; maybe frame was detached?".
-  const returnNavigationRequest = await page.waitForRequest(
-    "**/api/booking/square/return**",
-  );
-  expect(returnNavigationRequest.url()).toBe(CHECKOUT_URL);
-  const returnUrl = new URL(returnNavigationRequest.url());
-  expect(returnUrl.searchParams.get("orderId")).toBe(ORDER_ID);
-  expect(returnUrl.searchParams.get("paymentId")).toBe("mock-square-payment-1");
-
-  expect(configRequestCount).toBeGreaterThanOrEqual(1);
   expect(holdRequests).toEqual([
     expect.objectContaining({
       serviceSlug: SERVICE_SLUG,
       start: SLOT_START,
-      name: "Service Client",
-      email: "service.client@example.com",
-      phone: "(555) 123-4567",
-      paymentOption: "full",
     }),
   ]);
-  expect(checkoutRequests.length).toBeGreaterThanOrEqual(1);
-  expect(checkoutRequests).toEqual(
-    Array.from({ length: checkoutRequests.length }, () => ({
-      holdReference: HOLD_REFERENCE,
-    })),
-  );
+  expect(holdRequests[0]?.name).toBeUndefined();
+  expect(holdRequests[0]?.email).toBeUndefined();
+  expect(holdRequests[0]?.phone).toBeUndefined();
+  expect(holdRequests[0]?.paymentOption).toBeUndefined();
 
   const availabilityIndex = apiRequests.indexOf(
     "GET /api/booking/availability",
   );
   const holdsIndex = apiRequests.indexOf("POST /api/booking/holds");
-  const configIndex = apiRequests.indexOf("GET /api/booking/square/config");
-  const checkoutIndex = apiRequests.indexOf("POST /api/booking/checkout");
 
   expect(availabilityIndex).toBeGreaterThanOrEqual(0);
   expect(holdsIndex).toBeGreaterThan(availabilityIndex);
-  expect(configIndex).toBeGreaterThan(holdsIndex);
-  expect(checkoutIndex).toBeGreaterThan(configIndex);
+  expect(apiRequests).not.toContain("GET /api/booking/square/config");
+  expect(apiRequests).not.toContain("POST /api/booking/checkout");
   expect(forbiddenPaymentHosts).toEqual([]);
 });
 

@@ -115,6 +115,23 @@ New public offerings should not be activated until readiness confirms:
 
 Unavailable schedule exceptions create database block reservations. If an existing hold or appointment overlaps, the dashboard rejects the exception instead of silently creating a conflict.
 
+Offering-resource relationships are owner-managed on `/admin/offerings`. Required
+and optional relationships apply only to future hold creation. Removing a
+relationship is snapshot-safe: existing hold and appointment reservations remain
+authoritative and are not released or rewritten. Activation rechecks required
+resources under the same database concurrency lock used by relationship changes.
+
+Employee resource assignment is also fail-safe. Assignment is permitted when the
+employee has an active owned Calendar connection for that resource; unassignment
+or account disable is rejected while it would orphan an active Calendar
+assignment. Transfer or disconnect the Calendar assignment first.
+
+Owner and employee Calendar OAuth completion share one duplicate-account state
+machine. Reconnecting the same owner reuses the existing connection, a duplicate
+provisional connection is disabled, an account owned elsewhere is rejected, and
+newly issued refresh tokens are revoked best-effort on rejection or persistence
+failure.
+
 ## Roles
 
 - `owner`: all access, staff/configuration management, audit, sensitive exports/refunds.
@@ -129,7 +146,9 @@ Authorization is enforced in server queries and mutations. Hiding a navigation i
 - An active but unhealthy V2 offering is treated as unavailable, not as an unmigrated V1 service.
 - Resource occupancy is protected by a PostgreSQL exclusion constraint using half-open time ranges.
 - Calendar connection loss leaves the appointment/payment record recoverable and visible for manual follow-up.
-- Payment attempts use provider/idempotency evidence so reconciliation can recover without a duplicate charge.
+- Direct payment acquires a durable capture lease before provider work. Hold and reservation expiry exclude valid leases and durable authorized/captured attempts.
+- Payment attempts persist a hashed provider-request intent before Square. Same-body retries reuse the key; changed sources cancel the old intent by idempotency key before using a new one; ambiguous outcomes remain reconciliation work.
+- Provider completion is persisted before appointment projection. Reconciliation verifies amount, currency, customer, reference, and Square team member against the immutable intent before resuming projection or alerting.
 - Calendar events are correlated by both canonical calendar assignment and provider event ID.
 - Booking-outcome emails are claimed from durable appointment state. The 30-minute payment-reconciliation cron also retries unsent outcomes oldest-first; a later booked outcome can send a corrective confirmation after an earlier manual-follow-up email without reusing the manual email idempotency key.
 

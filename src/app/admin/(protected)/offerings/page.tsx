@@ -8,9 +8,11 @@ import { canAdmin } from "@/lib/admin/permissions";
 import { requireAdminPagePermission } from "@/lib/admin/page-authorization";
 
 import {
+  assignOfferingResourceAction,
   createBookingServiceAction,
   createOfferingAddOnAction,
   createServiceOfferingAction,
+  removeOfferingResourceAction,
   setBookingServiceStatusAction,
   setOfferingAddOnStatusAction,
   setServiceOfferingStatusAction,
@@ -37,6 +39,7 @@ export default async function AdminOfferingsPage({
     bookingResourceIds: actor.bookingResourceIds,
     role: actor.user.role,
   });
+  const canManageOfferingResources = actor.user.role === "owner";
   const providerById = new Map(data.providers.map((row) => [row.id, row]));
 
   return (
@@ -176,6 +179,51 @@ export default async function AdminOfferingsPage({
                   <button className={`${secondaryButtonClass} sm:col-span-2 sm:justify-self-start lg:col-span-3`} type="submit">Save offering details</button>
                 </form>
               ) : null}
+              <div className="mt-5 space-y-3">
+                <div>
+                  <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-lh-muted">Required resources</h4>
+                  <p className="mt-1 text-xs text-lh-muted">Changes apply to future holds. Existing hold and appointment snapshots keep their reservation rows.</p>
+                </div>
+                {data.offeringResources.filter((relationship) => relationship.offeringId === offering.id).length === 0 ? (
+                  <p className="text-sm text-lh-muted">No secondary resources assigned.</p>
+                ) : (
+                  data.offeringResources.filter((relationship) => relationship.offeringId === offering.id).map((relationship) => (
+                    <div key={relationship.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-lh-line px-3 py-2 text-sm">
+                      <span><strong>{relationship.resourceName}</strong> · {relationship.resourceKind} · {relationship.isRequired ? "required" : "optional"} · {relationship.resourceStatus}</span>
+                      {canManageOfferingResources ? (
+                        <form action={removeOfferingResourceAction}>
+                          <input type="hidden" name="offeringId" value={offering.id} />
+                          <input type="hidden" name="resourceId" value={relationship.resourceId} />
+                          <ConfirmSubmitButton className={secondaryButtonClass} confirmation="Remove this resource from future holds? Existing reservations remain unchanged.">Remove</ConfirmSubmitButton>
+                        </form>
+                      ) : null}
+                    </div>
+                  ))
+                )}
+                {canManageOfferingResources ? (
+                  <form action={assignOfferingResourceAction} className="grid gap-3 rounded-2xl bg-lh-neutral-2 p-4 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+                    <input type="hidden" name="offeringId" value={offering.id} />
+                    <Field label="Secondary resource">
+                      <select className={inputClass} name="resourceId" required defaultValue="">
+                        <option value="" disabled>Select room or equipment</option>
+                        {data.resources.filter((resource) =>
+                          resource.id !== offering.primaryResourceId &&
+                          !data.offeringResources.some((relationship) => relationship.offeringId === offering.id && relationship.resourceId === resource.id)
+                        ).map((resource) => (
+                          <option key={resource.id} value={resource.id}>{resource.name} · {resource.kind} · {resource.status}</option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="Requirement">
+                      <select className={inputClass} name="isRequired" defaultValue="true">
+                        <option value="true">Required</option>
+                        <option value="false">Optional</option>
+                      </select>
+                    </Field>
+                    <button className={secondaryButtonClass} type="submit">Assign resource</button>
+                  </form>
+                ) : null}
+              </div>
               <div className="mt-5 space-y-2">
                 <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-lh-muted">Add-ons</h4>
                 {data.addOns.filter((addOn) => addOn.offeringId === offering.id).map((addOn) => (

@@ -1,6 +1,8 @@
 import "server-only";
 
-import { and, desc, eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+
+import { and, desc, eq, sql } from "drizzle-orm";
 
 import { resolveBookingModelVersion } from "@/lib/booking/booking-model-version";
 import type { BookingHoldRecord, BookingHoldState } from "@/lib/booking/holds";
@@ -10,10 +12,10 @@ import type {
 } from "@/lib/booking/payments/service-charge-and-store";
 import {
   appointmentHolds,
-  appointments,
   bookingNoShowChargeRecords,
   bookingPaymentAttempts,
   bookingPolicyAcceptances,
+  bookingResourceReservations,
   bookingSavedPaymentMethods,
   bookingSquareCustomers,
 } from "@/lib/private-db/schema";
@@ -103,43 +105,36 @@ export async function createServiceBookingPaymentRepository(
           return { status: "in_progress" };
         }
 
-        // A V2 capture is committed atomically with the authoritative
-        // appointment before Calendar finalization. If the process exits in
-        // that gap, derive a recovery claim from those durable rows instead
-        // of returning the hold to the provider-payment path. This prevents a
-        // retry from creating or capturing another Square payment.
+        // Provider-observed capture is committed before appointment
+        // projection. A retry must resume that projection even when the
+        // appointment transaction previously failed.
         if (
           bookingModelVersion === 2 &&
           row.status !== "refund_required" &&
           row.finalizationStatus !== "refund_required"
         ) {
-          const [appointment] = await tx
-            .select({ id: appointments.id })
-            .from(appointments)
-            .where(eq(appointments.sourceHoldId, row.id))
+          const [capturedAttempt] = await tx
+            .select({
+              amountCents: bookingPaymentAttempts.amountCents,
+              currency: bookingPaymentAttempts.currency,
+              idempotencyKey: bookingPaymentAttempts.idempotencyKey,
+              providerOrderId: bookingPaymentAttempts.providerOrderId,
+              providerPaymentId: bookingPaymentAttempts.providerPaymentId,
+            })
+            .from(bookingPaymentAttempts)
+            .where(
+              and(
+                eq(bookingPaymentAttempts.holdId, row.id),
+                eq(
+                  bookingPaymentAttempts.operation,
+                  "square_charge_and_store",
+                ),
+                eq(bookingPaymentAttempts.paymentProvider, "square"),
+                eq(bookingPaymentAttempts.status, "captured"),
+              ),
+            )
+            .orderBy(desc(bookingPaymentAttempts.createdAt))
             .limit(1);
-
-          const [capturedAttempt] =
-            appointment === undefined
-              ? []
-              : await tx
-                  .select({
-                    amountCents: bookingPaymentAttempts.amountCents,
-                    currency: bookingPaymentAttempts.currency,
-                    providerOrderId: bookingPaymentAttempts.providerOrderId,
-                    providerPaymentId: bookingPaymentAttempts.providerPaymentId,
-                  })
-                  .from(bookingPaymentAttempts)
-                  .where(
-                    and(
-                      eq(bookingPaymentAttempts.holdId, row.id),
-                      eq(bookingPaymentAttempts.appointmentId, appointment.id),
-                      eq(bookingPaymentAttempts.paymentProvider, "square"),
-                      eq(bookingPaymentAttempts.status, "captured"),
-                    ),
-                  )
-                  .orderBy(desc(bookingPaymentAttempts.createdAt))
-                  .limit(1);
 
           if (capturedAttempt?.providerPaymentId != null) {
             const [savedCard] =
@@ -194,6 +189,7 @@ export async function createServiceBookingPaymentRepository(
               payment: {
                 amountCents: capturedAttempt.amountCents,
                 currency: capturedAttempt.currency,
+                idempotencyKey: capturedAttempt.idempotencyKey,
                 squareOrderId: capturedAttempt.providerOrderId ?? undefined,
                 squarePaymentId: capturedAttempt.providerPaymentId,
                 status: "COMPLETED",
@@ -306,6 +302,8 @@ export async function createServiceBookingPaymentRepository(
               hold: toBookingHoldRecord(updated),
               payment: {
                 amountCents: authorizedAttempt.amountCents,
+                captureLeaseId:
+                  row.captureLeaseId ?? "missing-operational-capture-lease",
                 currency: authorizedAttempt.currency,
                 idempotencyKey: authorizedAttempt.idempotencyKey,
                 squareOrderId: authorizedAttempt.providerOrderId ?? undefined,
@@ -341,6 +339,315 @@ export async function createServiceBookingPaymentRepository(
         }
 
         return { status: "available", hold: toBookingHoldRecord(updated) };
+      });
+    },
+
+    async prepareOperationalPaymentIntent(input) {
+      if (
+        input.leaseExpiresAt <= input.now ||
+        input.requestBodyHash.length === 0 ||
+        input.sourceIdHash.length === 0
+      ) {
+        throw new TypeError("Invalid operational payment intent");
+      }
+
+      return db.transaction(async (tx) => {
+        const [candidateHold] = await tx
+          .select()
+          .from(appointmentHolds)
+          .where(eq(appointmentHolds.id, input.holdId))
+          .limit(1);
+        if (candidateHold === undefined) {
+          return { status: "unavailable" } as const;
+        }
+
+        const expectedResourceIds = readExpectedReservedResourceIds(
+          candidateHold.offeringSnapshot,
+        );
+        for (const resourceId of expectedResourceIds) {
+          await tx.execute(
+            sql`select pg_advisory_xact_lock(hashtextextended(${resourceId}::text, 0))`,
+          );
+        }
+
+        const [hold] = await tx
+          .select()
+          .from(appointmentHolds)
+          .where(eq(appointmentHolds.id, input.holdId))
+          .limit(1)
+          .for("update");
+        if (
+          hold === undefined ||
+          resolveBookingModelVersion(hold) !== 2 ||
+          hold.status !== "held" ||
+          hold.finalizationStatus !== "pending"
+        ) {
+          return { status: "unavailable" } as const;
+        }
+
+        const reservations = await tx
+          .select()
+          .from(bookingResourceReservations)
+          .where(eq(bookingResourceReservations.holdId, hold.id))
+          .for("update");
+        if (
+          !reservationsMatchExpectedResources(
+            reservations,
+            expectedResourceIds,
+            input.now,
+          )
+        ) {
+          return { status: "unavailable" } as const;
+        }
+
+        const [pendingAttempt] = await tx
+          .select()
+          .from(bookingPaymentAttempts)
+          .where(
+            and(
+              eq(bookingPaymentAttempts.holdId, hold.id),
+              eq(
+                bookingPaymentAttempts.operation,
+                "square_charge_and_store",
+              ),
+              eq(bookingPaymentAttempts.paymentProvider, "square"),
+              eq(bookingPaymentAttempts.status, "pending"),
+            ),
+          )
+          .orderBy(desc(bookingPaymentAttempts.createdAt))
+          .limit(1)
+          .for("update");
+
+        const existingIntent = readSquareRequestIntent(
+          pendingAttempt?.providerMetadata,
+        );
+        const requestMatches =
+          pendingAttempt !== undefined &&
+          pendingAttempt.amountCents === input.amountCents &&
+          pendingAttempt.currency === input.currency.trim().toUpperCase() &&
+          existingIntent?.requestBodyHash === input.requestBodyHash &&
+          existingIntent.sourceIdHash === input.sourceIdHash &&
+          existingIntent.squareCustomerId === input.squareCustomerId &&
+          existingIntent.referenceId === input.referenceId &&
+          (existingIntent.squareTeamMemberId ?? undefined) ===
+            input.squareTeamMemberId &&
+          (existingIntent.verificationTokenHash ?? undefined) ===
+            input.verificationTokenHash;
+        const captureLeaseId =
+          hold.captureLeaseId !== null &&
+          hold.captureLeaseExpiresAt !== null &&
+          hold.captureLeaseExpiresAt > input.now
+            ? hold.captureLeaseId
+            : randomUUID();
+        const protectedUntil = new Date(
+          Math.max(hold.expiresAt.getTime(), input.leaseExpiresAt.getTime()),
+        );
+
+        await tx
+          .update(appointmentHolds)
+          .set({
+            captureLeaseExpiresAt: protectedUntil,
+            captureLeaseId,
+            expiresAt: protectedUntil,
+            updatedAt: input.now,
+          })
+          .where(eq(appointmentHolds.id, hold.id));
+        await tx
+          .update(bookingResourceReservations)
+          .set({ expiresAt: protectedUntil, updatedAt: input.now })
+          .where(
+            and(
+              eq(bookingResourceReservations.holdId, hold.id),
+              eq(bookingResourceReservations.kind, "hold"),
+              eq(bookingResourceReservations.state, "active"),
+            ),
+          );
+
+        if (pendingAttempt !== undefined && !requestMatches) {
+          return {
+            idempotencyKey: pendingAttempt.idempotencyKey,
+            status: "changed_request",
+          } as const;
+        }
+
+        if (pendingAttempt !== undefined) {
+          return {
+            captureLeaseId,
+            idempotencyKey: pendingAttempt.idempotencyKey,
+            reused: true,
+            status: "ready",
+          } as const;
+        }
+
+        const [attempt] = await tx
+          .insert(bookingPaymentAttempts)
+          .values({
+            amountCents: input.amountCents,
+            createdAt: input.now,
+            currency: input.currency.trim().toUpperCase(),
+            holdId: hold.id,
+            idempotencyKey: input.idempotencyKeyCandidate,
+            operation: "square_charge_and_store",
+            paymentProvider: "square",
+            providerMetadata: {
+              squareRequestIntent: {
+                createdAt: input.now.toISOString(),
+                referenceId: input.referenceId,
+                requestBodyHash: input.requestBodyHash,
+                sourceIdHash: input.sourceIdHash,
+                squareCustomerId: input.squareCustomerId,
+                squareTeamMemberId: input.squareTeamMemberId,
+                verificationTokenHash: input.verificationTokenHash,
+                version: 1,
+              },
+            },
+            squareTeamMemberId: input.squareTeamMemberId,
+            status: "pending",
+            updatedAt: input.now,
+          })
+          .returning();
+        if (attempt === undefined) {
+          throw new Error("Failed to persist operational payment intent");
+        }
+
+        return {
+          captureLeaseId,
+          idempotencyKey: attempt.idempotencyKey,
+          reused: false,
+          status: "ready",
+        } as const;
+      });
+    },
+
+    async terminateOperationalPaymentIntent(input) {
+      return db.transaction(async (tx) => {
+        await tx
+          .select({ id: appointmentHolds.id })
+          .from(appointmentHolds)
+          .where(eq(appointmentHolds.id, input.holdId))
+          .limit(1)
+          .for("update");
+        const [attempt] = await tx
+          .select()
+          .from(bookingPaymentAttempts)
+          .where(
+            and(
+              eq(bookingPaymentAttempts.holdId, input.holdId),
+              eq(bookingPaymentAttempts.idempotencyKey, input.idempotencyKey),
+            ),
+          )
+          .limit(1)
+          .for("update");
+
+        if (attempt === undefined) return false;
+        if (attempt.status === input.status) return true;
+        if (attempt.status !== "pending") return false;
+
+        const [updated] = await tx
+          .update(bookingPaymentAttempts)
+          .set({
+            failedAt: input.status === "failed" ? input.now : undefined,
+            status: input.status,
+            updatedAt: input.now,
+          })
+          .where(
+            and(
+              eq(bookingPaymentAttempts.id, attempt.id),
+              eq(bookingPaymentAttempts.status, "pending"),
+            ),
+          )
+          .returning({ id: bookingPaymentAttempts.id });
+
+        return updated !== undefined;
+      });
+    },
+
+    async validateOperationalCaptureLease(input) {
+      if (input.leaseExpiresAt <= input.now) return false;
+
+      return db.transaction(async (tx) => {
+        const [candidateHold] = await tx
+          .select()
+          .from(appointmentHolds)
+          .where(eq(appointmentHolds.id, input.holdId))
+          .limit(1);
+        if (candidateHold === undefined) return false;
+        const expectedResourceIds = readExpectedReservedResourceIds(
+          candidateHold.offeringSnapshot,
+        );
+        for (const resourceId of expectedResourceIds) {
+          await tx.execute(
+            sql`select pg_advisory_xact_lock(hashtextextended(${resourceId}::text, 0))`,
+          );
+        }
+
+        const [hold] = await tx
+          .select()
+          .from(appointmentHolds)
+          .where(eq(appointmentHolds.id, input.holdId))
+          .limit(1)
+          .for("update");
+        const [attempt] = await tx
+          .select()
+          .from(bookingPaymentAttempts)
+          .where(
+            and(
+              eq(bookingPaymentAttempts.holdId, input.holdId),
+              eq(bookingPaymentAttempts.idempotencyKey, input.idempotencyKey),
+            ),
+          )
+          .limit(1)
+          .for("update");
+        if (
+          hold === undefined ||
+          hold.captureLeaseId !== input.captureLeaseId ||
+          hold.captureLeaseExpiresAt === null ||
+          hold.captureLeaseExpiresAt <= input.now ||
+          attempt === undefined ||
+          attempt.status !== "authorized" ||
+          attempt.providerPaymentId !== input.squarePaymentId
+        ) {
+          return false;
+        }
+
+        const reservations = await tx
+          .select()
+          .from(bookingResourceReservations)
+          .where(eq(bookingResourceReservations.holdId, hold.id))
+          .for("update");
+        if (
+          !reservationsMatchExpectedResources(
+            reservations,
+            expectedResourceIds,
+            input.now,
+          )
+        ) {
+          return false;
+        }
+
+        const protectedUntil = new Date(
+          Math.max(hold.expiresAt.getTime(), input.leaseExpiresAt.getTime()),
+        );
+        await tx
+          .update(appointmentHolds)
+          .set({
+            captureLeaseExpiresAt: protectedUntil,
+            expiresAt: protectedUntil,
+            updatedAt: input.now,
+          })
+          .where(eq(appointmentHolds.id, hold.id));
+        await tx
+          .update(bookingResourceReservations)
+          .set({ expiresAt: protectedUntil, updatedAt: input.now })
+          .where(
+            and(
+              eq(bookingResourceReservations.holdId, hold.id),
+              eq(bookingResourceReservations.kind, "hold"),
+              eq(bookingResourceReservations.state, "active"),
+            ),
+          );
+
+        return true;
       });
     },
 
@@ -629,6 +936,20 @@ export async function createServiceBookingPaymentRepository(
     },
 
     async recordCapturedOperationalPayment(input) {
+      await appointmentFinalization.recordPaymentAttempt({
+        amountCents: input.amountCents,
+        capturedAt: input.now,
+        currency: input.currency,
+        holdId: input.holdId,
+        idempotencyKey: input.idempotencyKey,
+        now: input.now,
+        operation: "square_charge_and_store",
+        paymentProvider: "square",
+        providerOrderId: input.squareOrderId,
+        providerPaymentId: input.squarePaymentId,
+        status: "captured",
+      });
+
       await appointmentFinalization.confirmOperationalAppointment({
         calendar: { status: "pending" },
         holdId: input.holdId,
@@ -1067,6 +1388,95 @@ export async function createServiceBookingPaymentRepository(
         return { status: "refund_required" } as const;
       });
     },
+  };
+}
+
+function readExpectedReservedResourceIds(
+  offeringSnapshot: Record<string, unknown>,
+): string[] {
+  const resourceIds = offeringSnapshot.reservedResourceIds;
+  const expectedCount = offeringSnapshot.reservedResourceCount;
+  if (
+    !Array.isArray(resourceIds) ||
+    resourceIds.length === 0 ||
+    !resourceIds.every(
+      (resourceId): resourceId is string =>
+        typeof resourceId === "string" && resourceId.length > 0,
+    ) ||
+    !Number.isInteger(expectedCount) ||
+    expectedCount !== resourceIds.length ||
+    new Set(resourceIds).size !== resourceIds.length
+  ) {
+    throw new Error("Operational hold has an invalid reserved-resource set");
+  }
+
+  return [...resourceIds].sort((first, second) =>
+    first.localeCompare(second),
+  );
+}
+
+function reservationsMatchExpectedResources(
+  reservations: Array<typeof bookingResourceReservations.$inferSelect>,
+  expectedResourceIds: string[],
+  now: Date,
+): boolean {
+  const actualResourceIds = reservations
+    .map((reservation) => reservation.resourceId)
+    .sort((first, second) => first.localeCompare(second));
+
+  return (
+    reservations.length === expectedResourceIds.length &&
+    reservations.every(
+      (reservation) =>
+        reservation.kind === "hold" &&
+        reservation.state === "active" &&
+        reservation.expiresAt !== null &&
+        reservation.expiresAt > now,
+    ) &&
+    actualResourceIds.every(
+      (resourceId, index) => resourceId === expectedResourceIds[index],
+    )
+  );
+}
+
+function readSquareRequestIntent(value: unknown):
+  | {
+      referenceId: string;
+      requestBodyHash: string;
+      sourceIdHash: string;
+      squareCustomerId: string;
+      squareTeamMemberId?: string;
+      verificationTokenHash?: string;
+    }
+  | undefined {
+  if (value === null || typeof value !== "object") return undefined;
+  const intent = (value as Record<string, unknown>).squareRequestIntent;
+  if (intent === null || typeof intent !== "object") return undefined;
+  const record = intent as Record<string, unknown>;
+  if (
+    typeof record.referenceId !== "string" ||
+    typeof record.requestBodyHash !== "string" ||
+    typeof record.sourceIdHash !== "string" ||
+    typeof record.squareCustomerId !== "string" ||
+    (record.squareTeamMemberId !== undefined &&
+      typeof record.squareTeamMemberId !== "string") ||
+    (record.verificationTokenHash !== undefined &&
+      typeof record.verificationTokenHash !== "string")
+  ) {
+    return undefined;
+  }
+
+  return {
+    referenceId: record.referenceId,
+    requestBodyHash: record.requestBodyHash,
+    sourceIdHash: record.sourceIdHash,
+    squareCustomerId: record.squareCustomerId,
+    ...(record.squareTeamMemberId === undefined
+      ? {}
+      : { squareTeamMemberId: record.squareTeamMemberId }),
+    ...(record.verificationTokenHash === undefined
+      ? {}
+      : { verificationTokenHash: record.verificationTokenHash }),
   };
 }
 

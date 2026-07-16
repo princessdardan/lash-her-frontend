@@ -21,6 +21,7 @@ import {
 import { runAuditedAdminMutation } from "./admin-transaction";
 import { requirePermission } from "./auth";
 import { getCalendarAssignmentAccessError } from "./calendar-capabilities";
+import { resolveAndSaveGoogleCalendarCredential } from "./google-calendar-credential-resolution";
 import {
   getEmployeeAssignmentDisableError,
   getEmployeeDisconnectError,
@@ -195,93 +196,16 @@ export async function saveEmployeeGoogleCalendarCredential(input: {
     domain: "calendar",
     metadata: { provider: "google", resourceId: input.resourceId },
     mutate: async (tx) => {
-      const [provisional] = await tx
-        .select({ id: bookingCalendarConnections.id })
-        .from(bookingCalendarConnections)
-        .where(
-          and(
-            eq(bookingCalendarConnections.id, input.connectionId),
-            eq(
-              bookingCalendarConnections.credentialOwnerAdminUserId,
-              actor.user.id,
-            ),
-          ),
-        )
-        .limit(1)
-        .for("update");
-      if (!provisional) {
-        throw new Error("Calendar connection is not owned by this employee");
-      }
-
-      const [duplicate] = await tx
-        .select({
-          credentialOwnerAdminUserId:
-            bookingCalendarConnections.credentialOwnerAdminUserId,
-          id: bookingCalendarConnections.id,
-        })
-        .from(bookingCalendarConnections)
-        .where(
-          and(
-            eq(bookingCalendarConnections.provider, "google"),
-            eq(
-              bookingCalendarConnections.providerAccountId,
-              providerAccountId,
-            ),
-          ),
-        )
-        .limit(1)
-        .for("update");
-
-      if (duplicate && duplicate.id !== input.connectionId) {
-        await disableProvisionalConnection(tx, input.connectionId, new Date());
-        if (duplicate.credentialOwnerAdminUserId !== actor.user.id) {
-          return { status: "owned_elsewhere" } as const;
-        }
-
-        const now = new Date();
-        await tx
-          .update(bookingCalendarConnections)
-          .set({
-            accountEmail,
-            connectedByAdminUserId: actor.user.id,
-            credentialCiphertext,
-            credentialSecretRef: null,
-            disabledAt: null,
-            lastErrorCode: null,
-            lastVerifiedAt: now,
-            scopes,
-            status: "active",
-            updatedAt: now,
-          })
-          .where(eq(bookingCalendarConnections.id, duplicate.id));
-        return {
-          connectionId: duplicate.id,
-          status: "reconnected_existing",
-        } as const;
-      }
-
       const now = new Date();
-      const [saved] = await tx
-        .update(bookingCalendarConnections)
-        .set({
-          accountEmail,
-          connectedByAdminUserId: actor.user.id,
-          credentialCiphertext,
-          credentialSecretRef: null,
-          disabledAt: null,
-          lastErrorCode: null,
-          lastVerifiedAt: now,
-          providerAccountId,
-          scopes,
-          status: "active",
-          updatedAt: now,
-        })
-        .where(eq(bookingCalendarConnections.id, input.connectionId))
-        .returning({ id: bookingCalendarConnections.id });
-      if (!saved) {
-        throw new Error("Calendar connection was not found");
-      }
-      return { connectionId: saved.id, status: "saved" } as const;
+      return resolveAndSaveGoogleCalendarCredential(tx, {
+        accountEmail,
+        actorAdminUserId: actor.user.id,
+        connectionId: input.connectionId,
+        credentialCiphertext,
+        now,
+        providerAccountId,
+        scopes,
+      });
     },
     targetId: input.connectionId,
     targetType: "calendar_connection",
@@ -548,23 +472,4 @@ function assertEmployee(actor: AdminActor): void {
   if (actor.user.role !== "employee") {
     throw new Error("Employee calendar self-service is available to employees only");
   }
-}
-
-async function disableProvisionalConnection(
-  tx: Parameters<
-    Parameters<ReturnType<typeof getPrivateDb>["transaction"]>[0]
-  >[0],
-  connectionId: string,
-  now: Date,
-): Promise<void> {
-  await tx
-    .update(bookingCalendarConnections)
-    .set({
-      credentialCiphertext: null,
-      credentialSecretRef: null,
-      disabledAt: now,
-      status: "disabled",
-      updatedAt: now,
-    })
-    .where(eq(bookingCalendarConnections.id, connectionId));
 }
