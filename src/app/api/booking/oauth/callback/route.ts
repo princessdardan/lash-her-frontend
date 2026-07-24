@@ -82,6 +82,22 @@ const adminCallbackDependencies: AdminCalendarOAuthCallbackDependencies = {
       : requirePermission("calendar-connections:manage");
   },
   consumeState: consumeBookingCalendarOAuthState,
+  async disableProvisionalConnection(state) {
+    if (state.flowType === "employee") {
+      const { disableEmployeeCalendarConnectionAfterOAuthFailure } =
+        await import("@/lib/admin/employee-calendar");
+      await disableEmployeeCalendarConnectionAfterOAuthFailure({
+        connectionId: state.connectionId,
+        resourceId: state.resourceId!,
+      });
+      return;
+    }
+
+    const { disableAdminCalendarConnectionAfterOAuthFailure } = await import(
+      "@/lib/admin/operations-write"
+    );
+    await disableAdminCalendarConnectionAfterOAuthFailure(state.connectionId);
+  },
   async exchangeCode(code) {
     const oauthClient = createOAuthClient();
     const { tokens } = await oauthClient.getToken(code);

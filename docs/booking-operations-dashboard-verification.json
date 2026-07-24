@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-07-15T21:00:00-04:00",
+  "recordedAt": "2026-07-23T19:22:57-04:00",
   "baseBranch": "staging",
   "baseCommit": "0818297805d6d95a669b3f78c7859d5464d5e1cf",
   "recoveryBranch": "codex/booking-operations-dashboard-recovery",
@@ -19,7 +19,7 @@
     {
       "command": "npm run test:unit",
       "result": "passed",
-      "sourceTests": 1396,
+      "sourceTests": 1398,
       "scriptTests": 19,
       "failed": 0,
       "skipped": 0
@@ -27,7 +27,7 @@
     {
       "command": "TEST_DATABASE_URL=<disposable-local-db> npm run test:unit:db",
       "result": "passed",
-      "tests": 99,
+      "tests": 101,
       "failed": 0,
       "skipped": 0
     },
@@ -50,16 +50,43 @@
       "result": "passed",
       "bundler": "webpack",
       "reactCompiler": true,
-      "runtime": "node 22.21.0",
+      "runtime": "node 26.5.0",
       "staticPages": 45
     },
     {
-      "command": "npx playwright test tests/booking.spec.ts tests/booking-card-on-file-config.spec.ts tests/service-booking-payment-page.spec.ts tests/admin-calendar-self-service.spec.ts --project=chromium",
+      "command": "DATABASE_URL=<disposable-local-db> SERVICE_BOOKING_PAYMENT_E2E_DB_WRITES=true npx playwright test tests/booking.spec.ts tests/booking-card-on-file-config.spec.ts tests/service-booking-payment-page.spec.ts tests/admin-calendar-self-service.spec.ts --project=chromium",
       "result": "passed_with_fixture_gates",
       "passed": 10,
       "failed": 0,
       "skipped": 3,
       "skipReason": "employee and owner Auth.js storage states plus an isolated live Google Calendar fixture were not provided"
+    },
+    {
+      "command": "node --env-file=<staging-.env> --conditions=react-server --import tsx <ephemeral-square-sandbox-certification-script>",
+      "result": "passed_provider_lifecycle",
+      "recordedAt": "2026-07-23T23:21:08Z",
+      "environment": "square_sandbox",
+      "targetDeployment": {
+        "branch": "staging",
+        "commit": "0818297805d6d95a669b3f78c7859d5464d5e1cf",
+        "deploymentId": "dpl_HB8ccQXqJzvwKgHhDE18bEQKiXUN"
+      },
+      "assertions": [
+        "configured location authenticated",
+        "customer and card creation succeeded",
+        "sandbox decline was observed",
+        "same-body idempotent replay preserved the payment",
+        "delayed authorization reached APPROVED and cancellation reached CANCELED",
+        "capture reached COMPLETED",
+        "full cleanup refund reached COMPLETED",
+        "no-show order and invoice creation reached DRAFT"
+      ],
+      "webhookDeliveries": {
+        "path": "/api/webhooks/square",
+        "http200": 35,
+        "http5xx": 0
+      },
+      "scope": "Direct recovery-source Square clients plus the existing staging webhook transport; no shared staging database or Google Calendar records were mutated, and the recovery branch was not deployed."
     },
     {
       "command": "git diff --check",
@@ -69,13 +96,14 @@
   "knownWarnings": [
     "The seven ESLint warnings are in files unchanged from staging.",
     "The production build reports the existing optional @opentelemetry/winston-transport resolution warning; compilation, type checking, page generation, and trace collection complete successfully.",
-    "Next 16 Turbopack repeatedly entered an all-worker wait in the linked worktree on Node 22 and Node 26. The canonical production build now uses webpack; React Compiler remains enabled."
+    "Next 16 Turbopack repeatedly entered an all-worker wait in the linked worktree on Node 22 and Node 26. The canonical production build now uses webpack; React Compiler remains enabled.",
+    "Square's synthetic Test Webhook Subscription payloads referenced non-existent sandbox payments and produced three retryable HTTP 503 responses after Square API 404 lookups. Real provider lifecycle events in the recorded certification window produced 35 HTTP 200 responses and no 5xx responses."
   ],
   "pendingExternalGates": [
     "Inspect migrations 0018 through 0022 on every shared or production-like database target; repository evidence establishes only new local databases.",
     "Apply the migration chain to an approved staging clone after backup/PITR approval.",
     "Run the gated owner and employee Auth.js/Google Calendar browser fixture, including live callback completion.",
-    "Run Square sandbox payment, webhook, ambiguous-outcome, cancellation, reconciliation, refund-required, and no-show certification with real provider credentials.",
+    "Deploy the recovery branch and complete the application-level Square sandbox booking, ambiguous-outcome recovery, reconciliation, refund-required, and no-show certification against an approved staging database and Calendar fixture. Direct provider payment, cancellation, refund, DRAFT invoice, and existing staging webhook transport are certified.",
     "Complete target-environment public V1/V2 and admin role smoke checks with owner, admin, employee, disabled, and unassigned identities."
   ]
 }

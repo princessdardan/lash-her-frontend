@@ -18,13 +18,16 @@ terminal charged attempt; owner/employee OAuth completion shares duplicate and
 token-cleanup behavior; offering-resource administration is owner-only and
 snapshot-safe; and the source/DB test runner is reproducible.
 
-Local verification passes TypeScript, lint with baseline warnings only, 1,415
-DB-disabled/script tests, 99 serial DB tests, all 23 migrations on a new
+Local verification passes TypeScript, lint with baseline warnings only, 1,417
+DB-disabled/script tests, 101 serial DB tests, all 23 migrations on a new
 database, the production webpack build with React Compiler enabled, and 10
 Chromium booking/payment smokes. Three live Auth.js/Google Calendar cases are
-explicitly gated. Shared-database inspection, an approved staging-clone
-migration, live Google fixture completion, and Square sandbox certification are
-still required before production enablement. The machine-readable record is
+explicitly gated. A direct Square provider-client lifecycle and the existing
+staging webhook transport were certified against the sandbox on 2026-07-23.
+Shared-database inspection, an approved staging-clone migration, live Google
+fixture completion, and end-to-end Square recovery/reconciliation certification
+against a deployed recovery build are still required before production
+enablement. The machine-readable record is
 `docs/booking-operations-dashboard-verification.json`.
 
 ## Executive decision

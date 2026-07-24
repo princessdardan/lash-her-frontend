@@ -20,6 +20,7 @@ import {
   appointmentHolds,
   bookingBusinessSettings,
   bookingCalendarConnections,
+  bookingPaymentAttempts,
   bookingProviders,
   bookingResourceCalendarAssignments,
   bookingResourceReservations,
@@ -30,6 +31,7 @@ import {
   bookingServiceOfferings,
 } from "./schema";
 import * as schema from "./schema";
+import { observeOperationalSquarePayment } from "./operational-square-payment-observer";
 
 const TEST_PREFIX = "v2-res-test-";
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
@@ -358,6 +360,167 @@ test(
       }),
       true,
     );
+  },
+);
+
+test(
+  "provider-observed authorization protects an ambiguous CreatePayment before the HTTP response",
+  { skip: skipReason },
+  async () => {
+    const fixture = await seedFixture();
+    const reservationRepository =
+      createDrizzleBookingReservationRepository(requireDb());
+    const paymentRepository =
+      await createServiceBookingPaymentRepository(requireDb());
+    const initialNow = new Date("2031-04-20T12:00:00.000Z");
+    const start = new Date("2031-04-22T15:00:00.000Z");
+    const created = await reservationRepository.createV2Hold({
+      ...createHoldInput(fixture, start, initialNow),
+      expiresAt: new Date("2031-04-20T12:10:00.000Z"),
+    });
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+
+    const prepare = paymentRepository.prepareOperationalPaymentIntent;
+    assert.ok(prepare);
+    const squareCustomerId = `${TEST_PREFIX}webhook-customer-${randomUUID()}`;
+    const prepared = await prepare({
+      amountCents: 13560,
+      currency: "CAD",
+      holdId: created.hold.id,
+      idempotencyKeyCandidate: `${TEST_PREFIX}webhook-key-${randomUUID()}`,
+      leaseExpiresAt: new Date("2031-04-20T12:20:00.000Z"),
+      now: new Date("2031-04-20T12:01:00.000Z"),
+      referenceId: created.hold.publicReference,
+      requestBodyHash: `${TEST_PREFIX}webhook-request-hash`,
+      sourceIdHash: `${TEST_PREFIX}webhook-source-hash`,
+      squareCustomerId,
+    });
+    assert.equal(prepared.status, "ready");
+    if (prepared.status !== "ready") return;
+
+    const paymentId = `${TEST_PREFIX}webhook-payment-${randomUUID()}`;
+    const observed = await observeOperationalSquarePayment(
+      {
+        amount_money: { amount: 13560, currency: "CAD" },
+        customer_id: squareCustomerId,
+        id: paymentId,
+        reference_id: created.hold.publicReference,
+        status: "APPROVED",
+        version_token: "version-before-response",
+      },
+      new Date("2031-04-20T12:02:00.000Z"),
+      requireDb(),
+    );
+    const [attempt] = await requireDb()
+      .select({
+        providerMetadata: bookingPaymentAttempts.providerMetadata,
+        providerPaymentId: bookingPaymentAttempts.providerPaymentId,
+        status: bookingPaymentAttempts.status,
+      })
+      .from(bookingPaymentAttempts)
+      .where(eq(bookingPaymentAttempts.idempotencyKey, prepared.idempotencyKey));
+
+    assert.equal(observed.status, "observed");
+    assert.equal(attempt.providerPaymentId, paymentId);
+    assert.equal(attempt.status, "authorized");
+    assert.equal(
+      attempt.providerMetadata?.squareVersionToken,
+      "version-before-response",
+    );
+
+    const competing = await reservationRepository.createV2Hold(
+      createHoldInput(
+        fixture,
+        start,
+        new Date("2031-04-20T12:21:00.000Z"),
+      ),
+    );
+    assert.deepEqual(competing, { ok: false, reason: "slot_conflict" });
+  },
+);
+
+test(
+  "provider-observed completion remains captured when appointment projection fails",
+  { skip: skipReason },
+  async () => {
+    const fixture = await seedFixture();
+    const reservationRepository =
+      createDrizzleBookingReservationRepository(requireDb());
+    const paymentRepository =
+      await createServiceBookingPaymentRepository(requireDb());
+    const initialNow = new Date("2031-04-25T12:00:00.000Z");
+    const start = new Date("2031-04-27T15:00:00.000Z");
+    const created = await reservationRepository.createV2Hold({
+      ...createHoldInput(fixture, start, initialNow),
+      expiresAt: new Date("2031-04-25T12:10:00.000Z"),
+    });
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+
+    const prepare = paymentRepository.prepareOperationalPaymentIntent;
+    assert.ok(prepare);
+    const squareCustomerId = `${TEST_PREFIX}captured-customer-${randomUUID()}`;
+    const prepared = await prepare({
+      amountCents: 13560,
+      currency: "CAD",
+      holdId: created.hold.id,
+      idempotencyKeyCandidate: `${TEST_PREFIX}captured-key-${randomUUID()}`,
+      leaseExpiresAt: new Date("2031-04-25T12:20:00.000Z"),
+      now: new Date("2031-04-25T12:01:00.000Z"),
+      referenceId: created.hold.publicReference,
+      requestBodyHash: `${TEST_PREFIX}captured-request-hash`,
+      sourceIdHash: `${TEST_PREFIX}captured-source-hash`,
+      squareCustomerId,
+    });
+    assert.equal(prepared.status, "ready");
+    if (prepared.status !== "ready") return;
+
+    const paymentId = `${TEST_PREFIX}captured-payment-${randomUUID()}`;
+    const completedPayment = {
+      amount_money: { amount: 13560, currency: "CAD" },
+      customer_id: squareCustomerId,
+      id: paymentId,
+      reference_id: created.hold.publicReference,
+      status: "COMPLETED",
+    };
+    await assert.rejects(
+      observeOperationalSquarePayment(
+        completedPayment,
+        new Date("2031-04-25T12:02:00.000Z"),
+        requireDb(),
+      ),
+      /validated payment selection/,
+    );
+
+    const [attempt] = await requireDb()
+      .select({
+        providerPaymentId: bookingPaymentAttempts.providerPaymentId,
+        status: bookingPaymentAttempts.status,
+      })
+      .from(bookingPaymentAttempts)
+      .where(eq(bookingPaymentAttempts.idempotencyKey, prepared.idempotencyKey));
+    assert.equal(attempt.providerPaymentId, paymentId);
+    assert.equal(attempt.status, "captured");
+
+    // A webhook retry must keep using the same captured evidence and retry the
+    // local projection rather than falling through to a legacy finalizer.
+    await assert.rejects(
+      observeOperationalSquarePayment(
+        completedPayment,
+        new Date("2031-04-25T12:03:00.000Z"),
+        requireDb(),
+      ),
+      /validated payment selection/,
+    );
+    const competing = await reservationRepository.createV2Hold(
+      createHoldInput(
+        fixture,
+        start,
+        new Date("2031-04-25T12:21:00.000Z"),
+      ),
+    );
+    assert.deepEqual(competing, { ok: false, reason: "slot_conflict" });
   },
 );
 

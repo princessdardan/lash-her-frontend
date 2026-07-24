@@ -45,10 +45,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   if (!db) return;
-  await db
-    .update(bookingBusinessSettings)
-    .set({ requireSquareTeamAttribution: originalRequired })
-    .where(eq(bookingBusinessSettings.singletonKey, "default"));
+  await setAttributionRequired(originalRequired);
   await cleanup();
 });
 
@@ -61,10 +58,7 @@ test(
   { skip: skipReason },
   async () => {
     const fixture = await seed("active");
-    await requireDb()
-      .update(bookingBusinessSettings)
-      .set({ requireSquareTeamAttribution: false })
-      .where(eq(bookingBusinessSettings.singletonKey, "default"));
+    await setAttributionRequired(false);
     const gate = deferred<void>();
     const checked = deferred<void>();
 
@@ -105,10 +99,7 @@ test(
   { skip: skipReason },
   async () => {
     const fixture = await seed("draft");
-    await requireDb()
-      .update(bookingBusinessSettings)
-      .set({ requireSquareTeamAttribution: true })
-      .where(eq(bookingBusinessSettings.singletonKey, "default"));
+    await setAttributionRequired(true);
     const gate = deferred<void>();
     const checked = deferred<void>();
 
@@ -213,6 +204,22 @@ function deferred<T>() {
 function requireDb() {
   if (!db) throw new Error("TEST_DATABASE_URL not configured");
   return db;
+}
+
+async function setAttributionRequired(required: boolean): Promise<void> {
+  await requireDb()
+    .insert(bookingBusinessSettings)
+    .values({
+      requireSquareTeamAttribution: required,
+      singletonKey: "default",
+    })
+    .onConflictDoUpdate({
+      target: bookingBusinessSettings.singletonKey,
+      set: {
+        requireSquareTeamAttribution: required,
+        updatedAt: new Date(),
+      },
+    });
 }
 
 async function cleanup(): Promise<void> {

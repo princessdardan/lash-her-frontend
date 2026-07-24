@@ -43,6 +43,7 @@ import { localDateTimeToUtc } from "./local-time";
 import { getCalendarAssignmentAccessError } from "./calendar-capabilities";
 import { getCalendarOwnershipTransferError } from "./calendar-self-service-policy";
 import {
+  disableProvisionalGoogleCalendarConnection,
   resolveAndSaveGoogleCalendarCredential,
   type GoogleCalendarCredentialResolution,
 } from "./google-calendar-credential-resolution";
@@ -1275,6 +1276,26 @@ export async function createCalendarConnection() {
       return connection;
     },
     targetId: (connection) => connection.id,
+    targetType: "calendar_connection",
+  });
+}
+
+export async function disableAdminCalendarConnectionAfterOAuthFailure(
+  connectionId: string,
+): Promise<void> {
+  const actor = await requirePermission("calendar-connections:manage");
+  await runAuditedAdminMutation({
+    action: "calendar_connection_authorization_failed",
+    actor,
+    domain: "calendar",
+    metadata: { provider: "google" },
+    mutate: (tx) =>
+      disableProvisionalGoogleCalendarConnection(tx, {
+        actorAdminUserId: actor.user.id,
+        connectionId,
+        now: new Date(),
+      }),
+    targetId: connectionId,
     targetType: "calendar_connection",
   });
 }

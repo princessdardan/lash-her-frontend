@@ -14,8 +14,12 @@ test("owner and employee duplicate-account rejection revoke the new token", asyn
   for (const flowType of ["admin", "employee"] as const) {
     await t.test(flowType, async () => {
       const state = createState(flowType);
+      const disabled: string[] = [];
       const revoked: string[] = [];
       const dependencies = createDependencies(state, {
+        disableProvisionalConnection: async (payload) => {
+          disabled.push(payload.connectionId);
+        },
         revokeRefreshToken: async (token) => {
           revoked.push(token);
         },
@@ -29,6 +33,7 @@ test("owner and employee duplicate-account rejection revoke the new token", asyn
       );
 
       assert.equal(response.status, 307);
+      assert.deepEqual(disabled, ["connection-1"]);
       assert.deepEqual(revoked, ["new-refresh-token"]);
       const location = new URL(response.headers.get("location")!);
       assert.match(
@@ -41,8 +46,12 @@ test("owner and employee duplicate-account rejection revoke the new token", asyn
 
 test("OAuth persistence failure revokes the issued refresh token", async () => {
   const state = createState("admin");
+  const disabled: string[] = [];
   const revoked: string[] = [];
   const dependencies = createDependencies(state, {
+    disableProvisionalConnection: async (payload) => {
+      disabled.push(payload.connectionId);
+    },
     revokeRefreshToken: async (token) => {
       revoked.push(token);
     },
@@ -57,6 +66,7 @@ test("OAuth persistence failure revokes the issued refresh token", async () => {
   );
 
   assert.equal(response.status, 307);
+  assert.deepEqual(disabled, ["connection-1"]);
   assert.deepEqual(revoked, ["new-refresh-token"]);
   assert.match(
     new URL(response.headers.get("location")!).searchParams.get("error") ?? "",
@@ -66,8 +76,12 @@ test("OAuth persistence failure revokes the issued refresh token", async () => {
 
 test("unverified Google identity revokes the issued token before redirect", async () => {
   const state = createState("employee");
+  const disabled: string[] = [];
   const revoked: string[] = [];
   const dependencies = createDependencies(state, {
+    disableProvisionalConnection: async (payload) => {
+      disabled.push(payload.connectionId);
+    },
     exchangeCode: async () => ({
       async getVerifiedProfile() {
         return {
@@ -90,6 +104,7 @@ test("unverified Google identity revokes the issued token before redirect", asyn
   );
 
   assert.equal(response.status, 307);
+  assert.deepEqual(disabled, ["connection-1"]);
   assert.deepEqual(revoked, ["new-refresh-token"]);
   assert.match(
     new URL(response.headers.get("location")!).searchParams.get("error") ?? "",
@@ -97,10 +112,68 @@ test("unverified Google identity revokes the issued token before redirect", asyn
   );
 });
 
+test("missing offline access disables the provisional connection", async () => {
+  const state = createState("admin");
+  const disabled: string[] = [];
+  const dependencies = createDependencies(state, {
+    disableProvisionalConnection: async (payload) => {
+      disabled.push(payload.connectionId);
+    },
+    exchangeCode: async () => ({
+      async getVerifiedProfile() {
+        throw new Error("profile should not be requested without a token");
+      },
+      scopes: ["calendar"],
+    }),
+  });
+
+  const response = await handleAdminCalendarOAuthCallback(
+    { code: "oauth-code", origin, state: "admin_state" },
+    dependencies,
+  );
+
+  assert.equal(response.status, 307);
+  assert.deepEqual(disabled, ["connection-1"]);
+  assert.match(
+    new URL(response.headers.get("location")!).searchParams.get("error") ?? "",
+    /offline access/,
+  );
+});
+
+test("OAuth cleanup failures do not replace the deterministic error redirect", async () => {
+  const state = createState("admin");
+  const dependencies = createDependencies(state, {
+    async disableProvisionalConnection() {
+      throw new Error("database unavailable");
+    },
+    async revokeRefreshToken() {
+      throw new Error("Google revocation unavailable");
+    },
+    async saveOwnerCredential() {
+      throw new Error("persistence conflict");
+    },
+  });
+
+  const response = await handleAdminCalendarOAuthCallback(
+    { code: "oauth-code", origin, state: "admin_state" },
+    dependencies,
+  );
+
+  assert.equal(response.status, 307);
+  assert.match(
+    new URL(response.headers.get("location")!).searchParams.get("error") ?? "",
+    /authorization failed/,
+  );
+});
+
 test("successful callback saves the verified credential and redirects deterministically", async () => {
   const state = createState("admin");
+  const disabled: string[] = [];
   const saved: unknown[] = [];
   const dependencies = createDependencies(state, {
+    disableProvisionalConnection: async (payload) => {
+      disabled.push(payload.connectionId);
+    },
     saveOwnerCredential: async (input) => {
       saved.push(input);
       return { status: "reconnected_existing" };
@@ -113,6 +186,7 @@ test("successful callback saves the verified credential and redirects determinis
   );
 
   assert.equal(response.status, 307);
+  assert.deepEqual(disabled, []);
   assert.equal(saved.length, 1);
   assert.equal(
     new URL(response.headers.get("location")!).searchParams.get("notice"),
@@ -147,6 +221,7 @@ function createDependencies(
     async consumeState() {
       return state;
     },
+    async disableProvisionalConnection() {},
     async exchangeCode() {
       return {
         async getVerifiedProfile() {

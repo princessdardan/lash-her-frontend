@@ -82,6 +82,54 @@ export async function resolveAndSaveGoogleCalendarCredential(
   return { connectionId: input.connectionId, status: "saved" };
 }
 
+export async function disableProvisionalGoogleCalendarConnection(
+  tx: AdminWriteTransaction,
+  input: {
+    actorAdminUserId: string;
+    connectionId: string;
+    now: Date;
+  },
+): Promise<boolean> {
+  const [connection] = await tx
+    .select({
+      credentialOwnerAdminUserId:
+        bookingCalendarConnections.credentialOwnerAdminUserId,
+      id: bookingCalendarConnections.id,
+      status: bookingCalendarConnections.status,
+    })
+    .from(bookingCalendarConnections)
+    .where(
+      and(
+        eq(bookingCalendarConnections.id, input.connectionId),
+        eq(bookingCalendarConnections.provider, "google"),
+      ),
+    )
+    .limit(1)
+    .for("update");
+
+  if (
+    connection === undefined ||
+    connection.credentialOwnerAdminUserId !== input.actorAdminUserId ||
+    connection.status !== "reconnect_required"
+  ) {
+    return false;
+  }
+
+  const [disabled] = await tx
+    .update(bookingCalendarConnections)
+    .set({
+      credentialCiphertext: null,
+      credentialSecretRef: null,
+      disabledAt: input.now,
+      status: "disabled",
+      updatedAt: input.now,
+    })
+    .where(eq(bookingCalendarConnections.id, connection.id))
+    .returning({ id: bookingCalendarConnections.id });
+
+  return disabled !== undefined;
+}
+
 async function activateConnection(
   tx: AdminWriteTransaction,
   connectionId: string,

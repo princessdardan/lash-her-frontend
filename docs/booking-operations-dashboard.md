@@ -132,6 +132,15 @@ provisional connection is disabled, an account owned elsewhere is rejected, and
 newly issued refresh tokens are revoked best-effort on rejection or persistence
 failure.
 
+No-show attribution uses the actual successful charge attempt associated with
+the record's Square payment ID, not the policy ceiling. When there are multiple
+attempts, the matching terminal attempt wins; historical records without a
+terminal attempt contribute zero; voided records are excluded. A record with
+full or partial refund evidence also contributes zero because the current model
+cannot calculate a trustworthy net partial-refund amount. This conservative
+treatment is one reason the report is attribution-only and must not be used for
+commissions, payroll, tax, or financial accounting.
+
 ## Roles
 
 - `owner`: all access, staff/configuration management, audit, sensitive exports/refunds.

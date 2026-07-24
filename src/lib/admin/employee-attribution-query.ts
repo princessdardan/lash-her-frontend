@@ -19,19 +19,30 @@ export async function queryEmployeeNoShowAttribution(
       // terminal attempt linked to the record's provider payment; otherwise
       // use the most recent terminal attempt. Historical charged records with
       // no terminal attempt contribute zero instead of the policy ceiling.
-      amountCents: sql<number>`coalesce((
-        select ${bookingNoShowChargeAttempts.amountCents}
-        from ${bookingNoShowChargeAttempts}
-        where ${bookingNoShowChargeAttempts.noShowChargeRecordId} = ${bookingNoShowChargeRecords.id}
-          and ${bookingNoShowChargeAttempts.status} = 'charged'
-          and (
-            ${bookingNoShowChargeRecords.squarePaymentId} is null
-            or ${bookingNoShowChargeAttempts.squarePaymentId} = ${bookingNoShowChargeRecords.squarePaymentId}
-          )
-        order by ${bookingNoShowChargeAttempts.processedAt} desc nulls last,
-          ${bookingNoShowChargeAttempts.createdAt} desc
-        limit 1
-      ), 0)`.mapWith(Number),
+      // Any recorded full or partial refund evidence also contributes zero:
+      // the current attribution model does not have enough information to
+      // calculate a trustworthy net partial-refund amount.
+      amountCents: sql<number>`case
+        when exists (
+          select 1
+          from ${bookingNoShowChargeAttempts}
+          where ${bookingNoShowChargeAttempts.noShowChargeRecordId} = ${bookingNoShowChargeRecords.id}
+            and ${bookingNoShowChargeAttempts.status} in ('refunded', 'partially_refunded')
+        ) then 0
+        else coalesce((
+          select ${bookingNoShowChargeAttempts.amountCents}
+          from ${bookingNoShowChargeAttempts}
+          where ${bookingNoShowChargeAttempts.noShowChargeRecordId} = ${bookingNoShowChargeRecords.id}
+            and ${bookingNoShowChargeAttempts.status} = 'charged'
+            and (
+              ${bookingNoShowChargeRecords.squarePaymentId} is null
+              or ${bookingNoShowChargeAttempts.squarePaymentId} = ${bookingNoShowChargeRecords.squarePaymentId}
+            )
+          order by ${bookingNoShowChargeAttempts.processedAt} desc nulls last,
+            ${bookingNoShowChargeAttempts.createdAt} desc
+          limit 1
+        ), 0)
+      end`.mapWith(Number),
       providerSnapshot: appointments.providerSnapshot,
       squareTeamMemberId: appointments.squareTeamMemberId,
     })

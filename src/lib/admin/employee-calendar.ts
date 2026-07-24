@@ -21,7 +21,10 @@ import {
 import { runAuditedAdminMutation } from "./admin-transaction";
 import { requirePermission } from "./auth";
 import { getCalendarAssignmentAccessError } from "./calendar-capabilities";
-import { resolveAndSaveGoogleCalendarCredential } from "./google-calendar-credential-resolution";
+import {
+  disableProvisionalGoogleCalendarConnection,
+  resolveAndSaveGoogleCalendarCredential,
+} from "./google-calendar-credential-resolution";
 import {
   getEmployeeAssignmentDisableError,
   getEmployeeDisconnectError,
@@ -128,6 +131,26 @@ export async function createEmployeeCalendarConnection(
       return connection;
     },
     targetId: (connection) => connection.id,
+    targetType: "calendar_connection",
+  });
+}
+
+export async function disableEmployeeCalendarConnectionAfterOAuthFailure(
+  input: { connectionId: string; resourceId: string },
+): Promise<void> {
+  const actor = await assertEmployeeOwnsCalendarConnection(input);
+  await runAuditedAdminMutation({
+    action: "employee_calendar_authorization_failed",
+    actor,
+    domain: "calendar",
+    metadata: { provider: "google", resourceId: input.resourceId },
+    mutate: (tx) =>
+      disableProvisionalGoogleCalendarConnection(tx, {
+        actorAdminUserId: actor.user.id,
+        connectionId: input.connectionId,
+        now: new Date(),
+      }),
+    targetId: input.connectionId,
     targetType: "calendar_connection",
   });
 }

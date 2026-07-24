@@ -258,15 +258,18 @@ test(
       ])
       .returning();
     const providerAccountId = `${TEST_PREFIX}google-${suffix}`;
-    await database.insert(bookingCalendarConnections).values({
-      accountEmail: `${TEST_PREFIX}other-calendar-${suffix}@example.com`,
-      connectedByAdminUserId: otherActor.id,
-      credentialCiphertext: `${TEST_PREFIX}existing-ciphertext`,
-      credentialOwnerAdminUserId: otherActor.id,
-      provider: "google",
-      providerAccountId,
-      status: "active",
-    });
+    const [otherOwnedConnection] = await database
+      .insert(bookingCalendarConnections)
+      .values({
+        accountEmail: `${TEST_PREFIX}other-calendar-${suffix}@example.com`,
+        connectedByAdminUserId: otherActor.id,
+        credentialCiphertext: `${TEST_PREFIX}existing-ciphertext`,
+        credentialOwnerAdminUserId: otherActor.id,
+        provider: "google",
+        providerAccountId,
+        status: "active",
+      })
+      .returning();
     const [provisional] = await database
       .insert(bookingCalendarConnections)
       .values({
@@ -276,9 +279,10 @@ test(
         status: "reconnect_required",
       })
       .returning();
-    const { resolveAndSaveGoogleCalendarCredential } = await import(
-      "@/lib/admin/google-calendar-credential-resolution"
-    );
+    const {
+      disableProvisionalGoogleCalendarConnection,
+      resolveAndSaveGoogleCalendarCredential,
+    } = await import("@/lib/admin/google-calendar-credential-resolution");
 
     const outcome = await database.transaction((tx) =>
       resolveAndSaveGoogleCalendarCredential(tx, {
@@ -298,6 +302,50 @@ test(
       .from(bookingCalendarConnections)
       .where(eq(bookingCalendarConnections.id, provisional.id));
     assert.equal(disabled.status, "disabled");
+
+    const [failedProvisional] = await database
+      .insert(bookingCalendarConnections)
+      .values({
+        connectedByAdminUserId: actor.id,
+        credentialOwnerAdminUserId: actor.id,
+        provider: "google",
+        status: "reconnect_required",
+      })
+      .returning();
+    assert.equal(
+      await database.transaction((tx) =>
+        disableProvisionalGoogleCalendarConnection(tx, {
+          actorAdminUserId: actor.id,
+          connectionId: failedProvisional.id,
+          now: new Date("2032-01-01T12:05:00.000Z"),
+        }),
+      ),
+      true,
+    );
+    assert.equal(
+      await database.transaction((tx) =>
+        disableProvisionalGoogleCalendarConnection(tx, {
+          actorAdminUserId: otherActor.id,
+          connectionId: otherOwnedConnection.id,
+          now: new Date("2032-01-01T12:05:00.000Z"),
+        }),
+      ),
+      false,
+    );
+    const [failedConnection, preservedActiveConnection] = await Promise.all([
+      database
+        .select({ status: bookingCalendarConnections.status })
+        .from(bookingCalendarConnections)
+        .where(eq(bookingCalendarConnections.id, failedProvisional.id))
+        .then(([connection]) => connection),
+      database
+        .select({ status: bookingCalendarConnections.status })
+        .from(bookingCalendarConnections)
+        .where(eq(bookingCalendarConnections.id, otherOwnedConnection.id))
+        .then(([connection]) => connection),
+    ]);
+    assert.equal(failedConnection.status, "disabled");
+    assert.equal(preservedActiveConnection.status, "active");
   },
 );
 

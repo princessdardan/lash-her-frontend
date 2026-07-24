@@ -9,6 +9,9 @@ export interface AdminCalendarOAuthCallbackDependencies {
     user: { id: string };
   }>;
   consumeState(state: string): Promise<BookingCalendarOAuthState | null>;
+  disableProvisionalConnection(
+    state: BookingCalendarOAuthState,
+  ): Promise<void>;
   exchangeCode(code: string): Promise<{
     getVerifiedProfile(): Promise<{
       accountEmail?: string | null;
@@ -70,6 +73,7 @@ export async function handleAdminCalendarOAuthCallback(
     const grant = await dependencies.exchangeCode(input.code);
     issuedRefreshToken = grant.refreshToken;
     if (issuedRefreshToken === undefined) {
+      await cleanupRejectedGrant(dependencies, statePayload);
       return oauthRedirect(
         statePayload.returnTo,
         input.origin,
@@ -88,8 +92,11 @@ export async function handleAdminCalendarOAuthCallback(
       accountEmail.length === 0 ||
       profile.verified !== true
     ) {
-      await dependencies.revokeRefreshToken(issuedRefreshToken);
-      issuedRefreshToken = undefined;
+      await cleanupRejectedGrant(
+        dependencies,
+        statePayload,
+        issuedRefreshToken,
+      );
       return oauthRedirect(
         statePayload.returnTo,
         input.origin,
@@ -116,8 +123,11 @@ export async function handleAdminCalendarOAuthCallback(
             scopes: grant.scopes,
           });
     if (result.status === "owned_elsewhere") {
-      await dependencies.revokeRefreshToken(issuedRefreshToken);
-      issuedRefreshToken = undefined;
+      await cleanupRejectedGrant(
+        dependencies,
+        statePayload,
+        issuedRefreshToken,
+      );
       return oauthRedirect(
         statePayload.returnTo,
         input.origin,
@@ -134,7 +144,11 @@ export async function handleAdminCalendarOAuthCallback(
     );
   } catch {
     if (issuedRefreshToken !== undefined) {
-      await dependencies.revokeRefreshToken(issuedRefreshToken);
+      await cleanupRejectedGrant(
+        dependencies,
+        statePayload,
+        issuedRefreshToken,
+      );
     }
     return oauthRedirect(
       statePayload.returnTo,
@@ -143,6 +157,19 @@ export async function handleAdminCalendarOAuthCallback(
       "Google Calendar authorization failed. Retry the connection.",
     );
   }
+}
+
+async function cleanupRejectedGrant(
+  dependencies: AdminCalendarOAuthCallbackDependencies,
+  state: BookingCalendarOAuthState,
+  refreshToken?: string,
+): Promise<void> {
+  await Promise.allSettled([
+    dependencies.disableProvisionalConnection(state),
+    ...(refreshToken === undefined
+      ? []
+      : [dependencies.revokeRefreshToken(refreshToken)]),
+  ]);
 }
 
 function oauthRedirect(

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test, { after, afterEach } from "node:test";
 
-import { inArray, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
@@ -40,13 +40,22 @@ after(async () => {
 });
 
 test(
-  "no-show attribution uses the matching successful attempt rather than the policy ceiling",
+  "no-show attribution uses actual terminal attempts and handles voids, refunds, and missing history conservatively",
   { skip: skipReason },
   async () => {
     const first = await seedChargedRecord("with-attempt");
     const second = await seedChargedRecord("historical-without-attempt");
+    const voided = await seedChargedRecord("voided");
+    const refunded = await seedChargedRecord("refunded");
     const processedAt = new Date("2035-01-10T15:00:00.000Z");
 
+    await requireDb()
+      .update(bookingNoShowChargeRecords)
+      .set({
+        status: "voided",
+        voidedAt: new Date("2035-01-10T15:05:00.000Z"),
+      })
+      .where(eq(bookingNoShowChargeRecords.id, voided.recordId));
     await requireDb().insert(bookingNoShowChargeAttempts).values([
       {
         amountCents: 9000,
@@ -72,6 +81,30 @@ test(
         squarePaymentId: `${TEST_PREFIX}unrelated-payment`,
         status: "charged",
       },
+      {
+        amountCents: 6500,
+        createdAt: new Date("2035-01-10T14:30:00.000Z"),
+        noShowChargeRecordId: voided.recordId,
+        processedAt: new Date("2035-01-10T15:05:00.000Z"),
+        squarePaymentId: voided.squarePaymentId,
+        status: "charged",
+      },
+      {
+        amountCents: 6000,
+        createdAt: new Date("2035-01-10T14:40:00.000Z"),
+        noShowChargeRecordId: refunded.recordId,
+        processedAt: new Date("2035-01-10T15:10:00.000Z"),
+        squarePaymentId: refunded.squarePaymentId,
+        status: "charged",
+      },
+      {
+        amountCents: 2000,
+        createdAt: new Date("2035-01-10T15:20:00.000Z"),
+        noShowChargeRecordId: refunded.recordId,
+        processedAt: new Date("2035-01-10T15:20:00.000Z"),
+        squarePaymentId: `${TEST_PREFIX}refund-${randomUUID()}`,
+        status: "partially_refunded",
+      },
     ]);
 
     const rows = await queryEmployeeNoShowAttribution(requireDb(), {
@@ -79,9 +112,10 @@ test(
       endExclusive: new Date("2035-02-01T00:00:00.000Z"),
     });
     const amounts = rows.map((row) => row.amountCents).sort((a, b) => a - b);
-    assert.deepEqual(amounts, [0, 7500]);
+    assert.deepEqual(amounts, [0, 0, 7500]);
     assert.equal(first.maxChargeCents, 12500);
     assert.equal(second.maxChargeCents, 12500);
+    assert.equal(rows.length, 3);
   },
 );
 
