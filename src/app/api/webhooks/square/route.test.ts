@@ -107,6 +107,98 @@ function createSquareInvoiceWebhookPayload(input: {
   };
 }
 
+test("Square webhook persists refund evidence without invoking payment finalizers", async () => {
+  const bookingFinalizerCalls: unknown[] = [];
+  const refundCalls: unknown[] = [];
+  const handler = createHandler(bookingFinalizerCalls, {
+    recordSquareRefundEvent: async (input) => {
+      refundCalls.push(input);
+      return { duplicate: false };
+    },
+  });
+  const response = await handler(
+    createSignedRequest(
+      JSON.stringify({
+        created_at: "2026-07-20T15:00:00.000Z",
+        event_id: "evt_refund_123",
+        type: "refund.updated",
+        data: {
+          object: {
+            refund: {
+              amount_money: { amount: 2_500, currency: "CAD" },
+              id: "refund_123",
+              payment_id: "pay_123",
+              status: "COMPLETED",
+              updated_at: "2026-07-20T14:59:00.000Z",
+            },
+          },
+        },
+      }),
+    ),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(bookingFinalizerCalls.length, 0);
+  assert.deepEqual(refundCalls, [
+    {
+      amountCents: 2_500,
+      currency: "CAD",
+      occurredAt: new Date("2026-07-20T14:59:00.000Z"),
+      payloadSanitized: {
+        created_at: "2026-07-20T15:00:00.000Z",
+        data: {
+          object: {
+            refund: {
+              amount_money: { amount: 2_500, currency: "CAD" },
+              id: "refund_123",
+              payment_id: "pay_123",
+              status: "COMPLETED",
+              updated_at: "2026-07-20T14:59:00.000Z",
+            },
+          },
+        },
+        event_id: "evt_refund_123",
+        type: "refund.updated",
+      },
+      providerEventId: "evt_refund_123",
+      squarePaymentId: "pay_123",
+      squareRefundId: "refund_123",
+      status: "COMPLETED",
+    },
+  ]);
+});
+
+test("Square webhook retries when refund evidence cannot be persisted", async () => {
+  const bookingFinalizerCalls: unknown[] = [];
+  const handler = createHandler(bookingFinalizerCalls, {
+    recordSquareRefundEvent: async () => {
+      throw new Error("database unavailable");
+    },
+  });
+  const response = await handler(
+    createSignedRequest(
+      JSON.stringify({
+        event_id: "evt_refund_retry",
+        type: "refund.created",
+        data: {
+          object: {
+            refund: {
+              amount_money: { amount: 500, currency: "CAD" },
+              created_at: "2026-07-20T14:59:00.000Z",
+              id: "refund_retry",
+              payment_id: "pay_retry",
+              status: "PENDING",
+            },
+          },
+        },
+      }),
+    ),
+  );
+
+  assert.equal(response.status, 503);
+  assert.equal(bookingFinalizerCalls.length, 0);
+});
+
 function createTrainingSquareInvoiceOrder(
   overrides: Partial<CheckoutOrderRow> = {},
 ): CheckoutOrderRow {

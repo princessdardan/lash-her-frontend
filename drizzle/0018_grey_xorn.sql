@@ -1,3 +1,98 @@
+-- Reconcile the abandoned admin-dashboard migration lineage before creating
+-- the current booking-operations schema. The legacy objects are removed only
+-- when their exact schema signature is present and every legacy table is
+-- empty. Any database with legacy data or an unknown partial schema aborts
+-- this transaction without changing existing application data.
+DO $$
+DECLARE
+	legacy_admin_roles text[];
+BEGIN
+	SELECT array_agg(enum_value.enumlabel::text ORDER BY enum_value.enumsortorder)
+	INTO legacy_admin_roles
+	FROM pg_type enum_type
+	INNER JOIN pg_namespace enum_namespace
+		ON enum_namespace.oid = enum_type.typnamespace
+	INNER JOIN pg_enum enum_value
+		ON enum_value.enumtypid = enum_type.oid
+	WHERE enum_namespace.nspname = 'public'
+		AND enum_type.typname = 'admin_role';
+
+	IF legacy_admin_roles IS NULL THEN
+		IF to_regtype('public.admin_role') IS NOT NULL
+			OR to_regtype('public.admin_audit_action') IS NOT NULL
+			OR to_regtype('public.admin_user_status') IS NOT NULL
+			OR to_regclass('public.admin_users') IS NOT NULL
+			OR to_regclass('public.admin_audit_logs') IS NOT NULL
+			OR to_regclass('public.privacy_requests') IS NOT NULL
+			OR to_regclass('public.privacy_request_events') IS NOT NULL
+		THEN
+			RAISE EXCEPTION USING
+				ERRCODE = '55000',
+				MESSAGE = 'Unsupported partial legacy admin schema detected before migration 0018';
+		END IF;
+	ELSIF legacy_admin_roles <> ARRAY['owner', 'operator']::text[] THEN
+		RAISE EXCEPTION USING
+			ERRCODE = '55000',
+			MESSAGE = format(
+				'Unsupported public.admin_role values before migration 0018: %s',
+				legacy_admin_roles
+			);
+	ELSE
+		IF to_regtype('public.admin_audit_action') IS NULL
+			OR to_regtype('public.admin_user_status') IS NULL
+			OR to_regtype('public.privacy_request_event_type') IS NULL
+			OR to_regtype('public.privacy_request_status') IS NULL
+			OR to_regtype('public.privacy_request_type') IS NULL
+			OR to_regclass('public.admin_users') IS NULL
+			OR to_regclass('public.admin_audit_logs') IS NULL
+			OR to_regclass('public.privacy_requests') IS NULL
+			OR to_regclass('public.privacy_request_events') IS NULL
+			OR to_regtype('public.admin_audit_outcome') IS NOT NULL
+			OR NOT EXISTS (
+				SELECT 1
+				FROM information_schema.columns
+				WHERE table_schema = 'public'
+					AND table_name = 'admin_audit_logs'
+					AND column_name = 'actor_email'
+			)
+			OR NOT EXISTS (
+				SELECT 1
+				FROM information_schema.columns
+				WHERE table_schema = 'public'
+					AND table_name = 'admin_audit_logs'
+					AND column_name = 'privacy_request_id'
+			)
+		THEN
+			RAISE EXCEPTION USING
+				ERRCODE = '55000',
+				MESSAGE = 'Legacy admin schema does not match the expected abandoned migration lineage';
+		END IF;
+
+		IF EXISTS (SELECT 1 FROM public.admin_users LIMIT 1)
+			OR EXISTS (SELECT 1 FROM public.admin_audit_logs LIMIT 1)
+			OR EXISTS (SELECT 1 FROM public.privacy_requests LIMIT 1)
+			OR EXISTS (SELECT 1 FROM public.privacy_request_events LIMIT 1)
+		THEN
+			RAISE EXCEPTION USING
+				ERRCODE = '55000',
+				MESSAGE = 'Legacy admin/privacy tables contain data; migration 0018 requires a data-preserving migration plan';
+		END IF;
+
+		DROP TABLE public.admin_audit_logs;
+		DROP TABLE public.privacy_request_events;
+		DROP TABLE public.privacy_requests;
+		DROP TABLE public.admin_users;
+
+		DROP TYPE public.admin_audit_action;
+		DROP TYPE public.admin_role;
+		DROP TYPE public.admin_user_status;
+		DROP TYPE public.privacy_request_event_type;
+		DROP TYPE public.privacy_request_status;
+		DROP TYPE public.privacy_request_type;
+	END IF;
+END
+$$;
+--> statement-breakpoint
 CREATE EXTENSION IF NOT EXISTS "btree_gist";--> statement-breakpoint
 CREATE TYPE "public"."admin_audit_outcome" AS ENUM('success', 'denied', 'failure');--> statement-breakpoint
 CREATE TYPE "public"."admin_role" AS ENUM('owner', 'admin', 'employee');--> statement-breakpoint

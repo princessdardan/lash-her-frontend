@@ -21,6 +21,14 @@ export async function lockSquareAttributionInvariant(
   );
 }
 
+export async function lockSquareAttributionInvariantShared(
+  tx: AdminWriteTransaction,
+): Promise<void> {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock_shared(hashtext(${SQUARE_ATTRIBUTION_INVARIANT_LOCK}))`,
+  );
+}
+
 export async function assertSquareAttributionCanBeRequired(
   tx: AdminWriteTransaction,
 ): Promise<void> {
@@ -83,7 +91,9 @@ export async function assertSquareOfferingActivationAllowed(
 ): Promise<void> {
   const [[settings], [provider]] = await Promise.all([
     tx
-      .select({ required: bookingBusinessSettings.requireSquareTeamAttribution })
+      .select({
+        required: bookingBusinessSettings.requireSquareTeamAttribution,
+      })
       .from(bookingBusinessSettings)
       .where(eq(bookingBusinessSettings.singletonKey, "default"))
       .limit(1),

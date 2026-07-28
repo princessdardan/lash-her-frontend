@@ -24,6 +24,7 @@ export type AdminPermissionAction =
 interface PermissionCheckInput {
   action: AdminPermissionAction;
   bookingResourceId?: string;
+  bookingProviderResourceIds: readonly string[];
   bookingResourceIds: readonly string[];
   role: AdminRole;
 }
@@ -79,6 +80,14 @@ export function canAdmin(input: PermissionCheckInput): boolean {
     return true;
   }
 
+  if (input.action === "calendar-connections:self-manage") {
+    if (input.bookingResourceId) {
+      return input.bookingProviderResourceIds.includes(input.bookingResourceId);
+    }
+
+    return input.bookingProviderResourceIds.length > 0;
+  }
+
   if (input.bookingResourceId) {
     return input.bookingResourceIds.includes(input.bookingResourceId);
   }
@@ -87,6 +96,7 @@ export function canAdmin(input: PermissionCheckInput): boolean {
 }
 
 export function getVisibleAdminSections(input: {
+  bookingProviderResourceIds: readonly string[];
   bookingResourceIds: readonly string[];
   role: AdminRole;
 }): AdminPermissionAction[] {
@@ -102,9 +112,12 @@ export function getVisibleAdminSections(input: {
     "audit:view",
   ];
 
-  return candidates.filter((action) => canAdmin({
-    action,
-    bookingResourceIds: input.bookingResourceIds,
-    role: input.role,
-  }));
+  return candidates.filter((action) =>
+    canAdmin({
+      action,
+      bookingProviderResourceIds: input.bookingProviderResourceIds,
+      bookingResourceIds: input.bookingResourceIds,
+      role: input.role,
+    }),
+  );
 }

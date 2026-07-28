@@ -102,6 +102,7 @@ export interface SquareEventRecordInput {
 interface SquarePaidRecordInput {
   amountCents: number;
   order: SquareCheckoutOrderRecord;
+  paidAt: Date;
   payment: SquarePayment;
   providerOrderId?: string;
   tipAmountCents?: number;
@@ -309,6 +310,10 @@ export function createSquarePaymentFinalizer(
     await dependencies.repository.recordSquarePaymentPendingCalendar({
       amountCents,
       order: localOrder,
+      paidAt:
+        getSquarePaymentProviderDate(lookup.payment) ??
+        getSquareProviderEventDate(input.event) ??
+        new Date(),
       payment: lookup.payment,
       providerOrderId,
       tipAmountCents: lookup.payment.tip_money?.amount,
@@ -677,7 +682,7 @@ function createDrizzleSquarePaymentFinalizerRepository(): SquarePaymentFinalizer
           .update(checkoutOrders)
           .set({
             calendarFinalizationStatus: "paid_calendar_pending",
-            paidAt: now,
+            paidAt: input.paidAt,
             providerOrderId:
               input.providerOrderId ?? input.order.providerOrderId,
             providerPaymentId: input.payment.id,
@@ -692,7 +697,7 @@ function createDrizzleSquarePaymentFinalizerRepository(): SquarePaymentFinalizer
           .update(appointmentHolds)
           .set({
             finalizationStatus: "paid_calendar_pending",
-            paidAt: now,
+            paidAt: input.paidAt,
             reconciliationMetadata: {
               squarePayment: {
                 amountCents: input.amountCents,
@@ -729,7 +734,7 @@ function createDrizzleSquarePaymentFinalizerRepository(): SquarePaymentFinalizer
         now,
         payment: {
           amountCents: input.amountCents,
-          capturedAt: now,
+          capturedAt: input.paidAt,
           checkoutOrderId: input.order.id,
           currency: input.payment.amount_money?.currency ?? "CAD",
           idempotencyKey: buildHostedPaymentAttemptIdempotencyKey(
@@ -745,6 +750,31 @@ function createDrizzleSquarePaymentFinalizerRepository(): SquarePaymentFinalizer
       });
     },
   };
+}
+
+function getSquareProviderEventDate(
+  event: VerifiedSquareWebhookEvent | undefined,
+): Date | null {
+  if (event?.createdAt === undefined) {
+    return null;
+  }
+
+  const date = new Date(event.createdAt);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
+function getSquarePaymentProviderDate(payment: SquarePayment): Date | null {
+  for (const value of [payment.updated_at, payment.created_at]) {
+    if (value === undefined) {
+      continue;
+    }
+    const date = new Date(value);
+    if (Number.isFinite(date.getTime())) {
+      return date;
+    }
+  }
+
+  return null;
 }
 
 async function getSquarePaymentFinalizerDb() {

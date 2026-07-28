@@ -18,17 +18,25 @@ exclusions; no differences were reported after transfer.
 
 ## Migration SHA-256 checksums
 
-| Migration | SHA-256 |
-| --- | --- |
-| `drizzle/0018_grey_xorn.sql` | `ed1d83d9a57a5947b713a00270ed7cedf5029d6052395a7b247299e7642587b0` |
-| `drizzle/0019_rainy_lorna_dane.sql` | `fe2f4d5f38421d02ed8e0b71309ef378ae1bd3b51662102c49b95fb92ee7399d` |
+| Migration                                 | SHA-256                                                            |
+| ----------------------------------------- | ------------------------------------------------------------------ |
+| `drizzle/0018_grey_xorn.sql`              | `2e23b9e1861d763ed31ba6b540bfefd42d6d7a7955fefaf291288f88c42bb490` |
+| `drizzle/0019_rainy_lorna_dane.sql`       | `fe2f4d5f38421d02ed8e0b71309ef378ae1bd3b51662102c49b95fb92ee7399d` |
 | `drizzle/0020_eager_stark_industries.sql` | `5c251835bc8e7f7652178cdf24c0ba1d9b3ab1a2e930eb5dcab1a3c30e44c984` |
 | `drizzle/0021_grey_professor_monster.sql` | `5b06e89f076095658a43f7f9c36b66f0e96eddb3d7e5a6e425d2ab70460c9270` |
-| `drizzle/0022_cold_mikhail_rasputin.sql` | `7e50ee7e7b61214b8d9514f24e5776e6e43031591c3c4e4f34e645b3c590a62f` |
+| `drizzle/0022_cold_mikhail_rasputin.sql`  | `7e50ee7e7b61214b8d9514f24e5776e6e43031591c3c4e4f34e645b3c590a62f` |
 
-Migrations `0018` through `0021` are recovered evidence and must retain their
+Migrations `0019` through `0021` are recovered evidence and must retain their
 filenames, contents, journal order, and timestamps. Migration `0022` is the
 forward-only capture-lease remediation generated on the recovery branch.
+
+Migration `0018` was amended on 2026-07-28 after staging inspection confirmed
+that the abandoned admin-dashboard migration lineage had created incompatible,
+zero-row admin and privacy tables. The reconciliation preamble verifies the
+exact legacy signature and refuses to remove any table containing data before
+the recovered booking-operations statements run. The original recovered
+checksum was
+`ed1d83d9a57a5947b713a00270ed7cedf5029d6052395a7b247299e7642587b0`.
 
 ## Session provenance
 

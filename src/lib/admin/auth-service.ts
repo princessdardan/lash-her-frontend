@@ -69,7 +69,10 @@ export function createAdminAuth(
         adminUserId: emailUser.id,
       });
     } else if (dependencies.getOwnerEmails().has(emailNormalized)) {
-      user = await createBootstrapOwnerAfterRace(dependencies.userStore, identity);
+      user = await createBootstrapOwnerAfterRace(
+        dependencies.userStore,
+        identity,
+      );
       assertActiveUser(user);
     } else {
       throw new AdminAuthError("not_allowed");
@@ -77,9 +80,14 @@ export function createAdminAuth(
 
     assertActiveUser(user);
 
+    const [bookingProviderResourceIds, bookingResourceIds] = await Promise.all([
+      dependencies.userStore.listBookingProviderResourceIds(user.id),
+      dependencies.userStore.listBookingResourceIds(user.id),
+    ]);
+
     return {
-      bookingResourceIds:
-        await dependencies.userStore.listBookingResourceIds(user.id),
+      bookingProviderResourceIds,
+      bookingResourceIds,
       user,
     };
   };
@@ -99,12 +107,15 @@ export function assertAdminPermission(
   action: AdminPermissionAction,
   context: AdminPermissionContext = {},
 ): void {
-  if (!canAdmin({
-    action,
-    bookingResourceId: context.bookingResourceId,
-    bookingResourceIds: actor.bookingResourceIds,
-    role: actor.user.role,
-  })) {
+  if (
+    !canAdmin({
+      action,
+      bookingResourceId: context.bookingResourceId,
+      bookingProviderResourceIds: actor.bookingProviderResourceIds,
+      bookingResourceIds: actor.bookingResourceIds,
+      role: actor.user.role,
+    })
+  ) {
     throw new AdminAuthError("forbidden");
   }
 }

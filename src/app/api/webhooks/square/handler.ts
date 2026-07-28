@@ -78,6 +78,16 @@ interface SquareWebhookDependencies {
     now: Date;
     payment: SquarePayment;
   }) => Promise<{ status: "not_operational" | "observed" }>;
+  recordSquareRefundEvent?: (input: {
+    amountCents: number;
+    currency: string;
+    occurredAt: Date;
+    payloadSanitized: Record<string, unknown>;
+    providerEventId: string;
+    squarePaymentId: string;
+    squareRefundId: string;
+    status: string;
+  }) => Promise<{ duplicate: boolean }>;
   recordSquareInvoiceWebhookEventProcessed: (
     input: SquareInvoiceWebhookEventInput,
   ) => Promise<void>;
@@ -184,10 +194,14 @@ export const defaultDependencies: SquareWebhookDependencies = {
     );
   },
   async observeOperationalPayment(input) {
-    const { observeOperationalSquarePayment } = await import(
-      "@/lib/private-db/operational-square-payment-observer"
-    );
+    const { observeOperationalSquarePayment } =
+      await import("@/lib/private-db/operational-square-payment-observer");
     return observeOperationalSquarePayment(input.payment, input.now);
+  },
+  async recordSquareRefundEvent(input) {
+    const { recordSquareRefundEvent } =
+      await import("@/lib/private-db/square-refund-event-repository");
+    return recordSquareRefundEvent(input);
   },
   async getEnv() {
     const [
@@ -250,6 +264,44 @@ export function createSquareWebhookPostHandler(
     } catch (error) {
       console.warn("[square-webhook] Invalid payload", error);
       return new Response(null, { status: 400 });
+    }
+
+    if (event.refund !== undefined) {
+      if (dependencies.recordSquareRefundEvent === undefined) {
+        console.error(
+          "[square-webhook] Square refund persistence is unavailable",
+          {
+            eventId: event.eventId,
+            refundId: event.refund.refundId,
+          },
+        );
+        return new Response(null, { status: 503 });
+      }
+
+      try {
+        await dependencies.recordSquareRefundEvent({
+          amountCents: event.refund.amountCents,
+          currency: event.refund.currency,
+          occurredAt: new Date(event.refund.occurredAt),
+          payloadSanitized: event.payloadSanitized,
+          providerEventId: event.eventId,
+          squarePaymentId: event.refund.paymentId,
+          squareRefundId: event.refund.refundId,
+          status: event.refund.status,
+        });
+      } catch (error) {
+        console.error("[square-webhook] Square refund persistence failed", {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unknown persistence error",
+          eventId: event.eventId,
+          refundId: event.refund.refundId,
+        });
+        return new Response(null, { status: 503 });
+      }
+
+      return new Response(null, { status: 200 });
     }
 
     if (isSquareInvoicePaidEventType(event.eventType)) {
@@ -408,7 +460,9 @@ export function createSquareWebhookPostHandler(
           message: "Operational Square payment observation failed",
           context: {
             error:
-              error instanceof Error ? error.message : "Unknown observation error",
+              error instanceof Error
+                ? error.message
+                : "Unknown observation error",
             eventId: event.eventId,
             eventType: event.eventType,
             paymentId: event.paymentId,
@@ -567,11 +621,10 @@ async function finalizeTrainingSquareInvoicePayment(
 }
 
 export async function loadTrainingSquareInvoiceFinalizer(): Promise<TrainingSquareInvoiceModuleFinalizer> {
-  const finalizerModule = (await import(
-    "@/lib/commerce/training-square-invoice-finalizer"
-  )) as {
-    finalizeTrainingSquareInvoice: TrainingSquareInvoiceModuleFinalizer;
-  };
+  const finalizerModule =
+    (await import("@/lib/commerce/training-square-invoice-finalizer")) as {
+      finalizeTrainingSquareInvoice: TrainingSquareInvoiceModuleFinalizer;
+    };
 
   return finalizerModule.finalizeTrainingSquareInvoice;
 }

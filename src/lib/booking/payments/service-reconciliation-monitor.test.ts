@@ -35,6 +35,9 @@ const helperScript = String.raw`
       findPaidBookingsNotBooked: async () => [],
       findSquareInvoicePaymentEventsNotReconciled: async () => [],
       findSquarePaymentsPendingTooLong: async () => [],
+      markOperationalPaymentFailed: async () => {},
+      markOperationalPaymentRefundRequired: async () => {},
+      markOperationalPaymentTerminated: async (input) => input.status,
       recordProviderCompletedOperationalPayment: async () => {},
       ...overrides,
     };
@@ -223,6 +226,167 @@ test("reconciliation alerts when provider completion cannot project an appointme
       finding.category === "provider_completed_payment_without_operational_appointment" &&
       finding.paymentAttemptId === "attempt-authorized"
     ));
+  `);
+});
+
+test("reconciliation cancels and terminalizes mismatched Square authorizations", () => {
+  runMonitorScenario(`
+    const cancellations = [];
+    const failedHolds = [];
+    const refunds = [];
+    const terminations = [];
+    const alerts = [];
+    const attempt = {
+      amountCents: 13560,
+      currency: "CAD",
+      holdId: "hold-mismatch",
+      idempotencyKey: "provider-key",
+      paymentAttemptId: "attempt-mismatch",
+      referenceId: "booking-reference",
+      squareCustomerId: "customer-1",
+      squarePaymentId: "payment-1",
+      squareTeamMemberId: "team-expected",
+    };
+    const repository = createFakeRepository({
+      findAuthorizedOperationalPayments: async () => [attempt],
+      markOperationalPaymentFailed: async (input) => failedHolds.push(input),
+      markOperationalPaymentRefundRequired: async (input) => refunds.push(input),
+      markOperationalPaymentTerminated: async (input) => {
+        terminations.push(input);
+        return input.status;
+      },
+    });
+    const monitor = createServiceReconciliationMonitor({
+      alerts: { alert(input) { alerts.push(input); } },
+      providerPayments: {
+        async cancelPayment(paymentId) {
+          cancellations.push(paymentId);
+          return { payment: {
+            amount_money: { amount: 13560, currency: "CAD" },
+            customer_id: "customer-1",
+            id: paymentId,
+            reference_id: "booking-reference",
+            status: "CANCELED",
+            team_member_id: "team-wrong",
+          } };
+        },
+        async getPayment() {
+          return { payment: {
+            amount_money: { amount: 13560, currency: "CAD" },
+            customer_id: "customer-1",
+            id: "payment-1",
+            reference_id: "booking-reference",
+            status: "APPROVED",
+            team_member_id: "team-wrong",
+          } };
+        },
+      },
+      repository,
+    });
+
+    const summary = await monitor.run({ now: new Date("2026-06-19T12:00:00.000Z") });
+    assert.deepEqual(cancellations, ["payment-1"]);
+    assert.equal(terminations.length, 1);
+    assert.equal(terminations[0].status, "cancelled");
+    assert.equal(failedHolds.length, 1);
+    assert.equal(refunds.length, 0);
+    assert.ok(alerts.some((alert) => alert.category === "stuck_payment_state"));
+    assert.ok(summary.findings.some((finding) =>
+      finding.category === "authorized_payment_provider_evidence_mismatch"
+    ));
+  `);
+});
+
+test("reconciliation marks completed attribution mismatches refund-required", () => {
+  runMonitorScenario(`
+    const completedWrites = [];
+    const refunds = [];
+    const alerts = [];
+    const repository = createFakeRepository({
+      findAuthorizedOperationalPayments: async () => [{
+        amountCents: 13560,
+        currency: "CAD",
+        holdId: "hold-completed-mismatch",
+        idempotencyKey: "provider-key",
+        paymentAttemptId: "attempt-completed-mismatch",
+        referenceId: "booking-reference",
+        squareCustomerId: "customer-1",
+        squarePaymentId: "payment-1",
+        squareTeamMemberId: "team-expected",
+      }],
+      markOperationalPaymentRefundRequired: async (input) => refunds.push(input),
+      recordProviderCompletedOperationalPayment: async (input) => {
+        completedWrites.push(input);
+      },
+    });
+    const monitor = createServiceReconciliationMonitor({
+      alerts: { alert(input) { alerts.push(input); } },
+      providerPayments: {
+        async getPayment() {
+          return { payment: {
+            amount_money: { amount: 13560, currency: "CAD" },
+            customer_id: "customer-1",
+            id: "payment-1",
+            reference_id: "booking-reference",
+            status: "COMPLETED",
+            team_member_id: "team-wrong",
+          } };
+        },
+      },
+      repository,
+    });
+
+    const summary = await monitor.run({ now: new Date("2026-06-19T12:00:00.000Z") });
+    assert.equal(completedWrites.length, 0);
+    assert.equal(refunds.length, 1);
+    assert.equal(refunds[0].providerEvidence, "completed");
+    assert.ok(alerts.some((alert) => alert.category === "stuck_payment_state"));
+    assert.ok(summary.findings.some((finding) =>
+      finding.category === "provider_completed_payment_evidence_mismatch"
+    ));
+  `);
+});
+
+test("reconciliation preserves manual follow-up when mismatched cancellation is unconfirmed", () => {
+  runMonitorScenario(`
+    const refunds = [];
+    const repository = createFakeRepository({
+      findAuthorizedOperationalPayments: async () => [{
+        amountCents: 13560,
+        currency: "CAD",
+        holdId: "hold-cancel-failed",
+        idempotencyKey: "provider-key",
+        paymentAttemptId: "attempt-cancel-failed",
+        referenceId: "booking-reference",
+        squareCustomerId: "customer-1",
+        squarePaymentId: "payment-1",
+        squareTeamMemberId: "team-expected",
+      }],
+      markOperationalPaymentRefundRequired: async (input) => refunds.push(input),
+    });
+    const monitor = createServiceReconciliationMonitor({
+      alerts: { alert() {} },
+      providerPayments: {
+        async cancelPayment() {
+          throw new Error("Square unavailable");
+        },
+        async getPayment() {
+          return { payment: {
+            amount_money: { amount: 13560, currency: "CAD" },
+            customer_id: "customer-1",
+            id: "payment-1",
+            reference_id: "booking-reference",
+            status: "APPROVED",
+            team_member_id: "team-wrong",
+          } };
+        },
+      },
+      repository,
+    });
+
+    await monitor.run({ now: new Date("2026-06-19T12:00:00.000Z") });
+    assert.equal(refunds.length, 1);
+    assert.equal(refunds[0].providerEvidence, "cancellation_unconfirmed");
   `);
 });
 

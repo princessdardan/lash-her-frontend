@@ -9,6 +9,7 @@ export const runtime = "nodejs";
 export default async function AdminOverviewPage() {
   const actor = await requirePermission("admin:view");
   const visibleSections = getVisibleAdminSections({
+    bookingProviderResourceIds: actor.bookingProviderResourceIds,
     bookingResourceIds: actor.bookingResourceIds,
     role: actor.user.role,
   });
@@ -23,17 +24,24 @@ export default async function AdminOverviewPage() {
           Admin overview
         </h1>
         <p className="mt-3 max-w-2xl text-lh-muted">
-          Access is derived from the active PostgreSQL staff profile shown below. Google provides identity only.
+          Access is derived from the active PostgreSQL staff profile shown
+          below. Google provides identity only.
         </p>
       </div>
       <div className="grid gap-4 md:grid-cols-3">
-        <AdminCard label="Account status" value={<StatusPill tone="success">Active</StatusPill>}>
+        <AdminCard
+          label="Account status"
+          value={<StatusPill tone="success">Active</StatusPill>}
+        >
           Disabled profiles are rejected on the next request.
         </AdminCard>
         <AdminCard label="Role" value={actor.user.role}>
           Roles and permissions are managed in the private operational database.
         </AdminCard>
-        <AdminCard label="Assigned resources" value={actor.bookingResourceIds.length}>
+        <AdminCard
+          label="Assigned resources"
+          value={actor.bookingResourceIds.length}
+        >
           Employee booking and schedule access is limited to these resources.
         </AdminCard>
       </div>

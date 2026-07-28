@@ -185,10 +185,7 @@ test(
       .select()
       .from(bookingResourceReservations)
       .where(
-        eq(
-          bookingResourceReservations.appointmentId,
-          first.appointment.id,
-        ),
+        eq(bookingResourceReservations.appointmentId, first.appointment.id),
       );
     const attempts = await requireDb()
       .select()
@@ -230,10 +227,10 @@ test(
     assert.equal(hold.status, "paid_pending_booking");
     assert.equal(hold.squarePaymentId, payment.providerPaymentId);
     assert.equal(hold.squareOrderId, payment.providerOrderId);
-    assert.deepEqual(
-      events.map((event) => event.eventType).sort(),
-      ["appointment_confirmed", "payment_captured"],
-    );
+    assert.deepEqual(events.map((event) => event.eventType).sort(), [
+      "appointment_confirmed",
+      "payment_captured",
+    ]);
     assert.equal(acceptance.appointmentId, first.appointment.id);
     assert.equal(noShowRecord.appointmentId, first.appointment.id);
   },
@@ -591,20 +588,19 @@ test(
       .update(bookingResourceCalendarAssignments)
       .set({ acceptsBookings: false, status: "disabled" })
       .where(
-        eq(
-          bookingResourceCalendarAssignments.id,
-          seeded.fixture.assignmentId,
-        ),
+        eq(bookingResourceCalendarAssignments.id, seeded.fixture.assignmentId),
       );
-    await requireDb().insert(bookingResourceCalendarAssignments).values({
-      acceptsBookings: true,
-      calendarConnectionId: seeded.fixture.calendarConnectionId,
-      calendarLabel: `${TEST_PREFIX}replacement-${randomUUID()}`,
-      contributesBusy: true,
-      providerCalendarId: `${TEST_PREFIX}replacement-id-${randomUUID()}`,
-      resourceId: seeded.fixture.primaryResourceId,
-      status: "active",
-    });
+    await requireDb()
+      .insert(bookingResourceCalendarAssignments)
+      .values({
+        acceptsBookings: true,
+        calendarConnectionId: seeded.fixture.calendarConnectionId,
+        calendarLabel: `${TEST_PREFIX}replacement-${randomUUID()}`,
+        contributesBusy: true,
+        providerCalendarId: `${TEST_PREFIX}replacement-id-${randomUUID()}`,
+        resourceId: seeded.fixture.primaryResourceId,
+        status: "active",
+      });
 
     const routing = await getOperationalAppointmentCalendarRouting(
       seeded.holdId,
@@ -615,10 +611,7 @@ test(
       routing.writeCalendar.assignmentId,
       seeded.fixture.assignmentId,
     );
-    assert.equal(
-      routing.writeCalendar.calendarId,
-      seeded.fixture.calendarId,
-    );
+    assert.equal(routing.writeCalendar.calendarId, seeded.fixture.calendarId);
     assert.ok(
       routing.busyCalendars.some(
         (calendar) =>
@@ -721,7 +714,9 @@ test(
     assert.equal(appointment.bookingConfirmationEmailLastError, null);
 
     const [sentHold] = await requireDb()
-      .select({ reconciliationMetadata: appointmentHolds.reconciliationMetadata })
+      .select({
+        reconciliationMetadata: appointmentHolds.reconciliationMetadata,
+      })
       .from(appointmentHolds)
       .where(eq(appointmentHolds.id, seeded.holdId));
     const legacyMetadata = {
@@ -821,7 +816,9 @@ test(
       requireDb(),
     );
     const [emailHold] = await requireDb()
-      .select({ reconciliationMetadata: appointmentHolds.reconciliationMetadata })
+      .select({
+        reconciliationMetadata: appointmentHolds.reconciliationMetadata,
+      })
       .from(appointmentHolds)
       .where(eq(appointmentHolds.id, seeded.holdId));
     assert.equal(correctiveSent.correctionRequired, false);
@@ -860,9 +857,8 @@ test(
     if (result.bookingModelVersion !== 2 || result.paymentAttempt === null) {
       return;
     }
-    const reconciliation = createDrizzleServiceReconciliationRepository(
-      requireDb(),
-    );
+    const reconciliation =
+      createDrizzleServiceReconciliationRepository(requireDb());
     const checkAt = new Date("2032-12-01T13:00:00.000Z");
     const pending =
       await reconciliation.findOperationalAppointmentsPendingCalendar(checkAt);
@@ -1528,6 +1524,92 @@ test(
     assert.equal(outcome, "cancelled");
     assert.equal(attempt.status, "cancelled");
     assert.equal(hold.status, "payment_failed");
+  },
+);
+
+test(
+  "provider-confirmed cancellation terminalizes a pending operational attempt by idempotency key",
+  { skip: skipReason },
+  async () => {
+    const seeded = await seedOperationalHold({ leavePaymentPending: true });
+    const repository = await createServiceBookingPaymentRepository(requireDb());
+    const terminate = repository.markAuthorizedOperationalPaymentTerminated;
+    assert.ok(terminate);
+    const providerKey = `${TEST_PREFIX}pending-cancel-key-${randomUUID()}`;
+    const paymentId = `${TEST_PREFIX}pending-cancel-payment-${randomUUID()}`;
+    await prepareOperationalPaymentIntentForTest(repository, {
+      holdId: seeded.holdId,
+      idempotencyKey: providerKey,
+      now: new Date("2032-01-01T12:05:10.000Z"),
+      squareCustomerId: `${TEST_PREFIX}pending-cancel-customer`,
+    });
+
+    const outcome = await terminate({
+      holdId: seeded.holdId,
+      idempotencyKey: providerKey,
+      now: new Date("2032-01-01T12:05:11.000Z"),
+      squarePaymentId: paymentId,
+      status: "cancelled",
+    });
+    const [attempt] = await requireDb()
+      .select()
+      .from(bookingPaymentAttempts)
+      .where(eq(bookingPaymentAttempts.idempotencyKey, providerKey));
+
+    assert.equal(outcome, "cancelled");
+    assert.equal(attempt.status, "cancelled");
+    assert.equal(attempt.providerPaymentId, paymentId);
+  },
+);
+
+test(
+  "provider-completed evidence overrides the active-authorization stale fallback guard",
+  { skip: skipReason },
+  async () => {
+    const seeded = await seedOperationalHold({ leavePaymentPending: true });
+    const repository = await createServiceBookingPaymentRepository(requireDb());
+    const recordAuthorized = repository.recordAuthorizedOperationalPayment;
+    assert.ok(recordAuthorized);
+    const providerKey = `${TEST_PREFIX}completed-refund-key-${randomUUID()}`;
+    const paymentId = `${TEST_PREFIX}completed-refund-payment-${randomUUID()}`;
+    const now = new Date("2032-01-01T12:05:20.000Z");
+    await prepareOperationalPaymentIntentForTest(repository, {
+      holdId: seeded.holdId,
+      idempotencyKey: providerKey,
+      now,
+      squareCustomerId: `${TEST_PREFIX}completed-refund-customer`,
+    });
+    await recordAuthorized({
+      amountCents: 13560,
+      currency: "CAD",
+      holdId: seeded.holdId,
+      idempotencyKey: providerKey,
+      now,
+      squarePaymentId: paymentId,
+    });
+
+    const outcome = await repository.markHoldRefundRequired({
+      holdId: seeded.holdId,
+      idempotencyKey: providerKey,
+      now: new Date("2032-01-01T12:05:21.000Z"),
+      providerEvidence: "completed",
+      reason: "completed attribution mismatch",
+      squarePaymentId: paymentId,
+    });
+    const [attempt] = await requireDb()
+      .select()
+      .from(bookingPaymentAttempts)
+      .where(eq(bookingPaymentAttempts.idempotencyKey, providerKey));
+    const [hold] = await requireDb()
+      .select()
+      .from(appointmentHolds)
+      .where(eq(appointmentHolds.id, seeded.holdId));
+
+    assert.equal(outcome?.status, "refund_required");
+    assert.equal(attempt.status, "captured");
+    assert.equal(attempt.capturedAt?.toISOString(), "2032-01-01T12:05:21.000Z");
+    assert.equal(hold.status, "refund_required");
+    assert.equal(hold.finalizationStatus, "refund_required");
   },
 );
 

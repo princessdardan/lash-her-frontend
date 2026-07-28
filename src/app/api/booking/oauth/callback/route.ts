@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { eq, or } from "drizzle-orm";
 import { google } from "googleapis";
 
 import {
@@ -10,6 +11,8 @@ import {
   consumeBookingCalendarOAuthState,
   saveGoogleRefreshToken,
 } from "@/lib/booking/operational-store";
+import { getPrivateDb } from "@/lib/private-db/client";
+import { bookingCalendarConnections } from "@/lib/private-db/schema";
 
 const OAUTH_STATE_COOKIE = "booking_oauth_state";
 
@@ -68,9 +71,8 @@ export async function GET(req: NextRequest): Promise<Response> {
 
 const adminCallbackDependencies: AdminCalendarOAuthCallbackDependencies = {
   async assertEmployeeOwnsConnection(input) {
-    const { assertEmployeeOwnsCalendarConnection } = await import(
-      "@/lib/admin/employee-calendar"
-    );
+    const { assertEmployeeOwnsCalendarConnection } =
+      await import("@/lib/admin/employee-calendar");
     return assertEmployeeOwnsCalendarConnection(input);
   },
   async authorizeActor(state) {
@@ -80,6 +82,34 @@ const adminCallbackDependencies: AdminCalendarOAuthCallbackDependencies = {
           bookingResourceId: state.resourceId!,
         })
       : requirePermission("calendar-connections:manage");
+  },
+  async canRevokeRejectedGrant(state, providerAccountId) {
+    if (providerAccountId === undefined) {
+      return false;
+    }
+    const connections = await getPrivateDb()
+      .select({
+        id: bookingCalendarConnections.id,
+        providerAccountId: bookingCalendarConnections.providerAccountId,
+      })
+      .from(bookingCalendarConnections)
+      .where(
+        or(
+          eq(bookingCalendarConnections.id, state.connectionId),
+          eq(bookingCalendarConnections.providerAccountId, providerAccountId),
+        ),
+      );
+    const target = connections.find(
+      (connection) => connection.id === state.connectionId,
+    );
+    return (
+      target?.providerAccountId === null &&
+      !connections.some(
+        (connection) =>
+          connection.id !== state.connectionId &&
+          connection.providerAccountId === providerAccountId,
+      )
+    );
   },
   consumeState: consumeBookingCalendarOAuthState,
   async disableProvisionalConnection(state) {
@@ -93,9 +123,8 @@ const adminCallbackDependencies: AdminCalendarOAuthCallbackDependencies = {
       return;
     }
 
-    const { disableAdminCalendarConnectionAfterOAuthFailure } = await import(
-      "@/lib/admin/operations-write"
-    );
+    const { disableAdminCalendarConnectionAfterOAuthFailure } =
+      await import("@/lib/admin/operations-write");
     await disableAdminCalendarConnectionAfterOAuthFailure(state.connectionId);
   },
   async exchangeCode(code) {
@@ -122,21 +151,18 @@ const adminCallbackDependencies: AdminCalendarOAuthCallbackDependencies = {
     };
   },
   async revokeRefreshToken(refreshToken) {
-    const { revokeGoogleTokenBestEffort } = await import(
-      "@/lib/booking/google-calendar"
-    );
+    const { revokeGoogleTokenBestEffort } =
+      await import("@/lib/booking/google-calendar");
     await revokeGoogleTokenBestEffort(refreshToken);
   },
   async saveEmployeeCredential(input) {
-    const { saveEmployeeGoogleCalendarCredential } = await import(
-      "@/lib/admin/employee-calendar"
-    );
+    const { saveEmployeeGoogleCalendarCredential } =
+      await import("@/lib/admin/employee-calendar");
     return saveEmployeeGoogleCalendarCredential(input);
   },
   async saveOwnerCredential(input) {
-    const { saveAdminGoogleCalendarCredential } = await import(
-      "@/lib/admin/operations-write"
-    );
+    const { saveAdminGoogleCalendarCredential } =
+      await import("@/lib/admin/operations-write");
     return saveAdminGoogleCalendarCredential(input);
   },
 };

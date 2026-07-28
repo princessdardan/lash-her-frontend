@@ -37,6 +37,13 @@ describe("resolveOperationalBooking", () => {
     );
     assert.equal(result.booking.pricing.addOnPriceCents, 1500);
     assert.equal(result.booking.providerSnapshot.displayName, "Nataliea");
+    assert.equal(result.booking.squareTeamMemberId, "square-team-member-1");
+    assert.equal(
+      JSON.stringify(result.booking.providerSnapshot).includes(
+        "square-team-member-1",
+      ),
+      false,
+    );
     assert.equal(result.booking.calendar.calendarId, "calendar@example.com");
   });
 
@@ -134,7 +141,7 @@ describe("toPublicBookingOffering", () => {
     const serialized = JSON.stringify(projected);
     assert.doesNotMatch(
       serialized,
-      /assignment-1|calendar@example\.com|connection-1|provider-1|resource-1|service-1/,
+      /assignment-1|calendar@example\.com|connection-1|provider-1|resource-1|service-1|square-team-member-1/,
     );
   });
 });
@@ -172,6 +179,7 @@ function createOffering(): OperationalBookingOffering {
       id: "provider-1",
       providerKey: "nataliea",
       publicSlug: "nataliea",
+      squareTeamMemberId: "square-team-member-1",
       status: "active",
     },
     resource: {

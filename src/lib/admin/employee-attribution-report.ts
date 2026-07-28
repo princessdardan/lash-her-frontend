@@ -3,6 +3,23 @@ import { localDateTimeToUtc } from "./local-time";
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_REPORT_DAYS = 366;
 
+export function calculateRefundPeriodMetrics(input: {
+  grossAmountCents: number;
+  refundedBeforeCents: number;
+  refundedInPeriodCents: number;
+  refundedThroughPeriodCents: number;
+}): { fullyRefundedCents: number; refundedCents: number } {
+  const becameFullyRefunded =
+    input.grossAmountCents > 0 &&
+    input.refundedBeforeCents < input.grossAmountCents &&
+    input.refundedThroughPeriodCents >= input.grossAmountCents;
+
+  return {
+    fullyRefundedCents: becameFullyRefunded ? input.grossAmountCents : 0,
+    refundedCents: input.refundedInPeriodCents,
+  };
+}
+
 export interface EmployeeAttributionRow {
   attributionKey: string;
   capturedSalesCents: number;
@@ -12,8 +29,8 @@ export interface EmployeeAttributionRow {
   legacyChargesCents: number;
   netAttributedSalesCents: number;
   noShowChargesCents: number;
+  refundedCents: number;
   sourceLabels: string[];
-  squareTeamMemberId: string | null;
   unattributedRecords: number;
 }
 
@@ -26,14 +43,12 @@ export function aggregateEmployeeAttributionRows(input: {
     amountCents: number;
     providerSnapshot: Record<string, unknown>;
     squareTeamMemberId: string | null;
-    status: string;
     tipCents: number | null;
   }>;
   legacyCharges: Array<{
     amountCents: number;
     providerSnapshot: Record<string, unknown>;
     squareTeamMemberId: string | null;
-    status: string;
     tipCents: number | null;
   }>;
   noShowCharges: Array<{
@@ -41,9 +56,22 @@ export function aggregateEmployeeAttributionRows(input: {
     providerSnapshot: Record<string, unknown>;
     squareTeamMemberId: string | null;
   }>;
+  refunds: Array<{
+    amountCents: number;
+    countUnattributed?: boolean;
+    evidence: "local_fallback" | "square_event";
+    forceUnattributed?: boolean;
+    fullyRefundedCents: number;
+    providerSnapshot: Record<string, unknown>;
+    source: "currency_mismatch" | "direct" | "legacy" | "no_show" | "unmatched";
+    squareTeamMemberId: string | null;
+  }>;
 }): {
   rows: EmployeeAttributionRow[];
-  totals: Omit<EmployeeAttributionRow, "attributionKey" | "employeeLabel" | "sourceLabels" | "squareTeamMemberId">;
+  totals: Omit<
+    EmployeeAttributionRow,
+    "attributionKey" | "employeeLabel" | "sourceLabels"
+  >;
 } {
   const rows = new Map<string, MutableAttributionRow>();
 
@@ -55,9 +83,6 @@ export function aggregateEmployeeAttributionRows(input: {
     });
     row.capturedSalesCents += payment.amountCents;
     row.knownTipsCents += payment.tipCents ?? 0;
-    if (payment.status === "refunded") {
-      row.fullyRefundedCents += payment.amountCents;
-    }
     row.sourceLabelSet.add("Native Square direct payment");
   }
 
@@ -79,28 +104,38 @@ export function aggregateEmployeeAttributionRows(input: {
     });
     row.legacyChargesCents += charge.amountCents;
     row.knownTipsCents += charge.tipCents ?? 0;
-    if (charge.status === "refunded") {
-      row.fullyRefundedCents += charge.amountCents;
-    }
     row.sourceLabelSet.add("Local attribution · legacy Square Payment Link");
+  }
+
+  for (const refund of input.refunds) {
+    const row = getOrCreateRow(rows, {
+      countUnattributed: refund.countUnattributed ?? false,
+      forceUnattributed: refund.forceUnattributed,
+      nativeAttributionRequired: refund.source === "direct",
+      providerSnapshot: refund.providerSnapshot,
+      squareTeamMemberId: refund.squareTeamMemberId,
+    });
+    row.refundedCents += refund.amountCents;
+    row.fullyRefundedCents += refund.fullyRefundedCents;
+    row.sourceLabelSet.add(getRefundSourceLabel(refund));
   }
 
   const resultRows = [...rows.values()]
     .map(finalizeRow)
-    .sort((left, right) => left.employeeLabel.localeCompare(right.employeeLabel));
+    .sort((left, right) =>
+      left.employeeLabel.localeCompare(right.employeeLabel),
+    );
   const totals = resultRows.reduce(
     (total, row) => ({
       capturedSalesCents: total.capturedSalesCents + row.capturedSalesCents,
-      fullyRefundedCents:
-        total.fullyRefundedCents + row.fullyRefundedCents,
+      fullyRefundedCents: total.fullyRefundedCents + row.fullyRefundedCents,
       knownTipsCents: total.knownTipsCents + row.knownTipsCents,
       legacyChargesCents: total.legacyChargesCents + row.legacyChargesCents,
       netAttributedSalesCents:
         total.netAttributedSalesCents + row.netAttributedSalesCents,
-      noShowChargesCents:
-        total.noShowChargesCents + row.noShowChargesCents,
-      unattributedRecords:
-        total.unattributedRecords + row.unattributedRecords,
+      noShowChargesCents: total.noShowChargesCents + row.noShowChargesCents,
+      refundedCents: total.refundedCents + row.refundedCents,
+      unattributedRecords: total.unattributedRecords + row.unattributedRecords,
     }),
     emptyTotals(),
   );
@@ -121,12 +156,14 @@ export function resolveEmployeeAttributionReportingRange(
   if (from > to) {
     throw new Error("The from date must not be after the to date");
   }
+  if (to > addCalendarDays(from, MAX_REPORT_DAYS - 1)) {
+    throw new Error(
+      `The reporting range cannot exceed ${MAX_REPORT_DAYS} days`,
+    );
+  }
   const endDate = addCalendarDays(to, 1);
   const start = localDateTimeToUtc(`${from}T00:00`, timezone);
   const endExclusive = localDateTimeToUtc(`${endDate}T00:00`, timezone);
-  if (endExclusive.getTime() - start.getTime() > MAX_REPORT_DAYS * 86_400_000) {
-    throw new Error(`The reporting range cannot exceed ${MAX_REPORT_DAYS} days`);
-  }
   return { endExclusive, from, start, to };
 }
 
@@ -134,19 +171,21 @@ function getOrCreateRow(
   rows: Map<string, MutableAttributionRow>,
   input: {
     nativeAttributionRequired: boolean;
+    countUnattributed?: boolean;
+    forceUnattributed?: boolean;
     providerSnapshot: Record<string, unknown>;
     squareTeamMemberId: string | null;
   },
 ): MutableAttributionRow {
   const snapshotLabel = getSnapshotLabel(input.providerSnapshot);
   const teamMemberId = input.squareTeamMemberId?.trim() || null;
-  const isUnattributed = input.nativeAttributionRequired && teamMemberId === null;
+  const isUnattributed =
+    input.forceUnattributed === true ||
+    (input.nativeAttributionRequired && teamMemberId === null);
   const providerKey = getSnapshotProviderKey(input.providerSnapshot);
   const key = isUnattributed
     ? "unattributed"
-    : teamMemberId
-      ? `team:${teamMemberId}`
-      : `provider:${providerKey ?? snapshotLabel}`;
+    : `provider:${providerKey ?? snapshotLabel}`;
   let row = rows.get(key);
 
   if (!row) {
@@ -156,11 +195,10 @@ function getOrCreateRow(
       employeeLabel: isUnattributed ? "Unattributed" : snapshotLabel,
       sourceLabels: [],
       sourceLabelSet: new Set<string>(),
-      squareTeamMemberId: teamMemberId,
     };
     rows.set(key, row);
   }
-  if (isUnattributed) {
+  if (isUnattributed && input.countUnattributed !== false) {
     row.unattributedRecords += 1;
   }
   return row;
@@ -179,10 +217,10 @@ function finalizeRow(row: MutableAttributionRow): EmployeeAttributionRow {
       row.knownTipsCents +
       row.noShowChargesCents +
       row.legacyChargesCents -
-      row.fullyRefundedCents,
+      row.refundedCents,
     noShowChargesCents: row.noShowChargesCents,
+    refundedCents: row.refundedCents,
     sourceLabels: [...row.sourceLabelSet].sort(),
-    squareTeamMemberId: row.squareTeamMemberId,
     unattributedRecords: row.unattributedRecords,
   };
 }
@@ -195,8 +233,42 @@ function emptyTotals() {
     legacyChargesCents: 0,
     netAttributedSalesCents: 0,
     noShowChargesCents: 0,
+    refundedCents: 0,
     unattributedRecords: 0,
   };
+}
+
+function getRefundSourceLabel(refund: {
+  evidence: "local_fallback" | "square_event";
+  source: "currency_mismatch" | "direct" | "legacy" | "no_show" | "unmatched";
+}): string {
+  if (refund.evidence === "local_fallback") {
+    if (refund.source === "direct") {
+      return "Historical local evidence · direct payment refund";
+    }
+    if (refund.source === "legacy") {
+      return "Historical local evidence · legacy Payment Link refund";
+    }
+    return "Historical local evidence · no-show refund";
+  }
+
+  if (refund.source === "currency_mismatch") {
+    return "Unattributed Square refund · currency mismatch";
+  }
+
+  if (refund.source === "unmatched") {
+    return "Unattributed Square refund · payment not found";
+  }
+
+  if (refund.source === "direct") {
+    return "Native Square direct payment refund";
+  }
+
+  if (refund.source === "legacy") {
+    return "Local attribution · legacy Square Payment Link refund";
+  }
+
+  return "Local attribution · Square no-show invoice refund";
 }
 
 function getSnapshotLabel(snapshot: Record<string, unknown>): string {
@@ -205,7 +277,9 @@ function getSnapshotLabel(snapshot: Record<string, unknown>): string {
     : "Unknown provider";
 }
 
-function getSnapshotProviderKey(snapshot: Record<string, unknown>): string | null {
+function getSnapshotProviderKey(
+  snapshot: Record<string, unknown>,
+): string | null {
   return typeof snapshot.providerKey === "string" && snapshot.providerKey.trim()
     ? snapshot.providerKey.trim()
     : null;

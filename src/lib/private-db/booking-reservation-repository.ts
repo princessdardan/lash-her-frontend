@@ -16,6 +16,7 @@ import {
 } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
+import { lockSquareAttributionInvariantShared } from "@/lib/admin/square-attribution-invariant";
 import type { ResolvedOperationalBooking } from "@/lib/booking/operations/offering";
 import type { BookingAnswerInput } from "@/lib/booking/types";
 
@@ -97,11 +98,12 @@ export function createDrizzleBookingReservationRepository(
 
       try {
         return await db.transaction(async (tx) => {
+          await lockSquareAttributionInvariantShared(tx);
+
           const [[settings], [provider]] = await Promise.all([
             tx
               .select({
-                required:
-                  bookingBusinessSettings.requireSquareTeamAttribution,
+                required: bookingBusinessSettings.requireSquareTeamAttribution,
               })
               .from(bookingBusinessSettings)
               .where(eq(bookingBusinessSettings.singletonKey, "default"))
@@ -117,14 +119,17 @@ export function createDrizzleBookingReservationRepository(
               .where(eq(bookingProviders.id, input.booking.providerId))
               .limit(1),
           ]);
+          const squareTeamMemberId =
+            provider?.squareTeamMemberId !== null &&
+            provider?.squareTeamMemberId !== undefined &&
+            provider.squareTeamMemberStatus === "active" &&
+            provider.squareTeamMemberVerifiedAt !== null
+              ? provider.squareTeamMemberId
+              : null;
           if (
             settings?.required === true &&
-            (!provider ||
-              provider.squareTeamMemberId === null ||
-              provider.squareTeamMemberStatus !== "active" ||
-              provider.squareTeamMemberVerifiedAt === null ||
-              input.booking.providerSnapshot.squareTeamMemberId !==
-                provider.squareTeamMemberId)
+            (squareTeamMemberId === null ||
+              input.booking.squareTeamMemberId !== squareTeamMemberId)
           ) {
             return {
               ok: false,
@@ -178,10 +183,7 @@ export function createDrizzleBookingReservationRepository(
                           appointmentHolds.id,
                           bookingResourceReservations.holdId,
                         ),
-                        gt(
-                          appointmentHolds.captureLeaseExpiresAt,
-                          input.now,
-                        ),
+                        gt(appointmentHolds.captureLeaseExpiresAt, input.now),
                       ),
                     ),
                 ),
@@ -275,8 +277,7 @@ export function createDrizzleBookingReservationRepository(
               primaryResourceId: input.booking.resourceId,
               providerId: input.booking.providerId,
               providerSnapshot: { ...input.booking.providerSnapshot },
-              squareTeamMemberId:
-                input.booking.providerSnapshot.squareTeamMemberId,
+              squareTeamMemberId,
               publicReference:
                 input.publicReference ?? generateAppointmentHoldReference(),
               selectedEnd: input.booking.selectedEnd,
@@ -345,10 +346,7 @@ export function createDrizzleBookingReservationRepository(
                         appointmentHolds.id,
                         bookingResourceReservations.holdId,
                       ),
-                      gt(
-                        appointmentHolds.captureLeaseExpiresAt,
-                        input.now,
-                      ),
+                      gt(appointmentHolds.captureLeaseExpiresAt, input.now),
                     ),
                   ),
               ),

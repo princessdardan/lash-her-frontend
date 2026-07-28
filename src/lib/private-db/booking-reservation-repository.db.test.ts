@@ -6,6 +6,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
+import { lockSquareAttributionInvariant } from "@/lib/admin/square-attribution-invariant";
 import type { ResolvedOperationalBooking } from "@/lib/booking/operations/offering";
 import {
   resolveServiceBookingPaymentSession,
@@ -76,13 +77,11 @@ test(
         [{ questionId: "notes", answer: "Sensitive eyes" }],
       );
       assert.equal(
-        (first.hold.offeringSnapshot as Record<string, unknown>)
-          .customerStatus,
+        (first.hold.offeringSnapshot as Record<string, unknown>).customerStatus,
         "pending",
       );
       assert.equal(
-        (first.hold.offeringSnapshot as Record<string, unknown>)
-          .paymentStatus,
+        (first.hold.offeringSnapshot as Record<string, unknown>).paymentStatus,
         "pending",
       );
     }
@@ -138,8 +137,7 @@ test(
       .select({ squareTeamMemberId: bookingProviders.squareTeamMemberId })
       .from(bookingProviders)
       .where(eq(bookingProviders.id, fixture.providerId));
-    mappedInput.booking.providerSnapshot.squareTeamMemberId =
-      provider.squareTeamMemberId!;
+    mappedInput.booking.squareTeamMemberId = provider.squareTeamMemberId!;
 
     await database
       .insert(bookingBusinessSettings)
@@ -191,8 +189,7 @@ test(
         new Date("2031-02-12T19:00:00.000Z"),
         now,
       );
-      inactiveInput.booking.providerSnapshot.squareTeamMemberId =
-        inactiveTeamMemberId;
+      inactiveInput.booking.squareTeamMemberId = inactiveTeamMemberId;
       assert.deepEqual(await repository.createV2Hold(inactiveInput), {
         ok: false,
         reason: "square_team_attribution_required",
@@ -202,6 +199,192 @@ test(
         .update(bookingBusinessSettings)
         .set({ requireSquareTeamAttribution: false })
         .where(eq(bookingBusinessSettings.singletonKey, "default"));
+    }
+  },
+);
+
+test(
+  "hold creation waits for a concurrent Square mapping replacement and rejects the stale snapshot",
+  { skip: skipReason },
+  async () => {
+    const database = requireDb();
+    const repository = createDrizzleBookingReservationRepository(database);
+    const fixture = await seedFixture();
+    const now = new Date("2031-02-13T12:00:00.000Z");
+    const originalTeamMemberId = `square-team-${randomUUID()}`;
+    const replacementTeamMemberId = `square-team-${randomUUID()}`;
+    const input = createHoldInput(
+      fixture,
+      new Date("2031-02-15T15:00:00.000Z"),
+      now,
+    );
+    input.booking.squareTeamMemberId = originalTeamMemberId;
+
+    await database
+      .update(bookingProviders)
+      .set({
+        squareTeamMemberDisplayLabel: "Original Reservation Team Member",
+        squareTeamMemberId: originalTeamMemberId,
+        squareTeamMemberStatus: "active",
+        squareTeamMemberVerifiedAt: now,
+      })
+      .where(eq(bookingProviders.id, fixture.providerId));
+    await database
+      .insert(bookingBusinessSettings)
+      .values({
+        requireSquareTeamAttribution: true,
+        singletonKey: "default",
+      })
+      .onConflictDoUpdate({
+        target: bookingBusinessSettings.singletonKey,
+        set: { requireSquareTeamAttribution: true },
+      });
+
+    const replacementReady = deferred<void>();
+    const releaseReplacement = deferred<void>();
+    const replacement = database.transaction(async (tx) => {
+      await lockSquareAttributionInvariant(tx);
+      await tx
+        .update(bookingProviders)
+        .set({
+          squareTeamMemberDisplayLabel: "Replacement Reservation Team Member",
+          squareTeamMemberId: replacementTeamMemberId,
+          squareTeamMemberStatus: "active",
+          squareTeamMemberVerifiedAt: new Date("2031-02-13T12:01:00.000Z"),
+        })
+        .where(eq(bookingProviders.id, fixture.providerId));
+      replacementReady.resolve();
+      await releaseReplacement.promise;
+    });
+    await replacementReady.promise;
+
+    let holdSettled = false;
+    const holdCreation = repository.createV2Hold(input).then((result) => {
+      holdSettled = true;
+      return result;
+    });
+
+    try {
+      await waitForAdvisoryLockWaiter(database);
+      assert.equal(holdSettled, false);
+      releaseReplacement.resolve();
+      await replacement;
+
+      assert.deepEqual(await holdCreation, {
+        ok: false,
+        reason: "square_team_attribution_required",
+      });
+      const holds = await database
+        .select({ id: appointmentHolds.id })
+        .from(appointmentHolds)
+        .where(eq(appointmentHolds.publicReference, input.publicReference));
+      assert.equal(holds.length, 0);
+    } finally {
+      releaseReplacement.resolve();
+      await replacement;
+      await database
+        .update(bookingBusinessSettings)
+        .set({ requireSquareTeamAttribution: false })
+        .where(eq(bookingBusinessSettings.singletonKey, "default"));
+    }
+  },
+);
+
+test(
+  "hold creation snapshots the current Square mapping after a concurrent replacement when enforcement is disabled",
+  { skip: skipReason },
+  async () => {
+    const database = requireDb();
+    const repository = createDrizzleBookingReservationRepository(database);
+    const fixture = await seedFixture();
+    const now = new Date("2031-02-14T12:00:00.000Z");
+    const originalTeamMemberId = `square-team-${randomUUID()}`;
+    const replacementTeamMemberId = `square-team-${randomUUID()}`;
+    const laterTeamMemberId = `square-team-${randomUUID()}`;
+    const input = createHoldInput(
+      fixture,
+      new Date("2031-02-16T15:00:00.000Z"),
+      now,
+    );
+    input.booking.squareTeamMemberId = originalTeamMemberId;
+
+    await database
+      .update(bookingProviders)
+      .set({
+        squareTeamMemberDisplayLabel: "Original Optional Team Member",
+        squareTeamMemberId: originalTeamMemberId,
+        squareTeamMemberStatus: "active",
+        squareTeamMemberVerifiedAt: now,
+      })
+      .where(eq(bookingProviders.id, fixture.providerId));
+    await database
+      .insert(bookingBusinessSettings)
+      .values({
+        requireSquareTeamAttribution: false,
+        singletonKey: "default",
+      })
+      .onConflictDoUpdate({
+        target: bookingBusinessSettings.singletonKey,
+        set: { requireSquareTeamAttribution: false },
+      });
+
+    const replacementReady = deferred<void>();
+    const releaseReplacement = deferred<void>();
+    const replacement = database.transaction(async (tx) => {
+      await lockSquareAttributionInvariant(tx);
+      await tx
+        .update(bookingProviders)
+        .set({
+          squareTeamMemberDisplayLabel: "Replacement Optional Team Member",
+          squareTeamMemberId: replacementTeamMemberId,
+          squareTeamMemberStatus: "active",
+          squareTeamMemberVerifiedAt: new Date("2031-02-14T12:01:00.000Z"),
+        })
+        .where(eq(bookingProviders.id, fixture.providerId));
+      replacementReady.resolve();
+      await releaseReplacement.promise;
+    });
+    await replacementReady.promise;
+
+    let holdSettled = false;
+    const holdCreation = repository.createV2Hold(input).then((result) => {
+      holdSettled = true;
+      return result;
+    });
+
+    try {
+      await waitForAdvisoryLockWaiter(database);
+      assert.equal(holdSettled, false);
+      releaseReplacement.resolve();
+      await replacement;
+
+      const created = await holdCreation;
+      assert.equal(created.ok, true);
+      if (!created.ok) return;
+      assert.equal(created.hold.squareTeamMemberId, replacementTeamMemberId);
+
+      await database.transaction(async (tx) => {
+        await lockSquareAttributionInvariant(tx);
+        await tx
+          .update(bookingProviders)
+          .set({
+            squareTeamMemberDisplayLabel: "Later Optional Team Member",
+            squareTeamMemberId: laterTeamMemberId,
+            squareTeamMemberStatus: "active",
+            squareTeamMemberVerifiedAt: new Date("2031-02-14T12:02:00.000Z"),
+          })
+          .where(eq(bookingProviders.id, fixture.providerId));
+      });
+      const [persistedHold] = await database
+        .select({
+          squareTeamMemberId: appointmentHolds.squareTeamMemberId,
+        })
+        .from(appointmentHolds)
+        .where(eq(appointmentHolds.id, created.hold.id));
+      assert.equal(persistedHold.squareTeamMemberId, replacementTeamMemberId);
+    } finally {
+      releaseReplacement.resolve();
+      await replacement;
     }
   },
 );
@@ -341,11 +524,7 @@ test(
     // This transaction runs after the original hold expiry but during the
     // capture lease. It must neither release the reservation nor acquire it.
     const competing = await reservationRepository.createV2Hold(
-      createHoldInput(
-        fixture,
-        start,
-        new Date("2031-04-10T12:11:00.000Z"),
-      ),
+      createHoldInput(fixture, start, new Date("2031-04-10T12:11:00.000Z")),
     );
     assert.deepEqual(competing, { ok: false, reason: "slot_conflict" });
 
@@ -419,7 +598,9 @@ test(
         status: bookingPaymentAttempts.status,
       })
       .from(bookingPaymentAttempts)
-      .where(eq(bookingPaymentAttempts.idempotencyKey, prepared.idempotencyKey));
+      .where(
+        eq(bookingPaymentAttempts.idempotencyKey, prepared.idempotencyKey),
+      );
 
     assert.equal(observed.status, "observed");
     assert.equal(attempt.providerPaymentId, paymentId);
@@ -430,13 +611,312 @@ test(
     );
 
     const competing = await reservationRepository.createV2Hold(
-      createHoldInput(
-        fixture,
-        start,
-        new Date("2031-04-20T12:21:00.000Z"),
-      ),
+      createHoldInput(fixture, start, new Date("2031-04-20T12:21:00.000Z")),
     );
     assert.deepEqual(competing, { ok: false, reason: "slot_conflict" });
+  },
+);
+
+test(
+  "provider observation never rebinds an attempt to a second matching-metadata payment",
+  { skip: skipReason },
+  async () => {
+    const database = requireDb();
+    const fixture = await seedFixture();
+    const reservationRepository =
+      createDrizzleBookingReservationRepository(database);
+    const paymentRepository =
+      await createServiceBookingPaymentRepository(database);
+    const initialNow = new Date("2031-04-21T12:00:00.000Z");
+    const created = await reservationRepository.createV2Hold(
+      createHoldInput(
+        fixture,
+        new Date("2031-04-23T15:00:00.000Z"),
+        initialNow,
+      ),
+    );
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+
+    const prepare = paymentRepository.prepareOperationalPaymentIntent;
+    assert.ok(prepare);
+    const squareCustomerId = `${TEST_PREFIX}webhook-binding-customer-${randomUUID()}`;
+    const prepared = await prepare({
+      amountCents: 13560,
+      currency: "CAD",
+      holdId: created.hold.id,
+      idempotencyKeyCandidate: `${TEST_PREFIX}webhook-binding-key-${randomUUID()}`,
+      leaseExpiresAt: new Date("2031-04-21T12:20:00.000Z"),
+      now: new Date("2031-04-21T12:01:00.000Z"),
+      referenceId: created.hold.publicReference,
+      requestBodyHash: `${TEST_PREFIX}webhook-binding-request-hash`,
+      sourceIdHash: `${TEST_PREFIX}webhook-binding-source-hash`,
+      squareCustomerId,
+    });
+    assert.equal(prepared.status, "ready");
+    if (prepared.status !== "ready") return;
+
+    const boundPaymentId = `${TEST_PREFIX}webhook-bound-payment-${randomUUID()}`;
+    await observeOperationalSquarePayment(
+      {
+        amount_money: { amount: 13560, currency: "CAD" },
+        customer_id: squareCustomerId,
+        id: boundPaymentId,
+        reference_id: created.hold.publicReference,
+        status: "APPROVED",
+        version_token: "bound-version",
+      },
+      new Date("2031-04-21T12:02:00.000Z"),
+      database,
+    );
+
+    const conflictingPaymentId = `${TEST_PREFIX}webhook-conflicting-payment-${randomUUID()}`;
+    const alerts: unknown[] = [];
+    let completedProjectionCalls = 0;
+    const conflictingObservation = await observeOperationalSquarePayment(
+      {
+        amount_money: { amount: 13560, currency: "CAD" },
+        customer_id: squareCustomerId,
+        id: conflictingPaymentId,
+        reference_id: created.hold.publicReference,
+        status: "COMPLETED",
+        version_token: "conflicting-version",
+      },
+      new Date("2031-04-21T12:03:00.000Z"),
+      database,
+      {
+        alerts: { alert: (input) => alerts.push(input) },
+        async recordCompletedPayment() {
+          completedProjectionCalls += 1;
+        },
+      },
+    );
+
+    const [attempt] = await database
+      .select({
+        providerMetadata: bookingPaymentAttempts.providerMetadata,
+        providerPaymentId: bookingPaymentAttempts.providerPaymentId,
+        status: bookingPaymentAttempts.status,
+      })
+      .from(bookingPaymentAttempts)
+      .where(
+        eq(bookingPaymentAttempts.idempotencyKey, prepared.idempotencyKey),
+      );
+
+    assert.equal(conflictingObservation.status, "observed");
+    assert.equal(attempt.providerPaymentId, boundPaymentId);
+    assert.equal(attempt.status, "authorized");
+    assert.equal(attempt.providerMetadata?.squareVersionToken, "bound-version");
+    assert.equal(completedProjectionCalls, 0);
+    assert.equal(alerts.length, 1);
+    assert.match(JSON.stringify(alerts[0]), /immutable payment attempt/);
+  },
+);
+
+test(
+  "provider-observed attribution mismatch cancels and terminalizes the authorization",
+  { skip: skipReason },
+  async () => {
+    const database = requireDb();
+    const fixture = await seedFixture();
+    const reservationRepository =
+      createDrizzleBookingReservationRepository(database);
+    const paymentRepository =
+      await createServiceBookingPaymentRepository(database);
+    const expectedTeamMemberId = `${TEST_PREFIX}webhook-team-${randomUUID()}`;
+    const initialNow = new Date("2031-04-23T12:00:00.000Z");
+    await database
+      .update(bookingProviders)
+      .set({
+        squareTeamMemberDisplayLabel: "Webhook Team Member",
+        squareTeamMemberId: expectedTeamMemberId,
+        squareTeamMemberStatus: "active",
+        squareTeamMemberVerifiedAt: initialNow,
+      })
+      .where(eq(bookingProviders.id, fixture.providerId));
+    const holdInput = createHoldInput(
+      fixture,
+      new Date("2031-04-25T15:00:00.000Z"),
+      initialNow,
+    );
+    holdInput.booking.squareTeamMemberId = expectedTeamMemberId;
+    const created = await reservationRepository.createV2Hold(holdInput);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+
+    const prepare = paymentRepository.prepareOperationalPaymentIntent;
+    const terminate =
+      paymentRepository.markAuthorizedOperationalPaymentTerminated;
+    assert.ok(prepare);
+    assert.ok(terminate);
+    const squareCustomerId = `${TEST_PREFIX}webhook-mismatch-customer-${randomUUID()}`;
+    const prepared = await prepare({
+      amountCents: 13560,
+      currency: "CAD",
+      holdId: created.hold.id,
+      idempotencyKeyCandidate: `${TEST_PREFIX}webhook-mismatch-key-${randomUUID()}`,
+      leaseExpiresAt: new Date("2031-04-23T12:20:00.000Z"),
+      now: new Date("2031-04-23T12:01:00.000Z"),
+      referenceId: created.hold.publicReference,
+      requestBodyHash: `${TEST_PREFIX}webhook-mismatch-request-hash`,
+      sourceIdHash: `${TEST_PREFIX}webhook-mismatch-source-hash`,
+      squareCustomerId,
+      squareTeamMemberId: expectedTeamMemberId,
+    });
+    assert.equal(prepared.status, "ready");
+    if (prepared.status !== "ready") return;
+
+    const cancellationCalls: string[] = [];
+    const alertCalls: unknown[] = [];
+    const paymentId = `${TEST_PREFIX}webhook-mismatch-payment-${randomUUID()}`;
+    const observed = await observeOperationalSquarePayment(
+      {
+        amount_money: { amount: 13560, currency: "CAD" },
+        customer_id: squareCustomerId,
+        id: paymentId,
+        reference_id: created.hold.publicReference,
+        status: "APPROVED",
+        team_member_id: `${TEST_PREFIX}wrong-team`,
+      },
+      new Date("2031-04-23T12:02:00.000Z"),
+      database,
+      {
+        alerts: { alert: (input) => alertCalls.push(input) },
+        async cancelPayment(squarePaymentId) {
+          cancellationCalls.push(squarePaymentId);
+          return {
+            payment: {
+              amount_money: { amount: 13560, currency: "CAD" },
+              customer_id: squareCustomerId,
+              id: squarePaymentId,
+              reference_id: created.hold.publicReference,
+              status: "CANCELED",
+              team_member_id: `${TEST_PREFIX}wrong-team`,
+            },
+          };
+        },
+        markHoldPaymentFailed: (input) =>
+          paymentRepository.markHoldPaymentFailed(input),
+        markHoldRefundRequired: (input) =>
+          paymentRepository.markHoldRefundRequired(input),
+        markPaymentTerminated: (input) => terminate(input),
+      },
+    );
+
+    const [attempt] = await database
+      .select()
+      .from(bookingPaymentAttempts)
+      .where(
+        eq(bookingPaymentAttempts.idempotencyKey, prepared.idempotencyKey),
+      );
+    const [hold] = await database
+      .select()
+      .from(appointmentHolds)
+      .where(eq(appointmentHolds.id, created.hold.id));
+    assert.equal(observed.status, "observed");
+    assert.deepEqual(cancellationCalls, [paymentId]);
+    assert.equal(attempt.status, "cancelled");
+    assert.equal(attempt.providerPaymentId, paymentId);
+    assert.equal(hold.status, "payment_failed");
+    assert.equal(alertCalls.length, 1);
+  },
+);
+
+test(
+  "provider-observed completed attribution mismatch is captured without creating an appointment",
+  { skip: skipReason },
+  async () => {
+    const database = requireDb();
+    const fixture = await seedFixture();
+    const reservationRepository =
+      createDrizzleBookingReservationRepository(database);
+    const paymentRepository =
+      await createServiceBookingPaymentRepository(database);
+    const expectedTeamMemberId = `${TEST_PREFIX}webhook-complete-team-${randomUUID()}`;
+    const initialNow = new Date("2031-04-24T12:00:00.000Z");
+    await database
+      .update(bookingProviders)
+      .set({
+        squareTeamMemberDisplayLabel: "Completed Webhook Team Member",
+        squareTeamMemberId: expectedTeamMemberId,
+        squareTeamMemberStatus: "active",
+        squareTeamMemberVerifiedAt: initialNow,
+      })
+      .where(eq(bookingProviders.id, fixture.providerId));
+    const holdInput = createHoldInput(
+      fixture,
+      new Date("2031-04-26T15:00:00.000Z"),
+      initialNow,
+    );
+    holdInput.booking.squareTeamMemberId = expectedTeamMemberId;
+    const created = await reservationRepository.createV2Hold(holdInput);
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+
+    const prepare = paymentRepository.prepareOperationalPaymentIntent;
+    const terminate =
+      paymentRepository.markAuthorizedOperationalPaymentTerminated;
+    assert.ok(prepare);
+    assert.ok(terminate);
+    const squareCustomerId = `${TEST_PREFIX}webhook-complete-customer-${randomUUID()}`;
+    const prepared = await prepare({
+      amountCents: 13560,
+      currency: "CAD",
+      holdId: created.hold.id,
+      idempotencyKeyCandidate: `${TEST_PREFIX}webhook-complete-key-${randomUUID()}`,
+      leaseExpiresAt: new Date("2031-04-24T12:20:00.000Z"),
+      now: new Date("2031-04-24T12:01:00.000Z"),
+      referenceId: created.hold.publicReference,
+      requestBodyHash: `${TEST_PREFIX}webhook-complete-request-hash`,
+      sourceIdHash: `${TEST_PREFIX}webhook-complete-source-hash`,
+      squareCustomerId,
+      squareTeamMemberId: expectedTeamMemberId,
+    });
+    assert.equal(prepared.status, "ready");
+    if (prepared.status !== "ready") return;
+
+    let completedProjectionCalls = 0;
+    const paymentId = `${TEST_PREFIX}webhook-complete-payment-${randomUUID()}`;
+    const observed = await observeOperationalSquarePayment(
+      {
+        amount_money: { amount: 13560, currency: "CAD" },
+        customer_id: squareCustomerId,
+        id: paymentId,
+        reference_id: created.hold.publicReference,
+        status: "COMPLETED",
+        team_member_id: `${TEST_PREFIX}wrong-team`,
+      },
+      new Date("2031-04-24T12:02:00.000Z"),
+      database,
+      {
+        alerts: { alert() {} },
+        markHoldPaymentFailed: (input) =>
+          paymentRepository.markHoldPaymentFailed(input),
+        markHoldRefundRequired: (input) =>
+          paymentRepository.markHoldRefundRequired(input),
+        markPaymentTerminated: (input) => terminate(input),
+        async recordCompletedPayment() {
+          completedProjectionCalls += 1;
+        },
+      },
+    );
+
+    const [attempt] = await database
+      .select()
+      .from(bookingPaymentAttempts)
+      .where(
+        eq(bookingPaymentAttempts.idempotencyKey, prepared.idempotencyKey),
+      );
+    const [hold] = await database
+      .select()
+      .from(appointmentHolds)
+      .where(eq(appointmentHolds.id, created.hold.id));
+    assert.equal(observed.status, "observed");
+    assert.equal(completedProjectionCalls, 0);
+    assert.equal(attempt.status, "captured");
+    assert.equal(attempt.providerPaymentId, paymentId);
+    assert.equal(hold.status, "refund_required");
+    assert.equal(hold.finalizationStatus, "refund_required");
   },
 );
 
@@ -499,7 +979,9 @@ test(
         status: bookingPaymentAttempts.status,
       })
       .from(bookingPaymentAttempts)
-      .where(eq(bookingPaymentAttempts.idempotencyKey, prepared.idempotencyKey));
+      .where(
+        eq(bookingPaymentAttempts.idempotencyKey, prepared.idempotencyKey),
+      );
     assert.equal(attempt.providerPaymentId, paymentId);
     assert.equal(attempt.status, "captured");
 
@@ -514,11 +996,7 @@ test(
       /validated payment selection/,
     );
     const competing = await reservationRepository.createV2Hold(
-      createHoldInput(
-        fixture,
-        start,
-        new Date("2031-04-25T12:21:00.000Z"),
-      ),
+      createHoldInput(fixture, start, new Date("2031-04-25T12:21:00.000Z")),
     );
     assert.deepEqual(competing, { ok: false, reason: "slot_conflict" });
   },
@@ -983,9 +1461,42 @@ function requireDb() {
   return db;
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolver) => {
+    resolve = resolver;
+  });
+  return { promise, resolve };
+}
+
+async function waitForAdvisoryLockWaiter(
+  database: ReturnType<typeof requireDb>,
+): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const result = await database.execute<{ waiting: number }>(
+      sql`select count(*)::int as waiting
+          from pg_locks
+          where locktype = 'advisory'
+            and granted = false`,
+    );
+    if ((result.rows[0]?.waiting ?? 0) > 0) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(
+    "Timed out waiting for hold creation to block on advisory lock",
+  );
+}
+
 function getNestedPostgresCode(error: unknown): string | undefined {
   let current: unknown = error;
-  for (let depth = 0; depth < 4 && current && typeof current === "object"; depth += 1) {
+  for (
+    let depth = 0;
+    depth < 4 && current && typeof current === "object";
+    depth += 1
+  ) {
     const record = current as { cause?: unknown; code?: unknown };
     if (typeof record.code === "string") {
       return record.code;

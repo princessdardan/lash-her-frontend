@@ -41,6 +41,11 @@ import { canAdmin } from "./permissions";
 import { AdminAuthError } from "./types";
 import { localDateTimeToUtc } from "./local-time";
 import { getCalendarAssignmentAccessError } from "./calendar-capabilities";
+import { revokeEncryptedGoogleCredentialBestEffort } from "./calendar-credential-revocation";
+import {
+  lockEmployeeCalendarInvariant,
+  lockEmployeeCalendarInvariants,
+} from "./employee-calendar-invariant";
 import { getCalendarOwnershipTransferError } from "./calendar-self-service-policy";
 import {
   disableProvisionalGoogleCalendarConnection,
@@ -74,8 +79,10 @@ export async function createStaffUser(input: {
   const actor = await requirePermission("staff:manage");
   const email = input.email.trim();
 
-  if (!EMAIL_PATTERN.test(email)) throw new Error("A valid staff email is required");
-  if (input.role !== "admin" && input.role !== "employee") throw new Error("Invalid staff role");
+  if (!EMAIL_PATTERN.test(email))
+    throw new Error("A valid staff email is required");
+  if (input.role !== "admin" && input.role !== "employee")
+    throw new Error("Invalid staff role");
 
   return runAuditedAdminMutation({
     action: "staff_created",
@@ -115,6 +122,19 @@ export async function setStaffStatus(input: {
     domain: "staff",
     metadata: { status: input.status },
     mutate: async (tx) => {
+      await lockEmployeeCalendarInvariant(tx, input.userId);
+      const [staffUser] = await tx
+        .select({
+          role: adminUsers.role,
+          status: adminUsers.status,
+        })
+        .from(adminUsers)
+        .where(eq(adminUsers.id, input.userId))
+        .limit(1)
+        .for("update");
+      if (!staffUser) {
+        throw new Error("Staff user not found");
+      }
       if (input.status === "disabled") {
         const [ownedActiveAssignment] = await tx
           .select({ id: bookingResourceCalendarAssignments.id })
@@ -202,10 +222,12 @@ export async function unassignStaffResource(input: {
       });
       await tx
         .delete(adminUserResources)
-        .where(and(
-          eq(adminUserResources.adminUserId, input.userId),
-          eq(adminUserResources.bookingResourceId, input.resourceId),
-        ));
+        .where(
+          and(
+            eq(adminUserResources.adminUserId, input.userId),
+            eq(adminUserResources.bookingResourceId, input.resourceId),
+          ),
+        );
     },
     targetId: input.userId,
     targetType: "admin_user",
@@ -385,10 +407,12 @@ export async function updateBookingResourceProfile(input: {
         const activeOffering = await tx
           .select({ id: bookingServiceOfferings.id })
           .from(bookingServiceOfferings)
-          .where(and(
-            eq(bookingServiceOfferings.providerId, provider.id),
-            eq(bookingServiceOfferings.status, "active"),
-          ))
+          .where(
+            and(
+              eq(bookingServiceOfferings.providerId, provider.id),
+              eq(bookingServiceOfferings.status, "active"),
+            ),
+          )
           .limit(1);
         if (activeOffering.length > 0 && !providerPublicSlug) {
           throw new Error(
@@ -507,10 +531,12 @@ export async function updateBookingServiceProfile(input: {
       const activeOffering = await tx
         .select({ id: bookingServiceOfferings.id })
         .from(bookingServiceOfferings)
-        .where(and(
-          eq(bookingServiceOfferings.serviceId, input.serviceId),
-          eq(bookingServiceOfferings.status, "active"),
-        ))
+        .where(
+          and(
+            eq(bookingServiceOfferings.serviceId, input.serviceId),
+            eq(bookingServiceOfferings.status, "active"),
+          ),
+        )
         .limit(1);
       if (activeOffering.length > 0 && (!publicSlug || !sanityDocumentId)) {
         throw new Error(
@@ -633,10 +659,12 @@ export async function updateServiceOffering(input: {
           updatedByAdminUserId: actor.user.id,
           version: sql`${bookingServiceOfferings.version} + 1`,
         })
-        .where(and(
-          eq(bookingServiceOfferings.id, input.offeringId),
-          eq(bookingServiceOfferings.version, input.expectedVersion),
-        ))
+        .where(
+          and(
+            eq(bookingServiceOfferings.id, input.offeringId),
+            eq(bookingServiceOfferings.version, input.expectedVersion),
+          ),
+        )
         .returning({ id: bookingServiceOfferings.id });
       if (rows.length === 0) {
         throw new Error(
@@ -693,9 +721,10 @@ export async function setServiceOfferingStatus(input: {
 }) {
   const actor = await requirePermission("offerings:manage");
   assertConfigurationStatus(input.status);
-  const validatedSanityLink = input.status === "active"
-    ? await loadAndValidateOfferingSanityServiceLink(input.offeringId)
-    : null;
+  const validatedSanityLink =
+    input.status === "active"
+      ? await loadAndValidateOfferingSanityServiceLink(input.offeringId)
+      : null;
 
   await runAuditedAdminMutation({
     action: "service_offering_status_changed",
@@ -767,8 +796,7 @@ export async function setServiceOfferingStatus(input: {
         }
         if (
           validatedSanityLink === null ||
-          configuration.servicePublicSlug !==
-            validatedSanityLink.publicSlug ||
+          configuration.servicePublicSlug !== validatedSanityLink.publicSlug ||
           configuration.serviceSanityDocumentId !==
             validatedSanityLink.sanityDocumentId
         ) {
@@ -786,10 +814,15 @@ export async function setServiceOfferingStatus(input: {
           tx
             .select({ id: bookingResourceSchedules.id })
             .from(bookingResourceSchedules)
-            .where(and(
-              eq(bookingResourceSchedules.resourceId, configuration.resourceId),
-              eq(bookingResourceSchedules.status, "active"),
-            ))
+            .where(
+              and(
+                eq(
+                  bookingResourceSchedules.resourceId,
+                  configuration.resourceId,
+                ),
+                eq(bookingResourceSchedules.status, "active"),
+              ),
+            )
             .limit(1),
           tx
             .select({ id: bookingResourceCalendarAssignments.id })
@@ -801,15 +834,17 @@ export async function setServiceOfferingStatus(input: {
                 bookingResourceCalendarAssignments.calendarConnectionId,
               ),
             )
-            .where(and(
-              eq(
-                bookingResourceCalendarAssignments.resourceId,
-                configuration.resourceId,
+            .where(
+              and(
+                eq(
+                  bookingResourceCalendarAssignments.resourceId,
+                  configuration.resourceId,
+                ),
+                eq(bookingResourceCalendarAssignments.status, "active"),
+                eq(bookingResourceCalendarAssignments.acceptsBookings, true),
+                eq(bookingCalendarConnections.status, "active"),
               ),
-              eq(bookingResourceCalendarAssignments.status, "active"),
-              eq(bookingResourceCalendarAssignments.acceptsBookings, true),
-              eq(bookingCalendarConnections.status, "active"),
-            ))
+            )
             .limit(1),
           tx
             .select({
@@ -821,13 +856,12 @@ export async function setServiceOfferingStatus(input: {
               priceCents: bookingServiceOfferingAddOns.priceCents,
             })
             .from(bookingServiceOfferingAddOns)
-            .where(and(
-              eq(
-                bookingServiceOfferingAddOns.offeringId,
-                input.offeringId,
+            .where(
+              and(
+                eq(bookingServiceOfferingAddOns.offeringId, input.offeringId),
+                eq(bookingServiceOfferingAddOns.status, "active"),
               ),
-              eq(bookingServiceOfferingAddOns.status, "active"),
-            )),
+            ),
           tx
             .select({
               resourceId: bookingResources.id,
@@ -853,25 +887,33 @@ export async function setServiceOfferingStatus(input: {
                 eq(bookingResourceSchedules.status, "active"),
               ),
             )
-            .where(and(
-              eq(
-                bookingServiceOfferingResources.offeringId,
-                input.offeringId,
+            .where(
+              and(
+                eq(
+                  bookingServiceOfferingResources.offeringId,
+                  input.offeringId,
+                ),
+                eq(bookingServiceOfferingResources.isRequired, true),
+                sql`${bookingServiceOfferingResources.resourceId} <> ${configuration.resourceId}`,
               ),
-              eq(bookingServiceOfferingResources.isRequired, true),
-              sql`${bookingServiceOfferingResources.resourceId} <> ${configuration.resourceId}`,
-            )),
+            ),
         ]);
-        const requiredSecondaryResourceById = new Map<string, {
-          hasActiveWeeklySchedule: boolean;
-          name: string;
-          status: BookingConfigurationStatus;
-        }>();
+        const requiredSecondaryResourceById = new Map<
+          string,
+          {
+            hasActiveWeeklySchedule: boolean;
+            name: string;
+            status: BookingConfigurationStatus;
+          }
+        >();
         for (const resource of requiredSecondaryResourceRows) {
-          const existing = requiredSecondaryResourceById.get(resource.resourceId);
+          const existing = requiredSecondaryResourceById.get(
+            resource.resourceId,
+          );
           requiredSecondaryResourceById.set(resource.resourceId, {
             hasActiveWeeklySchedule:
-              Boolean(resource.scheduleId) || existing?.hasActiveWeeklySchedule === true,
+              Boolean(resource.scheduleId) ||
+              existing?.hasActiveWeeklySchedule === true,
             name: resource.resourceName,
             status: resource.resourceStatus,
           });
@@ -924,9 +966,7 @@ export async function setServiceOfferingStatus(input: {
   });
 }
 
-async function loadAndValidateOfferingSanityServiceLink(
-  offeringId: string,
-) {
+async function loadAndValidateOfferingSanityServiceLink(offeringId: string) {
   const [link] = await getPrivateDb()
     .select({
       publicSlug: bookingServices.publicSlug,
@@ -968,7 +1008,11 @@ export async function createOfferingAddOn(input: {
         .insert(bookingServiceOfferingAddOns)
         .values({
           addOnKey: requireKey(input.addOnKey, "Add-on key"),
-          description: requireText(input.description, "Add-on description", 500),
+          description: requireText(
+            input.description,
+            "Add-on description",
+            500,
+          ),
           durationDeltaMinutes: input.durationDeltaMinutes,
           name: requireText(input.name, "Add-on name", 120),
           offeringId: input.offeringId,
@@ -1040,8 +1084,14 @@ export async function updateBookingSettings(input: {
   assertPositiveInteger(input.bookingHorizonDays, "Booking horizon");
   assertNonnegativeInteger(input.minimumLeadTimeHours, "Minimum lead time");
   assertPositiveInteger(input.slotIntervalMinutes, "Slot interval");
-  assertNonnegativeInteger(input.defaultBufferBeforeMinutes, "Default buffer before");
-  assertNonnegativeInteger(input.defaultBufferAfterMinutes, "Default buffer after");
+  assertNonnegativeInteger(
+    input.defaultBufferBeforeMinutes,
+    "Default buffer before",
+  );
+  assertNonnegativeInteger(
+    input.defaultBufferAfterMinutes,
+    "Default buffer after",
+  );
   await runAuditedAdminMutation({
     action: "booking_settings_updated",
     actor,
@@ -1133,10 +1183,12 @@ export async function disableResourceSchedule(input: {
           updatedByAdminUserId: actor.user.id,
           version: sql`${bookingResourceSchedules.version} + 1`,
         })
-        .where(and(
-          eq(bookingResourceSchedules.id, input.scheduleId),
-          eq(bookingResourceSchedules.resourceId, input.resourceId),
-        ));
+        .where(
+          and(
+            eq(bookingResourceSchedules.id, input.scheduleId),
+            eq(bookingResourceSchedules.resourceId, input.resourceId),
+          ),
+        );
     },
     targetId: input.scheduleId,
     targetType: "resource_schedule",
@@ -1163,39 +1215,43 @@ export async function createScheduleException(input: {
       domain: "schedules",
       metadata: { kind: input.kind, resourceId: input.resourceId },
       mutate: async (tx) => {
-      const resource = await getResource(tx, input.resourceId);
-      const startsAt = localDateTimeToUtc(input.startsAtLocal, resource.timezone);
-      const endsAt = localDateTimeToUtc(input.endsAtLocal, resource.timezone);
-      if (endsAt <= startsAt) throw new Error("Exception end must be after start");
-      if (input.kind === "unavailable") {
-        await tx.execute(
-          sql`select pg_advisory_xact_lock(hashtextextended(${input.resourceId}::text, 0))`,
+        const resource = await getResource(tx, input.resourceId);
+        const startsAt = localDateTimeToUtc(
+          input.startsAtLocal,
+          resource.timezone,
         );
-      }
-      const [row] = await tx
-        .insert(bookingResourceScheduleExceptions)
-        .values({
-          createdByAdminUserId: actor.user.id,
-          endsAt,
-          kind: input.kind,
-          note: cleanOptional(input.note),
-          resourceId: input.resourceId,
-          startsAt,
-          status: "active",
-          timezone: resource.timezone,
-          updatedByAdminUserId: actor.user.id,
-        })
-        .returning({ id: bookingResourceScheduleExceptions.id });
-      if (input.kind === "unavailable") {
-        await tx.insert(bookingResourceReservations).values({
-          kind: "block",
-          occupiedEnd: endsAt,
-          occupiedStart: startsAt,
-          resourceId: input.resourceId,
-          scheduleExceptionId: row.id,
-          state: "active",
-        });
-      }
+        const endsAt = localDateTimeToUtc(input.endsAtLocal, resource.timezone);
+        if (endsAt <= startsAt)
+          throw new Error("Exception end must be after start");
+        if (input.kind === "unavailable") {
+          await tx.execute(
+            sql`select pg_advisory_xact_lock(hashtextextended(${input.resourceId}::text, 0))`,
+          );
+        }
+        const [row] = await tx
+          .insert(bookingResourceScheduleExceptions)
+          .values({
+            createdByAdminUserId: actor.user.id,
+            endsAt,
+            kind: input.kind,
+            note: cleanOptional(input.note),
+            resourceId: input.resourceId,
+            startsAt,
+            status: "active",
+            timezone: resource.timezone,
+            updatedByAdminUserId: actor.user.id,
+          })
+          .returning({ id: bookingResourceScheduleExceptions.id });
+        if (input.kind === "unavailable") {
+          await tx.insert(bookingResourceReservations).values({
+            kind: "block",
+            occupiedEnd: endsAt,
+            occupiedStart: startsAt,
+            resourceId: input.resourceId,
+            scheduleExceptionId: row.id,
+            state: "active",
+          });
+        }
         return row;
       },
       targetId: (row) => row.id,
@@ -1203,7 +1259,9 @@ export async function createScheduleException(input: {
     });
   } catch (error) {
     if (getPostgresErrorCode(error) === "23P01") {
-      throw new Error("This unavailable period overlaps an existing hold, appointment, or blocked time");
+      throw new Error(
+        "This unavailable period overlaps an existing hold, appointment, or blocked time",
+      );
     }
     throw error;
   }
@@ -1234,10 +1292,12 @@ export async function cancelScheduleException(input: {
           updatedAt: now,
           updatedByAdminUserId: actor.user.id,
         })
-        .where(and(
-          eq(bookingResourceScheduleExceptions.id, input.exceptionId),
-          eq(bookingResourceScheduleExceptions.resourceId, input.resourceId),
-        ));
+        .where(
+          and(
+            eq(bookingResourceScheduleExceptions.id, input.exceptionId),
+            eq(bookingResourceScheduleExceptions.resourceId, input.resourceId),
+          ),
+        );
       await tx
         .update(bookingResourceReservations)
         .set({
@@ -1246,11 +1306,16 @@ export async function cancelScheduleException(input: {
           state: "released",
           updatedAt: now,
         })
-        .where(and(
-          eq(bookingResourceReservations.scheduleExceptionId, input.exceptionId),
-          eq(bookingResourceReservations.resourceId, input.resourceId),
-          eq(bookingResourceReservations.state, "active"),
-        ));
+        .where(
+          and(
+            eq(
+              bookingResourceReservations.scheduleExceptionId,
+              input.exceptionId,
+            ),
+            eq(bookingResourceReservations.resourceId, input.resourceId),
+            eq(bookingResourceReservations.state, "active"),
+          ),
+        );
     },
     targetId: input.exceptionId,
     targetType: "schedule_exception",
@@ -1268,7 +1333,7 @@ export async function createCalendarConnection() {
         .insert(bookingCalendarConnections)
         .values({
           connectedByAdminUserId: actor.user.id,
-          credentialOwnerAdminUserId: actor.user.id,
+          credentialOwnerAdminUserId: null,
           provider: "google",
           status: "reconnect_required",
         })
@@ -1293,6 +1358,7 @@ export async function disableAdminCalendarConnectionAfterOAuthFailure(
       disableProvisionalGoogleCalendarConnection(tx, {
         actorAdminUserId: actor.user.id,
         connectionId,
+        credentialOwnerAdminUserId: null,
         now: new Date(),
       }),
     targetId: connectionId,
@@ -1332,31 +1398,63 @@ export async function saveAdminGoogleCalendarCredential(input: {
       return resolveAndSaveGoogleCalendarCredential(tx, {
         accountEmail,
         actorAdminUserId: actor.user.id,
+        canManageAllConnections: true,
         connectionId: input.connectionId,
         credentialCiphertext,
+        credentialOwnerAdminUserId: null,
+        employeeResourceId: null,
         now,
         providerAccountId,
         scopes,
       });
     },
-    targetId: input.connectionId,
+    targetId: (result) =>
+      "connectionId" in result ? result.connectionId : input.connectionId,
     targetType: "calendar_connection",
   });
 }
 
 export async function disableCalendarConnection(connectionId: string) {
   const actor = await requirePermission("calendar-connections:manage");
-  await runAuditedAdminMutation({
+  const expectedOwnerAdminUserId =
+    await loadCalendarConnectionOwnerSnapshot(connectionId);
+  const credentialCiphertext = await runAuditedAdminMutation({
     action: "calendar_connection_disabled",
     actor,
     domain: "calendar",
     mutate: async (tx) => {
       const now = new Date();
+      if (expectedOwnerAdminUserId !== null) {
+        await lockEmployeeCalendarInvariant(tx, expectedOwnerAdminUserId);
+      }
+      const [connection] = await tx
+        .select({
+          credentialCiphertext: bookingCalendarConnections.credentialCiphertext,
+          credentialOwnerAdminUserId:
+            bookingCalendarConnections.credentialOwnerAdminUserId,
+          id: bookingCalendarConnections.id,
+        })
+        .from(bookingCalendarConnections)
+        .where(eq(bookingCalendarConnections.id, connectionId))
+        .limit(1)
+        .for("update");
+      if (!connection) throw new Error("Calendar connection not found");
+      if (connection.credentialOwnerAdminUserId !== expectedOwnerAdminUserId) {
+        throw new Error(
+          "Calendar connection ownership changed. Retry the operation",
+        );
+      }
+
       await tx
         .update(bookingResourceCalendarAssignments)
         .set({ status: "disabled", updatedAt: now })
-        .where(eq(bookingResourceCalendarAssignments.calendarConnectionId, connectionId));
-      const rows = await tx
+        .where(
+          eq(
+            bookingResourceCalendarAssignments.calendarConnectionId,
+            connectionId,
+          ),
+        );
+      await tx
         .update(bookingCalendarConnections)
         .set({
           credentialCiphertext: null,
@@ -1365,13 +1463,14 @@ export async function disableCalendarConnection(connectionId: string) {
           status: "disabled",
           updatedAt: now,
         })
-        .where(eq(bookingCalendarConnections.id, connectionId))
-        .returning({ id: bookingCalendarConnections.id });
-      if (rows.length === 0) throw new Error("Calendar connection not found");
+        .where(eq(bookingCalendarConnections.id, connectionId));
+      return connection.credentialCiphertext;
     },
     targetId: connectionId,
     targetType: "calendar_connection",
   });
+
+  await revokeEncryptedGoogleCredentialBestEffort(credentialCiphertext);
 }
 
 export async function transferCalendarConnectionOwnership(input: {
@@ -1379,6 +1478,9 @@ export async function transferCalendarConnectionOwnership(input: {
   employeeUserId: string | null;
 }) {
   const actor = await requirePermission("calendar-connections:manage");
+  const expectedOwnerAdminUserId = await loadCalendarConnectionOwnerSnapshot(
+    input.connectionId,
+  );
 
   await runAuditedAdminMutation({
     action: "calendar_connection_ownership_transferred",
@@ -1386,8 +1488,16 @@ export async function transferCalendarConnectionOwnership(input: {
     domain: "calendar",
     metadata: { employeeOwnerPresent: input.employeeUserId !== null },
     mutate: async (tx) => {
+      await lockEmployeeCalendarInvariants(tx, [
+        expectedOwnerAdminUserId,
+        input.employeeUserId,
+      ]);
       const [connection] = await tx
-        .select({ id: bookingCalendarConnections.id })
+        .select({
+          credentialOwnerAdminUserId:
+            bookingCalendarConnections.credentialOwnerAdminUserId,
+          id: bookingCalendarConnections.id,
+        })
         .from(bookingCalendarConnections)
         .where(eq(bookingCalendarConnections.id, input.connectionId))
         .limit(1)
@@ -1395,24 +1505,50 @@ export async function transferCalendarConnectionOwnership(input: {
       if (!connection) {
         throw new Error("Calendar connection not found");
       }
+      if (connection.credentialOwnerAdminUserId !== expectedOwnerAdminUserId) {
+        throw new Error(
+          "Calendar connection ownership changed. Retry the transfer",
+        );
+      }
 
       if (input.employeeUserId !== null) {
         const [employee] = await tx
-          .select({ id: adminUsers.id, role: adminUsers.role, status: adminUsers.status })
+          .select({
+            id: adminUsers.id,
+            role: adminUsers.role,
+            status: adminUsers.status,
+          })
           .from(adminUsers)
           .where(eq(adminUsers.id, input.employeeUserId))
           .limit(1);
-        if (!employee || employee.role !== "employee" || employee.status !== "active") {
-          throw new Error("Calendar ownership can only be transferred to an active employee");
+        if (
+          !employee ||
+          employee.role !== "employee" ||
+          employee.status !== "active"
+        ) {
+          throw new Error(
+            "Calendar ownership can only be transferred to an active employee",
+          );
         }
 
         const [assignedResources, activeAssignments] = await Promise.all([
           tx
             .select({ resourceId: adminUserResources.bookingResourceId })
             .from(adminUserResources)
-            .where(eq(adminUserResources.adminUserId, employee.id)),
+            .innerJoin(
+              bookingResources,
+              eq(bookingResources.id, adminUserResources.bookingResourceId),
+            )
+            .where(
+              and(
+                eq(adminUserResources.adminUserId, employee.id),
+                eq(bookingResources.kind, "provider"),
+              ),
+            ),
           tx
-            .select({ resourceId: bookingResourceCalendarAssignments.resourceId })
+            .select({
+              resourceId: bookingResourceCalendarAssignments.resourceId,
+            })
             .from(bookingResourceCalendarAssignments)
             .where(
               and(
@@ -1469,11 +1605,16 @@ export async function saveCalendarAssignment(input: {
   if (input.acceptsBookings && !input.contributesBusy) {
     throw new Error("A booking calendar must also block its busy time");
   }
-  let calendar: Awaited<ReturnType<typeof listConnectionGoogleCalendars>>[number]
+  const connectionSnapshot = await loadActiveCalendarConnectionSnapshot(
+    input.connectionId,
+  );
+  let calendar:
+    | Awaited<ReturnType<typeof listConnectionGoogleCalendars>>[number]
     | undefined;
   try {
-    calendar = (await listConnectionGoogleCalendars(input.connectionId))
-      .find((option) => option.id === providerCalendarId);
+    calendar = (await listConnectionGoogleCalendars(input.connectionId)).find(
+      (option) => option.id === providerCalendarId,
+    );
   } catch {
     throw new Error(
       "Google Calendar access could not be verified. Reconnect the account and retry",
@@ -1496,15 +1637,103 @@ export async function saveCalendarAssignment(input: {
       resourceId: input.resourceId,
     },
     mutate: async (tx) => {
+      if (connectionSnapshot.credentialOwnerAdminUserId !== null) {
+        await lockEmployeeCalendarInvariant(
+          tx,
+          connectionSnapshot.credentialOwnerAdminUserId,
+        );
+      }
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${input.resourceId}::text, 0))`,
+      );
+      const [connection] = await tx
+        .select({
+          credentialCiphertext: bookingCalendarConnections.credentialCiphertext,
+          credentialOwnerAdminUserId:
+            bookingCalendarConnections.credentialOwnerAdminUserId,
+          credentialSecretRef: bookingCalendarConnections.credentialSecretRef,
+          id: bookingCalendarConnections.id,
+          providerAccountId: bookingCalendarConnections.providerAccountId,
+          status: bookingCalendarConnections.status,
+          updatedAt: bookingCalendarConnections.updatedAt,
+        })
+        .from(bookingCalendarConnections)
+        .where(
+          and(
+            eq(bookingCalendarConnections.id, input.connectionId),
+            eq(bookingCalendarConnections.provider, "google"),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (
+        !connection ||
+        connection.status !== "active" ||
+        connection.providerAccountId === null ||
+        (connection.credentialCiphertext === null) ===
+          (connection.credentialSecretRef === null)
+      ) {
+        throw new Error("Calendar connection is not active");
+      }
+      if (
+        connection.providerAccountId !== connectionSnapshot.providerAccountId ||
+        connection.updatedAt.getTime() !==
+          connectionSnapshot.updatedAt.getTime() ||
+        connection.credentialOwnerAdminUserId !==
+          connectionSnapshot.credentialOwnerAdminUserId
+      ) {
+        throw new Error(
+          "Calendar connection changed during verification. Retry the assignment",
+        );
+      }
+      if (connection.credentialOwnerAdminUserId !== null) {
+        const [employeeAccess] = await tx
+          .select({ id: adminUsers.id })
+          .from(adminUsers)
+          .innerJoin(
+            adminUserResources,
+            and(
+              eq(
+                adminUserResources.adminUserId,
+                connection.credentialOwnerAdminUserId,
+              ),
+              eq(adminUserResources.bookingResourceId, input.resourceId),
+            ),
+          )
+          .innerJoin(
+            bookingResources,
+            eq(bookingResources.id, adminUserResources.bookingResourceId),
+          )
+          .where(
+            and(
+              eq(adminUsers.id, connection.credentialOwnerAdminUserId),
+              eq(adminUsers.role, "employee"),
+              eq(adminUsers.status, "active"),
+              eq(bookingResources.kind, "provider"),
+            ),
+          )
+          .limit(1);
+        if (!employeeAccess) {
+          throw new Error(
+            "Transfer or clear calendar ownership before assigning this connection to an unassigned resource",
+          );
+        }
+      }
+
       const now = new Date();
       if (input.acceptsBookings) {
         await tx
           .update(bookingResourceCalendarAssignments)
           .set({ acceptsBookings: false, updatedAt: now })
-          .where(and(
-            eq(bookingResourceCalendarAssignments.resourceId, input.resourceId),
-            eq(bookingResourceCalendarAssignments.acceptsBookings, true),
-          ));
+          .where(
+            and(
+              eq(
+                bookingResourceCalendarAssignments.resourceId,
+                input.resourceId,
+              ),
+              eq(bookingResourceCalendarAssignments.acceptsBookings, true),
+            ),
+          );
       }
       const [assignment] = await tx
         .insert(bookingResourceCalendarAssignments)
@@ -1545,13 +1774,134 @@ export async function saveCalendarAssignment(input: {
   });
 }
 
+async function loadActiveCalendarConnectionSnapshot(
+  connectionId: string,
+): Promise<{
+  credentialOwnerAdminUserId: string | null;
+  providerAccountId: string;
+  updatedAt: Date;
+}> {
+  const [connection] = await getPrivateDb()
+    .select({
+      credentialOwnerAdminUserId:
+        bookingCalendarConnections.credentialOwnerAdminUserId,
+      providerAccountId: bookingCalendarConnections.providerAccountId,
+      status: bookingCalendarConnections.status,
+      updatedAt: bookingCalendarConnections.updatedAt,
+    })
+    .from(bookingCalendarConnections)
+    .where(
+      and(
+        eq(bookingCalendarConnections.id, connectionId),
+        eq(bookingCalendarConnections.provider, "google"),
+      ),
+    )
+    .limit(1);
+  if (
+    !connection ||
+    connection.status !== "active" ||
+    connection.providerAccountId === null
+  ) {
+    throw new Error("Calendar connection is not active");
+  }
+  return {
+    credentialOwnerAdminUserId: connection.credentialOwnerAdminUserId,
+    providerAccountId: connection.providerAccountId,
+    updatedAt: connection.updatedAt,
+  };
+}
+
+async function loadCalendarConnectionOwnerSnapshot(
+  connectionId: string,
+): Promise<string | null> {
+  const [connection] = await getPrivateDb()
+    .select({
+      credentialOwnerAdminUserId:
+        bookingCalendarConnections.credentialOwnerAdminUserId,
+    })
+    .from(bookingCalendarConnections)
+    .where(eq(bookingCalendarConnections.id, connectionId))
+    .limit(1);
+  if (!connection) {
+    throw new Error("Calendar connection not found");
+  }
+  return connection.credentialOwnerAdminUserId;
+}
+
+async function loadCalendarAssignmentOwnershipSnapshot(
+  assignmentId: string,
+): Promise<{
+  credentialOwnerAdminUserId: string | null;
+  resourceId: string;
+}> {
+  const [assignment] = await getPrivateDb()
+    .select({
+      credentialOwnerAdminUserId:
+        bookingCalendarConnections.credentialOwnerAdminUserId,
+      resourceId: bookingResourceCalendarAssignments.resourceId,
+    })
+    .from(bookingResourceCalendarAssignments)
+    .innerJoin(
+      bookingCalendarConnections,
+      eq(
+        bookingCalendarConnections.id,
+        bookingResourceCalendarAssignments.calendarConnectionId,
+      ),
+    )
+    .where(eq(bookingResourceCalendarAssignments.id, assignmentId))
+    .limit(1);
+  if (!assignment) {
+    throw new Error("Calendar assignment not found");
+  }
+  return assignment;
+}
+
 export async function disableCalendarAssignment(assignmentId: string) {
   const actor = await requirePermission("calendar-connections:manage");
+  const assignmentSnapshot =
+    await loadCalendarAssignmentOwnershipSnapshot(assignmentId);
   await runAuditedAdminMutation({
     action: "calendar_assignment_disabled",
     actor,
     domain: "calendar",
     mutate: async (tx) => {
+      if (assignmentSnapshot.credentialOwnerAdminUserId !== null) {
+        await lockEmployeeCalendarInvariant(
+          tx,
+          assignmentSnapshot.credentialOwnerAdminUserId,
+        );
+      }
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${assignmentSnapshot.resourceId}::text, 0))`,
+      );
+      const [assignment] = await tx
+        .select({
+          credentialOwnerAdminUserId:
+            bookingCalendarConnections.credentialOwnerAdminUserId,
+          id: bookingResourceCalendarAssignments.id,
+          resourceId: bookingResourceCalendarAssignments.resourceId,
+        })
+        .from(bookingResourceCalendarAssignments)
+        .innerJoin(
+          bookingCalendarConnections,
+          eq(
+            bookingCalendarConnections.id,
+            bookingResourceCalendarAssignments.calendarConnectionId,
+          ),
+        )
+        .where(eq(bookingResourceCalendarAssignments.id, assignmentId))
+        .limit(1)
+        .for("update");
+      if (
+        !assignment ||
+        assignment.resourceId !== assignmentSnapshot.resourceId ||
+        assignment.credentialOwnerAdminUserId !==
+          assignmentSnapshot.credentialOwnerAdminUserId
+      ) {
+        throw new Error(
+          "Calendar assignment ownership changed. Retry the operation",
+        );
+      }
       const rows = await tx
         .update(bookingResourceCalendarAssignments)
         .set({ status: "disabled", updatedAt: new Date() })
@@ -1572,9 +1922,10 @@ export async function setAppointmentAttendanceStatus(input: {
   const now = new Date();
 
   await runAuditedAdminMutation({
-    action: input.status === "completed"
-      ? "appointment_completed"
-      : "appointment_marked_no_show",
+    action:
+      input.status === "completed"
+        ? "appointment_completed"
+        : "appointment_marked_no_show",
     actor,
     domain: "bookings",
     metadata: { status: input.status },
@@ -1592,12 +1943,15 @@ export async function setAppointmentAttendanceStatus(input: {
         .for("update");
 
       if (!appointment) throw new Error("Appointment not found");
-      if (!canAdmin({
-        action: "bookings:manage",
-        bookingResourceId: appointment.primaryResourceId,
-        bookingResourceIds: actor.bookingResourceIds,
-        role: actor.user.role,
-      })) {
+      if (
+        !canAdmin({
+          action: "bookings:manage",
+          bookingResourceId: appointment.primaryResourceId,
+          bookingProviderResourceIds: actor.bookingProviderResourceIds,
+          bookingResourceIds: actor.bookingResourceIds,
+          role: actor.user.role,
+        })
+      ) {
         throw new AdminAuthError("forbidden");
       }
       const transitionError = getAttendanceTransitionError({
@@ -1623,9 +1977,10 @@ export async function setAppointmentAttendanceStatus(input: {
       await tx.insert(appointmentEvents).values({
         actorAdminUserId: actor.user.id,
         appointmentId: appointment.id,
-        eventType: input.status === "completed"
-          ? "appointment_completed"
-          : "appointment_marked_no_show",
+        eventType:
+          input.status === "completed"
+            ? "appointment_completed"
+            : "appointment_marked_no_show",
         nextStatus: input.status,
         previousStatus: appointment.status,
         source: "admin_dashboard",
@@ -1655,7 +2010,9 @@ function requireText(value: string, label: string, maxLength: number): string {
 function requireKey(value: string, label: string): string {
   const key = value.trim().toLowerCase();
   if (!KEY_PATTERN.test(key) || key.length > 100) {
-    throw new Error(`${label} must use lowercase letters, numbers, and hyphens`);
+    throw new Error(
+      `${label} must use lowercase letters, numbers, and hyphens`,
+    );
   }
   return key;
 }
@@ -1686,26 +2043,37 @@ function assertTimezone(timezone: string): void {
 }
 
 function assertPositiveInteger(value: number, label: string): void {
-  if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`${label} must be positive`);
+  if (!Number.isSafeInteger(value) || value <= 0)
+    throw new Error(`${label} must be positive`);
 }
 
 function assertNonnegativeInteger(value: number, label: string): void {
-  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${label} cannot be negative`);
+  if (!Number.isSafeInteger(value) || value < 0)
+    throw new Error(`${label} cannot be negative`);
 }
 
 function assertWeekday(value: number): void {
-  if (!Number.isInteger(value) || value < 1 || value > 7) throw new Error("Invalid weekday");
+  if (!Number.isInteger(value) || value < 1 || value > 7)
+    throw new Error("Invalid weekday");
 }
 
 function assertTimeRange(startsAt: string, endsAt: string): void {
-  if (!TIME_PATTERN.test(startsAt) || !TIME_PATTERN.test(endsAt) || endsAt <= startsAt) {
+  if (
+    !TIME_PATTERN.test(startsAt) ||
+    !TIME_PATTERN.test(endsAt) ||
+    endsAt <= startsAt
+  ) {
     throw new Error("Schedule end must be after start");
   }
 }
 
 function assertDateRange(effectiveFrom: string, effectiveUntil?: string): void {
-  if (!DATE_PATTERN.test(effectiveFrom)) throw new Error("A valid start date is required");
-  if (effectiveUntil && (!DATE_PATTERN.test(effectiveUntil) || effectiveUntil < effectiveFrom)) {
+  if (!DATE_PATTERN.test(effectiveFrom))
+    throw new Error("A valid start date is required");
+  if (
+    effectiveUntil &&
+    (!DATE_PATTERN.test(effectiveUntil) || effectiveUntil < effectiveFrom)
+  ) {
     throw new Error("Schedule end date must not be before its start date");
   }
 }

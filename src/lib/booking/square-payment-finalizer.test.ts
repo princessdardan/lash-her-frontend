@@ -52,6 +52,7 @@ function createStatefulSquareFinalizerRepository() {
   const processedEvents = new Set<string>();
   const finalizedOrders = new Set<string>();
   const paidOrders = new Set<string>();
+  let paidAt: Date | null = null;
   const counts = {
     bookingFinalizations: 0,
     eventRecords: 0,
@@ -96,12 +97,16 @@ function createStatefulSquareFinalizerRepository() {
       }
 
       paidOrders.add(input.order.orderId);
+      paidAt = input.paidAt;
       counts.paidTransitions += 1;
     },
   };
 
   return {
     counts,
+    get paidAt() {
+      return paidAt;
+    },
     repository,
     async finalizeAppointmentPaymentForOrder(
       input: FinalizeAppointmentPaymentForOrderInput,
@@ -423,6 +428,7 @@ test("Square finalizer handles webhook before return on the shared mock payment"
 
   const webhookResult = await finalizer({
     event: {
+      createdAt: "2026-05-23T11:59:30.000Z",
       eventId: "evt_webhook_first",
       eventType: "payment.updated",
       orderId: created.payment_link.order_id,
@@ -441,6 +447,7 @@ test("Square finalizer handles webhook before return on the shared mock payment"
   assert.equal(harness.counts.paidTransitions, 1);
   assert.equal(harness.counts.bookingFinalizations, 1);
   assert.equal(harness.counts.eventRecords, 1);
+  assert.equal(harness.paidAt?.toISOString(), "2026-05-23T11:59:30.000Z");
 });
 
 test("Square finalizer handles return before webhook on the shared mock payment", async () => {

@@ -11,7 +11,11 @@ test("admin auth keeps database roles authoritative and enforces resource scopes
     const { createAdminAuth } = authService;
     const { AdminAuthError } = adminTypes;
 
-    function createStore(initialRows = [], resourceIds = new Map()) {
+    function createStore(
+      initialRows = [],
+      resourceIds = new Map(),
+      providerResourceIds = resourceIds,
+    ) {
       const rows = new Map(initialRows.map((row) => [row.id, row]));
 
       return {
@@ -49,6 +53,9 @@ test("admin auth keeps database roles authoritative and enforces resource scopes
         },
         async listBookingResourceIds(id) {
           return resourceIds.get(id) ?? [];
+        },
+        async listBookingProviderResourceIds(id) {
+          return providerResourceIds.get(id) ?? [];
         },
         async recordSignIn(input) {
           return this.bindIdentity(input);
@@ -95,6 +102,7 @@ test("admin auth keeps database roles authoritative and enforces resource scopes
       bookingResourceId: "resource-a",
     });
     assert.equal(actor.user.role, "employee");
+    assert.deepEqual(actor.bookingProviderResourceIds, ["resource-a"]);
     assert.deepEqual(actor.bookingResourceIds, ["resource-a"]);
     await rejectsWithCode(
       () => employeeAuth.requirePermission("bookings:view", {

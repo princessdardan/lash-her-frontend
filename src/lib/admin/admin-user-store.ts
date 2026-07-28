@@ -1,22 +1,30 @@
 import "server-only";
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { getPrivateDb } from "@/lib/private-db/client";
 import {
   adminUserResources,
   adminUsers,
+  bookingResources,
 } from "@/lib/private-db/schema";
 
 import type { AdminIdentity, AdminUserRecord } from "./types";
 
 export interface AdminUserRepository {
-  bindIdentity(input: AdminIdentity & { adminUserId: string }): Promise<AdminUserRecord>;
+  bindIdentity(
+    input: AdminIdentity & { adminUserId: string },
+  ): Promise<AdminUserRecord>;
   createBootstrapOwner(identity: AdminIdentity): Promise<AdminUserRecord>;
-  findByEmailNormalized(emailNormalized: string): Promise<AdminUserRecord | null>;
+  findByEmailNormalized(
+    emailNormalized: string,
+  ): Promise<AdminUserRecord | null>;
   findByProviderUserId(providerUserId: string): Promise<AdminUserRecord | null>;
+  listBookingProviderResourceIds(adminUserId: string): Promise<string[]>;
   listBookingResourceIds(adminUserId: string): Promise<string[]>;
-  recordSignIn(input: AdminIdentity & { adminUserId: string }): Promise<AdminUserRecord>;
+  recordSignIn(
+    input: AdminIdentity & { adminUserId: string },
+  ): Promise<AdminUserRecord>;
 }
 
 export type AdminUserStore = AdminUserRepository;
@@ -93,6 +101,23 @@ export function createDrizzleAdminUserRepository(): AdminUserRepository {
         .limit(1);
 
       return rows[0] ?? null;
+    },
+    async listBookingProviderResourceIds(adminUserId) {
+      const rows = await db
+        .select({ bookingResourceId: adminUserResources.bookingResourceId })
+        .from(adminUserResources)
+        .innerJoin(
+          bookingResources,
+          eq(bookingResources.id, adminUserResources.bookingResourceId),
+        )
+        .where(
+          and(
+            eq(adminUserResources.adminUserId, adminUserId),
+            eq(bookingResources.kind, "provider"),
+          ),
+        );
+
+      return rows.map((row) => row.bookingResourceId);
     },
     async listBookingResourceIds(adminUserId) {
       const rows = await db

@@ -6,6 +6,7 @@ import {
   createSquareTeamClient,
   type SquareTeamClient,
   type SquareTeamMemberOption,
+  type SquareTeamMemberVerification,
 } from "@/lib/booking/square-team-client";
 import { getSquareServiceBookingRuntimeEnv } from "@/lib/booking/square-runtime";
 import { getPrivateDb } from "@/lib/private-db/client";
@@ -25,6 +26,13 @@ import {
   assertSquareMappingRemovalAllowed,
   lockSquareAttributionInvariant,
 } from "./square-attribution-invariant";
+import {
+  createSquareTeamMemberSelectionOption,
+  resolveSquareTeamMemberSelection,
+  type SquareTeamMemberSelectionCandidate,
+  type SquareTeamMemberSelectionOption,
+} from "./square-team-selection";
+import { applySquareTeamMappingRefresh } from "./square-team-mapping-refresh";
 
 export interface SquareAttributionProviderReadiness {
   displayName: string;
@@ -36,109 +44,108 @@ export interface SquareAttributionProviderReadiness {
 }
 
 export async function listSquareTeamMemberOptions(): Promise<
-  SquareTeamMemberOption[]
+  SquareTeamMemberSelectionOption[]
 > {
   await requirePermission("staff:manage");
-  return getSquareTeamClient().listActiveLocationMembers();
+  const context = getSquareTeamClientContext();
+  const members = await context.client.listActiveLocationMembers();
+  return members.map((member) =>
+    createSquareTeamMemberSelectionOption(member, context.selectionSecret),
+  );
+}
+
+export function createCurrentSquareTeamMemberSelectionOption(input: {
+  displayLabel: string;
+  id: string;
+  status: "active" | "inactive" | "missing";
+}): SquareTeamMemberSelectionOption | null {
+  const env = getSquareServiceBookingRuntimeEnv();
+  if (!env) {
+    return null;
+  }
+
+  return createSquareTeamMemberSelectionOption(
+    {
+      displayLabel: input.displayLabel,
+      id: input.id,
+      isOwner: false,
+      status: input.status,
+    },
+    env.accessToken,
+  );
 }
 
 export async function refreshSquareTeamMappings(): Promise<{
-  members: SquareTeamMemberOption[];
+  members: SquareTeamMemberSelectionOption[];
   verifiedMappings: number;
 }> {
   const actor = await requirePermission("staff:manage");
-  const members = await getSquareTeamClient().listActiveLocationMembers();
-  const memberById = new Map(members.map((member) => [member.id, member]));
+  const context = getSquareTeamClientContext();
+  const activeMembers = await context.client.listActiveLocationMembers();
+  const mappedMemberIds = await listMappedSquareTeamMemberIds();
+  const verificationById = await buildSquareTeamVerificationSnapshot({
+    activeMembers,
+    client: context.client,
+    mappedMemberIds,
+  });
 
   const verifiedMappings = await runAuditedAdminMutation({
     action: "square_team_mappings_refreshed",
     actor,
     domain: "square_attribution",
-    metadata: { eligibleMemberCount: members.length },
+    metadata: {
+      activeMemberCount: activeMembers.length,
+      inactiveMappingCount: countVerificationStatus(
+        verificationById,
+        "inactive",
+      ),
+      missingMappingCount: countVerificationStatus(verificationById, "missing"),
+    },
     mutate: async (tx) => {
       await lockSquareAttributionInvariant(tx);
-      const now = new Date();
-      const mappedProviders = await tx
-        .select({
-          id: bookingProviders.id,
-          squareTeamMemberDisplayLabel:
-            bookingProviders.squareTeamMemberDisplayLabel,
-          squareTeamMemberId: bookingProviders.squareTeamMemberId,
-        })
-        .from(bookingProviders)
-        .where(isNotNull(bookingProviders.squareTeamMemberId));
-
-      const [settings] = await tx
-        .select({
-          required: bookingBusinessSettings.requireSquareTeamAttribution,
-        })
-        .from(bookingBusinessSettings)
-        .where(eq(bookingBusinessSettings.singletonKey, "default"))
-        .limit(1);
-
-      if (settings?.required === true) {
-        const activeProviderRows = await tx
-          .selectDistinct({ providerId: bookingServiceOfferings.providerId })
-          .from(bookingServiceOfferings)
-          .where(eq(bookingServiceOfferings.status, "active"));
-        const activeProviderIds = new Set(
-          activeProviderRows.map((row) => row.providerId),
-        );
-        const invalidatedProviders = mappedProviders.filter(
-          (provider) =>
-            activeProviderIds.has(provider.id) &&
-            !memberById.has(provider.squareTeamMemberId!),
-        );
-
-        if (invalidatedProviders.length > 0) {
-          throw new Error(
-            "Square Team refresh would invalidate a required mapping for an active offering",
-          );
-        }
-      }
-
-      for (const provider of mappedProviders) {
-        const member = memberById.get(provider.squareTeamMemberId!);
-        await tx
-          .update(bookingProviders)
-          .set({
-            squareTeamMemberDisplayLabel:
-              member?.displayLabel ?? provider.squareTeamMemberDisplayLabel,
-            squareTeamMemberStatus: member ? "active" : "missing",
-            squareTeamMemberVerifiedAt: now,
-            updatedAt: now,
-            updatedByAdminUserId: actor.user.id,
-          })
-          .where(eq(bookingProviders.id, provider.id));
-      }
-
-      return mappedProviders.length;
+      return applySquareTeamMappingRefresh(tx, {
+        actorUserId: actor.user.id,
+        now: new Date(),
+        verificationById,
+      });
     },
     targetId: "default",
     targetType: "square_team_directory",
   });
 
-  return { members, verifiedMappings };
+  return {
+    members: activeMembers.map((member) =>
+      createSquareTeamMemberSelectionOption(member, context.selectionSecret),
+    ),
+    verifiedMappings,
+  };
 }
 
 export async function setProviderSquareTeamMember(input: {
   providerId: string;
-  squareTeamMemberId: string | null;
+  squareTeamMemberSelectionHandle: string | null;
 }): Promise<void> {
   const actor = await requirePermission("staff:manage");
   const providerId = requireIdentifier(input.providerId, "Provider");
-  const requestedMemberId = input.squareTeamMemberId?.trim() || null;
-  const member = requestedMemberId
-    ? (await getSquareTeamClient().listActiveLocationMembers()).find(
-        (candidate) => candidate.id === requestedMemberId,
-      )
-    : null;
+  const requestedSelectionHandle =
+    input.squareTeamMemberSelectionHandle?.trim() || null;
+  let member: SquareTeamMemberSelectionCandidate | null = null;
+  if (requestedSelectionHandle) {
+    const context = getSquareTeamClientContext();
+    const activeMembers = await context.client.listActiveLocationMembers();
+    member = resolveSquareTeamMemberSelection(
+      requestedSelectionHandle,
+      activeMembers,
+      context.selectionSecret,
+    );
+  }
 
-  if (requestedMemberId && !member) {
+  if (requestedSelectionHandle && !member) {
     throw new Error(
       "The selected Square team member is not active at the configured location",
     );
   }
+  const requestedMemberId = member?.id ?? null;
 
   try {
     await runAuditedAdminMutation({
@@ -277,12 +284,7 @@ async function listRequiredProviderReadiness(
       squareTeamMemberVerifiedAt: bookingProviders.squareTeamMemberVerifiedAt,
     })
     .from(bookingProviders)
-    .where(
-      inArray(
-        bookingProviders.id,
-        activeProviderIds,
-      ),
-    );
+    .where(inArray(bookingProviders.id, activeProviderIds));
 
   return providers.map((provider) => ({
     displayName: provider.displayName,
@@ -297,12 +299,76 @@ async function listRequiredProviderReadiness(
   }));
 }
 
-function getSquareTeamClient(): SquareTeamClient {
-  const env = getSquareServiceBookingRuntimeEnv();
-  if (!env) {
+async function listMappedSquareTeamMemberIds(): Promise<string[]> {
+  const rows = await getPrivateDb()
+    .selectDistinct({ id: bookingProviders.squareTeamMemberId })
+    .from(bookingProviders)
+    .where(isNotNull(bookingProviders.squareTeamMemberId));
+  return rows.flatMap((row) => (row.id ? [row.id] : []));
+}
+
+async function buildSquareTeamVerificationSnapshot(input: {
+  activeMembers: SquareTeamMemberOption[];
+  client: SquareTeamClient;
+  mappedMemberIds: string[];
+}): Promise<Map<string, SquareTeamMemberVerification>> {
+  const verificationById = new Map<string, SquareTeamMemberVerification>(
+    input.activeMembers.map((member) => [member.id, member]),
+  );
+  const absentMemberIds = [
+    ...new Set(
+      input.mappedMemberIds.filter(
+        (memberId) => !verificationById.has(memberId),
+      ),
+    ),
+  ];
+  const absentVerifications = await Promise.all(
+    absentMemberIds.map((memberId) =>
+      input.client.retrieveLocationMember(memberId),
+    ),
+  );
+  for (const verification of absentVerifications) {
+    verificationById.set(verification.id, verification);
+  }
+  return verificationById;
+}
+
+function countVerificationStatus(
+  verificationById: ReadonlyMap<string, SquareTeamMemberVerification>,
+  status: "inactive" | "missing",
+): number {
+  let count = 0;
+  for (const verification of verificationById.values()) {
+    if (verification.status === status) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function getSquareTeamClientContext(): {
+  client: SquareTeamClient;
+  selectionSecret: string;
+} {
+  const context = getOptionalSquareTeamClientContext();
+  if (!context) {
     throw new Error("Square service booking is not enabled");
   }
-  return createSquareTeamClient(env);
+  return context;
+}
+
+function getOptionalSquareTeamClientContext(): {
+  client: SquareTeamClient;
+  selectionSecret: string;
+} | null {
+  const env = getSquareServiceBookingRuntimeEnv();
+  if (!env) {
+    return null;
+  }
+  return {
+    client: createSquareTeamClient(env),
+    selectionSecret: env.accessToken,
+  };
 }
 
 function requireIdentifier(value: string, label: string): string {

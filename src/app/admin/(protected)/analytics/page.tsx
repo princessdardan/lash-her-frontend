@@ -27,19 +27,51 @@ export default async function AdminAnalyticsPage({
   return (
     <div className="space-y-8">
       <header>
-        <p className="font-smallcaps text-sm uppercase tracking-[0.2em] text-lh-muted">Last 30 days</p>
-        <h1 className="mt-2 font-heading text-6xl uppercase tracking-[0.08em]">Business snapshot</h1>
-        <p className="mt-3 max-w-3xl text-lh-muted">Operational totals from PostgreSQL. Revenue includes paid product, service, and training checkout orders.</p>
+        <p className="font-smallcaps text-sm uppercase tracking-[0.2em] text-lh-muted">
+          Last 30 days
+        </p>
+        <h1 className="mt-2 font-heading text-6xl uppercase tracking-[0.08em]">
+          Business snapshot
+        </h1>
+        <p className="mt-3 max-w-3xl text-lh-muted">
+          Operational totals from PostgreSQL. Revenue includes paid product,
+          service, and training checkout orders.
+        </p>
       </header>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <AdminCard label="Paid revenue" value={money(analytics.revenueCents)}>{analytics.paidOrders} paid orders</AdminCard>
-        <AdminCard label="Active contacts" value={analytics.contacts.active}>{analytics.contacts.unsubscribed} unsubscribed</AdminCard>
-        <AdminCard label="Active offerings" value={analytics.offerings.active}>{analytics.offerings.total} total operational offerings</AdminCard>
-        <AdminCard label="Appointments" value={appointmentRows.reduce((total, [, count]) => total + count, 0)}>Appointments scheduled in the reporting window</AdminCard>
+        <AdminCard label="Paid revenue" value={money(analytics.revenueCents)}>
+          {analytics.paidOrders} paid orders
+        </AdminCard>
+        <AdminCard label="Active contacts" value={analytics.contacts.active}>
+          {analytics.contacts.unsubscribed} unsubscribed
+        </AdminCard>
+        <AdminCard label="Active offerings" value={analytics.offerings.active}>
+          {analytics.offerings.total} total operational offerings
+        </AdminCard>
+        <AdminCard
+          label="Appointments"
+          value={appointmentRows.reduce((total, [, count]) => total + count, 0)}
+        >
+          Appointments scheduled in the reporting window
+        </AdminCard>
       </div>
       <AdminTable caption="Appointments by status">
-        <thead className={theadClass}><tr><th className={cellClass}>Appointment status</th><th className={`${cellClass} text-right`}>Count</th></tr></thead>
-        <tbody className="divide-y divide-lh-line">{appointmentRows.map(([status, count]) => <tr key={status}><td className={cellClass}>{status}</td><td className={`${cellClass} text-right font-semibold`}>{count}</td></tr>)}</tbody>
+        <thead className={theadClass}>
+          <tr>
+            <th className={cellClass}>Appointment status</th>
+            <th className={`${cellClass} text-right`}>Count</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-lh-line">
+          {appointmentRows.map(([status, count]) => (
+            <tr key={status}>
+              <td className={cellClass}>{status}</td>
+              <td className={`${cellClass} text-right font-semibold`}>
+                {count}
+              </td>
+            </tr>
+          ))}
+        </tbody>
       </AdminTable>
 
       <section className="space-y-4">
@@ -54,7 +86,10 @@ export default async function AdminAnalyticsPage({
             Historical provider and Square team-member snapshots only. Invoice
             no-show charges and legacy Payment Links are labeled as local
             attribution. This report does not calculate commissions, wages,
-            taxes, or final employee payouts.
+            taxes, or final employee payouts. Square refund events use their
+            provider timestamp. Pre-migration refunds without an event use the
+            local terminal evidence timestamp and are labeled as historical
+            local evidence.
           </p>
         </div>
         {attributionResult.error ? (
@@ -62,13 +97,27 @@ export default async function AdminAnalyticsPage({
         ) : null}
         <form className="flex flex-wrap items-end gap-3" method="get">
           <Field label="From">
-            <input className={inputClass} defaultValue={attribution.from} name="from" type="date" />
+            <input
+              className={inputClass}
+              defaultValue={attribution.from}
+              name="from"
+              type="date"
+            />
           </Field>
           <Field label="To">
-            <input className={inputClass} defaultValue={attribution.to} name="to" type="date" />
+            <input
+              className={inputClass}
+              defaultValue={attribution.to}
+              name="to"
+              type="date"
+            />
           </Field>
-          <button className={buttonClass} type="submit">Apply dates</button>
-          <p className="text-xs text-lh-muted">Business timezone: {attribution.timezone}</p>
+          <button className={buttonClass} type="submit">
+            Apply dates
+          </button>
+          <p className="text-xs text-lh-muted">
+            Business timezone: {attribution.timezone}
+          </p>
         </form>
         <AdminTable caption="Employee-attributed Square sales">
           <thead className={theadClass}>
@@ -76,7 +125,8 @@ export default async function AdminAnalyticsPage({
               <th className={cellClass}>Employee snapshot</th>
               <th className={`${cellClass} text-right`}>Captured</th>
               <th className={`${cellClass} text-right`}>Known tips</th>
-              <th className={`${cellClass} text-right`}>Refunded</th>
+              <th className={`${cellClass} text-right`}>Refunds</th>
+              <th className={`${cellClass} text-right`}>Fully refunded</th>
               <th className={`${cellClass} text-right`}>No-show</th>
               <th className={`${cellClass} text-right`}>Legacy</th>
               <th className={`${cellClass} text-right`}>Net sales</th>
@@ -92,24 +142,58 @@ export default async function AdminAnalyticsPage({
                     {row.sourceLabels.join(" · ") || "No source label"}
                   </p>
                 </td>
-                <td className={`${cellClass} text-right`}>{money(row.capturedSalesCents)}</td>
-                <td className={`${cellClass} text-right`}>{money(row.knownTipsCents)}</td>
-                <td className={`${cellClass} text-right`}>{money(row.fullyRefundedCents)}</td>
-                <td className={`${cellClass} text-right`}>{money(row.noShowChargesCents)}</td>
-                <td className={`${cellClass} text-right`}>{money(row.legacyChargesCents)}</td>
-                <td className={`${cellClass} text-right font-semibold`}>{money(row.netAttributedSalesCents)}</td>
-                <td className={`${cellClass} text-right`}>{row.unattributedRecords}</td>
+                <td className={`${cellClass} text-right`}>
+                  {money(row.capturedSalesCents)}
+                </td>
+                <td className={`${cellClass} text-right`}>
+                  {money(row.knownTipsCents)}
+                </td>
+                <td className={`${cellClass} text-right`}>
+                  {money(row.refundedCents)}
+                </td>
+                <td className={`${cellClass} text-right`}>
+                  {money(row.fullyRefundedCents)}
+                </td>
+                <td className={`${cellClass} text-right`}>
+                  {money(row.noShowChargesCents)}
+                </td>
+                <td className={`${cellClass} text-right`}>
+                  {money(row.legacyChargesCents)}
+                </td>
+                <td className={`${cellClass} text-right font-semibold`}>
+                  {money(row.netAttributedSalesCents)}
+                </td>
+                <td className={`${cellClass} text-right`}>
+                  {row.unattributedRecords}
+                </td>
               </tr>
             ))}
             <tr className="bg-lh-neutral-2 font-semibold">
               <td className={cellClass}>Totals</td>
-              <td className={`${cellClass} text-right`}>{money(attribution.totals.capturedSalesCents)}</td>
-              <td className={`${cellClass} text-right`}>{money(attribution.totals.knownTipsCents)}</td>
-              <td className={`${cellClass} text-right`}>{money(attribution.totals.fullyRefundedCents)}</td>
-              <td className={`${cellClass} text-right`}>{money(attribution.totals.noShowChargesCents)}</td>
-              <td className={`${cellClass} text-right`}>{money(attribution.totals.legacyChargesCents)}</td>
-              <td className={`${cellClass} text-right`}>{money(attribution.totals.netAttributedSalesCents)}</td>
-              <td className={`${cellClass} text-right`}>{attribution.totals.unattributedRecords}</td>
+              <td className={`${cellClass} text-right`}>
+                {money(attribution.totals.capturedSalesCents)}
+              </td>
+              <td className={`${cellClass} text-right`}>
+                {money(attribution.totals.knownTipsCents)}
+              </td>
+              <td className={`${cellClass} text-right`}>
+                {money(attribution.totals.refundedCents)}
+              </td>
+              <td className={`${cellClass} text-right`}>
+                {money(attribution.totals.fullyRefundedCents)}
+              </td>
+              <td className={`${cellClass} text-right`}>
+                {money(attribution.totals.noShowChargesCents)}
+              </td>
+              <td className={`${cellClass} text-right`}>
+                {money(attribution.totals.legacyChargesCents)}
+              </td>
+              <td className={`${cellClass} text-right`}>
+                {money(attribution.totals.netAttributedSalesCents)}
+              </td>
+              <td className={`${cellClass} text-right`}>
+                {attribution.totals.unattributedRecords}
+              </td>
             </tr>
           </tbody>
         </AdminTable>
@@ -118,9 +202,18 @@ export default async function AdminAnalyticsPage({
   );
 }
 
-function money(cents: number) { return new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" }).format(cents / 100); }
+function money(cents: number) {
+  return new Intl.NumberFormat("en-CA", {
+    style: "currency",
+    currency: "CAD",
+  }).format(cents / 100);
+}
 function firstString(value: string | string[] | undefined) {
-  return typeof value === "string" ? value : Array.isArray(value) ? value[0] : undefined;
+  return typeof value === "string"
+    ? value
+    : Array.isArray(value)
+      ? value[0]
+      : undefined;
 }
 async function getAttributionOrDefault(from?: string, to?: string) {
   try {
@@ -130,15 +223,30 @@ async function getAttributionOrDefault(from?: string, to?: string) {
     };
   } catch (error) {
     return {
-      error: error instanceof Error ? error.message : "The date range is invalid",
+      error:
+        error instanceof Error ? error.message : "The date range is invalid",
       report: await getEmployeeAttributionAnalytics(),
     };
   }
 }
-function Field({ children, label }: { children: React.ReactNode; label: string }) {
-  return <label className="block text-sm font-semibold"><span className="mb-2 block">{label}</span>{children}</label>;
+function Field({
+  children,
+  label,
+}: {
+  children: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <label className="block text-sm font-semibold">
+      <span className="mb-2 block">{label}</span>
+      {children}
+    </label>
+  );
 }
-const inputClass = "rounded-xl border border-lh-line bg-white px-3 py-2 text-sm";
-const buttonClass = "rounded-full border border-lh-line px-4 py-2 text-sm font-semibold";
-const theadClass = "bg-lh-neutral-2 text-xs uppercase tracking-[0.12em] text-lh-muted";
+const inputClass =
+  "rounded-xl border border-lh-line bg-white px-3 py-2 text-sm";
+const buttonClass =
+  "rounded-full border border-lh-line px-4 py-2 text-sm font-semibold";
+const theadClass =
+  "bg-lh-neutral-2 text-xs uppercase tracking-[0.12em] text-lh-muted";
 const cellClass = "px-4 py-3";

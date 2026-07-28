@@ -689,7 +689,9 @@ function createFakes(initialHolds: BookingHoldRecord[] = [createHold()]): {
           : (state.createPaymentTeamMemberIdOverride ?? undefined);
       if (state.throwCreatePaymentAfterAcceptOnce) {
         state.throwCreatePaymentAfterAcceptOnce = false;
-        throw new Error("Connection closed after Square accepted CreatePayment");
+        throw new Error(
+          "Connection closed after Square accepted CreatePayment",
+        );
       }
       return {
         payment: {
@@ -980,10 +982,7 @@ test("V2 direct payments carry and verify the immutable Square team-member snaps
   });
 
   assert.equal(result.ok, true);
-  assert.equal(
-    state.squarePaymentCreates[0]?.team_member_id,
-    "team-member-1",
-  );
+  assert.equal(state.squarePaymentCreates[0]?.team_member_id, "team-member-1");
   assert.equal(state.squarePaymentCompletes.length, 1);
 });
 
@@ -1018,6 +1017,7 @@ test("V2 cancels an uncaptured authorization when Square omits or changes team a
 
   assert.equal(result.ok, false);
   assert.deepEqual(state.squarePaymentCancels, ["pay_1"]);
+  assert.equal(state.operationalPaymentIntents[0]?.status, "cancelled");
   assert.equal(state.squarePaymentCompletes.length, 0);
   assert.equal(state.calendarFinalizeCalls.length, 0);
   assert.ok(
@@ -2870,6 +2870,48 @@ test("a non-CANCELED Square cancellation response preserves V2 authorization rec
       (call) =>
         call.category === "stuck_payment_state" &&
         call.message.includes("CANCELED evidence"),
+    ),
+  );
+});
+
+test("a confirmed Square cancellation uses manual follow-up when ledger terminalization fails", async () => {
+  const {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    state,
+  } = createFakes([createHold({ bookingModelVersion: 2 })]);
+  state.completePaymentStatus = "FAILED";
+  repository.recordAuthorizedOperationalPayment = async () => ({
+    bookingModelVersion: 2,
+  });
+  repository.markAuthorizedOperationalPaymentTerminated = async () => {
+    throw new Error("Database unavailable");
+  };
+
+  const result = await confirmChargeAndStoreBooking(createRequest(), {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+    locationId: "LOC123",
+    now,
+  });
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(state.squarePaymentCancels, ["pay_1"]);
+  assert.equal(state.markHoldPaymentFailedCalls.length, 0);
+  assert.equal(state.markHoldRefundRequiredCalls.length, 1);
+  assert.ok(
+    state.alertCalls.some((call) =>
+      call.message.includes("ledger transition failed"),
     ),
   );
 });

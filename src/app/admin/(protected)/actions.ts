@@ -48,9 +48,10 @@ import {
 
 export async function setAppointmentAttendanceStatusAction(formData: FormData) {
   const rawAppointmentId = formData.get("appointmentId");
-  const destination = typeof rawAppointmentId === "string" && rawAppointmentId
-    ? `/admin/appointments/${encodeURIComponent(rawAppointmentId)}`
-    : "/admin/appointments";
+  const destination =
+    typeof rawAppointmentId === "string" && rawAppointmentId
+      ? `/admin/appointments/${encodeURIComponent(rawAppointmentId)}`
+      : "/admin/appointments";
   return runAdminAction({
     destination,
     revalidatePaths: ["/admin/appointments", destination],
@@ -107,10 +108,11 @@ export async function assignStaffResourceAction(formData: FormData) {
     destination: "/admin/staff",
     revalidatePaths: ["/admin/staff"],
     success: "Resource assigned.",
-    task: () => assignStaffResource({
-      resourceId: getString(formData, "resourceId"),
-      userId: getString(formData, "userId"),
-    }),
+    task: () =>
+      assignStaffResource({
+        resourceId: getString(formData, "resourceId"),
+        userId: getString(formData, "userId"),
+      }),
   });
 }
 
@@ -119,10 +121,11 @@ export async function unassignStaffResourceAction(formData: FormData) {
     destination: "/admin/staff",
     revalidatePaths: ["/admin/staff"],
     success: "Resource access removed.",
-    task: () => unassignStaffResource({
-      resourceId: getString(formData, "resourceId"),
-      userId: getString(formData, "userId"),
-    }),
+    task: () =>
+      unassignStaffResource({
+        resourceId: getString(formData, "resourceId"),
+        userId: getString(formData, "userId"),
+      }),
   });
 }
 
@@ -143,17 +146,14 @@ export async function refreshSquareTeamMappingsAction() {
 export async function setProviderSquareTeamMemberAction(formData: FormData) {
   return runAdminAction({
     destination: "/admin/staff",
-    revalidatePaths: [
-      "/admin/staff",
-      "/admin/setup",
-      "/admin/offerings",
-    ],
+    revalidatePaths: ["/admin/staff", "/admin/setup", "/admin/offerings"],
     success: "Square team-member mapping saved.",
     task: () =>
       setProviderSquareTeamMember({
         providerId: getString(formData, "providerId"),
-        squareTeamMemberId:
-          getOptionalString(formData, "squareTeamMemberId") ?? null,
+        squareTeamMemberSelectionHandle:
+          getOptionalString(formData, "squareTeamMemberSelectionHandle") ??
+          null,
       }),
   });
 }
@@ -163,11 +163,7 @@ export async function setSquareAttributionRequirementAction(
 ) {
   return runAdminAction({
     destination: "/admin/setup",
-    revalidatePaths: [
-      "/admin/setup",
-      "/admin/staff",
-      "/admin/offerings",
-    ],
+    revalidatePaths: ["/admin/setup", "/admin/staff", "/admin/offerings"],
     success: "Square attribution requirement updated.",
     task: () =>
       setSquareAttributionRequirement(
@@ -203,10 +199,11 @@ export async function setBookingResourceStatusAction(formData: FormData) {
     destination: "/admin/staff",
     revalidatePaths: ["/admin/staff", "/admin/setup"],
     success: "Resource status updated.",
-    task: () => setBookingResourceStatus({
-      resourceId: getString(formData, "resourceId"),
-      status: getConfigurationStatus(formData),
-    }),
+    task: () =>
+      setBookingResourceStatus({
+        resourceId: getString(formData, "resourceId"),
+        status: getConfigurationStatus(formData),
+      }),
   });
 }
 
@@ -220,16 +217,17 @@ export async function updateBookingResourceProfileAction(formData: FormData) {
       "/admin/setup",
     ],
     success: "Resource profile updated.",
-    task: () => updateBookingResourceProfile({
-      name: getString(formData, "name"),
-      providerPublicSlug: getOptionalString(formData, "providerPublicSlug"),
-      providerSanityDocumentId: getOptionalString(
-        formData,
-        "providerSanityDocumentId",
-      ),
-      resourceId: getString(formData, "resourceId"),
-      timezone: getString(formData, "timezone"),
-    }),
+    task: () =>
+      updateBookingResourceProfile({
+        name: getString(formData, "name"),
+        providerPublicSlug: getOptionalString(formData, "providerPublicSlug"),
+        providerSanityDocumentId: getOptionalString(
+          formData,
+          "providerSanityDocumentId",
+        ),
+        resourceId: getString(formData, "resourceId"),
+        timezone: getString(formData, "timezone"),
+      }),
   });
 }
 
@@ -254,10 +252,11 @@ export async function setBookingServiceStatusAction(formData: FormData) {
     destination: "/admin/offerings",
     revalidatePaths: ["/admin/offerings", "/admin/setup"],
     success: "Service status updated.",
-    task: () => setBookingServiceStatus({
-      serviceId: getString(formData, "serviceId"),
-      status: getConfigurationStatus(formData),
-    }),
+    task: () =>
+      setBookingServiceStatus({
+        serviceId: getString(formData, "serviceId"),
+        status: getConfigurationStatus(formData),
+      }),
   });
 }
 
@@ -282,17 +281,18 @@ export async function createServiceOfferingAction(formData: FormData) {
     destination: "/admin/offerings",
     revalidatePaths: ["/admin/offerings", "/admin/setup"],
     success: "Provider offering created as a draft.",
-    task: () => createServiceOffering({
-      bufferAfterMinutes: getInteger(formData, "bufferAfterMinutes"),
-      bufferBeforeMinutes: getInteger(formData, "bufferBeforeMinutes"),
-      depositAmountCents: getMoneyCents(formData, "depositAmount"),
-      durationMinutes: getInteger(formData, "durationMinutes"),
-      fullPriceCents: getMoneyCents(formData, "fullPrice"),
-      offeringKey: getString(formData, "offeringKey"),
-      providerId: getString(formData, "providerId"),
-      serviceId: getString(formData, "serviceId"),
-      slotIntervalMinutes: getInteger(formData, "slotIntervalMinutes"),
-    }),
+    task: () =>
+      createServiceOffering({
+        bufferAfterMinutes: getInteger(formData, "bufferAfterMinutes"),
+        bufferBeforeMinutes: getInteger(formData, "bufferBeforeMinutes"),
+        depositAmountCents: getMoneyCents(formData, "depositAmount"),
+        durationMinutes: getInteger(formData, "durationMinutes"),
+        fullPriceCents: getMoneyCents(formData, "fullPrice"),
+        offeringKey: getString(formData, "offeringKey"),
+        providerId: getString(formData, "providerId"),
+        serviceId: getString(formData, "serviceId"),
+        slotIntervalMinutes: getInteger(formData, "slotIntervalMinutes"),
+      }),
   });
 }
 
@@ -301,10 +301,11 @@ export async function setServiceOfferingStatusAction(formData: FormData) {
     destination: "/admin/offerings",
     revalidatePaths: ["/admin/offerings", "/admin/setup"],
     success: "Offering status updated.",
-    task: () => setServiceOfferingStatus({
-      offeringId: getString(formData, "offeringId"),
-      status: getConfigurationStatus(formData),
-    }),
+    task: () =>
+      setServiceOfferingStatus({
+        offeringId: getString(formData, "offeringId"),
+        status: getConfigurationStatus(formData),
+      }),
   });
 }
 
@@ -313,16 +314,17 @@ export async function updateServiceOfferingAction(formData: FormData) {
     destination: "/admin/offerings",
     revalidatePaths: ["/admin/offerings", "/admin/setup"],
     success: "Offering details updated.",
-    task: () => updateServiceOffering({
-      bufferAfterMinutes: getInteger(formData, "bufferAfterMinutes"),
-      bufferBeforeMinutes: getInteger(formData, "bufferBeforeMinutes"),
-      depositAmountCents: getMoneyCents(formData, "depositAmount"),
-      durationMinutes: getInteger(formData, "durationMinutes"),
-      expectedVersion: getInteger(formData, "expectedVersion"),
-      fullPriceCents: getMoneyCents(formData, "fullPrice"),
-      offeringId: getString(formData, "offeringId"),
-      slotIntervalMinutes: getInteger(formData, "slotIntervalMinutes"),
-    }),
+    task: () =>
+      updateServiceOffering({
+        bufferAfterMinutes: getInteger(formData, "bufferAfterMinutes"),
+        bufferBeforeMinutes: getInteger(formData, "bufferBeforeMinutes"),
+        depositAmountCents: getMoneyCents(formData, "depositAmount"),
+        durationMinutes: getInteger(formData, "durationMinutes"),
+        expectedVersion: getInteger(formData, "expectedVersion"),
+        fullPriceCents: getMoneyCents(formData, "fullPrice"),
+        offeringId: getString(formData, "offeringId"),
+        slotIntervalMinutes: getInteger(formData, "slotIntervalMinutes"),
+      }),
   });
 }
 
@@ -358,14 +360,15 @@ export async function createOfferingAddOnAction(formData: FormData) {
     destination: "/admin/offerings",
     revalidatePaths: ["/admin/offerings"],
     success: "Add-on created.",
-    task: () => createOfferingAddOn({
-      addOnKey: getString(formData, "addOnKey"),
-      description: getString(formData, "description"),
-      durationDeltaMinutes: getInteger(formData, "durationDeltaMinutes"),
-      name: getString(formData, "name"),
-      offeringId: getString(formData, "offeringId"),
-      priceCents: getMoneyCents(formData, "price"),
-    }),
+    task: () =>
+      createOfferingAddOn({
+        addOnKey: getString(formData, "addOnKey"),
+        description: getString(formData, "description"),
+        durationDeltaMinutes: getInteger(formData, "durationDeltaMinutes"),
+        name: getString(formData, "name"),
+        offeringId: getString(formData, "offeringId"),
+        priceCents: getMoneyCents(formData, "price"),
+      }),
   });
 }
 
@@ -392,14 +395,21 @@ export async function updateBookingSettingsAction(formData: FormData) {
     destination: "/admin/setup",
     revalidatePaths: ["/admin/setup"],
     success: "Booking defaults saved.",
-    task: () => updateBookingSettings({
-      bookingHorizonDays: getInteger(formData, "bookingHorizonDays"),
-      defaultBufferAfterMinutes: getInteger(formData, "defaultBufferAfterMinutes"),
-      defaultBufferBeforeMinutes: getInteger(formData, "defaultBufferBeforeMinutes"),
-      minimumLeadTimeHours: getInteger(formData, "minimumLeadTimeHours"),
-      slotIntervalMinutes: getInteger(formData, "slotIntervalMinutes"),
-      timezone: getString(formData, "timezone"),
-    }),
+    task: () =>
+      updateBookingSettings({
+        bookingHorizonDays: getInteger(formData, "bookingHorizonDays"),
+        defaultBufferAfterMinutes: getInteger(
+          formData,
+          "defaultBufferAfterMinutes",
+        ),
+        defaultBufferBeforeMinutes: getInteger(
+          formData,
+          "defaultBufferBeforeMinutes",
+        ),
+        minimumLeadTimeHours: getInteger(formData, "minimumLeadTimeHours"),
+        slotIntervalMinutes: getInteger(formData, "slotIntervalMinutes"),
+        timezone: getString(formData, "timezone"),
+      }),
   });
 }
 
@@ -408,14 +418,15 @@ export async function createResourceScheduleAction(formData: FormData) {
     destination: "/admin/schedules",
     revalidatePaths: ["/admin/schedules", "/admin/setup"],
     success: "Weekly hours added.",
-    task: () => createResourceSchedule({
-      effectiveFrom: getString(formData, "effectiveFrom"),
-      effectiveUntil: getOptionalString(formData, "effectiveUntil"),
-      endsAt: getString(formData, "endsAt"),
-      resourceId: getString(formData, "resourceId"),
-      startsAt: getString(formData, "startsAt"),
-      weekday: getInteger(formData, "weekday"),
-    }),
+    task: () =>
+      createResourceSchedule({
+        effectiveFrom: getString(formData, "effectiveFrom"),
+        effectiveUntil: getOptionalString(formData, "effectiveUntil"),
+        endsAt: getString(formData, "endsAt"),
+        resourceId: getString(formData, "resourceId"),
+        startsAt: getString(formData, "startsAt"),
+        weekday: getInteger(formData, "weekday"),
+      }),
   });
 }
 
@@ -424,10 +435,11 @@ export async function disableResourceScheduleAction(formData: FormData) {
     destination: "/admin/schedules",
     revalidatePaths: ["/admin/schedules", "/admin/setup"],
     success: "Weekly hours disabled.",
-    task: () => disableResourceSchedule({
-      resourceId: getString(formData, "resourceId"),
-      scheduleId: getString(formData, "scheduleId"),
-    }),
+    task: () =>
+      disableResourceSchedule({
+        resourceId: getString(formData, "resourceId"),
+        scheduleId: getString(formData, "scheduleId"),
+      }),
   });
 }
 
@@ -457,17 +469,20 @@ export async function cancelScheduleExceptionAction(formData: FormData) {
     destination: "/admin/schedules",
     revalidatePaths: ["/admin/schedules"],
     success: "Schedule exception cancelled.",
-    task: () => cancelScheduleException({
-      exceptionId: getString(formData, "exceptionId"),
-      resourceId: getString(formData, "resourceId"),
-    }),
+    task: () =>
+      cancelScheduleException({
+        exceptionId: getString(formData, "exceptionId"),
+        resourceId: getString(formData, "resourceId"),
+      }),
   });
 }
 
 export async function createCalendarConnectionAction() {
   const outcome = await attemptAdminAction(createCalendarConnection);
   if (!outcome.ok) {
-    redirect(feedbackUrl("/admin/calendar-connections", "error", outcome.error));
+    redirect(
+      feedbackUrl("/admin/calendar-connections", "error", outcome.error),
+    );
   }
   redirect(
     `/api/admin/calendar-connections/${outcome.value.id}/oauth/start?returnTo=/admin/calendar-connections`,
@@ -488,14 +503,15 @@ export async function saveCalendarAssignmentAction(formData: FormData) {
     destination: "/admin/calendar-connections",
     revalidatePaths: ["/admin/calendar-connections", "/admin/setup"],
     success: "Calendar assignment saved.",
-    task: () => saveCalendarAssignment({
-      acceptsBookings: formData.get("acceptsBookings") === "on",
-      calendarLabel: getOptionalString(formData, "calendarLabel"),
-      connectionId: getString(formData, "connectionId"),
-      contributesBusy: formData.get("contributesBusy") === "on",
-      providerCalendarId: getString(formData, "providerCalendarId"),
-      resourceId: getString(formData, "resourceId"),
-    }),
+    task: () =>
+      saveCalendarAssignment({
+        acceptsBookings: formData.get("acceptsBookings") === "on",
+        calendarLabel: getOptionalString(formData, "calendarLabel"),
+        connectionId: getString(formData, "connectionId"),
+        contributesBusy: formData.get("contributesBusy") === "on",
+        providerCalendarId: getString(formData, "providerCalendarId"),
+        resourceId: getString(formData, "resourceId"),
+      }),
   });
 }
 
@@ -626,13 +642,23 @@ function friendlyActionError(error: unknown): string {
   }
 
   const postgresCode = getPostgresErrorCode(error);
-  if (postgresCode === "23505") return "That key, slug, email, or assignment is already in use.";
-  if (postgresCode === "23503") return "That record is still in use and cannot be changed this way.";
+  if (postgresCode === "23505")
+    return "That key, slug, email, or assignment is already in use.";
+  if (postgresCode === "23503")
+    return "That record is still in use and cannot be changed this way.";
 
   if (error instanceof Error) {
     const message = error.message.trim();
-    const looksInternal = /(?:duplicate key|constraint|database|drizzle|insert into|query|relation|sql|stack|token|credential)/i.test(message);
-    if (message && message.length <= 280 && !message.includes("\n") && !looksInternal) {
+    const looksInternal =
+      /(?:duplicate key|constraint|database|drizzle|insert into|query|relation|sql|stack|token|credential)/i.test(
+        message,
+      );
+    if (
+      message &&
+      message.length <= 280 &&
+      !message.includes("\n") &&
+      !looksInternal
+    ) {
       return message;
     }
   }
@@ -651,11 +677,15 @@ function feedbackUrl(
 
 function getString(formData: FormData, name: string): string {
   const value = formData.get(name);
-  if (typeof value !== "string" || !value.trim()) throw new Error(`${name} is required`);
+  if (typeof value !== "string" || !value.trim())
+    throw new Error(`${name} is required`);
   return value.trim();
 }
 
-function getOptionalString(formData: FormData, name: string): string | undefined {
+function getOptionalString(
+  formData: FormData,
+  name: string,
+): string | undefined {
   const value = formData.get(name);
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }

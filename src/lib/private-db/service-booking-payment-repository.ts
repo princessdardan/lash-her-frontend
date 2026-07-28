@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 
 import { resolveBookingModelVersion } from "@/lib/booking/booking-model-version";
 import type { BookingHoldRecord, BookingHoldState } from "@/lib/booking/holds";
@@ -125,10 +125,7 @@ export async function createServiceBookingPaymentRepository(
             .where(
               and(
                 eq(bookingPaymentAttempts.holdId, row.id),
-                eq(
-                  bookingPaymentAttempts.operation,
-                  "square_charge_and_store",
-                ),
+                eq(bookingPaymentAttempts.operation, "square_charge_and_store"),
                 eq(bookingPaymentAttempts.paymentProvider, "square"),
                 eq(bookingPaymentAttempts.status, "captured"),
               ),
@@ -217,10 +214,7 @@ export async function createServiceBookingPaymentRepository(
             .where(
               and(
                 eq(bookingPaymentAttempts.holdId, row.id),
-                eq(
-                  bookingPaymentAttempts.operation,
-                  "square_charge_and_store",
-                ),
+                eq(bookingPaymentAttempts.operation, "square_charge_and_store"),
                 eq(bookingPaymentAttempts.paymentProvider, "square"),
                 eq(bookingPaymentAttempts.status, "authorized"),
               ),
@@ -253,10 +247,7 @@ export async function createServiceBookingPaymentRepository(
               })
               .from(bookingSavedPaymentMethods)
               .where(
-                eq(
-                  bookingSavedPaymentMethods.id,
-                  row.savedPaymentMethodId!,
-                ),
+                eq(bookingSavedPaymentMethods.id, row.savedPaymentMethodId!),
               )
               .limit(1);
 
@@ -406,10 +397,7 @@ export async function createServiceBookingPaymentRepository(
           .where(
             and(
               eq(bookingPaymentAttempts.holdId, hold.id),
-              eq(
-                bookingPaymentAttempts.operation,
-                "square_charge_and_store",
-              ),
+              eq(bookingPaymentAttempts.operation, "square_charge_and_store"),
               eq(bookingPaymentAttempts.paymentProvider, "square"),
               eq(bookingPaymentAttempts.status, "pending"),
             ),
@@ -1166,21 +1154,45 @@ export async function createServiceBookingPaymentRepository(
           .where(
             and(
               eq(bookingPaymentAttempts.holdId, input.holdId),
-              eq(
-                bookingPaymentAttempts.operation,
-                "square_charge_and_store",
-              ),
+              eq(bookingPaymentAttempts.operation, "square_charge_and_store"),
               eq(bookingPaymentAttempts.paymentProvider, "square"),
-              eq(
-                bookingPaymentAttempts.providerPaymentId,
-                input.squarePaymentId,
-              ),
+              input.idempotencyKey === undefined
+                ? eq(
+                    bookingPaymentAttempts.providerPaymentId,
+                    input.squarePaymentId,
+                  )
+                : or(
+                    eq(
+                      bookingPaymentAttempts.providerPaymentId,
+                      input.squarePaymentId,
+                    ),
+                    and(
+                      eq(
+                        bookingPaymentAttempts.idempotencyKey,
+                        input.idempotencyKey,
+                      ),
+                      isNull(bookingPaymentAttempts.providerPaymentId),
+                    ),
+                  ),
+              inArray(bookingPaymentAttempts.status, [
+                "pending",
+                "authorized",
+                "captured",
+                "refunded",
+                "failed",
+                "cancelled",
+              ]),
             ),
           )
+          .orderBy(desc(bookingPaymentAttempts.createdAt))
           .limit(1)
           .for("update");
 
-        if (attempt === undefined) {
+        if (
+          attempt === undefined ||
+          (attempt.providerPaymentId !== null &&
+            attempt.providerPaymentId !== input.squarePaymentId)
+        ) {
           return "not_found" as const;
         }
         if (attempt.status === "captured" || attempt.status === "refunded") {
@@ -1189,7 +1201,7 @@ export async function createServiceBookingPaymentRepository(
         if (attempt.status === input.status) {
           return input.status;
         }
-        if (attempt.status !== "authorized") {
+        if (attempt.status !== "pending" && attempt.status !== "authorized") {
           return "not_found" as const;
         }
 
@@ -1197,13 +1209,15 @@ export async function createServiceBookingPaymentRepository(
           .update(bookingPaymentAttempts)
           .set({
             failedAt: input.status === "failed" ? input.now : undefined,
+            providerPaymentId:
+              attempt.providerPaymentId ?? input.squarePaymentId,
             status: input.status,
             updatedAt: input.now,
           })
           .where(
             and(
               eq(bookingPaymentAttempts.id, attempt.id),
-              eq(bookingPaymentAttempts.status, "authorized"),
+              inArray(bookingPaymentAttempts.status, ["pending", "authorized"]),
             ),
           )
           .returning({ id: bookingPaymentAttempts.id });
@@ -1241,10 +1255,7 @@ export async function createServiceBookingPaymentRepository(
           .where(
             and(
               eq(bookingPaymentAttempts.holdId, input.holdId),
-              eq(
-                bookingPaymentAttempts.operation,
-                "square_charge_and_store",
-              ),
+              eq(bookingPaymentAttempts.operation, "square_charge_and_store"),
               eq(bookingPaymentAttempts.paymentProvider, "square"),
               eq(bookingPaymentAttempts.status, "authorized"),
             ),
@@ -1312,22 +1323,32 @@ export async function createServiceBookingPaymentRepository(
           unknown
         >;
 
-        const [authorizedAttempt] = await tx
-          .select({ id: bookingPaymentAttempts.id })
+        const [activeAttempt] = await tx
+          .select({
+            id: bookingPaymentAttempts.id,
+            idempotencyKey: bookingPaymentAttempts.idempotencyKey,
+            providerPaymentId: bookingPaymentAttempts.providerPaymentId,
+            status: bookingPaymentAttempts.status,
+          })
           .from(bookingPaymentAttempts)
           .where(
             and(
               eq(bookingPaymentAttempts.holdId, input.holdId),
-              eq(
-                bookingPaymentAttempts.operation,
-                "square_charge_and_store",
-              ),
+              eq(bookingPaymentAttempts.operation, "square_charge_and_store"),
               eq(bookingPaymentAttempts.paymentProvider, "square"),
-              eq(bookingPaymentAttempts.status, "authorized"),
+              inArray(bookingPaymentAttempts.status, ["pending", "authorized"]),
             ),
           )
+          .orderBy(desc(bookingPaymentAttempts.createdAt))
           .limit(1)
           .for("update");
+
+        const providerEvidenceMatchesActiveAttempt =
+          activeAttempt !== undefined &&
+          (activeAttempt.providerPaymentId === input.squarePaymentId ||
+            (activeAttempt.providerPaymentId === null &&
+              input.idempotencyKey !== undefined &&
+              activeAttempt.idempotencyKey === input.idempotencyKey));
 
         const confirmation = metadata.chargeAndStoreConfirmation as
           | Extract<ChargeAndStoreBookingResult, { ok: true }>
@@ -1343,10 +1364,11 @@ export async function createServiceBookingPaymentRepository(
           hold.finalizationStatus === "manual_review" ||
           hold.finalizationStatus === "paid_calendar_pending" ||
           hold.finalizationStatus === "manual_rebooked" ||
-          hold.finalizationStatus ===
-            "paid_unbookable_rebooking_pending" ||
+          hold.finalizationStatus === "paid_unbookable_rebooking_pending" ||
           hold.finalizationStatus === "refunded" ||
-          authorizedAttempt !== undefined ||
+          (activeAttempt !== undefined &&
+            (input.providerEvidence === undefined ||
+              !providerEvidenceMatchesActiveAttempt)) ||
           confirmation !== undefined ||
           metadata.authoritativeAppointment !== undefined
         ) {
@@ -1358,6 +1380,33 @@ export async function createServiceBookingPaymentRepository(
 
         if (metadata.chargeAndStoreRefundRequired !== undefined) {
           return { status: "refund_required" } as const;
+        }
+
+        if (
+          activeAttempt !== undefined &&
+          providerEvidenceMatchesActiveAttempt &&
+          input.providerEvidence !== undefined
+        ) {
+          await tx
+            .update(bookingPaymentAttempts)
+            .set({
+              authorizedAt:
+                input.providerEvidence === "cancellation_unconfirmed"
+                  ? activeAttempt.status === "authorized"
+                    ? undefined
+                    : input.now
+                  : undefined,
+              capturedAt:
+                input.providerEvidence === "completed" ? input.now : undefined,
+              providerPaymentId:
+                activeAttempt.providerPaymentId ?? input.squarePaymentId,
+              status:
+                input.providerEvidence === "completed"
+                  ? "captured"
+                  : "authorized",
+              updatedAt: input.now,
+            })
+            .where(eq(bookingPaymentAttempts.id, activeAttempt.id));
         }
 
         await tx
@@ -1377,6 +1426,7 @@ export async function createServiceBookingPaymentRepository(
               chargeAndStoreInProgress: undefined,
               chargeAndStoreRefundRequired: {
                 squarePaymentId: input.squarePaymentId,
+                providerEvidence: input.providerEvidence,
                 reason: input.reason,
                 markedAt: input.now.toISOString(),
               },
@@ -1410,9 +1460,7 @@ function readExpectedReservedResourceIds(
     throw new Error("Operational hold has an invalid reserved-resource set");
   }
 
-  return [...resourceIds].sort((first, second) =>
-    first.localeCompare(second),
-  );
+  return [...resourceIds].sort((first, second) => first.localeCompare(second));
 }
 
 function reservationsMatchExpectedResources(

@@ -16,14 +16,22 @@ const navItems: Array<{
   { action: "staff:view", href: "/admin/staff", label: "Staff & resources" },
   { action: "offerings:view", href: "/admin/offerings", label: "Offerings" },
   { action: "schedules:view", href: "/admin/schedules", label: "Schedules" },
-  { action: "calendar-connections:view", href: "/admin/calendar-connections", label: "Calendars" },
+  {
+    action: "calendar-connections:view",
+    href: "/admin/calendar-connections",
+    label: "Calendars",
+  },
   {
     action: "calendar-connections:self-manage",
     href: "/admin/my-calendar",
     label: "My Calendar",
     roles: ["employee"],
   },
-  { action: "bookings:view", href: "/admin/appointments", label: "Appointments" },
+  {
+    action: "bookings:view",
+    href: "/admin/appointments",
+    label: "Appointments",
+  },
   { action: "marketing:view", href: "/admin/marketing", label: "Marketing" },
   { action: "analytics:view", href: "/admin/analytics", label: "Analytics" },
   { action: "audit:view", href: "/admin/audit", label: "Audit log" },
@@ -45,6 +53,7 @@ export function AdminShell({
       (item.roles === undefined || item.roles.includes(actor.user.role)) &&
       canAdmin({
         action: item.action,
+        bookingProviderResourceIds: actor.bookingProviderResourceIds,
         bookingResourceIds: actor.bookingResourceIds,
         role: actor.user.role,
       }),
@@ -95,7 +104,10 @@ export function AdminShell({
                 </form>
               </div>
             </div>
-            <nav className="mt-4 flex gap-2 overflow-x-auto pb-1 lg:hidden" aria-label="Admin navigation">
+            <nav
+              className="mt-4 flex gap-2 overflow-x-auto pb-1 lg:hidden"
+              aria-label="Admin navigation"
+            >
               {visibleNavItems.map((item) => (
                 <Link
                   key={item.href}

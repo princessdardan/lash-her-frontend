@@ -40,6 +40,7 @@ export interface NoShowChargeFinalizerRepository {
   finalizeNoShowChargeRecord(input: {
     noShowChargeRecordId: string;
     status: NoShowChargeStatus;
+    chargedAmountCents?: number;
     squarePaymentId?: string;
     providerStatus?: string;
     providerFailureReason?: string;
@@ -299,9 +300,17 @@ export async function finalizeNoShowCharge(
     };
   }
 
-  const update = buildRecordUpdate(record, outcome, paymentId, now);
+  const providerOccurredAt = getProviderOccurredAt(event) ?? now;
+  const update = buildRecordUpdate(
+    record,
+    outcome,
+    paymentId,
+    providerOccurredAt,
+  );
   await repository.finalizeNoShowChargeRecord({
     ...update,
+    chargedAmountCents:
+      outcome.kind === "success" ? factsResult.facts.amountCents : undefined,
     event: {
       eventId: event.eventId,
       eventType: event.eventType,
@@ -421,6 +430,15 @@ function buildRecordUpdate(
     squarePaymentId: paymentId,
     chargedAt: now,
   };
+}
+
+function getProviderOccurredAt(event: VerifiedSquareWebhookEvent): Date | null {
+  if (event.createdAt === undefined) {
+    return null;
+  }
+
+  const timestamp = new Date(event.createdAt);
+  return Number.isFinite(timestamp.getTime()) ? timestamp : null;
 }
 
 function isDuplicateTerminalOutcome(

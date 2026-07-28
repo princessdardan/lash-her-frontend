@@ -1,26 +1,32 @@
 import "server-only";
 
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
-import {
-  decryptCalendarCredential,
-  encryptCalendarCredential,
-} from "@/lib/booking/calendar-credential-secret";
+import { encryptCalendarCredential } from "@/lib/booking/calendar-credential-secret";
 import {
   listConnectionGoogleCalendars,
-  revokeGoogleTokenBestEffort,
   type GoogleCalendarOption,
 } from "@/lib/booking/google-calendar";
 import { getPrivateDb } from "@/lib/private-db/client";
 import {
+  adminUserResources,
   bookingCalendarConnections,
   bookingResourceCalendarAssignments,
   bookingResources,
 } from "@/lib/private-db/schema";
 
-import { runAuditedAdminMutation } from "./admin-transaction";
+import {
+  runAuditedAdminMutation,
+  type AdminWriteTransaction,
+} from "./admin-transaction";
 import { requirePermission } from "./auth";
+import { assertEmployeeBusyAssignmentCanBeSaved } from "./calendar-assignment-authorization";
 import { getCalendarAssignmentAccessError } from "./calendar-capabilities";
+import { revokeEncryptedGoogleCredentialBestEffort } from "./calendar-credential-revocation";
+import {
+  lockEmployeeCalendarInvariant,
+  requireActiveEmployeeProviderResourceUnderInvariantLock,
+} from "./employee-calendar-invariant";
 import {
   disableProvisionalGoogleCalendarConnection,
   resolveAndSaveGoogleCalendarCredential,
@@ -36,7 +42,7 @@ export async function listEmployeeCalendarWorkspace() {
   assertEmployee(actor);
   const db = getPrivateDb();
 
-  if (actor.bookingResourceIds.length === 0) {
+  if (actor.bookingProviderResourceIds.length === 0) {
     return { assignments: [], connections: [], resources: [] };
   }
 
@@ -60,19 +66,22 @@ export async function listEmployeeCalendarWorkspace() {
     db
       .select({ id: bookingResources.id, name: bookingResources.name })
       .from(bookingResources)
-      .where(inArray(bookingResources.id, actor.bookingResourceIds))
+      .where(
+        and(
+          inArray(bookingResources.id, actor.bookingProviderResourceIds),
+          eq(bookingResources.kind, "provider"),
+        ),
+      )
       .orderBy(asc(bookingResources.name)),
     db
       .select({
         acceptsBookings: bookingResourceCalendarAssignments.acceptsBookings,
         calendarLabel: bookingResourceCalendarAssignments.calendarLabel,
         connectionAccountEmail: bookingCalendarConnections.accountEmail,
-        connectionId:
-          bookingResourceCalendarAssignments.calendarConnectionId,
+        connectionId: bookingResourceCalendarAssignments.calendarConnectionId,
         connectionOwnerAdminUserId:
           bookingCalendarConnections.credentialOwnerAdminUserId,
-        contributesBusy:
-          bookingResourceCalendarAssignments.contributesBusy,
+        contributesBusy: bookingResourceCalendarAssignments.contributesBusy,
         id: bookingResourceCalendarAssignments.id,
         providerCalendarId:
           bookingResourceCalendarAssignments.providerCalendarId,
@@ -95,7 +104,7 @@ export async function listEmployeeCalendarWorkspace() {
       .where(
         inArray(
           bookingResourceCalendarAssignments.resourceId,
-          actor.bookingResourceIds,
+          actor.bookingProviderResourceIds,
         ),
       )
       .orderBy(asc(bookingResources.name)),
@@ -115,6 +124,11 @@ export async function createEmployeeCalendarConnection(
     domain: "calendar",
     metadata: { resourceId },
     mutate: async (tx) => {
+      await lockEmployeeCalendarInvariant(tx, actor.user.id);
+      await requireActiveEmployeeProviderResourceUnderInvariantLock(tx, {
+        employeeUserId: actor.user.id,
+        resourceId,
+      });
       const [connection] = await tx
         .insert(bookingCalendarConnections)
         .values({
@@ -135,21 +149,25 @@ export async function createEmployeeCalendarConnection(
   });
 }
 
-export async function disableEmployeeCalendarConnectionAfterOAuthFailure(
-  input: { connectionId: string; resourceId: string },
-): Promise<void> {
+export async function disableEmployeeCalendarConnectionAfterOAuthFailure(input: {
+  connectionId: string;
+  resourceId: string;
+}): Promise<void> {
   const actor = await assertEmployeeOwnsCalendarConnection(input);
   await runAuditedAdminMutation({
     action: "employee_calendar_authorization_failed",
     actor,
     domain: "calendar",
     metadata: { provider: "google", resourceId: input.resourceId },
-    mutate: (tx) =>
-      disableProvisionalGoogleCalendarConnection(tx, {
+    mutate: async (tx) => {
+      await lockEmployeeCalendarInvariant(tx, actor.user.id);
+      return disableProvisionalGoogleCalendarConnection(tx, {
         actorAdminUserId: actor.user.id,
         connectionId: input.connectionId,
+        credentialOwnerAdminUserId: actor.user.id,
         now: new Date(),
-      }),
+      });
+    },
     targetId: input.connectionId,
     targetType: "calendar_connection",
   });
@@ -190,6 +208,10 @@ export async function listEmployeeGoogleCalendars(input: {
 }
 
 export type EmployeeGoogleCredentialSaveResult =
+  | {
+      connectionId: string;
+      status: "account_mismatch";
+    }
   | { connectionId: string; status: "saved" }
   | { connectionId: string; status: "reconnected_existing" }
   | { status: "owned_elsewhere" };
@@ -223,14 +245,18 @@ export async function saveEmployeeGoogleCalendarCredential(input: {
       return resolveAndSaveGoogleCalendarCredential(tx, {
         accountEmail,
         actorAdminUserId: actor.user.id,
+        canManageAllConnections: false,
         connectionId: input.connectionId,
         credentialCiphertext,
+        credentialOwnerAdminUserId: actor.user.id,
+        employeeResourceId: input.resourceId,
         now,
         providerAccountId,
         scopes,
       });
     },
-    targetId: input.connectionId,
+    targetId: (result) =>
+      "connectionId" in result ? result.connectionId : input.connectionId,
     targetType: "calendar_connection",
   });
 }
@@ -247,6 +273,10 @@ export async function saveEmployeeBusyAssignment(input: {
     throw new Error("A canonical Google Calendar ID is required");
   }
 
+  const connectionSnapshot = await loadActiveEmployeeConnectionSnapshot({
+    actorAdminUserId: actor.user.id,
+    connectionId: input.connectionId,
+  });
   let calendar: GoogleCalendarOption | undefined;
   try {
     calendar = (await listConnectionGoogleCalendars(input.connectionId)).find(
@@ -275,8 +305,22 @@ export async function saveEmployeeBusyAssignment(input: {
       resourceId: input.resourceId,
     },
     mutate: async (tx) => {
+      await lockEmployeeCalendarInvariant(tx, actor.user.id);
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${input.resourceId}::text, 0))`,
+      );
+      await assertEmployeeProviderResourceAccessInTransaction(tx, {
+        actorAdminUserId: actor.user.id,
+        resourceId: input.resourceId,
+      });
       const [connection] = await tx
-        .select({ id: bookingCalendarConnections.id })
+        .select({
+          credentialCiphertext: bookingCalendarConnections.credentialCiphertext,
+          credentialSecretRef: bookingCalendarConnections.credentialSecretRef,
+          id: bookingCalendarConnections.id,
+          providerAccountId: bookingCalendarConnections.providerAccountId,
+          updatedAt: bookingCalendarConnections.updatedAt,
+        })
         .from(bookingCalendarConnections)
         .where(
           and(
@@ -288,10 +332,30 @@ export async function saveEmployeeBusyAssignment(input: {
             eq(bookingCalendarConnections.status, "active"),
           ),
         )
-        .limit(1);
+        .limit(1)
+        .for("update");
       if (!connection) {
-        throw new Error("Calendar connection is not active or owned by this employee");
+        throw new Error(
+          "Calendar connection is not active or owned by this employee",
+        );
       }
+      if (
+        connection.providerAccountId !== connectionSnapshot.providerAccountId ||
+        connection.updatedAt.getTime() !==
+          connectionSnapshot.updatedAt.getTime() ||
+        (connection.credentialCiphertext === null) ===
+          (connection.credentialSecretRef === null)
+      ) {
+        throw new Error(
+          "Calendar connection changed during verification. Retry the assignment",
+        );
+      }
+
+      await assertEmployeeBusyAssignmentCanBeSaved(tx, {
+        connectionId: input.connectionId,
+        providerCalendarId,
+        resourceId: input.resourceId,
+      });
 
       const now = new Date();
       const [assignment] = await tx
@@ -349,6 +413,14 @@ export async function disableEmployeeBusyAssignment(input: {
     domain: "calendar",
     metadata: { resourceId: input.resourceId },
     mutate: async (tx) => {
+      await lockEmployeeCalendarInvariant(tx, actor.user.id);
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${input.resourceId}::text, 0))`,
+      );
+      await assertEmployeeProviderResourceAccessInTransaction(tx, {
+        actorAdminUserId: actor.user.id,
+        resourceId: input.resourceId,
+      });
       const [assignment] = await tx
         .select({
           acceptsBookings: bookingResourceCalendarAssignments.acceptsBookings,
@@ -375,7 +447,7 @@ export async function disableEmployeeBusyAssignment(input: {
               assignment.connectionOwnerAdminUserId === actor.user.id,
             resourceAssignedToActor:
               assignment.resourceId === input.resourceId &&
-              actor.bookingResourceIds.includes(assignment.resourceId),
+              actor.bookingProviderResourceIds.includes(assignment.resourceId),
           })
         : "Calendar assignment is outside this employee's access";
       if (policyError) {
@@ -397,26 +469,43 @@ export async function disconnectEmployeeCalendarConnection(input: {
   resourceId: string;
 }): Promise<void> {
   const actor = await assertEmployeeOwnsCalendarConnection(input);
-  const [credential] = await getPrivateDb()
-    .select({
-      credentialCiphertext: bookingCalendarConnections.credentialCiphertext,
-    })
-    .from(bookingCalendarConnections)
-    .where(eq(bookingCalendarConnections.id, input.connectionId))
-    .limit(1);
-  const refreshToken = credential?.credentialCiphertext
-    ? decryptCalendarCredential(credential.credentialCiphertext)
-    : null;
-
-  await runAuditedAdminMutation({
+  const credentialCiphertext = await runAuditedAdminMutation({
     action: "employee_calendar_connection_disconnected",
     actor,
     domain: "calendar",
     metadata: { resourceId: input.resourceId },
     mutate: async (tx) => {
+      await lockEmployeeCalendarInvariant(tx, actor.user.id);
+      await assertEmployeeProviderResourceAccessInTransaction(tx, {
+        actorAdminUserId: actor.user.id,
+        resourceId: input.resourceId,
+      });
+      const [lockedConnection] = await tx
+        .select({
+          credentialCiphertext: bookingCalendarConnections.credentialCiphertext,
+          id: bookingCalendarConnections.id,
+        })
+        .from(bookingCalendarConnections)
+        .where(
+          and(
+            eq(bookingCalendarConnections.id, input.connectionId),
+            eq(
+              bookingCalendarConnections.credentialOwnerAdminUserId,
+              actor.user.id,
+            ),
+            eq(bookingCalendarConnections.provider, "google"),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (!lockedConnection) {
+        throw new Error("Calendar connection was not found");
+      }
+
       const activeAssignments = await tx
         .select({
           acceptsBookings: bookingResourceCalendarAssignments.acceptsBookings,
+          resourceId: bookingResourceCalendarAssignments.resourceId,
         })
         .from(bookingResourceCalendarAssignments)
         .where(
@@ -429,6 +518,18 @@ export async function disconnectEmployeeCalendarConnection(input: {
           ),
         )
         .for("update");
+      const currentProviderResourceIds =
+        await listEmployeeProviderResourceIdsInTransaction(tx, actor.user.id);
+      if (
+        activeAssignments.some(
+          (assignment) =>
+            !currentProviderResourceIds.includes(assignment.resourceId),
+        )
+      ) {
+        throw new Error(
+          "The owner must resolve assignments outside this employee's resources before disconnecting",
+        );
+      }
       const disconnectError = getEmployeeDisconnectError(activeAssignments);
       if (disconnectError) {
         throw new Error(disconnectError);
@@ -469,17 +570,18 @@ export async function disconnectEmployeeCalendarConnection(input: {
       if (!connection) {
         throw new Error("Calendar connection was not found");
       }
+      return lockedConnection.credentialCiphertext;
     },
     targetId: input.connectionId,
     targetType: "calendar_connection",
   });
 
-  if (refreshToken) {
-    await revokeGoogleTokenBestEffort(refreshToken);
-  }
+  await revokeEncryptedGoogleCredentialBestEffort(credentialCiphertext);
 }
 
-async function requireEmployeeResource(resourceId: string): Promise<AdminActor> {
+async function requireEmployeeResource(
+  resourceId: string,
+): Promise<AdminActor> {
   const normalized = resourceId.trim();
   if (!normalized) {
     throw new Error("Booking resource is required");
@@ -488,11 +590,101 @@ async function requireEmployeeResource(resourceId: string): Promise<AdminActor> 
     bookingResourceId: normalized,
   });
   assertEmployee(actor);
+  await assertEmployeeProviderResourceAccess(normalized, actor.user.id);
   return actor;
 }
 
 function assertEmployee(actor: AdminActor): void {
   if (actor.user.role !== "employee") {
-    throw new Error("Employee calendar self-service is available to employees only");
+    throw new Error(
+      "Employee calendar self-service is available to employees only",
+    );
   }
+}
+
+async function assertEmployeeProviderResourceAccess(
+  resourceId: string,
+  actorAdminUserId: string,
+): Promise<void> {
+  const [resource] = await getPrivateDb()
+    .select({ id: bookingResources.id })
+    .from(adminUserResources)
+    .innerJoin(
+      bookingResources,
+      eq(bookingResources.id, adminUserResources.bookingResourceId),
+    )
+    .where(
+      and(
+        eq(adminUserResources.adminUserId, actorAdminUserId),
+        eq(adminUserResources.bookingResourceId, resourceId),
+        eq(bookingResources.kind, "provider"),
+      ),
+    )
+    .limit(1);
+  if (!resource) {
+    throw new Error("Calendar resource is outside this employee's access");
+  }
+}
+
+async function assertEmployeeProviderResourceAccessInTransaction(
+  tx: AdminWriteTransaction,
+  input: { actorAdminUserId: string; resourceId: string },
+): Promise<void> {
+  await requireActiveEmployeeProviderResourceUnderInvariantLock(tx, {
+    employeeUserId: input.actorAdminUserId,
+    resourceId: input.resourceId,
+  });
+}
+
+async function listEmployeeProviderResourceIdsInTransaction(
+  tx: AdminWriteTransaction,
+  actorAdminUserId: string,
+): Promise<string[]> {
+  const resources = await tx
+    .select({ id: bookingResources.id })
+    .from(adminUserResources)
+    .innerJoin(
+      bookingResources,
+      eq(bookingResources.id, adminUserResources.bookingResourceId),
+    )
+    .where(
+      and(
+        eq(adminUserResources.adminUserId, actorAdminUserId),
+        eq(bookingResources.kind, "provider"),
+      ),
+    );
+  return resources.map((resource) => resource.id);
+}
+
+async function loadActiveEmployeeConnectionSnapshot(input: {
+  actorAdminUserId: string;
+  connectionId: string;
+}): Promise<{ providerAccountId: string; updatedAt: Date }> {
+  const [connection] = await getPrivateDb()
+    .select({
+      providerAccountId: bookingCalendarConnections.providerAccountId,
+      updatedAt: bookingCalendarConnections.updatedAt,
+    })
+    .from(bookingCalendarConnections)
+    .where(
+      and(
+        eq(bookingCalendarConnections.id, input.connectionId),
+        eq(
+          bookingCalendarConnections.credentialOwnerAdminUserId,
+          input.actorAdminUserId,
+        ),
+        eq(bookingCalendarConnections.provider, "google"),
+        eq(bookingCalendarConnections.status, "active"),
+      ),
+    )
+    .limit(1);
+  if (!connection?.providerAccountId) {
+    throw new Error(
+      "Calendar connection is not active or owned by this employee",
+    );
+  }
+  return {
+    providerAccountId: connection.providerAccountId,
+    updatedAt: connection.updatedAt,
+  };
 }

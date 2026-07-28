@@ -14,9 +14,22 @@ const modelVersionMigrationSql = readFileSync(
   new URL("../../../drizzle/0020_eager_stark_industries.sql", import.meta.url),
   "utf8",
 );
+const lineageReconciliationMigrationSql = readFileSync(
+  new URL(
+    "../../../drizzle/0024_private_db_lineage_reconciliation.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 
 test("booking operations migration is additive", () => {
-  assert.doesNotMatch(migrationSql, /DROP\s+(?:TABLE|COLUMN|TYPE)/i);
+  const currentSchemaMigrationSql = migrationSql.slice(
+    migrationSql.indexOf('CREATE EXTENSION IF NOT EXISTS "btree_gist"'),
+  );
+  assert.doesNotMatch(
+    currentSchemaMigrationSql,
+    /DROP\s+(?:TABLE|COLUMN|TYPE)/i,
+  );
 
   for (const table of [
     "admin_users",
@@ -40,11 +53,36 @@ test("booking operations migration is additive", () => {
   }
 });
 
-test("booking operations migration enforces resource-scoped occupancy", () => {
+test("booking operations migration safely reconciles only the empty legacy admin lineage", () => {
   assert.match(
     migrationSql,
-    /CREATE EXTENSION IF NOT EXISTS "btree_gist"/,
+    /legacy_admin_roles <> ARRAY\['owner', 'operator'\]::text\[\]/,
   );
+  assert.match(
+    migrationSql,
+    /Legacy admin\/privacy tables contain data; migration 0018 requires a data-preserving migration plan/,
+  );
+  assert.match(
+    migrationSql,
+    /EXISTS \(SELECT 1 FROM public\.admin_users LIMIT 1\)/,
+  );
+  assert.match(
+    migrationSql,
+    /EXISTS \(SELECT 1 FROM public\.admin_audit_logs LIMIT 1\)/,
+  );
+  assert.match(
+    migrationSql,
+    /EXISTS \(SELECT 1 FROM public\.privacy_requests LIMIT 1\)/,
+  );
+  assert.match(
+    migrationSql,
+    /EXISTS \(SELECT 1 FROM public\.privacy_request_events LIMIT 1\)/,
+  );
+  assert.doesNotMatch(migrationSql, /DROP\s+(?:TABLE|TYPE)[^;]+CASCADE/i);
+});
+
+test("booking operations migration enforces resource-scoped occupancy", () => {
+  assert.match(migrationSql, /CREATE EXTENSION IF NOT EXISTS "btree_gist"/);
   assert.match(
     migrationSql,
     /ADD CONSTRAINT "booking_resource_reservations_no_active_overlap" EXCLUDE USING gist/,
@@ -65,10 +103,7 @@ test("booking operations migration keeps V1 holds valid", () => {
     migrationSql,
     /ADD CONSTRAINT "appointment_holds_booking_model_v2_check" CHECK .* NOT VALID/,
   );
-  assert.doesNotMatch(
-    migrationSql,
-    /ALTER COLUMN "offering_id" (?:DROP|SET)/,
-  );
+  assert.doesNotMatch(migrationSql, /ALTER COLUMN "offering_id" (?:DROP|SET)/);
 });
 
 test("booking operations migration permits one active write calendar per resource", () => {
@@ -97,9 +132,27 @@ test("booking operations guardrails reject unusable assignments and negative add
 });
 
 test("booking operations reject unknown hold model versions", () => {
-  assert.doesNotMatch(modelVersionMigrationSql, /DROP\s+(?:TABLE|COLUMN|TYPE)/i);
+  assert.doesNotMatch(
+    modelVersionMigrationSql,
+    /DROP\s+(?:TABLE|COLUMN|TYPE)/i,
+  );
   assert.match(
     modelVersionMigrationSql,
     /appointment_holds_booking_model_version_check[\s\S]*booking_model_version[\s\S]*IN \(1, 2\)/,
+  );
+});
+
+test("lineage reconciliation restores missing marketing sync uniqueness guarantees", () => {
+  assert.match(
+    lineageReconciliationMigrationSql,
+    /CREATE UNIQUE INDEX IF NOT EXISTS "marketing_contact_sync_jobs_submission_id_idx"[\s\S]*\("submission_id"\)/,
+  );
+  assert.match(
+    lineageReconciliationMigrationSql,
+    /CREATE UNIQUE INDEX IF NOT EXISTS "marketing_contact_sync_jobs_consent_event_id_idx"[\s\S]*\("consent_event_id"\)/,
+  );
+  assert.doesNotMatch(
+    lineageReconciliationMigrationSql,
+    /DROP\s+(?:TABLE|COLUMN|TYPE|INDEX)/i,
   );
 });

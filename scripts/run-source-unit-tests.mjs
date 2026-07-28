@@ -4,6 +4,7 @@ import path from "node:path";
 import process from "node:process";
 
 const SERVER_ONLY_TEST_FILES = new Set([
+  "src/lib/admin/square-team-selection.test.ts",
   "src/lib/booking/operations/model-mode.test.ts",
   "src/lib/booking/operations/public-offerings.test.ts",
   "src/lib/booking/operations/sanity-service-link.test.ts",

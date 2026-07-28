@@ -1,16 +1,19 @@
 import "server-only";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import {
   adminUserResources,
-  adminUsers,
   bookingCalendarConnections,
   bookingResourceCalendarAssignments,
   bookingResources,
 } from "@/lib/private-db/schema";
 
 import type { AdminWriteTransaction } from "./admin-transaction";
+import {
+  lockEmployeeCalendarInvariant,
+  requireEmployeeStatusUnderInvariantLock,
+} from "./employee-calendar-invariant";
 
 export async function assertStaffResourceMutationAllowed(
   tx: AdminWriteTransaction,
@@ -20,16 +23,14 @@ export async function assertStaffResourceMutationAllowed(
     userId: string;
   },
 ): Promise<void> {
-  const [employee] = await tx
-    .select({ id: adminUsers.id, role: adminUsers.role })
-    .from(adminUsers)
-    .where(eq(adminUsers.id, input.userId))
-    .limit(1)
-    .for("update");
-
-  if (employee === undefined || employee.role !== "employee") {
-    throw new Error("Employee account not found");
-  }
+  await lockEmployeeCalendarInvariant(tx, input.userId);
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${input.resourceId}::text, 0))`,
+  );
+  await requireEmployeeStatusUnderInvariantLock(tx, {
+    employeeUserId: input.userId,
+    requireActive: input.operation === "assign",
+  });
 
   const [resource] = await tx
     .select({ id: bookingResources.id })
@@ -66,14 +67,8 @@ export async function assertStaffResourceMutationAllowed(
     )
     .where(
       and(
-        eq(
-          bookingCalendarConnections.credentialOwnerAdminUserId,
-          input.userId,
-        ),
-        eq(
-          bookingResourceCalendarAssignments.resourceId,
-          input.resourceId,
-        ),
+        eq(bookingCalendarConnections.credentialOwnerAdminUserId, input.userId),
+        eq(bookingResourceCalendarAssignments.resourceId, input.resourceId),
         eq(bookingResourceCalendarAssignments.status, "active"),
       ),
     )

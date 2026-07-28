@@ -1,116 +1,195 @@
+import { spawnSync } from "node:child_process";
+import path from "node:path";
+
 import {
   expect,
   test,
   type Browser,
+  type BrowserContextOptions,
   type Locator,
   type Page,
 } from "@playwright/test";
 
-const BASE_URL = process.env.BOOKING_ADMIN_E2E_BASE_URL ?? "http://localhost:3000";
-const EMPLOYEE_STORAGE_STATE =
-  process.env.BOOKING_ADMIN_EMPLOYEE_STORAGE_STATE;
-const OWNER_STORAGE_STATE = process.env.BOOKING_ADMIN_OWNER_STORAGE_STATE;
-const EMPLOYEE_CONNECTION_EMAIL =
-  process.env.BOOKING_ADMIN_E2E_EMPLOYEE_CONNECTION_EMAIL;
-const RESOURCE_NAME = process.env.BOOKING_ADMIN_E2E_RESOURCE_NAME;
-const GOOGLE_CALENDAR_LABEL =
-  process.env.BOOKING_ADMIN_E2E_GOOGLE_CALENDAR_LABEL;
+import {
+  createAdminCalendarAuthFixture,
+  type AdminCalendarAuthFixture,
+} from "./support/admin-calendar-auth-fixture";
+import { getAdminCalendarE2EDatabaseUrl } from "./support/admin-calendar-e2e-config";
+
+const BASE_URL =
+  process.env.BOOKING_ADMIN_E2E_BASE_URL ?? "http://localhost:3000";
 const ASSIGNMENT_LABEL =
   process.env.BOOKING_ADMIN_E2E_ASSIGNMENT_LABEL ??
   "Employee busy calendar browser test";
-
-const hasLiveFixture = Boolean(
-  EMPLOYEE_STORAGE_STATE &&
-    OWNER_STORAGE_STATE &&
-    EMPLOYEE_CONNECTION_EMAIL &&
-    RESOURCE_NAME &&
-    GOOGLE_CALENDAR_LABEL,
+const GOOGLE_CALENDAR_LABEL = "Browser fixture calendar";
+const GOOGLE_FIXTURE_PRELOAD = path.resolve(
+  "tests/support/google-calendar-fetch-fixture.cjs",
 );
+const hasTestDatabase = getAdminCalendarE2EDatabaseUrl() !== null;
+let adminFixture: AdminCalendarAuthFixture | undefined;
+
+test("Google Calendar browser fixture refuses production activation", () => {
+  const result = spawnSync(
+    process.execPath,
+    ["--require", GOOGLE_FIXTURE_PRELOAD, "--eval", "process.exitCode = 0"],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        BOOKING_ADMIN_E2E_GOOGLE_FIXTURE: "1",
+        NODE_ENV: "production",
+      },
+    },
+  );
+
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain(
+    "The Google Calendar Playwright fixture cannot run in production.",
+  );
+});
 
 test.describe("employee calendar self-service", () => {
   test.describe.configure({ mode: "serial" });
   test.skip(
-    !hasLiveFixture,
-    "Requires employee/owner Auth.js storage states and an isolated active Google Calendar fixture.",
+    ({ browserName }) => browserName !== "chromium",
+    "The stateful database workflow runs once in Chromium.",
   );
+  test.skip(
+    !hasTestDatabase,
+    "Requires a migrated, isolated TEST_DATABASE_URL.",
+  );
+  test.beforeAll(async () => {
+    adminFixture = await createAdminCalendarAuthFixture();
+  });
+  test.afterAll(async () => {
+    await adminFixture?.cleanup();
+  });
 
-  test("employee can begin OAuth and assign an owned calendar as busy-only", async ({
+  test("employee completes OAuth and assigns the persisted calendar as busy-only", async ({
     browser,
   }) => {
-    const page = await newAuthenticatedPage(browser, EMPLOYEE_STORAGE_STATE!);
+    const fixture = requireAdminFixture();
+    const page = await newAuthenticatedPage(
+      browser,
+      fixture.employeeStorageState,
+    );
     await page.goto("/admin/my-calendar");
 
-    await expect(page.getByRole("heading", { name: "My Calendar" })).toBeVisible();
-
-    await page.route("https://accounts.google.com/**", async (route) => {
-      await route.fulfill({
-        body: "<h1>Google authorization request</h1>",
-        contentType: "text/html",
-        status: 200,
-      });
-    });
-    await page.getByRole("button", { name: "Connect Google account" }).click();
     await expect(
-      page.getByRole("heading", { name: "Google authorization request" }),
+      page.getByRole("heading", { name: "My Calendar" }),
     ).toBeVisible();
 
-    await page.goto("/admin/my-calendar");
-    const accountCard = page.locator("article").filter({
-      hasText: EMPLOYEE_CONNECTION_EMAIL!,
+    const oauthRequest = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return (
+        url.origin === "https://accounts.google.com" &&
+        url.pathname === "/o/oauth2/v2/auth"
+      );
     });
+    await page
+      .getByRole("button", { name: "Connect Google account" })
+      .click({ noWaitAfter: true });
+
+    const oauthState = new URL((await oauthRequest).url()).searchParams.get(
+      "state",
+    );
+    expect(oauthState).toMatch(/^(calendar|employee)_[A-Za-z0-9_-]+$/);
+    await fixture.persistOAuthState(oauthState!);
+    await page.goto(
+      `/api/booking/oauth/callback?code=${encodeURIComponent(fixture.oauthCode)}&state=${encodeURIComponent(oauthState!)}`,
+    );
+    await expect(page).toHaveURL(/\/admin\/my-calendar\?notice=/);
+    await expect(
+      page.getByText("Google Calendar account connected."),
+    ).toBeVisible();
+
+    const storedCredential = await fixture.loadPersistedCredential();
+    expect(storedCredential.status).toBe("active");
+    expect(storedCredential.credentialSecretRef).toBeNull();
+    expect(storedCredential.credentialCiphertext).toMatch(
+      /^v1:[^:]+:[^:]+:[^:]+$/,
+    );
+    expect(storedCredential.credentialCiphertext).not.toBe(
+      fixture.expectedRefreshToken,
+    );
+    expect(storedCredential.credentialCiphertext).not.toContain(
+      fixture.expectedRefreshToken,
+    );
+
+    const accountCard = page.locator("article").filter({
+      hasText: fixture.employeeConnectionEmail,
+    });
+    await expect(accountCard).toBeVisible();
     const assignmentForm = accountCard.locator("form").filter({
       hasText: "Add busy calendar",
     });
     await assignmentForm.getByLabel("Provider resource").selectOption({
-      label: RESOURCE_NAME!,
+      label: fixture.resourceName,
     });
     await selectOptionContaining(
       assignmentForm.getByLabel("Google calendar"),
-      GOOGLE_CALENDAR_LABEL!,
+      GOOGLE_CALENDAR_LABEL,
     );
     await assignmentForm.getByLabel("Display label").fill(ASSIGNMENT_LABEL);
-    await assignmentForm.getByRole("button", { name: "Add busy calendar" }).click();
+    await assignmentForm
+      .getByRole("button", { name: "Add busy calendar" })
+      .click();
 
-    await expect(page.getByText("Busy calendar assignment saved.")).toBeVisible();
+    await expect(
+      page.getByText("Busy calendar assignment saved."),
+    ).toBeVisible();
     const assignment = accountCard.locator("div.rounded-xl").filter({
       hasText: ASSIGNMENT_LABEL,
     });
-    await expect(assignment.getByText("Blocks busy time", { exact: true })).toBeVisible();
+    await expect(
+      assignment.getByText("Blocks busy time", { exact: true }),
+    ).toBeVisible();
     await expect(assignment.getByText(/Receives bookings/)).toHaveCount(0);
     await page.context().close();
   });
 
-  test("employee is denied owner calendar administration", async ({ browser }) => {
-    const page = await newAuthenticatedPage(browser, EMPLOYEE_STORAGE_STATE!);
+  test("employee is denied owner calendar administration", async ({
+    browser,
+  }) => {
+    const page = await newAuthenticatedPage(
+      browser,
+      requireAdminFixture().employeeStorageState,
+    );
     await page.goto("/admin/calendar-connections");
 
     await expect(page).toHaveURL(/\/admin\/not-authorized$/);
-    await expect(page.getByRole("heading", { name: "Not authorized" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Not authorized" }),
+    ).toBeVisible();
     await page.context().close();
   });
 
   test("owner can promote the employee calendar to the booking destination", async ({
     browser,
   }) => {
-    const page = await newAuthenticatedPage(browser, OWNER_STORAGE_STATE!);
+    const fixture = requireAdminFixture();
+    const page = await newAuthenticatedPage(browser, fixture.ownerStorageState);
     await page.goto("/admin/calendar-connections");
 
     const accountCard = page.locator("article").filter({
-      hasText: EMPLOYEE_CONNECTION_EMAIL!,
+      hasText: fixture.employeeConnectionEmail,
     });
+    await expect(accountCard).toBeVisible();
     const assignmentForm = accountCard.locator("form").filter({
       hasText: "Assign calendar",
     });
     await assignmentForm.getByLabel("Resource").selectOption({
-      label: RESOURCE_NAME!,
+      label: fixture.resourceName,
     });
     await selectOptionContaining(
       assignmentForm.getByLabel("Google calendar"),
-      GOOGLE_CALENDAR_LABEL!,
+      GOOGLE_CALENDAR_LABEL,
     );
     await assignmentForm.getByLabel("Display label").fill(ASSIGNMENT_LABEL);
     await assignmentForm.getByLabel("Receives new bookings").check();
-    await assignmentForm.getByRole("button", { name: "Save assignment" }).click();
+    await assignmentForm
+      .getByRole("button", { name: "Save assignment" })
+      .click();
 
     await expect(page.getByText("Calendar assignment saved.")).toBeVisible();
     const assignment = accountCard.locator("div.rounded-xl").filter({
@@ -123,13 +202,20 @@ test.describe("employee calendar self-service", () => {
 
 async function newAuthenticatedPage(
   browser: Browser,
-  storageState: string,
+  storageState: NonNullable<BrowserContextOptions["storageState"]>,
 ): Promise<Page> {
   const context = await browser.newContext({
     baseURL: BASE_URL,
     storageState,
   });
   return context.newPage();
+}
+
+function requireAdminFixture(): AdminCalendarAuthFixture {
+  if (adminFixture === undefined) {
+    throw new Error("The deterministic admin calendar fixture was not created");
+  }
+  return adminFixture;
 }
 
 async function selectOptionContaining(

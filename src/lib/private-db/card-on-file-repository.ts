@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, isNull, lt, notInArray } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, notInArray, or } from "drizzle-orm";
 
 import { resolveBookingModelVersion } from "@/lib/booking/booking-model-version";
 import type { BookingHoldRecord, BookingHoldState } from "@/lib/booking/holds";
@@ -1156,6 +1156,49 @@ export async function createCardOnFileDrizzleRepository(
           throw new Error(
             "No-show charge record not found or is already in a terminal state",
           );
+        }
+
+        if (
+          input.status === "charged" &&
+          input.squarePaymentId !== undefined &&
+          input.chargedAmountCents !== undefined
+        ) {
+          const [attempt] = await tx
+            .select({ id: bookingNoShowChargeAttempts.id })
+            .from(bookingNoShowChargeAttempts)
+            .where(
+              and(
+                eq(
+                  bookingNoShowChargeAttempts.noShowChargeRecordId,
+                  input.noShowChargeRecordId,
+                ),
+                or(
+                  eq(
+                    bookingNoShowChargeAttempts.squarePaymentId,
+                    input.squarePaymentId,
+                  ),
+                  isNull(bookingNoShowChargeAttempts.squarePaymentId),
+                ),
+                or(
+                  isNull(bookingNoShowChargeAttempts.status),
+                  eq(bookingNoShowChargeAttempts.status, "charge_pending"),
+                ),
+              ),
+            )
+            .orderBy(desc(bookingNoShowChargeAttempts.createdAt))
+            .limit(1);
+
+          if (attempt !== undefined) {
+            await tx
+              .update(bookingNoShowChargeAttempts)
+              .set({
+                amountCents: input.chargedAmountCents,
+                processedAt: input.event.processedAt,
+                squarePaymentId: input.squarePaymentId,
+                status: "charged",
+              })
+              .where(eq(bookingNoShowChargeAttempts.id, attempt.id));
+          }
         }
 
         await tx.insert(checkoutPaymentEvents).values({

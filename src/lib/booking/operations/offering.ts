@@ -1,4 +1,8 @@
-export type OperationalRecordStatus = "active" | "archived" | "disabled" | "draft";
+export type OperationalRecordStatus =
+  | "active"
+  | "archived"
+  | "disabled"
+  | "draft";
 
 export interface OperationalBookingAddOn {
   description: string;
@@ -104,7 +108,6 @@ export interface ResolvedOperationalBooking {
     displayName: string;
     providerKey: string;
     publicSlug?: string;
-    squareTeamMemberId?: string;
   };
   resourceId: string;
   selectedAddOn?: {
@@ -123,6 +126,7 @@ export interface ResolvedOperationalBooking {
     serviceId: string;
     serviceKey: string;
   };
+  squareTeamMemberId?: string;
   timezone: string;
 }
 
@@ -176,7 +180,10 @@ export function resolveOperationalBooking(input: {
   const durationMinutes =
     offering.durationMinutes + (selectedAddOn?.durationDeltaMinutes ?? 0);
   const selectedEnd = addMinutes(selectedStart, durationMinutes);
-  const occupiedStart = addMinutes(selectedStart, -offering.bufferBeforeMinutes);
+  const occupiedStart = addMinutes(
+    selectedStart,
+    -offering.bufferBeforeMinutes,
+  );
   const occupiedEnd = addMinutes(selectedEnd, offering.bufferAfterMinutes);
 
   return {
@@ -202,9 +209,6 @@ export function resolveOperationalBooking(input: {
         providerKey: offering.provider.providerKey,
         ...(offering.provider.publicSlug
           ? { publicSlug: offering.provider.publicSlug }
-          : {}),
-        ...(offering.provider.squareTeamMemberId
-          ? { squareTeamMemberId: offering.provider.squareTeamMemberId }
           : {}),
       },
       resourceId: offering.resource.id,
@@ -232,6 +236,9 @@ export function resolveOperationalBooking(input: {
           ? { sanityDocumentId: offering.service.sanityDocumentId }
           : {}),
       },
+      ...(offering.provider.squareTeamMemberId
+        ? { squareTeamMemberId: offering.provider.squareTeamMemberId }
+        : {}),
       timezone: offering.resource.timezone,
     },
   };

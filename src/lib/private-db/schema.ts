@@ -381,6 +381,10 @@ export interface CheckoutPaymentEventPayload {
   [key: string]: unknown;
 }
 
+export interface SquarePaymentRefundPayload {
+  [key: string]: unknown;
+}
+
 export interface MarketingContactSubmissionPayload {
   [key: string]: unknown;
 }
@@ -1153,6 +1157,43 @@ export const checkoutPaymentEvents = pgTable(
     uniqueIndex("checkout_payment_events_provider_event_idx").on(
       table.paymentProvider,
       table.providerEventId,
+    ),
+  ],
+);
+
+export const squarePaymentRefundEvents = pgTable(
+  "square_payment_refund_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    providerEventId: text("provider_event_id").notNull(),
+    squareRefundId: text("square_refund_id").notNull(),
+    squarePaymentId: text("square_payment_id").notNull(),
+    status: text("status").notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    currency: text("currency").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    payloadSanitized:
+      jsonb("payload_sanitized").$type<SquarePaymentRefundPayload>(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("square_payment_refund_events_provider_event_idx").on(
+      table.providerEventId,
+    ),
+    index("square_payment_refund_events_refund_occurred_idx").on(
+      table.squareRefundId,
+      table.occurredAt,
+    ),
+    index("square_payment_refund_events_payment_status_occurred_idx").on(
+      table.squarePaymentId,
+      table.status,
+      table.occurredAt,
+    ),
+    check(
+      "square_payment_refund_events_amount_check",
+      sql`${table.amountCents} >= 0`,
     ),
   ],
 );

@@ -22,6 +22,10 @@ import type {
   SquareGetPaymentResponse,
   SquarePaymentsClient,
 } from "@/lib/payments/square/payments-client";
+import {
+  createServicePaymentAlertLogger,
+  type ServicePaymentAlertLogger,
+} from "@/lib/booking/payments/service-payment-alerts";
 import { STALE_CHARGE_PENDING_MS } from "@/lib/booking/payments/service-no-show-invoice";
 import {
   appointmentHolds,
@@ -58,6 +62,7 @@ export interface ServiceReconciliationFinding {
     | "authorized_payment_pending_capture"
     | "authorized_payment_provider_state_unverified"
     | "authorized_payment_provider_terminal_mismatch"
+    | "authorized_payment_provider_evidence_mismatch"
     | "provider_completed_payment_evidence_mismatch"
     | "provider_completed_payment_without_operational_appointment";
   appointmentId?: string;
@@ -105,6 +110,26 @@ export interface ServiceReconciliationRepository {
     squareOrderId?: string;
     squarePaymentId: string;
   }): Promise<void>;
+  markOperationalPaymentFailed(input: {
+    holdId: string;
+    now: Date;
+    reason: string;
+  }): Promise<void>;
+  markOperationalPaymentRefundRequired(input: {
+    holdId: string;
+    idempotencyKey: string;
+    now: Date;
+    providerEvidence: "cancellation_unconfirmed" | "completed";
+    reason: string;
+    squarePaymentId: string;
+  }): Promise<void>;
+  markOperationalPaymentTerminated(input: {
+    holdId: string;
+    idempotencyKey: string;
+    now: Date;
+    squarePaymentId: string;
+    status: "cancelled" | "failed";
+  }): Promise<"cancelled" | "failed" | "capture_preserved" | "not_found">;
   findCapturedPaymentsWithoutOperationalAppointment(
     now: Date,
   ): Promise<Array<{ holdId?: string; paymentAttemptId: string }>>;
@@ -172,7 +197,9 @@ export interface ServiceReconciliationRepository {
 }
 
 export interface ServiceReconciliationMonitorDependencies {
-  providerPayments?: Pick<SquarePaymentsClient, "getPayment">;
+  alerts?: ServicePaymentAlertLogger;
+  providerPayments?: Pick<SquarePaymentsClient, "getPayment"> &
+    Partial<Pick<SquarePaymentsClient, "cancelPayment">>;
   repository: ServiceReconciliationRepository;
 }
 
@@ -453,7 +480,9 @@ export function createServiceReconciliationMonitor(
 
 async function reconcileAuthorizedOperationalPayments(input: {
   attempts: Awaited<
-    ReturnType<ServiceReconciliationRepository["findAuthorizedOperationalPayments"]>
+    ReturnType<
+      ServiceReconciliationRepository["findAuthorizedOperationalPayments"]
+    >
   >;
   dependencies: ServiceReconciliationMonitorDependencies;
   now: Date;
@@ -488,8 +517,20 @@ async function reconcileAuthorizedOperationalPayments(input: {
 
     const payment = providerResponse.payment;
     const providerStatus = payment.status.trim().toUpperCase();
+    const evidenceMatches = providerPaymentMatchesAuthorizedAttempt(
+      payment,
+      attempt,
+    );
     if (providerStatus === "COMPLETED") {
-      if (!providerPaymentMatchesAuthorizedAttempt(payment, attempt)) {
+      if (!evidenceMatches) {
+        await markReconciliationRefundRequired({
+          attempt,
+          dependencies: input.dependencies,
+          now: input.now,
+          providerEvidence: "completed",
+          reason:
+            "Provider-completed Square payment evidence did not match the immutable operational attempt; refund required",
+        });
         findings.push({
           category: "provider_completed_payment_evidence_mismatch",
           holdId: attempt.holdId,
@@ -525,7 +566,47 @@ async function reconcileAuthorizedOperationalPayments(input: {
       continue;
     }
 
+    if (providerStatus === "APPROVED" && !evidenceMatches) {
+      await cancelMismatchedAuthorization({
+        attempt,
+        dependencies: input.dependencies,
+        now: input.now,
+      });
+      findings.push({
+        category: "authorized_payment_provider_evidence_mismatch",
+        holdId: attempt.holdId,
+        paymentAttemptId: attempt.paymentAttemptId,
+        providerStatus,
+        severity: "error",
+      });
+      continue;
+    }
+
     if (["CANCELED", "FAILED", "DECLINED"].includes(providerStatus)) {
+      try {
+        const outcome =
+          await input.dependencies.repository.markOperationalPaymentTerminated({
+            holdId: attempt.holdId,
+            idempotencyKey: attempt.idempotencyKey,
+            now: input.now,
+            squarePaymentId: attempt.squarePaymentId,
+            status: providerStatus === "CANCELED" ? "cancelled" : "failed",
+          });
+        if (outcome === "cancelled" || outcome === "failed") {
+          await input.dependencies.repository.markOperationalPaymentFailed({
+            holdId: attempt.holdId,
+            now: input.now,
+            reason: `Square reports the operational authorization as ${providerStatus}`,
+          });
+        }
+      } catch (error) {
+        await alertReconciliationFailure(
+          input.dependencies,
+          "Failed to persist terminal Square authorization evidence",
+          attempt,
+          error,
+        );
+      }
       findings.push({
         category: "authorized_payment_provider_terminal_mismatch",
         holdId: attempt.holdId,
@@ -548,10 +629,145 @@ async function reconcileAuthorizedOperationalPayments(input: {
   return findings;
 }
 
+async function cancelMismatchedAuthorization(input: {
+  attempt: Awaited<
+    ReturnType<
+      ServiceReconciliationRepository["findAuthorizedOperationalPayments"]
+    >
+  >[number];
+  dependencies: ServiceReconciliationMonitorDependencies;
+  now: Date;
+}): Promise<void> {
+  await (input.dependencies.alerts ?? defaultAlerts).alert({
+    category: "stuck_payment_state",
+    severity: "error",
+    message:
+      "Reconciliation found a Square authorization that did not match immutable operational payment evidence",
+    context: {
+      holdId: input.attempt.holdId,
+      paymentAttemptId: input.attempt.paymentAttemptId,
+      squarePaymentId: input.attempt.squarePaymentId,
+    },
+  });
+
+  try {
+    const cancelPayment = input.dependencies.providerPayments?.cancelPayment;
+    if (cancelPayment !== undefined) {
+      const cancellation = await cancelPayment(input.attempt.squarePaymentId);
+      if (
+        cancellation.payment.id === input.attempt.squarePaymentId &&
+        cancellation.payment.status.trim().toUpperCase() === "CANCELED"
+      ) {
+        const outcome =
+          await input.dependencies.repository.markOperationalPaymentTerminated({
+            holdId: input.attempt.holdId,
+            idempotencyKey: input.attempt.idempotencyKey,
+            now: input.now,
+            squarePaymentId: input.attempt.squarePaymentId,
+            status: "cancelled",
+          });
+        if (outcome === "cancelled") {
+          await input.dependencies.repository.markOperationalPaymentFailed({
+            holdId: input.attempt.holdId,
+            now: input.now,
+            reason:
+              "Square authorization evidence mismatch; cancellation confirmed",
+          });
+          return;
+        }
+      }
+    }
+  } catch (error) {
+    await alertReconciliationFailure(
+      input.dependencies,
+      "Failed to cancel a mismatched Square authorization during reconciliation",
+      input.attempt,
+      error,
+    );
+  }
+
+  await markReconciliationRefundRequired({
+    attempt: input.attempt,
+    dependencies: input.dependencies,
+    now: input.now,
+    providerEvidence: "cancellation_unconfirmed",
+    reason:
+      "Square authorization evidence mismatch and cancellation could not be confirmed; manual follow-up required",
+  });
+}
+
+async function markReconciliationRefundRequired(input: {
+  attempt: Awaited<
+    ReturnType<
+      ServiceReconciliationRepository["findAuthorizedOperationalPayments"]
+    >
+  >[number];
+  dependencies: ServiceReconciliationMonitorDependencies;
+  now: Date;
+  providerEvidence: "cancellation_unconfirmed" | "completed";
+  reason: string;
+}): Promise<void> {
+  await (input.dependencies.alerts ?? defaultAlerts).alert({
+    category: "stuck_payment_state",
+    severity: "error",
+    message: input.reason,
+    context: {
+      holdId: input.attempt.holdId,
+      paymentAttemptId: input.attempt.paymentAttemptId,
+      squarePaymentId: input.attempt.squarePaymentId,
+    },
+  });
+
+  try {
+    await input.dependencies.repository.markOperationalPaymentRefundRequired({
+      holdId: input.attempt.holdId,
+      idempotencyKey: input.attempt.idempotencyKey,
+      now: input.now,
+      providerEvidence: input.providerEvidence,
+      reason: input.reason,
+      squarePaymentId: input.attempt.squarePaymentId,
+    });
+  } catch (error) {
+    await alertReconciliationFailure(
+      input.dependencies,
+      "Failed to persist operational payment manual follow-up state",
+      input.attempt,
+      error,
+    );
+  }
+}
+
+async function alertReconciliationFailure(
+  dependencies: ServiceReconciliationMonitorDependencies,
+  message: string,
+  attempt: Awaited<
+    ReturnType<
+      ServiceReconciliationRepository["findAuthorizedOperationalPayments"]
+    >
+  >[number],
+  error: unknown,
+): Promise<void> {
+  await (dependencies.alerts ?? defaultAlerts).alert({
+    category: "stuck_payment_state",
+    severity: "error",
+    message,
+    context: {
+      error: error instanceof Error ? error.message : "Unknown error",
+      holdId: attempt.holdId,
+      paymentAttemptId: attempt.paymentAttemptId,
+      squarePaymentId: attempt.squarePaymentId,
+    },
+  });
+}
+
+const defaultAlerts = createServicePaymentAlertLogger({});
+
 function providerPaymentMatchesAuthorizedAttempt(
   payment: SquareGetPaymentResponse["payment"],
   attempt: Awaited<
-    ReturnType<ServiceReconciliationRepository["findAuthorizedOperationalPayments"]>
+    ReturnType<
+      ServiceReconciliationRepository["findAuthorizedOperationalPayments"]
+    >
   >[number],
 ): boolean {
   return (
@@ -582,11 +798,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export default async function runServiceReconciliationMonitor(input?: {
   now?: Date;
 }): Promise<ServiceReconciliationSummary> {
-  const [{ createSquarePaymentsClient }, { getSquareServiceBookingRuntimeEnv }] =
-    await Promise.all([
-      import("@/lib/payments/square/payments-client"),
-      import("@/lib/booking/square-runtime"),
-    ]);
+  const [
+    { createSquarePaymentsClient },
+    { getSquareServiceBookingRuntimeEnv },
+  ] = await Promise.all([
+    import("@/lib/payments/square/payments-client"),
+    import("@/lib/booking/square-runtime"),
+  ]);
   const squareEnv = getSquareServiceBookingRuntimeEnv();
   const monitor = createServiceReconciliationMonitor({
     providerPayments:
@@ -602,7 +820,7 @@ export function createDrizzleServiceReconciliationRepository(
 ): ServiceReconciliationRepository {
   let paymentRepositoryPromise:
     | ReturnType<
-        typeof import("@/lib/private-db/service-booking-payment-repository")["createServiceBookingPaymentRepository"]
+        (typeof import("@/lib/private-db/service-booking-payment-repository"))["createServiceBookingPaymentRepository"]
       >
     | undefined;
   return {
@@ -639,32 +857,48 @@ export function createDrizzleServiceReconciliationRepository(
         if (row.holdId === null || row.squarePaymentId === null) return [];
         const intent = readSquareRequestIntent(row.providerMetadata);
         if (intent === null) return [];
-        return [{
-          amountCents: row.amountCents,
-          currency: row.currency,
-          holdId: row.holdId,
-          idempotencyKey: row.idempotencyKey,
-          paymentAttemptId: row.paymentAttemptId,
-          referenceId: row.referenceId,
-          squareCustomerId: intent.squareCustomerId,
-          squareOrderId: row.squareOrderId ?? undefined,
-          squarePaymentId: row.squarePaymentId,
-          squareTeamMemberId: row.squareTeamMemberId ?? undefined,
-        }];
+        return [
+          {
+            amountCents: row.amountCents,
+            currency: row.currency,
+            holdId: row.holdId,
+            idempotencyKey: row.idempotencyKey,
+            paymentAttemptId: row.paymentAttemptId,
+            referenceId: row.referenceId,
+            squareCustomerId: intent.squareCustomerId,
+            squareOrderId: row.squareOrderId ?? undefined,
+            squarePaymentId: row.squarePaymentId,
+            squareTeamMemberId: row.squareTeamMemberId ?? undefined,
+          },
+        ];
       });
     },
     async recordProviderCompletedOperationalPayment(input) {
-      if (paymentRepositoryPromise === undefined) {
-        const { createServiceBookingPaymentRepository } = await import(
-          "@/lib/private-db/service-booking-payment-repository"
-        );
-        paymentRepositoryPromise = createServiceBookingPaymentRepository(db);
-      }
-      const paymentRepository = await paymentRepositoryPromise;
+      const paymentRepository = await getPaymentRepository();
       if (paymentRepository.recordCapturedOperationalPayment === undefined) {
         throw new Error("Operational captured-payment writer is unavailable");
       }
       await paymentRepository.recordCapturedOperationalPayment(input);
+    },
+    async markOperationalPaymentFailed(input) {
+      const paymentRepository = await getPaymentRepository();
+      await paymentRepository.markHoldPaymentFailed(input);
+    },
+    async markOperationalPaymentRefundRequired(input) {
+      const paymentRepository = await getPaymentRepository();
+      await paymentRepository.markHoldRefundRequired(input);
+    },
+    async markOperationalPaymentTerminated(input) {
+      const paymentRepository = await getPaymentRepository();
+      if (
+        paymentRepository.markAuthorizedOperationalPaymentTerminated ===
+        undefined
+      ) {
+        throw new Error("Operational payment terminal writer is unavailable");
+      }
+      return paymentRepository.markAuthorizedOperationalPaymentTerminated(
+        input,
+      );
     },
     async findCapturedPaymentsWithoutOperationalAppointment(now) {
       const threshold = new Date(now.getTime() - PAID_NOT_BOOKED_THRESHOLD_MS);
@@ -1168,4 +1402,13 @@ export function createDrizzleServiceReconciliationRepository(
       return [...amountCurrency, ...customer, ...card, ...link];
     },
   };
+
+  async function getPaymentRepository() {
+    if (paymentRepositoryPromise === undefined) {
+      const { createServiceBookingPaymentRepository } =
+        await import("@/lib/private-db/service-booking-payment-repository");
+      paymentRepositoryPromise = createServiceBookingPaymentRepository(db);
+    }
+    return paymentRepositoryPromise;
+  }
 }

@@ -15,6 +15,13 @@ export interface SquareTeamMemberOption {
   status: "active";
 }
 
+export interface SquareTeamMemberVerification {
+  displayLabel: string | null;
+  id: string;
+  isOwner: boolean;
+  status: "active" | "inactive" | "missing";
+}
+
 export interface SquareTeamClientEnv {
   accessToken: string;
   environment: "sandbox" | "production";
@@ -23,6 +30,9 @@ export interface SquareTeamClientEnv {
 
 export interface SquareTeamClient {
   listActiveLocationMembers(): Promise<SquareTeamMemberOption[]>;
+  retrieveLocationMember(
+    teamMemberId: string,
+  ): Promise<SquareTeamMemberVerification>;
 }
 
 interface SquareTeamSearchMember {
@@ -41,6 +51,10 @@ interface SquareTeamSearchMember {
 interface SquareTeamSearchResponse {
   cursor?: string;
   team_members: SquareTeamSearchMember[];
+}
+
+interface SquareTeamRetrieveResponse {
+  team_member: SquareTeamSearchMember;
 }
 
 export function createSquareTeamClient(
@@ -90,6 +104,49 @@ export function createSquareTeamClient(
 
       throw new Error("Square Team API pagination limit was exceeded");
     },
+    async retrieveLocationMember(teamMemberId) {
+      const normalizedTeamMemberId = requireConfig(
+        teamMemberId,
+        "Square team member ID",
+      );
+      const member = await retrieveTeamMember({
+        accessToken,
+        environment: env.environment,
+        fetchImplementation,
+        teamMemberId: normalizedTeamMemberId,
+      });
+
+      if (member === null) {
+        return {
+          displayLabel: null,
+          id: normalizedTeamMemberId,
+          isOwner: false,
+          status: "missing",
+        };
+      }
+
+      if (member.id !== normalizedTeamMemberId) {
+        throw new Error("Square Team API response was malformed");
+      }
+
+      if (member.status === "INACTIVE") {
+        return {
+          displayLabel: toDisplayLabel(member),
+          id: member.id,
+          isOwner: member.is_owner === true,
+          status: "inactive",
+        };
+      }
+
+      return {
+        displayLabel: toDisplayLabel(member),
+        id: member.id,
+        isOwner: member.is_owner === true,
+        status: isEligibleForLocation(member, locationId)
+          ? "active"
+          : "missing",
+      };
+    },
   };
 }
 
@@ -127,11 +184,15 @@ async function searchTeamMembers(input: {
       },
     );
   } catch {
-    throw new Error("Square Team API request failed before receiving a response");
+    throw new Error(
+      "Square Team API request failed before receiving a response",
+    );
   }
 
   if (!response.ok) {
-    throw new Error(`Square Team API request failed with status ${response.status}`);
+    throw new Error(
+      `Square Team API request failed with status ${response.status}`,
+    );
   }
 
   let payload: unknown;
@@ -146,6 +207,57 @@ async function searchTeamMembers(input: {
   }
 
   return payload;
+}
+
+async function retrieveTeamMember(input: {
+  accessToken: string;
+  environment: "sandbox" | "production";
+  fetchImplementation: typeof globalThis.fetch;
+  teamMemberId: string;
+}): Promise<SquareTeamSearchMember | null> {
+  let response: Response;
+
+  try {
+    response = await input.fetchImplementation(
+      `${SQUARE_BASE_URLS[input.environment]}/v2/team-members/${encodeURIComponent(input.teamMemberId)}`,
+      {
+        cache: "no-store",
+        headers: {
+          accept: "application/json",
+          authorization: `Bearer ${input.accessToken}`,
+          "content-type": "application/json",
+          "square-version": SQUARE_VERSION,
+        },
+        method: "GET",
+      },
+    );
+  } catch {
+    throw new Error(
+      "Square Team API request failed before receiving a response",
+    );
+  }
+
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    throw new Error(
+      `Square Team API request failed with status ${response.status}`,
+    );
+  }
+
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error("Square Team API response was malformed");
+  }
+
+  if (!isSquareTeamRetrieveResponse(payload)) {
+    throw new Error("Square Team API response was malformed");
+  }
+
+  return payload.team_member;
 }
 
 function isSquareTeamSearchResponse(
@@ -165,13 +277,23 @@ function isSquareTeamSearchResponse(
   return value.team_members.every(isSquareTeamSearchMember);
 }
 
+function isSquareTeamRetrieveResponse(
+  value: unknown,
+): value is SquareTeamRetrieveResponse {
+  return (
+    isRecord(value) &&
+    "team_member" in value &&
+    isSquareTeamSearchMember(value.team_member)
+  );
+}
+
 function isSquareTeamSearchMember(
   value: unknown,
 ): value is SquareTeamSearchMember {
   if (
     !isRecord(value) ||
     !isNonemptyBoundedString(value.id) ||
-    !isNonemptyBoundedString(value.status)
+    (value.status !== "ACTIVE" && value.status !== "INACTIVE")
   ) {
     return false;
   }
@@ -194,10 +316,7 @@ function isSquareTeamSearchMember(
     return false;
   }
 
-  if (
-    "assigned_locations" in value &&
-    value.assigned_locations !== undefined
-  ) {
+  if ("assigned_locations" in value && value.assigned_locations !== undefined) {
     if (!isRecord(value.assigned_locations)) {
       return false;
     }
@@ -269,7 +388,9 @@ function requireConfig(value: string, label: string): string {
 }
 
 function isNonemptyBoundedString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0 && value.length <= 512;
+  return (
+    typeof value === "string" && value.trim().length > 0 && value.length <= 512
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
