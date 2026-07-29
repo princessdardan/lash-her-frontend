@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 
 import { encryptCalendarCredential } from "@/lib/booking/calendar-credential-secret";
 import {
@@ -57,9 +57,12 @@ export async function listEmployeeCalendarWorkspace() {
       })
       .from(bookingCalendarConnections)
       .where(
-        eq(
-          bookingCalendarConnections.credentialOwnerAdminUserId,
-          actor.user.id,
+        and(
+          eq(
+            bookingCalendarConnections.credentialOwnerAdminUserId,
+            actor.user.id,
+          ),
+          ne(bookingCalendarConnections.status, "disabled"),
         ),
       )
       .orderBy(asc(bookingCalendarConnections.accountEmail)),
@@ -102,9 +105,13 @@ export async function listEmployeeCalendarWorkspace() {
         eq(bookingResources.id, bookingResourceCalendarAssignments.resourceId),
       )
       .where(
-        inArray(
-          bookingResourceCalendarAssignments.resourceId,
-          actor.bookingProviderResourceIds,
+        and(
+          inArray(
+            bookingResourceCalendarAssignments.resourceId,
+            actor.bookingProviderResourceIds,
+          ),
+          eq(bookingResourceCalendarAssignments.status, "active"),
+          ne(bookingCalendarConnections.status, "disabled"),
         ),
       )
       .orderBy(asc(bookingResources.name)),

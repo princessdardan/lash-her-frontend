@@ -20,10 +20,7 @@ test("calendar OAuth state is actor/resource bound, fixed-path, expiring, and on
       });
       return "OK";
     },
-    async eval<TResult>(
-      _script: string,
-      keys: string[],
-    ): Promise<TResult> {
+    async eval<TResult>(_script: string, keys: string[]): Promise<TResult> {
       const key = keys[0]!;
       const stored = values.get(key);
       values.delete(key);
@@ -67,6 +64,32 @@ test("calendar OAuth state is actor/resource bound, fixed-path, expiring, and on
   assert.equal(
     await consumeBookingCalendarOAuthState(expiringState, storage),
     null,
+  );
+});
+
+test("calendar OAuth state accepts Upstash's automatically deserialized eval result", async () => {
+  const payload = {
+    actorAdminUserId: "employee-1",
+    connectionId: "connection-1",
+    flowType: "employee" as const,
+    resourceId: "resource-1",
+    returnTo: "/admin/my-calendar",
+  };
+  const storage = {
+    async eval<TResult>(): Promise<TResult> {
+      return payload as TResult;
+    },
+    async set() {
+      throw new Error("state storage is not written while consuming");
+    },
+  } as BookingCalendarOAuthStateStorage;
+
+  assert.deepEqual(
+    await consumeBookingCalendarOAuthState(
+      "calendar_abcdefghijklmnopqrstuvwxyz123456",
+      storage,
+    ),
+    payload,
   );
 });
 

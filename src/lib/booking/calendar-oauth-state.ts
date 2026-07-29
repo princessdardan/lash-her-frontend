@@ -53,21 +53,20 @@ export async function consumeBookingCalendarOAuthState(
 ): Promise<BookingCalendarOAuthState | null> {
   assertOAuthState(state);
 
-  const value = await storage.eval<[], string | null>(
+  const value = await storage.eval<[], unknown>(
     CONSUME_VALUE_SCRIPT,
     [toBookingCalendarOAuthStateKey(state)],
     [],
   );
 
-  if (typeof value !== "string") {
-    return null;
-  }
-
-  let payload: unknown;
-  try {
-    payload = JSON.parse(value);
-  } catch {
-    return null;
+  // @upstash/redis may JSON-deserialize EVAL results before returning them.
+  let payload = value;
+  if (typeof value === "string") {
+    try {
+      payload = JSON.parse(value);
+    } catch {
+      return null;
+    }
   }
 
   return isBookingCalendarOAuthState(payload) ? payload : null;
@@ -82,9 +81,10 @@ export function isBookingCalendarOAuthState(
 
   const candidate = value as Record<string, unknown>;
   const flowType = candidate.flowType;
-  const expectedReturnTo = flowType === "employee"
-    ? "/admin/my-calendar"
-    : "/admin/calendar-connections";
+  const expectedReturnTo =
+    flowType === "employee"
+      ? "/admin/my-calendar"
+      : "/admin/calendar-connections";
 
   return (
     typeof candidate.actorAdminUserId === "string" &&

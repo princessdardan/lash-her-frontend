@@ -169,6 +169,35 @@ test.describe("employee calendar self-service", () => {
     await page.context().close();
   });
 
+  test("employee removes a busy calendar assignment from My Calendar", async ({
+    browser,
+  }) => {
+    const fixture = requireAdminFixture();
+    const page = await newAuthenticatedPage(
+      browser,
+      fixture.employeeStorageState,
+    );
+    await page.goto("/admin/my-calendar");
+
+    const accountCard = page.locator("article").filter({
+      hasText: fixture.employeeConnectionEmail,
+    });
+    const assignment = accountCard.locator("div.rounded-xl").filter({
+      hasText: ASSIGNMENT_LABEL,
+    });
+    await expect(assignment).toBeVisible();
+
+    page.once("dialog", (dialog) => dialog.accept());
+    await assignment.getByRole("button", { name: "Remove" }).click();
+
+    await expect(
+      page.getByText("Busy calendar assignment removed."),
+    ).toBeVisible();
+    await expect(assignment).toHaveCount(0);
+    await expect(accountCard.getByText("No calendars assigned.")).toBeVisible();
+    await page.context().close();
+  });
+
   test("owner can promote the employee calendar to the booking destination", async ({
     browser,
   }) => {
@@ -201,6 +230,100 @@ test.describe("employee calendar self-service", () => {
       hasText: ASSIGNMENT_LABEL,
     });
     await expect(assignment.getByText(/Receives bookings/)).toBeVisible();
+    await page.context().close();
+  });
+
+  test("owner disables a calendar assignment and it disappears", async ({
+    browser,
+  }) => {
+    const fixture = requireAdminFixture();
+    const page = await newAuthenticatedPage(browser, fixture.ownerStorageState);
+    await page.goto("/admin/calendar-connections");
+
+    const accountCard = page.locator("article").filter({
+      hasText: fixture.employeeConnectionEmail,
+    });
+    const assignment = accountCard.locator("div.rounded-xl").filter({
+      hasText: ASSIGNMENT_LABEL,
+    });
+    await expect(assignment).toBeVisible();
+
+    page.once("dialog", (dialog) => dialog.accept());
+    await assignment.getByRole("button", { name: "Disable" }).click();
+
+    await expect(page.getByText("Calendar assignment disabled.")).toBeVisible();
+    await expect(assignment).toHaveCount(0);
+    await expect(accountCard.getByText("No resources assigned.")).toBeVisible();
+    await page.context().close();
+  });
+
+  test("owner disables a calendar connection and its card disappears", async ({
+    browser,
+  }) => {
+    const fixture = requireAdminFixture();
+    const page = await newAuthenticatedPage(browser, fixture.ownerStorageState);
+    await page.goto("/admin/calendar-connections");
+
+    const accountCard = page.locator("article").filter({
+      hasText: fixture.employeeConnectionEmail,
+    });
+    await expect(accountCard).toBeVisible();
+
+    page.once("dialog", (dialog) => dialog.accept());
+    await accountCard
+      .getByRole("button", { name: "Disable connection" })
+      .click();
+
+    await expect(page.getByText("Calendar connection disabled.")).toBeVisible();
+    await expect(accountCard).toHaveCount(0);
+    await page.context().close();
+  });
+
+  test("employee reconnects and disconnects without leaving a disabled card", async ({
+    browser,
+  }) => {
+    const fixture = requireAdminFixture();
+    const page = await newAuthenticatedPage(
+      browser,
+      fixture.employeeStorageState,
+    );
+    await page.goto("/admin/my-calendar");
+
+    const oauthRequest = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return (
+        url.origin === "https://accounts.google.com" &&
+        url.pathname === "/o/oauth2/v2/auth"
+      );
+    });
+    await page
+      .getByRole("button", { name: "Connect Google account" })
+      .click({ noWaitAfter: true });
+
+    const oauthState = new URL((await oauthRequest).url()).searchParams.get(
+      "state",
+    );
+    expect(oauthState).toMatch(/^(calendar|employee)_[A-Za-z0-9_-]+$/);
+    await fixture.persistOAuthState(oauthState!);
+    await page.goto(
+      `/api/booking/oauth/callback?code=${encodeURIComponent(fixture.oauthCode)}&state=${encodeURIComponent(oauthState!)}`,
+    );
+    await expect(
+      page.getByText("Google Calendar account connected."),
+    ).toBeVisible();
+
+    const accountCard = page.locator("article").filter({
+      hasText: fixture.employeeConnectionEmail,
+    });
+    await expect(accountCard).toBeVisible();
+
+    page.once("dialog", (dialog) => dialog.accept());
+    await accountCard.getByRole("button", { name: "Disconnect" }).click();
+
+    await expect(
+      page.getByText("Google Calendar account disconnected."),
+    ).toBeVisible();
+    await expect(accountCard).toHaveCount(0);
     await page.context().close();
   });
 });
