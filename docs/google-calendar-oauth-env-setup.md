@@ -157,6 +157,12 @@ For each Vercel environment:
 
 Keep staging and production values separate when using separate OAuth clients.
 
+The app also namespaces stored refresh tokens by `VERCEL_TARGET_ENV` (falling
+back to `VERCEL_ENV`). Production, preview, and custom staging targets can
+therefore share a Redis instance without overwriting each other's Google
+Calendar connection. The historical unscoped token is read only by production
+for migration compatibility.
+
 ## Step 7: Connect The Calendar
 
 After deploying the env vars, run the protected internal OAuth setup flow in the target environment using `BOOKING_ADMIN_SETUP_SECRET` from the secure secret manager (do not share the setup URL or include it in documentation).

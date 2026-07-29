@@ -110,24 +110,24 @@ Then open:
 
 ### Core commands
 
-| Command                     | What it does                                                            |
-| --------------------------- | ----------------------------------------------------------------------- |
-| `npm run dev`               | Starts the Next.js development server.                                  |
-| `npm run build`             | Runs `prebuild` Sanity env validation, then creates a production build. |
-| `npm run start`             | Starts the production Next server after a build.                        |
-| `npm run lint`              | Runs ESLint.                                                            |
-| `npm test`                  | Runs Playwright E2E tests.                                              |
-| `npm run test:unit`         | Runs every DB-disabled source test plus script tests.                  |
+| Command                     | What it does                                                                        |
+| --------------------------- | ----------------------------------------------------------------------------------- |
+| `npm run dev`               | Starts the Next.js development server.                                              |
+| `npm run build`             | Runs `prebuild` Sanity env validation, then creates a production build.             |
+| `npm run start`             | Starts the production Next server after a build.                                    |
+| `npm run lint`              | Runs ESLint.                                                                        |
+| `npm test`                  | Runs Playwright E2E tests.                                                          |
+| `npm run test:unit`         | Runs every DB-disabled source test plus script tests.                               |
 | `npm run test:unit:db`      | Runs every registered DB-backed source test serially; requires `TEST_DATABASE_URL`. |
-| `npm run test:unit:all`     | Runs the DB-disabled, script, and registered DB-backed suites.         |
-| `npm run test:ui`           | Opens the Playwright UI runner.                                         |
-| `npm run test:headed`       | Runs Playwright headed.                                                 |
-| `npm run test:debug`        | Runs Playwright in debug mode.                                          |
-| `npm run test:report`       | Opens the last Playwright HTML report.                                  |
-| `npm run db:generate`       | Generates Drizzle migrations from schema changes.                       |
-| `npm run db:migrate`        | Applies private database migrations using `DATABASE_URL`.               |
-| `npm run git:verify-remote` | Verifies the `origin` git remote points at the canonical repository.    |
-| `npm run git:push-staging`  | Verifies the remote, then pushes the `staging` branch to `origin`.      |
+| `npm run test:unit:all`     | Runs the DB-disabled, script, and registered DB-backed suites.                      |
+| `npm run test:ui`           | Opens the Playwright UI runner.                                                     |
+| `npm run test:headed`       | Runs Playwright headed.                                                             |
+| `npm run test:debug`        | Runs Playwright in debug mode.                                                      |
+| `npm run test:report`       | Opens the last Playwright HTML report.                                              |
+| `npm run db:generate`       | Generates Drizzle migrations from schema changes.                                   |
+| `npm run db:migrate`        | Applies private database migrations using `DATABASE_URL`.                           |
+| `npm run git:verify-remote` | Verifies the `origin` git remote points at the canonical repository.                |
+| `npm run git:push-staging`  | Verifies the remote, then pushes the `staging` branch to `origin`.                  |
 
 ## Environment and services
 
@@ -173,6 +173,10 @@ Google Calendar integration requires OAuth credentials and Upstash Redis/KV toke
 - `KV_REST_API_TOKEN`
 
 Run the protected internal OAuth setup flow in the target environment using `BOOKING_ADMIN_SETUP_SECRET` from the secure secret manager. Do not share the setup URL or include it in documentation, tickets, or chat.
+
+Refresh tokens are namespaced by `VERCEL_TARGET_ENV` (falling back to
+`VERCEL_ENV`), so preview/staging OAuth setup cannot replace the production
+connection when environments share one Redis instance.
 
 ### Private database
 
