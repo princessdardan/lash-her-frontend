@@ -57,8 +57,8 @@ export async function requireEmployeeStatusUnderInvariantLock(
   ) {
     throw new Error(
       input.requireActive
-        ? "Calendar access requires an active employee account"
-        : "Employee account not found",
+        ? "Calendar access requires an active contractor account"
+        : "Contractor account not found",
     );
   }
 }
@@ -94,7 +94,7 @@ export async function requireActiveEmployeeProviderResourceUnderInvariantLock(
 
   if (!resource) {
     throw new Error(
-      "Calendar access requires an active employee assigned to this provider resource",
+      "Calendar access requires an active contractor assigned to this provider resource",
     );
   }
 }

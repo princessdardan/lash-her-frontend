@@ -36,7 +36,9 @@ test("duplicate-account rejection preserves the existing Google project grant", 
       assert.deepEqual(disabled, []);
       assert.deepEqual(revoked, []);
       const location = new URL(response.headers.get("location")!);
-      assert.match(location.searchParams.get("error") ?? "", /already managed/);
+      const errorMessage = location.searchParams.get("error") ?? "";
+      assert.match(errorMessage, /already managed by another contractor/);
+      assert.doesNotMatch(errorMessage, /\bemployees?\b/i);
     });
   }
 });

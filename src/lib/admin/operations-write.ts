@@ -158,7 +158,7 @@ export async function setStaffStatus(input: {
           .limit(1);
         if (ownedActiveAssignment) {
           throw new Error(
-            "Transfer or disconnect the employee's active calendar assignments before disabling the account",
+            "Transfer or disconnect the contractor's active calendar assignments before disabling the account",
           );
         }
       }
@@ -1527,7 +1527,7 @@ export async function transferCalendarConnectionOwnership(input: {
           employee.status !== "active"
         ) {
           throw new Error(
-            "Calendar ownership can only be transferred to an active employee",
+            "Calendar ownership can only be transferred to an active contractor",
           );
         }
 

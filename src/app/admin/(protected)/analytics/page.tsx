@@ -77,7 +77,7 @@ export default async function AdminAnalyticsPage({
       <section className="space-y-4">
         <div>
           <p className="font-smallcaps text-sm uppercase tracking-[0.2em] text-lh-muted">
-            Employee attribution
+            Contractor attribution
           </p>
           <h2 className="mt-2 font-heading text-4xl uppercase tracking-[0.08em]">
             Attributed net sales
@@ -85,10 +85,10 @@ export default async function AdminAnalyticsPage({
           <p className="mt-2 max-w-4xl text-sm text-lh-muted">
             Historical provider and Square team-member snapshots only. Invoice
             no-show charges and legacy Payment Links are labeled as local
-            attribution. This report does not calculate commissions, wages,
-            taxes, or final employee payouts. Square refund events use their
-            provider timestamp. Pre-migration refunds without an event use the
-            local terminal evidence timestamp and are labeled as historical
+            attribution. This report does not calculate commissions, contractor
+            fees, tax treatment, or final payouts. Square refund events use
+            their provider timestamp. Pre-migration refunds without an event use
+            the local terminal evidence timestamp and are labeled as historical
             local evidence.
           </p>
         </div>
@@ -119,10 +119,10 @@ export default async function AdminAnalyticsPage({
             Business timezone: {attribution.timezone}
           </p>
         </form>
-        <AdminTable caption="Employee-attributed Square sales">
+        <AdminTable caption="Contractor-attributed Square sales">
           <thead className={theadClass}>
             <tr>
-              <th className={cellClass}>Employee snapshot</th>
+              <th className={cellClass}>Contractor snapshot</th>
               <th className={`${cellClass} text-right`}>Captured</th>
               <th className={`${cellClass} text-right`}>Known tips</th>
               <th className={`${cellClass} text-right`}>Refunds</th>

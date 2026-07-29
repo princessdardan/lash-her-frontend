@@ -45,6 +45,7 @@ import {
   setProviderSquareTeamMember,
   setSquareAttributionRequirement,
 } from "@/lib/admin/square-team-attribution";
+import { toContractorTerminology } from "@/lib/admin/presentation";
 
 export async function setAppointmentAttendanceStatusAction(formData: FormData) {
   const rawAppointmentId = formData.get("appointmentId");
@@ -671,7 +672,9 @@ function feedbackUrl(
   kind: "error" | "notice",
   message: string,
 ): string {
-  const query = new URLSearchParams({ [kind]: message });
+  const query = new URLSearchParams({
+    [kind]: toContractorTerminology(message),
+  });
   return `${destination}?${query.toString()}`;
 }
 

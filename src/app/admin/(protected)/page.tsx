@@ -2,6 +2,7 @@ import { AdminCard } from "@/components/admin/admin-card";
 import { StatusPill } from "@/components/admin/status-pill";
 import { requirePermission } from "@/lib/admin/auth";
 import { getVisibleAdminSections } from "@/lib/admin/permissions";
+import { getAdminRoleLabel } from "@/lib/admin/presentation";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -35,14 +36,14 @@ export default async function AdminOverviewPage() {
         >
           Disabled profiles are rejected on the next request.
         </AdminCard>
-        <AdminCard label="Role" value={actor.user.role}>
+        <AdminCard label="Role" value={getAdminRoleLabel(actor.user.role)}>
           Roles and permissions are managed in the private operational database.
         </AdminCard>
         <AdminCard
           label="Assigned resources"
           value={actor.bookingResourceIds.length}
         >
-          Employee booking and schedule access is limited to these resources.
+          Contractor booking and schedule access is limited to these resources.
         </AdminCard>
       </div>
       <section className="rounded-2xl border border-lh-line bg-white p-6">

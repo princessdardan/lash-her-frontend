@@ -37,7 +37,7 @@ export async function assertEmployeeBusyAssignmentCanBeSaved(
 
   if (existingAssignment?.acceptsBookings === true) {
     throw new Error(
-      "Employees cannot change a calendar that receives bookings",
+      "Contractors cannot change a calendar that receives bookings",
     );
   }
 }

@@ -66,8 +66,8 @@ export async function createAdminCalendarAuthFixture(): Promise<AdminCalendarAut
     providerUserId: `e2e-owner-${runId}`,
   };
   const employeeIdentity = {
-    email: `employee-${runId}@example.test`,
-    name: "Calendar E2E Employee",
+    email: `contractor-${runId}@example.test`,
+    name: "Calendar E2E Contractor",
     providerUserId: `e2e-employee-${runId}`,
   };
   const resourceName = `Calendar E2E Provider ${runId.slice(0, 8)}`;

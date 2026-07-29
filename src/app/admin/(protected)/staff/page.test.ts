@@ -27,3 +27,11 @@ test("staff Square mapping controls submit opaque selection handles", () => {
     /getOptionalString\(formData,\s*"squareTeamMemberId"\)/,
   );
 });
+
+test("staff role control presents the internal employee role as Contractor", () => {
+  assert.match(pageSource, /<option value="employee">Contractor<\/option>/);
+  assert.doesNotMatch(
+    pageSource,
+    /<option value="employee">Employee<\/option>/,
+  );
+});

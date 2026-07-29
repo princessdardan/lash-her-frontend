@@ -1,3 +1,5 @@
+import { toContractorTerminology } from "@/lib/admin/presentation";
+
 interface AdminActionFeedbackProps {
   error?: string | string[];
   notice?: string | string[];
@@ -15,9 +17,11 @@ export function AdminActionFeedback({
   return (
     <div
       aria-live="polite"
-      className={errorMessage
-        ? "rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-900"
-        : "rounded-2xl border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-950"}
+      className={
+        errorMessage
+          ? "rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-900"
+          : "rounded-2xl border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-950"
+      }
       role={errorMessage ? "alert" : "status"}
     >
       {errorMessage ?? noticeMessage}
@@ -27,5 +31,5 @@ export function AdminActionFeedback({
 
 function firstMessage(value: string | string[] | undefined): string | null {
   const message = Array.isArray(value) ? value[0] : value;
-  return message?.slice(0, 300) ?? null;
+  return message ? toContractorTerminology(message).slice(0, 300) : null;
 }

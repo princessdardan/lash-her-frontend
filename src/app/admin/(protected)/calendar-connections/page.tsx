@@ -11,6 +11,7 @@ import {
 import { listAdminCalendarConnections } from "@/lib/admin/operations-read";
 import { canAdmin } from "@/lib/admin/permissions";
 import { requireAdminPagePermission } from "@/lib/admin/page-authorization";
+import { toContractorTerminology } from "@/lib/admin/presentation";
 
 import {
   createCalendarConnectionAction,
@@ -121,7 +122,7 @@ export default async function AdminCalendarConnectionsPage({
                   ? connection.lastVerifiedAt.toLocaleString("en-CA")
                   : "Never"}
                 {connection.lastErrorCode
-                  ? ` · ${connection.lastErrorCode}`
+                  ? ` · ${toContractorTerminology(connection.lastErrorCode)}`
                   : ""}
               </p>
               <p className="mt-2 text-sm text-lh-muted">
@@ -157,7 +158,7 @@ export default async function AdminCalendarConnectionsPage({
                   </Field>
                   <ConfirmSubmitButton
                     className={secondaryButtonClass}
-                    confirmation="Transfer this connection only if every active assignment belongs to the selected employee?"
+                    confirmation="Transfer this connection only if every active assignment belongs to the selected contractor?"
                   >
                     Update owner
                   </ConfirmSubmitButton>

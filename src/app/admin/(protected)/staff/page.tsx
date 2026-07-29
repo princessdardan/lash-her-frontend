@@ -3,6 +3,7 @@ import { AdminActionFeedback } from "@/components/admin/admin-action-feedback";
 import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
 import { StatusPill } from "@/components/admin/status-pill";
 import { canAdmin } from "@/lib/admin/permissions";
+import { getAdminRoleLabel } from "@/lib/admin/presentation";
 import { listAdminStaffAndResources } from "@/lib/admin/operations-read";
 import { requireAdminPagePermission } from "@/lib/admin/page-authorization";
 import {
@@ -73,7 +74,7 @@ export default async function AdminStaffPage({
         </h1>
         <p className="mt-3 max-w-3xl text-lh-muted">
           Staff sign in with a verified Google identity. Roles, account status,
-          and employee resource access are controlled here.
+          and contractor resource access are controlled here.
         </p>
       </header>
 
@@ -245,7 +246,7 @@ export default async function AdminStaffPage({
                   name="role"
                   defaultValue="employee"
                 >
-                  <option value="employee">Employee</option>
+                  <option value="employee">Contractor</option>
                   <option value="admin">Administrator</option>
                 </select>
               </Field>
@@ -340,7 +341,7 @@ export default async function AdminStaffPage({
                     </p>
                     <p className="text-xs text-lh-muted">{user.email}</p>
                   </td>
-                  <td className={cellClass}>{user.role}</td>
+                  <td className={cellClass}>{getAdminRoleLabel(user.role)}</td>
                   <td className={cellClass}>
                     <div className="flex flex-wrap gap-2">
                       {assignments.length === 0 ? (

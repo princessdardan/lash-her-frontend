@@ -20,7 +20,7 @@ const BASE_URL =
   process.env.BOOKING_ADMIN_E2E_BASE_URL ?? "http://localhost:3000";
 const ASSIGNMENT_LABEL =
   process.env.BOOKING_ADMIN_E2E_ASSIGNMENT_LABEL ??
-  "Employee busy calendar browser test";
+  "Contractor busy calendar browser test";
 const GOOGLE_CALENDAR_LABEL = "Browser fixture calendar";
 const GOOGLE_FIXTURE_PRELOAD = path.resolve(
   "tests/support/google-calendar-fetch-fixture.cjs",
@@ -78,6 +78,11 @@ test.describe("employee calendar self-service", () => {
     await expect(
       page.getByRole("heading", { name: "My Calendar" }),
     ).toBeVisible();
+    await expect(page.getByText("Contractor", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Contractor self-service", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText(/\bEmployees?\b/i)).toHaveCount(0);
 
     const oauthRequest = page.waitForRequest((request) => {
       const url = new URL(request.url());

@@ -1,4 +1,5 @@
 import type { BookingCalendarOAuthState } from "@/lib/booking/calendar-oauth-state";
+import { toContractorTerminology } from "@/lib/admin/presentation";
 
 export interface AdminCalendarOAuthCallbackDependencies {
   assertEmployeeOwnsConnection(input: {
@@ -155,7 +156,7 @@ export async function handleAdminCalendarOAuthCallback(
         statePayload,
         input.origin,
         "error",
-        "That Google account is already managed by another employee or by the owner. Contact the owner to transfer it.",
+        "That Google account is already managed by another contractor or by the owner. Contact the owner to transfer it.",
       );
     }
     if (result.status === "account_mismatch") {
@@ -227,7 +228,7 @@ function oauthRedirect(
       ? "/admin/my-calendar"
       : "/admin/calendar-connections";
   const redirectUrl = new URL(returnTo, origin);
-  redirectUrl.searchParams.set(kind, message);
+  redirectUrl.searchParams.set(kind, toContractorTerminology(message));
   return new Response(null, {
     headers: { location: redirectUrl.toString() },
     status: 307,

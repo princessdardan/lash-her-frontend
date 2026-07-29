@@ -194,7 +194,7 @@ export async function assertEmployeeOwnsCalendarConnection(input: {
     .limit(1);
 
   if (!connection) {
-    throw new Error("Calendar connection is not owned by this employee");
+    throw new Error("Calendar connection is not owned by this contractor");
   }
   return actor;
 }
@@ -336,7 +336,7 @@ export async function saveEmployeeBusyAssignment(input: {
         .for("update");
       if (!connection) {
         throw new Error(
-          "Calendar connection is not active or owned by this employee",
+          "Calendar connection is not active or owned by this contractor",
         );
       }
       if (
@@ -449,7 +449,7 @@ export async function disableEmployeeBusyAssignment(input: {
               assignment.resourceId === input.resourceId &&
               actor.bookingProviderResourceIds.includes(assignment.resourceId),
           })
-        : "Calendar assignment is outside this employee's access";
+        : "Calendar assignment is outside this contractor's access";
       if (policyError) {
         throw new Error(policyError);
       }
@@ -527,7 +527,7 @@ export async function disconnectEmployeeCalendarConnection(input: {
         )
       ) {
         throw new Error(
-          "The owner must resolve assignments outside this employee's resources before disconnecting",
+          "The owner must resolve assignments outside this contractor's resources before disconnecting",
         );
       }
       const disconnectError = getEmployeeDisconnectError(activeAssignments);
@@ -597,7 +597,7 @@ async function requireEmployeeResource(
 function assertEmployee(actor: AdminActor): void {
   if (actor.user.role !== "employee") {
     throw new Error(
-      "Employee calendar self-service is available to employees only",
+      "Contractor calendar self-service is available to contractors only",
     );
   }
 }
@@ -622,7 +622,7 @@ async function assertEmployeeProviderResourceAccess(
     )
     .limit(1);
   if (!resource) {
-    throw new Error("Calendar resource is outside this employee's access");
+    throw new Error("Calendar resource is outside this contractor's access");
   }
 }
 
@@ -680,7 +680,7 @@ async function loadActiveEmployeeConnectionSnapshot(input: {
     .limit(1);
   if (!connection?.providerAccountId) {
     throw new Error(
-      "Calendar connection is not active or owned by this employee",
+      "Calendar connection is not active or owned by this contractor",
     );
   }
   return {

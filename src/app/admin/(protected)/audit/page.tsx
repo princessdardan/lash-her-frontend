@@ -1,7 +1,11 @@
 import { AdminTable } from "@/components/admin/admin-table";
 import { StatusPill } from "@/components/admin/status-pill";
-import { listRecentAdminAuditEntries, recordAdminAudit } from "@/lib/admin/audit-log";
+import {
+  listRecentAdminAuditEntries,
+  recordAdminAudit,
+} from "@/lib/admin/audit-log";
 import { requireAdminPagePermission } from "@/lib/admin/page-authorization";
+import { toContractorTerminology } from "@/lib/admin/presentation";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -47,15 +51,25 @@ export default async function AdminAuditPage() {
                 </time>
               </td>
               <td className="px-4 py-3">{row.actorEmail ?? "Removed user"}</td>
-              <td className="px-4 py-3">{row.action}</td>
-              <td className="px-4 py-3">{row.domain}</td>
               <td className="px-4 py-3">
-                <StatusPill tone={row.outcome === "success" ? "success" : "attention"}>
+                {toContractorTerminology(row.action)}
+              </td>
+              <td className="px-4 py-3">
+                {toContractorTerminology(row.domain)}
+              </td>
+              <td className="px-4 py-3">
+                <StatusPill
+                  tone={row.outcome === "success" ? "success" : "attention"}
+                >
                   {row.outcome}
                 </StatusPill>
               </td>
               <td className="px-4 py-3">
-                {row.targetType ? `${row.targetType}:${row.targetId ?? ""}` : "—"}
+                {row.targetType
+                  ? toContractorTerminology(
+                      `${row.targetType}:${row.targetId ?? ""}`,
+                    )
+                  : "—"}
               </td>
             </tr>
           ))}

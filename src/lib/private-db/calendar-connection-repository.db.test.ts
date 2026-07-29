@@ -903,7 +903,7 @@ test(
       });
     const assignmentRejection = assert.rejects(
       assignmentAttempt,
-      /active employee/,
+      /active contractor/,
     );
 
     await delay(25);
@@ -1167,7 +1167,7 @@ test(
           userId: employee.id,
         }),
       ),
-      /Transfer or disconnect the employee's active calendar assignment/,
+      /Transfer or disconnect the contractor's active calendar assignment/,
     );
 
     await repository.disableConnection({

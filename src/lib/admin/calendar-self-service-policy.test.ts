@@ -14,7 +14,7 @@ test("employee calendar mutations enforce connection and resource isolation", ()
       connectionOwnedByActor: false,
       resourceAssignedToActor: true,
     }) ?? "",
-    /outside this employee's access/,
+    /outside this contractor's access/,
   );
   assert.match(
     getEmployeeAssignmentDisableError({
@@ -22,7 +22,7 @@ test("employee calendar mutations enforce connection and resource isolation", ()
       connectionOwnedByActor: true,
       resourceAssignedToActor: false,
     }) ?? "",
-    /outside this employee's access/,
+    /outside this contractor's access/,
   );
   assert.equal(
     getEmployeeAssignmentDisableError({
@@ -47,10 +47,7 @@ test("employees cannot disable or disconnect an active booking destination", () 
     getEmployeeDisconnectError([{ acceptsBookings: true }]) ?? "",
     /owner must move/,
   );
-  assert.equal(
-    getEmployeeDisconnectError([{ acceptsBookings: false }]),
-    null,
-  );
+  assert.equal(getEmployeeDisconnectError([{ acceptsBookings: false }]), null);
 });
 
 test("ownership transfer requires every active assignment resource", () => {

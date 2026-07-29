@@ -29,7 +29,7 @@ const GOOGLE_CALENDAR_LABEL =
   process.env.BOOKING_ADMIN_E2E_GOOGLE_CALENDAR_LABEL;
 const ASSIGNMENT_LABEL =
   process.env.BOOKING_ADMIN_E2E_ASSIGNMENT_LABEL ??
-  "Employee busy calendar live browser smoke";
+  "Contractor busy calendar live browser smoke";
 
 const hasLiveFixture = Boolean(
   LIVE_GOOGLE_ENABLED &&

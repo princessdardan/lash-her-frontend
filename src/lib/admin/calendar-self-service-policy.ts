@@ -4,10 +4,10 @@ export function getEmployeeAssignmentDisableError(input: {
   resourceAssignedToActor: boolean;
 }): string | null {
   if (!input.connectionOwnedByActor || !input.resourceAssignedToActor) {
-    return "Calendar assignment is outside this employee's access";
+    return "Calendar assignment is outside this contractor's access";
   }
   if (input.acceptsBookings) {
-    return "Employees cannot disable a calendar that receives bookings";
+    return "Contractors cannot disable a calendar that receives bookings";
   }
   return null;
 }
@@ -28,6 +28,6 @@ export function getCalendarOwnershipTransferError(input: {
   return input.activeAssignmentResourceIds.some(
     (resourceId) => !employeeResources.has(resourceId),
   )
-    ? "Every active calendar assignment must belong to a resource assigned to that employee"
+    ? "Every active calendar assignment must belong to a resource assigned to that contractor"
     : null;
 }

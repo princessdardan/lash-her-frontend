@@ -68,7 +68,7 @@ export default async function MyCalendarPage({
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="font-smallcaps text-sm uppercase tracking-[0.2em] text-lh-muted">
-            Employee self-service
+            Contractor self-service
           </p>
           <h1 className="mt-2 font-heading text-6xl uppercase tracking-[0.08em]">
             My Calendar
@@ -80,7 +80,10 @@ export default async function MyCalendarPage({
           </p>
         </div>
         {contextResourceId ? (
-          <form action={createMyCalendarConnectionAction} className="flex gap-2">
+          <form
+            action={createMyCalendarConnectionAction}
+            className="flex gap-2"
+          >
             <select
               aria-label="Provider resource for new Google connection"
               className={inputClass}
@@ -124,13 +127,16 @@ export default async function MyCalendarPage({
                     {connection.accountEmail ?? "Google account not connected"}
                   </h2>
                   <p className="mt-1 text-sm text-lh-muted">
-                    Last verified: {connection.lastVerifiedAt
+                    Last verified:{" "}
+                    {connection.lastVerifiedAt
                       ? connection.lastVerifiedAt.toLocaleString("en-CA")
                       : "Never"}
                   </p>
                 </div>
                 <StatusPill
-                  tone={connection.status === "active" ? "success" : "attention"}
+                  tone={
+                    connection.status === "active" ? "success" : "attention"
+                  }
                 >
                   {connection.status}
                 </StatusPill>
@@ -150,10 +156,13 @@ export default async function MyCalendarPage({
                       value={contextResourceId}
                     />
                     <button className={secondaryButtonClass} type="submit">
-                      {connection.status === "active" ? "Reconnect" : "Authorize"}
+                      {connection.status === "active"
+                        ? "Reconnect"
+                        : "Authorize"}
                     </button>
                   </form>
-                  {!activeWriteAssignment && connection.status !== "disabled" ? (
+                  {!activeWriteAssignment &&
+                  connection.status !== "disabled" ? (
                     <form action={disconnectMyCalendarConnectionAction}>
                       <input
                         name="connectionId"
@@ -221,10 +230,13 @@ export default async function MyCalendarPage({
                     </Field>
                   </div>
                   <p className="mt-3 text-xs text-lh-muted">
-                    Employee assignments always block busy time and never receive
-                    bookings.
+                    Contractor assignments always block busy time and never
+                    receive bookings.
                   </p>
-                  <button className={`${primaryButtonClass} mt-4`} type="submit">
+                  <button
+                    className={`${primaryButtonClass} mt-4`}
+                    type="submit"
+                  >
                     Add busy calendar
                   </button>
                 </form>
@@ -246,7 +258,8 @@ export default async function MyCalendarPage({
                     >
                       <div>
                         <p className="font-semibold">
-                          {assignment.resourceName} · {assignment.calendarLabel ??
+                          {assignment.resourceName} ·{" "}
+                          {assignment.calendarLabel ??
                             assignment.providerCalendarId}
                         </p>
                         <p className="text-xs text-lh-muted">
@@ -257,7 +270,11 @@ export default async function MyCalendarPage({
                       </div>
                       <div className="flex items-center gap-2">
                         <StatusPill
-                          tone={assignment.status === "active" ? "success" : "neutral"}
+                          tone={
+                            assignment.status === "active"
+                              ? "success"
+                              : "neutral"
+                          }
                         >
                           {assignment.status}
                         </StatusPill>
@@ -286,7 +303,9 @@ export default async function MyCalendarPage({
                   );
                 })}
                 {assignments.length === 0 ? (
-                  <p className="text-sm text-lh-muted">No calendars assigned.</p>
+                  <p className="text-sm text-lh-muted">
+                    No calendars assigned.
+                  </p>
                 ) : null}
               </div>
             </article>
@@ -294,7 +313,7 @@ export default async function MyCalendarPage({
         })}
         {data.connections.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-lh-line bg-white p-6 text-lh-muted">
-            No employee-owned Google Calendar accounts are connected.
+            No contractor-owned Google Calendar accounts are connected.
           </p>
         ) : null}
       </section>
@@ -314,11 +333,12 @@ export default async function MyCalendarPage({
               >
                 <div>
                   <p className="font-semibold">
-                    {assignment.resourceName} · {assignment.calendarLabel ??
-                      assignment.providerCalendarId}
+                    {assignment.resourceName} ·{" "}
+                    {assignment.calendarLabel ?? assignment.providerCalendarId}
                   </p>
                   <p className="text-xs text-lh-muted">
-                    {assignment.connectionAccountEmail ?? "Admin-managed account"}
+                    {assignment.connectionAccountEmail ??
+                      "Admin-managed account"}
                     {" · "}
                     {assignment.acceptsBookings
                       ? "Receives bookings and blocks busy time"

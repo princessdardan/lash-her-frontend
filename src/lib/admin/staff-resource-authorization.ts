@@ -77,7 +77,7 @@ export async function assertStaffResourceMutationAllowed(
 
   if (input.operation === "unassign" && ownedActiveAssignment !== undefined) {
     throw new Error(
-      "Transfer or disconnect the employee's active calendar assignment before removing this resource",
+      "Transfer or disconnect the contractor's active calendar assignment before removing this resource",
     );
   }
 }

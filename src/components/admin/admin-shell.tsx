@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { signOutAdminAction } from "@/app/admin/auth-actions";
 import { canAdmin, type AdminPermissionAction } from "@/lib/admin/permissions";
+import { getAdminRoleLabel } from "@/lib/admin/presentation";
 import type { AdminActor } from "@/lib/admin/types";
 
 const navItems: Array<{
@@ -92,7 +93,7 @@ export function AdminShell({
               </div>
               <div className="flex items-center gap-3">
                 <span className="rounded-full border border-lh-line px-4 py-2 text-sm uppercase tracking-[0.14em] text-lh-muted">
-                  {actor.user.role}
+                  {getAdminRoleLabel(actor.user.role)}
                 </span>
                 <form action={signOutAdminAction}>
                   <button
