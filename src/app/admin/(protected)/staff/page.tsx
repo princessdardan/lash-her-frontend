@@ -1,8 +1,7 @@
-import Link from "next/link";
-
 import { AdminTable } from "@/components/admin/admin-table";
 import { AdminActionFeedback } from "@/components/admin/admin-action-feedback";
 import { AdminSubmitButton } from "@/components/admin/admin-submit-button";
+import { AdminTabLink } from "@/components/admin/admin-tab-link";
 import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
 import { StatusPill } from "@/components/admin/status-pill";
 import { canAdmin } from "@/lib/admin/permissions";
@@ -105,18 +104,13 @@ export default async function AdminStaffPage({
             ["square", "Square sales matching"],
           ] as const
         ).map(([value, label]) => (
-          <Link
-            aria-current={tab === value ? "page" : undefined}
-            className={
-              tab === value
-                ? `${tabClass} border-lh-primary bg-lh-primary text-white`
-                : tabClass
-            }
+          <AdminTabLink
+            active={tab === value}
             href={`/admin/staff?tab=${value}`}
             key={value}
           >
             {label}
-          </Link>
+          </AdminTabLink>
         ))}
       </nav>
 
@@ -827,5 +821,3 @@ const advancedSummaryClass =
 const createDetailsClass = "rounded-2xl border border-lh-line bg-white p-6";
 const createSummaryClass =
   "min-h-11 cursor-pointer list-none py-2 font-heading text-3xl uppercase tracking-[0.08em] text-lh-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lh-primary focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden";
-const tabClass =
-  "inline-flex min-h-11 items-center rounded-full border border-lh-line px-4 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lh-primary focus-visible:ring-offset-2";

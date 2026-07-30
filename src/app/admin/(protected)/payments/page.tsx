@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { AdminCard } from "@/components/admin/admin-card";
+import { AdminTabLink } from "@/components/admin/admin-tab-link";
 import {
   AdminWorkspaceHeader,
   AdminWorkspaceResults,
@@ -69,13 +70,9 @@ export default async function AdminPaymentsPage({
 
       <nav aria-label="Payment views" className="flex flex-wrap gap-2">
         {(["payments", "refunds"] as const).map((candidate) => (
-          <Link
-            aria-current={view === candidate ? "page" : undefined}
-            className={`inline-flex min-h-11 items-center rounded-full border px-5 py-2.5 text-sm font-semibold ${
-              view === candidate
-                ? "border-lh-primary bg-lh-primary text-white"
-                : "border-lh-line bg-white text-lh-shadow"
-            }`}
+          <AdminTabLink
+            active={view === candidate}
+            className="px-5 py-2.5"
             href={paymentViewHref(
               candidate,
               result.from,
@@ -85,7 +82,7 @@ export default async function AdminPaymentsPage({
             key={candidate}
           >
             {candidate === "payments" ? "Payments received" : "Refunds"}
-          </Link>
+          </AdminTabLink>
         ))}
       </nav>
 

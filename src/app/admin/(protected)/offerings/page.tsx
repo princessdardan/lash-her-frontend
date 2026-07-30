@@ -1,8 +1,7 @@
-import Link from "next/link";
-
 import { AdminTable } from "@/components/admin/admin-table";
 import { AdminActionFeedback } from "@/components/admin/admin-action-feedback";
 import { AdminSubmitButton } from "@/components/admin/admin-submit-button";
+import { AdminTabLink } from "@/components/admin/admin-tab-link";
 import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
 import { StatusPill } from "@/components/admin/status-pill";
 import { loaders } from "@/data/loaders";
@@ -90,18 +89,14 @@ export default async function AdminOfferingsPage({
         className="flex gap-2 overflow-x-auto pb-1"
       >
         {offeringsTabs.map((tab) => (
-          <Link
+          <AdminTabLink
+            active={activeTab === tab.value}
+            className="shrink-0"
             key={tab.value}
             href={`/admin/offerings?tab=${tab.value}`}
-            aria-current={activeTab === tab.value ? "page" : undefined}
-            className={
-              activeTab === tab.value
-                ? `${tabLinkClass} border-lh-primary bg-lh-primary text-white`
-                : `${tabLinkClass} border-lh-line bg-white text-lh-primary hover:border-lh-primary`
-            }
           >
             {tab.label}
-          </Link>
+          </AdminTabLink>
         ))}
       </nav>
 
@@ -1169,8 +1164,6 @@ const secondaryButtonClass =
 const theadClass =
   "bg-lh-neutral-2 text-xs uppercase tracking-[0.12em] text-lh-muted";
 const cellClass = "px-4 py-3 align-top";
-const tabLinkClass =
-  "flex min-h-11 shrink-0 items-center rounded-full border px-4 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lh-primary focus-visible:ring-offset-2";
 const createSummaryClass =
   "min-h-11 cursor-pointer list-none py-2 font-heading text-2xl uppercase tracking-[0.08em] text-lh-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lh-primary focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden";
 const advancedDetailsClass =

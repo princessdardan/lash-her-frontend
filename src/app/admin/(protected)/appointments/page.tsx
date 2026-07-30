@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { AdminTable } from "@/components/admin/admin-table";
+import { AdminTabLink } from "@/components/admin/admin-tab-link";
 import { StatusPill } from "@/components/admin/status-pill";
 import {
   ADMIN_APPOINTMENT_VIEWS,
@@ -72,13 +73,9 @@ export default async function AdminAppointmentsPage({
         {ADMIN_APPOINTMENT_VIEWS.map((view) => {
           const active = data.filters.view === view;
           return (
-            <Link
-              aria-current={active ? "page" : undefined}
-              className={
-                active
-                  ? "inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full bg-lh-shadow px-4 py-2 text-sm font-semibold text-white"
-                  : "inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full border border-lh-line bg-white px-4 py-2 text-sm font-semibold text-lh-shadow transition hover:border-lh-primary hover:bg-lh-neutral-2"
-              }
+            <AdminTabLink
+              active={active}
+              className="shrink-0 gap-2"
               href={buildAppointmentsHref(data.filters, {
                 page: null,
                 view,
@@ -90,14 +87,14 @@ export default async function AdminAppointmentsPage({
                 <span
                   className={
                     active
-                      ? "rounded-full bg-white/20 px-2 py-0.5 text-xs"
+                      ? "rounded-full bg-lh-primary/10 px-2 py-0.5 text-xs"
                       : "rounded-full bg-lh-light-soft px-2 py-0.5 text-xs text-lh-accent"
                   }
                 >
                   {data.attentionCount.toLocaleString("en-CA")}
                 </span>
               ) : null}
-            </Link>
+            </AdminTabLink>
           );
         })}
       </nav>

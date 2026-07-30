@@ -3,6 +3,7 @@ import Link from "next/link";
 import { AdminTable } from "@/components/admin/admin-table";
 import { AdminActionFeedback } from "@/components/admin/admin-action-feedback";
 import { AdminSubmitButton } from "@/components/admin/admin-submit-button";
+import { AdminTabLink } from "@/components/admin/admin-tab-link";
 import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
 import { StatusPill } from "@/components/admin/status-pill";
 import { formatDateInTimezone } from "@/lib/admin/business-time";
@@ -122,18 +123,14 @@ export default async function AdminSchedulesPage({
             ["calendar", "Calendar sync"],
           ] as const
         ).map(([value, label]) => (
-          <Link
-            aria-current={tab === value ? "page" : undefined}
-            className={
-              tab === value
-                ? `${tabClass} border-lh-primary bg-lh-primary text-white`
-                : tabClass
-            }
+          <AdminTabLink
+            active={tab === value}
+            className="px-5"
             href={availabilityHref(value, selectedResourceId)}
             key={value}
           >
             {label}
-          </Link>
+          </AdminTabLink>
         ))}
       </nav>
 
@@ -704,8 +701,6 @@ const primaryButtonClass =
   "mt-5 min-h-11 rounded-full bg-lh-primary px-5 py-3 text-sm font-semibold uppercase tracking-[0.12em] text-white disabled:cursor-not-allowed disabled:opacity-50";
 const secondaryButtonClass =
   "inline-flex min-h-11 items-center justify-center rounded-full border border-lh-line px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50";
-const tabClass =
-  "inline-flex min-h-11 items-center rounded-full border border-lh-line bg-white px-5 py-2 text-sm font-semibold text-lh-shadow transition hover:border-lh-primary";
 const emptyStateClass =
   "rounded-2xl border border-dashed border-lh-line bg-white p-6 text-sm text-lh-muted";
 const theadClass =

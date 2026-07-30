@@ -1,7 +1,6 @@
-import Link from "next/link";
-
 import { AdminActionFeedback } from "@/components/admin/admin-action-feedback";
 import { AdminCard } from "@/components/admin/admin-card";
+import { AdminTabLink } from "@/components/admin/admin-tab-link";
 import { AdminTable } from "@/components/admin/admin-table";
 import { getEmployeeAttributionAnalytics } from "@/lib/admin/employee-attribution-analytics";
 import { getAdminAnalytics } from "@/lib/admin/operations-read";
@@ -95,18 +94,13 @@ export default async function AdminReportsPage({
             ["methodology", "Methodology"],
           ] as const
         ).map(([value, label]) => (
-          <Link
-            aria-current={tab === value ? "page" : undefined}
-            className={
-              tab === value
-                ? `${tabClass} border-lh-primary bg-lh-primary text-white`
-                : tabClass
-            }
+          <AdminTabLink
+            active={tab === value}
             href={reportHref(value, analytics.range)}
             key={value}
           >
             {label}
-          </Link>
+          </AdminTabLink>
         ))}
       </nav>
 
@@ -502,8 +496,6 @@ const inputClass =
   "min-h-11 rounded-xl border border-lh-line bg-white px-3 py-2 text-sm";
 const buttonClass =
   "inline-flex min-h-11 items-center rounded-full border border-lh-line px-4 py-2 text-sm font-semibold hover:bg-lh-neutral-2";
-const tabClass =
-  "inline-flex min-h-11 items-center rounded-full border border-lh-line px-4 py-2 text-sm font-semibold";
 const theadClass =
   "bg-lh-neutral-2 text-xs uppercase tracking-[0.12em] text-lh-muted";
 const cellClass = "px-4 py-3";
