@@ -33,6 +33,10 @@ const operationalServiceOwnershipMigrationSql = readFileSync(
   new URL("../../../drizzle/0027_curly_leader.sql", import.meta.url),
   "utf8",
 );
+const providerScopedServiceIdentityMigrationSql = readFileSync(
+  new URL("../../../drizzle/0029_chemical_virginia_dare.sql", import.meta.url),
+  "utf8",
+);
 
 test("booking operations migration is additive", () => {
   const currentSchemaMigrationSql = migrationSql.slice(
@@ -224,6 +228,37 @@ test("operational service ownership migration keeps booking settings and promoti
   assert.doesNotMatch(
     operationalServiceOwnershipMigrationSql,
     /FOREIGN KEY \("source_sanity_document_id"\)/i,
+  );
+});
+
+test("provider-scoped service identity migration permits matching services across providers", () => {
+  for (const indexName of [
+    "booking_services_service_key_idx",
+    "booking_services_sanity_document_idx",
+    "booking_services_public_slug_idx",
+  ]) {
+    const dropPosition = providerScopedServiceIdentityMigrationSql.indexOf(
+      `DROP INDEX "${indexName}"`,
+    );
+    const createPosition = providerScopedServiceIdentityMigrationSql.indexOf(
+      `CREATE UNIQUE INDEX "${indexName}"`,
+    );
+
+    assert.ok(dropPosition >= 0);
+    assert.ok(createPosition > dropPosition);
+  }
+
+  assert.match(
+    providerScopedServiceIdentityMigrationSql,
+    /"booking_services_service_key_idx"[\s\S]*\("owner_provider_id","service_key"\)/,
+  );
+  assert.match(
+    providerScopedServiceIdentityMigrationSql,
+    /"booking_services_sanity_document_idx"[\s\S]*\("owner_provider_id","sanity_document_id"\)/,
+  );
+  assert.match(
+    providerScopedServiceIdentityMigrationSql,
+    /"booking_services_public_slug_idx"[\s\S]*\("owner_provider_id","public_slug"\)/,
   );
 });
 

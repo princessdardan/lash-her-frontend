@@ -624,6 +624,33 @@ test("booking configuration schema separates resources, providers, services, and
   );
 });
 
+test("booking service identity is unique within each provider", () => {
+  const indexes = new Map(
+    getTableConfig(bookingServices).indexes.map((index) => [
+      index.config.name,
+      {
+        columns: index.config.columns.map((column) =>
+          "name" in column ? column.name : null,
+        ),
+        unique: index.config.unique,
+      },
+    ]),
+  );
+
+  assert.deepEqual(indexes.get("booking_services_service_key_idx"), {
+    columns: ["owner_provider_id", "service_key"],
+    unique: true,
+  });
+  assert.deepEqual(indexes.get("booking_services_sanity_document_idx"), {
+    columns: ["owner_provider_id", "sanity_document_id"],
+    unique: true,
+  });
+  assert.deepEqual(indexes.get("booking_services_public_slug_idx"), {
+    columns: ["owner_provider_id", "public_slug"],
+    unique: true,
+  });
+});
+
 test("offering copy provenance migration leaves generated copy legacy-owned", () => {
   const migrationSql = readFileSync(
     new URL("../../../drizzle/0028_lucky_lady_ursula.sql", import.meta.url),

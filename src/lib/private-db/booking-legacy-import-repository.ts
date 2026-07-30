@@ -135,7 +135,7 @@ export async function importLegacyBookingConfiguration(input: {
           status: "draft",
         })
         .onConflictDoUpdate({
-          target: bookingServices.serviceKey,
+          target: [bookingServices.ownerProviderId, bookingServices.serviceKey],
           set: {
             displayTitle: offeringPlan.service.displayTitle,
             publicSlug: offeringPlan.service.publicSlug,

@@ -311,7 +311,7 @@ test(
 );
 
 test(
-  "legacy import leaves a multi-provider service shared while owning an unambiguous service",
+  "legacy import keeps matching service identities separate per provider",
   { skip: skipReason },
   async () => {
     const database = requireDb();
@@ -335,7 +335,7 @@ test(
       .where(eq(bookingServices.serviceKey, serviceSlug));
     assert.equal(ownedService.ownerProviderId, first.providerId);
 
-    await importLegacyBookingConfiguration({
+    const second = await importLegacyBookingConfiguration({
       db: database,
       plan: buildPlan({
         addOnPriceCad: 25,
@@ -344,11 +344,27 @@ test(
         serviceSlug,
       }),
     });
-    const [sharedService] = await database
-      .select({ ownerProviderId: bookingServices.ownerProviderId })
+    const matchingServices = await database
+      .select({
+        ownerProviderId: bookingServices.ownerProviderId,
+        publicSlug: bookingServices.publicSlug,
+        sanityDocumentId: bookingServices.sanityDocumentId,
+      })
       .from(bookingServices)
       .where(eq(bookingServices.serviceKey, serviceSlug));
-    assert.equal(sharedService.ownerProviderId, null);
+
+    assert.equal(matchingServices.length, 2);
+    assert.deepEqual(
+      new Set(matchingServices.map((service) => service.ownerProviderId)),
+      new Set([first.providerId, second.providerId]),
+    );
+    assert.ok(
+      matchingServices.every(
+        (service) =>
+          service.publicSlug === serviceSlug &&
+          service.sanityDocumentId === `${serviceSlug}-sanity`,
+      ),
+    );
   },
 );
 

@@ -616,11 +616,18 @@ export const bookingServices = pgTable(
       .defaultNow(),
   },
   (table) => [
-    uniqueIndex("booking_services_service_key_idx").on(table.serviceKey),
+    uniqueIndex("booking_services_service_key_idx").on(
+      table.ownerProviderId,
+      table.serviceKey,
+    ),
     uniqueIndex("booking_services_sanity_document_idx").on(
+      table.ownerProviderId,
       table.sanityDocumentId,
     ),
-    uniqueIndex("booking_services_public_slug_idx").on(table.publicSlug),
+    uniqueIndex("booking_services_public_slug_idx").on(
+      table.ownerProviderId,
+      table.publicSlug,
+    ),
     index("booking_services_owner_provider_idx").on(table.ownerProviderId),
     index("booking_services_status_display_idx").on(
       table.status,
