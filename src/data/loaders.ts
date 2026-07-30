@@ -20,6 +20,7 @@ import type {
   TPolicyPage,
   TPromotionCode,
   TService,
+  TServiceEditorial,
   TTrainingProgramCatalogItem,
 } from "@/types";
 
@@ -88,6 +89,18 @@ const PRODUCT_PROJECTION = groq`{
 }`;
 
 const SERVICE_PROJECTION = groq`{
+  _id,
+  title,
+  description,
+  shortDescription,
+  "slug": slug.current,
+  image{ asset, hotspot, crop, alt },
+  gallery[]{ asset, hotspot, crop, alt },
+  detailSections[]{ _key, heading, content },
+  seo{ title, description, image{ asset, hotspot, crop, alt } }
+}`;
+
+const LEGACY_SERVICE_PROJECTION = groq`{
   _id,
   title,
   description,
@@ -750,7 +763,13 @@ async function getBookingSettings(
 async function getBookableServices(
   options: SanityFetchOptions = {},
 ): Promise<TService[]> {
-  const services = await getServices(options);
+  const query = groq`*[_type == "service" && isAvailable == true] | order(displayOrder asc, title asc) ${LEGACY_SERVICE_PROJECTION}`;
+  const services = await sanityFetch<TService[]>(
+    query,
+    {},
+    ["service"],
+    options,
+  );
   return services.filter(isPaymentConfiguredService).sort(compareServices);
 }
 
@@ -758,7 +777,13 @@ async function getBookableServiceBySlug(
   slug: string,
   options: SanityFetchOptions = {},
 ): Promise<TService | null> {
-  const service = await getServiceBySlug(slug, options);
+  const query = groq`*[_type == "service" && slug.current == $slug && isAvailable == true][0] ${LEGACY_SERVICE_PROJECTION}`;
+  const service = await sanityFetch<TService | null>(
+    query,
+    { slug },
+    ["service"],
+    options,
+  );
   return service !== null && isPaymentConfiguredService(service)
     ? service
     : null;
@@ -841,9 +866,9 @@ async function getPromotionCode(code: string): Promise<TPromotionCode | null> {
 
 async function getServices(
   options: SanityFetchOptions = {},
-): Promise<TService[]> {
-  const query = groq`*[_type == "service" && isAvailable == true] | order(displayOrder asc, title asc) ${SERVICE_PROJECTION}`;
-  return sanityFetch<TService[]>(query, {}, ["service"], options);
+): Promise<TServiceEditorial[]> {
+  const query = groq`*[_type == "service"] | order(title asc) ${SERVICE_PROJECTION}`;
+  return sanityFetch<TServiceEditorial[]>(query, {}, ["service"], options);
 }
 
 async function getTrainingProgramCatalogItems(): Promise<
@@ -880,13 +905,18 @@ async function getAllProductSlugs(): Promise<Array<{ slug: string }>> {
 async function getServiceBySlug(
   slug: string,
   options: SanityFetchOptions = {},
-): Promise<TService | null> {
-  const query = groq`*[_type == "service" && slug.current == $slug && isAvailable == true][0] ${SERVICE_PROJECTION}`;
-  return sanityFetch<TService | null>(query, { slug }, ["service"], options);
+): Promise<TServiceEditorial | null> {
+  const query = groq`*[_type == "service" && slug.current == $slug][0] ${SERVICE_PROJECTION}`;
+  return sanityFetch<TServiceEditorial | null>(
+    query,
+    { slug },
+    ["service"],
+    options,
+  );
 }
 
 async function getAllServiceSlugs(): Promise<Array<{ slug: string }>> {
-  const query = groq`*[_type == "service" && isAvailable == true]{
+  const query = groq`*[_type == "service" && defined(slug.current)]{
     "slug": slug.current
   }`;
   return sanityStaticFetch<Array<{ slug: string }>>(query, {}, ["service"]);

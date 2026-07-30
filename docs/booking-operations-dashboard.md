@@ -1,6 +1,6 @@
 # Booking Operations Dashboard
 
-The multi-provider booking system uses PostgreSQL for operational configuration and booking state, while Sanity remains the source for public/editorial service content. Google Calendar is an external projection and busy-time source; PostgreSQL resource reservations and appointments are authoritative.
+The multi-provider booking system uses PostgreSQL for operational configuration, public catalog copy, intake content, and booking state. Sanity owns only the editorial, media, and SEO content rendered on service detail pages. Google Calendar is an external projection and busy-time source; PostgreSQL resource reservations and appointments are authoritative.
 
 ## Authentication decision
 
@@ -28,16 +28,17 @@ Create separate Google OAuth clients for identity and booking-calendar access so
 
 ## Data ownership
 
-| Concern | Authority |
-| --- | --- |
-| Service description, imagery, SEO, intake copy | Sanity |
-| Provider/resource status and assignment | PostgreSQL |
-| Provider-specific offering price, duration, buffer, add-ons | PostgreSQL |
-| Weekly schedules and exceptions | PostgreSQL |
-| Calendar connections and canonical calendar IDs | PostgreSQL, with encrypted credentials |
-| Holds, resource occupancy, appointments, payment attempts | PostgreSQL |
-| Busy events and appointment event projection | Google Calendar |
-| Card/payment processing | Square |
+| Concern                                                     | Authority                              |
+| ----------------------------------------------------------- | -------------------------------------- |
+| Service detail-page editorial, imagery, and SEO             | Sanity                                 |
+| Public service catalog title/summary and intake copy        | PostgreSQL                             |
+| Provider/resource status and assignment                     | PostgreSQL                             |
+| Provider-specific offering price, duration, buffer, add-ons | PostgreSQL                             |
+| Weekly schedules and exceptions                             | PostgreSQL                             |
+| Calendar connections and canonical calendar IDs             | PostgreSQL, with encrypted credentials |
+| Holds, resource occupancy, appointments, payment attempts   | PostgreSQL                             |
+| Busy events and appointment event projection                | Google Calendar                        |
+| Card/payment processing                                     | Square                                 |
 
 The browser receives a public offering ID and display data only. It never supplies provider-resource routing, a connection ID, or a calendar ID.
 
@@ -58,7 +59,8 @@ The browser receives a public offering ID and display data only. It never suppli
 6. Connect and assign a writable canonical Google Calendar.
 7. Confirm setup readiness, then activate the resource/provider, services, and offerings.
 8. Run the sandbox smoke matrix before enabling live traffic.
-9. After legacy holds have expired or finalized and every public service is migrated, set `SERVICE_BOOKING_MODEL_MODE=operational`. This disables creation of new V1 holds while existing V1 payments/finalizers remain recoverable.
+9. After legacy holds have expired or finalized and every public service is migrated, complete the operational data cutover gate below.
+10. Only after the cutover command reports success, set `SERVICE_BOOKING_MODEL_MODE=operational`. This disables creation of new V1 holds while existing V1 payments/finalizers remain recoverable.
 
 `legacy` is an emergency rollback mode for new booking creation. `dual` permits per-service migration. `operational` is the final cutover mode.
 
@@ -89,13 +91,62 @@ The write command requires `DATABASE_URL`, `PRIVATE_DB_MIGRATION_TARGET`, and an
 
 The import deliberately does not copy the legacy `primary` calendar alias or global OAuth token. The owner must connect the Google account in `/admin/calendar-connections` and choose a canonical calendar returned by Google CalendarList. This prevents ambiguous routing once more than one employee exists.
 
+## Operational data cutover gate
+
+Keep `SERVICE_BOOKING_MODEL_MODE=dual` until this gate passes. Apply the
+PostgreSQL migrations and finish staging every provider/service/offering first.
+The cutover import reads the published legacy Sanity booking settings and raw
+service-promotion eligibility fields, but runtime operational booking remains
+PostgreSQL-only.
+
+Run the validation-only dry run:
+
+```bash
+npm run booking:import-operational-cutover
+```
+
+The command exits nonzero without writing if booking settings are missing, a
+specific Sanity service cannot map by exact Sanity document ID, one Sanity ID
+maps to more than one operational service record, promotion codes collide with
+admin-owned PostgreSQL codes, or source values violate operational limits. One
+Sanity service may map to several provider offerings; the import records every
+such offering explicitly. Review the reported source promotion, referenced
+service, target offering, eligibility-row, intake-question, and stale-promotion
+counts.
+
+Execute only after the dry-run counts are approved:
+
+```bash
+npm run booking:import-operational-cutover -- --execute
+```
+
+The write is transactional and idempotent. It upserts settings and
+Sanity-lineage promotion codes, replaces only those imported promotions' exact
+offering eligibility, disables imported promotions no longer present in the
+source, and enriches provider-offering public copy from linked published
+service documents. PostgreSQL tracks title and summary provenance independently.
+The import can enrich only fields marked as legacy-owned; saving offering copy
+in Admin marks both fields as administrator-owned, including when the saved
+text happens to equal a migration fallback. Administrator-owned provider copy
+is preserved on every cutover or legacy-bootstrap rerun, while legacy-owned
+title and summary fields remain independently refreshable. Copy generated by
+the `0025` migration remains legacy-owned until it is explicitly saved through
+Admin. Existing admin-owned promotion codes are never adopted or overwritten.
+
+The command requires `SANITY_API_READ_TOKEN`, `DATABASE_URL`,
+`PRIVATE_DB_MIGRATION_TARGET`, and an exact `PRIVATE_DB_MIGRATION_HOST` match.
+Production additionally requires `BOOKING_CUTOVER_CONFIRM=production` after a
+backup and reviewed dry run. Do not set
+`SERVICE_BOOKING_MODEL_MODE=operational` unless the execute command exits zero
+and prints `CUTOVER VALIDATION PASSED`.
+
 ## Owner workflow
 
 The dashboard provides these operational areas:
 
 - `/admin/setup`: configuration/readiness summary and global defaults.
 - `/admin/staff`: owner/admin/employee profiles, resources, and employee resource assignments.
-- `/admin/offerings`: Sanity-linked base services and provider-specific prices, durations, buffers, and add-ons.
+- `/admin/offerings`: operational services, public catalog copy, provider-specific prices, durations, buffers, add-ons, and optional detail-page editorial links.
 - `/admin/schedules`: weekly shifts, split shifts, closures, and availability exceptions.
 - `/admin/calendar-connections`: connect/reconnect Google accounts and assign busy/write calendars.
 - `/admin/appointments`: resource-scoped appointment operations and status history.
@@ -106,7 +157,8 @@ The dashboard provides these operational areas:
 New public offerings should not be activated until readiness confirms:
 
 - the provider and primary resource are active;
-- the Sanity service link and public slug are present;
+- the operational public slug and provider-facing title/summary are present;
+- any optional Sanity detail-page link resolves when configured; a missing editorial link does not block an otherwise valid offering;
 - at least one active schedule exists;
 - an active Calendar connection exists;
 - one canonical calendar with write access receives bookings;

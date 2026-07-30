@@ -183,6 +183,7 @@ test("V2 hold resolves offering, add-on, resources, and calendar server-side", (
     const offering = createOperationalOffering();
     const createInputs = [];
     let legacyServiceLoaded = false;
+    let legacySettingsLoaded = false;
     const handler = createHoldHandler({
       createOperationalHold: async (input) => {
         createInputs.push(input);
@@ -201,6 +202,15 @@ test("V2 hold resolves offering, add-on, resources, and calendar server-side", (
         legacyServiceLoaded = true;
         return createService();
       },
+      getBookingSettings: async () => {
+        legacySettingsLoaded = true;
+        return createSettings();
+      },
+      getOperationalBookingUiSettings: async () => createSettings({
+        intakeQuestions: [
+          { id: "notes", label: "Notes", inputType: "text", required: false },
+        ],
+      }),
       getNow: () => now,
       operationalAvailability: createOperationalAvailabilityDependencies(offering),
     });
@@ -215,10 +225,12 @@ test("V2 hold resolves offering, add-on, resources, and calendar server-side", (
 
     assert.equal(response.status, 201);
     assert.equal(legacyServiceLoaded, false);
+    assert.equal(legacySettingsLoaded, false);
     assert.equal(createInputs.length, 1);
     assert.deepEqual(createInputs[0].answers, [
       { questionId: "notes", answer: "Sensitive eyes" },
     ]);
+    assert.equal(createInputs[0].marketingOptInLabel, "Send me updates");
     assert.equal(createInputs[0].booking.offeringId, OPERATIONAL_OFFERING_ID);
     assert.equal(createInputs[0].booking.providerId, "provider-server");
     assert.equal(createInputs[0].booking.resourceId, "resource-server");
@@ -568,6 +580,7 @@ test("booking hold route revalidates a slot and returns payment page handoff", (
       bookingType: "in-person-appointment",
       durationMinutes: 60,
       customerStatus: "pending",
+      marketingOptInLabel: "Send me updates",
       paymentStatus: "pending",
       pricing: {
         depositAmount: 50,

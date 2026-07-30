@@ -23,6 +23,7 @@ import {
   bookingConfigurationStatus,
   bookingNoShowChargeAttempts,
   bookingNoShowChargeRecords,
+  bookingOfferingCopyProvenance,
   bookingPaymentAttempts,
   bookingPolicyAcceptances,
   bookingProviders,
@@ -36,6 +37,8 @@ import {
   bookingServiceOfferingAddOns,
   bookingServiceOfferingResources,
   bookingServiceOfferings,
+  bookingServicePromotionCodes,
+  bookingServicePromotionOfferings,
   bookingSquareCustomers,
   calendarFinalizationStatus,
   checkoutOrders,
@@ -63,6 +66,9 @@ function getIndexNames(
     | typeof bookingCalendarConnections
     | typeof bookingResourceCalendarAssignments
     | typeof bookingResourceReservations
+    | typeof bookingServiceOfferings
+    | typeof bookingServicePromotionCodes
+    | typeof bookingServicePromotionOfferings
     | typeof bookingPaymentAttempts
     | typeof bookingNoShowChargeRecords
     | typeof checkoutOrders
@@ -560,19 +566,76 @@ test("booking configuration schema separates resources, providers, services, and
     bookingServiceOfferings,
     bookingServiceOfferingAddOns,
     bookingServiceOfferingResources,
+    bookingServicePromotionCodes,
+    bookingServicePromotionOfferings,
     bookingBusinessSettings,
   ]) {
     assert.ok(table);
   }
 
   assert.ok(Object.keys(bookingProviders).includes("primaryResourceId"));
+  assert.ok(Object.keys(bookingServices).includes("ownerProviderId"));
   assert.ok(Object.keys(bookingServiceOfferings).includes("providerId"));
+  assert.ok(Object.keys(bookingServiceOfferings).includes("publicTitle"));
+  assert.ok(Object.keys(bookingServiceOfferings).includes("publicSummary"));
+  assert.deepEqual(bookingOfferingCopyProvenance.enumValues, [
+    "legacy",
+    "admin",
+  ]);
+  assert.equal(bookingServiceOfferings.publicTitleProvenance.default, "legacy");
+  assert.equal(
+    bookingServiceOfferings.publicSummaryProvenance.default,
+    "legacy",
+  );
+  assert.ok(
+    Object.keys(bookingServicePromotionCodes).includes(
+      "sourceSanityDocumentId",
+    ),
+  );
   assert.ok(
     Object.keys(bookingServiceOfferings).includes("bufferBeforeMinutes"),
   );
   assert.ok(
     Object.keys(bookingServiceOfferings).includes("bufferAfterMinutes"),
   );
+  assert.ok(
+    getIndexNames(bookingServiceOfferings).includes(
+      "booking_service_offerings_active_service_provider_idx",
+    ),
+  );
+  assert.equal(bookingBusinessSettings.intakeQuestions.notNull, true);
+  assert.equal(bookingBusinessSettings.marketingOptInLabel.notNull, true);
+  assert.equal(bookingServicePromotionCodes.code.notNull, true);
+  assert.equal(bookingServicePromotionCodes.discountValue.notNull, true);
+  assert.ok(
+    getIndexNames(bookingServicePromotionCodes).includes(
+      "booking_service_promotion_codes_code_idx",
+    ),
+  );
+  assert.ok(
+    getIndexNames(bookingServicePromotionCodes).includes(
+      "booking_service_promotion_codes_sanity_document_idx",
+    ),
+  );
+  assert.ok(
+    getIndexNames(bookingServicePromotionOfferings).includes(
+      "booking_service_promotion_offerings_pair_idx",
+    ),
+  );
+});
+
+test("offering copy provenance migration leaves generated copy legacy-owned", () => {
+  const migrationSql = readFileSync(
+    new URL("../../../drizzle/0028_lucky_lady_ursula.sql", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    migrationSql,
+    /CREATE TYPE "public"\."booking_offering_copy_provenance" AS ENUM\('legacy', 'admin'\)/,
+  );
+  assert.doesNotMatch(migrationSql, /admin_audit_logs/);
+  assert.doesNotMatch(migrationSql, /\bUPDATE\b/);
 });
 
 test("resource schedules support recurring windows and absolute exceptions", () => {
@@ -819,10 +882,7 @@ test("calendar credential ownership and immutable attribution snapshots are stor
     migrationSql,
     /require_square_team_attribution" boolean DEFAULT false NOT NULL/,
   );
-  assert.match(
-    migrationSql,
-    /credential_owner_admin_user_id" uuid/,
-  );
+  assert.match(migrationSql, /credential_owner_admin_user_id" uuid/);
 });
 
 test("policy and no-show evidence can link to durable appointments", () => {

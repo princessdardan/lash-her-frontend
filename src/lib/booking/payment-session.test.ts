@@ -6,6 +6,7 @@ import {
   type ServiceBookingPaymentSessionDisplay,
 } from "./payment-session";
 import type { BookingHoldRecord } from "./holds";
+import { DEFAULT_BOOKING_MARKETING_OPT_IN_LABEL } from "./operational-ui-settings";
 
 const now = new Date("2030-01-01T18:00:00.000Z");
 
@@ -83,6 +84,7 @@ test("resolves active payment sessions into safe display data", async () => {
   const expected: ServiceBookingPaymentSessionDisplay = {
     currency: "CAD",
     expiresAt: "2030-01-01T18:10:00.000Z",
+    marketingOptInLabel: DEFAULT_BOOKING_MARKETING_OPT_IN_LABEL,
     paymentSessionReference: "pay_sess_1",
     pricing: {
       addOnPriceCents: 2500,
@@ -105,6 +107,35 @@ test("resolves active payment sessions into safe display data", async () => {
   };
 
   assert.deepEqual(result.session, expected);
+});
+
+test("exposes the immutable V1 marketing label snapshot", async () => {
+  const baseHold = createHold();
+  const hold = createHold({
+    offeringSnapshot: {
+      ...baseHold.offeringSnapshot,
+      marketingOptInLabel: "Send me legacy service updates.",
+    },
+  });
+
+  const result = await resolveServiceBookingPaymentSession(
+    {
+      paymentSessionReference: "pay_sess_1",
+      serviceSlug: "classic-fill",
+      now,
+    },
+    createFakeRepository(hold),
+  );
+
+  assert.equal(result.status, "active");
+  if (result.status !== "active") {
+    throw new Error("Expected active session result");
+  }
+
+  assert.equal(
+    result.session.marketingOptInLabel,
+    "Send me legacy service updates.",
+  );
 });
 
 test("resolves active provisional sessions with no add-on and zero addOnPrice", async () => {
@@ -140,6 +171,59 @@ test("resolves active provisional sessions with no add-on and zero addOnPrice", 
 
   assert.equal(result.session.pricing.addOnPriceCents, 0);
   assert.equal(result.session.selectedAddOn, undefined);
+});
+
+test("exposes the immutable V2 marketing label snapshot", async () => {
+  const baseHold = createHold();
+  const hold = createHold({
+    bookingModelVersion: 2,
+    offeringSnapshot: {
+      ...baseHold.offeringSnapshot,
+      marketingOptInLabel: "Send me provider-specific updates.",
+    },
+  });
+
+  const result = await resolveServiceBookingPaymentSession(
+    {
+      paymentSessionReference: "pay_sess_1",
+      serviceSlug: "classic-fill",
+      now,
+    },
+    createFakeRepository(hold),
+  );
+
+  assert.equal(result.status, "active");
+  if (result.status !== "active") {
+    throw new Error("Expected active session result");
+  }
+
+  assert.equal(
+    result.session.marketingOptInLabel,
+    "Send me provider-specific updates.",
+  );
+});
+
+test("uses the immutable default for pre-change V2 holds without a marketing label snapshot", async () => {
+  const hold = createHold({ bookingModelVersion: 2 });
+
+  const result = await resolveServiceBookingPaymentSession(
+    {
+      paymentSessionReference: "pay_sess_1",
+      serviceSlug: "classic-fill",
+      now,
+    },
+    createFakeRepository(hold),
+  );
+
+  assert.equal(result.status, "active");
+  if (result.status !== "active") {
+    throw new Error("Expected active session result");
+  }
+
+  assert.equal(
+    result.session.marketingOptInLabel,
+    DEFAULT_BOOKING_MARKETING_OPT_IN_LABEL,
+  );
 });
 
 test("rejects slug mismatches with not_found", async () => {

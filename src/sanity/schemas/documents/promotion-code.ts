@@ -101,7 +101,6 @@ export const promotionCode = defineType({
           { title: "All products and training programs", value: "all" },
           { title: "All products", value: "products" },
           { title: "All training programs", value: "trainingPrograms" },
-          { title: "All services", value: "services" },
           { title: "Specific items", value: "specificItems" },
         ],
       },
@@ -127,28 +126,18 @@ export const promotionCode = defineType({
           to: [{ type: "trainingProgram" }],
         }),
       ],
-    }),
-    defineField({
-      name: "services",
-      title: "Eligible Services",
-      type: "array",
-      group: "eligibility",
-      hidden: ({ document }) => document?.appliesTo !== "specificItems",
-      of: [defineArrayMember({ type: "reference", to: [{ type: "service" }] })],
       validation: (Rule) =>
         Rule.custom((value, context) => {
           if (context.document?.appliesTo !== "specificItems") return true;
 
           const products = context.document?.products;
-          const trainingPrograms = context.document?.trainingPrograms;
-          const services = value;
+          const trainingPrograms = value;
           const hasProducts = Array.isArray(products) && products.length > 0;
           const hasTrainingPrograms =
             Array.isArray(trainingPrograms) && trainingPrograms.length > 0;
-          const hasServices = Array.isArray(services) && services.length > 0;
 
-          if (!hasProducts && !hasTrainingPrograms && !hasServices) {
-            return "Select at least one eligible product, training program, or service.";
+          if (!hasProducts && !hasTrainingPrograms) {
+            return "Select at least one eligible product or training program.";
           }
 
           return true;

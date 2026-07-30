@@ -47,9 +47,8 @@ test(
   { skip: skipReason },
   async () => {
     const fixture = await seedConfigurationFixture();
-    const repository = createDrizzleOperationalBookingConfigurationRepository(
-      requireDb(),
-    );
+    const repository =
+      createDrizzleOperationalBookingConfigurationRepository(requireDb());
     const [businessDefaults] = await requireDb()
       .select({
         bookingHorizonDays: bookingBusinessSettings.bookingHorizonDays,
@@ -70,10 +69,14 @@ test(
 
     assert.equal(offerings.length, 1);
     assert.equal(offerings[0].id, fixture.activeOfferingId);
+    assert.equal(offerings[0].displayOrder, 7);
+    assert.equal(offerings[0].publicTitle, "Provider-specific public title");
     assert.equal(
-      offerings[0].horizonDays,
-      expectedDefaults.bookingHorizonDays,
+      offerings[0].publicSummary,
+      "Provider-specific public summary",
     );
+    assert.equal(offerings[0].service.hasEditorialDetail, true);
+    assert.equal(offerings[0].horizonDays, expectedDefaults.bookingHorizonDays);
     assert.equal(
       offerings[0].minimumLeadTimeHours,
       expectedDefaults.minimumLeadTimeHours,
@@ -101,6 +104,18 @@ test(
       }),
       [],
     );
+    await requireDb()
+      .update(bookingServices)
+      .set({ sanityDocumentId: null })
+      .where(eq(bookingServices.publicSlug, fixture.servicePublicSlug));
+    const slugOfferings =
+      await repository.listActiveOfferingsByServicePublicSlug?.({
+        now: fixture.now,
+        servicePublicSlug: fixture.servicePublicSlug,
+      });
+    assert.equal(slugOfferings?.length, 1);
+    assert.equal(slugOfferings?.[0].id, fixture.activeOfferingId);
+    assert.equal(slugOfferings?.[0].service.hasEditorialDetail, false);
   },
 );
 
@@ -140,12 +155,14 @@ test(
       ["unavailable"],
     );
     assert.deepEqual(
-      primary.busyCalendarAssignments.map((assignment) => ({
-        calendarId: assignment.calendarId,
-        connectionId: assignment.connectionId,
-      })).sort((first, second) =>
-        first.calendarId.localeCompare(second.calendarId),
-      ),
+      primary.busyCalendarAssignments
+        .map((assignment) => ({
+          calendarId: assignment.calendarId,
+          connectionId: assignment.connectionId,
+        }))
+        .sort((first, second) =>
+          first.calendarId.localeCompare(second.calendarId),
+        ),
       [
         {
           calendarId: fixture.busyCalendarId,
@@ -167,9 +184,8 @@ test(
   { skip: skipReason },
   async () => {
     const fixture = await seedConfigurationFixture();
-    const repository = createDrizzleOperationalBookingConfigurationRepository(
-      requireDb(),
-    );
+    const repository =
+      createDrizzleOperationalBookingConfigurationRepository(requireDb());
     await requireDb()
       .update(bookingResourceCalendarAssignments)
       .set({ status: "disabled" })
@@ -265,15 +281,25 @@ async function seedConfigurationFixture(
     .returning();
   const sanityServiceId = `${TEST_PREFIX}sanity-${suffix}`;
   const servicePublicSlug = `${TEST_PREFIX}service-${suffix}`;
-  const [service] = await database
+  const [service, futureService] = await database
     .insert(bookingServices)
-    .values({
-      displayTitle: `Public read service ${suffix}`,
-      publicSlug: servicePublicSlug,
-      sanityDocumentId: sanityServiceId,
-      serviceKey: `${TEST_PREFIX}service-${suffix}`,
-      status: "active",
-    })
+    .values([
+      {
+        displayTitle: `Public read service ${suffix}`,
+        ownerProviderId: provider.id,
+        publicSlug: servicePublicSlug,
+        sanityDocumentId: sanityServiceId,
+        serviceKey: `${TEST_PREFIX}service-${suffix}`,
+        status: "active",
+      },
+      {
+        displayTitle: `Future public read service ${suffix}`,
+        ownerProviderId: provider.id,
+        publicSlug: `${TEST_PREFIX}future-service-${suffix}`,
+        serviceKey: `${TEST_PREFIX}future-service-${suffix}`,
+        status: "active",
+      },
+    ])
     .returning();
   const [activeOffering, futureOffering] = await database
     .insert(bookingServiceOfferings)
@@ -284,9 +310,12 @@ async function seedConfigurationFixture(
         effectiveFrom: new Date("2030-01-01T00:00:00.000Z"),
         effectiveUntil: new Date("2030-12-31T00:00:00.000Z"),
         fullPriceCents: 15000,
+        displayOrder: 7,
         offeringKey: `${TEST_PREFIX}active-${suffix}`,
         primaryResourceId: primaryResource.id,
         providerId: provider.id,
+        publicSummary: "Provider-specific public summary",
+        publicTitle: "Provider-specific public title",
         serviceId: service.id,
         slotIntervalMinutes: 30,
         status: "active",
@@ -299,7 +328,7 @@ async function seedConfigurationFixture(
         offeringKey: `${TEST_PREFIX}future-${suffix}`,
         primaryResourceId: primaryResource.id,
         providerId: provider.id,
-        serviceId: service.id,
+        serviceId: futureService.id,
         slotIntervalMinutes: 30,
         status: "active",
       },

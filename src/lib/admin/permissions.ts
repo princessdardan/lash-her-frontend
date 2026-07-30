@@ -18,6 +18,10 @@ export type AdminPermissionAction =
   | "payments:view"
   | "schedules:manage"
   | "schedules:view"
+  | "service-promotions:manage"
+  | "service-promotions:view"
+  | "settings:manage"
+  | "setup:view"
   | "staff:manage"
   | "staff:view";
 
@@ -43,6 +47,10 @@ const ADMIN_ACTIONS = new Set<AdminPermissionAction>([
   "payments:view",
   "schedules:manage",
   "schedules:view",
+  "service-promotions:manage",
+  "service-promotions:view",
+  "settings:manage",
+  "setup:view",
   "staff:view",
 ]);
 
@@ -51,6 +59,8 @@ const EMPLOYEE_ACTIONS = new Set<AdminPermissionAction>([
   "bookings:manage",
   "bookings:view",
   "calendar-connections:self-manage",
+  "offerings:manage",
+  "offerings:view",
   "schedules:manage",
   "schedules:view",
 ]);
@@ -59,6 +69,8 @@ const EMPLOYEE_RESOURCE_ACTIONS = new Set<AdminPermissionAction>([
   "bookings:manage",
   "bookings:view",
   "calendar-connections:self-manage",
+  "offerings:manage",
+  "offerings:view",
   "schedules:manage",
   "schedules:view",
 ]);
@@ -80,7 +92,11 @@ export function canAdmin(input: PermissionCheckInput): boolean {
     return true;
   }
 
-  if (input.action === "calendar-connections:self-manage") {
+  if (
+    input.action === "calendar-connections:self-manage" ||
+    input.action === "offerings:manage" ||
+    input.action === "offerings:view"
+  ) {
     if (input.bookingResourceId) {
       return input.bookingProviderResourceIds.includes(input.bookingResourceId);
     }
@@ -105,6 +121,8 @@ export function getVisibleAdminSections(input: {
     "bookings:view",
     "schedules:view",
     "offerings:view",
+    "service-promotions:view",
+    "setup:view",
     "calendar-connections:view",
     "marketing:view",
     "analytics:view",

@@ -98,11 +98,26 @@ test(
       .from(bookingProviders)
       .where(eq(bookingProviders.id, first.providerId));
     const [firstOffering] = await database
-      .select({ id: bookingServiceOfferings.id })
+      .select({
+        id: bookingServiceOfferings.id,
+        publicSummary: bookingServiceOfferings.publicSummary,
+        publicSummaryProvenance:
+          bookingServiceOfferings.publicSummaryProvenance,
+        publicTitle: bookingServiceOfferings.publicTitle,
+        publicTitleProvenance: bookingServiceOfferings.publicTitleProvenance,
+      })
       .from(bookingServiceOfferings)
-      .where(eq(bookingServiceOfferings.offeringKey, `${serviceSlug}-${providerSlug}`));
+      .where(
+        eq(
+          bookingServiceOfferings.offeringKey,
+          `${serviceSlug}-${providerSlug}`,
+        ),
+      );
     const [firstService] = await database
-      .select({ id: bookingServices.id })
+      .select({
+        id: bookingServices.id,
+        ownerProviderId: bookingServices.ownerProviderId,
+      })
       .from(bookingServices)
       .where(eq(bookingServices.serviceKey, serviceSlug));
 
@@ -110,6 +125,14 @@ test(
     assert.equal(firstProvider.status, "draft");
     assert.ok(firstOffering);
     assert.ok(firstService);
+    assert.equal(firstService.ownerProviderId, first.providerId);
+    assert.equal(firstOffering.publicTitle, "Legacy Test Service");
+    assert.equal(firstOffering.publicTitleProvenance, "legacy");
+    assert.equal(
+      firstOffering.publicSummary,
+      "Book Legacy Test Service with Legacy Import Test.",
+    );
+    assert.equal(firstOffering.publicSummaryProvenance, "legacy");
 
     await Promise.all([
       database
@@ -149,10 +172,7 @@ test(
       .from(bookingServiceOfferings)
       .innerJoin(
         bookingServiceOfferingAddOns,
-        eq(
-          bookingServiceOfferingAddOns.offeringId,
-          bookingServiceOfferings.id,
-        ),
+        eq(bookingServiceOfferingAddOns.offeringId, bookingServiceOfferings.id),
       )
       .innerJoin(
         bookingResources,
@@ -188,10 +208,156 @@ test(
   },
 );
 
+test(
+  "legacy import refreshes only legacy-owned public copy fields",
+  { skip: skipReason },
+  async () => {
+    const database = requireDb();
+    const suffix = randomUUID();
+    const providerSlug = `${TEST_PREFIX}copy-provider-${suffix}`;
+    const serviceSlug = `${TEST_PREFIX}copy-service-${suffix}`;
+    const first = await importLegacyBookingConfiguration({
+      db: database,
+      plan: buildPlan({
+        addOnPriceCad: 25,
+        fullPriceCad: 120,
+        providerSlug,
+        serviceSlug,
+      }),
+    });
+    const [offering] = await database
+      .select({ id: bookingServiceOfferings.id })
+      .from(bookingServiceOfferings)
+      .where(
+        eq(
+          bookingServiceOfferings.offeringKey,
+          `${serviceSlug}-${providerSlug}`,
+        ),
+      );
+
+    await database
+      .update(bookingServiceOfferings)
+      .set({
+        publicTitle: "Legacy Test Service",
+        publicTitleProvenance: "admin",
+      })
+      .where(eq(bookingServiceOfferings.id, offering.id));
+    await importLegacyBookingConfiguration({
+      db: database,
+      plan: buildPlan({
+        addOnPriceCad: 25,
+        fullPriceCad: 125,
+        providerSlug,
+        publicSummary: "Refreshed legacy summary.",
+        publicTitle: "Refreshed legacy title",
+        serviceSlug,
+      }),
+    });
+
+    const [partiallyRefreshed] = await database
+      .select({
+        publicSummary: bookingServiceOfferings.publicSummary,
+        publicSummaryProvenance:
+          bookingServiceOfferings.publicSummaryProvenance,
+        publicTitle: bookingServiceOfferings.publicTitle,
+        publicTitleProvenance: bookingServiceOfferings.publicTitleProvenance,
+      })
+      .from(bookingServiceOfferings)
+      .where(eq(bookingServiceOfferings.id, offering.id));
+    assert.deepEqual(partiallyRefreshed, {
+      publicSummary: "Refreshed legacy summary.",
+      publicSummaryProvenance: "legacy",
+      publicTitle: "Legacy Test Service",
+      publicTitleProvenance: "admin",
+    });
+
+    await database
+      .update(bookingServiceOfferings)
+      .set({
+        publicSummary: "Book Legacy Test Service with Legacy Import Test.",
+        publicSummaryProvenance: "admin",
+      })
+      .where(eq(bookingServiceOfferings.id, offering.id));
+    await importLegacyBookingConfiguration({
+      db: database,
+      plan: buildPlan({
+        addOnPriceCad: 25,
+        fullPriceCad: 130,
+        providerSlug,
+        publicSummary: "Third legacy summary.",
+        publicTitle: "Third legacy title",
+        serviceSlug,
+      }),
+    });
+
+    const [preserved] = await database
+      .select({
+        publicSummary: bookingServiceOfferings.publicSummary,
+        publicSummaryProvenance:
+          bookingServiceOfferings.publicSummaryProvenance,
+        publicTitle: bookingServiceOfferings.publicTitle,
+        publicTitleProvenance: bookingServiceOfferings.publicTitleProvenance,
+      })
+      .from(bookingServiceOfferings)
+      .where(eq(bookingServiceOfferings.id, offering.id));
+    assert.deepEqual(preserved, {
+      publicSummary: "Book Legacy Test Service with Legacy Import Test.",
+      publicSummaryProvenance: "admin",
+      publicTitle: "Legacy Test Service",
+      publicTitleProvenance: "admin",
+    });
+    assert.equal(first.offeringCount, 1);
+  },
+);
+
+test(
+  "legacy import leaves a multi-provider service shared while owning an unambiguous service",
+  { skip: skipReason },
+  async () => {
+    const database = requireDb();
+    const suffix = randomUUID();
+    const serviceSlug = `${TEST_PREFIX}shared-service-${suffix}`;
+    const firstProviderSlug = `${TEST_PREFIX}provider-a-${suffix}`;
+    const secondProviderSlug = `${TEST_PREFIX}provider-b-${suffix}`;
+
+    const first = await importLegacyBookingConfiguration({
+      db: database,
+      plan: buildPlan({
+        addOnPriceCad: 25,
+        fullPriceCad: 120,
+        providerSlug: firstProviderSlug,
+        serviceSlug,
+      }),
+    });
+    const [ownedService] = await database
+      .select({ ownerProviderId: bookingServices.ownerProviderId })
+      .from(bookingServices)
+      .where(eq(bookingServices.serviceKey, serviceSlug));
+    assert.equal(ownedService.ownerProviderId, first.providerId);
+
+    await importLegacyBookingConfiguration({
+      db: database,
+      plan: buildPlan({
+        addOnPriceCad: 25,
+        fullPriceCad: 125,
+        providerSlug: secondProviderSlug,
+        serviceSlug,
+      }),
+    });
+    const [sharedService] = await database
+      .select({ ownerProviderId: bookingServices.ownerProviderId })
+      .from(bookingServices)
+      .where(eq(bookingServices.serviceKey, serviceSlug));
+    assert.equal(sharedService.ownerProviderId, null);
+  },
+);
+
 function buildPlan(input: {
   addOnPriceCad: number;
   fullPriceCad: number;
   providerSlug: string;
+  publicSummary?: string;
+  publicTitle?: string;
   serviceSlug: string;
 }) {
   return buildLegacyBookingImportPlan({
@@ -208,11 +374,12 @@ function buildPlan(input: {
           },
         ],
         depositCad: 40,
+        description: input.publicSummary,
         durationMinutes: 90,
         fullPriceCad: input.fullPriceCad,
         sanityDocumentId: `${input.serviceSlug}-sanity`,
         slug: input.serviceSlug,
-        title: "Legacy Test Service",
+        title: input.publicTitle ?? "Legacy Test Service",
       },
     ],
     settings: {

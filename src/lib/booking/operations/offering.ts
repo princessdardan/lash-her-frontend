@@ -25,12 +25,15 @@ export interface OperationalBookingOffering {
   };
   currency: "CAD";
   depositAmountCents: number;
+  displayOrder?: number;
   durationMinutes: number;
   fullPriceCents: number;
   horizonDays: number;
   id: string;
   minimumLeadTimeHours: number;
   offeringKey: string;
+  publicSummary?: string;
+  publicTitle?: string;
   provider: {
     displayName: string;
     id: string;
@@ -48,6 +51,7 @@ export interface OperationalBookingOffering {
   };
   service: {
     displayTitle: string;
+    hasEditorialDetail?: boolean;
     id: string;
     publicSlug?: string;
     sanityDocumentId?: string;
@@ -78,10 +82,15 @@ export interface PublicBookingOffering {
   fullPriceCents: number;
   id: string;
   offeringKey: string;
+  displayOrder?: number;
+  hasEditorialDetail?: boolean;
   provider: {
     displayName: string;
+    providerKey?: string;
     publicSlug?: string;
   };
+  publicSummary?: string;
+  publicTitle?: string;
   serviceSlug: string;
   serviceTitle: string;
 }
@@ -142,6 +151,7 @@ export type ResolveOperationalBookingResult =
     };
 
 const MINUTE_MS = 60_000;
+const PUBLIC_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export function resolveOperationalBooking(input: {
   offering: OperationalBookingOffering;
@@ -249,7 +259,10 @@ export function toPublicBookingOffering(
 ): PublicBookingOffering | null {
   const serviceSlug = offering.service.publicSlug?.trim();
   const serviceTitle = offering.service.displayTitle.trim();
+  const publicTitle = offering.publicTitle?.trim() || serviceTitle;
+  const publicSummary = offering.publicSummary?.trim() ?? "";
   const providerDisplayName = offering.provider.displayName.trim();
+  const providerKey = offering.provider.providerKey.trim();
   const offeringKey = offering.offeringKey.trim();
   const providerPublicSlug = offering.provider.publicSlug?.trim();
   const activeAddOns = offering.addOns.filter(
@@ -260,9 +273,13 @@ export function toPublicBookingOffering(
     !isBookable(offering) ||
     !isValidOfferingConfiguration(offering) ||
     serviceSlug === undefined ||
-    serviceSlug.length === 0 ||
+    !PUBLIC_SLUG_PATTERN.test(serviceSlug) ||
     serviceTitle.length === 0 ||
+    publicTitle.length === 0 ||
     providerDisplayName.length === 0 ||
+    providerKey.length === 0 ||
+    providerPublicSlug === undefined ||
+    !PUBLIC_SLUG_PATTERN.test(providerPublicSlug) ||
     offeringKey.length === 0 ||
     !activeAddOns.every(isValidOperationalBookingAddOn)
   ) {
@@ -278,14 +295,23 @@ export function toPublicBookingOffering(
       priceCents: addOn.priceCents,
     })),
     depositAmountCents: offering.depositAmountCents,
+    displayOrder: Number.isInteger(offering.displayOrder)
+      ? offering.displayOrder
+      : 0,
     durationMinutes: offering.durationMinutes,
     fullPriceCents: offering.fullPriceCents,
+    hasEditorialDetail:
+      offering.service.hasEditorialDetail ??
+      Boolean(offering.service.sanityDocumentId?.trim()),
     id: offering.id,
     offeringKey,
     provider: {
       displayName: providerDisplayName,
+      providerKey,
       ...(providerPublicSlug ? { publicSlug: providerPublicSlug } : {}),
     },
+    publicSummary,
+    publicTitle,
     serviceSlug,
     serviceTitle,
   };
@@ -306,8 +332,11 @@ function isValidOfferingConfiguration(
   return (
     offering.id.trim().length > 0 &&
     offering.provider.id.trim().length > 0 &&
+    offering.provider.providerKey.trim().length > 0 &&
     offering.resource.id.trim().length > 0 &&
     offering.service.id.trim().length > 0 &&
+    offering.service.publicSlug !== undefined &&
+    offering.service.publicSlug.trim().length > 0 &&
     offering.calendar.assignmentId.trim().length > 0 &&
     offering.calendar.connectionId.trim().length > 0 &&
     offering.calendar.calendarId.trim().length > 0 &&

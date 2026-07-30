@@ -99,6 +99,28 @@ describe("resolveOperationalBooking", () => {
       { ok: false, reason: "invalid_configuration" },
     );
   });
+
+  it("books without a Sanity link but requires the public service slug", () => {
+    const offering = createOffering();
+    offering.service.sanityDocumentId = undefined;
+
+    assert.equal(
+      resolveOperationalBooking({
+        offering,
+        selectedStart: new Date("2026-07-20T14:00:00.000Z"),
+      }).ok,
+      true,
+    );
+
+    offering.service.publicSlug = undefined;
+    assert.deepEqual(
+      resolveOperationalBooking({
+        offering,
+        selectedStart: new Date("2026-07-20T14:00:00.000Z"),
+      }),
+      { ok: false, reason: "invalid_configuration" },
+    );
+  });
 });
 
 describe("toPublicBookingOffering", () => {
@@ -126,14 +148,19 @@ describe("toPublicBookingOffering", () => {
         },
       ],
       depositAmountCents: 5000,
+      displayOrder: 4,
       durationMinutes: 60,
       fullPriceCents: 15000,
+      hasEditorialDetail: true,
       id: "offering-1",
       offeringKey: "classic-fill-nataliea",
       provider: {
         displayName: "Nataliea",
+        providerKey: "nataliea",
         publicSlug: "nataliea",
       },
+      publicSummary: "A provider-specific classic fill.",
+      publicTitle: "Nataliea's Classic Fill",
       serviceSlug: "classic-fill",
       serviceTitle: "Classic Fill",
     });
@@ -143,6 +170,16 @@ describe("toPublicBookingOffering", () => {
       serialized,
       /assignment-1|calendar@example\.com|connection-1|provider-1|resource-1|service-1|square-team-member-1/,
     );
+  });
+
+  it("rejects route-unsafe operational slugs", () => {
+    const unsafeService = createOffering();
+    unsafeService.service.publicSlug = "../classic-fill";
+    assert.equal(toPublicBookingOffering(unsafeService), null);
+
+    const unsafeProvider = createOffering();
+    unsafeProvider.provider.publicSlug = "Nataliea / Owner";
+    assert.equal(toPublicBookingOffering(unsafeProvider), null);
   });
 });
 
@@ -168,12 +205,15 @@ function createOffering(): OperationalBookingOffering {
     },
     currency: "CAD",
     depositAmountCents: 5000,
+    displayOrder: 4,
     durationMinutes: 60,
     fullPriceCents: 15000,
     horizonDays: 30,
     id: "offering-1",
     minimumLeadTimeHours: 24,
     offeringKey: "classic-fill-nataliea",
+    publicSummary: "A provider-specific classic fill.",
+    publicTitle: "Nataliea's Classic Fill",
     provider: {
       displayName: "Nataliea",
       id: "provider-1",

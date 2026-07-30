@@ -23,6 +23,7 @@ import {
 } from "./square-charge-and-store-form";
 
 export interface ServiceBookingPaymentFormProps {
+  marketingOptInLabel: string;
   onExpired: () => void;
   onSessionUpdate: (session: ServiceBookingPaymentSessionDisplay) => void;
   onSuccess: (result: ServiceBookingPaymentConfirmation) => void;
@@ -41,6 +42,7 @@ export interface ServiceBookingPaymentConfirmation {
 }
 
 export function ServiceBookingPaymentForm({
+  marketingOptInLabel,
   onExpired,
   onSessionUpdate,
   onSuccess,
@@ -436,7 +438,7 @@ export function ServiceBookingPaymentForm({
             htmlFor="servicePaymentMarketingOptIn"
             className="text-sm leading-snug text-muted-foreground"
           >
-            I would like to receive marketing updates and offers.
+            {marketingOptInLabel}
           </Label>
         </div>
       </div>
@@ -786,6 +788,11 @@ function parseSessionResponse(
     typeof record.paymentSessionReference === "string"
       ? record.paymentSessionReference
       : "";
+  const marketingOptInLabel =
+    typeof record.marketingOptInLabel === "string" &&
+    record.marketingOptInLabel.trim().length > 0
+      ? record.marketingOptInLabel.trim()
+      : null;
   const serviceSlug =
     typeof record.serviceSlug === "string" ? record.serviceSlug : "";
   const serviceTitle =
@@ -805,6 +812,7 @@ function parseSessionResponse(
     timezone.length === 0 ||
     selectedStart.length === 0 ||
     selectedEnd.length === 0 ||
+    marketingOptInLabel === null ||
     !isRecord(record.pricing)
   ) {
     return null;
@@ -863,6 +871,7 @@ function parseSessionResponse(
   return {
     currency: "CAD",
     expiresAt,
+    marketingOptInLabel,
     paymentSessionReference,
     pricing,
     selectedAddOn: parseSelectedAddOn(record.selectedAddOn),

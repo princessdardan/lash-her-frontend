@@ -1,6 +1,16 @@
 import "server-only";
 
-import { and, asc, eq, gt, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  or,
+} from "drizzle-orm";
 
 import type {
   OperationalBookingAddOn,
@@ -29,6 +39,7 @@ interface BookingOfferingRow {
   calendarConnectionId: string;
   currency: string;
   depositAmountCents: number;
+  displayOrder: number;
   durationMinutes: number;
   fullPriceCents: number;
   id: string;
@@ -43,6 +54,8 @@ interface BookingOfferingRow {
   providerSquareTeamMemberVerifiedAt: Date | null;
   providerStatus: OperationalRecordStatus;
   providerCalendarId: string;
+  publicSummary: string | null;
+  publicTitle: string | null;
   resourceId: string;
   resourceKey: string;
   resourceName: string;
@@ -78,6 +91,10 @@ export interface OperationalBookingConfigurationRepository {
   listActiveOfferings(input: {
     now: Date;
   }): Promise<OperationalBookingOffering[]>;
+  listActiveOfferingsByServicePublicSlug?: (input: {
+    now: Date;
+    servicePublicSlug: string;
+  }) => Promise<OperationalBookingOffering[]>;
   listActiveOfferingsBySanityServiceId(input: {
     now: Date;
     sanityServiceId: string;
@@ -88,7 +105,6 @@ export interface OperationalBookingConfigurationRepository {
 export function createDrizzleOperationalBookingConfigurationRepository(
   db: ReturnType<typeof getPrivateDb> = getPrivateDb(),
 ): OperationalBookingConfigurationRepository {
-
   return {
     async findActiveOfferingById(input) {
       if (!isUuid(input.id)) {
@@ -127,7 +143,9 @@ export function createDrizzleOperationalBookingConfigurationRepository(
           )!,
         );
       } else if (input.sanityServiceId) {
-        filters.push(eq(bookingServices.sanityDocumentId, input.sanityServiceId));
+        filters.push(
+          eq(bookingServices.sanityDocumentId, input.sanityServiceId),
+        );
       } else if (input.servicePublicSlug) {
         filters.push(eq(bookingServices.publicSlug, input.servicePublicSlug));
       }
@@ -149,6 +167,16 @@ export function createDrizzleOperationalBookingConfigurationRepository(
       const rows = await selectActiveOfferingRows({
         now: input.now,
         requireSquareTeamAttribution: defaults.requireSquareTeamAttribution,
+      });
+
+      return hydrateOfferings(rows, defaults);
+    },
+    async listActiveOfferingsByServicePublicSlug(input) {
+      const defaults = await loadDefaults();
+      const rows = await selectActiveOfferingRows({
+        now: input.now,
+        requireSquareTeamAttribution: defaults.requireSquareTeamAttribution,
+        servicePublicSlug: input.servicePublicSlug,
       });
 
       return hydrateOfferings(rows, defaults);
@@ -178,11 +206,13 @@ export function createDrizzleOperationalBookingConfigurationRepository(
       .where(eq(bookingBusinessSettings.singletonKey, "default"))
       .limit(1);
 
-    return row ?? {
-      bookingHorizonDays: 30,
-      minimumLeadTimeHours: 24,
-      requireSquareTeamAttribution: false,
-    };
+    return (
+      row ?? {
+        bookingHorizonDays: 30,
+        minimumLeadTimeHours: 24,
+        requireSquareTeamAttribution: false,
+      }
+    );
   }
 
   async function selectActiveOfferingRows(input: {
@@ -241,6 +271,7 @@ export function createDrizzleOperationalBookingConfigurationRepository(
           bookingResourceCalendarAssignments.calendarConnectionId,
         currency: bookingServiceOfferings.currency,
         depositAmountCents: bookingServiceOfferings.depositAmountCents,
+        displayOrder: bookingServiceOfferings.displayOrder,
         durationMinutes: bookingServiceOfferings.durationMinutes,
         fullPriceCents: bookingServiceOfferings.fullPriceCents,
         id: bookingServiceOfferings.id,
@@ -257,6 +288,8 @@ export function createDrizzleOperationalBookingConfigurationRepository(
         providerStatus: bookingProviders.status,
         providerCalendarId:
           bookingResourceCalendarAssignments.providerCalendarId,
+        publicSummary: bookingServiceOfferings.publicSummary,
+        publicTitle: bookingServiceOfferings.publicTitle,
         resourceId: bookingResources.id,
         resourceKey: bookingResources.resourceKey,
         resourceName: bookingResources.name,
@@ -318,8 +351,7 @@ export function createDrizzleOperationalBookingConfigurationRepository(
       .select({
         addOnKey: bookingServiceOfferingAddOns.addOnKey,
         description: bookingServiceOfferingAddOns.description,
-        durationDeltaMinutes:
-          bookingServiceOfferingAddOns.durationDeltaMinutes,
+        durationDeltaMinutes: bookingServiceOfferingAddOns.durationDeltaMinutes,
         name: bookingServiceOfferingAddOns.name,
         offeringId: bookingServiceOfferingAddOns.offeringId,
         priceCents: bookingServiceOfferingAddOns.priceCents,
@@ -353,67 +385,75 @@ export function createDrizzleOperationalBookingConfigurationRepository(
     }
 
     return rows.flatMap((row) => {
-      if (row.bookingType !== "in-person-appointment" || row.currency !== "CAD") {
+      if (
+        row.bookingType !== "in-person-appointment" ||
+        row.currency !== "CAD"
+      ) {
         return [];
       }
 
-      return [{
-        addOns: addOnsByOffering.get(row.id) ?? [],
-        bookingType: "in-person-appointment" as const,
-        bufferAfterMinutes: row.bufferAfterMinutes,
-        bufferBeforeMinutes: row.bufferBeforeMinutes,
-        calendar: {
-          assignmentId: row.calendarAssignmentId,
-          calendarId: row.providerCalendarId,
-          connectionId: row.calendarConnectionId,
+      return [
+        {
+          addOns: addOnsByOffering.get(row.id) ?? [],
+          bookingType: "in-person-appointment" as const,
+          bufferAfterMinutes: row.bufferAfterMinutes,
+          bufferBeforeMinutes: row.bufferBeforeMinutes,
+          calendar: {
+            assignmentId: row.calendarAssignmentId,
+            calendarId: row.providerCalendarId,
+            connectionId: row.calendarConnectionId,
+          },
+          currency: "CAD" as const,
+          depositAmountCents: row.depositAmountCents,
+          displayOrder: row.displayOrder,
+          durationMinutes: row.durationMinutes,
+          fullPriceCents: row.fullPriceCents,
+          horizonDays: row.bookingHorizonDays ?? defaults.bookingHorizonDays,
+          id: row.id,
+          minimumLeadTimeHours:
+            row.minimumLeadTimeHours ?? defaults.minimumLeadTimeHours,
+          offeringKey: row.offeringKey,
+          ...(row.publicSummary ? { publicSummary: row.publicSummary } : {}),
+          ...(row.publicTitle ? { publicTitle: row.publicTitle } : {}),
+          provider: {
+            displayName: row.providerDisplayName,
+            id: row.providerId,
+            providerKey: row.providerKey,
+            ...(row.providerPublicSlug
+              ? { publicSlug: row.providerPublicSlug }
+              : {}),
+            ...(row.providerSquareTeamMemberId &&
+            row.providerSquareTeamMemberStatus === "active" &&
+            row.providerSquareTeamMemberVerifiedAt
+              ? { squareTeamMemberId: row.providerSquareTeamMemberId }
+              : {}),
+            status: row.providerStatus,
+          },
+          resource: {
+            id: row.resourceId,
+            name: row.resourceName,
+            resourceKey: row.resourceKey,
+            status: row.resourceStatus,
+            timezone: row.resourceTimezone,
+          },
+          service: {
+            displayTitle: row.serviceDisplayTitle,
+            hasEditorialDetail: Boolean(row.serviceSanityDocumentId?.trim()),
+            id: row.serviceId,
+            ...(row.servicePublicSlug
+              ? { publicSlug: row.servicePublicSlug }
+              : {}),
+            ...(row.serviceSanityDocumentId
+              ? { sanityDocumentId: row.serviceSanityDocumentId }
+              : {}),
+            serviceKey: row.serviceKey,
+            status: row.serviceStatus,
+          },
+          slotIntervalMinutes: row.slotIntervalMinutes,
+          status: row.status,
+          version: row.version,
         },
-        currency: "CAD" as const,
-        depositAmountCents: row.depositAmountCents,
-        durationMinutes: row.durationMinutes,
-        fullPriceCents: row.fullPriceCents,
-        horizonDays:
-          row.bookingHorizonDays ?? defaults.bookingHorizonDays,
-        id: row.id,
-        minimumLeadTimeHours:
-          row.minimumLeadTimeHours ?? defaults.minimumLeadTimeHours,
-        offeringKey: row.offeringKey,
-        provider: {
-          displayName: row.providerDisplayName,
-          id: row.providerId,
-          providerKey: row.providerKey,
-          ...(row.providerPublicSlug
-            ? { publicSlug: row.providerPublicSlug }
-            : {}),
-          ...(row.providerSquareTeamMemberId &&
-          row.providerSquareTeamMemberStatus === "active" &&
-          row.providerSquareTeamMemberVerifiedAt
-            ? { squareTeamMemberId: row.providerSquareTeamMemberId }
-            : {}),
-          status: row.providerStatus,
-        },
-        resource: {
-          id: row.resourceId,
-          name: row.resourceName,
-          resourceKey: row.resourceKey,
-          status: row.resourceStatus,
-          timezone: row.resourceTimezone,
-        },
-        service: {
-          displayTitle: row.serviceDisplayTitle,
-          id: row.serviceId,
-          ...(row.servicePublicSlug
-            ? { publicSlug: row.servicePublicSlug }
-            : {}),
-          ...(row.serviceSanityDocumentId
-            ? { sanityDocumentId: row.serviceSanityDocumentId }
-            : {}),
-          serviceKey: row.serviceKey,
-          status: row.serviceStatus,
-        },
-        slotIntervalMinutes: row.slotIntervalMinutes,
-        status: row.status,
-        version: row.version,
-      }];
+      ];
     });
   }
 }

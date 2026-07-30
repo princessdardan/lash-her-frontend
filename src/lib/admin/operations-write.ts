@@ -2,10 +2,15 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 
 import { listConnectionGoogleCalendars } from "@/lib/booking/google-calendar";
 import { encryptCalendarCredential } from "@/lib/booking/calendar-credential-secret";
+import {
+  normalizeBookingMarketingOptInLabel,
+  normalizeOperationalBookingQuestions,
+} from "@/lib/booking/operational-ui-settings";
+import type { BookingQuestion } from "@/lib/booking/types";
 import { assertExactPublishedSanityServiceLink } from "@/lib/booking/operations/sanity-service-link";
 import { getPrivateDb } from "@/lib/private-db/client";
 import {
@@ -38,7 +43,7 @@ import {
 import { getAttendanceTransitionError } from "./attendance-transition";
 import { requirePermission } from "./auth";
 import { canAdmin } from "./permissions";
-import { AdminAuthError } from "./types";
+import { AdminAuthError, type AdminActor } from "./types";
 import { localDateTimeToUtc } from "./local-time";
 import { getCalendarAssignmentAccessError } from "./calendar-capabilities";
 import { revokeEncryptedGoogleCredentialBestEffort } from "./calendar-credential-revocation";
@@ -57,6 +62,11 @@ import {
   isPublicAddOnReady,
 } from "./offering-readiness";
 import {
+  assertProviderOfferingAccess,
+  assertProviderOwnedServiceAccess,
+  assertProviderResourceAccess,
+} from "./provider-service-authorization";
+import {
   assignOfferingResourceInTransaction,
   removeOfferingResourceInTransaction,
 } from "./offering-resource-admin";
@@ -65,11 +75,104 @@ import {
   lockSquareAttributionInvariant,
 } from "./square-attribution-invariant";
 import { assertStaffResourceMutationAllowed } from "./staff-resource-authorization";
+import { runServiceOfferingOwnershipMutation } from "./service-offering-ownership-invariant";
 
 const EMAIL_PATTERN = /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/;
 const KEY_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+async function assertServiceMutationAllowed(
+  tx: AdminWriteTransaction,
+  actor: AdminActor,
+  serviceId: string,
+) {
+  const [service] = await tx
+    .select({
+      ownerProviderId: bookingServices.ownerProviderId,
+    })
+    .from(bookingServices)
+    .where(eq(bookingServices.id, serviceId))
+    .limit(1)
+    .for("update");
+  if (!service) throw new Error("Booking service not found");
+  const [ownerProvider] = service.ownerProviderId
+    ? await tx
+        .select({
+          primaryResourceId: bookingProviders.primaryResourceId,
+        })
+        .from(bookingProviders)
+        .where(eq(bookingProviders.id, service.ownerProviderId))
+        .limit(1)
+    : [];
+
+  assertProviderOwnedServiceAccess(actor, {
+    ownerProviderId: service.ownerProviderId,
+    ownerProviderPrimaryResourceId: ownerProvider?.primaryResourceId ?? null,
+  });
+  return {
+    ...service,
+    ownerProviderPrimaryResourceId: ownerProvider?.primaryResourceId ?? null,
+  };
+}
+
+async function assertOfferingMutationAllowed(
+  tx: AdminWriteTransaction,
+  actor: AdminActor,
+  offeringId: string,
+) {
+  const [offering] = await tx
+    .select({
+      ownerProviderId: bookingServices.ownerProviderId,
+      primaryResourceId: bookingServiceOfferings.primaryResourceId,
+      providerId: bookingServiceOfferings.providerId,
+      providerPrimaryResourceId: bookingProviders.primaryResourceId,
+    })
+    .from(bookingServiceOfferings)
+    .innerJoin(
+      bookingServices,
+      eq(bookingServices.id, bookingServiceOfferings.serviceId),
+    )
+    .innerJoin(
+      bookingProviders,
+      eq(bookingProviders.id, bookingServiceOfferings.providerId),
+    )
+    .where(eq(bookingServiceOfferings.id, offeringId))
+    .limit(1)
+    .for("update");
+  if (!offering) throw new Error("Service offering not found");
+
+  if (offering.primaryResourceId !== offering.providerPrimaryResourceId) {
+    throw new Error(
+      "Repair the provider primary-resource link before editing this offering",
+    );
+  }
+  assertProviderOfferingAccess(actor, {
+    ownerProviderId: offering.ownerProviderId,
+    providerId: offering.providerId,
+    providerPrimaryResourceId: offering.providerPrimaryResourceId,
+  });
+  return offering;
+}
+
+async function assertAddOnMutationAllowed(
+  tx: AdminWriteTransaction,
+  actor: AdminActor,
+  addOnId: string,
+) {
+  const [addOn] = await tx
+    .select({
+      offeringId: bookingServiceOfferingAddOns.offeringId,
+    })
+    .from(bookingServiceOfferingAddOns)
+    .where(eq(bookingServiceOfferingAddOns.id, addOnId))
+    .limit(1)
+    .for("update");
+  if (!addOn) throw new Error("Offering add-on not found");
+
+  await assertOfferingMutationAllowed(tx, actor, addOn.offeringId);
+  return addOn;
+}
 
 export async function createStaffUser(input: {
   displayName?: string;
@@ -272,7 +375,10 @@ export async function createBookingResource(input: {
           displayName: name,
           primaryResourceId: resource.id,
           providerKey: resourceKey,
-          publicSlug: cleanOptional(input.publicSlug),
+          publicSlug: cleanOptionalKey(
+            input.publicSlug,
+            "Provider public slug",
+          ),
           sanityDocumentId: cleanOptional(input.sanityDocumentId),
           status: "draft",
           updatedByAdminUserId: actor.user.id,
@@ -364,7 +470,10 @@ export async function updateBookingResourceProfile(input: {
 }) {
   const actor = await requirePermission("staff:manage");
   const name = requireText(input.name, "Resource name", 120);
-  const providerPublicSlug = cleanOptional(input.providerPublicSlug);
+  const providerPublicSlug = cleanOptionalKey(
+    input.providerPublicSlug,
+    "Provider public slug",
+  );
   const providerSanityDocumentId = cleanOptional(
     input.providerSanityDocumentId,
   );
@@ -438,15 +547,16 @@ export async function updateBookingResourceProfile(input: {
 
 export async function createBookingService(input: {
   displayTitle: string;
+  ownerProviderId: string;
   publicSlug?: string;
   sanityDocumentId?: string;
   serviceKey: string;
 }) {
   const actor = await requirePermission("offerings:manage");
-  const publicSlug = cleanOptional(input.publicSlug);
+  const publicSlug = cleanOptionalKey(input.publicSlug, "Service public slug");
   const sanityDocumentId = cleanOptional(input.sanityDocumentId);
 
-  if (publicSlug || sanityDocumentId) {
+  if (sanityDocumentId) {
     await assertExactPublishedSanityServiceLink({
       publicSlug,
       sanityDocumentId,
@@ -458,11 +568,20 @@ export async function createBookingService(input: {
     actor,
     domain: "offerings",
     mutate: async (tx) => {
+      const [provider] = await tx
+        .select({ primaryResourceId: bookingProviders.primaryResourceId })
+        .from(bookingProviders)
+        .where(eq(bookingProviders.id, input.ownerProviderId))
+        .limit(1);
+      if (!provider) throw new Error("Provider not found");
+      assertProviderResourceAccess(actor, provider.primaryResourceId);
+
       const [row] = await tx
         .insert(bookingServices)
         .values({
           createdByAdminUserId: actor.user.id,
           displayTitle: requireText(input.displayTitle, "Service title", 160),
+          ownerProviderId: input.ownerProviderId,
           publicSlug,
           sanityDocumentId,
           serviceKey: requireKey(input.serviceKey, "Service key"),
@@ -489,6 +608,7 @@ export async function setBookingServiceStatus(input: {
     domain: "offerings",
     metadata: { status: input.status },
     mutate: async (tx) => {
+      await assertServiceMutationAllowed(tx, actor, input.serviceId);
       const rows = await tx
         .update(bookingServices)
         .set({
@@ -513,10 +633,10 @@ export async function updateBookingServiceProfile(input: {
 }) {
   const actor = await requirePermission("offerings:manage");
   const displayTitle = requireText(input.displayTitle, "Service title", 160);
-  const publicSlug = cleanOptional(input.publicSlug);
+  const publicSlug = cleanOptionalKey(input.publicSlug, "Service public slug");
   const sanityDocumentId = cleanOptional(input.sanityDocumentId);
 
-  if (publicSlug || sanityDocumentId) {
+  if (sanityDocumentId) {
     await assertExactPublishedSanityServiceLink({
       publicSlug,
       sanityDocumentId,
@@ -528,21 +648,7 @@ export async function updateBookingServiceProfile(input: {
     actor,
     domain: "offerings",
     mutate: async (tx) => {
-      const activeOffering = await tx
-        .select({ id: bookingServiceOfferings.id })
-        .from(bookingServiceOfferings)
-        .where(
-          and(
-            eq(bookingServiceOfferings.serviceId, input.serviceId),
-            eq(bookingServiceOfferings.status, "active"),
-          ),
-        )
-        .limit(1);
-      if (activeOffering.length > 0 && (!publicSlug || !sanityDocumentId)) {
-        throw new Error(
-          "Disable active service offerings before removing the public slug or Sanity link",
-        );
-      }
+      await assertServiceMutationAllowed(tx, actor, input.serviceId);
       const rows = await tx
         .update(bookingServices)
         .set({
@@ -565,10 +671,13 @@ export async function createServiceOffering(input: {
   bufferAfterMinutes: number;
   bufferBeforeMinutes: number;
   depositAmountCents: number;
+  displayOrder: number;
   durationMinutes: number;
   fullPriceCents: number;
   offeringKey: string;
   providerId: string;
+  publicSummary: string;
+  publicTitle: string;
   serviceId: string;
   slotIntervalMinutes: number;
 }) {
@@ -579,6 +688,7 @@ export async function createServiceOffering(input: {
   assertNonnegativeInteger(input.bufferAfterMinutes, "Buffer after");
   assertPositiveInteger(input.fullPriceCents, "Full price");
   assertPositiveInteger(input.depositAmountCents, "Deposit");
+  assertNonnegativeInteger(input.displayOrder, "Display order");
   if (input.depositAmountCents >= input.fullPriceCents) {
     throw new Error("Deposit must be lower than the full price");
   }
@@ -593,25 +703,46 @@ export async function createServiceOffering(input: {
         .where(eq(bookingProviders.id, input.providerId))
         .limit(1);
       if (!provider) throw new Error("Provider not found");
-      const [row] = await tx
-        .insert(bookingServiceOfferings)
-        .values({
-          bufferAfterMinutes: input.bufferAfterMinutes,
-          bufferBeforeMinutes: input.bufferBeforeMinutes,
-          createdByAdminUserId: actor.user.id,
-          depositAmountCents: input.depositAmountCents,
-          durationMinutes: input.durationMinutes,
-          fullPriceCents: input.fullPriceCents,
-          offeringKey: requireKey(input.offeringKey, "Offering key"),
-          primaryResourceId: provider.primaryResourceId,
-          providerId: input.providerId,
-          serviceId: input.serviceId,
-          slotIntervalMinutes: input.slotIntervalMinutes,
-          status: "draft",
-          updatedByAdminUserId: actor.user.id,
-        })
-        .returning({ id: bookingServiceOfferings.id });
-      return row;
+      assertProviderResourceAccess(actor, provider.primaryResourceId);
+      return runServiceOfferingOwnershipMutation(tx, {
+        serviceId: input.serviceId,
+        updatedByAdminUserId: actor.user.id,
+        mutate: async (service) => {
+          assertProviderOfferingAccess(actor, {
+            ownerProviderId: service.ownerProviderId,
+            providerId: input.providerId,
+            providerPrimaryResourceId: provider.primaryResourceId,
+          });
+          const [row] = await tx
+            .insert(bookingServiceOfferings)
+            .values({
+              bufferAfterMinutes: input.bufferAfterMinutes,
+              bufferBeforeMinutes: input.bufferBeforeMinutes,
+              createdByAdminUserId: actor.user.id,
+              depositAmountCents: input.depositAmountCents,
+              displayOrder: input.displayOrder,
+              durationMinutes: input.durationMinutes,
+              fullPriceCents: input.fullPriceCents,
+              offeringKey: requireKey(input.offeringKey, "Offering key"),
+              primaryResourceId: provider.primaryResourceId,
+              providerId: input.providerId,
+              publicSummary: requireText(
+                input.publicSummary,
+                "Public summary",
+                500,
+              ),
+              publicSummaryProvenance: "admin",
+              publicTitle: requireText(input.publicTitle, "Public title", 160),
+              publicTitleProvenance: "admin",
+              serviceId: input.serviceId,
+              slotIntervalMinutes: input.slotIntervalMinutes,
+              status: "draft",
+              updatedByAdminUserId: actor.user.id,
+            })
+            .returning({ id: bookingServiceOfferings.id });
+          return row;
+        },
+      });
     },
     targetId: (row) => row.id,
     targetType: "service_offering",
@@ -622,10 +753,13 @@ export async function updateServiceOffering(input: {
   bufferAfterMinutes: number;
   bufferBeforeMinutes: number;
   depositAmountCents: number;
+  displayOrder: number;
   durationMinutes: number;
   expectedVersion: number;
   fullPriceCents: number;
   offeringId: string;
+  publicSummary: string;
+  publicTitle: string;
   slotIntervalMinutes: number;
 }) {
   const actor = await requirePermission("offerings:manage");
@@ -636,6 +770,7 @@ export async function updateServiceOffering(input: {
   assertPositiveInteger(input.fullPriceCents, "Full price");
   assertPositiveInteger(input.depositAmountCents, "Deposit");
   assertPositiveInteger(input.expectedVersion, "Offering version");
+  assertNonnegativeInteger(input.displayOrder, "Display order");
   if (input.depositAmountCents >= input.fullPriceCents) {
     throw new Error("Deposit must be lower than the full price");
   }
@@ -646,14 +781,24 @@ export async function updateServiceOffering(input: {
     domain: "offerings",
     metadata: { previousVersion: input.expectedVersion },
     mutate: async (tx) => {
+      await assertOfferingMutationAllowed(tx, actor, input.offeringId);
       const rows = await tx
         .update(bookingServiceOfferings)
         .set({
           bufferAfterMinutes: input.bufferAfterMinutes,
           bufferBeforeMinutes: input.bufferBeforeMinutes,
           depositAmountCents: input.depositAmountCents,
+          displayOrder: input.displayOrder,
           durationMinutes: input.durationMinutes,
           fullPriceCents: input.fullPriceCents,
+          publicSummary: requireText(
+            input.publicSummary,
+            "Public summary",
+            500,
+          ),
+          publicSummaryProvenance: "admin",
+          publicTitle: requireText(input.publicTitle, "Public title", 160),
+          publicTitleProvenance: "admin",
           slotIntervalMinutes: input.slotIntervalMinutes,
           updatedAt: new Date(),
           updatedByAdminUserId: actor.user.id,
@@ -721,10 +866,6 @@ export async function setServiceOfferingStatus(input: {
 }) {
   const actor = await requirePermission("offerings:manage");
   assertConfigurationStatus(input.status);
-  const validatedSanityLink =
-    input.status === "active"
-      ? await loadAndValidateOfferingSanityServiceLink(input.offeringId)
-      : null;
 
   await runAuditedAdminMutation({
     action: "service_offering_status_changed",
@@ -732,6 +873,7 @@ export async function setServiceOfferingStatus(input: {
     domain: "offerings",
     metadata: { status: input.status },
     mutate: async (tx) => {
+      await assertOfferingMutationAllowed(tx, actor, input.offeringId);
       await lockSquareAttributionInvariant(tx);
       if (input.status === "active") {
         const [configuration] = await tx
@@ -746,8 +888,11 @@ export async function setServiceOfferingStatus(input: {
             providerSquareTeamMemberVerifiedAt:
               bookingProviders.squareTeamMemberVerifiedAt,
             providerStatus: bookingProviders.status,
+            offeringPublicSummary: bookingServiceOfferings.publicSummary,
+            offeringPublicTitle: bookingServiceOfferings.publicTitle,
             resourceId: bookingResources.id,
             resourceStatus: bookingResources.status,
+            serviceId: bookingServices.id,
             servicePublicSlug: bookingServices.publicSlug,
             serviceSanityDocumentId: bookingServices.sanityDocumentId,
             serviceStatus: bookingServices.status,
@@ -769,6 +914,23 @@ export async function setServiceOfferingStatus(input: {
           .limit(1);
 
         if (!configuration) throw new Error("Service offering not found");
+        const [alreadyActiveOffering] = await tx
+          .select({ id: bookingServiceOfferings.id })
+          .from(bookingServiceOfferings)
+          .where(
+            and(
+              eq(bookingServiceOfferings.serviceId, configuration.serviceId),
+              eq(bookingServiceOfferings.providerId, configuration.providerId),
+              eq(bookingServiceOfferings.status, "active"),
+              ne(bookingServiceOfferings.id, input.offeringId),
+            ),
+          )
+          .limit(1);
+        if (alreadyActiveOffering) {
+          throw new Error(
+            "Disable the provider's existing active offering for this service before activating another",
+          );
+        }
         await assertSquareOfferingActivationAllowed(
           tx,
           configuration.providerId,
@@ -794,17 +956,6 @@ export async function setServiceOfferingStatus(input: {
             "Assign and verify an active Square team member before activating this offering",
           );
         }
-        if (
-          validatedSanityLink === null ||
-          configuration.servicePublicSlug !== validatedSanityLink.publicSlug ||
-          configuration.serviceSanityDocumentId !==
-            validatedSanityLink.sanityDocumentId
-        ) {
-          throw new Error(
-            "The linked Sanity service changed during activation. Retry with the published service selected",
-          );
-        }
-
         const [
           schedule,
           bookingCalendar,
@@ -922,6 +1073,10 @@ export async function setServiceOfferingStatus(input: {
           activeAddOnsArePubliclyValid: activeAddOns.every(isPublicAddOnReady),
           hasActiveBookingCalendar: bookingCalendar.length > 0,
           hasActiveWeeklySchedule: schedule.length > 0,
+          offering: {
+            publicSummary: configuration.offeringPublicSummary,
+            publicTitle: configuration.offeringPublicTitle,
+          },
           provider: {
             displayName: configuration.providerDisplayName,
             primaryResourceId: configuration.providerPrimaryResourceId,
@@ -966,27 +1121,6 @@ export async function setServiceOfferingStatus(input: {
   });
 }
 
-async function loadAndValidateOfferingSanityServiceLink(offeringId: string) {
-  const [link] = await getPrivateDb()
-    .select({
-      publicSlug: bookingServices.publicSlug,
-      sanityDocumentId: bookingServices.sanityDocumentId,
-    })
-    .from(bookingServiceOfferings)
-    .innerJoin(
-      bookingServices,
-      eq(bookingServices.id, bookingServiceOfferings.serviceId),
-    )
-    .where(eq(bookingServiceOfferings.id, offeringId))
-    .limit(1);
-
-  if (!link) {
-    throw new Error("Service offering not found");
-  }
-
-  return assertExactPublishedSanityServiceLink(link);
-}
-
 export async function createOfferingAddOn(input: {
   addOnKey: string;
   description: string;
@@ -1004,6 +1138,7 @@ export async function createOfferingAddOn(input: {
     domain: "offerings",
     metadata: { offeringId: input.offeringId },
     mutate: async (tx) => {
+      await assertOfferingMutationAllowed(tx, actor, input.offeringId);
       const [row] = await tx
         .insert(bookingServiceOfferingAddOns)
         .values({
@@ -1038,6 +1173,7 @@ export async function setOfferingAddOnStatus(input: {
     domain: "offerings",
     metadata: { status: input.status },
     mutate: async (tx) => {
+      await assertAddOnMutationAllowed(tx, actor, input.addOnId);
       if (input.status === "active") {
         const [addOn] = await tx
           .select({
@@ -1075,11 +1211,13 @@ export async function updateBookingSettings(input: {
   bookingHorizonDays: number;
   defaultBufferAfterMinutes: number;
   defaultBufferBeforeMinutes: number;
+  intakeQuestions: BookingQuestion[];
+  marketingOptInLabel: string;
   minimumLeadTimeHours: number;
   slotIntervalMinutes: number;
   timezone: string;
 }) {
-  const actor = await requirePermission("offerings:manage");
+  const actor = await requirePermission("settings:manage");
   assertTimezone(input.timezone);
   assertPositiveInteger(input.bookingHorizonDays, "Booking horizon");
   assertNonnegativeInteger(input.minimumLeadTimeHours, "Minimum lead time");
@@ -1092,6 +1230,17 @@ export async function updateBookingSettings(input: {
     input.defaultBufferAfterMinutes,
     "Default buffer after",
   );
+  const intakeQuestions = normalizeOperationalBookingQuestions(
+    input.intakeQuestions,
+  );
+  const marketingOptInLabel = normalizeBookingMarketingOptInLabel(
+    input.marketingOptInLabel,
+  );
+  const settings = {
+    ...input,
+    intakeQuestions,
+    marketingOptInLabel,
+  };
   await runAuditedAdminMutation({
     action: "booking_settings_updated",
     actor,
@@ -1100,14 +1249,14 @@ export async function updateBookingSettings(input: {
       await tx
         .insert(bookingBusinessSettings)
         .values({
-          ...input,
+          ...settings,
           singletonKey: "default",
           updatedByAdminUserId: actor.user.id,
         })
         .onConflictDoUpdate({
           target: bookingBusinessSettings.singletonKey,
           set: {
-            ...input,
+            ...settings,
             updatedAt: new Date(),
             updatedByAdminUserId: actor.user.id,
             version: sql`${bookingBusinessSettings.version} + 1`,
@@ -2020,6 +2169,13 @@ function requireKey(value: string, label: string): string {
 function cleanOptional(value: string | undefined): string | null {
   const text = value?.trim() ?? "";
   return text ? text : null;
+}
+
+function cleanOptionalKey(
+  value: string | undefined,
+  label: string,
+): string | null {
+  return cleanOptional(value) ? requireKey(value ?? "", label) : null;
 }
 
 function isVerifiedActiveSquareMapping(input: {

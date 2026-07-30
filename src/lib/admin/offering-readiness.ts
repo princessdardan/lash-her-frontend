@@ -4,6 +4,10 @@ export interface OfferingActivationReadiness {
   activeAddOnsArePubliclyValid: boolean;
   hasActiveBookingCalendar: boolean;
   hasActiveWeeklySchedule: boolean;
+  offering: {
+    publicSummary: string | null;
+    publicTitle: string | null;
+  };
   provider: {
     displayName: string;
     primaryResourceId: string;
@@ -39,18 +43,29 @@ export function getOfferingActivationBlockers(
 ): string[] {
   const blockers: string[] = [];
 
-  if (readiness.provider.status !== "active") blockers.push("activate the provider");
-  if (!readiness.provider.displayName.trim()) blockers.push("add the provider display name");
-  if (!readiness.provider.publicSlug?.trim()) blockers.push("link the provider public slug");
-  if (readiness.resource.status !== "active") blockers.push("activate the primary resource");
+  if (readiness.provider.status !== "active")
+    blockers.push("activate the provider");
+  if (!readiness.provider.displayName.trim())
+    blockers.push("add the provider display name");
+  if (!readiness.provider.publicSlug?.trim())
+    blockers.push("link the provider public slug");
+  if (!readiness.offering.publicTitle?.trim())
+    blockers.push("add the public offering title");
+  if (!readiness.offering.publicSummary?.trim())
+    blockers.push("add the public offering summary");
+  if (readiness.resource.status !== "active")
+    blockers.push("activate the primary resource");
   if (readiness.provider.primaryResourceId !== readiness.resource.id) {
     blockers.push("repair the provider primary-resource link");
   }
-  if (readiness.service.status !== "active") blockers.push("activate the service");
-  if (!readiness.service.sanityDocumentId?.trim()) blockers.push("link the Sanity service document");
-  if (!readiness.service.publicSlug?.trim()) blockers.push("link the service public slug");
-  if (!readiness.hasActiveWeeklySchedule) blockers.push("add an active weekly schedule");
-  if (!readiness.hasActiveBookingCalendar) blockers.push("assign an active booking calendar");
+  if (readiness.service.status !== "active")
+    blockers.push("activate the service");
+  if (!readiness.service.publicSlug?.trim())
+    blockers.push("link the service public slug");
+  if (!readiness.hasActiveWeeklySchedule)
+    blockers.push("add an active weekly schedule");
+  if (!readiness.hasActiveBookingCalendar)
+    blockers.push("assign an active booking calendar");
   for (const resource of readiness.requiredSecondaryResources) {
     if (resource.status !== "active") {
       blockers.push(`activate required resource ${resource.name}`);
@@ -62,18 +77,22 @@ export function getOfferingActivationBlockers(
     }
   }
   if (!readiness.activeAddOnsArePubliclyValid) {
-    blockers.push("complete every active add-on name, key, description, price, and duration");
+    blockers.push(
+      "complete every active add-on name, key, description, price, and duration",
+    );
   }
 
   return blockers;
 }
 
 export function isPublicAddOnReady(addOn: PublicAddOnReadiness): boolean {
-  return addOn.addOnKey.trim().length > 0
-    && addOn.name.trim().length > 0
-    && Boolean(addOn.description?.trim())
-    && Number.isSafeInteger(addOn.priceCents)
-    && addOn.priceCents > 0
-    && Number.isSafeInteger(addOn.durationDeltaMinutes)
-    && addOn.durationDeltaMinutes >= 0;
+  return (
+    addOn.addOnKey.trim().length > 0 &&
+    addOn.name.trim().length > 0 &&
+    Boolean(addOn.description?.trim()) &&
+    Number.isSafeInteger(addOn.priceCents) &&
+    addOn.priceCents > 0 &&
+    Number.isSafeInteger(addOn.durationDeltaMinutes) &&
+    addOn.durationDeltaMinutes >= 0
+  );
 }

@@ -36,6 +36,7 @@ import type {
   BookingTypeConfig,
   CalendarEventWindow,
 } from "@/lib/booking/types";
+import type { OperationalBookingUiSettings } from "@/lib/booking/operational-ui-settings";
 import type { TService } from "@/types";
 import type {
   CreateV2BookingHoldInput,
@@ -98,6 +99,7 @@ export interface BookingHoldsPostHandlerDependencies {
   }) => Promise<CreateBookingHoldResult>;
   getBookableServiceBySlug: (slug: string) => Promise<TService | null>;
   getBookingSettings: () => Promise<BookingSettings | null>;
+  getOperationalBookingUiSettings?: () => Promise<OperationalBookingUiSettings>;
   hasOperationalOfferingIntent?: (input: {
     now: Date;
     sanityServiceId: string;
@@ -138,10 +140,7 @@ export function createBookingHoldsPostHandler(
     );
     if (!parsedBody.ok) {
       return parsedBody.reason === "too_large"
-        ? Response.json(
-            { error: "Hold request is too large" },
-            { status: 413 },
-          )
+        ? Response.json({ error: "Hold request is too large" }, { status: 413 })
         : Response.json({ error: "Invalid hold request" }, { status: 400 });
     }
     const body = parsedBody.value;
@@ -204,13 +203,10 @@ export function createBookingHoldsPostHandler(
     }
 
     try {
-      const bookingModelMode =
-        dependencies.getBookingModelMode?.() ?? "dual";
+      const bookingModelMode = dependencies.getBookingModelMode?.() ?? "dual";
 
       if (input.offeringId) {
-        if (
-          !permitsOperationalBookingCreation(bookingModelMode)
-        ) {
+        if (!permitsOperationalBookingCreation(bookingModelMode)) {
           return bookingNotConfiguredResponse();
         }
 
@@ -222,9 +218,7 @@ export function createBookingHoldsPostHandler(
         });
       }
 
-      if (
-        !permitsLegacyBookingCreation(bookingModelMode)
-      ) {
+      if (!permitsLegacyBookingCreation(bookingModelMode)) {
         return bookingNotConfiguredResponse();
       }
 
@@ -359,7 +353,12 @@ export function createBookingHoldsPostHandler(
           bookingType: SERVICE_BOOKING_TYPE,
           customer: PENDING_CUSTOMER,
           offeringId: service._id,
-          offeringSnapshot: toServiceSnapshot(service, input, selectedAddOn),
+          offeringSnapshot: toServiceSnapshot(
+            service,
+            input,
+            selectedAddOn,
+            settings.marketingOptInLabel,
+          ),
           selectedEnd,
           selectedStart,
           timezone: settings.timezone,
@@ -522,7 +521,10 @@ async function releaseActiveHoldQuota(
   }
 }
 
-function rateLimitedResponse(error: string, retryAfterSeconds: number): Response {
+function rateLimitedResponse(
+  error: string,
+  retryAfterSeconds: number,
+): Response {
   return Response.json(
     { error },
     {
@@ -560,15 +562,25 @@ async function handleOperationalBookingHold(input: {
   }
 
   const now = dependencies.getNow?.() ?? new Date();
+  const getOperationalBookingUiSettings =
+    dependencies.getOperationalBookingUiSettings ??
+    (async () => {
+      const legacySettings = await dependencies.getBookingSettings();
+      if (legacySettings === null) {
+        throw new Error("Operational booking settings are unavailable");
+      }
+
+      return legacySettings;
+    });
   const [settings, offering] = await Promise.all([
-    dependencies.getBookingSettings(),
+    getOperationalBookingUiSettings(),
     dependencies.operationalAvailability.findActiveOfferingById({
       id: offeringId,
       now,
     }),
   ]);
 
-  if (settings === null || offering === null || !offering.service.publicSlug) {
+  if (offering === null || !offering.service.publicSlug) {
     return Response.json(
       { error: "Booking is not configured" },
       { status: 400 },
@@ -659,6 +671,7 @@ async function handleOperationalBookingHold(input: {
       booking: resolution.booking,
       customer: PENDING_CUSTOMER,
       expiresAt: new Date(now.getTime() + HOLD_DURATION_MINUTES * MINUTE_MS),
+      marketingOptInLabel: settings.marketingOptInLabel,
       now,
     });
   } catch (error) {
@@ -707,10 +720,7 @@ function slotConflictResponse(): Response {
 }
 
 function bookingNotConfiguredResponse(): Response {
-  return Response.json(
-    { error: "Booking is not configured" },
-    { status: 400 },
-  );
+  return Response.json({ error: "Booking is not configured" }, { status: 400 });
 }
 
 export const POST = createBookingHoldsPostHandler({
@@ -743,6 +753,12 @@ export const POST = createBookingHoldsPostHandler({
     const { loaders } = await import("@/data/loaders");
 
     return loaders.getBookingSettings({ mode: "published", stega: false });
+  },
+  getOperationalBookingUiSettings: async () => {
+    const { loadOperationalBookingUiSettings } =
+      await import("@/lib/private-db/booking-business-settings-repository");
+
+    return loadOperationalBookingUiSettings();
   },
   hasOperationalOfferingIntent: async (input) => {
     const { createDrizzleOperationalBookingConfigurationRepository } =
@@ -952,6 +968,7 @@ function toServiceSnapshot(
   service: TService,
   input: BookingHoldRequestInput,
   selectedAddOn: BookingAddOnSelectionSnapshot | null,
+  marketingOptInLabel: string,
 ): Record<string, unknown> {
   return {
     id: service._id,
@@ -961,6 +978,7 @@ function toServiceSnapshot(
     bookingType: SERVICE_BOOKING_TYPE,
     durationMinutes: service.durationMinutes,
     customerStatus: "pending",
+    marketingOptInLabel: marketingOptInLabel.trim(),
     paymentStatus: "pending",
     pricing: {
       depositAmount: service.depositAmount,

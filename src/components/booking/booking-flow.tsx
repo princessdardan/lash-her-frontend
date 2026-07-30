@@ -1,12 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { usePathname } from "next/navigation";
-import type {
-  BookingAnswerInput,
-  BookingSettings,
-  BookingSlot,
-} from "@/lib/booking/types";
+import { usePathname, useRouter } from "next/navigation";
+import type { BookingAnswerInput, BookingSlot } from "@/lib/booking/types";
+import type { OperationalBookingUiSettings } from "@/lib/booking/operational-ui-settings";
 import type {
   PublicBookingOffering,
   PublicServiceBookingModel,
@@ -61,16 +58,22 @@ interface DisplayBookingAddOn {
   price: number;
 }
 
-type BookingFlowStep = "service" | "provider" | "datetime" | "details";
+type BookingFlowStep =
+  | "service"
+  | "provider"
+  | "datetime"
+  | "addons"
+  | "details";
 
 const VISIBLE_DATE_COUNT = 7;
 
 interface BookingFlowProps {
+  initialProviderSlug?: string;
   initialServiceSlug?: string;
   offerings?: PublicBookingOffering[];
   serviceBookingModels?: Record<string, PublicServiceBookingModel>;
   services?: TService[];
-  settings: BookingSettings;
+  settings: OperationalBookingUiSettings;
 }
 
 export function getServiceBookingModel(input: {
@@ -94,10 +97,23 @@ export function getServiceBookingModel(input: {
 export function getInitialOfferingSelection(
   offerings: readonly PublicBookingOffering[],
   serviceSlug: string | undefined,
+  providerSlug?: string,
 ): { offeringId: string; requiresProviderSelection: boolean } {
   const matchingOfferings = serviceSlug
     ? offerings.filter((offering) => offering.serviceSlug === serviceSlug)
     : [];
+  const providerOffering = providerSlug
+    ? matchingOfferings.find(
+        (offering) => offering.provider.publicSlug === providerSlug,
+      )
+    : undefined;
+
+  if (providerOffering) {
+    return {
+      offeringId: providerOffering.id,
+      requiresProviderSelection: false,
+    };
+  }
 
   return matchingOfferings.length === 1
     ? {
@@ -108,6 +124,7 @@ export function getInitialOfferingSelection(
 }
 
 export function BookingFlow({
+  initialProviderSlug,
   initialServiceSlug,
   offerings,
   serviceBookingModels,
@@ -115,6 +132,7 @@ export function BookingFlow({
   settings,
 }: BookingFlowProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const hasInitialService = Boolean(initialServiceSlug);
   const initialBookingModel = getServiceBookingModel({
     offerings,
@@ -124,8 +142,11 @@ export function BookingFlow({
   const initialOfferingSelection = getInitialOfferingSelection(
     offerings ?? [],
     initialServiceSlug,
+    initialProviderSlug,
   );
-  const legacyInitialStep: BookingFlowStep = hasInitialService ? "datetime" : "service";
+  const legacyInitialStep: BookingFlowStep = hasInitialService
+    ? "datetime"
+    : "service";
   const [step, setStep] = useState<BookingFlowStep>(
     initialBookingModel === "operational" &&
       hasInitialService &&
@@ -144,8 +165,11 @@ export function BookingFlow({
   const [selectedDateState, setSelectedDateState] = useState<string>("");
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
+  const [hasLoadedAvailability, setHasLoadedAvailability] = useState(false);
+  const [isValidatingAddOn, setIsValidatingAddOn] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [slotLoadErrorMessage, setSlotLoadErrorMessage] = useState("");
   const [selectedAddOnKey, setSelectedAddOnKey] = useState<string | null>(null);
   const [dateWindowStart, setDateWindowStart] = useState(0);
   const isOfferingFlow =
@@ -200,6 +224,7 @@ export function BookingFlow({
   useEffect(() => {
     if (
       step !== "datetime" ||
+      hasLoadedAvailability ||
       (isOfferingFlow
         ? selectedOfferingId.length === 0
         : selectedServiceSlug.length === 0)
@@ -212,13 +237,11 @@ export function BookingFlow({
     async function loadSlots() {
       setIsLoadingSlots(true);
       setErrorMessage("");
+      setSlotLoadErrorMessage("");
 
       try {
         const res = isOfferingFlow
-          ? await fetchOfferingAvailability(
-              selectedOfferingId,
-              selectedAddOnKey,
-            )
+          ? await fetchOfferingAvailability(selectedOfferingId)
           : await fetchAvailability(selectedServiceSlug);
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
@@ -237,6 +260,7 @@ export function BookingFlow({
           setSelectedDateState("");
           setDateWindowStart(0);
           setErrorMessage("");
+          setSlotLoadErrorMessage("");
         }
       } catch (error: unknown) {
         if (isMounted) {
@@ -244,7 +268,7 @@ export function BookingFlow({
           setSelectedSlot("");
           setSelectedDateState("");
           setDateWindowStart(0);
-          setErrorMessage(
+          setSlotLoadErrorMessage(
             error instanceof Error
               ? error.message
               : "Could not load available times. Please try again later.",
@@ -252,6 +276,7 @@ export function BookingFlow({
         }
       } finally {
         if (isMounted) {
+          setHasLoadedAvailability(true);
           setIsLoadingSlots(false);
         }
       }
@@ -264,7 +289,7 @@ export function BookingFlow({
     };
   }, [
     isOfferingFlow,
-    selectedAddOnKey,
+    hasLoadedAvailability,
     selectedOfferingId,
     selectedServiceSlug,
     step,
@@ -323,6 +348,8 @@ export function BookingFlow({
     setSelectedDateState("");
     setDateWindowStart(0);
     setErrorMessage("");
+    setSlotLoadErrorMessage("");
+    setHasLoadedAvailability(false);
   };
 
   const resetDependentBookingState = () => {
@@ -343,13 +370,23 @@ export function BookingFlow({
   };
 
   const handleOfferingSelect = (offeringId: string) => {
+    const offering = (offerings ?? []).find(
+      (candidate) => candidate.id === offeringId,
+    );
+
     setSelectedOfferingId(offeringId);
     resetDependentBookingState();
+
+    if (offering?.provider.publicSlug) {
+      const params = new URLSearchParams(window.location.search);
+      params.set("provider", offering.provider.publicSlug);
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    }
   };
 
   const handleAddOnSelect = (addOnKey: string | null) => {
     setSelectedAddOnKey(addOnKey);
-    resetSlotSelectionState();
+    setErrorMessage("");
   };
 
   const handleContinueFromService = () => {
@@ -369,6 +406,7 @@ export function BookingFlow({
 
   const handleSelectedSlotChange = (value: string) => {
     setSelectedSlot(value);
+    setErrorMessage("");
   };
 
   const handleSelectedDateChange = (dateStr: string) => {
@@ -389,6 +427,81 @@ export function BookingFlow({
     const nextDate = availableDates[nextWindowStart];
     if (nextDate) {
       handleSelectedDateChange(nextDate);
+    }
+  };
+
+  const handleContinueFromDateTime = () => {
+    setErrorMessage("");
+    setStep(currentServiceAddOns.length > 0 ? "addons" : "details");
+  };
+
+  const handleContinueFromAddOns = async () => {
+    if (!selectedSlot) {
+      setErrorMessage(
+        "Please choose an appointment time before selecting add-ons.",
+      );
+      setStep("datetime");
+      return;
+    }
+
+    if (!isOfferingFlow || !selectedAddOnKey) {
+      setErrorMessage("");
+      setStep("details");
+      return;
+    }
+
+    setIsValidatingAddOn(true);
+    setErrorMessage("");
+
+    try {
+      const response = await fetchOfferingAvailability(
+        selectedOfferingId,
+        selectedAddOnKey,
+      );
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        const staleAddOnMessage = readResponseFieldError(
+          data,
+          "selectedAddOnKey",
+        );
+        if (staleAddOnMessage) {
+          setSelectedAddOnKey(null);
+          setErrorMessage(
+            `${staleAddOnMessage}. Please choose another add-on or continue without one.`,
+          );
+          return;
+        }
+
+        throw new Error(
+          readResponseError(data, "Could not validate add-on availability"),
+        );
+      }
+
+      const validatedSlots = readBookingSlots(data);
+      setSlots(validatedSlots);
+      setHasLoadedAvailability(true);
+      setSlotLoadErrorMessage("");
+
+      if (validatedSlots.some((slot) => slot.start === selectedSlot)) {
+        setErrorMessage("");
+        setStep("details");
+        return;
+      }
+
+      setSelectedSlot("");
+      setErrorMessage(
+        "That time is not available with the selected add-on. Please choose another available time.",
+      );
+      setStep("datetime");
+    } catch (error: unknown) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not validate add-on availability. Please try again.",
+      );
+    } finally {
+      setIsValidatingAddOn(false);
     }
   };
 
@@ -440,7 +553,30 @@ export function BookingFlow({
 
       window.location.assign(paymentPageUrl);
     } catch (error: unknown) {
-      if (error instanceof BookingHoldExpiredError) {
+      if (
+        error instanceof BookingHoldRequestError &&
+        error.status === 409 &&
+        error.fieldErrors.start
+      ) {
+        setSlots((currentSlots) =>
+          currentSlots.filter((slot) => slot.start !== selectedSlot),
+        );
+        setSelectedSlot("");
+        setHasLoadedAvailability(true);
+        setStep("datetime");
+        setErrorMessage(
+          `${error.fieldErrors.start}. Please choose another available time.`,
+        );
+      } else if (
+        error instanceof BookingHoldRequestError &&
+        error.fieldErrors.selectedAddOnKey
+      ) {
+        setSelectedAddOnKey(null);
+        setStep(currentServiceAddOns.length > 0 ? "addons" : "datetime");
+        setErrorMessage(
+          `${error.fieldErrors.selectedAddOnKey}. Please choose another add-on or continue without one.`,
+        );
+      } else if (error instanceof BookingHoldExpiredError) {
         setErrorMessage(error.message);
       } else {
         setErrorMessage(
@@ -593,7 +729,8 @@ export function BookingFlow({
                         {offering.provider.displayName}
                       </h2>
                       <p className="text-sm text-lh-muted">
-                        {offering.serviceTitle} · {offering.durationMinutes} min
+                        {offering.publicTitle?.trim() || offering.serviceTitle}{" "}
+                        · {offering.durationMinutes} min
                       </p>
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-3">
@@ -665,23 +802,19 @@ export function BookingFlow({
             </h1>
           </header>
 
-          {isOfferingFlow && currentServiceAddOns.length > 0 && (
-            <BookingAddOnPicker
-              addOns={currentServiceAddOns}
-              className="mb-8 rounded-xl border border-lh-line bg-white p-6"
-              description="Choose an optional add-on before selecting a time. Added service time is included in the availability below."
-              onChange={handleAddOnSelect}
-              selectedAddOnKey={selectedAddOnKey}
-            />
+          {errorMessage && (
+            <FieldError role="alert" className="mb-6 text-center">
+              {errorMessage}
+            </FieldError>
           )}
 
           {isLoadingSlots ? (
             <div className="py-12 text-center text-lh-muted">
               Loading available times...
             </div>
-          ) : errorMessage ? (
+          ) : slotLoadErrorMessage ? (
             <FieldError className="py-12 text-center">
-              {errorMessage}
+              {slotLoadErrorMessage}
             </FieldError>
           ) : slots.length === 0 ? (
             <div className="py-12 text-center text-lh-muted">
@@ -763,6 +896,7 @@ export function BookingFlow({
                     <button
                       key={slot.start}
                       type="button"
+                      aria-pressed={isSelected}
                       onClick={() => handleSelectedSlotChange(slot.start)}
                       className={`rounded-lg border px-2 py-3 text-center text-sm font-medium transition-colors ${isSelected ? "border-lh-primary bg-lh-primary text-white" : "border-lh-line bg-white text-black hover:border-lh-primary"}`}
                     >
@@ -793,9 +927,69 @@ export function BookingFlow({
             <Button
               className="mt-6 w-full"
               disabled={!selectedSlot}
-              onClick={() => setStep("details")}
+              onClick={handleContinueFromDateTime}
             >
               Continue
+            </Button>
+          </section>
+        </aside>
+      </section>
+    );
+  }
+
+  if (step === "addons") {
+    return (
+      <section className="flex flex-col gap-8 lg:flex-row">
+        <section className="min-w-0 flex-1">
+          <header className="mb-6 flex items-center gap-4">
+            <button
+              type="button"
+              onClick={() => {
+                setErrorMessage("");
+                setStep("datetime");
+              }}
+              className="text-lh-muted hover:text-black"
+            >
+              ← Back
+            </button>
+            <h1 className="section-heading text-3xl md:text-3xl lg:text-3xl">
+              Select Add-ons
+            </h1>
+          </header>
+
+          <BookingAddOnPicker
+            addOns={currentServiceAddOns}
+            className="rounded-xl border border-lh-line bg-white p-6"
+            description="Choose one optional add-on. We will confirm that your selected appointment time can accommodate it."
+            onChange={handleAddOnSelect}
+            selectedAddOnKey={selectedAddOnKey}
+          />
+
+          {errorMessage && (
+            <FieldError role="alert" className="mt-6 text-center">
+              {errorMessage}
+            </FieldError>
+          )}
+        </section>
+
+        <aside className="w-full shrink-0 lg:w-80">
+          <section className="sticky top-24 rounded-xl border border-lh-line bg-white p-6">
+            <h2 className="section-subheading mb-4 text-xl md:text-xl lg:text-xl">
+              Summary
+            </h2>
+            <BookingSummary
+              offering={selectedOffering}
+              service={currentService}
+              selectedAddOn={selectedAddOn}
+              selectedSlot={selectedSlot}
+              timezone={settings.timezone}
+            />
+            <Button
+              className="mt-6 w-full"
+              disabled={isValidatingAddOn}
+              onClick={handleContinueFromAddOns}
+            >
+              {isValidatingAddOn ? "Checking availability..." : "Continue"}
             </Button>
           </section>
         </aside>
@@ -809,7 +1003,9 @@ export function BookingFlow({
         <header className="mb-6 flex items-center gap-4">
           <button
             type="button"
-            onClick={() => setStep("datetime")}
+            onClick={() =>
+              setStep(currentServiceAddOns.length > 0 ? "addons" : "datetime")
+            }
             className="text-lh-muted hover:text-black"
           >
             ← Back
@@ -871,16 +1067,6 @@ export function BookingFlow({
               )}
             </Field>
           ))}
-
-          {!isOfferingFlow && currentServiceAddOns.length > 0 && (
-            <BookingAddOnPicker
-              addOns={currentServiceAddOns}
-              className="border-t border-border/50 pt-4"
-              description="Only one add-on can be selected for this booking. Add-ons do not change your appointment duration."
-              onChange={setSelectedAddOnKey}
-              selectedAddOnKey={selectedAddOnKey}
-            />
-          )}
 
           {errorMessage && (
             <FieldError role="alert" className="text-center">
@@ -1006,7 +1192,11 @@ function BookingSummary({
     );
   }
 
-  const title = offering?.serviceTitle ?? service?.title ?? "Service";
+  const title =
+    offering?.publicTitle?.trim() ||
+    offering?.serviceTitle ||
+    service?.title ||
+    "Service";
   const fullPrice = offering
     ? offering.fullPriceCents / 100
     : (service?.fullPrice ?? 0);
@@ -1050,9 +1240,7 @@ function BookingSummary({
       <div className="border-t border-lh-line pt-4">
         <div className="flex justify-between font-medium text-black">
           <span>Total</span>
-          <span>
-            {formatCad(fullPrice + (selectedAddOn?.price ?? 0))}
-          </span>
+          <span>{formatCad(fullPrice + (selectedAddOn?.price ?? 0))}</span>
         </div>
       </div>
     </div>
@@ -1077,10 +1265,9 @@ export function fetchOfferingAvailability(
     availabilityParams.set("selectedAddOnKey", selectedAddOnKey);
   }
 
-  return fetcher(
-    `/api/booking/availability?${availabilityParams.toString()}`,
-    { cache: "no-store" },
-  );
+  return fetcher(`/api/booking/availability?${availabilityParams.toString()}`, {
+    cache: "no-store",
+  });
 }
 
 export async function createBookingHold(
@@ -1108,8 +1295,12 @@ export async function createBookingHold(
   });
 
   if (!holdRes.ok) {
-    const data = await holdRes.json();
-    throw new Error(readResponseError(data, "Failed to hold appointment time"));
+    const data = await holdRes.json().catch(() => ({}));
+    throw new BookingHoldRequestError({
+      fieldErrors: readResponseFieldErrors(data),
+      message: readResponseError(data, "Failed to hold appointment time"),
+      status: holdRes.status,
+    });
   }
 
   const holdData = (await holdRes.json()) as {
@@ -1131,6 +1322,71 @@ export async function createBookingHold(
   }
 
   return { paymentPageUrl, paymentSessionReference };
+}
+
+export class BookingHoldRequestError extends Error {
+  readonly fieldErrors: Readonly<Record<string, string>>;
+  readonly status: number;
+
+  constructor(input: {
+    fieldErrors?: Readonly<Record<string, string>>;
+    message: string;
+    status: number;
+  }) {
+    super(input.message);
+    this.name = "BookingHoldRequestError";
+    this.fieldErrors = input.fieldErrors ?? {};
+    this.status = input.status;
+  }
+}
+
+function readBookingSlots(data: unknown): BookingSlot[] {
+  if (
+    !data ||
+    typeof data !== "object" ||
+    !("slots" in data) ||
+    !Array.isArray(data.slots)
+  ) {
+    return [];
+  }
+
+  return data.slots.filter(
+    (slot): slot is BookingSlot =>
+      Boolean(slot) &&
+      typeof slot === "object" &&
+      "start" in slot &&
+      typeof slot.start === "string" &&
+      "end" in slot &&
+      typeof slot.end === "string",
+  );
+}
+
+function readResponseFieldErrors(
+  data: unknown,
+): Readonly<Record<string, string>> {
+  if (
+    !data ||
+    typeof data !== "object" ||
+    !("fieldErrors" in data) ||
+    !data.fieldErrors ||
+    typeof data.fieldErrors !== "object"
+  ) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(data.fieldErrors).filter(
+      (entry): entry is [string, string] =>
+        typeof entry[1] === "string" && entry[1].length > 0,
+    ),
+  );
+}
+
+function readResponseFieldError(
+  data: unknown,
+  field: string,
+): string | undefined {
+  return readResponseFieldErrors(data)[field];
 }
 
 function readResponseError(data: unknown, fallback: string): string {

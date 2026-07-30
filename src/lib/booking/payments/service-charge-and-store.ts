@@ -1,5 +1,6 @@
 import type { BookingHoldRecord } from "@/lib/booking/holds";
 import { resolveBookingModelVersion } from "@/lib/booking/booking-model-version";
+import { readBookingMarketingOptInLabelSnapshot } from "@/lib/booking/operational-ui-settings";
 import type {
   SquareCreateCustomerRequest,
   SquareCreateCustomerResponse,
@@ -671,11 +672,13 @@ export async function confirmChargeAndStoreBooking(
   // record must be durably persisted before payment proceeds.
   if (dependencies.recordMarketingChoice !== undefined) {
     try {
+      const consentText = readBookingMarketingOptInLabelSnapshot(
+        hold.offeringSnapshot.marketingOptInLabel,
+      );
       await dependencies.recordMarketingChoice({
         answers: readBookingAnswers(hold.offeringSnapshot.answers),
         bookingType: hold.bookingType,
-        consentText:
-          "I would like to receive updates and offers from Lash Her by Nataliea.",
+        consentText,
         email: input.customer.email,
         marketingOptIn: input.customer.marketingOptIn,
         name: input.customer.name,

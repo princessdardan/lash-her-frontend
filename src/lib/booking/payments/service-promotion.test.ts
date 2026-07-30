@@ -4,6 +4,7 @@ import test from "node:test";
 import type { PromotionCode } from "@/lib/commerce/discounts";
 
 import {
+  calculateAuthorizedServicePromotionSnapshot,
   calculateServicePromotionSnapshot,
   readServicePromotionSnapshot,
 } from "./service-promotion";
@@ -25,7 +26,7 @@ function createPromotionCode(
 test("calculates percentage service discount", () => {
   const snapshot = calculateServicePromotionSnapshot({
     promotionCode: createPromotionCode({ amount: 20 }),
-    serviceId: "service-1",
+    serviceIds: ["service-1"],
     basePriceCents: 13000,
   });
 
@@ -39,13 +40,43 @@ test("calculates percentage service discount", () => {
   });
 });
 
+test("calculates a repository-authorized operational promotion without service identities", () => {
+  assert.deepEqual(
+    calculateAuthorizedServicePromotionSnapshot({
+      basePriceCents: 13000,
+      promotionCode: createPromotionCode(),
+    }),
+    {
+      code: "SAVE10",
+      discountType: "percentage",
+      discountAmount: 10,
+      discountCents: 1300,
+      originalBasePriceCents: 13000,
+      discountedBasePriceCents: 11700,
+    },
+  );
+});
+
+test("operational calculator rejects item-scoped definitions", () => {
+  assert.equal(
+    calculateAuthorizedServicePromotionSnapshot({
+      basePriceCents: 13000,
+      promotionCode: createPromotionCode({
+        appliesTo: "specificItems",
+        services: [{ _id: "offering-1" }],
+      }),
+    }),
+    null,
+  );
+});
+
 test("calculates fixed service discount", () => {
   const snapshot = calculateServicePromotionSnapshot({
     promotionCode: createPromotionCode({
       discountType: "fixed",
       amount: 25,
     }),
-    serviceId: "service-1",
+    serviceIds: ["service-1"],
     basePriceCents: 13000,
   });
 
@@ -65,7 +96,7 @@ test("returns null when promotion does not apply to service", () => {
       appliesTo: "specificItems",
       services: [{ _id: "service-2" }],
     }),
-    serviceId: "service-1",
+    serviceIds: ["service-1"],
     basePriceCents: 13000,
   });
 
@@ -75,7 +106,7 @@ test("returns null when promotion does not apply to service", () => {
 test("allows 100% discount to reduce the base to zero", () => {
   const snapshot = calculateServicePromotionSnapshot({
     promotionCode: createPromotionCode({ amount: 100 }),
-    serviceId: "service-1",
+    serviceIds: ["service-1"],
     basePriceCents: 13000,
   });
 
@@ -89,7 +120,7 @@ test("clamps over-base fixed discount to reduce the base to zero", () => {
       discountType: "fixed",
       amount: 200,
     }),
-    serviceId: "service-1",
+    serviceIds: ["service-1"],
     basePriceCents: 13000,
   });
 
@@ -100,7 +131,30 @@ test("clamps over-base fixed discount to reduce the base to zero", () => {
 test("returns null for disabled promotion code", () => {
   const snapshot = calculateServicePromotionSnapshot({
     promotionCode: createPromotionCode({ isEnabled: false }),
-    serviceId: "service-1",
+    serviceIds: ["service-1"],
+    basePriceCents: 13000,
+  });
+
+  assert.equal(snapshot, null);
+});
+
+test("matches any immutable service identity captured by the hold", () => {
+  const snapshot = calculateServicePromotionSnapshot({
+    promotionCode: createPromotionCode({
+      appliesTo: "specificItems",
+      services: [{ _id: "sanity-service-1" }],
+    }),
+    serviceIds: ["operational-service-1", "sanity-service-1"],
+    basePriceCents: 13000,
+  });
+
+  assert.equal(snapshot?.discountCents, 1300);
+});
+
+test("returns null when no valid service identity is present", () => {
+  const snapshot = calculateServicePromotionSnapshot({
+    promotionCode: createPromotionCode(),
+    serviceIds: [" ", ""],
     basePriceCents: 13000,
   });
 

@@ -18,17 +18,53 @@ export interface ServicePromotionSnapshot {
 
 export function calculateServicePromotionSnapshot(input: {
   promotionCode: PromotionCode;
-  serviceId: string;
+  serviceIds: string[];
   basePriceCents: number;
 }): ServicePromotionSnapshot | null {
-  const { promotionCode, serviceId, basePriceCents } = input;
+  const { promotionCode, basePriceCents } = input;
+  const serviceIds = Array.from(
+    new Set(
+      input.serviceIds.map((serviceId) => serviceId.trim()).filter(Boolean),
+    ),
+  );
 
-  if (basePriceCents <= 0) return null;
+  if (basePriceCents <= 0 || serviceIds.length === 0) return null;
 
+  return calculatePromotionSnapshot({
+    basePriceCents,
+    promotionCode,
+    serviceIds,
+  });
+}
+
+export function calculateAuthorizedServicePromotionSnapshot(input: {
+  promotionCode: PromotionCode;
+  basePriceCents: number;
+}): ServicePromotionSnapshot | null {
+  if (
+    input.basePriceCents <= 0 ||
+    input.promotionCode.appliesTo !== "services"
+  ) {
+    return null;
+  }
+
+  return calculatePromotionSnapshot({
+    basePriceCents: input.basePriceCents,
+    promotionCode: input.promotionCode,
+    serviceIds: [],
+  });
+}
+
+function calculatePromotionSnapshot(input: {
+  basePriceCents: number;
+  promotionCode: PromotionCode;
+  serviceIds: string[];
+}): ServicePromotionSnapshot | null {
+  const { basePriceCents, promotionCode, serviceIds } = input;
   const discountResult = applyPromotionCode({
     promotionCode,
     targetType: "service",
-    targetIds: [serviceId],
+    targetIds: serviceIds,
     amount: centsToCad(basePriceCents),
   });
 

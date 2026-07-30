@@ -4,7 +4,8 @@ import { isIP } from "node:net";
 export type BookingAbuseScope =
   | "active-holds"
   | "availability"
-  | "hold-attempts";
+  | "hold-attempts"
+  | "promotion-attempts";
 
 interface HeaderReader {
   get(name: string): string | null;
@@ -20,9 +21,7 @@ export function getTrustedClientIp(
   headers: HeaderReader,
   environment: PlatformEnvironment = process.env,
 ): string | null {
-  const vercelForwarded = firstValidIp(
-    headers.get("x-vercel-forwarded-for"),
-  );
+  const vercelForwarded = firstValidIp(headers.get("x-vercel-forwarded-for"));
   if (vercelForwarded) return vercelForwarded;
   if (isVercelLaunchEnvironment(environment)) return null;
 
@@ -41,7 +40,10 @@ export function buildBookingAbuseKey(input: {
   subject: string;
 }): string | null {
   const clientIp = getTrustedClientIp(input.headers, input.environment);
-  if (!clientIp && isVercelLaunchEnvironment(input.environment ?? process.env)) {
+  if (
+    !clientIp &&
+    isVercelLaunchEnvironment(input.environment ?? process.env)
+  ) {
     return null;
   }
   const clientDigest = digest(`client:${clientIp ?? "local-unavailable"}`);
@@ -58,9 +60,11 @@ function firstValidIp(value: string | null): string | null {
 }
 
 function isVercelLaunchEnvironment(environment: PlatformEnvironment): boolean {
-  return environment.VERCEL === "1"
-    || environment.VERCEL_ENV === "production"
-    || environment.VERCEL_ENV === "preview";
+  return (
+    environment.VERCEL === "1" ||
+    environment.VERCEL_ENV === "production" ||
+    environment.VERCEL_ENV === "preview"
+  );
 }
 
 function digest(value: string): string {

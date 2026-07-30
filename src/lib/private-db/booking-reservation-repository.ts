@@ -44,6 +44,7 @@ export interface CreateV2BookingHoldInput {
   customer: AppointmentHoldCustomerSnapshot;
   expiresAt: Date;
   legacyOfferingId?: string;
+  marketingOptInLabel: string;
   now: Date;
   paymentProvider?: PaymentProvider;
   paymentSessionReference?: string;
@@ -268,6 +269,7 @@ export function createDrizzleBookingReservationRepository(
               offeringSnapshot: createOfferingSnapshot(
                 input.booking,
                 input.answers ?? [],
+                input.marketingOptInLabel,
                 resourceIds,
               ),
               paymentProvider: input.paymentProvider ?? "square",
@@ -402,6 +404,7 @@ export function createDrizzleBookingReservationRepository(
 function createOfferingSnapshot(
   booking: ResolvedOperationalBooking,
   answers: BookingAnswerInput[],
+  marketingOptInLabel: string,
   reservedResourceIds: string[],
 ): Record<string, unknown> {
   const addOnPrice = booking.pricing.addOnPriceCents / 100;
@@ -415,6 +418,7 @@ function createOfferingSnapshot(
     currency: booking.pricing.currency,
     customerStatus: "pending",
     durationMinutes: booking.durationMinutes,
+    marketingOptInLabel: marketingOptInLabel.trim(),
     offeringId: booking.offeringId,
     offeringKey: booking.offeringKey,
     operationalPricing: { ...booking.pricing },
@@ -507,6 +511,8 @@ function validateCreateInput(input: CreateV2BookingHoldInput): void {
     booking.calendar.assignmentId.length === 0 ||
     booking.calendar.calendarId.length === 0 ||
     booking.calendar.calendarId === "primary" ||
+    typeof input.marketingOptInLabel !== "string" ||
+    input.marketingOptInLabel.trim().length === 0 ||
     !Number.isInteger(booking.configurationVersion) ||
     booking.configurationVersion <= 0
   ) {

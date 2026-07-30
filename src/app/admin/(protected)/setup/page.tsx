@@ -7,6 +7,7 @@ import { getSetupReadiness } from "@/lib/admin/operations-read";
 import { canAdmin } from "@/lib/admin/permissions";
 import { requireAdminPagePermission } from "@/lib/admin/page-authorization";
 import { getSquareAttributionReadiness } from "@/lib/admin/square-team-attribution";
+import { DEFAULT_BOOKING_MARKETING_OPT_IN_LABEL } from "@/lib/booking/operational-ui-settings";
 
 import {
   setSquareAttributionRequirementAction,
@@ -25,13 +26,13 @@ export default async function AdminSetupPage({
   }>;
 }) {
   const feedback = await searchParams;
-  const actor = await requireAdminPagePermission("offerings:view");
+  const actor = await requireAdminPagePermission("setup:view");
   const [readiness, squareReadiness] = await Promise.all([
     getSetupReadiness(),
     getSquareAttributionReadiness(),
   ]);
   const canManage = canAdmin({
-    action: "offerings:manage",
+    action: "settings:manage",
     bookingProviderResourceIds: actor.bookingProviderResourceIds,
     bookingResourceIds: actor.bookingResourceIds,
     role: actor.user.role,
@@ -46,6 +47,8 @@ export default async function AdminSetupPage({
     bookingHorizonDays: 30,
     defaultBufferAfterMinutes: 15,
     defaultBufferBeforeMinutes: 15,
+    intakeQuestions: [],
+    marketingOptInLabel: DEFAULT_BOOKING_MARKETING_OPT_IN_LABEL,
     minimumLeadTimeHours: 24,
     requireSquareTeamAttribution: false,
     slotIntervalMinutes: 15,
@@ -62,9 +65,8 @@ export default async function AdminSetupPage({
           Booking readiness
         </h1>
         <p className="mt-3 max-w-3xl text-lh-muted">
-          A provider is ready only when its public Sanity links, operational
-          profile, resource, offering, weekly schedule, and booking calendar are
-          all active.
+          A provider is ready only when its operational profile, resource,
+          offering, weekly schedule, and booking calendar are all active.
         </p>
       </header>
 
@@ -288,6 +290,29 @@ export default async function AdminSetupPage({
                 type="number"
                 min="0"
                 defaultValue={settings.defaultBufferAfterMinutes}
+                required
+              />
+            </Field>
+          </div>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <Field label="Client intake questions (JSON)">
+              <textarea
+                className={`${inputClass} min-h-52 font-mono`}
+                name="intakeQuestions"
+                defaultValue={JSON.stringify(settings.intakeQuestions, null, 2)}
+                spellCheck={false}
+                required
+              />
+              <span className="mt-2 block text-xs font-normal text-lh-muted">
+                Use an array of objects with id, label, inputType, required, and
+                options for select questions.
+              </span>
+            </Field>
+            <Field label="Marketing opt-in label">
+              <textarea
+                className={`${inputClass} min-h-28`}
+                name="marketingOptInLabel"
+                defaultValue={settings.marketingOptInLabel}
                 required
               />
             </Field>

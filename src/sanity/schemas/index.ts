@@ -7,7 +7,6 @@ import { trainingProgramsPage } from "./documents/training-programs-page";
 import { productsPage } from "./documents/products-page";
 import { globalSettings } from "./documents/global-settings";
 import { mainMenu } from "./documents/main-menu";
-import { bookingSettings } from "./documents/booking-settings";
 
 // Documents — Collections
 import { product } from "./documents/product";
@@ -57,7 +56,6 @@ export const schemaTypes = [
   productsPage,
   globalSettings,
   mainMenu,
-  bookingSettings,
   product,
   productCollection,
   promotionCode,

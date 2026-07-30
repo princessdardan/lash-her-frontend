@@ -13,9 +13,14 @@ const navItems: Array<{
   roles?: AdminActor["user"]["role"][];
 }> = [
   { action: "admin:view", href: "/admin", label: "Overview" },
-  { action: "offerings:view", href: "/admin/setup", label: "Setup" },
+  { action: "setup:view", href: "/admin/setup", label: "Setup" },
   { action: "staff:view", href: "/admin/staff", label: "Staff & resources" },
   { action: "offerings:view", href: "/admin/offerings", label: "Offerings" },
+  {
+    action: "service-promotions:view",
+    href: "/admin/service-promotions",
+    label: "Service promotions",
+  },
   { action: "schedules:view", href: "/admin/schedules", label: "Schedules" },
   {
     action: "calendar-connections:view",

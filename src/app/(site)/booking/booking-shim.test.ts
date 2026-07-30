@@ -4,13 +4,27 @@ import { test } from "node:test";
 
 import { resolveBookingShim } from "./booking-shim";
 
-const bookingPageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+const bookingPageSource = readFileSync(
+  new URL("./page.tsx", import.meta.url),
+  "utf8",
+);
 
-test("booking shim renders canonical booking for empty and in-person-only links", async () => {
-  assert.deepEqual(await resolveBookingShim({}, createDependencies()), { kind: "render" });
+test("booking shim sends generic service booking links to the provider catalog", async () => {
+  assert.deepEqual(await resolveBookingShim({}, createDependencies()), {
+    kind: "redirect",
+    href: "/services",
+    redirectMode: "permanent",
+  });
   assert.deepEqual(
-    await resolveBookingShim({ type: "in-person-appointment" }, createDependencies()),
-    { kind: "render" },
+    await resolveBookingShim(
+      { type: "in-person-appointment" },
+      createDependencies(),
+    ),
+    {
+      kind: "redirect",
+      href: "/services",
+      redirectMode: "permanent",
+    },
   );
 });
 
@@ -24,7 +38,10 @@ test("booking shim rejects malformed, private, training, and unknown legacy URLs
     { type: "training-call" },
     { type: "not-a-booking-type" },
   ]) {
-    assert.deepEqual(await resolveBookingShim(searchParams, createDependencies()), { kind: "notFound" });
+    assert.deepEqual(
+      await resolveBookingShim(searchParams, createDependencies()),
+      { kind: "notFound" },
+    );
   }
 });
 
@@ -46,7 +63,10 @@ test("booking shim permanently redirects accepted service legacy links", async (
     { service: "lash-fill" },
   ]) {
     assert.deepEqual(
-      await resolveBookingShim(searchParams, createDependencies({ service: { slug: "lash-fill" } })),
+      await resolveBookingShim(
+        searchParams,
+        createDependencies({ service: { slug: "lash-fill" } }),
+      ),
       {
         kind: "redirect",
         href: "/services/lash-fill/booking",
@@ -61,17 +81,17 @@ test("booking page disables static caching and only uses permanent service redir
   assert.match(bookingPageSource, /export const revalidate = 0;/);
   assert.match(bookingPageSource, /permanentRedirect\(resolution\.href\)/);
   assert.doesNotMatch(bookingPageSource, /redirect\(resolution\.href\)/);
-  assert.doesNotMatch(bookingPageSource, /findPendingTrainingEnrollmentByToken|getOrIssueTrainingSchedulingTokenForPaidOrder/);
+  assert.doesNotMatch(
+    bookingPageSource,
+    /findPendingTrainingEnrollmentByToken|getOrIssueTrainingSchedulingTokenForPaidOrder/,
+  );
 });
 
-function createDependencies(overrides: { service?: { slug: string } | null } = {}) {
+function createDependencies(
+  overrides: { service?: { slug: string } | null } = {},
+) {
   return {
-    getBookableServiceBySlug: async (slug: string) => {
-      if (overrides.service?.slug === slug) {
-        return { slug } as never;
-      }
-
-      return null;
-    },
+    hasBookableServiceSlug: async (slug: string) =>
+      overrides.service?.slug === slug,
   };
 }

@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { TService } from "@/types";
+import type { TServiceEditorial } from "@/types";
 
 export interface ExactSanityServiceLink {
   publicSlug: string;
@@ -8,16 +8,16 @@ export interface ExactSanityServiceLink {
 }
 
 export interface SanityServiceLinkDependencies {
-  getPublishedBookableServiceBySlug: (
+  getPublishedServiceBySlug: (
     slug: string,
-  ) => Promise<TService | null>;
+  ) => Promise<TServiceEditorial | null>;
 }
 
 const defaultDependencies: SanityServiceLinkDependencies = {
-  getPublishedBookableServiceBySlug: async (slug) => {
+  getPublishedServiceBySlug: async (slug) => {
     const { loaders } = await import("@/data/loaders");
 
-    return loaders.getBookableServiceBySlug(slug, {
+    return loaders.getServiceBySlug(slug, {
       mode: "published",
       stega: false,
     });
@@ -40,16 +40,14 @@ export async function assertExactPublishedSanityServiceLink(
   const sanityDocumentId = input.sanityDocumentId?.trim();
 
   if (!publicSlug || !sanityDocumentId) {
-    throw new Error("Select a published bookable Sanity service");
+    throw new Error("Select a published Sanity service");
   }
 
   const publishedService =
-    await dependencies.getPublishedBookableServiceBySlug(publicSlug);
+    await dependencies.getPublishedServiceBySlug(publicSlug);
 
   if (publishedService === null) {
-    throw new Error(
-      "The linked Sanity service slug is not published and bookable",
-    );
+    throw new Error("The linked Sanity service slug is not published");
   }
 
   if (publishedService._id !== sanityDocumentId) {

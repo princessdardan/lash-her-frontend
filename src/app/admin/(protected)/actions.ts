@@ -39,6 +39,7 @@ import {
   updateBookingSettings,
   updateServiceOffering,
 } from "@/lib/admin/operations-write";
+import { parseOperationalBookingQuestionsJson } from "@/lib/booking/operational-ui-settings";
 import { AdminAuthError } from "@/lib/admin/types";
 import {
   refreshSquareTeamMappings,
@@ -235,13 +236,17 @@ export async function updateBookingResourceProfileAction(formData: FormData) {
 export async function createBookingServiceAction(formData: FormData) {
   return runAdminAction({
     destination: "/admin/offerings",
-    revalidatePaths: ["/admin/offerings", "/admin/setup"],
+    revalidatePaths: ["/admin/offerings", "/admin/setup", "/services"],
     success: "Service created as a draft.",
     task: () => {
       const sanityLink = getOptionalSanityServiceLink(formData);
+      const publicSlug =
+        sanityLink.publicSlug ?? getOptionalString(formData, "publicSlug");
       return createBookingService({
         displayTitle: getString(formData, "displayTitle"),
-        ...sanityLink,
+        ownerProviderId: getString(formData, "ownerProviderId"),
+        publicSlug,
+        sanityDocumentId: sanityLink.sanityDocumentId,
         serviceKey: getString(formData, "serviceKey"),
       });
     },
@@ -251,7 +256,7 @@ export async function createBookingServiceAction(formData: FormData) {
 export async function setBookingServiceStatusAction(formData: FormData) {
   return runAdminAction({
     destination: "/admin/offerings",
-    revalidatePaths: ["/admin/offerings", "/admin/setup"],
+    revalidatePaths: ["/admin/offerings", "/admin/setup", "/services"],
     success: "Service status updated.",
     task: () =>
       setBookingServiceStatus({
@@ -264,13 +269,16 @@ export async function setBookingServiceStatusAction(formData: FormData) {
 export async function updateBookingServiceProfileAction(formData: FormData) {
   return runAdminAction({
     destination: "/admin/offerings",
-    revalidatePaths: ["/admin/offerings", "/admin/setup"],
+    revalidatePaths: ["/admin/offerings", "/admin/setup", "/services"],
     success: "Service profile updated.",
     task: () => {
       const sanityLink = getOptionalSanityServiceLink(formData);
+      const publicSlug =
+        sanityLink.publicSlug ?? getOptionalString(formData, "publicSlug");
       return updateBookingServiceProfile({
         displayTitle: getString(formData, "displayTitle"),
-        ...sanityLink,
+        publicSlug,
+        sanityDocumentId: sanityLink.sanityDocumentId,
         serviceId: getString(formData, "serviceId"),
       });
     },
@@ -280,17 +288,20 @@ export async function updateBookingServiceProfileAction(formData: FormData) {
 export async function createServiceOfferingAction(formData: FormData) {
   return runAdminAction({
     destination: "/admin/offerings",
-    revalidatePaths: ["/admin/offerings", "/admin/setup"],
+    revalidatePaths: ["/admin/offerings", "/admin/setup", "/services"],
     success: "Provider offering created as a draft.",
     task: () =>
       createServiceOffering({
         bufferAfterMinutes: getInteger(formData, "bufferAfterMinutes"),
         bufferBeforeMinutes: getInteger(formData, "bufferBeforeMinutes"),
         depositAmountCents: getMoneyCents(formData, "depositAmount"),
+        displayOrder: getInteger(formData, "displayOrder"),
         durationMinutes: getInteger(formData, "durationMinutes"),
         fullPriceCents: getMoneyCents(formData, "fullPrice"),
         offeringKey: getString(formData, "offeringKey"),
         providerId: getString(formData, "providerId"),
+        publicSummary: getString(formData, "publicSummary"),
+        publicTitle: getString(formData, "publicTitle"),
         serviceId: getString(formData, "serviceId"),
         slotIntervalMinutes: getInteger(formData, "slotIntervalMinutes"),
       }),
@@ -300,7 +311,7 @@ export async function createServiceOfferingAction(formData: FormData) {
 export async function setServiceOfferingStatusAction(formData: FormData) {
   return runAdminAction({
     destination: "/admin/offerings",
-    revalidatePaths: ["/admin/offerings", "/admin/setup"],
+    revalidatePaths: ["/admin/offerings", "/admin/setup", "/services"],
     success: "Offering status updated.",
     task: () =>
       setServiceOfferingStatus({
@@ -313,17 +324,20 @@ export async function setServiceOfferingStatusAction(formData: FormData) {
 export async function updateServiceOfferingAction(formData: FormData) {
   return runAdminAction({
     destination: "/admin/offerings",
-    revalidatePaths: ["/admin/offerings", "/admin/setup"],
+    revalidatePaths: ["/admin/offerings", "/admin/setup", "/services"],
     success: "Offering details updated.",
     task: () =>
       updateServiceOffering({
         bufferAfterMinutes: getInteger(formData, "bufferAfterMinutes"),
         bufferBeforeMinutes: getInteger(formData, "bufferBeforeMinutes"),
         depositAmountCents: getMoneyCents(formData, "depositAmount"),
+        displayOrder: getInteger(formData, "displayOrder"),
         durationMinutes: getInteger(formData, "durationMinutes"),
         expectedVersion: getInteger(formData, "expectedVersion"),
         fullPriceCents: getMoneyCents(formData, "fullPrice"),
         offeringId: getString(formData, "offeringId"),
+        publicSummary: getString(formData, "publicSummary"),
+        publicTitle: getString(formData, "publicTitle"),
         slotIntervalMinutes: getInteger(formData, "slotIntervalMinutes"),
       }),
   });
@@ -332,7 +346,7 @@ export async function updateServiceOfferingAction(formData: FormData) {
 export async function assignOfferingResourceAction(formData: FormData) {
   return runAdminAction({
     destination: "/admin/offerings",
-    revalidatePaths: ["/admin/offerings", "/admin/setup"],
+    revalidatePaths: ["/admin/offerings", "/admin/setup", "/services"],
     success: "Offering resource saved.",
     task: () =>
       assignOfferingResource({
@@ -346,7 +360,7 @@ export async function assignOfferingResourceAction(formData: FormData) {
 export async function removeOfferingResourceAction(formData: FormData) {
   return runAdminAction({
     destination: "/admin/offerings",
-    revalidatePaths: ["/admin/offerings", "/admin/setup"],
+    revalidatePaths: ["/admin/offerings", "/admin/setup", "/services"],
     success: "Offering resource removed for future holds.",
     task: () =>
       removeOfferingResource({
@@ -359,7 +373,7 @@ export async function removeOfferingResourceAction(formData: FormData) {
 export async function createOfferingAddOnAction(formData: FormData) {
   return runAdminAction({
     destination: "/admin/offerings",
-    revalidatePaths: ["/admin/offerings"],
+    revalidatePaths: ["/admin/offerings", "/services"],
     success: "Add-on created.",
     task: () =>
       createOfferingAddOn({
@@ -376,7 +390,7 @@ export async function createOfferingAddOnAction(formData: FormData) {
 export async function setOfferingAddOnStatusAction(formData: FormData) {
   return runAdminAction({
     destination: "/admin/offerings",
-    revalidatePaths: ["/admin/offerings"],
+    revalidatePaths: ["/admin/offerings", "/services"],
     success: "Add-on status updated.",
     task: async () => {
       const status = getString(formData, "status");
@@ -407,6 +421,10 @@ export async function updateBookingSettingsAction(formData: FormData) {
           formData,
           "defaultBufferBeforeMinutes",
         ),
+        intakeQuestions: parseOperationalBookingQuestionsJson(
+          getString(formData, "intakeQuestions"),
+        ),
+        marketingOptInLabel: getString(formData, "marketingOptInLabel"),
         minimumLeadTimeHours: getInteger(formData, "minimumLeadTimeHours"),
         slotIntervalMinutes: getInteger(formData, "slotIntervalMinutes"),
         timezone: getString(formData, "timezone"),

@@ -1,7 +1,4 @@
-import type {
-  BookingHoursWindow,
-  BookingWeekday,
-} from "@/lib/booking/types";
+import type { BookingHoursWindow, BookingWeekday } from "@/lib/booking/types";
 
 export interface LegacyBookingImportAddOn {
   description?: string;
@@ -13,9 +10,11 @@ export interface LegacyBookingImportAddOn {
 export interface LegacyBookingImportService {
   addOns?: LegacyBookingImportAddOn[];
   depositCad: number;
+  description?: string;
   durationMinutes: number;
   fullPriceCad: number;
   sanityDocumentId: string;
+  shortDescription?: string;
   slug: string;
   title: string;
 }
@@ -53,6 +52,8 @@ export interface LegacyBookingImportPlan {
     durationMinutes: number;
     fullPriceCents: number;
     offeringKey: string;
+    publicSummary: string;
+    publicTitle: string;
     service: {
       displayTitle: string;
       publicSlug: string;
@@ -102,8 +103,14 @@ export function buildLegacyBookingImportPlan(input: {
   services: LegacyBookingImportService[];
   settings: LegacyBookingImportSettings;
 }): LegacyBookingImportPlan {
-  const providerName = requireText(input.providerName ?? "Nataliea", "Provider name");
-  const providerKey = requireKey(input.providerSlug ?? "nataliea", "Provider slug");
+  const providerName = requireText(
+    input.providerName ?? "Nataliea",
+    "Provider name",
+  );
+  const providerKey = requireKey(
+    input.providerSlug ?? "nataliea",
+    "Provider slug",
+  );
   const settings = validateSettings(input.settings);
   const effectiveFrom = requireIsoDate(input.effectiveFrom);
 
@@ -120,7 +127,10 @@ export function buildLegacyBookingImportPlan(input: {
     }
     seenServiceKeys.add(serviceKey);
 
-    const fullPriceCents = toCents(service.fullPriceCad, `${service.title} full price`);
+    const fullPriceCents = toCents(
+      service.fullPriceCad,
+      `${service.title} full price`,
+    );
     const depositAmountCents = toCents(
       service.depositCad,
       `${service.title} deposit`,
@@ -130,8 +140,13 @@ export function buildLegacyBookingImportPlan(input: {
       throw new Error(`${service.title} deposit must be lower than full price`);
     }
 
-    if (!Number.isInteger(service.durationMinutes) || service.durationMinutes <= 0) {
-      throw new Error(`${service.title} duration must be a positive whole number`);
+    if (
+      !Number.isInteger(service.durationMinutes) ||
+      service.durationMinutes <= 0
+    ) {
+      throw new Error(
+        `${service.title} duration must be a positive whole number`,
+      );
     }
 
     const addOnKeys = new Set<string>();
@@ -142,7 +157,9 @@ export function buildLegacyBookingImportPlan(input: {
       );
 
       if (addOnKeys.has(addOnKey)) {
-        throw new Error(`Duplicate add-on key ${addOnKey} for ${service.title}`);
+        throw new Error(
+          `Duplicate add-on key ${addOnKey} for ${service.title}`,
+        );
       }
       addOnKeys.add(addOnKey);
 
@@ -155,6 +172,19 @@ export function buildLegacyBookingImportPlan(input: {
       };
     });
 
+    const displayTitle = requireBoundedText(
+      service.title,
+      "Service title",
+      160,
+    );
+    const publicSummary = requireBoundedText(
+      cleanOptionalText(service.shortDescription) ??
+        cleanOptionalText(service.description) ??
+        `Book ${displayTitle} with ${providerName}.`,
+      `${displayTitle} public summary`,
+      500,
+    );
+
     return {
       addOns,
       bufferAfterMinutes: settings.bufferMinutes,
@@ -163,8 +193,10 @@ export function buildLegacyBookingImportPlan(input: {
       durationMinutes: service.durationMinutes,
       fullPriceCents,
       offeringKey: `${serviceKey}-${providerKey}`,
+      publicSummary,
+      publicTitle: displayTitle,
       service: {
-        displayTitle: requireText(service.title, "Service title"),
+        displayTitle,
         publicSlug: serviceKey,
         sanityDocumentId: requireText(
           service.sanityDocumentId,
@@ -178,11 +210,16 @@ export function buildLegacyBookingImportPlan(input: {
   const schedules = settings.hoursOfOperation
     .filter((window) => window.isOpen)
     .map((window) => {
-      if (!TIME_PATTERN.test(window.opensAt) || !TIME_PATTERN.test(window.closesAt)) {
+      if (
+        !TIME_PATTERN.test(window.opensAt) ||
+        !TIME_PATTERN.test(window.closesAt)
+      ) {
         throw new Error(`Invalid ${window.day} booking hours`);
       }
       if (window.opensAt >= window.closesAt) {
-        throw new Error(`${window.day} closing time must be after opening time`);
+        throw new Error(
+          `${window.day} closing time must be after opening time`,
+        );
       }
 
       return {
@@ -195,7 +232,9 @@ export function buildLegacyBookingImportPlan(input: {
     });
 
   if (schedules.length === 0) {
-    throw new Error("At least one open legacy booking-hours window is required");
+    throw new Error(
+      "At least one open legacy booking-hours window is required",
+    );
   }
 
   const warnings: string[] = [];
@@ -235,7 +274,10 @@ function validateSettings(
   settings: LegacyBookingImportSettings,
 ): LegacyBookingImportSettings {
   assertPositiveInteger(settings.bookingHorizonDays, "Booking horizon days");
-  assertNonnegativeInteger(settings.minimumLeadTimeHours, "Minimum lead time hours");
+  assertNonnegativeInteger(
+    settings.minimumLeadTimeHours,
+    "Minimum lead time hours",
+  );
   assertPositiveInteger(settings.slotIntervalMinutes, "Slot interval minutes");
   assertNonnegativeInteger(settings.bufferMinutes, "Buffer minutes");
   requireText(settings.timezone, "Timezone");
@@ -252,8 +294,14 @@ function validateSettings(
 function toCents(amount: number, label: string): number {
   const cents = Math.round(amount * 100);
 
-  if (!Number.isFinite(amount) || cents <= 0 || Math.abs(cents / 100 - amount) > 1e-9) {
-    throw new Error(`${label} must be a positive amount with at most two decimals`);
+  if (
+    !Number.isFinite(amount) ||
+    cents <= 0 ||
+    Math.abs(cents / 100 - amount) > 1e-9
+  ) {
+    throw new Error(
+      `${label} must be a positive amount with at most two decimals`,
+    );
   }
 
   return cents;
@@ -265,6 +313,18 @@ function requireText(value: string, label: string): string {
   return cleaned;
 }
 
+function requireBoundedText(
+  value: string,
+  label: string,
+  maxLength: number,
+): string {
+  const cleaned = requireText(value, label);
+  if (cleaned.length > maxLength) {
+    throw new Error(`${label} must be ${maxLength} characters or fewer`);
+  }
+  return cleaned;
+}
+
 function cleanOptionalText(value: string | undefined): string | undefined {
   const cleaned = value?.trim();
   return cleaned || undefined;
@@ -273,7 +333,9 @@ function cleanOptionalText(value: string | undefined): string | undefined {
 function requireKey(value: string, label: string): string {
   const cleaned = value.trim().toLowerCase();
   if (!KEY_PATTERN.test(cleaned)) {
-    throw new Error(`${label} must contain lowercase letters, numbers, and hyphens only`);
+    throw new Error(
+      `${label} must contain lowercase letters, numbers, and hyphens only`,
+    );
   }
   return cleaned;
 }
@@ -293,7 +355,10 @@ function requireIsoDate(value: string): string {
     throw new Error("Effective date must use YYYY-MM-DD");
   }
   const parsed = new Date(`${value}T00:00:00.000Z`);
-  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.toISOString().slice(0, 10) !== value
+  ) {
     throw new Error("Effective date is invalid");
   }
   return value;

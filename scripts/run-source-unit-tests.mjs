@@ -14,10 +14,12 @@ const SERVER_ONLY_TEST_FILES = new Set([
 const DB_TEST_FILES = new Set([
   "src/lib/admin/employee-attribution-analytics.db.test.ts",
   "src/lib/admin/offering-resource-admin.db.test.ts",
+  "src/lib/admin/service-offering-ownership-invariant.db.test.ts",
   "src/lib/admin/square-attribution-invariant.db.test.ts",
   "src/lib/booking/payments/service-reconciliation-monitor.test.ts",
   "src/lib/private-db/appointment-finalization-repository.db.test.ts",
   "src/lib/private-db/booking-legacy-import-repository.db.test.ts",
+  "src/lib/private-db/legacy-operational-cutover-repository.db.test.ts",
   "src/lib/private-db/booking-public-read-repositories.db.test.ts",
   "src/lib/private-db/booking-reservation-repository.db.test.ts",
   "src/lib/private-db/calendar-connection-repository.db.test.ts",

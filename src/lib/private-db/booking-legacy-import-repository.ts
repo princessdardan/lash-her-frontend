@@ -131,6 +131,7 @@ export async function importLegacyBookingConfiguration(input: {
         .values({
           ...offeringPlan.service,
           ...actorColumns,
+          ownerProviderId: provider.id,
           status: "draft",
         })
         .onConflictDoUpdate({
@@ -160,6 +161,10 @@ export async function importLegacyBookingConfiguration(input: {
           offeringKey: offeringPlan.offeringKey,
           primaryResourceId: resource.id,
           providerId: provider.id,
+          publicSummary: offeringPlan.publicSummary,
+          publicSummaryProvenance: "legacy",
+          publicTitle: offeringPlan.publicTitle,
+          publicTitleProvenance: "legacy",
           serviceId: service.id,
           slotIntervalMinutes: offeringPlan.slotIntervalMinutes,
           status: "draft",
@@ -175,6 +180,20 @@ export async function importLegacyBookingConfiguration(input: {
             fullPriceCents: offeringPlan.fullPriceCents,
             primaryResourceId: resource.id,
             providerId: provider.id,
+            publicSummary: sql`
+              CASE
+                WHEN ${bookingServiceOfferings.publicSummaryProvenance} = 'legacy'
+                  THEN ${offeringPlan.publicSummary}
+                ELSE ${bookingServiceOfferings.publicSummary}
+              END
+            `,
+            publicTitle: sql`
+              CASE
+                WHEN ${bookingServiceOfferings.publicTitleProvenance} = 'legacy'
+                  THEN ${offeringPlan.publicTitle}
+                ELSE ${bookingServiceOfferings.publicTitle}
+              END
+            `,
             serviceId: service.id,
             slotIntervalMinutes: offeringPlan.slotIntervalMinutes,
             updatedAt: now,
@@ -185,7 +204,24 @@ export async function importLegacyBookingConfiguration(input: {
         })
         .returning({ id: bookingServiceOfferings.id });
 
-      if (!offering) throw new Error("Legacy service offering was not imported");
+      if (!offering)
+        throw new Error("Legacy service offering was not imported");
+
+      await tx.execute(sql`
+        UPDATE ${bookingServices}
+        SET
+          owner_provider_id = (
+            SELECT CASE
+              WHEN count(DISTINCT candidate.provider_id) = 1
+                THEN min(candidate.provider_id::text)::uuid
+              ELSE NULL
+            END
+            FROM ${bookingServiceOfferings} AS candidate
+            WHERE candidate.service_id = ${service.id}
+          ),
+          updated_at = ${now}
+        WHERE ${bookingServices.id} = ${service.id}
+      `);
 
       for (const [displayOrder, addOn] of offeringPlan.addOns.entries()) {
         await tx

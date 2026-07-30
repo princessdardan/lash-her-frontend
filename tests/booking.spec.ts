@@ -1,20 +1,29 @@
-import { expect, type Page, test } from '@playwright/test';
+import { expect, type Page, test } from "@playwright/test";
 
-const SERVICE_SLUG = 'lash-fill';
-const TRAINING_SLUG = 'advanced-private-training';
-const ORDER_ID = 'lh-service-e2e-order';
-const HOLD_REFERENCE = 'hold-service-e2e';
+const SERVICE_SLUG = "lash-fill";
+const TRAINING_SLUG = "advanced-private-training";
+const ORDER_ID = "lh-service-e2e-order";
+const HOLD_REFERENCE = "hold-service-e2e";
 const SQUARE_CHECKOUT_URL = `http://localhost:3000/api/booking/square/return?orderId=${ORDER_ID}&paymentId=mock-square-payment-1`;
-const FORBIDDEN_PAYMENT_HOSTS = new Set(['api.helcim.com', 'connect.squareup.com', 'connect.squareupsandbox.com']);
-const slotStart = '2030-06-15T16:00:00.000Z';
-const slotEnd = '2030-06-15T17:00:00.000Z';
+const FORBIDDEN_PAYMENT_HOSTS = new Set([
+  "api.helcim.com",
+  "connect.squareup.com",
+  "connect.squareupsandbox.com",
+]);
+const slotStart = "2030-06-15T16:00:00.000Z";
+const slotEnd = "2030-06-15T17:00:00.000Z";
 
-async function mockServiceBookingPage(page: Page, checkoutScenario: 'success' | 'conflict' = 'success'): Promise<void> {
-  await page.route(new RegExp(`/services/${SERVICE_SLUG}/booking(?:$|\\?)`), async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'text/html',
-      body: `<!doctype html>
+async function mockServiceBookingPage(
+  page: Page,
+  checkoutScenario: "success" | "conflict" = "success",
+): Promise<void> {
+  await page.route(
+    new RegExp(`/services/${SERVICE_SLUG}/booking(?:$|\\?)`),
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/html",
+        body: `<!doctype html>
         <html>
           <body>
             <main>
@@ -97,18 +106,19 @@ async function mockServiceBookingPage(page: Page, checkoutScenario: 'success' | 
             </script>
           </body>
         </html>`,
-    });
-  });
+      });
+    },
+  );
 }
 
 async function mockAvailability(page: Page): Promise<void> {
-  await page.route('**/api/booking/availability**', async (route) => {
+  await page.route("**/api/booking/availability**", async (route) => {
     const url = new URL(route.request().url());
-    expect(url.searchParams.get('offering')).toBe(SERVICE_SLUG);
+    expect(url.searchParams.get("offering")).toBe(SERVICE_SLUG);
 
     await route.fulfill({
       status: 200,
-      contentType: 'application/json',
+      contentType: "application/json",
       body: JSON.stringify({
         slots: [
           {
@@ -124,26 +134,28 @@ async function mockAvailability(page: Page): Promise<void> {
 async function completeServiceDetails(page: Page): Promise<void> {
   await page.goto(`/services/${SERVICE_SLUG}/booking`);
 
-  await expect(page.getByText('Book Appointment')).toBeVisible();
-  await expect(page.getByRole('heading', { name: /select time/i })).toBeVisible();
+  await expect(page.getByText("Book Appointment")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: /select time/i }),
+  ).toBeVisible();
 
-  const timeStr = new Intl.DateTimeFormat('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZone: 'America/Toronto',
+  const timeStr = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "America/Toronto",
   }).format(new Date(slotStart));
-  await page.getByRole('button', { name: timeStr }).click();
-  await page.getByRole('button', { name: /continue/i }).click();
+  await page.getByRole("button", { name: timeStr }).click();
+  await page.getByRole("button", { name: /continue/i }).click();
 
-  await page.getByLabel(/full name/i).fill('Service Client');
-  await page.getByLabel(/email address/i).fill('service.client@example.com');
-  await page.getByLabel(/phone number/i).fill('(555) 123-4567');
+  await page.getByLabel(/full name/i).fill("Service Client");
+  await page.getByLabel(/email address/i).fill("service.client@example.com");
+  await page.getByLabel(/phone number/i).fill("(555) 123-4567");
 }
 
 function collectForbiddenPaymentHosts(page: Page): string[] {
   const hosts: string[] = [];
 
-  page.on('request', (request) => {
+  page.on("request", (request) => {
     const host = new URL(request.url()).host;
 
     if (FORBIDDEN_PAYMENT_HOSTS.has(host)) {
@@ -154,38 +166,67 @@ function collectForbiddenPaymentHosts(page: Page): string[] {
   return hosts;
 }
 
-test.describe('Booking route flows', () => {
-  test('shows not found for legacy booking confirmation without an order reference', async ({ page }) => {
-    await page.goto('/booking/confirmation');
+test.describe("Booking route flows", () => {
+  test("shows not found for legacy booking confirmation without an order reference", async ({
+    page,
+  }) => {
+    await page.goto("/booking/confirmation");
 
-    await expect(page.getByRole('heading', { name: /page not found/i })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /page not found/i }),
+    ).toBeVisible();
   });
 
-  test('redirects legacy service links to the canonical service booking route', async ({ page }) => {
+  test("redirects legacy service links to the canonical service booking route", async ({
+    page,
+  }) => {
     await page.goto(`/booking?offeringSlug=${SERVICE_SLUG}`);
 
-    await expect(page).toHaveURL(new RegExp(`/services/${SERVICE_SLUG}/booking$`));
+    await expect(page).toHaveURL(
+      new RegExp(`/services/${SERVICE_SLUG}/booking$`),
+    );
     await expect(
-      page.getByRole('region', { name: /service booking/i }).getByText(/book appointment/i),
+      page
+        .getByRole("region", { name: /service booking/i })
+        .getByText(/book appointment/i),
     ).toBeVisible();
-    await expect(page.getByRole('heading', { name: /select time/i })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /select time/i }),
+    ).toBeVisible();
   });
 
-  test('rejects malformed legacy booking query shapes without redirecting', async ({ page }) => {
-    await page.goto(`/booking?offering=${SERVICE_SLUG}&offeringSlug=${SERVICE_SLUG}`);
+  test("rejects malformed legacy booking query shapes without redirecting", async ({
+    page,
+  }) => {
+    await page.goto(
+      `/booking?offering=${SERVICE_SLUG}&offeringSlug=${SERVICE_SLUG}`,
+    );
 
-    await expect(page).toHaveURL(`/booking?offering=${SERVICE_SLUG}&offeringSlug=${SERVICE_SLUG}`);
-    await expect(page.getByRole('heading', { name: /page not found/i })).toBeVisible();
+    await expect(page).toHaveURL(
+      `/booking?offering=${SERVICE_SLUG}&offeringSlug=${SERVICE_SLUG}`,
+    );
+    await expect(
+      page.getByRole("heading", { name: /page not found/i }),
+    ).toBeVisible();
   });
 
-  test('renders the canonical booking route', async ({ page }) => {
-    await page.goto('/booking');
+  test("redirects the generic booking entry to the provider service catalog", async ({
+    page,
+  }) => {
+    await page.goto("/booking");
 
-    await expect(page.getByRole('heading', { name: /select service/i })).toBeVisible();
-    await expect(page.getByRole('heading', { name: /page not found/i })).toHaveCount(0);
+    await expect(page).toHaveURL(/\/services(?:\?.*)?$/);
+    await expect(
+      page.getByRole("heading", { name: /^services$/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /page not found/i }),
+    ).toHaveCount(0);
   });
 
-  test('uses a mocked service shell to exercise booking availability, hold, and Square checkout contracts', async ({ page }) => {
+  test("uses a mocked service shell to exercise booking availability, hold, and Square checkout contracts", async ({
+    page,
+  }) => {
     let validationCalled = false;
     const holdRequests: Array<Record<string, unknown>> = [];
     const checkoutRequests: Array<Record<string, unknown>> = [];
@@ -194,129 +235,174 @@ test.describe('Booking route flows', () => {
     await mockServiceBookingPage(page);
     await mockAvailability(page);
 
-    page.on('request', (request) => {
+    page.on("request", (request) => {
       const url = new URL(request.url());
 
-      if (url.origin === 'http://localhost:3000' && url.pathname.startsWith('/api/')) {
+      if (
+        url.origin === "http://localhost:3000" &&
+        url.pathname.startsWith("/api/")
+      ) {
         apiRequests.push(`${request.method()} ${url.pathname}`);
       }
     });
 
-    await page.route('**/api/booking/square/return**', async (route) => {
+    await page.route("**/api/booking/square/return**", async (route) => {
       const url = new URL(route.request().url());
-      expect(url.searchParams.get('orderId')).toBe(ORDER_ID);
-      expect(url.searchParams.get('paymentId')).toBe('mock-square-payment-1');
+      expect(url.searchParams.get("orderId")).toBe(ORDER_ID);
+      expect(url.searchParams.get("paymentId")).toBe("mock-square-payment-1");
 
       await route.fulfill({
         status: 200,
-        contentType: 'text/html',
+        contentType: "text/html",
         body: `<!doctype html><html><body><script>window.location.replace('/booking/confirmation?payment=paid_calendar_pending');</script></body></html>`,
       });
     });
 
-    await page.route('**/api/booking/holds', async (route) => {
-      holdRequests.push(route.request().postDataJSON() as Record<string, unknown>);
+    await page.route("**/api/booking/holds", async (route) => {
+      holdRequests.push(
+        route.request().postDataJSON() as Record<string, unknown>,
+      );
 
       await route.fulfill({
         status: 200,
-        contentType: 'application/json',
+        contentType: "application/json",
         body: JSON.stringify({ hold: { reference: HOLD_REFERENCE } }),
       });
     });
 
     await page.route(/\/api\/booking\/checkout(?:\?.*)?$/, async (route) => {
       const url = new URL(route.request().url());
-      expect(url.searchParams.get('mockPaymentScenario')).toBe('success');
-      expect(route.request().headers()['x-lash-payment-mock-scenario']).toBe('success');
-      checkoutRequests.push(route.request().postDataJSON() as Record<string, unknown>);
+      expect(url.searchParams.get("mockPaymentScenario")).toBe("success");
+      expect(route.request().headers()["x-lash-payment-mock-scenario"]).toBe(
+        "success",
+      );
+      checkoutRequests.push(
+        route.request().postDataJSON() as Record<string, unknown>,
+      );
 
       await route.fulfill({
         status: 200,
-        contentType: 'application/json',
+        contentType: "application/json",
         body: JSON.stringify({
           checkoutUrl: SQUARE_CHECKOUT_URL,
           holdReference: HOLD_REFERENCE,
           orderId: ORDER_ID,
-          paymentProvider: 'square',
+          paymentProvider: "square",
           reused: false,
-          squarePaymentLinkId: 'square-payment-link-e2e',
+          squarePaymentLinkId: "square-payment-link-e2e",
         }),
       });
     });
 
-    await page.route('**/api/checkout/validate-payment', async (route) => {
+    await page.route("**/api/checkout/validate-payment", async (route) => {
       validationCalled = true;
-      await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'Helcim validation must not be called' }) });
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Helcim validation must not be called" }),
+      });
     });
 
     await completeServiceDetails(page);
-    await expect(page.getByRole('button', { name: /continue to secure square checkout/i })).toBeEnabled();
-    await page.getByRole('button', { name: /continue to secure square checkout/i }).click();
+    await expect(
+      page.getByRole("button", { name: /continue to secure square checkout/i }),
+    ).toBeEnabled();
+    await page
+      .getByRole("button", { name: /continue to secure square checkout/i })
+      .click();
 
-    await expect(page.getByRole('status')).toContainText(/opening secure square checkout/i);
-    await expect(page.getByRole('link', { name: /continue to secure square checkout/i })).toHaveAttribute('href', SQUARE_CHECKOUT_URL);
-    expect(holdRequests).toEqual([{
-      offeringSlug: SERVICE_SLUG,
-      start: slotStart,
-      name: 'Service Client',
-      email: 'service.client@example.com',
-      phone: '(555) 123-4567',
-      paymentOption: 'full',
-    }]);
+    await expect(page.getByRole("status")).toContainText(
+      /opening secure square checkout/i,
+    );
+    await expect(
+      page.getByRole("link", { name: /continue to secure square checkout/i }),
+    ).toHaveAttribute("href", SQUARE_CHECKOUT_URL);
+    expect(holdRequests).toEqual([
+      {
+        offeringSlug: SERVICE_SLUG,
+        start: slotStart,
+        name: "Service Client",
+        email: "service.client@example.com",
+        phone: "(555) 123-4567",
+        paymentOption: "full",
+      },
+    ]);
     expect(checkoutRequests).toEqual([{ holdReference: HOLD_REFERENCE }]);
-    await expect(page).toHaveURL('/booking/confirmation?payment=paid_calendar_pending');
-    await expect(page.getByRole('heading', { name: /payment verification pending/i })).toBeVisible();
-    await expect(page.getByRole('status')).toContainText(/your payment was received/i);
+    await expect(page).toHaveURL(
+      "/booking/confirmation?payment=paid_calendar_pending",
+    );
+    await expect(
+      page.getByRole("heading", { name: /payment verification pending/i }),
+    ).toBeVisible();
+    await expect(page.getByRole("status")).toContainText(
+      /your payment was received/i,
+    );
     expect(apiRequests).toEqual([
-      'GET /api/booking/availability',
-      'POST /api/booking/holds',
-      'POST /api/booking/checkout',
-      'GET /api/booking/square/return',
+      "GET /api/booking/availability",
+      "POST /api/booking/holds",
+      "POST /api/booking/checkout",
+      "GET /api/booking/square/return",
     ]);
     expect(forbiddenPaymentHosts).toEqual([]);
     expect(validationCalled).toBe(false);
   });
 
-  test('shows expired hold recovery instead of navigating to payment', async ({ page }) => {
+  test("shows expired hold recovery instead of navigating to payment", async ({
+    page,
+  }) => {
     const forbiddenPaymentHosts = collectForbiddenPaymentHosts(page);
-    await mockServiceBookingPage(page, 'conflict');
+    await mockServiceBookingPage(page, "conflict");
     await mockAvailability(page);
 
-    await page.route('**/api/booking/holds', async (route) => {
+    await page.route("**/api/booking/holds", async (route) => {
       await route.fulfill({
         status: 200,
-        contentType: 'application/json',
+        contentType: "application/json",
         body: JSON.stringify({ hold: { reference: HOLD_REFERENCE } }),
       });
     });
 
     await page.route(/\/api\/booking\/checkout(?:\?.*)?$/, async (route) => {
       const url = new URL(route.request().url());
-      expect(url.searchParams.get('mockPaymentScenario')).toBe('conflict');
-      expect(route.request().headers()['x-lash-payment-mock-scenario']).toBe('conflict');
+      expect(url.searchParams.get("mockPaymentScenario")).toBe("conflict");
+      expect(route.request().headers()["x-lash-payment-mock-scenario"]).toBe(
+        "conflict",
+      );
 
       await route.fulfill({
         status: 409,
-        contentType: 'application/json',
-        body: JSON.stringify({ error: 'Booking hold is no longer available' }),
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Booking hold is no longer available" }),
       });
     });
 
     await completeServiceDetails(page);
-    await page.getByRole('button', { name: /continue to secure square checkout/i }).click();
+    await page
+      .getByRole("button", { name: /continue to secure square checkout/i })
+      .click();
 
-    await expect(page.getByRole('status')).toContainText(/hold expired, choose another time/i);
-    await expect(page.getByRole('link', { name: /continue to secure square checkout/i })).toHaveCount(0);
-    await expect(page).toHaveURL(new RegExp(`/services/${SERVICE_SLUG}/booking$`));
+    await expect(page.getByRole("status")).toContainText(
+      /hold expired, choose another time/i,
+    );
+    await expect(
+      page.getByRole("link", { name: /continue to secure square checkout/i }),
+    ).toHaveCount(0);
+    await expect(page).toHaveURL(
+      new RegExp(`/services/${SERVICE_SLUG}/booking$`),
+    );
     expect(forbiddenPaymentHosts).toEqual([]);
   });
 
-  test('shows branded safe error copy for invalid training scheduling tokens without checkout email', async ({ page }) => {
-    await page.route(new RegExp(`/training-programs/${TRAINING_SLUG}/schedule(?:$|\\?)`), async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'text/html',
-        body: `<!doctype html>
+  test("shows branded safe error copy for invalid training scheduling tokens without checkout email", async ({
+    page,
+  }) => {
+    await page.route(
+      new RegExp(`/training-programs/${TRAINING_SLUG}/schedule(?:$|\\?)`),
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "text/html",
+          body: `<!doctype html>
           <html>
             <body>
               <main>
@@ -326,14 +412,23 @@ test.describe('Booking route flows', () => {
               </main>
             </body>
           </html>`,
-      });
-    });
+        });
+      },
+    );
 
-    await page.goto(`/training-programs/${TRAINING_SLUG}/schedule?token=wrong-token`);
+    await page.goto(
+      `/training-programs/${TRAINING_SLUG}/schedule?token=wrong-token`,
+    );
 
-    await expect(page.getByRole('heading', { name: /scheduling unavailable/i })).toBeVisible();
-    await expect(page.getByText(/could not verify this training scheduling link/i)).toBeVisible();
-    await expect(page.getByRole('link', { name: /contact support/i })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /scheduling unavailable/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/could not verify this training scheduling link/i),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: /contact support/i }),
+    ).toBeVisible();
     await expect(page.getByLabel(/checkout email/i)).toHaveCount(0);
     await expect(page.getByLabel(/email address/i)).toHaveCount(0);
     await expect(page.getByText(/wrong-token/i)).toHaveCount(0);

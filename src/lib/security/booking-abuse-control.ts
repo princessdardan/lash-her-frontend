@@ -21,6 +21,10 @@ export const BOOKING_HOLD_RATE_LIMIT = {
   limit: 5,
   windowMs: 10 * 60_000,
 } as const;
+export const BOOKING_PROMOTION_CODE_RATE_LIMIT = {
+  limit: 10,
+  windowMs: 60_000,
+} as const;
 export const BOOKING_ACTIVE_HOLD_LIMIT = 2;
 
 let redisStore: RedisScriptStore | null = null;
@@ -43,6 +47,18 @@ export async function checkBookingHoldRateLimit(input: {
 }): Promise<RateLimitDecision> {
   return checkSlidingWindowRateLimitWithStore(getRedisStore(), {
     ...BOOKING_HOLD_RATE_LIMIT,
+    key: input.key,
+    nowMs: input.now.getTime(),
+    requestId: randomUUID(),
+  });
+}
+
+export async function checkBookingPromotionCodeRateLimit(input: {
+  key: string;
+  now: Date;
+}): Promise<RateLimitDecision> {
+  return checkSlidingWindowRateLimitWithStore(getRedisStore(), {
+    ...BOOKING_PROMOTION_CODE_RATE_LIMIT,
     key: input.key,
     nowMs: input.now.getTime(),
     requestId: randomUUID(),

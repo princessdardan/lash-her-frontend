@@ -22,7 +22,12 @@ type SchemaField = {
   name?: string;
   group?: string;
   type?: string;
-  of?: Array<{ type?: string; fields?: SchemaField[] }>;
+  of?: Array<{
+    type?: string;
+    fields?: SchemaField[];
+    styles?: Array<{ title: string; value: string }>;
+    lists?: Array<{ title: string; value: string }>;
+  }>;
   fields?: SchemaField[];
   validation?: (rule: RuleStub) => unknown;
   hidden?: unknown;

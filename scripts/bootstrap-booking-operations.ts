@@ -22,8 +22,10 @@ interface SanityBootstrapResult {
     }>;
     currency?: string;
     depositAmount: number;
+    description?: string;
     durationMinutes: number;
     fullPrice: number;
+    shortDescription?: string;
     slug: string;
     title: string;
   }>;
@@ -47,6 +49,8 @@ const QUERY = `{
     fullPrice,
     depositAmount,
     currency,
+    description,
+    shortDescription,
     addOns[]{ _key, name, description, price }
   },
   "settings": *[
@@ -143,9 +147,11 @@ function toLegacyService(
       priceCad: addOn.price,
     })),
     depositCad: service.depositAmount,
+    description: service.description,
     durationMinutes: service.durationMinutes,
     fullPriceCad: service.fullPrice,
     sanityDocumentId: service._id,
+    shortDescription: service.shortDescription,
     slug: service.slug,
     title: service.title,
   };
@@ -164,7 +170,8 @@ function readArgument(name: string): string | undefined {
 function assertSafeWriteTarget(): void {
   const databaseUrl = process.env.DATABASE_URL;
   const target = process.env.PRIVATE_DB_MIGRATION_TARGET;
-  const expectedHost = process.env.PRIVATE_DB_MIGRATION_HOST?.trim().toLowerCase();
+  const expectedHost =
+    process.env.PRIVATE_DB_MIGRATION_HOST?.trim().toLowerCase();
 
   if (!databaseUrl) throw new Error("Missing env var: DATABASE_URL");
   if (target !== "local" && target !== "staging" && target !== "production") {
@@ -173,7 +180,9 @@ function assertSafeWriteTarget(): void {
     );
   }
   if (!expectedHost) {
-    throw new Error("Set PRIVATE_DB_MIGRATION_HOST before executing the import");
+    throw new Error(
+      "Set PRIVATE_DB_MIGRATION_HOST before executing the import",
+    );
   }
 
   const databaseHost = new URL(databaseUrl).hostname.toLowerCase();

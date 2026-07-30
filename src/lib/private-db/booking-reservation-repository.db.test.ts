@@ -84,6 +84,11 @@ test(
         (first.hold.offeringSnapshot as Record<string, unknown>).paymentStatus,
         "pending",
       );
+      assert.equal(
+        (first.hold.offeringSnapshot as Record<string, unknown>)
+          .marketingOptInLabel,
+        "Send me reservation updates.",
+      );
     }
     assert.deepEqual(second, { ok: false, reason: "slot_conflict" });
   },
@@ -1418,6 +1423,7 @@ function createHoldInput(fixture: SeededFixture, start: Date, now: Date) {
       phone: "5555555555",
     },
     expiresAt: new Date(now.getTime() + 10 * 60 * 1000),
+    marketingOptInLabel: "Send me reservation updates.",
     now,
     paymentSessionReference: `${TEST_PREFIX}session-${randomUUID()}`,
     publicReference: `${TEST_PREFIX}hold-${randomUUID()}`,

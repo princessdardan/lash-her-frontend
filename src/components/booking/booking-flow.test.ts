@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 import { loadSquareScript } from "./square-card-on-file-form";
 import type { PublicBookingOffering } from "@/lib/booking/operations/offering";
 import {
+  BookingHoldRequestError,
   createBookingHold,
   fetchOfferingAvailability,
   getInitialOfferingSelection,
@@ -43,6 +44,10 @@ const servicesPageSource = readFileSync(
   new URL("../../app/(site)/services/page.tsx", import.meta.url),
   "utf8",
 );
+const providerServiceTabsSource = readFileSync(
+  new URL("../services/provider-service-tabs.tsx", import.meta.url),
+  "utf8",
+);
 const bookingConfirmationSource = readFileSync(
   new URL("../../app/(site)/booking/confirmation/page.tsx", import.meta.url),
   "utf8",
@@ -70,9 +75,10 @@ describe("booking service flow contract", () => {
     assert.match(bookingPageSource, /resolveBookingShim\(await searchParams/);
     assert.match(
       bookingPageSource,
-      /if \(resolution\.kind === "redirect"\) \{/,
+      /if \(resolution\.kind === "notFound"\) \{[\s\S]*?notFound\(\)/,
     );
-    assert.match(bookingShimSource, /getBookableServiceBySlug/);
+    assert.match(bookingPageSource, /permanentRedirect\(resolution\.href\)/);
+    assert.match(bookingShimSource, /hasBookableServiceSlug/);
     assert.match(bookingShimSource, /buildServiceBookingUrl/);
   });
 
@@ -91,7 +97,11 @@ describe("booking service flow contract", () => {
     assert.match(bookingFlowSource, /fetchAvailability\(selectedServiceSlug\)/);
     assert.match(
       bookingFlowSource,
-      /isOfferingFlow,\s*selectedAddOnKey,\s*selectedOfferingId,\s*selectedServiceSlug,\s*step,/,
+      /isOfferingFlow,\s*hasLoadedAvailability,\s*selectedOfferingId,\s*selectedServiceSlug,\s*step,/,
+    );
+    assert.doesNotMatch(
+      bookingFlowSource,
+      /isOfferingFlow,\s*hasLoadedAvailability,\s*selectedAddOnKey,/,
     );
   });
 
@@ -122,6 +132,37 @@ describe("booking service flow contract", () => {
     );
     assert.match(bookingFlowSource, /if \(step === "provider"\)/);
     assert.match(bookingFlowSource, /offering\.provider\.displayName/);
+  });
+
+  it("preselects a matching provider while preserving invalid-provider fallback", () => {
+    const firstOffering = createPublicOffering();
+    const secondOffering = {
+      ...firstOffering,
+      id: "offering-2",
+      offeringKey: "classic-fill-amara",
+      provider: { displayName: "Amara", publicSlug: "amara" },
+    };
+
+    assert.deepEqual(
+      getInitialOfferingSelection(
+        [firstOffering, secondOffering],
+        "classic-fill",
+        "amara",
+      ),
+      {
+        offeringId: "offering-2",
+        requiresProviderSelection: false,
+      },
+    );
+    assert.deepEqual(
+      getInitialOfferingSelection(
+        [firstOffering, secondOffering],
+        "classic-fill",
+        "unknown-provider",
+      ),
+      { offeringId: "", requiresProviderSelection: true },
+    );
+    assert.match(bookingFlowSource, /initialProviderSlug\?: string/);
   });
 
   it("selects the booking model per service in a mixed dual-mode catalog", () => {
@@ -171,7 +212,9 @@ describe("booking service flow contract", () => {
   });
 
   it("renders availability errors before showing the generic no-times state", () => {
-    const errorBranchIndex = bookingFlowSource.indexOf(") : errorMessage ? (");
+    const errorBranchIndex = bookingFlowSource.indexOf(
+      ") : slotLoadErrorMessage ? (",
+    );
     const noTimesBranchIndex = bookingFlowSource.indexOf(
       "No times available for this service.",
     );
@@ -225,9 +268,52 @@ describe("booking service flow contract", () => {
     assert.match(bookingFlowSource, /selectedAddOnKey/);
     assert.match(bookingFlowSource, /Optional add-on/);
     assert.match(bookingFlowSource, /No add-on/);
-    assert.match(bookingFlowSource, /Only one add-on can be selected/);
+    assert.equal(
+      [...bookingFlowSource.matchAll(/<BookingAddOnPicker\s/g)].length,
+      1,
+    );
     assert.match(bookingFlowSource, /type="radio"/);
     assert.doesNotMatch(bookingFlowSource, /role="radio(?:group)?"/);
+  });
+
+  it("renders add-ons after time and skips the step when none are configured", () => {
+    const dateTimeBranch = bookingFlowSource.indexOf(
+      'if (step === "datetime")',
+    );
+    const addOnBranch = bookingFlowSource.indexOf('if (step === "addons")');
+    const detailsHeading = bookingFlowSource.indexOf("Appointment Details");
+
+    assert.ok(dateTimeBranch > -1);
+    assert.ok(addOnBranch > dateTimeBranch);
+    assert.ok(detailsHeading > addOnBranch);
+    assert.match(
+      bookingFlowSource,
+      /setStep\(currentServiceAddOns\.length > 0 \? "addons" : "details"\)/,
+    );
+    assert.match(
+      bookingFlowSource,
+      /setStep\(currentServiceAddOns\.length > 0 \? "addons" : "datetime"\)/,
+    );
+  });
+
+  it("loads initial availability without an add-on and preserves the selected time while validating one", () => {
+    assert.match(
+      bookingFlowSource,
+      /\? await fetchOfferingAvailability\(selectedOfferingId\)/,
+    );
+    assert.match(
+      bookingFlowSource,
+      /fetchOfferingAvailability\(\s*selectedOfferingId,\s*selectedAddOnKey,\s*\)/,
+    );
+    assert.match(
+      bookingFlowSource,
+      /validatedSlots\.some\(\(slot\) => slot\.start === selectedSlot\)/,
+    );
+    assert.match(bookingFlowSource, /setSelectedSlot\(""\)/);
+    assert.match(
+      bookingFlowSource,
+      /That time is not available with the selected add-on/,
+    );
   });
 
   it("clears selected add-ons when the selected service changes", () => {
@@ -312,37 +398,42 @@ describe("booking service flow contract", () => {
     );
   });
 
-  it("keeps service detail links discoverable outside the active offerings branch", () => {
-    const emptyOfferingsIndex = servicesPageSource.indexOf(
-      "bookableServices.length === 0",
-    );
-    const detailServicesIndex = servicesPageSource.indexOf(
-      "detailServices.length > 0",
-    );
-
-    assert.ok(emptyOfferingsIndex > -1);
-    assert.ok(detailServicesIndex > emptyOfferingsIndex);
+  it("keeps linked service details discoverable in provider service results", () => {
+    assert.match(providerServiceTabsSource, /service\.detailHref \?/);
     assert.match(
-      servicesPageSource,
-      /href=\{`\/services\/\$\{service\.slug\}`\}/,
+      providerServiceTabsSource,
+      /<Link href=\{service\.detailHref\}>View details<\/Link>/,
     );
   });
 
-  it("service listing booking links use /services/<slug>/booking", () => {
+  it("service listing booking links use the catalog booking href", () => {
     assert.match(
-      servicesPageSource,
-      /href=\{`\/services\/\$\{service\.slug\}\/booking`\}/,
+      providerServiceTabsSource,
+      /<Link href=\{service\.bookingHref\}>Book<\/Link>/,
     );
   });
 
-  it("service detail booking link uses /services/<slug>/booking", () => {
+  it("keeps provider context and provider-owned copy throughout booking", () => {
+    assert.match(
+      bookingFlowSource,
+      /params\.set\("provider", offering\.provider\.publicSlug\)/,
+    );
+    assert.match(
+      bookingFlowSource,
+      /router\.replace\(`\$\{pathname\}\?\$\{params\.toString\(\)\}`/,
+    );
+    assert.match(bookingFlowSource, /offering\?\.publicTitle\?\.trim\(\)/);
+    assert.match(bookingFlowSource, /aria-pressed=\{isSelected\}/);
+  });
+
+  it("service detail pages return customers to provider services and pricing", () => {
     const serviceDetailPageSource = readFileSync(
       new URL("../../app/(site)/services/[slug]/page.tsx", import.meta.url),
       "utf8",
     );
     assert.match(
       serviceDetailPageSource,
-      /href=\{`\/services\/\$\{service\.slug\}\/booking`\}/,
+      /<Link href=\{servicesHref\}[\s\S]*?View Provider Services &amp; Pricing/,
     );
   });
 
@@ -391,7 +482,7 @@ describe("booking service flow contract", () => {
     assert.deepEqual([...requestUrl.searchParams.keys()], ["offeringId"]);
   });
 
-  it("refetches V2 availability for a duration-changing add-on choice", async () => {
+  it("validates V2 availability for a duration-changing add-on choice", async () => {
     const requests: string[] = [];
     const fetcher: typeof fetch = async (input) => {
       requests.push(input.toString());
@@ -403,8 +494,12 @@ describe("booking service flow contract", () => {
     assert.deepEqual(requests, [
       "/api/booking/availability?offeringId=offering-1&selectedAddOnKey=lash-bath",
     ]);
-    assert.match(bookingFlowSource, /handleAddOnSelect/);
-    assert.match(bookingFlowSource, /resetSlotSelectionState\(\)/);
+    assert.match(bookingFlowSource, /handleContinueFromAddOns/);
+    const addOnHandler = bookingFlowSource.match(
+      /const handleAddOnSelect = \(addOnKey: string \| null\) => \{[\s\S]*?\n  \};/,
+    )?.[0];
+    assert.ok(addOnHandler);
+    assert.doesNotMatch(addOnHandler, /resetSlotSelectionState\(\)/);
   });
 
   it("posts a V2 hold with only offering selection and customer choices", async () => {
@@ -496,21 +591,62 @@ describe("booking service flow contract", () => {
     const fetcher: typeof fetch = async (input) => {
       requests.push(input.toString());
       return Response.json(
-        { error: "Selected time is no longer available." },
+        {
+          error: "Selected time is no longer available.",
+          fieldErrors: { start: "That time is no longer available" },
+        },
         { status: 409 },
       );
     };
 
-    await assert.rejects(
-      createBookingHold({
-        serviceSlug: "classic-fill",
-        start: "2030-06-15T16:00:00.000Z",
-        answers: [],
-        fetcher,
-      }),
-      /Selected time is no longer available\./,
+    const error = await createBookingHold({
+      serviceSlug: "classic-fill",
+      start: "2030-06-15T16:00:00.000Z",
+      answers: [],
+      fetcher,
+    }).then(
+      () => undefined,
+      (caught: unknown) => caught,
     );
+
+    assert.ok(error instanceof BookingHoldRequestError);
+    assert.equal(error.status, 409);
+    assert.deepEqual(error.fieldErrors, {
+      start: "That time is no longer available",
+    });
+    assert.match(error.message, /Selected time is no longer available\./);
     assert.deepEqual(requests, ["/api/booking/holds"]);
+  });
+
+  it("types stale add-on hold errors for step recovery", async () => {
+    const fetcher: typeof fetch = async () =>
+      Response.json(
+        {
+          error: "Please fix the hold details and try again.",
+          fieldErrors: {
+            selectedAddOnKey:
+              "That add-on is no longer available. Please review your selection.",
+          },
+        },
+        { status: 400 },
+      );
+
+    const error = await createBookingHold({
+      serviceSlug: "classic-fill",
+      start: "2030-06-15T16:00:00.000Z",
+      answers: [],
+      fetcher,
+      selectedAddOnKey: "stale-addon",
+    }).then(
+      () => undefined,
+      (caught: unknown) => caught,
+    );
+
+    assert.ok(error instanceof BookingHoldRequestError);
+    assert.equal(
+      error.fieldErrors.selectedAddOnKey,
+      "That add-on is no longer available. Please review your selection.",
+    );
   });
 
   it("booking page copy sends customers to payment after service details", () => {
@@ -524,7 +660,7 @@ describe("booking service flow contract", () => {
 
     assert.match(
       serviceBookingPageSource,
-      /Select your appointment time, add-ons, and service details before\s*payment\./,
+      /Select your appointment time, then choose add-ons and enter your\s*service details before payment\./,
     );
     assert.doesNotMatch(serviceBookingPageSource, /confirm your details/i);
   });
@@ -534,6 +670,7 @@ describe("booking service flow contract", () => {
     assert.match(serviceBookingPaymentFormSource, /Email Address/);
     assert.match(serviceBookingPaymentFormSource, /Phone Number/);
     assert.match(serviceBookingPaymentFormSource, /Marketing/);
+    assert.match(serviceBookingPaymentFormSource, /\{marketingOptInLabel\}/);
     assert.match(serviceBookingPaymentFormSource, /Payment Option/);
     assert.match(
       serviceBookingPaymentFormSource,

@@ -7,6 +7,10 @@ const readyConfiguration = {
   activeAddOnsArePubliclyValid: true,
   hasActiveBookingCalendar: true,
   hasActiveWeeklySchedule: true,
+  offering: {
+    publicSummary: "A complete classic lash service.",
+    publicTitle: "Classic lash set",
+  },
   provider: {
     displayName: "Nataliea",
     primaryResourceId: "resource-1",
@@ -35,6 +39,10 @@ test("offering activation reports every missing setup dependency", () => {
     activeAddOnsArePubliclyValid: false,
     hasActiveBookingCalendar: false,
     hasActiveWeeklySchedule: false,
+    offering: {
+      publicSummary: null,
+      publicTitle: null,
+    },
     provider: {
       ...readyConfiguration.provider,
       publicSlug: null,
@@ -61,10 +69,11 @@ test("offering activation reports every missing setup dependency", () => {
   assert.deepEqual(blockers, [
     "activate the provider",
     "link the provider public slug",
+    "add the public offering title",
+    "add the public offering summary",
     "activate the primary resource",
     "repair the provider primary-resource link",
     "activate the service",
-    "link the Sanity service document",
     "link the service public slug",
     "add an active weekly schedule",
     "assign an active booking calendar",

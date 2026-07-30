@@ -4,6 +4,7 @@ import test from "node:test";
 
 import type { NoShowChargeStatus } from "@/lib/private-db/schema";
 import type { BookingHoldRecord } from "@/lib/booking/holds";
+import { DEFAULT_BOOKING_MARKETING_OPT_IN_LABEL } from "@/lib/booking/operational-ui-settings";
 import type { SquareInvoicesClient } from "@/lib/payments/square/invoice-client";
 import type {
   SquareCard,
@@ -1133,12 +1134,13 @@ test("returns booked only after payment, card, no-show record, and calendar fina
   assert.equal(state.markHoldBookedCalls[0]?.googleEventId, "gcal-event-1");
 });
 
-test("records marketing choice after customer details are persisted", async () => {
+test("V1 marketing consent evidence uses the immutable hold label", async () => {
   const baseHold = createHold();
   const hold = createHold({
     offeringSnapshot: {
       ...baseHold.offeringSnapshot,
       answers: [{ questionId: "allergies", answer: "No allergies" }],
+      marketingOptInLabel: "Send me occasional operational updates.",
       sourcePath: "/services/lash-fill/booking",
     },
   });
@@ -1184,8 +1186,7 @@ test("records marketing choice after customer details are persisted", async () =
   assert.deepEqual(marketingChoices[0], {
     answers: [{ questionId: "allergies", answer: "No allergies" }],
     bookingType: "in-person-appointment",
-    consentText:
-      "I would like to receive updates and offers from Lash Her by Nataliea.",
+    consentText: "Send me occasional operational updates.",
     email: "client@example.com",
     marketingOptIn: true,
     name: "Client Name",
@@ -1196,6 +1197,162 @@ test("records marketing choice after customer details are persisted", async () =
     state.sagaOrderEvents.indexOf("persistCustomerAndSelection") <
       state.sagaOrderEvents.indexOf("persistPolicyAcceptance"),
     "Marketing choice must be persisted before policy acceptance",
+  );
+});
+
+test("pre-change V1 holds persist the same immutable default shown on the payment page", async () => {
+  const {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+  } = createFakes();
+
+  const marketingChoices: RecordMarketingChoiceInput[] = [];
+  const result = await confirmChargeAndStoreBooking(
+    createRequest({
+      customer: {
+        email: "client@example.com",
+        marketingOptIn: true,
+        name: "Client Name",
+        phone: "+14165550123",
+      },
+    }),
+    {
+      repository,
+      squarePayments,
+      squareCards,
+      squareInvoices,
+      squareCustomers,
+      calendarFinalizer,
+      alerts,
+      locationId: "LOC123",
+      now,
+      recordMarketingChoice: async (input) => {
+        marketingChoices.push(input);
+      },
+    },
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(marketingChoices.length, 1);
+  assert.equal(
+    marketingChoices[0]?.consentText,
+    DEFAULT_BOOKING_MARKETING_OPT_IN_LABEL,
+  );
+});
+
+test("V2 marketing consent evidence uses the immutable hold label", async () => {
+  const baseHold = createHold();
+  const hold = createHold({
+    bookingModelVersion: 2,
+    offeringSnapshot: {
+      ...baseHold.offeringSnapshot,
+      marketingOptInLabel: "Send me provider-specific updates.",
+    },
+    squareTeamMemberId: "team-member-1",
+  });
+  const {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+  } = createFakes([hold]);
+  repository.recordAuthorizedOperationalPayment = async () => ({
+    bookingModelVersion: 2,
+  });
+  repository.recordCapturedOperationalPayment = async () => undefined;
+
+  const marketingChoices: RecordMarketingChoiceInput[] = [];
+  const result = await confirmChargeAndStoreBooking(
+    createRequest({
+      customer: {
+        email: "client@example.com",
+        marketingOptIn: true,
+        name: "Client Name",
+        phone: "+14165550123",
+      },
+    }),
+    {
+      repository,
+      squarePayments,
+      squareCards,
+      squareInvoices,
+      squareCustomers,
+      calendarFinalizer,
+      alerts,
+      locationId: "LOC123",
+      now,
+      recordMarketingChoice: async (input) => {
+        marketingChoices.push(input);
+      },
+    },
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(marketingChoices.length, 1);
+  assert.equal(
+    marketingChoices[0]?.consentText,
+    "Send me provider-specific updates.",
+  );
+});
+
+test("pre-change V2 holds persist the same immutable default shown on the payment page", async () => {
+  const hold = createHold({
+    bookingModelVersion: 2,
+    squareTeamMemberId: "team-member-1",
+  });
+  const {
+    repository,
+    squarePayments,
+    squareCards,
+    squareInvoices,
+    squareCustomers,
+    calendarFinalizer,
+    alerts,
+  } = createFakes([hold]);
+  repository.recordAuthorizedOperationalPayment = async () => ({
+    bookingModelVersion: 2,
+  });
+  repository.recordCapturedOperationalPayment = async () => undefined;
+
+  const marketingChoices: RecordMarketingChoiceInput[] = [];
+  const result = await confirmChargeAndStoreBooking(
+    createRequest({
+      customer: {
+        email: "client@example.com",
+        marketingOptIn: true,
+        name: "Client Name",
+        phone: "+14165550123",
+      },
+    }),
+    {
+      repository,
+      squarePayments,
+      squareCards,
+      squareInvoices,
+      squareCustomers,
+      calendarFinalizer,
+      alerts,
+      locationId: "LOC123",
+      now,
+      recordMarketingChoice: async (input) => {
+        marketingChoices.push(input);
+      },
+    },
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(marketingChoices.length, 1);
+  assert.equal(
+    marketingChoices[0]?.consentText,
+    DEFAULT_BOOKING_MARKETING_OPT_IN_LABEL,
   );
 });
 

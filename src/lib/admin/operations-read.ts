@@ -8,6 +8,7 @@ import {
   gte,
   ilike,
   inArray,
+  isNull,
   ne,
   or,
   sql,
@@ -37,10 +38,11 @@ import {
 import { requirePermission } from "./auth";
 import { recordAdminAudit } from "./audit-log";
 import { isPublicAddOnReady } from "./offering-readiness";
+import { hasGlobalProviderServiceAccess } from "./provider-service-authorization";
 import type { AdminActor } from "./types";
 
 export async function getSetupReadiness() {
-  await requirePermission("offerings:view");
+  await requirePermission("setup:view");
   const db = getPrivateDb();
   const [
     resources,
@@ -190,15 +192,16 @@ export async function getSetupReadiness() {
         const service = serviceById.get(offering.serviceId);
         return (
           service?.status === "active" &&
-          Boolean(service.sanityDocumentId?.trim()) &&
           Boolean(service.publicSlug?.trim()) &&
+          Boolean(offering.publicTitle?.trim()) &&
+          Boolean(offering.publicSummary?.trim()) &&
           !invalidAddOnOfferingIds.has(offering.id) &&
           !invalidRequiredResourceOfferingIds.has(offering.id)
         );
       })
     ) {
       blockers.push(
-        "No active offering has a public Sanity service, valid add-ons, and ready required resources",
+        "No active offering has complete public copy, a public service slug, valid add-ons, and ready required resources",
       );
     }
 
@@ -259,79 +262,124 @@ export async function listAdminStaffAndResources() {
 }
 
 export async function listAdminOfferings() {
-  await requirePermission("offerings:view");
+  const actor = await requirePermission("offerings:view");
   const db = getPrivateDb();
-  const [services, providers, resources, offerings, addOns, offeringResources] =
-    await Promise.all([
-      db
-        .select()
-        .from(bookingServices)
-        .orderBy(asc(bookingServices.displayOrder)),
-      db
-        .select()
-        .from(bookingProviders)
-        .orderBy(asc(bookingProviders.displayOrder)),
-      db.select().from(bookingResources).orderBy(asc(bookingResources.name)),
-      db
-        .select({
-          bookingHorizonDays: bookingServiceOfferings.bookingHorizonDays,
-          bufferAfterMinutes: bookingServiceOfferings.bufferAfterMinutes,
-          bufferBeforeMinutes: bookingServiceOfferings.bufferBeforeMinutes,
-          currency: bookingServiceOfferings.currency,
-          depositAmountCents: bookingServiceOfferings.depositAmountCents,
-          durationMinutes: bookingServiceOfferings.durationMinutes,
-          fullPriceCents: bookingServiceOfferings.fullPriceCents,
-          id: bookingServiceOfferings.id,
-          minimumLeadTimeHours: bookingServiceOfferings.minimumLeadTimeHours,
-          offeringKey: bookingServiceOfferings.offeringKey,
-          primaryResourceId: bookingServiceOfferings.primaryResourceId,
-          providerId: bookingServiceOfferings.providerId,
-          resourceName: bookingResources.name,
-          serviceId: bookingServiceOfferings.serviceId,
-          serviceTitle: bookingServices.displayTitle,
-          slotIntervalMinutes: bookingServiceOfferings.slotIntervalMinutes,
-          status: bookingServiceOfferings.status,
-          version: bookingServiceOfferings.version,
-        })
-        .from(bookingServiceOfferings)
-        .innerJoin(
-          bookingServices,
-          eq(bookingServices.id, bookingServiceOfferings.serviceId),
-        )
-        .innerJoin(
-          bookingResources,
-          eq(bookingResources.id, bookingServiceOfferings.primaryResourceId),
-        )
-        .orderBy(asc(bookingServiceOfferings.displayOrder)),
-      db
-        .select()
-        .from(bookingServiceOfferingAddOns)
-        .orderBy(
-          asc(bookingServiceOfferingAddOns.offeringId),
-          asc(bookingServiceOfferingAddOns.displayOrder),
-        ),
-      db
-        .select({
-          id: bookingServiceOfferingResources.id,
-          isRequired: bookingServiceOfferingResources.isRequired,
-          offeringId: bookingServiceOfferingResources.offeringId,
-          resourceId: bookingServiceOfferingResources.resourceId,
-          resourceKind: bookingResources.kind,
-          resourceName: bookingResources.name,
-          resourceStatus: bookingResources.status,
-          role: bookingServiceOfferingResources.role,
-        })
-        .from(bookingServiceOfferingResources)
-        .innerJoin(
-          bookingResources,
-          eq(bookingResources.id, bookingServiceOfferingResources.resourceId),
-        )
-        .orderBy(
-          asc(bookingServiceOfferingResources.offeringId),
-          asc(bookingServiceOfferingResources.displayOrder),
-          asc(bookingResources.name),
-        ),
-    ]);
+  const hasGlobalAccess = hasGlobalProviderServiceAccess(actor);
+  const providerResourceScope = hasGlobalAccess
+    ? undefined
+    : inArray(
+        bookingProviders.primaryResourceId,
+        actor.bookingProviderResourceIds,
+      );
+  const providers = await db
+    .select()
+    .from(bookingProviders)
+    .where(providerResourceScope)
+    .orderBy(asc(bookingProviders.displayOrder));
+  const providerIds = providers.map((provider) => provider.id);
+  const primaryResourceIds = providers.map(
+    (provider) => provider.primaryResourceId,
+  );
+  const serviceScope = hasGlobalAccess
+    ? undefined
+    : or(
+        isNull(bookingServices.ownerProviderId),
+        inArray(bookingServices.ownerProviderId, providerIds),
+      );
+  const offeringScope = hasGlobalAccess
+    ? undefined
+    : inArray(bookingServiceOfferings.providerId, providerIds);
+  const [services, resources, offerings] = await Promise.all([
+    db
+      .select()
+      .from(bookingServices)
+      .where(serviceScope)
+      .orderBy(asc(bookingServices.displayOrder)),
+    db
+      .select()
+      .from(bookingResources)
+      .where(
+        hasGlobalAccess
+          ? undefined
+          : inArray(bookingResources.id, primaryResourceIds),
+      )
+      .orderBy(asc(bookingResources.name)),
+    db
+      .select({
+        bookingHorizonDays: bookingServiceOfferings.bookingHorizonDays,
+        bufferAfterMinutes: bookingServiceOfferings.bufferAfterMinutes,
+        bufferBeforeMinutes: bookingServiceOfferings.bufferBeforeMinutes,
+        currency: bookingServiceOfferings.currency,
+        depositAmountCents: bookingServiceOfferings.depositAmountCents,
+        displayOrder: bookingServiceOfferings.displayOrder,
+        durationMinutes: bookingServiceOfferings.durationMinutes,
+        fullPriceCents: bookingServiceOfferings.fullPriceCents,
+        id: bookingServiceOfferings.id,
+        minimumLeadTimeHours: bookingServiceOfferings.minimumLeadTimeHours,
+        offeringKey: bookingServiceOfferings.offeringKey,
+        primaryResourceId: bookingServiceOfferings.primaryResourceId,
+        providerId: bookingServiceOfferings.providerId,
+        publicSummary: bookingServiceOfferings.publicSummary,
+        publicTitle: bookingServiceOfferings.publicTitle,
+        resourceName: bookingResources.name,
+        serviceId: bookingServiceOfferings.serviceId,
+        serviceOwnerProviderId: bookingServices.ownerProviderId,
+        serviceTitle: bookingServices.displayTitle,
+        slotIntervalMinutes: bookingServiceOfferings.slotIntervalMinutes,
+        status: bookingServiceOfferings.status,
+        version: bookingServiceOfferings.version,
+      })
+      .from(bookingServiceOfferings)
+      .innerJoin(
+        bookingServices,
+        eq(bookingServices.id, bookingServiceOfferings.serviceId),
+      )
+      .innerJoin(
+        bookingResources,
+        eq(bookingResources.id, bookingServiceOfferings.primaryResourceId),
+      )
+      .where(offeringScope)
+      .orderBy(asc(bookingServiceOfferings.displayOrder)),
+  ]);
+  const offeringIds = offerings.map((offering) => offering.id);
+  const relatedOfferingScope = hasGlobalAccess
+    ? undefined
+    : inArray(bookingServiceOfferingAddOns.offeringId, offeringIds);
+  const relatedResourceScope = hasGlobalAccess
+    ? undefined
+    : inArray(bookingServiceOfferingResources.offeringId, offeringIds);
+  const [addOns, offeringResources] = await Promise.all([
+    db
+      .select()
+      .from(bookingServiceOfferingAddOns)
+      .where(relatedOfferingScope)
+      .orderBy(
+        asc(bookingServiceOfferingAddOns.offeringId),
+        asc(bookingServiceOfferingAddOns.displayOrder),
+      ),
+    db
+      .select({
+        id: bookingServiceOfferingResources.id,
+        isRequired: bookingServiceOfferingResources.isRequired,
+        offeringId: bookingServiceOfferingResources.offeringId,
+        resourceId: bookingServiceOfferingResources.resourceId,
+        resourceKind: bookingResources.kind,
+        resourceName: bookingResources.name,
+        resourceStatus: bookingResources.status,
+        role: bookingServiceOfferingResources.role,
+      })
+      .from(bookingServiceOfferingResources)
+      .innerJoin(
+        bookingResources,
+        eq(bookingResources.id, bookingServiceOfferingResources.resourceId),
+      )
+      .where(relatedResourceScope)
+      .orderBy(
+        asc(bookingServiceOfferingResources.offeringId),
+        asc(bookingServiceOfferingResources.displayOrder),
+        asc(bookingResources.name),
+      ),
+  ]);
 
   return {
     addOns,

@@ -21,6 +21,18 @@ const lineageReconciliationMigrationSql = readFileSync(
   ),
   "utf8",
 );
+const activeOfferingUniquenessMigrationSql = readFileSync(
+  new URL("../../../drizzle/0026_nice_mattie_franklin.sql", import.meta.url),
+  "utf8",
+);
+const operationalServiceColumnsMigrationSql = readFileSync(
+  new URL("../../../drizzle/0025_smart_praxagora.sql", import.meta.url),
+  "utf8",
+);
+const operationalServiceOwnershipMigrationSql = readFileSync(
+  new URL("../../../drizzle/0027_curly_leader.sql", import.meta.url),
+  "utf8",
+);
 
 test("booking operations migration is additive", () => {
   const currentSchemaMigrationSql = migrationSql.slice(
@@ -154,5 +166,94 @@ test("lineage reconciliation restores missing marketing sync uniqueness guarante
   assert.doesNotMatch(
     lineageReconciliationMigrationSql,
     /DROP\s+(?:TABLE|COLUMN|TYPE|INDEX)/i,
+  );
+});
+
+test("active offering uniqueness migration identifies duplicates before creating its index", () => {
+  const preflightPosition =
+    activeOfferingUniquenessMigrationSql.indexOf("IF EXISTS");
+  const indexPosition = activeOfferingUniquenessMigrationSql.indexOf(
+    "CREATE UNIQUE INDEX",
+  );
+
+  assert.ok(preflightPosition >= 0);
+  assert.ok(indexPosition > preflightPosition);
+  assert.match(
+    activeOfferingUniquenessMigrationSql,
+    /GROUP BY "service_id", "provider_id"[\s\S]*HAVING count\(\*\) > 1/,
+  );
+  assert.match(
+    activeOfferingUniquenessMigrationSql,
+    /Disable or archive all but one offering[\s\S]*then rerun the migration/,
+  );
+});
+
+test("operational service ownership migration keeps booking settings and promotions in PostgreSQL", () => {
+  assert.doesNotMatch(
+    operationalServiceOwnershipMigrationSql,
+    /DROP\s+(?:TABLE|COLUMN|TYPE|INDEX)/i,
+  );
+  assert.match(
+    operationalServiceOwnershipMigrationSql,
+    /CREATE TABLE "booking_service_promotion_codes"/,
+  );
+  assert.match(
+    operationalServiceOwnershipMigrationSql,
+    /"source_sanity_document_id" text/,
+  );
+  assert.match(
+    operationalServiceOwnershipMigrationSql,
+    /CREATE UNIQUE INDEX "booking_service_promotion_codes_sanity_document_idx"/,
+  );
+  assert.match(
+    operationalServiceOwnershipMigrationSql,
+    /CREATE TABLE "booking_service_promotion_offerings"/,
+  );
+  assert.match(
+    operationalServiceOwnershipMigrationSql,
+    /ADD COLUMN "intake_questions" jsonb DEFAULT '\[\]'::jsonb NOT NULL/,
+  );
+  assert.match(
+    operationalServiceOwnershipMigrationSql,
+    /ADD COLUMN "marketing_opt_in_label" text .* NOT NULL/,
+  );
+  assert.match(
+    operationalServiceOwnershipMigrationSql,
+    /"offering_id"\) REFERENCES "public"\."booking_service_offerings"\("id"\)/,
+  );
+  assert.doesNotMatch(
+    operationalServiceOwnershipMigrationSql,
+    /FOREIGN KEY \("source_sanity_document_id"\)/i,
+  );
+});
+
+test("operational cutover migration backfills provider ownership and public offering copy idempotently", () => {
+  assert.doesNotMatch(
+    operationalServiceColumnsMigrationSql,
+    /DROP\s+(?:TABLE|COLUMN|TYPE|INDEX)/i,
+  );
+  assert.match(
+    operationalServiceColumnsMigrationSql,
+    /ADD COLUMN "owner_provider_id" uuid/,
+  );
+  assert.match(
+    operationalServiceColumnsMigrationSql,
+    /count\(DISTINCT "provider_id"\) = 1[\s\S]*ELSE NULL/,
+  );
+  assert.match(
+    operationalServiceColumnsMigrationSql,
+    /"owner_provider_id" IS DISTINCT FROM "resolution"\."owner_provider_id"/,
+  );
+  assert.match(
+    operationalServiceColumnsMigrationSql,
+    /"public_title" IS NULL OR btrim\("offering"\."public_title"\) = ''/,
+  );
+  assert.match(
+    operationalServiceColumnsMigrationSql,
+    /'Book ' \|\| btrim\("service"\."display_title"\) \|\| ' with ' \|\| btrim\("provider"\."display_name"\)/,
+  );
+  assert.doesNotMatch(
+    operationalServiceColumnsMigrationSql,
+    /UPDATE "booking_service_offerings"[\s\S]*SET[\s\S]*"status"/,
   );
 });

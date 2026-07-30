@@ -40,6 +40,7 @@ test("builds a draft-ready Nataliea import plan without carrying the global cale
           },
         ],
         depositCad: 40,
+        description: "A full classic lash set.",
         durationMinutes: 90,
         fullPriceCad: 120,
         sanityDocumentId: "service-classic",
@@ -59,6 +60,8 @@ test("builds a draft-ready Nataliea import plan without carrying the global cale
   assert.equal(plan.offerings[0]?.fullPriceCents, 12_000);
   assert.equal(plan.offerings[0]?.depositAmountCents, 4_000);
   assert.equal(plan.offerings[0]?.addOns[0]?.priceCents, 2_550);
+  assert.equal(plan.offerings[0]?.publicTitle, "Classic Set");
+  assert.equal(plan.offerings[0]?.publicSummary, "A full classic lash set.");
   assert.deepEqual(plan.schedules, [
     {
       effectiveFrom: "2032-01-15",
@@ -124,5 +127,14 @@ test("rejects duplicate services, unsafe keys, invalid money, and closed schedul
         },
       }),
     /At least one open/,
+  );
+  assert.throws(
+    () =>
+      buildLegacyBookingImportPlan({
+        effectiveFrom: "2032-01-15",
+        services: [{ ...service, shortDescription: "x".repeat(501) }],
+        settings,
+      }),
+    /public summary must be 500 characters or fewer/,
   );
 });

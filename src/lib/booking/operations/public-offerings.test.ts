@@ -30,11 +30,19 @@ test("public offering loader returns only the browser-safe projection", async ()
         },
       ],
       depositAmountCents: 5000,
+      displayOrder: 2,
       durationMinutes: 60,
       fullPriceCents: 15000,
+      hasEditorialDetail: false,
       id: "00000000-0000-4000-8000-000000000001",
       offeringKey: "classic-fill-nataliea",
-      provider: { displayName: "Nataliea", publicSlug: "nataliea" },
+      provider: {
+        displayName: "Nataliea",
+        providerKey: "nataliea",
+        publicSlug: "nataliea",
+      },
+      publicSummary: "A provider-specific classic fill.",
+      publicTitle: "Nataliea's Classic Fill",
       serviceSlug: "classic-fill",
       serviceTitle: "Classic Fill",
     },
@@ -61,7 +69,7 @@ test("public offering loader leaves V1 active only when there is no V2 intent", 
   );
 });
 
-test("stale Sanity ID with a matching public slug fails closed while true legacy still falls back", async () => {
+test("public slug resolves operational offerings independently of their Sanity link", async () => {
   const staleLinkOffering = createOffering();
   staleLinkOffering.service.sanityDocumentId = "stale-sanity-id";
   const repository = createRepository(
@@ -69,13 +77,13 @@ test("stale Sanity ID with a matching public slug fails closed while true legacy
     new Set(["classic-fill"]),
   );
 
-  assert.deepEqual(
+  assert.equal(
     await loadPublicOperationalOfferings({
       repository,
       sanityServiceId: "published-sanity-id",
       servicePublicSlug: "classic-fill",
-    }),
-    [],
+    }).then((offerings) => offerings?.[0]?.offeringKey),
+    "classic-fill-nataliea",
   );
   assert.equal(
     await loadPublicOperationalOfferings({
@@ -91,9 +99,17 @@ test("stale Sanity ID with a matching public slug fails closed while true legacy
     repository,
     services: [createService("published-sanity-id", "classic-fill")],
   });
-  assert.deepEqual(globalCatalog.services, []);
-  assert.deepEqual(globalCatalog.offerings, []);
-  assert.deepEqual(globalCatalog.serviceBookingModels, {});
+  assert.deepEqual(
+    globalCatalog.services.map((service) => service.slug),
+    ["classic-fill"],
+  );
+  assert.deepEqual(
+    globalCatalog.offerings?.map((offering) => offering.offeringKey),
+    ["classic-fill-nataliea"],
+  );
+  assert.deepEqual(globalCatalog.serviceBookingModels, {
+    "classic-fill": "operational",
+  });
 });
 
 test("operational cutover shows configured-unavailable instead of V1", async () => {
@@ -152,7 +168,7 @@ test("dual-mode global catalog keeps ready V2 and true V1 paths but hides unheal
   );
 });
 
-test("booking pages pass operational DTOs without removing the V1 fallback", () => {
+test("canonical booking pages resolve operational offerings without a Sanity catalog read", () => {
   const bookingPage = readFileSync(
     new URL("../../../app/(site)/booking/page.tsx", import.meta.url),
     "utf8",
@@ -165,17 +181,18 @@ test("booking pages pass operational DTOs without removing the V1 fallback", () 
     "utf8",
   );
 
-  assert.match(bookingPage, /loadPublicBookingCatalog\(\{ services \}\)/);
-  assert.match(bookingPage, /offerings=\{catalog\.offerings\}/);
-  assert.match(
-    bookingPage,
-    /serviceBookingModels=\{catalog\.serviceBookingModels\}/,
-  );
+  assert.match(bookingPage, /loadPublicOperationalOfferings\(\{/);
+  assert.match(bookingPage, /mode: "operational"/);
+  assert.match(bookingPage, /servicePublicSlug: slug/);
+  assert.match(bookingPage, /permanentRedirect\(resolution\.href\)/);
+  assert.doesNotMatch(bookingPage, /getBookableServiceBySlug|loaders\./);
   assert.match(
     serviceBookingPage,
-    /loadPublicOperationalOfferings\(\{\s*sanityServiceId: service\._id,\s*servicePublicSlug: service\.slug,\s*\}\)/,
+    /loadPublicOperationalOfferings\(\{\s*mode: "operational",\s*servicePublicSlug: slug,\s*\}\)/,
   );
   assert.match(serviceBookingPage, /offerings=\{offerings\}/);
+  assert.match(serviceBookingPage, /loadOperationalBookingUiSettings\(\)/);
+  assert.doesNotMatch(serviceBookingPage, /getBookingSettings|loaders\./);
   assert.match(serviceBookingPage, /export const dynamic = "force-dynamic"/);
   assert.match(serviceBookingPage, /export const revalidate = 0/);
 });
@@ -187,10 +204,7 @@ function createRepository(
   return {
     findActiveOfferingById: async ({ id }) =>
       offerings.find((offering) => offering.id === id) ?? null,
-    hasActiveOfferingIntent: async ({
-      sanityServiceId,
-      servicePublicSlug,
-    }) =>
+    hasActiveOfferingIntent: async ({ sanityServiceId, servicePublicSlug }) =>
       typeof hasActiveOfferingIntent === "boolean"
         ? hasActiveOfferingIntent
         : sanityServiceId === undefined && servicePublicSlug === undefined
@@ -250,12 +264,15 @@ function createOffering(): OperationalBookingOffering {
     },
     currency: "CAD",
     depositAmountCents: 5000,
+    displayOrder: 2,
     durationMinutes: 60,
     fullPriceCents: 15000,
     horizonDays: 30,
     id: "00000000-0000-4000-8000-000000000001",
     minimumLeadTimeHours: 24,
     offeringKey: "classic-fill-nataliea",
+    publicSummary: "A provider-specific classic fill.",
+    publicTitle: "Nataliea's Classic Fill",
     provider: {
       displayName: "Nataliea",
       id: "provider-private",

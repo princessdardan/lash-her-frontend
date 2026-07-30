@@ -3,6 +3,7 @@ import { AdminActionFeedback } from "@/components/admin/admin-action-feedback";
 import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
 import { StatusPill } from "@/components/admin/status-pill";
 import { loaders } from "@/data/loaders";
+import { resolveOptionalEditorialServiceOptions } from "@/lib/admin/editorial-service-options";
 import { listAdminOfferings } from "@/lib/admin/operations-read";
 import { canAdmin } from "@/lib/admin/permissions";
 import { requireAdminPagePermission } from "@/lib/admin/page-authorization";
@@ -33,10 +34,13 @@ export default async function AdminOfferingsPage({
 }) {
   const feedback = await searchParams;
   const actor = await requireAdminPagePermission("offerings:view");
-  const [data, publishedServices] = await Promise.all([
+  const [data, editorialServiceOptions] = await Promise.all([
     listAdminOfferings(),
-    loaders.getBookableServices({ mode: "published", stega: false }),
+    resolveOptionalEditorialServiceOptions(() =>
+      loaders.getServices({ mode: "published", stega: false }),
+    ),
   ]);
+  const publishedServices = editorialServiceOptions.services;
   const canManage = canAdmin({
     action: "offerings:manage",
     bookingProviderResourceIds: actor.bookingProviderResourceIds,
@@ -45,6 +49,13 @@ export default async function AdminOfferingsPage({
   });
   const canManageOfferingResources = actor.user.role === "owner";
   const providerById = new Map(data.providers.map((row) => [row.id, row]));
+  const canManageAllServices =
+    actor.user.role === "owner" || actor.user.role === "admin";
+  const canManageService = (service: (typeof data.services)[number]) =>
+    canManage &&
+    (canManageAllServices ||
+      (service.ownerProviderId !== null &&
+        providerById.has(service.ownerProviderId)));
 
   return (
     <div className="space-y-8">
@@ -56,12 +67,24 @@ export default async function AdminOfferingsPage({
           Services & offerings
         </h1>
         <p className="mt-3 max-w-3xl text-lh-muted">
-          Services link public editorial content to provider-specific duration,
-          pricing, deposits, buffers, and slot rules.
+          Each provider owns its service catalogue, public copy, duration,
+          pricing, deposits, buffers, and slot rules. Sanity links are optional
+          and used only for editorial detail pages.
         </p>
       </header>
 
       <AdminActionFeedback error={feedback.error} notice={feedback.notice} />
+
+      {!editorialServiceOptions.isAvailable ? (
+        <div
+          className="rounded-2xl border border-lh-accent-soft bg-lh-light-soft p-4 text-sm text-lh-accent"
+          role="status"
+        >
+          Sanity editorial services are temporarily unavailable. Operational
+          services and provider offerings remain manageable; editorial link
+          changes are disabled.
+        </div>
+      ) : null}
 
       {canManage ? (
         <div className="grid gap-6 xl:grid-cols-3">
@@ -79,13 +102,31 @@ export default async function AdminOfferingsPage({
                   placeholder="classic-fill"
                 />
               </Field>
-              <Field label="Published Sanity service">
+              <Field label="Provider">
+                <select className={inputClass} name="ownerProviderId" required>
+                  {data.providers.map((provider) => (
+                    <option key={provider.id} value={provider.id}>
+                      {provider.displayName}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Public booking slug">
+                <input
+                  className={inputClass}
+                  name="publicSlug"
+                  required
+                  placeholder="classic-fill"
+                />
+              </Field>
+              <Field label="Editorial Sanity service (optional)">
                 <select
                   className={inputClass}
+                  disabled={!editorialServiceOptions.isAvailable}
                   name="sanityServiceLink"
                   defaultValue=""
                 >
-                  <option value="">Unlinked draft</option>
+                  <option value="">No editorial detail page</option>
                   {publishedServices.map((service) => (
                     <option
                       key={service._id}
@@ -128,6 +169,27 @@ export default async function AdminOfferingsPage({
                     </option>
                   ))}
                 </select>
+              </Field>
+              <Field label="Public title">
+                <input className={inputClass} name="publicTitle" required />
+              </Field>
+              <Field label="Public summary">
+                <textarea
+                  className={inputClass}
+                  name="publicSummary"
+                  rows={3}
+                  required
+                />
+              </Field>
+              <Field label="Display order">
+                <input
+                  className={inputClass}
+                  name="displayOrder"
+                  type="number"
+                  min="0"
+                  defaultValue="0"
+                  required
+                />
               </Field>
               <Field label="Duration (minutes)">
                 <input
@@ -259,9 +321,15 @@ export default async function AdminOfferingsPage({
                 <td className={cellClass}>
                   <p className="font-semibold">{service.displayTitle}</p>
                   <p className="text-xs text-lh-muted">{service.serviceKey}</p>
+                  <p className="text-xs text-lh-muted">
+                    {service.ownerProviderId
+                      ? (providerById.get(service.ownerProviderId)
+                          ?.displayName ?? "Unknown provider")
+                      : "Shared service"}
+                  </p>
                 </td>
                 <td className={cellClass}>
-                  {canManage ? (
+                  {canManageService(service) ? (
                     <form
                       action={updateBookingServiceProfileAction}
                       className="grid min-w-64 gap-2"
@@ -279,25 +347,59 @@ export default async function AdminOfferingsPage({
                           required
                         />
                       </Field>
-                      <Field label="Published Sanity service">
-                        <select
+                      <Field label="Public booking slug">
+                        <input
                           className={inputClass}
-                          name="sanityServiceLink"
-                          defaultValue={getSanityServiceLinkValue(
-                            publishedServices,
-                            service,
-                          )}
-                        >
-                          <option value="">Unlinked draft</option>
-                          {publishedServices.map((publishedService) => (
-                            <option
-                              key={publishedService._id}
-                              value={encodeSanityServiceLink(publishedService)}
-                            >
-                              {publishedService.title} · {publishedService.slug}
-                            </option>
-                          ))}
-                        </select>
+                          disabled={
+                            !editorialServiceOptions.isAvailable &&
+                            service.sanityDocumentId !== null &&
+                            service.publicSlug !== null
+                          }
+                          name="publicSlug"
+                          defaultValue={service.publicSlug ?? ""}
+                          required
+                        />
+                      </Field>
+                      <Field label="Editorial Sanity service (optional)">
+                        {editorialServiceOptions.isAvailable ? (
+                          <select
+                            className={inputClass}
+                            name="sanityServiceLink"
+                            defaultValue={getSanityServiceLinkValue(
+                              publishedServices,
+                              service,
+                            )}
+                          >
+                            <option value="">No editorial detail page</option>
+                            {publishedServices.map((publishedService) => (
+                              <option
+                                key={publishedService._id}
+                                value={encodeSanityServiceLink(
+                                  publishedService,
+                                )}
+                              >
+                                {publishedService.title} ·{" "}
+                                {publishedService.slug}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <>
+                            {service.sanityDocumentId && service.publicSlug ? (
+                              <input
+                                name="sanityServiceLink"
+                                type="hidden"
+                                value={encodeSanityServiceLink({
+                                  _id: service.sanityDocumentId,
+                                  slug: service.publicSlug,
+                                })}
+                              />
+                            ) : null}
+                            <p className="rounded-xl border border-lh-line bg-lh-neutral-2 px-3 py-2 text-sm text-lh-muted">
+                              Existing editorial link preserved.
+                            </p>
+                          </>
+                        )}
                       </Field>
                       <button
                         className={`${secondaryButtonClass} justify-self-start`}
@@ -323,7 +425,7 @@ export default async function AdminOfferingsPage({
                   </StatusPill>
                 </td>
                 <td className={cellClass}>
-                  {canManage ? (
+                  {canManageService(service) ? (
                     <StatusForm
                       action={setBookingServiceStatusAction}
                       idName="serviceId"
@@ -348,15 +450,21 @@ export default async function AdminOfferingsPage({
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h3 className="text-xl font-semibold">
-                    {offering.serviceTitle}
+                    {offering.publicTitle ?? offering.serviceTitle}
                   </h3>
+                  {offering.publicSummary ? (
+                    <p className="mt-1 max-w-xl text-sm text-lh-muted">
+                      {offering.publicSummary}
+                    </p>
+                  ) : null}
                   <p className="mt-1 text-sm text-lh-muted">
                     {providerById.get(offering.providerId)?.displayName ??
                       "Unknown provider"}{" "}
                     · {offering.resourceName}
                   </p>
                   <p className="mt-1 text-xs text-lh-muted">
-                    {offering.offeringKey} · v{offering.version}
+                    {offering.offeringKey} · order {offering.displayOrder} · v
+                    {offering.version}
                   </p>
                 </div>
                 <StatusPill
@@ -391,6 +499,35 @@ export default async function AdminOfferingsPage({
                     name="expectedVersion"
                     value={offering.version}
                   />
+                  <Field label="Public title">
+                    <input
+                      className={inputClass}
+                      name="publicTitle"
+                      defaultValue={
+                        offering.publicTitle ?? offering.serviceTitle
+                      }
+                      required
+                    />
+                  </Field>
+                  <Field label="Public summary">
+                    <textarea
+                      className={inputClass}
+                      name="publicSummary"
+                      defaultValue={offering.publicSummary ?? ""}
+                      rows={3}
+                      required
+                    />
+                  </Field>
+                  <Field label="Display order">
+                    <input
+                      className={inputClass}
+                      name="displayOrder"
+                      type="number"
+                      min="0"
+                      defaultValue={offering.displayOrder}
+                      required
+                    />
+                  </Field>
                   <Field label="Duration (minutes)">
                     <input
                       className={inputClass}

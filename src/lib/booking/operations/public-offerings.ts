@@ -76,9 +76,7 @@ export async function loadPublicBookingCatalog(input: {
         : { kind: "unavailable" as const, service };
     }),
   );
-  const availablePaths = paths.filter(
-    (path) => path.kind !== "unavailable",
-  );
+  const availablePaths = paths.filter((path) => path.kind !== "unavailable");
   const operationalOfferings = availablePaths.flatMap((path) =>
     path.kind === "operational" ? path.offerings : [],
   );
@@ -100,13 +98,15 @@ export async function loadPublicBookingCatalog(input: {
   };
 }
 
-export async function loadPublicOperationalOfferings(input: {
-  mode?: ServiceBookingModelMode;
-  now?: Date;
-  repository?: OperationalBookingConfigurationRepository;
-  sanityServiceId?: string;
-  servicePublicSlug?: string;
-} = {}): Promise<PublicBookingOffering[] | undefined> {
+export async function loadPublicOperationalOfferings(
+  input: {
+    mode?: ServiceBookingModelMode;
+    now?: Date;
+    repository?: OperationalBookingConfigurationRepository;
+    sanityServiceId?: string;
+    servicePublicSlug?: string;
+  } = {},
+): Promise<PublicBookingOffering[] | undefined> {
   const now = input.now ?? new Date();
   const mode = input.mode ?? getServiceBookingModelMode();
 
@@ -117,15 +117,21 @@ export async function loadPublicOperationalOfferings(input: {
   const repository =
     input.repository ??
     createDrizzleOperationalBookingConfigurationRepository();
-  const operationalOfferings = input.sanityServiceId
-    ? await repository.listActiveOfferingsBySanityServiceId({
-      now,
-      sanityServiceId: input.sanityServiceId,
-      ...(input.servicePublicSlug
-        ? { servicePublicSlug: input.servicePublicSlug }
-        : {}),
-    })
-    : await repository.listActiveOfferings({ now });
+  const operationalOfferings = input.servicePublicSlug
+    ? repository.listActiveOfferingsByServicePublicSlug
+      ? await repository.listActiveOfferingsByServicePublicSlug({
+          now,
+          servicePublicSlug: input.servicePublicSlug,
+        })
+      : (await repository.listActiveOfferings({ now })).filter(
+          (offering) => offering.service.publicSlug === input.servicePublicSlug,
+        )
+    : input.sanityServiceId
+      ? await repository.listActiveOfferingsBySanityServiceId({
+          now,
+          sanityServiceId: input.sanityServiceId,
+        })
+      : await repository.listActiveOfferings({ now });
   const publicOfferings = operationalOfferings.flatMap((offering) => {
     const projected = toPublicBookingOffering(offering);
     return projected === null ? [] : [projected];

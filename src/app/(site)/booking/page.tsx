@@ -1,7 +1,5 @@
 import { notFound, permanentRedirect } from "next/navigation";
-import { loaders } from "@/data/loaders";
-import { BookingFlow } from "@/components/booking/booking-flow";
-import { loadPublicBookingCatalog } from "@/lib/booking/operations/public-offerings";
+import { loadPublicOperationalOfferings } from "@/lib/booking/operations/public-offerings";
 import { resolveBookingShim } from "./booking-shim";
 
 export const dynamic = "force-dynamic";
@@ -13,38 +11,19 @@ export default async function BookingPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const resolution = await resolveBookingShim(await searchParams, {
-    getBookableServiceBySlug: async (slug) => loaders.getBookableServiceBySlug(slug),
+    hasBookableServiceSlug: async (slug) => {
+      const offerings = await loadPublicOperationalOfferings({
+        mode: "operational",
+        servicePublicSlug: slug,
+      });
+
+      return Boolean(offerings?.length);
+    },
   });
 
   if (resolution.kind === "notFound") {
     notFound();
   }
 
-  if (resolution.kind === "redirect") {
-    permanentRedirect(resolution.href);
-  }
-
-  const [settings, services] = await Promise.all([
-    loaders.getBookingSettings(),
-    loaders.getBookableServices(),
-  ]);
-
-  if (!settings) {
-    notFound();
-  }
-
-  const catalog = await loadPublicBookingCatalog({ services });
-
-  return (
-    <section className="min-h-screen bg-lh-neutral-2 py-12 lg:py-24" aria-label="Service booking">
-      <div className="content-container max-w-5xl mx-auto">
-        <BookingFlow
-          offerings={catalog.offerings}
-          serviceBookingModels={catalog.serviceBookingModels}
-          settings={settings}
-          services={catalog.services}
-        />
-      </div>
-    </section>
-  );
+  permanentRedirect(resolution.href);
 }

@@ -17,6 +17,8 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import type { BookingQuestion } from "@/lib/booking/types";
+
 export const checkoutOrderStatus = pgEnum("checkout_order_status", [
   "pending",
   "paid",
@@ -158,6 +160,11 @@ export const bookingConfigurationStatus = pgEnum(
 export const bookingOfferingResourceRole = pgEnum(
   "booking_offering_resource_role",
   ["provider", "room", "equipment"],
+);
+
+export const bookingOfferingCopyProvenance = pgEnum(
+  "booking_offering_copy_provenance",
+  ["legacy", "admin"],
 );
 
 export const bookingScheduleExceptionKind = pgEnum(
@@ -584,6 +591,10 @@ export const bookingServices = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     serviceKey: text("service_key").notNull(),
     displayTitle: text("display_title").notNull(),
+    ownerProviderId: uuid("owner_provider_id").references(
+      () => bookingProviders.id,
+      { onDelete: "set null" },
+    ),
     sanityDocumentId: text("sanity_document_id"),
     publicSlug: text("public_slug"),
     status: bookingConfigurationStatus("status").notNull().default("draft"),
@@ -610,6 +621,7 @@ export const bookingServices = pgTable(
       table.sanityDocumentId,
     ),
     uniqueIndex("booking_services_public_slug_idx").on(table.publicSlug),
+    index("booking_services_owner_provider_idx").on(table.ownerProviderId),
     index("booking_services_status_display_idx").on(
       table.status,
       table.displayOrder,
@@ -642,6 +654,18 @@ export const bookingServiceOfferings = pgTable(
     fullPriceCents: integer("full_price_cents").notNull(),
     depositAmountCents: integer("deposit_amount_cents").notNull(),
     currency: text("currency").notNull().default("CAD"),
+    publicTitle: text("public_title"),
+    publicTitleProvenance: bookingOfferingCopyProvenance(
+      "public_title_provenance",
+    )
+      .notNull()
+      .default("legacy"),
+    publicSummary: text("public_summary"),
+    publicSummaryProvenance: bookingOfferingCopyProvenance(
+      "public_summary_provenance",
+    )
+      .notNull()
+      .default("legacy"),
     minimumLeadTimeHours: integer("minimum_lead_time_hours"),
     bookingHorizonDays: integer("booking_horizon_days"),
     displayOrder: integer("display_order").notNull().default(0),
@@ -673,6 +697,9 @@ export const bookingServiceOfferings = pgTable(
       table.providerId,
       table.status,
     ),
+    uniqueIndex("booking_service_offerings_active_service_provider_idx")
+      .on(table.serviceId, table.providerId)
+      .where(sql`${table.status} = 'active'`),
     index("booking_service_offerings_resource_status_idx").on(
       table.primaryResourceId,
       table.status,
@@ -692,6 +719,90 @@ export const bookingServiceOfferings = pgTable(
     check(
       "booking_service_offerings_effective_range_check",
       sql`${table.effectiveUntil} IS NULL OR ${table.effectiveFrom} IS NULL OR ${table.effectiveUntil} > ${table.effectiveFrom}`,
+    ),
+  ],
+);
+
+export const bookingServicePromotionCodes = pgTable(
+  "booking_service_promotion_codes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    code: text("code").notNull(),
+    internalTitle: text("internal_title").notNull(),
+    discountType: text("discount_type").notNull(),
+    discountValue: integer("discount_value").notNull(),
+    status: bookingConfigurationStatus("status").notNull().default("draft"),
+    sourceSanityDocumentId: text("source_sanity_document_id"),
+    effectiveFrom: timestamp("effective_from", { withTimezone: true }),
+    effectiveUntil: timestamp("effective_until", { withTimezone: true }),
+    createdByAdminUserId: uuid("created_by_admin_user_id").references(
+      () => adminUsers.id,
+      { onDelete: "set null" },
+    ),
+    updatedByAdminUserId: uuid("updated_by_admin_user_id").references(
+      () => adminUsers.id,
+      { onDelete: "set null" },
+    ),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("booking_service_promotion_codes_code_idx").on(table.code),
+    uniqueIndex("booking_service_promotion_codes_sanity_document_idx").on(
+      table.sourceSanityDocumentId,
+    ),
+    index("booking_service_promotion_codes_status_window_idx").on(
+      table.status,
+      table.effectiveFrom,
+      table.effectiveUntil,
+    ),
+    check(
+      "booking_service_promotion_codes_code_check",
+      sql`${table.code} ~ '^[A-Z0-9][A-Z0-9_-]{1,31}$'`,
+    ),
+    check(
+      "booking_service_promotion_codes_discount_type_check",
+      sql`${table.discountType} IN ('percentage', 'fixed')`,
+    ),
+    check(
+      "booking_service_promotion_codes_discount_value_check",
+      sql`${table.discountValue} > 0 AND (${table.discountType} <> 'percentage' OR ${table.discountValue} <= 10000)`,
+    ),
+    check(
+      "booking_service_promotion_codes_effective_range_check",
+      sql`${table.effectiveUntil} IS NULL OR ${table.effectiveFrom} IS NULL OR ${table.effectiveUntil} > ${table.effectiveFrom}`,
+    ),
+  ],
+);
+
+export const bookingServicePromotionOfferings = pgTable(
+  "booking_service_promotion_offerings",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    promotionCodeId: uuid("promotion_code_id")
+      .notNull()
+      .references(() => bookingServicePromotionCodes.id, {
+        onDelete: "cascade",
+      }),
+    offeringId: uuid("offering_id")
+      .notNull()
+      .references(() => bookingServiceOfferings.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("booking_service_promotion_offerings_pair_idx").on(
+      table.promotionCodeId,
+      table.offeringId,
+    ),
+    index("booking_service_promotion_offerings_offering_idx").on(
+      table.offeringId,
+      table.promotionCodeId,
     ),
   ],
 );
@@ -788,6 +899,15 @@ export const bookingBusinessSettings = pgTable(
     requireSquareTeamAttribution: boolean("require_square_team_attribution")
       .notNull()
       .default(false),
+    intakeQuestions: jsonb("intake_questions")
+      .$type<BookingQuestion[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    marketingOptInLabel: text("marketing_opt_in_label")
+      .notNull()
+      .default(
+        "I agree to receive occasional updates from Lash Her by Nataliea.",
+      ),
     version: integer("version").notNull().default(1),
     updatedByAdminUserId: uuid("updated_by_admin_user_id").references(
       () => adminUsers.id,

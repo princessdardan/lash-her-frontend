@@ -491,12 +491,23 @@ export interface TServiceAddOn {
   image?: TSanityImage;
 }
 
-export interface TService {
+export interface TServiceEditorial {
   _id: string;
   title: string;
   description: string;
   shortDescription?: string;
   slug: string;
+  image?: TSanityImage;
+  gallery?: TSanityImage[];
+  detailSections?: TCommerceDetailSection[];
+  seo?: TCommerceSeo;
+}
+
+/**
+ * Legacy Sanity commerce shape retained for migration-only booking paths.
+ * New service commerce data belongs to the operational database.
+ */
+export interface TService extends TServiceEditorial {
   showDetailPage: boolean;
   durationMinutes: number;
   fullPrice: number;
@@ -505,10 +516,6 @@ export interface TService {
   currency: TCommerceCurrency;
   isAvailable: boolean;
   displayOrder?: number;
-  image?: TSanityImage;
-  gallery?: TSanityImage[];
-  detailSections?: TCommerceDetailSection[];
-  seo?: TCommerceSeo;
 }
 
 export interface TTrainingProgramCatalogItem {
@@ -534,7 +541,6 @@ export type TPromotionAppliesTo =
   | "all"
   | "products"
   | "trainingPrograms"
-  | "services"
   | "specificItems";
 
 export interface TPromotionCode {
@@ -547,13 +553,14 @@ export interface TPromotionCode {
   appliesTo?: TPromotionAppliesTo;
   products?: Array<Pick<TProduct, "_id">>;
   trainingPrograms?: Array<Pick<TTrainingProgram, "_id">>;
-  services?: Array<Pick<TService, "_id">>;
+  /** Legacy V1 booking eligibility retained during the operational cutover. */
+  services?: Array<Pick<TServiceEditorial, "_id">>;
 }
 
 export interface TProductsGroupedCatalog {
   products: TProduct[];
   trainingPrograms: TTrainingProgramCatalogItem[];
-  services: TService[];
+  services: TServiceEditorial[];
 }
 
 export interface THeader {

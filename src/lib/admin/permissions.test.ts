@@ -45,6 +45,33 @@ test("admin has operational access but not owner-only actions", () => {
   );
   assert.equal(
     canAdmin({
+      action: "setup:view",
+      bookingProviderResourceIds: [],
+      bookingResourceIds: [],
+      role: "admin",
+    }),
+    true,
+  );
+  assert.equal(
+    canAdmin({
+      action: "settings:manage",
+      bookingProviderResourceIds: [],
+      bookingResourceIds: [],
+      role: "admin",
+    }),
+    true,
+  );
+  assert.equal(
+    canAdmin({
+      action: "service-promotions:manage",
+      bookingProviderResourceIds: [],
+      bookingResourceIds: [],
+      role: "admin",
+    }),
+    true,
+  );
+  assert.equal(
+    canAdmin({
       action: "payments:refund",
       bookingProviderResourceIds: [],
       bookingResourceIds: [],
@@ -99,6 +126,31 @@ test("employee access is restricted to assigned booking resources", () => {
     false,
   );
   assert.equal(canAdmin({ ...base, action: "marketing:view" }), false);
+  assert.equal(canAdmin({ ...base, action: "offerings:view" }), true);
+  assert.equal(canAdmin({ ...base, action: "offerings:manage" }), true);
+  assert.equal(
+    canAdmin({
+      ...base,
+      action: "offerings:manage",
+      bookingResourceId: "resource-a",
+    }),
+    true,
+  );
+  assert.equal(
+    canAdmin({
+      ...base,
+      action: "offerings:manage",
+      bookingResourceId: "resource-b",
+    }),
+    false,
+  );
+  assert.equal(canAdmin({ ...base, action: "setup:view" }), false);
+  assert.equal(canAdmin({ ...base, action: "settings:manage" }), false);
+  assert.equal(canAdmin({ ...base, action: "service-promotions:view" }), false);
+  assert.equal(
+    canAdmin({ ...base, action: "service-promotions:manage" }),
+    false,
+  );
   assert.equal(
     canAdmin({
       action: "bookings:view",
@@ -111,6 +163,15 @@ test("employee access is restricted to assigned booking resources", () => {
   assert.equal(
     canAdmin({
       action: "calendar-connections:self-manage",
+      bookingProviderResourceIds: [],
+      bookingResourceIds: [],
+      role: "employee",
+    }),
+    false,
+  );
+  assert.equal(
+    canAdmin({
+      action: "offerings:view",
       bookingProviderResourceIds: [],
       bookingResourceIds: [],
       role: "employee",

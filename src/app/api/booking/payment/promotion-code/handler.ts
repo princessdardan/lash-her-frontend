@@ -8,13 +8,21 @@ import {
   type ServiceBookingPaymentSessionDisplay,
 } from "@/lib/booking/payment-session";
 import {
+  calculateAuthorizedServicePromotionSnapshot,
   calculateServicePromotionSnapshot,
   type ServicePromotionSnapshot,
 } from "@/lib/booking/payments/service-promotion";
 import {
   parsePromotionCodeInput,
+  PROMOTION_CODE_MAX_LENGTH,
   type PromotionCode,
 } from "@/lib/commerce/discounts";
+import { readBoundedJsonBody } from "@/lib/security/bounded-json-body";
+import type { RateLimitDecision } from "@/lib/security/kv-rate-limiter";
+import { buildBookingAbuseKey } from "@/lib/security/trusted-client-ip";
+
+const PROMOTION_CODE_BODY_MAX_BYTES = 1024;
+const PAYMENT_SESSION_REFERENCE_MAX_LENGTH = 128;
 
 export type ServiceBookingPromotionAction = "apply" | "remove";
 
@@ -32,20 +40,35 @@ export interface ServiceBookingPromotionCodeErrorBody {
   error: string;
 }
 
-interface ServiceBookingPromotionHoldContext {
-  basePriceCents: number;
-  serviceId: string;
-  serviceSlug: string;
-}
+type ServiceBookingPromotionHoldContext =
+  | {
+      basePriceCents: number;
+      bookingModelVersion: 2;
+      offeringId: string;
+      serviceSlug: string;
+    }
+  | {
+      basePriceCents: number;
+      bookingModelVersion: 1;
+      serviceIds: string[];
+      serviceSlug: string;
+    };
 
 export interface ServiceBookingPromotionCodeHandlerDependencies {
-  checkRateLimit?: (
-    key: string,
-  ) => { ok: true } | { ok: false; retryAfterSeconds: number };
+  checkRateLimit?: (input: {
+    key: string;
+    now: Date;
+  }) => Promise<RateLimitDecision>;
+  getNow?: () => Date;
   getHoldContext: (
     paymentSessionReference: string,
   ) => Promise<ServiceBookingPromotionHoldContext | null>;
   getPromotionCode: (code: string) => Promise<PromotionCode | null>;
+  resolveOperationalPromotionCode: (input: {
+    code: string;
+    now: Date;
+    offeringId: string;
+  }) => Promise<PromotionCode | null>;
   resolveSession: (input: {
     paymentSessionReference: string;
     serviceSlug: string;
@@ -72,27 +95,34 @@ export function createServiceBookingPromotionCodePostHandler(
   return async function serviceBookingPromotionCodePostHandler(
     req: NextRequest,
   ): Promise<Response> {
-    let body: unknown;
-
-    try {
-      body = await req.json();
-    } catch {
-      return invalidRequestResponse("Invalid JSON body");
+    const parsedBody = await readBoundedJsonBody(
+      req,
+      PROMOTION_CODE_BODY_MAX_BYTES,
+    );
+    if (!parsedBody.ok) {
+      return parsedBody.reason === "too_large"
+        ? NextResponse.json<ServiceBookingPromotionCodeErrorBody>(
+            { error: "Promotion code request is too large" },
+            { status: 413 },
+          )
+        : invalidRequestResponse("Invalid JSON body");
     }
 
-    const request = parsePromotionCodeRequest(body);
+    const request = parsePromotionCodeRequest(parsedBody.value);
     if (request === null) {
       return invalidRequestResponse("Invalid promotion code request");
     }
 
-    const now = new Date();
+    const now = dependencies.getNow?.() ?? new Date();
 
-    if (request.action === "apply") {
-      const rateLimitKey = `${request.paymentSessionReference}:${getClientIp(req) ?? "unknown"}`;
-      const rateLimit = dependencies.checkRateLimit?.(rateLimitKey);
-      if (rateLimit !== undefined && !rateLimit.ok) {
-        return rateLimitedResponse();
-      }
+    const rateLimitResponse = await enforcePromotionCodeRateLimit({
+      dependencies,
+      now,
+      req,
+      action: request.action,
+    });
+    if (rateLimitResponse !== null) {
+      return rateLimitResponse;
     }
 
     const holdContext = await dependencies.getHoldContext(
@@ -126,17 +156,30 @@ export function createServiceBookingPromotionCodePostHandler(
       return invalidRequestResponse("Promotion code is required");
     }
 
-    const promotionCode = await dependencies.getPromotionCode(request.code);
+    const promotionCode =
+      holdContext.bookingModelVersion === 2
+        ? await dependencies.resolveOperationalPromotionCode({
+            code: request.code,
+            now,
+            offeringId: holdContext.offeringId,
+          })
+        : await dependencies.getPromotionCode(request.code);
 
     if (promotionCode === null || promotionCode.isEnabled === false) {
       return invalidRequestResponse("Promotion code is not valid");
     }
 
-    const promotionSnapshot = calculateServicePromotionSnapshot({
-      promotionCode,
-      serviceId: holdContext.serviceId,
-      basePriceCents: holdContext.basePriceCents,
-    });
+    const promotionSnapshot =
+      holdContext.bookingModelVersion === 2
+        ? calculateAuthorizedServicePromotionSnapshot({
+            promotionCode,
+            basePriceCents: holdContext.basePriceCents,
+          })
+        : calculateServicePromotionSnapshot({
+            promotionCode,
+            serviceIds: holdContext.serviceIds,
+            basePriceCents: holdContext.basePriceCents,
+          });
 
     if (promotionSnapshot === null) {
       return invalidRequestResponse(
@@ -171,10 +214,12 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
-  const { loaders } = await import("@/data/loaders");
-
   return createServiceBookingPromotionCodePostHandler({
-    checkRateLimit: defaultRateLimiter.check.bind(defaultRateLimiter),
+    checkRateLimit: async (input) => {
+      const { checkBookingPromotionCodeRateLimit } =
+        await import("@/lib/security/booking-abuse-control");
+      return checkBookingPromotionCodeRateLimit(input);
+    },
     getHoldContext: async (paymentSessionReference) => {
       const { getAppointmentHoldByPaymentSessionReference } =
         await import("@/lib/booking/holds");
@@ -184,23 +229,17 @@ export async function POST(req: NextRequest): Promise<Response> {
 
       if (hold === null) return null;
 
-      const serviceId =
-        typeof hold.offeringSnapshot.id === "string"
-          ? hold.offeringSnapshot.id
-          : null;
-      const serviceSlug =
-        typeof hold.offeringSnapshot.serviceSlug === "string"
-          ? hold.offeringSnapshot.serviceSlug
-          : null;
-      const basePriceCents = readHeldBasePriceCents(hold.offeringSnapshot);
-
-      return serviceId !== null &&
-        serviceSlug !== null &&
-        basePriceCents !== null
-        ? { basePriceCents, serviceId, serviceSlug }
-        : null;
+      return readServiceBookingPromotionHoldContext(hold.offeringSnapshot);
     },
-    getPromotionCode: loaders.getPromotionCode,
+    getPromotionCode: async (code) => {
+      const { loaders } = await import("@/data/loaders");
+      return loaders.getPromotionCode(code);
+    },
+    resolveOperationalPromotionCode: async (input) => {
+      const { resolveActiveServicePromotionCode } =
+        await import("@/lib/private-db/service-promotion-repository");
+      return resolveActiveServicePromotionCode(input);
+    },
     resolveSession: async ({ paymentSessionReference, serviceSlug, now }) => {
       const result = await resolveServiceBookingPaymentSession({
         paymentSessionReference,
@@ -216,6 +255,41 @@ export async function POST(req: NextRequest): Promise<Response> {
     },
     updateHoldPromotionSnapshot: createDefaultUpdateHoldPromotionSnapshot(),
   })(req);
+}
+
+export function readServiceBookingPromotionHoldContext(
+  snapshot: Record<string, unknown>,
+): ServiceBookingPromotionHoldContext | null {
+  const serviceSlug = parseRequiredString(snapshot.serviceSlug);
+  const basePriceCents = readHeldBasePriceCents(snapshot);
+
+  if (serviceSlug === null || basePriceCents === null) {
+    return null;
+  }
+
+  if (snapshot.bookingModelVersion === 2) {
+    const offeringId = parseRequiredString(snapshot.offeringId);
+    if (offeringId === null) {
+      return null;
+    }
+
+    return {
+      basePriceCents,
+      bookingModelVersion: 2,
+      offeringId,
+      serviceSlug,
+    };
+  }
+
+  const legacyServiceId = parseRequiredString(snapshot.id);
+  return legacyServiceId === null
+    ? null
+    : {
+        basePriceCents,
+        bookingModelVersion: 1,
+        serviceIds: [legacyServiceId],
+        serviceSlug,
+      };
 }
 
 async function resolveSessionResponse(
@@ -328,70 +402,60 @@ function readHeldBasePriceCents(
   return Math.round(fullPrice * 100);
 }
 
-const defaultRateLimiter = createInMemoryRateLimiter({
-  windowMs: 60_000,
-  maxAttempts: 10,
-});
-
-export interface InMemoryRateLimiter {
-  check(key: string): { ok: true } | { ok: false; retryAfterSeconds: number };
-}
-
-export function createInMemoryRateLimiter(options: {
-  windowMs: number;
-  maxAttempts: number;
-}): InMemoryRateLimiter {
-  const attempts = new Map<string, number[]>();
-
-  return {
-    check(key) {
-      const now = Date.now();
-      const windowStart = now - options.windowMs;
-      const timestamps = attempts.get(key) ?? [];
-      const recent = timestamps.filter((timestamp) => timestamp > windowStart);
-
-      if (recent.length >= options.maxAttempts) {
-        const oldest = recent[0] ?? now;
-        const retryAfterSeconds = Math.ceil(
-          (oldest + options.windowMs - now) / 1000,
-        );
-        return { ok: false, retryAfterSeconds };
-      }
-
-      recent.push(now);
-      attempts.set(key, recent);
-      return { ok: true };
-    },
-  };
-}
-
-function getClientIp(req: NextRequest): string | undefined {
-  const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded !== null) {
-    const first = forwarded.split(",")[0];
-    if (first !== undefined) {
-      const trimmed = first.trim();
-      if (trimmed.length > 0) {
-        return trimmed;
-      }
-    }
+async function enforcePromotionCodeRateLimit(input: {
+  action: ServiceBookingPromotionAction;
+  dependencies: ServiceBookingPromotionCodeHandlerDependencies;
+  now: Date;
+  req: NextRequest;
+}): Promise<Response | null> {
+  if (input.action === "remove" || !input.dependencies.checkRateLimit) {
+    return null;
   }
 
-  const realIp = req.headers.get("x-real-ip");
-  if (realIp !== null) {
-    const trimmed = realIp.trim();
-    if (trimmed.length > 0) {
-      return trimmed;
-    }
+  const key = buildBookingAbuseKey({
+    headers: input.req.headers,
+    scope: "promotion-attempts",
+    subject: "all",
+  });
+  if (key === null) {
+    return promotionCodeServiceUnavailableResponse();
   }
 
-  return undefined;
+  try {
+    const decision = await input.dependencies.checkRateLimit({
+      key,
+      now: input.now,
+    });
+    return decision.allowed
+      ? null
+      : rateLimitedResponse(decision.retryAfterSeconds);
+  } catch (error) {
+    console.warn("[booking promotion code] Rate limiter unavailable", {
+      error: getErrorMessage(error),
+    });
+    return promotionCodeServiceUnavailableResponse();
+  }
 }
 
-function rateLimitedResponse(): NextResponse<ServiceBookingPromotionCodeErrorBody> {
+function rateLimitedResponse(
+  retryAfterSeconds: number,
+): NextResponse<ServiceBookingPromotionCodeErrorBody> {
   return NextResponse.json(
     { error: "Too many promotion code attempts. Please try again later." },
-    { status: 429 },
+    {
+      headers: {
+        "Cache-Control": "no-store",
+        "Retry-After": String(retryAfterSeconds),
+      },
+      status: 429,
+    },
+  );
+}
+
+function promotionCodeServiceUnavailableResponse(): NextResponse<ServiceBookingPromotionCodeErrorBody> {
+  return NextResponse.json(
+    { error: "Promotion codes are temporarily unavailable" },
+    { headers: { "Cache-Control": "no-store" }, status: 503 },
   );
 }
 
@@ -413,6 +477,7 @@ function parsePromotionCodeRequest(
 
   const paymentSessionReference = parseRequiredString(
     body.paymentSessionReference,
+    PAYMENT_SESSION_REFERENCE_MAX_LENGTH,
   );
   const action = parsePromotionAction(body.action);
 
@@ -426,6 +491,12 @@ function parsePromotionCodeRequest(
   };
 
   if (action === "apply") {
+    if (
+      typeof body.code !== "string" ||
+      body.code.length > PROMOTION_CODE_MAX_LENGTH
+    ) {
+      return null;
+    }
     const code = parsePromotionCodeInput(body.code);
     if (!code) return null;
     request.code = code;
@@ -441,8 +512,11 @@ function parsePromotionAction(
   return null;
 }
 
-function parseRequiredString(value: unknown): string | null {
-  if (typeof value !== "string") return null;
+function parseRequiredString(
+  value: unknown,
+  maxLength = Number.MAX_SAFE_INTEGER,
+): string | null {
+  if (typeof value !== "string" || value.length > maxLength) return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
 }
@@ -462,4 +536,8 @@ function holdUnavailableResponse(): NextResponse<ServiceBookingPromotionCodeErro
     { error: "Booking hold is no longer available" },
     { status: 409 },
   );
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Unknown error";
 }

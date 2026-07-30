@@ -2013,6 +2013,7 @@ async function seedOperationalHold(
       phone: "5555555555",
     },
     expiresAt: new Date("2032-01-01T12:10:00.000Z"),
+    marketingOptInLabel: "Send me finalization updates.",
     now,
     paymentSessionReference: `${TEST_PREFIX}session-${randomUUID()}`,
     publicReference: `${TEST_PREFIX}hold-${randomUUID()}`,
