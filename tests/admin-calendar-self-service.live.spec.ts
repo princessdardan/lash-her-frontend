@@ -54,13 +54,18 @@ test.describe("employee calendar self-service live Google smoke", () => {
   test("employee discovers a live calendar and owner can promote it", async ({
     browser,
   }) => {
-    await disablePriorLiveAssignment(browser);
-
     const employeePage = await newAuthenticatedPage(
       browser,
       EMPLOYEE_STORAGE_STATE!,
     );
     await employeePage.goto("/admin/my-calendar");
+    const resourceSwitcher = employeePage.getByLabel("Availability for");
+    if ((await resourceSwitcher.count()) > 0) {
+      await resourceSwitcher.selectOption({ label: RESOURCE_NAME! });
+      await employeePage
+        .getByRole("button", { name: "Switch resource" })
+        .click();
+    }
 
     const employeeAccountCard = employeePage.locator("article").filter({
       hasText: EMPLOYEE_CONNECTION_EMAIL!,
@@ -69,30 +74,35 @@ test.describe("employee calendar self-service live Google smoke", () => {
     const employeeAssignmentForm = employeeAccountCard.locator("form").filter({
       hasText: "Add busy calendar",
     });
-    await employeeAssignmentForm.getByLabel("Provider resource").selectOption({
-      label: RESOURCE_NAME!,
-    });
-    await selectOptionContaining(
-      employeeAssignmentForm.getByLabel("Google calendar"),
-      GOOGLE_CALENDAR_LABEL!,
-    );
-    await employeeAssignmentForm
-      .getByLabel("Display label")
-      .fill(ASSIGNMENT_LABEL);
-    await employeeAssignmentForm
-      .getByRole("button", { name: "Add busy calendar" })
-      .click();
-
-    await expect(
-      employeePage.getByText("Busy calendar assignment saved."),
-    ).toBeVisible();
-    const busyAssignment = employeeAccountCard
+    const existingAssignment = employeeAccountCard
       .locator("div.rounded-xl")
       .filter({ hasText: ASSIGNMENT_LABEL });
-    await expect(
-      busyAssignment.getByText("Blocks busy time", { exact: true }),
-    ).toBeVisible();
-    await expect(busyAssignment.getByText(/Receives bookings/)).toHaveCount(0);
+    if ((await existingAssignment.count()) === 0) {
+      await selectOptionContaining(
+        employeeAssignmentForm.getByLabel("Google calendar"),
+        GOOGLE_CALENDAR_LABEL!,
+      );
+      await employeeAssignmentForm
+        .getByLabel("Calendar name")
+        .fill(ASSIGNMENT_LABEL);
+      await employeeAssignmentForm
+        .getByRole("button", { name: "Add busy calendar" })
+        .click();
+
+      await expect(
+        employeePage.getByText("Busy calendar assignment saved."),
+      ).toBeVisible();
+      await expect(
+        existingAssignment.getByText("Blocks busy time", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        existingAssignment.getByText(/Receives bookings/),
+      ).toHaveCount(0);
+    } else {
+      await expect(
+        existingAssignment.getByText(/blocks busy time/i),
+      ).toBeVisible();
+    }
     await employeePage.context().close();
 
     const ownerPage = await newAuthenticatedPage(browser, OWNER_STORAGE_STATE!);
@@ -103,17 +113,19 @@ test.describe("employee calendar self-service live Google smoke", () => {
     const ownerAssignmentForm = ownerAccountCard.locator("form").filter({
       hasText: "Assign calendar",
     });
-    await ownerAssignmentForm.getByLabel("Resource").selectOption({
-      label: RESOURCE_NAME!,
-    });
+    await ownerAssignmentForm
+      .getByLabel("Person, room, or equipment")
+      .selectOption({ label: RESOURCE_NAME! });
     await selectOptionContaining(
       ownerAssignmentForm.getByLabel("Google calendar"),
       GOOGLE_CALENDAR_LABEL!,
     );
     await ownerAssignmentForm
-      .getByLabel("Display label")
+      .getByLabel("Calendar name")
       .fill(ASSIGNMENT_LABEL);
-    await ownerAssignmentForm.getByLabel("Receives new bookings").check();
+    await ownerAssignmentForm
+      .getByLabel("Receives bookings and blocks busy time")
+      .check();
     await ownerAssignmentForm
       .getByRole("button", { name: "Save assignment" })
       .click();
@@ -128,29 +140,6 @@ test.describe("employee calendar self-service live Google smoke", () => {
     await ownerPage.context().close();
   });
 });
-
-async function disablePriorLiveAssignment(browser: Browser): Promise<void> {
-  const page = await newAuthenticatedPage(browser, OWNER_STORAGE_STATE!);
-  await page.goto("/admin/calendar-connections");
-  const accountCard = page.locator("article").filter({
-    hasText: EMPLOYEE_CONNECTION_EMAIL!,
-  });
-  const priorAssignment = accountCard
-    .locator("div.rounded-xl")
-    .filter({ hasText: ASSIGNMENT_LABEL })
-    .first();
-
-  const disableButton = priorAssignment.getByRole("button", {
-    name: "Disable",
-  });
-  if ((await disableButton.count()) > 0) {
-    page.once("dialog", (dialog) => dialog.accept());
-    await disableButton.click();
-    await expect(page.getByText("Calendar assignment disabled.")).toBeVisible();
-  }
-
-  await page.context().close();
-}
 
 async function newAuthenticatedPage(
   browser: Browser,

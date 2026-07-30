@@ -1,7 +1,11 @@
 import "server-only";
 
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 
+import {
+  getBookingDestinationChangeError,
+  getCalendarConnectionDisableError,
+} from "@/lib/admin/calendar-destination-policy";
 import {
   decryptCalendarCredential,
   encryptCalendarCredential,
@@ -11,6 +15,7 @@ import { getPrivateDb } from "./client";
 import {
   bookingCalendarConnections,
   bookingResourceCalendarAssignments,
+  bookingResources,
 } from "./schema";
 
 export interface CalendarConnectionSummary {
@@ -65,6 +70,7 @@ export interface CalendarConnectionRepository {
     acceptsBookings: boolean;
     actorAdminUserId: string;
     calendarLabel?: string;
+    confirmedReplacementAssignmentId?: string;
     connectionId: string;
     contributesBusy: boolean;
     now: Date;
@@ -118,6 +124,46 @@ export function createDrizzleCalendarConnectionRepository(
     },
     async disableConnection(input) {
       return db.transaction(async (tx) => {
+        const [connection] = await tx
+          .select({ id: bookingCalendarConnections.id })
+          .from(bookingCalendarConnections)
+          .where(eq(bookingCalendarConnections.id, input.connectionId))
+          .limit(1)
+          .for("update");
+        if (!connection) {
+          return false;
+        }
+
+        const activeBookingDestinations = await tx
+          .select({
+            resourceName: bookingResources.name,
+          })
+          .from(bookingResourceCalendarAssignments)
+          .innerJoin(
+            bookingResources,
+            eq(
+              bookingResources.id,
+              bookingResourceCalendarAssignments.resourceId,
+            ),
+          )
+          .where(
+            and(
+              eq(
+                bookingResourceCalendarAssignments.calendarConnectionId,
+                input.connectionId,
+              ),
+              eq(bookingResourceCalendarAssignments.status, "active"),
+              eq(bookingResourceCalendarAssignments.acceptsBookings, true),
+            ),
+          )
+          .for("update");
+        const disableError = getCalendarConnectionDisableError(
+          activeBookingDestinations.map((row) => row.resourceName),
+        );
+        if (disableError) {
+          throw new Error(disableError);
+        }
+
         await tx
           .update(bookingResourceCalendarAssignments)
           .set({ status: "disabled", updatedAt: input.now })
@@ -145,8 +191,7 @@ export function createDrizzleCalendarConnectionRepository(
     async getActiveGoogleCredential(connectionId) {
       const [row] = await db
         .select({
-          credentialCiphertext:
-            bookingCalendarConnections.credentialCiphertext,
+          credentialCiphertext: bookingCalendarConnections.credentialCiphertext,
           provider: bookingCalendarConnections.provider,
           scopes: bookingCalendarConnections.scopes,
           status: bookingCalendarConnections.status,
@@ -173,9 +218,7 @@ export function createDrizzleCalendarConnectionRepository(
       return db
         .select(assignmentSelection)
         .from(bookingResourceCalendarAssignments)
-        .where(
-          eq(bookingResourceCalendarAssignments.resourceId, resourceId),
-        )
+        .where(eq(bookingResourceCalendarAssignments.resourceId, resourceId))
         .orderBy(
           asc(bookingResourceCalendarAssignments.status),
           asc(bookingResourceCalendarAssignments.calendarLabel),
@@ -230,8 +273,60 @@ export function createDrizzleCalendarConnectionRepository(
       if (!input.contributesBusy && !input.acceptsBookings) {
         throw new Error("Calendar assignment must have a booking role");
       }
+      if (input.acceptsBookings && !input.contributesBusy) {
+        throw new Error("A booking calendar must also block its busy time");
+      }
 
       return db.transaction(async (tx) => {
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${input.resourceId}::text, 0))`,
+        );
+        const [connection] = await tx
+          .select({
+            id: bookingCalendarConnections.id,
+            status: bookingCalendarConnections.status,
+          })
+          .from(bookingCalendarConnections)
+          .where(eq(bookingCalendarConnections.id, input.connectionId))
+          .limit(1)
+          .for("update");
+        if (!connection || connection.status !== "active") {
+          throw new Error("Calendar connection is not active");
+        }
+
+        const [currentDestination] = await tx
+          .select({
+            assignmentId: bookingResourceCalendarAssignments.id,
+            connectionId:
+              bookingResourceCalendarAssignments.calendarConnectionId,
+            providerCalendarId:
+              bookingResourceCalendarAssignments.providerCalendarId,
+          })
+          .from(bookingResourceCalendarAssignments)
+          .where(
+            and(
+              eq(
+                bookingResourceCalendarAssignments.resourceId,
+                input.resourceId,
+              ),
+              eq(bookingResourceCalendarAssignments.status, "active"),
+              eq(bookingResourceCalendarAssignments.acceptsBookings, true),
+            ),
+          )
+          .limit(1)
+          .for("update");
+        const destinationChangeError = getBookingDestinationChangeError({
+          acceptsBookings: input.acceptsBookings,
+          confirmedReplacementAssignmentId:
+            input.confirmedReplacementAssignmentId?.trim() || null,
+          currentDestination: currentDestination ?? null,
+          requestedConnectionId: input.connectionId,
+          requestedProviderCalendarId: providerCalendarId,
+        });
+        if (destinationChangeError) {
+          throw new Error(destinationChangeError);
+        }
+
         if (input.acceptsBookings) {
           await tx
             .update(bookingResourceCalendarAssignments)

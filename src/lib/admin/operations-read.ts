@@ -8,10 +8,13 @@ import {
   gte,
   ilike,
   inArray,
+  isNotNull,
   isNull,
+  lt,
   ne,
   or,
   sql,
+  type SQL,
 } from "drizzle-orm";
 
 import { getPrivateDb } from "@/lib/private-db/client";
@@ -33,11 +36,22 @@ import {
   checkoutOrders,
   marketingContacts,
   marketingContactSyncJobs,
+  squarePaymentRefundEvents,
 } from "@/lib/private-db/schema";
+import type { MarketingContactSyncJobStatus } from "@/lib/private-db/schema";
 
 import { requirePermission } from "./auth";
 import { recordAdminAudit } from "./audit-log";
+import {
+  addCalendarDays,
+  getBusinessDateRange,
+  getBusinessRollingDateRange,
+} from "./business-time";
 import { isPublicAddOnReady } from "./offering-readiness";
+import {
+  getMarketingSourceLabel,
+  getMarketingSyncStatusPresentation,
+} from "./presentation";
 import { hasGlobalProviderServiceAccess } from "./provider-service-authorization";
 import type { AdminActor } from "./types";
 
@@ -391,9 +405,10 @@ export async function listAdminOfferings() {
   };
 }
 
-export async function listAdminSchedules() {
+export async function listAdminSchedules(input: { resourceId?: string } = {}) {
   const actor = await requirePermission("schedules:view");
   const db = getPrivateDb();
+  const now = new Date();
   const resourceFilter = getResourceFilter(actor, bookingResources.id);
 
   if (resourceFilter === false) {
@@ -405,13 +420,18 @@ export async function listAdminSchedules() {
     .from(bookingResources)
     .where(resourceFilter)
     .orderBy(asc(bookingResources.name));
-  const resourceIds = resources.map((resource) => resource.id);
+  const accessibleResourceIds = resources.map((resource) => resource.id);
+  const requestedResourceId = input.resourceId?.trim();
+  const resourceIds =
+    requestedResourceId && accessibleResourceIds.includes(requestedResourceId)
+      ? [requestedResourceId]
+      : accessibleResourceIds;
 
   if (resourceIds.length === 0) {
     return { exceptions: [], resources, schedules: [] };
   }
 
-  const [schedules, exceptions] = await Promise.all([
+  const [schedules, currentExceptions, exceptionHistory] = await Promise.all([
     db
       .select()
       .from(bookingResourceSchedules)
@@ -424,12 +444,36 @@ export async function listAdminSchedules() {
     db
       .select()
       .from(bookingResourceScheduleExceptions)
-      .where(inArray(bookingResourceScheduleExceptions.resourceId, resourceIds))
+      .where(
+        and(
+          inArray(bookingResourceScheduleExceptions.resourceId, resourceIds),
+          eq(bookingResourceScheduleExceptions.status, "active"),
+          gte(bookingResourceScheduleExceptions.endsAt, now),
+        ),
+      )
+      .orderBy(asc(bookingResourceScheduleExceptions.startsAt))
+      .limit(200),
+    db
+      .select()
+      .from(bookingResourceScheduleExceptions)
+      .where(
+        and(
+          inArray(bookingResourceScheduleExceptions.resourceId, resourceIds),
+          or(
+            eq(bookingResourceScheduleExceptions.status, "cancelled"),
+            lt(bookingResourceScheduleExceptions.endsAt, now),
+          ),
+        ),
+      )
       .orderBy(desc(bookingResourceScheduleExceptions.startsAt))
       .limit(100),
   ]);
 
-  return { exceptions, resources, schedules };
+  return {
+    exceptions: [...currentExceptions, ...exceptionHistory],
+    resources,
+    schedules,
+  };
 }
 
 export async function listAdminCalendarConnections() {
@@ -587,112 +631,407 @@ export async function getAdminAppointmentDetail(id: string) {
   return row ?? null;
 }
 
-export async function listAdminMarketingContacts(search?: string) {
+export type AdminMarketingContactStatusFilter =
+  | "all"
+  | "delivery_issue"
+  | "opted_in"
+  | "unsubscribed";
+
+export interface ListAdminMarketingContactsInput {
+  from?: string;
+  page?: number;
+  pageSize?: number;
+  q?: string;
+  source?: string;
+  status?: AdminMarketingContactStatusFilter;
+  to?: string;
+}
+
+export async function listAdminMarketingContacts(
+  input: ListAdminMarketingContactsInput = {},
+) {
   const actor = await requirePermission("marketing:view");
   const db = getPrivateDb();
-  const query = search?.trim().slice(0, 120) ?? "";
-  const contactFilter = query
-    ? or(
+  const query = input.q?.trim().slice(0, 120) ?? "";
+  const source = input.source?.trim().slice(0, 120) ?? "";
+  const status = input.status ?? "all";
+  const consentFrom = input.from?.trim() ?? "";
+  const consentTo = input.to?.trim() ?? "";
+  const requestedPage = positiveInteger(input.page, 1);
+  const pageSize = Math.min(positiveInteger(input.pageSize, 50), 100);
+  let consentRange: ReturnType<typeof getBusinessDateRange> | null = null;
+
+  if (consentFrom || consentTo) {
+    if (!consentFrom || !consentTo) {
+      throw new Error("Both consent start and end dates are required");
+    }
+
+    const [settings] = await db
+      .select({ timezone: bookingBusinessSettings.timezone })
+      .from(bookingBusinessSettings)
+      .where(eq(bookingBusinessSettings.singletonKey, "default"))
+      .limit(1);
+    consentRange = getBusinessDateRange(
+      consentFrom,
+      consentTo,
+      settings?.timezone ?? "America/Toronto",
+    );
+  }
+  const latestSyncJobs = db
+    .selectDistinctOn([marketingContactSyncJobs.emailNormalized], {
+      createdAt: marketingContactSyncJobs.createdAt,
+      deadLetteredAt: marketingContactSyncJobs.deadLetteredAt,
+      emailNormalized: marketingContactSyncJobs.emailNormalized,
+      id: marketingContactSyncJobs.id,
+      lastAttemptedAt: marketingContactSyncJobs.lastAttemptedAt,
+      status: marketingContactSyncJobs.status,
+      succeededAt: marketingContactSyncJobs.succeededAt,
+    })
+    .from(marketingContactSyncJobs)
+    .orderBy(
+      marketingContactSyncJobs.emailNormalized,
+      desc(marketingContactSyncJobs.createdAt),
+      desc(marketingContactSyncJobs.id),
+    )
+    .as("latest_marketing_contact_sync_jobs");
+  const filters: SQL[] = [];
+
+  if (query) {
+    filters.push(
+      or(
         ilike(marketingContacts.email, `%${query}%`),
         ilike(marketingContacts.name, `%${query}%`),
-      )
-    : undefined;
-  const contacts = await db
-    .select()
-    .from(marketingContacts)
-    .where(contactFilter)
-    .orderBy(desc(marketingContacts.updatedAt))
-    .limit(150);
-  const emails = contacts.map((contact) => contact.emailNormalized);
-  const failedJobs =
-    emails.length === 0
-      ? []
-      : await db
-          .select({
-            emailNormalized: marketingContactSyncJobs.emailNormalized,
-            lastError: marketingContactSyncJobs.lastError,
-            status: marketingContactSyncJobs.status,
-          })
-          .from(marketingContactSyncJobs)
-          .where(
-            and(
-              inArray(marketingContactSyncJobs.emailNormalized, emails),
-              inArray(marketingContactSyncJobs.status, [
-                "retryable_failed",
-                "dead_letter",
-              ]),
-            ),
-          );
-  const syncIssueByEmail = new Map(
-    failedJobs.map((job) => [job.emailNormalized, job]),
-  );
+      )!,
+    );
+  }
+  if (source) {
+    filters.push(eq(marketingContacts.source, source));
+  }
+  if (consentRange) {
+    filters.push(
+      gte(marketingContacts.firstConsentedAt, consentRange.start),
+      lt(marketingContacts.firstConsentedAt, consentRange.endExclusive),
+    );
+  }
+  if (status === "opted_in") {
+    filters.push(isNull(marketingContacts.unsubscribedAt));
+  } else if (status === "unsubscribed") {
+    filters.push(isNotNull(marketingContacts.unsubscribedAt));
+  } else if (status === "delivery_issue") {
+    filters.push(
+      and(
+        isNull(marketingContacts.unsubscribedAt),
+        inArray(latestSyncJobs.status, MARKETING_SYNC_ISSUE_STATUSES),
+      )!,
+    );
+  }
 
-  const results = contacts.map((contact) => ({
-    ...contact,
-    syncIssue: syncIssueByEmail.get(contact.emailNormalized) ?? null,
-  }));
+  const contactFilter = filters.length > 0 ? and(...filters) : undefined;
+  const [totalRows, overviewRows, sourceRows] = await Promise.all([
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(marketingContacts)
+      .leftJoin(
+        latestSyncJobs,
+        eq(latestSyncJobs.emailNormalized, marketingContacts.emailNormalized),
+      )
+      .where(contactFilter),
+    db
+      .select({
+        currentAudience: sql<number>`count(*) filter (where ${marketingContacts.unsubscribedAt} is null)::int`,
+        deliveryIssues: sql<number>`count(*) filter (
+          where ${marketingContacts.unsubscribedAt} is null
+            and ${latestSyncJobs.status} in ('retryable_failed', 'dead_letter')
+        )::int`,
+        total: sql<number>`count(*)::int`,
+        unsubscribed: sql<number>`count(*) filter (where ${marketingContacts.unsubscribedAt} is not null)::int`,
+      })
+      .from(marketingContacts)
+      .leftJoin(
+        latestSyncJobs,
+        eq(latestSyncJobs.emailNormalized, marketingContacts.emailNormalized),
+      ),
+    db
+      .select({ source: marketingContacts.source })
+      .from(marketingContacts)
+      .groupBy(marketingContacts.source)
+      .orderBy(marketingContacts.source),
+  ]);
+  const total = totalRows[0]?.count ?? 0;
+  const pageCount = total === 0 ? 0 : Math.ceil(total / pageSize);
+  const page = pageCount === 0 ? 1 : Math.min(requestedPage, pageCount);
+  const contacts = await db
+    .select({
+      createdAt: marketingContacts.createdAt,
+      email: marketingContacts.email,
+      emailNormalized: marketingContacts.emailNormalized,
+      firstConsentedAt: marketingContacts.firstConsentedAt,
+      id: marketingContacts.id,
+      instagram: marketingContacts.instagram,
+      lastConsentedAt: marketingContacts.lastConsentedAt,
+      latestSyncCreatedAt: latestSyncJobs.createdAt,
+      latestSyncDeadLetteredAt: latestSyncJobs.deadLetteredAt,
+      latestSyncLastAttemptedAt: latestSyncJobs.lastAttemptedAt,
+      latestSyncStatus: latestSyncJobs.status,
+      latestSyncSucceededAt: latestSyncJobs.succeededAt,
+      name: marketingContacts.name,
+      phone: marketingContacts.phone,
+      source: marketingContacts.source,
+      unsubscribedAt: marketingContacts.unsubscribedAt,
+      updatedAt: marketingContacts.updatedAt,
+    })
+    .from(marketingContacts)
+    .leftJoin(
+      latestSyncJobs,
+      eq(latestSyncJobs.emailNormalized, marketingContacts.emailNormalized),
+    )
+    .where(contactFilter)
+    .orderBy(desc(marketingContacts.updatedAt), desc(marketingContacts.id))
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
+  const rows = contacts.map((contact) => {
+    const latestSync =
+      contact.latestSyncStatus === null
+        ? null
+        : {
+            ...getMarketingSyncStatusPresentation(contact.latestSyncStatus),
+            createdAt: contact.latestSyncCreatedAt,
+            deadLetteredAt: contact.latestSyncDeadLetteredAt,
+            lastAttemptedAt: contact.latestSyncLastAttemptedAt,
+            succeededAt: contact.latestSyncSucceededAt,
+          };
+    const hasSyncIssue =
+      contact.unsubscribedAt === null &&
+      contact.latestSyncStatus !== null &&
+      isMarketingSyncIssue(contact.latestSyncStatus);
+
+    return {
+      createdAt: contact.createdAt,
+      email: contact.email,
+      emailNormalized: contact.emailNormalized,
+      firstConsentedAt: contact.firstConsentedAt,
+      id: contact.id,
+      instagram: contact.instagram,
+      lastConsentedAt: contact.lastConsentedAt,
+      latestSync,
+      name: contact.name,
+      phone: contact.phone,
+      sourceCode: contact.source,
+      sourceLabel: getMarketingSourceLabel(contact.source),
+      syncIssue: hasSyncIssue ? latestSync : null,
+      unsubscribedAt: contact.unsubscribedAt,
+      updatedAt: contact.updatedAt,
+    };
+  });
   await recordAdminAudit({
     action: "marketing_contacts_view",
     actor,
     domain: "marketing",
-    metadata: { resultCount: results.length, searchApplied: query.length > 0 },
+    metadata: {
+      page,
+      resultCount: rows.length,
+      consentRangeApplied: consentRange !== null,
+      searchApplied: query.length > 0,
+      sourceApplied: source.length > 0,
+      statusApplied: status !== "all",
+    },
     outcome: "success",
     targetType: "marketing_contact_list",
   });
-  return results;
+  return {
+    consentRange: consentRange
+      ? { from: consentRange.from, to: consentRange.to }
+      : null,
+    overview: overviewRows[0] ?? {
+      currentAudience: 0,
+      deliveryIssues: 0,
+      total: 0,
+      unsubscribed: 0,
+    },
+    page,
+    pageCount,
+    pageSize,
+    rows,
+    sources: sourceRows.map((row) => ({
+      label: getMarketingSourceLabel(row.source),
+      value: row.source,
+    })),
+    total,
+  };
 }
 
-export async function getAdminAnalytics() {
+export async function getAdminAnalytics(
+  input: { from?: string; now?: Date; to?: string } = {},
+) {
   await requirePermission("analytics:view");
   const db = getPrivateDb();
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1_000);
-  const [appointmentRows, revenueRows, contactRows, offeringRows] =
-    await Promise.all([
-      db
-        .select({
-          count: sql<number>`count(*)::int`,
-          status: appointments.status,
-        })
-        .from(appointments)
-        .where(gte(appointments.selectedStart, thirtyDaysAgo))
-        .groupBy(appointments.status),
-      db
-        .select({
-          count: sql<number>`count(*)::int`,
-          revenueCents: sql<number>`coalesce(sum(${checkoutOrders.amountCents}), 0)::int`,
-        })
-        .from(checkoutOrders)
-        .where(
-          and(
-            eq(checkoutOrders.status, "paid"),
-            gte(checkoutOrders.createdAt, thirtyDaysAgo),
-          ),
+  const [settings] = await db
+    .select({ timezone: bookingBusinessSettings.timezone })
+    .from(bookingBusinessSettings)
+    .where(eq(bookingBusinessSettings.singletonKey, "default"))
+    .limit(1);
+  const timezone = settings?.timezone ?? "America/Toronto";
+  const defaultRange = getBusinessRollingDateRange(
+    input.now ?? new Date(),
+    timezone,
+    30,
+  );
+  const range = getBusinessDateRange(
+    input.from?.trim() || defaultRange.from,
+    input.to?.trim() || defaultRange.to,
+    timezone,
+  );
+  if (range.to > addCalendarDays(range.from, 365)) {
+    throw new Error("The reporting range cannot exceed 366 days");
+  }
+  const completedSquareRefunds = db
+    .selectDistinctOn([squarePaymentRefundEvents.squareRefundId], {
+      amountCents: squarePaymentRefundEvents.amountCents,
+      occurredAt: squarePaymentRefundEvents.occurredAt,
+      squareRefundId: squarePaymentRefundEvents.squareRefundId,
+    })
+    .from(squarePaymentRefundEvents)
+    .where(eq(squarePaymentRefundEvents.status, "COMPLETED"))
+    .orderBy(
+      squarePaymentRefundEvents.squareRefundId,
+      squarePaymentRefundEvents.occurredAt,
+      squarePaymentRefundEvents.createdAt,
+    )
+    .as("completed_square_refunds");
+  const [
+    scheduledAppointmentRows,
+    completedAppointmentRows,
+    paymentRows,
+    newOptInRows,
+    refundRows,
+    audienceRows,
+    offeringRows,
+  ] = await Promise.all([
+    db
+      .select({
+        count: sql<number>`count(*)::int`,
+        status: appointments.status,
+      })
+      .from(appointments)
+      .where(
+        and(
+          gte(appointments.selectedStart, range.start),
+          lt(appointments.selectedStart, range.endExclusive),
         ),
-      db
-        .select({
-          active: sql<number>`count(*) filter (where ${marketingContacts.unsubscribedAt} is null)::int`,
-          total: sql<number>`count(*)::int`,
-          unsubscribed: sql<number>`count(*) filter (where ${marketingContacts.unsubscribedAt} is not null)::int`,
-        })
-        .from(marketingContacts),
-      db
-        .select({
-          active: sql<number>`count(*) filter (where ${bookingServiceOfferings.status} = 'active')::int`,
-          total: sql<number>`count(*)::int`,
-        })
-        .from(bookingServiceOfferings),
-    ]);
-  const appointmentCounts = Object.fromEntries(
-    appointmentRows.map((row) => [row.status, row.count]),
+      )
+      .groupBy(appointments.status),
+    db
+      .select({
+        count: sql<number>`count(*)::int`,
+      })
+      .from(appointments)
+      .where(
+        and(
+          eq(appointments.status, "completed"),
+          gte(appointments.completedAt, range.start),
+          lt(appointments.completedAt, range.endExclusive),
+        ),
+      ),
+    db
+      .select({
+        count: sql<number>`count(*)::int`,
+        paymentsReceivedCents: sql<number>`coalesce(
+            sum(
+              ${checkoutOrders.amountCents}
+              + coalesce(${checkoutOrders.squareTipAmountCents}, 0)
+            ),
+            0
+          )::int`,
+      })
+      .from(checkoutOrders)
+      .where(
+        and(
+          inArray(checkoutOrders.status, ["paid", "refunded"]),
+          gte(checkoutOrders.paidAt, range.start),
+          lt(checkoutOrders.paidAt, range.endExclusive),
+        ),
+      ),
+    db
+      .select({
+        count: sql<number>`count(*)::int`,
+      })
+      .from(marketingContacts)
+      .where(
+        and(
+          gte(marketingContacts.firstConsentedAt, range.start),
+          lt(marketingContacts.firstConsentedAt, range.endExclusive),
+        ),
+      ),
+    db
+      .select({
+        amountCents: sql<number>`coalesce(sum(${completedSquareRefunds.amountCents}), 0)::int`,
+      })
+      .from(completedSquareRefunds)
+      .where(
+        and(
+          gte(completedSquareRefunds.occurredAt, range.start),
+          lt(completedSquareRefunds.occurredAt, range.endExclusive),
+        ),
+      ),
+    db
+      .select({
+        currentAudience: sql<number>`count(*) filter (where ${marketingContacts.unsubscribedAt} is null)::int`,
+        total: sql<number>`count(*)::int`,
+        unsubscribed: sql<number>`count(*) filter (where ${marketingContacts.unsubscribedAt} is not null)::int`,
+      })
+      .from(marketingContacts),
+    db
+      .select({
+        active: sql<number>`count(*) filter (where ${bookingServiceOfferings.status} = 'active')::int`,
+        total: sql<number>`count(*)::int`,
+      })
+      .from(bookingServiceOfferings),
+  ]);
+  const scheduledAppointmentsByStatus = Object.fromEntries(
+    scheduledAppointmentRows.map((row) => [row.status, row.count]),
   );
 
   return {
-    appointmentCounts,
-    contacts: contactRows[0] ?? { active: 0, total: 0, unsubscribed: 0 },
-    offerings: offeringRows[0] ?? { active: 0, total: 0 },
-    paidOrders: revenueRows[0]?.count ?? 0,
-    revenueCents: revenueRows[0]?.revenueCents ?? 0,
+    currentAudience: audienceRows[0] ?? {
+      currentAudience: 0,
+      total: 0,
+      unsubscribed: 0,
+    },
+    currentConfiguration: {
+      offerings: offeringRows[0] ?? { active: 0, total: 0 },
+    },
+    period: {
+      completedAppointments: completedAppointmentRows[0]?.count ?? 0,
+      newMarketingOptIns: newOptInRows[0]?.count ?? 0,
+      paidCheckoutOrders: paymentRows[0]?.count ?? 0,
+      paymentsReceivedCents: paymentRows[0]?.paymentsReceivedCents ?? 0,
+      refundCoverage: "square_only" as const,
+      refundsIssuedCents: refundRows[0]?.amountCents ?? 0,
+      scheduledAppointmentsByStatus,
+    },
+    range: {
+      from: range.from,
+      to: range.to,
+    },
+    timezone,
   };
+}
+
+const MARKETING_SYNC_ISSUE_STATUSES = [
+  "retryable_failed",
+  "dead_letter",
+] as const;
+
+function isMarketingSyncIssue(status: MarketingContactSyncJobStatus): boolean {
+  return MARKETING_SYNC_ISSUE_STATUSES.some(
+    (candidate) => candidate === status,
+  );
+}
+
+function positiveInteger(value: number | undefined, fallback: number): number {
+  return Number.isSafeInteger(value) && value !== undefined && value > 0
+    ? value
+    : fallback;
 }
 
 function getResourceFilter(

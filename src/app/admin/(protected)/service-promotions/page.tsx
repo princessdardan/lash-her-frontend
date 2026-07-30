@@ -1,7 +1,9 @@
 import { AdminActionFeedback } from "@/components/admin/admin-action-feedback";
+import { AdminSubmitButton } from "@/components/admin/admin-submit-button";
 import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
 import { StatusPill } from "@/components/admin/status-pill";
 import { requireAdminPagePermission } from "@/lib/admin/page-authorization";
+import { getBookingConfigurationStatusPresentation } from "@/lib/admin/presentation";
 import { listAdminServicePromotions } from "@/lib/admin/service-promotions";
 
 import {
@@ -29,15 +31,14 @@ export default async function AdminServicePromotionsPage({
     <div className="space-y-8">
       <header>
         <p className="font-smallcaps text-sm uppercase tracking-[0.2em] text-lh-muted">
-          Provider-specific discounts
+          Discounts
         </p>
-        <h1 className="mt-2 font-heading text-6xl uppercase tracking-[0.08em]">
+        <h1 className="mt-2 font-heading text-4xl uppercase leading-none tracking-[0.08em] sm:text-5xl lg:text-6xl">
           Service promotions
         </h1>
         <p className="mt-3 max-w-3xl text-lh-muted">
-          Promotion eligibility is assigned to exact provider offerings. Codes
-          never carry across providers unless each offering is explicitly
-          selected.
+          Choose which provider-service combinations accept each code. A code
+          applies only to the services you select.
         </p>
       </header>
 
@@ -46,7 +47,7 @@ export default async function AdminServicePromotionsPage({
       <form action={createServicePromotionAction} className={panelClass}>
         <h2 className={headingClass}>Create promotion code</h2>
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <Field label="Internal title">
+          <Field label="Staff label">
             <input className={inputClass} name="internalTitle" required />
           </Field>
           <Field label="Customer code">
@@ -92,9 +93,12 @@ export default async function AdminServicePromotionsPage({
           </Field>
         </div>
         <OfferingChecklist offerings={data.offerings} />
-        <button className={primaryButtonClass} type="submit">
+        <AdminSubmitButton
+          className={primaryButtonClass}
+          pendingLabel="Creating draft…"
+        >
           Create as draft
-        </button>
+        </AdminSubmitButton>
       </form>
 
       <section className="space-y-5">
@@ -108,6 +112,9 @@ export default async function AdminServicePromotionsPage({
         ) : (
           data.promotions.map((promotion) => {
             const archived = promotion.status === "archived";
+            const status = getBookingConfigurationStatusPresentation(
+              promotion.status,
+            );
             return (
               <article className={panelClass} key={promotion.id}>
                 <div className="flex flex-wrap items-start justify-between gap-4">
@@ -119,9 +126,7 @@ export default async function AdminServicePromotionsPage({
                       {promotion.internalTitle}
                     </p>
                   </div>
-                  <StatusPill tone={statusTone(promotion.status)}>
-                    {promotion.status}
-                  </StatusPill>
+                  <StatusPill tone={status.tone}>{status.label}</StatusPill>
                 </div>
 
                 <form action={updateServicePromotionAction} className="mt-5">
@@ -132,7 +137,7 @@ export default async function AdminServicePromotionsPage({
                   />
                   <fieldset disabled={archived}>
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                      <Field label="Internal title">
+                      <Field label="Staff label">
                         <input
                           className={inputClass}
                           defaultValue={promotion.internalTitle}
@@ -197,9 +202,12 @@ export default async function AdminServicePromotionsPage({
                       selectedOfferingIds={promotion.offeringIds}
                     />
                     {!archived ? (
-                      <button className={secondaryButtonClass} type="submit">
+                      <AdminSubmitButton
+                        className={secondaryButtonClass}
+                        pendingLabel="Saving…"
+                      >
                         Save changes
-                      </button>
+                      </AdminSubmitButton>
                     ) : null}
                   </fieldset>
                 </form>
@@ -218,13 +226,13 @@ export default async function AdminServicePromotionsPage({
                             value={promotion.id}
                           />
                           <input name="status" type="hidden" value={status} />
-                          <button
+                          <AdminSubmitButton
                             className={statusButtonClass}
                             disabled={promotion.status === status}
-                            type="submit"
+                            pendingLabel="Updating…"
                           >
-                            Set {status}
-                          </button>
+                            {getPromotionStatusActionLabel(status)}
+                          </AdminSubmitButton>
                         </form>
                       ),
                     )}
@@ -267,32 +275,37 @@ function OfferingChecklist({
   return (
     <fieldset className="mt-5">
       <legend className="text-xs font-semibold uppercase tracking-[0.12em] text-lh-muted">
-        Eligible provider offerings
+        Eligible services
       </legend>
       <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-        {offerings.map((offering) => (
-          <label
-            className="flex items-start gap-3 rounded-xl border border-lh-line bg-white p-3 text-sm"
-            key={offering.id}
-          >
-            <input
-              className="mt-1"
-              defaultChecked={selected.has(offering.id)}
-              name="offeringId"
-              type="checkbox"
-              value={offering.id}
-            />
-            <span>
-              <span className="block font-semibold">
-                {offering.publicTitle ?? offering.serviceTitle}
+        {offerings.map((offering) => {
+          const status = getBookingConfigurationStatusPresentation(
+            offering.status,
+          );
+
+          return (
+            <label
+              className="flex items-start gap-3 rounded-xl border border-lh-line bg-white p-3 text-sm"
+              key={offering.id}
+            >
+              <input
+                className="mt-1"
+                defaultChecked={selected.has(offering.id)}
+                name="offeringId"
+                type="checkbox"
+                value={offering.id}
+              />
+              <span>
+                <span className="block font-semibold">
+                  {offering.publicTitle ?? offering.serviceTitle}
+                </span>
+                <span className="block text-xs text-lh-muted">
+                  {offering.providerName} · {status.label}
+                </span>
               </span>
-              <span className="block text-xs text-lh-muted">
-                {offering.providerName} · {offering.offeringKey} ·{" "}
-                {offering.status}
-              </span>
-            </span>
-          </label>
-        ))}
+            </label>
+          );
+        })}
       </div>
     </fieldset>
   );
@@ -323,10 +336,12 @@ function formatDiscountValue(value: number): string {
   return (value / 100).toFixed(2).replace(/\.?0+$/, "");
 }
 
-function statusTone(status: string): "attention" | "neutral" | "success" {
-  if (status === "active") return "success";
-  if (status === "disabled") return "attention";
-  return "neutral";
+function getPromotionStatusActionLabel(
+  status: "active" | "disabled" | "draft",
+): string {
+  if (status === "active") return "Activate";
+  if (status === "disabled") return "Disable";
+  return "Move to draft";
 }
 
 const panelClass = "rounded-3xl border border-lh-line bg-white p-6 shadow-sm";
@@ -335,9 +350,9 @@ const sectionHeadingClass = "font-heading text-4xl uppercase tracking-[0.08em]";
 const inputClass =
   "w-full rounded-xl border border-lh-line bg-white px-3 py-2.5 text-sm";
 const primaryButtonClass =
-  "mt-5 rounded-full bg-lh-primary px-5 py-3 text-sm font-semibold text-white";
+  "mt-5 rounded-full bg-lh-primary px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50";
 const secondaryButtonClass =
-  "mt-5 rounded-full border border-lh-primary px-5 py-2.5 text-sm font-semibold text-lh-primary";
+  "mt-5 rounded-full border border-lh-primary px-5 py-2.5 text-sm font-semibold text-lh-primary disabled:cursor-not-allowed disabled:opacity-50";
 const statusButtonClass =
   "rounded-full border border-lh-line px-4 py-2 text-xs font-semibold uppercase tracking-[0.1em] disabled:cursor-not-allowed disabled:opacity-40";
 const dangerButtonClass =

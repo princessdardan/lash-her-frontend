@@ -76,12 +76,9 @@ test.describe("employee calendar self-service", () => {
     await page.goto("/admin/my-calendar");
 
     await expect(
-      page.getByRole("heading", { name: "My Calendar" }),
+      page.getByRole("heading", { name: "My availability" }),
     ).toBeVisible();
     await expect(page.getByText("Contractor", { exact: true })).toBeVisible();
-    await expect(
-      page.getByText("Contractor self-service", { exact: true }),
-    ).toBeVisible();
     await expect(page.getByText(/\bEmployees?\b/i)).toHaveCount(0);
 
     const oauthRequest = page.waitForRequest((request) => {
@@ -128,14 +125,11 @@ test.describe("employee calendar self-service", () => {
     const assignmentForm = accountCard.locator("form").filter({
       hasText: "Add busy calendar",
     });
-    await assignmentForm.getByLabel("Provider resource").selectOption({
-      label: fixture.resourceName,
-    });
     await selectOptionContaining(
       assignmentForm.getByLabel("Google calendar"),
       GOOGLE_CALENDAR_LABEL,
     );
-    await assignmentForm.getByLabel("Display label").fill(ASSIGNMENT_LABEL);
+    await assignmentForm.getByLabel("Calendar name").fill(ASSIGNMENT_LABEL);
     await assignmentForm
       .getByRole("button", { name: "Add busy calendar" })
       .click();
@@ -164,12 +158,14 @@ test.describe("employee calendar self-service", () => {
 
     await expect(page).toHaveURL(/\/admin\/not-authorized$/);
     await expect(
-      page.getByRole("heading", { name: "Not authorized" }),
+      page.getByRole("heading", {
+        name: "This account does not have access",
+      }),
     ).toBeVisible();
     await page.context().close();
   });
 
-  test("employee removes a busy calendar assignment from My Calendar", async ({
+  test("employee removes a busy calendar assignment from My availability", async ({
     browser,
   }) => {
     const fixture = requireAdminFixture();
@@ -187,8 +183,11 @@ test.describe("employee calendar self-service", () => {
     });
     await expect(assignment).toBeVisible();
 
-    page.once("dialog", (dialog) => dialog.accept());
     await assignment.getByRole("button", { name: "Remove" }).click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Remove" })
+      .click();
 
     await expect(
       page.getByText("Busy calendar assignment removed."),
@@ -212,15 +211,17 @@ test.describe("employee calendar self-service", () => {
     const assignmentForm = accountCard.locator("form").filter({
       hasText: "Assign calendar",
     });
-    await assignmentForm.getByLabel("Resource").selectOption({
-      label: fixture.resourceName,
-    });
+    await assignmentForm
+      .getByLabel("Person, room, or equipment")
+      .selectOption({ label: fixture.resourceName });
     await selectOptionContaining(
       assignmentForm.getByLabel("Google calendar"),
       GOOGLE_CALENDAR_LABEL,
     );
-    await assignmentForm.getByLabel("Display label").fill(ASSIGNMENT_LABEL);
-    await assignmentForm.getByLabel("Receives new bookings").check();
+    await assignmentForm.getByLabel("Calendar name").fill(ASSIGNMENT_LABEL);
+    await assignmentForm
+      .getByLabel("Receives bookings and blocks busy time")
+      .check();
     await assignmentForm
       .getByRole("button", { name: "Save assignment" })
       .click();
@@ -233,7 +234,7 @@ test.describe("employee calendar self-service", () => {
     await page.context().close();
   });
 
-  test("owner disables a calendar assignment and it disappears", async ({
+  test("owner cannot disable a calendar assignment that receives bookings", async ({
     browser,
   }) => {
     const fixture = requireAdminFixture();
@@ -247,39 +248,26 @@ test.describe("employee calendar self-service", () => {
       hasText: ASSIGNMENT_LABEL,
     });
     await expect(assignment).toBeVisible();
-
-    page.once("dialog", (dialog) => dialog.accept());
-    await assignment.getByRole("button", { name: "Disable" }).click();
-
-    await expect(page.getByText("Calendar assignment disabled.")).toBeVisible();
-    await expect(assignment).toHaveCount(0);
-    await expect(accountCard.getByText("No resources assigned.")).toBeVisible();
+    await expect(
+      assignment.getByText("Move the booking destination before disabling."),
+    ).toBeVisible();
+    await expect(
+      assignment.getByRole("button", { name: "Disable" }),
+    ).toHaveCount(0);
+    await expect(
+      accountCard.getByText(
+        new RegExp(
+          `Move the booking destination for ${fixture.resourceName} before disabling this account`,
+        ),
+      ),
+    ).toBeVisible();
+    await expect(
+      accountCard.getByRole("button", { name: "Disable connection" }),
+    ).toHaveCount(0);
     await page.context().close();
   });
 
-  test("owner disables a calendar connection and its card disappears", async ({
-    browser,
-  }) => {
-    const fixture = requireAdminFixture();
-    const page = await newAuthenticatedPage(browser, fixture.ownerStorageState);
-    await page.goto("/admin/calendar-connections");
-
-    const accountCard = page.locator("article").filter({
-      hasText: fixture.employeeConnectionEmail,
-    });
-    await expect(accountCard).toBeVisible();
-
-    page.once("dialog", (dialog) => dialog.accept());
-    await accountCard
-      .getByRole("button", { name: "Disable connection" })
-      .click();
-
-    await expect(page.getByText("Calendar connection disabled.")).toBeVisible();
-    await expect(accountCard).toHaveCount(0);
-    await page.context().close();
-  });
-
-  test("employee reconnects and disconnects without leaving a disabled card", async ({
+  test("employee reconnects but cannot disconnect the booking destination", async ({
     browser,
   }) => {
     const fixture = requireAdminFixture();
@@ -316,14 +304,14 @@ test.describe("employee calendar self-service", () => {
       hasText: fixture.employeeConnectionEmail,
     });
     await expect(accountCard).toBeVisible();
-
-    page.once("dialog", (dialog) => dialog.accept());
-    await accountCard.getByRole("button", { name: "Disconnect" }).click();
-
     await expect(
-      page.getByText("Google Calendar account disconnected."),
+      accountCard.getByText(
+        "This account receives bookings. The owner must move that destination before you can disconnect it.",
+      ),
     ).toBeVisible();
-    await expect(accountCard).toHaveCount(0);
+    await expect(
+      accountCard.getByRole("button", { name: "Disconnect" }),
+    ).toHaveCount(0);
     await page.context().close();
   });
 });

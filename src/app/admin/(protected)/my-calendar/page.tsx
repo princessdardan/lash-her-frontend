@@ -1,13 +1,25 @@
-import { AdminActionFeedback } from "@/components/admin/admin-action-feedback";
+import Link from "next/link";
 import { redirect } from "next/navigation";
+
+import { AdminActionFeedback } from "@/components/admin/admin-action-feedback";
+import { AdminSubmitButton } from "@/components/admin/admin-submit-button";
 import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
 import { StatusPill } from "@/components/admin/status-pill";
 import {
   listEmployeeCalendarWorkspace,
   listEmployeeGoogleCalendars,
 } from "@/lib/admin/employee-calendar";
+import {
+  loadCalendarDiscoveryResult,
+  type CalendarDiscoveryResult,
+} from "@/lib/admin/calendar-discovery-result";
 import type { GoogleCalendarOption } from "@/lib/booking/google-calendar";
 import { requireAdminPagePermission } from "@/lib/admin/page-authorization";
+import {
+  getCalendarAssignmentStatusPresentation,
+  getCalendarConnectionStatusPresentation,
+  getGoogleCalendarAccessRoleLabel,
+} from "@/lib/admin/presentation";
 
 import {
   createMyCalendarConnectionAction,
@@ -26,6 +38,7 @@ export default async function MyCalendarPage({
   searchParams: Promise<{
     error?: string | string[];
     notice?: string | string[];
+    resource?: string | string[];
   }>;
 }) {
   const feedback = await searchParams;
@@ -36,31 +49,40 @@ export default async function MyCalendarPage({
     redirect("/admin/not-authorized");
   }
   const data = await listEmployeeCalendarWorkspace();
-  const contextResourceId = data.resources[0]?.id;
-  const discoveredEntries = await Promise.all(
+  const requestedResourceId = firstString(feedback.resource);
+  const contextResource =
+    data.resources.find((resource) => resource.id === requestedResourceId) ??
+    data.resources[0];
+  const contextResourceId = contextResource?.id;
+  const discoveredEntries: Array<
+    readonly [string, CalendarDiscoveryResult<GoogleCalendarOption>]
+  > = await Promise.all(
     data.connections.map(async (connection) => {
       if (connection.status !== "active" || !contextResourceId) {
-        return [connection.id, [] as GoogleCalendarOption[]] as const;
-      }
-      try {
         return [
           connection.id,
-          await listEmployeeGoogleCalendars({
+          { calendars: [], kind: "ready" } as const,
+        ] as const;
+      }
+      return [
+        connection.id,
+        await loadCalendarDiscoveryResult(() =>
+          listEmployeeGoogleCalendars({
             connectionId: connection.id,
             resourceId: contextResourceId,
           }),
-        ] as const;
-      } catch {
-        return [connection.id, [] as GoogleCalendarOption[]] as const;
-      }
+        ),
+      ] as const;
     }),
   );
-  const calendarsByConnection = new Map(discoveredEntries);
+  const discoveryByConnection = new Map(discoveredEntries);
   const ownedConnectionIds = new Set(
     data.connections.map((connection) => connection.id),
   );
   const ownerManagedAssignments = data.assignments.filter(
-    (assignment) => !ownedConnectionIds.has(assignment.connectionId),
+    (assignment) =>
+      assignment.resourceId === contextResourceId &&
+      !ownedConnectionIds.has(assignment.connectionId),
   );
 
   return (
@@ -68,27 +90,55 @@ export default async function MyCalendarPage({
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="font-smallcaps text-sm uppercase tracking-[0.2em] text-lh-muted">
-            Contractor self-service
+            Daily work
           </p>
-          <h1 className="mt-2 font-heading text-6xl uppercase tracking-[0.08em]">
-            My Calendar
+          <h1 className="mt-2 font-heading text-4xl uppercase tracking-[0.08em] sm:text-5xl lg:text-6xl">
+            My availability
           </h1>
           <p className="mt-3 max-w-3xl text-lh-muted">
-            Connect Google accounts you control and choose calendars that block
-            your availability. Only the owner or an admin can select where new
-            bookings are written.
+            Review your hours and connect calendars that should block busy time.
+            The booking destination selected by the owner is shown for
+            reference.
           </p>
         </div>
         {contextResourceId ? (
-          <form
-            action={createMyCalendarConnectionAction}
-            className="flex gap-2"
-          >
+          <div className="flex flex-wrap gap-2">
+            <Link
+              className={secondaryButtonClass}
+              href={`/admin/schedules?resource=${encodeURIComponent(contextResourceId)}`}
+            >
+              View hours and time off
+            </Link>
+            <form action={createMyCalendarConnectionAction}>
+              <input
+                name="resourceId"
+                type="hidden"
+                value={contextResourceId}
+              />
+              <AdminSubmitButton
+                className={primaryButtonClass}
+                pendingLabel="Connecting…"
+              >
+                Connect Google account
+              </AdminSubmitButton>
+            </form>
+          </div>
+        ) : null}
+      </header>
+
+      <AdminActionFeedback error={feedback.error} notice={feedback.notice} />
+
+      {data.resources.length > 1 && contextResourceId ? (
+        <form
+          action="/admin/my-calendar"
+          className="flex max-w-xl flex-col gap-2 rounded-2xl border border-lh-line bg-white p-4 sm:flex-row sm:items-end"
+          method="get"
+        >
+          <Field label="Availability for">
             <select
-              aria-label="Provider resource for new Google connection"
               className={inputClass}
-              name="resourceId"
-              required
+              defaultValue={contextResourceId}
+              name="resource"
             >
               {data.resources.map((resource) => (
                 <option key={resource.id} value={resource.id}>
@@ -96,25 +146,37 @@ export default async function MyCalendarPage({
                 </option>
               ))}
             </select>
-            <button className={primaryButtonClass} type="submit">
-              Connect Google account
-            </button>
-          </form>
-        ) : null}
-      </header>
+          </Field>
+          <button className={secondaryButtonClass} type="submit">
+            Switch resource
+          </button>
+        </form>
+      ) : null}
 
-      <AdminActionFeedback error={feedback.error} notice={feedback.notice} />
+      {contextResource ? (
+        <p className="text-sm text-lh-muted">
+          Showing calendars for {contextResource.name}.
+        </p>
+      ) : null}
 
       <section className="grid gap-5 xl:grid-cols-2">
         {data.connections.map((connection) => {
-          const calendars = calendarsByConnection.get(connection.id) ?? [];
+          const discovery = discoveryByConnection.get(connection.id) ?? {
+            kind: "error" as const,
+          };
           const assignments = data.assignments.filter(
-            (assignment) => assignment.connectionId === connection.id,
+            (assignment) =>
+              assignment.resourceId === contextResourceId &&
+              assignment.connectionId === connection.id,
           );
           const activeWriteAssignment = assignments.some(
             (assignment) =>
               assignment.status === "active" && assignment.acceptsBookings,
           );
+          const connectionStatus =
+            connection.status === "active" && discovery.kind === "error"
+              ? { label: "Calendar check failed", tone: "attention" as const }
+              : getCalendarConnectionStatusPresentation(connection.status);
 
           return (
             <article
@@ -133,12 +195,8 @@ export default async function MyCalendarPage({
                       : "Never"}
                   </p>
                 </div>
-                <StatusPill
-                  tone={
-                    connection.status === "active" ? "success" : "attention"
-                  }
-                >
-                  {connection.status}
+                <StatusPill tone={connectionStatus.tone}>
+                  {connectionStatus.label}
                 </StatusPill>
               </div>
 
@@ -155,11 +213,14 @@ export default async function MyCalendarPage({
                       type="hidden"
                       value={contextResourceId}
                     />
-                    <button className={secondaryButtonClass} type="submit">
+                    <AdminSubmitButton
+                      className={secondaryButtonClass}
+                      pendingLabel="Reconnecting…"
+                    >
                       {connection.status === "active"
                         ? "Reconnect"
                         : "Authorize"}
-                    </button>
+                    </AdminSubmitButton>
                   </form>
                   {!activeWriteAssignment &&
                   connection.status !== "disabled" ? (
@@ -176,7 +237,7 @@ export default async function MyCalendarPage({
                       />
                       <ConfirmSubmitButton
                         className={secondaryButtonClass}
-                        confirmation="Disconnect this Google account and remove its busy assignments?"
+                        confirmation={`Disconnect ${connection.accountEmail ?? "this Google account"} and remove its ${assignments.length} busy calendar assignment${assignments.length === 1 ? "" : "s"}?`}
                       >
                         Disconnect
                       </ConfirmSubmitButton>
@@ -191,66 +252,85 @@ export default async function MyCalendarPage({
                 </div>
               ) : null}
 
-              {connection.status === "active" && calendars.length > 0 ? (
-                <form
-                  action={saveMyCalendarAssignmentAction}
-                  className="mt-6 rounded-2xl bg-lh-neutral-2 p-4"
-                >
-                  <h3 className="font-semibold">Add busy calendar</h3>
-                  <input
-                    name="connectionId"
-                    type="hidden"
-                    value={connection.id}
-                  />
-                  <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                    <Field label="Provider resource">
-                      <select className={inputClass} name="resourceId" required>
-                        {data.resources.map((resource) => (
-                          <option key={resource.id} value={resource.id}>
-                            {resource.name}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
-                    <Field label="Google calendar">
-                      <select
-                        className={inputClass}
-                        name="providerCalendarId"
-                        required
-                      >
-                        {calendars.map((calendar) => (
-                          <option key={calendar.id} value={calendar.id}>
-                            {calendar.label} · {calendar.accessRole}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
-                    <Field label="Display label">
-                      <input className={inputClass} name="calendarLabel" />
-                    </Field>
-                  </div>
-                  <p className="mt-3 text-xs text-lh-muted">
-                    Contractor assignments always block busy time and never
-                    receive bookings.
-                  </p>
-                  <button
-                    className={`${primaryButtonClass} mt-4`}
-                    type="submit"
+              {connection.status === "active" ? (
+                discovery.kind === "error" ? (
+                  <div
+                    className="mt-6 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"
+                    role="alert"
                   >
-                    Add busy calendar
-                  </button>
-                </form>
+                    Calendars could not be checked. Retry this page or reconnect
+                    the Google account before adding a busy calendar.
+                  </div>
+                ) : discovery.calendars.length === 0 ? (
+                  <p
+                    className="mt-6 rounded-2xl border border-lh-line bg-lh-neutral-2 p-4 text-sm text-lh-muted"
+                    role="status"
+                  >
+                    No calendars were found for this Google account. Check its
+                    calendar access or reconnect it.
+                  </p>
+                ) : (
+                  <form
+                    action={saveMyCalendarAssignmentAction}
+                    className="mt-6 rounded-2xl bg-lh-neutral-2 p-4"
+                  >
+                    <h3 className="font-semibold">Add busy calendar</h3>
+                    <input
+                      name="connectionId"
+                      type="hidden"
+                      value={connection.id}
+                    />
+                    <input
+                      name="resourceId"
+                      type="hidden"
+                      value={contextResourceId}
+                    />
+                    <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                      <Field label="Google calendar">
+                        <select
+                          className={inputClass}
+                          name="providerCalendarId"
+                          required
+                        >
+                          {discovery.calendars.map((calendar) => (
+                            <option key={calendar.id} value={calendar.id}>
+                              {calendar.label} ·{" "}
+                              {getGoogleCalendarAccessRoleLabel(
+                                calendar.accessRole,
+                              )}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                      <Field label="Calendar name">
+                        <input className={inputClass} name="calendarLabel" />
+                      </Field>
+                    </div>
+                    <p className="mt-3 text-xs text-lh-muted">
+                      Calendars added here block busy time and do not receive
+                      new bookings.
+                    </p>
+                    <AdminSubmitButton
+                      className={`${primaryButtonClass} mt-4`}
+                      pendingLabel="Adding…"
+                    >
+                      Add busy calendar
+                    </AdminSubmitButton>
+                  </form>
+                )
               ) : null}
 
               <div className="mt-6 space-y-3">
                 <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-lh-muted">
-                  Assignments for my resources
+                  Calendars for {contextResource?.name ?? "this availability"}
                 </h3>
                 {assignments.map((assignment) => {
                   const employeeMayDisable =
                     assignment.status === "active" &&
                     !assignment.acceptsBookings &&
                     assignment.connectionOwnerAdminUserId === actor.user.id;
+                  const assignmentStatus =
+                    getCalendarAssignmentStatusPresentation(assignment.status);
                   return (
                     <div
                       className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-lh-line p-3 text-sm"
@@ -259,8 +339,7 @@ export default async function MyCalendarPage({
                       <div>
                         <p className="font-semibold">
                           {assignment.resourceName} ·{" "}
-                          {assignment.calendarLabel ??
-                            assignment.providerCalendarId}
+                          {assignment.calendarLabel ?? "Google calendar"}
                         </p>
                         <p className="text-xs text-lh-muted">
                           {assignment.acceptsBookings
@@ -269,14 +348,8 @@ export default async function MyCalendarPage({
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <StatusPill
-                          tone={
-                            assignment.status === "active"
-                              ? "success"
-                              : "neutral"
-                          }
-                        >
-                          {assignment.status}
+                        <StatusPill tone={assignmentStatus.tone}>
+                          {assignmentStatus.label}
                         </StatusPill>
                         {employeeMayDisable ? (
                           <form action={disableMyCalendarAssignmentAction}>
@@ -292,7 +365,7 @@ export default async function MyCalendarPage({
                             />
                             <ConfirmSubmitButton
                               className={secondaryButtonClass}
-                              confirmation="Remove this busy calendar assignment?"
+                              confirmation={`Remove ${assignment.calendarLabel ?? "this Google calendar"} from ${assignment.resourceName}? It will no longer block busy time.`}
                             >
                               Remove
                             </ConfirmSubmitButton>
@@ -313,45 +386,49 @@ export default async function MyCalendarPage({
         })}
         {data.connections.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-lh-line bg-white p-6 text-lh-muted">
-            No contractor-owned Google Calendar accounts are connected.
+            No Google Calendar accounts are connected for your availability.
           </p>
         ) : null}
       </section>
 
       {ownerManagedAssignments.length > 0 ? (
         <section className="rounded-2xl border border-lh-line bg-white p-6">
-          <h2 className="text-xl font-semibold">Owner-managed assignments</h2>
+          <h2 className="text-xl font-semibold">Managed by Lash Her</h2>
           <p className="mt-2 text-sm text-lh-muted">
-            These calendars apply to your assigned resources, but their Google
-            connections are managed by the owner or an admin.
+            These calendars apply to the people, rooms, or equipment you can
+            manage, but their Google connections are controlled by the owner or
+            an administrator.
           </p>
           <div className="mt-5 space-y-3">
-            {ownerManagedAssignments.map((assignment) => (
-              <div
-                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-lh-line p-3 text-sm"
-                key={assignment.id}
-              >
-                <div>
-                  <p className="font-semibold">
-                    {assignment.resourceName} ·{" "}
-                    {assignment.calendarLabel ?? assignment.providerCalendarId}
-                  </p>
-                  <p className="text-xs text-lh-muted">
-                    {assignment.connectionAccountEmail ??
-                      "Admin-managed account"}
-                    {" · "}
-                    {assignment.acceptsBookings
-                      ? "Receives bookings and blocks busy time"
-                      : "Blocks busy time"}
-                  </p>
-                </div>
-                <StatusPill
-                  tone={assignment.status === "active" ? "success" : "neutral"}
+            {ownerManagedAssignments.map((assignment) => {
+              const assignmentStatus = getCalendarAssignmentStatusPresentation(
+                assignment.status,
+              );
+              return (
+                <div
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-lh-line p-3 text-sm"
+                  key={assignment.id}
                 >
-                  {assignment.status}
-                </StatusPill>
-              </div>
-            ))}
+                  <div>
+                    <p className="font-semibold">
+                      {assignment.resourceName} ·{" "}
+                      {assignment.calendarLabel ?? "Google calendar"}
+                    </p>
+                    <p className="text-xs text-lh-muted">
+                      {assignment.connectionAccountEmail ??
+                        "Admin-managed account"}
+                      {" · "}
+                      {assignment.acceptsBookings
+                        ? "Receives bookings and blocks busy time"
+                        : "Blocks busy time"}
+                    </p>
+                  </div>
+                  <StatusPill tone={assignmentStatus.tone}>
+                    {assignmentStatus.label}
+                  </StatusPill>
+                </div>
+              );
+            })}
           </div>
         </section>
       ) : null}
@@ -374,9 +451,13 @@ function Field({
   );
 }
 
+function firstString(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
+}
+
 const inputClass =
-  "w-full rounded-xl border border-lh-line bg-white px-3 py-2 text-sm";
+  "min-h-11 w-full rounded-xl border border-lh-line bg-white px-3 py-2 text-sm";
 const primaryButtonClass =
-  "inline-flex rounded-full bg-lh-primary px-5 py-3 text-sm font-semibold uppercase tracking-[0.12em] text-white";
+  "inline-flex min-h-11 items-center justify-center rounded-full bg-lh-primary px-5 py-3 text-sm font-semibold uppercase tracking-[0.12em] text-white disabled:cursor-wait disabled:opacity-60";
 const secondaryButtonClass =
-  "inline-flex rounded-full border border-lh-line px-3 py-2 text-xs font-semibold";
+  "inline-flex min-h-11 items-center justify-center rounded-full border border-lh-line px-3 py-2 text-xs font-semibold disabled:cursor-wait disabled:opacity-60";

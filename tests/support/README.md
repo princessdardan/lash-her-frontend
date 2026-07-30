@@ -55,9 +55,9 @@ npx playwright test tests/admin-calendar-self-service.live.spec.ts \
   --project=chromium --workers=1
 ```
 
-Do not point the live smoke at a production booking destination. It disables a
-prior assignment with the configured test label so the scenario is repeatable,
-then promotes that isolated calendar to the resource’s write destination.
+Do not point the live smoke at a production booking destination. It validates
+or safely reuses the isolated resource’s existing booking destination without
+disabling another assignment.
 Before Playwright creates an authenticated browser context, the executable
 target guard refuses production/preview runtimes, known or production-like
 hosts, non-HTTPS remote origins, and remote hosts that are not explicitly named

@@ -48,6 +48,11 @@ import { localDateTimeToUtc } from "./local-time";
 import { getCalendarAssignmentAccessError } from "./calendar-capabilities";
 import { revokeEncryptedGoogleCredentialBestEffort } from "./calendar-credential-revocation";
 import {
+  getBookingDestinationChangeError,
+  getBookingDestinationDisableError,
+  getCalendarConnectionDisableError,
+} from "./calendar-destination-policy";
+import {
   lockEmployeeCalendarInvariant,
   lockEmployeeCalendarInvariants,
 } from "./employee-calendar-invariant";
@@ -1594,6 +1599,34 @@ export async function disableCalendarConnection(connectionId: string) {
         );
       }
 
+      const activeBookingDestinations = await tx
+        .select({ resourceName: bookingResources.name })
+        .from(bookingResourceCalendarAssignments)
+        .innerJoin(
+          bookingResources,
+          eq(
+            bookingResources.id,
+            bookingResourceCalendarAssignments.resourceId,
+          ),
+        )
+        .where(
+          and(
+            eq(
+              bookingResourceCalendarAssignments.calendarConnectionId,
+              connectionId,
+            ),
+            eq(bookingResourceCalendarAssignments.status, "active"),
+            eq(bookingResourceCalendarAssignments.acceptsBookings, true),
+          ),
+        )
+        .for("update");
+      const disableError = getCalendarConnectionDisableError(
+        activeBookingDestinations.map((row) => row.resourceName),
+      );
+      if (disableError) {
+        throw new Error(disableError);
+      }
+
       await tx
         .update(bookingResourceCalendarAssignments)
         .set({ status: "disabled", updatedAt: now })
@@ -1738,6 +1771,7 @@ export async function transferCalendarConnectionOwnership(input: {
 export async function saveCalendarAssignment(input: {
   acceptsBookings: boolean;
   calendarLabel?: string;
+  confirmedReplacementAssignmentId?: string;
   connectionId: string;
   contributesBusy: boolean;
   providerCalendarId: string;
@@ -1867,6 +1901,35 @@ export async function saveCalendarAssignment(input: {
             "Transfer or clear calendar ownership before assigning this connection to an unassigned resource",
           );
         }
+      }
+
+      const [currentDestination] = await tx
+        .select({
+          assignmentId: bookingResourceCalendarAssignments.id,
+          connectionId: bookingResourceCalendarAssignments.calendarConnectionId,
+          providerCalendarId:
+            bookingResourceCalendarAssignments.providerCalendarId,
+        })
+        .from(bookingResourceCalendarAssignments)
+        .where(
+          and(
+            eq(bookingResourceCalendarAssignments.resourceId, input.resourceId),
+            eq(bookingResourceCalendarAssignments.status, "active"),
+            eq(bookingResourceCalendarAssignments.acceptsBookings, true),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      const destinationChangeError = getBookingDestinationChangeError({
+        acceptsBookings: input.acceptsBookings,
+        confirmedReplacementAssignmentId:
+          cleanOptional(input.confirmedReplacementAssignmentId) ?? null,
+        currentDestination: currentDestination ?? null,
+        requestedConnectionId: input.connectionId,
+        requestedProviderCalendarId: providerCalendarId,
+      });
+      if (destinationChangeError) {
+        throw new Error(destinationChangeError);
       }
 
       const now = new Date();
@@ -2025,10 +2088,12 @@ export async function disableCalendarAssignment(assignmentId: string) {
       );
       const [assignment] = await tx
         .select({
+          acceptsBookings: bookingResourceCalendarAssignments.acceptsBookings,
           credentialOwnerAdminUserId:
             bookingCalendarConnections.credentialOwnerAdminUserId,
           id: bookingResourceCalendarAssignments.id,
           resourceId: bookingResourceCalendarAssignments.resourceId,
+          status: bookingResourceCalendarAssignments.status,
         })
         .from(bookingResourceCalendarAssignments)
         .innerJoin(
@@ -2050,6 +2115,13 @@ export async function disableCalendarAssignment(assignmentId: string) {
         throw new Error(
           "Calendar assignment ownership changed. Retry the operation",
         );
+      }
+      const disableError = getBookingDestinationDisableError({
+        acceptsBookings: assignment.acceptsBookings,
+        status: assignment.status,
+      });
+      if (disableError) {
+        throw new Error(disableError);
       }
       const rows = await tx
         .update(bookingResourceCalendarAssignments)

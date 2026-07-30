@@ -56,7 +56,7 @@ export async function setAppointmentAttendanceStatusAction(formData: FormData) {
       : "/admin/appointments";
   return runAdminAction({
     destination,
-    revalidatePaths: ["/admin/appointments", destination],
+    revalidatePaths: ["/admin", "/admin/appointments", destination],
     success: "Attendance status updated.",
     task: async () => {
       const status = getString(formData, "status");
@@ -73,7 +73,7 @@ export async function setAppointmentAttendanceStatusAction(formData: FormData) {
 
 export async function createStaffUserAction(formData: FormData) {
   return runAdminAction({
-    destination: "/admin/staff",
+    destination: "/admin/staff?tab=people",
     revalidatePaths: ["/admin/staff"],
     success: "Staff member added.",
     task: async () => {
@@ -92,7 +92,7 @@ export async function createStaffUserAction(formData: FormData) {
 
 export async function setStaffStatusAction(formData: FormData) {
   return runAdminAction({
-    destination: "/admin/staff",
+    destination: "/admin/staff?tab=people",
     revalidatePaths: ["/admin/staff"],
     success: "Staff status updated.",
     task: async () => {
@@ -107,7 +107,7 @@ export async function setStaffStatusAction(formData: FormData) {
 
 export async function assignStaffResourceAction(formData: FormData) {
   return runAdminAction({
-    destination: "/admin/staff",
+    destination: "/admin/staff?tab=people",
     revalidatePaths: ["/admin/staff"],
     success: "Resource assigned.",
     task: () =>
@@ -120,7 +120,7 @@ export async function assignStaffResourceAction(formData: FormData) {
 
 export async function unassignStaffResourceAction(formData: FormData) {
   return runAdminAction({
-    destination: "/admin/staff",
+    destination: "/admin/staff?tab=people",
     revalidatePaths: ["/admin/staff"],
     success: "Resource access removed.",
     task: () =>
@@ -147,7 +147,7 @@ export async function refreshSquareTeamMappingsAction() {
 
 export async function setProviderSquareTeamMemberAction(formData: FormData) {
   return runAdminAction({
-    destination: "/admin/staff",
+    destination: "/admin/staff?tab=square",
     revalidatePaths: ["/admin/staff", "/admin/setup", "/admin/offerings"],
     success: "Square team-member mapping saved.",
     task: () =>
@@ -164,8 +164,14 @@ export async function setSquareAttributionRequirementAction(
   formData: FormData,
 ) {
   return runAdminAction({
-    destination: "/admin/setup",
-    revalidatePaths: ["/admin/setup", "/admin/staff", "/admin/offerings"],
+    destination: "/admin/integrations",
+    revalidatePaths: [
+      "/admin",
+      "/admin/integrations",
+      "/admin/setup",
+      "/admin/staff",
+      "/admin/offerings",
+    ],
     success: "Square attribution requirement updated.",
     task: () =>
       setSquareAttributionRequirement(
@@ -176,7 +182,7 @@ export async function setSquareAttributionRequirementAction(
 
 export async function createBookingResourceAction(formData: FormData) {
   return runAdminAction({
-    destination: "/admin/staff",
+    destination: "/admin/staff?tab=resources",
     revalidatePaths: ["/admin/staff", "/admin/setup"],
     success: "Booking resource created as a draft.",
     task: async () => {
@@ -198,7 +204,7 @@ export async function createBookingResourceAction(formData: FormData) {
 
 export async function setBookingResourceStatusAction(formData: FormData) {
   return runAdminAction({
-    destination: "/admin/staff",
+    destination: "/admin/staff?tab=resources",
     revalidatePaths: ["/admin/staff", "/admin/setup"],
     success: "Resource status updated.",
     task: () =>
@@ -211,7 +217,7 @@ export async function setBookingResourceStatusAction(formData: FormData) {
 
 export async function updateBookingResourceProfileAction(formData: FormData) {
   return runAdminAction({
-    destination: "/admin/staff",
+    destination: "/admin/staff?tab=resources",
     revalidatePaths: [
       "/admin/staff",
       "/admin/offerings",
@@ -235,7 +241,7 @@ export async function updateBookingResourceProfileAction(formData: FormData) {
 
 export async function createBookingServiceAction(formData: FormData) {
   return runAdminAction({
-    destination: "/admin/offerings",
+    destination: "/admin/offerings?tab=services",
     revalidatePaths: ["/admin/offerings", "/admin/setup", "/services"],
     success: "Service created as a draft.",
     task: () => {
@@ -255,7 +261,7 @@ export async function createBookingServiceAction(formData: FormData) {
 
 export async function setBookingServiceStatusAction(formData: FormData) {
   return runAdminAction({
-    destination: "/admin/offerings",
+    destination: "/admin/offerings?tab=services",
     revalidatePaths: ["/admin/offerings", "/admin/setup", "/services"],
     success: "Service status updated.",
     task: () =>
@@ -268,7 +274,7 @@ export async function setBookingServiceStatusAction(formData: FormData) {
 
 export async function updateBookingServiceProfileAction(formData: FormData) {
   return runAdminAction({
-    destination: "/admin/offerings",
+    destination: "/admin/offerings?tab=services",
     revalidatePaths: ["/admin/offerings", "/admin/setup", "/services"],
     success: "Service profile updated.",
     task: () => {
@@ -287,7 +293,7 @@ export async function updateBookingServiceProfileAction(formData: FormData) {
 
 export async function createServiceOfferingAction(formData: FormData) {
   return runAdminAction({
-    destination: "/admin/offerings",
+    destination: "/admin/offerings?tab=price-timing",
     revalidatePaths: ["/admin/offerings", "/admin/setup", "/services"],
     success: "Provider offering created as a draft.",
     task: () =>
@@ -310,7 +316,7 @@ export async function createServiceOfferingAction(formData: FormData) {
 
 export async function setServiceOfferingStatusAction(formData: FormData) {
   return runAdminAction({
-    destination: "/admin/offerings",
+    destination: "/admin/offerings?tab=price-timing",
     revalidatePaths: ["/admin/offerings", "/admin/setup", "/services"],
     success: "Offering status updated.",
     task: () =>
@@ -323,7 +329,7 @@ export async function setServiceOfferingStatusAction(formData: FormData) {
 
 export async function updateServiceOfferingAction(formData: FormData) {
   return runAdminAction({
-    destination: "/admin/offerings",
+    destination: "/admin/offerings?tab=price-timing",
     revalidatePaths: ["/admin/offerings", "/admin/setup", "/services"],
     success: "Offering details updated.",
     task: () =>
@@ -345,7 +351,7 @@ export async function updateServiceOfferingAction(formData: FormData) {
 
 export async function assignOfferingResourceAction(formData: FormData) {
   return runAdminAction({
-    destination: "/admin/offerings",
+    destination: "/admin/offerings?tab=price-timing",
     revalidatePaths: ["/admin/offerings", "/admin/setup", "/services"],
     success: "Offering resource saved.",
     task: () =>
@@ -359,7 +365,7 @@ export async function assignOfferingResourceAction(formData: FormData) {
 
 export async function removeOfferingResourceAction(formData: FormData) {
   return runAdminAction({
-    destination: "/admin/offerings",
+    destination: "/admin/offerings?tab=price-timing",
     revalidatePaths: ["/admin/offerings", "/admin/setup", "/services"],
     success: "Offering resource removed for future holds.",
     task: () =>
@@ -372,7 +378,7 @@ export async function removeOfferingResourceAction(formData: FormData) {
 
 export async function createOfferingAddOnAction(formData: FormData) {
   return runAdminAction({
-    destination: "/admin/offerings",
+    destination: "/admin/offerings?tab=add-ons",
     revalidatePaths: ["/admin/offerings", "/services"],
     success: "Add-on created.",
     task: () =>
@@ -389,7 +395,7 @@ export async function createOfferingAddOnAction(formData: FormData) {
 
 export async function setOfferingAddOnStatusAction(formData: FormData) {
   return runAdminAction({
-    destination: "/admin/offerings",
+    destination: "/admin/offerings?tab=add-ons",
     revalidatePaths: ["/admin/offerings", "/services"],
     success: "Add-on status updated.",
     task: async () => {
@@ -407,8 +413,8 @@ export async function setOfferingAddOnStatusAction(formData: FormData) {
 
 export async function updateBookingSettingsAction(formData: FormData) {
   return runAdminAction({
-    destination: "/admin/setup",
-    revalidatePaths: ["/admin/setup"],
+    destination: "/admin/booking-settings",
+    revalidatePaths: ["/admin", "/admin/booking-settings", "/admin/setup"],
     success: "Booking defaults saved.",
     task: () =>
       updateBookingSettings({
@@ -433,8 +439,9 @@ export async function updateBookingSettingsAction(formData: FormData) {
 }
 
 export async function createResourceScheduleAction(formData: FormData) {
+  const returnResourceId = getOptionalString(formData, "resourceId") ?? "";
   return runAdminAction({
-    destination: "/admin/schedules",
+    destination: availabilityDestination("hours", returnResourceId),
     revalidatePaths: ["/admin/schedules", "/admin/setup"],
     success: "Weekly hours added.",
     task: () =>
@@ -450,8 +457,9 @@ export async function createResourceScheduleAction(formData: FormData) {
 }
 
 export async function disableResourceScheduleAction(formData: FormData) {
+  const returnResourceId = getOptionalString(formData, "resourceId") ?? "";
   return runAdminAction({
-    destination: "/admin/schedules",
+    destination: availabilityDestination("hours", returnResourceId),
     revalidatePaths: ["/admin/schedules", "/admin/setup"],
     success: "Weekly hours disabled.",
     task: () =>
@@ -463,8 +471,9 @@ export async function disableResourceScheduleAction(formData: FormData) {
 }
 
 export async function createScheduleExceptionAction(formData: FormData) {
+  const returnResourceId = getOptionalString(formData, "resourceId") ?? "";
   return runAdminAction({
-    destination: "/admin/schedules",
+    destination: availabilityDestination("exceptions", returnResourceId),
     revalidatePaths: ["/admin/schedules"],
     success: "Schedule exception added.",
     task: async () => {
@@ -484,8 +493,9 @@ export async function createScheduleExceptionAction(formData: FormData) {
 }
 
 export async function cancelScheduleExceptionAction(formData: FormData) {
+  const returnResourceId = getOptionalString(formData, "resourceId") ?? "";
   return runAdminAction({
-    destination: "/admin/schedules",
+    destination: availabilityDestination("exceptions", returnResourceId),
     revalidatePaths: ["/admin/schedules"],
     success: "Schedule exception cancelled.",
     task: () =>
@@ -522,15 +532,27 @@ export async function saveCalendarAssignmentAction(formData: FormData) {
     destination: "/admin/calendar-connections",
     revalidatePaths: ["/admin/calendar-connections", "/admin/setup"],
     success: "Calendar assignment saved.",
-    task: () =>
-      saveCalendarAssignment({
-        acceptsBookings: formData.get("acceptsBookings") === "on",
+    task: () => {
+      const assignmentRole = getString(formData, "assignmentRole");
+      if (
+        assignmentRole !== "busy_only" &&
+        assignmentRole !== "booking_destination"
+      ) {
+        throw new Error("Choose how this calendar is used");
+      }
+      return saveCalendarAssignment({
+        acceptsBookings: assignmentRole === "booking_destination",
         calendarLabel: getOptionalString(formData, "calendarLabel"),
+        confirmedReplacementAssignmentId: getOptionalString(
+          formData,
+          "confirmedReplacementAssignmentId",
+        ),
         connectionId: getString(formData, "connectionId"),
-        contributesBusy: formData.get("contributesBusy") === "on",
+        contributesBusy: true,
         providerCalendarId: getString(formData, "providerCalendarId"),
         resourceId: getString(formData, "resourceId"),
-      }),
+      });
+    },
   });
 }
 
@@ -568,7 +590,13 @@ export async function createMyCalendarConnectionAction(formData: FormData) {
     createEmployeeCalendarConnection(resourceId),
   );
   if (!outcome.ok) {
-    redirect(feedbackUrl("/admin/my-calendar", "error", outcome.error));
+    redirect(
+      feedbackUrl(
+        myAvailabilityDestination(resourceId),
+        "error",
+        outcome.error,
+      ),
+    );
   }
   redirect(
     `/api/admin/my-calendar/connections/${outcome.value.id}/oauth/start?resourceId=${encodeURIComponent(resourceId)}`,
@@ -584,8 +612,9 @@ export async function reconnectMyCalendarConnectionAction(formData: FormData) {
 }
 
 export async function saveMyCalendarAssignmentAction(formData: FormData) {
+  const returnResourceId = getOptionalString(formData, "resourceId") ?? "";
   return runAdminAction({
-    destination: "/admin/my-calendar",
+    destination: myAvailabilityDestination(returnResourceId),
     revalidatePaths: ["/admin/my-calendar", "/admin/calendar-connections"],
     success: "Busy calendar assignment saved.",
     task: () =>
@@ -599,8 +628,9 @@ export async function saveMyCalendarAssignmentAction(formData: FormData) {
 }
 
 export async function disableMyCalendarAssignmentAction(formData: FormData) {
+  const returnResourceId = getOptionalString(formData, "resourceId") ?? "";
   return runAdminAction({
-    destination: "/admin/my-calendar",
+    destination: myAvailabilityDestination(returnResourceId),
     revalidatePaths: ["/admin/my-calendar", "/admin/calendar-connections"],
     success: "Busy calendar assignment removed.",
     task: () =>
@@ -612,8 +642,9 @@ export async function disableMyCalendarAssignmentAction(formData: FormData) {
 }
 
 export async function disconnectMyCalendarConnectionAction(formData: FormData) {
+  const returnResourceId = getOptionalString(formData, "resourceId") ?? "";
   return runAdminAction({
-    destination: "/admin/my-calendar",
+    destination: myAvailabilityDestination(returnResourceId),
     revalidatePaths: [
       "/admin/my-calendar",
       "/admin/calendar-connections",
@@ -693,7 +724,21 @@ function feedbackUrl(
   const query = new URLSearchParams({
     [kind]: toContractorTerminology(message),
   });
-  return `${destination}?${query.toString()}`;
+  return `${destination}${destination.includes("?") ? "&" : "?"}${query.toString()}`;
+}
+
+function availabilityDestination(
+  tab: "exceptions" | "hours",
+  resourceId: string,
+): string {
+  const query = new URLSearchParams({ tab });
+  if (resourceId) query.set("resource", resourceId);
+  return `/admin/schedules?${query.toString()}`;
+}
+
+function myAvailabilityDestination(resourceId: string): string {
+  if (!resourceId) return "/admin/my-calendar";
+  return `/admin/my-calendar?${new URLSearchParams({ resource: resourceId }).toString()}`;
 }
 
 function getString(formData: FormData, name: string): string {

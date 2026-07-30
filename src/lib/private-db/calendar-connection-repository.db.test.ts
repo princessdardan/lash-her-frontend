@@ -162,6 +162,31 @@ test(
       providerCalendarId: `${TEST_PREFIX}calendar-a-${suffix}`,
       resourceId: resource.id,
     });
+    await assert.rejects(
+      repository.upsertAssignment({
+        acceptsBookings: false,
+        actorAdminUserId: actor.id,
+        calendarLabel: "First",
+        connectionId: firstConnection.id,
+        contributesBusy: true,
+        now,
+        providerCalendarId: `${TEST_PREFIX}calendar-a-${suffix}`,
+        resourceId: resource.id,
+      }),
+      /Move the booking destination/,
+    );
+    await assert.rejects(
+      repository.upsertAssignment({
+        acceptsBookings: true,
+        actorAdminUserId: actor.id,
+        connectionId: firstConnection.id,
+        contributesBusy: false,
+        now,
+        providerCalendarId: `${TEST_PREFIX}invalid-role-${suffix}`,
+        resourceId: resource.id,
+      }),
+      /must also block its busy time/,
+    );
     const secondConnection = await repository.createGoogleConnection({
       actorAdminUserId: actor.id,
       now,
@@ -175,10 +200,24 @@ test(
       refreshToken: `${TEST_PREFIX}refresh-second-${suffix}`,
       scopes: ["scope-a"],
     });
+    await assert.rejects(
+      repository.upsertAssignment({
+        acceptsBookings: true,
+        actorAdminUserId: actor.id,
+        calendarLabel: "Second",
+        connectionId: secondConnection.id,
+        contributesBusy: true,
+        now,
+        providerCalendarId: `${TEST_PREFIX}calendar-b-${suffix}`,
+        resourceId: resource.id,
+      }),
+      /Confirm the existing booking destination replacement/,
+    );
     const secondAssignment = await repository.upsertAssignment({
       acceptsBookings: true,
       actorAdminUserId: actor.id,
       calendarLabel: "Second",
+      confirmedReplacementAssignmentId: firstAssignment.id,
       connectionId: secondConnection.id,
       contributesBusy: true,
       now,
@@ -207,6 +246,24 @@ test(
       true,
     );
 
+    await assert.rejects(
+      repository.disableConnection({
+        connectionId: secondConnection.id,
+        now: new Date("2032-01-01T12:03:00.000Z"),
+      }),
+      /Move the booking destination/,
+    );
+    await repository.upsertAssignment({
+      acceptsBookings: true,
+      actorAdminUserId: actor.id,
+      calendarLabel: "First",
+      confirmedReplacementAssignmentId: secondAssignment.id,
+      connectionId: firstConnection.id,
+      contributesBusy: true,
+      now: new Date("2032-01-01T12:04:00.000Z"),
+      providerCalendarId: `${TEST_PREFIX}calendar-a-${suffix}`,
+      resourceId: resource.id,
+    });
     assert.equal(
       await repository.disableConnection({
         connectionId: secondConnection.id,
@@ -1142,7 +1199,7 @@ test(
       scopes: ["scope-a"],
     });
     await repository.upsertAssignment({
-      acceptsBookings: true,
+      acceptsBookings: false,
       actorAdminUserId: employee.id,
       connectionId: connection.id,
       contributesBusy: true,

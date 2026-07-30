@@ -11,6 +11,10 @@ import {
   type AdminAuthService,
   type AdminPermissionContext,
 } from "./auth-service";
+import {
+  ADMIN_PERMISSION_DENIAL_AUDIT_EVENT,
+  requirePermissionWithAudit,
+} from "./authorization-policy";
 import type { AdminPermissionAction } from "./permissions";
 import type { AdminActor, AdminIdentity } from "./types";
 
@@ -40,11 +44,21 @@ export async function requirePermission(
   action: AdminPermissionAction,
   context: AdminPermissionContext = {},
 ): Promise<AdminActor> {
-  const actor = await getRequestActor();
-  const { assertAdminPermission } = await import("./auth-service");
-
-  assertAdminPermission(actor, action, context);
-  return actor;
+  return requirePermissionWithAudit({
+    action,
+    context,
+    getActor: getRequestActor,
+    recordDenial: async ({ actor: deniedActor, requestedPermission }) => {
+      // The writer does not authorize. The dynamic import avoids the
+      // audit-log -> auth read-path dependency becoming a module cycle.
+      const { recordAdminAuditBestEffort } = await import("./audit-log");
+      await recordAdminAuditBestEffort({
+        ...ADMIN_PERMISSION_DENIAL_AUDIT_EVENT,
+        actor: deniedActor,
+        metadata: { requestedPermission },
+      });
+    },
+  });
 }
 
 async function getRequestActor(): Promise<AdminActor> {
@@ -75,9 +89,9 @@ async function getAuthJsIdentity(): Promise<AdminIdentity | null> {
   const sessionUser = session?.user;
 
   if (
-    !sessionUser
-    || typeof sessionUser.email !== "string"
-    || typeof sessionUser.providerUserId !== "string"
+    !sessionUser ||
+    typeof sessionUser.email !== "string" ||
+    typeof sessionUser.providerUserId !== "string"
   ) {
     return null;
   }

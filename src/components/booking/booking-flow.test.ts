@@ -89,8 +89,9 @@ describe("booking service flow contract", () => {
     );
     assert.match(
       bookingFlowSource,
-      /hasInitialService \? "datetime" : "service"/,
+      /const legacyInitialStep:[\s\S]*?hasInitialService\s*\? "datetime"\s*: "service"/,
     );
+    assert.match(bookingFlowSource, /:\s*legacyInitialStep,/);
   });
 
   it("does not refetch availability when customer fields change", () => {
@@ -433,7 +434,7 @@ describe("booking service flow contract", () => {
     );
     assert.match(
       serviceDetailPageSource,
-      /<Link href=\{servicesHref\}[\s\S]*?View Provider Services &amp; Pricing/,
+      /<Link\s+href=\{servicesHref\}[\s\S]*?View Provider Services &amp; Pricing/,
     );
   });
 

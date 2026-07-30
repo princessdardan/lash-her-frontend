@@ -1,5 +1,8 @@
+import Link from "next/link";
+
 import { AdminTable } from "@/components/admin/admin-table";
 import { AdminActionFeedback } from "@/components/admin/admin-action-feedback";
+import { AdminSubmitButton } from "@/components/admin/admin-submit-button";
 import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
 import { StatusPill } from "@/components/admin/status-pill";
 import { loaders } from "@/data/loaders";
@@ -7,6 +10,11 @@ import { resolveOptionalEditorialServiceOptions } from "@/lib/admin/editorial-se
 import { listAdminOfferings } from "@/lib/admin/operations-read";
 import { canAdmin } from "@/lib/admin/permissions";
 import { requireAdminPagePermission } from "@/lib/admin/page-authorization";
+import {
+  getBookingConfigurationStatusPresentation,
+  getBookingResourceKindLabel,
+} from "@/lib/admin/presentation";
+import type { BookingConfigurationStatus } from "@/lib/private-db/schema";
 
 import {
   assignOfferingResourceAction,
@@ -30,9 +38,11 @@ export default async function AdminOfferingsPage({
   searchParams: Promise<{
     error?: string | string[];
     notice?: string | string[];
+    tab?: string | string[];
   }>;
 }) {
   const feedback = await searchParams;
+  const activeTab = parseOfferingsTab(feedback.tab);
   const actor = await requireAdminPagePermission("offerings:view");
   const [data, editorialServiceOptions] = await Promise.all([
     listAdminOfferings(),
@@ -49,6 +59,7 @@ export default async function AdminOfferingsPage({
   });
   const canManageOfferingResources = actor.user.role === "owner";
   const providerById = new Map(data.providers.map((row) => [row.id, row]));
+  const offeringById = new Map(data.offerings.map((row) => [row.id, row]));
   const canManageAllServices =
     actor.user.role === "owner" || actor.user.role === "admin";
   const canManageService = (service: (typeof data.services)[number]) =>
@@ -58,49 +69,59 @@ export default async function AdminOfferingsPage({
         providerById.has(service.ownerProviderId)));
 
   return (
-    <div className="space-y-8">
+    <div className="flex flex-col gap-8">
       <header>
         <p className="font-smallcaps text-sm uppercase tracking-[0.2em] text-lh-muted">
-          Booking catalogue
+          Manage business
         </p>
-        <h1 className="mt-2 font-heading text-6xl uppercase tracking-[0.08em]">
-          Services & offerings
+        <h1 className="mt-2 font-heading text-4xl uppercase leading-none tracking-[0.08em] sm:text-5xl lg:text-6xl">
+          Services &amp; pricing
         </h1>
         <p className="mt-3 max-w-3xl text-lh-muted">
-          Each provider owns its service catalogue, public copy, duration,
-          pricing, deposits, buffers, and slot rules. Sanity links are optional
-          and used only for editorial detail pages.
+          Manage what clients can book, who provides each service, how long it
+          takes, and what the client pays.
         </p>
       </header>
 
       <AdminActionFeedback error={feedback.error} notice={feedback.notice} />
 
-      {!editorialServiceOptions.isAvailable ? (
+      <nav
+        aria-label="Services and pricing sections"
+        className="flex gap-2 overflow-x-auto pb-1"
+      >
+        {offeringsTabs.map((tab) => (
+          <Link
+            key={tab.value}
+            href={`/admin/offerings?tab=${tab.value}`}
+            aria-current={activeTab === tab.value ? "page" : undefined}
+            className={
+              activeTab === tab.value
+                ? `${tabLinkClass} border-lh-primary bg-lh-primary text-white`
+                : `${tabLinkClass} border-lh-line bg-white text-lh-primary hover:border-lh-primary`
+            }
+          >
+            {tab.label}
+          </Link>
+        ))}
+      </nav>
+
+      {activeTab === "services" && !editorialServiceOptions.isAvailable ? (
         <div
           className="rounded-2xl border border-lh-accent-soft bg-lh-light-soft p-4 text-sm text-lh-accent"
           role="status"
         >
-          Sanity editorial services are temporarily unavailable. Operational
-          services and provider offerings remain manageable; editorial link
-          changes are disabled.
+          Website content is temporarily unavailable. Services and pricing
+          remain manageable; website content links cannot be changed right now.
         </div>
       ) : null}
 
-      {canManage ? (
-        <div className="grid gap-6 xl:grid-cols-3">
-          <form action={createBookingServiceAction} className={panelClass}>
-            <h2 className={headingClass}>Add service</h2>
+      {canManage && activeTab === "services" && data.providers.length > 0 ? (
+        <details className={`${panelClass} order-last`}>
+          <summary className={createSummaryClass}>Add a service</summary>
+          <form action={createBookingServiceAction} className="mt-5">
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
               <Field label="Display title">
                 <input className={inputClass} name="displayTitle" required />
-              </Field>
-              <Field label="Stable key">
-                <input
-                  className={inputClass}
-                  name="serviceKey"
-                  required
-                  placeholder="classic-fill"
-                />
               </Field>
               <Field label="Provider">
                 <select className={inputClass} name="ownerProviderId" required>
@@ -111,47 +132,66 @@ export default async function AdminOfferingsPage({
                   ))}
                 </select>
               </Field>
-              <Field label="Public booking slug">
-                <input
-                  className={inputClass}
-                  name="publicSlug"
-                  required
-                  placeholder="classic-fill"
-                />
-              </Field>
-              <Field label="Editorial Sanity service (optional)">
-                <select
-                  className={inputClass}
-                  disabled={!editorialServiceOptions.isAvailable}
-                  name="sanityServiceLink"
-                  defaultValue=""
-                >
-                  <option value="">No editorial detail page</option>
-                  {publishedServices.map((service) => (
-                    <option
-                      key={service._id}
-                      value={encodeSanityServiceLink(service)}
-                    >
-                      {service.title} · {service.slug}
-                    </option>
-                  ))}
-                </select>
-              </Field>
             </div>
-            <SubmitButton>Add as draft</SubmitButton>
+            <details className={advancedDetailsClass}>
+              <summary className={advancedSummaryClass}>Advanced</summary>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <Field label="Service key">
+                  <input
+                    className={inputClass}
+                    name="serviceKey"
+                    required
+                    placeholder="classic-fill"
+                  />
+                </Field>
+                <Field label="Public booking slug">
+                  <input
+                    className={inputClass}
+                    name="publicSlug"
+                    required
+                    placeholder="classic-fill"
+                  />
+                </Field>
+                <Field label="Website content page (optional)">
+                  <select
+                    className={inputClass}
+                    disabled={!editorialServiceOptions.isAvailable}
+                    name="sanityServiceLink"
+                    defaultValue=""
+                  >
+                    <option value="">No website content page</option>
+                    {publishedServices.map((service) => (
+                      <option
+                        key={service._id}
+                        value={encodeSanityServiceLink(service)}
+                      >
+                        {service.title}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+            </details>
+            <AdminSubmitButton
+              className={primaryButtonClass}
+              pendingLabel="Adding service…"
+            >
+              Add as draft
+            </AdminSubmitButton>
           </form>
+        </details>
+      ) : null}
 
-          <form action={createServiceOfferingAction} className={panelClass}>
-            <h2 className={headingClass}>Assign service to provider</h2>
+      {canManage &&
+      activeTab === "price-timing" &&
+      data.services.length > 0 &&
+      data.providers.length > 0 ? (
+        <details className={`${panelClass} order-last`}>
+          <summary className={createSummaryClass}>
+            Assign a service to a provider
+          </summary>
+          <form action={createServiceOfferingAction} className="mt-5">
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              <Field label="Offering key">
-                <input
-                  className={inputClass}
-                  name="offeringKey"
-                  required
-                  placeholder="classic-fill-nataliea"
-                />
-              </Field>
               <Field label="Service">
                 <select className={inputClass} name="serviceId">
                   {data.services.map((row) => (
@@ -250,31 +290,47 @@ export default async function AdminOfferingsPage({
                 />
               </Field>
             </div>
-            <SubmitButton>Create draft offering</SubmitButton>
+            <details className={advancedDetailsClass}>
+              <summary className={advancedSummaryClass}>Advanced</summary>
+              <div className="mt-4">
+                <Field label="Offering key">
+                  <input
+                    className={inputClass}
+                    name="offeringKey"
+                    required
+                    placeholder="classic-fill-nataliea"
+                  />
+                </Field>
+              </div>
+            </details>
+            <AdminSubmitButton
+              className={primaryButtonClass}
+              pendingLabel="Assigning service…"
+            >
+              Save as draft
+            </AdminSubmitButton>
           </form>
+        </details>
+      ) : null}
 
-          <form action={createOfferingAddOnAction} className={panelClass}>
-            <h2 className={headingClass}>Add offering add-on</h2>
+      {canManage && activeTab === "add-ons" && data.offerings.length > 0 ? (
+        <details className={`${panelClass} order-last`}>
+          <summary className={createSummaryClass}>Add a service add-on</summary>
+          <form action={createOfferingAddOnAction} className="mt-5">
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              <Field label="Offering">
+              <Field label="Service and provider">
                 <select className={inputClass} name="offeringId">
                   {data.offerings.map((row) => (
                     <option key={row.id} value={row.id}>
-                      {row.serviceTitle} · {row.offeringKey}
+                      {row.publicTitle ?? row.serviceTitle} ·{" "}
+                      {providerById.get(row.providerId)?.displayName ??
+                        "Unknown provider"}
                     </option>
                   ))}
                 </select>
               </Field>
               <Field label="Name">
                 <input className={inputClass} name="name" required />
-              </Field>
-              <Field label="Stable key">
-                <input
-                  className={inputClass}
-                  name="addOnKey"
-                  required
-                  placeholder="foreign-removal"
-                />
               </Field>
               <Field label="Price (CAD)">
                 <input
@@ -299,484 +355,705 @@ export default async function AdminOfferingsPage({
                 <input className={inputClass} name="description" required />
               </Field>
             </div>
-            <SubmitButton>Add add-on</SubmitButton>
+            <details className={advancedDetailsClass}>
+              <summary className={advancedSummaryClass}>Advanced</summary>
+              <div className="mt-4">
+                <Field label="Add-on key">
+                  <input
+                    className={inputClass}
+                    name="addOnKey"
+                    required
+                    placeholder="foreign-removal"
+                  />
+                </Field>
+              </div>
+            </details>
+            <AdminSubmitButton
+              className={primaryButtonClass}
+              pendingLabel="Adding add-on…"
+            >
+              Add add-on
+            </AdminSubmitButton>
           </form>
-        </div>
+        </details>
       ) : null}
 
-      <section className="space-y-4">
-        <h2 className={sectionHeadingClass}>Services</h2>
-        <AdminTable caption="Operational services">
-          <thead className={theadClass}>
-            <tr>
-              <th className={cellClass}>Service</th>
-              <th className={cellClass}>Public link</th>
-              <th className={cellClass}>Status</th>
-              <th className={cellClass}>Action</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-lh-line">
-            {data.services.map((service) => (
-              <tr key={service.id}>
-                <td className={cellClass}>
-                  <p className="font-semibold">{service.displayTitle}</p>
-                  <p className="text-xs text-lh-muted">{service.serviceKey}</p>
-                  <p className="text-xs text-lh-muted">
-                    {service.ownerProviderId
-                      ? (providerById.get(service.ownerProviderId)
-                          ?.displayName ?? "Unknown provider")
-                      : "Shared service"}
-                  </p>
-                </td>
-                <td className={cellClass}>
-                  {canManageService(service) ? (
-                    <form
-                      action={updateBookingServiceProfileAction}
-                      className="grid min-w-64 gap-2"
-                    >
-                      <input
-                        type="hidden"
-                        name="serviceId"
-                        value={service.id}
-                      />
-                      <Field label="Display title">
-                        <input
-                          className={inputClass}
-                          name="displayTitle"
-                          defaultValue={service.displayTitle}
-                          required
-                        />
-                      </Field>
-                      <Field label="Public booking slug">
-                        <input
-                          className={inputClass}
-                          disabled={
-                            !editorialServiceOptions.isAvailable &&
-                            service.sanityDocumentId !== null &&
-                            service.publicSlug !== null
-                          }
-                          name="publicSlug"
-                          defaultValue={service.publicSlug ?? ""}
-                          required
-                        />
-                      </Field>
-                      <Field label="Editorial Sanity service (optional)">
-                        {editorialServiceOptions.isAvailable ? (
-                          <select
-                            className={inputClass}
-                            name="sanityServiceLink"
-                            defaultValue={getSanityServiceLinkValue(
-                              publishedServices,
-                              service,
-                            )}
-                          >
-                            <option value="">No editorial detail page</option>
-                            {publishedServices.map((publishedService) => (
-                              <option
-                                key={publishedService._id}
-                                value={encodeSanityServiceLink(
-                                  publishedService,
-                                )}
-                              >
-                                {publishedService.title} ·{" "}
-                                {publishedService.slug}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <>
-                            {service.sanityDocumentId && service.publicSlug ? (
-                              <input
-                                name="sanityServiceLink"
-                                type="hidden"
-                                value={encodeSanityServiceLink({
-                                  _id: service.sanityDocumentId,
-                                  slug: service.publicSlug,
-                                })}
-                              />
-                            ) : null}
-                            <p className="rounded-xl border border-lh-line bg-lh-neutral-2 px-3 py-2 text-sm text-lh-muted">
-                              Existing editorial link preserved.
-                            </p>
-                          </>
-                        )}
-                      </Field>
-                      <button
-                        className={`${secondaryButtonClass} justify-self-start`}
-                        type="submit"
-                      >
-                        Save details
-                      </button>
-                    </form>
-                  ) : (
-                    <>
-                      <p>{service.publicSlug ?? "No public slug"}</p>
+      {activeTab === "services" ? (
+        <section className="space-y-4">
+          <h2 className={sectionHeadingClass}>Services</h2>
+          {data.services.length === 0 ? (
+            <EmptyState
+              title="No services yet"
+              description={
+                data.providers.length > 0
+                  ? "Add the first service to make it available for provider pricing and online booking."
+                  : "Add a bookable provider in Team before creating the first service."
+              }
+            />
+          ) : (
+            <AdminTable caption="Services">
+              <thead className={theadClass}>
+                <tr>
+                  <th scope="col" className={cellClass}>
+                    Service
+                  </th>
+                  <th scope="col" className={cellClass}>
+                    Public link
+                  </th>
+                  <th scope="col" className={cellClass}>
+                    Status
+                  </th>
+                  <th scope="col" className={cellClass}>
+                    Action
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-lh-line">
+                {data.services.map((service) => (
+                  <tr key={service.id}>
+                    <td className={cellClass}>
+                      <p className="font-semibold">{service.displayTitle}</p>
                       <p className="text-xs text-lh-muted">
-                        {service.sanityDocumentId ?? "No Sanity document"}
+                        {service.ownerProviderId
+                          ? (providerById.get(service.ownerProviderId)
+                              ?.displayName ?? "Unknown provider")
+                          : "Shared service"}
                       </p>
-                    </>
-                  )}
-                </td>
-                <td className={cellClass}>
-                  <StatusPill
-                    tone={service.status === "active" ? "success" : "neutral"}
-                  >
-                    {service.status}
-                  </StatusPill>
-                </td>
-                <td className={cellClass}>
-                  {canManageService(service) ? (
-                    <StatusForm
-                      action={setBookingServiceStatusAction}
-                      idName="serviceId"
-                      id={service.id}
-                      status={service.status}
-                    />
-                  ) : (
-                    "—"
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </AdminTable>
-      </section>
+                      <details className="mt-2">
+                        <summary className={recordAdvancedSummaryClass}>
+                          Advanced
+                        </summary>
+                        <p className="mt-1 break-all text-xs text-lh-muted">
+                          Service key: {service.serviceKey}
+                        </p>
+                      </details>
+                    </td>
+                    <td className={cellClass}>
+                      {canManageService(service) ? (
+                        <form
+                          action={updateBookingServiceProfileAction}
+                          className="grid min-w-64 gap-2"
+                        >
+                          <input
+                            type="hidden"
+                            name="serviceId"
+                            value={service.id}
+                          />
+                          <Field label="Display title">
+                            <input
+                              className={inputClass}
+                              name="displayTitle"
+                              defaultValue={service.displayTitle}
+                              required
+                            />
+                          </Field>
+                          <p className="text-sm text-lh-muted">
+                            {service.sanityDocumentId
+                              ? "Website content linked"
+                              : "No website content page"}
+                          </p>
+                          <details className={advancedDetailsClass}>
+                            <summary className={advancedSummaryClass}>
+                              Advanced
+                            </summary>
+                            <div className="mt-4 grid gap-3">
+                              <Field label="Public booking slug">
+                                <input
+                                  className={inputClass}
+                                  disabled={
+                                    !editorialServiceOptions.isAvailable &&
+                                    service.sanityDocumentId !== null &&
+                                    service.publicSlug !== null
+                                  }
+                                  name="publicSlug"
+                                  defaultValue={service.publicSlug ?? ""}
+                                  required
+                                />
+                              </Field>
+                              <Field label="Website content page (optional)">
+                                {editorialServiceOptions.isAvailable ? (
+                                  <select
+                                    className={inputClass}
+                                    name="sanityServiceLink"
+                                    defaultValue={getSanityServiceLinkValue(
+                                      publishedServices,
+                                      service,
+                                    )}
+                                  >
+                                    <option value="">
+                                      No website content page
+                                    </option>
+                                    {publishedServices.map(
+                                      (publishedService) => (
+                                        <option
+                                          key={publishedService._id}
+                                          value={encodeSanityServiceLink(
+                                            publishedService,
+                                          )}
+                                        >
+                                          {publishedService.title}
+                                        </option>
+                                      ),
+                                    )}
+                                  </select>
+                                ) : (
+                                  <>
+                                    {service.sanityDocumentId &&
+                                    service.publicSlug ? (
+                                      <input
+                                        name="sanityServiceLink"
+                                        type="hidden"
+                                        value={encodeSanityServiceLink({
+                                          _id: service.sanityDocumentId,
+                                          slug: service.publicSlug,
+                                        })}
+                                      />
+                                    ) : null}
+                                    <p className="rounded-xl border border-lh-line bg-white px-3 py-2 text-sm text-lh-muted">
+                                      Existing website content link preserved.
+                                    </p>
+                                  </>
+                                )}
+                              </Field>
+                            </div>
+                          </details>
+                          <AdminSubmitButton
+                            className={`${secondaryButtonClass} justify-self-start`}
+                            pendingLabel="Saving…"
+                          >
+                            Save details
+                          </AdminSubmitButton>
+                        </form>
+                      ) : (
+                        <>
+                          <p>
+                            {service.sanityDocumentId
+                              ? "Website content linked"
+                              : "No website content page"}
+                          </p>
+                          <details className="mt-2">
+                            <summary className={recordAdvancedSummaryClass}>
+                              Advanced
+                            </summary>
+                            <p className="mt-1 break-all text-xs text-lh-muted">
+                              Public slug: {service.publicSlug ?? "Not set"}
+                            </p>
+                            <p className="mt-1 break-all text-xs text-lh-muted">
+                              Website content ID:{" "}
+                              {service.sanityDocumentId ?? "Not linked"}
+                            </p>
+                          </details>
+                        </>
+                      )}
+                    </td>
+                    <td className={cellClass}>
+                      <StatusPill
+                        tone={
+                          getBookingConfigurationStatusPresentation(
+                            service.status,
+                          ).tone
+                        }
+                      >
+                        {
+                          getBookingConfigurationStatusPresentation(
+                            service.status,
+                          ).label
+                        }
+                      </StatusPill>
+                    </td>
+                    <td className={cellClass}>
+                      {canManageService(service) ? (
+                        <StatusForm
+                          action={setBookingServiceStatusAction}
+                          idName="serviceId"
+                          id={service.id}
+                          status={service.status}
+                        />
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </AdminTable>
+          )}
+        </section>
+      ) : null}
 
-      <section className="space-y-4">
-        <h2 className={sectionHeadingClass}>Provider offerings</h2>
-        <div className="grid gap-4 xl:grid-cols-2">
-          {data.offerings.map((offering) => (
-            <article key={offering.id} className={panelClass}>
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h3 className="text-xl font-semibold">
-                    {offering.publicTitle ?? offering.serviceTitle}
-                  </h3>
-                  {offering.publicSummary ? (
-                    <p className="mt-1 max-w-xl text-sm text-lh-muted">
-                      {offering.publicSummary}
-                    </p>
-                  ) : null}
-                  <p className="mt-1 text-sm text-lh-muted">
-                    {providerById.get(offering.providerId)?.displayName ??
-                      "Unknown provider"}{" "}
-                    · {offering.resourceName}
-                  </p>
-                  <p className="mt-1 text-xs text-lh-muted">
-                    {offering.offeringKey} · order {offering.displayOrder} · v
-                    {offering.version}
-                  </p>
-                </div>
-                <StatusPill
-                  tone={offering.status === "active" ? "success" : "neutral"}
-                >
-                  {offering.status}
-                </StatusPill>
-              </div>
-              <dl className="mt-5 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
-                <Metric
-                  label="Duration"
-                  value={`${offering.durationMinutes} min`}
-                />
-                <Metric label="Price" value={money(offering.fullPriceCents)} />
-                <Metric
-                  label="Deposit"
-                  value={money(offering.depositAmountCents)}
-                />
-                <Metric
-                  label="Buffers"
-                  value={`${offering.bufferBeforeMinutes}/${offering.bufferAfterMinutes} min`}
-                />
-              </dl>
-              {canManage ? (
-                <form
-                  action={updateServiceOfferingAction}
-                  className="mt-5 grid gap-3 rounded-2xl bg-lh-neutral-2 p-4 sm:grid-cols-2 lg:grid-cols-3"
-                >
-                  <input type="hidden" name="offeringId" value={offering.id} />
-                  <input
-                    type="hidden"
-                    name="expectedVersion"
-                    value={offering.version}
-                  />
-                  <Field label="Public title">
-                    <input
-                      className={inputClass}
-                      name="publicTitle"
-                      defaultValue={
-                        offering.publicTitle ?? offering.serviceTitle
-                      }
-                      required
-                    />
-                  </Field>
-                  <Field label="Public summary">
-                    <textarea
-                      className={inputClass}
-                      name="publicSummary"
-                      defaultValue={offering.publicSummary ?? ""}
-                      rows={3}
-                      required
-                    />
-                  </Field>
-                  <Field label="Display order">
-                    <input
-                      className={inputClass}
-                      name="displayOrder"
-                      type="number"
-                      min="0"
-                      defaultValue={offering.displayOrder}
-                      required
-                    />
-                  </Field>
-                  <Field label="Duration (minutes)">
-                    <input
-                      className={inputClass}
-                      name="durationMinutes"
-                      type="number"
-                      min="1"
-                      defaultValue={offering.durationMinutes}
-                      required
-                    />
-                  </Field>
-                  <Field label="Slot interval">
-                    <input
-                      className={inputClass}
-                      name="slotIntervalMinutes"
-                      type="number"
-                      min="1"
-                      defaultValue={offering.slotIntervalMinutes}
-                      required
-                    />
-                  </Field>
-                  <Field label="Buffer before">
-                    <input
-                      className={inputClass}
-                      name="bufferBeforeMinutes"
-                      type="number"
-                      min="0"
-                      defaultValue={offering.bufferBeforeMinutes}
-                      required
-                    />
-                  </Field>
-                  <Field label="Buffer after">
-                    <input
-                      className={inputClass}
-                      name="bufferAfterMinutes"
-                      type="number"
-                      min="0"
-                      defaultValue={offering.bufferAfterMinutes}
-                      required
-                    />
-                  </Field>
-                  <Field label="Full price (CAD)">
-                    <input
-                      className={inputClass}
-                      name="fullPrice"
-                      inputMode="decimal"
-                      pattern="[0-9]+(?:\.[0-9]{1,2})?"
-                      defaultValue={moneyInput(offering.fullPriceCents)}
-                      required
-                    />
-                  </Field>
-                  <Field label="Deposit (CAD)">
-                    <input
-                      className={inputClass}
-                      name="depositAmount"
-                      inputMode="decimal"
-                      pattern="[0-9]+(?:\.[0-9]{1,2})?"
-                      defaultValue={moneyInput(offering.depositAmountCents)}
-                      required
-                    />
-                  </Field>
-                  <button
-                    className={`${secondaryButtonClass} sm:col-span-2 sm:justify-self-start lg:col-span-3`}
-                    type="submit"
-                  >
-                    Save offering details
-                  </button>
-                </form>
-              ) : null}
-              <div className="mt-5 space-y-3">
-                <div>
-                  <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-lh-muted">
-                    Required resources
-                  </h4>
-                  <p className="mt-1 text-xs text-lh-muted">
-                    Changes apply to future holds. Existing hold and appointment
-                    snapshots keep their reservation rows.
-                  </p>
-                </div>
-                {data.offeringResources.filter(
-                  (relationship) => relationship.offeringId === offering.id,
-                ).length === 0 ? (
-                  <p className="text-sm text-lh-muted">
-                    No secondary resources assigned.
-                  </p>
-                ) : (
-                  data.offeringResources
-                    .filter(
-                      (relationship) => relationship.offeringId === offering.id,
-                    )
-                    .map((relationship) => (
-                      <div
-                        key={relationship.id}
-                        className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-lh-line px-3 py-2 text-sm"
-                      >
-                        <span>
-                          <strong>{relationship.resourceName}</strong> ·{" "}
-                          {relationship.resourceKind} ·{" "}
-                          {relationship.isRequired ? "required" : "optional"} ·{" "}
-                          {relationship.resourceStatus}
-                        </span>
-                        {canManageOfferingResources ? (
-                          <form action={removeOfferingResourceAction}>
-                            <input
-                              type="hidden"
-                              name="offeringId"
-                              value={offering.id}
-                            />
-                            <input
-                              type="hidden"
-                              name="resourceId"
-                              value={relationship.resourceId}
-                            />
-                            <ConfirmSubmitButton
-                              className={secondaryButtonClass}
-                              confirmation="Remove this resource from future holds? Existing reservations remain unchanged."
-                            >
-                              Remove
-                            </ConfirmSubmitButton>
-                          </form>
+      {activeTab === "price-timing" ? (
+        <section className="space-y-4">
+          <div>
+            <h2 className={sectionHeadingClass}>Price &amp; timing</h2>
+            <p className="mt-2 max-w-3xl text-sm text-lh-muted">
+              Set each provider&apos;s client-facing details, price, timing, and
+              required rooms or equipment.
+            </p>
+          </div>
+          {data.offerings.length === 0 ? (
+            <EmptyState
+              title="No provider pricing yet"
+              description={
+                data.services.length > 0 && data.providers.length > 0
+                  ? "Assign a service to a provider to set its price, duration, availability, and required resources."
+                  : "Create a service and a bookable provider before setting provider pricing."
+              }
+            />
+          ) : (
+            <div className="grid gap-4 xl:grid-cols-2">
+              {data.offerings.map((offering) => {
+                const offeringStatus =
+                  getBookingConfigurationStatusPresentation(offering.status);
+
+                return (
+                  <article key={offering.id} className={panelClass}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <h3 className="text-xl font-semibold">
+                          {offering.publicTitle ?? offering.serviceTitle}
+                        </h3>
+                        {offering.publicSummary ? (
+                          <p className="mt-1 max-w-xl text-sm text-lh-muted">
+                            {offering.publicSummary}
+                          </p>
                         ) : null}
+                        <p className="mt-1 text-sm text-lh-muted">
+                          {providerById.get(offering.providerId)?.displayName ??
+                            "Unknown provider"}{" "}
+                          · {offering.resourceName}
+                        </p>
+                        <details className="mt-2">
+                          <summary className={recordAdvancedSummaryClass}>
+                            Advanced
+                          </summary>
+                          <dl className="mt-2 grid gap-1 text-xs text-lh-muted">
+                            <div>
+                              <dt className="inline font-semibold">
+                                Offering key:{" "}
+                              </dt>
+                              <dd className="inline break-all">
+                                {offering.offeringKey}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="inline font-semibold">
+                                Display order:{" "}
+                              </dt>
+                              <dd className="inline">
+                                {offering.displayOrder}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="inline font-semibold">
+                                Configuration version:{" "}
+                              </dt>
+                              <dd className="inline">{offering.version}</dd>
+                            </div>
+                          </dl>
+                        </details>
                       </div>
-                    ))
-                )}
-                {canManageOfferingResources ? (
-                  <form
-                    action={assignOfferingResourceAction}
-                    className="grid gap-3 rounded-2xl bg-lh-neutral-2 p-4 sm:grid-cols-[1fr_auto_auto] sm:items-end"
-                  >
-                    <input
-                      type="hidden"
-                      name="offeringId"
-                      value={offering.id}
-                    />
-                    <Field label="Secondary resource">
-                      <select
-                        className={inputClass}
-                        name="resourceId"
-                        required
-                        defaultValue=""
+                      <StatusPill tone={offeringStatus.tone}>
+                        {offeringStatus.label}
+                      </StatusPill>
+                    </div>
+                    <dl className="mt-5 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+                      <Metric
+                        label="Duration"
+                        value={`${offering.durationMinutes} min`}
+                      />
+                      <Metric
+                        label="Price"
+                        value={money(offering.fullPriceCents)}
+                      />
+                      <Metric
+                        label="Deposit"
+                        value={money(offering.depositAmountCents)}
+                      />
+                      <Metric
+                        label="Buffers"
+                        value={`${offering.bufferBeforeMinutes}/${offering.bufferAfterMinutes} min`}
+                      />
+                    </dl>
+                    {canManage ? (
+                      <form
+                        action={updateServiceOfferingAction}
+                        className="mt-5 grid gap-3 rounded-2xl bg-lh-neutral-2 p-4 sm:grid-cols-2 lg:grid-cols-3"
                       >
-                        <option value="" disabled>
-                          Select room or equipment
-                        </option>
-                        {data.resources
+                        <input
+                          type="hidden"
+                          name="offeringId"
+                          value={offering.id}
+                        />
+                        <input
+                          type="hidden"
+                          name="expectedVersion"
+                          value={offering.version}
+                        />
+                        <Field label="Public title">
+                          <input
+                            className={inputClass}
+                            name="publicTitle"
+                            defaultValue={
+                              offering.publicTitle ?? offering.serviceTitle
+                            }
+                            required
+                          />
+                        </Field>
+                        <Field label="Public summary">
+                          <textarea
+                            className={inputClass}
+                            name="publicSummary"
+                            defaultValue={offering.publicSummary ?? ""}
+                            rows={3}
+                            required
+                          />
+                        </Field>
+                        <Field label="Display order">
+                          <input
+                            className={inputClass}
+                            name="displayOrder"
+                            type="number"
+                            min="0"
+                            defaultValue={offering.displayOrder}
+                            required
+                          />
+                        </Field>
+                        <Field label="Duration (minutes)">
+                          <input
+                            className={inputClass}
+                            name="durationMinutes"
+                            type="number"
+                            min="1"
+                            defaultValue={offering.durationMinutes}
+                            required
+                          />
+                        </Field>
+                        <Field label="Slot interval">
+                          <input
+                            className={inputClass}
+                            name="slotIntervalMinutes"
+                            type="number"
+                            min="1"
+                            defaultValue={offering.slotIntervalMinutes}
+                            required
+                          />
+                        </Field>
+                        <Field label="Buffer before">
+                          <input
+                            className={inputClass}
+                            name="bufferBeforeMinutes"
+                            type="number"
+                            min="0"
+                            defaultValue={offering.bufferBeforeMinutes}
+                            required
+                          />
+                        </Field>
+                        <Field label="Buffer after">
+                          <input
+                            className={inputClass}
+                            name="bufferAfterMinutes"
+                            type="number"
+                            min="0"
+                            defaultValue={offering.bufferAfterMinutes}
+                            required
+                          />
+                        </Field>
+                        <Field label="Full price (CAD)">
+                          <input
+                            className={inputClass}
+                            name="fullPrice"
+                            inputMode="decimal"
+                            pattern="[0-9]+(?:\.[0-9]{1,2})?"
+                            defaultValue={moneyInput(offering.fullPriceCents)}
+                            required
+                          />
+                        </Field>
+                        <Field label="Deposit (CAD)">
+                          <input
+                            className={inputClass}
+                            name="depositAmount"
+                            inputMode="decimal"
+                            pattern="[0-9]+(?:\.[0-9]{1,2})?"
+                            defaultValue={moneyInput(
+                              offering.depositAmountCents,
+                            )}
+                            required
+                          />
+                        </Field>
+                        <AdminSubmitButton
+                          className={`${secondaryButtonClass} sm:col-span-2 sm:justify-self-start lg:col-span-3`}
+                          pendingLabel="Saving…"
+                        >
+                          Save offering details
+                        </AdminSubmitButton>
+                      </form>
+                    ) : null}
+                    <div className="mt-5 space-y-3">
+                      <div>
+                        <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-lh-muted">
+                          Required resources
+                        </h4>
+                        <p className="mt-1 text-xs text-lh-muted">
+                          Changes apply to new bookings. Existing appointments
+                          keep the resources already reserved.
+                        </p>
+                      </div>
+                      {data.offeringResources.filter(
+                        (relationship) =>
+                          relationship.offeringId === offering.id,
+                      ).length === 0 ? (
+                        <p className="text-sm text-lh-muted">
+                          No secondary resources assigned.
+                        </p>
+                      ) : (
+                        data.offeringResources
                           .filter(
-                            (resource) =>
-                              resource.id !== offering.primaryResourceId &&
-                              !data.offeringResources.some(
-                                (relationship) =>
-                                  relationship.offeringId === offering.id &&
-                                  relationship.resourceId === resource.id,
-                              ),
+                            (relationship) =>
+                              relationship.offeringId === offering.id,
                           )
-                          .map((resource) => (
-                            <option key={resource.id} value={resource.id}>
-                              {resource.name} · {resource.kind} ·{" "}
-                              {resource.status}
-                            </option>
-                          ))}
-                      </select>
-                    </Field>
-                    <Field label="Requirement">
-                      <select
-                        className={inputClass}
-                        name="isRequired"
-                        defaultValue="true"
+                          .map((relationship) => (
+                            <div
+                              key={relationship.id}
+                              className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-lh-line px-3 py-2 text-sm"
+                            >
+                              <span className="flex flex-wrap items-center gap-2">
+                                <strong>{relationship.resourceName}</strong>
+                                <span className="text-lh-muted">
+                                  {getBookingResourceKindLabel(
+                                    relationship.resourceKind,
+                                  )}{" "}
+                                  ·{" "}
+                                  {relationship.isRequired
+                                    ? "Required"
+                                    : "Optional"}
+                                </span>
+                                <StatusPill
+                                  tone={
+                                    getBookingConfigurationStatusPresentation(
+                                      relationship.resourceStatus,
+                                    ).tone
+                                  }
+                                >
+                                  {
+                                    getBookingConfigurationStatusPresentation(
+                                      relationship.resourceStatus,
+                                    ).label
+                                  }
+                                </StatusPill>
+                              </span>
+                              {canManageOfferingResources ? (
+                                <form action={removeOfferingResourceAction}>
+                                  <input
+                                    type="hidden"
+                                    name="offeringId"
+                                    value={offering.id}
+                                  />
+                                  <input
+                                    type="hidden"
+                                    name="resourceId"
+                                    value={relationship.resourceId}
+                                  />
+                                  <ConfirmSubmitButton
+                                    className={secondaryButtonClass}
+                                    confirmation="Remove this resource from new bookings? Existing appointments keep the resources already reserved."
+                                  >
+                                    Remove
+                                  </ConfirmSubmitButton>
+                                </form>
+                              ) : null}
+                            </div>
+                          ))
+                      )}
+                      {canManageOfferingResources ? (
+                        <form
+                          action={assignOfferingResourceAction}
+                          className="grid gap-3 rounded-2xl bg-lh-neutral-2 p-4 sm:grid-cols-[1fr_auto_auto] sm:items-end"
+                        >
+                          <input
+                            type="hidden"
+                            name="offeringId"
+                            value={offering.id}
+                          />
+                          <Field label="Secondary resource">
+                            <select
+                              className={inputClass}
+                              name="resourceId"
+                              required
+                              defaultValue=""
+                            >
+                              <option value="" disabled>
+                                Select room or equipment
+                              </option>
+                              {data.resources
+                                .filter(
+                                  (resource) =>
+                                    resource.id !==
+                                      offering.primaryResourceId &&
+                                    !data.offeringResources.some(
+                                      (relationship) =>
+                                        relationship.offeringId ===
+                                          offering.id &&
+                                        relationship.resourceId === resource.id,
+                                    ),
+                                )
+                                .map((resource) => (
+                                  <option key={resource.id} value={resource.id}>
+                                    {resource.name} ·{" "}
+                                    {getBookingResourceKindLabel(resource.kind)}{" "}
+                                    ·{" "}
+                                    {
+                                      getBookingConfigurationStatusPresentation(
+                                        resource.status,
+                                      ).label
+                                    }
+                                  </option>
+                                ))}
+                            </select>
+                          </Field>
+                          <Field label="Requirement">
+                            <select
+                              className={inputClass}
+                              name="isRequired"
+                              defaultValue="true"
+                            >
+                              <option value="true">Required</option>
+                              <option value="false">Optional</option>
+                            </select>
+                          </Field>
+                          <AdminSubmitButton
+                            className={secondaryButtonClass}
+                            pendingLabel="Assigning…"
+                          >
+                            Assign resource
+                          </AdminSubmitButton>
+                        </form>
+                      ) : null}
+                    </div>
+                    {canManage ? (
+                      <div className="mt-5">
+                        <StatusForm
+                          action={setServiceOfferingStatusAction}
+                          idName="offeringId"
+                          id={offering.id}
+                          status={offering.status}
+                        />
+                      </div>
+                    ) : null}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      {activeTab === "add-ons" ? (
+        <section className="space-y-4">
+          <div>
+            <h2 className={sectionHeadingClass}>Add-ons</h2>
+            <p className="mt-2 max-w-3xl text-sm text-lh-muted">
+              Manage optional upgrades clients can select with a service.
+            </p>
+          </div>
+          {data.addOns.length === 0 ? (
+            <EmptyState
+              title="No add-ons yet"
+              description="Add an upgrade to an existing provider service to set its price and extra time."
+            />
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-2">
+              {data.addOns.map((addOn) => {
+                const addOnStatus = getBookingConfigurationStatusPresentation(
+                  addOn.status,
+                );
+                const offering = offeringById.get(addOn.offeringId);
+                const provider = offering
+                  ? providerById.get(offering.providerId)
+                  : undefined;
+
+                return (
+                  <article key={addOn.id} className={panelClass}>
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div>
+                        <h3 className="text-xl font-semibold">{addOn.name}</h3>
+                        <p className="mt-1 text-sm text-lh-muted">
+                          {offering?.publicTitle ??
+                            offering?.serviceTitle ??
+                            "Unavailable service"}
+                          {provider ? ` · ${provider.displayName}` : ""}
+                        </p>
+                      </div>
+                      <StatusPill tone={addOnStatus.tone}>
+                        {addOnStatus.label}
+                      </StatusPill>
+                    </div>
+                    {addOn.description ? (
+                      <p className="mt-4 text-sm text-lh-muted">
+                        {addOn.description}
+                      </p>
+                    ) : null}
+                    <dl className="mt-5 grid grid-cols-2 gap-4 text-sm">
+                      <Metric label="Price" value={money(addOn.priceCents)} />
+                      <Metric
+                        label="Extra time"
+                        value={`${addOn.durationDeltaMinutes} min`}
+                      />
+                    </dl>
+                    <details className="mt-3">
+                      <summary className={advancedSummaryClass}>
+                        Advanced
+                      </summary>
+                      <p className="mt-1 break-all text-xs text-lh-muted">
+                        Add-on key: {addOn.addOnKey}
+                      </p>
+                    </details>
+                    {canManage ? (
+                      <form
+                        action={setOfferingAddOnStatusAction}
+                        className="mt-5"
                       >
-                        <option value="true">Required</option>
-                        <option value="false">Optional</option>
-                      </select>
-                    </Field>
-                    <button className={secondaryButtonClass} type="submit">
-                      Assign resource
-                    </button>
-                  </form>
-                ) : null}
-              </div>
-              <div className="mt-5 space-y-2">
-                <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-lh-muted">
-                  Add-ons
-                </h4>
-                {data.addOns
-                  .filter((addOn) => addOn.offeringId === offering.id)
-                  .map((addOn) => (
-                    <div
-                      key={addOn.id}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-lh-line px-3 py-2 text-sm"
-                    >
-                      <span>
-                        <strong>{addOn.name}</strong> ·{" "}
-                        {money(addOn.priceCents)} · +
-                        {addOn.durationDeltaMinutes} min
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <StatusPill
-                          tone={
-                            addOn.status === "active" ? "success" : "neutral"
+                        <input type="hidden" name="addOnId" value={addOn.id} />
+                        <input
+                          type="hidden"
+                          name="status"
+                          value={
+                            addOn.status === "active" ? "disabled" : "active"
+                          }
+                        />
+                        <ConfirmSubmitButton
+                          className={secondaryButtonClass}
+                          confirmation={
+                            addOn.status === "active"
+                              ? `Disable ${addOn.name}? Clients will no longer be able to add it to new bookings.`
+                              : `Activate ${addOn.name}? Clients will be able to add it to eligible new bookings.`
                           }
                         >
-                          {addOn.status}
-                        </StatusPill>
-                        {canManage ? (
-                          <form action={setOfferingAddOnStatusAction}>
-                            <input
-                              type="hidden"
-                              name="addOnId"
-                              value={addOn.id}
-                            />
-                            <input
-                              type="hidden"
-                              name="status"
-                              value={
-                                addOn.status === "active"
-                                  ? "disabled"
-                                  : "active"
-                              }
-                            />
-                            <ConfirmSubmitButton
-                              className={secondaryButtonClass}
-                              confirmation={
-                                addOn.status === "active"
-                                  ? "Disable this add-on?"
-                                  : "Activate this add-on?"
-                              }
-                            >
-                              {addOn.status === "active"
-                                ? "Disable"
-                                : "Activate"}
-                            </ConfirmSubmitButton>
-                          </form>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))}
-              </div>
-              {canManage ? (
-                <div className="mt-5">
-                  <StatusForm
-                    action={setServiceOfferingStatusAction}
-                    idName="offeringId"
-                    id={offering.id}
-                    status={offering.status}
-                  />
-                </div>
-              ) : null}
-            </article>
-          ))}
-        </div>
-      </section>
+                          {addOn.status === "active" ? "Disable" : "Activate"}
+                        </ConfirmSubmitButton>
+                      </form>
+                    ) : null}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+function EmptyState({
+  description,
+  title,
+}: {
+  description: string;
+  title: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-dashed border-lh-line bg-lh-neutral-2 p-6">
+      <h3 className="text-lg font-semibold">{title}</h3>
+      <p className="mt-2 max-w-2xl text-sm text-lh-muted">{description}</p>
     </div>
   );
 }
@@ -790,7 +1067,7 @@ function StatusForm({
   action: (formData: FormData) => Promise<void>;
   id: string;
   idName: string;
-  status: string;
+  status: BookingConfigurationStatus;
 }) {
   return (
     <form action={action} className="flex gap-2">
@@ -806,7 +1083,7 @@ function StatusForm({
       </select>
       <ConfirmSubmitButton
         className={secondaryButtonClass}
-        confirmation="Apply this status change? Activating publishes the configuration to booking; disabling can make it unavailable."
+        confirmation="Apply this status change? Activating makes the service bookable; disabling can remove it from online booking."
       >
         Save
       </ConfirmSubmitButton>
@@ -826,16 +1103,6 @@ function Field({
       <span className="mb-2 block">{label}</span>
       {children}
     </label>
-  );
-}
-function SubmitButton({ children }: { children: React.ReactNode }) {
-  return (
-    <button
-      className="mt-5 rounded-full bg-lh-primary px-5 py-3 text-sm font-semibold uppercase tracking-[0.12em] text-white disabled:opacity-50"
-      type="submit"
-    >
-      {children}
-    </button>
   );
 }
 function Metric({ label, value }: { label: string; value: string }) {
@@ -875,13 +1142,40 @@ function getSanityServiceLinkValue(
   return publishedService ? encodeSanityServiceLink(publishedService) : "";
 }
 
+const offeringsTabs = [
+  { label: "Services", value: "services" },
+  { label: "Price, timing & availability", value: "price-timing" },
+  { label: "Add-ons", value: "add-ons" },
+] as const;
+
+type OfferingsTab = (typeof offeringsTabs)[number]["value"];
+
+function parseOfferingsTab(value: string | string[] | undefined): OfferingsTab {
+  const candidate = Array.isArray(value) ? value[0] : value;
+  if (candidate === "price-timing" || candidate === "add-ons") {
+    return candidate;
+  }
+  return "services";
+}
+
 const panelClass = "rounded-2xl border border-lh-line bg-white p-6";
-const headingClass = "font-heading text-3xl uppercase tracking-[0.08em]";
 const sectionHeadingClass = "font-heading text-4xl uppercase tracking-[0.08em]";
 const inputClass =
-  "w-full rounded-xl border border-lh-line bg-white px-3 py-2 text-sm";
+  "min-h-11 w-full rounded-xl border border-lh-line bg-white px-3 py-2 text-sm";
+const primaryButtonClass =
+  "mt-5 min-h-11 rounded-full bg-lh-primary px-5 py-3 text-sm font-semibold uppercase tracking-[0.12em] text-white disabled:cursor-not-allowed disabled:opacity-50";
 const secondaryButtonClass =
-  "rounded-full border border-lh-line px-3 py-2 text-xs font-semibold";
+  "min-h-11 rounded-full border border-lh-line px-4 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50";
 const theadClass =
   "bg-lh-neutral-2 text-xs uppercase tracking-[0.12em] text-lh-muted";
 const cellClass = "px-4 py-3 align-top";
+const tabLinkClass =
+  "flex min-h-11 shrink-0 items-center rounded-full border px-4 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lh-primary focus-visible:ring-offset-2";
+const createSummaryClass =
+  "min-h-11 cursor-pointer list-none py-2 font-heading text-2xl uppercase tracking-[0.08em] text-lh-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lh-primary focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden";
+const advancedDetailsClass =
+  "mt-3 rounded-2xl border border-lh-line bg-lh-neutral-2 p-4";
+const advancedSummaryClass =
+  "min-h-11 cursor-pointer list-none py-2 text-sm font-semibold text-lh-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lh-primary focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden";
+const recordAdvancedSummaryClass =
+  "min-h-11 cursor-pointer py-3 text-xs font-semibold text-lh-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lh-primary focus-visible:ring-offset-2";
