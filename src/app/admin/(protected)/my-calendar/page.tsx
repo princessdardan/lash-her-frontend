@@ -373,9 +373,8 @@ export default async function MyCalendarPage({
         <section className="rounded-2xl border border-lh-line bg-white p-6">
           <h2 className="text-xl font-semibold">Managed by Lash Her</h2>
           <p className="mt-2 text-sm text-lh-muted">
-            These calendars apply to the people, rooms, or equipment you can
-            manage, but their Google connections are controlled by the owner or
-            an administrator.
+            These calendars apply to your provider profile, but their Google
+            connections are controlled by the owner or an administrator.
           </p>
           <div className="mt-5 space-y-3">
             {ownerManagedAssignments.map((assignment) => {

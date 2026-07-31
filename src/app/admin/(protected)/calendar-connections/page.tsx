@@ -21,7 +21,6 @@ import { canAdmin } from "@/lib/admin/permissions";
 import { requireAdminPagePermission } from "@/lib/admin/page-authorization";
 import {
   getBookingConfigurationStatusPresentation,
-  getBookingResourceKindLabel,
   getCalendarAssignmentStatusPresentation,
   getCalendarConnectionStatusPresentation,
 } from "@/lib/admin/presentation";
@@ -109,7 +108,7 @@ export default async function AdminCalendarConnectionsPage({
           </h1>
           <p className="mt-3 max-w-3xl text-lh-muted">
             Review where new appointments are added and which calendars block
-            unavailable times for each person, room, or piece of equipment.
+            unavailable times for each provider.
           </p>
         </div>
         {canManage ? (
@@ -133,7 +132,7 @@ export default async function AdminCalendarConnectionsPage({
               className="font-heading text-3xl uppercase tracking-[0.08em]"
               id="resource-calendar-heading"
             >
-              Bookable people, rooms &amp; equipment
+              Providers
             </h2>
             <p className="mt-2 text-sm text-lh-muted">
               A booking destination receives new appointments. Busy calendars
@@ -215,7 +214,7 @@ export default async function AdminCalendarConnectionsPage({
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-lh-muted">
-                      {getBookingResourceKindLabel(resource.kind)}
+                      Provider
                     </p>
                     <h3 className="mt-1 text-xl font-semibold">
                       {resource.name}
@@ -226,9 +225,8 @@ export default async function AdminCalendarConnectionsPage({
 
                 {resource.status !== "active" ? (
                   <p className="mt-4 rounded-xl bg-lh-neutral-2 p-3 text-sm text-lh-muted">
-                    This person, room, or equipment is{" "}
-                    {resourceStatus.label.toLowerCase()} and is not currently
-                    offered for online booking.
+                    This provider is {resourceStatus.label.toLowerCase()} and is
+                    not currently offered for online booking.
                   </p>
                 ) : null}
 
@@ -326,7 +324,7 @@ export default async function AdminCalendarConnectionsPage({
           })}
           {visibleResources.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-lh-line bg-white p-6 text-lh-muted xl:col-span-2">
-              <p>No bookable people, rooms, or equipment are configured.</p>
+              <p>No provider accounts are configured.</p>
               <Link
                 className={`${secondaryButtonClass} mt-4`}
                 href="/admin/staff"

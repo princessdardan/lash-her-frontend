@@ -32,7 +32,7 @@ Create separate Google OAuth clients for identity and booking-calendar access so
 | ----------------------------------------------------------- | -------------------------------------- |
 | Service detail-page editorial, imagery, and SEO             | Sanity                                 |
 | Public service catalog title/summary and intake copy        | PostgreSQL                             |
-| Provider/resource status and assignment                     | PostgreSQL                             |
+| Staff provider identity and booking status                  | PostgreSQL                             |
 | Provider-specific offering price, duration, buffer, add-ons | PostgreSQL                             |
 | Weekly schedules and exceptions                             | PostgreSQL                             |
 | Calendar connections and canonical calendar IDs             | PostgreSQL, with encrypted credentials |
@@ -145,7 +145,7 @@ and prints `CUTOVER VALIDATION PASSED`.
 The dashboard provides these operational areas:
 
 - `/admin/setup`: configuration/readiness summary and global defaults.
-- `/admin/staff`: owner/admin/employee profiles, resources, and employee resource assignments.
+- `/admin/staff`: owner/admin/employee accounts, their automatically provisioned provider profiles, booking status, and Square attribution.
 - `/admin/offerings`: operational services, public catalog copy, provider-specific prices, durations, buffers, add-ons, and optional detail-page editorial links.
 - `/admin/schedules`: weekly shifts, split shifts, closures, and availability exceptions.
 - `/admin/calendar-connections`: connect/reconnect Google accounts and assign busy/write calendars.
@@ -198,8 +198,8 @@ commissions, payroll, tax, or financial accounting.
 - `owner`: all access, staff/configuration management, audit, sensitive exports/refunds.
 - `admin`: daily operations, configuration, calendars, marketing, analytics, and staff viewing; no owner-only audit/export/refund authority.
 - `employee`: appointments, schedules, and owned Google Calendar routing for
-  assigned provider resources only. Employees can choose busy-only calendars
-  and the booking destination for those resources but cannot access the
+  their implicit provider profile. Employees can choose busy-only calendars
+  and the booking destination for that profile but cannot access the
   business-wide Calendar administration surface.
 
 Authorization is enforced in server queries and mutations. Hiding a navigation item is not treated as authorization.

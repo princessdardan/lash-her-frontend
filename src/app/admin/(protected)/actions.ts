@@ -10,10 +10,7 @@ import {
   saveEmployeeCalendarAssignment,
 } from "@/lib/admin/employee-calendar";
 import {
-  assignOfferingResource,
-  assignStaffResource,
   cancelScheduleException,
-  createBookingResource,
   createBookingService,
   createCalendarConnection,
   createOfferingAddOn,
@@ -24,7 +21,6 @@ import {
   disableCalendarAssignment,
   disableCalendarConnection,
   disableResourceSchedule,
-  removeOfferingResource,
   saveCalendarAssignment,
   setAppointmentAttendanceStatus,
   setBookingResourceStatus,
@@ -33,8 +29,6 @@ import {
   setServiceOfferingStatus,
   setStaffStatus,
   transferCalendarConnectionOwnership,
-  unassignStaffResource,
-  updateBookingResourceProfile,
   updateBookingServiceProfile,
   updateBookingSettings,
   updateServiceOffering,
@@ -105,32 +99,6 @@ export async function setStaffStatusAction(formData: FormData) {
   });
 }
 
-export async function assignStaffResourceAction(formData: FormData) {
-  return runAdminAction({
-    destination: "/admin/staff?tab=people",
-    revalidatePaths: ["/admin/staff"],
-    success: "Resource assigned.",
-    task: () =>
-      assignStaffResource({
-        resourceId: getString(formData, "resourceId"),
-        userId: getString(formData, "userId"),
-      }),
-  });
-}
-
-export async function unassignStaffResourceAction(formData: FormData) {
-  return runAdminAction({
-    destination: "/admin/staff?tab=people",
-    revalidatePaths: ["/admin/staff"],
-    success: "Resource access removed.",
-    task: () =>
-      unassignStaffResource({
-        resourceId: getString(formData, "resourceId"),
-        userId: getString(formData, "userId"),
-      }),
-  });
-}
-
 export async function refreshSquareTeamMappingsAction() {
   const outcome = await attemptAdminAction(refreshSquareTeamMappings);
   if (!outcome.ok) {
@@ -180,61 +148,15 @@ export async function setSquareAttributionRequirementAction(
   });
 }
 
-export async function createBookingResourceAction(formData: FormData) {
-  return runAdminAction({
-    destination: "/admin/staff?tab=resources",
-    revalidatePaths: ["/admin/staff", "/admin/setup"],
-    success: "Booking resource created as a draft.",
-    task: async () => {
-      const kind = getString(formData, "kind");
-      if (kind !== "provider" && kind !== "room" && kind !== "equipment") {
-        throw new Error("Invalid resource kind");
-      }
-      await createBookingResource({
-        kind,
-        name: getString(formData, "name"),
-        publicSlug: getOptionalString(formData, "publicSlug"),
-        resourceKey: getString(formData, "resourceKey"),
-        sanityDocumentId: getOptionalString(formData, "sanityDocumentId"),
-        timezone: getString(formData, "timezone"),
-      });
-    },
-  });
-}
-
 export async function setBookingResourceStatusAction(formData: FormData) {
   return runAdminAction({
-    destination: "/admin/staff?tab=resources",
+    destination: "/admin/staff?tab=people",
     revalidatePaths: ["/admin/staff", "/admin/setup"],
-    success: "Resource status updated.",
+    success: "Booking status updated.",
     task: () =>
       setBookingResourceStatus({
         resourceId: getString(formData, "resourceId"),
         status: getConfigurationStatus(formData),
-      }),
-  });
-}
-
-export async function updateBookingResourceProfileAction(formData: FormData) {
-  return runAdminAction({
-    destination: "/admin/staff?tab=resources",
-    revalidatePaths: [
-      "/admin/staff",
-      "/admin/offerings",
-      "/admin/schedules",
-      "/admin/setup",
-    ],
-    success: "Resource profile updated.",
-    task: () =>
-      updateBookingResourceProfile({
-        name: getString(formData, "name"),
-        providerPublicSlug: getOptionalString(formData, "providerPublicSlug"),
-        providerSanityDocumentId: getOptionalString(
-          formData,
-          "providerSanityDocumentId",
-        ),
-        resourceId: getString(formData, "resourceId"),
-        timezone: getString(formData, "timezone"),
       }),
   });
 }
@@ -345,33 +267,6 @@ export async function updateServiceOfferingAction(formData: FormData) {
         publicSummary: getString(formData, "publicSummary"),
         publicTitle: getString(formData, "publicTitle"),
         slotIntervalMinutes: getInteger(formData, "slotIntervalMinutes"),
-      }),
-  });
-}
-
-export async function assignOfferingResourceAction(formData: FormData) {
-  return runAdminAction({
-    destination: "/admin/offerings?tab=price-timing",
-    revalidatePaths: ["/admin/offerings", "/admin/setup", "/services"],
-    success: "Offering resource saved.",
-    task: () =>
-      assignOfferingResource({
-        isRequired: getString(formData, "isRequired") === "true",
-        offeringId: getString(formData, "offeringId"),
-        resourceId: getString(formData, "resourceId"),
-      }),
-  });
-}
-
-export async function removeOfferingResourceAction(formData: FormData) {
-  return runAdminAction({
-    destination: "/admin/offerings?tab=price-timing",
-    revalidatePaths: ["/admin/offerings", "/admin/setup", "/services"],
-    success: "Offering resource removed for future holds.",
-    task: () =>
-      removeOfferingResource({
-        offeringId: getString(formData, "offeringId"),
-        resourceId: getString(formData, "resourceId"),
       }),
   });
 }

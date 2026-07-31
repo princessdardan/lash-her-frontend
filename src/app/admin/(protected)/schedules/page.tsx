@@ -286,11 +286,11 @@ export default async function AdminSchedulesPage({
         <section className="space-y-4">
           <h2 className={sectionHeadingClass}>Regular hours</h2>
           {currentSchedules.length > 0 ? (
-            <AdminTable caption="Regular availability by person, room, or equipment">
+            <AdminTable caption="Regular availability by provider">
               <thead className={theadClass}>
                 <tr>
                   <th className={cellClass} scope="col">
-                    Person, room, or equipment
+                    Provider
                   </th>
                   <th className={cellClass} scope="col">
                     Day
@@ -438,7 +438,7 @@ export default async function AdminSchedulesPage({
                 <thead className={theadClass}>
                   <tr>
                     <th className={cellClass} scope="col">
-                      Person, room, or equipment
+                      Provider
                     </th>
                     <th className={cellClass} scope="col">
                       Type
@@ -575,7 +575,7 @@ function ResourceField({
   resources: Array<{ id: string; name: string; timezone: string }>;
 }) {
   return (
-    <Field label="Person, room, or equipment">
+    <Field label="Provider">
       <select
         className={inputClass}
         defaultValue={defaultResourceId || resources[0]?.id}
@@ -624,7 +624,7 @@ function ExceptionHistoryTable({
       <thead className={theadClass}>
         <tr>
           <th className={cellClass} scope="col">
-            Person, room, or equipment
+            Provider
           </th>
           <th className={cellClass} scope="col">
             Type

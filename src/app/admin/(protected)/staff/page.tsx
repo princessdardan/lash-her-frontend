@@ -9,11 +9,9 @@ import {
   getAdminRoleLabel,
   getAdminUserStatusPresentation,
   getBookingConfigurationStatusPresentation,
-  getBookingResourceKindLabel,
   getSquareMappingStatusPresentation,
-  getTimezoneLabel,
 } from "@/lib/admin/presentation";
-import { listAdminStaffAndResources } from "@/lib/admin/operations-read";
+import { listAdminStaffAndProviders } from "@/lib/admin/operations-read";
 import { requireAdminPagePermission } from "@/lib/admin/page-authorization";
 import {
   createCurrentSquareTeamMemberSelectionOption,
@@ -21,21 +19,17 @@ import {
 } from "@/lib/admin/square-team-attribution";
 
 import {
-  assignStaffResourceAction,
-  createBookingResourceAction,
   createStaffUserAction,
   refreshSquareTeamMappingsAction,
   setBookingResourceStatusAction,
   setStaffStatusAction,
   setProviderSquareTeamMemberAction,
-  unassignStaffResourceAction,
-  updateBookingResourceProfileAction,
 } from "../actions";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-type TeamTab = "people" | "resources" | "square";
+type TeamTab = "people" | "square";
 
 export default async function AdminStaffPage({
   searchParams,
@@ -53,7 +47,7 @@ export default async function AdminStaffPage({
     firstString(feedback.squareTeam),
   );
   const actor = await requireAdminPagePermission("staff:view");
-  const data = await listAdminStaffAndResources();
+  const data = await listAdminStaffAndProviders();
   const canManage = canAdmin({
     action: "staff:manage",
     bookingProviderResourceIds: actor.bookingProviderResourceIds,
@@ -72,9 +66,6 @@ export default async function AdminStaffPage({
         "Square team members could not be loaded. Existing matches were preserved.";
     }
   }
-  const resourceById = new Map(
-    data.resources.map((resource) => [resource.id, resource]),
-  );
   const providerByResourceId = new Map(
     data.providers.map((provider) => [provider.primaryResourceId, provider]),
   );
@@ -89,8 +80,8 @@ export default async function AdminStaffPage({
           Team
         </h1>
         <p className="mt-3 max-w-3xl text-lh-muted">
-          Manage who can access the admin and which people, rooms, or equipment
-          they can work with.
+          Manage team access and each person&apos;s booking availability. Every
+          team account is automatically created as a bookable provider.
         </p>
       </header>
 
@@ -100,7 +91,6 @@ export default async function AdminStaffPage({
         {(
           [
             ["people", "People"],
-            ["resources", "Bookable people, rooms & equipment"],
             ["square", "Square sales matching"],
           ] as const
         ).map(([value, label]) => (
@@ -296,8 +286,8 @@ export default async function AdminStaffPage({
               <div>
                 <dt className="font-semibold">Contractor</dt>
                 <dd className="mt-1 text-lh-muted">
-                  Works only with assigned people, rooms, or equipment and their
-                  related appointments and availability.
+                  Manages their own appointments, services, availability, and
+                  Google Calendar connection.
                 </dd>
               </div>
             </dl>
@@ -317,10 +307,10 @@ export default async function AdminStaffPage({
                     Access level
                   </th>
                   <th scope="col" className={cellClass}>
-                    Assigned resources
+                    Booking profile
                   </th>
                   <th scope="col" className={cellClass}>
-                    Status
+                    Account status
                   </th>
                   <th scope="col" className={cellClass}>
                     Action
@@ -339,6 +329,11 @@ export default async function AdminStaffPage({
                     const assignments = data.assignments.filter(
                       (row) => row.adminUserId === user.id,
                     );
+                    const provider = assignments
+                      .map((assignment) =>
+                        providerByResourceId.get(assignment.bookingResourceId),
+                      )
+                      .find((candidate) => candidate !== undefined);
                     const userStatus = getAdminUserStatusPresentation(
                       user.status,
                     );
@@ -354,70 +349,58 @@ export default async function AdminStaffPage({
                           {getAdminRoleLabel(user.role)}
                         </td>
                         <td className={cellClass}>
-                          <div className="flex flex-wrap gap-2">
-                            {assignments.length === 0 ? (
-                              <span className="text-lh-muted">None</span>
-                            ) : (
-                              assignments.map((assignment) => (
-                                <span
-                                  key={assignment.bookingResourceId}
-                                  className="inline-flex items-center gap-2 rounded-full border border-lh-line px-3 py-1 text-xs"
+                          {provider ? (
+                            <div className="space-y-2">
+                              <StatusPill
+                                tone={
+                                  getBookingConfigurationStatusPresentation(
+                                    provider.status,
+                                  ).tone
+                                }
+                              >
+                                {
+                                  getBookingConfigurationStatusPresentation(
+                                    provider.status,
+                                  ).label
+                                }
+                              </StatusPill>
+                              {canManage ? (
+                                <form
+                                  action={setBookingResourceStatusAction}
+                                  className="flex gap-2"
                                 >
-                                  {resourceById.get(
-                                    assignment.bookingResourceId,
-                                  )?.name ?? "Unknown"}
-                                  {canManage ? (
-                                    <form action={unassignStaffResourceAction}>
-                                      <input
-                                        type="hidden"
-                                        name="userId"
-                                        value={user.id}
-                                      />
-                                      <input
-                                        type="hidden"
-                                        name="resourceId"
-                                        value={assignment.bookingResourceId}
-                                      />
-                                      <ConfirmSubmitButton
-                                        ariaLabel="Remove resource assignment"
-                                        confirmation={`Remove ${resourceById.get(assignment.bookingResourceId)?.name ?? "this resource"} from ${user.displayName ?? user.email}?`}
-                                      >
-                                        ×
-                                      </ConfirmSubmitButton>
-                                    </form>
-                                  ) : null}
-                                </span>
-                              ))
-                            )}
-                          </div>
-                          {canManage && data.resources.length > 0 ? (
-                            <form
-                              action={assignStaffResourceAction}
-                              className="mt-3 flex gap-2"
-                            >
-                              <input
-                                type="hidden"
-                                name="userId"
-                                value={user.id}
-                              />
-                              <select
-                                className={`${inputClass} min-w-40`}
-                                name="resourceId"
-                              >
-                                {data.resources.map((resource) => (
-                                  <option key={resource.id} value={resource.id}>
-                                    {resource.name}
-                                  </option>
-                                ))}
-                              </select>
-                              <AdminSubmitButton
-                                className={secondaryButtonClass}
-                                pendingLabel="Assigning…"
-                              >
-                                Assign
-                              </AdminSubmitButton>
-                            </form>
-                          ) : null}
+                                  <input
+                                    type="hidden"
+                                    name="resourceId"
+                                    value={provider.primaryResourceId}
+                                  />
+                                  <select
+                                    className={inputClass}
+                                    name="status"
+                                    defaultValue={
+                                      provider.status === "archived"
+                                        ? "disabled"
+                                        : provider.status
+                                    }
+                                  >
+                                    <option value="draft">Draft</option>
+                                    <option value="active">Active</option>
+                                    <option value="disabled">Disabled</option>
+                                  </select>
+                                  <ConfirmSubmitButton
+                                    className={secondaryButtonClass}
+                                    confirmation={`Update booking availability for ${user.displayName ?? user.email}?`}
+                                  >
+                                    Save
+                                  </ConfirmSubmitButton>
+                                </form>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <span className="text-sm text-red-700">
+                              Booking profile missing
+                            </span>
+                          )}
                         </td>
                         <td className={cellClass}>
                           <StatusPill tone={userStatus.tone}>
@@ -470,6 +453,10 @@ export default async function AdminStaffPage({
             <details className={createDetailsClass}>
               <summary className={createSummaryClass}>Add staff member</summary>
               <form action={createStaffUserAction} className="mt-5">
+                <p className="mb-5 text-sm text-lh-muted">
+                  A bookable provider profile is created automatically with the
+                  team account.
+                </p>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field label="Name">
                     <input
@@ -508,261 +495,6 @@ export default async function AdminStaffPage({
           ) : null}
         </>
       ) : null}
-
-      {tab === "resources" ? (
-        <>
-          <section className="space-y-4">
-            <div>
-              <h2 className="font-heading text-4xl uppercase tracking-[0.08em]">
-                Bookable people, rooms &amp; equipment
-              </h2>
-              <p className="mt-2 max-w-3xl text-sm text-lh-muted">
-                Bookable team members provide services. Rooms and equipment can
-                be reserved with them when a service requires those resources.
-              </p>
-            </div>
-            {data.resources.length === 0 ? (
-              <p className="rounded-2xl border border-lh-line bg-white p-5 text-sm text-lh-muted">
-                No bookable people, rooms, or equipment have been added.
-              </p>
-            ) : (
-              <div className="grid gap-4 lg:grid-cols-2">
-                {data.resources.map((resource) => {
-                  const provider = providerByResourceId.get(resource.id);
-                  const resourceStatus =
-                    getBookingConfigurationStatusPresentation(resource.status);
-                  return (
-                    <article
-                      key={resource.id}
-                      className="rounded-2xl border border-lh-line bg-white p-5"
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <h3 className="text-lg font-semibold">
-                            {resource.name}
-                          </h3>
-                          <p className="mt-1 text-sm text-lh-muted">
-                            {getBookingResourceKindLabel(resource.kind)}
-                          </p>
-                        </div>
-                        <StatusPill tone={resourceStatus.tone}>
-                          {resourceStatus.label}
-                        </StatusPill>
-                      </div>
-                      {canManage ? (
-                        <form
-                          action={updateBookingResourceProfileAction}
-                          className="mt-5"
-                        >
-                          <input
-                            type="hidden"
-                            name="resourceId"
-                            value={resource.id}
-                          />
-                          <Field label="Display name">
-                            <input
-                              className={inputClass}
-                              name="name"
-                              defaultValue={resource.name}
-                              required
-                              maxLength={120}
-                            />
-                          </Field>
-                          <details className={advancedDetailsClass}>
-                            <summary className={advancedSummaryClass}>
-                              Advanced
-                            </summary>
-                            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                              <div className="rounded-xl bg-lh-neutral-2 p-3 text-sm">
-                                <span className="block text-xs font-semibold uppercase tracking-[0.12em] text-lh-muted">
-                                  Resource key
-                                </span>
-                                <span className="mt-1 block break-all">
-                                  {resource.resourceKey}
-                                </span>
-                              </div>
-                              <Field label="Timezone identifier">
-                                <input
-                                  className={inputClass}
-                                  name="timezone"
-                                  defaultValue={resource.timezone}
-                                  required
-                                />
-                              </Field>
-                              {resource.kind === "provider" ? (
-                                <>
-                                  <Field label="Public provider slug">
-                                    <input
-                                      className={inputClass}
-                                      name="providerPublicSlug"
-                                      defaultValue={provider?.publicSlug ?? ""}
-                                    />
-                                  </Field>
-                                  <Field label="Website content provider ID">
-                                    <input
-                                      className={inputClass}
-                                      name="providerSanityDocumentId"
-                                      defaultValue={
-                                        provider?.sanityDocumentId ?? ""
-                                      }
-                                    />
-                                  </Field>
-                                </>
-                              ) : null}
-                            </div>
-                            <p className="mt-3 text-xs text-lh-muted">
-                              Times are shown to staff as{" "}
-                              {getTimezoneLabel(resource.timezone)}.
-                            </p>
-                          </details>
-                          <AdminSubmitButton
-                            className={`${secondaryButtonClass} mt-4`}
-                            pendingLabel="Saving…"
-                          >
-                            Save profile
-                          </AdminSubmitButton>
-                        </form>
-                      ) : (
-                        <details className={advancedDetailsClass}>
-                          <summary className={advancedSummaryClass}>
-                            Advanced
-                          </summary>
-                          <dl className="mt-4 grid gap-3 text-sm">
-                            <div>
-                              <dt className="font-semibold text-lh-muted">
-                                Resource key
-                              </dt>
-                              <dd className="break-all">
-                                {resource.resourceKey}
-                              </dd>
-                            </div>
-                            <div>
-                              <dt className="font-semibold text-lh-muted">
-                                Timezone identifier
-                              </dt>
-                              <dd className="break-all">{resource.timezone}</dd>
-                            </div>
-                            {provider?.sanityDocumentId ? (
-                              <div>
-                                <dt className="font-semibold text-lh-muted">
-                                  Website content provider ID
-                                </dt>
-                                <dd className="break-all">
-                                  {provider.sanityDocumentId}
-                                </dd>
-                              </div>
-                            ) : null}
-                          </dl>
-                        </details>
-                      )}
-                      {canManage ? (
-                        <form
-                          action={setBookingResourceStatusAction}
-                          className="mt-4 flex gap-2"
-                        >
-                          <input
-                            type="hidden"
-                            name="resourceId"
-                            value={resource.id}
-                          />
-                          <select
-                            className={inputClass}
-                            name="status"
-                            defaultValue={
-                              resource.status === "archived"
-                                ? "disabled"
-                                : resource.status
-                            }
-                          >
-                            <option value="draft">Draft</option>
-                            <option value="active">Active</option>
-                            <option value="disabled">Disabled</option>
-                          </select>
-                          <ConfirmSubmitButton
-                            className={secondaryButtonClass}
-                            confirmation={`Save the status change for ${resource.name}? Disabling it can stop services that require this resource from being booked online.`}
-                          >
-                            Save status
-                          </ConfirmSubmitButton>
-                        </form>
-                      ) : null}
-                    </article>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-
-          {canManage ? (
-            <details className={createDetailsClass}>
-              <summary className={createSummaryClass}>
-                Add person, room or equipment
-              </summary>
-              <form action={createBookingResourceAction} className="mt-5">
-                <p className="text-sm text-lh-muted">
-                  New resources start as drafts and are not available for online
-                  booking until their setup is complete.
-                </p>
-                <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                  <Field label="Name">
-                    <input
-                      className={inputClass}
-                      name="name"
-                      required
-                      maxLength={120}
-                    />
-                  </Field>
-                  <Field label="Resource type">
-                    <select
-                      className={inputClass}
-                      name="kind"
-                      defaultValue="provider"
-                    >
-                      <option value="provider">Bookable team member</option>
-                      <option value="room">Room</option>
-                      <option value="equipment">Equipment</option>
-                    </select>
-                  </Field>
-                </div>
-                <details className={advancedDetailsClass}>
-                  <summary className={advancedSummaryClass}>Advanced</summary>
-                  <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                    <Field label="Resource key">
-                      <input
-                        className={inputClass}
-                        name="resourceKey"
-                        required
-                        pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
-                        placeholder="nataliea"
-                      />
-                    </Field>
-                    <Field label="Timezone identifier">
-                      <input
-                        className={inputClass}
-                        name="timezone"
-                        defaultValue="America/Toronto"
-                        required
-                      />
-                    </Field>
-                    <Field label="Public provider slug">
-                      <input className={inputClass} name="publicSlug" />
-                    </Field>
-                    <Field label="Website content provider ID">
-                      <input className={inputClass} name="sanityDocumentId" />
-                    </Field>
-                  </div>
-                </details>
-                <AdminSubmitButton
-                  className={primaryButtonClass}
-                  pendingLabel="Adding resource…"
-                >
-                  Add as draft
-                </AdminSubmitButton>
-              </form>
-            </details>
-          ) : null}
-        </>
-      ) : null}
     </div>
   );
 }
@@ -779,11 +511,7 @@ function normalizeTab(
     return "square";
   }
 
-  if (
-    requestedTab === "people" ||
-    requestedTab === "resources" ||
-    requestedTab === "square"
-  ) {
+  if (requestedTab === "people" || requestedTab === "square") {
     return requestedTab;
   }
 
@@ -814,10 +542,6 @@ const secondaryButtonClass =
 const theadClass =
   "bg-lh-neutral-2 text-xs uppercase tracking-[0.12em] text-lh-muted";
 const cellClass = "px-4 py-3 align-top";
-const advancedDetailsClass =
-  "mt-4 rounded-2xl border border-lh-line bg-lh-neutral-2 p-4";
-const advancedSummaryClass =
-  "min-h-11 cursor-pointer list-none py-2 text-sm font-semibold text-lh-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lh-primary focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden";
 const createDetailsClass = "rounded-2xl border border-lh-line bg-white p-6";
 const createSummaryClass =
   "min-h-11 cursor-pointer list-none py-2 font-heading text-3xl uppercase tracking-[0.08em] text-lh-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lh-primary focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden";

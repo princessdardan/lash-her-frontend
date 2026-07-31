@@ -32,7 +32,6 @@ import {
   bookingServiceOfferings,
   type AdminRole,
   type BookingConfigurationStatus,
-  type BookingResourceKind,
   type BookingScheduleExceptionKind,
 } from "@/lib/private-db/schema";
 
@@ -56,6 +55,7 @@ import {
   lockEmployeeCalendarInvariant,
   lockEmployeeCalendarInvariants,
 } from "./employee-calendar-invariant";
+import { createImplicitStaffProvider } from "./implicit-staff-provider";
 import { getCalendarOwnershipTransferError } from "./calendar-self-service-policy";
 import {
   disableProvisionalGoogleCalendarConnection,
@@ -72,14 +72,9 @@ import {
   assertProviderResourceAccess,
 } from "./provider-service-authorization";
 import {
-  assignOfferingResourceInTransaction,
-  removeOfferingResourceInTransaction,
-} from "./offering-resource-admin";
-import {
   assertSquareOfferingActivationAllowed,
   lockSquareAttributionInvariant,
 } from "./square-attribution-invariant";
-import { assertStaffResourceMutationAllowed } from "./staff-resource-authorization";
 import { runServiceOfferingOwnershipMutation } from "./service-offering-ownership-invariant";
 
 const EMAIL_PATTERN = /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/;
@@ -209,6 +204,12 @@ export async function createStaffUser(input: {
           status: "active",
         })
         .returning({ id: adminUsers.id });
+      await createImplicitStaffProvider(tx, {
+        adminUserId: user.id,
+        createdByAdminUserId: actor.user.id,
+        displayName: cleanOptional(input.displayName),
+        email,
+      });
       return user;
     },
     targetId: (user) => user.id,
@@ -282,121 +283,6 @@ export async function setStaffStatus(input: {
   });
 }
 
-export async function assignStaffResource(input: {
-  resourceId: string;
-  userId: string;
-}) {
-  const actor = await requirePermission("staff:manage");
-  await runAuditedAdminMutation({
-    action: "staff_resource_assigned",
-    actor,
-    domain: "staff",
-    metadata: { resourceId: input.resourceId },
-    mutate: async (tx) => {
-      await assertStaffResourceMutationAllowed(tx, {
-        operation: "assign",
-        resourceId: input.resourceId,
-        userId: input.userId,
-      });
-      await tx
-        .insert(adminUserResources)
-        .values({
-          adminUserId: input.userId,
-          bookingResourceId: input.resourceId,
-          createdByAdminUserId: actor.user.id,
-        })
-        .onConflictDoNothing();
-    },
-    targetId: input.userId,
-    targetType: "admin_user",
-  });
-}
-
-export async function unassignStaffResource(input: {
-  resourceId: string;
-  userId: string;
-}) {
-  const actor = await requirePermission("staff:manage");
-  await runAuditedAdminMutation({
-    action: "staff_resource_unassigned",
-    actor,
-    domain: "staff",
-    metadata: { resourceId: input.resourceId },
-    mutate: async (tx) => {
-      await assertStaffResourceMutationAllowed(tx, {
-        operation: "unassign",
-        resourceId: input.resourceId,
-        userId: input.userId,
-      });
-      await tx
-        .delete(adminUserResources)
-        .where(
-          and(
-            eq(adminUserResources.adminUserId, input.userId),
-            eq(adminUserResources.bookingResourceId, input.resourceId),
-          ),
-        );
-    },
-    targetId: input.userId,
-    targetType: "admin_user",
-  });
-}
-
-export async function createBookingResource(input: {
-  kind: BookingResourceKind;
-  name: string;
-  publicSlug?: string;
-  resourceKey: string;
-  sanityDocumentId?: string;
-  timezone: string;
-}) {
-  const actor = await requirePermission("staff:manage");
-  const name = requireText(input.name, "Resource name", 120);
-  const resourceKey = requireKey(input.resourceKey, "Resource key");
-  if (!isResourceKind(input.kind)) throw new Error("Invalid resource kind");
-  assertTimezone(input.timezone);
-  return runAuditedAdminMutation({
-    action: "booking_resource_created",
-    actor,
-    domain: "booking_setup",
-    metadata: { kind: input.kind },
-    mutate: async (tx) => {
-      const [resource] = await tx
-        .insert(bookingResources)
-        .values({
-          createdByAdminUserId: actor.user.id,
-          kind: input.kind,
-          name,
-          resourceKey,
-          status: "draft",
-          timezone: input.timezone,
-          updatedByAdminUserId: actor.user.id,
-        })
-        .returning({ id: bookingResources.id });
-
-      if (input.kind === "provider") {
-        await tx.insert(bookingProviders).values({
-          createdByAdminUserId: actor.user.id,
-          displayName: name,
-          primaryResourceId: resource.id,
-          providerKey: resourceKey,
-          publicSlug: cleanOptionalKey(
-            input.publicSlug,
-            "Provider public slug",
-          ),
-          sanityDocumentId: cleanOptional(input.sanityDocumentId),
-          status: "draft",
-          updatedByAdminUserId: actor.user.id,
-        });
-      }
-
-      return resource;
-    },
-    targetId: (resource) => resource.id,
-    targetType: "booking_resource",
-  });
-}
-
 export async function setBookingResourceStatus(input: {
   resourceId: string;
   status: Exclude<BookingConfigurationStatus, "archived">;
@@ -410,29 +296,28 @@ export async function setBookingResourceStatus(input: {
     metadata: { status: input.status },
     mutate: async (tx) => {
       await lockSquareAttributionInvariant(tx);
+      const [provider] = await tx
+        .select({
+          id: bookingProviders.id,
+          squareTeamMemberId: bookingProviders.squareTeamMemberId,
+          squareTeamMemberStatus: bookingProviders.squareTeamMemberStatus,
+          squareTeamMemberVerifiedAt:
+            bookingProviders.squareTeamMemberVerifiedAt,
+        })
+        .from(bookingProviders)
+        .where(eq(bookingProviders.primaryResourceId, input.resourceId))
+        .limit(1);
+      if (!provider) throw new Error("Booking profile not found");
+
       if (input.status === "active") {
-        const [[provider], [settings]] = await Promise.all([
-          tx
-            .select({
-              id: bookingProviders.id,
-              squareTeamMemberId: bookingProviders.squareTeamMemberId,
-              squareTeamMemberStatus: bookingProviders.squareTeamMemberStatus,
-              squareTeamMemberVerifiedAt:
-                bookingProviders.squareTeamMemberVerifiedAt,
-            })
-            .from(bookingProviders)
-            .where(eq(bookingProviders.primaryResourceId, input.resourceId))
-            .limit(1),
-          tx
-            .select({
-              required: bookingBusinessSettings.requireSquareTeamAttribution,
-            })
-            .from(bookingBusinessSettings)
-            .where(eq(bookingBusinessSettings.singletonKey, "default"))
-            .limit(1),
-        ]);
+        const [settings] = await tx
+          .select({
+            required: bookingBusinessSettings.requireSquareTeamAttribution,
+          })
+          .from(bookingBusinessSettings)
+          .where(eq(bookingBusinessSettings.singletonKey, "default"))
+          .limit(1);
         if (
-          provider &&
           settings?.required === true &&
           !isVerifiedActiveSquareMapping(provider)
         ) {
@@ -460,90 +345,6 @@ export async function setBookingResourceStatus(input: {
           updatedByAdminUserId: actor.user.id,
         })
         .where(eq(bookingProviders.primaryResourceId, input.resourceId));
-    },
-    targetId: input.resourceId,
-    targetType: "booking_resource",
-  });
-}
-
-export async function updateBookingResourceProfile(input: {
-  name: string;
-  providerPublicSlug?: string;
-  providerSanityDocumentId?: string;
-  resourceId: string;
-  timezone: string;
-}) {
-  const actor = await requirePermission("staff:manage");
-  const name = requireText(input.name, "Resource name", 120);
-  const providerPublicSlug = cleanOptionalKey(
-    input.providerPublicSlug,
-    "Provider public slug",
-  );
-  const providerSanityDocumentId = cleanOptional(
-    input.providerSanityDocumentId,
-  );
-  assertTimezone(input.timezone);
-
-  await runAuditedAdminMutation({
-    action: "booking_resource_profile_updated",
-    actor,
-    domain: "booking_setup",
-    mutate: async (tx) => {
-      const [resource] = await tx
-        .update(bookingResources)
-        .set({
-          name,
-          timezone: input.timezone,
-          updatedAt: new Date(),
-          updatedByAdminUserId: actor.user.id,
-        })
-        .where(eq(bookingResources.id, input.resourceId))
-        .returning({ id: bookingResources.id, kind: bookingResources.kind });
-      if (!resource) throw new Error("Booking resource not found");
-
-      await tx
-        .update(bookingResourceSchedules)
-        .set({
-          timezone: input.timezone,
-          updatedAt: new Date(),
-          updatedByAdminUserId: actor.user.id,
-          version: sql`${bookingResourceSchedules.version} + 1`,
-        })
-        .where(eq(bookingResourceSchedules.resourceId, input.resourceId));
-
-      if (resource.kind === "provider") {
-        const [provider] = await tx
-          .select({ id: bookingProviders.id })
-          .from(bookingProviders)
-          .where(eq(bookingProviders.primaryResourceId, resource.id))
-          .limit(1);
-        if (!provider) throw new Error("Provider profile not found");
-        const activeOffering = await tx
-          .select({ id: bookingServiceOfferings.id })
-          .from(bookingServiceOfferings)
-          .where(
-            and(
-              eq(bookingServiceOfferings.providerId, provider.id),
-              eq(bookingServiceOfferings.status, "active"),
-            ),
-          )
-          .limit(1);
-        if (activeOffering.length > 0 && !providerPublicSlug) {
-          throw new Error(
-            "Disable active provider offerings before removing the public provider slug",
-          );
-        }
-        await tx
-          .update(bookingProviders)
-          .set({
-            displayName: name,
-            publicSlug: providerPublicSlug,
-            sanityDocumentId: providerSanityDocumentId,
-            updatedAt: new Date(),
-            updatedByAdminUserId: actor.user.id,
-          })
-          .where(eq(bookingProviders.id, provider.id));
-      }
     },
     targetId: input.resourceId,
     targetType: "booking_resource",
@@ -822,44 +623,6 @@ export async function updateServiceOffering(input: {
         );
       }
     },
-    targetId: input.offeringId,
-    targetType: "service_offering",
-  });
-}
-
-export async function assignOfferingResource(input: {
-  isRequired: boolean;
-  offeringId: string;
-  resourceId: string;
-}): Promise<void> {
-  const actor = await requirePermission("offerings:manage");
-  if (actor.user.role !== "owner") throw new AdminAuthError("forbidden");
-  await runAuditedAdminMutation({
-    action: "service_offering_resource_assigned",
-    actor,
-    domain: "offerings",
-    metadata: { isRequired: input.isRequired, resourceId: input.resourceId },
-    mutate: (tx) => assignOfferingResourceInTransaction(tx, input),
-    targetId: input.offeringId,
-    targetType: "service_offering",
-  });
-}
-
-export async function removeOfferingResource(input: {
-  offeringId: string;
-  resourceId: string;
-}): Promise<void> {
-  const actor = await requirePermission("offerings:manage");
-  if (actor.user.role !== "owner") throw new AdminAuthError("forbidden");
-  await runAuditedAdminMutation({
-    action: "service_offering_resource_removed",
-    actor,
-    domain: "offerings",
-    metadata: {
-      resourceId: input.resourceId,
-      snapshotSemantics: "existing_reservations_preserved",
-    },
-    mutate: (tx) => removeOfferingResourceInTransaction(tx, input),
     targetId: input.offeringId,
     targetType: "service_offering",
   });
@@ -1829,6 +1592,7 @@ export async function saveCalendarAssignment(input: {
       await tx.execute(
         sql`select pg_advisory_xact_lock(hashtextextended(${input.resourceId}::text, 0))`,
       );
+      await getResource(tx, input.resourceId);
       const [connection] = await tx
         .select({
           credentialCiphertext: bookingCalendarConnections.credentialCiphertext,
@@ -2196,9 +1960,14 @@ async function getResource(tx: AdminWriteTransaction, resourceId: string) {
   const [resource] = await tx
     .select({ id: bookingResources.id, timezone: bookingResources.timezone })
     .from(bookingResources)
-    .where(eq(bookingResources.id, resourceId))
+    .where(
+      and(
+        eq(bookingResources.id, resourceId),
+        eq(bookingResources.kind, "provider"),
+      ),
+    )
     .limit(1);
-  if (!resource) throw new Error("Booking resource not found");
+  if (!resource) throw new Error("Provider booking profile not found");
   return resource;
 }
 
@@ -2284,10 +2053,6 @@ function assertDateRange(effectiveFrom: string, effectiveUntil?: string): void {
   ) {
     throw new Error("Schedule end date must not be before its start date");
   }
-}
-
-function isResourceKind(value: string): value is BookingResourceKind {
-  return value === "provider" || value === "room" || value === "equipment";
 }
 
 function assertConfigurationStatus(

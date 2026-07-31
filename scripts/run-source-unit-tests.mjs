@@ -4,6 +4,7 @@ import path from "node:path";
 import process from "node:process";
 
 const SERVER_ONLY_TEST_FILES = new Set([
+  "src/lib/admin/implicit-staff-provider.test.ts",
   "src/lib/admin/square-team-selection.test.ts",
   "src/lib/booking/operations/model-mode.test.ts",
   "src/lib/booking/operations/public-offerings.test.ts",
@@ -13,6 +14,7 @@ const SERVER_ONLY_TEST_FILES = new Set([
 
 const DB_TEST_FILES = new Set([
   "src/lib/admin/employee-attribution-analytics.db.test.ts",
+  "src/lib/admin/implicit-staff-provider.db.test.ts",
   "src/lib/admin/offering-resource-admin.db.test.ts",
   "src/lib/admin/service-offering-ownership-invariant.db.test.ts",
   "src/lib/admin/square-attribution-invariant.db.test.ts",
@@ -96,10 +98,7 @@ if (mode === "--no-db") {
     );
   }
 
-  runTests(dbTestFiles, [
-    "--conditions=react-server",
-    "--test-concurrency=1",
-  ]);
+  runTests(dbTestFiles, ["--conditions=react-server", "--test-concurrency=1"]);
 }
 
 async function listTestFiles(directory) {

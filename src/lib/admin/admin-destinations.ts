@@ -186,18 +186,10 @@ const ADMIN_DESTINATION_DEFINITIONS: readonly AdminDestinationDefinition[] = [
   {
     action: "staff:view",
     description:
-      "Manage staff access, bookable resources, and Square sales matching.",
+      "Manage team access, provider booking status, and Square sales matching.",
     group: "Manage business",
     href: "/admin/staff",
-    keywords: [
-      "contractors",
-      "accounts",
-      "roles",
-      "people",
-      "rooms",
-      "equipment",
-      "square",
-    ],
+    keywords: ["contractors", "accounts", "roles", "people", "square"],
     label: "Team",
     navigation: true,
   },
@@ -372,8 +364,7 @@ const ADMIN_DESTINATION_DEFINITIONS: readonly AdminDestinationDefinition[] = [
   },
   {
     action: "staff:view",
-    description:
-      "Manage admin accounts, roles, status, and resource assignments.",
+    description: "Manage admin accounts, roles, status, and provider profiles.",
     group: "Manage business",
     href: "/admin/staff?tab=people",
     keywords: [
@@ -388,11 +379,11 @@ const ADMIN_DESTINATION_DEFINITIONS: readonly AdminDestinationDefinition[] = [
   },
   {
     action: "staff:view",
-    description: "Manage bookable people, rooms, and equipment.",
+    description: "Manage team accounts and their provider booking status.",
     group: "Manage business",
-    href: "/admin/staff?tab=resources",
-    keywords: ["providers", "resource assignments", "chairs", "spaces"],
-    label: "Bookable resources",
+    href: "/admin/staff?tab=people",
+    keywords: ["providers", "booking profiles", "availability"],
+    label: "Provider profiles",
     navigation: false,
   },
   {

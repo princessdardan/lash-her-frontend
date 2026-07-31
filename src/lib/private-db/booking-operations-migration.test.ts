@@ -37,6 +37,13 @@ const providerScopedServiceIdentityMigrationSql = readFileSync(
   new URL("../../../drizzle/0029_chemical_virginia_dare.sql", import.meta.url),
   "utf8",
 );
+const implicitStaffProviderMigrationSql = readFileSync(
+  new URL(
+    "../../../drizzle/0030_implicit_staff_providers.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 
 test("booking operations migration is additive", () => {
   const currentSchemaMigrationSql = migrationSql.slice(
@@ -67,6 +74,29 @@ test("booking operations migration is additive", () => {
   ]) {
     assert.match(migrationSql, new RegExp(`CREATE TABLE "${table}"`));
   }
+});
+
+test("implicit staff provider migration preserves matches and provisions gaps", () => {
+  assert.doesNotMatch(
+    implicitStaffProviderMigrationSql,
+    /DROP\s+(?:TABLE|COLUMN|TYPE|INDEX)|DELETE\s+FROM/i,
+  );
+  assert.match(
+    implicitStaffProviderMigrationSql,
+    /INSERT INTO "admin_user_resources"/,
+  );
+  assert.match(
+    implicitStaffProviderMigrationSql,
+    /INSERT INTO "booking_resources"/,
+  );
+  assert.match(
+    implicitStaffProviderMigrationSql,
+    /INSERT INTO "booking_providers"/,
+  );
+  assert.match(
+    implicitStaffProviderMigrationSql,
+    /resource\.kind = 'provider'/,
+  );
 });
 
 test("booking operations migration safely reconciles only the empty legacy admin lineage", () => {

@@ -9,18 +9,13 @@ import { resolveOptionalEditorialServiceOptions } from "@/lib/admin/editorial-se
 import { listAdminOfferings } from "@/lib/admin/operations-read";
 import { canAdmin } from "@/lib/admin/permissions";
 import { requireAdminPagePermission } from "@/lib/admin/page-authorization";
-import {
-  getBookingConfigurationStatusPresentation,
-  getBookingResourceKindLabel,
-} from "@/lib/admin/presentation";
+import { getBookingConfigurationStatusPresentation } from "@/lib/admin/presentation";
 import type { BookingConfigurationStatus } from "@/lib/private-db/schema";
 
 import {
-  assignOfferingResourceAction,
   createBookingServiceAction,
   createOfferingAddOnAction,
   createServiceOfferingAction,
-  removeOfferingResourceAction,
   setBookingServiceStatusAction,
   setOfferingAddOnStatusAction,
   setServiceOfferingStatusAction,
@@ -56,7 +51,6 @@ export default async function AdminOfferingsPage({
     bookingResourceIds: actor.bookingResourceIds,
     role: actor.user.role,
   });
-  const canManageOfferingResources = actor.user.role === "owner";
   const providerById = new Map(data.providers.map((row) => [row.id, row]));
   const offeringById = new Map(data.offerings.map((row) => [row.id, row]));
   const canManageAllServices =
@@ -581,8 +575,7 @@ export default async function AdminOfferingsPage({
           <div>
             <h2 className={sectionHeadingClass}>Price &amp; timing</h2>
             <p className="mt-2 max-w-3xl text-sm text-lh-muted">
-              Set each provider&apos;s client-facing details, price, timing, and
-              required rooms or equipment.
+              Set each provider&apos;s client-facing details, price, and timing.
             </p>
           </div>
           {data.offerings.length === 0 ? (
@@ -783,147 +776,6 @@ export default async function AdminOfferingsPage({
                         </AdminSubmitButton>
                       </form>
                     ) : null}
-                    <div className="mt-5 space-y-3">
-                      <div>
-                        <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-lh-muted">
-                          Required resources
-                        </h4>
-                        <p className="mt-1 text-xs text-lh-muted">
-                          Changes apply to new bookings. Existing appointments
-                          keep the resources already reserved.
-                        </p>
-                      </div>
-                      {data.offeringResources.filter(
-                        (relationship) =>
-                          relationship.offeringId === offering.id,
-                      ).length === 0 ? (
-                        <p className="text-sm text-lh-muted">
-                          No secondary resources assigned.
-                        </p>
-                      ) : (
-                        data.offeringResources
-                          .filter(
-                            (relationship) =>
-                              relationship.offeringId === offering.id,
-                          )
-                          .map((relationship) => (
-                            <div
-                              key={relationship.id}
-                              className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-lh-line px-3 py-2 text-sm"
-                            >
-                              <span className="flex flex-wrap items-center gap-2">
-                                <strong>{relationship.resourceName}</strong>
-                                <span className="text-lh-muted">
-                                  {getBookingResourceKindLabel(
-                                    relationship.resourceKind,
-                                  )}{" "}
-                                  ·{" "}
-                                  {relationship.isRequired
-                                    ? "Required"
-                                    : "Optional"}
-                                </span>
-                                <StatusPill
-                                  tone={
-                                    getBookingConfigurationStatusPresentation(
-                                      relationship.resourceStatus,
-                                    ).tone
-                                  }
-                                >
-                                  {
-                                    getBookingConfigurationStatusPresentation(
-                                      relationship.resourceStatus,
-                                    ).label
-                                  }
-                                </StatusPill>
-                              </span>
-                              {canManageOfferingResources ? (
-                                <form action={removeOfferingResourceAction}>
-                                  <input
-                                    type="hidden"
-                                    name="offeringId"
-                                    value={offering.id}
-                                  />
-                                  <input
-                                    type="hidden"
-                                    name="resourceId"
-                                    value={relationship.resourceId}
-                                  />
-                                  <ConfirmSubmitButton
-                                    className={secondaryButtonClass}
-                                    confirmation="Remove this resource from new bookings? Existing appointments keep the resources already reserved."
-                                  >
-                                    Remove
-                                  </ConfirmSubmitButton>
-                                </form>
-                              ) : null}
-                            </div>
-                          ))
-                      )}
-                      {canManageOfferingResources ? (
-                        <form
-                          action={assignOfferingResourceAction}
-                          className="grid gap-3 rounded-2xl bg-lh-neutral-2 p-4 sm:grid-cols-[1fr_auto_auto] sm:items-end"
-                        >
-                          <input
-                            type="hidden"
-                            name="offeringId"
-                            value={offering.id}
-                          />
-                          <Field label="Secondary resource">
-                            <select
-                              className={inputClass}
-                              name="resourceId"
-                              required
-                              defaultValue=""
-                            >
-                              <option value="" disabled>
-                                Select room or equipment
-                              </option>
-                              {data.resources
-                                .filter(
-                                  (resource) =>
-                                    resource.id !==
-                                      offering.primaryResourceId &&
-                                    !data.offeringResources.some(
-                                      (relationship) =>
-                                        relationship.offeringId ===
-                                          offering.id &&
-                                        relationship.resourceId === resource.id,
-                                    ),
-                                )
-                                .map((resource) => (
-                                  <option key={resource.id} value={resource.id}>
-                                    {resource.name} ·{" "}
-                                    {getBookingResourceKindLabel(resource.kind)}{" "}
-                                    ·{" "}
-                                    {
-                                      getBookingConfigurationStatusPresentation(
-                                        resource.status,
-                                      ).label
-                                    }
-                                  </option>
-                                ))}
-                            </select>
-                          </Field>
-                          <Field label="Requirement">
-                            <select
-                              className={inputClass}
-                              name="isRequired"
-                              defaultValue="true"
-                            >
-                              <option value="true">Required</option>
-                              <option value="false">Optional</option>
-                            </select>
-                          </Field>
-                          <AdminSubmitButton
-                            className={secondaryButtonClass}
-                            pendingLabel="Assigning…"
-                          >
-                            Assign resource
-                          </AdminSubmitButton>
-                        </form>
-                      ) : null}
-                    </div>
                     {canManage ? (
                       <div className="mt-5">
                         <StatusForm

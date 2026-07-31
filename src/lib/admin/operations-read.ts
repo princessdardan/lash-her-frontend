@@ -69,10 +69,32 @@ export async function getSetupReadiness() {
     writeAssignments,
     settingsRows,
   ] = await Promise.all([
-    db.select().from(bookingResources).orderBy(asc(bookingResources.name)),
+    db
+      .select()
+      .from(bookingResources)
+      .where(
+        and(
+          eq(bookingResources.kind, "provider"),
+          inArray(
+            bookingResources.id,
+            db
+              .select({ id: adminUserResources.bookingResourceId })
+              .from(adminUserResources),
+          ),
+        ),
+      )
+      .orderBy(asc(bookingResources.name)),
     db
       .select()
       .from(bookingProviders)
+      .where(
+        inArray(
+          bookingProviders.primaryResourceId,
+          db
+            .select({ id: adminUserResources.bookingResourceId })
+            .from(adminUserResources),
+        ),
+      )
       .orderBy(asc(bookingProviders.displayOrder)),
     db
       .select()
@@ -244,10 +266,10 @@ export async function getSetupReadiness() {
   };
 }
 
-export async function listAdminStaffAndResources() {
+export async function listAdminStaffAndProviders() {
   await requirePermission("staff:view");
   const db = getPrivateDb();
-  const [users, resources, assignments, providers] = await Promise.all([
+  const [users, assignments, providers] = await Promise.all([
     db
       .select({
         displayName: adminUsers.displayName,
@@ -260,40 +282,51 @@ export async function listAdminStaffAndResources() {
       .from(adminUsers)
       .orderBy(asc(adminUsers.role), asc(adminUsers.emailNormalized)),
     db
-      .select()
-      .from(bookingResources)
-      .orderBy(asc(bookingResources.kind), asc(bookingResources.name)),
-    db
       .select({
         adminUserId: adminUserResources.adminUserId,
         bookingResourceId: adminUserResources.bookingResourceId,
       })
       .from(adminUserResources),
-    db.select().from(bookingProviders),
+    db
+      .select()
+      .from(bookingProviders)
+      .where(
+        inArray(
+          bookingProviders.primaryResourceId,
+          db
+            .select({ id: adminUserResources.bookingResourceId })
+            .from(adminUserResources),
+        ),
+      ),
   ]);
 
-  return { assignments, providers, resources, users };
+  return { assignments, providers, users };
 }
 
 export async function listAdminOfferings() {
   const actor = await requirePermission("offerings:view");
   const db = getPrivateDb();
   const hasGlobalAccess = hasGlobalProviderServiceAccess(actor);
-  const providerResourceScope = hasGlobalAccess
-    ? undefined
-    : inArray(
-        bookingProviders.primaryResourceId,
-        actor.bookingProviderResourceIds,
-      );
+  const providerResourceScope = and(
+    inArray(
+      bookingProviders.primaryResourceId,
+      db
+        .select({ id: adminUserResources.bookingResourceId })
+        .from(adminUserResources),
+    ),
+    hasGlobalAccess
+      ? undefined
+      : inArray(
+          bookingProviders.primaryResourceId,
+          actor.bookingProviderResourceIds,
+        ),
+  );
   const providers = await db
     .select()
     .from(bookingProviders)
     .where(providerResourceScope)
     .orderBy(asc(bookingProviders.displayOrder));
   const providerIds = providers.map((provider) => provider.id);
-  const primaryResourceIds = providers.map(
-    (provider) => provider.primaryResourceId,
-  );
   const serviceScope = hasGlobalAccess
     ? undefined
     : or(
@@ -303,21 +336,12 @@ export async function listAdminOfferings() {
   const offeringScope = hasGlobalAccess
     ? undefined
     : inArray(bookingServiceOfferings.providerId, providerIds);
-  const [services, resources, offerings] = await Promise.all([
+  const [services, offerings] = await Promise.all([
     db
       .select()
       .from(bookingServices)
       .where(serviceScope)
       .orderBy(asc(bookingServices.displayOrder)),
-    db
-      .select()
-      .from(bookingResources)
-      .where(
-        hasGlobalAccess
-          ? undefined
-          : inArray(bookingResources.id, primaryResourceIds),
-      )
-      .orderBy(asc(bookingResources.name)),
     db
       .select({
         bookingHorizonDays: bookingServiceOfferings.bookingHorizonDays,
@@ -359,48 +383,19 @@ export async function listAdminOfferings() {
   const relatedOfferingScope = hasGlobalAccess
     ? undefined
     : inArray(bookingServiceOfferingAddOns.offeringId, offeringIds);
-  const relatedResourceScope = hasGlobalAccess
-    ? undefined
-    : inArray(bookingServiceOfferingResources.offeringId, offeringIds);
-  const [addOns, offeringResources] = await Promise.all([
-    db
-      .select()
-      .from(bookingServiceOfferingAddOns)
-      .where(relatedOfferingScope)
-      .orderBy(
-        asc(bookingServiceOfferingAddOns.offeringId),
-        asc(bookingServiceOfferingAddOns.displayOrder),
-      ),
-    db
-      .select({
-        id: bookingServiceOfferingResources.id,
-        isRequired: bookingServiceOfferingResources.isRequired,
-        offeringId: bookingServiceOfferingResources.offeringId,
-        resourceId: bookingServiceOfferingResources.resourceId,
-        resourceKind: bookingResources.kind,
-        resourceName: bookingResources.name,
-        resourceStatus: bookingResources.status,
-        role: bookingServiceOfferingResources.role,
-      })
-      .from(bookingServiceOfferingResources)
-      .innerJoin(
-        bookingResources,
-        eq(bookingResources.id, bookingServiceOfferingResources.resourceId),
-      )
-      .where(relatedResourceScope)
-      .orderBy(
-        asc(bookingServiceOfferingResources.offeringId),
-        asc(bookingServiceOfferingResources.displayOrder),
-        asc(bookingResources.name),
-      ),
-  ]);
+  const addOns = await db
+    .select()
+    .from(bookingServiceOfferingAddOns)
+    .where(relatedOfferingScope)
+    .orderBy(
+      asc(bookingServiceOfferingAddOns.offeringId),
+      asc(bookingServiceOfferingAddOns.displayOrder),
+    );
 
   return {
     addOns,
-    offeringResources,
     offerings,
     providers,
-    resources,
     services,
   };
 }
@@ -418,7 +413,18 @@ export async function listAdminSchedules(input: { resourceId?: string } = {}) {
   const resources = await db
     .select()
     .from(bookingResources)
-    .where(resourceFilter)
+    .where(
+      and(
+        resourceFilter,
+        eq(bookingResources.kind, "provider"),
+        inArray(
+          bookingResources.id,
+          db
+            .select({ id: adminUserResources.bookingResourceId })
+            .from(adminUserResources),
+        ),
+      ),
+    )
     .orderBy(asc(bookingResources.name));
   const accessibleResourceIds = resources.map((resource) => resource.id);
   const requestedResourceId = input.resourceId?.trim();
@@ -503,7 +509,21 @@ export async function listAdminCalendarConnections() {
       )
       .where(ne(bookingCalendarConnections.status, "disabled"))
       .orderBy(asc(bookingCalendarConnections.accountEmail)),
-    db.select().from(bookingResources).orderBy(asc(bookingResources.name)),
+    db
+      .select()
+      .from(bookingResources)
+      .where(
+        and(
+          eq(bookingResources.kind, "provider"),
+          inArray(
+            bookingResources.id,
+            db
+              .select({ id: adminUserResources.bookingResourceId })
+              .from(adminUserResources),
+          ),
+        ),
+      )
+      .orderBy(asc(bookingResources.name)),
     db
       .select({
         acceptsBookings: bookingResourceCalendarAssignments.acceptsBookings,
@@ -523,7 +543,12 @@ export async function listAdminCalendarConnections() {
         bookingResources,
         eq(bookingResources.id, bookingResourceCalendarAssignments.resourceId),
       )
-      .where(eq(bookingResourceCalendarAssignments.status, "active"))
+      .where(
+        and(
+          eq(bookingResourceCalendarAssignments.status, "active"),
+          eq(bookingResources.kind, "provider"),
+        ),
+      )
       .orderBy(asc(bookingResources.name)),
     db
       .select({

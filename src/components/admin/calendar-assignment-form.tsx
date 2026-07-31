@@ -278,7 +278,7 @@ export function CalendarAssignmentForm({
       />
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <Field label="Person, room, or equipment">
+        <Field label="Provider">
           <select
             className={inputClass}
             name="resourceId"
@@ -389,7 +389,7 @@ export function CalendarAssignmentForm({
       />
       {selectedResource === null ? (
         <p className="mt-3 text-sm text-red-700" role="alert">
-          Choose a person, room, or piece of equipment.
+          Choose a provider.
         </p>
       ) : null}
     </form>

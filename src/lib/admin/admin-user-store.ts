@@ -10,6 +10,10 @@ import {
 } from "@/lib/private-db/schema";
 
 import type { AdminIdentity, AdminUserRecord } from "./types";
+import {
+  createImplicitStaffProvider,
+  syncImplicitStaffProviderName,
+} from "./implicit-staff-provider";
 
 export interface AdminUserRepository {
   bindIdentity(
@@ -44,45 +48,61 @@ export function createDrizzleAdminUserRepository(): AdminUserRepository {
 
   return {
     async bindIdentity(input) {
-      const rows = await db
-        .update(adminUsers)
-        .set({
-          displayName: input.displayName,
-          email: input.email.trim(),
-          emailNormalized: input.email.trim().toLowerCase(),
-          lastSignedInAt: new Date(),
-          providerUserId: input.providerUserId,
-          updatedAt: new Date(),
-        })
-        .where(eq(adminUsers.id, input.adminUserId))
-        .returning(adminUserSelection);
+      return db.transaction(async (tx) => {
+        const rows = await tx
+          .update(adminUsers)
+          .set({
+            displayName: input.displayName,
+            email: input.email.trim(),
+            emailNormalized: input.email.trim().toLowerCase(),
+            lastSignedInAt: new Date(),
+            providerUserId: input.providerUserId,
+            updatedAt: new Date(),
+          })
+          .where(eq(adminUsers.id, input.adminUserId))
+          .returning(adminUserSelection);
 
-      if (!rows[0]) {
-        throw new Error("Admin user disappeared while binding identity");
-      }
+        if (!rows[0]) {
+          throw new Error("Admin user disappeared while binding identity");
+        }
+        await syncImplicitStaffProviderName(tx, {
+          adminUserId: rows[0].id,
+          displayName: rows[0].displayName,
+          email: rows[0].email,
+        });
 
-      return rows[0];
+        return rows[0];
+      });
     },
     async createBootstrapOwner(identity) {
-      const rows = await db
-        .insert(adminUsers)
-        .values({
-          displayName: identity.displayName,
-          email: identity.email.trim(),
-          emailNormalized: identity.email.trim().toLowerCase(),
-          lastSignedInAt: new Date(),
-          providerUserId: identity.providerUserId,
-          role: "owner",
-          status: "active",
-        })
-        .onConflictDoNothing()
-        .returning(adminUserSelection);
+      return db.transaction(async (tx) => {
+        const rows = await tx
+          .insert(adminUsers)
+          .values({
+            displayName: identity.displayName,
+            email: identity.email.trim(),
+            emailNormalized: identity.email.trim().toLowerCase(),
+            lastSignedInAt: new Date(),
+            providerUserId: identity.providerUserId,
+            role: "owner",
+            status: "active",
+          })
+          .onConflictDoNothing()
+          .returning(adminUserSelection);
 
-      if (!rows[0]) {
-        throw new Error("Admin bootstrap identity already exists");
-      }
+        if (!rows[0]) {
+          throw new Error("Admin bootstrap identity already exists");
+        }
 
-      return rows[0];
+        await createImplicitStaffProvider(tx, {
+          adminUserId: rows[0].id,
+          createdByAdminUserId: rows[0].id,
+          displayName: rows[0].displayName,
+          email: rows[0].email,
+        });
+
+        return rows[0];
+      });
     },
     async findByEmailNormalized(emailNormalized) {
       const rows = await db
@@ -123,28 +143,44 @@ export function createDrizzleAdminUserRepository(): AdminUserRepository {
       const rows = await db
         .select({ bookingResourceId: adminUserResources.bookingResourceId })
         .from(adminUserResources)
-        .where(eq(adminUserResources.adminUserId, adminUserId));
+        .innerJoin(
+          bookingResources,
+          eq(bookingResources.id, adminUserResources.bookingResourceId),
+        )
+        .where(
+          and(
+            eq(adminUserResources.adminUserId, adminUserId),
+            eq(bookingResources.kind, "provider"),
+          ),
+        );
 
       return rows.map((row) => row.bookingResourceId);
     },
     async recordSignIn(input) {
-      const rows = await db
-        .update(adminUsers)
-        .set({
-          displayName: input.displayName,
-          email: input.email.trim(),
-          emailNormalized: input.email.trim().toLowerCase(),
-          lastSignedInAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(adminUsers.id, input.adminUserId))
-        .returning(adminUserSelection);
+      return db.transaction(async (tx) => {
+        const rows = await tx
+          .update(adminUsers)
+          .set({
+            displayName: input.displayName,
+            email: input.email.trim(),
+            emailNormalized: input.email.trim().toLowerCase(),
+            lastSignedInAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(adminUsers.id, input.adminUserId))
+          .returning(adminUserSelection);
 
-      if (!rows[0]) {
-        throw new Error("Admin user disappeared while refreshing identity");
-      }
+        if (!rows[0]) {
+          throw new Error("Admin user disappeared while refreshing identity");
+        }
+        await syncImplicitStaffProviderName(tx, {
+          adminUserId: rows[0].id,
+          displayName: rows[0].displayName,
+          email: rows[0].email,
+        });
 
-      return rows[0];
+        return rows[0];
+      });
     },
   };
 }
