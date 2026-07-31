@@ -2,8 +2,9 @@
 
 `admin-calendar-self-service.spec.ts` exercises the real employee OAuth start
 route, one-time state consumption, callback, encrypted credential persistence,
-calendar discovery, busy-only assignment, owner-only route denial, and owner
-promotion. Playwright starts the development server with
+calendar discovery, busy-only assignment, owner-only route denial, contractor
+booking-destination promotion, and confirmed destination replacement.
+Playwright starts the development server with
 `google-calendar-fetch-fixture.cjs`, which handles only fixture codes and tokens
 prefixed with `e2e-calendar-`. Every other request is passed to the original
 network transport.

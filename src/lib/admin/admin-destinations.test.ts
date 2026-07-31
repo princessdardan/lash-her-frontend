@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { getVisibleAdminDestinations } from "./admin-destinations";
+import {
+  getAdminCalendarManagementHref,
+  getVisibleAdminDestinations,
+} from "./admin-destinations";
 import type { AdminActor, AdminRole } from "./types";
 
 function createActor(
@@ -69,6 +72,30 @@ test("employee destinations stay within assigned-resource permissions", () => {
 
 test("employees without assigned resources only see the dashboard", () => {
   assert.deepEqual(navigationLabels(createActor("employee")), ["Today"]);
+});
+
+test("calendar management routes employees only to accessible self-service", () => {
+  assert.equal(
+    getAdminCalendarManagementHref(
+      createActor("employee", {
+        bookingProviderResourceIds: ["provider-resource"],
+        bookingResourceIds: ["provider-resource"],
+      }),
+    ),
+    "/admin/my-calendar",
+  );
+  assert.equal(
+    getAdminCalendarManagementHref(
+      createActor("employee", {
+        bookingResourceIds: ["room-resource"],
+      }),
+    ),
+    null,
+  );
+  assert.equal(
+    getAdminCalendarManagementHref(createActor("admin")),
+    "/admin/calendar-connections",
+  );
 });
 
 test("administrator search excludes owner-only and employee-only destinations", () => {

@@ -22,6 +22,10 @@ const ASSIGNMENT_LABEL =
   process.env.BOOKING_ADMIN_E2E_ASSIGNMENT_LABEL ??
   "Contractor busy calendar browser test";
 const GOOGLE_CALENDAR_LABEL = "Browser fixture calendar";
+const GOOGLE_REPLACEMENT_CALENDAR_LABEL =
+  "Browser fixture replacement calendar";
+const REPLACEMENT_ASSIGNMENT_LABEL =
+  "Contractor replacement booking calendar browser test";
 const GOOGLE_FIXTURE_PRELOAD = path.resolve(
   "tests/support/google-calendar-fetch-fixture.cjs",
 );
@@ -123,20 +127,19 @@ test.describe("employee calendar self-service", () => {
     });
     await expect(accountCard).toBeVisible();
     const assignmentForm = accountCard.locator("form").filter({
-      hasText: "Add busy calendar",
+      hasText: "Assign calendar",
     });
     await selectOptionContaining(
       assignmentForm.getByLabel("Google calendar"),
       GOOGLE_CALENDAR_LABEL,
     );
     await assignmentForm.getByLabel("Calendar name").fill(ASSIGNMENT_LABEL);
+    await assignmentForm.getByLabel("Blocks busy time only").check();
     await assignmentForm
-      .getByRole("button", { name: "Add busy calendar" })
+      .getByRole("button", { name: "Save assignment" })
       .click();
 
-    await expect(
-      page.getByText("Busy calendar assignment saved."),
-    ).toBeVisible();
+    await expect(page.getByText("Calendar assignment saved.")).toBeVisible();
     const assignment = accountCard.locator("div.rounded-xl").filter({
       hasText: ASSIGNMENT_LABEL,
     });
@@ -197,12 +200,15 @@ test.describe("employee calendar self-service", () => {
     await page.context().close();
   });
 
-  test("owner can promote the employee calendar to the booking destination", async ({
+  test("employee can promote an owned calendar for the assigned provider resource", async ({
     browser,
   }) => {
     const fixture = requireAdminFixture();
-    const page = await newAuthenticatedPage(browser, fixture.ownerStorageState);
-    await page.goto("/admin/calendar-connections");
+    const page = await newAuthenticatedPage(
+      browser,
+      fixture.employeeStorageState,
+    );
+    await page.goto("/admin/my-calendar");
 
     const accountCard = page.locator("article").filter({
       hasText: fixture.employeeConnectionEmail,
@@ -211,9 +217,6 @@ test.describe("employee calendar self-service", () => {
     const assignmentForm = accountCard.locator("form").filter({
       hasText: "Assign calendar",
     });
-    await assignmentForm
-      .getByLabel("Person, room, or equipment")
-      .selectOption({ label: fixture.resourceName });
     await selectOptionContaining(
       assignmentForm.getByLabel("Google calendar"),
       GOOGLE_CALENDAR_LABEL,
@@ -234,6 +237,64 @@ test.describe("employee calendar self-service", () => {
     await page.context().close();
   });
 
+  test("employee confirms replacement before moving the booking destination", async ({
+    browser,
+  }) => {
+    const fixture = requireAdminFixture();
+    const page = await newAuthenticatedPage(
+      browser,
+      fixture.employeeStorageState,
+    );
+    await page.goto("/admin/my-calendar");
+
+    const accountCard = page.locator("article").filter({
+      hasText: fixture.employeeConnectionEmail,
+    });
+    const assignmentForm = accountCard.locator("form").filter({
+      hasText: "Assign calendar",
+    });
+    await selectOptionContaining(
+      assignmentForm.getByLabel("Google calendar"),
+      GOOGLE_REPLACEMENT_CALENDAR_LABEL,
+    );
+    await assignmentForm
+      .getByLabel("Calendar name")
+      .fill(REPLACEMENT_ASSIGNMENT_LABEL);
+    await assignmentForm
+      .getByLabel("Receives bookings and blocks busy time")
+      .check();
+    await assignmentForm
+      .getByRole("button", { name: "Save assignment" })
+      .click();
+
+    const replacementDialog = page.getByRole("dialog", {
+      name: "Move booking destination?",
+    });
+    await expect(replacementDialog).toBeVisible();
+    await expect(replacementDialog).toContainText(ASSIGNMENT_LABEL);
+    await expect(replacementDialog).toContainText(
+      GOOGLE_REPLACEMENT_CALENDAR_LABEL,
+    );
+    await replacementDialog
+      .getByRole("button", { name: "Move booking destination" })
+      .click();
+
+    await expect(page.getByText("Calendar assignment saved.")).toBeVisible();
+    const replacementAssignment = accountCard.locator("div.rounded-xl").filter({
+      hasText: REPLACEMENT_ASSIGNMENT_LABEL,
+    });
+    await expect(
+      replacementAssignment.getByText(/Receives bookings/),
+    ).toBeVisible();
+    const previousAssignment = accountCard.locator("div.rounded-xl").filter({
+      hasText: ASSIGNMENT_LABEL,
+    });
+    await expect(
+      previousAssignment.getByText("Blocks busy time", { exact: true }),
+    ).toBeVisible();
+    await page.context().close();
+  });
+
   test("owner cannot disable a calendar assignment that receives bookings", async ({
     browser,
   }) => {
@@ -245,7 +306,7 @@ test.describe("employee calendar self-service", () => {
       hasText: fixture.employeeConnectionEmail,
     });
     const assignment = accountCard.locator("div.rounded-xl").filter({
-      hasText: ASSIGNMENT_LABEL,
+      hasText: REPLACEMENT_ASSIGNMENT_LABEL,
     });
     await expect(assignment).toBeVisible();
     await expect(
@@ -306,7 +367,7 @@ test.describe("employee calendar self-service", () => {
     await expect(accountCard).toBeVisible();
     await expect(
       accountCard.getByText(
-        "This account receives bookings. The owner must move that destination before you can disconnect it.",
+        "This account receives bookings. Move that destination to another calendar before disconnecting it.",
       ),
     ).toBeVisible();
     await expect(

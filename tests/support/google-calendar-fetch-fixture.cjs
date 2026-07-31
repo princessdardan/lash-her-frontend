@@ -136,6 +136,12 @@ function installGoogleCalendarFetchFixture() {
             primary: false,
             summary: "Browser fixture calendar",
           },
+          {
+            accessRole: "writer",
+            id: `fixture-replacement-${accessRunId}@group.calendar.google.com`,
+            primary: false,
+            summary: "Browser fixture replacement calendar",
+          },
         ],
       });
     }
@@ -215,19 +221,20 @@ function handleOAuthStateRedisCommand(command) {
       exIndex >= 0 && Number.isFinite(Number(command[exIndex + 1]))
         ? Number(command[exIndex + 1])
         : 600;
-    saveOAuthStateValue(key, {
-      expiresAt: Date.now() + ttlSeconds * 1000,
-      value,
-    }, command.includes("nx"));
+    saveOAuthStateValue(
+      key,
+      {
+        expiresAt: Date.now() + ttlSeconds * 1000,
+        value,
+      },
+      command.includes("nx"),
+    );
     return { handled: true, value: "OK" };
   }
 
   if (operation === "eval") {
     const key = command[3];
-    if (
-      typeof key !== "string" ||
-      !key.startsWith(OAUTH_STATE_KEY_PREFIX)
-    ) {
+    if (typeof key !== "string" || !key.startsWith(OAUTH_STATE_KEY_PREFIX)) {
       return { handled: false };
     }
 
@@ -238,10 +245,9 @@ function handleOAuthStateRedisCommand(command) {
       value:
         stored === null
           ? null
-          : Buffer.from(
-              JSON.stringify(stored.value),
-              "utf8",
-            ).toString("base64"),
+          : Buffer.from(JSON.stringify(stored.value), "utf8").toString(
+              "base64",
+            ),
     };
   }
 
@@ -250,9 +256,7 @@ function handleOAuthStateRedisCommand(command) {
 
 function currentOAuthStateValue(key) {
   try {
-    const stored = JSON.parse(
-      readFileSync(oauthStatePath(key), "utf8"),
-    );
+    const stored = JSON.parse(readFileSync(oauthStatePath(key), "utf8"));
     if (
       typeof stored?.expiresAt !== "number" ||
       typeof stored?.value !== "string" ||
@@ -372,8 +376,7 @@ async function requestBody(input, init) {
 
 function requestMethod(input, init) {
   return (
-    init?.method ??
-    (input instanceof Request ? input.method : "GET")
+    init?.method ?? (input instanceof Request ? input.method : "GET")
   ).toUpperCase();
 }
 

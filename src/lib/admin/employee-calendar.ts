@@ -20,7 +20,7 @@ import {
   type AdminWriteTransaction,
 } from "./admin-transaction";
 import { requirePermission } from "./auth";
-import { assertEmployeeBusyAssignmentCanBeSaved } from "./calendar-assignment-authorization";
+import { lockAndValidateBookingDestinationChange } from "./calendar-assignment-authorization";
 import { getCalendarAssignmentAccessError } from "./calendar-capabilities";
 import { revokeEncryptedGoogleCredentialBestEffort } from "./calendar-credential-revocation";
 import {
@@ -268,8 +268,10 @@ export async function saveEmployeeGoogleCalendarCredential(input: {
   });
 }
 
-export async function saveEmployeeBusyAssignment(input: {
+export async function saveEmployeeCalendarAssignment(input: {
+  acceptsBookings: boolean;
   calendarLabel?: string;
+  confirmedReplacementAssignmentId?: string;
   connectionId: string;
   providerCalendarId: string;
   resourceId: string;
@@ -295,7 +297,7 @@ export async function saveEmployeeBusyAssignment(input: {
     );
   }
   const accessError = getCalendarAssignmentAccessError({
-    acceptsBookings: false,
+    acceptsBookings: input.acceptsBookings,
     accessRole: calendar?.accessRole ?? null,
   });
   if (accessError) {
@@ -307,7 +309,7 @@ export async function saveEmployeeBusyAssignment(input: {
     actor,
     domain: "calendar",
     metadata: {
-      acceptsBookings: false,
+      acceptsBookings: input.acceptsBookings,
       contributesBusy: true,
       resourceId: input.resourceId,
     },
@@ -358,17 +360,34 @@ export async function saveEmployeeBusyAssignment(input: {
         );
       }
 
-      await assertEmployeeBusyAssignmentCanBeSaved(tx, {
+      await lockAndValidateBookingDestinationChange(tx, {
+        acceptsBookings: input.acceptsBookings,
+        confirmedReplacementAssignmentId:
+          input.confirmedReplacementAssignmentId?.trim() || null,
         connectionId: input.connectionId,
         providerCalendarId,
         resourceId: input.resourceId,
       });
 
       const now = new Date();
+      if (input.acceptsBookings) {
+        await tx
+          .update(bookingResourceCalendarAssignments)
+          .set({ acceptsBookings: false, updatedAt: now })
+          .where(
+            and(
+              eq(
+                bookingResourceCalendarAssignments.resourceId,
+                input.resourceId,
+              ),
+              eq(bookingResourceCalendarAssignments.acceptsBookings, true),
+            ),
+          );
+      }
       const [assignment] = await tx
         .insert(bookingResourceCalendarAssignments)
         .values({
-          acceptsBookings: false,
+          acceptsBookings: input.acceptsBookings,
           calendarConnectionId: input.connectionId,
           calendarLabel: input.calendarLabel?.trim() || calendar?.label || null,
           contributesBusy: true,
@@ -387,7 +406,7 @@ export async function saveEmployeeBusyAssignment(input: {
             bookingResourceCalendarAssignments.providerCalendarId,
           ],
           set: {
-            acceptsBookings: false,
+            acceptsBookings: input.acceptsBookings,
             calendarLabel:
               input.calendarLabel?.trim() || calendar?.label || null,
             contributesBusy: true,

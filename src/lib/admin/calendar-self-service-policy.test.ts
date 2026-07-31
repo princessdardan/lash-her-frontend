@@ -45,7 +45,7 @@ test("employees cannot disable or disconnect an active booking destination", () 
   );
   assert.match(
     getEmployeeDisconnectError([{ acceptsBookings: true }]) ?? "",
-    /owner must move/,
+    /Move the active booking destination/,
   );
   assert.equal(getEmployeeDisconnectError([{ acceptsBookings: false }]), null);
 });

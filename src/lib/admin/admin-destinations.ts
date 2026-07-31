@@ -17,6 +17,10 @@ export interface AdminDestination extends AdminSearchItem {
   group: AdminDestinationGroup;
 }
 
+export type AdminCalendarManagementHref =
+  | "/admin/calendar-connections"
+  | "/admin/my-calendar";
+
 interface AdminDestinationDefinition extends AdminDestination {
   action: AdminPermissionAction;
   roles?: readonly AdminRole[];
@@ -546,4 +550,27 @@ export function getVisibleAdminDestinations(
     label: destination.label,
     navigation: destination.navigation,
   }));
+}
+
+export function getAdminCalendarManagementHref(
+  actor: AdminActor,
+): AdminCalendarManagementHref | null {
+  const permissionContext = {
+    bookingProviderResourceIds: actor.bookingProviderResourceIds,
+    bookingResourceIds: actor.bookingResourceIds,
+    role: actor.user.role,
+  };
+
+  if (actor.user.role === "employee") {
+    return canAdmin({
+      action: "calendar-connections:self-manage",
+      ...permissionContext,
+    })
+      ? "/admin/my-calendar"
+      : null;
+  }
+
+  return canAdmin({ action: "calendar-connections:view", ...permissionContext })
+    ? "/admin/calendar-connections"
+    : null;
 }

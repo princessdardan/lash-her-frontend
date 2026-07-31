@@ -460,18 +460,20 @@ test(
         status: "active",
       })
       .returning();
-    const { assertEmployeeBusyAssignmentCanBeSaved } =
+    const { lockAndValidateBookingDestinationChange } =
       await import("@/lib/admin/calendar-assignment-authorization");
 
     await assert.rejects(
       database.transaction((tx) =>
-        assertEmployeeBusyAssignmentCanBeSaved(tx, {
+        lockAndValidateBookingDestinationChange(tx, {
+          acceptsBookings: false,
+          confirmedReplacementAssignmentId: null,
           connectionId: connection.id,
           providerCalendarId,
           resourceId: resource.id,
         }),
       ),
-      /cannot change a calendar that receives bookings/,
+      /Move the booking destination/,
     );
 
     const [preserved] = await database

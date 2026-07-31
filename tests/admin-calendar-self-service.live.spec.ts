@@ -51,7 +51,7 @@ test.describe("employee calendar self-service live Google smoke", () => {
     "Requires the explicitly enabled, isolated live Google Calendar fixture.",
   );
 
-  test("employee discovers a live calendar and owner can promote it", async ({
+  test("employee discovers a live calendar and can make it the booking destination", async ({
     browser,
   }) => {
     const employeePage = await newAuthenticatedPage(
@@ -72,37 +72,40 @@ test.describe("employee calendar self-service live Google smoke", () => {
     });
     await expect(employeeAccountCard).toBeVisible();
     const employeeAssignmentForm = employeeAccountCard.locator("form").filter({
-      hasText: "Add busy calendar",
+      hasText: "Assign calendar",
     });
     const existingAssignment = employeeAccountCard
       .locator("div.rounded-xl")
       .filter({ hasText: ASSIGNMENT_LABEL });
-    if ((await existingAssignment.count()) === 0) {
-      await selectOptionContaining(
-        employeeAssignmentForm.getByLabel("Google calendar"),
-        GOOGLE_CALENDAR_LABEL!,
-      );
-      await employeeAssignmentForm
-        .getByLabel("Calendar name")
-        .fill(ASSIGNMENT_LABEL);
-      await employeeAssignmentForm
-        .getByRole("button", { name: "Add busy calendar" })
-        .click();
+    await selectOptionContaining(
+      employeeAssignmentForm.getByLabel("Google calendar"),
+      GOOGLE_CALENDAR_LABEL!,
+    );
+    await employeeAssignmentForm
+      .getByLabel("Calendar name")
+      .fill(ASSIGNMENT_LABEL);
+    await employeeAssignmentForm
+      .getByLabel("Receives bookings and blocks busy time")
+      .check();
+    await employeeAssignmentForm
+      .getByRole("button", { name: "Save assignment" })
+      .click();
 
-      await expect(
-        employeePage.getByText("Busy calendar assignment saved."),
-      ).toBeVisible();
-      await expect(
-        existingAssignment.getByText("Blocks busy time", { exact: true }),
-      ).toBeVisible();
-      await expect(
-        existingAssignment.getByText(/Receives bookings/),
-      ).toHaveCount(0);
-    } else {
-      await expect(
-        existingAssignment.getByText(/blocks busy time/i),
-      ).toBeVisible();
+    const replacementDialog = employeePage.getByRole("dialog", {
+      name: "Move booking destination?",
+    });
+    if (await replacementDialog.isVisible()) {
+      await replacementDialog
+        .getByRole("button", { name: "Move booking destination" })
+        .click();
     }
+
+    await expect(
+      employeePage.getByText("Calendar assignment saved."),
+    ).toBeVisible();
+    await expect(
+      existingAssignment.getByText(/Receives bookings/),
+    ).toBeVisible();
     await employeePage.context().close();
 
     const ownerPage = await newAuthenticatedPage(browser, OWNER_STORAGE_STATE!);
@@ -110,29 +113,6 @@ test.describe("employee calendar self-service live Google smoke", () => {
     const ownerAccountCard = ownerPage.locator("article").filter({
       hasText: EMPLOYEE_CONNECTION_EMAIL!,
     });
-    const ownerAssignmentForm = ownerAccountCard.locator("form").filter({
-      hasText: "Assign calendar",
-    });
-    await ownerAssignmentForm
-      .getByLabel("Person, room, or equipment")
-      .selectOption({ label: RESOURCE_NAME! });
-    await selectOptionContaining(
-      ownerAssignmentForm.getByLabel("Google calendar"),
-      GOOGLE_CALENDAR_LABEL!,
-    );
-    await ownerAssignmentForm
-      .getByLabel("Calendar name")
-      .fill(ASSIGNMENT_LABEL);
-    await ownerAssignmentForm
-      .getByLabel("Receives bookings and blocks busy time")
-      .check();
-    await ownerAssignmentForm
-      .getByRole("button", { name: "Save assignment" })
-      .click();
-
-    await expect(
-      ownerPage.getByText("Calendar assignment saved."),
-    ).toBeVisible();
     const writeAssignment = ownerAccountCard
       .locator("div.rounded-xl")
       .filter({ hasText: ASSIGNMENT_LABEL });

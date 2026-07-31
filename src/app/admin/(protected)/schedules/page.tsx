@@ -7,6 +7,7 @@ import { AdminTabLink } from "@/components/admin/admin-tab-link";
 import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
 import { StatusPill } from "@/components/admin/status-pill";
 import { formatDateInTimezone } from "@/lib/admin/business-time";
+import { getAdminCalendarManagementHref } from "@/lib/admin/admin-destinations";
 import { listAdminSchedules } from "@/lib/admin/operations-read";
 import { canAdmin } from "@/lib/admin/permissions";
 import { requireAdminPagePermission } from "@/lib/admin/page-authorization";
@@ -67,6 +68,7 @@ export default async function AdminSchedulesPage({
     bookingResourceIds: actor.bookingResourceIds,
     role: actor.user.role,
   });
+  const calendarManagementHref = getAdminCalendarManagementHref(actor);
   const resourcesById = new Map(
     data.resources.map((resource) => [resource.id, resource]),
   );
@@ -551,12 +553,14 @@ export default async function AdminSchedulesPage({
             Choose where new appointments are added and which connected
             calendars block times that are already busy.
           </p>
-          <Link
-            className={`${secondaryButtonClass} mt-5`}
-            href="/admin/calendar-connections"
-          >
-            Manage calendar sync
-          </Link>
+          {calendarManagementHref ? (
+            <Link
+              className={`${secondaryButtonClass} mt-5`}
+              href={calendarManagementHref}
+            >
+              Manage calendar sync
+            </Link>
+          ) : null}
         </section>
       ) : null}
     </div>

@@ -3,6 +3,10 @@ import { redirect } from "next/navigation";
 
 import { AdminActionFeedback } from "@/components/admin/admin-action-feedback";
 import { AdminSubmitButton } from "@/components/admin/admin-submit-button";
+import {
+  CalendarAssignmentForm,
+  type CurrentBookingDestinationOption,
+} from "@/components/admin/calendar-assignment-form";
 import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
 import { StatusPill } from "@/components/admin/status-pill";
 import {
@@ -18,7 +22,6 @@ import { requireAdminPagePermission } from "@/lib/admin/page-authorization";
 import {
   getCalendarAssignmentStatusPresentation,
   getCalendarConnectionStatusPresentation,
-  getGoogleCalendarAccessRoleLabel,
 } from "@/lib/admin/presentation";
 
 import {
@@ -84,6 +87,19 @@ export default async function MyCalendarPage({
       assignment.resourceId === contextResourceId &&
       !ownedConnectionIds.has(assignment.connectionId),
   );
+  const currentDestinations: CurrentBookingDestinationOption[] =
+    data.assignments
+      .filter((assignment) => assignment.acceptsBookings)
+      .map((assignment) => ({
+        assignmentId: assignment.id,
+        calendarLabel: assignment.calendarLabel ?? "Unnamed Google calendar",
+        connectionId: assignment.connectionId,
+        connectionLabel:
+          assignment.connectionAccountEmail ?? "Lash Her managed account",
+        providerCalendarId: assignment.providerCalendarId,
+        resourceId: assignment.resourceId,
+        resourceName: assignment.resourceName,
+      }));
 
   return (
     <div className="space-y-8">
@@ -96,9 +112,8 @@ export default async function MyCalendarPage({
             My availability
           </h1>
           <p className="mt-3 max-w-3xl text-lh-muted">
-            Review your hours and connect calendars that should block busy time.
-            The booking destination selected by the owner is shown for
-            reference.
+            Review your hours, connect personal calendars, and choose where new
+            bookings for your assigned provider profile should be added.
           </p>
         </div>
         {contextResourceId ? (
@@ -245,8 +260,8 @@ export default async function MyCalendarPage({
                   ) : null}
                   {activeWriteAssignment ? (
                     <p className="w-full text-xs text-lh-muted">
-                      This account receives bookings. The owner must move that
-                      destination before you can disconnect it.
+                      This account receives bookings. Move that destination to
+                      another calendar before disconnecting it.
                     </p>
                   ) : null}
                 </div>
@@ -259,7 +274,7 @@ export default async function MyCalendarPage({
                     role="alert"
                   >
                     Calendars could not be checked. Retry this page or reconnect
-                    the Google account before adding a busy calendar.
+                    the Google account before assigning a calendar.
                   </div>
                 ) : discovery.calendars.length === 0 ? (
                   <p
@@ -270,53 +285,16 @@ export default async function MyCalendarPage({
                     calendar access or reconnect it.
                   </p>
                 ) : (
-                  <form
+                  <CalendarAssignmentForm
                     action={saveMyCalendarAssignmentAction}
-                    className="mt-6 rounded-2xl bg-lh-neutral-2 p-4"
-                  >
-                    <h3 className="font-semibold">Add busy calendar</h3>
-                    <input
-                      name="connectionId"
-                      type="hidden"
-                      value={connection.id}
-                    />
-                    <input
-                      name="resourceId"
-                      type="hidden"
-                      value={contextResourceId}
-                    />
-                    <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                      <Field label="Google calendar">
-                        <select
-                          className={inputClass}
-                          name="providerCalendarId"
-                          required
-                        >
-                          {discovery.calendars.map((calendar) => (
-                            <option key={calendar.id} value={calendar.id}>
-                              {calendar.label} ·{" "}
-                              {getGoogleCalendarAccessRoleLabel(
-                                calendar.accessRole,
-                              )}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                      <Field label="Calendar name">
-                        <input className={inputClass} name="calendarLabel" />
-                      </Field>
-                    </div>
-                    <p className="mt-3 text-xs text-lh-muted">
-                      Calendars added here block busy time and do not receive
-                      new bookings.
-                    </p>
-                    <AdminSubmitButton
-                      className={`${primaryButtonClass} mt-4`}
-                      pendingLabel="Adding…"
-                    >
-                      Add busy calendar
-                    </AdminSubmitButton>
-                  </form>
+                    calendars={discovery.calendars}
+                    connectionId={connection.id}
+                    connectionLabel={
+                      connection.accountEmail ?? "Personal Google account"
+                    }
+                    currentDestinations={currentDestinations}
+                    resources={contextResource ? [contextResource] : []}
+                  />
                 )
               ) : null}
 

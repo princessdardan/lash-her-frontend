@@ -197,7 +197,10 @@ commissions, payroll, tax, or financial accounting.
 
 - `owner`: all access, staff/configuration management, audit, sensitive exports/refunds.
 - `admin`: daily operations, configuration, calendars, marketing, analytics, and staff viewing; no owner-only audit/export/refund authority.
-- `employee`: appointments and schedules for assigned resources only.
+- `employee`: appointments, schedules, and owned Google Calendar routing for
+  assigned provider resources only. Employees can choose busy-only calendars
+  and the booking destination for those resources but cannot access the
+  business-wide Calendar administration surface.
 
 Authorization is enforced in server queries and mutations. Hiding a navigation item is not treated as authorization.
 

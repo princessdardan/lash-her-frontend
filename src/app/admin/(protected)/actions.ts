@@ -7,7 +7,7 @@ import {
   createEmployeeCalendarConnection,
   disableEmployeeBusyAssignment,
   disconnectEmployeeCalendarConnection,
-  saveEmployeeBusyAssignment,
+  saveEmployeeCalendarAssignment,
 } from "@/lib/admin/employee-calendar";
 import {
   assignOfferingResource,
@@ -616,14 +616,27 @@ export async function saveMyCalendarAssignmentAction(formData: FormData) {
   return runAdminAction({
     destination: myAvailabilityDestination(returnResourceId),
     revalidatePaths: ["/admin/my-calendar", "/admin/calendar-connections"],
-    success: "Busy calendar assignment saved.",
-    task: () =>
-      saveEmployeeBusyAssignment({
+    success: "Calendar assignment saved.",
+    task: () => {
+      const assignmentRole = getString(formData, "assignmentRole");
+      if (
+        assignmentRole !== "busy_only" &&
+        assignmentRole !== "booking_destination"
+      ) {
+        throw new Error("Choose how this calendar is used");
+      }
+      return saveEmployeeCalendarAssignment({
+        acceptsBookings: assignmentRole === "booking_destination",
         calendarLabel: getOptionalString(formData, "calendarLabel"),
+        confirmedReplacementAssignmentId: getOptionalString(
+          formData,
+          "confirmedReplacementAssignmentId",
+        ),
         connectionId: getString(formData, "connectionId"),
         providerCalendarId: getString(formData, "providerCalendarId"),
         resourceId: getString(formData, "resourceId"),
-      }),
+      });
+    },
   });
 }
 

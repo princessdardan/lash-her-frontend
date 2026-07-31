@@ -46,9 +46,9 @@ import { canAdmin } from "./permissions";
 import { AdminAuthError, type AdminActor } from "./types";
 import { localDateTimeToUtc } from "./local-time";
 import { getCalendarAssignmentAccessError } from "./calendar-capabilities";
+import { lockAndValidateBookingDestinationChange } from "./calendar-assignment-authorization";
 import { revokeEncryptedGoogleCredentialBestEffort } from "./calendar-credential-revocation";
 import {
-  getBookingDestinationChangeError,
   getBookingDestinationDisableError,
   getCalendarConnectionDisableError,
 } from "./calendar-destination-policy";
@@ -1903,34 +1903,14 @@ export async function saveCalendarAssignment(input: {
         }
       }
 
-      const [currentDestination] = await tx
-        .select({
-          assignmentId: bookingResourceCalendarAssignments.id,
-          connectionId: bookingResourceCalendarAssignments.calendarConnectionId,
-          providerCalendarId:
-            bookingResourceCalendarAssignments.providerCalendarId,
-        })
-        .from(bookingResourceCalendarAssignments)
-        .where(
-          and(
-            eq(bookingResourceCalendarAssignments.resourceId, input.resourceId),
-            eq(bookingResourceCalendarAssignments.status, "active"),
-            eq(bookingResourceCalendarAssignments.acceptsBookings, true),
-          ),
-        )
-        .limit(1)
-        .for("update");
-      const destinationChangeError = getBookingDestinationChangeError({
+      await lockAndValidateBookingDestinationChange(tx, {
         acceptsBookings: input.acceptsBookings,
         confirmedReplacementAssignmentId:
           cleanOptional(input.confirmedReplacementAssignmentId) ?? null,
-        currentDestination: currentDestination ?? null,
-        requestedConnectionId: input.connectionId,
-        requestedProviderCalendarId: providerCalendarId,
+        connectionId: input.connectionId,
+        providerCalendarId,
+        resourceId: input.resourceId,
       });
-      if (destinationChangeError) {
-        throw new Error(destinationChangeError);
-      }
 
       const now = new Date();
       if (input.acceptsBookings) {

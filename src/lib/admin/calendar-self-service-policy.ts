@@ -16,7 +16,7 @@ export function getEmployeeDisconnectError(
   activeAssignments: ReadonlyArray<{ acceptsBookings: boolean }>,
 ): string | null {
   return activeAssignments.some((assignment) => assignment.acceptsBookings)
-    ? "The owner must move the active booking destination before this account can be disconnected"
+    ? "Move the active booking destination before this account can be disconnected"
     : null;
 }
 
