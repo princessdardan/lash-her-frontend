@@ -297,6 +297,25 @@ describe("booking service flow contract", () => {
     );
   });
 
+  it("moves mobile users to each newly rendered booking step", () => {
+    assert.match(bookingFlowSource, /previousStepRef = useRef\(step\)/);
+    assert.match(
+      bookingFlowSource,
+      /window\.requestAnimationFrame\(\(\) => \{[\s\S]*?stepHeadingRef\.current/,
+    );
+    assert.match(bookingFlowSource, /\(max-width: 1023px\)/);
+    assert.match(
+      bookingFlowSource,
+      /heading\.focus\(\{ preventScroll: true \}\)/,
+    );
+    assert.match(bookingFlowSource, /heading\.scrollIntoView\(\{/);
+    assert.match(bookingFlowSource, /prefers-reduced-motion: reduce/);
+    assert.equal(
+      [...bookingFlowSource.matchAll(/ref=\{stepHeadingRef\}/g)].length,
+      5,
+    );
+  });
+
   it("loads initial availability without an add-on and preserves the selected time while validating one", () => {
     assert.match(
       bookingFlowSource,

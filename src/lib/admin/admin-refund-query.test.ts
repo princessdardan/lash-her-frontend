@@ -31,6 +31,7 @@ test("admin refund rows keep every joined customer and hold column qualified", (
     query,
     /on "appointment_holds"\."id" = "booking_payment_attempts"\."hold_id"/,
   );
+  assert.match(query, /"checkout_orders"\."paid_at" desc nulls last/);
   assert.doesNotMatch(query, /on "id" = "hold_id"/);
 });
 

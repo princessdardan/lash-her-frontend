@@ -54,7 +54,7 @@ export function buildAdminRefundQueries(
         eq(checkoutOrders.providerPaymentId, completedRefunds.squarePaymentId),
       ),
     )
-    .orderBy(desc(checkoutOrders.paidAt))
+    .orderBy(sql`${checkoutOrders.paidAt} desc nulls last`)
     .limit(1)
     .as("admin_refund_order");
   const linkedHold = db

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type { BookingAnswerInput, BookingSlot } from "@/lib/booking/types";
 import type { OperationalBookingUiSettings } from "@/lib/booking/operational-ui-settings";
@@ -172,6 +172,8 @@ export function BookingFlow({
   const [slotLoadErrorMessage, setSlotLoadErrorMessage] = useState("");
   const [selectedAddOnKey, setSelectedAddOnKey] = useState<string | null>(null);
   const [dateWindowStart, setDateWindowStart] = useState(0);
+  const previousStepRef = useRef(step);
+  const stepHeadingRef = useRef<HTMLHeadingElement>(null);
   const isOfferingFlow =
     getServiceBookingModel({
       offerings,
@@ -220,6 +222,35 @@ export function BookingFlow({
     (addOn) => addOn.key === selectedAddOnKey,
   );
   const intakeQuestions = settings.intakeQuestions ?? [];
+
+  useEffect(() => {
+    if (previousStepRef.current === step) {
+      return;
+    }
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      previousStepRef.current = step;
+
+      if (!window.matchMedia("(max-width: 1023px)").matches) {
+        return;
+      }
+
+      const heading = stepHeadingRef.current;
+      if (!heading) {
+        return;
+      }
+
+      heading.focus({ preventScroll: true });
+      heading.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "auto"
+          : "smooth",
+        block: "start",
+      });
+    });
+
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [step]);
 
   useEffect(() => {
     if (
@@ -595,7 +626,11 @@ export function BookingFlow({
       <section className="flex flex-col gap-8 lg:flex-row">
         <section className="min-w-0 flex-1">
           <header>
-            <h1 className="section-heading mb-6 text-3xl md:text-3xl lg:text-3xl">
+            <h1
+              ref={stepHeadingRef}
+              tabIndex={-1}
+              className="section-heading mb-6 scroll-mt-24 text-3xl focus:outline-none md:text-3xl lg:text-3xl"
+            >
               Select Service
             </h1>
           </header>
@@ -702,7 +737,11 @@ export function BookingFlow({
                 ← Back
               </button>
             )}
-            <h1 className="section-heading text-3xl md:text-3xl lg:text-3xl">
+            <h1
+              ref={stepHeadingRef}
+              tabIndex={-1}
+              className="section-heading scroll-mt-24 text-3xl focus:outline-none md:text-3xl lg:text-3xl"
+            >
               Select Provider
             </h1>
           </header>
@@ -797,7 +836,11 @@ export function BookingFlow({
                 ← Back
               </button>
             )}
-            <h1 className="section-heading text-3xl md:text-3xl lg:text-3xl">
+            <h1
+              ref={stepHeadingRef}
+              tabIndex={-1}
+              className="section-heading scroll-mt-24 text-3xl focus:outline-none md:text-3xl lg:text-3xl"
+            >
               Select Time
             </h1>
           </header>
@@ -952,7 +995,11 @@ export function BookingFlow({
             >
               ← Back
             </button>
-            <h1 className="section-heading text-3xl md:text-3xl lg:text-3xl">
+            <h1
+              ref={stepHeadingRef}
+              tabIndex={-1}
+              className="section-heading scroll-mt-24 text-3xl focus:outline-none md:text-3xl lg:text-3xl"
+            >
               Select Add-ons
             </h1>
           </header>
@@ -1010,7 +1057,11 @@ export function BookingFlow({
           >
             ← Back
           </button>
-          <h1 className="section-heading text-3xl md:text-3xl lg:text-3xl">
+          <h1
+            ref={stepHeadingRef}
+            tabIndex={-1}
+            className="section-heading scroll-mt-24 text-3xl focus:outline-none md:text-3xl lg:text-3xl"
+          >
             Appointment Details
           </h1>
         </header>
