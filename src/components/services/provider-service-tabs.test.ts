@@ -3,10 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 import type { PublicBookingOffering } from "@/lib/booking/operations/offering";
-import {
-  buildPublicProviderServiceCatalog,
-  resolvePublicProviderSlug,
-} from "@/lib/booking/operations/public-service-catalog";
+import { buildPublicProviderServiceCatalog } from "@/lib/booking/operations/public-service-catalog";
 
 const tabsSource = readFileSync(
   new URL("./provider-service-tabs.tsx", import.meta.url),
@@ -120,11 +117,7 @@ describe("provider service tabs", () => {
     assert.equal(services[2]?.summary, "");
     assert.equal(services[2]?.detailHref, undefined);
     assert.equal(catalog.providers[0]?.providerKey, "shared-provider");
-    assert.equal(resolvePublicProviderSlug(catalog, "  "), "shared-provider");
-    assert.equal(
-      resolvePublicProviderSlug(catalog, "missing-provider"),
-      "shared-provider",
-    );
+    assert.equal(catalog.defaultProviderSlug, "shared-provider");
   });
 
   it("uses the provider slug as the Nataliea default when its key differs", () => {
@@ -148,14 +141,6 @@ describe("provider service tabs", () => {
     ]);
 
     assert.equal(catalog.defaultProviderSlug, "nataliea");
-    assert.equal(resolvePublicProviderSlug(catalog, "nataliea"), "nataliea");
-    assert.equal(
-      resolvePublicProviderSlug(
-        { defaultProviderSlug: null, providers: [] },
-        undefined,
-      ),
-      null,
-    );
   });
 
   it("implements an associated, roving-tabindex keyboard tab pattern", () => {
@@ -191,19 +176,16 @@ describe("provider service tabs", () => {
     );
   });
 
-  it("loads the operational catalog and safely resolves the provider query", () => {
+  it("loads the operational catalog and always starts with its default provider", () => {
     assert.match(
       servicesPageSource,
-      /loadPublicOperationalOfferings\(\{ mode: "operational" \}\)/,
+      /loadPublicOperationalOfferings\(\{\s*mode: "operational",?\s*\}\)/,
     );
     assert.match(
       servicesPageSource,
-      /typeof params\.provider === "string" \? params\.provider : undefined/,
+      /const initialProviderSlug = catalog\.defaultProviderSlug/,
     );
-    assert.match(
-      servicesPageSource,
-      /resolvePublicProviderSlug\(\s*catalog,\s*requestedProvider,\s*\)/,
-    );
+    assert.doesNotMatch(servicesPageSource, /searchParams|requestedProvider/);
     assert.match(
       servicesPageSource,
       /initialProviderSlug=\{initialProviderSlug\}/,

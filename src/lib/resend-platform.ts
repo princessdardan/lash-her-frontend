@@ -56,6 +56,7 @@ export class ResendContactSyncError extends Error {
 
 export type ResendEmailTemplateKey =
   | "booking_confirmation"
+  | "provider_booking_confirmation"
   | "contact_popup_admin"
   | "contact_popup_customer"
   | "general_inquiry_admin"
@@ -118,6 +119,8 @@ export interface ResendContactSyncDependencies {
 
 const TEMPLATE_ENV_BY_KEY: Record<ResendEmailTemplateKey, string> = {
   booking_confirmation: "RESEND_TEMPLATE_BOOKING_CONFIRMATION_ID",
+  provider_booking_confirmation:
+    "RESEND_TEMPLATE_PROVIDER_BOOKING_CONFIRMATION_ID",
   contact_popup_admin: "RESEND_TEMPLATE_CONTACT_POPUP_ADMIN_ID",
   contact_popup_customer: "RESEND_TEMPLATE_CONTACT_POPUP_CUSTOMER_ID",
   general_inquiry_admin: "RESEND_TEMPLATE_GENERAL_INQUIRY_ADMIN_ID",

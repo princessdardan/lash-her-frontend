@@ -108,6 +108,8 @@ export function getTerminalAppointmentHoldRedactionValues(now: Date) {
   return {
     bookingConfirmationEmailClaimedUntil: null,
     bookingConfirmationEmailLastError: null,
+    providerBookingEmailClaimedUntil: null,
+    providerBookingEmailLastError: null,
     customerSnapshot: REDACTED_APPOINTMENT_CUSTOMER,
     failureMetadata: null,
     failureReason: null,

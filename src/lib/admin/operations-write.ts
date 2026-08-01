@@ -75,6 +75,7 @@ import {
   assertSquareOfferingActivationAllowed,
   lockSquareAttributionInvariant,
 } from "./square-attribution-invariant";
+import { createServiceIdentifier } from "./service-identifier";
 import { runServiceOfferingOwnershipMutation } from "./service-offering-ownership-invariant";
 
 const EMAIL_PATTERN = /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/;
@@ -484,7 +485,7 @@ export async function createServiceOffering(input: {
   displayOrder: number;
   durationMinutes: number;
   fullPriceCents: number;
-  offeringKey: string;
+  offeringKey?: string;
   providerId: string;
   publicSummary: string;
   publicTitle: string;
@@ -508,7 +509,10 @@ export async function createServiceOffering(input: {
     domain: "offerings",
     mutate: async (tx) => {
       const [provider] = await tx
-        .select({ primaryResourceId: bookingProviders.primaryResourceId })
+        .select({
+          primaryResourceId: bookingProviders.primaryResourceId,
+          providerKey: bookingProviders.providerKey,
+        })
         .from(bookingProviders)
         .where(eq(bookingProviders.id, input.providerId))
         .limit(1);
@@ -533,7 +537,13 @@ export async function createServiceOffering(input: {
               displayOrder: input.displayOrder,
               durationMinutes: input.durationMinutes,
               fullPriceCents: input.fullPriceCents,
-              offeringKey: requireKey(input.offeringKey, "Offering key"),
+              offeringKey: requireKey(
+                input.offeringKey ??
+                  createServiceIdentifier(
+                    `${service.serviceKey}-${provider.providerKey}`,
+                  ),
+                "Offering key",
+              ),
               primaryResourceId: provider.primaryResourceId,
               providerId: input.providerId,
               publicSummary: requireText(

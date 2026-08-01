@@ -14,6 +14,10 @@ import {
   getBookingPaymentSelection,
   getBookingSelectedAddOn,
 } from "@/lib/booking/payment-policy";
+import {
+  sendProviderBookingEmailForHold,
+  sendProviderBookingEmailForOrder,
+} from "@/lib/booking/provider-booking-email";
 import { getConfiguredTransactionalTemplate } from "@/lib/resend-platform";
 import {
   CUSTOMER_REPLY_TO_EMAIL,
@@ -42,6 +46,7 @@ export interface SendBookingConfirmationEmailForOrderDependencies {
   markBookingConfirmationEmailSent: typeof markBookingConfirmationEmailSent;
   recordBookingConfirmationEmailFailure: typeof recordBookingConfirmationEmailFailure;
   sendBookingConfirmationEmail: typeof sendBookingConfirmationEmail;
+  sendProviderBookingEmailForOrder?: typeof sendProviderBookingEmailForOrder;
 }
 
 export interface SendBookingConfirmationEmailForHoldDependencies {
@@ -50,6 +55,7 @@ export interface SendBookingConfirmationEmailForHoldDependencies {
   markBookingConfirmationEmailSent: typeof markBookingConfirmationEmailSent;
   recordBookingConfirmationEmailFailure: typeof recordBookingConfirmationEmailFailure;
   sendBookingConfirmationEmail: typeof sendBookingConfirmationEmail;
+  sendProviderBookingEmailForHold?: typeof sendProviderBookingEmailForHold;
 }
 
 export interface RetryOperationalBookingOutcomeEmailsDependencies {
@@ -143,40 +149,26 @@ export async function sendBookingConfirmationEmailForOrder(
   orderId: string,
   dependencies: SendBookingConfirmationEmailForOrderDependencies = defaultSendBookingConfirmationEmailForOrderDependencies,
 ): Promise<void> {
-  const claimed = await dependencies.claimBookingConfirmationEmailByOrderId({
-    orderId,
-  });
+  let customerError: unknown;
 
-  if (claimed === null) {
-    return;
-  }
-
-  let correctionRequired = false;
   try {
-    await dependencies.sendBookingConfirmationEmail(
-      toBookingConfirmationInput(claimed, orderId),
-    );
-    const sent = await dependencies.markBookingConfirmationEmailSent({
-      bookingStatus: claimed.bookingConfirmationStatus ?? "booked",
-      holdId: claimed.id,
-    });
-    correctionRequired = sent?.correctionRequired === true;
+    await sendCustomerBookingConfirmationEmailForOrder(orderId, dependencies);
   } catch (error) {
-    const message = getErrorMessage(error);
-    await dependencies.recordBookingConfirmationEmailFailure({
-      error: message,
-      holdId: claimed.id,
-    });
-    dependencies.logError("[booking-email] Booking confirmation email failed", {
-      error: message,
-      holdId: claimed.id,
-      orderId,
-    });
-    throw new Error(message, { cause: error });
+    customerError = error;
   }
 
-  if (correctionRequired) {
-    await sendBookingConfirmationEmailForOrder(orderId, dependencies);
+  let providerError: unknown;
+  try {
+    await dependencies.sendProviderBookingEmailForOrder?.(orderId);
+  } catch (error) {
+    providerError = error;
+  }
+
+  if (customerError !== undefined) {
+    throw customerError;
+  }
+  if (providerError !== undefined) {
+    throw providerError;
   }
 }
 
@@ -184,43 +176,26 @@ export async function sendBookingConfirmationEmailForHold(
   holdId: string,
   dependencies: SendBookingConfirmationEmailForHoldDependencies = defaultSendBookingConfirmationEmailForHoldDependencies,
 ): Promise<void> {
-  const claimed = await dependencies.claimBookingConfirmationEmailByHoldId({
-    holdId,
-  });
+  let customerError: unknown;
 
-  if (claimed === null) {
-    return;
-  }
-
-  const orderReference =
-    claimed.checkoutOrderPublicId ?? claimed.publicReference;
-
-  let correctionRequired = false;
   try {
-    await dependencies.sendBookingConfirmationEmail(
-      toBookingConfirmationInput(claimed, orderReference),
-    );
-    const sent = await dependencies.markBookingConfirmationEmailSent({
-      bookingStatus: claimed.bookingConfirmationStatus ?? "booked",
-      holdId: claimed.id,
-    });
-    correctionRequired = sent?.correctionRequired === true;
+    await sendCustomerBookingConfirmationEmailForHold(holdId, dependencies);
   } catch (error) {
-    const message = getErrorMessage(error);
-    await dependencies.recordBookingConfirmationEmailFailure({
-      error: message,
-      holdId: claimed.id,
-    });
-    dependencies.logError("[booking-email] Booking outcome email failed", {
-      error: message,
-      holdId: claimed.id,
-      orderId: orderReference,
-    });
-    throw new Error(message, { cause: error });
+    customerError = error;
   }
 
-  if (correctionRequired) {
-    await sendBookingConfirmationEmailForHold(holdId, dependencies);
+  let providerError: unknown;
+  try {
+    await dependencies.sendProviderBookingEmailForHold?.(holdId);
+  } catch (error) {
+    providerError = error;
+  }
+
+  if (customerError !== undefined) {
+    throw customerError;
+  }
+  if (providerError !== undefined) {
+    throw providerError;
   }
 }
 
@@ -259,6 +234,7 @@ const defaultSendBookingConfirmationEmailForOrderDependencies: SendBookingConfir
     markBookingConfirmationEmailSent,
     recordBookingConfirmationEmailFailure,
     sendBookingConfirmationEmail,
+    sendProviderBookingEmailForOrder,
   };
 
 const defaultSendBookingConfirmationEmailForHoldDependencies: SendBookingConfirmationEmailForHoldDependencies =
@@ -268,7 +244,89 @@ const defaultSendBookingConfirmationEmailForHoldDependencies: SendBookingConfirm
     markBookingConfirmationEmailSent,
     recordBookingConfirmationEmailFailure,
     sendBookingConfirmationEmail,
+    sendProviderBookingEmailForHold,
   };
+
+async function sendCustomerBookingConfirmationEmailForOrder(
+  orderId: string,
+  dependencies: SendBookingConfirmationEmailForOrderDependencies,
+): Promise<void> {
+  let correctionRequired = true;
+
+  while (correctionRequired) {
+    const claimed = await dependencies.claimBookingConfirmationEmailByOrderId({
+      orderId,
+    });
+    if (claimed === null) {
+      return;
+    }
+
+    correctionRequired = false;
+    try {
+      await dependencies.sendBookingConfirmationEmail(
+        toBookingConfirmationInput(claimed, orderId),
+      );
+      const sent = await dependencies.markBookingConfirmationEmailSent({
+        bookingStatus: claimed.bookingConfirmationStatus ?? "booked",
+        holdId: claimed.id,
+      });
+      correctionRequired = sent?.correctionRequired === true;
+    } catch (error) {
+      const message = getErrorMessage(error);
+      await dependencies.recordBookingConfirmationEmailFailure({
+        error: message,
+        holdId: claimed.id,
+      });
+      dependencies.logError(
+        "[booking-email] Booking confirmation email failed",
+        { error: message, holdId: claimed.id, orderId },
+      );
+      throw new Error(message, { cause: error });
+    }
+  }
+}
+
+async function sendCustomerBookingConfirmationEmailForHold(
+  holdId: string,
+  dependencies: SendBookingConfirmationEmailForHoldDependencies,
+): Promise<void> {
+  let correctionRequired = true;
+
+  while (correctionRequired) {
+    const claimed = await dependencies.claimBookingConfirmationEmailByHoldId({
+      holdId,
+    });
+    if (claimed === null) {
+      return;
+    }
+
+    const orderReference =
+      claimed.checkoutOrderPublicId ?? claimed.publicReference;
+    correctionRequired = false;
+    try {
+      await dependencies.sendBookingConfirmationEmail(
+        toBookingConfirmationInput(claimed, orderReference),
+      );
+      const sent = await dependencies.markBookingConfirmationEmailSent({
+        bookingStatus: claimed.bookingConfirmationStatus ?? "booked",
+        holdId: claimed.id,
+      });
+      correctionRequired = sent?.correctionRequired === true;
+    } catch (error) {
+      const message = getErrorMessage(error);
+      await dependencies.recordBookingConfirmationEmailFailure({
+        error: message,
+        holdId: claimed.id,
+      });
+      dependencies.logError("[booking-email] Booking outcome email failed", {
+        error: message,
+        holdId: claimed.id,
+        orderId: orderReference,
+      });
+      throw new Error(message, { cause: error });
+    }
+  }
+}
 
 interface BookingConfirmationHtmlInput extends SendBookingConfirmationInput {
   formattedStart: string;

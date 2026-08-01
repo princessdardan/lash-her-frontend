@@ -491,20 +491,30 @@ export async function listRetryableOperationalBookingOutcomeEmailHoldIds(
       and(
         eq(appointmentHolds.bookingModelVersion, 2),
         inArray(appointments.status, ["confirmed", "rebooking_pending"]),
-        inArray(appointments.calendarSyncStatus, [
-          "synced",
-          "manual_followup",
-        ]),
+        inArray(appointments.calendarSyncStatus, ["synced", "manual_followup"]),
         or(
-          isNull(appointments.bookingConfirmationEmailClaimedUntil),
-          lte(appointments.bookingConfirmationEmailClaimedUntil, now),
-        ),
-        or(
-          isNull(appointments.bookingConfirmationEmailSentAt),
+          and(
+            or(
+              isNull(appointments.bookingConfirmationEmailClaimedUntil),
+              lte(appointments.bookingConfirmationEmailClaimedUntil, now),
+            ),
+            or(
+              isNull(appointments.bookingConfirmationEmailSentAt),
+              and(
+                eq(appointments.status, "confirmed"),
+                eq(appointments.calendarSyncStatus, "synced"),
+                sql`${appointmentHolds.reconciliationMetadata}->>'bookingConfirmationEmailOutcome' = 'manual_followup'`,
+              ),
+            ),
+          ),
           and(
             eq(appointments.status, "confirmed"),
             eq(appointments.calendarSyncStatus, "synced"),
-            sql`${appointmentHolds.reconciliationMetadata}->>'bookingConfirmationEmailOutcome' = 'manual_followup'`,
+            isNull(appointmentHolds.providerBookingEmailSentAt),
+            or(
+              isNull(appointmentHolds.providerBookingEmailClaimedUntil),
+              lte(appointmentHolds.providerBookingEmailClaimedUntil, now),
+            ),
           ),
         ),
       ),
@@ -546,9 +556,9 @@ async function claimBookingConfirmationEmail(
 
     if (resolveBookingModelVersion(hold) === 2) {
       const previousEmailOutcome = (
-        hold.reconciliationMetadata as
-          | { bookingConfirmationEmailOutcome?: unknown }
-          | null
+        hold.reconciliationMetadata as {
+          bookingConfirmationEmailOutcome?: unknown;
+        } | null
       )?.bookingConfirmationEmailOutcome;
       const sentEligibility =
         previousEmailOutcome === "manual_followup"
@@ -660,9 +670,9 @@ export async function markBookingConfirmationEmailSent(
       .for("update");
     const sentOutcome = input.bookingStatus ?? "booked";
     const previousSentOutcome = (
-      hold?.reconciliationMetadata as
-        | { bookingConfirmationEmailOutcome?: unknown }
-        | null
+      hold?.reconciliationMetadata as {
+        bookingConfirmationEmailOutcome?: unknown;
+      } | null
     )?.bookingConfirmationEmailOutcome;
     const effectiveSentOutcome =
       previousSentOutcome === "booked" ? "booked" : sentOutcome;

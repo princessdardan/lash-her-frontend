@@ -353,6 +353,8 @@ test("private data retention redacts appointment email retry state", () => {
     });
     assert.equal(redactionValues.bookingConfirmationEmailClaimedUntil, null);
     assert.equal(redactionValues.bookingConfirmationEmailLastError, null);
+    assert.equal(redactionValues.providerBookingEmailClaimedUntil, null);
+    assert.equal(redactionValues.providerBookingEmailLastError, null);
     assert.equal(redactionValues.failureMetadata, null);
     assert.equal(redactionValues.failureReason, null);
     assert.equal(redactionValues.finalizationReason, null);

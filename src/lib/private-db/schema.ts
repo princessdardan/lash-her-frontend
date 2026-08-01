@@ -1470,6 +1470,14 @@ export const appointmentHolds = pgTable(
     bookingConfirmationEmailLastError: text(
       "booking_confirmation_email_last_error",
     ),
+    providerBookingEmailSentAt: timestamp("provider_booking_email_sent_at", {
+      withTimezone: true,
+    }),
+    providerBookingEmailClaimedUntil: timestamp(
+      "provider_booking_email_claimed_until",
+      { withTimezone: true },
+    ),
+    providerBookingEmailLastError: text("provider_booking_email_last_error"),
     expiredAt: timestamp("expired_at", { withTimezone: true }),
     paymentFailedAt: timestamp("payment_failed_at", { withTimezone: true }),
     bookingFailedAt: timestamp("booking_failed_at", { withTimezone: true }),

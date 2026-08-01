@@ -17,6 +17,9 @@ interface CardOnFilePostHandlerDependencies {
   runCardOnFileBooking: (
     input: CardOnFileBookingRequestBody,
   ) => Promise<CardOnFileBookingResult>;
+  sendProviderBookingEmailForPublicReference?: (
+    publicReference: string,
+  ) => Promise<void>;
 }
 
 class CardOnFileRouteValidationError extends Error {
@@ -85,6 +88,27 @@ export function createCardOnFilePostHandler(
       );
     }
 
+    if (
+      result.bookingStatus === "booked" &&
+      dependencies.sendProviderBookingEmailForPublicReference !== undefined
+    ) {
+      try {
+        await dependencies.sendProviderBookingEmailForPublicReference(
+          result.holdReference,
+        );
+      } catch (error) {
+        await dependencies.alerts.alert({
+          category: "provider_booking_email_failed",
+          severity: "warning",
+          message: "Provider booking confirmation email failed",
+          context: {
+            error: error instanceof Error ? error.message : "Unknown error",
+            holdReference: result.holdReference,
+          },
+        });
+      }
+    }
+
     return Response.json({
       bookingStatus: result.bookingStatus,
       card: result.card,
@@ -103,12 +127,15 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const alerts = createServicePaymentAlertLogger({});
+  const { sendProviderBookingEmailForPublicReference } =
+    await import("@/lib/booking/provider-booking-email");
   const runCardOnFileBooking =
     await createDefaultCardOnFileBookingRunner(alerts);
 
   return createCardOnFilePostHandler({
     alerts,
     runCardOnFileBooking,
+    sendProviderBookingEmailForPublicReference,
   })(req);
 }
 

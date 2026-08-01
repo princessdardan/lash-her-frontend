@@ -3,10 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 import type { PublicBookingOffering } from "./offering";
-import {
-  buildPublicProviderServiceCatalog,
-  resolvePublicProviderSlug,
-} from "./public-service-catalog";
+import { buildPublicProviderServiceCatalog } from "./public-service-catalog";
 
 type CatalogOffering = PublicBookingOffering & {
   displayOrder: number;
@@ -17,7 +14,7 @@ type CatalogOffering = PublicBookingOffering & {
 };
 
 describe("public provider service catalog", () => {
-  it("sorts provider tabs alphabetically but defaults to Nataliea", () => {
+  it("puts Nataliea first, sorts the remaining provider tabs alphabetically, and defaults to Nataliea", () => {
     const catalog = buildPublicProviderServiceCatalog([
       createOffering({
         displayName: "Zoë",
@@ -44,12 +41,12 @@ describe("public provider service catalog", () => {
 
     assert.deepEqual(
       catalog.providers.map((provider) => provider.providerSlug),
-      ["amara", "nataliea", "zoe"],
+      ["nataliea", "amara", "zoe"],
     );
     assert.equal(catalog.defaultProviderSlug, "nataliea");
   });
 
-  it("falls back to the alphabetical provider and honors a valid request", () => {
+  it("falls back to the alphabetical provider when Nataliea is unavailable", () => {
     const catalog = buildPublicProviderServiceCatalog([
       createOffering({
         displayName: "Zoë",
@@ -68,8 +65,6 @@ describe("public provider service catalog", () => {
     ]);
 
     assert.equal(catalog.defaultProviderSlug, "amara");
-    assert.equal(resolvePublicProviderSlug(catalog, "zoe"), "zoe");
-    assert.equal(resolvePublicProviderSlug(catalog, "unknown"), "amara");
   });
 
   it("defaults to a normalized Nataliea display name when identifiers differ", () => {
@@ -91,6 +86,42 @@ describe("public provider service catalog", () => {
     ]);
 
     assert.equal(catalog.defaultProviderSlug, "nataliea-demiri");
+    assert.deepEqual(
+      catalog.providers.map((provider) => provider.providerSlug),
+      ["nataliea-demiri", "amara"],
+    );
+  });
+
+  it("prioritizes the exact Nataliea panel over another Nataliea identity", () => {
+    const catalog = buildPublicProviderServiceCatalog([
+      createOffering({
+        displayName: "Nataliea",
+        offeringId: "offering-nataliea-alias",
+        providerKey: "nataliea",
+        providerSlug: "nataliea-alias",
+        serviceSlug: "volume-set",
+      }),
+      createOffering({
+        displayName: "Nataliea Demiri",
+        offeringId: "offering-owner",
+        providerKey: "provider-001",
+        providerSlug: "nataliea",
+        serviceSlug: "classic-set",
+      }),
+      createOffering({
+        displayName: "Amara",
+        offeringId: "offering-amara",
+        providerKey: "amara",
+        providerSlug: "amara",
+        serviceSlug: "hybrid-set",
+      }),
+    ]);
+
+    assert.equal(catalog.defaultProviderSlug, "nataliea");
+    assert.deepEqual(
+      catalog.providers.map((provider) => provider.providerSlug),
+      ["nataliea", "amara", "nataliea-alias"],
+    );
   });
 
   it("returns provider-specific copy, ordering, pricing, and links", () => {
@@ -189,7 +220,7 @@ describe("public provider service catalog", () => {
 
     assert.match(
       servicesPageSource,
-      /loadPublicOperationalOfferings\(\{ mode: "operational" \}\)/,
+      /loadPublicOperationalOfferings\(\{\s*mode: "operational",?\s*\}\)/,
     );
     assert.doesNotMatch(servicesPageSource, /loaders\.|sanity/i);
     assert.match(tabsSource, /role="tablist"/);

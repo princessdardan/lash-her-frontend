@@ -3,6 +3,7 @@ import { AdminActionFeedback } from "@/components/admin/admin-action-feedback";
 import { AdminSubmitButton } from "@/components/admin/admin-submit-button";
 import { AdminTabLink } from "@/components/admin/admin-tab-link";
 import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
+import { CreateBookingServiceFields } from "@/components/admin/create-booking-service-fields";
 import { StatusPill } from "@/components/admin/status-pill";
 import { loaders } from "@/data/loaders";
 import { resolveOptionalEditorialServiceOptions } from "@/lib/admin/editorial-service-options";
@@ -108,59 +109,18 @@ export default async function AdminOfferingsPage({
         <details className={`${panelClass} order-last`}>
           <summary className={createSummaryClass}>Add a service</summary>
           <form action={createBookingServiceAction} className="mt-5">
-            <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              <Field label="Display title">
-                <input className={inputClass} name="displayTitle" required />
-              </Field>
-              <Field label="Provider">
-                <select className={inputClass} name="ownerProviderId" required>
-                  {data.providers.map((provider) => (
-                    <option key={provider.id} value={provider.id}>
-                      {provider.displayName}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            </div>
-            <details className={advancedDetailsClass}>
-              <summary className={advancedSummaryClass}>Advanced</summary>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <Field label="Service key">
-                  <input
-                    className={inputClass}
-                    name="serviceKey"
-                    required
-                    placeholder="classic-fill"
-                  />
-                </Field>
-                <Field label="Public booking slug">
-                  <input
-                    className={inputClass}
-                    name="publicSlug"
-                    required
-                    placeholder="classic-fill"
-                  />
-                </Field>
-                <Field label="Website content page (optional)">
-                  <select
-                    className={inputClass}
-                    disabled={!editorialServiceOptions.isAvailable}
-                    name="sanityServiceLink"
-                    defaultValue=""
-                  >
-                    <option value="">No website content page</option>
-                    {publishedServices.map((service) => (
-                      <option
-                        key={service._id}
-                        value={encodeSanityServiceLink(service)}
-                      >
-                        {service.title}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-              </div>
-            </details>
+            <CreateBookingServiceFields
+              editorialServicesAvailable={editorialServiceOptions.isAvailable}
+              providers={data.providers.map((provider) => ({
+                displayName: provider.displayName,
+                id: provider.id,
+              }))}
+              publishedServices={publishedServices.map((service) => ({
+                _id: service._id,
+                slug: service.slug,
+                title: service.title,
+              }))}
+            />
             <AdminSubmitButton
               className={primaryButtonClass}
               pendingLabel="Adding service…"
@@ -280,15 +240,20 @@ export default async function AdminOfferingsPage({
               </Field>
             </div>
             <details className={advancedDetailsClass}>
-              <summary className={advancedSummaryClass}>Advanced</summary>
+              <summary className={advancedSummaryClass}>
+                Advanced — offering key is set automatically
+              </summary>
               <div className="mt-4">
-                <Field label="Offering key">
+                <Field label="Offering key (optional override)">
                   <input
                     className={inputClass}
                     name="offeringKey"
-                    required
-                    placeholder="classic-fill-nataliea"
+                    placeholder="Generated from the service and provider"
                   />
+                  <span className="mt-2 block text-xs font-normal leading-5 text-lh-muted">
+                    Used internally and must be unique. Leave blank to generate
+                    it from the selected service and provider.
+                  </span>
                 </Field>
               </div>
             </details>
@@ -345,15 +310,20 @@ export default async function AdminOfferingsPage({
               </Field>
             </div>
             <details className={advancedDetailsClass}>
-              <summary className={advancedSummaryClass}>Advanced</summary>
+              <summary className={advancedSummaryClass}>
+                Advanced — add-on key is set automatically
+              </summary>
               <div className="mt-4">
-                <Field label="Add-on key">
+                <Field label="Add-on key (optional override)">
                   <input
                     className={inputClass}
                     name="addOnKey"
-                    required
-                    placeholder="foreign-removal"
+                    placeholder="Generated from the add-on name"
                   />
+                  <span className="mt-2 block text-xs font-normal leading-5 text-lh-muted">
+                    Used internally and must be unique for this offering. Leave
+                    blank to generate it from the add-on name.
+                  </span>
                 </Field>
               </div>
             </details>

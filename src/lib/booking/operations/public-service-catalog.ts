@@ -39,6 +39,7 @@ const providerCollator = new Intl.Collator("en-CA", {
   sensitivity: "base",
   usage: "sort",
 });
+const OWNER_PROVIDER_IDENTITY = "nataliea";
 const PUBLIC_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export function buildPublicProviderServiceCatalog(
@@ -91,7 +92,17 @@ export function buildPublicProviderServiceCatalog(
     groups.set(providerSlug, group);
   }
 
-  const providers = Array.from(groups.values()).sort(compareProviders);
+  const providers = Array.from(groups.values());
+  const ownerProvider =
+    providers.find(
+      (provider) =>
+        normalizeProviderIdentity(provider.providerSlug) ===
+        OWNER_PROVIDER_IDENTITY,
+    ) ?? providers.find(isOwnerProvider);
+
+  providers.sort((left, right) =>
+    compareProviders(left, right, ownerProvider?.providerSlug),
+  );
 
   for (const provider of providers) {
     provider.services.sort(
@@ -102,43 +113,36 @@ export function buildPublicProviderServiceCatalog(
     );
   }
 
-  const nataliea = providers.find(
-    (provider) =>
-      normalizeProviderIdentity(provider.providerKey) === "nataliea" ||
-      normalizeProviderIdentity(provider.providerSlug) === "nataliea" ||
-      normalizeProviderIdentity(provider.displayName) === "nataliea",
-  );
-
   return {
     defaultProviderSlug:
-      nataliea?.providerSlug ?? providers[0]?.providerSlug ?? null,
+      ownerProvider?.providerSlug ?? providers[0]?.providerSlug ?? null,
     providers,
   };
-}
-
-export function resolvePublicProviderSlug(
-  catalog: PublicProviderServiceCatalog,
-  requestedProviderSlug: string | undefined,
-): string | null {
-  const requested = requestedProviderSlug?.trim();
-
-  if (
-    requested &&
-    catalog.providers.some((provider) => provider.providerSlug === requested)
-  ) {
-    return requested;
-  }
-
-  return catalog.defaultProviderSlug;
 }
 
 function compareProviders(
   left: PublicProviderServiceCatalogGroup,
   right: PublicProviderServiceCatalogGroup,
+  ownerProviderSlug?: string,
 ): number {
+  const ownerPriority =
+    Number(right.providerSlug === ownerProviderSlug) -
+    Number(left.providerSlug === ownerProviderSlug);
+
   return (
+    ownerPriority ||
     providerCollator.compare(left.displayName, right.displayName) ||
     left.providerSlug.localeCompare(right.providerSlug)
+  );
+}
+
+function isOwnerProvider(provider: PublicProviderServiceCatalogGroup): boolean {
+  return (
+    normalizeProviderIdentity(provider.providerKey) ===
+      OWNER_PROVIDER_IDENTITY ||
+    normalizeProviderIdentity(provider.providerSlug) ===
+      OWNER_PROVIDER_IDENTITY ||
+    normalizeProviderIdentity(provider.displayName) === OWNER_PROVIDER_IDENTITY
   );
 }
 

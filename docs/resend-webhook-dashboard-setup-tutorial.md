@@ -30,6 +30,7 @@ RESEND_TOPIC_NEWSLETTER_ID=<topic-id>
 RESEND_TOPIC_TRAINING_ID=<topic-id>
 
 RESEND_TEMPLATE_BOOKING_CONFIRMATION_ID=<template-id>
+RESEND_TEMPLATE_PROVIDER_BOOKING_CONFIRMATION_ID=<template-id>
 RESEND_TEMPLATE_CONTACT_POPUP_ADMIN_ID=<template-id>
 RESEND_TEMPLATE_CONTACT_POPUP_CUSTOMER_ID=<template-id>
 RESEND_TEMPLATE_GENERAL_INQUIRY_ADMIN_ID=<template-id>
@@ -114,18 +115,19 @@ Templates are optional. If a template ID is not configured, the app uses its sou
 3. Publish the template before using it in staging or production.
 4. Copy each template ID into the matching env var:
 
-| Flow | Env var |
-| --- | --- |
-| Booking confirmation | `RESEND_TEMPLATE_BOOKING_CONFIRMATION_ID` |
-| Contact popup admin notification | `RESEND_TEMPLATE_CONTACT_POPUP_ADMIN_ID` |
-| Contact popup customer reply | `RESEND_TEMPLATE_CONTACT_POPUP_CUSTOMER_ID` |
-| General inquiry admin notification | `RESEND_TEMPLATE_GENERAL_INQUIRY_ADMIN_ID` |
-| General inquiry customer reply | `RESEND_TEMPLATE_GENERAL_INQUIRY_CUSTOMER_ID` |
-| Product order confirmation | `RESEND_TEMPLATE_PRODUCT_CONFIRMATION_ID` |
-| Training contact admin notification | `RESEND_TEMPLATE_TRAINING_CONTACT_ADMIN_ID` |
-| Training contact customer reply | `RESEND_TEMPLATE_TRAINING_CONTACT_CUSTOMER_ID` |
-| Training payment admin notification | `RESEND_TEMPLATE_TRAINING_PAYMENT_ADMIN_ID` |
-| Training payment customer confirmation | `RESEND_TEMPLATE_TRAINING_PAYMENT_CUSTOMER_ID` |
+| Flow                                   | Env var                                            |
+| -------------------------------------- | -------------------------------------------------- |
+| Booking confirmation                   | `RESEND_TEMPLATE_BOOKING_CONFIRMATION_ID`          |
+| Provider booking confirmation          | `RESEND_TEMPLATE_PROVIDER_BOOKING_CONFIRMATION_ID` |
+| Contact popup admin notification       | `RESEND_TEMPLATE_CONTACT_POPUP_ADMIN_ID`           |
+| Contact popup customer reply           | `RESEND_TEMPLATE_CONTACT_POPUP_CUSTOMER_ID`        |
+| General inquiry admin notification     | `RESEND_TEMPLATE_GENERAL_INQUIRY_ADMIN_ID`         |
+| General inquiry customer reply         | `RESEND_TEMPLATE_GENERAL_INQUIRY_CUSTOMER_ID`      |
+| Product order confirmation             | `RESEND_TEMPLATE_PRODUCT_CONFIRMATION_ID`          |
+| Training contact admin notification    | `RESEND_TEMPLATE_TRAINING_CONTACT_ADMIN_ID`        |
+| Training contact customer reply        | `RESEND_TEMPLATE_TRAINING_CONTACT_CUSTOMER_ID`     |
+| Training payment admin notification    | `RESEND_TEMPLATE_TRAINING_PAYMENT_ADMIN_ID`        |
+| Training payment customer confirmation | `RESEND_TEMPLATE_TRAINING_PAYMENT_CUSTOMER_ID`     |
 
 Use uppercase variables in templates, such as `CUSTOMER_NAME`, `CUSTOMER_FIRST_NAME`, `CUSTOMER_EMAIL`, `ORDER_ID`, `PROGRAM_TITLE`, `SOURCE_PATH`, `EMAIL_PROFILE_IMAGE_HTML`, and flow-specific fields. Keep `{{{EMAIL_PROFILE_IMAGE_HTML}}}` in the header where the app-managed profile image should appear; the app fills it from `EMAIL_PROFILE_IMAGE_URL` at send time. Test in staging before setting production template IDs.
 

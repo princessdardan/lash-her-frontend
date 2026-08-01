@@ -180,6 +180,42 @@ test("factory returns 200 with safe response on successful card-on-file booking"
   assert.ok(!bodyText.includes("squareCardId"));
 });
 
+test("factory sends the provider email only after a successful booked result", async () => {
+  const notifiedReferences: string[] = [];
+  const { handler } = createHandler({
+    sendProviderBookingEmailForPublicReference: async (publicReference) => {
+      notifiedReferences.push(publicReference);
+    },
+  });
+
+  const response = await handler(createValidRequest());
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(notifiedReferences, ["hold_public_1"]);
+});
+
+test("factory keeps a confirmed booking successful when the provider email fails", async () => {
+  const { handler, alertCalls } = createHandler({
+    sendProviderBookingEmailForPublicReference: async () => {
+      throw new Error("Resend unavailable");
+    },
+  });
+
+  const response = await handler(createValidRequest());
+
+  assert.equal(response.status, 200);
+  assert.equal(alertCalls.length, 1);
+  assert.deepEqual(alertCalls[0], {
+    category: "provider_booking_email_failed",
+    context: {
+      error: "Resend unavailable",
+      holdReference: "hold_public_1",
+    },
+    message: "Provider booking confirmation email failed",
+    severity: "warning",
+  });
+});
+
 function createValidRequest(): NextRequest {
   return new NextRequest("http://localhost:3000/api/booking/card-on-file", {
     method: "POST",
@@ -491,6 +527,9 @@ function createHandler(
     runCardOnFileBooking: (
       input: CardOnFileBookingRequestBody,
     ) => Promise<CardOnFileBookingResult>;
+    sendProviderBookingEmailForPublicReference: (
+      publicReference: string,
+    ) => Promise<void>;
   }> = {},
 ) {
   const alertCalls: unknown[] = [];
@@ -509,6 +548,8 @@ function createHandler(
         holdReference: "hold_public_1",
         noShowChargeStatus: "ready",
       })),
+    sendProviderBookingEmailForPublicReference:
+      overrides.sendProviderBookingEmailForPublicReference,
   });
 
   return { alertCalls, handler };

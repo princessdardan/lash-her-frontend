@@ -11,7 +11,8 @@ Current transactional flows are:
 - General inquiry, training contact, and contact popup notifications from `src/lib/email.ts`.
 - Product order confirmations from `src/lib/commerce/product-order-email.ts`.
 - Training payment customer/admin notifications from `src/lib/commerce/training-payment-email.ts` and `src/lib/commerce/training-payment-notifications.ts`.
-- Service booking confirmations from `src/lib/booking/email.ts`.
+- Service booking customer confirmations from `src/lib/booking/email.ts`.
+- Successful service booking provider notifications from `src/lib/booking/provider-booking-email.ts`. Operational bookings resolve active staff assigned to the booked provider resource; legacy bookings and missing staff assignments fall back to `ADMIN_EMAIL`.
 
 Payment-related email delivery is intentionally idempotent:
 
@@ -19,6 +20,7 @@ Payment-related email delivery is intentionally idempotent:
 - Training customer email uses `training-customer:<orderId>`.
 - Training admin email uses `training-admin:<orderId>`.
 - Booking confirmation uses `booking-confirmation:<holdId>`.
+- Provider booking confirmation uses `provider-booking-confirmation:<holdId>:<recipient-hash>`.
 
 The private database stores email sent/claim/error state so browser validation and webhook retries can recover missed sends without duplicating successfully recorded emails.
 
@@ -37,6 +39,7 @@ EMAIL_RETRY_SECRET=<long-random-manual-retry-secret>
 
 # Optional Resend Dashboard templates. When omitted, source-rendered HTML fallback remains active.
 RESEND_TEMPLATE_BOOKING_CONFIRMATION_ID=<optional-template-id>
+RESEND_TEMPLATE_PROVIDER_BOOKING_CONFIRMATION_ID=<optional-template-id>
 RESEND_TEMPLATE_CONTACT_POPUP_ADMIN_ID=<optional-template-id>
 RESEND_TEMPLATE_CONTACT_POPUP_CUSTOMER_ID=<optional-template-id>
 RESEND_TEMPLATE_GENERAL_INQUIRY_ADMIN_ID=<optional-template-id>
@@ -136,18 +139,19 @@ Recommended manual checks:
 
 Admins can manage transactional email copy in Resend Templates. The code keeps a source-rendered HTML fallback for every flow, so template rollout is controlled by environment variables:
 
-| Flow | Env var |
-| --- | --- |
-| Booking confirmation | `RESEND_TEMPLATE_BOOKING_CONFIRMATION_ID` |
-| Contact popup admin notification | `RESEND_TEMPLATE_CONTACT_POPUP_ADMIN_ID` |
-| Contact popup customer reply | `RESEND_TEMPLATE_CONTACT_POPUP_CUSTOMER_ID` |
-| General inquiry admin notification | `RESEND_TEMPLATE_GENERAL_INQUIRY_ADMIN_ID` |
-| General inquiry customer reply | `RESEND_TEMPLATE_GENERAL_INQUIRY_CUSTOMER_ID` |
-| Product order confirmation | `RESEND_TEMPLATE_PRODUCT_CONFIRMATION_ID` |
-| Training contact admin notification | `RESEND_TEMPLATE_TRAINING_CONTACT_ADMIN_ID` |
-| Training contact customer reply | `RESEND_TEMPLATE_TRAINING_CONTACT_CUSTOMER_ID` |
-| Training payment admin notification | `RESEND_TEMPLATE_TRAINING_PAYMENT_ADMIN_ID` |
-| Training payment customer confirmation | `RESEND_TEMPLATE_TRAINING_PAYMENT_CUSTOMER_ID` |
+| Flow                                   | Env var                                            |
+| -------------------------------------- | -------------------------------------------------- |
+| Booking confirmation                   | `RESEND_TEMPLATE_BOOKING_CONFIRMATION_ID`          |
+| Provider booking confirmation          | `RESEND_TEMPLATE_PROVIDER_BOOKING_CONFIRMATION_ID` |
+| Contact popup admin notification       | `RESEND_TEMPLATE_CONTACT_POPUP_ADMIN_ID`           |
+| Contact popup customer reply           | `RESEND_TEMPLATE_CONTACT_POPUP_CUSTOMER_ID`        |
+| General inquiry admin notification     | `RESEND_TEMPLATE_GENERAL_INQUIRY_ADMIN_ID`         |
+| General inquiry customer reply         | `RESEND_TEMPLATE_GENERAL_INQUIRY_CUSTOMER_ID`      |
+| Product order confirmation             | `RESEND_TEMPLATE_PRODUCT_CONFIRMATION_ID`          |
+| Training contact admin notification    | `RESEND_TEMPLATE_TRAINING_CONTACT_ADMIN_ID`        |
+| Training contact customer reply        | `RESEND_TEMPLATE_TRAINING_CONTACT_CUSTOMER_ID`     |
+| Training payment admin notification    | `RESEND_TEMPLATE_TRAINING_PAYMENT_ADMIN_ID`        |
+| Training payment customer confirmation | `RESEND_TEMPLATE_TRAINING_PAYMENT_CUSTOMER_ID`     |
 
 Template variables are sent as uppercase keys such as `CUSTOMER_NAME`, `CUSTOMER_FIRST_NAME`, `CUSTOMER_EMAIL`, `ORDER_ID`, `PROGRAM_TITLE`, `SOURCE_PATH`, `EMAIL_PROFILE_IMAGE_HTML`, and flow-specific fields. Check the fallback HTML for each flow before editing templates so the dashboard copy preserves required operational content.
 
@@ -193,20 +197,20 @@ When a website form includes affirmative marketing consent, the app writes the p
 
 Recommended segment/topic setup:
 
-| Consent source | Segment env var | Topic env var |
-| --- | --- | --- |
-| All marketing contacts | `RESEND_SEGMENT_MARKETING_ID` | `RESEND_TOPIC_MARKETING_ID` |
-| Booking marketing opt-in | `RESEND_SEGMENT_BOOKING_ID` | none by default |
-| Contact popup | `RESEND_SEGMENT_CONTACT_POPUP_ID` | `RESEND_TOPIC_NEWSLETTER_ID` |
-| General inquiry | `RESEND_SEGMENT_GENERAL_INQUIRY_ID` | none by default |
-| Training contact | `RESEND_SEGMENT_TRAINING_CONTACT_ID` | `RESEND_TOPIC_TRAINING_ID` |
-| Sanity legacy backfill | `RESEND_SEGMENT_SANITY_BACKFILL_ID` | none by default |
+| Consent source           | Segment env var                      | Topic env var                |
+| ------------------------ | ------------------------------------ | ---------------------------- |
+| All marketing contacts   | `RESEND_SEGMENT_MARKETING_ID`        | `RESEND_TOPIC_MARKETING_ID`  |
+| Booking marketing opt-in | `RESEND_SEGMENT_BOOKING_ID`          | none by default              |
+| Contact popup            | `RESEND_SEGMENT_CONTACT_POPUP_ID`    | `RESEND_TOPIC_NEWSLETTER_ID` |
+| General inquiry          | `RESEND_SEGMENT_GENERAL_INQUIRY_ID`  | none by default              |
+| Training contact         | `RESEND_SEGMENT_TRAINING_CONTACT_ID` | `RESEND_TOPIC_TRAINING_ID`   |
+| Sanity legacy backfill   | `RESEND_SEGMENT_SANITY_BACKFILL_ID`  | none by default              |
 
 Admins can create Resend Automations triggered by the configured opt-in event and can create Resend Broadcasts against the configured segments/topics. Marketing broadcast templates should include Resend's unsubscribe placeholder, `{{{RESEND_UNSUBSCRIBE_URL}}}`, or the equivalent dashboard unsubscribe block so Resend handles unsubscribe requests.
 
 ## Delivery Recovery And Idempotency
 
-The app records email state in private Postgres through `drizzle/0009_dashing_rocket_raccoon.sql`:
+The app records customer email state through `drizzle/0009_dashing_rocket_raccoon.sql` and provider booking email state through `drizzle/0031_bored_loa.sql`:
 
 - `checkout_orders.product_confirmation_email_sent_at`
 - `checkout_orders.product_confirmation_email_claimed_until`
@@ -217,6 +221,11 @@ The app records email state in private Postgres through `drizzle/0009_dashing_ro
 - `appointment_holds.booking_confirmation_email_sent_at`
 - `appointment_holds.booking_confirmation_email_claimed_until`
 - `appointment_holds.booking_confirmation_email_last_error`
+- `appointment_holds.provider_booking_email_sent_at`
+- `appointment_holds.provider_booking_email_claimed_until`
+- `appointment_holds.provider_booking_email_last_error`
+
+The provider email contains the booked service, confirmed start/end and timezone, customer contact details, payment type (deposit, full, or custom partial), captured booking amount, Square tip, computed total paid at booking, payment provider, booking reference, and selected add-on payment status. It does not include card data, payment tokens, or full provider payment identifiers.
 
 Apply this migration through `docs/private-database-migration-runbook.md` before relying on payment email recovery in staging or production.
 

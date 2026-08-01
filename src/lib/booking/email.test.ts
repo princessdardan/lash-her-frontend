@@ -49,6 +49,45 @@ test("scheduled booking outcome retries isolate individual provider failures", (
   `);
 });
 
+test("provider notification still runs when the customer email was already sent", () => {
+  runBookingEmailScenario(`
+    const providerOrders = [];
+
+    await sendBookingConfirmationEmailForOrder("LH-BOOKING-1", {
+      claimBookingConfirmationEmailByOrderId: async () => null,
+      logError: () => {},
+      markBookingConfirmationEmailSent: async () => {},
+      recordBookingConfirmationEmailFailure: async () => {},
+      sendBookingConfirmationEmail: async () => {},
+      sendProviderBookingEmailForOrder: async (orderId) => providerOrders.push(orderId),
+    });
+
+    assert.deepEqual(providerOrders, ["LH-BOOKING-1"]);
+  `);
+});
+
+test("provider notification is attempted even when the customer email fails", () => {
+  runBookingEmailScenario(`
+    const providerOrders = [];
+    const failures = [];
+
+    await assert.rejects(
+      sendBookingConfirmationEmailForOrder("LH-BOOKING-1", {
+        claimBookingConfirmationEmailByOrderId: async () => createHold(),
+        logError: () => {},
+        markBookingConfirmationEmailSent: async () => {},
+        recordBookingConfirmationEmailFailure: async (input) => failures.push(input),
+        sendBookingConfirmationEmail: async () => { throw new Error("customer send failed"); },
+        sendProviderBookingEmailForOrder: async (orderId) => providerOrders.push(orderId),
+      }),
+      /customer send failed/,
+    );
+
+    assert.deepEqual(providerOrders, ["LH-BOOKING-1"]);
+    assert.deepEqual(failures, [{ error: "customer send failed", holdId: "hold-1" }]);
+  `);
+});
+
 test("booking confirmation email includes selected add-on balance copy for partial payments", () => {
   runBookingEmailScenario(`
     let renderedHtml = "";

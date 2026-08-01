@@ -35,9 +35,10 @@ test("Resend seed payloads include template metadata, placeholders, and variable
   runResendTemplateSeedScenario(`
     const definitions = buildResendTemplateDefinitions();
 
-    assert.equal(definitions.length, 10);
+    assert.equal(definitions.length, 11);
     assert.deepEqual(definitions.map((definition) => definition.key), [
       "booking_confirmation",
+      "provider_booking_confirmation",
       "contact_popup_admin",
       "contact_popup_customer",
       "general_inquiry_admin",
@@ -74,6 +75,15 @@ test("Resend seed payloads include template metadata, placeholders, and variable
       key: "EMAIL_PROFILE_IMAGE_HTML",
       type: "string",
     });
+
+    const providerBooking = findDefinition(definitions, "provider_booking_confirmation");
+    assert.equal(providerBooking.envVar, "RESEND_TEMPLATE_PROVIDER_BOOKING_CONFIRMATION_ID");
+    assert.equal(providerBooking.payload.name, "Lash Her provider booking confirmation");
+    assert.equal(providerBooking.payload.subject, "New booking confirmed: {{{SERVICE_NAME}}}");
+    assert.equal(providerBooking.payload.html.includes("{{{TOTAL_PAID}}}"), true);
+    assert.equal(providerBooking.payload.html.includes("{{{TIP_AMOUNT}}}"), true);
+    assert.equal(providerBooking.payload.html.includes("{{{PAYMENT_KIND}}}"), true);
+    assert.equal(providerBooking.payload.html.includes("{{{FORMATTED_START}}}"), true);
 
     const generalInquiryAdmin = findDefinition(definitions, "general_inquiry_admin");
     assert.equal(generalInquiryAdmin.envVar, "RESEND_TEMPLATE_GENERAL_INQUIRY_ADMIN_ID");
@@ -135,7 +145,7 @@ test("Resend template dry-run prints summaries without calling Resend", () => {
 
     assert.deepEqual(results, []);
     assert.deepEqual(calls, []);
-    assert.equal(logs.some((message) => message.includes("Prepared 10 Resend template payloads.")), true);
+    assert.equal(logs.some((message) => message.includes("Prepared 11 Resend template payloads.")), true);
     assert.equal(logs.some((message) => message.includes("RESEND_TEMPLATE_BOOKING_CONFIRMATION_ID")), true);
     assert.equal(logs.some((message) => message.includes("Dry run only")), true);
   `);
@@ -318,14 +328,14 @@ test("Resend template apply mode creates then publishes and prints env mappings"
       log: (message) => logs.push(message),
     });
 
-    assert.equal(results.length, 10);
-    assert.equal(calls.length, 20);
+    assert.equal(results.length, 11);
+    assert.equal(calls.length, 22);
     assert.deepEqual(calls.slice(0, 4).map((call) => call.type), ["create", "publish", "create", "publish"]);
     assert.equal(calls[1].id, results[0].id);
     assert.equal(calls[0].name, "Lash Her booking confirmation");
     assert.equal(calls[0].variables > 0, true);
     assert.equal(logs.some((message) => message === "RESEND_TEMPLATE_BOOKING_CONFIRMATION_ID=" + results[0].id), true);
-    assert.equal(logs.some((message) => message === "RESEND_TEMPLATE_TRAINING_PAYMENT_CUSTOMER_ID=" + results[9].id), true);
+    assert.equal(logs.some((message) => message === "RESEND_TEMPLATE_TRAINING_PAYMENT_CUSTOMER_ID=" + results[10].id), true);
   `);
 });
 

@@ -37,7 +37,7 @@ Main capabilities:
 - **Training checkout**: Helcim-backed enrollment purchase flow.
 - **Private database storage**: Drizzle/PostgreSQL persistence for sensitive and operational records.
 - **Webhook handling**: Sanity revalidation, Helcim card transaction handling, and Square service-booking webhook handling.
-- **Transactional email**: Resend-backed customer/admin notifications.
+- **Transactional email**: Resend-backed customer, provider, and admin notifications.
 
 ## How the application works
 

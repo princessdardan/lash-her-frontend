@@ -2,30 +2,17 @@ import type { ReactElement } from "react";
 
 import { ProviderServiceTabs } from "@/components/services/provider-service-tabs";
 import { loadPublicOperationalOfferings } from "@/lib/booking/operations/public-offerings";
-import {
-  buildPublicProviderServiceCatalog,
-  resolvePublicProviderSlug,
-} from "@/lib/booking/operations/public-service-catalog";
+import { buildPublicProviderServiceCatalog } from "@/lib/booking/operations/public-service-catalog";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export default async function ServicesPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ provider?: string | string[] }>;
-}): Promise<ReactElement> {
-  const [params, offerings] = await Promise.all([
-    searchParams,
-    loadPublicOperationalOfferings({ mode: "operational" }),
-  ]);
+export default async function ServicesPage(): Promise<ReactElement> {
+  const offerings = await loadPublicOperationalOfferings({
+    mode: "operational",
+  });
   const catalog = buildPublicProviderServiceCatalog(offerings ?? []);
-  const requestedProvider =
-    typeof params.provider === "string" ? params.provider : undefined;
-  const initialProviderSlug = resolvePublicProviderSlug(
-    catalog,
-    requestedProvider,
-  );
+  const initialProviderSlug = catalog.defaultProviderSlug;
 
   return (
     <section className="min-h-screen bg-lh-neutral-2 py-12 lg:py-24">

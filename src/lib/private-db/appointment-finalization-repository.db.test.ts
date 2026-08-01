@@ -31,6 +31,10 @@ import {
   createAppointmentFinalizationRepository,
 } from "./appointment-finalization-repository";
 import { createDrizzleBookingReservationRepository } from "./booking-reservation-repository";
+import {
+  claimProviderBookingEmail,
+  markProviderBookingEmailSent,
+} from "./booking-provider-email-repository";
 import { createServiceBookingPaymentRepository } from "./service-booking-payment-repository";
 import { createPrivateDbPoolConfig } from "./pool-config";
 import { getOperationalAppointmentCalendarRouting } from "./operational-calendar-routing-repository";
@@ -732,7 +736,32 @@ test(
         { now: new Date("2032-10-01T12:08:00.000Z") },
         requireDb(),
       );
-    assert.equal(legacySentCandidates.includes(seeded.holdId), false);
+    assert.equal(legacySentCandidates.includes(seeded.holdId), true);
+
+    const providerClaim = await claimProviderBookingEmail(
+      {
+        lookup: { holdId: seeded.holdId },
+        now: new Date("2032-10-01T12:09:00.000Z"),
+      },
+      requireDb(),
+    );
+    assert.equal(providerClaim?.holdId, seeded.holdId);
+    assert.equal(providerClaim?.capturedAmountCents, payment.amountCents);
+    assert.equal(providerClaim?.currency, payment.currency);
+    await markProviderBookingEmailSent(
+      {
+        holdId: seeded.holdId,
+        now: new Date("2032-10-01T12:10:00.000Z"),
+      },
+      requireDb(),
+    );
+
+    const fullySentCandidates =
+      await listRetryableOperationalBookingOutcomeEmailHoldIds(
+        { now: new Date("2032-10-01T12:11:00.000Z") },
+        requireDb(),
+      );
+    assert.equal(fullySentCandidates.includes(seeded.holdId), false);
   },
 );
 
@@ -836,7 +865,30 @@ test(
         { now: new Date("2032-11-01T12:08:00.000Z") },
         requireDb(),
       );
-    assert.equal(retryableAfterBooked.includes(seeded.holdId), false);
+    assert.equal(retryableAfterBooked.includes(seeded.holdId), true);
+
+    const providerClaim = await claimProviderBookingEmail(
+      {
+        lookup: { holdId: seeded.holdId },
+        now: new Date("2032-11-01T12:09:00.000Z"),
+      },
+      requireDb(),
+    );
+    assert.equal(providerClaim?.holdId, seeded.holdId);
+    await markProviderBookingEmailSent(
+      {
+        holdId: seeded.holdId,
+        now: new Date("2032-11-01T12:10:00.000Z"),
+      },
+      requireDb(),
+    );
+
+    const allEmailsSent =
+      await listRetryableOperationalBookingOutcomeEmailHoldIds(
+        { now: new Date("2032-11-01T12:11:00.000Z") },
+        requireDb(),
+      );
+    assert.equal(allEmailsSent.includes(seeded.holdId), false);
   },
 );
 

@@ -782,7 +782,7 @@ export async function listAdminBookingIssues(
         order by ${bookingPaymentAttempts.capturedAt} desc nulls last,
           ${bookingPaymentAttempts.updatedAt} desc
         limit 1
-      )`,
+      )`.mapWith(bookingPaymentAttempts.capturedAt),
       currency: sql<string>`coalesce((
         select ${bookingPaymentAttempts.currency}
         from ${bookingPaymentAttempts}

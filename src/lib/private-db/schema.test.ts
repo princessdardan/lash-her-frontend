@@ -741,6 +741,9 @@ test("appointment holds preserve V1 fields and add nullable V2 routing fields", 
     "occupiedEnd",
     "calendarAssignmentId",
     "googleCalendarId",
+    "providerBookingEmailSentAt",
+    "providerBookingEmailClaimedUntil",
+    "providerBookingEmailLastError",
   ]) {
     assert.ok(columns.includes(column));
   }

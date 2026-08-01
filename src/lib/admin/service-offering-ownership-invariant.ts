@@ -11,6 +11,7 @@ import type { AdminWriteTransaction } from "./admin-transaction";
 
 interface LockedService {
   ownerProviderId: string | null;
+  serviceKey: string;
 }
 
 export async function runServiceOfferingOwnershipMutation<T>(
@@ -25,6 +26,7 @@ export async function runServiceOfferingOwnershipMutation<T>(
     .select({
       id: bookingServices.id,
       ownerProviderId: bookingServices.ownerProviderId,
+      serviceKey: bookingServices.serviceKey,
     })
     .from(bookingServices)
     .where(eq(bookingServices.id, input.serviceId))

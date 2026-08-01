@@ -41,6 +41,7 @@ import {
   setSquareAttributionRequirement,
 } from "@/lib/admin/square-team-attribution";
 import { toContractorTerminology } from "@/lib/admin/presentation";
+import { createServiceIdentifier } from "@/lib/admin/service-identifier";
 
 export async function setAppointmentAttendanceStatusAction(formData: FormData) {
   const rawAppointmentId = formData.get("appointmentId");
@@ -167,15 +168,20 @@ export async function createBookingServiceAction(formData: FormData) {
     revalidatePaths: ["/admin/offerings", "/admin/setup", "/services"],
     success: "Service created as a draft.",
     task: () => {
+      const displayTitle = getString(formData, "displayTitle");
+      const generatedIdentifier = createServiceIdentifier(displayTitle);
       const sanityLink = getOptionalSanityServiceLink(formData);
       const publicSlug =
-        sanityLink.publicSlug ?? getOptionalString(formData, "publicSlug");
+        sanityLink.publicSlug ??
+        getOptionalString(formData, "publicSlug") ??
+        generatedIdentifier;
       return createBookingService({
-        displayTitle: getString(formData, "displayTitle"),
+        displayTitle,
         ownerProviderId: getString(formData, "ownerProviderId"),
         publicSlug,
         sanityDocumentId: sanityLink.sanityDocumentId,
-        serviceKey: getString(formData, "serviceKey"),
+        serviceKey:
+          getOptionalString(formData, "serviceKey") ?? generatedIdentifier,
       });
     },
   });
@@ -226,7 +232,7 @@ export async function createServiceOfferingAction(formData: FormData) {
         displayOrder: getInteger(formData, "displayOrder"),
         durationMinutes: getInteger(formData, "durationMinutes"),
         fullPriceCents: getMoneyCents(formData, "fullPrice"),
-        offeringKey: getString(formData, "offeringKey"),
+        offeringKey: getOptionalString(formData, "offeringKey"),
         providerId: getString(formData, "providerId"),
         publicSummary: getString(formData, "publicSummary"),
         publicTitle: getString(formData, "publicTitle"),
@@ -276,15 +282,19 @@ export async function createOfferingAddOnAction(formData: FormData) {
     destination: "/admin/offerings?tab=add-ons",
     revalidatePaths: ["/admin/offerings", "/services"],
     success: "Add-on created.",
-    task: () =>
-      createOfferingAddOn({
-        addOnKey: getString(formData, "addOnKey"),
+    task: () => {
+      const name = getString(formData, "name");
+      return createOfferingAddOn({
+        addOnKey:
+          getOptionalString(formData, "addOnKey") ??
+          createServiceIdentifier(name),
         description: getString(formData, "description"),
         durationDeltaMinutes: getInteger(formData, "durationDeltaMinutes"),
-        name: getString(formData, "name"),
+        name,
         offeringId: getString(formData, "offeringId"),
         priceCents: getMoneyCents(formData, "price"),
-      }),
+      });
+    },
   });
 }
 
