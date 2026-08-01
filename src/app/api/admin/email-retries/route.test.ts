@@ -4,7 +4,7 @@ import test from "node:test";
 const helperScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { createEmailRetryPostHandler } from "./src/app/api/admin/email-retries/route.ts";
+  import { createEmailRetryPostHandler } from "./src/app/api/admin/email-retries/handler.ts";
 
   function createRequest(body, headers = { authorization: "Bearer retry-secret" }) {
     return new Request("https://lash.test/api/admin/email-retries", {

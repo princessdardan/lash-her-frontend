@@ -243,6 +243,25 @@ test("service booking redirects to dedicated payment page and mounts Square cont
   );
 
   try {
+    await page.context().addCookies([
+      {
+        domain: "localhost",
+        name: "lh_contact_popup_dismissed",
+        path: "/",
+        value: "true",
+      },
+    ]);
+    await page.addInitScript(() => {
+      window.localStorage.setItem(
+        "lh_cookie_consent",
+        JSON.stringify({
+          analytics: false,
+          decidedAt: "2030-01-01T00:00:00.000Z",
+          required: true,
+          version: 1,
+        }),
+      );
+    });
     await page.goto(`/services/${SERVICE_SLUG}/booking`);
 
     const timeStr = new Intl.DateTimeFormat("en-US", {
@@ -253,6 +272,10 @@ test("service booking redirects to dedicated payment page and mounts Square cont
     await page.getByRole("button", { name: timeStr }).click();
 
     await page.getByRole("button", { name: /continue$/i }).click();
+    await expect(
+      page.getByRole("heading", { name: /appointment details/i }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: /continue to payment/i }).click();
 
     await expect(page).toHaveURL(
       new RegExp(
@@ -260,7 +283,9 @@ test("service booking redirects to dedicated payment page and mounts Square cont
       ),
     );
 
-    const container = page.locator("[id^='square-charge-card-container']");
+    const container = page.locator(
+      "[id^='square-charge-card-container']:visible",
+    );
     await expect(container).toBeVisible();
 
     const attachedSelector = await page.evaluate(async () => {
@@ -283,12 +308,20 @@ test("service booking redirects to dedicated payment page and mounts Square cont
     await page.getByLabel(/Phone Number/i).fill("5550100000");
     await page.getByLabel(/Marketing/i).check();
     await page
-      .getByLabel(/I authorize Lash Her to charge today.s booking payment/i)
+      .getByLabel(/I have read and agree to the no-show policy above/i)
       .check();
 
     await expect(page.getByText(/No payment is taken today/i)).toHaveCount(0);
-    await expect(page.getByText(/postal code/i)).toBeVisible();
+    await expect(
+      page.locator("p:visible", { hasText: /postal code/i }),
+    ).toBeVisible();
     await expect(page.getByText(/ZIP/i)).toHaveCount(0);
+
+    const verificationDetailsPromise = page
+      .waitForFunction(
+        () => window.__squareVerificationDetails ?? false,
+      )
+      .then((handle) => handle.jsonValue());
 
     await Promise.all([
       page.waitForResponse(
@@ -297,11 +330,10 @@ test("service booking redirects to dedicated payment page and mounts Square cont
           response.status() === 200,
       ),
       page.getByRole("button", { name: /Pay and confirm booking/i }).click(),
+      verificationDetailsPromise,
     ]);
 
-    const verificationDetails = await page.evaluate(
-      () => window.__squareVerificationDetails,
-    );
+    const verificationDetails = await verificationDetailsPromise;
     expect(verificationDetails).toMatchObject({
       intent: "CHARGE_AND_STORE",
       currencyCode: "CAD",

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   ACTIVE_HOLD_STATES,
+  claimBookingConfirmationEmailByHoldId,
   createAppointmentHoldFinalizerRepository,
   createAppointmentHoldStore,
   createBookingHold,
@@ -17,10 +18,48 @@ import {
   type CreateBookingHoldRecordInput,
   type TransitionAppointmentHoldInput,
 } from "./holds";
+import { UnsupportedBookingModelVersionError } from "./booking-model-version";
 
 const now = new Date("2026-05-18T12:00:00.000Z");
 const slotStart = new Date("2026-05-19T14:00:00.000Z");
 const slotEnd = new Date("2026-05-19T14:30:00.000Z");
+
+test("confirmation email claims fail closed for unknown booking model versions", async () => {
+  let updateCalled = false;
+  const chain = {
+    for: async () => [{ bookingModelVersion: 3 }],
+    from() {
+      return this;
+    },
+    limit() {
+      return this;
+    },
+    where() {
+      return this;
+    },
+  };
+  const db = {
+    async transaction<T>(callback: (tx: unknown) => Promise<T>): Promise<T> {
+      return callback({
+        select: () => chain,
+        update: () => {
+          updateCalled = true;
+          throw new Error("Unknown model versions must not reach updates");
+        },
+      });
+    },
+  };
+
+  await assert.rejects(
+    () =>
+      claimBookingConfirmationEmailByHoldId(
+        { holdId: "unknown-version-hold", now },
+        db as never,
+      ),
+    UnsupportedBookingModelVersionError,
+  );
+  assert.equal(updateCalled, false);
+});
 
 test("createBookingHold creates a held lifecycle record that expires in 10 minutes", async () => {
   const repository = new FakeHoldRepository();

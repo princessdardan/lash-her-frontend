@@ -14,52 +14,64 @@ export const structure: StructureResolver = (S) =>
               S.listItem()
                 .title("Homepage")
                 .id("homePage")
-                .child(S.document().schemaType("homePage").documentId("homePage")),
+                .child(
+                  S.document().schemaType("homePage").documentId("homePage"),
+                ),
               S.listItem()
                 .title("Contact Page")
                 .id("contactPage")
-                .child(S.document().schemaType("contactPage").documentId("contactPage")),
+                .child(
+                  S.document()
+                    .schemaType("contactPage")
+                    .documentId("contactPage"),
+                ),
               S.listItem()
                 .title("Gallery")
                 .id("galleryPage")
-                .child(S.document().schemaType("galleryPage").documentId("galleryPage")),
+                .child(
+                  S.document()
+                    .schemaType("galleryPage")
+                    .documentId("galleryPage"),
+                ),
               S.listItem()
                 .title("Training")
                 .id("trainingPage")
-                .child(S.document().schemaType("trainingPage").documentId("trainingPage")),
+                .child(
+                  S.document()
+                    .schemaType("trainingPage")
+                    .documentId("trainingPage"),
+                ),
               S.listItem()
                 .title("Training Programs Overview")
                 .id("trainingProgramsPage")
                 .child(
-                  S.document().schemaType("trainingProgramsPage").documentId("trainingProgramsPage")
+                  S.document()
+                    .schemaType("trainingProgramsPage")
+                    .documentId("trainingProgramsPage"),
                 ),
               S.listItem()
                 .title("Products Page")
                 .id("productsPage")
-                .child(S.document().schemaType("productsPage").documentId("productsPage")),
+                .child(
+                  S.document()
+                    .schemaType("productsPage")
+                    .documentId("productsPage"),
+                ),
               S.listItem()
                 .title("Global Settings")
                 .id("globalSettings")
-                .child(S.document().schemaType("globalSettings").documentId("globalSettings")),
+                .child(
+                  S.document()
+                    .schemaType("globalSettings")
+                    .documentId("globalSettings"),
+                ),
               S.listItem()
                 .title("Navigation Menu")
                 .id("mainMenu")
-                .child(S.document().schemaType("mainMenu").documentId("mainMenu")),
-            ])
-        ),
-      S.divider(),
-      // ---- BOOKING ----
-      S.listItem()
-        .title("Booking")
-        .child(
-          S.list()
-            .title("Booking")
-            .items([
-              S.listItem()
-                .title("Booking Settings")
-                .id("bookingSettings")
-                .child(S.document().schemaType("bookingSettings").documentId("bookingSettings")),
-            ])
+                .child(
+                  S.document().schemaType("mainMenu").documentId("mainMenu"),
+                ),
+            ]),
         ),
       S.divider(),
       // ---- CONTENT ----
@@ -70,11 +82,15 @@ export const structure: StructureResolver = (S) =>
             .title("Content")
             .items([
               S.documentTypeListItem("product").title("Products"),
-              S.documentTypeListItem("productCollection").title("Product Collections"),
+              S.documentTypeListItem("productCollection").title(
+                "Product Collections",
+              ),
               S.documentTypeListItem("promotionCode").title("Promotion Codes"),
               S.documentTypeListItem("service").title("Services"),
-              S.documentTypeListItem("trainingProgram").title("Training Programs"),
-              S.documentTypeListItem("policyPage").title("Policy Pages") 
-            ])
+              S.documentTypeListItem("trainingProgram").title(
+                "Training Programs",
+              ),
+              S.documentTypeListItem("policyPage").title("Policy Pages"),
+            ]),
         ),
     ]);

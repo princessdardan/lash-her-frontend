@@ -20,7 +20,7 @@ Private DB tables already include:
 - `marketing_contact_submissions` for inquiry, popup, booking marketing choice, training contact, and backfill submissions.
 - `marketing_consent_events` for consent, no-consent, unsubscribe, and backfill evidence.
 
-Existing admin routes are API-only and secret-protected: private data retention cleanup and transactional email retry. There is no existing app-level admin UI, auth middleware, or managed-auth dependency in the project.
+This paragraph described the project before the dashboard implementation. The current app now has an Auth.js identity boundary, PostgreSQL-backed roles, and protected `/admin` routes. Clerk is explicitly not part of the architecture.
 
 The launch readiness checklist requires access control, audit logging, and approved retention/privacy policy before private-record admin UI is added. This design treats those as first-class requirements.
 
@@ -31,7 +31,7 @@ The launch readiness checklist requires access control, audit logging, and appro
 - Provide one unified revenue/purchases route or widget across product, service, and training transactions.
 - Present marketing data in a way that supports decisions about lead source quality, audience health, and training demand.
 - Include privacy/DSAR request tracking, owner-only full exports, correction/deletion/redaction decision tracking, and access logs from day one.
-- Use managed authentication with internal `owner` and `operator` roles.
+- Use self-hosted Auth.js with Google OpenID Connect identity and internal `owner`, `admin`, and `employee` roles.
 - Audit sensitive access and actions without storing unnecessary PII in audit metadata.
 - Design the full product shape now while implementing a conservative first release.
 
@@ -43,7 +43,7 @@ The launch readiness checklist requires access control, audit logging, and appro
 - No raw webhook payload display in normal views.
 - No full analytics/reporting layer with custom charts and advanced segmentation.
 - No broad CSV exports outside owner-only DSAR/privacy request exports.
-- No custom authentication system unless managed auth becomes impossible.
+- No custom password storage and no Clerk dependency. Auth.js handles the signed session; PostgreSQL remains authoritative for access.
 
 ## Product Phasing
 
@@ -52,8 +52,8 @@ The launch readiness checklist requires access control, audit logging, and appro
 V1 includes:
 
 - `/admin` route group inside the existing Next app.
-- Managed-auth integration with internal role resolution.
-- `owner` and `operator` roles.
+- Auth.js integration with PostgreSQL-backed internal role resolution.
+- `owner`, `admin`, and resource-scoped `employee` roles.
 - Access and action audit logging.
 - Operations-inbox command center.
 - Read-only domain workspaces for orders, bookings, training, and marketing.

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createBookingCreatePostHandler } from "./route";
+import { createBookingCreatePostHandler } from "./handler";
 
 function createRequest(body: string) {
   return new Request("http://localhost:3000/api/booking/create", {

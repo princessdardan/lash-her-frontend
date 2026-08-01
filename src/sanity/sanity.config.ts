@@ -1,4 +1,4 @@
-'use client'
+"use client";
 
 import { defineConfig } from "sanity";
 import { vercelProtectionBypassTool } from "@sanity/vercel-protection-bypass";
@@ -18,7 +18,6 @@ const singletonTypes = new Set([
   "productsPage",
   "globalSettings",
   "mainMenu",
-  "bookingSettings",
 ]);
 
 const singletonActions = new Set(["publish", "discardChanges", "restore"]);

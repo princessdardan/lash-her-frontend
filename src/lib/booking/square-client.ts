@@ -60,10 +60,12 @@ export interface SquareMoney {
 export interface SquarePayment {
   id: string;
   amount_money?: SquareMoney;
+  created_at?: string;
   order_id?: string;
   status?: string;
   tip_money?: SquareMoney;
   total_money?: SquareMoney;
+  updated_at?: string;
 }
 
 export interface SquareOrder {
@@ -88,7 +90,9 @@ export interface SquareClientEnv {
 }
 
 export interface SquareClient {
-  createPaymentLink(request: SquareCreatePaymentLinkRequest): Promise<SquareCreatePaymentLinkResponse>;
+  createPaymentLink(
+    request: SquareCreatePaymentLinkRequest,
+  ): Promise<SquareCreatePaymentLinkResponse>;
   getOrder(orderId: string): Promise<SquareGetOrderResponse>;
   getPayment(paymentId: string): Promise<SquareGetPaymentResponse>;
 }
@@ -96,7 +100,10 @@ export interface SquareClient {
 export function createSquareClient(env: SquareClientEnv): SquareClient {
   return {
     async createPaymentLink(request) {
-      return postSquare<SquareCreatePaymentLinkRequest, SquareCreatePaymentLinkResponse>(
+      return postSquare<
+        SquareCreatePaymentLinkRequest,
+        SquareCreatePaymentLinkResponse
+      >(
         env,
         "/v2/online-checkout/payment-links",
         request,
@@ -205,25 +212,35 @@ async function getSquare<TResponse>(
   return body;
 }
 
-function isSquareCreatePaymentLinkResponse(value: unknown): value is SquareCreatePaymentLinkResponse {
+function isSquareCreatePaymentLinkResponse(
+  value: unknown,
+): value is SquareCreatePaymentLinkResponse {
   if (!isRecord(value) || !isRecord(value.payment_link)) {
     return false;
   }
 
-  return typeof value.payment_link.id === "string" &&
+  return (
+    typeof value.payment_link.id === "string" &&
     typeof value.payment_link.url === "string" &&
-    (
-      value.payment_link.order_id === undefined ||
-      typeof value.payment_link.order_id === "string"
-    );
+    (value.payment_link.order_id === undefined ||
+      typeof value.payment_link.order_id === "string")
+  );
 }
 
-function isSquareGetPaymentResponse(value: unknown): value is SquareGetPaymentResponse {
+function isSquareGetPaymentResponse(
+  value: unknown,
+): value is SquareGetPaymentResponse {
   return isRecord(value) && isSquarePayment(value.payment);
 }
 
-function isSquareGetOrderResponse(value: unknown): value is SquareGetOrderResponse {
-  return isRecord(value) && isRecord(value.order) && typeof value.order.id === "string";
+function isSquareGetOrderResponse(
+  value: unknown,
+): value is SquareGetOrderResponse {
+  return (
+    isRecord(value) &&
+    isRecord(value.order) &&
+    typeof value.order.id === "string"
+  );
 }
 
 function isSquarePayment(value: unknown): value is SquarePayment {

@@ -7,9 +7,86 @@ const helperScript = String.raw`
   import {
     buildBookingConfirmationFallbackHtml,
     buildBookingSchedulingFailureAdminHtml,
+    getBookingConfirmationEmailIdempotencyKey,
+    retryOperationalBookingOutcomeEmails,
+    sendBookingConfirmationEmailForHold,
     sendBookingConfirmationEmailForOrder,
   } from "./src/lib/booking/email.ts";
 `;
+
+test("booked email idempotency remains rollout-compatible while manual uses a distinct key", () => {
+  runBookingEmailScenario(`
+    assert.equal(
+      getBookingConfirmationEmailIdempotencyKey("hold-1", "booked"),
+      "booking-confirmation:hold-1",
+    );
+    assert.equal(
+      getBookingConfirmationEmailIdempotencyKey("hold-1", "manual_followup"),
+      "booking-confirmation:hold-1:manual_followup",
+    );
+  `);
+});
+
+test("scheduled booking outcome retries isolate individual provider failures", () => {
+  runBookingEmailScenario(`
+    const sent = [];
+    const logged = [];
+    const summary = await retryOperationalBookingOutcomeEmails(
+      { limit: 10, now: new Date("2032-01-01T12:00:00.000Z") },
+      {
+        listHoldIds: async () => ["hold-1", "hold-2"],
+        logError: (...args) => logged.push(args),
+        sendForHold: async (holdId) => {
+          sent.push(holdId);
+          if (holdId === "hold-2") throw new Error("provider unavailable");
+        },
+      },
+    );
+
+    assert.deepEqual(sent, ["hold-1", "hold-2"]);
+    assert.deepEqual(summary, { attempted: 2, failed: 1, processed: 1 });
+    assert.equal(logged.length, 1);
+  `);
+});
+
+test("provider notification still runs when the customer email was already sent", () => {
+  runBookingEmailScenario(`
+    const providerOrders = [];
+
+    await sendBookingConfirmationEmailForOrder("LH-BOOKING-1", {
+      claimBookingConfirmationEmailByOrderId: async () => null,
+      logError: () => {},
+      markBookingConfirmationEmailSent: async () => {},
+      recordBookingConfirmationEmailFailure: async () => {},
+      sendBookingConfirmationEmail: async () => {},
+      sendProviderBookingEmailForOrder: async (orderId) => providerOrders.push(orderId),
+    });
+
+    assert.deepEqual(providerOrders, ["LH-BOOKING-1"]);
+  `);
+});
+
+test("provider notification is attempted even when the customer email fails", () => {
+  runBookingEmailScenario(`
+    const providerOrders = [];
+    const failures = [];
+
+    await assert.rejects(
+      sendBookingConfirmationEmailForOrder("LH-BOOKING-1", {
+        claimBookingConfirmationEmailByOrderId: async () => createHold(),
+        logError: () => {},
+        markBookingConfirmationEmailSent: async () => {},
+        recordBookingConfirmationEmailFailure: async (input) => failures.push(input),
+        sendBookingConfirmationEmail: async () => { throw new Error("customer send failed"); },
+        sendProviderBookingEmailForOrder: async (orderId) => providerOrders.push(orderId),
+      }),
+      /customer send failed/,
+    );
+
+    assert.deepEqual(providerOrders, ["LH-BOOKING-1"]);
+    assert.deepEqual(failures, [{ error: "customer send failed", holdId: "hold-1" }]);
+  `);
+});
 
 test("booking confirmation email includes selected add-on balance copy for partial payments", () => {
   runBookingEmailScenario(`
@@ -53,6 +130,65 @@ test("booking confirmation email includes selected add-on included copy for full
 
     assert.match(renderedHtml, /Lash Bath/);
     assert.match(renderedHtml, /add-on included in payment/i);
+  `);
+});
+
+test("manual Calendar follow-up email acknowledges payment without claiming the appointment is confirmed", () => {
+  runBookingEmailScenario(`
+    let renderedHtml = "";
+    let markedSent = 0;
+    const hold = createHold({
+      bookingConfirmationStatus: "manual_followup",
+      state: "manual_followup",
+    });
+
+    await sendBookingConfirmationEmailForHold(hold.id, {
+      claimBookingConfirmationEmailByHoldId: async () => hold,
+      logError: () => {},
+      markBookingConfirmationEmailSent: async () => { markedSent += 1; },
+      recordBookingConfirmationEmailFailure: async () => {},
+      sendBookingConfirmationEmail: async (input) => {
+        renderedHtml = buildBookingConfirmationFallbackHtml(input);
+      },
+    });
+
+    assert.match(renderedHtml, /We received your booking/i);
+    assert.match(renderedHtml, /received your payment/i);
+    assert.match(renderedHtml, /team will contact you/i);
+    assert.doesNotMatch(renderedHtml, /is reserved for/i);
+    assert.equal(markedSent, 1);
+  `);
+});
+
+test("a booked upgrade sends a corrective outcome after a concurrent manual email", () => {
+  runBookingEmailScenario(`
+    const manual = createHold({
+      bookingConfirmationStatus: "manual_followup",
+      state: "manual_followup",
+    });
+    const booked = createHold({
+      bookingConfirmationStatus: "booked",
+      state: "booked",
+    });
+    const claims = [manual, booked];
+    const sentStatuses = [];
+    const markedStatuses = [];
+
+    await sendBookingConfirmationEmailForHold(manual.id, {
+      claimBookingConfirmationEmailByHoldId: async () => claims.shift() ?? null,
+      logError: () => {},
+      markBookingConfirmationEmailSent: async (input) => {
+        markedStatuses.push(input.bookingStatus);
+        return { correctionRequired: input.bookingStatus === "manual_followup" };
+      },
+      recordBookingConfirmationEmailFailure: async () => {},
+      sendBookingConfirmationEmail: async (input) => {
+        sentStatuses.push(input.bookingStatus);
+      },
+    });
+
+    assert.deepEqual(sentStatuses, ["manual_followup", "booked"]);
+    assert.deepEqual(markedStatuses, ["manual_followup", "booked"]);
   `);
 });
 

@@ -19,6 +19,10 @@ const launchEnvVars = [
   "SANITY_API_READ_TOKEN",
   "SANITY_WRITE_TOKEN",
   "SANITY_WEBHOOK_SECRET",
+  "AUTH_SECRET",
+  "AUTH_GOOGLE_ID",
+  "AUTH_GOOGLE_SECRET",
+  "ADMIN_OWNER_EMAILS",
   "RESEND_API_KEY",
   "RESEND_WEBHOOK_SECRET",
   "RESEND_SEGMENT_MARKETING_ID",
@@ -32,6 +36,8 @@ const launchEnvVars = [
   "KV_REST_API_TOKEN",
   "DATABASE_URL",
   "CHECKOUT_SECRET_ENCRYPTION_KEY",
+  "BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY",
+  "SERVICE_BOOKING_MODEL_MODE",
   "HELCIM_GENERAL_API_TOKEN",
   "HELCIM_TRANSACTION_API_TOKEN",
   "HELCIM_WEBHOOK_VERIFIER_TOKEN",
@@ -62,6 +68,8 @@ const isLaunchEnvironment = expectedDataset !== undefined;
 const paymentGatewayMode = process.env.PAYMENT_GATEWAY_MODE ?? "live";
 const isPaymentMockMode = paymentGatewayMode === "mock";
 const serviceBookingSquareEnabled = process.env.SERVICE_BOOKING_SQUARE_ENABLED;
+const serviceBookingModelMode =
+  process.env.SERVICE_BOOKING_MODEL_MODE ?? "dual";
 const isSquareServiceBookingEnabled =
   serviceBookingSquareEnabled === "true";
 const requiredEnvVars = isLaunchEnvironment
@@ -99,6 +107,16 @@ if (paymentGatewayMode !== "live" && paymentGatewayMode !== "mock") {
 }
 
 if (
+  serviceBookingModelMode !== "legacy"
+  && serviceBookingModelMode !== "dual"
+  && serviceBookingModelMode !== "operational"
+) {
+  errors.push(
+    "Malformed env var: SERVICE_BOOKING_MODEL_MODE must be legacy, dual, or operational"
+  );
+}
+
+if (
   serviceBookingSquareEnabled !== undefined
   && serviceBookingSquareEnabled !== "true"
   && serviceBookingSquareEnabled !== "false"
@@ -124,7 +142,28 @@ if (isLaunchEnvironment) {
   }
 
   if (hasValue(process.env.CHECKOUT_SECRET_ENCRYPTION_KEY)) {
-    validateCheckoutSecretEncryptionKey(process.env.CHECKOUT_SECRET_ENCRYPTION_KEY);
+    validateBase64EncryptionKey(
+      "CHECKOUT_SECRET_ENCRYPTION_KEY",
+      process.env.CHECKOUT_SECRET_ENCRYPTION_KEY,
+    );
+  }
+
+  if (hasValue(process.env.BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY)) {
+    validateBase64EncryptionKey(
+      "BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY",
+      process.env.BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY,
+    );
+  }
+
+  if (hasValue(process.env.ADMIN_OWNER_EMAILS)) {
+    validateEmailList("ADMIN_OWNER_EMAILS", process.env.ADMIN_OWNER_EMAILS);
+  }
+
+  if (
+    hasValue(process.env.AUTH_SECRET)
+    && process.env.AUTH_SECRET.trim().length < 32
+  ) {
+    errors.push("Malformed env var: AUTH_SECRET must be at least 32 characters");
   }
 
   for (const name of ["HELCIM_GENERAL_API_TOKEN", "HELCIM_TRANSACTION_API_TOKEN"]) {
@@ -188,10 +227,10 @@ function validateEmail(name, value) {
   }
 }
 
-function validateCheckoutSecretEncryptionKey(value) {
+function validateBase64EncryptionKey(name, value) {
   if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value) || value.length % 4 !== 0) {
     errors.push(
-      "Malformed env var: CHECKOUT_SECRET_ENCRYPTION_KEY must be base64-encoded 32 bytes"
+      `Malformed env var: ${name} must be base64-encoded 32 bytes`
     );
     return;
   }
@@ -200,8 +239,16 @@ function validateCheckoutSecretEncryptionKey(value) {
 
   if (key.length !== 32 || key.toString("base64") !== value) {
     errors.push(
-      "Malformed env var: CHECKOUT_SECRET_ENCRYPTION_KEY must be base64-encoded 32 bytes"
+      `Malformed env var: ${name} must be base64-encoded 32 bytes`
     );
+  }
+}
+
+function validateEmailList(name, value) {
+  const entries = value.split(",").map((entry) => entry.trim()).filter(Boolean);
+
+  if (entries.length === 0 || entries.some((entry) => !entry.includes("@"))) {
+    errors.push(`Malformed env var: ${name} must be a comma-separated email list`);
   }
 }
 

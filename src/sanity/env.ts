@@ -62,19 +62,18 @@ export function getHelcimTransactionApiToken(): string {
 
 /** Lazy — only asserts when checkout validation needs persisted Helcim secrets. */
 export function getCheckoutSecretEncryptionKey(): Buffer {
-  const encodedKey = assertValue(
+  return getEncryptionKey(
+    "CHECKOUT_SECRET_ENCRYPTION_KEY",
     process.env.CHECKOUT_SECRET_ENCRYPTION_KEY,
-    "Missing env var: CHECKOUT_SECRET_ENCRYPTION_KEY"
   );
-  const key = Buffer.from(encodedKey, "base64");
+}
 
-  if (key.length !== 32 || key.toString("base64") !== encodedKey) {
-    throw new Error(
-      "Malformed env var: CHECKOUT_SECRET_ENCRYPTION_KEY must be base64-encoded 32 bytes"
-    );
-  }
-
-  return key;
+/** Lazy — only asserts when a provider calendar credential is persisted or read. */
+export function getBookingCalendarCredentialEncryptionKey(): Buffer {
+  return getEncryptionKey(
+    "BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY",
+    process.env.BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY,
+  );
 }
 
 function assertValue<T>(v: T | undefined, errorMessage: string): T {
@@ -102,4 +101,17 @@ function assertHelcimApiToken(value: string | undefined, name: string): string {
   }
 
   return token;
+}
+
+function getEncryptionKey(name: string, value: string | undefined): Buffer {
+  const encodedKey = assertValue(value, `Missing env var: ${name}`);
+  const key = Buffer.from(encodedKey, "base64");
+
+  if (key.length !== 32 || key.toString("base64") !== encodedKey) {
+    throw new Error(
+      `Malformed env var: ${name} must be base64-encoded 32 bytes`,
+    );
+  }
+
+  return key;
 }

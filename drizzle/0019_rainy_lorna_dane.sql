@@ -1,0 +1,2 @@
+ALTER TABLE "booking_resource_calendar_assignments" ADD CONSTRAINT "booking_resource_calendar_assignments_has_role_check" CHECK ("booking_resource_calendar_assignments"."contributes_busy" = true OR "booking_resource_calendar_assignments"."accepts_bookings" = true);--> statement-breakpoint
+ALTER TABLE "booking_service_offering_add_ons" ADD CONSTRAINT "booking_service_offering_add_ons_duration_check" CHECK ("booking_service_offering_add_ons"."duration_delta_minutes" >= 0);

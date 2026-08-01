@@ -4,7 +4,7 @@ import test from "node:test";
 const helperScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { createBackupValidationGetHandler } from "./src/app/api/cron/backup-validation/route.ts";
+  import { createBackupValidationGetHandler } from "./src/app/api/cron/backup-validation/handler.ts";
 
   function createRequest(headers = { authorization: "Bearer cron-secret" }) {
     return new Request("https://lash.test/api/cron/backup-validation", {

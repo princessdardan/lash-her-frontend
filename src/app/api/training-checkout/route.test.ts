@@ -5,7 +5,7 @@ import test from "node:test";
 const helperScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { createTrainingCheckoutPostHandler, resolveTrainingCheckoutHelcimGatewayForRequest } from "./src/app/api/training-checkout/route.ts";
+  import { createTrainingCheckoutPostHandler, resolveTrainingCheckoutHelcimGatewayForRequest } from "./src/app/api/training-checkout/handler.ts";
 
   const program = {
     _id: "training-program-classic-lash",
@@ -306,7 +306,7 @@ test("training checkout route returns a generic failure when enrollment write fa
 });
 
 test("training checkout route remains Helcim-only and does not import Square modules", () => {
-  const routeSource = readFileSync("src/app/api/training-checkout/route.ts", "utf8");
+  const routeSource = readFileSync("src/app/api/training-checkout/handler.ts", "utf8");
 
   assertNoSquareImports(routeSource);
 });

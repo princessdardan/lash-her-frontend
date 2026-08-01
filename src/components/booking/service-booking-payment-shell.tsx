@@ -11,8 +11,10 @@ import { ServiceBookingPaymentForm } from "./service-booking-payment-form";
 import type { ServiceBookingPaymentConfirmation } from "./service-booking-payment-form";
 
 export function ServiceBookingPaymentShell({
+  marketingOptInLabel,
   session: initialSession,
 }: {
+  marketingOptInLabel: string;
   session: ServiceBookingPaymentSessionDisplay;
 }) {
   const [session, setSession] = useState(initialSession);
@@ -97,6 +99,7 @@ export function ServiceBookingPaymentShell({
           </div>
         ) : (
           <ServiceBookingPaymentForm
+            marketingOptInLabel={marketingOptInLabel}
             session={session}
             onSessionUpdate={handleSessionUpdate}
             onSuccess={handleSuccess}

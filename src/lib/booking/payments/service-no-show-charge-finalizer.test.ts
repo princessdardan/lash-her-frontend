@@ -170,9 +170,7 @@ function makeAlerts() {
 }
 
 interface MockProviderReader {
-  getInvoice(
-    invoiceId: string,
-  ): Promise<{
+  getInvoice(invoiceId: string): Promise<{
     invoice: { id: string; status: string; order_id: string; version: number };
   }>;
   getPayment(paymentId: string): Promise<{
@@ -520,6 +518,7 @@ test("finalizer uses atomic repository method for charged outcome", async () => 
   const result = await finalizeNoShowCharge(
     {
       event: makeEvent({
+        createdAt: "2026-06-20T12:19:30.000Z",
         eventId: "evt-atomic",
         eventType: "payment.created",
         paymentId: "sq-payment-atomic",
@@ -562,6 +561,8 @@ test("finalizer uses atomic repository method for charged outcome", async () => 
   assert.equal(result.status, "charged");
   assert.equal(repo.finalizations.length, 1);
   const finalization = repo.finalizations[0] as {
+    chargedAmountCents?: number;
+    chargedAt?: Date;
     noShowChargeRecordId: string;
     status: string;
     squarePaymentId?: string;
@@ -569,6 +570,11 @@ test("finalizer uses atomic repository method for charged outcome", async () => 
   };
   assert.equal(finalization.noShowChargeRecordId, record.id);
   assert.equal(finalization.status, "charged");
+  assert.equal(finalization.chargedAmountCents, 10000);
+  assert.equal(
+    finalization.chargedAt?.toISOString(),
+    "2026-06-20T12:19:30.000Z",
+  );
   assert.equal(finalization.squarePaymentId, "sq-payment-atomic");
   assert.equal(finalization.event.eventId, "evt-atomic");
   assert.equal(finalization.event.status, "charged");

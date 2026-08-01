@@ -3,8 +3,25 @@ import "server-only";
 import { Redis } from "@upstash/redis";
 
 import { getBookingEnv } from "@/sanity/env";
+import {
+  consumeBookingCalendarOAuthState as consumeCalendarOAuthState,
+  saveBookingCalendarOAuthState as saveCalendarOAuthState,
+  type BookingCalendarOAuthState,
+  type BookingCalendarOAuthStateStorage,
+} from "./calendar-oauth-state";
+import {
+  readGoogleRefreshToken,
+  writeGoogleRefreshToken,
+  type BookingDeploymentEnvironment,
+  type GoogleRefreshTokenStorage,
+} from "./google-refresh-token-store";
 
-const TOKEN_KEY = "booking:google-refresh-token";
+export {
+  isBookingCalendarOAuthState,
+  type BookingCalendarOAuthState,
+  type BookingCalendarOAuthStateStorage,
+} from "./calendar-oauth-state";
+
 const CALENDAR_LOCK_KEY = "booking:calendar-lock";
 const RELEASE_LOCK_SCRIPT = `#!lua flags=allow-key-locking
 if redis.call("GET", KEYS[1]) == ARGV[1] then
@@ -28,12 +45,19 @@ function getRedis(): Redis {
   return redisClient;
 }
 
-export async function getGoogleRefreshToken(): Promise<string | null> {
-  return getRedis().get<string>(TOKEN_KEY);
+export async function getGoogleRefreshToken(
+  storage: GoogleRefreshTokenStorage = getRedis(),
+  environment: BookingDeploymentEnvironment = process.env,
+): Promise<string | null> {
+  return readGoogleRefreshToken(storage, environment);
 }
 
-export async function saveGoogleRefreshToken(refreshToken: string): Promise<void> {
-  await getRedis().set(TOKEN_KEY, refreshToken);
+export async function saveGoogleRefreshToken(
+  refreshToken: string,
+  storage: GoogleRefreshTokenStorage = getRedis(),
+  environment: BookingDeploymentEnvironment = process.env,
+): Promise<void> {
+  await writeGoogleRefreshToken(refreshToken, storage, environment);
 }
 
 export async function acquireCalendarLock(
@@ -57,10 +81,14 @@ export async function acquireScopedBookingLock(input: {
   lockId: string;
   ttlSeconds: number;
 }): Promise<boolean> {
-  const result = await getRedis().set(toScopedBookingLockKey(input.key), input.lockId, {
-    nx: true,
-    ex: input.ttlSeconds,
-  });
+  const result = await getRedis().set(
+    toScopedBookingLockKey(input.key),
+    input.lockId,
+    {
+      nx: true,
+      ex: input.ttlSeconds,
+    },
+  );
 
   return result === "OK";
 }
@@ -90,6 +118,24 @@ export async function claimIdempotencyKey(
   );
 
   return result === "OK";
+}
+
+export async function saveBookingCalendarOAuthState(
+  input: {
+    state: string;
+    payload: BookingCalendarOAuthState;
+    ttlSeconds: number;
+  },
+  storage: BookingCalendarOAuthStateStorage = getRedis(),
+): Promise<boolean> {
+  return saveCalendarOAuthState(input, storage);
+}
+
+export async function consumeBookingCalendarOAuthState(
+  state: string,
+  storage: BookingCalendarOAuthStateStorage = getRedis(),
+): Promise<BookingCalendarOAuthState | null> {
+  return consumeCalendarOAuthState(state, storage);
 }
 
 function toScopedBookingLockKey(key: string): string {

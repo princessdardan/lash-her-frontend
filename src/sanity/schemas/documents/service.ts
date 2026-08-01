@@ -1,61 +1,6 @@
 import { CalendarIcon } from "@sanity/icons";
 import { defineArrayMember, defineField, defineType } from "sanity";
 
-type ServiceCommerceDocument = {
-  fullPrice?: number;
-  depositAmount?: number;
-};
-
-function isServiceCommerceDocument(value: unknown): value is ServiceCommerceDocument {
-  return typeof value === "object" && value !== null;
-}
-
-function getServiceDocument(value: unknown): ServiceCommerceDocument | undefined {
-  return isServiceCommerceDocument(value) ? value : undefined;
-}
-
-function validateDepositAmount(value: unknown, context: { document?: unknown }) {
-  const document = getServiceDocument(context.document);
-
-  if (typeof value !== "number") return "Deposit amount is required.";
-
-  if (!Number.isFinite(value) || value <= 0) {
-    return "Deposit amount must be greater than zero.";
-  }
-
-  if (typeof document?.fullPrice === "number" && value >= document.fullPrice) {
-    return "Deposit amount must be less than the full price.";
-  }
-
-  return true;
-}
-
-function validateFullPrice(value: unknown, context: { document?: unknown }) {
-  const document = getServiceDocument(context.document);
-
-  if (typeof value !== "number") return "Full price is required.";
-
-  if (!Number.isFinite(value) || value <= 0) {
-    return "Full price must be greater than zero.";
-  }
-
-  if (typeof document?.depositAmount === "number" && value <= document.depositAmount) {
-    return "Full price must be greater than the deposit amount.";
-  }
-
-  return true;
-}
-
-function validateAddOnPrice(value: unknown) {
-  if (typeof value !== "number") return "Add-on price is required.";
-
-  if (!Number.isFinite(value) || value <= 0) {
-    return "Add-on price must be greater than zero.";
-  }
-
-  return true;
-}
-
 export const service = defineType({
   name: "service",
   title: "Service",
@@ -63,54 +8,40 @@ export const service = defineType({
   icon: CalendarIcon,
   groups: [
     { name: "overview", title: "Overview" },
-    { name: "booking", title: "Booking" },
-    { name: "pricing", title: "Pricing" },
     { name: "media", title: "Media" },
     { name: "details", title: "Details" },
     { name: "seo", title: "SEO" },
   ],
   fields: [
-    defineField({ name: "title", title: "Title", type: "string", group: "overview", validation: (Rule) => Rule.required() }),
-    defineField({ name: "slug", title: "Slug", type: "slug", group: "overview", options: { source: "title" }, validation: (Rule) => Rule.required() }),
-    defineField({ name: "description", title: "Description", type: "text", group: "overview", rows: 3, validation: (Rule) => Rule.required() }),
-    defineField({ name: "shortDescription", title: "Short Description", type: "text", group: "overview" }),
-    defineField({ name: "showDetailPage", title: "Show Detail Page", type: "boolean", group: "overview", initialValue: true, validation: (Rule) => Rule.required() }),
-    defineField({ name: "isAvailable", title: "Available for booking", type: "boolean", group: "overview", initialValue: true, validation: (Rule) => Rule.required() }),
-    defineField({ name: "displayOrder", title: "Display Order", type: "number", group: "overview", initialValue: 0, validation: (Rule) => Rule.integer() }),
-    defineField({ name: "durationMinutes", title: "Duration Minutes", type: "number", group: "booking", validation: (Rule) => Rule.required().integer().min(15).max(240) }),
-    defineField({ name: "fullPrice", title: "Full Price", type: "number", group: "pricing", validation: (Rule) => Rule.custom(validateFullPrice) }),
-    defineField({ name: "depositAmount", title: "Deposit Amount", type: "number", group: "pricing", validation: (Rule) => Rule.custom(validateDepositAmount) }),
     defineField({
-      name: "addOns",
-      title: "Add-ons",
-      type: "array",
-      group: "pricing",
-      of: [
-        defineArrayMember({
-          type: "object",
-          title: "Add-on",
-          fields: [
-            defineField({ name: "name", title: "Name", type: "string", validation: (Rule) => Rule.required() }),
-            defineField({ name: "description", title: "Description", type: "text", rows: 2, validation: (Rule) => Rule.required() }),
-            defineField({
-              name: "image",
-              title: "Image",
-              type: "image",
-              options: { hotspot: true },
-              fields: [defineField({ name: "alt", title: "Alt text", type: "string" })],
-            }),
-            defineField({ name: "price", title: "Price", type: "number", validation: (Rule) => Rule.custom(validateAddOnPrice) }),
-          ],
-          preview: {
-            select: { title: "name", subtitle: "price", media: "image" },
-            prepare({ title, subtitle, media }) {
-              return { title, subtitle: typeof subtitle === "number" ? `$${subtitle.toFixed(2)} CAD` : undefined, media };
-            },
-          },
-        }),
-      ],
+      name: "title",
+      title: "Title",
+      type: "string",
+      group: "overview",
+      validation: (Rule) => Rule.required(),
     }),
-    defineField({ name: "currency", title: "Currency", type: "string", group: "pricing", initialValue: "CAD", readOnly: true, validation: (Rule) => Rule.required() }),
+    defineField({
+      name: "slug",
+      title: "Slug",
+      type: "slug",
+      group: "overview",
+      options: { source: "title" },
+      validation: (Rule) => Rule.required(),
+    }),
+    defineField({
+      name: "description",
+      title: "Description",
+      type: "text",
+      group: "overview",
+      rows: 3,
+      validation: (Rule) => Rule.required(),
+    }),
+    defineField({
+      name: "shortDescription",
+      title: "Short Description",
+      type: "text",
+      group: "overview",
+    }),
     defineField({
       name: "image",
       title: "Image",
@@ -128,7 +59,9 @@ export const service = defineType({
         defineArrayMember({
           type: "image",
           options: { hotspot: true },
-          fields: [defineField({ name: "alt", title: "Alt text", type: "string" })],
+          fields: [
+            defineField({ name: "alt", title: "Alt text", type: "string" }),
+          ],
         }),
       ],
     }),
@@ -154,15 +87,21 @@ export const service = defineType({
       group: "seo",
       fields: [
         defineField({ name: "title", title: "SEO Title", type: "string" }),
-        defineField({ name: "description", title: "SEO Description", type: "text" }),
-        defineField({ name: "image", title: "SEO Image", type: "image", options: { hotspot: true } }),
+        defineField({
+          name: "description",
+          title: "SEO Description",
+          type: "text",
+        }),
+        defineField({
+          name: "image",
+          title: "SEO Image",
+          type: "image",
+          options: { hotspot: true },
+        }),
       ],
     }),
   ],
   preview: {
-    select: { title: "title", subtitle: "durationMinutes", media: "image" },
-    prepare({ title, subtitle, media }) {
-      return { title, subtitle: subtitle ? `${subtitle} minutes` : undefined, media };
-    },
+    select: { title: "title", subtitle: "shortDescription", media: "image" },
   },
 });

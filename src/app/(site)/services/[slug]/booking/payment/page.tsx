@@ -79,7 +79,10 @@ export default async function ServiceBookingPaymentPage({
       aria-label="Service booking payment"
     >
       <div className="content-container max-w-5xl mx-auto">
-        <ServiceBookingPaymentShell session={result.session} />
+        <ServiceBookingPaymentShell
+          marketingOptInLabel={result.session.marketingOptInLabel}
+          session={result.session}
+        />
       </div>
     </section>
   );

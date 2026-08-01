@@ -4,6 +4,7 @@ import {
   type BookingHoldRecord,
   type BookingHoldState,
 } from "./holds";
+import { readBookingMarketingOptInLabelSnapshot } from "./operational-ui-settings";
 import { readServicePromotionSnapshot } from "./payments/service-promotion";
 
 export interface PaymentSessionRepository {
@@ -15,6 +16,7 @@ export interface PaymentSessionRepository {
 export interface ServiceBookingPaymentSessionDisplay {
   currency: "CAD";
   expiresAt: string;
+  marketingOptInLabel: string;
   paymentSessionReference: string;
   pricing: {
     addOnPriceCents: number;
@@ -104,6 +106,9 @@ export async function resolveServiceBookingPaymentSession(
     session: {
       currency: "CAD",
       expiresAt: hold.expiresAt.toISOString(),
+      marketingOptInLabel: readBookingMarketingOptInLabelSnapshot(
+        hold.offeringSnapshot.marketingOptInLabel,
+      ),
       paymentSessionReference: hold.paymentSessionReference,
       pricing: service.pricing,
       selectedAddOn: service.selectedAddOn,

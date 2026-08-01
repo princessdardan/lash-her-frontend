@@ -5,7 +5,7 @@ import test from "node:test";
 const disabledRouteScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { GET } from "./src/app/api/booking/square/config/route.ts";
+  import { GET } from "./src/app/api/booking/square/config/handler.ts";
 
   (async () => {
     const response = await GET(new Request("http://localhost:3000/api/booking/square/config"));
@@ -23,7 +23,7 @@ const disabledRouteScript = String.raw`
 const enabledSandboxRouteScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { GET } from "./src/app/api/booking/square/config/route.ts";
+  import { GET } from "./src/app/api/booking/square/config/handler.ts";
 
   (async () => {
     const response = await GET(new Request("http://localhost:3000/api/booking/square/config"));
@@ -49,7 +49,7 @@ const enabledSandboxRouteScript = String.raw`
 const enabledProductionRouteScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { GET } from "./src/app/api/booking/square/config/route.ts";
+  import { GET } from "./src/app/api/booking/square/config/handler.ts";
 
   (async () => {
     const response = await GET(new Request("http://localhost:3000/api/booking/square/config"));
@@ -72,7 +72,7 @@ const enabledProductionRouteScript = String.raw`
 const factoryScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { createSquareConfigGetHandler } from "./src/app/api/booking/square/config/route.ts";
+  import { createSquareConfigGetHandler } from "./src/app/api/booking/square/config/handler.ts";
 
   (async () => {
     const handler = createSquareConfigGetHandler({
@@ -103,7 +103,7 @@ const factoryScript = String.raw`
 const factoryDisabledScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { createSquareConfigGetHandler } from "./src/app/api/booking/square/config/route.ts";
+  import { createSquareConfigGetHandler } from "./src/app/api/booking/square/config/handler.ts";
 
   (async () => {
     const handler = createSquareConfigGetHandler({
@@ -214,7 +214,7 @@ function runTsx(
     ["--conditions=react-server", "--eval", script],
     {
       cwd: process.cwd(),
-      env,
+      env: { ...env, NODE_NO_WARNINGS: "1" },
       encoding: "utf8",
       stdio: "pipe",
     },

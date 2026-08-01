@@ -113,6 +113,7 @@ const helperScript = String.raw`
   async function seedHeldAppointmentHold(db, publicReference) {
     const [row] = await db.insert(appointmentHolds).values({
       publicReference,
+      paymentSessionReference: publicReference + "-payment",
       offeringId: "service-test",
       offeringSnapshot: { title: "Test Service", fullPrice: 125 },
       bookingType: "in-person-appointment",

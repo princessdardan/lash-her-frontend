@@ -1,18 +1,17 @@
-import {
-  buildServiceBookingUrl,
-} from "@/lib/training-checkout";
-import type { TService } from "@/types";
+import { buildServiceBookingUrl } from "@/lib/training-checkout";
 
-export type BookingShimSearchParams = Record<string, string | string[] | undefined>;
+export type BookingShimSearchParams = Record<
+  string,
+  string | string[] | undefined
+>;
 
 export interface BookingShimDependencies {
-  getBookableServiceBySlug(slug: string): Promise<TService | null>;
+  hasBookableServiceSlug(slug: string): Promise<boolean>;
 }
 
 export type BookingShimResolution =
   | { kind: "notFound" }
-  | { kind: "redirect"; href: string; redirectMode: "permanent" }
-  | { kind: "render" };
+  | { kind: "redirect"; href: string; redirectMode: "permanent" };
 
 type ExclusiveAliasGroupResult =
   | { kind: "absent" }
@@ -38,7 +37,11 @@ export async function resolveBookingShim(
   }
 
   if (parsed.size === 0) {
-    return { kind: "render" };
+    return {
+      kind: "redirect",
+      href: "/services",
+      redirectMode: "permanent",
+    };
   }
 
   for (const key of parsed.keys()) {
@@ -47,7 +50,12 @@ export async function resolveBookingShim(
     }
   }
 
-  const serviceSlug = getExclusiveString(parsed, ["serviceSlug", "service", "offeringSlug", "offering"]);
+  const serviceSlug = getExclusiveString(parsed, [
+    "serviceSlug",
+    "service",
+    "offeringSlug",
+    "offering",
+  ]);
   const bookingType = getExclusiveString(parsed, ["type"]);
 
   if (serviceSlug.kind === "conflict" || bookingType.kind === "conflict") {
@@ -59,15 +67,17 @@ export async function resolveBookingShim(
       return { kind: "notFound" };
     }
 
-    const service = await dependencies.getBookableServiceBySlug(serviceSlug.value);
+    const isBookable = await dependencies.hasBookableServiceSlug(
+      serviceSlug.value,
+    );
 
-    if (!service) {
+    if (!isBookable) {
       return { kind: "notFound" };
     }
 
     return {
       kind: "redirect",
-      href: buildServiceBookingUrl({ serviceSlug: service.slug }),
+      href: buildServiceBookingUrl({ serviceSlug: serviceSlug.value }),
       redirectMode: "permanent",
     };
   }
@@ -80,10 +90,16 @@ export async function resolveBookingShim(
     return { kind: "notFound" };
   }
 
-  return { kind: "render" };
+  return {
+    kind: "redirect",
+    href: "/services",
+    redirectMode: "permanent",
+  };
 }
 
-function parseSearchParams(searchParams: BookingShimSearchParams): Map<string, string> | null {
+function parseSearchParams(
+  searchParams: BookingShimSearchParams,
+): Map<string, string> | null {
   const parsed = new Map<string, string>();
 
   for (const [key, value] of Object.entries(searchParams)) {
@@ -107,7 +123,10 @@ function parseSearchParams(searchParams: BookingShimSearchParams): Map<string, s
   return parsed;
 }
 
-function getExclusiveString(params: Map<string, string>, keys: readonly string[]): ExclusiveAliasGroupResult {
+function getExclusiveString(
+  params: Map<string, string>,
+  keys: readonly string[],
+): ExclusiveAliasGroupResult {
   let found: string | undefined;
   let sawPresent = false;
 

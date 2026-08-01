@@ -5,7 +5,7 @@ const helperScript = String.raw`
   import assert from "node:assert/strict";
   import { createHmac } from "node:crypto";
 
-  import { createHelcimWebhookPostHandler, resolveHelcimWebhookGatewayForRequest } from "./src/app/api/webhooks/card-transactions/route.ts";
+  import { createHelcimWebhookPostHandler, resolveHelcimWebhookGatewayForRequest } from "./src/app/api/webhooks/card-transactions/handler.ts";
   import { buildMockHelcimWebhook, signMockHelcimWebhook } from "./src/lib/commerce/helcim-mock-gateway.ts";
 
   const verifierToken = Buffer.from("webhook-secret-key").toString("base64");

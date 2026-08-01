@@ -19,7 +19,7 @@ test("legacy booking confirmation redirects order references to the service conf
   assert.match(source, /buildServiceBookingConfirmationResolverUrl/);
   assert.match(
     source,
-    /redirect\(buildServiceBookingConfirmationResolverUrl\(/,
+    /redirect\(\s*buildServiceBookingConfirmationResolverUrl\(/,
   );
   assert.doesNotMatch(source, /getVerifiedBookingConfirmation/);
 });

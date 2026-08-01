@@ -10,6 +10,7 @@ export type ServicePaymentAlertCategory =
   | "booking_without_saved_card"
   | "booking_without_no_show_record"
   | "booking_calendar_finalization_failed"
+  | "provider_booking_email_failed"
   | "no_show_charge_failed"
   | "no_show_publish_unknown"
   | "no_show_charge_unknown_provider_event"

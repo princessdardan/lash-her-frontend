@@ -1,4 +1,6 @@
 import type { BookingHoldRecord } from "@/lib/booking/holds";
+import { resolveBookingModelVersion } from "@/lib/booking/booking-model-version";
+import { readBookingMarketingOptInLabelSnapshot } from "@/lib/booking/operational-ui-settings";
 import type {
   SquareCreateCustomerRequest,
   SquareCreateCustomerResponse,
@@ -8,6 +10,7 @@ import type {
   SquareCardsClient,
 } from "@/lib/payments/square/cards-client";
 import type {
+  SquareCreatePaymentRequest,
   SquareCreatePaymentResponse,
   SquareGetPaymentResponse,
   SquarePaymentsClient,
@@ -89,6 +92,34 @@ export type ChargeAndStoreBookingResult =
       message: string;
     };
 
+export interface CapturedChargeAndStorePaymentEvidence {
+  amountCents: number;
+  currency: string;
+  idempotencyKey: string;
+  squareOrderId?: string;
+  squarePaymentId: string;
+  status: "COMPLETED";
+}
+
+export interface AuthorizedChargeAndStorePaymentEvidence {
+  amountCents: number;
+  captureLeaseId: string;
+  currency: string;
+  idempotencyKey: string;
+  squareOrderId?: string;
+  squarePaymentId: string;
+  status: "APPROVED";
+  squareTeamMemberId?: string;
+  versionToken?: string;
+}
+
+export interface ChargeAndStoreCardDisplay {
+  brand?: string;
+  expMonth?: number;
+  expYear?: number;
+  last4?: string;
+}
+
 export interface ChargeAndStoreRepository extends CreateDraftNoShowInvoiceRepository {
   claimPaymentAttempt(input: {
     paymentSessionReference: string;
@@ -99,6 +130,19 @@ export interface ChargeAndStoreRepository extends CreateDraftNoShowInvoiceReposi
     | {
         status: "confirmed";
         confirmation: Extract<ChargeAndStoreBookingResult, { ok: true }>;
+        holdId?: string;
+      }
+    | {
+        status: "captured_pending_finalization";
+        card: ChargeAndStoreCardDisplay;
+        hold: BookingHoldRecord;
+        payment: CapturedChargeAndStorePaymentEvidence;
+      }
+    | {
+        status: "authorized_pending_capture";
+        card: ChargeAndStoreCardDisplay;
+        hold: BookingHoldRecord;
+        payment: AuthorizedChargeAndStorePaymentEvidence;
       }
     | { status: "in_progress" }
     | { status: "unavailable" }
@@ -165,6 +209,71 @@ export interface ChargeAndStoreRepository extends CreateDraftNoShowInvoiceReposi
     providerMetadata?: Record<string, unknown>;
     now: Date;
   }): Promise<{ id: string; status: "ready" }>;
+  /**
+   * Production repositories use this hook to durably convert a V2 hold into
+   * an appointment immediately after Square capture. It is optional so
+   * existing V1-only adapters and focused service fakes remain compatible.
+   */
+  recordCapturedOperationalPayment?(input: {
+    amountCents: number;
+    currency: string;
+    holdId: string;
+    idempotencyKey: string;
+    now: Date;
+    squareOrderId?: string;
+    squarePaymentId: string;
+  }): Promise<void>;
+  /**
+   * Persists the provider payment identity before capture so a retry can
+   * query and complete the same Square payment instead of creating another.
+   */
+  recordAuthorizedOperationalPayment?(input: {
+    amountCents: number;
+    currency: string;
+    holdId: string;
+    idempotencyKey: string;
+    now: Date;
+    squareOrderId?: string;
+    squarePaymentId: string;
+    versionToken?: string;
+  }): Promise<{ bookingModelVersion: 1 | 2 }>;
+  prepareOperationalPaymentIntent?(input: {
+    amountCents: number;
+    currency: string;
+    holdId: string;
+    idempotencyKeyCandidate: string;
+    leaseExpiresAt: Date;
+    now: Date;
+    referenceId: string;
+    requestBodyHash: string;
+    sourceIdHash: string;
+    squareCustomerId: string;
+    squareTeamMemberId?: string;
+    verificationTokenHash?: string;
+  }): Promise<
+    | {
+        captureLeaseId: string;
+        idempotencyKey: string;
+        reused: boolean;
+        status: "ready";
+      }
+    | { idempotencyKey: string; status: "changed_request" }
+    | { status: "unavailable" }
+  >;
+  terminateOperationalPaymentIntent?(input: {
+    holdId: string;
+    idempotencyKey: string;
+    now: Date;
+    status: "cancelled" | "failed";
+  }): Promise<boolean>;
+  validateOperationalCaptureLease?(input: {
+    captureLeaseId: string;
+    holdId: string;
+    idempotencyKey: string;
+    leaseExpiresAt: Date;
+    now: Date;
+    squarePaymentId: string;
+  }): Promise<boolean>;
   markHoldBooked(input: {
     holdId: string;
     confirmation: Extract<ChargeAndStoreBookingResult, { ok: true }>;
@@ -182,12 +291,28 @@ export interface ChargeAndStoreRepository extends CreateDraftNoShowInvoiceReposi
     reason: string;
     now: Date;
   }): Promise<void>;
+  markAuthorizedOperationalPaymentTerminated?(input: {
+    holdId: string;
+    idempotencyKey?: string;
+    now: Date;
+    squarePaymentId: string;
+    status: "cancelled" | "failed";
+  }): Promise<"cancelled" | "failed" | "capture_preserved" | "not_found">;
   markHoldRefundRequired(input: {
     holdId: string;
+    idempotencyKey?: string;
     squarePaymentId: string;
+    providerEvidence?: "cancellation_unconfirmed" | "completed";
     reason: string;
     now: Date;
-  }): Promise<void>;
+  }): Promise<
+    | void
+    | { status: "refund_required" }
+    | {
+        status: "booking_outcome_preserved";
+        confirmation?: Extract<ChargeAndStoreBookingResult, { ok: true }>;
+      }
+  >;
 }
 
 export interface SquareCustomerGateway {
@@ -196,7 +321,7 @@ export interface SquareCustomerGateway {
   ): Promise<SquareCreateCustomerResponse>;
 }
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import type { BookingAnswerInput } from "@/lib/booking/types";
 
@@ -218,6 +343,7 @@ export interface ConfirmChargeAndStoreBookingDependencies {
   now?: Date;
   recordMarketingChoice?: (input: RecordMarketingChoiceInput) => Promise<void>;
   repository: ChargeAndStoreRepository;
+  sendBookingConfirmationEmailForHold?: (holdId: string) => Promise<void>;
   sendBookingSchedulingFailureAdminEmail?: (
     input: SendBookingSchedulingFailureAdminEmailInput,
   ) => Promise<void>;
@@ -226,6 +352,8 @@ export interface ConfirmChargeAndStoreBookingDependencies {
   squareInvoices: SquareInvoicesClient;
   squarePayments: SquarePaymentsClient;
 }
+
+export const OPERATIONAL_CAPTURE_LEASE_MS = 5 * 60 * 1000;
 
 export async function confirmChargeAndStoreBooking(
   input: ChargeAndStoreBookingRequestBody,
@@ -304,10 +432,72 @@ export async function confirmChargeAndStoreBooking(
   }
 
   if (claimResult.status === "confirmed") {
+    if (claimResult.holdId !== undefined) {
+      await sendBookingConfirmationEmailForHoldSafe(
+        dependencies,
+        claimResult.holdId,
+      );
+    }
     return claimResult.confirmation;
   }
 
+  if (claimResult.status === "captured_pending_finalization") {
+    if (
+      dependencies.repository.recordCapturedOperationalPayment === undefined
+    ) {
+      return {
+        ok: false,
+        error: "infrastructure_error",
+        message: "Payment was captured and is being reconciled",
+      };
+    }
+    try {
+      await dependencies.repository.recordCapturedOperationalPayment({
+        amountCents: claimResult.payment.amountCents,
+        currency: claimResult.payment.currency,
+        holdId: claimResult.hold.id,
+        idempotencyKey: claimResult.payment.idempotencyKey,
+        now,
+        squareOrderId: claimResult.payment.squareOrderId,
+        squarePaymentId: claimResult.payment.squarePaymentId,
+      });
+    } catch (error) {
+      await alertInfrastructureError(
+        dependencies,
+        "Failed to resume captured operational appointment projection",
+        {
+          error: getErrorMessage(error),
+          holdId: claimResult.hold.id,
+          squarePaymentId: claimResult.payment.squarePaymentId,
+        },
+      );
+      return {
+        ok: false,
+        error: "infrastructure_error",
+        message: "Payment was captured and is being reconciled",
+      };
+    }
+    return finalizeCapturedChargeAndStoreBooking({
+      card: claimResult.card,
+      dependencies,
+      hold: claimResult.hold,
+      now,
+      payment: claimResult.payment,
+    });
+  }
+
+  if (claimResult.status === "authorized_pending_capture") {
+    return resumeAuthorizedChargeAndStorePayment({
+      card: claimResult.card,
+      dependencies,
+      hold: claimResult.hold,
+      now,
+      payment: claimResult.payment,
+    });
+  }
+
   let hold = claimResult.hold;
+  const operationalBooking = resolveBookingModelVersion(hold) === 2;
 
   if (!isChargeAndStoreHoldAvailable(hold, now)) {
     await markHoldPaymentFailedSafe(
@@ -323,7 +513,10 @@ export async function confirmChargeAndStoreBooking(
     };
   }
 
-  if (hold.offeringSnapshot.customerStatus !== "pending") {
+  if (
+    hold.offeringSnapshot.customerStatus !== "pending" &&
+    !(operationalBooking && hold.offeringSnapshot.customerStatus === "captured")
+  ) {
     await markHoldPaymentFailedSafe(
       dependencies,
       hold.id,
@@ -479,11 +672,13 @@ export async function confirmChargeAndStoreBooking(
   // record must be durably persisted before payment proceeds.
   if (dependencies.recordMarketingChoice !== undefined) {
     try {
+      const consentText = readBookingMarketingOptInLabelSnapshot(
+        hold.offeringSnapshot.marketingOptInLabel,
+      );
       await dependencies.recordMarketingChoice({
         answers: readBookingAnswers(hold.offeringSnapshot.answers),
         bookingType: hold.bookingType,
-        consentText:
-          "I would like to receive updates and offers from Lash Her by Nataliea.",
+        consentText,
         email: input.customer.email,
         marketingOptIn: input.customer.marketingOptIn,
         name: input.customer.name,
@@ -594,22 +789,153 @@ export async function confirmChargeAndStoreBooking(
     };
   }
 
+  const paymentRequestWithoutIdempotency: Omit<
+    SquareCreatePaymentRequest,
+    "idempotency_key"
+  > = {
+    source_id: input.sourceId,
+    customer_id: squareCustomer.squareCustomerId,
+    amount_money: {
+      amount: taxQuote.expectedAmountCents,
+      currency: "CAD",
+    },
+    autocomplete: false,
+    verification_token: input.verificationToken,
+    reference_id: hold.publicReference,
+    note: `${resolvedPayment.description} (includes ${taxQuote.taxName})`,
+    team_member_id: operationalBooking
+      ? (hold.squareTeamMemberId ?? undefined)
+      : undefined,
+  };
+  let providerPaymentIdempotencyKey = input.idempotencyKey;
+  let captureLeaseId: string | undefined;
+
+  if (operationalBooking) {
+    const prepareIntent =
+      dependencies.repository.prepareOperationalPaymentIntent;
+    const terminateIntent =
+      dependencies.repository.terminateOperationalPaymentIntent;
+
+    if (prepareIntent === undefined || terminateIntent === undefined) {
+      await alertInfrastructureError(
+        dependencies,
+        "Operational payment repository cannot persist Square request intent",
+        { holdId: hold.id },
+      );
+      return {
+        ok: false,
+        error: "infrastructure_error",
+        message: "Unable to secure payment request",
+      };
+    }
+
+    const intentInput = {
+      amountCents: taxQuote.expectedAmountCents,
+      currency: "CAD",
+      holdId: hold.id,
+      idempotencyKeyCandidate: makeSquareIdempotencyKey(
+        "payment",
+        randomUUID(),
+      ),
+      leaseExpiresAt: new Date(now.getTime() + OPERATIONAL_CAPTURE_LEASE_MS),
+      now,
+      referenceId: hold.publicReference,
+      requestBodyHash: hashSquarePaymentRequestIntent(
+        paymentRequestWithoutIdempotency,
+      ),
+      sourceIdHash: hashProviderToken(input.sourceId),
+      squareCustomerId: squareCustomer.squareCustomerId,
+      squareTeamMemberId: hold.squareTeamMemberId ?? undefined,
+      verificationTokenHash:
+        input.verificationToken === undefined
+          ? undefined
+          : hashProviderToken(input.verificationToken),
+    };
+
+    let prepared: Awaited<ReturnType<typeof prepareIntent>>;
+    try {
+      prepared = await prepareIntent(intentInput);
+    } catch (error) {
+      await alertInfrastructureError(
+        dependencies,
+        "Failed to persist Square request intent and capture lease",
+        { error: getErrorMessage(error), holdId: hold.id },
+      );
+      return {
+        ok: false,
+        error: "infrastructure_error",
+        message: "Unable to secure payment request",
+      };
+    }
+
+    if (prepared.status === "changed_request") {
+      try {
+        await dependencies.squarePayments.cancelPaymentByIdempotencyKey(
+          prepared.idempotencyKey,
+        );
+      } catch {
+        return {
+          ok: false,
+          error: "infrastructure_error",
+          message: "Payment status is being reconciled. Please try again.",
+        };
+      }
+
+      const terminated = await terminateIntent({
+        holdId: hold.id,
+        idempotencyKey: prepared.idempotencyKey,
+        now,
+        status: "cancelled",
+      });
+      if (!terminated) {
+        return {
+          ok: false,
+          error: "infrastructure_error",
+          message: "Payment status is being reconciled. Please try again.",
+        };
+      }
+
+      try {
+        prepared = await prepareIntent({
+          ...intentInput,
+          idempotencyKeyCandidate: makeSquareIdempotencyKey(
+            "payment",
+            randomUUID(),
+          ),
+        });
+      } catch (error) {
+        await alertInfrastructureError(
+          dependencies,
+          "Failed to replace a cancelled Square request intent",
+          { error: getErrorMessage(error), holdId: hold.id },
+        );
+        return {
+          ok: false,
+          error: "infrastructure_error",
+          message: "Payment status is being reconciled. Please try again.",
+        };
+      }
+    }
+
+    if (prepared.status !== "ready") {
+      return {
+        ok: false,
+        error: "hold_unavailable",
+        message: "Booking hold is no longer available",
+      };
+    }
+
+    providerPaymentIdempotencyKey = prepared.idempotencyKey;
+    captureLeaseId = prepared.captureLeaseId;
+  }
+
   let paymentResponse: SquareCreatePaymentResponse;
 
   try {
     paymentResponse = await dependencies.squarePayments.createCardOnFilePayment(
       {
-        idempotency_key: input.idempotencyKey,
-        source_id: input.sourceId,
-        customer_id: squareCustomer.squareCustomerId,
-        amount_money: {
-          amount: taxQuote.expectedAmountCents,
-          currency: "CAD",
-        },
-        autocomplete: false,
-        verification_token: input.verificationToken,
-        reference_id: hold.publicReference,
-        note: `${resolvedPayment.description} (includes ${taxQuote.taxName})`,
+        idempotency_key: providerPaymentIdempotencyKey,
+        ...paymentRequestWithoutIdempotency,
       },
     );
   } catch {
@@ -619,6 +945,13 @@ export async function confirmChargeAndStoreBooking(
       message: "Square payment creation failed for charge-and-store booking",
       context: { holdId: hold.id, holdReference: hold.publicReference },
     });
+    if (operationalBooking) {
+      return {
+        ok: false,
+        error: "infrastructure_error",
+        message: "Payment status is being reconciled. Please try again.",
+      };
+    }
     await markHoldPaymentFailedSafe(
       dependencies,
       hold.id,
@@ -644,6 +977,26 @@ export async function confirmChargeAndStoreBooking(
       error: "payment_declined",
       message: "Payment was declined",
     };
+  }
+
+  if (
+    operationalBooking &&
+    !hasExpectedSquareTeamAttribution(paymentResponse, hold)
+  ) {
+    await alertSquareTeamAttributionMismatch(
+      dependencies,
+      hold,
+      paymentResponse.payment,
+      "Square authorization did not preserve the hold's team attribution",
+    );
+    return cancelAuthorizationAndReturnFailure({
+      dependencies,
+      hold,
+      idempotencyKey: providerPaymentIdempotencyKey,
+      message: "Payment attribution could not be verified",
+      now,
+      squarePaymentId: paymentResponse.payment.id,
+    });
   }
 
   let cardResponse: { card: SquareCard };
@@ -930,6 +1283,91 @@ export async function confirmChargeAndStoreBooking(
 
   const squarePaymentId = paymentResponse.payment.id;
 
+  if (
+    operationalBooking &&
+    dependencies.repository.recordAuthorizedOperationalPayment === undefined
+  ) {
+    await alertInfrastructureError(
+      dependencies,
+      "Operational payment repository cannot persist Square authorization",
+      { holdId: hold.id, squarePaymentId },
+    );
+    return cancelAuthorizationAndReturnFailure({
+      dependencies,
+      hold,
+      idempotencyKey: providerPaymentIdempotencyKey,
+      message: "Unable to secure payment recovery before capture",
+      now,
+      squarePaymentId,
+    });
+  }
+
+  try {
+    await dependencies.repository.recordAuthorizedOperationalPayment?.({
+      amountCents: paymentResponse.payment.amount_money.amount,
+      currency: paymentResponse.payment.amount_money.currency,
+      holdId: hold.id,
+      idempotencyKey: providerPaymentIdempotencyKey,
+      now,
+      squareOrderId: paymentResponse.payment.order_id,
+      squarePaymentId,
+      versionToken: paymentResponse.payment.version_token,
+    });
+  } catch (error) {
+    await alertInfrastructureError(
+      dependencies,
+      "Failed to persist Square authorization before capture",
+      { error: getErrorMessage(error), holdId: hold.id, squarePaymentId },
+    );
+    return cancelAuthorizationAndReturnFailure({
+      dependencies,
+      hold,
+      idempotencyKey: providerPaymentIdempotencyKey,
+      message: "Unable to secure payment recovery before capture",
+      now,
+      squarePaymentId,
+    });
+  }
+
+  if (operationalBooking) {
+    const validateLease =
+      dependencies.repository.validateOperationalCaptureLease;
+    const captureNow = dependencies.now ?? new Date();
+    let leaseIsValid = false;
+
+    if (validateLease !== undefined && captureLeaseId !== undefined) {
+      try {
+        leaseIsValid = await validateLease({
+          captureLeaseId,
+          holdId: hold.id,
+          idempotencyKey: providerPaymentIdempotencyKey,
+          leaseExpiresAt: new Date(
+            captureNow.getTime() + OPERATIONAL_CAPTURE_LEASE_MS,
+          ),
+          now: captureNow,
+          squarePaymentId,
+        });
+      } catch (error) {
+        await alertInfrastructureError(
+          dependencies,
+          "Failed to revalidate operational capture lease",
+          { error: getErrorMessage(error), holdId: hold.id, squarePaymentId },
+        );
+      }
+    }
+
+    if (!leaseIsValid) {
+      return cancelAuthorizationAndReturnFailure({
+        dependencies,
+        hold,
+        idempotencyKey: providerPaymentIdempotencyKey,
+        message: "Booking reservation changed before payment capture",
+        now: captureNow,
+        squarePaymentId,
+      });
+    }
+  }
+
   let capturedPayment: SquareGetPaymentResponse | undefined;
 
   try {
@@ -941,11 +1379,10 @@ export async function confirmChargeAndStoreBooking(
     // Capture failed before we received a final response. Query Square to
     // determine whether the payment was actually completed so we know whether
     // to request a refund or leave the hold for manual follow-up.
-    let paymentStatus: string | undefined;
+    let lookupPayment: SquareGetPaymentResponse | undefined;
     try {
-      const lookup =
+      lookupPayment =
         await dependencies.squarePayments.getPayment(squarePaymentId);
-      paymentStatus = lookup.payment.status;
     } catch (lookupError) {
       await dependencies.alerts.alert({
         category: "square_webhook_retryable_failure",
@@ -961,24 +1398,27 @@ export async function confirmChargeAndStoreBooking(
       });
     }
 
-    if (paymentStatus === "COMPLETED") {
-      return await markRefundRequiredAndReturnFailure(
+    if (lookupPayment?.payment.status === "COMPLETED") {
+      return persistCapturedPaymentAndFinalize({
+        card: savedPaymentMethod,
         dependencies,
-        hold.id,
-        squarePaymentId,
-        "Payment captured by Square but booking could not be finalized; refund required",
+        hold,
+        idempotencyKey: providerPaymentIdempotencyKey,
         now,
-        "Payment was captured but booking could not be finalized",
-      );
+        payment: lookupPayment,
+      });
     }
 
-    if (paymentStatus !== undefined && paymentStatus !== "COMPLETED") {
+    const paymentStatus = lookupPayment?.payment.status;
+    if (paymentStatus !== undefined) {
       // The payment is only authorized. Cancel it so the customer cannot be
       // charged for a booking we cannot finalize.
       const cancelResult = await cancelSquarePaymentSafe(
         dependencies,
         hold,
         squarePaymentId,
+        now,
+        providerPaymentIdempotencyKey,
       );
       if (cancelResult.ok) {
         await markHoldPaymentFailedSafe(
@@ -1000,12 +1440,26 @@ export async function confirmChargeAndStoreBooking(
         `Capture failed with status ${paymentStatus} and cancellation failed; refund required`,
         now,
         "Payment capture failed and booking could not be finalized",
+        "square_api_error",
+        {
+          idempotencyKey: providerPaymentIdempotencyKey,
+          providerEvidence: "cancellation_unconfirmed",
+        },
       );
     }
 
-    // Square status is unknown: the customer may have been charged. Mark a
-    // durable refund-required terminal state rather than payment_failed, which
-    // would allow a retry that could double-charge.
+    // V2 has a durable authorized attempt containing this provider payment ID.
+    // Leave it reclaimable so a retry can query the same Square payment rather
+    // than creating a new charge when the capture outcome is ambiguous.
+    if (operationalBooking) {
+      return {
+        ok: false,
+        error: "infrastructure_error",
+        message: "Payment status is being reconciled. Please try again.",
+      };
+    }
+
+    // Legacy V1 has no durable authorized-payment recovery path.
     return await markRefundRequiredAndReturnFailure(
       dependencies,
       hold.id,
@@ -1023,6 +1477,8 @@ export async function confirmChargeAndStoreBooking(
       dependencies,
       hold,
       capturedPayment.payment.id,
+      now,
+      providerPaymentIdempotencyKey,
     );
     if (cancelResult.ok) {
       await markHoldPaymentFailedSafe(
@@ -1044,17 +1500,516 @@ export async function confirmChargeAndStoreBooking(
       `Square capture returned status ${capturedPayment.payment.status} and cancellation failed; refund required`,
       now,
       "Payment capture did not complete",
+      "square_api_error",
+      {
+        idempotencyKey: providerPaymentIdempotencyKey,
+        providerEvidence: "cancellation_unconfirmed",
+      },
     );
   }
 
+  return persistCapturedPaymentAndFinalize({
+    card: savedPaymentMethod,
+    dependencies,
+    hold,
+    idempotencyKey: providerPaymentIdempotencyKey,
+    now,
+    payment: capturedPayment,
+  });
+}
+
+async function resumeAuthorizedChargeAndStorePayment(input: {
+  card: ChargeAndStoreCardDisplay;
+  dependencies: ConfirmChargeAndStoreBookingDependencies;
+  hold: BookingHoldRecord;
+  now: Date;
+  payment: AuthorizedChargeAndStorePaymentEvidence;
+}): Promise<ChargeAndStoreBookingResult> {
+  let observed: SquareGetPaymentResponse;
+
+  try {
+    observed = await input.dependencies.squarePayments.getPayment(
+      input.payment.squarePaymentId,
+    );
+  } catch (error) {
+    await alertInfrastructureError(
+      input.dependencies,
+      "Failed to query durable Square authorization during recovery",
+      {
+        error: getErrorMessage(error),
+        holdId: input.hold.id,
+        squarePaymentId: input.payment.squarePaymentId,
+      },
+    );
+    return {
+      ok: false,
+      error: "infrastructure_error",
+      message: "Payment status is being reconciled. Please try again.",
+    };
+  }
+
+  if (!matchesAuthorizedPaymentEvidence(observed, input.payment)) {
+    await alertInfrastructureError(
+      input.dependencies,
+      "Square authorization recovery evidence did not match the durable attempt",
+      {
+        holdId: input.hold.id,
+        squarePaymentId: input.payment.squarePaymentId,
+      },
+    );
+    return {
+      ok: false,
+      error: "infrastructure_error",
+      message: "Payment status requires manual reconciliation",
+    };
+  }
+
+  if (
+    !hasExpectedSquareTeamAttribution(observed, input.hold) ||
+    normalizeSquareTeamMemberId(input.payment.squareTeamMemberId) !==
+      normalizeSquareTeamMemberId(input.hold.squareTeamMemberId)
+  ) {
+    await alertSquareTeamAttributionMismatch(
+      input.dependencies,
+      input.hold,
+      observed.payment,
+      "Recovered Square authorization did not match the hold's team attribution",
+    );
+
+    if (observed.payment.status === "APPROVED") {
+      return cancelAuthorizationAndReturnFailure({
+        dependencies: input.dependencies,
+        hold: input.hold,
+        idempotencyKey: input.payment.idempotencyKey,
+        message: "Payment attribution could not be verified",
+        now: input.now,
+        squarePaymentId: observed.payment.id,
+      });
+    }
+
+    if (observed.payment.status === "COMPLETED") {
+      return markRefundRequiredAndReturnFailure(
+        input.dependencies,
+        input.hold.id,
+        observed.payment.id,
+        "Captured Square payment team attribution did not match the hold snapshot; refund required",
+        input.now,
+        "Payment was captured with invalid attribution and requires manual follow-up",
+        "infrastructure_error",
+        {
+          idempotencyKey: input.payment.idempotencyKey,
+          providerEvidence: "completed",
+        },
+      );
+    }
+
+    return {
+      ok: false,
+      error: "infrastructure_error",
+      message: "Payment status requires manual reconciliation",
+    };
+  }
+
+  if (observed.payment.status === "COMPLETED") {
+    return persistCapturedPaymentAndFinalize({
+      card: input.card,
+      dependencies: input.dependencies,
+      hold: input.hold,
+      idempotencyKey: input.payment.idempotencyKey,
+      now: input.now,
+      payment: observed,
+    });
+  }
+
+  if (observed.payment.status !== "APPROVED") {
+    if (
+      observed.payment.status !== "CANCELED" &&
+      observed.payment.status !== "FAILED"
+    ) {
+      return {
+        ok: false,
+        error: "infrastructure_error",
+        message: "Payment status is being reconciled. Please try again.",
+      };
+    }
+
+    const terminateAttempt =
+      input.dependencies.repository.markAuthorizedOperationalPaymentTerminated;
+    if (terminateAttempt === undefined) {
+      return {
+        ok: false,
+        error: "infrastructure_error",
+        message: "Payment status requires manual reconciliation",
+      };
+    }
+
+    try {
+      const outcome = await terminateAttempt({
+        holdId: input.hold.id,
+        now: input.now,
+        squarePaymentId: input.payment.squarePaymentId,
+        status: observed.payment.status === "CANCELED" ? "cancelled" : "failed",
+      });
+      if (outcome === "capture_preserved" || outcome === "not_found") {
+        return {
+          ok: false,
+          error: "infrastructure_error",
+          message: "Payment status is being reconciled. Please try again.",
+        };
+      }
+    } catch (error) {
+      await alertInfrastructureError(
+        input.dependencies,
+        "Failed to persist terminal Square authorization status",
+        {
+          error: getErrorMessage(error),
+          holdId: input.hold.id,
+          squarePaymentId: input.payment.squarePaymentId,
+        },
+      );
+      return {
+        ok: false,
+        error: "infrastructure_error",
+        message: "Payment status is being reconciled. Please try again.",
+      };
+    }
+
+    await markHoldPaymentFailedSafe(
+      input.dependencies,
+      input.hold.id,
+      `Durable Square authorization is ${observed.payment.status}`,
+      input.now,
+    );
+    return {
+      ok: false,
+      error: "payment_declined",
+      message: "Payment authorization is no longer available",
+    };
+  }
+
+  const validateLease =
+    input.dependencies.repository.validateOperationalCaptureLease;
+  const captureNow = input.dependencies.now ?? new Date();
+  let leaseIsValid = false;
+  if (validateLease !== undefined) {
+    try {
+      leaseIsValid = await validateLease({
+        captureLeaseId: input.payment.captureLeaseId,
+        holdId: input.hold.id,
+        idempotencyKey: input.payment.idempotencyKey,
+        leaseExpiresAt: new Date(
+          captureNow.getTime() + OPERATIONAL_CAPTURE_LEASE_MS,
+        ),
+        now: captureNow,
+        squarePaymentId: input.payment.squarePaymentId,
+      });
+    } catch (error) {
+      await alertInfrastructureError(
+        input.dependencies,
+        "Failed to revalidate recovered operational capture lease",
+        {
+          error: getErrorMessage(error),
+          holdId: input.hold.id,
+          squarePaymentId: input.payment.squarePaymentId,
+        },
+      );
+    }
+  }
+
+  if (!leaseIsValid) {
+    return cancelAuthorizationAndReturnFailure({
+      dependencies: input.dependencies,
+      hold: input.hold,
+      idempotencyKey: input.payment.idempotencyKey,
+      message: "Booking reservation changed before payment capture",
+      now: captureNow,
+      squarePaymentId: input.payment.squarePaymentId,
+    });
+  }
+
+  let completed: SquareGetPaymentResponse | undefined;
+  try {
+    completed = await input.dependencies.squarePayments.completePayment(
+      input.payment.squarePaymentId,
+      observed.payment.version_token ?? input.payment.versionToken,
+    );
+  } catch (completeError) {
+    try {
+      const afterError = await input.dependencies.squarePayments.getPayment(
+        input.payment.squarePaymentId,
+      );
+      if (
+        matchesAuthorizedPaymentEvidence(afterError, input.payment) &&
+        afterError.payment.status === "COMPLETED"
+      ) {
+        completed = afterError;
+      }
+    } catch (lookupError) {
+      await input.dependencies.alerts.alert({
+        category: "square_webhook_retryable_failure",
+        severity: "warning",
+        message:
+          "Could not resolve Square status after recovered capture failed",
+        context: {
+          completeError: getErrorMessage(completeError),
+          holdId: input.hold.id,
+          lookupError: getErrorMessage(lookupError),
+          squarePaymentId: input.payment.squarePaymentId,
+        },
+      });
+    }
+  }
+
+  if (completed?.payment.status !== "COMPLETED") {
+    return {
+      ok: false,
+      error: "infrastructure_error",
+      message: "Payment status is being reconciled. Please try again.",
+    };
+  }
+
+  return persistCapturedPaymentAndFinalize({
+    card: input.card,
+    dependencies: input.dependencies,
+    hold: input.hold,
+    idempotencyKey: input.payment.idempotencyKey,
+    now: input.now,
+    payment: completed,
+  });
+}
+
+async function persistCapturedPaymentAndFinalize(input: {
+  card: ChargeAndStoreCardDisplay;
+  dependencies: ConfirmChargeAndStoreBookingDependencies;
+  hold: BookingHoldRecord;
+  idempotencyKey: string;
+  now: Date;
+  payment: SquareGetPaymentResponse;
+}): Promise<ChargeAndStoreBookingResult> {
+  const payment = input.payment.payment;
+  const operationalBooking = resolveBookingModelVersion(input.hold) === 2;
+
+  if (payment.status !== "COMPLETED") {
+    throw new TypeError(
+      "Captured payment finalization requires COMPLETED evidence",
+    );
+  }
+
+  if (
+    operationalBooking &&
+    !hasExpectedSquareTeamAttribution(input.payment, input.hold)
+  ) {
+    await alertSquareTeamAttributionMismatch(
+      input.dependencies,
+      input.hold,
+      payment,
+      "Captured Square payment did not match the hold's team attribution",
+    );
+    return markRefundRequiredAndReturnFailure(
+      input.dependencies,
+      input.hold.id,
+      payment.id,
+      "Captured Square payment team attribution did not match the hold snapshot; refund required",
+      input.now,
+      "Payment was captured with invalid attribution and requires manual follow-up",
+      "infrastructure_error",
+      {
+        idempotencyKey: input.idempotencyKey,
+        providerEvidence: "completed",
+      },
+    );
+  }
+
+  if (
+    operationalBooking &&
+    input.dependencies.repository.recordCapturedOperationalPayment === undefined
+  ) {
+    await alertInfrastructureError(
+      input.dependencies,
+      "Operational payment repository cannot persist captured evidence",
+      { holdId: input.hold.id, squarePaymentId: payment.id },
+    );
+    return {
+      ok: false,
+      error: "infrastructure_error",
+      message: "Payment was captured and is being reconciled",
+    };
+  }
+
+  try {
+    await input.dependencies.repository.recordCapturedOperationalPayment?.({
+      amountCents: payment.amount_money.amount,
+      currency: payment.amount_money.currency,
+      holdId: input.hold.id,
+      idempotencyKey: input.idempotencyKey,
+      now: input.now,
+      squareOrderId: payment.order_id,
+      squarePaymentId: payment.id,
+    });
+  } catch (error) {
+    await alertInfrastructureError(
+      input.dependencies,
+      "Failed to persist captured payment before Calendar finalization",
+      {
+        error: getErrorMessage(error),
+        holdId: input.hold.id,
+        squarePaymentId: payment.id,
+      },
+    );
+
+    // V2 keeps the durable authorized attempt reclaimable. A later request
+    // queries the same provider payment and retries only the local projection.
+    if (operationalBooking) {
+      return {
+        ok: false,
+        error: "infrastructure_error",
+        message: "Payment was captured and is being reconciled",
+      };
+    }
+
+    return markRefundRequiredAndReturnFailure(
+      input.dependencies,
+      input.hold.id,
+      payment.id,
+      "Payment was captured but the authoritative appointment could not be persisted; refund required",
+      input.now,
+      "Payment was captured but booking could not be finalized",
+      "infrastructure_error",
+      {
+        idempotencyKey: input.idempotencyKey,
+        providerEvidence: "completed",
+      },
+    );
+  }
+
+  return finalizeCapturedChargeAndStoreBooking({
+    card: input.card,
+    dependencies: input.dependencies,
+    hold: input.hold,
+    now: input.now,
+    payment: {
+      amountCents: payment.amount_money.amount,
+      currency: payment.amount_money.currency,
+      idempotencyKey: input.idempotencyKey,
+      squareOrderId: payment.order_id,
+      squarePaymentId: payment.id,
+      status: "COMPLETED",
+    },
+  });
+}
+
+function matchesAuthorizedPaymentEvidence(
+  response: SquareGetPaymentResponse,
+  evidence: AuthorizedChargeAndStorePaymentEvidence,
+): boolean {
+  return (
+    response.payment.id === evidence.squarePaymentId &&
+    response.payment.amount_money.amount === evidence.amountCents &&
+    response.payment.amount_money.currency.trim().toUpperCase() ===
+      evidence.currency.trim().toUpperCase()
+  );
+}
+
+function hasExpectedSquareTeamAttribution(
+  response: SquareGetPaymentResponse,
+  hold: BookingHoldRecord,
+): boolean {
+  return (
+    normalizeSquareTeamMemberId(response.payment.team_member_id) ===
+    normalizeSquareTeamMemberId(hold.squareTeamMemberId)
+  );
+}
+
+function normalizeSquareTeamMemberId(
+  value: string | null | undefined,
+): string | null {
+  const normalized = value?.trim();
+  return normalized === undefined || normalized.length === 0
+    ? null
+    : normalized;
+}
+
+async function alertSquareTeamAttributionMismatch(
+  dependencies: ConfirmChargeAndStoreBookingDependencies,
+  hold: BookingHoldRecord,
+  payment: SquareGetPaymentResponse["payment"],
+  message: string,
+): Promise<void> {
+  await dependencies.alerts.alert({
+    category: "stuck_payment_state",
+    severity: "error",
+    message,
+    context: {
+      expectedSquareTeamMemberId: hold.squareTeamMemberId ?? null,
+      holdId: hold.id,
+      holdReference: hold.publicReference,
+      observedSquareTeamMemberId: payment.team_member_id ?? null,
+      squarePaymentId: payment.id,
+      squarePaymentStatus: payment.status,
+    },
+  });
+}
+
+async function cancelAuthorizationAndReturnFailure(input: {
+  dependencies: ConfirmChargeAndStoreBookingDependencies;
+  hold: BookingHoldRecord;
+  idempotencyKey?: string;
+  message: string;
+  now: Date;
+  squarePaymentId: string;
+}): Promise<ChargeAndStoreBookingResult> {
+  const cancellation = await cancelSquarePaymentSafe(
+    input.dependencies,
+    input.hold,
+    input.squarePaymentId,
+    input.now,
+    input.idempotencyKey,
+  );
+
+  if (cancellation.ok) {
+    await markHoldPaymentFailedSafe(
+      input.dependencies,
+      input.hold.id,
+      input.message,
+      input.now,
+    );
+    return {
+      ok: false,
+      error: "infrastructure_error",
+      message: input.message,
+    };
+  }
+
+  return markRefundRequiredAndReturnFailure(
+    input.dependencies,
+    input.hold.id,
+    input.squarePaymentId,
+    `${input.message}; Square authorization cancellation failed`,
+    input.now,
+    input.message,
+    "infrastructure_error",
+    {
+      idempotencyKey: input.idempotencyKey,
+      providerEvidence: "cancellation_unconfirmed",
+    },
+  );
+}
+
+async function finalizeCapturedChargeAndStoreBooking(input: {
+  card: ChargeAndStoreCardDisplay;
+  dependencies: ConfirmChargeAndStoreBookingDependencies;
+  hold: BookingHoldRecord;
+  now: Date;
+  payment: CapturedChargeAndStorePaymentEvidence;
+}): Promise<ChargeAndStoreBookingResult> {
   let calendarResult: Awaited<
     ReturnType<CardOnFileCalendarFinalizer["finalize"]>
   >;
 
   try {
-    calendarResult = await dependencies.calendarFinalizer.finalize({
-      hold,
-      now,
+    calendarResult = await input.dependencies.calendarFinalizer.finalize({
+      hold: input.hold,
+      now: input.now,
     });
   } catch (error) {
     calendarResult = {
@@ -1065,78 +2020,90 @@ export async function confirmChargeAndStoreBooking(
   }
 
   const successResult: Extract<ChargeAndStoreBookingResult, { ok: true }> = {
-    ...buildSuccessResult(hold, savedPaymentMethod),
+    ...buildSuccessResult(input.hold, input.card),
     bookingStatus: calendarResult.ok ? "booked" : "manual_followup",
   };
 
   if (!calendarResult.ok) {
-    await dependencies.alerts.alert({
-      category: "booking_calendar_finalization_failed",
-      severity: "warning",
-      message:
-        "Calendar finalization failed after payment capture; manual follow-up required",
-      context: {
-        holdId: hold.id,
-        holdReference: hold.publicReference,
-        reason: calendarResult.error,
-      },
-    });
-
+    let terminalHold: BookingHoldRecord;
     try {
-      await dependencies.repository.markHoldManualFollowup({
-        holdId: hold.id,
-        confirmation: successResult,
-        reason: calendarResult.error,
-        now,
-      });
+      terminalHold = await input.dependencies.repository.markHoldManualFollowup(
+        {
+          holdId: input.hold.id,
+          confirmation: successResult,
+          reason: calendarResult.error,
+          now: input.now,
+        },
+      );
     } catch (error) {
       await alertInfrastructureError(
-        dependencies,
+        input.dependencies,
         "Failed to mark hold for manual follow-up after calendar failure",
-        { error: getErrorMessage(error), holdId: hold.id },
+        { error: getErrorMessage(error), holdId: input.hold.id },
       );
-      return await markRefundRequiredAndReturnFailure(
-        dependencies,
-        hold.id,
-        squarePaymentId,
+      const fallback = await markRefundRequiredAndReturnFailure(
+        input.dependencies,
+        input.hold.id,
+        input.payment.squarePaymentId,
         "Calendar finalization failed and manual follow-up marker could not be persisted; refund required",
-        now,
+        input.now,
         "Unable to finalize booking after payment capture",
         "infrastructure_error",
+        {
+          idempotencyKey: input.payment.idempotencyKey,
+          providerEvidence: "completed",
+        },
       );
+      await sendTerminalOutcomeSideEffects({
+        confirmation: fallback,
+        currentBookingStatus: calendarResult.status,
+        dependencies: input.dependencies,
+        failureReason: calendarResult.error,
+        hold: input.hold,
+        payment: input.payment,
+      });
+      return fallback;
     }
 
-    await sendBookingSchedulingFailureAdminEmailSafe(dependencies, {
-      amountCents: capturedPayment.payment.amount_money?.amount ?? 0,
-      currency: capturedPayment.payment.amount_money?.currency ?? "CAD",
+    const effectiveConfirmation =
+      readStoredChargeAndStoreConfirmation(terminalHold) ?? successResult;
+
+    await sendTerminalOutcomeSideEffects({
+      confirmation: effectiveConfirmation,
       currentBookingStatus: calendarResult.status,
+      dependencies: input.dependencies,
       failureReason: calendarResult.error,
-      hold,
-      paymentProvider: "square",
-      paymentReference: squarePaymentId,
-      paymentStatus: capturedPayment.payment.status ?? "unknown",
+      hold: input.hold,
+      payment: input.payment,
     });
 
-    return successResult;
+    return effectiveConfirmation;
   }
 
   try {
-    const bookedHold = await dependencies.repository.markHoldBooked({
-      holdId: hold.id,
+    const bookedHold = await input.dependencies.repository.markHoldBooked({
+      holdId: input.hold.id,
       confirmation: successResult,
       googleEventId: calendarResult.googleEventId,
-      now,
+      now: input.now,
     });
 
-    return {
-      ...successResult,
+    const effectiveConfirmation = {
+      ...(readStoredChargeAndStoreConfirmation(bookedHold) ?? successResult),
       holdReference: bookedHold.publicReference,
     };
+    await sendTerminalOutcomeSideEffects({
+      confirmation: effectiveConfirmation,
+      dependencies: input.dependencies,
+      hold: input.hold,
+      payment: input.payment,
+    });
+    return effectiveConfirmation;
   } catch (error) {
     await alertInfrastructureError(
-      dependencies,
+      input.dependencies,
       "Failed to finalize booking after Calendar success",
-      { error: getErrorMessage(error), holdId: hold.id },
+      { error: getErrorMessage(error), holdId: input.hold.id },
     );
 
     const manualFollowupConfirmation: Extract<
@@ -1148,31 +2115,102 @@ export async function confirmChargeAndStoreBooking(
     };
 
     try {
-      await dependencies.repository.markHoldManualFollowup({
-        holdId: hold.id,
-        confirmation: manualFollowupConfirmation,
-        reason: "Booking finalization failed after calendar success",
-        now,
-      });
+      const manualHold =
+        await input.dependencies.repository.markHoldManualFollowup({
+          holdId: input.hold.id,
+          confirmation: manualFollowupConfirmation,
+          reason: "Booking finalization failed after calendar success",
+          now: input.now,
+        });
 
-      return manualFollowupConfirmation;
+      const effectiveConfirmation =
+        readStoredChargeAndStoreConfirmation(manualHold) ??
+        manualFollowupConfirmation;
+      await sendTerminalOutcomeSideEffects({
+        confirmation: effectiveConfirmation,
+        currentBookingStatus: "manual_followup",
+        dependencies: input.dependencies,
+        failureReason: "Booking finalization failed after calendar success",
+        hold: input.hold,
+        payment: input.payment,
+      });
+      return effectiveConfirmation;
     } catch (manualError) {
       await alertInfrastructureError(
-        dependencies,
+        input.dependencies,
         "Failed to mark hold manual follow-up after calendar booking failure",
-        { error: getErrorMessage(manualError), holdId: hold.id },
+        { error: getErrorMessage(manualError), holdId: input.hold.id },
       );
-      return await markRefundRequiredAndReturnFailure(
-        dependencies,
-        hold.id,
-        squarePaymentId,
+      const fallback = await markRefundRequiredAndReturnFailure(
+        input.dependencies,
+        input.hold.id,
+        input.payment.squarePaymentId,
         "Booking finalization failed and manual follow-up marker could not be persisted; refund required",
-        now,
+        input.now,
         "Unable to finalize booking after Calendar success",
         "infrastructure_error",
+        {
+          idempotencyKey: input.payment.idempotencyKey,
+          providerEvidence: "completed",
+        },
       );
+      await sendTerminalOutcomeSideEffects({
+        confirmation: fallback,
+        currentBookingStatus: "manual_followup",
+        dependencies: input.dependencies,
+        failureReason: "Booking finalization failed after calendar success",
+        hold: input.hold,
+        payment: input.payment,
+      });
+      return fallback;
     }
   }
+}
+
+async function sendTerminalOutcomeSideEffects(input: {
+  confirmation: ChargeAndStoreBookingResult;
+  currentBookingStatus?: string;
+  dependencies: ConfirmChargeAndStoreBookingDependencies;
+  failureReason?: string;
+  hold: BookingHoldRecord;
+  payment: CapturedChargeAndStorePaymentEvidence;
+}): Promise<void> {
+  if (!input.confirmation.ok) {
+    return;
+  }
+
+  if (
+    input.confirmation.bookingStatus === "manual_followup" &&
+    input.failureReason !== undefined
+  ) {
+    await input.dependencies.alerts.alert({
+      category: "booking_calendar_finalization_failed",
+      severity: "warning",
+      message:
+        "Calendar finalization failed after payment capture; manual follow-up required",
+      context: {
+        holdId: input.hold.id,
+        holdReference: input.hold.publicReference,
+        reason: input.failureReason,
+      },
+    });
+
+    await sendBookingSchedulingFailureAdminEmailSafe(input.dependencies, {
+      amountCents: input.payment.amountCents,
+      currency: input.payment.currency,
+      currentBookingStatus: input.currentBookingStatus ?? "manual_followup",
+      failureReason: input.failureReason,
+      hold: input.hold,
+      paymentProvider: "square",
+      paymentReference: input.payment.squarePaymentId,
+      paymentStatus: input.payment.status,
+    });
+  }
+
+  await sendBookingConfirmationEmailForHoldSafe(
+    input.dependencies,
+    input.hold.id,
+  );
 }
 
 class ChargeAndStoreInfrastructureError extends Error {
@@ -1257,6 +2295,57 @@ function makeSquareIdempotencyKey(scope: string, holdId: string): string {
     .digest("hex")
     .slice(0, 32);
   return `cs:${scope}:${hash}`;
+}
+
+function hashProviderToken(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function hashSquarePaymentRequestIntent(
+  request: Omit<SquareCreatePaymentRequest, "idempotency_key">,
+): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        amountMoney: request.amount_money,
+        autocomplete: request.autocomplete ?? true,
+        customerId: request.customer_id,
+        note: request.note ?? null,
+        referenceId: request.reference_id ?? null,
+        sourceId: request.source_id,
+        teamMemberId: request.team_member_id ?? null,
+        verificationToken: request.verification_token ?? null,
+      }),
+    )
+    .digest("hex");
+}
+
+export function getChargeAndStoreSquarePaymentIdempotencyKey(
+  holdId: string,
+): string {
+  return makeSquareIdempotencyKey("payment", holdId);
+}
+
+function readStoredChargeAndStoreConfirmation(
+  hold: BookingHoldRecord,
+): Extract<ChargeAndStoreBookingResult, { ok: true }> | undefined {
+  const value = hold.reconciliationMetadata?.chargeAndStoreConfirmation;
+  if (value === null || typeof value !== "object") {
+    return undefined;
+  }
+
+  const confirmation = value as Partial<
+    Extract<ChargeAndStoreBookingResult, { ok: true }>
+  >;
+  return confirmation.ok === true &&
+    (confirmation.bookingStatus === "booked" ||
+      confirmation.bookingStatus === "manual_followup") &&
+    confirmation.paymentStatus === "captured" &&
+    typeof confirmation.holdReference === "string" &&
+    confirmation.card !== null &&
+    typeof confirmation.card === "object"
+    ? (confirmation as Extract<ChargeAndStoreBookingResult, { ok: true }>)
+    : undefined;
 }
 
 function buildSuccessResult(
@@ -1537,9 +2626,85 @@ async function cancelSquarePaymentSafe(
   dependencies: ConfirmChargeAndStoreBookingDependencies,
   hold: BookingHoldRecord,
   squarePaymentId: string,
+  now: Date,
+  idempotencyKey?: string,
 ): Promise<{ ok: true } | { ok: false }> {
   try {
-    await dependencies.squarePayments.cancelPayment(squarePaymentId);
+    const response =
+      await dependencies.squarePayments.cancelPayment(squarePaymentId);
+    if (
+      response.payment.id !== squarePaymentId ||
+      response.payment.status !== "CANCELED"
+    ) {
+      await dependencies.alerts.alert({
+        category: "stuck_payment_state",
+        severity: "error",
+        message:
+          "Square cancellation did not return matching CANCELED evidence",
+        context: {
+          holdId: hold.id,
+          returnedPaymentId: response.payment.id,
+          returnedStatus: response.payment.status,
+          squarePaymentId,
+        },
+      });
+      return { ok: false };
+    }
+
+    try {
+      const terminateAuthorization =
+        dependencies.repository.markAuthorizedOperationalPaymentTerminated;
+      const ledgerOutcome =
+        terminateAuthorization === undefined
+          ? "not_found"
+          : await terminateAuthorization({
+              holdId: hold.id,
+              idempotencyKey,
+              now,
+              squarePaymentId,
+              status: "cancelled",
+            });
+      if (ledgerOutcome === "capture_preserved") {
+        return { ok: false };
+      }
+      if (
+        ledgerOutcome === "not_found" &&
+        resolveBookingModelVersion(hold) === 2
+      ) {
+        const terminateIntent =
+          dependencies.repository.terminateOperationalPaymentIntent;
+        const pendingTerminated =
+          idempotencyKey !== undefined &&
+          terminateIntent !== undefined &&
+          (await terminateIntent({
+            holdId: hold.id,
+            idempotencyKey,
+            now,
+            status: "cancelled",
+          }));
+        if (!pendingTerminated) {
+          await alertInfrastructureError(
+            dependencies,
+            "Square cancellation succeeded but no operational payment attempt was terminalized",
+            { holdId: hold.id, squarePaymentId },
+          );
+          return { ok: false };
+        }
+      }
+    } catch (ledgerError) {
+      // Square is definitively canceled. Keep any durable authorization row
+      // recoverable; a retry can observe CANCELED and repeat this DB step.
+      await alertInfrastructureError(
+        dependencies,
+        "Square cancellation succeeded but its ledger transition failed",
+        {
+          error: getErrorMessage(ledgerError),
+          holdId: hold.id,
+          squarePaymentId,
+        },
+      );
+      return { ok: false };
+    }
     return { ok: true };
   } catch {
     await dependencies.alerts.alert({
@@ -1564,14 +2729,26 @@ async function markRefundRequiredAndReturnFailure(
   now: Date,
   message: string,
   errorCode: "square_api_error" | "infrastructure_error" = "square_api_error",
+  evidence?: {
+    idempotencyKey?: string;
+    providerEvidence: "cancellation_unconfirmed" | "completed";
+  },
 ): Promise<ChargeAndStoreBookingResult> {
   try {
-    await dependencies.repository.markHoldRefundRequired({
+    const outcome = await dependencies.repository.markHoldRefundRequired({
       holdId,
+      idempotencyKey: evidence?.idempotencyKey,
       squarePaymentId,
+      providerEvidence: evidence?.providerEvidence,
       reason,
       now,
     });
+    if (
+      outcome?.status === "booking_outcome_preserved" &&
+      outcome.confirmation !== undefined
+    ) {
+      return outcome.confirmation;
+    }
   } catch (error) {
     await alertInfrastructureError(
       dependencies,
@@ -1606,6 +2783,26 @@ async function sendBookingSchedulingFailureAdminEmailSafe(
         holdId: input.hold?.id,
         reason: input.failureReason,
       },
+    });
+  }
+}
+
+async function sendBookingConfirmationEmailForHoldSafe(
+  dependencies: ConfirmChargeAndStoreBookingDependencies,
+  holdId: string,
+): Promise<void> {
+  if (dependencies.sendBookingConfirmationEmailForHold === undefined) {
+    return;
+  }
+
+  try {
+    await dependencies.sendBookingConfirmationEmailForHold(holdId);
+  } catch (emailError) {
+    dependencies.alerts.alert({
+      category: "stuck_payment_state",
+      severity: "error",
+      message: "Failed to send customer booking outcome email",
+      context: { error: getErrorMessage(emailError), holdId },
     });
   }
 }

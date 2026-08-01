@@ -9,6 +9,12 @@ import {
   type SendBookingConfirmationInput,
 } from "@/lib/booking/email";
 import {
+  PROVIDER_BOOKING_EMAIL_SUBJECT_PREFIX,
+  buildProviderBookingFallbackHtml,
+  getProviderBookingSeedTemplateVariables,
+  type SendProviderBookingEmailInput,
+} from "@/lib/booking/provider-booking-email";
+import {
   PRODUCT_ORDER_CONFIRMATION_EMAIL_SUBJECT,
   buildProductOrderConfirmationHtml,
   getProductOrderTemplateVariables,
@@ -31,7 +37,11 @@ import {
   type GeneralInquiryData,
   type TrainingContactData,
 } from "@/lib/email";
-import { createResendTemplate, publishResendTemplate, type ResendEmailTemplateKey } from "@/lib/resend-platform";
+import {
+  createResendTemplate,
+  publishResendTemplate,
+  type ResendEmailTemplateKey,
+} from "@/lib/resend-platform";
 import {
   EMAIL_PROFILE_IMAGE_HTML_VARIABLE,
   escapeHtml,
@@ -39,7 +49,9 @@ import {
   getEmailProfileImageTemplateVariables,
 } from "@/lib/transactional-email";
 
-export type ResendSeedTemplateVariable = NonNullable<CreateTemplateOptions["variables"]>[number];
+export type ResendSeedTemplateVariable = NonNullable<
+  CreateTemplateOptions["variables"]
+>[number];
 
 export type ResendSeedTemplatePayload = CreateTemplateOptions & {
   html: string;
@@ -74,6 +86,8 @@ export interface SeedResendTemplatesOptions {
 
 const TEMPLATE_ENV_BY_KEY: Record<ResendEmailTemplateKey, string> = {
   booking_confirmation: "RESEND_TEMPLATE_BOOKING_CONFIRMATION_ID",
+  provider_booking_confirmation:
+    "RESEND_TEMPLATE_PROVIDER_BOOKING_CONFIRMATION_ID",
   contact_popup_admin: "RESEND_TEMPLATE_CONTACT_POPUP_ADMIN_ID",
   contact_popup_customer: "RESEND_TEMPLATE_CONTACT_POPUP_CUSTOMER_ID",
   general_inquiry_admin: "RESEND_TEMPLATE_GENERAL_INQUIRY_ADMIN_ID",
@@ -87,6 +101,7 @@ const TEMPLATE_ENV_BY_KEY: Record<ResendEmailTemplateKey, string> = {
 
 const TEMPLATE_NAME_BY_KEY: Record<ResendEmailTemplateKey, string> = {
   booking_confirmation: "Lash Her booking confirmation",
+  provider_booking_confirmation: "Lash Her provider booking confirmation",
   contact_popup_admin: "Lash Her contact popup admin notification",
   contact_popup_customer: "Lash Her contact popup customer reply",
   general_inquiry_admin: "Lash Her general inquiry admin notification",
@@ -101,14 +116,16 @@ const TEMPLATE_NAME_BY_KEY: Record<ResendEmailTemplateKey, string> = {
 const RESEND_TEMPLATE_SEED_REQUEST_INTERVAL_MS = 350;
 const RESEND_TEMPLATE_SEED_RATE_LIMIT_RETRY_MS = 1_500;
 const RESEND_TEMPLATE_SEED_RATE_LIMIT_RETRIES = 3;
-const RESEND_TEMPLATE_PROFILE_IMAGE_PLACEHOLDER_URL = "https://assets.lashher.test/email-profile-placeholder.jpg";
+const RESEND_TEMPLATE_PROFILE_IMAGE_PLACEHOLDER_URL =
+  "https://assets.lashher.test/email-profile-placeholder.jpg";
 
 const SAMPLE_GENERAL_INQUIRY: GeneralInquiryData = {
   consentText: "I agree to receive Lash Her updates.",
   email: "client.general@example.com",
   instagram: "clientgeneral",
   marketingConsent: true,
-  message: "I would love to book a full set and learn more about availability next month.",
+  message:
+    "I would love to book a full set and learn more about availability next month.",
   name: "Avery General",
   phone: "+1 555 010 1000",
   sourcePath: "/contact",
@@ -151,6 +168,32 @@ const SAMPLE_BOOKING_CONFIRMATION: SendBookingConfirmationInput = {
   timezone: "America/Toronto",
 };
 
+const SAMPLE_PROVIDER_BOOKING_CONFIRMATION: SendProviderBookingEmailInput = {
+  addOnPaymentCopy:
+    "Lash Bath selected ($25.00); included in the booked totals shown in the payment section.",
+  bookedSubtotalCents: 12500,
+  bookedTotalAfterTaxCents: 14125,
+  bookingPaymentAmountCents: 5650,
+  currency: "CAD",
+  customerEmail: "booking.client@example.com",
+  customerName: "Jordan Booking",
+  customerPhone: "+1 555 010 3000",
+  end: new Date("2026-06-15T17:00:00.000Z"),
+  holdId: "hold_sample_123",
+  orderId: "LH-BOOKING-1001",
+  paymentKindLabel: "Deposit",
+  paymentProvider: "square",
+  providerName: "Nataliea",
+  recipientEmails: ["provider@example.com"],
+  remainingBalanceAfterTaxCents: 8475,
+  remainingBalanceCents: 7500,
+  serviceName: "Volume Lash Fill",
+  start: new Date("2026-06-15T15:30:00.000Z"),
+  timezone: "America/Toronto",
+  tipAmountCents: 1500,
+  totalPaidCents: 7150,
+};
+
 const SAMPLE_PRODUCT_CONFIRMATION: SendProductOrderConfirmationEmailInput = {
   currency: "cad",
   customerEmail: "product.client@example.com",
@@ -189,13 +232,44 @@ const SAMPLE_TRAINING_PAYMENT: SendTrainingPaymentNotificationEmailsInput = {
 export function buildResendTemplateDefinitions(): ResendSeedTemplateDefinition[] {
   return [
     buildBookingDefinition(),
-    buildFormDefinition("contact_popup_admin", "admin", "contact-popup", SAMPLE_CONTACT_POPUP),
-    buildFormDefinition("contact_popup_customer", "customer", "contact-popup", SAMPLE_CONTACT_POPUP),
-    buildFormDefinition("general_inquiry_admin", "admin", "general-inquiry", SAMPLE_GENERAL_INQUIRY),
-    buildFormDefinition("general_inquiry_customer", "customer", "general-inquiry", SAMPLE_GENERAL_INQUIRY),
+    buildProviderBookingDefinition(),
+    buildFormDefinition(
+      "contact_popup_admin",
+      "admin",
+      "contact-popup",
+      SAMPLE_CONTACT_POPUP,
+    ),
+    buildFormDefinition(
+      "contact_popup_customer",
+      "customer",
+      "contact-popup",
+      SAMPLE_CONTACT_POPUP,
+    ),
+    buildFormDefinition(
+      "general_inquiry_admin",
+      "admin",
+      "general-inquiry",
+      SAMPLE_GENERAL_INQUIRY,
+    ),
+    buildFormDefinition(
+      "general_inquiry_customer",
+      "customer",
+      "general-inquiry",
+      SAMPLE_GENERAL_INQUIRY,
+    ),
     buildProductDefinition(),
-    buildFormDefinition("training_contact_admin", "admin", "training-contact", SAMPLE_TRAINING_CONTACT),
-    buildFormDefinition("training_contact_customer", "customer", "training-contact", SAMPLE_TRAINING_CONTACT),
+    buildFormDefinition(
+      "training_contact_admin",
+      "admin",
+      "training-contact",
+      SAMPLE_TRAINING_CONTACT,
+    ),
+    buildFormDefinition(
+      "training_contact_customer",
+      "customer",
+      "training-contact",
+      SAMPLE_TRAINING_CONTACT,
+    ),
     buildTrainingPaymentAdminDefinition(),
     buildTrainingPaymentCustomerDefinition(),
   ];
@@ -211,7 +285,9 @@ export async function seedResendTemplates({
   printTemplateSummary(definitions, log);
 
   if (!apply) {
-    log("Dry run only. Re-run with --apply to create and publish these templates in Resend.");
+    log(
+      "Dry run only. Re-run with --apply to create and publish these templates in Resend.",
+    );
     return [];
   }
 
@@ -220,16 +296,23 @@ export async function seedResendTemplates({
   }
 
   const resend = dependencies ?? getDefaultResendTemplateSeedDependencies();
-  const requestIntervalMs = dependencies === undefined ? RESEND_TEMPLATE_SEED_REQUEST_INTERVAL_MS : 0;
+  const requestIntervalMs =
+    dependencies === undefined ? RESEND_TEMPLATE_SEED_REQUEST_INTERVAL_MS : 0;
   const results: ResendSeedTemplateResult[] = [];
 
-  log("Creating and publishing Resend templates. Copy each UUID line as it appears:");
+  log(
+    "Creating and publishing Resend templates. Copy each UUID line as it appears:",
+  );
 
   for (const definition of definitions) {
     log(`Creating ${definition.payload.name}...`);
-    const created = await runResendTemplateSeedRequest(() => resend.createTemplate(definition.payload));
+    const created = await runResendTemplateSeedRequest(() =>
+      resend.createTemplate(definition.payload),
+    );
     await waitForResendTemplateSeedRateLimit(requestIntervalMs);
-    await runResendTemplateSeedRequest(() => resend.publishTemplate(created.id));
+    await runResendTemplateSeedRequest(() =>
+      resend.publishTemplate(created.id),
+    );
     const result = {
       envVar: definition.envVar,
       id: created.id,
@@ -247,19 +330,26 @@ export async function seedResendTemplates({
   return results;
 }
 
-async function runResendTemplateSeedRequest<T>(request: () => Promise<T>): Promise<T> {
+async function runResendTemplateSeedRequest<T>(
+  request: () => Promise<T>,
+): Promise<T> {
   let attempts = 0;
 
   while (true) {
     try {
       return await request();
     } catch (error) {
-      if (attempts >= RESEND_TEMPLATE_SEED_RATE_LIMIT_RETRIES || !isRateLimitError(error)) {
+      if (
+        attempts >= RESEND_TEMPLATE_SEED_RATE_LIMIT_RETRIES ||
+        !isRateLimitError(error)
+      ) {
         throw error;
       }
 
       attempts += 1;
-      await waitForResendTemplateSeedRateLimit(RESEND_TEMPLATE_SEED_RATE_LIMIT_RETRY_MS);
+      await waitForResendTemplateSeedRateLimit(
+        RESEND_TEMPLATE_SEED_RATE_LIMIT_RETRY_MS,
+      );
     }
   }
 }
@@ -273,21 +363,42 @@ function isRateLimitError(error: unknown): boolean {
 }
 
 function waitForResendTemplateSeedRateLimit(delayMs: number): Promise<void> {
-  return delayMs > 0 ? new Promise((resolve) => setTimeout(resolve, delayMs)) : Promise.resolve();
+  return delayMs > 0
+    ? new Promise((resolve) => setTimeout(resolve, delayMs))
+    : Promise.resolve();
 }
 
 function buildBookingDefinition(): ResendSeedTemplateDefinition {
   return buildDefinition({
-    html: buildTemplateHtmlWithProfileImageVariable(() => buildBookingConfirmationFallbackHtml(SAMPLE_BOOKING_CONFIRMATION)),
+    html: buildTemplateHtmlWithProfileImageVariable(() =>
+      buildBookingConfirmationFallbackHtml(SAMPLE_BOOKING_CONFIRMATION),
+    ),
     key: "booking_confirmation",
     subject: BOOKING_CONFIRMATION_EMAIL_SUBJECT,
-    variables: getBookingConfirmationSeedTemplateVariables(SAMPLE_BOOKING_CONFIRMATION),
+    variables: getBookingConfirmationSeedTemplateVariables(
+      SAMPLE_BOOKING_CONFIRMATION,
+    ),
+  });
+}
+
+function buildProviderBookingDefinition(): ResendSeedTemplateDefinition {
+  return buildDefinition({
+    html: buildTemplateHtmlWithProfileImageVariable(() =>
+      buildProviderBookingFallbackHtml(SAMPLE_PROVIDER_BOOKING_CONFIRMATION),
+    ),
+    key: "provider_booking_confirmation",
+    subject: `${PROVIDER_BOOKING_EMAIL_SUBJECT_PREFIX}: ${SAMPLE_PROVIDER_BOOKING_CONFIRMATION.serviceName}`,
+    variables: getProviderBookingSeedTemplateVariables(
+      SAMPLE_PROVIDER_BOOKING_CONFIRMATION,
+    ),
   });
 }
 
 function buildProductDefinition(): ResendSeedTemplateDefinition {
   return buildDefinition({
-    html: buildTemplateHtmlWithProfileImageVariable(() => buildProductOrderConfirmationHtml(SAMPLE_PRODUCT_CONFIRMATION)),
+    html: buildTemplateHtmlWithProfileImageVariable(() =>
+      buildProductOrderConfirmationHtml(SAMPLE_PRODUCT_CONFIRMATION),
+    ),
     key: "product_confirmation",
     subject: PRODUCT_ORDER_CONFIRMATION_EMAIL_SUBJECT,
     variables: getProductOrderTemplateVariables(SAMPLE_PRODUCT_CONFIRMATION),
@@ -296,7 +407,9 @@ function buildProductDefinition(): ResendSeedTemplateDefinition {
 
 function buildTrainingPaymentAdminDefinition(): ResendSeedTemplateDefinition {
   return buildDefinition({
-    html: buildTemplateHtmlWithProfileImageVariable(() => getAdminTrainingPaymentHtml(SAMPLE_TRAINING_PAYMENT)),
+    html: buildTemplateHtmlWithProfileImageVariable(() =>
+      getAdminTrainingPaymentHtml(SAMPLE_TRAINING_PAYMENT),
+    ),
     key: "training_payment_admin",
     subject: `Training paid — scheduling pending — ${SAMPLE_TRAINING_PAYMENT.orderId}`,
     variables: getTrainingPaymentTemplateVariables(SAMPLE_TRAINING_PAYMENT),
@@ -305,7 +418,9 @@ function buildTrainingPaymentAdminDefinition(): ResendSeedTemplateDefinition {
 
 function buildTrainingPaymentCustomerDefinition(): ResendSeedTemplateDefinition {
   return buildDefinition({
-    html: buildTemplateHtmlWithProfileImageVariable(() => getCustomerTrainingPaymentHtml(SAMPLE_TRAINING_PAYMENT)),
+    html: buildTemplateHtmlWithProfileImageVariable(() =>
+      getCustomerTrainingPaymentHtml(SAMPLE_TRAINING_PAYMENT),
+    ),
     key: "training_payment_customer",
     subject: TRAINING_PAYMENT_CUSTOMER_EMAIL_SUBJECT,
     variables: getTrainingPaymentTemplateVariables(SAMPLE_TRAINING_PAYMENT),
@@ -319,22 +434,33 @@ function buildFormDefinition(
   sample: GeneralInquiryData | TrainingContactData | ContactPopupData,
 ): ResendSeedTemplateDefinition {
   return buildDefinition({
-    html: buildTemplateHtmlWithProfileImageVariable(() => buildFormEmailFallbackHtml(audience, formType, sample)),
+    html: buildTemplateHtmlWithProfileImageVariable(() =>
+      buildFormEmailFallbackHtml(audience, formType, sample),
+    ),
     key,
     subject: getFormEmailSubject(audience, formType, sample),
-    variables: getFormEmailTemplateVariables(formType, sample, SAMPLE_SUBMITTED_AT),
+    variables: getFormEmailTemplateVariables(
+      formType,
+      sample,
+      SAMPLE_SUBMITTED_AT,
+    ),
   });
 }
 
-function buildTemplateHtmlWithProfileImageVariable(buildHtml: () => string): string {
+function buildTemplateHtmlWithProfileImageVariable(
+  buildHtml: () => string,
+): string {
   const previousProfileImageUrl = process.env.EMAIL_PROFILE_IMAGE_URL;
 
-  process.env.EMAIL_PROFILE_IMAGE_URL = RESEND_TEMPLATE_PROFILE_IMAGE_PLACEHOLDER_URL;
+  process.env.EMAIL_PROFILE_IMAGE_URL =
+    RESEND_TEMPLATE_PROFILE_IMAGE_PLACEHOLDER_URL;
 
   try {
     const profileImageHtml = getEmailProfileImageHtml();
 
-    return buildHtml().split(profileImageHtml).join(`{{{${EMAIL_PROFILE_IMAGE_HTML_VARIABLE}}}}`);
+    return buildHtml()
+      .split(profileImageHtml)
+      .join(`{{{${EMAIL_PROFILE_IMAGE_HTML_VARIABLE}}}}`);
   } finally {
     if (previousProfileImageUrl === undefined) {
       delete process.env.EMAIL_PROFILE_IMAGE_URL;
@@ -354,9 +480,18 @@ function buildDefinition(input: {
     ...input.variables,
     ...getEmailProfileImageTemplateVariables(),
   };
-  const html = replaceSampleValuesWithTemplateVariables(input.html, templateVariables);
-  const subject = replaceSampleValuesWithTemplateVariables(input.subject, templateVariables);
-  const variables = getVariablesUsedByHtml(`${html}\n${subject}`, templateVariables);
+  const html = replaceSampleValuesWithTemplateVariables(
+    input.html,
+    templateVariables,
+  );
+  const subject = replaceSampleValuesWithTemplateVariables(
+    input.subject,
+    templateVariables,
+  );
+  const variables = getVariablesUsedByHtml(
+    `${html}\n${subject}`,
+    templateVariables,
+  );
 
   return {
     envVar: TEMPLATE_ENV_BY_KEY[input.key],
@@ -370,8 +505,14 @@ function buildDefinition(input: {
   };
 }
 
-function replaceSampleValuesWithTemplateVariables(html: string, variables: Record<string, unknown>): string {
-  let output = html.replace(/Received on [^<]+/g, "Received on {{{SUBMITTED_AT}}}");
+function replaceSampleValuesWithTemplateVariables(
+  html: string,
+  variables: Record<string, unknown>,
+): string {
+  let output = html.replace(
+    /Received on [^<]+/g,
+    "Received on {{{SUBMITTED_AT}}}",
+  );
   const replacements = getSampleReplacementCandidates(variables)
     .filter((replacement) => replacement.value.length > 0)
     .sort((left, right) => right.value.length - left.value.length);
@@ -383,7 +524,9 @@ function replaceSampleValuesWithTemplateVariables(html: string, variables: Recor
   return output;
 }
 
-function getSampleReplacementCandidates(variables: Record<string, unknown>): { key: string; value: string }[] {
+function getSampleReplacementCandidates(
+  variables: Record<string, unknown>,
+): { key: string; value: string }[] {
   const candidates: { key: string; value: string }[] = [];
 
   for (const [key, value] of Object.entries(variables)) {
@@ -401,7 +544,10 @@ function getSampleReplacementCandidates(variables: Record<string, unknown>): { k
   return candidates;
 }
 
-function getValueReplacementCandidates(key: string, value: number | string): string[] {
+function getValueReplacementCandidates(
+  key: string,
+  value: number | string,
+): string[] {
   if (typeof value === "number") {
     return [];
   }
@@ -422,14 +568,20 @@ function getValueReplacementCandidates(key: string, value: number | string): str
   return Array.from(candidates);
 }
 
-function getVariablesUsedByHtml(html: string, variables: Record<string, unknown>): ResendSeedTemplateVariable[] {
+function getVariablesUsedByHtml(
+  html: string,
+  variables: Record<string, unknown>,
+): ResendSeedTemplateVariable[] {
   return Object.entries(variables)
     .filter(([key]) => html.includes(`{{{${key}}}}`))
     .map(([key, value]) => toTemplateVariableDefinition(key, value))
     .sort((left, right) => left.key.localeCompare(right.key));
 }
 
-function toTemplateVariableDefinition(key: string, value: unknown): ResendSeedTemplateVariable {
+function toTemplateVariableDefinition(
+  key: string,
+  value: unknown,
+): ResendSeedTemplateVariable {
   const fallbackValue = toRequiredVariableFallbackValue(key, value);
 
   if (typeof fallbackValue === "number") {
@@ -447,11 +599,16 @@ function toTemplateVariableDefinition(key: string, value: unknown): ResendSeedTe
   };
 }
 
-function toRequiredVariableFallbackValue(key: string, value: unknown): number | string {
+function toRequiredVariableFallbackValue(
+  key: string,
+  value: unknown,
+): number | string {
   const fallbackValue = toVariableFallbackValue(value);
 
   if (fallbackValue === undefined) {
-    throw new Error(`Missing fallback value for Resend template variable ${key}`);
+    throw new Error(
+      `Missing fallback value for Resend template variable ${key}`,
+    );
   }
 
   return fallbackValue;
@@ -484,26 +641,34 @@ function toVariableFallbackValue(value: unknown): number | string | undefined {
   return JSON.stringify(value);
 }
 
-function printTemplateSummary(definitions: ResendSeedTemplateDefinition[], log: (message: string) => void): void {
+function printTemplateSummary(
+  definitions: ResendSeedTemplateDefinition[],
+  log: (message: string) => void,
+): void {
   log(`Prepared ${definitions.length} Resend template payloads.`);
 
   for (const definition of definitions) {
     log(`${definition.payload.name}`);
     log(`  key: ${definition.key}`);
     log(`  subject: ${definition.payload.subject}`);
-    log(`  variables: ${definition.payload.variables.map((variable) => variable.key).join(", ")}`);
+    log(
+      `  variables: ${definition.payload.variables.map((variable) => variable.key).join(", ")}`,
+    );
     log(`  env: ${definition.envVar}`);
   }
 }
 
 function getDefaultResendTemplateSeedDependencies(): ResendTemplateSeedDependencies {
   return {
-    createTemplate: (input) => createResendTemplate(toCreateTemplateOptions(input)),
+    createTemplate: (input) =>
+      createResendTemplate(toCreateTemplateOptions(input)),
     publishTemplate: publishResendTemplate,
   };
 }
 
-function toCreateTemplateOptions(input: ResendSeedTemplatePayload): CreateTemplateOptions {
+function toCreateTemplateOptions(
+  input: ResendSeedTemplatePayload,
+): CreateTemplateOptions {
   return {
     html: input.html,
     name: input.name,

@@ -4,7 +4,7 @@ import test from "node:test";
 const helperScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { createPrivateDataRetentionGetHandler } from "./src/app/api/admin/private-data-retention/route.ts";
+  import { createPrivateDataRetentionGetHandler } from "./src/app/api/admin/private-data-retention/handler.ts";
 
   function createRequest(headers = { authorization: "Bearer cron-secret" }) {
     return new Request("https://lash.test/api/admin/private-data-retention", {

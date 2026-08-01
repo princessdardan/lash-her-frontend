@@ -875,6 +875,19 @@ test("rejects non-held hold", async () => {
   }
 });
 
+test("rejects V2 holds before the legacy card-storage flow makes provider calls", async () => {
+  const { result, state } = await runSaga(createRequest(), {
+    initialHolds: [createHold({ bookingModelVersion: 2 })],
+  });
+
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.error, "invalid_request");
+  assert.equal(state.customers.length, 0);
+  assert.equal(state.paymentMethods.length, 0);
+  assert.equal(state.calendarCalls.length, 0);
+});
+
 test("creates Square customer, card, policy, no-show record, finalizes Calendar, and returns booked", async () => {
   const { result, state } = await runSaga(createRequest());
 
@@ -1100,6 +1113,111 @@ test("calendar finalizer creates event when no correlation exists under lock", a
 
   assert.deepEqual(result, { ok: true, googleEventId: "event-new" });
   assert.equal(fixture.google.insertBookingEventCalls.length, 1);
+});
+
+test("V2 direct-payment Calendar finalization uses only persisted connection routing and survives lock release failure", async () => {
+  const hold = createHold({
+    bookingModelVersion: 2,
+    calendarAssignmentId: "assignment-v2",
+    googleCalendarId: "canonical-v2@example.com",
+    occupiedStart: selectedStart,
+    occupiedEnd: selectedEnd,
+    primaryResourceId: "resource-v2",
+  });
+  const connectionFindCalls: unknown[] = [];
+  const connectionListCalls: unknown[] = [];
+  const connectionInsertCalls: unknown[] = [];
+  const scopedLockCalls: unknown[] = [];
+  let findCallCount = 0;
+  const finalizer = createCardOnFileCalendarFinalizer({
+    getBookingSettings: async () => {
+      throw new Error("V2 must not load legacy Sanity booking settings");
+    },
+    getOperationalCalendarRouting: async () => ({
+      busyCalendars: [
+        {
+          assignmentId: "assignment-v2",
+          calendarId: "canonical-v2@example.com",
+          connectionId: "connection-v2",
+          resourceId: "resource-v2",
+        },
+      ],
+      writeCalendar: {
+        assignmentId: "assignment-v2",
+        calendarId: "canonical-v2@example.com",
+        connectionId: "connection-v2",
+        resourceId: "resource-v2",
+      },
+    }),
+    googleCalendar: {
+      async findConnectionBookingEventForHold(input) {
+        connectionFindCalls.push(input);
+        findCallCount += 1;
+        return null;
+      },
+      async listConnectionCalendarEvents(input) {
+        connectionListCalls.push(input);
+        return [];
+      },
+      async insertConnectionBookingEvent(input) {
+        connectionInsertCalls.push(input);
+        return "event-v2";
+      },
+      async findBookingEventForHold() {
+        throw new Error("V2 must not use the global Calendar credential");
+      },
+      async listCalendarEvents() {
+        throw new Error("V2 must not use global Calendar busy reads");
+      },
+      async insertBookingEvent() {
+        throw new Error("V2 must not use the global Calendar credential");
+      },
+      buildBookingEventPayload: () => ({ summary: "V2 appointment" }),
+    },
+    holds: {
+      async listActiveAppointmentHolds() {
+        throw new Error("V2 must not recheck its own DB reservation");
+      },
+      getActiveHoldBusyEvents() {
+        throw new Error("V2 must not recheck its own DB reservation");
+      },
+    },
+    operationalStore: {
+      async acquireCalendarLock() {
+        throw new Error("V2 must not use the global Calendar lock");
+      },
+      async acquireScopedBookingLock(input) {
+        scopedLockCalls.push(input);
+        return true;
+      },
+      async releaseCalendarLock() {
+        throw new Error("V2 must not use the global Calendar lock");
+      },
+      async releaseScopedBookingLock() {
+        throw new Error("simulated release failure");
+      },
+    },
+  });
+
+  const result = await finalizer.finalize({ hold, now });
+
+  assert.deepEqual(result, { ok: true, googleEventId: "event-v2" });
+  assert.equal(findCallCount, 2);
+  assert.equal(connectionListCalls.length, 1);
+  assert.equal(connectionInsertCalls.length, 1);
+  assert.deepEqual(scopedLockCalls, [
+    {
+      key: "calendar-assignment:assignment-v2",
+      lockId: (scopedLockCalls[0] as { lockId: string }).lockId,
+      ttlSeconds: 20,
+    },
+  ]);
+  assert.ok(
+    connectionFindCalls.every(
+      (call) =>
+        (call as { connectionId: string }).connectionId === "connection-v2",
+    ),
+  );
 });
 
 test("Calendar finalization failure after card save sets manual follow-up and alerts", async () => {

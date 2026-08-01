@@ -221,6 +221,28 @@ test("cancelPayment posts to /v2/payments/{id}/cancel", () => {
   `);
 });
 
+test("cancelPaymentByIdempotencyKey posts to the Square unknown-outcome endpoint", () => {
+  runPaymentsClientScenario(`
+    const requests = [];
+    globalThis.fetch = async (url, init) => {
+      requests.push({ url, init });
+      return new Response(JSON.stringify({}), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    const client = createSquarePaymentsClient({ environment: "sandbox", accessToken: "square-secret-token" });
+    await client.cancelPaymentByIdempotencyKey("provider-request-key");
+
+    assert.equal(requests[0].url, "https://connect.squareupsandbox.com/v2/payments/cancel");
+    assert.equal(requests[0].init.method, "POST");
+    assert.deepEqual(JSON.parse(requests[0].init.body), {
+      idempotency_key: "provider-request-key",
+    });
+  `);
+});
+
 test("Square payments client errors are sanitized for non-2xx responses", () => {
   runPaymentsClientScenario(`
     globalThis.fetch = async () => new Response(JSON.stringify({ errors: [{ detail: "square-secret-token leaked" }] }), { status: 401 });

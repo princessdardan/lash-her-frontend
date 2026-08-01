@@ -7,6 +7,7 @@ import test from "node:test";
 
 const scriptPath = join(process.cwd(), "scripts/validate-sanity-env.mjs");
 const checkoutKey = Buffer.alloc(32, 7).toString("base64");
+const calendarCredentialKey = Buffer.alloc(32, 11).toString("base64");
 const secretValue = "super-secret-value-that-must-not-appear";
 
 const publicSanityEnv = {
@@ -20,6 +21,10 @@ const launchEnv = {
   SANITY_API_READ_TOKEN: "sanity-api-read-token",
   SANITY_WRITE_TOKEN: "sanity-write-token",
   SANITY_WEBHOOK_SECRET: "sanity-webhook-secret",
+  AUTH_SECRET: "auth-secret-with-at-least-thirty-two-characters",
+  AUTH_GOOGLE_ID: "google-identity-client-id",
+  AUTH_GOOGLE_SECRET: "google-identity-client-secret",
+  ADMIN_OWNER_EMAILS: "owner@lashher.com",
   RESEND_API_KEY: "resend-api-key",
   RESEND_WEBHOOK_SECRET: "resend-webhook-secret",
   RESEND_SEGMENT_MARKETING_ID: "resend-segment-marketing-id",
@@ -33,6 +38,8 @@ const launchEnv = {
   KV_REST_API_TOKEN: "kv-rest-api-token",
   DATABASE_URL: "postgres://user:password@example.com:5432/lashher",
   CHECKOUT_SECRET_ENCRYPTION_KEY: checkoutKey,
+  BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY: calendarCredentialKey,
+  SERVICE_BOOKING_MODEL_MODE: "dual",
   HELCIM_GENERAL_API_TOKEN: "helcim-general-api-token-with-safe-length",
   HELCIM_TRANSACTION_API_TOKEN: "helcim-transaction-api-token-with-safe-length",
   HELCIM_WEBHOOK_VERIFIER_TOKEN: "helcim-webhook-verifier-token",
@@ -309,6 +316,60 @@ test("fails malformed checkout encryption key", () => {
 
   assert.notEqual(result.status, 0);
   assert.match(result.combinedOutput, /CHECKOUT_SECRET_ENCRYPTION_KEY/);
+});
+
+test("fails launch environment without Auth.js identity configuration", () => {
+  const env: Record<string, string> = {
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+  };
+
+  delete env.AUTH_SECRET;
+
+  const result = runValidator(env);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.combinedOutput, /Missing env var: AUTH_SECRET/);
+});
+
+test("fails launch environment with a short Auth.js secret", () => {
+  const result = runValidator({
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+    AUTH_SECRET: "too-short",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.combinedOutput, /AUTH_SECRET must be at least 32 characters/);
+});
+
+test("fails an unknown service booking model rollout mode", () => {
+  const result = runValidator({
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+    SERVICE_BOOKING_MODEL_MODE: "automatic",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.combinedOutput, /SERVICE_BOOKING_MODEL_MODE/);
+});
+
+test("fails malformed booking calendar credential encryption key", () => {
+  const result = runValidator({
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+    BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY: "not-base64",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.combinedOutput,
+    /BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY/,
+  );
 });
 
 test("fails launch environment when Helcim token appears truncated", () => {

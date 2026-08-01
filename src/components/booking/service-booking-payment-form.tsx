@@ -23,6 +23,7 @@ import {
 } from "./square-charge-and-store-form";
 
 export interface ServiceBookingPaymentFormProps {
+  marketingOptInLabel: string;
   onExpired: () => void;
   onSessionUpdate: (session: ServiceBookingPaymentSessionDisplay) => void;
   onSuccess: (result: ServiceBookingPaymentConfirmation) => void;
@@ -41,6 +42,7 @@ export interface ServiceBookingPaymentConfirmation {
 }
 
 export function ServiceBookingPaymentForm({
+  marketingOptInLabel,
   onExpired,
   onSessionUpdate,
   onSuccess,
@@ -436,7 +438,7 @@ export function ServiceBookingPaymentForm({
             htmlFor="servicePaymentMarketingOptIn"
             className="text-sm leading-snug text-muted-foreground"
           >
-            I would like to receive marketing updates and offers.
+            {marketingOptInLabel}
           </Label>
         </div>
       </div>
@@ -577,8 +579,10 @@ export function ServiceBookingPaymentForm({
                   : `Between ${formatCad(
                       session.pricing.depositAmountCents / 100,
                     )} and ${formatCad(
-                      (session.pricing.discountedBasePriceCents ??
-                        session.pricing.fullPriceCents) / 100,
+                      ((session.pricing.discountedBasePriceCents ??
+                        session.pricing.fullPriceCents) +
+                        session.pricing.addOnPriceCents) /
+                        100,
                     )} before HST`
               }
               aria-label="Custom payment amount"
@@ -663,6 +667,15 @@ export function ServiceBookingPaymentForm({
           <p className="mt-2 text-sm leading-snug text-lh-muted">
             {SERVICE_NO_SHOW_POLICY_TEXT}
           </p>
+          <div className="mt-3 flex items-center justify-between gap-4 border-t border-lh-line pt-3 text-sm">
+            <span className="font-medium text-black">
+              Maximum no-show amount
+            </span>
+            <span className="text-right text-lh-muted">
+              {formatCad(bookedTotalAfterDiscountCents / 100)}
+              <span className="block text-xs">before applicable HST</span>
+            </span>
+          </div>
         </div>
 
         <div className="flex items-start gap-3">
@@ -777,6 +790,11 @@ function parseSessionResponse(
     typeof record.paymentSessionReference === "string"
       ? record.paymentSessionReference
       : "";
+  const marketingOptInLabel =
+    typeof record.marketingOptInLabel === "string" &&
+    record.marketingOptInLabel.trim().length > 0
+      ? record.marketingOptInLabel.trim()
+      : null;
   const serviceSlug =
     typeof record.serviceSlug === "string" ? record.serviceSlug : "";
   const serviceTitle =
@@ -796,6 +814,7 @@ function parseSessionResponse(
     timezone.length === 0 ||
     selectedStart.length === 0 ||
     selectedEnd.length === 0 ||
+    marketingOptInLabel === null ||
     !isRecord(record.pricing)
   ) {
     return null;
@@ -854,6 +873,7 @@ function parseSessionResponse(
   return {
     currency: "CAD",
     expiresAt,
+    marketingOptInLabel,
     paymentSessionReference,
     pricing,
     selectedAddOn: parseSelectedAddOn(record.selectedAddOn),

@@ -1,26 +1,145 @@
 import "dotenv/config";
 
-import { drizzle } from "drizzle-orm/node-postgres";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { Pool } from "pg";
+import { readFileSync } from "node:fs";
+import { readMigrationFiles, type MigrationMeta } from "drizzle-orm/migrator";
+import { Pool, type PoolClient } from "pg";
 
 import { createPrivateDbPoolConfig } from "../src/lib/private-db/pool-config";
-import * as schema from "../src/lib/private-db/schema";
 
 const KNOWN_TARGETS = new Set(["local", "staging", "production"]);
+const MIGRATION_LOCK_NAME = "lash-her:private-db:migrations";
+const MIGRATIONS_FOLDER = "./drizzle";
+const MIGRATION_JOURNAL_PATH = `${MIGRATIONS_FOLDER}/meta/_journal.json`;
+
+interface MigrationJournal {
+  entries: Array<{
+    tag: string;
+    when: number;
+  }>;
+}
+
+interface NamedMigrationMeta extends MigrationMeta {
+  tag: string;
+}
 
 async function main(): Promise<void> {
   const databaseUrl = getCheckoutDatabaseUrl();
   assertMigrationTarget(databaseUrl);
+  const migrations = readNamedMigrationFiles();
 
   const pool = new Pool(createPrivateDbPoolConfig(databaseUrl));
+  const client = await pool.connect();
 
   try {
-    const db = drizzle({ client: pool, schema });
-    await migrate(db, { migrationsFolder: "./drizzle" });
+    await migrateSequentially(client, migrations);
   } finally {
+    client.release();
     await pool.end();
   }
+}
+
+/**
+ * Drizzle's PostgreSQL migrator wraps every pending migration in one
+ * transaction. PostgreSQL requires an enum value added by one migration to be
+ * committed before a later migration can use it in an index predicate. Apply
+ * each journal entry in its own transaction while retaining Drizzle's journal
+ * format so both clean installs and incremental deploys are safe.
+ */
+async function migrateSequentially(
+  client: PoolClient,
+  migrations: NamedMigrationMeta[],
+): Promise<void> {
+  await client.query("SELECT pg_advisory_lock(hashtext($1))", [
+    MIGRATION_LOCK_NAME,
+  ]);
+
+  try {
+    await client.query("CREATE SCHEMA IF NOT EXISTS drizzle");
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS drizzle.__drizzle_migrations (
+        id SERIAL PRIMARY KEY,
+        hash text NOT NULL,
+        created_at bigint
+      )
+    `);
+
+    const latest = await client.query<{ created_at: string | null }>(
+      "SELECT created_at FROM drizzle.__drizzle_migrations ORDER BY created_at DESC NULLS LAST LIMIT 1",
+    );
+    let latestAppliedAt = Number(latest.rows[0]?.created_at ?? 0);
+
+    for (const migration of migrations) {
+      if (migration.folderMillis <= latestAppliedAt) {
+        continue;
+      }
+
+      console.info(`[private-db] Applying migration ${migration.tag}`);
+
+      try {
+        await applyMigration(client, migration);
+      } catch (error) {
+        throw new Error(
+          `Migration ${migration.tag} (${migration.folderMillis}) failed`,
+          { cause: error },
+        );
+      }
+
+      console.info(`[private-db] Applied migration ${migration.tag}`);
+      latestAppliedAt = migration.folderMillis;
+    }
+  } finally {
+    await client.query("SELECT pg_advisory_unlock(hashtext($1))", [
+      MIGRATION_LOCK_NAME,
+    ]);
+  }
+}
+
+async function applyMigration(
+  client: PoolClient,
+  migration: NamedMigrationMeta,
+): Promise<void> {
+  await client.query("BEGIN");
+
+  try {
+    for (const statement of migration.sql) {
+      await client.query(statement);
+    }
+
+    await client.query(
+      "INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)",
+      [migration.hash, migration.folderMillis],
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  }
+}
+
+function readNamedMigrationFiles(): NamedMigrationMeta[] {
+  const journal = JSON.parse(
+    readFileSync(MIGRATION_JOURNAL_PATH, "utf8"),
+  ) as MigrationJournal;
+  const tagsByTimestamp = new Map(
+    journal.entries.map((entry) => [entry.when, entry.tag]),
+  );
+
+  return readMigrationFiles({ migrationsFolder: MIGRATIONS_FOLDER }).map(
+    (migration) => {
+      const tag = tagsByTimestamp.get(migration.folderMillis);
+
+      if (!tag) {
+        throw new Error(
+          `Migration journal is missing a tag for timestamp ${migration.folderMillis}.`,
+        );
+      }
+
+      return {
+        ...migration,
+        tag,
+      };
+    },
+  );
 }
 
 function getCheckoutDatabaseUrl(): string {
@@ -44,17 +163,25 @@ function assertMigrationTarget(databaseUrl: string): void {
 
   const parsedUrl = parseDatabaseUrl(databaseUrl);
   const host = parsedUrl.hostname.toLowerCase();
-  const expectedHost = process.env.PRIVATE_DB_MIGRATION_HOST?.trim().toLowerCase();
+  const expectedHost =
+    process.env.PRIVATE_DB_MIGRATION_HOST?.trim().toLowerCase();
 
   if (!expectedHost) {
-    throw new Error("Set PRIVATE_DB_MIGRATION_HOST to the verified database host before running migrations.");
+    throw new Error(
+      "Set PRIVATE_DB_MIGRATION_HOST to the verified database host before running migrations.",
+    );
   }
 
   if (host !== expectedHost) {
-    throw new Error(`DATABASE_URL host mismatch: expected ${expectedHost}, received ${host}.`);
+    throw new Error(
+      `DATABASE_URL host mismatch: expected ${expectedHost}, received ${host}.`,
+    );
   }
 
-  if (target === "production" && process.env.PRIVATE_DB_MIGRATION_CONFIRM !== "production") {
+  if (
+    target === "production" &&
+    process.env.PRIVATE_DB_MIGRATION_CONFIRM !== "production"
+  ) {
     throw new Error(
       "Production migrations require PRIVATE_DB_MIGRATION_CONFIRM=production after backup/PITR and approval checks.",
     );
@@ -65,7 +192,9 @@ function parseDatabaseUrl(databaseUrl: string): URL {
   try {
     return new URL(databaseUrl);
   } catch {
-    throw new Error("Malformed env var: DATABASE_URL must be a valid PostgreSQL URL.");
+    throw new Error(
+      "Malformed env var: DATABASE_URL must be a valid PostgreSQL URL.",
+    );
   }
 }
 

@@ -4,7 +4,7 @@ import test from "node:test";
 const helperScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { createMarketingContactSyncGetHandler } from "./src/app/api/admin/marketing-contact-sync/route.ts";
+  import { createMarketingContactSyncGetHandler } from "./src/app/api/admin/marketing-contact-sync/handler.ts";
   import { getResendMarketingSyncCronSecrets } from "./src/lib/env/private-checkout.ts";
 
   function getConfiguredResendMarketingSyncCronSecrets() {

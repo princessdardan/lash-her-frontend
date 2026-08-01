@@ -715,6 +715,7 @@ test("card-on-file config returns public values when both card and service flags
           applicationId: "sandbox-sq0idb-test",
           environment: "sandbox",
           locationId: "LOC123",
+          locale: "en-CA",
         });
         const configText = JSON.stringify(config);
         assert.ok(!configText.includes("secret-access-token"));
@@ -777,6 +778,7 @@ test("square card-on-file config returns public Square values and omits secrets"
           applicationId: "sandbox-sq0idb-test",
           environment: "sandbox",
           locationId: "LOC123",
+          locale: "en-CA",
         });
         const configText = JSON.stringify(config);
         assert.ok(!configText.includes("secret-access-token"));
@@ -852,7 +854,7 @@ function runTsx(
     ["--conditions=react-server", "--eval", script],
     {
       cwd: process.cwd(),
-      env,
+      env: { ...env, NODE_NO_WARNINGS: "1" },
       encoding: "utf8",
       stdio: "pipe",
     },

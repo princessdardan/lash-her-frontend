@@ -2,8 +2,8 @@ import { createHmac } from "node:crypto";
 
 import { expect, test, type Page, type Route } from "@playwright/test";
 
-import { createTrainingSquareInvoicePostHandler } from "../src/app/api/training-checkout/square-invoice/route";
-import { createSquareWebhookPostHandler } from "../src/app/api/webhooks/square/route";
+import { createTrainingSquareInvoicePostHandler } from "../src/app/api/training-checkout/square-invoice/handler";
+import { createSquareWebhookPostHandler } from "../src/app/api/webhooks/square/handler";
 import { createServicePaymentAlertLogger } from "../src/lib/booking/payments/service-payment-alerts";
 import type { CheckoutOrderRow } from "../src/lib/commerce/order-store";
 import type {
