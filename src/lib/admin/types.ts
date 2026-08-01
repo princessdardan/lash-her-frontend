@@ -17,6 +17,10 @@ export interface AdminUserRecord {
 export interface AdminActor {
   bookingProviderResourceIds: string[];
   bookingResourceIds: string[];
+  developerMode?: {
+    accountRole: AdminRole;
+    permissionRole: AdminRole;
+  };
   user: AdminUserRecord;
 }
 

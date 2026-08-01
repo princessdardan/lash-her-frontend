@@ -280,6 +280,13 @@ function describeOutcome(input: {
   outcome: AdminAuditOutcome;
   targetLabel: string;
 }): string {
+  if (
+    input.outcome === "success" &&
+    input.action === "developer_session_started"
+  ) {
+    return `A privileged developer session started for ${input.targetLabel}.`;
+  }
+
   if (input.outcome === "success" && isRecordedFailureAction(input.action)) {
     return `${input.actorLabel} recorded a failed Google Calendar authorization for ${input.targetLabel}.`;
   }
@@ -470,6 +477,11 @@ function getActivityAttempt(
       return attempt(
         "accessed a restricted admin area",
         "access a restricted admin area",
+      );
+    case "developer_session_started":
+      return attempt(
+        `started a privileged developer session for ${target}`,
+        `start a privileged developer session for ${target}`,
       );
     default:
       return attempt(

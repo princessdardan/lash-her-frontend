@@ -36,6 +36,7 @@ import {
   type AdminActivityPresentation,
   type AdminActivityQueryFilters,
 } from "./activity-presentation";
+import { addAdminActorAuditContext } from "./actor-audit-context";
 import { requirePermission } from "./auth";
 import { sanitizeAdminAuditMetadata } from "./audit-metadata";
 import type { AdminActor } from "./types";
@@ -85,7 +86,9 @@ export async function recordAdminAudit(
       correlationId: cleanOptional(input.correlationId),
       domain: input.domain,
       ipHash: cleanOptional(input.ipHash),
-      metadata: sanitizeAdminAuditMetadata(input.metadata),
+      metadata: sanitizeAdminAuditMetadata(
+        addAdminActorAuditContext(input.actor, input.metadata),
+      ),
       outcome: input.outcome,
       reason: cleanOptional(input.reason),
       targetId: cleanOptional(input.targetId),

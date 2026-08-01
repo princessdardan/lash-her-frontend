@@ -124,6 +124,21 @@ test("activity presentation uses human sentences and keeps codes in system detai
     permissionDenied.systemDetails.requestedPermission,
     "marketing:view",
   );
+
+  const developerSession = presentAdminActivity(
+    record({
+      action: "developer_session_started",
+      domain: "authorization",
+      outcome: "success",
+      targetLabel: "Contractor account",
+      targetType: "admin_user",
+    }),
+  );
+  assert.equal(
+    developerSession.description,
+    "A privileged developer session started for Contractor account.",
+  );
+  assert.equal(developerSession.areaLabel, "Access control");
 });
 
 test("legacy OAuth cleanup and unknown action rows remain honest and readable", () => {

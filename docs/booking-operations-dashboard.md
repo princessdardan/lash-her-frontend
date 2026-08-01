@@ -21,6 +21,61 @@ AUTH_GOOGLE_SECRET
 ADMIN_OWNER_EMAILS
 ```
 
+### Cross-deployment developer mode
+
+Developer mode is an explicit break-glass capability. Configure both of these
+server-only variables in each local, preview, or production environment that
+requires it:
+
+```text
+ADMIN_DEVELOPER_MODE=true
+ADMIN_DEVELOPER_ACCESS_KEY=<distinct high-entropy secret of at least 32 characters>
+```
+
+Use a different access key for each environment. Never prefix either variable
+with `NEXT_PUBLIC_`, commit an access key, place it in a URL, or send it through
+chat or tickets. Generate keys with a cryptographically secure secret manager
+or `openssl rand -base64 48`.
+
+Configure Vercel through the project Environment Variables settings or with
+interactive CLI prompts so secret values do not enter shell history:
+
+```bash
+vercel env add ADMIN_DEVELOPER_MODE production
+vercel env add ADMIN_DEVELOPER_ACCESS_KEY production --sensitive
+vercel env add ADMIN_DEVELOPER_MODE preview
+vercel env add ADMIN_DEVELOPER_ACCESS_KEY preview --sensitive
+```
+
+Enter `true` for each mode flag and a distinct generated key for each sensitive
+prompt. Redeploy production and create a new preview deployment after changing
+environment variables; existing deployments do not gain new values in place.
+
+The sign-in page first requires the deployment's developer access key, then
+provides a developer session that:
+
+- bypasses Google identity authentication;
+- can represent any PostgreSQL `admin_users` record, including a disabled one;
+- independently simulates owner, administrator, or contractor permissions;
+- keeps the selected user ID on writes so on-behalf-of behavior can be tested;
+- records each developer-session start in the administrative audit log;
+- marks mutation audit metadata with `developerMode`, the represented account's
+  stored role, and the simulated permission role.
+
+The mode fails closed unless both variables are valid. The submitted key is
+compared in constant time and is not copied into cookie or session state. It
+signs an HTTP-only, SameSite=Strict unlock cookie lasting 15 minutes and an
+HTTP-only, SameSite=Strict developer session lasting 30 days; deployed cookies
+also use the Secure flag. Session contents are rejected if altered, expired,
+signed for a different purpose, or signed by a rotated key. Rotating the
+environment's access key immediately invalidates every developer session for
+that deployment.
+
+Disable the capability by setting `ADMIN_DEVELOPER_MODE=false` or removing both
+variables, then redeploy. While enabled locally, bind the development server to
+loopback with `npm run dev -- --hostname 127.0.0.1` and do not expose it through
+a LAN, port-forward, or public tunnel.
+
 Create separate Google OAuth clients for identity and booking-calendar access so identity sessions never receive Calendar scopes.
 
 - Identity client callback: `https://<host>/api/auth/callback/google`

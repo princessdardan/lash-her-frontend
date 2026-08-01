@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { signOutAdminAction } from "@/app/admin/auth-actions";
+import { AdminDeveloperToolbar } from "@/components/admin/admin-developer-toolbar";
 import {
   AdminDesktopNavigation,
   AdminMobileNavigation,
@@ -13,18 +14,21 @@ import {
   ADMIN_DESTINATION_GROUPS,
   getVisibleAdminDestinations,
 } from "@/lib/admin/admin-destinations";
+import type { AdminDeveloperUserOption } from "@/lib/admin/developer-mode-config";
 import { getAdminRoleLabel } from "@/lib/admin/presentation";
 import type { AdminActor } from "@/lib/admin/types";
 
 interface AdminShellProps {
   actor: AdminActor;
   children: ReactNode;
+  developerUsers?: AdminDeveloperUserOption[];
   environmentLabel: string;
 }
 
 export function AdminShell({
   actor,
   children,
+  developerUsers = [],
   environmentLabel,
 }: AdminShellProps) {
   const visibleDestinations = getVisibleAdminDestinations(actor);
@@ -69,6 +73,9 @@ export function AdminShell({
           <AdminDesktopNavigation groups={visibleNavGroups} />
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
+          {actor.developerMode ? (
+            <AdminDeveloperToolbar actor={actor} users={developerUsers} />
+          ) : null}
           {environmentWarning ? (
             <div
               className="border-b border-lh-light bg-lh-light-soft px-5 py-2 text-center text-sm font-semibold text-lh-accent md:px-8"
@@ -112,6 +119,12 @@ export function AdminShell({
                     <p className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-lh-muted">
                       {getAdminRoleLabel(actor.user.role)}
                     </p>
+                    {actor.developerMode ? (
+                      <p className="mt-2 text-xs text-amber-800">
+                        Represented account role:{" "}
+                        {getAdminRoleLabel(actor.developerMode.accountRole)}
+                      </p>
+                    ) : null}
                     <form action={signOutAdminAction} className="mt-4">
                       <AdminSubmitButton
                         className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-lh-line px-4 py-2 text-sm font-semibold text-lh-shadow transition hover:bg-lh-neutral-2 disabled:cursor-wait disabled:opacity-60"

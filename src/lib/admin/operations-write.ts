@@ -222,7 +222,11 @@ export async function setStaffStatus(input: {
   userId: string;
 }) {
   const actor = await requirePermission("staff:manage");
-  if (input.userId === actor.user.id && input.status === "disabled") {
+  if (
+    !actor.developerMode &&
+    input.userId === actor.user.id &&
+    input.status === "disabled"
+  ) {
     throw new Error("You cannot disable your own account");
   }
   await runAuditedAdminMutation({

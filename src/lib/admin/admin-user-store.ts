@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 
 import { getPrivateDb } from "@/lib/private-db/client";
 import {
@@ -187,4 +187,33 @@ export function createDrizzleAdminUserRepository(): AdminUserRepository {
 
 export function getAdminUserStore(): AdminUserStore {
   return createDrizzleAdminUserRepository();
+}
+
+export async function findAdminUserById(
+  adminUserId: string,
+): Promise<AdminUserRecord | null> {
+  const rows = await getPrivateDb()
+    .select(adminUserSelection)
+    .from(adminUsers)
+    .where(eq(adminUsers.id, adminUserId))
+    .limit(1);
+
+  return rows[0] ?? null;
+}
+
+export async function listAdminUsersForDeveloperMode(): Promise<
+  Array<
+    Pick<AdminUserRecord, "displayName" | "email" | "id" | "role" | "status">
+  >
+> {
+  return getPrivateDb()
+    .select({
+      displayName: adminUsers.displayName,
+      email: adminUsers.email,
+      id: adminUsers.id,
+      role: adminUsers.role,
+      status: adminUsers.status,
+    })
+    .from(adminUsers)
+    .orderBy(asc(adminUsers.displayName), asc(adminUsers.emailNormalized));
 }

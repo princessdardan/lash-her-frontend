@@ -6,6 +6,7 @@ import {
   type AdminAuditMetadata,
 } from "@/lib/private-db/schema";
 
+import { addAdminActorAuditContext } from "./actor-audit-context";
 import { recordAdminAuditBestEffort } from "./audit-log";
 import { sanitizeAdminAuditMetadata } from "./audit-metadata";
 import {
@@ -51,7 +52,9 @@ export async function runAuditedAdminMutation<T>(
             actorAdminUserId: input.actor.user.id,
             actorRole: input.actor.user.role,
             domain: input.domain,
-            metadata: sanitizeAdminAuditMetadata(input.metadata),
+            metadata: sanitizeAdminAuditMetadata(
+              addAdminActorAuditContext(input.actor, input.metadata),
+            ),
             outcome: getCommittedAdminAuditOutcome(input.action),
             targetId,
             targetType: input.targetType,

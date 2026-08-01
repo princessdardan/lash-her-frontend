@@ -15,6 +15,7 @@ import {
   ADMIN_PERMISSION_DENIAL_AUDIT_EVENT,
   requirePermissionWithAudit,
 } from "./authorization-policy";
+import { getAdminDeveloperActor } from "./developer-mode";
 import type { AdminPermissionAction } from "./permissions";
 import type { AdminActor, AdminIdentity } from "./types";
 
@@ -65,7 +66,7 @@ async function getRequestActor(): Promise<AdminActor> {
   const requestId = (await headers()).get(ADMIN_REQUEST_ID_HEADER);
 
   if (!requestId) {
-    return getAdminAuth().requireActor();
+    return resolveRequestActor();
   }
 
   const cached = requestActors.get(requestId);
@@ -74,13 +75,17 @@ async function getRequestActor(): Promise<AdminActor> {
     return cached;
   }
 
-  const actorPromise = getAdminAuth().requireActor();
+  const actorPromise = resolveRequestActor();
   requestActors.set(requestId, actorPromise);
   after(() => {
     requestActors.delete(requestId);
   });
 
   return actorPromise;
+}
+
+async function resolveRequestActor(): Promise<AdminActor> {
+  return (await getAdminDeveloperActor()) ?? getAdminAuth().requireActor();
 }
 
 async function getAuthJsIdentity(): Promise<AdminIdentity | null> {
