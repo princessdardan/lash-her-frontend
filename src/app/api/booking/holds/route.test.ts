@@ -461,7 +461,7 @@ test("hold creation accepts service data without contact or payment selection", 
       fullPrice: 150,
       currency: "CAD",
       customAmountMinimum: 50,
-      customAmountMaximum: 150,
+      customAmountMaximum: 175,
       addOnPrice: 25,
     });
     assert.equal(body.hold.paymentSessionReference, "pay_sess_service_only");
@@ -657,7 +657,7 @@ test("booking hold route snapshots immutable pricing bounds with a selected add-
       fullPrice: 150,
       currency: "CAD",
       customAmountMinimum: 50,
-      customAmountMaximum: 150,
+      customAmountMaximum: 175,
       addOnPrice: 25,
     });
     assert.equal(createInputs[0].offeringSnapshot.selectedPayment, undefined);

@@ -579,8 +579,10 @@ export function ServiceBookingPaymentForm({
                   : `Between ${formatCad(
                       session.pricing.depositAmountCents / 100,
                     )} and ${formatCad(
-                      (session.pricing.discountedBasePriceCents ??
-                        session.pricing.fullPriceCents) / 100,
+                      ((session.pricing.discountedBasePriceCents ??
+                        session.pricing.fullPriceCents) +
+                        session.pricing.addOnPriceCents) /
+                        100,
                     )} before HST`
               }
               aria-label="Custom payment amount"

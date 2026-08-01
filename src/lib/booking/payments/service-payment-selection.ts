@@ -117,7 +117,8 @@ export function resolveServicePaymentSelection(input: {
   }
 
   // There is no payable range when the service base has been discounted to
-  // zero; a custom partial would either be zero or exceed the discounted base.
+  // zero. Keep this option unavailable even when an add-on remains payable;
+  // add-ons are only eligible for partial payment alongside a paid service.
   if (discountedBasePriceCents === 0) {
     return {
       ok: false,
@@ -126,19 +127,23 @@ export function resolveServicePaymentSelection(input: {
     };
   }
 
-  // Enforce against the real deposit and discounted base price from the
+  // Enforce against the real deposit and discounted booked total from the
   // snapshot, not the configurable min/max bounds, so a misconfigured snapshot
-  // cannot widen the acceptable custom range.
+  // cannot widen the acceptable custom range. A selected add-on is part of the
+  // booked total, so a customer may pay more than the base service price while
+  // still leaving a balance due.
   if (customAmountCents <= pricing.depositAmountCents) {
     return {
       ok: false,
       error: "Custom amount must be greater than the deposit.",
     };
   }
-  if (customAmountCents >= discountedBasePriceCents) {
+  const fullBookedTotalCents =
+    discountedBasePriceCents + pricing.addOnPriceCents;
+  if (customAmountCents >= fullBookedTotalCents) {
     return {
       ok: false,
-      error: "Custom amount must be less than the full service price.",
+      error: "Custom amount must be less than the full booked total.",
     };
   }
 

@@ -54,7 +54,7 @@ test("resolves full amount including add-on", () => {
   );
 });
 
-test("resolves custom partial between deposit and full service price", () => {
+test("resolves custom partial between deposit and full booked total", () => {
   assert.deepEqual(
     resolveServicePaymentSelection({
       pricing,
@@ -75,6 +75,47 @@ test("resolves custom partial between deposit and full service price", () => {
   );
 });
 
+test("allows custom partial above the base service price when an add-on leaves a balance", () => {
+  assert.deepEqual(
+    resolveServicePaymentSelection({
+      pricing,
+      selection: { option: "customPartial", customAmountCents: 14000 },
+    }),
+    {
+      ok: true,
+      payment: {
+        amountCents: 14000,
+        currency: "CAD",
+        description:
+          "Classic Fill custom partial payment; Removal add-on balance due later",
+        option: "customPartial",
+        purpose: "appointment_custom_partial",
+        sku: "BOOKING-CUSTOM-PARTIAL",
+      },
+    },
+  );
+});
+
+test("does not allow custom partial at the full service price without an add-on", () => {
+  const noAddOn: ServicePaymentPricingSnapshot = {
+    ...pricing,
+    addOnPriceCents: 0,
+    customAmountMaximumCents: pricing.fullPriceCents,
+    selectedAddOnName: undefined,
+  };
+
+  assert.deepEqual(
+    resolveServicePaymentSelection({
+      pricing: noAddOn,
+      selection: { option: "customPartial", customAmountCents: 13000 },
+    }),
+    {
+      ok: false,
+      error: "Custom amount must be less than the full booked total.",
+    },
+  );
+});
+
 test("rejects custom partial at or below deposit", () => {
   assert.deepEqual(
     resolveServicePaymentSelection({
@@ -85,15 +126,15 @@ test("rejects custom partial at or below deposit", () => {
   );
 });
 
-test("rejects custom partial at or above full service price", () => {
+test("rejects custom partial at or above full booked total", () => {
   assert.deepEqual(
     resolveServicePaymentSelection({
       pricing,
-      selection: { option: "customPartial", customAmountCents: 13000 },
+      selection: { option: "customPartial", customAmountCents: 15500 },
     }),
     {
       ok: false,
-      error: "Custom amount must be less than the full service price.",
+      error: "Custom amount must be less than the full booked total.",
     },
   );
 });
@@ -112,7 +153,7 @@ test("rejects custom partial equal to deposit when snapshot minimum is misconfig
   );
 });
 
-test("rejects custom partial equal to full price when snapshot maximum is misconfigured higher", () => {
+test("rejects custom partial equal to booked total when snapshot maximum is misconfigured higher", () => {
   const misconfigured: ServicePaymentPricingSnapshot = {
     ...pricing,
     customAmountMaximumCents: 15000,
@@ -120,11 +161,11 @@ test("rejects custom partial equal to full price when snapshot maximum is miscon
   assert.deepEqual(
     resolveServicePaymentSelection({
       pricing: misconfigured,
-      selection: { option: "customPartial", customAmountCents: 13000 },
+      selection: { option: "customPartial", customAmountCents: 15500 },
     }),
     {
       ok: false,
-      error: "Custom amount must be less than the full service price.",
+      error: "Custom amount must be less than the full booked total.",
     },
   );
 });
@@ -288,7 +329,7 @@ test("deposit is capped at discounted base price", () => {
   );
 });
 
-test("custom partial uses discounted base as upper bound", () => {
+test("custom partial uses discounted booked total as upper bound", () => {
   const discounted: ServicePaymentPricingSnapshot = {
     ...pricing,
     discountedBasePriceCents: 10000,
@@ -316,15 +357,36 @@ test("custom partial uses discounted base as upper bound", () => {
     },
   );
 
-  // At the discounted base is rejected, same as at full price without discount.
+  // The discounted base alone is allowed because the add-on leaves a balance.
   assert.deepEqual(
     resolveServicePaymentSelection({
       pricing: discounted,
       selection: { option: "customPartial", customAmountCents: 10000 },
     }),
     {
+      ok: true,
+      payment: {
+        amountCents: 10000,
+        currency: "CAD",
+        description:
+          "Classic Fill custom partial payment; Removal add-on balance due later",
+        option: "customPartial",
+        purpose: "appointment_custom_partial",
+        sku: "BOOKING-CUSTOM-PARTIAL",
+      },
+    },
+  );
+
+  // The discounted service plus add-on total is still an overpayment for a
+  // partial-payment option.
+  assert.deepEqual(
+    resolveServicePaymentSelection({
+      pricing: discounted,
+      selection: { option: "customPartial", customAmountCents: 12500 },
+    }),
+    {
       ok: false,
-      error: "Custom amount must be less than the full service price.",
+      error: "Custom amount must be less than the full booked total.",
     },
   );
 });

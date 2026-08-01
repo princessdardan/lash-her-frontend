@@ -985,7 +985,7 @@ function toServiceSnapshot(
       fullPrice: service.fullPrice,
       currency: service.currency,
       customAmountMinimum: service.depositAmount,
-      customAmountMaximum: service.fullPrice,
+      customAmountMaximum: service.fullPrice + (selectedAddOn?.price ?? 0),
       addOnPrice: selectedAddOn?.price ?? 0,
     },
     ...(selectedAddOn ? { selectedAddOn } : {}),

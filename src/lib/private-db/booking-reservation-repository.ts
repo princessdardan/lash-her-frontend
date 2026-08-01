@@ -426,7 +426,7 @@ function createOfferingSnapshot(
     pricing: {
       addOnPrice,
       currency: booking.pricing.currency,
-      customAmountMaximum: fullPrice,
+      customAmountMaximum: fullPrice + addOnPrice,
       customAmountMinimum: depositAmount,
       depositAmount,
       fullPrice,
