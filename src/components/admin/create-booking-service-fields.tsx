@@ -95,6 +95,83 @@ export function CreateBookingServiceFields({
           </select>
         </Field>
       </div>
+      <div className="mt-6 border-t border-lh-line pt-6">
+        <h3 className="font-heading text-2xl uppercase tracking-[0.08em]">
+          Pricing, timing &amp; availability
+        </h3>
+        <p className="mt-2 max-w-2xl text-sm text-lh-muted">
+          Availability follows the selected provider&apos;s working hours and
+          connected booking calendar.
+        </p>
+        <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Field label="Public summary">
+            <textarea
+              className={inputClass}
+              name="publicSummary"
+              rows={3}
+              required
+            />
+          </Field>
+          <Field label="Duration (minutes)">
+            <input
+              className={inputClass}
+              defaultValue="90"
+              min="1"
+              name="durationMinutes"
+              required
+              type="number"
+            />
+          </Field>
+          <Field label="Slot interval (minutes)">
+            <input
+              className={inputClass}
+              defaultValue="15"
+              min="1"
+              name="slotIntervalMinutes"
+              required
+              type="number"
+            />
+          </Field>
+          <Field label="Buffer before (minutes)">
+            <input
+              className={inputClass}
+              defaultValue="15"
+              min="0"
+              name="bufferBeforeMinutes"
+              required
+              type="number"
+            />
+          </Field>
+          <Field label="Buffer after (minutes)">
+            <input
+              className={inputClass}
+              defaultValue="15"
+              min="0"
+              name="bufferAfterMinutes"
+              required
+              type="number"
+            />
+          </Field>
+          <Field label="Full price (CAD)">
+            <input
+              className={inputClass}
+              inputMode="decimal"
+              name="fullPrice"
+              pattern="[0-9]+(?:\.[0-9]{1,2})?"
+              required
+            />
+          </Field>
+          <Field label="Deposit (CAD)">
+            <input
+              className={inputClass}
+              inputMode="decimal"
+              name="depositAmount"
+              pattern="[0-9]+(?:\.[0-9]{1,2})?"
+              required
+            />
+          </Field>
+        </div>
+      </div>
       <details className={advancedDetailsClass}>
         <summary className={advancedSummaryClass}>
           Advanced — identifiers are set automatically
@@ -152,6 +229,16 @@ export function CreateBookingServiceFields({
                 </option>
               ))}
             </select>
+          </Field>
+          <Field
+            description="Used internally and generated from the service and provider when left blank."
+            label="Offering key (optional override)"
+          >
+            <input
+              className={inputClass}
+              name="offeringKey"
+              placeholder="classic-fill-provider"
+            />
           </Field>
         </div>
       </details>

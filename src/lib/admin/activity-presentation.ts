@@ -363,6 +363,11 @@ function getActivityAttempt(
       return statusAttempt(target, status);
     case "service_offering_created":
       return attempt(`created ${target}`, `create ${target}`);
+    case "service_offering_order_updated":
+      return attempt(
+        "changed service display order",
+        "change service display order",
+      );
     case "service_offering_updated":
       return attempt(`updated ${target}`, `update ${target}`);
     case "service_offering_status_changed":

@@ -254,6 +254,7 @@ const AUDIT_ACTION_LABELS = {
   schedule_exception_cancelled: "Cancelled an availability exception",
   schedule_exception_created: "Added an availability exception",
   service_offering_created: "Created service pricing",
+  service_offering_order_updated: "Changed service display order",
   service_offering_resource_assigned: "Assigned a service resource",
   service_offering_resource_removed: "Removed a service resource",
   service_offering_status_changed: "Changed service availability",

@@ -4,6 +4,7 @@ import { AdminSubmitButton } from "@/components/admin/admin-submit-button";
 import { AdminTabLink } from "@/components/admin/admin-tab-link";
 import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
 import { CreateBookingServiceFields } from "@/components/admin/create-booking-service-fields";
+import { SortableServiceList } from "@/components/admin/sortable-service-list";
 import { StatusPill } from "@/components/admin/status-pill";
 import { loaders } from "@/data/loaders";
 import { resolveOptionalEditorialServiceOptions } from "@/lib/admin/editorial-service-options";
@@ -16,7 +17,7 @@ import type { BookingConfigurationStatus } from "@/lib/private-db/schema";
 import {
   createBookingServiceAction,
   createOfferingAddOnAction,
-  createServiceOfferingAction,
+  reorderServiceOfferingsAction,
   setBookingServiceStatusAction,
   setOfferingAddOnStatusAction,
   setServiceOfferingStatusAction,
@@ -53,6 +54,7 @@ export default async function AdminOfferingsPage({
     role: actor.user.role,
   });
   const providerById = new Map(data.providers.map((row) => [row.id, row]));
+  const serviceById = new Map(data.services.map((row) => [row.id, row]));
   const offeringById = new Map(data.offerings.map((row) => [row.id, row]));
   const canManageAllServices =
     actor.user.role === "owner" || actor.user.role === "admin";
@@ -106,8 +108,10 @@ export default async function AdminOfferingsPage({
       ) : null}
 
       {canManage && activeTab === "services" && data.providers.length > 0 ? (
-        <details className={`${panelClass} order-last`}>
-          <summary className={createSummaryClass}>Add a service</summary>
+        <details className={panelClass}>
+          <summary className={createSummaryClass}>
+            Create and configure a service
+          </summary>
           <form action={createBookingServiceAction} className="mt-5">
             <CreateBookingServiceFields
               editorialServicesAvailable={editorialServiceOptions.isAvailable}
@@ -123,145 +127,9 @@ export default async function AdminOfferingsPage({
             />
             <AdminSubmitButton
               className={primaryButtonClass}
-              pendingLabel="Adding service…"
+              pendingLabel="Creating service…"
             >
-              Add as draft
-            </AdminSubmitButton>
-          </form>
-        </details>
-      ) : null}
-
-      {canManage &&
-      activeTab === "price-timing" &&
-      data.services.length > 0 &&
-      data.providers.length > 0 ? (
-        <details className={`${panelClass} order-last`}>
-          <summary className={createSummaryClass}>
-            Assign a service to a provider
-          </summary>
-          <form action={createServiceOfferingAction} className="mt-5">
-            <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              <Field label="Service">
-                <select className={inputClass} name="serviceId">
-                  {data.services.map((row) => (
-                    <option key={row.id} value={row.id}>
-                      {row.displayTitle}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Provider">
-                <select className={inputClass} name="providerId">
-                  {data.providers.map((row) => (
-                    <option key={row.id} value={row.id}>
-                      {row.displayName}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Public title">
-                <input className={inputClass} name="publicTitle" required />
-              </Field>
-              <Field label="Public summary">
-                <textarea
-                  className={inputClass}
-                  name="publicSummary"
-                  rows={3}
-                  required
-                />
-              </Field>
-              <Field label="Display order">
-                <input
-                  className={inputClass}
-                  name="displayOrder"
-                  type="number"
-                  min="0"
-                  defaultValue="0"
-                  required
-                />
-              </Field>
-              <Field label="Duration (minutes)">
-                <input
-                  className={inputClass}
-                  name="durationMinutes"
-                  type="number"
-                  min="1"
-                  defaultValue="90"
-                  required
-                />
-              </Field>
-              <Field label="Slot interval (minutes)">
-                <input
-                  className={inputClass}
-                  name="slotIntervalMinutes"
-                  type="number"
-                  min="1"
-                  defaultValue="15"
-                  required
-                />
-              </Field>
-              <Field label="Buffer before (minutes)">
-                <input
-                  className={inputClass}
-                  name="bufferBeforeMinutes"
-                  type="number"
-                  min="0"
-                  defaultValue="15"
-                  required
-                />
-              </Field>
-              <Field label="Buffer after (minutes)">
-                <input
-                  className={inputClass}
-                  name="bufferAfterMinutes"
-                  type="number"
-                  min="0"
-                  defaultValue="15"
-                  required
-                />
-              </Field>
-              <Field label="Full price (CAD)">
-                <input
-                  className={inputClass}
-                  name="fullPrice"
-                  inputMode="decimal"
-                  pattern="\d+(?:\.\d{1,2})?"
-                  required
-                />
-              </Field>
-              <Field label="Deposit (CAD)">
-                <input
-                  className={inputClass}
-                  name="depositAmount"
-                  inputMode="decimal"
-                  pattern="\d+(?:\.\d{1,2})?"
-                  required
-                />
-              </Field>
-            </div>
-            <details className={advancedDetailsClass}>
-              <summary className={advancedSummaryClass}>
-                Advanced — offering key is set automatically
-              </summary>
-              <div className="mt-4">
-                <Field label="Offering key (optional override)">
-                  <input
-                    className={inputClass}
-                    name="offeringKey"
-                    placeholder="Generated from the service and provider"
-                  />
-                  <span className="mt-2 block text-xs font-normal leading-5 text-lh-muted">
-                    Used internally and must be unique. Leave blank to generate
-                    it from the selected service and provider.
-                  </span>
-                </Field>
-              </div>
-            </details>
-            <AdminSubmitButton
-              className={primaryButtonClass}
-              pendingLabel="Assigning service…"
-            >
-              Save as draft
+              Create service as draft
             </AdminSubmitButton>
           </form>
         </details>
@@ -338,8 +206,8 @@ export default async function AdminOfferingsPage({
       ) : null}
 
       {activeTab === "services" ? (
-        <section className="space-y-4">
-          <h2 className={sectionHeadingClass}>Services</h2>
+        <section className="order-last space-y-4">
+          <h2 className={sectionHeadingClass}>Service profile details</h2>
           {data.services.length === 0 ? (
             <EmptyState
               title="No services yet"
@@ -540,12 +408,14 @@ export default async function AdminOfferingsPage({
         </section>
       ) : null}
 
-      {activeTab === "price-timing" ? (
+      {activeTab === "services" ? (
         <section className="space-y-4">
           <div>
-            <h2 className={sectionHeadingClass}>Price &amp; timing</h2>
+            <h2 className={sectionHeadingClass}>Services</h2>
             <p className="mt-2 max-w-3xl text-sm text-lh-muted">
-              Set each provider&apos;s client-facing details, price, and timing.
+              Edit pricing and timing, manage status, and set the client-facing
+              order. Availability follows the provider&apos;s working hours and
+              connected booking calendar.
             </p>
           </div>
           {data.offerings.length === 0 ? (
@@ -558,208 +428,226 @@ export default async function AdminOfferingsPage({
               }
             />
           ) : (
-            <div className="grid gap-4 xl:grid-cols-2">
-              {data.offerings.map((offering) => {
+            <SortableServiceList
+              action={reorderServiceOfferingsAction}
+              items={data.offerings.map((offering) => {
                 const offeringStatus =
                   getBookingConfigurationStatusPresentation(offering.status);
+                const service = serviceById.get(offering.serviceId);
+                const serviceStatus = service
+                  ? getBookingConfigurationStatusPresentation(service.status)
+                  : null;
 
-                return (
-                  <article key={offering.id} className={panelClass}>
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <h3 className="text-xl font-semibold">
-                          {offering.publicTitle ?? offering.serviceTitle}
-                        </h3>
-                        {offering.publicSummary ? (
-                          <p className="mt-1 max-w-xl text-sm text-lh-muted">
-                            {offering.publicSummary}
+                return {
+                  content: (
+                    <article className={`${panelClass} pt-16`}>
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <h3 className="text-xl font-semibold">
+                            {offering.publicTitle ?? offering.serviceTitle}
+                          </h3>
+                          {offering.publicSummary ? (
+                            <p className="mt-1 max-w-xl text-sm text-lh-muted">
+                              {offering.publicSummary}
+                            </p>
+                          ) : null}
+                          <p className="mt-1 text-sm text-lh-muted">
+                            {providerById.get(offering.providerId)
+                              ?.displayName ?? "Unknown provider"}{" "}
+                            · {offering.resourceName}
                           </p>
-                        ) : null}
-                        <p className="mt-1 text-sm text-lh-muted">
-                          {providerById.get(offering.providerId)?.displayName ??
-                            "Unknown provider"}{" "}
-                          · {offering.resourceName}
-                        </p>
-                        <details className="mt-2">
-                          <summary className={recordAdvancedSummaryClass}>
-                            Advanced
-                          </summary>
-                          <dl className="mt-2 grid gap-1 text-xs text-lh-muted">
-                            <div>
-                              <dt className="inline font-semibold">
-                                Offering key:{" "}
-                              </dt>
-                              <dd className="inline break-all">
-                                {offering.offeringKey}
-                              </dd>
-                            </div>
-                            <div>
-                              <dt className="inline font-semibold">
-                                Display order:{" "}
-                              </dt>
-                              <dd className="inline">
-                                {offering.displayOrder}
-                              </dd>
-                            </div>
-                            <div>
-                              <dt className="inline font-semibold">
-                                Configuration version:{" "}
-                              </dt>
-                              <dd className="inline">{offering.version}</dd>
-                            </div>
-                          </dl>
-                        </details>
+                          <details className="mt-2">
+                            <summary className={recordAdvancedSummaryClass}>
+                              Advanced
+                            </summary>
+                            <dl className="mt-2 grid gap-1 text-xs text-lh-muted">
+                              <div>
+                                <dt className="inline font-semibold">
+                                  Offering key:{" "}
+                                </dt>
+                                <dd className="inline break-all">
+                                  {offering.offeringKey}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt className="inline font-semibold">
+                                  Configuration version:{" "}
+                                </dt>
+                                <dd className="inline">{offering.version}</dd>
+                              </div>
+                            </dl>
+                          </details>
+                        </div>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          {serviceStatus ? (
+                            <StatusPill tone={serviceStatus.tone}>
+                              Service: {serviceStatus.label}
+                            </StatusPill>
+                          ) : null}
+                          <StatusPill tone={offeringStatus.tone}>
+                            Booking: {offeringStatus.label}
+                          </StatusPill>
+                        </div>
                       </div>
-                      <StatusPill tone={offeringStatus.tone}>
-                        {offeringStatus.label}
-                      </StatusPill>
-                    </div>
-                    <dl className="mt-5 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
-                      <Metric
-                        label="Duration"
-                        value={`${offering.durationMinutes} min`}
-                      />
-                      <Metric
-                        label="Price"
-                        value={money(offering.fullPriceCents)}
-                      />
-                      <Metric
-                        label="Deposit"
-                        value={money(offering.depositAmountCents)}
-                      />
-                      <Metric
-                        label="Buffers"
-                        value={`${offering.bufferBeforeMinutes}/${offering.bufferAfterMinutes} min`}
-                      />
-                    </dl>
-                    {canManage ? (
-                      <form
-                        action={updateServiceOfferingAction}
-                        className="mt-5 grid gap-3 rounded-2xl bg-lh-neutral-2 p-4 sm:grid-cols-2 lg:grid-cols-3"
-                      >
-                        <input
-                          type="hidden"
-                          name="offeringId"
-                          value={offering.id}
+                      <dl className="mt-5 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+                        <Metric
+                          label="Duration"
+                          value={`${offering.durationMinutes} min`}
                         />
-                        <input
-                          type="hidden"
-                          name="expectedVersion"
-                          value={offering.version}
+                        <Metric
+                          label="Price"
+                          value={money(offering.fullPriceCents)}
                         />
-                        <Field label="Public title">
-                          <input
-                            className={inputClass}
-                            name="publicTitle"
-                            defaultValue={
-                              offering.publicTitle ?? offering.serviceTitle
-                            }
-                            required
-                          />
-                        </Field>
-                        <Field label="Public summary">
-                          <textarea
-                            className={inputClass}
-                            name="publicSummary"
-                            defaultValue={offering.publicSummary ?? ""}
-                            rows={3}
-                            required
-                          />
-                        </Field>
-                        <Field label="Display order">
-                          <input
-                            className={inputClass}
-                            name="displayOrder"
-                            type="number"
-                            min="0"
-                            defaultValue={offering.displayOrder}
-                            required
-                          />
-                        </Field>
-                        <Field label="Duration (minutes)">
-                          <input
-                            className={inputClass}
-                            name="durationMinutes"
-                            type="number"
-                            min="1"
-                            defaultValue={offering.durationMinutes}
-                            required
-                          />
-                        </Field>
-                        <Field label="Slot interval">
-                          <input
-                            className={inputClass}
-                            name="slotIntervalMinutes"
-                            type="number"
-                            min="1"
-                            defaultValue={offering.slotIntervalMinutes}
-                            required
-                          />
-                        </Field>
-                        <Field label="Buffer before">
-                          <input
-                            className={inputClass}
-                            name="bufferBeforeMinutes"
-                            type="number"
-                            min="0"
-                            defaultValue={offering.bufferBeforeMinutes}
-                            required
-                          />
-                        </Field>
-                        <Field label="Buffer after">
-                          <input
-                            className={inputClass}
-                            name="bufferAfterMinutes"
-                            type="number"
-                            min="0"
-                            defaultValue={offering.bufferAfterMinutes}
-                            required
-                          />
-                        </Field>
-                        <Field label="Full price (CAD)">
-                          <input
-                            className={inputClass}
-                            name="fullPrice"
-                            inputMode="decimal"
-                            pattern="[0-9]+(?:\.[0-9]{1,2})?"
-                            defaultValue={moneyInput(offering.fullPriceCents)}
-                            required
-                          />
-                        </Field>
-                        <Field label="Deposit (CAD)">
-                          <input
-                            className={inputClass}
-                            name="depositAmount"
-                            inputMode="decimal"
-                            pattern="[0-9]+(?:\.[0-9]{1,2})?"
-                            defaultValue={moneyInput(
-                              offering.depositAmountCents,
-                            )}
-                            required
-                          />
-                        </Field>
-                        <AdminSubmitButton
-                          className={`${secondaryButtonClass} sm:col-span-2 sm:justify-self-start lg:col-span-3`}
-                          pendingLabel="Saving…"
+                        <Metric
+                          label="Deposit"
+                          value={money(offering.depositAmountCents)}
+                        />
+                        <Metric
+                          label="Buffers"
+                          value={`${offering.bufferBeforeMinutes}/${offering.bufferAfterMinutes} min`}
+                        />
+                      </dl>
+                      {canManage ? (
+                        <form
+                          action={updateServiceOfferingAction}
+                          className="mt-5 grid gap-3 rounded-2xl bg-lh-neutral-2 p-4 sm:grid-cols-2 lg:grid-cols-3"
                         >
-                          Save offering details
-                        </AdminSubmitButton>
-                      </form>
-                    ) : null}
-                    {canManage ? (
-                      <div className="mt-5">
-                        <StatusForm
-                          action={setServiceOfferingStatusAction}
-                          idName="offeringId"
-                          id={offering.id}
-                          status={offering.status}
-                        />
-                      </div>
-                    ) : null}
-                  </article>
-                );
+                          <input
+                            type="hidden"
+                            name="offeringId"
+                            value={offering.id}
+                          />
+                          <input
+                            type="hidden"
+                            name="expectedVersion"
+                            value={offering.version}
+                          />
+                          <Field label="Public title">
+                            <input
+                              className={inputClass}
+                              name="publicTitle"
+                              defaultValue={
+                                offering.publicTitle ?? offering.serviceTitle
+                              }
+                              required
+                            />
+                          </Field>
+                          <Field label="Public summary">
+                            <textarea
+                              className={inputClass}
+                              name="publicSummary"
+                              defaultValue={offering.publicSummary ?? ""}
+                              rows={3}
+                              required
+                            />
+                          </Field>
+                          <Field label="Duration (minutes)">
+                            <input
+                              className={inputClass}
+                              name="durationMinutes"
+                              type="number"
+                              min="1"
+                              defaultValue={offering.durationMinutes}
+                              required
+                            />
+                          </Field>
+                          <Field label="Slot interval">
+                            <input
+                              className={inputClass}
+                              name="slotIntervalMinutes"
+                              type="number"
+                              min="1"
+                              defaultValue={offering.slotIntervalMinutes}
+                              required
+                            />
+                          </Field>
+                          <Field label="Buffer before">
+                            <input
+                              className={inputClass}
+                              name="bufferBeforeMinutes"
+                              type="number"
+                              min="0"
+                              defaultValue={offering.bufferBeforeMinutes}
+                              required
+                            />
+                          </Field>
+                          <Field label="Buffer after">
+                            <input
+                              className={inputClass}
+                              name="bufferAfterMinutes"
+                              type="number"
+                              min="0"
+                              defaultValue={offering.bufferAfterMinutes}
+                              required
+                            />
+                          </Field>
+                          <Field label="Full price (CAD)">
+                            <input
+                              className={inputClass}
+                              name="fullPrice"
+                              inputMode="decimal"
+                              pattern="[0-9]+(?:\.[0-9]{1,2})?"
+                              defaultValue={moneyInput(offering.fullPriceCents)}
+                              required
+                            />
+                          </Field>
+                          <Field label="Deposit (CAD)">
+                            <input
+                              className={inputClass}
+                              name="depositAmount"
+                              inputMode="decimal"
+                              pattern="[0-9]+(?:\.[0-9]{1,2})?"
+                              defaultValue={moneyInput(
+                                offering.depositAmountCents,
+                              )}
+                              required
+                            />
+                          </Field>
+                          <AdminSubmitButton
+                            className={`${secondaryButtonClass} sm:col-span-2 sm:justify-self-start lg:col-span-3`}
+                            pendingLabel="Saving…"
+                          >
+                            Save offering details
+                          </AdminSubmitButton>
+                        </form>
+                      ) : null}
+                      {canManage || (service && canManageService(service)) ? (
+                        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                          {service && canManageService(service) ? (
+                            <div>
+                              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-lh-muted">
+                                Service status
+                              </p>
+                              <StatusForm
+                                action={setBookingServiceStatusAction}
+                                idName="serviceId"
+                                id={service.id}
+                                status={service.status}
+                              />
+                            </div>
+                          ) : null}
+                          {canManage ? (
+                            <div>
+                              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-lh-muted">
+                                Booking availability
+                              </p>
+                              <StatusForm
+                                action={setServiceOfferingStatusAction}
+                                idName="offeringId"
+                                id={offering.id}
+                                status={offering.status}
+                              />
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </article>
+                  ),
+                  id: offering.id,
+                  label: offering.publicTitle ?? offering.serviceTitle,
+                };
               })}
-            </div>
+            />
           )}
         </section>
       ) : null}
@@ -961,7 +849,6 @@ function getSanityServiceLinkValue(
 
 const offeringsTabs = [
   { label: "Services", value: "services" },
-  { label: "Price, timing & availability", value: "price-timing" },
   { label: "Add-ons", value: "add-ons" },
 ] as const;
 
@@ -969,9 +856,7 @@ type OfferingsTab = (typeof offeringsTabs)[number]["value"];
 
 function parseOfferingsTab(value: string | string[] | undefined): OfferingsTab {
   const candidate = Array.isArray(value) ? value[0] : value;
-  if (candidate === "price-timing" || candidate === "add-ons") {
-    return candidate;
-  }
+  if (candidate === "add-ons") return candidate;
   return "services";
 }
 

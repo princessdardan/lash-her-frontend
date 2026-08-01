@@ -342,7 +342,7 @@ const ADMIN_DESTINATION_DEFINITIONS: readonly AdminDestinationDefinition[] = [
     description:
       "Set provider prices, deposits, duration, buffers, and required resources.",
     group: "Manage business",
-    href: "/admin/offerings?tab=price-timing",
+    href: "/admin/offerings?tab=services",
     keywords: [
       "deposit",
       "duration",

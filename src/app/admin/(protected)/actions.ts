@@ -11,12 +11,12 @@ import {
 } from "@/lib/admin/employee-calendar";
 import {
   cancelScheduleException,
-  createBookingService,
   createCalendarConnection,
+  createConfiguredBookingService,
   createOfferingAddOn,
   createResourceSchedule,
   createScheduleException,
-  createServiceOffering,
+  reorderServiceOfferings,
   createStaffUser,
   disableCalendarAssignment,
   disableCalendarConnection,
@@ -166,7 +166,7 @@ export async function createBookingServiceAction(formData: FormData) {
   return runAdminAction({
     destination: "/admin/offerings?tab=services",
     revalidatePaths: ["/admin/offerings", "/admin/setup", "/services"],
-    success: "Service created as a draft.",
+    success: "Service and booking details created as drafts.",
     task: () => {
       const displayTitle = getString(formData, "displayTitle");
       const generatedIdentifier = createServiceIdentifier(displayTitle);
@@ -175,13 +175,21 @@ export async function createBookingServiceAction(formData: FormData) {
         sanityLink.publicSlug ??
         getOptionalString(formData, "publicSlug") ??
         generatedIdentifier;
-      return createBookingService({
+      return createConfiguredBookingService({
+        bufferAfterMinutes: getInteger(formData, "bufferAfterMinutes"),
+        bufferBeforeMinutes: getInteger(formData, "bufferBeforeMinutes"),
+        depositAmountCents: getMoneyCents(formData, "depositAmount"),
         displayTitle,
+        durationMinutes: getInteger(formData, "durationMinutes"),
+        fullPriceCents: getMoneyCents(formData, "fullPrice"),
+        offeringKey: getOptionalString(formData, "offeringKey"),
         ownerProviderId: getString(formData, "ownerProviderId"),
         publicSlug,
+        publicSummary: getString(formData, "publicSummary"),
         sanityDocumentId: sanityLink.sanityDocumentId,
         serviceKey:
           getOptionalString(formData, "serviceKey") ?? generatedIdentifier,
+        slotIntervalMinutes: getInteger(formData, "slotIntervalMinutes"),
       });
     },
   });
@@ -219,32 +227,9 @@ export async function updateBookingServiceProfileAction(formData: FormData) {
   });
 }
 
-export async function createServiceOfferingAction(formData: FormData) {
-  return runAdminAction({
-    destination: "/admin/offerings?tab=price-timing",
-    revalidatePaths: ["/admin/offerings", "/admin/setup", "/services"],
-    success: "Provider offering created as a draft.",
-    task: () =>
-      createServiceOffering({
-        bufferAfterMinutes: getInteger(formData, "bufferAfterMinutes"),
-        bufferBeforeMinutes: getInteger(formData, "bufferBeforeMinutes"),
-        depositAmountCents: getMoneyCents(formData, "depositAmount"),
-        displayOrder: getInteger(formData, "displayOrder"),
-        durationMinutes: getInteger(formData, "durationMinutes"),
-        fullPriceCents: getMoneyCents(formData, "fullPrice"),
-        offeringKey: getOptionalString(formData, "offeringKey"),
-        providerId: getString(formData, "providerId"),
-        publicSummary: getString(formData, "publicSummary"),
-        publicTitle: getString(formData, "publicTitle"),
-        serviceId: getString(formData, "serviceId"),
-        slotIntervalMinutes: getInteger(formData, "slotIntervalMinutes"),
-      }),
-  });
-}
-
 export async function setServiceOfferingStatusAction(formData: FormData) {
   return runAdminAction({
-    destination: "/admin/offerings?tab=price-timing",
+    destination: "/admin/offerings?tab=services",
     revalidatePaths: ["/admin/offerings", "/admin/setup", "/services"],
     success: "Offering status updated.",
     task: () =>
@@ -257,7 +242,7 @@ export async function setServiceOfferingStatusAction(formData: FormData) {
 
 export async function updateServiceOfferingAction(formData: FormData) {
   return runAdminAction({
-    destination: "/admin/offerings?tab=price-timing",
+    destination: "/admin/offerings?tab=services",
     revalidatePaths: ["/admin/offerings", "/admin/setup", "/services"],
     success: "Offering details updated.",
     task: () =>
@@ -265,7 +250,6 @@ export async function updateServiceOfferingAction(formData: FormData) {
         bufferAfterMinutes: getInteger(formData, "bufferAfterMinutes"),
         bufferBeforeMinutes: getInteger(formData, "bufferBeforeMinutes"),
         depositAmountCents: getMoneyCents(formData, "depositAmount"),
-        displayOrder: getInteger(formData, "displayOrder"),
         durationMinutes: getInteger(formData, "durationMinutes"),
         expectedVersion: getInteger(formData, "expectedVersion"),
         fullPriceCents: getMoneyCents(formData, "fullPrice"),
@@ -275,6 +259,17 @@ export async function updateServiceOfferingAction(formData: FormData) {
         slotIntervalMinutes: getInteger(formData, "slotIntervalMinutes"),
       }),
   });
+}
+
+export async function reorderServiceOfferingsAction(offeringIds: string[]) {
+  const outcome = await attemptAdminAction(() =>
+    reorderServiceOfferings({ offeringIds }),
+  );
+  if (!outcome.ok) return { error: outcome.error };
+
+  revalidatePath("/admin/offerings");
+  revalidatePath("/services");
+  return {};
 }
 
 export async function createOfferingAddOnAction(formData: FormData) {

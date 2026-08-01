@@ -56,6 +56,7 @@ import {
   type AdminInquiryContentPresentation,
   type AdminWorkspaceStatusPresentation,
 } from "./operations-workspaces-presentation";
+import { buildAdminRefundQueries } from "./admin-refund-query";
 
 const DEFAULT_BUSINESS_TIMEZONE = "America/Toronto";
 
@@ -310,144 +311,16 @@ export async function listAdminRefunds(
   const db = getPrivateDb();
   const timezone = await getAdminBusinessTimezone(db);
   const range = getAdminFinancialRange(input, timezone);
-
-  const completedRefunds = db
-    .selectDistinctOn([squarePaymentRefundEvents.squareRefundId], {
-      amountCents: squarePaymentRefundEvents.amountCents,
-      currency: squarePaymentRefundEvents.currency,
-      id: squarePaymentRefundEvents.id,
-      occurredAt: squarePaymentRefundEvents.occurredAt,
-      squarePaymentId: squarePaymentRefundEvents.squarePaymentId,
-      squareRefundId: squarePaymentRefundEvents.squareRefundId,
-    })
-    .from(squarePaymentRefundEvents)
-    .where(eq(squarePaymentRefundEvents.status, "COMPLETED"))
-    .orderBy(
-      squarePaymentRefundEvents.squareRefundId,
-      asc(squarePaymentRefundEvents.occurredAt),
-      asc(squarePaymentRefundEvents.createdAt),
-    )
-    .as("admin_completed_square_refunds");
-  const linkedOrderPurposeExpression = sql<string | null>`(
-    select ${checkoutOrders.purpose}::text
-    from ${checkoutOrders}
-    where ${checkoutOrders.paymentProvider} = 'square'
-      and ${checkoutOrders.providerPaymentId} = ${completedRefunds.squarePaymentId}
-    order by ${checkoutOrders.paidAt} desc nulls last
-    limit 1
-  )`;
-  const linkedOrderReferenceExpression = sql<string | null>`(
-    select ${checkoutOrders.orderId}
-    from ${checkoutOrders}
-    where ${checkoutOrders.paymentProvider} = 'square'
-      and ${checkoutOrders.providerPaymentId} = ${completedRefunds.squarePaymentId}
-    order by ${checkoutOrders.paidAt} desc nulls last
-    limit 1
-  )`;
-  const linkedHoldReferenceExpression = sql<string | null>`(
-    select ${appointmentHolds.publicReference}
-    from ${bookingPaymentAttempts}
-    inner join ${appointmentHolds}
-      on ${appointmentHolds.id} = ${bookingPaymentAttempts.holdId}
-    where ${bookingPaymentAttempts.providerPaymentId} = ${completedRefunds.squarePaymentId}
-      and ${bookingPaymentAttempts.paymentProvider} = 'square'
-    order by ${bookingPaymentAttempts.updatedAt} desc
-    limit 1
-  )`;
-  const customerNameExpression = sql<string | null>`coalesce(
-    (
-      select ${checkoutOrders.customerName}
-      from ${checkoutOrders}
-      where ${checkoutOrders.paymentProvider} = 'square'
-        and ${checkoutOrders.providerPaymentId} = ${completedRefunds.squarePaymentId}
-      order by ${checkoutOrders.paidAt} desc nulls last
-      limit 1
-    ),
-    (
-      select ${appointmentHolds.customerSnapshot}->>'name'
-      from ${bookingPaymentAttempts}
-      inner join ${appointmentHolds}
-        on ${appointmentHolds.id} = ${bookingPaymentAttempts.holdId}
-      where ${bookingPaymentAttempts.providerPaymentId} = ${completedRefunds.squarePaymentId}
-        and ${bookingPaymentAttempts.paymentProvider} = 'square'
-      order by ${bookingPaymentAttempts.updatedAt} desc
-      limit 1
-    )
-  )`;
-  const customerEmailExpression = sql<string | null>`coalesce(
-    (
-      select ${checkoutOrders.customerEmail}
-      from ${checkoutOrders}
-      where ${checkoutOrders.paymentProvider} = 'square'
-        and ${checkoutOrders.providerPaymentId} = ${completedRefunds.squarePaymentId}
-      order by ${checkoutOrders.paidAt} desc nulls last
-      limit 1
-    ),
-    (
-      select ${appointmentHolds.customerSnapshot}->>'email'
-      from ${bookingPaymentAttempts}
-      inner join ${appointmentHolds}
-        on ${appointmentHolds.id} = ${bookingPaymentAttempts.holdId}
-      where ${bookingPaymentAttempts.providerPaymentId} = ${completedRefunds.squarePaymentId}
-        and ${bookingPaymentAttempts.paymentProvider} = 'square'
-      order by ${bookingPaymentAttempts.updatedAt} desc
-      limit 1
-    )
-  )`;
-  const referenceExpression = sql<string>`coalesce(
-    ${linkedOrderReferenceExpression},
-    ${linkedHoldReferenceExpression},
-    'Refund record'
-  )`;
-  const sourceLabelExpression = sql<string>`case
-    when ${linkedOrderPurposeExpression} = 'product' then 'Product order'
-    when ${linkedOrderPurposeExpression} = 'training' then 'Training purchase'
-    when ${linkedOrderPurposeExpression} = 'appointment_deposit' then 'Appointment deposit'
-    when ${linkedOrderPurposeExpression} = 'appointment_full' then 'Appointment payment'
-    when ${linkedOrderPurposeExpression} = 'appointment_custom_partial' then 'Appointment partial payment'
-    when ${linkedHoldReferenceExpression} is not null then 'Appointment payment'
-    else 'Payment record'
-  end`;
   const search = normalizeAdminWorkspaceSearch(input.search);
-  const searchFilter = search
-    ? or(
-        ilike(referenceExpression, `%${search}%`),
-        ilike(customerNameExpression, `%${search}%`),
-        ilike(customerEmailExpression, `%${search}%`),
-        ilike(sourceLabelExpression, `%${search}%`),
-      )
-    : undefined;
-  const where = and(
-    gte(completedRefunds.occurredAt, range.start),
-    lt(completedRefunds.occurredAt, range.endExclusive),
-    searchFilter,
-  );
-  const [summary] = await db
-    .select({
-      total: sql<number>`count(*)::int`,
-      totalRefundedCents: sql<number>`coalesce(
-        sum(${completedRefunds.amountCents}),
-        0
-      )::int`,
-    })
-    .from(completedRefunds)
-    .where(where);
+  const queries = buildAdminRefundQueries(db, {
+    endExclusive: range.endExclusive,
+    search,
+    start: range.start,
+  });
+  const [summary] = await queries.summary;
   const total = summary?.total ?? 0;
   const pagination = getAdminWorkspacePagination(input.page, total);
-  const rows = await db
-    .select({
-      amountCents: completedRefunds.amountCents,
-      currency: completedRefunds.currency,
-      customerEmail: customerEmailExpression,
-      customerName: customerNameExpression,
-      id: completedRefunds.id,
-      occurredAt: completedRefunds.occurredAt,
-      reference: referenceExpression,
-      sourceLabel: sourceLabelExpression,
-    })
-    .from(completedRefunds)
-    .where(where)
-    .orderBy(desc(completedRefunds.occurredAt), desc(completedRefunds.id))
+  const rows = await queries.rows
     .limit(pagination.pageSize)
     .offset(pagination.offset);
 

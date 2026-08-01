@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq, max, ne, sql } from "drizzle-orm";
 
 import { listConnectionGoogleCalendars } from "@/lib/booking/google-calendar";
 import { encryptCalendarCredential } from "@/lib/booking/calendar-credential-secret";
@@ -128,6 +128,7 @@ async function assertOfferingMutationAllowed(
       primaryResourceId: bookingServiceOfferings.primaryResourceId,
       providerId: bookingServiceOfferings.providerId,
       providerPrimaryResourceId: bookingProviders.primaryResourceId,
+      serviceId: bookingServiceOfferings.serviceId,
     })
     .from(bookingServiceOfferings)
     .innerJoin(
@@ -154,6 +155,127 @@ async function assertOfferingMutationAllowed(
     providerPrimaryResourceId: offering.providerPrimaryResourceId,
   });
   return offering;
+}
+
+export async function createConfiguredBookingService(input: {
+  bufferAfterMinutes: number;
+  bufferBeforeMinutes: number;
+  depositAmountCents: number;
+  displayTitle: string;
+  durationMinutes: number;
+  fullPriceCents: number;
+  offeringKey?: string;
+  ownerProviderId: string;
+  publicSlug?: string;
+  publicSummary: string;
+  sanityDocumentId?: string;
+  serviceKey: string;
+  slotIntervalMinutes: number;
+}) {
+  const actor = await requirePermission("offerings:manage");
+  const displayTitle = requireText(input.displayTitle, "Service title", 160);
+  const publicSlug = cleanOptionalKey(input.publicSlug, "Service public slug");
+  const sanityDocumentId = cleanOptional(input.sanityDocumentId);
+  assertPositiveInteger(input.durationMinutes, "Duration");
+  assertPositiveInteger(input.slotIntervalMinutes, "Slot interval");
+  assertNonnegativeInteger(input.bufferBeforeMinutes, "Buffer before");
+  assertNonnegativeInteger(input.bufferAfterMinutes, "Buffer after");
+  assertPositiveInteger(input.fullPriceCents, "Full price");
+  assertPositiveInteger(input.depositAmountCents, "Deposit");
+  if (input.depositAmountCents >= input.fullPriceCents) {
+    throw new Error("Deposit must be lower than the full price");
+  }
+
+  if (sanityDocumentId) {
+    await assertExactPublishedSanityServiceLink({
+      publicSlug,
+      sanityDocumentId,
+    });
+  }
+
+  return runAuditedAdminMutation({
+    action: "booking_service_created",
+    actor,
+    domain: "offerings",
+    metadata: { providerId: input.ownerProviderId },
+    mutate: async (tx) => {
+      const [provider] = await tx
+        .select({
+          primaryResourceId: bookingProviders.primaryResourceId,
+          providerKey: bookingProviders.providerKey,
+        })
+        .from(bookingProviders)
+        .where(eq(bookingProviders.id, input.ownerProviderId))
+        .limit(1);
+      if (!provider) throw new Error("Provider not found");
+      assertProviderResourceAccess(actor, provider.primaryResourceId);
+
+      const [serviceOrder] = await tx
+        .select({ value: max(bookingServices.displayOrder) })
+        .from(bookingServices);
+      const [offeringOrder] = await tx
+        .select({ value: max(bookingServiceOfferings.displayOrder) })
+        .from(bookingServiceOfferings);
+      const serviceDisplayOrder = (serviceOrder?.value ?? -1) + 1;
+      const offeringDisplayOrder = (offeringOrder?.value ?? -1) + 1;
+
+      const [service] = await tx
+        .insert(bookingServices)
+        .values({
+          createdByAdminUserId: actor.user.id,
+          displayOrder: serviceDisplayOrder,
+          displayTitle,
+          ownerProviderId: input.ownerProviderId,
+          publicSlug,
+          sanityDocumentId,
+          serviceKey: requireKey(input.serviceKey, "Service key"),
+          status: "draft",
+          updatedByAdminUserId: actor.user.id,
+        })
+        .returning({
+          id: bookingServices.id,
+          serviceKey: bookingServices.serviceKey,
+        });
+
+      const [offering] = await tx
+        .insert(bookingServiceOfferings)
+        .values({
+          bufferAfterMinutes: input.bufferAfterMinutes,
+          bufferBeforeMinutes: input.bufferBeforeMinutes,
+          createdByAdminUserId: actor.user.id,
+          depositAmountCents: input.depositAmountCents,
+          displayOrder: offeringDisplayOrder,
+          durationMinutes: input.durationMinutes,
+          fullPriceCents: input.fullPriceCents,
+          offeringKey: requireKey(
+            input.offeringKey ??
+              createServiceIdentifier(
+                `${service.serviceKey}-${provider.providerKey}`,
+              ),
+            "Offering key",
+          ),
+          primaryResourceId: provider.primaryResourceId,
+          providerId: input.ownerProviderId,
+          publicSummary: requireText(
+            input.publicSummary,
+            "Public summary",
+            500,
+          ),
+          publicSummaryProvenance: "admin",
+          publicTitle: displayTitle,
+          publicTitleProvenance: "admin",
+          serviceId: service.id,
+          slotIntervalMinutes: input.slotIntervalMinutes,
+          status: "draft",
+          updatedByAdminUserId: actor.user.id,
+        })
+        .returning({ id: bookingServiceOfferings.id });
+
+      return { offeringId: offering.id, serviceId: service.id };
+    },
+    targetId: (row) => row.serviceId,
+    targetType: "booking_service",
+  });
 }
 
 async function assertAddOnMutationAllowed(
@@ -573,7 +695,6 @@ export async function updateServiceOffering(input: {
   bufferAfterMinutes: number;
   bufferBeforeMinutes: number;
   depositAmountCents: number;
-  displayOrder: number;
   durationMinutes: number;
   expectedVersion: number;
   fullPriceCents: number;
@@ -590,7 +711,6 @@ export async function updateServiceOffering(input: {
   assertPositiveInteger(input.fullPriceCents, "Full price");
   assertPositiveInteger(input.depositAmountCents, "Deposit");
   assertPositiveInteger(input.expectedVersion, "Offering version");
-  assertNonnegativeInteger(input.displayOrder, "Display order");
   if (input.depositAmountCents >= input.fullPriceCents) {
     throw new Error("Deposit must be lower than the full price");
   }
@@ -608,7 +728,6 @@ export async function updateServiceOffering(input: {
           bufferAfterMinutes: input.bufferAfterMinutes,
           bufferBeforeMinutes: input.bufferBeforeMinutes,
           depositAmountCents: input.depositAmountCents,
-          displayOrder: input.displayOrder,
           durationMinutes: input.durationMinutes,
           fullPriceCents: input.fullPriceCents,
           publicSummary: requireText(
@@ -639,6 +758,67 @@ export async function updateServiceOffering(input: {
     },
     targetId: input.offeringId,
     targetType: "service_offering",
+  });
+}
+
+export async function reorderServiceOfferings(input: {
+  offeringIds: string[];
+}) {
+  const actor = await requirePermission("offerings:manage");
+  if (input.offeringIds.length === 0) {
+    throw new Error("At least one service is required to save the order");
+  }
+  if (input.offeringIds.length > 500) {
+    throw new Error("Too many services were submitted at once");
+  }
+  const offeringIds = input.offeringIds.map((id) =>
+    requireText(id, "Offering ID", 100),
+  );
+  if (new Set(offeringIds).size !== offeringIds.length) {
+    throw new Error("Each service can appear only once in the display order");
+  }
+
+  await runAuditedAdminMutation({
+    action: "service_offering_order_updated",
+    actor,
+    domain: "offerings",
+    metadata: { count: offeringIds.length },
+    mutate: async (tx) => {
+      const serviceOrder = new Map<string, number>();
+
+      for (const [displayOrder, offeringId] of offeringIds.entries()) {
+        const offering = await assertOfferingMutationAllowed(
+          tx,
+          actor,
+          offeringId,
+        );
+        await tx
+          .update(bookingServiceOfferings)
+          .set({
+            displayOrder,
+            updatedAt: new Date(),
+            updatedByAdminUserId: actor.user.id,
+            version: sql`${bookingServiceOfferings.version} + 1`,
+          })
+          .where(eq(bookingServiceOfferings.id, offeringId));
+        if (!serviceOrder.has(offering.serviceId)) {
+          serviceOrder.set(offering.serviceId, displayOrder);
+        }
+      }
+
+      for (const [serviceId, displayOrder] of serviceOrder) {
+        await tx
+          .update(bookingServices)
+          .set({
+            displayOrder,
+            updatedAt: new Date(),
+            updatedByAdminUserId: actor.user.id,
+          })
+          .where(eq(bookingServices.id, serviceId));
+      }
+    },
+    targetId: offeringIds[0],
+    targetType: "service_offering_order",
   });
 }
 
