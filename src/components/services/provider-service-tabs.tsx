@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useRef, useState, type KeyboardEvent } from "react";
 
+import { getProviderTabLabel } from "@/components/services/provider-tab-label";
 import { Button } from "@/components/ui/button";
 import { formatCad } from "@/lib/commerce/money";
 import type {
@@ -118,7 +119,7 @@ export function ProviderServiceTabs({
               tabIndex={isSelected ? 0 : -1}
               type="button"
             >
-              {provider.displayName}
+              {getProviderTabLabel(provider.displayName)}
             </button>
           );
         })}

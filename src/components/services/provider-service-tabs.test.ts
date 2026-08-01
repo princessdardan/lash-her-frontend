@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
+import { getProviderTabLabel } from "@/components/services/provider-tab-label";
 import type { PublicBookingOffering } from "@/lib/booking/operations/offering";
 import { buildPublicProviderServiceCatalog } from "@/lib/booking/operations/public-service-catalog";
 
@@ -15,6 +16,13 @@ const servicesPageSource = readFileSync(
 );
 
 describe("provider service tabs", () => {
+  it("shows only the provider's first name in tab labels", () => {
+    assert.equal(getProviderTabLabel("Dardan Demiri"), "Dardan");
+    assert.equal(getProviderTabLabel("Dashed-Name Johnson"), "Dashed-Name");
+    assert.equal(getProviderTabLabel("  Nataliea  "), "Nataliea");
+    assert.match(tabsSource, /getProviderTabLabel\(provider\.displayName\)/);
+  });
+
   it("keeps provider-specific copy, prices, and booking links isolated", () => {
     const catalog = buildPublicProviderServiceCatalog([
       createOffering({
