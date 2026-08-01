@@ -81,6 +81,10 @@ test("Resend seed payloads include template metadata, placeholders, and variable
     assert.equal(providerBooking.payload.name, "Lash Her provider booking confirmation");
     assert.equal(providerBooking.payload.subject, "New booking confirmed: {{{SERVICE_NAME}}}");
     assert.equal(providerBooking.payload.html.includes("{{{TOTAL_PAID}}}"), true);
+    assert.equal(providerBooking.payload.html.includes("{{{BOOKED_SUBTOTAL}}}"), true);
+    assert.equal(providerBooking.payload.html.includes("{{{BOOKED_TOTAL_AFTER_TAX}}}"), true);
+    assert.equal(providerBooking.payload.html.includes("{{{REMAINING_BALANCE}}}"), true);
+    assert.equal(providerBooking.payload.html.includes("{{{REMAINING_BALANCE_AFTER_TAX}}}"), true);
     assert.equal(providerBooking.payload.html.includes("{{{TIP_AMOUNT}}}"), true);
     assert.equal(providerBooking.payload.html.includes("{{{PAYMENT_KIND}}}"), true);
     assert.equal(providerBooking.payload.html.includes("{{{FORMATTED_START}}}"), true);

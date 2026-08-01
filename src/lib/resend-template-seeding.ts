@@ -169,7 +169,10 @@ const SAMPLE_BOOKING_CONFIRMATION: SendBookingConfirmationInput = {
 };
 
 const SAMPLE_PROVIDER_BOOKING_CONFIRMATION: SendProviderBookingEmailInput = {
-  addOnPaymentCopy: "Lash Bath add-on balance due later ($25.00).",
+  addOnPaymentCopy:
+    "Lash Bath selected ($25.00); included in the booked totals shown in the payment section.",
+  bookedSubtotalCents: 12500,
+  bookedTotalAfterTaxCents: 14125,
   bookingPaymentAmountCents: 5650,
   currency: "CAD",
   customerEmail: "booking.client@example.com",
@@ -182,6 +185,8 @@ const SAMPLE_PROVIDER_BOOKING_CONFIRMATION: SendProviderBookingEmailInput = {
   paymentProvider: "square",
   providerName: "Nataliea",
   recipientEmails: ["provider@example.com"],
+  remainingBalanceAfterTaxCents: 8475,
+  remainingBalanceCents: 7500,
   serviceName: "Volume Lash Fill",
   start: new Date("2026-06-15T15:30:00.000Z"),
   timezone: "America/Toronto",

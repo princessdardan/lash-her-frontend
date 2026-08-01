@@ -11,6 +11,8 @@ import {
 } from "@/lib/private-db/booking-provider-email-repository";
 import type { CheckoutOrderPurpose } from "@/lib/private-db/schema";
 import { getConfiguredTransactionalTemplate } from "@/lib/resend-platform";
+import { calculateServiceBookingHstQuote } from "@/lib/booking/service-tax-policy";
+import { readServicePromotionSnapshot } from "@/lib/booking/payments/service-promotion";
 import {
   CUSTOMER_REPLY_TO_EMAIL,
   escapeHtml,
@@ -21,6 +23,8 @@ import {
 
 export interface SendProviderBookingEmailInput {
   addOnPaymentCopy: string | null;
+  bookedSubtotalCents: number;
+  bookedTotalAfterTaxCents: number;
   bookingPaymentAmountCents: number;
   currency: string;
   customerEmail: string;
@@ -33,6 +37,8 @@ export interface SendProviderBookingEmailInput {
   paymentProvider: string;
   providerName: string;
   recipientEmails: string[];
+  remainingBalanceAfterTaxCents: number;
+  remainingBalanceCents: number;
   serviceName: string;
   start: Date;
   timezone: string;
@@ -157,14 +163,17 @@ export function toProviderBookingEmailInput(
     readNonEmptyString(claim.offeringSnapshot.title) ?? "Lash appointment";
   const tipAmountCents = Math.max(0, claim.tipAmountCents);
   const bookingPaymentAmountCents = Math.max(0, claim.capturedAmountCents);
+  const pricingSummary = getProviderBookingPricingSummary(
+    claim.offeringSnapshot,
+  );
 
   return {
     addOnPaymentCopy:
       selectedAddOn === null
         ? null
-        : paymentPurpose === "appointment_full"
-          ? `${selectedAddOn.name} add-on included in the captured booking payment.`
-          : `${selectedAddOn.name} add-on balance due later (${formatMoney(selectedAddOn.priceCents, selectedAddOn.currency)}).`,
+        : `${selectedAddOn.name} selected (${formatMoney(selectedAddOn.priceCents, selectedAddOn.currency)}); included in the booked totals shown in the payment section.`,
+    bookedSubtotalCents: pricingSummary.bookedSubtotalCents,
+    bookedTotalAfterTaxCents: pricingSummary.bookedTotalAfterTaxCents,
     bookingPaymentAmountCents,
     currency: claim.currency,
     customerEmail: claim.customer.email,
@@ -177,6 +186,8 @@ export function toProviderBookingEmailInput(
     paymentProvider: claim.paymentProvider,
     providerName: claim.providerName,
     recipientEmails: claim.recipientEmails,
+    remainingBalanceAfterTaxCents: pricingSummary.remainingBalanceAfterTaxCents,
+    remainingBalanceCents: pricingSummary.remainingBalanceCents,
     serviceName,
     start: claim.start,
     timezone: claim.timezone,
@@ -228,8 +239,21 @@ interface ProviderBookingHtmlInput extends SendProviderBookingEmailInput {
 }
 
 function getProviderBookingHtml(input: ProviderBookingHtmlInput): string {
+  const bookedSubtotal = formatMoney(input.bookedSubtotalCents, input.currency);
+  const bookedTotalAfterTax = formatMoney(
+    input.bookedTotalAfterTaxCents,
+    input.currency,
+  );
   const bookingPayment = formatMoney(
     input.bookingPaymentAmountCents,
+    input.currency,
+  );
+  const remainingBalance = formatMoney(
+    input.remainingBalanceCents,
+    input.currency,
+  );
+  const remainingBalanceAfterTax = formatMoney(
+    input.remainingBalanceAfterTaxCents,
     input.currency,
   );
   const tip = formatMoney(input.tipAmountCents, input.currency);
@@ -275,9 +299,13 @@ function getProviderBookingHtml(input: ProviderBookingHtmlInput): string {
 
               ${getDetailsSectionHtml("Payment", [
                 ["Payment type", input.paymentKindLabel],
+                ["Booked subtotal (service + add-on)", bookedSubtotal],
+                ["Booked total after HST", bookedTotalAfterTax],
                 ["Booking payment captured", bookingPayment],
                 ["Tip", tip],
                 ["Total paid at booking", totalPaid],
+                ["Remaining balance before HST", remainingBalance],
+                ["Remaining balance after HST", remainingBalanceAfterTax],
                 ["Payment provider", input.paymentProvider],
                 ["Booking reference", input.orderId],
               ])}
@@ -299,6 +327,11 @@ function getProviderBookingTemplateVariables(
 ): Record<string, unknown> {
   return {
     ADD_ON_PAYMENT_COPY: escapeHtml(input.addOnPaymentCopy ?? "None"),
+    BOOKED_SUBTOTAL: formatMoney(input.bookedSubtotalCents, input.currency),
+    BOOKED_TOTAL_AFTER_TAX: formatMoney(
+      input.bookedTotalAfterTaxCents,
+      input.currency,
+    ),
     BOOKING_PAYMENT_AMOUNT: formatMoney(
       input.bookingPaymentAmountCents,
       input.currency,
@@ -313,6 +346,11 @@ function getProviderBookingTemplateVariables(
     PAYMENT_KIND: escapeHtml(input.paymentKindLabel),
     PAYMENT_PROVIDER: escapeHtml(input.paymentProvider),
     PROVIDER_NAME: escapeHtml(input.providerName),
+    REMAINING_BALANCE: formatMoney(input.remainingBalanceCents, input.currency),
+    REMAINING_BALANCE_AFTER_TAX: formatMoney(
+      input.remainingBalanceAfterTaxCents,
+      input.currency,
+    ),
     SERVICE_NAME: escapeHtml(input.serviceName),
     TIMEZONE: escapeHtml(input.timezone),
     TIP_AMOUNT: formatMoney(input.tipAmountCents, input.currency),
@@ -406,6 +444,82 @@ function readSelectedAddOn(
   }
 
   return { currency, name, priceCents: Math.round(price * 100) };
+}
+
+interface ProviderBookingPricingSummary {
+  bookedSubtotalCents: number;
+  bookedTotalAfterTaxCents: number;
+  remainingBalanceAfterTaxCents: number;
+  remainingBalanceCents: number;
+}
+
+function getProviderBookingPricingSummary(
+  snapshot: Record<string, unknown>,
+): ProviderBookingPricingSummary {
+  const pricing = isRecord(snapshot.pricing) ? snapshot.pricing : snapshot;
+  const fullPriceCents = dollarsToPositiveCents(pricing.fullPrice);
+  const selectedPaymentCents = readSelectedPaymentAmountCents(snapshot);
+  const selectedAddOn = readSelectedAddOn(snapshot);
+
+  if (fullPriceCents === null || selectedPaymentCents === null) {
+    return {
+      bookedSubtotalCents: 0,
+      bookedTotalAfterTaxCents: 0,
+      remainingBalanceAfterTaxCents: 0,
+      remainingBalanceCents: 0,
+    };
+  }
+
+  const promotion = readServicePromotionSnapshot(snapshot, fullPriceCents);
+  const servicePriceCents =
+    promotion?.discountedBasePriceCents ?? fullPriceCents;
+  const bookedSubtotalCents =
+    servicePriceCents + (selectedAddOn?.priceCents ?? 0);
+  const remainingBalanceCents = Math.max(
+    0,
+    bookedSubtotalCents - selectedPaymentCents,
+  );
+
+  return {
+    bookedSubtotalCents,
+    bookedTotalAfterTaxCents: addServiceHst(bookedSubtotalCents),
+    remainingBalanceAfterTaxCents: addServiceHst(remainingBalanceCents),
+    remainingBalanceCents,
+  };
+}
+
+function readSelectedPaymentAmountCents(
+  snapshot: Record<string, unknown>,
+): number | null {
+  const selectedPayment = snapshot.selectedPayment;
+  if (!isRecord(selectedPayment)) {
+    return null;
+  }
+
+  if (
+    typeof selectedPayment.amountCents === "number" &&
+    Number.isSafeInteger(selectedPayment.amountCents) &&
+    selectedPayment.amountCents > 0
+  ) {
+    return selectedPayment.amountCents;
+  }
+
+  return dollarsToPositiveCents(selectedPayment.amount);
+}
+
+function dollarsToPositiveCents(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+
+  const cents = Math.round(value * 100);
+  return Number.isSafeInteger(cents) ? cents : null;
+}
+
+function addServiceHst(amountCents: number): number {
+  return amountCents === 0
+    ? 0
+    : calculateServiceBookingHstQuote(amountCents).expectedAmountCents;
 }
 
 function formatBookingDateTime(date: Date, timezone: string): string {

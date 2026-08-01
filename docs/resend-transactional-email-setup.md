@@ -225,7 +225,7 @@ The app records customer email state through `drizzle/0009_dashing_rocket_raccoo
 - `appointment_holds.provider_booking_email_claimed_until`
 - `appointment_holds.provider_booking_email_last_error`
 
-The provider email contains the booked service, confirmed start/end and timezone, customer contact details, payment type (deposit, full, or custom partial), captured booking amount, Square tip, computed total paid at booking, payment provider, booking reference, and selected add-on payment status. It does not include card data, payment tokens, or full provider payment identifiers.
+The provider email contains the booked service, confirmed start/end and timezone, customer contact details, payment type (deposit, full, or custom partial), service-plus-add-on subtotal, booked total after HST, captured booking amount, Square tip, computed total paid at booking, remaining balance before and after HST, payment provider, booking reference, and selected add-on details. It does not include card data, payment tokens, or full provider payment identifiers.
 
 Apply this migration through `docs/private-database-migration-runbook.md` before relying on payment email recovery in staging or production.
 

@@ -26,6 +26,11 @@ const helperScript = String.raw`
       holdId: "hold-1",
       offeringSnapshot: {
         currency: "CAD",
+        pricing: {
+          addOnPrice: 25,
+          currency: "CAD",
+          fullPrice: 100,
+        },
         selectedAddOn: {
           currency: "CAD",
           description: "A gentle cleanse.",
@@ -60,10 +65,14 @@ test("provider booking email reports service, schedule, payment kind, tip, and t
     const html = buildProviderBookingFallbackHtml(input);
 
     assert.equal(input.paymentKindLabel, "Full payment");
+    assert.equal(input.bookedSubtotalCents, 12500);
+    assert.equal(input.bookedTotalAfterTaxCents, 14125);
+    assert.equal(input.remainingBalanceCents, 0);
+    assert.equal(input.remainingBalanceAfterTaxCents, 0);
     assert.equal(input.bookingPaymentAmountCents, 5650);
     assert.equal(input.tipAmountCents, 1500);
     assert.equal(input.totalPaidCents, 7150);
-    assert.match(input.addOnPaymentCopy, /included in the captured booking payment/i);
+    assert.match(input.addOnPaymentCopy, /included in the booked totals/i);
     assert.match(html, /Volume Lash Fill/);
     assert.match(html, /Full payment/);
     assert.equal(html.includes("$56.50"), true);
@@ -75,21 +84,69 @@ test("provider booking email reports service, schedule, payment kind, tip, and t
   `);
 });
 
-test("custom partial provider email identifies an add-on balance due later", () => {
+test("custom partial provider email reports the actual balance after paying into an add-on", () => {
+  runProviderBookingEmailScenario(`
+    const claim = createClaim({
+      capturedAmountCents: 16949,
+      paymentPurpose: "appointment_custom_partial",
+      tipAmountCents: 0,
+    });
+    claim.offeringSnapshot.pricing.fullPrice = 100;
+    claim.offeringSnapshot.selectedAddOn.price = 50;
+    claim.offeringSnapshot.pricing.addOnPrice = 50;
+    delete claim.offeringSnapshot.selectedPayment.amount;
+    claim.offeringSnapshot.selectedPayment.amountCents = 14999;
+    claim.offeringSnapshot.selectedPayment.purpose = "appointment_custom_partial";
+    claim.offeringSnapshot.selectedPayment.sku = "BOOKING-CUSTOM-PARTIAL";
+
+    const input = toProviderBookingEmailInput(claim);
+    const html = buildProviderBookingFallbackHtml(input);
+
+    assert.equal(input.paymentKindLabel, "Custom partial payment");
+    assert.equal(input.bookedSubtotalCents, 15000);
+    assert.equal(input.bookedTotalAfterTaxCents, 16950);
+    assert.equal(input.bookingPaymentAmountCents, 16949);
+    assert.equal(input.remainingBalanceCents, 1);
+    assert.equal(input.remainingBalanceAfterTaxCents, 1);
+    assert.doesNotMatch(input.addOnPaymentCopy, /balance due later/i);
+    assert.match(input.addOnPaymentCopy, /included in the booked totals/i);
+    assert.equal(html.includes("Booked subtotal (service + add-on)"), true);
+    assert.match(html, /Booked total after HST/);
+    assert.match(html, /Remaining balance before HST/);
+    assert.match(html, /Remaining balance after HST/);
+    assert.equal(html.includes("$150.00"), true);
+    assert.equal(html.includes("$169.50"), true);
+    assert.equal(html.includes("$0.01"), true);
+  `);
+});
+
+test("provider booking totals use the discounted service price and full add-on price", () => {
   runProviderBookingEmailScenario(`
     const claim = createClaim({
       paymentPurpose: "appointment_custom_partial",
       tipAmountCents: 0,
     });
+    claim.offeringSnapshot.selectedAddOn.price = 50;
+    claim.offeringSnapshot.pricing.addOnPrice = 50;
+    claim.offeringSnapshot.promotionSnapshot = {
+      code: "SAVE20",
+      discountType: "percentage",
+      discountAmount: 20,
+      discountCents: 2000,
+      originalBasePriceCents: 10000,
+      discountedBasePriceCents: 8000,
+    };
+    delete claim.offeringSnapshot.selectedPayment.amount;
+    claim.offeringSnapshot.selectedPayment.amountCents = 10000;
     claim.offeringSnapshot.selectedPayment.purpose = "appointment_custom_partial";
     claim.offeringSnapshot.selectedPayment.sku = "BOOKING-CUSTOM-PARTIAL";
 
     const input = toProviderBookingEmailInput(claim);
 
-    assert.equal(input.paymentKindLabel, "Custom partial payment");
-    assert.equal(input.totalPaidCents, 5650);
-    assert.match(input.addOnPaymentCopy, /balance due later/i);
-    assert.equal(input.addOnPaymentCopy.includes("$25.00"), true);
+    assert.equal(input.bookedSubtotalCents, 13000);
+    assert.equal(input.bookedTotalAfterTaxCents, 14690);
+    assert.equal(input.remainingBalanceCents, 3000);
+    assert.equal(input.remainingBalanceAfterTaxCents, 3390);
   `);
 });
 

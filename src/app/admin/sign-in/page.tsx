@@ -69,97 +69,6 @@ export default async function AdminSignInPage({
             owner.
           </p>
         ) : null}
-        {developerModeEnabled ? (
-          <section className="mt-7 rounded-2xl border-2 border-amber-500 bg-amber-50 p-5">
-            <p className="text-sm font-semibold uppercase tracking-[0.14em] text-amber-950">
-              Developer access
-            </p>
-            <p className="mt-2 text-sm text-amber-950">
-              Use the deployment&apos;s protected developer access key, choose
-              the represented account, and simulate any permission level. Stored
-              account roles are not changed.
-            </p>
-            {!developerAccessAuthorized ? (
-              <form
-                action={authorizeAdminDeveloperAccessAction}
-                className="mt-5 space-y-4"
-              >
-                <input type="hidden" name="returnTo" value={returnTo} />
-                {hasDeveloperError ? (
-                  <p
-                    className="rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-800"
-                    role="alert"
-                  >
-                    Developer access could not be authorized.
-                  </p>
-                ) : null}
-                <label className="block text-sm font-semibold text-lh-shadow">
-                  Developer access key
-                  <input
-                    autoComplete="current-password"
-                    className="mt-2 min-h-11 w-full rounded-xl border border-lh-line bg-white px-3 py-2 font-normal"
-                    maxLength={512}
-                    name="accessKey"
-                    required
-                    type="password"
-                  />
-                </label>
-                <AdminSubmitButton
-                  className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-amber-950 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-amber-900 disabled:cursor-wait disabled:opacity-60"
-                  pendingLabel="Authorizing…"
-                >
-                  Authorize developer access
-                </AdminSubmitButton>
-              </form>
-            ) : developerUsers.length > 0 ? (
-              <form
-                action={setAdminDeveloperSessionAction}
-                className="mt-5 space-y-4"
-              >
-                <input type="hidden" name="returnTo" value={returnTo} />
-                <label className="block text-sm font-semibold text-lh-shadow">
-                  Represented account
-                  <select
-                    className="mt-2 min-h-11 w-full rounded-xl border border-lh-line bg-white px-3 py-2 font-normal"
-                    name="actingAdminUserId"
-                    required
-                  >
-                    {developerUsers.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.displayName ?? user.email} —{" "}
-                        {getAdminRoleLabel(user.role)}
-                        {user.status === "disabled" ? " (disabled)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block text-sm font-semibold text-lh-shadow">
-                  Simulated permissions
-                  <select
-                    className="mt-2 min-h-11 w-full rounded-xl border border-lh-line bg-white px-3 py-2 font-normal"
-                    defaultValue="owner"
-                    name="permissionRole"
-                  >
-                    <option value="owner">Owner</option>
-                    <option value="admin">Administrator</option>
-                    <option value="employee">Contractor</option>
-                  </select>
-                </label>
-                <AdminSubmitButton
-                  className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-amber-950 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-amber-900 disabled:cursor-wait disabled:opacity-60"
-                  pendingLabel="Starting developer session…"
-                >
-                  Enter developer mode
-                </AdminSubmitButton>
-              </form>
-            ) : (
-              <p className="mt-4 text-sm font-semibold text-amber-950">
-                No admin users exist in the configured database. Seed or migrate
-                the database before starting a developer session.
-              </p>
-            )}
-          </section>
-        ) : null}
         <form action={signInWithGoogleAction} className="mt-7">
           <input type="hidden" name="returnTo" value={returnTo} />
           <AdminSubmitButton
@@ -169,6 +78,111 @@ export default async function AdminSignInPage({
             Continue with your Lash Her Google account
           </AdminSubmitButton>
         </form>
+        {developerModeEnabled ? (
+          <details
+            className="group mt-4 overflow-hidden rounded-2xl border border-lh-line bg-lh-neutral-2"
+            open={hasDeveloperError || developerAccessAuthorized}
+          >
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 px-5 py-3 text-sm font-semibold text-lh-shadow transition hover:bg-lh-light-soft focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-lh-primary [&::-webkit-details-marker]:hidden">
+              Developer access
+              <svg
+                aria-hidden="true"
+                className="size-4 shrink-0 transition-transform group-open:rotate-180"
+                fill="none"
+                viewBox="0 0 16 16"
+              >
+                <path
+                  d="m4 6 4 4 4-4"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="1.5"
+                />
+              </svg>
+            </summary>
+            <div className="border-t border-lh-line bg-amber-50 p-5">
+              {!developerAccessAuthorized ? (
+                <form
+                  action={authorizeAdminDeveloperAccessAction}
+                  className="space-y-4"
+                >
+                  <input type="hidden" name="returnTo" value={returnTo} />
+                  {hasDeveloperError ? (
+                    <p
+                      className="rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-800"
+                      role="alert"
+                    >
+                      Developer access could not be authorized.
+                    </p>
+                  ) : null}
+                  <label className="block text-sm font-semibold text-lh-shadow">
+                    Developer access key
+                    <input
+                      autoComplete="current-password"
+                      className="mt-2 min-h-11 w-full rounded-xl border border-lh-line bg-white px-3 py-2 font-normal"
+                      maxLength={512}
+                      name="accessKey"
+                      required
+                      type="password"
+                    />
+                  </label>
+                  <AdminSubmitButton
+                    className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-amber-950 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-amber-900 disabled:cursor-wait disabled:opacity-60"
+                    pendingLabel="Authorizing…"
+                  >
+                    Authorize developer access
+                  </AdminSubmitButton>
+                </form>
+              ) : developerUsers.length > 0 ? (
+                <form
+                  action={setAdminDeveloperSessionAction}
+                  className="space-y-4"
+                >
+                  <input type="hidden" name="returnTo" value={returnTo} />
+                  <label className="block text-sm font-semibold text-lh-shadow">
+                    Represented account
+                    <select
+                      className="mt-2 min-h-11 w-full rounded-xl border border-lh-line bg-white px-3 py-2 font-normal"
+                      name="actingAdminUserId"
+                      required
+                    >
+                      {developerUsers.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.displayName ?? user.email} —{" "}
+                          {getAdminRoleLabel(user.role)}
+                          {user.status === "disabled" ? " (disabled)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block text-sm font-semibold text-lh-shadow">
+                    Simulated permissions
+                    <select
+                      className="mt-2 min-h-11 w-full rounded-xl border border-lh-line bg-white px-3 py-2 font-normal"
+                      defaultValue="owner"
+                      name="permissionRole"
+                    >
+                      <option value="owner">Owner</option>
+                      <option value="admin">Administrator</option>
+                      <option value="employee">Contractor</option>
+                    </select>
+                  </label>
+                  <AdminSubmitButton
+                    className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-amber-950 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-amber-900 disabled:cursor-wait disabled:opacity-60"
+                    pendingLabel="Starting developer session…"
+                  >
+                    Enter developer mode
+                  </AdminSubmitButton>
+                </form>
+              ) : (
+                <p className="text-sm font-semibold text-amber-950">
+                  No admin users exist in the configured database. Seed or
+                  migrate the database before starting a developer session.
+                </p>
+              )}
+            </div>
+          </details>
+        ) : null}
       </section>
     </main>
   );
