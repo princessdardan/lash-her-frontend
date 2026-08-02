@@ -61,6 +61,31 @@ test("verified Square webhook parsing extracts event and payment identifiers", (
   assert.equal(event.orderId, "order_123");
 });
 
+test("verified Square webhook parsing extracts the order ID from order.updated", () => {
+  const event = parseVerifiedSquareWebhook(
+    JSON.stringify({
+      event_id: "evt_order_updated_123",
+      type: "order.updated",
+      data: {
+        id: "order_123",
+        object: {
+          order_updated: {
+            order_id: "order_123",
+            state: "COMPLETED",
+            version: 2,
+          },
+        },
+        type: "order_updated",
+      },
+    }),
+  );
+
+  assert.equal(event.eventId, "evt_order_updated_123");
+  assert.equal(event.eventType, "order.updated");
+  assert.equal(event.orderId, "order_123");
+  assert.equal(event.paymentId, undefined);
+});
+
 test("verified Square webhook parsing extracts immutable refund evidence", () => {
   const event = parseVerifiedSquareWebhook(
     JSON.stringify({

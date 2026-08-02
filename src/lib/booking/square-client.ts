@@ -68,11 +68,17 @@ export interface SquarePayment {
   updated_at?: string;
 }
 
+export interface SquareTender {
+  id?: string;
+  payment_id?: string;
+}
+
 export interface SquareOrder {
   id: string;
   location_id?: string;
   reference_id?: string;
   state?: string;
+  tenders?: SquareTender[];
   total_money?: SquareMoney;
 }
 

@@ -21,6 +21,11 @@ import type { SquarePayment } from "@/lib/payments/square/payments-client";
 export const runtime = "nodejs";
 
 const SQUARE_INVOICE_PAID_EVENT_TYPES = ["invoice.payment_made"] as const;
+const SERVICE_BOOKING_RECONCILIATION_EVENT_TYPES = [
+  "order.updated",
+  "payment.created",
+  "payment.updated",
+] as const;
 type SquareInvoicePaidEventType =
   (typeof SQUARE_INVOICE_PAID_EVENT_TYPES)[number];
 type VerifiedSquareWebhookEvent = ReturnType<typeof parseVerifiedSquareWebhook>;
@@ -440,6 +445,10 @@ export function createSquareWebhookPostHandler(
       return noShowResponse;
     }
 
+    if (!isServiceBookingReconciliationEventType(event.eventType)) {
+      return new Response(null, { status: 200 });
+    }
+
     const operationalPayment = getSquarePayment(event);
     if (
       operationalPayment !== null &&
@@ -666,6 +675,12 @@ function isSquareInvoicePaidEventType(
 ): eventType is SquareInvoicePaidEventType {
   return SQUARE_INVOICE_PAID_EVENT_TYPES.includes(
     eventType as SquareInvoicePaidEventType,
+  );
+}
+
+function isServiceBookingReconciliationEventType(eventType: string): boolean {
+  return SERVICE_BOOKING_RECONCILIATION_EVENT_TYPES.includes(
+    eventType as (typeof SERVICE_BOOKING_RECONCILIATION_EVENT_TYPES)[number],
   );
 }
 

@@ -1,6 +1,18 @@
 import { CalendarIcon } from "@sanity/icons";
 import { defineArrayMember, defineField, defineType } from "sanity";
 
+export function canonicalizeServiceSlug(value: string): string {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 100)
+    .replace(/-+$/g, "");
+}
+
 export const service = defineType({
   name: "service",
   title: "Service",
@@ -25,8 +37,22 @@ export const service = defineType({
       title: "Slug",
       type: "slug",
       group: "overview",
-      options: { source: "title" },
-      validation: (Rule) => Rule.required(),
+      options: {
+        source: "title",
+        slugify: canonicalizeServiceSlug,
+      },
+      validation: (Rule) =>
+        Rule.required().custom((value) => {
+          const current = value?.current;
+          if (typeof current !== "string") return true;
+
+          const canonical = canonicalizeServiceSlug(current);
+          if (current === canonical) return true;
+
+          return canonical
+            ? `Use the lowercase URL slug "${canonical}".`
+            : "Enter a URL slug using lowercase letters, numbers, and hyphens.";
+        }),
     }),
     defineField({
       name: "description",

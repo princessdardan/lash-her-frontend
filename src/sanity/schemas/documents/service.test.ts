@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 
-import { service } from "./service";
+import { canonicalizeServiceSlug, service } from "./service";
 
 type SchemaField = {
   name?: string;
@@ -29,6 +29,15 @@ function getFields(): SchemaField[] {
 }
 
 describe("service schema editorial contract", () => {
+  it("normalizes generated service slugs to operational URL keys", () => {
+    assert.equal(canonicalizeServiceSlug(" Full Sét "), "full-set");
+    assert.equal(
+      canonicalizeServiceSlug("Mobile Appointment "),
+      "mobile-appointment",
+    );
+    assert.equal(canonicalizeServiceSlug("Brow---Waxing"), "brow-waxing");
+  });
+
   it("contains only service detail-page editorial fields", () => {
     const fieldNames = getFields().map((field) => field.name);
 
