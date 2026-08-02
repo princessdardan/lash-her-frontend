@@ -852,7 +852,35 @@ async function resolveSquarePaymentLookup(
     return { order: null, payment: null, pendingVerification: true };
   }
 
-  return { order: (await squareClient.getOrder(orderId)).order, payment: null };
+  const order = (await squareClient.getOrder(orderId)).order;
+  const orderPaymentId = getSquareOrderPaymentId(order);
+
+  if (orderPaymentId === undefined) {
+    return { order, payment: null };
+  }
+
+  return {
+    order,
+    payment: (await squareClient.getPayment(orderPaymentId)).payment,
+  };
+}
+
+function getSquareOrderPaymentId(order: SquareOrder): string | undefined {
+  const paymentIds = new Set(
+    (order.tenders ?? [])
+      .map((tender) => tender.payment_id ?? tender.id)
+      .filter(
+        (paymentId): paymentId is string =>
+          typeof paymentId === "string" && paymentId.trim().length > 0,
+      )
+      .map((paymentId) => paymentId.trim()),
+  );
+
+  if (paymentIds.size !== 1) {
+    return undefined;
+  }
+
+  return paymentIds.values().next().value;
 }
 
 function isPaidSquarePayment(payment: SquarePayment): boolean {

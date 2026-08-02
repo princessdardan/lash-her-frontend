@@ -450,6 +450,50 @@ test("Square finalizer handles webhook before return on the shared mock payment"
   assert.equal(harness.paidAt?.toISOString(), "2026-05-23T11:59:30.000Z");
 });
 
+test("Square finalizer resolves an order.updated event through its payment tender", async () => {
+  const store = createPaymentMockStore({
+    now: new Date("2026-05-23T12:00:00.000Z"),
+  });
+  const client = createMockSquareClient({ scenario: "webhook", store });
+  const created = await client.createPaymentLink(createPaymentLinkRequest());
+  const harness = createStatefulSquareFinalizerRepository();
+  const finalizer = createSquarePaymentFinalizer({
+    finalizeAppointmentPaymentForOrder:
+      harness.finalizeAppointmentPaymentForOrder,
+    getEnv: createEnv,
+    repository: harness.repository,
+    sendBookingConfirmationEmailForOrder: async () => {},
+    squareClientFactory: () => ({
+      ...client,
+      async getOrder(orderId) {
+        const response = await client.getOrder(orderId);
+
+        return {
+          order: {
+            ...response.order,
+            tenders: [{ payment_id: "mock-square-payment-1" }],
+          },
+        };
+      },
+    }),
+  });
+
+  const result = await finalizer({
+    event: {
+      eventId: "evt_order_updated",
+      eventType: "order.updated",
+      orderId: created.payment_link.order_id,
+      payloadSanitized: {},
+    },
+    source: "webhook",
+  });
+
+  assert.equal(result.status, "booked");
+  assert.equal(result.finalized, true);
+  assert.equal(harness.counts.paidTransitions, 1);
+  assert.equal(harness.counts.bookingFinalizations, 1);
+});
+
 test("Square finalizer handles return before webhook on the shared mock payment", async () => {
   const store = createPaymentMockStore({
     now: new Date("2026-05-23T12:00:00.000Z"),

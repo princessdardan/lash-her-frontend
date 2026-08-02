@@ -255,6 +255,36 @@ test("Square webhook accepts valid signature and calls shared finalizer", async 
   });
 });
 
+test("Square webhook acknowledges unrelated card events without payment reconciliation", async () => {
+  const finalizerCalls: unknown[] = [];
+  const handler = createHandler(finalizerCalls);
+  const response = await handler(
+    createSignedRequest(
+      JSON.stringify({
+        event_id: "evt_card_automatically_updated",
+        type: "card.automatically_updated",
+        data: {
+          id: "ccof:card-123",
+          object: {
+            card: {
+              id: "ccof:card-123",
+              customer_id: "customer-123",
+              exp_month: 8,
+              exp_year: 2029,
+              last_4: "1234",
+            },
+          },
+          type: "card",
+        },
+      }),
+    ),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(finalizerCalls.length, 0);
+  assert.equal(handler.alertCalls.length, 0);
+});
+
 test("Square webhook records an operational payment before the HTTP response is available", async () => {
   const finalizerCalls: unknown[] = [];
   const observationCalls: unknown[] = [];
@@ -837,7 +867,7 @@ test("Square webhook default dependencies load the training invoice finalizer ex
   assert.equal(typeof dynamicFinalizer, "function");
 });
 
-test("Square webhook does not dispatch published invoice events to training enrollment", async () => {
+test("Square webhook acknowledges published invoice events without payment finalization", async () => {
   const bookingFinalizerCalls: unknown[] = [];
   const trainingFinalizerCalls: unknown[] = [];
   const invoiceLookups: string[] = [];
@@ -861,7 +891,7 @@ test("Square webhook does not dispatch published invoice events to training enro
   assert.equal(response.status, 200);
   assert.equal(trainingFinalizerCalls.length, 0);
   assert.equal(invoiceLookups.length, 0);
-  assert.equal(bookingFinalizerCalls.length, 1);
+  assert.equal(bookingFinalizerCalls.length, 0);
 });
 
 test("Square webhook returns success for duplicate paid training invoice finalizer results", async () => {

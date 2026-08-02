@@ -61,6 +61,7 @@ export function parseVerifiedSquareWebhook(
   const payment =
     getObject(object?.payment) ?? (refund === null ? getObject(object) : null);
   const order = getObject(object?.order);
+  const orderUpdated = getObject(object?.order_updated);
   const eventId = getText(payload.event_id) ?? getText(payload.id);
   const eventType = getText(payload.type);
 
@@ -70,7 +71,11 @@ export function parseVerifiedSquareWebhook(
 
   const createdAt = getText(payload.created_at);
   const merchantId = getText(payload.merchant_id);
-  const orderId = getText(payment?.order_id) ?? getText(order?.id);
+  const orderId =
+    getText(payment?.order_id) ??
+    getText(order?.id) ??
+    getText(orderUpdated?.order_id) ??
+    (eventType === "order.updated" ? getText(data?.id) : null);
   const verifiedRefund = parseRefund(eventType, refund, createdAt);
   const paymentId = verifiedRefund?.paymentId ?? getText(payment?.id);
 
