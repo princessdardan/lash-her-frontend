@@ -90,7 +90,7 @@ The app integrates with:
 
 ### Requirements
 
-- Node.js compatible with Next.js 16.
+- Node.js 24 LTS (run `nvm use` to select the repository version).
 - npm.
 - Access to the required service credentials for the flows you need to test.
 - PostgreSQL connection string for private checkout/booking storage.
