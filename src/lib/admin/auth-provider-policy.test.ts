@@ -3,6 +3,7 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { getToken } from "next-auth/jwt";
 
 const root = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -21,13 +22,24 @@ test("admin authentication remains Auth.js based with no Clerk runtime dependenc
     ...packageJson.devDependencies,
   };
 
-  assert.equal(packageJson.dependencies?.["next-auth"], "5.0.0-beta.31");
+  assert.equal(packageJson.dependencies?.["next-auth"], "5.0.0-beta.32");
   assert.deepEqual(
-    Object.keys(dependencies).filter((name) => name.toLowerCase().includes("clerk")),
+    Object.keys(dependencies).filter((name) =>
+      name.toLowerCase().includes("clerk"),
+    ),
     [],
   );
 
   const lockfile = await readFile(path.join(root, "package-lock.json"), "utf8");
+  const lockfileJson = JSON.parse(lockfile) as {
+    packages?: Record<string, { version?: string }>;
+  };
+
+  assert.equal(
+    lockfileJson.packages?.["node_modules/@auth/core"]?.version,
+    "0.41.3",
+    "next-auth must resolve the Auth.js core release that fixes GHSA-x445-f3h2-j279",
+  );
   assert.doesNotMatch(lockfile, /node_modules\/@clerk\//i);
 
   const runtimeFiles = [
@@ -49,6 +61,17 @@ test("admin authentication remains Auth.js based with no Clerk runtime dependenc
       assert.doesNotMatch(source, pattern, path.relative(root, filePath));
     }
   }
+});
+
+test("Auth.js rejects malformed bearer encoding without throwing", async () => {
+  const token = await getToken({
+    req: new Request("https://lash.test/admin", {
+      headers: { authorization: "Bearer %E0%A4%A" },
+    }),
+    secret: "unit-test-auth-secret",
+  });
+
+  assert.equal(token, null);
 });
 
 async function listSourceFiles(directory: string): Promise<string[]> {
