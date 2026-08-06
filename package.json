@@ -2,6 +2,9 @@
   "name": "frontend",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "dev": "next dev",
     "prebuild": "node scripts/validate-sanity-env.mjs",
@@ -89,7 +92,7 @@
     "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4.2.1",
     "@tailwindcss/typography": "^0.5.19",
-    "@types/node": "^20",
+    "@types/node": "^24",
     "@types/pg": "^8.20.0",
     "@types/react": "^18.3.28",
     "@types/react-dom": "^18.3.7",
