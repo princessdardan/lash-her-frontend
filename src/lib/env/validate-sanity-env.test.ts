@@ -47,6 +47,18 @@ const launchEnv = {
   CRON_SECRET: "vercel-cron-secret",
 };
 
+const courseApiEnv = {
+  ACADEMY_ENABLED: "true",
+  COURSE_API_BASE_URL: "https://courses.example.com",
+  COURSE_API_USER_JWT_SECRET: "u".repeat(32),
+  COURSE_API_USER_JWT_ISSUER: "lash-her-frontend",
+  COURSE_API_USER_JWT_AUDIENCE: "lash-her-course-api",
+  COURSE_API_SERVICE_JWT_SECRET: "s".repeat(32),
+  COURSE_API_SERVICE_JWT_ISSUER: "lash-her-frontend-service",
+  COURSE_API_SERVICE_JWT_AUDIENCE: "lash-her-course-api-internal",
+  COURSE_API_SERVICE_JWT_SUBJECT: "lash-her-frontend",
+};
+
 test("validates local public Sanity environment", () => {
   const result = runValidator({
     ...publicSanityEnv,
@@ -89,6 +101,116 @@ test("validates preview launch environment", () => {
 
   assert.equal(result.status, 0);
   assert.match(result.stdout, /Vercel preview environment validated/);
+});
+
+test("validates an enabled academy and entitlement worker", () => {
+  const result = runValidator({
+    ...launchEnv,
+    ...courseApiEnv,
+    COURSE_ENTITLEMENT_WORKER_ENABLED: "true",
+    COURSE_ENTITLEMENT_CRON_SECRET: "e".repeat(32),
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+  });
+
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Vercel preview environment validated/);
+});
+
+test("fails an enabled academy with missing or unsafe course API configuration", () => {
+  const env: Record<string, string> = {
+    ...launchEnv,
+    ...courseApiEnv,
+    COURSE_API_BASE_URL: "https://user:password@courses.example.com?token=x",
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+  };
+  delete env.COURSE_API_USER_JWT_ISSUER;
+
+  const result = runValidator(env);
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.combinedOutput,
+    /Missing env var: COURSE_API_USER_JWT_ISSUER/,
+  );
+  assert.match(result.combinedOutput, /COURSE_API_BASE_URL must be HTTPS/);
+  assert.doesNotMatch(result.combinedOutput, /password|token=x/);
+});
+
+test("fails when course JWT secrets are short or reused", () => {
+  const result = runValidator({
+    ...launchEnv,
+    ...courseApiEnv,
+    COURSE_API_USER_JWT_SECRET: launchEnv.AUTH_SECRET,
+    COURSE_API_SERVICE_JWT_SECRET: "short",
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.combinedOutput,
+    /COURSE_API_SERVICE_JWT_SECRET must be at least 32 characters/,
+  );
+  assert.match(
+    result.combinedOutput,
+    /course user, and course service secrets must be distinct/,
+  );
+  assert.doesNotMatch(result.combinedOutput, new RegExp(launchEnv.AUTH_SECRET));
+});
+
+test("fails when the entitlement worker is enabled without academy or cron secret", () => {
+  const result = runValidator({
+    ...launchEnv,
+    ACADEMY_ENABLED: "false",
+    COURSE_ENTITLEMENT_WORKER_ENABLED: "true",
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.combinedOutput,
+    /COURSE_ENTITLEMENT_WORKER_ENABLED requires ACADEMY_ENABLED=true/,
+  );
+  assert.match(
+    result.combinedOutput,
+    /Missing env var: COURSE_ENTITLEMENT_CRON_SECRET/,
+  );
+});
+
+test("fails when the entitlement cron secret is short or reused", () => {
+  for (const secret of ["short", launchEnv.AUTH_SECRET]) {
+    const result = runValidator({
+      ...launchEnv,
+      ...courseApiEnv,
+      COURSE_ENTITLEMENT_WORKER_ENABLED: "true",
+      COURSE_ENTITLEMENT_CRON_SECRET: secret,
+      VERCEL_ENV: "preview",
+      NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+    });
+
+    assert.notEqual(result.status, 0);
+    assert.match(result.combinedOutput, /COURSE_ENTITLEMENT_CRON_SECRET/);
+    assert.doesNotMatch(result.combinedOutput, new RegExp(secret));
+  }
+});
+
+test("fails when course checkout is enabled without the academy", () => {
+  const result = runValidator({
+    ...launchEnv,
+    ACADEMY_ENABLED: "false",
+    COURSE_CHECKOUT_ENABLED: "true",
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.combinedOutput,
+    /COURSE_CHECKOUT_ENABLED requires ACADEMY_ENABLED=true/,
+  );
 });
 
 test("fails launch environment when Square service booking flag is blank", () => {
@@ -342,7 +464,10 @@ test("fails launch environment with a short Auth.js secret", () => {
   });
 
   assert.notEqual(result.status, 0);
-  assert.match(result.combinedOutput, /AUTH_SECRET must be at least 32 characters/);
+  assert.match(
+    result.combinedOutput,
+    /AUTH_SECRET must be at least 32 characters/,
+  );
 });
 
 test("fails an unknown service booking model rollout mode", () => {

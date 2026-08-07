@@ -172,6 +172,7 @@ const CHECKOUT_ORDER_PURPOSE_LABELS = {
   appointment_custom_partial: "Appointment partial payment",
   appointment_deposit: "Appointment deposit",
   appointment_full: "Appointment payment",
+  course: "Online course",
   product: "Product order",
   training: "Training enrollment",
 } satisfies Record<CheckoutOrderPurpose, string>;

@@ -22,8 +22,10 @@ export interface VerifiedHelcimWebhook {
   helcimInvoiceId?: number;
   helcimInvoiceNumber?: string;
   helcimTransactionId?: string;
+  originalTransactionId?: string;
   payloadRedacted?: Record<string, unknown>;
   status?: string;
+  transactionType?: string;
 }
 
 type WebhookPayload = Record<string, unknown>;
@@ -66,9 +68,18 @@ export function parseVerifiedHelcimWebhook(
     helcimTransactionId: transactionId ?? undefined,
     helcimInvoiceId: invoiceId ?? undefined,
     helcimInvoiceNumber: getText(data.invoiceNumber) ?? undefined,
+    originalTransactionId:
+      getText(data.originalTransactionId ?? data.originalCardTransactionId) ??
+      undefined,
     status: getText(data.status ?? data.paymentStatus ?? data.transactionStatus ?? data.approved) ?? undefined,
     amount: getNumberOrText(data.amount) ?? undefined,
     currency: getText(data.currency) ?? undefined,
+    transactionType:
+      getText(
+        data.transactionType ??
+          data.paymentType ??
+          (data === payload ? undefined : data.type),
+      ) ?? undefined,
   };
 }
 
@@ -88,8 +99,11 @@ export function mergeHelcimCardTransactionDetails(
     helcimInvoiceId: fields.invoiceId ?? event.helcimInvoiceId,
     helcimInvoiceNumber: fields.invoiceNumber ?? event.helcimInvoiceNumber,
     helcimTransactionId: fields.transactionId ?? event.helcimTransactionId,
+    originalTransactionId:
+      fields.originalTransactionId ?? event.originalTransactionId,
     payloadRedacted: toHelcimPayloadRedacted(fields),
     status: fields.status ?? event.status,
+    transactionType: fields.transactionType ?? event.transactionType,
   };
 }
 
@@ -111,8 +125,16 @@ export function normalizeHelcimCardTransactionDetails(
     currency: getText(details.currency) ?? undefined,
     invoiceId: getNumber(details.invoiceId ?? details.invoiceID) ?? undefined,
     invoiceNumber: getText(details.invoiceNumber ?? details.invoiceNo) ?? undefined,
+    originalTransactionId: getText(
+      details.originalTransactionId ??
+        details.originalCardTransactionId ??
+        details.originalId,
+    ) ?? undefined,
     status: getText(details.status ?? details.transactionStatus ?? details.approved) ?? undefined,
     transactionId: getText(details.transactionId ?? details.cardTransactionId ?? details.id) ?? undefined,
+    transactionType:
+      getText(details.type ?? details.transactionType ?? details.paymentType) ??
+      undefined,
   };
 }
 

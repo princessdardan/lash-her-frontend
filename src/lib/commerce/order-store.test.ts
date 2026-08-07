@@ -150,7 +150,7 @@ const helperScript = String.raw`
     async findCheckoutOrderByCheckoutTokenHash(checkoutTokenHash: string): Promise<CheckoutOrderRow | null> {
       return this.rows.find((row) => (
         row.checkoutTokenHash === checkoutTokenHash
-        && (row.status === "pending" || row.status === "paid")
+        && (row.status === "pending" || row.status === "paid" || row.status === "verification_failed")
       )) ?? null;
     }
 
@@ -482,7 +482,6 @@ test("private checkout store looks up pending orders by token hash only", () => 
   `);
 });
 
-
 test("private checkout store can recover paid appointment orders by checkout token", () => {
   runOrderStoreScenario(`
     const { repository, store } = createFakeStore();
@@ -555,6 +554,25 @@ test("private checkout store marks verification failures", () => {
   `);
 });
 
+test("only course checkout can recover its token after client verification failure", () => {
+  runOrderStoreScenario(`
+    const { repository, store } = createFakeStore();
+    await store.createPendingOrder(pendingOrderInput);
+    const row = repository.rows[0];
+
+    row.status = "verification_failed";
+    assert.equal(
+      await store.getPendingOrderByCheckoutToken(pendingOrderInput.checkoutToken),
+      null,
+    );
+
+    row.purpose = "course";
+    assert.ok(
+      await store.getPendingOrderByCheckoutToken(pendingOrderInput.checkoutToken),
+    );
+  `);
+});
+
 test("private checkout store records idempotent webhook events once", () => {
   runOrderStoreScenario(`
     const { repository, store } = createFakeStore();
@@ -614,6 +632,52 @@ test("private checkout store reconciles approved webhooks into paid orders", () 
   `);
 });
 
+test("private checkout store never treats an approved refund as a purchase", () => {
+  runOrderStoreScenario(`
+    const { repository, store } = createFakeStore();
+    await store.createPendingOrder(pendingOrderInput);
+
+    const result = await store.recordHelcimWebhookEventWithOrder({
+      amount: "123.45",
+      currency: "CAD",
+      eventId: "event-approved-refund",
+      eventType: "cardTransaction",
+      helcimInvoiceNumber: "INV-4242",
+      helcimTransactionId: "txn-refund-123",
+      originalTransactionId: "txn-purchase-123",
+      status: "approved",
+      transactionType: "refund",
+    });
+
+    assert.equal(result.recorded, true);
+    assert.equal(result.paid, false);
+    assert.equal(repository.rows[0].status, "pending");
+    assert.equal(repository.rows[0].helcimTransactionId, null);
+  `);
+});
+
+test("private checkout store defers course paid transitions to course-commerce", () => {
+  runOrderStoreScenario(`
+    const { repository, store } = createFakeStore();
+    await store.createPendingOrder({ ...pendingOrderInput, purpose: "course" });
+
+    const result = await store.recordHelcimWebhookEventWithOrder({
+      amount: "123.45",
+      currency: "CAD",
+      eventId: "event-approved-course",
+      eventType: "cardTransaction",
+      helcimInvoiceNumber: "INV-4242",
+      helcimTransactionId: "txn-course-123",
+      status: "approved",
+      transactionType: "purchase",
+    });
+
+    assert.equal(result.recorded, true);
+    assert.equal(result.paid, false);
+    assert.equal(repository.rows[0].status, "pending");
+    assert.equal(repository.rows[0].helcimTransactionId, null);
+  `);
+});
 
 test("private checkout store exposes matched order details for webhook branching", () => {
   runOrderStoreScenario(`
@@ -696,7 +760,6 @@ test("private checkout store ignores Square provider rows during Helcim webhook 
     assert.equal(repository.rows[0].helcimTransactionId, null);
   `);
 });
-
 
 test("private checkout store reports duplicate paid appointment webhooks as finalization eligible", () => {
   runOrderStoreScenario(`

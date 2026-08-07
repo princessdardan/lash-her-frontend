@@ -144,6 +144,10 @@ test("booking issue labels describe review evidence and do not expose raw codes"
 });
 
 test("checkout purposes use business labels", () => {
+  assert.deepEqual(getCheckoutPurposePresentation("course"), {
+    label: "Online course",
+    shortLabel: "Course",
+  });
   assert.deepEqual(getCheckoutPurposePresentation("product"), {
     label: "Product order",
     shortLabel: "Product",

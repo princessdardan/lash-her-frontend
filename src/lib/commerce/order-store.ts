@@ -15,14 +15,14 @@ import type {
   PaymentProvider,
 } from "@/lib/private-db/schema";
 import { getCheckoutSecretEncryptionKey } from "@/sanity/env";
-import {
-  checkoutOrders,
-  checkoutPaymentEvents,
-} from "@/lib/private-db/schema";
+import { checkoutOrders, checkoutPaymentEvents } from "@/lib/private-db/schema";
 import { getPrivateDb } from "@/lib/private-db/client";
 
 import type { ValidatedCart } from "./cart";
-import { decryptCheckoutSecret, encryptCheckoutSecret } from "./checkout-secret";
+import {
+  decryptCheckoutSecret,
+  encryptCheckoutSecret,
+} from "./checkout-secret";
 import { parseCad } from "./money";
 
 const EMAIL_CLAIM_DURATION_MS = 5 * 60 * 1000;
@@ -86,7 +86,6 @@ export interface PendingOrderRecord {
   shippingAddress: CheckoutOrderShippingAddressSnapshot | null;
 }
 
-
 export interface MatchedCheckoutOrderRecord {
   _id: string;
   amount: number;
@@ -112,8 +111,10 @@ export interface HelcimWebhookEventInput {
   helcimInvoiceId?: number;
   helcimInvoiceNumber?: string;
   helcimTransactionId?: string;
+  originalTransactionId?: string;
   payloadRedacted?: Record<string, unknown>;
   status?: string;
+  transactionType?: string;
 }
 
 export interface ClaimProductOrderConfirmationEmailInput {
@@ -189,7 +190,9 @@ type SquareInvoiceCheckoutOrderInsert = CheckoutOrderBaseInsert & {
   providerStatus: "draft" | "published" | "paid" | "finalization_failed";
   purpose: "training";
 };
-type CheckoutOrderInsert = HelcimCheckoutOrderInsert | SquareInvoiceCheckoutOrderInsert;
+type CheckoutOrderInsert =
+  | HelcimCheckoutOrderInsert
+  | SquareInvoiceCheckoutOrderInsert;
 type CheckoutPaymentEventInsert = {
   amountCents: number | null;
   currency: string | undefined;
@@ -203,25 +206,55 @@ type CheckoutPaymentEventInsert = {
 
 export interface CheckoutOrderRepository {
   createCheckoutOrder(values: CheckoutOrderInsert): Promise<{ id: string }>;
-  createSquareInvoiceWebhookEvent(values: SquareInvoiceWebhookEventInput): Promise<{ id: string } | null>;
-  createWebhookEvent(values: CheckoutPaymentEventInsert): Promise<{ id: string } | null>;
+  createSquareInvoiceWebhookEvent(
+    values: SquareInvoiceWebhookEventInput,
+  ): Promise<{ id: string } | null>;
+  createWebhookEvent(
+    values: CheckoutPaymentEventInsert,
+  ): Promise<{ id: string } | null>;
   claimProductOrderConfirmationEmail(input: {
     claimUntil: Date;
     now: Date;
     orderId: string;
   }): Promise<CheckoutOrderRow | null>;
-  findSquareInvoiceWebhookEventClaim(eventId: string): Promise<SquareInvoiceWebhookEventClaimResult>;
-  findOrderForWebhook(input: HelcimWebhookEventInput): Promise<CheckoutOrderRow | null>;
-  findCheckoutOrderByCheckoutTokenHash(checkoutTokenHash: string): Promise<CheckoutOrderRow | null>;
-  findOrderByCorrelationId(correlationId: string): Promise<CheckoutOrderRow | null>;
-  findOrderBySquareInvoiceId(invoiceId: string): Promise<CheckoutOrderRow | null>;
+  findSquareInvoiceWebhookEventClaim(
+    eventId: string,
+  ): Promise<SquareInvoiceWebhookEventClaimResult>;
+  findOrderForWebhook(
+    input: HelcimWebhookEventInput,
+  ): Promise<CheckoutOrderRow | null>;
+  findCheckoutOrderByCheckoutTokenHash(
+    checkoutTokenHash: string,
+  ): Promise<CheckoutOrderRow | null>;
+  findOrderByCorrelationId(
+    correlationId: string,
+  ): Promise<CheckoutOrderRow | null>;
+  findOrderBySquareInvoiceId(
+    invoiceId: string,
+  ): Promise<CheckoutOrderRow | null>;
   markOrderPaid(orderId: string, helcimTransactionId: string): Promise<void>;
   markOrderVerificationFailed(orderId: string): Promise<void>;
-  markProductOrderConfirmationEmailSent(orderId: string, now: Date): Promise<void>;
-  recordProductOrderConfirmationEmailFailure(orderId: string, error: string, now: Date): Promise<void>;
-  markSquareInvoiceFinalizationFailed(orderId: string, error: string, retryable: boolean): Promise<void>;
+  markProductOrderConfirmationEmailSent(
+    orderId: string,
+    now: Date,
+  ): Promise<void>;
+  recordProductOrderConfirmationEmailFailure(
+    orderId: string,
+    error: string,
+    now: Date,
+  ): Promise<void>;
+  markSquareInvoiceFinalizationFailed(
+    orderId: string,
+    error: string,
+    retryable: boolean,
+  ): Promise<void>;
   markSquareInvoicePaid(orderId: string, paymentId: string): Promise<void>;
-  recordSquareInvoicePublication(orderId: string, invoiceId: string, publicUrl: string, version: number): Promise<void>;
+  recordSquareInvoicePublication(
+    orderId: string,
+    invoiceId: string,
+    publicUrl: string,
+    version: number,
+  ): Promise<void>;
   updateSquareInvoiceWebhookEvent(
     values: SquareInvoiceWebhookEventInput,
     processingStatus: PaymentEventProcessingStatus,
@@ -229,23 +262,55 @@ export interface CheckoutOrderRepository {
 }
 
 export interface CheckoutOrderStore {
-  createPendingOrder(input: CreatePendingOrderInput): Promise<PendingOrderRecord>;
-  createPendingSquareInvoiceOrder(input: CreatePendingSquareInvoiceOrderInput): Promise<PendingOrderRecord>;
-  findOrderByCorrelationId(correlationId: string): Promise<CheckoutOrderRow | null>;
-  findOrderBySquareInvoiceId(invoiceId: string): Promise<CheckoutOrderRow | null>;
-  claimProductOrderConfirmationEmail(input: ClaimProductOrderConfirmationEmailInput): Promise<ProductOrderConfirmationEmailRecord | null>;
-  getPendingOrderByCheckoutToken(checkoutToken: string): Promise<PendingOrderRecord | null>;
+  createPendingOrder(
+    input: CreatePendingOrderInput,
+  ): Promise<PendingOrderRecord>;
+  createPendingSquareInvoiceOrder(
+    input: CreatePendingSquareInvoiceOrderInput,
+  ): Promise<PendingOrderRecord>;
+  findOrderByCorrelationId(
+    correlationId: string,
+  ): Promise<CheckoutOrderRow | null>;
+  findOrderBySquareInvoiceId(
+    invoiceId: string,
+  ): Promise<CheckoutOrderRow | null>;
+  claimProductOrderConfirmationEmail(
+    input: ClaimProductOrderConfirmationEmailInput,
+  ): Promise<ProductOrderConfirmationEmailRecord | null>;
+  getPendingOrderByCheckoutToken(
+    checkoutToken: string,
+  ): Promise<PendingOrderRecord | null>;
   markOrderPaid(orderId: string, helcimTransactionId: string): Promise<void>;
   markOrderVerificationFailed(orderId: string): Promise<void>;
-  markProductOrderConfirmationEmailSent(orderId: string, now?: Date): Promise<void>;
-  recordProductOrderConfirmationEmailFailure(input: ProductOrderConfirmationEmailFailureInput): Promise<void>;
-  markSquareInvoiceFinalizationFailed(orderId: string, error: string, retryable: boolean): Promise<void>;
+  markProductOrderConfirmationEmailSent(
+    orderId: string,
+    now?: Date,
+  ): Promise<void>;
+  recordProductOrderConfirmationEmailFailure(
+    input: ProductOrderConfirmationEmailFailureInput,
+  ): Promise<void>;
+  markSquareInvoiceFinalizationFailed(
+    orderId: string,
+    error: string,
+    retryable: boolean,
+  ): Promise<void>;
   markSquareInvoicePaid(orderId: string, paymentId: string): Promise<void>;
-  recordSquareInvoicePublication(orderId: string, invoiceId: string, publicUrl: string, version: number): Promise<void>;
+  recordSquareInvoicePublication(
+    orderId: string,
+    invoiceId: string,
+    publicUrl: string,
+    version: number,
+  ): Promise<void>;
   recordHelcimWebhookEvent(input: HelcimWebhookEventInput): Promise<boolean>;
-  recordHelcimWebhookEventWithOrder(input: HelcimWebhookEventInput): Promise<HelcimWebhookEventRecordResult>;
-  claimSquareInvoiceWebhookEvent(input: SquareInvoiceWebhookEventInput): Promise<SquareInvoiceWebhookEventClaimResult>;
-  recordSquareInvoiceWebhookEventProcessed(input: SquareInvoiceWebhookEventInput): Promise<void>;
+  recordHelcimWebhookEventWithOrder(
+    input: HelcimWebhookEventInput,
+  ): Promise<HelcimWebhookEventRecordResult>;
+  claimSquareInvoiceWebhookEvent(
+    input: SquareInvoiceWebhookEventInput,
+  ): Promise<SquareInvoiceWebhookEventClaimResult>;
+  recordSquareInvoiceWebhookEventProcessed(
+    input: SquareInvoiceWebhookEventInput,
+  ): Promise<void>;
 }
 
 export function createCheckoutOrderStore(
@@ -257,9 +322,10 @@ export function createCheckoutOrderStore(
       const secretTokenCiphertext = encryptCheckoutSecret(input.secretToken);
       const checkoutTokenHash = hashCheckoutToken(input.checkoutToken);
       const amountCents = toCents(input.cart.amount);
-      const promotionDiscountCents = input.cart.promotionDiscountAmount === undefined
-        ? undefined
-        : toCents(input.cart.promotionDiscountAmount);
+      const promotionDiscountCents =
+        input.cart.promotionDiscountAmount === undefined
+          ? undefined
+          : toCents(input.cart.promotionDiscountAmount);
       const lineItems = input.cart.lineItems.map((lineItem) => ({
         productId: lineItem.productId,
         ...(lineItem.variantId ? { variantId: lineItem.variantId } : {}),
@@ -267,12 +333,22 @@ export function createCheckoutOrderStore(
         description: lineItem.description,
         quantity: lineItem.quantity,
         unitPriceCents: toCents(lineItem.price),
-        ...(lineItem.originalPrice !== undefined ? { originalUnitPriceCents: toCents(lineItem.originalPrice) } : {}),
-        ...(lineItem.manualDiscount !== undefined ? { manualDiscountCents: toCents(lineItem.manualDiscount) } : {}),
-        ...(input.cart.promotionCode ? { promotionCode: input.cart.promotionCode } : {}),
-        ...(promotionDiscountCents !== undefined ? { promotionDiscountCents } : {}),
+        ...(lineItem.originalPrice !== undefined
+          ? { originalUnitPriceCents: toCents(lineItem.originalPrice) }
+          : {}),
+        ...(lineItem.manualDiscount !== undefined
+          ? { manualDiscountCents: toCents(lineItem.manualDiscount) }
+          : {}),
+        ...(input.cart.promotionCode
+          ? { promotionCode: input.cart.promotionCode }
+          : {}),
+        ...(promotionDiscountCents !== undefined
+          ? { promotionDiscountCents }
+          : {}),
         totalCents: toCents(lineItem.total),
-        ...(lineItem.originalTotal !== undefined ? { originalTotalCents: toCents(lineItem.originalTotal) } : {}),
+        ...(lineItem.originalTotal !== undefined
+          ? { originalTotalCents: toCents(lineItem.originalTotal) }
+          : {}),
       }));
 
       const createdOrder = await repository.createCheckoutOrder({
@@ -289,7 +365,9 @@ export function createCheckoutOrderStore(
         currency: input.cart.currency,
         lineItems,
         paymentProvider: "helcim",
-        ...(input.shippingAddress ? { shippingAddress: input.shippingAddress } : {}),
+        ...(input.shippingAddress
+          ? { shippingAddress: input.shippingAddress }
+          : {}),
       });
 
       return {
@@ -310,13 +388,17 @@ export function createCheckoutOrderStore(
     },
 
     async createPendingSquareInvoiceOrder(input) {
-      const existingByInvoice = await repository.findOrderBySquareInvoiceId(input.squareInvoiceId);
+      const existingByInvoice = await repository.findOrderBySquareInvoiceId(
+        input.squareInvoiceId,
+      );
 
       if (existingByInvoice) {
         return toPendingOrderRecord(existingByInvoice);
       }
 
-      const existingByCorrelation = await repository.findOrderByCorrelationId(input.correlationId);
+      const existingByCorrelation = await repository.findOrderByCorrelationId(
+        input.correlationId,
+      );
 
       if (existingByCorrelation) {
         return toPendingOrderRecord(existingByCorrelation);
@@ -365,8 +447,18 @@ export function createCheckoutOrderStore(
       };
     },
 
-    async recordSquareInvoicePublication(orderId, invoiceId, publicUrl, version) {
-      await repository.recordSquareInvoicePublication(orderId, invoiceId, publicUrl, version);
+    async recordSquareInvoicePublication(
+      orderId,
+      invoiceId,
+      publicUrl,
+      version,
+    ) {
+      await repository.recordSquareInvoicePublication(
+        orderId,
+        invoiceId,
+        publicUrl,
+        version,
+      );
     },
 
     async markSquareInvoicePaid(orderId, paymentId) {
@@ -374,7 +466,11 @@ export function createCheckoutOrderStore(
     },
 
     async markSquareInvoiceFinalizationFailed(orderId, error, retryable) {
-      await repository.markSquareInvoiceFinalizationFailed(orderId, error, retryable);
+      await repository.markSquareInvoiceFinalizationFailed(
+        orderId,
+        error,
+        retryable,
+      );
     },
 
     async findOrderBySquareInvoiceId(invoiceId) {
@@ -383,14 +479,18 @@ export function createCheckoutOrderStore(
 
     async claimProductOrderConfirmationEmail(input) {
       const now = input.now ?? new Date();
-      const claimUntil = new Date(now.getTime() + (input.claimForMs ?? EMAIL_CLAIM_DURATION_MS));
+      const claimUntil = new Date(
+        now.getTime() + (input.claimForMs ?? EMAIL_CLAIM_DURATION_MS),
+      );
       const claimedOrder = await repository.claimProductOrderConfirmationEmail({
         claimUntil,
         now,
         orderId: input.orderId,
       });
 
-      return claimedOrder === null ? null : toProductOrderConfirmationEmailRecord(claimedOrder);
+      return claimedOrder === null
+        ? null
+        : toProductOrderConfirmationEmailRecord(claimedOrder);
     },
 
     async findOrderByCorrelationId(correlationId) {
@@ -430,7 +530,10 @@ export function createCheckoutOrderStore(
     },
 
     async recordHelcimWebhookEvent(input) {
-      const result = await recordHelcimWebhookEventWithOrderInternal(repository, input);
+      const result = await recordHelcimWebhookEventWithOrderInternal(
+        repository,
+        input,
+      );
       return result.recorded;
     },
 
@@ -439,7 +542,8 @@ export function createCheckoutOrderStore(
     },
 
     async claimSquareInvoiceWebhookEvent(input) {
-      const createdEvent = await repository.createSquareInvoiceWebhookEvent(input);
+      const createdEvent =
+        await repository.createSquareInvoiceWebhookEvent(input);
 
       if (createdEvent !== null) {
         return { duplicate: false };
@@ -454,7 +558,9 @@ export function createCheckoutOrderStore(
   };
 }
 
-const defaultOrderStore = createCheckoutOrderStore(createDrizzleCheckoutOrderRepository());
+const defaultOrderStore = createCheckoutOrderStore(
+  createDrizzleCheckoutOrderRepository(),
+);
 
 export async function createPendingOrder(
   input: CreatePendingOrderInput,
@@ -475,7 +581,9 @@ export async function markOrderPaid(
   await defaultOrderStore.markOrderPaid(orderId, helcimTransactionId);
 }
 
-export async function markOrderVerificationFailed(orderId: string): Promise<void> {
+export async function markOrderVerificationFailed(
+  orderId: string,
+): Promise<void> {
   await defaultOrderStore.markOrderVerificationFailed(orderId);
 }
 
@@ -498,7 +606,12 @@ export async function recordSquareInvoicePublication(
   publicUrl: string,
   version: number,
 ): Promise<void> {
-  await defaultOrderStore.recordSquareInvoicePublication(orderId, invoiceId, publicUrl, version);
+  await defaultOrderStore.recordSquareInvoicePublication(
+    orderId,
+    invoiceId,
+    publicUrl,
+    version,
+  );
 }
 
 export async function markSquareInvoicePaid(
@@ -513,7 +626,11 @@ export async function markSquareInvoiceFinalizationFailed(
   error: string,
   retryable: boolean,
 ): Promise<void> {
-  await defaultOrderStore.markSquareInvoiceFinalizationFailed(orderId, error, retryable);
+  await defaultOrderStore.markSquareInvoiceFinalizationFailed(
+    orderId,
+    error,
+    retryable,
+  );
 }
 
 export async function findOrderBySquareInvoiceId(
@@ -550,6 +667,13 @@ export async function recordHelcimWebhookEventWithOrder(
   input: HelcimWebhookEventInput,
 ): Promise<HelcimWebhookEventRecordResult> {
   return defaultOrderStore.recordHelcimWebhookEventWithOrder(input);
+}
+
+export async function findHelcimCheckoutOrderForWebhook(
+  input: HelcimWebhookEventInput,
+): Promise<MatchedCheckoutOrderRecord | null> {
+  const order = await findOrderForWebhook(input);
+  return order === null ? null : toMatchedCheckoutOrderRecord(order);
 }
 
 export async function claimSquareInvoiceWebhookEvent(
@@ -609,23 +733,50 @@ async function reconcileWebhookPaidOrder(input: {
     return true;
   }
 
-  if (!input.input.helcimTransactionId || !isApprovedStatus(input.input.status)) {
+  // Course payments own their provider-event claim, paid transition, and
+  // entitlement outbox insertion in one transaction in course-commerce.
+  if (input.order.purpose === "course") {
     return false;
   }
 
-  const expectedAmountMatches = input.amountCents !== null && input.amountCents === input.order.amountCents;
-  const expectedCurrencyMatches = input.input.currency !== undefined &&
+  if (
+    !input.input.helcimTransactionId ||
+    !isApprovedStatus(input.input.status) ||
+    !isHelcimPurchaseTransaction(input.input.transactionType)
+  ) {
+    return false;
+  }
+
+  const expectedAmountMatches =
+    input.amountCents !== null && input.amountCents === input.order.amountCents;
+  const expectedCurrencyMatches =
+    input.input.currency !== undefined &&
     input.input.currency.toUpperCase() === input.order.currency;
 
   if (!expectedAmountMatches || !expectedCurrencyMatches) {
     return false;
   }
 
-  await input.repository.markOrderPaid(input.order.orderId, input.input.helcimTransactionId);
+  await input.repository.markOrderPaid(
+    input.order.orderId,
+    input.input.helcimTransactionId,
+  );
   return true;
 }
 
-function toMatchedCheckoutOrderRecord(order: CheckoutOrderRow): MatchedCheckoutOrderRecord {
+function isHelcimPurchaseTransaction(
+  transactionType: string | undefined,
+): boolean {
+  if (transactionType === undefined) {
+    return true;
+  }
+
+  return ["purchase", "capture"].includes(transactionType.trim().toLowerCase());
+}
+
+function toMatchedCheckoutOrderRecord(
+  order: CheckoutOrderRow,
+): MatchedCheckoutOrderRecord {
   const currency = order.currency.toUpperCase();
 
   if (currency !== "CAD") {
@@ -703,7 +854,9 @@ function toSquareInvoiceWebhookEventInsert(
     eventType: input.eventType,
     orderId: input.orderDatabaseId,
     paymentProvider: "square",
-    payloadHash: input.payloadSanitized ? hashPayload(input.payloadSanitized) : undefined,
+    payloadHash: input.payloadSanitized
+      ? hashPayload(input.payloadSanitized)
+      : undefined,
     payloadSanitized: input.payloadSanitized,
     processedAt: processingStatus === "processed" ? new Date() : undefined,
     processingStatus,
@@ -722,7 +875,9 @@ function toSquareInvoiceWebhookEventUpdate(
   return {
     eventType: input.eventType,
     orderId: input.orderDatabaseId,
-    payloadHash: input.payloadSanitized ? hashPayload(input.payloadSanitized) : undefined,
+    payloadHash: input.payloadSanitized
+      ? hashPayload(input.payloadSanitized)
+      : undefined,
     payloadSanitized: input.payloadSanitized,
     processedAt: processingStatus === "processed" ? new Date() : undefined,
     processingStatus,
@@ -752,7 +907,12 @@ function createDrizzleCheckoutOrderRepository(): CheckoutOrderRepository {
       const [createdEvent] = await getPrivateDb()
         .insert(checkoutPaymentEvents)
         .values(toSquareInvoiceWebhookEventInsert(values, "received"))
-        .onConflictDoNothing({ target: [checkoutPaymentEvents.paymentProvider, checkoutPaymentEvents.providerEventId] })
+        .onConflictDoNothing({
+          target: [
+            checkoutPaymentEvents.paymentProvider,
+            checkoutPaymentEvents.providerEventId,
+          ],
+        })
         .returning({ id: checkoutPaymentEvents.id });
 
       return createdEvent ?? null;
@@ -784,7 +944,10 @@ function createDrizzleCheckoutOrderRepository(): CheckoutOrderRepository {
             isNull(checkoutOrders.productConfirmationEmailSentAt),
             or(
               isNull(checkoutOrders.productConfirmationEmailClaimedUntil),
-              lte(checkoutOrders.productConfirmationEmailClaimedUntil, input.now),
+              lte(
+                checkoutOrders.productConfirmationEmailClaimedUntil,
+                input.now,
+              ),
             ),
           ),
         )
@@ -822,7 +985,11 @@ function createDrizzleCheckoutOrderRepository(): CheckoutOrderRepository {
         .where(
           and(
             eq(checkoutOrders.checkoutTokenHash, checkoutTokenHash),
-            inArray(checkoutOrders.status, ["pending", "paid"]),
+            inArray(checkoutOrders.status, [
+              "pending",
+              "paid",
+              "verification_failed",
+            ]),
           ),
         )
         .limit(1);
@@ -880,7 +1047,12 @@ function createDrizzleCheckoutOrderRepository(): CheckoutOrderRepository {
           failedAt: new Date(),
           updatedAt: new Date(),
         })
-        .where(eq(checkoutOrders.orderId, orderId));
+        .where(
+          and(
+            eq(checkoutOrders.orderId, orderId),
+            eq(checkoutOrders.status, "pending"),
+          ),
+        );
     },
 
     async markProductOrderConfirmationEmailSent(orderId, now) {
@@ -906,7 +1078,12 @@ function createDrizzleCheckoutOrderRepository(): CheckoutOrderRepository {
         .where(eq(checkoutOrders.orderId, orderId));
     },
 
-    async recordSquareInvoicePublication(orderId, invoiceId, publicUrl, version) {
+    async recordSquareInvoicePublication(
+      orderId,
+      invoiceId,
+      publicUrl,
+      version,
+    ) {
       await getPrivateDb()
         .update(checkoutOrders)
         .set({
@@ -982,7 +1159,9 @@ function createDrizzleCheckoutOrderRepository(): CheckoutOrderRepository {
   };
 }
 
-function toPendingOrderRecord(pendingOrder: CheckoutOrderRow): PendingOrderRecord {
+function toPendingOrderRecord(
+  pendingOrder: CheckoutOrderRow,
+): PendingOrderRecord {
   const currency = pendingOrder.currency.toUpperCase();
 
   if (currency !== "CAD") {
@@ -1006,8 +1185,13 @@ function toPendingOrderRecord(pendingOrder: CheckoutOrderRow): PendingOrderRecor
   };
 }
 
-async function findOrderForWebhook(input: HelcimWebhookEventInput): Promise<CheckoutOrderRow | null> {
-  if (input.helcimInvoiceId === undefined && input.helcimInvoiceNumber === undefined) {
+async function findOrderForWebhook(
+  input: HelcimWebhookEventInput,
+): Promise<CheckoutOrderRow | null> {
+  if (
+    input.helcimInvoiceId === undefined &&
+    input.helcimInvoiceNumber === undefined
+  ) {
     return null;
   }
 
@@ -1023,13 +1207,15 @@ async function findOrderForWebhook(input: HelcimWebhookEventInput): Promise<Chec
   const [order] = await getPrivateDb()
     .select()
     .from(checkoutOrders)
-    .where(and(eq(checkoutOrders.paymentProvider, "helcim"), ...invoiceConditions))
+    .where(
+      and(eq(checkoutOrders.paymentProvider, "helcim"), ...invoiceConditions),
+    )
     .limit(1);
 
   return order ?? null;
 }
 
-function hashCheckoutToken(checkoutToken: string): string {
+export function hashCheckoutToken(checkoutToken: string): string {
   return createHmac("sha256", getCheckoutSecretEncryptionKey())
     .update(checkoutToken, "utf8")
     .digest("hex");
@@ -1044,12 +1230,22 @@ function centsToCad(cents: number): number {
 }
 
 function hashPayload(payload: CheckoutPaymentEventPayload): string {
-  return createHash("sha256").update(JSON.stringify(payload), "utf8").digest("hex");
+  return createHash("sha256")
+    .update(JSON.stringify(payload), "utf8")
+    .digest("hex");
 }
 
 function isApprovedStatus(status: string | undefined): boolean {
-  return status !== undefined && ["approval", "approved", "completed", "success", "succeeded", "true"].includes(
-    status.trim().toLowerCase(),
+  return (
+    status !== undefined &&
+    [
+      "approval",
+      "approved",
+      "completed",
+      "success",
+      "succeeded",
+      "true",
+    ].includes(status.trim().toLowerCase())
   );
 }
 
@@ -1062,11 +1258,20 @@ function isCheckoutTokenValidationEligible(order: CheckoutOrderRow): boolean {
     return true;
   }
 
-  return order.status === "paid" && isAppointmentPurpose(order.purpose);
+  if (order.status === "verification_failed") {
+    return order.purpose === "course";
+  }
+
+  return (
+    order.status === "paid" &&
+    (isAppointmentPurpose(order.purpose) || order.purpose === "course")
+  );
 }
 
 function isAppointmentPurpose(purpose: CheckoutOrderPurpose): boolean {
-  return purpose === "appointment_deposit" ||
+  return (
+    purpose === "appointment_deposit" ||
     purpose === "appointment_full" ||
-    purpose === "appointment_custom_partial";
+    purpose === "appointment_custom_partial"
+  );
 }

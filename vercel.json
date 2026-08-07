@@ -9,6 +9,10 @@
       "schedule": "0 6 * * 1"
     },
     {
+      "path": "/api/cron/course-entitlements",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/admin/payment-reconciliation",
       "schedule": "*/30 * * * *"
     }

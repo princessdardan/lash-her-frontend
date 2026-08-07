@@ -20,6 +20,7 @@ const rawBody = JSON.stringify({
     invoiceNumber: "INV-12345",
     status: "APPROVED",
     transactionId: "txn_123",
+    transactionType: "purchase",
   },
 });
 const headers = {
@@ -90,7 +91,9 @@ test("parseVerifiedHelcimWebhook extracts only reconciliation fields", () => {
     helcimInvoiceId: 12345,
     helcimInvoiceNumber: "INV-12345",
     helcimTransactionId: "txn_123",
+    originalTransactionId: undefined,
     status: "APPROVED",
+    transactionType: "purchase",
   });
 });
 
@@ -105,7 +108,9 @@ test("parseVerifiedHelcimWebhook accepts sparse cardTransaction webhook payloads
     helcimInvoiceId: undefined,
     helcimInvoiceNumber: undefined,
     helcimTransactionId: "25764674",
+    originalTransactionId: undefined,
     status: undefined,
+    transactionType: undefined,
   });
 });
 
@@ -129,7 +134,9 @@ test("mergeHelcimCardTransactionDetails stores only minimal redacted reconciliat
     id: 25764674,
     invoiceId: 4242,
     invoiceNumber: "INV-4242",
+    originalTransactionId: 11111111,
     status: "APPROVED",
+    type: "refund",
   });
 
   assert.equal(merged.helcimTransactionId, "25764674");
@@ -141,6 +148,8 @@ test("mergeHelcimCardTransactionDetails stores only minimal redacted reconciliat
   assert.equal(merged.approvalCode, "APPROVAL-123");
   assert.equal(merged.cardType, "Visa");
   assert.equal(merged.cardLast4, "1111");
+  assert.equal(merged.originalTransactionId, "11111111");
+  assert.equal(merged.transactionType, "refund");
   assert.deepEqual(merged.payloadRedacted, {
     amount: "123.45",
     approvalCode: "APPROVAL-123",
@@ -149,8 +158,10 @@ test("mergeHelcimCardTransactionDetails stores only minimal redacted reconciliat
     currency: "CAD",
     invoiceId: 4242,
     invoiceNumber: "INV-4242",
+    originalTransactionId: "11111111",
     status: "APPROVED",
     transactionId: "25764674",
+    transactionType: "refund",
   });
   assert.equal(Object.hasOwn(merged.payloadRedacted ?? {}, "cardToken"), false);
   assert.equal(Object.hasOwn(merged.payloadRedacted ?? {}, "cardNumber"), false);
@@ -171,8 +182,10 @@ test("normalizeHelcimCardTransactionDetails derives last4 from top-level masked 
       currency: undefined,
       invoiceId: undefined,
       invoiceNumber: undefined,
+      originalTransactionId: undefined,
       status: undefined,
       transactionId: "txn_123",
+      transactionType: undefined,
     },
   );
 });
@@ -193,8 +206,10 @@ test("normalizeHelcimCardTransactionDetails derives last4 from nested card.cardN
       currency: undefined,
       invoiceId: undefined,
       invoiceNumber: undefined,
+      originalTransactionId: undefined,
       status: undefined,
       transactionId: "txn_4242",
+      transactionType: undefined,
     },
   );
 });
@@ -217,8 +232,10 @@ test("normalizeHelcimCardTransactionDetails keeps explicit last4 over cardNumber
       currency: undefined,
       invoiceId: undefined,
       invoiceNumber: undefined,
+      originalTransactionId: undefined,
       status: undefined,
       transactionId: "txn_explicit",
+      transactionType: undefined,
     },
   );
 });

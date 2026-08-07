@@ -75,6 +75,7 @@ function createSquareInvoiceOrder(overrides: Partial<CheckoutOrderRow> = {}): Ch
     status: "pending",
     updatedAt: now,
     ...overrides,
+    customerUserId: overrides.customerUserId ?? null,
   };
 }
 

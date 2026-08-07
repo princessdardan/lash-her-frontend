@@ -14,6 +14,7 @@ const pendingEnrollment: PendingTrainingEnrollmentRecord = {
     currency: "CAD",
     customerEmail: "checkout@example.com",
     customerName: "Client Name",
+    customerUserId: null,
     deletedAt: null,
     failedAt: null,
     finalizedAt: null,

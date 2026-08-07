@@ -22,6 +22,22 @@ test("owner has all permissions regardless of resource assignment", () => {
     }),
     true,
   );
+  for (const action of [
+    "courses:view",
+    "courses:manage",
+    "course-entitlements:view",
+    "course-entitlements:manage",
+  ] as const) {
+    assert.equal(
+      canAdmin({
+        action,
+        bookingProviderResourceIds: [],
+        bookingResourceIds: [],
+        role: "owner",
+      }),
+      true,
+    );
+  }
 });
 
 test("admin has operational access but not owner-only actions", () => {
@@ -79,6 +95,22 @@ test("admin has operational access but not owner-only actions", () => {
     }),
     false,
   );
+  for (const action of [
+    "courses:view",
+    "courses:manage",
+    "course-entitlements:view",
+    "course-entitlements:manage",
+  ] as const) {
+    assert.equal(
+      canAdmin({
+        action,
+        bookingProviderResourceIds: [],
+        bookingResourceIds: [],
+        role: "admin",
+      }),
+      false,
+    );
+  }
 });
 
 test("employee access is restricted to assigned booking resources", () => {
@@ -126,6 +158,16 @@ test("employee access is restricted to assigned booking resources", () => {
     false,
   );
   assert.equal(canAdmin({ ...base, action: "marketing:view" }), false);
+  assert.equal(canAdmin({ ...base, action: "courses:view" }), false);
+  assert.equal(canAdmin({ ...base, action: "courses:manage" }), false);
+  assert.equal(
+    canAdmin({ ...base, action: "course-entitlements:view" }),
+    false,
+  );
+  assert.equal(
+    canAdmin({ ...base, action: "course-entitlements:manage" }),
+    false,
+  );
   assert.equal(canAdmin({ ...base, action: "offerings:view" }), true);
   assert.equal(canAdmin({ ...base, action: "offerings:manage" }), true);
   assert.equal(

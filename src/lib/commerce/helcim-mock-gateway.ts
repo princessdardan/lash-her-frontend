@@ -194,6 +194,7 @@ export function createMockHelcimGateway({
         invoiceNumber: transaction.invoiceNumber,
         status: transaction.status,
         transactionId: transaction.transactionId,
+        type: "purchase",
       } satisfies HelcimCardTransactionResponse;
     },
   };

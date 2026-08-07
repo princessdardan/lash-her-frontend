@@ -33,7 +33,10 @@ const helperScript = String.raw`
   }
 
   async function runScenario({
+    dispatchCourseEntitlements,
     finalizeAppointmentPaymentForOrder,
+    finalizeCoursePayment,
+    findOrderForWebhook,
     getCardTransaction,
     getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing,
     getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice,
@@ -51,7 +54,16 @@ const helperScript = String.raw`
     const markedStaffAlerts = [];
     const sentEmails = [];
     const sentSchedulingFailureAlerts = [];
+    const finalizedCoursePayments = [];
+    let entitlementDispatches = 0;
     const handler = createHelcimWebhookPostHandler({
+      dispatchCourseEntitlements: async () => {
+        entitlementDispatches += 1;
+        if (dispatchCourseEntitlements) {
+          return dispatchCourseEntitlements();
+        }
+        return null;
+      },
       finalizeAppointmentPaymentForOrder: async (input) => {
         finalizedBookings.push(input);
         if (finalizeAppointmentPaymentForOrder) {
@@ -59,8 +71,24 @@ const helperScript = String.raw`
         }
         return { ok: true, eventId: "calendar-event-1", status: "booked" };
       },
+      finalizeCoursePayment: async (input) => {
+        finalizedCoursePayments.push(input);
+        if (finalizeCoursePayment) {
+          return finalizeCoursePayment(input);
+        }
+        return {
+          duplicate: false,
+          grantsEnqueued: 1,
+          itemsMarkedPaid: 1,
+          orderMarkedPaid: true,
+        };
+      },
+      findOrderForWebhook: async (event) => {
+        return findOrderForWebhook ? findOrderForWebhook(event) : null;
+      },
       getCardTransaction,
       getVerifierToken: () => verifierToken,
+      now: () => new Date("2026-08-07T12:00:00.000Z"),
       getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice: async (input) => {
         if (getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice) {
           return getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice(input);
@@ -125,7 +153,7 @@ const helperScript = String.raw`
       },
     });
 
-    return { finalizedBookings, handler, trainingNotifications, markedStaffAlerts, recorded, sentBookingEmails, sentEmails, sentProductEmails, sentSchedulingFailureAlerts };
+    return { entitlementDispatches: () => entitlementDispatches, finalizedBookings, finalizedCoursePayments, handler, trainingNotifications, markedStaffAlerts, recorded, sentBookingEmails, sentEmails, sentProductEmails, sentSchedulingFailureAlerts };
   }
 `;
 
@@ -249,12 +277,16 @@ test("Helcim webhook route uses mock gateway to enrich sparse card transaction w
     });
     const recorded = [];
     const handler = createHelcimWebhookPostHandler({
+      dispatchCourseEntitlements: async () => null,
       finalizeAppointmentPaymentForOrder: async () => ({ ok: true, eventId: "calendar-event-1", status: "booked" }),
+      finalizeCoursePayment: async () => ({ duplicate: false, grantsEnqueued: 0, itemsMarkedPaid: 0, orderMarkedPaid: false }),
+      findOrderForWebhook: async () => null,
       getCardTransaction: async (transactionId, request) => {
         const selectedGateway = await resolveHelcimWebhookGatewayForRequest(request);
         return selectedGateway.getCardTransaction(transactionId);
       },
       getVerifierToken: () => verifierToken,
+      now: () => new Date("2026-08-07T12:00:00.000Z"),
       getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing: async () => null,
       getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice: async () => null,
       recordEvent: async (event) => {
@@ -386,6 +418,99 @@ test("Helcim webhook route treats APPROVAL as an approved product payment", () =
 
     assert.equal(response.status, 200);
     assert.deepEqual(sentProductEmails, ["lh-product-123"]);
+  `);
+});
+
+test("Helcim webhook route atomically finalizes a matched course purchase", () => {
+  runRouteScenario(`
+    const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });
+    const courseOrder = {
+      _id: "checkout-order-course",
+      amount: 123.45,
+      currency: "CAD",
+      helcimInvoiceId: 4242,
+      helcimInvoiceNumber: "INV-4242",
+      orderId: "lh-course-123",
+      paymentProvider: "helcim",
+      purpose: "course",
+    };
+    const {
+      entitlementDispatches,
+      finalizedCoursePayments,
+      handler,
+      recorded,
+      sentProductEmails,
+    } = await runScenario({
+      findOrderForWebhook: async () => courseOrder,
+      getCardTransaction: async () => ({
+        amount: "123.45",
+        currency: "CAD",
+        id: 25764674,
+        invoiceId: 4242,
+        invoiceNumber: "INV-4242",
+        status: "APPROVED",
+        type: "purchase",
+      }),
+      recordEvent: async () => {
+        throw new Error("course purchase must use the atomic lifecycle");
+      },
+    });
+
+    const response = await handler(createRequest(body));
+
+    assert.equal(response.status, 200);
+    assert.equal(finalizedCoursePayments.length, 1);
+    assert.equal(finalizedCoursePayments[0].orderId, "lh-course-123");
+    assert.equal(finalizedCoursePayments[0].provider, "helcim");
+    assert.equal(finalizedCoursePayments[0].providerTransactionId, "25764674");
+    assert.equal(
+      finalizedCoursePayments[0].paidAt.toISOString(),
+      "2026-08-07T12:00:00.000Z",
+    );
+    assert.equal(finalizedCoursePayments[0].event.providerEventId, "webhook-route-test");
+    assert.match(finalizedCoursePayments[0].event.payloadHash, /^[a-f0-9]{64}$/);
+    assert.equal(finalizedCoursePayments[0].event.payloadSanitized.transactionType, "purchase");
+    assert.equal(entitlementDispatches(), 1);
+    assert.deepEqual(recorded, []);
+    assert.deepEqual(sentProductEmails, []);
+  `);
+});
+
+test("Helcim webhook route does not run paid-order side effects for an approved refund", () => {
+  runRouteScenario(`
+    const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });
+    const { finalizedBookings, handler, sentProductEmails, sentEmails } = await runScenario({
+      getCardTransaction: async () => ({
+        amount: "123.45",
+        currency: "CAD",
+        id: 25764674,
+        invoiceNumber: "INV-4242",
+        originalTransactionId: 20000000,
+        status: "APPROVED",
+        type: "refund",
+      }),
+      recordEvent: async () => ({
+        matchedOrder: {
+          _id: "checkout-order-product",
+          amount: 123.45,
+          currency: "CAD",
+          helcimInvoiceId: 4242,
+          helcimInvoiceNumber: "INV-4242",
+          orderId: "lh-product-123",
+          paymentProvider: "helcim",
+          purpose: "product",
+        },
+        paid: true,
+        recorded: true,
+      }),
+    });
+
+    const response = await handler(createRequest(body));
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(finalizedBookings, []);
+    assert.deepEqual(sentProductEmails, []);
+    assert.deepEqual(sentEmails, []);
   `);
 });
 

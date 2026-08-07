@@ -729,6 +729,7 @@ function createPendingSquareInvoiceOrder(input: {
     currency: "CAD",
     customerEmail: input.customerEmail,
     customerName: input.customerName,
+    customerUserId: null,
     deletedAt: null,
     failedAt: null,
     finalizedAt: null,

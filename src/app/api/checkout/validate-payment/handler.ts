@@ -12,12 +12,17 @@ import {
   markOrderVerificationFailed,
 } from "@/lib/commerce/order-store";
 import { sendProductOrderConfirmationEmailForOrder } from "@/lib/commerce/product-order-email";
+import { dispatchCourseEntitlementsBestEffort } from "@/lib/course-commerce/dispatch";
+import { finalizeCoursePayment } from "@/lib/course-commerce/service";
 import { sendTrainingPaymentNotificationEmailsIfNeeded } from "@/lib/commerce/training-payment-notifications";
 import {
   getOrIssueTrainingSchedulingTokenForPaidOrder,
   getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
 } from "@/lib/commerce/training-enrollment-store";
-import { persistVerifiedPayment, verifyHelcimPayment } from "@/lib/commerce/verified-payment";
+import {
+  persistVerifiedPayment,
+  verifyHelcimPayment,
+} from "@/lib/commerce/verified-payment";
 import type { VerifiablePendingOrder } from "@/lib/commerce/verified-payment";
 import type { HelcimPayloadValue } from "@/lib/commerce/helcim-types";
 import {
@@ -39,12 +44,15 @@ type ValidatePaymentRequest = Request & {
 };
 
 interface ValidatePaymentPostHandlerDependencies {
+  dispatchCourseEntitlements: typeof dispatchCourseEntitlementsBestEffort;
   finalizeAppointmentPaymentForOrder: typeof finalizeAppointmentPaymentForOrder;
+  finalizeCoursePayment: typeof finalizeCoursePayment;
   getAppointmentHoldByCheckoutOrderPublicId: typeof getAppointmentHoldByCheckoutOrderPublicId;
   getOrIssueTrainingSchedulingTokenForPaidOrder: typeof getOrIssueTrainingSchedulingTokenForPaidOrder;
   getPendingOrderByCheckoutToken: typeof getPendingOrderByCheckoutToken;
   getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId: typeof getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId;
   logError: typeof console.error;
+  now: () => Date;
   markOrderPaid: typeof markOrderPaid;
   markOrderVerificationFailed: typeof markOrderVerificationFailed;
   persistVerifiedPayment: typeof persistVerifiedPayment;
@@ -78,32 +86,35 @@ function isValidBody(body: unknown): body is ValidatePaymentBody {
 export function createValidatePaymentPostHandler(
   dependencies: ValidatePaymentPostHandlerDependencies,
 ): (req: ValidatePaymentRequest) => Promise<Response> {
-  return async function validatePaymentPostHandler(req: ValidatePaymentRequest): Promise<Response> {
+  return async function validatePaymentPostHandler(
+    req: ValidatePaymentRequest,
+  ): Promise<Response> {
     try {
       const body: unknown = await req.json();
 
       if (!isValidBody(body)) {
         return Response.json(
           { error: "Invalid request body" },
-          { status: 400 }
+          { status: 400 },
         );
       }
 
       const { checkoutToken, data, hash } = body;
 
-      const order = await dependencies.getPendingOrderByCheckoutToken(checkoutToken);
+      const order =
+        await dependencies.getPendingOrderByCheckoutToken(checkoutToken);
 
       if (!order) {
         return Response.json(
           { error: "Checkout session not found" },
-          { status: 404 }
+          { status: 404 },
         );
       }
 
       if (!hasHelcimInvoiceIdentifiers(order)) {
         return Response.json(
           { error: "Payment could not be verified" },
-          { status: 400 }
+          { status: 400 },
         );
       }
 
@@ -115,11 +126,52 @@ export function createValidatePaymentPostHandler(
       });
 
       if (!payment.ok) {
-        await dependencies.markOrderVerificationFailed(order.orderId);
+        // A browser controls when this callback is attempted. Never let an
+        // invalid or premature client payload poison a recoverable course
+        // payment before Helcim's trusted webhook arrives.
+        if (order.purpose !== "course") {
+          await dependencies.markOrderVerificationFailed(order.orderId);
+        }
         return Response.json(
           { error: "Payment could not be verified" },
-          { status: 400 }
+          { status: 400 },
         );
+      }
+
+      if (order.purpose === "course") {
+        try {
+          await dependencies.finalizeCoursePayment({
+            orderId: order.orderId,
+            paidAt: dependencies.now(),
+            provider: "helcim",
+            providerTransactionId: payment.transactionId,
+          });
+        } catch (error) {
+          dependencies.logError(
+            "[checkout] Verified course payment could not be finalized",
+            {
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Unknown finalization error",
+              orderId: order.orderId,
+            },
+          );
+          return Response.json(
+            {
+              error: "Payment verified but course access could not be recorded",
+            },
+            { status: 500 },
+          );
+        }
+
+        await dependencies.dispatchCourseEntitlements();
+
+        return Response.json({
+          accessStatus: "processing",
+          orderId: order.orderId,
+          redirectUrl: `/academy?payment=received&order=${encodeURIComponent(order.orderId)}`,
+        });
       }
 
       const persisted = await dependencies.persistVerifiedPayment({
@@ -131,7 +183,7 @@ export function createValidatePaymentPostHandler(
       if (!persisted) {
         return Response.json(
           { error: "Payment verified but order could not be recorded" },
-          { status: 500 }
+          { status: 500 },
         );
       }
 
@@ -149,12 +201,20 @@ export function createValidatePaymentPostHandler(
 
         if (booking.ok) {
           try {
-            await dependencies.sendBookingConfirmationEmailForOrder(order.orderId);
+            await dependencies.sendBookingConfirmationEmailForOrder(
+              order.orderId,
+            );
           } catch (error) {
-            dependencies.logError("[checkout] Booking confirmation email failed", {
-              error: error instanceof Error ? error.message : "Unknown email error",
-              orderId: order.orderId,
-            });
+            dependencies.logError(
+              "[checkout] Booking confirmation email failed",
+              {
+                error:
+                  error instanceof Error
+                    ? error.message
+                    : "Unknown email error",
+                orderId: order.orderId,
+              },
+            );
           }
 
           return Response.json({
@@ -165,17 +225,21 @@ export function createValidatePaymentPostHandler(
           });
         }
 
-        dependencies.logError("[checkout] Appointment booking finalization failed", {
-          error: booking.error,
-          orderId: order.orderId,
-          status: booking.status,
-        });
+        dependencies.logError(
+          "[checkout] Appointment booking finalization failed",
+          {
+            error: booking.error,
+            orderId: order.orderId,
+            status: booking.status,
+          },
+        );
 
         if (booking.status === "finalization_pending") {
           return Response.json(
             {
               bookingStatus: booking.status,
-              error: "Payment received; booking confirmation is still in progress",
+              error:
+                "Payment received; booking confirmation is still in progress",
               orderId: order.orderId,
             },
             { status: 409 },
@@ -193,24 +257,36 @@ export function createValidatePaymentPostHandler(
         );
       }
 
-      const trainingEnrollment = await dependencies.getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId(order.orderId);
+      const trainingEnrollment =
+        await dependencies.getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId(
+          order.orderId,
+        );
 
       if (trainingEnrollment) {
         const programSlug = trainingEnrollment.programSnapshot.slug;
 
         if (!programSlug) {
           return Response.json(
-            { error: "Payment verified but training confirmation could not be prepared" },
+            {
+              error:
+                "Payment verified but training confirmation could not be prepared",
+            },
             { status: 500 },
           );
         }
 
         const safeProgramSlug: string = programSlug;
-        const schedulingToken = await dependencies.getOrIssueTrainingSchedulingTokenForPaidOrder(order.orderId);
+        const schedulingToken =
+          await dependencies.getOrIssueTrainingSchedulingTokenForPaidOrder(
+            order.orderId,
+          );
 
         if (!schedulingToken) {
           return Response.json(
-            { error: "Payment verified but training scheduling could not be prepared" },
+            {
+              error:
+                "Payment verified but training scheduling could not be prepared",
+            },
             { status: 500 },
           );
         }
@@ -220,7 +296,10 @@ export function createValidatePaymentPostHandler(
           schedulingToken: schedulingToken.schedulingToken,
         });
 
-        if (trainingEnrollment.studentPaymentEmailSentAt === null || trainingEnrollment.staffAlertedAt === null) {
+        if (
+          trainingEnrollment.studentPaymentEmailSentAt === null ||
+          trainingEnrollment.staffAlertedAt === null
+        ) {
           try {
             await dependencies.sendTrainingPaymentNotificationEmailsIfNeeded({
               enrollment: trainingEnrollment,
@@ -232,10 +311,16 @@ export function createValidatePaymentPostHandler(
               ),
             });
           } catch (error) {
-            dependencies.logError("[checkout] Training payment notification email failed", {
-              error: error instanceof Error ? error.message : "Unknown email error",
-              orderId: order.orderId,
-            });
+            dependencies.logError(
+              "[checkout] Training payment notification email failed",
+              {
+                error:
+                  error instanceof Error
+                    ? error.message
+                    : "Unknown email error",
+                orderId: order.orderId,
+              },
+            );
           }
         }
 
@@ -246,12 +331,18 @@ export function createValidatePaymentPostHandler(
       }
 
       try {
-        await dependencies.sendProductOrderConfirmationEmailForOrder(order.orderId);
+        await dependencies.sendProductOrderConfirmationEmailForOrder(
+          order.orderId,
+        );
       } catch (error) {
-        dependencies.logError("[checkout] Product order confirmation email failed", {
-          error: error instanceof Error ? error.message : "Unknown email error",
-          orderId: order.orderId,
-        });
+        dependencies.logError(
+          "[checkout] Product order confirmation email failed",
+          {
+            error:
+              error instanceof Error ? error.message : "Unknown email error",
+            orderId: order.orderId,
+          },
+        );
       }
 
       return Response.json({
@@ -260,24 +351,25 @@ export function createValidatePaymentPostHandler(
       });
     } catch (error) {
       dependencies.logError("[checkout] Payment validation failed", {
-        error: error instanceof Error ? error.message : "Unknown validation error",
+        error:
+          error instanceof Error ? error.message : "Unknown validation error",
       });
-      return Response.json(
-        { error: "Internal server error" },
-        { status: 500 }
-      );
+      return Response.json({ error: "Internal server error" }, { status: 500 });
     }
   };
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
   return createValidatePaymentPostHandler({
+    dispatchCourseEntitlements: dispatchCourseEntitlementsBestEffort,
     finalizeAppointmentPaymentForOrder,
+    finalizeCoursePayment,
     getOrIssueTrainingSchedulingTokenForPaidOrder,
     getAppointmentHoldByCheckoutOrderPublicId,
     getPendingOrderByCheckoutToken,
     getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
     logError: console.error,
+    now: () => new Date(),
     markOrderPaid,
     markOrderVerificationFailed,
     persistVerifiedPayment,
@@ -292,10 +384,15 @@ async function getAppointmentBookingConfirmationRedirectUrl(input: {
   getAppointmentHoldByCheckoutOrderPublicId: typeof getAppointmentHoldByCheckoutOrderPublicId;
   orderId: string;
 }): Promise<string> {
-  const appointmentHold = await input.getAppointmentHoldByCheckoutOrderPublicId(input.orderId);
+  const appointmentHold = await input.getAppointmentHoldByCheckoutOrderPublicId(
+    input.orderId,
+  );
   const serviceSlug = appointmentHold?.offeringSnapshot.slug;
 
-  if (typeof serviceSlug === "string" && isSafeServiceConfirmationSlug(serviceSlug)) {
+  if (
+    typeof serviceSlug === "string" &&
+    isSafeServiceConfirmationSlug(serviceSlug)
+  ) {
     return buildServiceBookingConfirmationUrl({
       orderId: input.orderId,
       serviceSlug,
@@ -307,7 +404,11 @@ async function getAppointmentBookingConfirmationRedirectUrl(input: {
   });
 }
 
-function buildAbsoluteSchedulingUrl(origin: string, programSlug: string, schedulingToken: string): string {
+function buildAbsoluteSchedulingUrl(
+  origin: string,
+  programSlug: string,
+  schedulingToken: string,
+): string {
   return new URL(
     buildTrainingScheduleUrl({
       programSlug,
@@ -317,11 +418,13 @@ function buildAbsoluteSchedulingUrl(origin: string, programSlug: string, schedul
   ).toString();
 }
 
-function hasHelcimInvoiceIdentifiers<T extends {
-  helcimInvoiceId: number | null;
-  helcimInvoiceNumber: string | null;
-  paymentProvider?: string;
-}>(order: T): order is T & VerifiablePendingOrder {
+function hasHelcimInvoiceIdentifiers<
+  T extends {
+    helcimInvoiceId: number | null;
+    helcimInvoiceNumber: string | null;
+    paymentProvider?: string;
+  },
+>(order: T): order is T & VerifiablePendingOrder {
   return (
     order.paymentProvider === "helcim" &&
     order.helcimInvoiceId !== null &&

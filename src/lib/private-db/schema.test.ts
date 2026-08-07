@@ -41,9 +41,22 @@ import {
   bookingServicePromotionOfferings,
   bookingSquareCustomers,
   calendarFinalizationStatus,
+  courseOrderItemFinancialStatus,
+  courseOrderItemOwnershipStatus,
+  courseOrderItems,
+  courseRefundAllocationStatus,
+  courseRefundAllocations,
   checkoutOrders,
   checkoutPaymentEvents,
   checkoutOrderPurpose,
+  customerProviderAccounts,
+  customerUsers,
+  customerUserStatus,
+  customerVerifiedEmails,
+  entitlementOutbox,
+  entitlementOutboxCommandType,
+  entitlementOutboxStatus,
+  guestOrderClaims,
   marketingConsentEvents,
   marketingContactSyncJobs,
   noShowChargeStatus,
@@ -73,7 +86,13 @@ function getIndexNames(
     | typeof bookingNoShowChargeRecords
     | typeof checkoutOrders
     | typeof checkoutPaymentEvents
-    | typeof marketingContactSyncJobs,
+    | typeof marketingContactSyncJobs
+    | typeof customerProviderAccounts
+    | typeof customerVerifiedEmails
+    | typeof courseOrderItems
+    | typeof guestOrderClaims
+    | typeof courseRefundAllocations
+    | typeof entitlementOutbox,
 ): string[] {
   const names: string[] = [];
 
@@ -104,14 +123,257 @@ test("appointment hold status enum matches booking lifecycle states", () => {
   ]);
 });
 
-test("checkout order purpose enum includes custom partial appointment payments", () => {
+test("checkout order purpose enum includes courses and custom partial appointment payments", () => {
   assert.deepEqual(checkoutOrderPurpose.enumValues, [
     "product",
     "training",
+    "course",
     "appointment_deposit",
     "appointment_full",
     "appointment_custom_partial",
   ]);
+});
+
+test("course identity and lifecycle enums expose the approved states", () => {
+  assert.deepEqual(customerUserStatus.enumValues, ["active", "disabled"]);
+  assert.deepEqual(courseOrderItemOwnershipStatus.enumValues, [
+    "guest_unclaimed",
+    "claimed",
+  ]);
+  assert.deepEqual(courseOrderItemFinancialStatus.enumValues, [
+    "pending",
+    "paid",
+    "partially_refunded",
+    "refunded",
+    "disputed",
+    "chargeback",
+    "payment_reversed",
+  ]);
+  assert.deepEqual(entitlementOutboxCommandType.enumValues, [
+    "grant",
+    "revoke",
+  ]);
+  assert.deepEqual(entitlementOutboxStatus.enumValues, [
+    "pending",
+    "processing",
+    "completed",
+    "failed",
+    "cancelled",
+  ]);
+  assert.deepEqual(courseRefundAllocationStatus.enumValues, [
+    "pending",
+    "completed",
+    "failed",
+    "reversed",
+  ]);
+});
+
+test("customer identity tables retain provider and verified-email lineage", () => {
+  assert.equal(
+    [
+      "id",
+      "status",
+      "displayName",
+      "lastSignedInAt",
+      "createdAt",
+      "updatedAt",
+    ].every((column) => Object.keys(customerUsers).includes(column)),
+    true,
+  );
+  assert.ok(customerProviderAccounts.email);
+  assert.ok(customerProviderAccounts.emailNormalized);
+  assert.ok(customerProviderAccounts.emailVerifiedAt);
+  assert.ok(customerVerifiedEmails.verificationProvider);
+  assert.ok(customerVerifiedEmails.verifiedAt);
+
+  assert.deepEqual(getIndexNames(customerProviderAccounts), [
+    "customer_provider_accounts_customer_idx",
+    "customer_provider_accounts_provider_account_idx",
+  ]);
+  assert.deepEqual(getIndexNames(customerVerifiedEmails), [
+    "customer_verified_emails_customer_idx",
+    "customer_verified_emails_email_normalized_idx",
+    "customer_verified_emails_id_customer_idx",
+  ]);
+
+  for (const table of [customerProviderAccounts, customerVerifiedEmails]) {
+    assert.equal(getTableConfig(table).foreignKeys[0]?.onDelete, "restrict");
+  }
+});
+
+test("checkout orders optionally link a customer and support customer history scans", () => {
+  assert.equal(checkoutOrders.customerUserId.notNull, false);
+  assert.ok(
+    getIndexNames(checkoutOrders).includes(
+      "checkout_orders_customer_created_idx",
+    ),
+  );
+
+  const customerForeignKey = getTableConfig(checkoutOrders).foreignKeys.find(
+    (foreignKey) =>
+      foreignKey.getName() ===
+      "checkout_orders_customer_user_id_customer_users_id_fk",
+  );
+  assert.equal(customerForeignKey?.onDelete, "restrict");
+});
+
+test("course order items enforce ownership, amount, currency, and lineage constraints", () => {
+  const columns = Object.keys(courseOrderItems);
+
+  for (const column of [
+    "checkoutOrderId",
+    "courseId",
+    "customerUserId",
+    "courseSlug",
+    "courseTitle",
+    "ownershipStatus",
+    "priceCents",
+    "currency",
+    "financialStatus",
+    "refundedCents",
+    "paidAt",
+    "refundedAt",
+    "disputedAt",
+  ]) {
+    assert.ok(columns.includes(column));
+  }
+
+  assert.deepEqual(getIndexNames(courseOrderItems), [
+    "course_order_items_checkout_course_idx",
+    "course_order_items_course_financial_idx",
+    "course_order_items_customer_financial_idx",
+  ]);
+  assert.deepEqual(
+    getTableConfig(courseOrderItems)
+      .checks.map((constraint) => constraint.name)
+      .sort(),
+    [
+      "course_order_items_amount_check",
+      "course_order_items_currency_check",
+      "course_order_items_ownership_check",
+    ],
+  );
+  assert.deepEqual(
+    getTableConfig(courseOrderItems)
+      .foreignKeys.map((foreignKey) => foreignKey.onDelete)
+      .sort(),
+    ["restrict", "restrict"],
+  );
+});
+
+test("guest claims are unique per checkout order and retain all claim lineage", () => {
+  assert.deepEqual(getIndexNames(guestOrderClaims), [
+    "guest_order_claims_checkout_order_idx",
+    "guest_order_claims_customer_claimed_idx",
+  ]);
+  assert.deepEqual(
+    getTableConfig(guestOrderClaims)
+      .foreignKeys.map((foreignKey) => foreignKey.onDelete)
+      .sort(),
+    ["restrict", "restrict", "restrict"],
+  );
+  assert.ok(
+    getTableConfig(guestOrderClaims).foreignKeys.some(
+      (foreignKey) =>
+        foreignKey.getName() ===
+        "guest_order_claims_verified_email_customer_fk",
+    ),
+  );
+});
+
+test("refund allocations require immutable Helcim event evidence and valid amounts", () => {
+  assert.deepEqual(getIndexNames(courseRefundAllocations), [
+    "course_refund_allocations_item_occurred_idx",
+    "course_refund_allocations_provider_event_idx",
+    "course_refund_allocations_provider_refund_item_idx",
+    "course_refund_allocations_status_created_idx",
+  ]);
+  assert.deepEqual(
+    getTableConfig(courseRefundAllocations)
+      .checks.map((constraint) => constraint.name)
+      .sort(),
+    [
+      "course_refund_allocations_amount_check",
+      "course_refund_allocations_currency_check",
+      "course_refund_allocations_provider_check",
+    ],
+  );
+
+  const foreignKeys = getTableConfig(courseRefundAllocations).foreignKeys;
+  assert.equal(courseRefundAllocations.checkoutPaymentEventId.notNull, true);
+  assert.equal(
+    Object.keys(courseRefundAllocations).includes("squarePaymentRefundEventId"),
+    false,
+  );
+  assert.equal(
+    foreignKeys.find((foreignKey) =>
+      foreignKey
+        .getName()
+        .startsWith("course_refund_allocations_course_order_item_id"),
+    )?.onDelete,
+    "restrict",
+  );
+  assert.equal(
+    foreignKeys.find((foreignKey) =>
+      foreignKey
+        .getName()
+        .startsWith("course_refund_allocations_checkout_payment_event_id"),
+    )?.onDelete,
+    "restrict",
+  );
+});
+
+test("entitlement outbox supports ordered, leased, auditable delivery", () => {
+  for (const column of [
+    "courseOrderItemId",
+    "commandType",
+    "sequence",
+    "idempotencyKey",
+    "payload",
+    "payloadHash",
+    "status",
+    "attempts",
+    "maxAttempts",
+    "nextAttemptAt",
+    "leaseOwner",
+    "leaseExpiresAt",
+    "lastAttemptedAt",
+    "lastError",
+    "lastErrorContext",
+    "returnedGrantId",
+    "completedAt",
+    "cancelledByAdminUserId",
+    "cancellationReason",
+    "cancelledAt",
+  ]) {
+    assert.ok(Object.keys(entitlementOutbox).includes(column));
+  }
+
+  assert.deepEqual(getIndexNames(entitlementOutbox), [
+    "entitlement_outbox_due_idx",
+    "entitlement_outbox_history_idx",
+    "entitlement_outbox_idempotency_key_idx",
+    "entitlement_outbox_item_sequence_idx",
+    "entitlement_outbox_lease_idx",
+  ]);
+  assert.deepEqual(
+    getTableConfig(entitlementOutbox)
+      .checks.map((constraint) => constraint.name)
+      .sort(),
+    [
+      "entitlement_outbox_attempts_check",
+      "entitlement_outbox_cancellation_check",
+      "entitlement_outbox_completion_check",
+      "entitlement_outbox_lease_check",
+      "entitlement_outbox_sequence_check",
+    ],
+  );
+  assert.deepEqual(
+    getTableConfig(entitlementOutbox)
+      .foreignKeys.map((foreignKey) => foreignKey.onDelete)
+      .sort(),
+    ["restrict", "restrict"],
+  );
 });
 
 test("payment provider enum keeps Helcim compatibility and adds Square", () => {

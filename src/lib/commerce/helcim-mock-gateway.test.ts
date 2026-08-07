@@ -148,7 +148,9 @@ test("mock Helcim sparse webhook verifies signature and merges fetched transacti
     helcimInvoiceId: undefined,
     helcimInvoiceNumber: undefined,
     helcimTransactionId: "mock_helcim_txn_1",
+    originalTransactionId: undefined,
     status: undefined,
+    transactionType: undefined,
   });
 
   const merged = mergeHelcimCardTransactionDetails(
@@ -161,6 +163,7 @@ test("mock Helcim sparse webhook verifies signature and merges fetched transacti
   assert.equal(merged.currency, "CAD");
   assert.equal(merged.helcimInvoiceNumber, invoice.invoiceNumber);
   assert.equal(merged.cardLast4, "4242");
+  assert.equal(merged.transactionType, "purchase");
   const tokenField = ["card", "Token"].join("");
   const numberField = ["card", "Number"].join("");
 

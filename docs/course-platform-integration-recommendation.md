@@ -1,7 +1,7 @@
 # Course Platform Integration Recommendation
 
 **Date:** 2026-08-06  
-**Status:** Proposed  
+**Status:** Approved; implementation in progress
 **Repositories assessed:** lash-her-frontend and lash-her-course-api
 
 ## Decision
@@ -27,6 +27,30 @@ The proposed first-release shape is:
 - The frontend never reads the course database directly.
 - The existing training_enrollments table is not reused for online-course
   access.
+
+### Approved MVP implementation decisions
+
+- Online courses are standalone digital products for the first release.
+  Existing in-person training purchases do not automatically grant academy
+  access.
+- The course API is authoritative for course identity, publication state,
+  price, currency, curriculum, entitlement, playback, and progress.
+- Course checkout is CAD-only for the MVP and uses Helcim exclusively. Square
+  remains limited to its existing service-booking and optional training uses.
+- The learner content baseline is plain written lesson content plus Mux video.
+  Quizzes, certificates, downloads, captions, and assessments require an API
+  contract expansion before UI work.
+- The frontend uses a database-leased entitlement worker with immediate
+  best-effort delivery and scheduled recovery. Entitlement commands are
+  persisted before any call to the course API.
+- The academy remains disabled by default. Production enablement requires the
+  separate Node 24 course API deployment, course database, managed secrets,
+  restricted internal endpoints, and the missing authoritative learner-course
+  list and course-status contracts. Guest checkout and production course sales
+  also remain disabled until the verified-order claim UI and an audited,
+  item-explicit Helcim refund-to-revoke operation are connected end to end.
+  `COURSE_CHECKOUT_ENABLED` therefore remains a separate false-by-default
+  launch gate while the payment and entitlement foundation is integrated.
 
 ## Rationale
 
@@ -59,7 +83,7 @@ flowchart LR
     API --> Mux["Mux signed playback"]
     Mux --> Learner
 
-    Provider["Helcim or Square"] --> Webhook["Frontend payment webhook"]
+    Provider["Helcim"] --> Webhook["Frontend payment webhook"]
     Webhook --> FrontDB["Orders and entitlement outbox"]
     FrontDB --> Worker["Durable outbox worker"]
     Worker --> API
@@ -255,8 +279,10 @@ Required behavior:
 - Resolve price and availability server-side.
 - Persist provider-event claim, order transition, refund allocation, and
   outbox insertion in one PostgreSQL transaction.
-- Document exact authoritative Helcim/Square paid, refund, dispute,
-  chargeback, and reversal events.
+- Treat a verified Helcim purchase as the only automatic course-payment event.
+  Refund and reverse transactions are retained as evidence, but do not infer a
+  course-line allocation from the transaction amount. A revoke is emitted only
+  after an explicit Helcim refund allocation identifies the affected item.
 - Emit one grant or revoke per course order item.
 - Preserve causal ordering so a revoke cannot overtake its pending grant.
 - Defer guest grants until a verified account owns the order.

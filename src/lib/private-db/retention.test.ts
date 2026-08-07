@@ -6,6 +6,7 @@ const helperScript = String.raw`
 
   import {
     createPrivateDataRetentionCleanup,
+    getCheckoutPaymentEventDeletePredicate,
     getPrivateDataRetentionCutoffs,
     getSoftDeletedCheckoutOrderPurgePredicate,
     getTerminalAppointmentHoldDeletePredicate,
@@ -213,6 +214,11 @@ test("private data retention checkout purge preserves unresolved linked records"
     );
     assert.equal(query.sql.includes('"checkout_payment_events"."created_at" >'), true);
     assert.equal(query.sql.includes('from "training_enrollments"'), true);
+    assert.equal(query.sql.includes('from "course_order_items"'), true);
+    assert.equal(
+      query.sql.includes('"course_order_items"."checkout_order_id" = "checkout_orders"."id"'),
+      true,
+    );
     assert.equal(
       query.sql.includes('"training_enrollments"."checkout_order_id" = "checkout_orders"."id"'),
       true,
@@ -253,6 +259,25 @@ test("private data retention checkout purge preserves unresolved linked records"
     ]) {
       assert.equal(normalizedParams.includes(expectedParam), true);
     }
+  `);
+});
+
+test("private data retention preserves course refund evidence", () => {
+  runRetentionScenario(`
+    const dialect = new PgDialect();
+    const query = dialect.sqlToQuery(
+      getCheckoutPaymentEventDeletePredicate(
+        new Date("2026-05-01T12:00:00.000Z"),
+      ),
+    );
+
+    assert.match(query.sql, /"checkout_payment_events"\."created_at" <= \\$1/);
+    assert.match(query.sql, /not exists/);
+    assert.match(query.sql, /from "course_refund_allocations"/);
+    assert.match(
+      query.sql,
+      /"course_refund_allocations"\."checkout_payment_event_id" = "checkout_payment_events"\."id"/,
+    );
   `);
 });
 

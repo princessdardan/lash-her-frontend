@@ -21,6 +21,8 @@ import {
   appointments,
   checkoutOrders,
   checkoutPaymentEvents,
+  courseRefundAllocations,
+  courseOrderItems,
   marketingConsentEvents,
   marketingContacts,
   marketingContactSubmissions,
@@ -578,6 +580,12 @@ export function getSoftDeletedCheckoutOrderPurgePredicate(
     `),
     notExists(sql`
       (select 1
+      from ${courseOrderItems}
+      where ${courseOrderItems.checkoutOrderId} = ${checkoutOrders.id}
+      )
+    `),
+    notExists(sql`
+      (select 1
       from ${trainingEnrollments}
       where ${trainingEnrollments.checkoutOrderId} = ${checkoutOrders.id}
       and (
@@ -637,6 +645,13 @@ export function getTerminalAppointmentRedactionPredicate(cutoff: Date) {
   );
 }
 
+export function getCheckoutPaymentEventDeletePredicate(cutoff: Date) {
+  return and(
+    lte(checkoutPaymentEvents.createdAt, cutoff),
+    sql`not exists (select 1 from ${courseRefundAllocations} where ${courseRefundAllocations.checkoutPaymentEventId} = ${checkoutPaymentEvents.id})`,
+  );
+}
+
 export async function runPrivateDataRetentionCleanup(
   input: { now?: Date } = {},
 ): Promise<PrivateDataRetentionCleanupSummary> {
@@ -668,7 +683,7 @@ function createDrizzlePrivateDataRetentionRepository(): PrivateDataRetentionClea
     async deleteCheckoutPaymentEvents({ cutoff }) {
       const deleted = await getPrivateDb()
         .delete(checkoutPaymentEvents)
-        .where(lte(checkoutPaymentEvents.createdAt, cutoff))
+        .where(getCheckoutPaymentEventDeletePredicate(cutoff))
         .returning({ id: checkoutPaymentEvents.id });
 
       return deleted.length;

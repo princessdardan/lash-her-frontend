@@ -303,6 +303,8 @@ export function getCheckoutPurposePresentation(purpose: CheckoutOrderPurpose): {
       return { label: "Product order", shortLabel: "Product" };
     case "training":
       return { label: "Training purchase", shortLabel: "Training" };
+    case "course":
+      return { label: "Online course", shortLabel: "Course" };
     case "appointment_deposit":
       return { label: "Appointment deposit", shortLabel: "Deposit" };
     case "appointment_full":

@@ -4,6 +4,7 @@ import {
   boolean,
   check,
   date,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -30,12 +31,54 @@ export const checkoutOrderStatus = pgEnum("checkout_order_status", [
 export const checkoutOrderPurpose = pgEnum("checkout_order_purpose", [
   "product",
   "training",
+  "course",
   "appointment_deposit",
   "appointment_full",
   "appointment_custom_partial",
 ]);
 
 export const paymentProvider = pgEnum("payment_provider", ["helcim", "square"]);
+
+export const customerUserStatus = pgEnum("customer_user_status", [
+  "active",
+  "disabled",
+]);
+
+export const courseOrderItemOwnershipStatus = pgEnum(
+  "course_order_item_ownership_status",
+  ["guest_unclaimed", "claimed"],
+);
+
+export const courseOrderItemFinancialStatus = pgEnum(
+  "course_order_item_financial_status",
+  [
+    "pending",
+    "paid",
+    "partially_refunded",
+    "refunded",
+    "disputed",
+    "chargeback",
+    "payment_reversed",
+  ],
+);
+
+export const entitlementOutboxCommandType = pgEnum(
+  "entitlement_outbox_command_type",
+  ["grant", "revoke"],
+);
+
+export const entitlementOutboxStatus = pgEnum("entitlement_outbox_status", [
+  "pending",
+  "processing",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+
+export const courseRefundAllocationStatus = pgEnum(
+  "course_refund_allocation_status",
+  ["pending", "completed", "failed", "reversed"],
+);
 
 export const calendarFinalizationStatus = pgEnum(
   "calendar_finalization_status",
@@ -270,6 +313,17 @@ export type CheckoutOrderStatus =
 export type CheckoutOrderPurpose =
   (typeof checkoutOrderPurpose.enumValues)[number];
 export type PaymentProvider = (typeof paymentProvider.enumValues)[number];
+export type CustomerUserStatus = (typeof customerUserStatus.enumValues)[number];
+export type CourseOrderItemOwnershipStatus =
+  (typeof courseOrderItemOwnershipStatus.enumValues)[number];
+export type CourseOrderItemFinancialStatus =
+  (typeof courseOrderItemFinancialStatus.enumValues)[number];
+export type EntitlementOutboxCommandType =
+  (typeof entitlementOutboxCommandType.enumValues)[number];
+export type EntitlementOutboxStatus =
+  (typeof entitlementOutboxStatus.enumValues)[number];
+export type CourseRefundAllocationStatus =
+  (typeof courseRefundAllocationStatus.enumValues)[number];
 export type CalendarFinalizationStatus =
   (typeof calendarFinalizationStatus.enumValues)[number];
 export type PaymentEventProcessingStatus =
@@ -403,6 +457,82 @@ export interface MarketingConsentEventMetadata {
 export interface BookingNoShowProviderMetadata {
   [key: string]: unknown;
 }
+
+export interface EntitlementOutboxCommandPayload {
+  readonly [key: string]: unknown;
+}
+
+export const customerUsers = pgTable("customer_users", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  status: customerUserStatus("status").notNull().default("active"),
+  displayName: text("display_name"),
+  lastSignedInAt: timestamp("last_signed_in_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const customerProviderAccounts = pgTable(
+  "customer_provider_accounts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    customerUserId: uuid("customer_user_id")
+      .notNull()
+      .references(() => customerUsers.id, { onDelete: "restrict" }),
+    provider: text("provider").notNull(),
+    providerAccountId: text("provider_account_id").notNull(),
+    email: text("email"),
+    emailNormalized: text("email_normalized"),
+    emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
+    lastSignedInAt: timestamp("last_signed_in_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("customer_provider_accounts_provider_account_idx").on(
+      table.provider,
+      table.providerAccountId,
+    ),
+    index("customer_provider_accounts_customer_idx").on(table.customerUserId),
+  ],
+);
+
+export const customerVerifiedEmails = pgTable(
+  "customer_verified_emails",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    customerUserId: uuid("customer_user_id")
+      .notNull()
+      .references(() => customerUsers.id, { onDelete: "restrict" }),
+    email: text("email").notNull(),
+    emailNormalized: text("email_normalized").notNull(),
+    verificationProvider: text("verification_provider").notNull(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("customer_verified_emails_email_normalized_idx").on(
+      table.emailNormalized,
+    ),
+    uniqueIndex("customer_verified_emails_id_customer_idx").on(
+      table.id,
+      table.customerUserId,
+    ),
+    index("customer_verified_emails_customer_idx").on(table.customerUserId),
+  ],
+);
 
 export const adminUsers = pgTable(
   "admin_users",
@@ -1150,6 +1280,10 @@ export const checkoutOrders = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     orderId: text("order_id").notNull().unique(),
     purpose: checkoutOrderPurpose("purpose").notNull().default("product"),
+    customerUserId: uuid("customer_user_id").references(
+      () => customerUsers.id,
+      { onDelete: "restrict" },
+    ),
     status: checkoutOrderStatus("status").notNull().default("pending"),
     checkoutTokenHash: text("checkout_token_hash").notNull().unique(),
     secretTokenCiphertext: text("secret_token_ciphertext").notNull(),
@@ -1225,6 +1359,10 @@ export const checkoutOrders = pgTable(
     ),
     uniqueIndex("checkout_orders_calendar_event_id_idx").on(
       table.calendarEventId,
+    ),
+    index("checkout_orders_customer_created_idx").on(
+      table.customerUserId,
+      table.createdAt,
     ),
     index("checkout_orders_square_correlation_id_idx")
       .using("btree", sql`(${table.providerMetadata}->>'correlationId')`)
@@ -1321,6 +1459,242 @@ export const squarePaymentRefundEvents = pgTable(
     check(
       "square_payment_refund_events_amount_check",
       sql`${table.amountCents} >= 0`,
+    ),
+  ],
+);
+
+export const courseOrderItems = pgTable(
+  "course_order_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    checkoutOrderId: uuid("checkout_order_id")
+      .notNull()
+      .references(() => checkoutOrders.id, { onDelete: "restrict" }),
+    courseId: uuid("course_id").notNull(),
+    customerUserId: uuid("customer_user_id").references(
+      () => customerUsers.id,
+      { onDelete: "restrict" },
+    ),
+    courseSlug: text("course_slug").notNull(),
+    courseTitle: text("course_title").notNull(),
+    ownershipStatus: courseOrderItemOwnershipStatus("ownership_status")
+      .notNull()
+      .default("guest_unclaimed"),
+    priceCents: integer("price_cents").notNull(),
+    currency: text("currency").notNull(),
+    financialStatus: courseOrderItemFinancialStatus("financial_status")
+      .notNull()
+      .default("pending"),
+    refundedCents: integer("refunded_cents").notNull().default(0),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    refundedAt: timestamp("refunded_at", { withTimezone: true }),
+    disputedAt: timestamp("disputed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("course_order_items_checkout_course_idx").on(
+      table.checkoutOrderId,
+      table.courseId,
+    ),
+    index("course_order_items_customer_financial_idx").on(
+      table.customerUserId,
+      table.financialStatus,
+    ),
+    index("course_order_items_course_financial_idx").on(
+      table.courseId,
+      table.financialStatus,
+    ),
+    check(
+      "course_order_items_ownership_check",
+      sql`(${table.ownershipStatus} = 'guest_unclaimed' AND ${table.customerUserId} IS NULL) OR (${table.ownershipStatus} = 'claimed' AND ${table.customerUserId} IS NOT NULL)`,
+    ),
+    check(
+      "course_order_items_amount_check",
+      sql`${table.priceCents} >= 0 AND ${table.refundedCents} >= 0 AND ${table.refundedCents} <= ${table.priceCents}`,
+    ),
+    check(
+      "course_order_items_currency_check",
+      sql`${table.currency} ~ '^[A-Z]{3}$'`,
+    ),
+  ],
+);
+
+export const guestOrderClaims = pgTable(
+  "guest_order_claims",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    checkoutOrderId: uuid("checkout_order_id")
+      .notNull()
+      .references(() => checkoutOrders.id, { onDelete: "restrict" }),
+    customerUserId: uuid("customer_user_id")
+      .notNull()
+      .references(() => customerUsers.id, { onDelete: "restrict" }),
+    verifiedEmailId: uuid("verified_email_id").notNull(),
+    claimMethod: text("claim_method").notNull(),
+    claimedAt: timestamp("claimed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("guest_order_claims_checkout_order_idx").on(
+      table.checkoutOrderId,
+    ),
+    index("guest_order_claims_customer_claimed_idx").on(
+      table.customerUserId,
+      table.claimedAt,
+    ),
+    foreignKey({
+      columns: [table.verifiedEmailId, table.customerUserId],
+      foreignColumns: [
+        customerVerifiedEmails.id,
+        customerVerifiedEmails.customerUserId,
+      ],
+      name: "guest_order_claims_verified_email_customer_fk",
+    }).onDelete("restrict"),
+  ],
+);
+
+export const courseRefundAllocations = pgTable(
+  "course_refund_allocations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    courseOrderItemId: uuid("course_order_item_id")
+      .notNull()
+      .references(() => courseOrderItems.id, { onDelete: "restrict" }),
+    paymentProvider: paymentProvider("payment_provider").notNull(),
+    providerRefundId: text("provider_refund_id").notNull(),
+    providerEventId: text("provider_event_id").notNull(),
+    checkoutPaymentEventId: uuid("checkout_payment_event_id")
+      .notNull()
+      .references(() => checkoutPaymentEvents.id, { onDelete: "restrict" }),
+    status: courseRefundAllocationStatus("status").notNull().default("pending"),
+    amountCents: integer("amount_cents").notNull(),
+    currency: text("currency").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    reversedAt: timestamp("reversed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("course_refund_allocations_provider_refund_item_idx").on(
+      table.paymentProvider,
+      table.providerRefundId,
+      table.courseOrderItemId,
+    ),
+    index("course_refund_allocations_item_occurred_idx").on(
+      table.courseOrderItemId,
+      table.occurredAt,
+    ),
+    index("course_refund_allocations_provider_event_idx").on(
+      table.paymentProvider,
+      table.providerEventId,
+    ),
+    index("course_refund_allocations_status_created_idx").on(
+      table.status,
+      table.createdAt,
+    ),
+    check(
+      "course_refund_allocations_provider_check",
+      sql`${table.paymentProvider} = 'helcim'`,
+    ),
+    check(
+      "course_refund_allocations_amount_check",
+      sql`${table.amountCents} > 0`,
+    ),
+    check(
+      "course_refund_allocations_currency_check",
+      sql`${table.currency} ~ '^[A-Z]{3}$'`,
+    ),
+  ],
+);
+
+export const entitlementOutbox = pgTable(
+  "entitlement_outbox",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    courseOrderItemId: uuid("course_order_item_id")
+      .notNull()
+      .references(() => courseOrderItems.id, { onDelete: "restrict" }),
+    commandType: entitlementOutboxCommandType("command_type").notNull(),
+    sequence: integer("sequence").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    payload: jsonb("payload")
+      .$type<EntitlementOutboxCommandPayload>()
+      .notNull(),
+    payloadHash: text("payload_hash").notNull(),
+    status: entitlementOutboxStatus("status").notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(5),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    leaseOwner: text("lease_owner"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    lastAttemptedAt: timestamp("last_attempted_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    lastErrorContext:
+      jsonb("last_error_context").$type<Record<string, unknown>>(),
+    returnedGrantId: uuid("returned_grant_id"),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    cancelledByAdminUserId: uuid("cancelled_by_admin_user_id").references(
+      () => adminUsers.id,
+      { onDelete: "restrict" },
+    ),
+    cancellationReason: text("cancellation_reason"),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("entitlement_outbox_idempotency_key_idx").on(
+      table.idempotencyKey,
+    ),
+    uniqueIndex("entitlement_outbox_item_sequence_idx").on(
+      table.courseOrderItemId,
+      table.sequence,
+    ),
+    index("entitlement_outbox_due_idx").on(table.status, table.nextAttemptAt),
+    index("entitlement_outbox_lease_idx").on(
+      table.status,
+      table.leaseExpiresAt,
+    ),
+    index("entitlement_outbox_history_idx").on(
+      table.courseOrderItemId,
+      table.createdAt,
+    ),
+    check("entitlement_outbox_sequence_check", sql`${table.sequence} > 0`),
+    check(
+      "entitlement_outbox_attempts_check",
+      sql`${table.attempts} >= 0 AND ${table.maxAttempts} > 0 AND ${table.attempts} <= ${table.maxAttempts}`,
+    ),
+    check(
+      "entitlement_outbox_lease_check",
+      sql`(${table.leaseOwner} IS NULL AND ${table.leaseExpiresAt} IS NULL) OR (${table.leaseOwner} IS NOT NULL AND ${table.leaseExpiresAt} IS NOT NULL)`,
+    ),
+    check(
+      "entitlement_outbox_completion_check",
+      sql`(${table.status} = 'completed' AND ${table.completedAt} IS NOT NULL) OR (${table.status} <> 'completed' AND ${table.completedAt} IS NULL)`,
+    ),
+    check(
+      "entitlement_outbox_cancellation_check",
+      sql`(${table.status} = 'cancelled' AND ${table.cancelledByAdminUserId} IS NOT NULL AND ${table.cancellationReason} IS NOT NULL AND ${table.cancelledAt} IS NOT NULL) OR (${table.status} <> 'cancelled' AND ${table.cancelledByAdminUserId} IS NULL AND ${table.cancellationReason} IS NULL AND ${table.cancelledAt} IS NULL)`,
     ),
   ],
 );

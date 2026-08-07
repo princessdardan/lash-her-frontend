@@ -65,7 +65,9 @@ const helperScript = String.raw`
   }
 
   async function runScenario({
+    dispatchCourseEntitlements,
     finalizeAppointmentPaymentForOrder,
+    finalizeCoursePayment,
     getAppointmentHoldByCheckoutOrderPublicId,
     getPendingOrderByCheckoutToken,
     getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
@@ -87,14 +89,36 @@ const helperScript = String.raw`
     const operationOrder = [];
     const sentEmails = [];
     const sentProductEmails = [];
+    const finalizedCoursePayments = [];
+    let entitlementDispatches = 0;
 
     const handler = createValidatePaymentPostHandler({
+      dispatchCourseEntitlements: async () => {
+        entitlementDispatches += 1;
+        if (dispatchCourseEntitlements) {
+          return dispatchCourseEntitlements();
+        }
+        return null;
+      },
       finalizeAppointmentPaymentForOrder: async (input) => {
         finalizedBookings.push(input);
         if (finalizeAppointmentPaymentForOrder) {
           return finalizeAppointmentPaymentForOrder(input);
         }
         return { ok: true, eventId: "calendar-event-1", status: "booked" };
+      },
+      finalizeCoursePayment: async (input) => {
+        finalizedCoursePayments.push(input);
+        operationOrder.push("finalize-course");
+        if (finalizeCoursePayment) {
+          return finalizeCoursePayment(input);
+        }
+        return {
+          duplicate: false,
+          grantsEnqueued: 1,
+          itemsMarkedPaid: 1,
+          orderMarkedPaid: true,
+        };
       },
       getAppointmentHoldByCheckoutOrderPublicId: async (orderId) => {
         if (getAppointmentHoldByCheckoutOrderPublicId) {
@@ -123,6 +147,7 @@ const helperScript = String.raw`
       logError: (message, context) => {
         errors.push({ context, message });
       },
+      now: () => new Date("2026-08-07T12:00:00.000Z"),
       markOrderPaid: async (orderId, transactionId) => {
         markedPaidOrders.push({ orderId, transactionId });
         operationOrder.push("mark-paid");
@@ -181,7 +206,7 @@ const helperScript = String.raw`
       },
     });
 
-    return { errors, finalizedBookings, handler, markedFailedOrders, markedPaidOrders, markedStaffAlerts, operationOrder, sentBookingEmails, sentEmails, sentProductEmails };
+    return { entitlementDispatches: () => entitlementDispatches, errors, finalizedBookings, finalizedCoursePayments, handler, markedFailedOrders, markedPaidOrders, markedStaffAlerts, operationOrder, sentBookingEmails, sentEmails, sentProductEmails };
   }
 `;
 
@@ -291,6 +316,28 @@ test("checkout payment validation marks order failed for payment mismatches", ()
   `);
 });
 
+test("course payment validation failures remain recoverable by the trusted webhook", () => {
+  runRouteScenario(`
+    const { handler, markedFailedOrders, markedPaidOrders } = await runScenario({
+      getPendingOrderByCheckoutToken: async () => ({
+        ...pendingOrder,
+        purpose: "course",
+      }),
+      verifyHelcimPayment: () => ({ ok: false, reason: "invalid_hash" }),
+    });
+
+    const response = await handler(createRequest({
+      checkoutToken: "checkout-token",
+      data: approvedPaymentData,
+      hash: "attacker-controlled-hash",
+    }));
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(markedFailedOrders, []);
+    assert.deepEqual(markedPaidOrders, []);
+  `);
+});
+
 test("checkout payment validation rejects mock Helcim decline and cancel payloads", () => {
   runRouteScenario(`
     for (const scenario of ["decline", "cancel"]) {
@@ -368,6 +415,47 @@ test("checkout payment validation sends product confirmation email after persist
   `);
 });
 
+test("checkout payment validation atomically finalizes course access before dispatch", () => {
+  runRouteScenario(`
+    const courseOrder = { ...pendingOrder, purpose: "course" };
+    const {
+      entitlementDispatches,
+      finalizedCoursePayments,
+      handler,
+      markedPaidOrders,
+      operationOrder,
+      sentProductEmails,
+    } = await runScenario({
+      getPendingOrderByCheckoutToken: async () => courseOrder,
+      getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId: async () => {
+        throw new Error("training branch should not run");
+      },
+    });
+
+    const response = await handler(createRequest({
+      checkoutToken: "checkout-token",
+      data: approvedPaymentData,
+      hash: "hash",
+    }));
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      accessStatus: "processing",
+      orderId: "lh-order-123",
+      redirectUrl: "/academy?payment=received&order=lh-order-123",
+    });
+    assert.deepEqual(finalizedCoursePayments, [{
+      orderId: "lh-order-123",
+      paidAt: new Date("2026-08-07T12:00:00.000Z"),
+      provider: "helcim",
+      providerTransactionId: "txn-verified-123",
+    }]);
+    assert.deepEqual(operationOrder, ["finalize-course"]);
+    assert.equal(entitlementDispatches(), 1);
+    assert.deepEqual(markedPaidOrders, []);
+    assert.deepEqual(sentProductEmails, []);
+  `);
+});
 
 test("checkout payment validation finalizes appointment payments after persistence", () => {
   runRouteScenario(`
@@ -523,7 +611,6 @@ test("checkout payment validation falls back to service confirmation resolver fo
     });
   `);
 });
-
 
 test("checkout payment validation can confirm an already-paid appointment order", () => {
   runRouteScenario(`

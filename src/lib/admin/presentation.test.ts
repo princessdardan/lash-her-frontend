@@ -209,6 +209,7 @@ test("label maps cover sources, resources, scheduling, and order purposes", () =
     checkoutOrderPurpose.enumValues,
     getCheckoutOrderPurposeLabel,
   );
+  assert.equal(getCheckoutOrderPurposeLabel("course"), "Online course");
   assert.equal(getMarketingSourceLabel("legacy_import"), "Other source");
 });
 

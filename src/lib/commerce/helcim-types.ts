@@ -53,6 +53,8 @@ export interface HelcimTransactionReconciliationFields {
   currency?: string;
   invoiceId?: number;
   invoiceNumber?: string;
+  originalTransactionId?: string;
   status?: string;
   transactionId?: string;
+  transactionType?: string;
 }

@@ -1,30 +1,28 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 
+import {
+  applyCustomerIdentityToJwt,
+  applyCustomerIdentityToSession,
+} from "@/lib/customer-identity/auth-callbacks";
+import { resolveCustomerIdentity } from "@/lib/customer-identity/service";
+
 interface GoogleIdentityProfile {
   email?: unknown;
   email_verified?: unknown;
+  name?: unknown;
   sub?: unknown;
 }
 
 export const { auth, handlers, signIn, signOut } = NextAuth({
   callbacks: {
     async jwt({ account, profile, token }) {
-      if (account?.provider === "google") {
-        const googleProfile = profile as GoogleIdentityProfile | undefined;
-
-        if (typeof googleProfile?.sub === "string") {
-          token.providerUserId = googleProfile.sub;
-        }
-
-        token.googleEmailVerified = googleProfile?.email_verified === true;
-      }
-
-      if (!token.providerUserId && typeof token.sub === "string") {
-        token.providerUserId = token.sub;
-      }
-
-      return token;
+      return applyCustomerIdentityToJwt({
+        account,
+        profile: profile as GoogleIdentityProfile | undefined,
+        resolveIdentity: resolveCustomerIdentity,
+        token,
+      });
     },
     async session({ session, token }) {
       if (session.user) {
@@ -33,7 +31,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         session.user.isEmailVerified = token.googleEmailVerified === true;
       }
 
-      return session;
+      return applyCustomerIdentityToSession(session, token);
     },
     async signIn({ account, profile }) {
       if (account?.provider !== "google") {
@@ -52,8 +50,8 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     },
   },
   pages: {
-    error: "/admin/sign-in",
-    signIn: "/admin/sign-in",
+    error: "/sign-in",
+    signIn: "/sign-in",
   },
   providers: [
     Google({

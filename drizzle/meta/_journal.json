@@ -225,6 +225,13 @@
       "when": 1785597956449,
       "tag": "0031_bored_loa",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1786068107031,
+      "tag": "0032_sloppy_rocket_raccoon",
+      "breakpoints": true
     }
   ]
 }
