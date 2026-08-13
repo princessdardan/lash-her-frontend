@@ -22,8 +22,10 @@ export interface VerifiedHelcimWebhook {
   helcimInvoiceId?: number;
   helcimInvoiceNumber?: string;
   helcimTransactionId?: string;
+  originalTransactionId?: string;
   payloadRedacted?: Record<string, unknown>;
   status?: string;
+  transactionType?: string;
 }
 
 type WebhookPayload = Record<string, unknown>;
@@ -45,9 +47,9 @@ export function verifyHelcimWebhookSignature(
     .update(`${headers.id}.${headers.timestamp}.${rawBody}`, "utf8")
     .digest("base64");
 
-  return getSignatureCandidates(headers.signature).some((signature) => (
-    timingSafeStringEqual(expectedSignature, signature)
-  ));
+  return getSignatureCandidates(headers.signature).some((signature) =>
+    timingSafeStringEqual(expectedSignature, signature),
+  );
 }
 
 export function parseVerifiedHelcimWebhook(
@@ -56,19 +58,32 @@ export function parseVerifiedHelcimWebhook(
 ): VerifiedHelcimWebhook {
   const payload = parseJsonObject(rawBody);
   const data = getObject(payload.data) ?? payload;
-  const eventType = getText(payload.eventType) ?? getText(payload.type) ?? "helcim_webhook_received";
+  const eventType =
+    getText(payload.eventType) ??
+    getText(payload.type) ??
+    "helcim_webhook_received";
   const transactionId = getText(data.transactionId) ?? getText(data.id);
   const invoiceId = getNumber(data.invoiceId);
+  const originalTransactionId = getText(data.originalTransactionId);
+  const transactionType = getText(data.transactionType);
 
   return {
     eventId: headers.id,
     eventType,
     helcimTransactionId: transactionId ?? undefined,
+    ...(originalTransactionId ? { originalTransactionId } : {}),
     helcimInvoiceId: invoiceId ?? undefined,
     helcimInvoiceNumber: getText(data.invoiceNumber) ?? undefined,
-    status: getText(data.status ?? data.paymentStatus ?? data.transactionStatus ?? data.approved) ?? undefined,
+    status:
+      getText(
+        data.status ??
+          data.paymentStatus ??
+          data.transactionStatus ??
+          data.approved,
+      ) ?? undefined,
     amount: getNumberOrText(data.amount) ?? undefined,
     currency: getText(data.currency) ?? undefined,
+    ...(transactionType ? { transactionType } : {}),
   };
 }
 
@@ -77,6 +92,10 @@ export function mergeHelcimCardTransactionDetails(
   details: HelcimCardTransactionResponse,
 ): VerifiedHelcimWebhook {
   const fields = normalizeHelcimCardTransactionDetails(details);
+  const originalTransactionId = getText(
+    details.originalTransactionId ?? details.originalCardTransactionId,
+  );
+  const transactionType = getText(details.transactionType ?? details.type);
 
   return {
     ...event,
@@ -88,31 +107,66 @@ export function mergeHelcimCardTransactionDetails(
     helcimInvoiceId: fields.invoiceId ?? event.helcimInvoiceId,
     helcimInvoiceNumber: fields.invoiceNumber ?? event.helcimInvoiceNumber,
     helcimTransactionId: fields.transactionId ?? event.helcimTransactionId,
-    payloadRedacted: toHelcimPayloadRedacted(fields),
+    ...(originalTransactionId
+      ? { originalTransactionId }
+      : event.originalTransactionId
+        ? { originalTransactionId: event.originalTransactionId }
+        : {}),
+    payloadRedacted: {
+      ...toHelcimPayloadRedacted(fields),
+      ...(originalTransactionId ? { originalTransactionId } : {}),
+      ...(transactionType ? { transactionType } : {}),
+    },
     status: fields.status ?? event.status,
+    ...(transactionType
+      ? { transactionType }
+      : event.transactionType
+        ? { transactionType: event.transactionType }
+        : {}),
   };
 }
 
 export function normalizeHelcimCardTransactionDetails(
   details: HelcimCardTransactionResponse,
 ): HelcimTransactionReconciliationFields {
-  const card = getObject(details.card) ?? getObject(details.cardDetails) ?? getObject(details.paymentCard);
+  const card =
+    getObject(details.card) ??
+    getObject(details.cardDetails) ??
+    getObject(details.paymentCard);
   const amount = getNumberOrText(
-    details.amount ?? details.transactionAmount ?? details.amountPaid ?? details.totalAmount,
+    details.amount ??
+      details.transactionAmount ??
+      details.amountPaid ??
+      details.totalAmount,
   );
 
   return {
     amount: amount ?? undefined,
-    approvalCode: getText(details.approvalCode ?? details.authCode ?? details.authorizationCode) ?? undefined,
+    approvalCode:
+      getText(
+        details.approvalCode ?? details.authCode ?? details.authorizationCode,
+      ) ?? undefined,
     cardLast4: getCardLast4(details, card) ?? undefined,
-    cardType: getText(
-      details.cardType ?? details.cardBrand ?? details.cardNetwork ?? card?.type ?? card?.brand,
-    ) ?? undefined,
+    cardType:
+      getText(
+        details.cardType ??
+          details.cardBrand ??
+          details.cardNetwork ??
+          card?.type ??
+          card?.brand,
+      ) ?? undefined,
     currency: getText(details.currency) ?? undefined,
     invoiceId: getNumber(details.invoiceId ?? details.invoiceID) ?? undefined,
-    invoiceNumber: getText(details.invoiceNumber ?? details.invoiceNo) ?? undefined,
-    status: getText(details.status ?? details.transactionStatus ?? details.approved) ?? undefined,
-    transactionId: getText(details.transactionId ?? details.cardTransactionId ?? details.id) ?? undefined,
+    invoiceNumber:
+      getText(details.invoiceNumber ?? details.invoiceNo) ?? undefined,
+    status:
+      getText(
+        details.status ?? details.transactionStatus ?? details.approved,
+      ) ?? undefined,
+    transactionId:
+      getText(
+        details.transactionId ?? details.cardTransactionId ?? details.id,
+      ) ?? undefined,
   };
 }
 
@@ -124,7 +178,9 @@ function toHelcimPayloadRedacted(
   );
 }
 
-export function getHelcimWebhookHeaders(headers: Headers): HelcimWebhookHeaders | null {
+export function getHelcimWebhookHeaders(
+  headers: Headers,
+): HelcimWebhookHeaders | null {
   const id = headers.get("webhook-id");
   const timestamp = headers.get("webhook-timestamp");
   const signature = headers.get("webhook-signature");
@@ -198,16 +254,19 @@ function getNumberOrText(value: unknown): number | string | null {
   return null;
 }
 
-function getCardLast4(details: WebhookPayload, card: WebhookPayload | null): string | null {
+function getCardLast4(
+  details: WebhookPayload,
+  card: WebhookPayload | null,
+): string | null {
   return getText(
-    details.cardLast4
-      ?? details.last4
-      ?? details.cardNumberLast4
-      ?? card?.last4
-      ?? card?.cardLast4
-      ?? card?.cardNumberLast4
-      ?? getCardNumberLast4(details.cardNumber)
-      ?? getCardNumberLast4(card?.cardNumber),
+    details.cardLast4 ??
+      details.last4 ??
+      details.cardNumberLast4 ??
+      card?.last4 ??
+      card?.cardLast4 ??
+      card?.cardNumberLast4 ??
+      getCardNumberLast4(details.cardNumber) ??
+      getCardNumberLast4(card?.cardNumber),
   );
 }
 
@@ -232,7 +291,11 @@ function getSignatureCandidates(signatureHeader: string): string[] {
     .split(/\s+/)
     .map((signature) => signature.trim())
     .filter((signature) => signature.length > 0)
-    .map((signature) => signature.includes(",") ? signature.slice(signature.indexOf(",") + 1) : signature)
+    .map((signature) =>
+      signature.includes(",")
+        ? signature.slice(signature.indexOf(",") + 1)
+        : signature,
+    )
     .filter((signature) => signature.length > 0);
 }
 

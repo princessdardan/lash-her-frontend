@@ -29,6 +29,28 @@ export async function checkShippingQuoteRateLimit(input: {
   );
 }
 
+export async function checkSignedShippingLinkRateLimit(input: {
+  key: string;
+  now: Date;
+}): Promise<RateLimitDecision> {
+  const url = requireEnv("KV_REST_API_URL");
+  const token = requireEnv("KV_REST_API_TOKEN");
+  const redis = new Redis({ token, url });
+  return checkSlidingWindowRateLimitWithStore(
+    {
+      eval: <TResult>(script: string, keys: string[], args: string[]) =>
+        redis.eval<string[], TResult>(script, keys, args),
+    },
+    {
+      key: input.key,
+      limit: 10,
+      windowMs: 15 * 60_000,
+      nowMs: input.now.getTime(),
+      requestId: randomUUID(),
+    },
+  );
+}
+
 function requireEnv(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`Missing env var: ${name}`);

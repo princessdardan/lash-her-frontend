@@ -55,6 +55,7 @@ export interface ChitChatsShipment {
   postage_fee?: string | number | null;
   insurance_fee?: string | number | null;
   is_insured?: boolean | null;
+  estimated_delivery_at?: string | null;
   postage_label_pdf_url?: string | null;
   rates?: ChitChatsRate[];
   tracking_events?: ChitChatsTrackingEvent[];
@@ -67,6 +68,7 @@ export interface ChitChatsRate {
   postage_description?: string | null;
   delivery_time_description?: string | null;
   tracking_type_description?: string | null;
+  signature_confirmation_description?: string | null;
   is_insured?: boolean | null;
   payment_amount: string | number;
   insurance_fee?: string | number | null;
@@ -82,6 +84,15 @@ export interface ChitChatsTrackingEvent {
   [key: string]: unknown;
 }
 
+export interface ChitChatsReturn {
+  id: string;
+  shipment_id?: string | null;
+  status?: string | null;
+  reason?: string | null;
+  created_at?: string | null;
+  [key: string]: unknown;
+}
+
 export interface ChitChatsCreateShipmentInput {
   recipient: ShippingRecipient;
   packageSnapshot: ProductShipmentPackageSnapshot;
@@ -90,4 +101,5 @@ export interface ChitChatsCreateShipmentInput {
   orderReference: string;
   postageType?: string;
   shipDate?: string;
+  signatureRequested: boolean;
 }

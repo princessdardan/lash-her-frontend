@@ -20,6 +20,7 @@ import { parsePromotionCodeInput } from "@/lib/commerce/discounts";
 import type { HelcimGateway } from "@/lib/commerce/helcim-gateway";
 import { createPaymentMockStore } from "@/lib/payment-mocks/in-memory-store";
 import { ShippingQuoteConflictError } from "@/lib/shipping/errors";
+import { getTrustedClientIp } from "@/lib/security/trusted-client-ip";
 import type { TProduct, TPromotionCode } from "@/types";
 
 const checkoutPaymentMockStore = createPaymentMockStore();
@@ -104,6 +105,7 @@ interface CheckoutPostHandlerDependencies {
     shippingQuoteToken: string;
     shippingQuoteFingerprint: string;
     shippingRateId: string;
+    refundOriginIp: string;
   }) => Promise<{
     orderId: string;
     shippingAmountCents: number;
@@ -282,6 +284,13 @@ export function createCheckoutPostHandler({
           );
         }
         stage = "reserve_order";
+        const refundOriginIp = getTrustedClientIp(req.headers);
+        if (!refundOriginIp && process.env.VERCEL_ENV === "production") {
+          return NextResponse.json<CheckoutErrorBody>(
+            { error: "Checkout is temporarily unavailable" },
+            { status: 503 },
+          );
+        }
         initializingOrder = await createInitializingOrder({
           customerName: checkoutRequest.customer.name,
           customerEmail: checkoutRequest.customer.email,
@@ -306,6 +315,7 @@ export function createCheckoutPostHandler({
           shippingQuoteToken: checkoutRequest.shippingQuote.token,
           shippingQuoteFingerprint: currentFingerprint,
           shippingRateId: checkoutRequest.shippingQuote.rateId,
+          refundOriginIp: refundOriginIp ?? "127.0.0.1",
         });
         initializingOrderId = initializingOrder.orderId;
         checkoutAmount = initializingOrder.totalAmountCents / 100;

@@ -32,6 +32,13 @@ function createSquareInvoiceOrder(
   return {
     amountCents: 249900,
     merchandiseAmountCents: null,
+    refundOriginIpCiphertext: null,
+    atRiskValueCents: null,
+    fraudClassification: "low",
+    fraudRiskReasons: [],
+    fulfillmentClearedAt: null,
+    fraudClearedAt: null,
+    shippingPolicyVersion: null,
     shippingAmountCents: 0,
     initializationStatus: "ready",
     initializationError: null,

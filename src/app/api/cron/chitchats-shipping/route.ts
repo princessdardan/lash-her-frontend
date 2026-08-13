@@ -48,6 +48,7 @@ export async function GET(req: Request): Promise<Response> {
         trackingUrl: provider.tracking_url,
         actualPostageCents: moneyToCents(provider.postage_fee),
         actualInsuranceCents: moneyToCents(provider.insurance_fee),
+        estimatedDeliveryAt: provider.estimated_delivery_at,
       });
       for (const event of provider.tracking_events ?? []) {
         const occurredAt = event.created_at

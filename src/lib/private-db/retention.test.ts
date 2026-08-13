@@ -85,7 +85,11 @@ const helperScript = String.raw`
 
 test("private data retention windows define every scheduled table action", () => {
   runRetentionScenario(`
-    assert.equal(PRIVATE_DATA_RETENTION_WINDOWS.checkoutOrders.redactAfterDays, 395);
+    assert.equal(PRIVATE_DATA_RETENTION_WINDOWS.checkoutOrders.redactAfterDays, 365);
+    assert.equal(
+      PRIVATE_DATA_RETENTION_WINDOWS.checkoutOrders.redactAfterTerminalDays,
+      180,
+    );
     assert.equal(PRIVATE_DATA_RETENTION_WINDOWS.checkoutOrders.softDeleteAfterDays, 2555);
     assert.equal(PRIVATE_DATA_RETENTION_WINDOWS.checkoutPaymentEvents.scrubPayloadAfterDays, 90);
     assert.equal(PRIVATE_DATA_RETENTION_WINDOWS.appointmentHolds.deleteAbandonedAfterDays, 30);
@@ -139,7 +143,7 @@ test("private data retention cutoffs subtract configured UTC windows", () => {
     assert.equal(cutoffs.marketingSubmissionNonConsentingDeleteCutoff.toISOString(), "2025-11-29T12:00:00.000Z");
     assert.equal(cutoffs.marketingContactSyncJobRedactCutoff.toISOString(), "2025-04-28T12:00:00.000Z");
     assert.equal(cutoffs.marketingContactSyncJobDeleteCutoff.toISOString(), "2019-05-30T12:00:00.000Z");
-    assert.equal(cutoffs.checkoutOrderRedactCutoff.toISOString(), "2025-04-28T12:00:00.000Z");
+    assert.equal(cutoffs.checkoutOrderRedactCutoff.toISOString(), "2025-05-28T12:00:00.000Z");
     assert.equal(cutoffs.checkoutOrderSoftDeleteCutoff.toISOString(), "2019-05-30T12:00:00.000Z");
   `);
 });

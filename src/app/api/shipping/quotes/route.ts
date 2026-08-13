@@ -18,6 +18,7 @@ import {
 } from "@/lib/shipping/prepare-quote";
 import { issueShippingQuoteToken } from "@/lib/shipping/quote-token";
 import { selectCustomerRates } from "@/lib/shipping/rates";
+import { loadShippingPolicyContext } from "@/lib/shipping/policy";
 import {
   completeQuote,
   createQuoteDraft,
@@ -91,9 +92,10 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
   const config = getChitChatsConfig();
   const productIds = [...new Set(body.items.map((item) => item.productId))];
-  const [{ loaders }, profiles] = await Promise.all([
+  const [{ loaders }, profiles, policy] = await Promise.all([
     import("@/data/loaders"),
     listEnabledPackageProfiles(),
+    loadShippingPolicyContext(),
   ]);
   const [products, promotionCode] = await Promise.all([
     loaders.getProductsByIds(productIds),
@@ -143,10 +145,20 @@ export async function POST(req: NextRequest): Promise<Response> {
       customsLines: prepared.customsLines,
       merchandiseValueCents: prepared.merchandiseValueCents,
       orderReference: publicReference,
+      signatureRequested:
+        prepared.merchandiseValueCents >=
+        policy.settings.signatureThresholdCents,
     });
     const rates = selectCustomerRates(
       shipment.rates ?? [],
       config.trackedPostageTypes,
+      {
+        atRiskValueCents: prepared.merchandiseValueCents,
+        destinationCountryCode: body.recipient.countryCode,
+        estimatedDeliveryAt: shipment.estimated_delivery_at,
+        servicePolicies: policy.servicePolicies,
+        signatureThresholdCents: policy.settings.signatureThresholdCents,
+      },
     );
     if (rates.length === 0) {
       await markQuoteUnknown(draft.id, stripSignedLabelUrls(shipment));
@@ -177,6 +189,13 @@ export async function POST(req: NextRequest): Promise<Response> {
       const rates = selectCustomerRates(
         recovered.rates ?? [],
         config.trackedPostageTypes,
+        {
+          atRiskValueCents: prepared.merchandiseValueCents,
+          destinationCountryCode: body.recipient.countryCode,
+          estimatedDeliveryAt: recovered.estimated_delivery_at,
+          servicePolicies: policy.servicePolicies,
+          signatureThresholdCents: policy.settings.signatureThresholdCents,
+        },
       );
       if (rates.length > 0) {
         await completeQuote({
@@ -231,6 +250,9 @@ function publicRate(rate: {
   paymentAmountCents: number;
   insured: boolean;
   tracked: boolean;
+  deliveryMaxBusinessDays?: number;
+  signatureAvailable: boolean;
+  signatureRequired: boolean;
 }) {
   return {
     id: rate.id,
@@ -240,13 +262,14 @@ function publicRate(rate: {
     amountCents: rate.paymentAmountCents,
     insured: rate.insured,
     tracked: rate.tracked,
+    deliveryMaxBusinessDays: rate.deliveryMaxBusinessDays,
+    signatureAvailable: rate.signatureAvailable,
+    signatureRequired: rate.signatureRequired,
     currency: "CAD",
   };
 }
 
-function parseBody(
-  value: unknown,
-): {
+function parseBody(value: unknown): {
   items: CartInputItem[];
   promotionCode?: string;
   recipient: ShippingRecipient;

@@ -60,6 +60,7 @@ test("creates a Chit Chats shipment using the documented client-scoped contract"
     ],
     merchandiseValueCents: 2400,
     orderReference: "lhq-reference",
+    signatureRequested: false,
   });
 
   assert.equal(shipment.id, "shipment-1");
@@ -115,6 +116,7 @@ test("uses documented shipment lifecycle endpoints and response shapes", async (
     widthCm: 20,
     heightCm: 10,
     shipDate: "today",
+    signatureRequested: false,
   });
   await client.buyShipment("shipment-1", {
     postageType: "chit_chats_canada_tracked",

@@ -29,6 +29,7 @@ import {
   buildTrainingScheduleUrl,
 } from "@/lib/training-checkout";
 import { activateShipmentForPaidOrder } from "@/lib/shipping/shipment-store";
+import { classifyProductOrderPaymentRisk } from "@/lib/shipping/fraud";
 
 interface ValidatePaymentBody {
   checkoutToken: string;
@@ -57,6 +58,7 @@ interface ValidatePaymentPostHandlerDependencies {
   sendProductOrderConfirmationEmailForOrder: typeof sendProductOrderConfirmationEmailForOrder;
   sendTrainingPaymentNotificationEmailsIfNeeded: typeof sendTrainingPaymentNotificationEmailsIfNeeded;
   verifyHelcimPayment: typeof verifyHelcimPayment;
+  classifyProductOrderPaymentRisk?: typeof classifyProductOrderPaymentRisk;
 }
 
 function isValidBody(body: unknown): body is ValidatePaymentBody {
@@ -142,6 +144,12 @@ export function createValidatePaymentPostHandler(
           { status: 500 },
         );
       }
+
+      if (order.purpose === "product")
+        await dependencies.classifyProductOrderPaymentRisk?.(
+          order.orderId,
+          data,
+        );
 
       if (isAppointmentCheckoutPurpose(order.purpose)) {
         const booking = await dependencies.finalizeAppointmentPaymentForOrder({
@@ -320,6 +328,7 @@ export function createValidatePaymentPostHandler(
 export async function POST(req: NextRequest): Promise<Response> {
   return createValidatePaymentPostHandler({
     activateShipmentForPaidOrder,
+    classifyProductOrderPaymentRisk,
     finalizeAppointmentPaymentForOrder,
     getOrIssueTrainingSchedulingTokenForPaidOrder,
     getAppointmentHoldByCheckoutOrderPublicId,

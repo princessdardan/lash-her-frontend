@@ -39,6 +39,9 @@ interface ShippingRate {
   currency: "CAD";
   insured: boolean;
   tracked: boolean;
+  deliveryMaxBusinessDays?: number;
+  signatureAvailable: boolean;
+  signatureRequired: boolean;
 }
 
 interface ShippingQuote {
@@ -854,6 +857,11 @@ function CheckoutContent({
                                   <span className="block text-xs text-lh-muted">
                                     Insurance and tracking included
                                   </span>
+                                  {rate.signatureRequired ? (
+                                    <span className="block text-xs font-bold text-lh-shadow">
+                                      Signature is required at delivery
+                                    </span>
+                                  ) : null}
                                 </span>
                               </span>
                               <span className="whitespace-nowrap text-sm font-bold text-lh-shadow">

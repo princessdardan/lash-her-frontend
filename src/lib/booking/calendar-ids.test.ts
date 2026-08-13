@@ -1,9 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  parseBookingCalendarIds,
-} from "./calendar-ids";
+import { parseBookingCalendarIds } from "./calendar-ids";
 
 test("parseBookingCalendarIds returns single ID unchanged", () => {
   assert.deepEqual(parseBookingCalendarIds("primary"), ["primary"]);
@@ -32,7 +30,9 @@ test("parseBookingCalendarIds ignores empty entries", () => {
 
 test("parseBookingCalendarIds accepts settings object", () => {
   assert.deepEqual(
-    parseBookingCalendarIds({ calendarId: "primary, second" } as import("./types").BookingSettings),
+    parseBookingCalendarIds({
+      calendarId: "primary, second",
+    } as import("./types").BookingSettings),
     ["primary", "second"],
   );
 });
@@ -44,5 +44,3 @@ test("parseBookingCalendarIds returns empty array for empty string", () => {
 test("parseBookingCalendarIds returns empty array for whitespace-only string", () => {
   assert.deepEqual(parseBookingCalendarIds("   ,  ,  "), []);
 });
-
-

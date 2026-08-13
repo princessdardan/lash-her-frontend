@@ -37,6 +37,7 @@ const helperScript = String.raw`
     getCardTransaction,
     getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing,
     getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice,
+    reconcileProductOrderRefund,
     recordEvent,
     sendBookingConfirmationEmailForOrder,
     sendProductOrderConfirmationEmailForOrder,
@@ -51,6 +52,7 @@ const helperScript = String.raw`
     const markedStaffAlerts = [];
     const sentEmails = [];
     const sentSchedulingFailureAlerts = [];
+    const reconciledRefunds = [];
     const handler = createHelcimWebhookPostHandler({
       finalizeAppointmentPaymentForOrder: async (input) => {
         finalizedBookings.push(input);
@@ -61,6 +63,10 @@ const helperScript = String.raw`
       },
       getCardTransaction,
       getVerifierToken: () => verifierToken,
+      reconcileProductOrderRefund: async (input) => {
+        reconciledRefunds.push(input);
+        return reconcileProductOrderRefund ? reconcileProductOrderRefund(input) : true;
+      },
       getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice: async (input) => {
         if (getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice) {
           return getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice(input);
@@ -125,7 +131,7 @@ const helperScript = String.raw`
       },
     });
 
-    return { finalizedBookings, handler, trainingNotifications, markedStaffAlerts, recorded, sentBookingEmails, sentEmails, sentProductEmails, sentSchedulingFailureAlerts };
+    return { finalizedBookings, handler, reconciledRefunds, trainingNotifications, markedStaffAlerts, recorded, sentBookingEmails, sentEmails, sentProductEmails, sentSchedulingFailureAlerts };
   }
 `;
 
@@ -188,6 +194,31 @@ test("Helcim webhook route returns retryable status when private persistence fai
       status: "APPROVED",
       transactionId: "25764674",
     });
+  `);
+});
+
+test("Helcim webhook route reconciles an ambiguous local refund from signed provider details", () => {
+  runRouteScenario(`
+    const body = JSON.stringify({ id: "991122", type: "cardTransaction" });
+    const { handler, reconciledRefunds } = await runScenario({
+      getCardTransaction: async () => ({
+        amount: "-12.50",
+        currency: "CAD",
+        id: 991122,
+        originalTransactionId: 25764674,
+        status: "APPROVED",
+        transactionType: "refund",
+      }),
+    });
+
+    const response = await handler(createRequest(body));
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(reconciledRefunds, [{
+      amountCents: 1250,
+      originalTransactionId: "25764674",
+      providerRefundId: "991122",
+    }]);
   `);
 });
 

@@ -723,6 +723,13 @@ function createPendingSquareInvoiceOrder(input: {
   return {
     amountCents: input.amountCents,
     merchandiseAmountCents: null,
+    refundOriginIpCiphertext: null,
+    atRiskValueCents: null,
+    fraudClassification: "low",
+    fraudRiskReasons: [],
+    fulfillmentClearedAt: null,
+    fraudClearedAt: null,
+    shippingPolicyVersion: null,
     shippingAmountCents: 0,
     initializationStatus: "ready",
     initializationError: null,

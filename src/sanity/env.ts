@@ -3,26 +3,26 @@ export const apiVersion =
 
 export const dataset = assertValue(
   process.env.NEXT_PUBLIC_SANITY_DATASET,
-  "Missing env var: NEXT_PUBLIC_SANITY_DATASET"
+  "Missing env var: NEXT_PUBLIC_SANITY_DATASET",
 );
 
 export const projectId = assertValue(
   process.env.NEXT_PUBLIC_SANITY_PROJECT_ID,
-  "Missing env var: NEXT_PUBLIC_SANITY_PROJECT_ID"
+  "Missing env var: NEXT_PUBLIC_SANITY_PROJECT_ID",
 );
 
 /** Lazy — only asserts when the revalidate route actually calls it. */
 export function getWebhookSecret(): string {
   return assertValue(
     process.env.SANITY_WEBHOOK_SECRET,
-    "Missing env var: SANITY_WEBHOOK_SECRET"
+    "Missing env var: SANITY_WEBHOOK_SECRET",
   );
 }
 
 export function getSanityApiReadToken(): string {
   return assertValue(
     process.env.SANITY_API_READ_TOKEN,
-    "Missing env var: SANITY_API_READ_TOKEN"
+    "Missing env var: SANITY_API_READ_TOKEN",
   );
 }
 
@@ -35,12 +35,30 @@ export function getBookingEnv(): {
   kvRestApiToken: string;
 } {
   return {
-    googleClientId: assertValue(process.env.GOOGLE_CLIENT_ID, "Missing env var: GOOGLE_CLIENT_ID"),
-    googleClientSecret: assertValue(process.env.GOOGLE_CLIENT_SECRET, "Missing env var: GOOGLE_CLIENT_SECRET"),
-    googleRedirectUri: assertValue(process.env.GOOGLE_REDIRECT_URI, "Missing env var: GOOGLE_REDIRECT_URI"),
-    bookingAdminSetupSecret: assertValue(process.env.BOOKING_ADMIN_SETUP_SECRET, "Missing env var: BOOKING_ADMIN_SETUP_SECRET"),
-    kvRestApiUrl: assertValue(process.env.KV_REST_API_URL, "Missing env var: KV_REST_API_URL"),
-    kvRestApiToken: assertValue(process.env.KV_REST_API_TOKEN, "Missing env var: KV_REST_API_TOKEN"),
+    googleClientId: assertValue(
+      process.env.GOOGLE_CLIENT_ID,
+      "Missing env var: GOOGLE_CLIENT_ID",
+    ),
+    googleClientSecret: assertValue(
+      process.env.GOOGLE_CLIENT_SECRET,
+      "Missing env var: GOOGLE_CLIENT_SECRET",
+    ),
+    googleRedirectUri: assertValue(
+      process.env.GOOGLE_REDIRECT_URI,
+      "Missing env var: GOOGLE_REDIRECT_URI",
+    ),
+    bookingAdminSetupSecret: assertValue(
+      process.env.BOOKING_ADMIN_SETUP_SECRET,
+      "Missing env var: BOOKING_ADMIN_SETUP_SECRET",
+    ),
+    kvRestApiUrl: assertValue(
+      process.env.KV_REST_API_URL,
+      "Missing env var: KV_REST_API_URL",
+    ),
+    kvRestApiToken: assertValue(
+      process.env.KV_REST_API_TOKEN,
+      "Missing env var: KV_REST_API_TOKEN",
+    ),
   };
 }
 
@@ -48,7 +66,7 @@ export function getBookingEnv(): {
 export function getHelcimGeneralApiToken(): string {
   return assertHelcimApiToken(
     process.env.HELCIM_GENERAL_API_TOKEN,
-    "HELCIM_GENERAL_API_TOKEN"
+    "HELCIM_GENERAL_API_TOKEN",
   );
 }
 
@@ -56,7 +74,7 @@ export function getHelcimGeneralApiToken(): string {
 export function getHelcimTransactionApiToken(): string {
   return assertHelcimApiToken(
     process.env.HELCIM_TRANSACTION_API_TOKEN,
-    "HELCIM_TRANSACTION_API_TOKEN"
+    "HELCIM_TRANSACTION_API_TOKEN",
   );
 }
 
@@ -65,6 +83,14 @@ export function getCheckoutSecretEncryptionKey(): Buffer {
   return getEncryptionKey(
     "CHECKOUT_SECRET_ENCRYPTION_KEY",
     process.env.CHECKOUT_SECRET_ENCRYPTION_KEY,
+  );
+}
+
+/** Lazy — only asserts when a checkout IP is encrypted for refund use. */
+export function getCheckoutPiiEncryptionKey(): Buffer {
+  return getEncryptionKey(
+    "CHECKOUT_PII_ENCRYPTION_KEY",
+    process.env.CHECKOUT_PII_ENCRYPTION_KEY,
   );
 }
 
@@ -96,7 +122,7 @@ function assertHelcimApiToken(value: string | undefined, name: string): string {
 
   if (token.length < 32) {
     throw new Error(
-      `Malformed env var: ${name} appears truncated; wrap Helcim tokens that contain # in quotes`
+      `Malformed env var: ${name} appears truncated; wrap Helcim tokens that contain # in quotes`,
     );
   }
 

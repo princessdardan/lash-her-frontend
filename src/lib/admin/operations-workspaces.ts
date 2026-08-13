@@ -21,6 +21,10 @@ import {
   bookingPaymentAttempts,
   bookingProviders,
   checkoutOrders,
+  productOrderAddressChangeRequests,
+  productOrderCustomerDecisions,
+  productOrderRefunds,
+  productShippingCases,
   productShipments,
   marketingContactSubmissions,
   squarePaymentRefundEvents,
@@ -141,6 +145,15 @@ export interface AdminProductOrderRow {
   reference: string;
   shippingLines: string[] | null;
   status: AdminWorkspaceStatusPresentation;
+  operations: {
+    addressChangeStatus: string | null;
+    customerDecisionStatus: string | null;
+    fraudClassification: string;
+    fraudRiskReasons: string[];
+    latestRefundStatus: string | null;
+    openCaseCount: number;
+    shipmentHistoryCount: number;
+  };
   shipment: {
     status: string;
     providerStatus: string | null;
@@ -150,6 +163,12 @@ export interface AdminProductOrderRow {
     actualShippingCents: number | null;
     packageWeightGrams: number;
     selectedPostageType: string | null;
+    sequence: number;
+    purpose: string;
+    handoffDeadlineAt: Date | null;
+    autoRefundDeadlineAt: Date | null;
+    signatureRequired: boolean;
+    manualReviewAcknowledgedAt: Date | null;
   } | null;
 }
 
@@ -409,6 +428,19 @@ export async function listAdminProductOrders(
       reference: checkoutOrders.orderId,
       shippingAddress: checkoutOrders.shippingAddress,
       status: checkoutOrders.status,
+      fraudClassification: checkoutOrders.fraudClassification,
+      fraudRiskReasons: checkoutOrders.fraudRiskReasons,
+      openCaseCount: sql<number>`(select count(*)::int from ${productShippingCases} where ${productShippingCases.orderId} = ${checkoutOrders.id} and ${productShippingCases.status} not in ('resolved', 'cancelled'))`,
+      latestRefundStatus: sql<
+        string | null
+      >`(select ${productOrderRefunds.status}::text from ${productOrderRefunds} where ${productOrderRefunds.orderId} = ${checkoutOrders.id} order by ${productOrderRefunds.createdAt} desc limit 1)`,
+      customerDecisionStatus: sql<
+        string | null
+      >`(select ${productOrderCustomerDecisions.status}::text from ${productOrderCustomerDecisions} where ${productOrderCustomerDecisions.orderId} = ${checkoutOrders.id} order by ${productOrderCustomerDecisions.createdAt} desc limit 1)`,
+      addressChangeStatus: sql<
+        string | null
+      >`(select ${productOrderAddressChangeRequests.status}::text from ${productOrderAddressChangeRequests} where ${productOrderAddressChangeRequests.orderId} = ${checkoutOrders.id} order by ${productOrderAddressChangeRequests.createdAt} desc limit 1)`,
+      shipmentHistoryCount: sql<number>`(select count(*)::int from ${productShipments} shipment_history where shipment_history.order_id = ${checkoutOrders.id})`,
       shipmentStatus: productShipments.status,
       shipmentProviderStatus: productShipments.providerStatus,
       shipmentTrackingNumber: productShipments.trackingNumber,
@@ -418,9 +450,22 @@ export async function listAdminProductOrders(
       shipmentActualInsuranceCents: productShipments.actualInsuranceCents,
       shipmentPackageSnapshot: productShipments.packageSnapshot,
       shipmentSelectedPostageType: productShipments.selectedPostageType,
+      shipmentSequence: productShipments.sequence,
+      shipmentPurpose: productShipments.purpose,
+      shipmentHandoffDeadlineAt: productShipments.originalHandoffDeadlineAt,
+      shipmentAutoRefundDeadlineAt: productShipments.autoRefundDeadlineAt,
+      shipmentSignatureRequired: productShipments.signatureRequired,
+      shipmentManualReviewAcknowledgedAt:
+        productShipments.manualReviewAcknowledgedAt,
     })
     .from(checkoutOrders)
-    .leftJoin(productShipments, eq(productShipments.orderId, checkoutOrders.id))
+    .leftJoin(
+      productShipments,
+      and(
+        eq(productShipments.orderId, checkoutOrders.id),
+        sql`${productShipments.sequence} = (select max(latest_shipment.sequence) from ${productShipments} latest_shipment where latest_shipment.order_id = ${checkoutOrders.id})`,
+      ),
+    )
     .where(where)
     .orderBy(desc(checkoutOrders.createdAt), desc(checkoutOrders.id))
     .limit(pagination.pageSize)
@@ -450,6 +495,15 @@ export async function listAdminProductOrders(
           ? null
           : presentShippingAddress(row.shippingAddress),
         status: getCheckoutOrderStatusPresentation(row.status),
+        operations: {
+          addressChangeStatus: row.addressChangeStatus,
+          customerDecisionStatus: row.customerDecisionStatus,
+          fraudClassification: row.fraudClassification,
+          fraudRiskReasons: row.fraudRiskReasons,
+          latestRefundStatus: row.latestRefundStatus,
+          openCaseCount: row.openCaseCount,
+          shipmentHistoryCount: row.shipmentHistoryCount,
+        },
         shipment:
           row.shipmentStatus === null
             ? null
@@ -468,6 +522,13 @@ export async function listAdminProductOrders(
                 packageWeightGrams:
                   row.shipmentPackageSnapshot?.totalWeightGrams ?? 0,
                 selectedPostageType: row.shipmentSelectedPostageType,
+                sequence: row.shipmentSequence ?? 0,
+                purpose: row.shipmentPurpose ?? "original",
+                handoffDeadlineAt: row.shipmentHandoffDeadlineAt,
+                autoRefundDeadlineAt: row.shipmentAutoRefundDeadlineAt,
+                signatureRequired: row.shipmentSignatureRequired ?? false,
+                manualReviewAcknowledgedAt:
+                  row.shipmentManualReviewAcknowledgedAt,
               },
       };
     }),

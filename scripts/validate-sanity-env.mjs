@@ -43,6 +43,7 @@ const launchEnvVars = [
   "HELCIM_WEBHOOK_VERIFIER_TOKEN",
   "PAYMENT_RECONCILIATION_CRON_SECRET",
   "CRON_SECRET",
+  "BACKUP_RETENTION_DAYS",
 ];
 
 const squareLaunchEnvVars = [
@@ -60,6 +61,10 @@ const chitchatsLaunchEnvVars = [
   "CHITCHATS_ACCESS_TOKEN",
   "CHITCHATS_QUOTE_SIGNING_SECRET",
   "CHITCHATS_WORKER_CRON_SECRET",
+  "CHECKOUT_PII_ENCRYPTION_KEY",
+  "SHIPPING_DECISION_TOKEN_SECRET",
+  "ADDRESS_CHANGE_TOKEN_SECRET",
+  "SHIPPING_POLICY_ENFORCEMENT_MODE",
 ];
 
 const urlEnvVars = [
@@ -151,6 +156,13 @@ if (chitchatsCheckoutEnabled === "true" && !isChitchatsShippingEnabled) {
   errors.push("Invalid env vars: CHITCHATS_CHECKOUT_ENABLED requires CHITCHATS_SHIPPING_ENABLED=true");
 }
 
+if (
+  chitchatsCheckoutEnabled === "true"
+  && process.env.SHIPPING_POLICY_ENFORCEMENT_MODE !== "enforce"
+) {
+  errors.push("Invalid env vars: CHITCHATS_CHECKOUT_ENABLED requires SHIPPING_POLICY_ENFORCEMENT_MODE=enforce");
+}
+
 if (isPaymentMockMode && (process.env.NODE_ENV === "production" || vercelEnv === "production")) {
   errors.push("Payment mock mode is not allowed in production");
 }
@@ -173,6 +185,21 @@ if (isLaunchEnvironment) {
       "CHECKOUT_SECRET_ENCRYPTION_KEY",
       process.env.CHECKOUT_SECRET_ENCRYPTION_KEY,
     );
+  }
+
+  if (hasValue(process.env.CHECKOUT_PII_ENCRYPTION_KEY)) {
+    validateBase64EncryptionKey(
+      "CHECKOUT_PII_ENCRYPTION_KEY",
+      process.env.CHECKOUT_PII_ENCRYPTION_KEY
+    );
+  }
+
+  if (
+    hasValue(process.env.BACKUP_RETENTION_DAYS)
+    && (!/^\d+$/.test(process.env.BACKUP_RETENTION_DAYS)
+      || Number(process.env.BACKUP_RETENTION_DAYS) > 30)
+  ) {
+    errors.push("Malformed env var: BACKUP_RETENTION_DAYS must be an integer from 0 through 30");
   }
 
   if (hasValue(process.env.BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY)) {
@@ -224,6 +251,14 @@ if (isLaunchEnvironment) {
       && process.env.CHITCHATS_QUOTE_SIGNING_SECRET.trim().length < 32
     ) {
       errors.push("Malformed env var: CHITCHATS_QUOTE_SIGNING_SECRET must be at least 32 characters");
+    }
+    if (!["off", "observe", "enforce"].includes(process.env.SHIPPING_POLICY_ENFORCEMENT_MODE)) {
+      errors.push("Malformed env var: SHIPPING_POLICY_ENFORCEMENT_MODE must be off, observe, or enforce");
+    }
+    for (const name of ["SHIPPING_DECISION_TOKEN_SECRET", "ADDRESS_CHANGE_TOKEN_SECRET"]) {
+      if (hasValue(process.env[name]) && Buffer.byteLength(process.env[name].trim()) < 32) {
+        errors.push(`Malformed env var: ${name} must be at least 32 bytes`);
+      }
     }
   }
 }

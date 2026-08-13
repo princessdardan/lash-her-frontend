@@ -16,8 +16,16 @@ import {
 import { hashShippingQuoteToken } from "./quote-token";
 import type { ProductShipmentStatus } from "./store-types";
 import type { ShippingPackageProfile } from "./types";
+import { loadShippingPolicyContext } from "./policy";
+import { computeShippingDeadlines } from "./policy-calendar";
 
 export type ProductShipmentRow = typeof productShipments.$inferSelect;
+export type ShipmentPurchaseClaim = ProductShipmentRow & {
+  orderAtRiskValueCents: number;
+  orderCustomerEmail: string;
+  orderFraudClassification: "low" | "high";
+  orderFraudClearedAt: Date | null;
+};
 
 export async function listEnabledPackageProfiles(): Promise<
   ShippingPackageProfile[]
@@ -186,32 +194,66 @@ export async function attachQuoteToOrder(input: {
 export async function activateShipmentForPaidOrder(
   orderId: string,
 ): Promise<boolean> {
-  const [order] = await getPrivateDb()
-    .select({ id: checkoutOrders.id })
-    .from(checkoutOrders)
-    .where(
-      and(
-        eq(checkoutOrders.orderId, orderId),
-        eq(checkoutOrders.purpose, "product"),
-        eq(checkoutOrders.status, "paid"),
-      ),
-    )
-    .limit(1);
-  if (!order) return false;
-  const [updated] = await getPrivateDb()
-    .update(productShipments)
-    .set({
-      status: "ready_for_staff",
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(productShipments.orderId, order.id),
-        eq(productShipments.status, "payment_pending"),
-      ),
-    )
-    .returning({ id: productShipments.id });
-  return Boolean(updated);
+  const now = new Date();
+  const policy = await loadShippingPolicyContext(now);
+  return getPrivateDb().transaction(async (tx) => {
+    const [order] = await tx
+      .select({
+        id: checkoutOrders.id,
+        paidAt: checkoutOrders.paidAt,
+        fraudClassification: checkoutOrders.fraudClassification,
+        fraudClearedAt: checkoutOrders.fraudClearedAt,
+        fulfillmentClearedAt: checkoutOrders.fulfillmentClearedAt,
+      })
+      .from(checkoutOrders)
+      .where(
+        and(
+          eq(checkoutOrders.orderId, orderId),
+          eq(checkoutOrders.purpose, "product"),
+          eq(checkoutOrders.status, "paid"),
+        ),
+      )
+      .for("update")
+      .limit(1);
+    if (!order) return false;
+    const cleared =
+      order.fraudClassification === "low" || order.fraudClearedAt !== null;
+    if (!cleared) return false;
+
+    const clearedAt =
+      order.fulfillmentClearedAt ??
+      (order.fraudClassification === "high"
+        ? order.fraudClearedAt
+        : order.paidAt) ??
+      now;
+    const deadlines = computeShippingDeadlines({
+      clearedAt,
+      settings: policy.settings,
+      closedDates: policy.closedDates,
+    });
+    if (!order.fulfillmentClearedAt) {
+      await tx
+        .update(checkoutOrders)
+        .set({ fulfillmentClearedAt: clearedAt, updatedAt: now })
+        .where(eq(checkoutOrders.id, order.id));
+    }
+    const [updated] = await tx
+      .update(productShipments)
+      .set({
+        status: "ready_for_staff",
+        originalHandoffDeadlineAt: deadlines.handoffDeadlineAt,
+        autoRefundDeadlineAt: deadlines.autoRefundDeadlineAt,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(productShipments.orderId, order.id),
+          eq(productShipments.status, "payment_pending"),
+        ),
+      )
+      .returning({ id: productShipments.id });
+    return Boolean(updated);
+  });
 }
 
 export async function getShipmentForOrderReference(
@@ -228,9 +270,16 @@ export async function getShipmentForOrderReference(
 
 export async function claimShipmentPurchase(
   orderReference: string,
-): Promise<ProductShipmentRow | null> {
+): Promise<ShipmentPurchaseClaim | null> {
   const [order] = await getPrivateDb()
-    .select({ id: checkoutOrders.id })
+    .select({
+      id: checkoutOrders.id,
+      customerEmail: checkoutOrders.customerEmail,
+      atRiskValueCents: checkoutOrders.atRiskValueCents,
+      fraudClassification: checkoutOrders.fraudClassification,
+      fraudClearedAt: checkoutOrders.fraudClearedAt,
+      merchandiseAmountCents: checkoutOrders.merchandiseAmountCents,
+    })
     .from(checkoutOrders)
     .where(
       and(
@@ -251,7 +300,16 @@ export async function claimShipmentPurchase(
       ),
     )
     .returning();
-  return shipment ?? null;
+  return shipment
+    ? {
+        ...shipment,
+        orderAtRiskValueCents:
+          order.atRiskValueCents ?? order.merchandiseAmountCents ?? 0,
+        orderCustomerEmail: order.customerEmail,
+        orderFraudClassification: order.fraudClassification,
+        orderFraudClearedAt: order.fraudClearedAt,
+      }
+    : null;
 }
 
 export async function releaseShipmentPurchaseClaim(
@@ -263,6 +321,10 @@ export async function releaseShipmentPurchaseClaim(
     .update(productShipments)
     .set({
       status,
+      manualReviewStartedAt:
+        status === "manual_review"
+          ? sql`coalesce(${productShipments.manualReviewStartedAt}, now())`
+          : undefined,
       ...(rawShipment ? { rawShipment } : {}),
       updatedAt: new Date(),
     })
@@ -272,6 +334,23 @@ export async function releaseShipmentPurchaseClaim(
         eq(productShipments.status, "purchase_pending"),
       ),
     );
+}
+
+export async function acknowledgeShipmentManualReview(
+  orderReference: string,
+  now = new Date(),
+): Promise<string | null> {
+  const [updated] = await getPrivateDb()
+    .update(productShipments)
+    .set({ manualReviewAcknowledgedAt: now, updatedAt: now })
+    .where(
+      and(
+        eq(productShipments.status, "manual_review"),
+        sql`${productShipments.orderId} = (select ${checkoutOrders.id} from ${checkoutOrders} where ${checkoutOrders.orderId} = ${orderReference})`,
+      ),
+    )
+    .returning({ id: productShipments.id });
+  return updated?.id ?? null;
 }
 
 export async function claimShipmentRefund(
@@ -310,6 +389,7 @@ export async function updateShipmentFromProvider(input: {
   trackingUrl?: string | null;
   actualPostageCents?: number | null;
   actualInsuranceCents?: number | null;
+  estimatedDeliveryAt?: string | null;
 }): Promise<void> {
   await getPrivateDb()
     .update(productShipments)
@@ -327,6 +407,10 @@ export async function updateShipmentFromProvider(input: {
           : sanitizeTrackingUrl(input.trackingUrl),
       actualPostageCents: input.actualPostageCents ?? undefined,
       actualInsuranceCents: input.actualInsuranceCents ?? undefined,
+      latestEstimatedDeliveryAt:
+        input.estimatedDeliveryAt === undefined
+          ? undefined
+          : parseProviderDate(input.estimatedDeliveryAt),
       purchasedAt: (
         [
           "label_ready",
@@ -345,6 +429,15 @@ export async function updateShipmentFromProvider(input: {
       deliveredAt:
         input.status === "delivered"
           ? sql`coalesce(${productShipments.deliveredAt}, now())`
+          : undefined,
+      privacyTerminalAt: (
+        ["delivered", "voided"] as ProductShipmentStatus[]
+      ).includes(input.status)
+        ? sql`coalesce(${productShipments.privacyTerminalAt}, now())`
+        : undefined,
+      manualReviewStartedAt:
+        input.status === "manual_review"
+          ? sql`coalesce(${productShipments.manualReviewStartedAt}, now())`
           : undefined,
       updatedAt: new Date(),
     })
@@ -384,6 +477,13 @@ export async function recordShipmentEvent(input: {
     .values(input)
     .onConflictDoNothing({ target: productShipmentEvents.fingerprint })
     .returning({ id: productShipmentEvents.id });
+  if (created)
+    await getPrivateDb()
+      .update(productShipments)
+      .set({
+        lastCarrierMovementAt: sql`greatest(coalesce(${productShipments.lastCarrierMovementAt}, ${input.occurredAt}), ${input.occurredAt})`,
+      })
+      .where(eq(productShipments.id, input.shipmentId));
   return Boolean(created);
 }
 
@@ -553,4 +653,10 @@ function sanitizeTrackingUrl(value: string | null): string | null {
   } catch {
     return null;
   }
+}
+
+function parseProviderDate(value: string | null): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
 }

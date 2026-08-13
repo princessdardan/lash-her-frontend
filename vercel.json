@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/chitchats-shipping",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/shipping-policy",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

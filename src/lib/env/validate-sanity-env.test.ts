@@ -7,6 +7,7 @@ import test from "node:test";
 
 const scriptPath = join(process.cwd(), "scripts/validate-sanity-env.mjs");
 const checkoutKey = Buffer.alloc(32, 7).toString("base64");
+const checkoutPiiKey = Buffer.alloc(32, 9).toString("base64");
 const calendarCredentialKey = Buffer.alloc(32, 11).toString("base64");
 const secretValue = "super-secret-value-that-must-not-appear";
 
@@ -45,6 +46,7 @@ const launchEnv = {
   HELCIM_WEBHOOK_VERIFIER_TOKEN: "helcim-webhook-verifier-token",
   PAYMENT_RECONCILIATION_CRON_SECRET: "payment-reconciliation-cron-secret",
   CRON_SECRET: "vercel-cron-secret",
+  BACKUP_RETENTION_DAYS: "30",
 };
 
 test("validates local public Sanity environment", () => {
@@ -104,6 +106,12 @@ test("validates preview Chit Chats shipping configuration", () => {
     CHITCHATS_ACCESS_TOKEN: "access-token",
     CHITCHATS_QUOTE_SIGNING_SECRET: "quote-signing-secret-with-safe-length",
     CHITCHATS_WORKER_CRON_SECRET: "worker-cron-secret",
+    CHECKOUT_PII_ENCRYPTION_KEY: checkoutPiiKey,
+    SHIPPING_DECISION_TOKEN_SECRET:
+      "shipping-decision-secret-at-least-thirty-two-bytes",
+    ADDRESS_CHANGE_TOKEN_SECRET:
+      "address-change-secret-at-least-thirty-two-bytes",
+    SHIPPING_POLICY_ENFORCEMENT_MODE: "enforce",
   });
 
   assert.equal(result.status, 0);

@@ -5,6 +5,16 @@ import { createChitChatsClient } from "@/lib/shipping/chitchats-client";
 import { getChitChatsConfig } from "@/lib/shipping/config";
 import { selectCustomerRates } from "@/lib/shipping/rates";
 import {
+  isEquivalentSubstitution,
+  loadShippingPolicyContext,
+} from "@/lib/shipping/policy";
+import { hasSignedCustomerDecision } from "@/lib/shipping/customer-decisions";
+import { queueProductOrderRefund } from "@/lib/shipping/customer-refunds";
+import {
+  sendShippingCustomerUpdate,
+  sendShippingPolicyAlert,
+} from "@/lib/shipping/policy-alerts";
+import {
   claimShipmentPurchase,
   releaseShipmentPurchaseClaim,
   updateShipmentFromProvider,
@@ -49,6 +59,8 @@ export async function POST(
     body && typeof body.alternateReason === "string"
       ? body.alternateReason.trim().slice(0, 500)
       : "";
+  const alternateConditionsUnchanged =
+    body?.alternateConditionsUnchanged === true;
   if (measuredWeightGrams <= 0 || measuredWeightGrams > 50_000 || !shipDate) {
     return NextResponse.json(
       { error: "Measured weight and ship date are required" },
@@ -68,6 +80,20 @@ export async function POST(
     );
   }
   const config = getChitChatsConfig();
+  const policy = await loadShippingPolicyContext();
+  const signatureRequired =
+    shipment.orderAtRiskValueCents >= policy.settings.signatureThresholdCents ||
+    shipment.orderFraudClassification === "high";
+  if (
+    shipment.orderFraudClassification === "high" &&
+    !shipment.orderFraudClearedAt
+  ) {
+    await releaseShipmentPurchaseClaim(shipment.id, "ready_for_staff");
+    return NextResponse.json(
+      { error: "High-risk order requires two-person clearance" },
+      { status: 409 },
+    );
+  }
   const client = createChitChatsClient(config);
   let buyWasRequested = false;
   try {
@@ -80,11 +106,23 @@ export async function POST(
         widthCm: shipment.packageSnapshot.widthCm,
         heightCm: shipment.packageSnapshot.heightCm,
         shipDate,
+        signatureRequested: signatureRequired,
       },
     );
     const rates = selectCustomerRates(
       refreshed.rates ?? [],
       config.trackedPostageTypes,
+      {
+        atRiskValueCents: shipment.orderAtRiskValueCents,
+        destinationCountryCode:
+          shipment.destination.countryCode ??
+          (shipment.destination.country === "Canada" ? "CA" : "US"),
+        estimatedDeliveryAt: refreshed.estimated_delivery_at,
+        servicePolicies: policy.servicePolicies,
+        signatureThresholdCents: signatureRequired
+          ? 0
+          : Number.MAX_SAFE_INTEGER,
+      },
     );
     const originalRate = rates.find(
       (rate) => rate.postageType === shipment.selectedPostageType,
@@ -122,6 +160,51 @@ export async function POST(
         { status: 400 },
       );
     }
+    const quotedRate = shipment.rates.find(
+      (rate) => rate.postageType === shipment.selectedPostageType,
+    );
+    if (
+      !originalRate &&
+      quotedRate &&
+      !isEquivalentSubstitution({
+        original: quotedRate,
+        substitute: selectedRate,
+        introducesPickupDutyOrBrokerage: !alternateConditionsUnchanged,
+      })
+    ) {
+      const substitutionConsented = shipment.orderId
+        ? await hasSignedCustomerDecision({
+            orderId: shipment.orderId,
+            outcomes: ["accept_substitute"],
+          })
+        : false;
+      const signatureConsented =
+        !selectedRate.signatureRequired || quotedRate.signatureRequired
+          ? true
+          : shipment.orderId
+            ? await hasSignedCustomerDecision({
+                orderId: shipment.orderId,
+                outcomes: ["accept_signature"],
+              })
+            : false;
+      if (substitutionConsented && signatureConsented) {
+        // The signed choice authorizes the otherwise non-equivalent service.
+      } else {
+        await releaseShipmentPurchaseClaim(
+          shipment.id,
+          "ready_for_staff",
+          stripSignedLabelUrls(refreshed),
+        );
+        return NextResponse.json(
+          {
+            error: signatureConsented
+              ? "This service change requires a signed customer decision"
+              : "This service adds signature delivery and requires signed customer consent",
+          },
+          { status: 409 },
+        );
+      }
+    }
 
     buyWasRequested = true;
     let purchased = await client.buyShipment(shipment.providerShipmentId, {
@@ -153,7 +236,32 @@ export async function POST(
       trackingUrl: purchased.tracking_url,
       actualPostageCents: moneyToCents(purchased.postage_fee),
       actualInsuranceCents: moneyToCents(purchased.insurance_fee),
+      estimatedDeliveryAt: purchased.estimated_delivery_at,
     });
+    const serviceReductionCents =
+      (shipment.quotedShippingCents ?? selectedRate.paymentAmountCents) -
+      selectedRate.paymentAmountCents;
+    if (serviceReductionCents >= 100) {
+      try {
+        await queueProductOrderRefund({
+          orderReference: orderId,
+          amountCents: serviceReductionCents,
+          reason: "Shipping service price reduction",
+          automated: true,
+        });
+      } catch {
+        // Local refundable-balance locking makes repeat purchase recovery safe.
+      }
+    }
+    if (!originalRate) {
+      await sendShippingCustomerUpdate({
+        to: shipment.orderCustomerEmail,
+        orderReference: orderId,
+        subject: "Your shipping service was updated",
+        message: `We selected ${selectedRate.title}, an insured and tracked shipping service that meets the approved delivery and signature conditions for your order. There is no added charge.`,
+        idempotencyKey: `shipping-substitution/${shipment.id}/${selectedRate.postageType}`,
+      }).catch(() => undefined);
+    }
     await recordAdminAuditBestEffort({
       action: "fulfillment.postage_purchase",
       actor,
@@ -167,7 +275,9 @@ export async function POST(
         measuredWeightGrams,
         quotedShippingCents: shipment.quotedShippingCents,
         actualShippingCents: selectedRate.paymentAmountCents,
+        serviceReductionCents: Math.max(0, serviceReductionCents),
         ...(alternateReason ? { alternateReason } : {}),
+        ...(alternatePostageType ? { alternateConditionsUnchanged } : {}),
       },
     });
     return NextResponse.json({
@@ -189,6 +299,15 @@ export async function POST(
       targetType: "product_shipment",
       metadata: { orderId, buyOutcomeUnknown: buyWasRequested },
     });
+    if (buyWasRequested)
+      await sendShippingPolicyAlert({
+        duties: ["operations_lead"],
+        critical: true,
+        subject: `Unknown postage purchase outcome: ${orderId}`,
+        message:
+          "A postage buy request may have succeeded. Stop retries and reconcile the stored provider shipment before any further purchase.",
+        idempotencyKey: `shipping-buy-unknown/${shipment.id}`,
+      }).catch(() => undefined);
     return NextResponse.json(
       {
         error: buyWasRequested

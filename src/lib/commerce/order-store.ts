@@ -31,6 +31,8 @@ import {
 } from "./checkout-secret";
 import { parseCad } from "./money";
 import { hashShippingQuoteToken } from "@/lib/shipping/quote-token";
+import { loadShippingPolicyContext } from "@/lib/shipping/policy";
+import { encryptCheckoutIp } from "./checkout-pii";
 
 const EMAIL_CLAIM_DURATION_MS = 5 * 60 * 1000;
 
@@ -54,6 +56,7 @@ export interface CreateInitializingProductOrderInput {
   shippingQuoteToken: string;
   shippingQuoteFingerprint: string;
   shippingRateId: string;
+  refundOriginIp: string;
 }
 
 export interface InitializingProductOrderRecord {
@@ -599,6 +602,7 @@ export async function createInitializingProductOrder(
 ): Promise<InitializingProductOrderRecord> {
   const db = getPrivateDb();
   const now = new Date();
+  const policy = await loadShippingPolicyContext(now);
   return db.transaction(async (tx) => {
     const [quote] = await tx
       .select()
@@ -651,6 +655,10 @@ export async function createInitializingProductOrder(
         lineItems: toOrderLineItemSnapshots(input.cart),
         paymentProvider: "helcim",
         shippingAddress: input.shippingAddress,
+        refundOriginIpCiphertext: encryptCheckoutIp(input.refundOriginIp),
+        atRiskValueCents: merchandiseAmountCents,
+        fraudClassification: "low",
+        shippingPolicyVersion: policy.settings.policyVersion,
       })
       .returning({ id: checkoutOrders.id });
     const [attached] = await tx
@@ -661,6 +669,12 @@ export async function createInitializingProductOrder(
         selectedPostageType: rate.postageType,
         quotedShippingCents: rate.paymentAmountCents,
         status: "payment_pending",
+        signatureRequired: rate.signatureRequired,
+        signatureRequested: rate.signatureRequired,
+        deliveryMaxBusinessDays: rate.deliveryMaxBusinessDays,
+        latestEstimatedDeliveryAt: rate.estimatedDeliveryAt
+          ? new Date(rate.estimatedDeliveryAt)
+          : null,
         updatedAt: now,
       })
       .where(

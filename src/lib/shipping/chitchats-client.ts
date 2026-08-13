@@ -1,7 +1,11 @@
 import "server-only";
 
 import { getChitChatsConfig, type ChitChatsConfig } from "./config";
-import type { ChitChatsCreateShipmentInput, ChitChatsShipment } from "./types";
+import type {
+  ChitChatsCreateShipmentInput,
+  ChitChatsReturn,
+  ChitChatsShipment,
+} from "./types";
 
 export class ChitChatsApiError extends Error {
   constructor(
@@ -30,6 +34,7 @@ export interface ChitChatsClient {
       widthCm: number;
       heightCm: number;
       shipDate: string;
+      signatureRequested: boolean;
     },
   ): Promise<ChitChatsShipment>;
   buyShipment(
@@ -38,6 +43,7 @@ export interface ChitChatsClient {
   ): Promise<ChitChatsShipment>;
   deleteShipment(id: string): Promise<void>;
   refundShipment(id: string): Promise<ChitChatsShipment>;
+  listReturns(page?: number): Promise<ChitChatsReturn[]>;
 }
 
 export function createChitChatsClient(
@@ -111,7 +117,7 @@ export function createChitChatsClient(
             size_y: input.widthCm,
             size_z: input.heightCm,
             insurance_requested: true,
-            signature_requested: false,
+            signature_requested: input.signatureRequested,
             ship_date: input.shipDate,
           }),
         },
@@ -139,6 +145,12 @@ export function createChitChatsClient(
         { method: "PATCH" },
       );
       return assertShipment(result.shipment);
+    },
+    async listReturns(page = 1) {
+      const result = await request<
+        ChitChatsReturn[] | { returns: ChitChatsReturn[] }
+      >(`/returns?limit=100&page=${encodeURIComponent(String(page))}`);
+      return Array.isArray(result) ? result : result.returns;
     },
   };
 }
@@ -173,7 +185,7 @@ function toShipmentPayload(
     size_y: input.packageSnapshot.widthCm,
     size_z: input.packageSnapshot.heightCm,
     insurance_requested: true,
-    signature_requested: false,
+    signature_requested: input.signatureRequested,
     duties_paid_requested: input.recipient.countryCode === "US",
     postage_type: input.postageType ?? "unknown",
     ship_date: input.shipDate ?? "today",

@@ -30,6 +30,7 @@ import {
 } from "@/lib/commerce/helcim-webhook";
 import { buildTrainingScheduleUrl } from "@/lib/training-checkout";
 import { activateShipmentForPaidOrder } from "@/lib/shipping/shipment-store";
+import { reconcileProductOrderRefund } from "@/lib/shipping/customer-refunds";
 
 export const runtime = "nodejs";
 
@@ -47,6 +48,7 @@ interface HelcimWebhookDependencies {
   getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing: typeof getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing;
   getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice: typeof getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice;
   recordEvent: typeof recordHelcimWebhookEventWithOrder;
+  reconcileProductOrderRefund?: typeof reconcileProductOrderRefund;
   sendBookingConfirmationEmailForOrder: typeof sendBookingConfirmationEmailForOrder;
   sendBookingSchedulingFailureAdminEmail?: (
     input: import("@/lib/booking/email").SendBookingSchedulingFailureAdminEmailInput,
@@ -68,6 +70,7 @@ const defaultDependencies: HelcimWebhookDependencies = {
     getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing,
   getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice,
   recordEvent: recordHelcimWebhookEventWithOrder,
+  reconcileProductOrderRefund,
   sendBookingConfirmationEmailForOrder,
   sendBookingSchedulingFailureAdminEmail,
   sendProductOrderConfirmationEmailForOrder,
@@ -137,6 +140,19 @@ export function createHelcimWebhookPostHandler(
     }
 
     try {
+      await reconcileRefundWebhook(eventForStorage, dependencies);
+    } catch (error) {
+      log("error", "[helcim-webhook] Refund reconciliation failed", {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unknown reconciliation error",
+        eventId: eventForStorage.eventId,
+      });
+      return new Response(null, { status: 503 });
+    }
+
+    try {
       await finalizeAppointmentWebhookPayment(
         eventForStorage,
         recordedEvent,
@@ -194,6 +210,27 @@ export function createHelcimWebhookPostHandler(
 }
 
 type ParsedHelcimWebhook = ReturnType<typeof parseVerifiedHelcimWebhook>;
+
+async function reconcileRefundWebhook(
+  event: ParsedHelcimWebhook,
+  dependencies: Pick<HelcimWebhookDependencies, "reconcileProductOrderRefund">,
+): Promise<void> {
+  if (
+    !dependencies.reconcileProductOrderRefund ||
+    !event.helcimTransactionId ||
+    !event.originalTransactionId ||
+    !/refund/i.test(`${event.eventType} ${event.transactionType ?? ""}`) ||
+    !/(approved|refunded|success)/i.test(event.status ?? "")
+  )
+    return;
+  const amount = Number(event.amount);
+  if (!Number.isFinite(amount) || amount === 0) return;
+  await dependencies.reconcileProductOrderRefund({
+    originalTransactionId: event.originalTransactionId,
+    providerRefundId: event.helcimTransactionId,
+    amountCents: Math.round(Math.abs(amount) * 100),
+  });
+}
 
 async function finalizeAppointmentWebhookPayment(
   event: ParsedHelcimWebhook,

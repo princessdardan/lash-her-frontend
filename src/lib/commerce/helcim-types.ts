@@ -45,6 +45,21 @@ export interface HelcimPaySuccessPayload {
 
 export type HelcimCardTransactionResponse = Record<string, unknown>;
 
+export interface HelcimRefundRequest {
+  originalTransactionId: number;
+  amount: number;
+  ipAddress: string;
+  ecommerce: true;
+}
+
+export interface HelcimRefundResponse {
+  transactionId: number | string;
+  status?: string;
+  amount?: number;
+  currency?: string;
+  [key: string]: unknown;
+}
+
 export interface HelcimTransactionReconciliationFields {
   amount?: number | string;
   approvalCode?: string;

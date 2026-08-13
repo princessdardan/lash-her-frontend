@@ -8,6 +8,7 @@ const helperScript = String.raw`
     createHelcimInvoice,
     getHelcimCardTransaction,
     initializeHelcimPay,
+    refundHelcimPayment,
   } from "./src/lib/commerce/helcim-client.ts";
 
   const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
@@ -42,12 +43,17 @@ const helperScript = String.raw`
       invoiceNumber: invoice.invoiceNumber,
     });
     const response = await getHelcimCardTransaction("25764674");
+    const refund = await refundHelcimPayment(
+      { originalTransactionId: 25764674, amount: 12.5, ipAddress: "203.0.113.10", ecommerce: true },
+      "123e4567-e89b-12d3-a456-426614174000",
+    );
     const invoiceCall = calls[0];
     const checkoutCall = calls[1];
 
     assert.deepEqual(invoice, { invoiceId: 12345, invoiceNumber: "INV-12345" });
     assert.deepEqual(checkout, { checkoutToken: "checkout-token", secretToken: "secret-token" });
     assert.deepEqual(response, { id: 25764674, status: "APPROVED" });
+    assert.deepEqual(refund, { id: 25764674, status: "APPROVED" });
     assert.ok(invoiceCall);
     assert.equal(String(invoiceCall.input), "https://api.helcim.com/v2/invoices/");
     assert.equal(invoiceCall.init?.method, "POST");
@@ -69,6 +75,19 @@ const helperScript = String.raw`
     assert.equal(headers.get("api-token"), "test-general-token-with-safe-length");
     assert.equal(headers.get("accept"), "application/json");
     assert.equal(headers.has("content-type"), false);
+
+    const refundCall = calls[3];
+    assert.ok(refundCall);
+    assert.equal(String(refundCall.input), "https://api.helcim.com/v2/payment/refund");
+    assert.equal(refundCall.init?.method, "POST");
+    assert.equal(new Headers(refundCall.init?.headers).get("api-token"), "test-transaction-token-with-safe-length");
+    assert.equal(new Headers(refundCall.init?.headers).get("idempotency-key"), "123e4567-e89b-12d3-a456-426614174000");
+    assert.deepEqual(JSON.parse(String(refundCall.init?.body)), {
+      originalTransactionId: 25764674,
+      amount: 12.5,
+      ipAddress: "203.0.113.10",
+      ecommerce: true,
+    });
   } finally {
     globalThis.fetch = originalFetch;
   }

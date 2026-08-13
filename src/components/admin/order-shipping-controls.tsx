@@ -28,6 +28,8 @@ export function OrderShippingControls({
   >([]);
   const [alternatePostageType, setAlternatePostageType] = useState("");
   const [alternateReason, setAlternateReason] = useState("");
+  const [alternateConditionsUnchanged, setAlternateConditionsUnchanged] =
+    useState(false);
 
   const buy = async () => {
     setBusy(true);
@@ -42,7 +44,11 @@ export function OrderShippingControls({
             measuredWeightGrams: Number(weight),
             shipDate,
             ...(alternatePostageType
-              ? { alternatePostageType, alternateReason }
+              ? {
+                  alternatePostageType,
+                  alternateReason,
+                  alternateConditionsUnchanged,
+                }
               : {}),
           }),
         },
@@ -92,6 +98,21 @@ export function OrderShippingControls({
     }
   };
 
+  const postAction = async (path: string, failure: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(path, { method: "POST" });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) setError(result.error ?? failure);
+      else router.refresh();
+    } catch {
+      setError(failure);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="mt-3 border-t border-lh-line pt-3">
       <p className="text-xs font-semibold uppercase tracking-[0.12em] text-lh-muted">
@@ -124,6 +145,40 @@ export function OrderShippingControls({
           </Button>
         </div>
       ) : null}
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={
+            busy || ["accepted", "in_transit", "delivered"].includes(status)
+          }
+          onClick={() =>
+            postAction(
+              `/api/admin/orders/${encodeURIComponent(orderId)}/address-change`,
+              "Address-change link could not be sent",
+            )
+          }
+        >
+          Send address-change link
+        </Button>
+        {status === "manual_review" ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() =>
+              postAction(
+                `/api/admin/orders/${encodeURIComponent(orderId)}/shipping/manual-review`,
+                "Manual review could not be acknowledged",
+              )
+            }
+          >
+            Acknowledge review
+          </Button>
+        ) : null}
+      </div>
       {status === "ready_for_staff" && alternateRates.length > 0 ? (
         <div className="mt-3 grid gap-2">
           <label
@@ -155,9 +210,21 @@ export function OrderShippingControls({
             placeholder="Required reason for service change"
             maxLength={500}
           />
+          <label className="flex items-start gap-2 text-xs text-lh-muted">
+            <input
+              type="checkbox"
+              checked={alternateConditionsUnchanged}
+              onChange={(event) =>
+                setAlternateConditionsUnchanged(event.target.checked)
+              }
+            />
+            Confirm this service adds no pickup, duty, brokerage, or signature
+            condition. Equal-or-faster delivery and insurance are checked by the
+            server.
+          </label>
           <p className="text-xs text-lh-muted">
-            The customer is not charged or refunded for the difference. Do not
-            select a downgrade without documenting why.
+            Lash Her absorbs increases. Reductions of at least CAD 1 are queued
+            to the customer-refund ledger.
           </p>
         </div>
       ) : null}

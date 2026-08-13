@@ -225,9 +225,14 @@ Chit Chats provides live insured tracked product-shipping rates, staff label pur
 - `CHITCHATS_ACCESS_TOKEN`
 - `CHITCHATS_QUOTE_SIGNING_SECRET`
 - `CHITCHATS_WORKER_CRON_SECRET`
+- `CHECKOUT_PII_ENCRYPTION_KEY` (base64-encoded 32-byte key)
+- `SHIPPING_DECISION_TOKEN_SECRET` (at least 32 bytes)
+- `ADDRESS_CHANGE_TOKEN_SECRET` (at least 32 bytes)
+- `SHIPPING_POLICY_ENFORCEMENT_MODE=off|observe|enforce`
+- `BACKUP_RETENTION_DAYS` (30 or less)
 - Optional `CHITCHATS_TRACKED_POSTAGE_TYPES`
 
-`CHITCHATS_CHECKOUT_ENABLED` must remain false until migration `0032_fat_roulette.sql` is applied, package profiles are reviewed, each purchasable Sanity product/variant has complete shipping metadata, and the proposed [shipping policy decisions](docs/chitchats-shipping-policy-decisions.md) are approved with all launch-blocking controls verified. `CHITCHATS_SHIPPING_ENABLED` keeps worker/admin processing active for existing shipments. U.S. shipping is separately fail-closed and requires per-item approval plus 10-digit HTS and manufacturer data. See the [shipping operations runbook](docs/chitchats-shipping-operations.md).
+`CHITCHATS_CHECKOUT_ENABLED` must remain false until migrations `0032_fat_roulette.sql` and `0033_bored_dexter_bennett.sql` are applied, package profiles are reviewed, each purchasable Sanity product/variant has complete shipping metadata, and the selected [shipping policy decisions](docs/chitchats-shipping-policy-decisions.md) receive formal approval with all launch-blocking controls verified. Address changes must follow the [signed-link implementation plan](docs/chitchats-address-change-implementation-plan.md). `CHITCHATS_SHIPPING_ENABLED` keeps worker/admin processing active for existing shipments. U.S. shipping is separately fail-closed and requires per-item approval plus 10-digit HTS and manufacturer data. See the [shipping operations runbook](docs/chitchats-shipping-operations.md).
 
 ## Sanity CMS workflow
 
