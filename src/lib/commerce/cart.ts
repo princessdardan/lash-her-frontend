@@ -1,5 +1,10 @@
 import { addCad, multiplyCad, parseCad } from "./money";
-import { applyPromotionCode, getManualDiscountAmount, subtractCad, type PromotionCode } from "./discounts";
+import {
+  applyPromotionCode,
+  getManualDiscountAmount,
+  subtractCad,
+  type PromotionCode,
+} from "./discounts";
 
 export type CommerceCurrency = "CAD";
 
@@ -59,6 +64,7 @@ export interface BuildValidatedCartOptions {
 
 const MIN_QUANTITY = 1;
 const MAX_QUANTITY = 10;
+export const MAX_CART_LINE_ITEMS = 20;
 const CART_EMPTY_ERROR = "Cart must contain at least one item";
 const QUANTITY_ERROR = "Quantity must be between 1 and 10";
 const UNAVAILABLE_PRODUCT_ERROR = "Product is no longer available";
@@ -72,8 +78,15 @@ export function buildValidatedCart(
   if (items.length === 0) {
     throw new Error(CART_EMPTY_ERROR);
   }
+  if (items.length > MAX_CART_LINE_ITEMS) {
+    throw new Error(
+      `Cart cannot contain more than ${MAX_CART_LINE_ITEMS} line items`,
+    );
+  }
 
-  const productsById = new Map(products.map((product) => [product.id, product]));
+  const productsById = new Map(
+    products.map((product) => [product.id, product]),
+  );
   const lineItems = items.map((item) => {
     assertValidQuantity(item.quantity);
 
@@ -87,9 +100,14 @@ export function buildValidatedCart(
     const originalPrice = parseCad(variant?.price ?? product.price);
     const price = resolveLineItemPrice(product, variant);
     const manualDiscount = getManualDiscountAmount({ price, originalPrice });
-    const description = variant ? `${product.title} — ${variant.title}` : product.title;
+    const description = variant
+      ? `${product.title} — ${variant.title}`
+      : product.title;
     const total = multiplyCad(price, item.quantity);
-    const originalTotal = manualDiscount > 0 ? multiplyCad(originalPrice, item.quantity) : undefined;
+    const originalTotal =
+      manualDiscount > 0
+        ? multiplyCad(originalPrice, item.quantity)
+        : undefined;
 
     return {
       productId: product.id,
@@ -105,9 +123,15 @@ export function buildValidatedCart(
   });
 
   const amount = addCad(lineItems.map((lineItem) => lineItem.total));
-  const originalAmount = addCad(lineItems.map((lineItem) => lineItem.originalTotal ?? lineItem.total));
+  const originalAmount = addCad(
+    lineItems.map((lineItem) => lineItem.originalTotal ?? lineItem.total),
+  );
   const manualDiscountAmount = subtractCad(originalAmount, amount);
-  const promotionBaseAmount = getPromotionBaseAmount(lineItems, options.promotionCode, amount);
+  const promotionBaseAmount = getPromotionBaseAmount(
+    lineItems,
+    options.promotionCode,
+    amount,
+  );
   const promotionDiscount = applyPromotionCode({
     promotionCode: options.promotionCode,
     targetType: "product",
@@ -121,7 +145,9 @@ export function buildValidatedCart(
     currency: "CAD",
     amount: finalAmount,
     ...(promotionDiscountAmount > 0 ? { amountBeforePromotion: amount } : {}),
-    ...(manualDiscountAmount > 0 || promotionDiscountAmount > 0 ? { originalAmount } : {}),
+    ...(manualDiscountAmount > 0 || promotionDiscountAmount > 0
+      ? { originalAmount }
+      : {}),
     ...(manualDiscountAmount > 0 ? { manualDiscountAmount } : {}),
     ...(promotionDiscount ? { promotionCode: promotionDiscount.code } : {}),
     ...(promotionDiscountAmount > 0 ? { promotionDiscountAmount } : {}),
@@ -136,7 +162,9 @@ function getPromotionBaseAmount(
 ): number {
   if (promotionCode?.appliesTo !== "specificItems") return cartAmount;
 
-  const eligibleProductIds = new Set(promotionCode.products?.map((product) => product._id) ?? []);
+  const eligibleProductIds = new Set(
+    promotionCode.products?.map((product) => product._id) ?? [],
+  );
   if (eligibleProductIds.size === 0) return 0;
 
   return addCad(
@@ -189,7 +217,11 @@ function resolveLineItemSku(
 }
 
 function assertValidQuantity(quantity: number): void {
-  if (!Number.isInteger(quantity) || quantity < MIN_QUANTITY || quantity > MAX_QUANTITY) {
+  if (
+    !Number.isInteger(quantity) ||
+    quantity < MIN_QUANTITY ||
+    quantity > MAX_QUANTITY
+  ) {
     throw new Error(QUANTITY_ERROR);
   }
 }

@@ -27,6 +27,46 @@ export const checkoutOrderStatus = pgEnum("checkout_order_status", [
   "refunded",
 ]);
 
+export const checkoutInitializationStatus = pgEnum(
+  "checkout_initialization_status",
+  ["initializing", "ready", "failed"],
+);
+
+export const productShipmentStatus = pgEnum("product_shipment_status", [
+  "quote_pending",
+  "quoted",
+  "quote_unknown",
+  "payment_pending",
+  "ready_for_staff",
+  "purchase_pending",
+  "label_ready",
+  "accepted",
+  "in_transit",
+  "delivered",
+  "exception",
+  "refund_pending",
+  "voided",
+  "abandoned",
+  "manual_review",
+]);
+
+export const productShipmentJobStatus = pgEnum("product_shipment_job_status", [
+  "queued",
+  "processing",
+  "succeeded",
+  "retryable_failed",
+  "dead_letter",
+]);
+
+export const productShipmentJobType = pgEnum("product_shipment_job_type", [
+  "create",
+  "purchase",
+  "tracking",
+  "refund",
+  "cleanup",
+  "notification",
+]);
+
 export const checkoutOrderPurpose = pgEnum("checkout_order_purpose", [
   "product",
   "training",
@@ -263,6 +303,56 @@ export interface CheckoutOrderShippingAddressSnapshot {
   province: string;
   postalCode: string;
   country: string;
+  countryCode?: "CA" | "US";
+  phone?: string;
+}
+
+export interface ProductShipmentPackageSnapshot {
+  profileId: string;
+  profileSlug: string;
+  packageType: string;
+  lengthCm: number;
+  widthCm: number;
+  heightCm: number;
+  tareWeightGrams: number;
+  totalWeightGrams: number;
+}
+
+export interface ProductShipmentDestinationSnapshot extends CheckoutOrderShippingAddressSnapshot {
+  name?: string;
+  email?: string;
+  phone?: string;
+}
+
+export interface ProductShipmentCustomsLineSnapshot {
+  productId: string;
+  variantId?: string;
+  sku: string;
+  description: string;
+  quantity: number;
+  unitValueCents: number;
+  unitWeightGrams: number;
+  countryOfOrigin: string;
+  hsTariffCode?: string;
+  manufacturerName?: string;
+  manufacturerAddress?: string;
+  manufacturerCity?: string;
+  manufacturerProvinceCode?: string;
+  manufacturerPostalCode?: string;
+  manufacturerCountryCode?: string;
+}
+
+export interface ProductShipmentRateSnapshot {
+  id: string;
+  postageType: string;
+  title: string;
+  carrier?: string;
+  deliveryEstimate?: string;
+  paymentAmountCents: number;
+  insuranceFeeCents: number;
+  insured: boolean;
+  tracked: boolean;
+  raw: Record<string, unknown>;
 }
 
 export type CheckoutOrderStatus =
@@ -1151,8 +1241,12 @@ export const checkoutOrders = pgTable(
     orderId: text("order_id").notNull().unique(),
     purpose: checkoutOrderPurpose("purpose").notNull().default("product"),
     status: checkoutOrderStatus("status").notNull().default("pending"),
-    checkoutTokenHash: text("checkout_token_hash").notNull().unique(),
-    secretTokenCiphertext: text("secret_token_ciphertext").notNull(),
+    initializationStatus: checkoutInitializationStatus("initialization_status")
+      .notNull()
+      .default("ready"),
+    initializationError: text("initialization_error"),
+    checkoutTokenHash: text("checkout_token_hash").unique(),
+    secretTokenCiphertext: text("secret_token_ciphertext"),
     helcimInvoiceId: integer("helcim_invoice_id"),
     helcimInvoiceNumber: text("helcim_invoice_number"),
     helcimTransactionId: text("helcim_transaction_id"),
@@ -1192,6 +1286,8 @@ export const checkoutOrders = pgTable(
     shippingAddress:
       jsonb("shipping_address").$type<CheckoutOrderShippingAddressSnapshot>(),
     amountCents: integer("amount_cents").notNull(),
+    merchandiseAmountCents: integer("merchandise_amount_cents"),
+    shippingAmountCents: integer("shipping_amount_cents").notNull().default(0),
     currency: text("currency").notNull().default("CAD"),
     lineItems: jsonb("line_items")
       .$type<CheckoutOrderLineItemSnapshot[]>()
@@ -1236,6 +1332,176 @@ export const checkoutOrders = pgTable(
       .where(
         sql`${table.status} = 'paid' AND ${table.paymentProvider} = 'square' AND ${table.purpose} IN ('appointment_deposit', 'appointment_full', 'appointment_custom_partial') AND ${table.calendarFinalizationStatus} NOT IN ('not_required', 'booked', 'manual_rebooked')`,
       ),
+  ],
+);
+
+export const shippingPackageProfiles = pgTable(
+  "shipping_package_profiles",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    slug: text("slug").notNull().unique(),
+    name: text("name").notNull(),
+    rank: integer("rank").notNull(),
+    packageType: text("package_type").notNull(),
+    lengthCm: integer("length_cm").notNull(),
+    widthCm: integer("width_cm").notNull(),
+    heightCm: integer("height_cm").notNull(),
+    tareWeightGrams: integer("tare_weight_grams").notNull(),
+    maxWeightGrams: integer("max_weight_grams").notNull(),
+    capacityUnits: integer("capacity_units").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("shipping_package_profiles_slug_idx").on(table.slug),
+    index("shipping_package_profiles_enabled_rank_idx").on(
+      table.enabled,
+      table.rank,
+    ),
+    check(
+      "shipping_package_profiles_dimensions_check",
+      sql`${table.lengthCm} > 0 AND ${table.widthCm} > 0 AND ${table.heightCm} > 0`,
+    ),
+    check(
+      "shipping_package_profiles_capacity_check",
+      sql`${table.capacityUnits} > 0 AND ${table.maxWeightGrams} > 0 AND ${table.tareWeightGrams} >= 0`,
+    ),
+  ],
+);
+
+export const productShipments = pgTable(
+  "product_shipments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orderId: uuid("order_id").references(() => checkoutOrders.id, {
+      onDelete: "set null",
+    }),
+    publicReference: text("public_reference").notNull().unique(),
+    quoteTokenHash: text("quote_token_hash").notNull().unique(),
+    quoteFingerprint: text("quote_fingerprint").notNull(),
+    provider: text("provider").notNull().default("chitchats"),
+    providerShipmentId: text("provider_shipment_id").unique(),
+    providerStatus: text("provider_status"),
+    status: productShipmentStatus("status").notNull().default("quote_pending"),
+    destination: jsonb("destination")
+      .$type<ProductShipmentDestinationSnapshot>()
+      .notNull(),
+    packageSnapshot: jsonb("package_snapshot")
+      .$type<ProductShipmentPackageSnapshot>()
+      .notNull(),
+    customsLines: jsonb("customs_lines")
+      .$type<ProductShipmentCustomsLineSnapshot[]>()
+      .notNull(),
+    rates: jsonb("rates").$type<ProductShipmentRateSnapshot[]>().notNull(),
+    selectedRateId: text("selected_rate_id"),
+    selectedPostageType: text("selected_postage_type"),
+    quotedShippingCents: integer("quoted_shipping_cents"),
+    actualPostageCents: integer("actual_postage_cents"),
+    actualInsuranceCents: integer("actual_insurance_cents"),
+    trackingNumber: text("tracking_number"),
+    trackingUrl: text("tracking_url"),
+    rawShipment: jsonb("raw_shipment").$type<Record<string, unknown>>(),
+    quoteExpiresAt: timestamp("quote_expires_at", {
+      withTimezone: true,
+    }).notNull(),
+    purchasedAt: timestamp("purchased_at", { withTimezone: true }),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    acceptedEmailSentAt: timestamp("accepted_email_sent_at", {
+      withTimezone: true,
+    }),
+    exceptionEmailSentAt: timestamp("exception_email_sent_at", {
+      withTimezone: true,
+    }),
+    deliveredEmailSentAt: timestamp("delivered_email_sent_at", {
+      withTimezone: true,
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    redactedAt: timestamp("redacted_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("product_shipments_order_id_idx").on(table.orderId),
+    uniqueIndex("product_shipments_reference_idx").on(table.publicReference),
+    uniqueIndex("product_shipments_quote_token_hash_idx").on(
+      table.quoteTokenHash,
+    ),
+    index("product_shipments_quote_fingerprint_idx").on(
+      table.quoteFingerprint,
+      table.quoteExpiresAt,
+    ),
+    index("product_shipments_poll_idx").on(table.status, table.updatedAt),
+  ],
+);
+
+export const productShipmentEvents = pgTable(
+  "product_shipment_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    shipmentId: uuid("shipment_id")
+      .notNull()
+      .references(() => productShipments.id, { onDelete: "cascade" }),
+    fingerprint: text("fingerprint").notNull().unique(),
+    providerStatus: text("provider_status"),
+    normalizedStatus: productShipmentStatus("normalized_status").notNull(),
+    description: text("description"),
+    payload: jsonb("payload").$type<Record<string, unknown>>(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("product_shipment_events_shipment_occurred_idx").on(
+      table.shipmentId,
+      table.occurredAt,
+    ),
+  ],
+);
+
+export const productShipmentJobs = pgTable(
+  "product_shipment_jobs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    shipmentId: uuid("shipment_id")
+      .notNull()
+      .references(() => productShipments.id, { onDelete: "cascade" }),
+    type: productShipmentJobType("type").notNull(),
+    status: productShipmentJobStatus("status").notNull().default("queued"),
+    idempotencyKey: text("idempotency_key").notNull().unique(),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    availableAt: timestamp("available_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    outcomeUnknown: boolean("outcome_unknown").notNull().default(false),
+    payload: jsonb("payload").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("product_shipment_jobs_idempotency_key_idx").on(
+      table.idempotencyKey,
+    ),
+    index("product_shipment_jobs_claim_idx").on(
+      table.status,
+      table.availableAt,
+      table.leaseExpiresAt,
+    ),
   ],
 );
 

@@ -7,6 +7,10 @@ const pendingEnrollment: PendingTrainingEnrollmentRecord = {
   checkoutEmail: "checkout@example.com",
   checkoutOrder: {
     amountCents: 149900,
+    merchandiseAmountCents: null,
+    shippingAmountCents: 0,
+    initializationStatus: "ready",
+    initializationError: null,
     checkoutTokenHash: "checkout-token-hash",
     calendarEventId: null,
     calendarFinalizationStatus: "not_required",
@@ -80,27 +84,45 @@ test("resolveTrainingIntroCallEligibility rejects missing scheduling token", asy
   assert.equal(result.ok, false);
 
   if (!result.ok) {
-    assert.equal(result.error, "We could not verify this training scheduling link.");
-    assert.deepEqual(result.fieldErrors, { schedulingToken: "Valid training scheduling link is required" });
+    assert.equal(
+      result.error,
+      "We could not verify this training scheduling link.",
+    );
+    assert.deepEqual(result.fieldErrors, {
+      schedulingToken: "Valid training scheduling link is required",
+    });
   }
 });
 
 test("resolveTrainingIntroCallEligibility returns generic failure for expired, used, unpaid, scheduled, or missing token state", async () => {
   const scenarios = [
     null,
-    { ...pendingEnrollment, tokenExpiresAt: new Date("2026-05-09T00:00:00.000Z") },
-    { ...pendingEnrollment, checkoutOrder: { ...pendingEnrollment.checkoutOrder, status: "pending" } },
+    {
+      ...pendingEnrollment,
+      tokenExpiresAt: new Date("2026-05-09T00:00:00.000Z"),
+    },
+    {
+      ...pendingEnrollment,
+      checkoutOrder: { ...pendingEnrollment.checkoutOrder, status: "pending" },
+    },
   ] as const;
 
   for (const enrollment of scenarios) {
     const result = await resolveTrainingIntroCallEligibility(
-      { now: new Date("2026-05-10T00:00:00.000Z"), programSlug: "lash-training", schedulingToken: "raw-token" },
+      {
+        now: new Date("2026-05-10T00:00:00.000Z"),
+        programSlug: "lash-training",
+        schedulingToken: "raw-token",
+      },
       async () => enrollment,
     );
 
     assert.equal(result.ok, false);
     if (!result.ok) {
-      assert.equal(result.error, "We could not verify this training scheduling link.");
+      assert.equal(
+        result.error,
+        "We could not verify this training scheduling link.",
+      );
       assert.equal(result.fieldErrors, undefined);
     }
   }
@@ -115,7 +137,10 @@ test("resolveTrainingIntroCallEligibility returns generic failure for wrong rout
   assert.equal(result.ok, false);
 
   if (!result.ok) {
-    assert.equal(result.error, "We could not verify this training scheduling link.");
+    assert.equal(
+      result.error,
+      "We could not verify this training scheduling link.",
+    );
     assert.equal(result.fieldErrors, undefined);
   }
 });

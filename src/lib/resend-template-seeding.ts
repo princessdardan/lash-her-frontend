@@ -208,7 +208,9 @@ const SAMPLE_PRODUCT_CONFIRMATION: SendProductOrderConfirmationEmailInput = {
       unitPriceCents: 6400,
     },
   ],
+  merchandiseAmount: 64,
   orderId: "LH-PRODUCT-1001",
+  shippingAmount: 12.5,
   shippingAddress: {
     city: "Toronto",
     country: "CA",
@@ -217,7 +219,7 @@ const SAMPLE_PRODUCT_CONFIRMATION: SendProductOrderConfirmationEmailInput = {
     postalCode: "M5V 1A1",
     province: "ON",
   },
-  totalAmount: 64,
+  totalAmount: 76.5,
 };
 
 const SAMPLE_TRAINING_PAYMENT: SendTrainingPaymentNotificationEmailsInput = {

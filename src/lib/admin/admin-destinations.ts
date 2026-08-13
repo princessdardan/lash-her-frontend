@@ -76,7 +76,7 @@ const ADMIN_DESTINATION_DEFINITIONS: readonly AdminDestinationDefinition[] = [
     roles: ["employee"],
   },
   {
-    action: "payments:view",
+    action: "fulfillment:view",
     description:
       "Review product orders, payment status, and fulfilment details.",
     group: "Daily work",

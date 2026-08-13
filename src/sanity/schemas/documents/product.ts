@@ -11,6 +11,7 @@ export const product = defineType({
     { name: "media", title: "Media" },
     { name: "variants", title: "Variants" },
     { name: "details", title: "Details" },
+    { name: "shipping", title: "Shipping" },
     { name: "legacy", title: "Legacy Fields" },
     { name: "seo", title: "SEO" },
   ],
@@ -48,7 +49,8 @@ export const product = defineType({
       title: "Card Subtitle",
       type: "string",
       group: "overview",
-      description: "Short catalog card label, such as retention or finish details.",
+      description:
+        "Short catalog card label, such as retention or finish details.",
     }),
     defineField({
       name: "badgeLabel",
@@ -69,20 +71,24 @@ export const product = defineType({
       title: "Manual Discount Price",
       type: "number",
       group: "pricing",
-      description: "Optional sale price configured directly in Sanity. Must be lower than the regular price.",
-      validation: (Rule) => Rule.min(0).custom((value, context) => {
-        if (value === undefined) return true;
-        return typeof context.document?.price === "number" && value < context.document.price
-          ? true
-          : "Manual discount price must be lower than the regular price.";
-      }),
+      description:
+        "Optional sale price configured directly in Sanity. Must be lower than the regular price.",
+      validation: (Rule) =>
+        Rule.min(0).custom((value, context) => {
+          if (value === undefined) return true;
+          return typeof context.document?.price === "number" &&
+            value < context.document.price
+            ? true
+            : "Manual discount price must be lower than the regular price.";
+        }),
     }),
     defineField({
       name: "sku",
       title: "Merchant SKU",
       type: "string",
       group: "pricing",
-      description: "Optional merchant-facing SKU for reconciliation. Generated fallback codes are internal and not shown to customers.",
+      description:
+        "Optional merchant-facing SKU for reconciliation. Generated fallback codes are internal and not shown to customers.",
     }),
     defineField({
       name: "currency",
@@ -110,7 +116,8 @@ export const product = defineType({
       title: "Filter Attributes (Deprecated)",
       type: "array",
       group: "legacy",
-      description: "Deprecated catalog filter metadata. The public product catalog no longer supports filters.",
+      description:
+        "Deprecated catalog filter metadata. The public product catalog no longer supports filters.",
       deprecated: {
         reason: "Catalog filters were removed from the public product route.",
       },
@@ -136,7 +143,8 @@ export const product = defineType({
       title: "Option Groups",
       type: "array",
       group: "variants",
-      description: "Groups used by the product detail option UI, such as Curl or Diameter.",
+      description:
+        "Groups used by the product detail option UI, such as Curl or Diameter.",
       of: [
         defineArrayMember({
           type: "object",
@@ -183,7 +191,17 @@ export const product = defineType({
       title: "Fulfillment Note",
       type: "text",
       group: "catalog",
-      description: "e.g., pickup, delivery, digital delivery, or care instructions.",
+      description:
+        "e.g., pickup, delivery, digital delivery, or care instructions.",
+    }),
+    defineField({
+      name: "shipping",
+      title: "Shipping and customs",
+      type: "object",
+      group: "shipping",
+      description:
+        "Operational metadata used to quote and buy Chit Chats postage.",
+      fields: shippingMetadataFields(),
     }),
     defineField({
       name: "displayOrder",
@@ -199,9 +217,7 @@ export const product = defineType({
       type: "image",
       group: "media",
       options: { hotspot: true },
-      fields: [
-        defineField({ name: "alt", title: "Alt text", type: "string" }),
-      ],
+      fields: [defineField({ name: "alt", title: "Alt text", type: "string" })],
     }),
     defineField({
       name: "gallery",
@@ -223,7 +239,8 @@ export const product = defineType({
       title: "Variants",
       type: "array",
       group: "variants",
-      description: "Optional purchasable choices such as size, finish, or format.",
+      description:
+        "Optional purchasable choices such as size, finish, or format.",
       of: [
         defineArrayMember({
           type: "object",
@@ -245,14 +262,19 @@ export const product = defineType({
               name: "discountPrice",
               title: "Manual Discount Price",
               type: "number",
-              description: "Optional variant sale price. Must be lower than this variant's regular price.",
-              validation: (Rule) => Rule.min(0).custom((value, context) => {
-                const parent = context.parent as { price?: number } | undefined;
-                if (value === undefined) return true;
-                return typeof parent?.price === "number" && value < parent.price
-                  ? true
-                  : "Manual discount price must be lower than the variant price.";
-              }),
+              description:
+                "Optional variant sale price. Must be lower than this variant's regular price.",
+              validation: (Rule) =>
+                Rule.min(0).custom((value, context) => {
+                  const parent = context.parent as
+                    | { price?: number }
+                    | undefined;
+                  if (value === undefined) return true;
+                  return typeof parent?.price === "number" &&
+                    value < parent.price
+                    ? true
+                    : "Manual discount price must be lower than the variant price.";
+                }),
             }),
             defineField({
               name: "sku",
@@ -276,20 +298,37 @@ export const product = defineType({
               name: "options",
               title: "Options",
               type: "array",
-              description: "Name/value pairs that connect this variant to option groups.",
+              description:
+                "Name/value pairs that connect this variant to option groups.",
               of: [
                 defineArrayMember({
                   type: "object",
                   title: "Option",
                   fields: [
-                    defineField({ name: "name", title: "Name", type: "string" }),
-                    defineField({ name: "value", title: "Value", type: "string" }),
+                    defineField({
+                      name: "name",
+                      title: "Name",
+                      type: "string",
+                    }),
+                    defineField({
+                      name: "value",
+                      title: "Value",
+                      type: "string",
+                    }),
                   ],
                   preview: {
                     select: { title: "name", subtitle: "value" },
                   },
                 }),
               ],
+            }),
+            defineField({
+              name: "shipping",
+              title: "Shipping override",
+              type: "object",
+              description:
+                "Optional complete override for this variant. Leave empty to use product shipping metadata.",
+              fields: shippingMetadataFields(),
             }),
           ],
           preview: {
@@ -299,7 +338,8 @@ export const product = defineType({
               isAvailable: "isAvailable",
             },
             prepare({ title, price, isAvailable }) {
-              const amount = typeof price === "number" ? `$${price.toFixed(2)}` : "No price";
+              const amount =
+                typeof price === "number" ? `$${price.toFixed(2)}` : "No price";
               return {
                 title,
                 subtitle: `${amount}${isAvailable === false ? " · Unavailable" : ""}`,
@@ -324,7 +364,8 @@ export const product = defineType({
               name: "body",
               title: "Rich Content",
               type: "array",
-              description: "Optional rich replacement for Content. Existing plain text content is preserved.",
+              description:
+                "Optional rich replacement for Content. Existing plain text content is preserved.",
               of: [
                 defineArrayMember({
                   type: "block",
@@ -346,7 +387,11 @@ export const product = defineType({
       group: "seo",
       fields: [
         defineField({ name: "title", title: "SEO Title", type: "string" }),
-        defineField({ name: "description", title: "SEO Description", type: "text" }),
+        defineField({
+          name: "description",
+          title: "SEO Description",
+          type: "text",
+        }),
         defineField({
           name: "image",
           title: "SEO Image",
@@ -364,3 +409,108 @@ export const product = defineType({
     },
   },
 });
+
+function shippingMetadataFields() {
+  return [
+    defineField({
+      name: "fulfillmentMode",
+      title: "Fulfillment mode",
+      type: "string",
+      initialValue: "physical",
+      options: {
+        list: [
+          { title: "Physical shipping", value: "physical" },
+          { title: "Manual fulfillment", value: "manual" },
+        ],
+        layout: "radio",
+      },
+      validation: (Rule) => Rule.required(),
+    }),
+    defineField({
+      name: "weightGrams",
+      title: "Item weight (grams)",
+      type: "number",
+      validation: (Rule) => Rule.integer().min(1),
+    }),
+    defineField({
+      name: "packingUnits",
+      title: "Packing units",
+      type: "number",
+      initialValue: 1,
+      description: "Relative space consumed in package profiles.",
+      validation: (Rule) => Rule.integer().min(1),
+    }),
+    defineField({
+      name: "minimumPackageTier",
+      title: "Minimum package profile slug",
+      type: "string",
+    }),
+    defineField({
+      name: "customsDescription",
+      title: "Customs description",
+      type: "string",
+    }),
+    defineField({
+      name: "countryOfOrigin",
+      title: "Country of origin",
+      type: "string",
+      description: "ISO 3166-1 alpha-2 code, for example CA or KR.",
+      validation: (Rule) =>
+        Rule.regex(/^[A-Z]{2}$/, { name: "ISO country code" }),
+    }),
+    defineField({
+      name: "usShippingApproved",
+      title: "Approved for U.S. shipping",
+      type: "boolean",
+      initialValue: false,
+      description:
+        "Fail-closed allowlist. U.S. quoting also requires the global feature flag.",
+    }),
+    defineField({
+      name: "hsTariffCode",
+      title: "10-digit HTS code",
+      type: "string",
+      validation: (Rule) =>
+        Rule.regex(/^\d{10}$/, { name: "10-digit HTS code" }),
+    }),
+    defineField({
+      name: "manufacturerName",
+      title: "Manufacturer name",
+      type: "string",
+    }),
+    defineField({
+      name: "manufacturerAddress",
+      title: "Manufacturer address",
+      type: "text",
+    }),
+    defineField({
+      name: "manufacturerCity",
+      title: "Manufacturer city",
+      type: "string",
+    }),
+    defineField({
+      name: "manufacturerProvinceCode",
+      title: "Manufacturer province/state code",
+      type: "string",
+    }),
+    defineField({
+      name: "manufacturerPostalCode",
+      title: "Manufacturer postal code",
+      type: "string",
+    }),
+    defineField({
+      name: "manufacturerCountryCode",
+      title: "Manufacturer country code",
+      type: "string",
+      validation: (Rule) =>
+        Rule.regex(/^[A-Z]{2}$/, { name: "ISO country code" }),
+    }),
+    defineField({
+      name: "hazardousMaterial",
+      title: "Hazardous material",
+      type: "boolean",
+      initialValue: false,
+      description: "Hazardous items are rejected by automated quoting.",
+    }),
+  ];
+}

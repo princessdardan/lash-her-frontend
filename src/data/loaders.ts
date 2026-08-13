@@ -77,10 +77,11 @@ const PRODUCT_PROJECTION = groq`{
     "displayOrder": @->displayOrder
   },
   optionGroups[]{ _key, name, values },
-  variants[]{ _key, title, sku, price, discountPrice, isAvailable, availabilityLabel, options[]{ _key, name, value } },
+  variants[]{ _key, title, sku, price, discountPrice, isAvailable, availabilityLabel, options[]{ _key, name, value }, shipping },
   isAvailable,
   availabilityLabel,
   fulfillmentNote,
+  shipping,
   displayOrder,
   image{ asset, hotspot, crop, alt },
   gallery[]{ asset, hotspot, crop, alt },

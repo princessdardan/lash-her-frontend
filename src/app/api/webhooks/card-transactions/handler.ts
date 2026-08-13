@@ -29,12 +29,14 @@ import {
   verifyHelcimWebhookSignature,
 } from "@/lib/commerce/helcim-webhook";
 import { buildTrainingScheduleUrl } from "@/lib/training-checkout";
+import { activateShipmentForPaidOrder } from "@/lib/shipping/shipment-store";
 
 export const runtime = "nodejs";
 
 const webhookPaymentMockStore = createPaymentMockStore();
 
 interface HelcimWebhookDependencies {
+  activateShipmentForPaidOrder?: typeof activateShipmentForPaidOrder;
   finalizeAppointmentPaymentForOrder: typeof finalizeAppointmentPaymentForOrder;
   getAppointmentHoldByCheckoutOrderPublicId?: typeof import("@/lib/booking/holds").getAppointmentHoldByCheckoutOrderPublicId;
   getCardTransaction: (
@@ -54,6 +56,7 @@ interface HelcimWebhookDependencies {
 }
 
 const defaultDependencies: HelcimWebhookDependencies = {
+  activateShipmentForPaidOrder,
   finalizeAppointmentPaymentForOrder,
   getAppointmentHoldByCheckoutOrderPublicId: undefined,
   getCardTransaction: async (cardTransactionId, req) => {
@@ -272,7 +275,7 @@ async function recoverProductOrderConfirmationEmail(
   recordedEvent: HelcimWebhookEventRecordResult,
   dependencies: Pick<
     HelcimWebhookDependencies,
-    "sendProductOrderConfirmationEmailForOrder"
+    "activateShipmentForPaidOrder" | "sendProductOrderConfirmationEmailForOrder"
   >,
 ): Promise<void> {
   if (
@@ -284,6 +287,10 @@ async function recoverProductOrderConfirmationEmail(
   ) {
     return;
   }
+
+  await dependencies.activateShipmentForPaidOrder?.(
+    recordedEvent.matchedOrder.orderId,
+  );
 
   await dependencies.sendProductOrderConfirmationEmailForOrder(
     recordedEvent.matchedOrder.orderId,

@@ -6,7 +6,11 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatCad } from "@/lib/commerce/money";
-import { buildValidatedCart, type ValidatedCart, type CartInputItem } from "@/lib/commerce/cart";
+import {
+  buildValidatedCart,
+  type ValidatedCart,
+  type CartInputItem,
+} from "@/lib/commerce/cart";
 import {
   CHECKOUT_CUSTOMER_NAME_MAX_LENGTH,
   CHECKOUT_EMAIL_MAX_LENGTH,
@@ -23,9 +27,31 @@ import { useProductCart } from "@/components/commerce/product-cart-provider";
 
 interface CheckoutPageClientProps {
   products: TProduct[];
+  shippingEnabled: boolean;
 }
 
-function CheckoutContent({ products }: CheckoutPageClientProps) {
+interface ShippingRate {
+  id: string;
+  title: string;
+  carrier?: string;
+  deliveryEstimate?: string;
+  amountCents: number;
+  currency: "CAD";
+  insured: boolean;
+  tracked: boolean;
+}
+
+interface ShippingQuote {
+  quoteToken: string;
+  fingerprint: string;
+  expiresAt: string;
+  rates: ShippingRate[];
+}
+
+function CheckoutContent({
+  products,
+  shippingEnabled,
+}: CheckoutPageClientProps) {
   const searchParams = useSearchParams();
   const { items: cartItems, clearCart } = useProductCart();
 
@@ -33,21 +59,44 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
   const buyNowProductId = searchParams.get("productId");
   const buyNowVariantId = searchParams.get("variantId");
   const buyNowQuantity = searchParams.get("quantity");
-  const initialPromotionCode = searchParams.get("promotionCode")?.toUpperCase() ?? "";
+  const initialPromotionCode =
+    searchParams.get("promotionCode")?.toUpperCase() ?? "";
 
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
   const [shippingLine1, setShippingLine1] = useState("");
   const [shippingLine2, setShippingLine2] = useState("");
   const [shippingCity, setShippingCity] = useState("");
   const [shippingProvince, setShippingProvince] = useState("");
   const [shippingPostalCode, setShippingPostalCode] = useState("");
-  const [shippingCountry, setShippingCountry] = useState("Canada");
-  const [promotionCodeInput, setPromotionCodeInput] = useState(initialPromotionCode);
-  const [redeemedPromotionCode, setRedeemedPromotionCode] = useState<string | undefined>();
-  const [promotionPreviewCart, setPromotionPreviewCart] = useState<ValidatedCart | null>(null);
-  const [promotionPreviewCartKey, setPromotionPreviewCartKey] = useState<string | undefined>();
-  const [promotionCodeError, setPromotionCodeError] = useState<string | null>(null);
+  const [shippingCountry, setShippingCountry] = useState("CA");
+  const [shippingQuote, setShippingQuote] = useState<ShippingQuote | null>(
+    null,
+  );
+  const [shippingQuoteRequestKey, setShippingQuoteRequestKey] = useState<
+    string | null
+  >(null);
+  const [selectedShippingRateId, setSelectedShippingRateId] = useState<
+    string | null
+  >(null);
+  const [shippingQuoteError, setShippingQuoteError] = useState<string | null>(
+    null,
+  );
+  const [isLoadingShippingRates, setIsLoadingShippingRates] = useState(false);
+  const [promotionCodeInput, setPromotionCodeInput] =
+    useState(initialPromotionCode);
+  const [redeemedPromotionCode, setRedeemedPromotionCode] = useState<
+    string | undefined
+  >();
+  const [promotionPreviewCart, setPromotionPreviewCart] =
+    useState<ValidatedCart | null>(null);
+  const [promotionPreviewCartKey, setPromotionPreviewCartKey] = useState<
+    string | undefined
+  >();
+  const [promotionCodeError, setPromotionCodeError] = useState<string | null>(
+    null,
+  );
   const [isApplyingPromotionCode, setIsApplyingPromotionCode] = useState(false);
 
   // Build checkout items: either buy-now single item or full cart
@@ -65,9 +114,15 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
     return cartItems;
   }, [isBuyNow, buyNowProductId, buyNowVariantId, buyNowQuantity, cartItems]);
 
-  const checkoutItemsKey = useMemo(() => JSON.stringify(checkoutItems), [checkoutItems]);
+  const checkoutItemsKey = useMemo(
+    () => JSON.stringify(checkoutItems),
+    [checkoutItems],
+  );
 
-  const cart = useMemo<{ cart: ValidatedCart | null; error: string | null }>(() => {
+  const cart = useMemo<{
+    cart: ValidatedCart | null;
+    error: string | null;
+  }>(() => {
     if (checkoutItems.length === 0) {
       return { cart: null, error: null };
     }
@@ -90,33 +145,64 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
           isAvailable: variant.isAvailable,
         })),
       }));
-      return { cart: buildValidatedCart(checkoutItems, catalogProducts), error: null };
+      return {
+        cart: buildValidatedCart(checkoutItems, catalogProducts),
+        error: null,
+      };
     } catch (err) {
-      return { cart: null, error: err instanceof Error ? err.message : "Invalid cart" };
+      return {
+        cart: null,
+        error: err instanceof Error ? err.message : "Invalid cart",
+      };
     }
   }, [checkoutItems, products]);
 
-  const totalItems = checkoutItems.reduce((sum, item) => sum + item.quantity, 0);
-  const hasPromotionPreview = promotionPreviewCartKey === checkoutItemsKey && promotionPreviewCart !== null;
-  const activeRedeemedPromotionCode = hasPromotionPreview ? redeemedPromotionCode : undefined;
+  const totalItems = checkoutItems.reduce(
+    (sum, item) => sum + item.quantity,
+    0,
+  );
+  const hasPromotionPreview =
+    promotionPreviewCartKey === checkoutItemsKey &&
+    promotionPreviewCart !== null;
+  const activeRedeemedPromotionCode = hasPromotionPreview
+    ? redeemedPromotionCode
+    : undefined;
   const displayedCart = hasPromotionPreview ? promotionPreviewCart : cart.cart;
   const normalizedCustomerName = normalizeCheckoutText(customerName);
   const normalizedCustomerEmail = customerEmail.trim().toLowerCase();
   const normalizedShippingLine2 = normalizeCheckoutText(shippingLine2);
-  const shippingAddress = {
-    line1: normalizeCheckoutText(shippingLine1),
-    ...(normalizedShippingLine2 ? { line2: normalizedShippingLine2 } : {}),
-    city: normalizeCheckoutText(shippingCity),
-    province: normalizeCheckoutText(shippingProvince),
-    postalCode: normalizeCheckoutText(shippingPostalCode),
-    country: normalizeCheckoutText(shippingCountry),
-  };
+  const shippingAddress = useMemo(
+    () => ({
+      line1: normalizeCheckoutText(shippingLine1),
+      ...(normalizedShippingLine2 ? { line2: normalizedShippingLine2 } : {}),
+      city: normalizeCheckoutText(shippingCity),
+      province: normalizeCheckoutText(shippingProvince),
+      postalCode: normalizeCheckoutText(shippingPostalCode),
+      country: shippingCountry === "US" ? "United States" : "Canada",
+      countryCode: shippingCountry,
+    }),
+    [
+      normalizedShippingLine2,
+      shippingCity,
+      shippingCountry,
+      shippingLine1,
+      shippingPostalCode,
+      shippingProvince,
+    ],
+  );
   const hasValidShippingAddress = Boolean(
     isValidCheckoutText(shippingLine1, CHECKOUT_SHIPPING_LINE_MAX_LENGTH) &&
-    (!normalizedShippingLine2 || isValidCheckoutText(shippingLine2, CHECKOUT_SHIPPING_LINE_MAX_LENGTH)) &&
+    (!normalizedShippingLine2 ||
+      isValidCheckoutText(shippingLine2, CHECKOUT_SHIPPING_LINE_MAX_LENGTH)) &&
     isValidCheckoutText(shippingCity, CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH) &&
-    isValidCheckoutText(shippingProvince, CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH) &&
-    isValidCheckoutText(shippingPostalCode, CHECKOUT_SHIPPING_POSTAL_CODE_MAX_LENGTH) &&
+    isValidCheckoutText(
+      shippingProvince,
+      CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH,
+    ) &&
+    isValidCheckoutText(
+      shippingPostalCode,
+      CHECKOUT_SHIPPING_POSTAL_CODE_MAX_LENGTH,
+    ) &&
     isValidCheckoutText(shippingCountry, CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH),
   );
   const hasValidCustomerDetails = Boolean(
@@ -124,8 +210,42 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
     isValidCheckoutEmail(normalizedCustomerEmail),
   );
   const cartAmount = displayedCart?.amount ?? 0;
+  const quoteRequestKey = useMemo(
+    () =>
+      JSON.stringify({
+        items: checkoutItems,
+        promotionCode: activeRedeemedPromotionCode ?? null,
+        customer: {
+          name: normalizedCustomerName,
+          email: normalizedCustomerEmail,
+          phone: normalizeCheckoutText(customerPhone),
+        },
+        shippingAddress,
+      }),
+    [
+      activeRedeemedPromotionCode,
+      checkoutItems,
+      customerPhone,
+      normalizedCustomerEmail,
+      normalizedCustomerName,
+      shippingAddress,
+    ],
+  );
+  const activeShippingQuote =
+    shippingQuoteRequestKey === quoteRequestKey ? shippingQuote : null;
+  const selectedShippingRate =
+    activeShippingQuote?.rates.find(
+      (rate) => rate.id === selectedShippingRateId,
+    ) ?? null;
+  const shippingAmount = selectedShippingRate
+    ? selectedShippingRate.amountCents / 100
+    : 0;
+  const checkoutTotal = Math.round((cartAmount + shippingAmount) * 100) / 100;
   const cartAmountBeforePromotion = displayedCart
-    ? Math.round((displayedCart.amount + (displayedCart.promotionDiscountAmount ?? 0)) * 100) / 100
+    ? Math.round(
+        (displayedCart.amount + (displayedCart.promotionDiscountAmount ?? 0)) *
+          100,
+      ) / 100
     : 0;
 
   const handleApplyPromotionCode = async () => {
@@ -152,7 +272,10 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
         return;
       }
 
-      const data = await response.json() as { promotionCode?: string; cart?: ValidatedCart };
+      const data = (await response.json()) as {
+        promotionCode?: string;
+        cart?: ValidatedCart;
+      };
       if (!data.promotionCode || !data.cart) {
         setPromotionCodeError("This code is not valid for your order.");
         setRedeemedPromotionCode(undefined);
@@ -180,8 +303,69 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
     setPromotionCodeError(null);
   };
 
+  const handleLoadShippingRates = async () => {
+    if (
+      !displayedCart ||
+      !hasValidCustomerDetails ||
+      !hasValidShippingAddress ||
+      !normalizeCheckoutText(customerPhone)
+    )
+      return;
+    setIsLoadingShippingRates(true);
+    setShippingQuoteError(null);
+    setShippingQuoteRequestKey(null);
+    setSelectedShippingRateId(null);
+    try {
+      const response = await fetch("/api/shipping/quotes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: checkoutItems,
+          promotionCode: activeRedeemedPromotionCode,
+          customer: {
+            name: normalizedCustomerName,
+            email: normalizedCustomerEmail,
+            phone: normalizeCheckoutText(customerPhone),
+          },
+          shippingAddress,
+        }),
+      });
+      const data = (await response.json()) as Partial<ShippingQuote> & {
+        error?: string;
+      };
+      if (
+        !response.ok ||
+        !data.quoteToken ||
+        !data.fingerprint ||
+        !data.expiresAt ||
+        !Array.isArray(data.rates)
+      ) {
+        setShippingQuoteError(
+          data.error ?? "Shipping rates are unavailable. Please try again.",
+        );
+        return;
+      }
+      const nextQuote = data as ShippingQuote;
+      setShippingQuote(nextQuote);
+      setShippingQuoteRequestKey(quoteRequestKey);
+      setSelectedShippingRateId(nextQuote.rates[0]?.id ?? null);
+    } catch {
+      setShippingQuoteError(
+        "Shipping rates are unavailable. Please try again.",
+      );
+    } finally {
+      setIsLoadingShippingRates(false);
+    }
+  };
+
   useEffect(() => {
-    if (!initialPromotionCode || !cart.cart || activeRedeemedPromotionCode || hasPromotionPreview || promotionCodeError || isApplyingPromotionCode) {
+    if (
+      !initialPromotionCode ||
+      !cart.cart ||
+      activeRedeemedPromotionCode ||
+      hasPromotionPreview ||
+      promotionCodeError
+    ) {
       return;
     }
 
@@ -211,7 +395,10 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
           return;
         }
 
-        const data = await response.json() as { promotionCode?: string; cart?: ValidatedCart };
+        const data = (await response.json()) as {
+          promotionCode?: string;
+          cart?: ValidatedCart;
+        };
         if (!data.promotionCode || !data.cart) {
           setPromotionCodeError("This code is not valid for your order.");
           setRedeemedPromotionCode(undefined);
@@ -225,7 +412,9 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
         setPromotionCodeInput(data.promotionCode);
       } catch {
         if (isCancelled) return;
-        setPromotionCodeError("We could not apply this code. Please try again.");
+        setPromotionCodeError(
+          "We could not apply this code. Please try again.",
+        );
         setRedeemedPromotionCode(undefined);
         setPromotionPreviewCart(null);
       } finally {
@@ -236,7 +425,15 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
     return () => {
       isCancelled = true;
     };
-  }, [activeRedeemedPromotionCode, cart.cart, checkoutItems, checkoutItemsKey, hasPromotionPreview, initialPromotionCode, isApplyingPromotionCode, promotionCodeError]);
+  }, [
+    activeRedeemedPromotionCode,
+    cart.cart,
+    checkoutItems,
+    checkoutItemsKey,
+    hasPromotionPreview,
+    initialPromotionCode,
+    promotionCodeError,
+  ]);
 
   if (checkoutItems.length === 0) {
     return (
@@ -244,7 +441,9 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
         <section className="section-shell-soft pt-12 md:pt-16 lg:pt-20">
           <div className="content-container max-w-2xl">
             <article className="soft-panel bg-lh-white p-8 md:p-12 text-center">
-              <h1 className="font-heading text-3xl font-normal text-lh-shadow mb-4">Your cart is empty</h1>
+              <h1 className="font-heading text-3xl font-normal text-lh-shadow mb-4">
+                Your cart is empty
+              </h1>
               <p className="font-body text-sm font-bold text-lh-muted mb-8">
                 Add products to your cart before checking out.
               </p>
@@ -263,7 +462,9 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
       <section className="section-shell-soft pt-12 md:pt-16 lg:pt-20">
         <div className="content-container max-w-2xl">
           <header className="mb-8">
-            <p className="eyebrow-label mb-3">{isBuyNow ? "Buy Now" : "Checkout"}</p>
+            <p className="eyebrow-label mb-3">
+              {isBuyNow ? "Buy Now" : "Checkout"}
+            </p>
             <h1 className="display-heading text-4xl md:text-5xl">
               {isBuyNow ? "Complete Your Purchase" : "Review Your Order"}
             </h1>
@@ -272,7 +473,9 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
           <section className="soft-panel bg-lh-white p-6 md:p-8">
             {cart.error ? (
               <div className="rounded-[18px] border border-lh-accent/30 bg-lh-accent-soft p-4 mb-6">
-                <p className="font-body text-sm font-bold text-lh-accent">{cart.error}</p>
+                <p className="font-body text-sm font-bold text-lh-accent">
+                  {cart.error}
+                </p>
               </div>
             ) : null}
 
@@ -299,7 +502,9 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
                       className="py-4 flex justify-between items-start"
                     >
                       <div>
-                        <p className="font-body font-bold text-lh-shadow">{lineItem.description}</p>
+                        <p className="font-body font-bold text-lh-shadow">
+                          {lineItem.description}
+                        </p>
                         <p className="font-body text-sm font-bold text-lh-muted">
                           Qty: {lineItem.quantity} × {formatCad(lineItem.price)}
                           {lineItem.originalPrice ? (
@@ -315,21 +520,28 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
                             {formatCad(lineItem.originalTotal)}
                           </p>
                         ) : null}
-                        <p className="font-body font-bold text-lh-shadow">{formatCad(lineItem.total)}</p>
+                        <p className="font-body font-bold text-lh-shadow">
+                          {formatCad(lineItem.total)}
+                        </p>
                       </div>
                     </li>
                   ))}
                 </ul>
 
                 <div className="rounded-[24px] border border-lh-line bg-lh-neutral-2/60 p-4">
-                  <label htmlFor="checkout-promotion-code" className="block text-sm font-bold text-lh-primary mb-2">
+                  <label
+                    htmlFor="checkout-promotion-code"
+                    className="block text-sm font-bold text-lh-primary mb-2"
+                  >
                     Promotion code
                   </label>
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <Input
                       id="checkout-promotion-code"
                       value={promotionCodeInput}
-                      onChange={(event) => setPromotionCodeInput(event.target.value.toUpperCase())}
+                      onChange={(event) =>
+                        setPromotionCodeInput(event.target.value.toUpperCase())
+                      }
                       placeholder="Enter code"
                       disabled={isApplyingPromotionCode}
                       autoComplete="off"
@@ -337,11 +549,23 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
                     <Button
                       type="button"
                       variant="ghost"
-                      onClick={activeRedeemedPromotionCode ? handleRemovePromotionCode : handleApplyPromotionCode}
-                      disabled={isApplyingPromotionCode || (!activeRedeemedPromotionCode && !promotionCodeInput.trim())}
+                      onClick={
+                        activeRedeemedPromotionCode
+                          ? handleRemovePromotionCode
+                          : handleApplyPromotionCode
+                      }
+                      disabled={
+                        isApplyingPromotionCode ||
+                        (!activeRedeemedPromotionCode &&
+                          !promotionCodeInput.trim())
+                      }
                       className="rounded-full border-lh-primary/30 px-5 font-body text-sm uppercase tracking-[0.12em] hover:bg-lh-primary-soft hover:text-lh-primary"
                     >
-                      {isApplyingPromotionCode ? "Applying" : activeRedeemedPromotionCode ? "Remove" : "Apply"}
+                      {isApplyingPromotionCode
+                        ? "Applying"
+                        : activeRedeemedPromotionCode
+                          ? "Remove"
+                          : "Apply"}
                     </Button>
                   </div>
                   {activeRedeemedPromotionCode ? (
@@ -350,7 +574,10 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
                     </p>
                   ) : null}
                   {promotionCodeError ? (
-                    <p className="mt-2 font-body text-xs font-bold text-lh-accent" role="alert">
+                    <p
+                      className="mt-2 font-body text-xs font-bold text-lh-accent"
+                      role="alert"
+                    >
                       {promotionCodeError}
                     </p>
                   ) : null}
@@ -360,29 +587,46 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
                   {displayedCart.manualDiscountAmount ? (
                     <div className="mb-2 flex justify-between font-body text-sm font-bold text-lh-muted">
                       <span>Manual discounts</span>
-                      <span>-{formatCad(displayedCart.manualDiscountAmount)}</span>
+                      <span>
+                        -{formatCad(displayedCart.manualDiscountAmount)}
+                      </span>
                     </div>
                   ) : null}
-                  {activeRedeemedPromotionCode && displayedCart.promotionDiscountAmount ? (
+                  {activeRedeemedPromotionCode &&
+                  displayedCart.promotionDiscountAmount ? (
                     <div className="mb-2 flex justify-between font-body text-sm font-bold text-lh-primary">
                       <span>Code {activeRedeemedPromotionCode}</span>
-                      <span>-{formatCad(displayedCart.promotionDiscountAmount)}</span>
+                      <span>
+                        -{formatCad(displayedCart.promotionDiscountAmount)}
+                      </span>
                     </div>
                   ) : null}
                   <div className="flex justify-between items-center gap-4">
-                    <span className="font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-muted">Total</span>
+                    <span className="font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-muted">
+                      Total
+                    </span>
                     <span className="flex flex-wrap items-baseline justify-end gap-2 font-body text-2xl font-bold text-lh-shadow">
-                      {activeRedeemedPromotionCode && displayedCart.promotionDiscountAmount ? (
-                        <span className="text-sm text-lh-muted line-through">{formatCad(cartAmountBeforePromotion)}</span>
+                      {activeRedeemedPromotionCode &&
+                      displayedCart.promotionDiscountAmount ? (
+                        <span className="text-sm text-lh-muted line-through">
+                          {formatCad(cartAmountBeforePromotion)}
+                        </span>
                       ) : null}
-                      <span>{formatCad(cartAmount)}</span>
+                      <span>
+                        {formatCad(
+                          shippingEnabled ? checkoutTotal : cartAmount,
+                        )}
+                      </span>
                     </span>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
-                    <label htmlFor="checkout-name" className="block text-sm font-bold text-lh-primary mb-1">
+                    <label
+                      htmlFor="checkout-name"
+                      className="block text-sm font-bold text-lh-primary mb-1"
+                    >
                       Name
                     </label>
                     <Input
@@ -396,7 +640,27 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
                     />
                   </div>
                   <div>
-                    <label htmlFor="checkout-email" className="block text-sm font-bold text-lh-primary mb-1">
+                    <label
+                      htmlFor="checkout-phone"
+                      className="block text-sm font-bold text-lh-primary mb-1"
+                    >
+                      Phone
+                    </label>
+                    <Input
+                      id="checkout-phone"
+                      type="tel"
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      maxLength={30}
+                      autoComplete="tel"
+                      placeholder="Phone number for delivery"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="checkout-email"
+                      className="block text-sm font-bold text-lh-primary mb-1"
+                    >
                       Email
                     </label>
                     <Input
@@ -414,15 +678,21 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
                 <div className="rounded-[24px] border border-lh-line bg-lh-neutral-2/60 p-5 md:p-6">
                   <div className="mb-5">
                     <p className="eyebrow-label mb-2">Shipping</p>
-                    <h2 className="font-heading text-2xl font-normal text-lh-shadow">Where should we send it?</h2>
+                    <h2 className="font-heading text-2xl font-normal text-lh-shadow">
+                      Where should we send it?
+                    </h2>
                     <p className="mt-2 font-body text-sm font-bold leading-6 text-lh-muted">
-                      Physical products require a delivery address before secure payment opens.
+                      Physical products require a delivery address before secure
+                      payment opens.
                     </p>
                   </div>
 
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div className="sm:col-span-2">
-                      <label htmlFor="checkout-shipping-line1" className="block text-sm font-bold text-lh-primary mb-1">
+                      <label
+                        htmlFor="checkout-shipping-line1"
+                        className="block text-sm font-bold text-lh-primary mb-1"
+                      >
                         Address
                       </label>
                       <Input
@@ -436,8 +706,12 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
                       />
                     </div>
                     <div className="sm:col-span-2">
-                      <label htmlFor="checkout-shipping-line2" className="block text-sm font-bold text-lh-primary mb-1">
-                        Apartment, suite, etc. <span className="text-lh-muted">(optional)</span>
+                      <label
+                        htmlFor="checkout-shipping-line2"
+                        className="block text-sm font-bold text-lh-primary mb-1"
+                      >
+                        Apartment, suite, etc.{" "}
+                        <span className="text-lh-muted">(optional)</span>
                       </label>
                       <Input
                         id="checkout-shipping-line2"
@@ -450,7 +724,10 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
                       />
                     </div>
                     <div>
-                      <label htmlFor="checkout-shipping-city" className="block text-sm font-bold text-lh-primary mb-1">
+                      <label
+                        htmlFor="checkout-shipping-city"
+                        className="block text-sm font-bold text-lh-primary mb-1"
+                      >
                         City
                       </label>
                       <Input
@@ -464,7 +741,10 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
                       />
                     </div>
                     <div>
-                      <label htmlFor="checkout-shipping-province" className="block text-sm font-bold text-lh-primary mb-1">
+                      <label
+                        htmlFor="checkout-shipping-province"
+                        className="block text-sm font-bold text-lh-primary mb-1"
+                      >
                         Province / State
                       </label>
                       <Input
@@ -474,11 +754,14 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
                         onChange={(e) => setShippingProvince(e.target.value)}
                         maxLength={CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH}
                         autoComplete="shipping address-level1"
-                        placeholder="Ontario"
+                        placeholder="ON"
                       />
                     </div>
                     <div>
-                      <label htmlFor="checkout-shipping-postal-code" className="block text-sm font-bold text-lh-primary mb-1">
+                      <label
+                        htmlFor="checkout-shipping-postal-code"
+                        className="block text-sm font-bold text-lh-primary mb-1"
+                      >
                         Postal code
                       </label>
                       <Input
@@ -492,28 +775,125 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
                       />
                     </div>
                     <div>
-                      <label htmlFor="checkout-shipping-country" className="block text-sm font-bold text-lh-primary mb-1">
+                      <label
+                        htmlFor="checkout-shipping-country"
+                        className="block text-sm font-bold text-lh-primary mb-1"
+                      >
                         Country
                       </label>
-                      <Input
+                      <select
                         id="checkout-shipping-country"
-                        type="text"
                         value={shippingCountry}
                         onChange={(e) => setShippingCountry(e.target.value)}
-                        maxLength={CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH}
                         autoComplete="shipping country-name"
-                        placeholder="Canada"
-                      />
+                        className="h-11 w-full rounded-md border border-lh-line bg-white px-3 text-sm text-lh-shadow"
+                      >
+                        <option value="CA">Canada</option>
+                        <option value="US">United States</option>
+                      </select>
                     </div>
                   </div>
+
+                  {shippingEnabled ? (
+                    <div className="sm:col-span-2 border-t border-lh-line pt-5">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleLoadShippingRates}
+                        disabled={
+                          isLoadingShippingRates ||
+                          !displayedCart ||
+                          !hasValidCustomerDetails ||
+                          !hasValidShippingAddress ||
+                          !normalizeCheckoutText(customerPhone)
+                        }
+                      >
+                        {isLoadingShippingRates
+                          ? "Loading rates..."
+                          : activeShippingQuote
+                            ? "Refresh shipping rates"
+                            : "Get shipping rates"}
+                      </Button>
+                      {shippingQuoteError ? (
+                        <p
+                          className="mt-3 text-sm font-bold text-lh-accent"
+                          role="alert"
+                        >
+                          {shippingQuoteError}
+                        </p>
+                      ) : null}
+                      {activeShippingQuote ? (
+                        <fieldset className="mt-4 space-y-3">
+                          <legend className="text-sm font-bold text-lh-primary">
+                            Choose an insured tracked service
+                          </legend>
+                          {activeShippingQuote.rates.map((rate) => (
+                            <label
+                              key={rate.id}
+                              className="flex cursor-pointer items-start justify-between gap-4 rounded-[18px] border border-lh-line bg-white p-4"
+                            >
+                              <span className="flex gap-3">
+                                <input
+                                  type="radio"
+                                  name="shipping-rate"
+                                  value={rate.id}
+                                  checked={selectedShippingRateId === rate.id}
+                                  onChange={() =>
+                                    setSelectedShippingRateId(rate.id)
+                                  }
+                                />
+                                <span>
+                                  <span className="block text-sm font-bold text-lh-shadow">
+                                    {rate.title}
+                                  </span>
+                                  {rate.deliveryEstimate ? (
+                                    <span className="block text-xs text-lh-muted">
+                                      {rate.deliveryEstimate}
+                                    </span>
+                                  ) : null}
+                                  <span className="block text-xs text-lh-muted">
+                                    Insurance and tracking included
+                                  </span>
+                                </span>
+                              </span>
+                              <span className="whitespace-nowrap text-sm font-bold text-lh-shadow">
+                                {formatCad(rate.amountCents / 100)}
+                              </span>
+                            </label>
+                          ))}
+                        </fieldset>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="mt-2">
                   <HelcimPayButton
-                    disabled={!displayedCart || !hasValidCustomerDetails || !hasValidShippingAddress}
+                    disabled={
+                      !displayedCart ||
+                      !hasValidCustomerDetails ||
+                      !hasValidShippingAddress ||
+                      (shippingEnabled &&
+                        (!activeShippingQuote || !selectedShippingRateId))
+                    }
                     items={checkoutItems}
-                    customer={{ name: normalizedCustomerName, email: normalizedCustomerEmail }}
+                    customer={{
+                      name: normalizedCustomerName,
+                      email: normalizedCustomerEmail,
+                      phone: normalizeCheckoutText(customerPhone),
+                    }}
                     shippingAddress={shippingAddress}
+                    shippingQuote={
+                      shippingEnabled &&
+                      activeShippingQuote &&
+                      selectedShippingRateId
+                        ? {
+                            token: activeShippingQuote.quoteToken,
+                            fingerprint: activeShippingQuote.fingerprint,
+                            rateId: selectedShippingRateId,
+                          }
+                        : undefined
+                    }
                     promotionCode={activeRedeemedPromotionCode}
                     onPaid={isBuyNow ? () => undefined : clearCart}
                   />
@@ -521,7 +901,8 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
 
                 {isBuyNow ? (
                   <p className="font-body text-xs font-bold text-lh-muted">
-                    This is a single-item checkout. Your existing cart has not been modified.
+                    This is a single-item checkout. Your existing cart has not
+                    been modified.
                   </p>
                 ) : null}
               </div>
@@ -533,7 +914,10 @@ function CheckoutContent({ products }: CheckoutPageClientProps) {
   );
 }
 
-export default function CheckoutPageClient({ products }: CheckoutPageClientProps) {
+export default function CheckoutPageClient({
+  products,
+  shippingEnabled,
+}: CheckoutPageClientProps) {
   return (
     <Suspense
       fallback={
@@ -544,7 +928,7 @@ export default function CheckoutPageClient({ products }: CheckoutPageClientProps
         </section>
       }
     >
-      <CheckoutContent products={products} />
+      <CheckoutContent products={products} shippingEnabled={shippingEnabled} />
     </Suspense>
   );
 }

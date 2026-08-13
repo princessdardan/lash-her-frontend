@@ -722,6 +722,10 @@ function createPendingSquareInvoiceOrder(input: {
 }): CheckoutOrderRow {
   return {
     amountCents: input.amountCents,
+    merchandiseAmountCents: null,
+    shippingAmountCents: 0,
+    initializationStatus: "ready",
+    initializationError: null,
     calendarEventId: null,
     calendarFinalizationStatus: "not_required",
     checkoutTokenHash: "checkout-token-hash",

@@ -9,6 +9,7 @@ import {
   type AdminProductOrderRow,
 } from "@/lib/admin/operations-workspaces";
 import { requireAdminPagePermission } from "@/lib/admin/page-authorization";
+import { OrderShippingControls } from "@/components/admin/order-shipping-controls";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -23,7 +24,7 @@ interface AdminOrdersPageProps {
 export default async function AdminOrdersPage({
   searchParams,
 }: AdminOrdersPageProps) {
-  await requireAdminPagePermission("payments:view");
+  await requireAdminPagePermission("fulfillment:view");
   const params = await searchParams;
   const result = await listAdminProductOrders({
     page: parsePositivePage(firstString(params.page)),
@@ -35,9 +36,8 @@ export default async function AdminOrdersPage({
       <AdminWorkspaceHeader
         description={
           <p>
-            Product purchases, payment state, and customer confirmation
-            delivery. Fulfillment is not tracked, so this page does not label
-            orders as shipped or complete.
+            Product purchases, payment state, Chit Chats label purchase,
+            tracking, and customer confirmation delivery.
           </p>
         }
         eyebrow="Daily work"
@@ -146,6 +146,15 @@ function OrderCard({
       </dl>
 
       <OrderDetails order={order} />
+      {order.shipment ? (
+        <OrderShippingControls
+          orderId={order.reference}
+          status={order.shipment.status}
+          defaultWeightGrams={order.shipment.packageWeightGrams}
+          trackingNumber={order.shipment.trackingNumber}
+          trackingUrl={order.shipment.trackingUrl}
+        />
+      ) : null}
     </article>
   );
 }
@@ -248,6 +257,15 @@ function OrderTable({
                   <p className="mt-2 max-w-64 text-xs text-lh-muted">
                     {order.confirmation.description}
                   </p>
+                ) : null}
+                {order.shipment ? (
+                  <OrderShippingControls
+                    orderId={order.reference}
+                    status={order.shipment.status}
+                    defaultWeightGrams={order.shipment.packageWeightGrams}
+                    trackingNumber={order.shipment.trackingNumber}
+                    trackingUrl={order.shipment.trackingUrl}
+                  />
                 ) : null}
               </td>
             </tr>

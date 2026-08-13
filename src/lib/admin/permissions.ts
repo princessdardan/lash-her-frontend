@@ -6,6 +6,8 @@ export type AdminPermissionAction =
   | "audit:view"
   | "bookings:manage"
   | "bookings:view"
+  | "fulfillment:manage"
+  | "fulfillment:view"
   | "calendar-connections:manage"
   | "calendar-connections:self-manage"
   | "calendar-connections:view"
@@ -38,6 +40,8 @@ const ADMIN_ACTIONS = new Set<AdminPermissionAction>([
   "analytics:view",
   "bookings:manage",
   "bookings:view",
+  "fulfillment:manage",
+  "fulfillment:view",
   "calendar-connections:manage",
   "calendar-connections:view",
   "marketing:manage",
@@ -119,6 +123,7 @@ export function getVisibleAdminSections(input: {
   const candidates: AdminPermissionAction[] = [
     "admin:view",
     "bookings:view",
+    "fulfillment:view",
     "schedules:view",
     "offerings:view",
     "service-promotions:view",

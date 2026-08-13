@@ -5,7 +5,8 @@ export type BookingAbuseScope =
   | "active-holds"
   | "availability"
   | "hold-attempts"
-  | "promotion-attempts";
+  | "promotion-attempts"
+  | "shipping-quotes";
 
 interface HeaderReader {
   get(name: string): string | null;

@@ -10,14 +10,21 @@ import {
   recordProductOrderConfirmationEmailFailure,
 } from "@/lib/commerce/order-store";
 import { getConfiguredTransactionalTemplate } from "@/lib/resend-platform";
-import { CUSTOMER_REPLY_TO_EMAIL, escapeHtml, getEmailProfileImageHtml, sendTransactionalEmail } from "@/lib/transactional-email";
+import {
+  CUSTOMER_REPLY_TO_EMAIL,
+  escapeHtml,
+  getEmailProfileImageHtml,
+  sendTransactionalEmail,
+} from "@/lib/transactional-email";
 
 export interface SendProductOrderConfirmationEmailInput {
   currency: string;
   customerEmail: string;
   customerName: string;
   lineItems: CheckoutOrderLineItemSnapshot[];
+  merchandiseAmount?: number;
   orderId: string;
+  shippingAmount?: number;
   shippingAddress: CheckoutOrderShippingAddressSnapshot | null;
   totalAmount: number;
 }
@@ -30,7 +37,8 @@ export interface SendProductOrderConfirmationEmailForOrderDependencies {
   sendProductOrderConfirmationEmail: typeof sendProductOrderConfirmationEmail;
 }
 
-export const PRODUCT_ORDER_CONFIRMATION_EMAIL_SUBJECT = "Your Lash Her order is confirmed";
+export const PRODUCT_ORDER_CONFIRMATION_EMAIL_SUBJECT =
+  "Your Lash Her order is confirmed";
 
 export async function sendProductOrderConfirmationEmail(
   input: SendProductOrderConfirmationEmailInput,
@@ -57,7 +65,9 @@ export async function sendProductOrderConfirmationEmailForOrder(
   orderId: string,
   dependencies: SendProductOrderConfirmationEmailForOrderDependencies = defaultSendProductOrderConfirmationEmailForOrderDependencies,
 ): Promise<void> {
-  const claimed = await dependencies.claimProductOrderConfirmationEmail({ orderId });
+  const claimed = await dependencies.claimProductOrderConfirmationEmail({
+    orderId,
+  });
 
   if (claimed === null) {
     return;
@@ -72,28 +82,37 @@ export async function sendProductOrderConfirmationEmailForOrder(
       error: message,
       orderId,
     });
-    dependencies.logError("[checkout] Product order confirmation email failed", {
-      error: message,
-      orderId,
-    });
+    dependencies.logError(
+      "[checkout] Product order confirmation email failed",
+      {
+        error: message,
+        orderId,
+      },
+    );
     throw new Error(message, { cause: error });
   }
 }
 
-const defaultSendProductOrderConfirmationEmailForOrderDependencies: SendProductOrderConfirmationEmailForOrderDependencies = {
-  claimProductOrderConfirmationEmail,
-  logError: console.error,
-  markProductOrderConfirmationEmailSent,
-  recordProductOrderConfirmationEmailFailure,
-  sendProductOrderConfirmationEmail,
-};
+const defaultSendProductOrderConfirmationEmailForOrderDependencies: SendProductOrderConfirmationEmailForOrderDependencies =
+  {
+    claimProductOrderConfirmationEmail,
+    logError: console.error,
+    markProductOrderConfirmationEmailSent,
+    recordProductOrderConfirmationEmailFailure,
+    sendProductOrderConfirmationEmail,
+  };
 
 export function buildProductOrderConfirmationHtml(
   input: SendProductOrderConfirmationEmailInput,
 ): string {
   const formattedTotal = formatCurrency(input.totalAmount, input.currency);
-  const itemRows = input.lineItems.map((lineItem) => getLineItemRow(lineItem, input.currency)).join("");
-  const shippingAddress = input.shippingAddress ? getShippingAddressHtml(input.shippingAddress) : "";
+  const shippingSummary = getShippingSummaryHtml(input);
+  const itemRows = input.lineItems
+    .map((lineItem) => getLineItemRow(lineItem, input.currency))
+    .join("");
+  const shippingAddress = input.shippingAddress
+    ? getShippingAddressHtml(input.shippingAddress)
+    : "";
 
   return `
 <!DOCTYPE html>
@@ -132,6 +151,7 @@ export function buildProductOrderConfirmationHtml(
                   ${itemRows}
                 </tbody>
               </table>
+              ${shippingSummary}
               <p style="margin:0 0 18px 0;text-align:right;font-size:17px;line-height:1.7;"><strong>Total paid:</strong> ${escapeHtml(formattedTotal)}</p>
               <div style="margin:28px 0;padding:20px;border-left:4px solid #D4B483;background-color:#F5F1F5;">
                 <p style="margin:0;font-size:14px;line-height:1.7;">You will receive fulfillment updates as your order is prepared. If you have questions about your purchase, reply to this confirmation or contact Lash Her support with your order number.</p>
@@ -151,22 +171,57 @@ export function buildProductOrderConfirmationHtml(
 export function getProductOrderTemplateVariables(
   input: SendProductOrderConfirmationEmailInput,
 ): Record<string, unknown> {
-  const lineItemsHtml = input.lineItems.map((lineItem) => getLineItemRow(lineItem, input.currency)).join("");
+  const lineItemsHtml = input.lineItems
+    .map((lineItem) => getLineItemRow(lineItem, input.currency))
+    .join("");
 
   return {
     CURRENCY: escapeHtml(input.currency.toUpperCase()),
     CUSTOMER_EMAIL: escapeHtml(input.customerEmail),
-    CUSTOMER_FIRST_NAME: escapeHtml(input.customerName.trim().split(/\s+/)[0] ?? ""),
+    CUSTOMER_FIRST_NAME: escapeHtml(
+      input.customerName.trim().split(/\s+/)[0] ?? "",
+    ),
     CUSTOMER_NAME: escapeHtml(input.customerName),
-    ITEM_COUNT: input.lineItems.reduce((total, lineItem) => total + lineItem.quantity, 0),
+    ITEM_COUNT: input.lineItems.reduce(
+      (total, lineItem) => total + lineItem.quantity,
+      0,
+    ),
     LINE_ITEMS_HTML: lineItemsHtml,
     ORDER_ID: escapeHtml(input.orderId),
-    SHIPPING_ADDRESS_HTML: input.shippingAddress ? getShippingAddressHtml(input.shippingAddress) : "",
+    SHIPPING_ADDRESS_HTML: input.shippingAddress
+      ? getShippingAddressHtml(input.shippingAddress)
+      : "",
+    SHIPPING_AMOUNT: escapeHtml(
+      formatCurrency(input.shippingAmount ?? 0, input.currency),
+    ),
+    SUBTOTAL: escapeHtml(
+      formatCurrency(
+        input.merchandiseAmount ??
+          input.totalAmount - (input.shippingAmount ?? 0),
+        input.currency,
+      ),
+    ),
     TOTAL: escapeHtml(formatCurrency(input.totalAmount, input.currency)),
   };
 }
 
-function getShippingAddressHtml(address: CheckoutOrderShippingAddressSnapshot): string {
+function getShippingSummaryHtml(
+  input: SendProductOrderConfirmationEmailInput,
+): string {
+  if (!input.shippingAmount || input.shippingAmount <= 0) return "";
+  const merchandiseAmount =
+    input.merchandiseAmount ?? input.totalAmount - input.shippingAmount;
+  return `
+<table role="presentation" style="width:100%;border-collapse:collapse;margin:0 0 10px 0;font-size:14px;line-height:1.7;">
+  <tr><td align="right" style="color:#746A72;">Merchandise</td><td align="right" style="width:120px;">${escapeHtml(formatCurrency(merchandiseAmount, input.currency))}</td></tr>
+  <tr><td align="right" style="color:#746A72;">Insured tracked shipping</td><td align="right">${escapeHtml(formatCurrency(input.shippingAmount, input.currency))}</td></tr>
+</table>
+  `.trim();
+}
+
+function getShippingAddressHtml(
+  address: CheckoutOrderShippingAddressSnapshot,
+): string {
   const lines = [
     address.line1,
     address.line2,

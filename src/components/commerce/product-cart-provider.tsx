@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import type { CartInputItem } from "@/lib/commerce/cart";
+import { MAX_CART_LINE_ITEMS } from "@/lib/commerce/cart";
 import {
   loadProductCartItems,
   persistProductCartItems,
@@ -31,7 +32,12 @@ export type ProductCartAction =
   | { type: "hydrate"; items: CartInputItem[] }
   | { type: "addItem"; item: ProductCartInputItem }
   | { type: "removeItem"; productId: string; variantId?: string }
-  | { type: "updateQuantity"; productId: string; variantId?: string; quantity: number }
+  | {
+      type: "updateQuantity";
+      productId: string;
+      variantId?: string;
+      quantity: number;
+    }
   | { type: "clearCart" }
   | { type: "openCart" }
   | { type: "closeCart" };
@@ -72,7 +78,8 @@ export function ProductCartProvider({ children }: { children: ReactNode }) {
     () => ({
       ...state,
       addItem: (item) => dispatch({ type: "addItem", item }),
-      removeItem: (productId, variantId) => dispatch({ type: "removeItem", productId, variantId }),
+      removeItem: (productId, variantId) =>
+        dispatch({ type: "removeItem", productId, variantId }),
       updateQuantity: (productId, quantity, variantId) => {
         dispatch({ type: "updateQuantity", productId, variantId, quantity });
       },
@@ -84,7 +91,11 @@ export function ProductCartProvider({ children }: { children: ReactNode }) {
     [state],
   );
 
-  return <ProductCartContext.Provider value={value}>{children}</ProductCartContext.Provider>;
+  return (
+    <ProductCartContext.Provider value={value}>
+      {children}
+    </ProductCartContext.Provider>
+  );
 }
 
 export function useProductCart(): ProductCartContextValue {
@@ -110,7 +121,8 @@ export function productCartReducer(
       return {
         ...state,
         items: state.items.filter(
-          (item) => !isMatchingLineItem(item, action.productId, action.variantId),
+          (item) =>
+            !isMatchingLineItem(item, action.productId, action.variantId),
         ),
       };
     case "updateQuantity":
@@ -133,23 +145,41 @@ export function productCartReducer(
   }
 }
 
-export function createBuyNowPayload(item: ProductCartInputItem): CartInputItem[] {
+export function createBuyNowPayload(
+  item: ProductCartInputItem,
+): CartInputItem[] {
   return [normalizeCartInputItem(item)];
 }
 
-function addCartItem(items: CartInputItem[], item: ProductCartInputItem): CartInputItem[] {
+function addCartItem(
+  items: CartInputItem[],
+  item: ProductCartInputItem,
+): CartInputItem[] {
   const normalizedItem = normalizeCartInputItem(item);
   const existingItem = items.find((candidate) =>
-    isMatchingLineItem(candidate, normalizedItem.productId, normalizedItem.variantId),
+    isMatchingLineItem(
+      candidate,
+      normalizedItem.productId,
+      normalizedItem.variantId,
+    ),
   );
 
   if (!existingItem) {
-    return [...items, normalizedItem];
+    return items.length >= MAX_CART_LINE_ITEMS
+      ? items
+      : [...items, normalizedItem];
   }
 
   return items.map((candidate) =>
-    isMatchingLineItem(candidate, normalizedItem.productId, normalizedItem.variantId)
-      ? { ...candidate, quantity: clampQuantity(candidate.quantity + normalizedItem.quantity) }
+    isMatchingLineItem(
+      candidate,
+      normalizedItem.productId,
+      normalizedItem.variantId,
+    )
+      ? {
+          ...candidate,
+          quantity: clampQuantity(candidate.quantity + normalizedItem.quantity),
+        }
       : candidate,
   );
 }
@@ -176,7 +206,8 @@ function isCartInputLike(item: unknown): item is ProductCartInputItem {
   return (
     typeof candidate.productId === "string" &&
     candidate.productId.length > 0 &&
-    (candidate.variantId === undefined || typeof candidate.variantId === "string") &&
+    (candidate.variantId === undefined ||
+      typeof candidate.variantId === "string") &&
     typeof candidate.quantity === "number" &&
     Number.isFinite(candidate.quantity)
   );

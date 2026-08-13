@@ -456,6 +456,25 @@ export interface TProductVariant {
   isAvailable: boolean;
   availabilityLabel?: string;
   options?: TProductVariantOption[];
+  shipping?: TProductShippingMetadata;
+}
+
+export interface TProductShippingMetadata {
+  fulfillmentMode: "physical" | "manual";
+  weightGrams?: number;
+  packingUnits?: number;
+  minimumPackageTier?: string;
+  customsDescription?: string;
+  countryOfOrigin?: string;
+  usShippingApproved?: boolean;
+  hsTariffCode?: string;
+  manufacturerName?: string;
+  manufacturerAddress?: string;
+  manufacturerCity?: string;
+  manufacturerProvinceCode?: string;
+  manufacturerPostalCode?: string;
+  manufacturerCountryCode?: string;
+  hazardousMaterial?: boolean;
 }
 
 export interface TProduct {
@@ -476,6 +495,7 @@ export interface TProduct {
   isAvailable: boolean;
   availabilityLabel?: string;
   fulfillmentNote?: string;
+  shipping?: TProductShippingMetadata;
   displayOrder?: number;
   image?: TSanityImage;
   gallery?: TSanityImage[];

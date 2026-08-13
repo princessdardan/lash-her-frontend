@@ -91,6 +91,63 @@ test("validates preview launch environment", () => {
   assert.match(result.stdout, /Vercel preview environment validated/);
 });
 
+test("validates preview Chit Chats shipping configuration", () => {
+  const result = runValidator({
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+    CHITCHATS_SHIPPING_ENABLED: "true",
+    CHITCHATS_CHECKOUT_ENABLED: "true",
+    CHITCHATS_US_SHIPPING_ENABLED: "false",
+    CHITCHATS_ENVIRONMENT: "staging",
+    CHITCHATS_CLIENT_ID: "client-id",
+    CHITCHATS_ACCESS_TOKEN: "access-token",
+    CHITCHATS_QUOTE_SIGNING_SECRET: "quote-signing-secret-with-safe-length",
+    CHITCHATS_WORKER_CRON_SECRET: "worker-cron-secret",
+  });
+
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Vercel preview environment validated/);
+});
+
+test("fails when Chit Chats checkout is enabled without the shipping worker", () => {
+  const result = runValidator({
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+    CHITCHATS_SHIPPING_ENABLED: "false",
+    CHITCHATS_CHECKOUT_ENABLED: "true",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.combinedOutput,
+    /CHITCHATS_CHECKOUT_ENABLED requires CHITCHATS_SHIPPING_ENABLED=true/,
+  );
+});
+
+test("fails production Chit Chats shipping configured against staging", () => {
+  const result = runValidator({
+    ...launchEnv,
+    VERCEL_ENV: "production",
+    NEXT_PUBLIC_SANITY_DATASET: "production",
+    CHITCHATS_SHIPPING_ENABLED: "true",
+    CHITCHATS_CHECKOUT_ENABLED: "false",
+    CHITCHATS_US_SHIPPING_ENABLED: "false",
+    CHITCHATS_ENVIRONMENT: "staging",
+    CHITCHATS_CLIENT_ID: "client-id",
+    CHITCHATS_ACCESS_TOKEN: "access-token",
+    CHITCHATS_QUOTE_SIGNING_SECRET: "quote-signing-secret-with-safe-length",
+    CHITCHATS_WORKER_CRON_SECRET: "worker-cron-secret",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.combinedOutput,
+    /requires CHITCHATS_ENVIRONMENT=production/,
+  );
+});
+
 test("fails launch environment when Square service booking flag is blank", () => {
   const result = runValidator({
     ...launchEnv,
@@ -342,7 +399,10 @@ test("fails launch environment with a short Auth.js secret", () => {
   });
 
   assert.notEqual(result.status, 0);
-  assert.match(result.combinedOutput, /AUTH_SECRET must be at least 32 characters/);
+  assert.match(
+    result.combinedOutput,
+    /AUTH_SECRET must be at least 32 characters/,
+  );
 });
 
 test("fails an unknown service booking model rollout mode", () => {

@@ -54,6 +54,14 @@ const squareLaunchEnvVars = [
   "SQUARE_SERVICE_BOOKING_WEBHOOK_URL",
 ];
 
+const chitchatsLaunchEnvVars = [
+  "CHITCHATS_ENVIRONMENT",
+  "CHITCHATS_CLIENT_ID",
+  "CHITCHATS_ACCESS_TOKEN",
+  "CHITCHATS_QUOTE_SIGNING_SECRET",
+  "CHITCHATS_WORKER_CRON_SECRET",
+];
+
 const urlEnvVars = [
   "GOOGLE_REDIRECT_URI",
   "KV_REST_API_URL",
@@ -72,11 +80,16 @@ const serviceBookingModelMode =
   process.env.SERVICE_BOOKING_MODEL_MODE ?? "dual";
 const isSquareServiceBookingEnabled =
   serviceBookingSquareEnabled === "true";
+const chitchatsShippingEnabled = process.env.CHITCHATS_SHIPPING_ENABLED;
+const chitchatsCheckoutEnabled = process.env.CHITCHATS_CHECKOUT_ENABLED;
+const chitchatsUsShippingEnabled = process.env.CHITCHATS_US_SHIPPING_ENABLED;
+const isChitchatsShippingEnabled = chitchatsShippingEnabled === "true";
 const requiredEnvVars = isLaunchEnvironment
   ? [
       ...publicSanityEnvVars,
       ...(isPaymentMockMode ? launchEnvVarsWithoutLivePayment() : launchEnvVars),
       ...(isSquareServiceBookingEnabled && !isPaymentMockMode ? squareLaunchEnvVars : []),
+      ...(isChitchatsShippingEnabled ? chitchatsLaunchEnvVars : []),
     ]
   : publicSanityEnvVars;
 
@@ -122,6 +135,20 @@ if (
   && serviceBookingSquareEnabled !== "false"
 ) {
   errors.push("Malformed env var: SERVICE_BOOKING_SQUARE_ENABLED must be true or false");
+}
+
+for (const [name, value] of [
+  ["CHITCHATS_SHIPPING_ENABLED", chitchatsShippingEnabled],
+  ["CHITCHATS_CHECKOUT_ENABLED", chitchatsCheckoutEnabled],
+  ["CHITCHATS_US_SHIPPING_ENABLED", chitchatsUsShippingEnabled],
+]) {
+  if (value !== undefined && value !== "true" && value !== "false") {
+    errors.push(`Malformed env var: ${name} must be true or false`);
+  }
+}
+
+if (chitchatsCheckoutEnabled === "true" && !isChitchatsShippingEnabled) {
+  errors.push("Invalid env vars: CHITCHATS_CHECKOUT_ENABLED requires CHITCHATS_SHIPPING_ENABLED=true");
 }
 
 if (isPaymentMockMode && (process.env.NODE_ENV === "production" || vercelEnv === "production")) {
@@ -182,6 +209,21 @@ if (isLaunchEnvironment) {
       if (hasValue(process.env[name])) {
         validateHttpsUrl(name, process.env[name]);
       }
+    }
+  }
+
+  if (isChitchatsShippingEnabled) {
+    if (process.env.CHITCHATS_ENVIRONMENT !== "staging" && process.env.CHITCHATS_ENVIRONMENT !== "production") {
+      errors.push("Malformed env var: CHITCHATS_ENVIRONMENT must be staging or production");
+    }
+    if (vercelEnv === "production" && process.env.CHITCHATS_ENVIRONMENT !== "production") {
+      errors.push("Invalid env var: production deployment requires CHITCHATS_ENVIRONMENT=production");
+    }
+    if (
+      hasValue(process.env.CHITCHATS_QUOTE_SIGNING_SECRET)
+      && process.env.CHITCHATS_QUOTE_SIGNING_SECRET.trim().length < 32
+    ) {
+      errors.push("Malformed env var: CHITCHATS_QUOTE_SIGNING_SECRET must be at least 32 characters");
     }
   }
 }

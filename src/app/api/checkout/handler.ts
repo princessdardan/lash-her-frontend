@@ -19,6 +19,7 @@ import {
 import { parsePromotionCodeInput } from "@/lib/commerce/discounts";
 import type { HelcimGateway } from "@/lib/commerce/helcim-gateway";
 import { createPaymentMockStore } from "@/lib/payment-mocks/in-memory-store";
+import { ShippingQuoteConflictError } from "@/lib/shipping/errors";
 import type { TProduct, TPromotionCode } from "@/types";
 
 const checkoutPaymentMockStore = createPaymentMockStore();
@@ -26,6 +27,7 @@ const checkoutPaymentMockStore = createPaymentMockStore();
 interface CheckoutCustomerInput {
   name: string;
   email: string;
+  phone?: string;
 }
 
 interface CheckoutShippingAddressInput {
@@ -35,6 +37,8 @@ interface CheckoutShippingAddressInput {
   province: string;
   postalCode: string;
   country: string;
+  countryCode?: "CA" | "US";
+  phone?: string;
 }
 
 interface CheckoutRequestBody {
@@ -42,6 +46,11 @@ interface CheckoutRequestBody {
   items: CartInputItem[];
   shippingAddress: CheckoutShippingAddressInput;
   promotionCode?: string;
+  shippingQuote?: {
+    token: string;
+    fingerprint: string;
+    rateId: string;
+  };
 }
 
 interface CheckoutResponseBody {
@@ -81,11 +90,40 @@ interface CheckoutPostHandlerDependencies {
     input: CheckoutPaySessionInput,
   ) => Promise<CheckoutPaySession>;
   createPendingOrder: (input: CheckoutPendingOrderInput) => Promise<unknown>;
+  shippingEnabled?: boolean;
+  validateShippingSelection?: (input: {
+    request: CheckoutRequestBody;
+    products: TProduct[];
+    promotionCode: TPromotionCode | null;
+  }) => Promise<string>;
+  createInitializingOrder?: (input: {
+    customerName: string;
+    customerEmail: string;
+    cart: ValidatedCart;
+    shippingAddress: CheckoutShippingAddressInput;
+    shippingQuoteToken: string;
+    shippingQuoteFingerprint: string;
+    shippingRateId: string;
+  }) => Promise<{
+    orderId: string;
+    shippingAmountCents: number;
+    totalAmountCents: number;
+    shippingRateTitle: string;
+  }>;
+  finalizeInitializingOrder?: (input: {
+    orderId: string;
+    checkoutToken: string;
+    secretToken: string;
+    helcimInvoiceId: number;
+    helcimInvoiceNumber: string;
+  }) => Promise<void>;
+  markInitializationFailed?: (orderId: string, error: string) => Promise<void>;
 }
 
 type CheckoutInitializationStage =
   | "prepare_checkout"
   | "load_checkout_inputs"
+  | "reserve_order"
   | "create_helcim_invoice"
   | "initialize_helcim_pay"
   | "persist_order";
@@ -139,12 +177,18 @@ export function createCheckoutPostHandler({
   createHelcimInvoice,
   initializeHelcimPay,
   createPendingOrder,
+  shippingEnabled,
+  validateShippingSelection,
+  createInitializingOrder,
+  finalizeInitializingOrder,
+  markInitializationFailed,
 }: CheckoutPostHandlerDependencies): (req: NextRequest) => Promise<Response> {
   return async function checkoutPostHandler(
     req: NextRequest,
   ): Promise<Response> {
     let body: unknown;
     let stage: CheckoutInitializationStage = "prepare_checkout";
+    let initializingOrderId: string | null = null;
 
     try {
       body = await req.json();
@@ -182,6 +226,21 @@ export function createCheckoutPostHandler({
         return invalidPromotionCode();
       }
 
+      if (
+        dependenciesRequireShipping({
+          shippingEnabled,
+          validateShippingSelection,
+          createInitializingOrder,
+          finalizeInitializingOrder,
+        }) &&
+        !checkoutRequest.shippingQuote
+      ) {
+        return NextResponse.json<CheckoutErrorBody>(
+          { error: "Select a current shipping rate" },
+          { status: 409 },
+        );
+      }
+
       const invoiceLineItems = cart.lineItems.map(
         ({ sku, description, quantity, price }) => ({
           sku,
@@ -200,13 +259,73 @@ export function createCheckoutPostHandler({
         });
       }
 
+      let checkoutAmount = cart.amount;
+      let initializingOrder: Awaited<
+        ReturnType<NonNullable<typeof createInitializingOrder>>
+      > | null = null;
+      if (
+        shippingEnabled &&
+        validateShippingSelection &&
+        createInitializingOrder &&
+        finalizeInitializingOrder &&
+        checkoutRequest.shippingQuote
+      ) {
+        const currentFingerprint = await validateShippingSelection({
+          request: checkoutRequest,
+          products,
+          promotionCode,
+        });
+        if (currentFingerprint !== checkoutRequest.shippingQuote.fingerprint) {
+          return NextResponse.json<CheckoutErrorBody>(
+            { error: "Shipping quote changed" },
+            { status: 409 },
+          );
+        }
+        stage = "reserve_order";
+        initializingOrder = await createInitializingOrder({
+          customerName: checkoutRequest.customer.name,
+          customerEmail: checkoutRequest.customer.email,
+          cart,
+          shippingAddress: {
+            ...checkoutRequest.shippingAddress,
+            province: normalizeProvinceCode(
+              checkoutRequest.shippingAddress.province,
+            ),
+            postalCode:
+              checkoutRequest.shippingAddress.postalCode.toUpperCase(),
+            countryCode:
+              checkoutRequest.shippingAddress.country.toUpperCase() ===
+                "UNITED STATES" ||
+              checkoutRequest.shippingAddress.country.toUpperCase() === "US"
+                ? "US"
+                : "CA",
+            ...(checkoutRequest.customer.phone
+              ? { phone: checkoutRequest.customer.phone }
+              : {}),
+          },
+          shippingQuoteToken: checkoutRequest.shippingQuote.token,
+          shippingQuoteFingerprint: currentFingerprint,
+          shippingRateId: checkoutRequest.shippingQuote.rateId,
+        });
+        initializingOrderId = initializingOrder.orderId;
+        checkoutAmount = initializingOrder.totalAmountCents / 100;
+        invoiceLineItems.push({
+          sku: "SHIPPING",
+          description: initializingOrder.shippingRateTitle,
+          quantity: 1,
+          price: initializingOrder.shippingAmountCents / 100,
+        });
+      }
+
       stage = "create_helcim_invoice";
       const invoice = validateCheckoutInvoice(
         await createHelcimInvoice({
           currency: "CAD",
           type: "INVOICE",
           status: "DUE",
-          notes: "Lash Her website checkout",
+          notes: initializingOrder
+            ? `Lash Her website checkout ${initializingOrder.orderId}`
+            : "Lash Her website checkout",
           lineItems: invoiceLineItems,
         }),
       );
@@ -215,36 +334,64 @@ export function createCheckoutPostHandler({
       const helcimPaySession = validateCheckoutPaySession(
         await initializeHelcimPay({
           paymentType: "purchase",
-          amount: cart.amount,
+          amount: checkoutAmount,
           currency: "CAD",
           invoiceNumber: invoice.invoiceNumber,
         }),
       );
 
       stage = "persist_order";
-      await createPendingOrder({
-        customerName: checkoutRequest.customer.name,
-        customerEmail: checkoutRequest.customer.email,
-        checkoutToken: helcimPaySession.checkoutToken,
-        secretToken: helcimPaySession.secretToken,
-        helcimInvoiceId: invoice.invoiceId,
-        helcimInvoiceNumber: invoice.invoiceNumber,
-        cart,
-        shippingAddress: checkoutRequest.shippingAddress,
-      });
+      if (initializingOrder && finalizeInitializingOrder) {
+        await finalizeInitializingOrder({
+          orderId: initializingOrder.orderId,
+          checkoutToken: helcimPaySession.checkoutToken,
+          secretToken: helcimPaySession.secretToken,
+          helcimInvoiceId: invoice.invoiceId,
+          helcimInvoiceNumber: invoice.invoiceNumber,
+        });
+      } else {
+        await createPendingOrder({
+          customerName: checkoutRequest.customer.name,
+          customerEmail: checkoutRequest.customer.email,
+          checkoutToken: helcimPaySession.checkoutToken,
+          secretToken: helcimPaySession.secretToken,
+          helcimInvoiceId: invoice.invoiceId,
+          helcimInvoiceNumber: invoice.invoiceNumber,
+          cart,
+          shippingAddress: checkoutRequest.shippingAddress,
+        });
+      }
 
       return NextResponse.json<CheckoutResponseBody>({
         checkoutToken: helcimPaySession.checkoutToken,
       });
     } catch (error) {
+      if (initializingOrderId && markInitializationFailed) {
+        await markInitializationFailed(
+          initializingOrderId,
+          error instanceof Error
+            ? error.message
+            : "Unknown initialization error",
+        ).catch(() => undefined);
+      }
       log("error", "[checkout] Unable to initialize checkout", {
         stage,
         ...summarizeCheckoutError(error),
       });
 
       return NextResponse.json<CheckoutErrorBody>(
-        { error: "Unable to start checkout" },
-        { status: getCheckoutFailureStatus(stage) },
+        {
+          error:
+            error instanceof ShippingQuoteConflictError
+              ? error.message
+              : "Unable to start checkout",
+        },
+        {
+          status:
+            error instanceof ShippingQuoteConflictError
+              ? 409
+              : getCheckoutFailureStatus(stage),
+        },
       );
     }
   };
@@ -267,10 +414,11 @@ class CheckoutProviderResponseError extends Error {
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
-  const [{ loaders }, gateway, { createPendingOrder }] = await Promise.all([
+  const [{ loaders }, gateway, orderStore, shippingConfig] = await Promise.all([
     import("@/data/loaders"),
     resolveCheckoutHelcimGatewayForRequest(req),
     import("@/lib/commerce/order-store"),
+    import("@/lib/shipping/config"),
   ]);
 
   return createCheckoutPostHandler({
@@ -278,7 +426,46 @@ export async function POST(req: NextRequest): Promise<Response> {
     getPromotionCode: loaders.getPromotionCode,
     createHelcimInvoice: gateway.createInvoice,
     initializeHelcimPay: gateway.initializePay,
-    createPendingOrder,
+    createPendingOrder: orderStore.createPendingOrder,
+    shippingEnabled: shippingConfig.isChitChatsCheckoutEnabled(),
+    validateShippingSelection: async ({ request, products, promotionCode }) => {
+      const [
+        { listEnabledPackageProfiles },
+        { prepareShippingQuote },
+        { getChitChatsConfig },
+      ] = await Promise.all([
+        import("@/lib/shipping/shipment-store"),
+        import("@/lib/shipping/prepare-quote"),
+        import("@/lib/shipping/config"),
+      ]);
+      if (!request.customer.phone)
+        throw new Error("Customer phone is required for shipping");
+      const countryCode =
+        request.shippingAddress.country.toUpperCase() === "UNITED STATES" ||
+        request.shippingAddress.country.toUpperCase() === "US"
+          ? "US"
+          : "CA";
+      const prepared = prepareShippingQuote({
+        items: request.items,
+        products,
+        promotionCode,
+        profiles: await listEnabledPackageProfiles(),
+        usShippingEnabled: getChitChatsConfig().usShippingEnabled,
+        recipient: {
+          ...request.shippingAddress,
+          province: normalizeProvinceCode(request.shippingAddress.province),
+          postalCode: request.shippingAddress.postalCode.toUpperCase(),
+          countryCode,
+          name: request.customer.name,
+          email: request.customer.email,
+          phone: request.customer.phone,
+        },
+      });
+      return prepared.fingerprint;
+    },
+    createInitializingOrder: orderStore.createInitializingProductOrder,
+    finalizeInitializingOrder: orderStore.finalizeInitializingProductOrder,
+    markInitializationFailed: orderStore.markProductOrderInitializationFailed,
   })(req);
 }
 
@@ -341,23 +528,55 @@ function parseCheckoutRequest(body: unknown): CheckoutRequestBody | null {
       : null;
   const shippingAddress = parseShippingAddress(body.shippingAddress);
   const promotionCode = parsePromotionCodeInput(body.promotionCode);
+  const phone = parseOptionalCheckoutText(body.customer.phone, 30);
+  const shippingQuote = parseShippingQuote(body.shippingQuote);
 
   if (
     name === null ||
     email === null ||
     !isValidCheckoutEmail(email) ||
     shippingAddress === null ||
-    promotionCode === null
+    promotionCode === null ||
+    phone === null ||
+    shippingQuote === null
   ) {
     return null;
   }
 
   return {
-    customer: { name, email },
+    customer: { name, email, ...(phone ? { phone } : {}) },
     items: body.items.map(toCartInputItem),
     shippingAddress,
     ...(promotionCode ? { promotionCode } : {}),
+    ...(shippingQuote ? { shippingQuote } : {}),
   };
+}
+
+function parseShippingQuote(
+  value: unknown,
+): CheckoutRequestBody["shippingQuote"] | null {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) return null;
+  const token = typeof value.token === "string" ? value.token.trim() : "";
+  const fingerprint =
+    typeof value.fingerprint === "string" ? value.fingerprint.trim() : "";
+  const rateId = typeof value.rateId === "string" ? value.rateId.trim() : "";
+  if (!token || !/^[a-f0-9]{64}$/.test(fingerprint) || !rateId) return null;
+  return { token, fingerprint, rateId };
+}
+
+function dependenciesRequireShipping(input: {
+  shippingEnabled?: boolean;
+  validateShippingSelection?: unknown;
+  createInitializingOrder?: unknown;
+  finalizeInitializingOrder?: unknown;
+}): boolean {
+  return Boolean(
+    input.shippingEnabled &&
+    input.validateShippingSelection &&
+    input.createInitializingOrder &&
+    input.finalizeInitializingOrder,
+  );
 }
 
 function parseShippingAddress(
@@ -408,9 +627,27 @@ function parseShippingAddress(
     ...(line2 ? { line2 } : {}),
     city,
     province,
-    postalCode,
+    postalCode: postalCode.toUpperCase(),
     country,
   };
+}
+
+function normalizeProvinceCode(value: string): string {
+  const normalized = value.trim().toUpperCase();
+  const names: Record<string, string> = {
+    ONTARIO: "ON",
+    QUEBEC: "QC",
+    ALBERTA: "AB",
+    "BRITISH COLUMBIA": "BC",
+    MANITOBA: "MB",
+    SASKATCHEWAN: "SK",
+    "NOVA SCOTIA": "NS",
+    "NEW BRUNSWICK": "NB",
+    NEWFOUNDLAND: "NL",
+    "NEWFOUNDLAND AND LABRADOR": "NL",
+    "PRINCE EDWARD ISLAND": "PE",
+  };
+  return names[normalized] ?? normalized;
 }
 
 function toCartInputItem(item: unknown): CartInputItem {
@@ -595,7 +832,11 @@ function summarizeCheckoutErrorMessage(error: Error): string {
 }
 
 function getCheckoutFailureStatus(stage: CheckoutInitializationStage): number {
-  if (stage === "load_checkout_inputs" || stage === "persist_order") {
+  if (
+    stage === "load_checkout_inputs" ||
+    stage === "reserve_order" ||
+    stage === "persist_order"
+  ) {
     return 500;
   }
 

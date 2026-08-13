@@ -31,7 +31,9 @@ test("product order confirmation email includes escaped order details", () => {
           unitPriceCents: 6500,
         },
       ],
+      merchandiseAmount: 1130,
       orderId: "lh-order-<123>",
+      shippingAmount: 14.5,
       shippingAddress: {
         line1: "646 <Oakwood> Avenue",
         line2: "Suite & Studio",
@@ -40,7 +42,7 @@ test("product order confirmation email includes escaped order details", () => {
         postalCode: "M6E 2Y4",
         country: "Canada",
       },
-      totalAmount: 1130,
+      totalAmount: 1144.5,
     });
 
     assert.match(html, /Your order is confirmed/);
@@ -53,6 +55,9 @@ test("product order confirmation email includes escaped order details", () => {
     assert.match(html, /646 &lt;Oakwood&gt; Avenue/);
     assert.match(html, /Suite &amp; Studio/);
     assert.equal(html.includes("$1,130.00"), true);
+    assert.equal(html.includes("$14.50"), true);
+    assert.equal(html.includes("$1,144.50"), true);
+    assert.match(html, /Insured tracked shipping/);
     assert.match(html, /Aftercare Kit/);
     assert.equal(html.includes(">2</td>"), true);
     assert.equal(html.includes("Client <Name> & Co"), false);

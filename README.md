@@ -213,6 +213,22 @@ Paid service bookings use Square only when enabled:
 
 Helcim webhook delivery must target `/api/webhooks/card-transactions` and must not contain `helcim` in the URL.
 
+### Product shipping
+
+Chit Chats provides live insured tracked product-shipping rates, staff label purchase, tracking polling, and delivery notifications. Configure:
+
+- `CHITCHATS_SHIPPING_ENABLED`
+- `CHITCHATS_CHECKOUT_ENABLED`
+- `CHITCHATS_US_SHIPPING_ENABLED`
+- `CHITCHATS_ENVIRONMENT=staging` or `production`
+- `CHITCHATS_CLIENT_ID`
+- `CHITCHATS_ACCESS_TOKEN`
+- `CHITCHATS_QUOTE_SIGNING_SECRET`
+- `CHITCHATS_WORKER_CRON_SECRET`
+- Optional `CHITCHATS_TRACKED_POSTAGE_TYPES`
+
+`CHITCHATS_CHECKOUT_ENABLED` must remain false until migration `0032_fat_roulette.sql` is applied, package profiles are reviewed, and each purchasable Sanity product/variant has complete shipping metadata. `CHITCHATS_SHIPPING_ENABLED` keeps worker/admin processing active for existing shipments. U.S. shipping is separately fail-closed and requires per-item approval plus 10-digit HTS and manufacturer data. See `docs/chitchats-shipping-operations.md`.
+
 ## Sanity CMS workflow
 
 The Studio is embedded at `/studio`, but schemas are source-driven from this repository.
@@ -265,7 +281,7 @@ Important areas:
 
 ### Product checkout
 
-Product checkout is Helcim-backed and exposed through `src/app/api/checkout`. Product content comes from Sanity, while order/payment state is private database data.
+Product checkout is Helcim-backed and exposed through `src/app/api/checkout`. Product content and shipping/customs metadata come from Sanity. Orders, quotes, package profiles, labels, and tracking state are private PostgreSQL data. Chit Chats quote creation is exposed through `src/app/api/shipping/quotes` when enabled.
 
 ### Training checkout
 

@@ -10,6 +10,7 @@ const SERVER_ONLY_TEST_FILES = new Set([
   "src/lib/booking/operations/public-offerings.test.ts",
   "src/lib/booking/operations/sanity-service-link.test.ts",
   "src/lib/booking/square-team-client.test.ts",
+  "src/lib/shipping/chitchats-client.test.ts",
 ]);
 
 const DB_TEST_FILES = new Set([

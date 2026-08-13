@@ -10,15 +10,31 @@ import {
   type TrainingSquareInvoiceFinalizerDependencies,
 } from "./training-square-invoice-finalizer";
 
-type EnrollmentRecord = Awaited<ReturnType<TrainingSquareInvoiceFinalizerDependencies["getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId"]>>;
-type SchedulingTokenRecord = Awaited<ReturnType<TrainingSquareInvoiceFinalizerDependencies["getOrIssueTrainingSchedulingTokenForPaidOrder"]>>;
+type EnrollmentRecord = Awaited<
+  ReturnType<
+    TrainingSquareInvoiceFinalizerDependencies["getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId"]
+  >
+>;
+type SchedulingTokenRecord = Awaited<
+  ReturnType<
+    TrainingSquareInvoiceFinalizerDependencies["getOrIssueTrainingSchedulingTokenForPaidOrder"]
+  >
+>;
 
 const now = new Date("2026-05-25T12:00:00.000Z");
-const request = new Request("http://localhost:3000/api/training-checkout/square-invoice");
+const request = new Request(
+  "http://localhost:3000/api/training-checkout/square-invoice",
+);
 
-function createSquareInvoiceOrder(overrides: Partial<CheckoutOrderRow> = {}): CheckoutOrderRow {
+function createSquareInvoiceOrder(
+  overrides: Partial<CheckoutOrderRow> = {},
+): CheckoutOrderRow {
   return {
     amountCents: 249900,
+    merchandiseAmountCents: null,
+    shippingAmountCents: 0,
+    initializationStatus: "ready",
+    initializationError: null,
     calendarEventId: null,
     calendarFinalizationStatus: "not_required",
     checkoutTokenHash: "checkout-token-hash",
@@ -78,16 +94,18 @@ function createSquareInvoiceOrder(overrides: Partial<CheckoutOrderRow> = {}): Ch
   };
 }
 
-function createPaidInvoiceDetails(input: {
-  amountCents?: number;
-  correlationId?: string;
-  currency?: "CAD";
-  customerId?: string;
-  invoiceId?: string;
-  orderId?: string;
-  paymentId?: string;
-  status?: string;
-} = {}) {
+function createPaidInvoiceDetails(
+  input: {
+    amountCents?: number;
+    correlationId?: string;
+    currency?: "CAD";
+    customerId?: string;
+    invoiceId?: string;
+    orderId?: string;
+    paymentId?: string;
+    status?: string;
+  } = {},
+) {
   const store = createPaymentMockStore({ now });
   const lifecycle = createMockSquareInvoiceLifecycle({
     amountCents: input.amountCents ?? 249900,
@@ -105,7 +123,10 @@ function createPaidInvoiceDetails(input: {
     id: input.invoiceId ?? lifecycle.invoice.id,
     order_id: input.orderId ?? lifecycle.invoice.order_id,
     payment: {
-      id: input.paymentId ?? lifecycle.webhookPayload.data.object.payment?.id ?? "square-payment-123",
+      id:
+        input.paymentId ??
+        lifecycle.webhookPayload.data.object.payment?.id ??
+        "square-payment-123",
     },
     primary_recipient: {
       customer_id: input.customerId ?? "square-customer-123",
@@ -115,14 +136,17 @@ function createPaidInvoiceDetails(input: {
   };
 }
 
-function createHarness(input: {
-  customerEmailFailure?: boolean;
-  getInvoice?: TrainingSquareInvoiceFinalizerDependencies["getInvoice"];
-  getOrder?: TrainingSquareInvoiceFinalizerDependencies["getOrder"];
-  order?: CheckoutOrderRow | null;
-  tokenFailureCount?: number;
-} = {}) {
-  let order = input.order === undefined ? createSquareInvoiceOrder() : input.order;
+function createHarness(
+  input: {
+    customerEmailFailure?: boolean;
+    getInvoice?: TrainingSquareInvoiceFinalizerDependencies["getInvoice"];
+    getOrder?: TrainingSquareInvoiceFinalizerDependencies["getOrder"];
+    order?: CheckoutOrderRow | null;
+    tokenFailureCount?: number;
+  } = {},
+) {
+  let order =
+    input.order === undefined ? createSquareInvoiceOrder() : input.order;
   let enrollment: EnrollmentRecord = null;
   let tokenFailureCount = input.tokenFailureCount ?? 0;
   const calls = {
@@ -185,7 +209,10 @@ function createHarness(input: {
         return input.getInvoice(invoiceId);
       }
 
-      return createPaidInvoiceDetails({ invoiceId, paymentId: "square-payment-123" });
+      return createPaidInvoiceDetails({
+        invoiceId,
+        paymentId: "square-payment-123",
+      });
     },
     async getOrder(orderId) {
       calls.getOrder += 1;
@@ -286,7 +313,8 @@ function createHarness(input: {
         orderId: "lh-training-123",
         paymentProvider: "square",
         programTitle: "Classic Lash Training",
-        schedulingUrl: "https://lashher.test/training-programs/classic-lash-training/schedule?token=tr_scheduling_token",
+        schedulingUrl:
+          "https://lashher.test/training-programs/classic-lash-training/schedule?token=tr_scheduling_token",
       });
       if (input.customerEmailFailure) {
         throw new Error("Customer training email failed");
@@ -300,7 +328,8 @@ function createHarness(input: {
         orderId: "lh-training-123",
         paymentProvider: "square",
         programTitle: "Classic Lash Training",
-        schedulingUrl: "https://lashher.test/training-programs/classic-lash-training/schedule?token=tr_scheduling_token",
+        schedulingUrl:
+          "https://lashher.test/training-programs/classic-lash-training/schedule?token=tr_scheduling_token",
       });
     },
   };
@@ -368,12 +397,19 @@ test("finalizeTrainingSquareInvoice keeps paid finalization when notification em
   assert.equal(harness.calls.markStaffAlerted, 1);
   assert.equal(harness.calls.markStudentPaymentEmailSent, 0);
   assert.equal(harness.calls.emails, 2);
-  assert.deepEqual(harness.calls.emailFailures, ["customer: Customer training email failed"]);
+  assert.deepEqual(harness.calls.emailFailures, [
+    "customer: Customer training email failed",
+  ]);
 });
 
 test("finalizeTrainingSquareInvoice rejects paid invoices with amount mismatches", async () => {
   const harness = createHarness({
-    getInvoice: async (invoiceId) => createPaidInvoiceDetails({ amountCents: 249899, invoiceId, paymentId: "square-payment-123" }),
+    getInvoice: async (invoiceId) =>
+      createPaidInvoiceDetails({
+        amountCents: 249899,
+        invoiceId,
+        paymentId: "square-payment-123",
+      }),
   });
 
   const result = await harness.finalizer({
@@ -385,10 +421,16 @@ test("finalizeTrainingSquareInvoice rejects paid invoices with amount mismatches
 
   assert.equal(result.finalized, false);
   assert.equal(result.duplicate, false);
-  assert.equal(result.reason, "Square invoice amount did not match local order");
+  assert.equal(
+    result.reason,
+    "Square invoice amount did not match local order",
+  );
   assert.equal(harness.calls.markPaid, 0);
   assert.deepEqual(harness.calls.markFailed, [
-    { error: "Square invoice amount did not match local order", retryable: false },
+    {
+      error: "Square invoice amount did not match local order",
+      retryable: false,
+    },
   ]);
   assert.equal(harness.calls.createEnrollment, 0);
   assert.equal(harness.calls.tokens, 0);
@@ -397,11 +439,12 @@ test("finalizeTrainingSquareInvoice rejects paid invoices with amount mismatches
 
 test("finalizeTrainingSquareInvoice rejects paid invoices with customer mismatches", async () => {
   const harness = createHarness({
-    getInvoice: async (invoiceId) => createPaidInvoiceDetails({
-      customerId: "square-customer-other",
-      invoiceId,
-      paymentId: "square-payment-123",
-    }),
+    getInvoice: async (invoiceId) =>
+      createPaidInvoiceDetails({
+        customerId: "square-customer-other",
+        invoiceId,
+        paymentId: "square-payment-123",
+      }),
   });
 
   const result = await harness.finalizer({
@@ -413,10 +456,16 @@ test("finalizeTrainingSquareInvoice rejects paid invoices with customer mismatch
 
   assert.equal(result.finalized, false);
   assert.equal(result.duplicate, false);
-  assert.equal(result.reason, "Square invoice customer did not match local order");
+  assert.equal(
+    result.reason,
+    "Square invoice customer did not match local order",
+  );
   assert.equal(harness.calls.markPaid, 0);
   assert.deepEqual(harness.calls.markFailed, [
-    { error: "Square invoice customer did not match local order", retryable: false },
+    {
+      error: "Square invoice customer did not match local order",
+      retryable: false,
+    },
   ]);
   assert.equal(harness.calls.createEnrollment, 0);
   assert.equal(harness.calls.tokens, 0);
@@ -426,7 +475,10 @@ test("finalizeTrainingSquareInvoice rejects paid invoices with customer mismatch
 test("finalizeTrainingSquareInvoice rejects paid invoices without a matching Square order correlation", async () => {
   const harness = createHarness({
     getInvoice: async (invoiceId) => {
-      const invoice = createPaidInvoiceDetails({ invoiceId, paymentId: "square-payment-123" });
+      const invoice = createPaidInvoiceDetails({
+        invoiceId,
+        paymentId: "square-payment-123",
+      });
 
       return {
         id: invoice.id,
@@ -448,11 +500,17 @@ test("finalizeTrainingSquareInvoice rejects paid invoices without a matching Squ
 
   assert.equal(result.finalized, false);
   assert.equal(result.duplicate, false);
-  assert.equal(result.reason, "Square invoice correlation did not match local order");
+  assert.equal(
+    result.reason,
+    "Square invoice correlation did not match local order",
+  );
   assert.equal(harness.calls.getOrder, 1);
   assert.equal(harness.calls.markPaid, 0);
   assert.deepEqual(harness.calls.markFailed, [
-    { error: "Square invoice correlation did not match local order", retryable: false },
+    {
+      error: "Square invoice correlation did not match local order",
+      retryable: false,
+    },
   ]);
   assert.equal(harness.calls.createEnrollment, 0);
   assert.equal(harness.calls.tokens, 0);
@@ -533,7 +591,10 @@ test("finalizeTrainingSquareInvoice reports retryable notification failures for 
     providerStatus: "paid",
     status: "paid",
   });
-  const harness = createHarness({ customerEmailFailure: true, order: paidOrder });
+  const harness = createHarness({
+    customerEmailFailure: true,
+    order: paidOrder,
+  });
   harness.enrollment = createEnrollmentRecord(paidOrder);
 
   const result = await harness.finalizer({
@@ -556,7 +617,9 @@ test("finalizeTrainingSquareInvoice reports retryable notification failures for 
   assert.equal(harness.calls.markStaffAlerted, 1);
   assert.equal(harness.calls.markStudentPaymentEmailSent, 0);
   assert.equal(harness.calls.emails, 2);
-  assert.deepEqual(harness.calls.emailFailures, ["customer: Customer training email failed"]);
+  assert.deepEqual(harness.calls.emailFailures, [
+    "customer: Customer training email failed",
+  ]);
 });
 
 test("finalizeTrainingSquareInvoice treats already finalized paid orders without pending enrollment as duplicate complete", async () => {
@@ -623,7 +686,9 @@ test("finalizeTrainingSquareInvoice retries after partial finalization failure w
   assert.equal(harness.calls.emails, 2);
 });
 
-function createEnrollmentRecord(order: CheckoutOrderRow | null): NonNullable<EnrollmentRecord> {
+function createEnrollmentRecord(
+  order: CheckoutOrderRow | null,
+): NonNullable<EnrollmentRecord> {
   assert.ok(order);
 
   return {

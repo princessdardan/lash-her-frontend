@@ -21,6 +21,7 @@ import {
   bookingPaymentAttempts,
   bookingProviders,
   checkoutOrders,
+  productShipments,
   marketingContactSubmissions,
   squarePaymentRefundEvents,
   trainingEnrollments,
@@ -140,6 +141,16 @@ export interface AdminProductOrderRow {
   reference: string;
   shippingLines: string[] | null;
   status: AdminWorkspaceStatusPresentation;
+  shipment: {
+    status: string;
+    providerStatus: string | null;
+    trackingNumber: string | null;
+    trackingUrl: string | null;
+    quotedShippingCents: number | null;
+    actualShippingCents: number | null;
+    packageWeightGrams: number;
+    selectedPostageType: string | null;
+  } | null;
 }
 
 export interface AdminOrderLineItemPresentation {
@@ -355,7 +366,7 @@ export async function listAdminRefunds(
 export async function listAdminProductOrders(
   input: AdminWorkspaceListInput = {},
 ): Promise<AdminWorkspacePage<AdminProductOrderRow>> {
-  await requirePermission("payments:view");
+  await requirePermission("fulfillment:view");
 
   const db = getPrivateDb();
   const search = normalizeAdminWorkspaceSearch(input.search);
@@ -398,8 +409,18 @@ export async function listAdminProductOrders(
       reference: checkoutOrders.orderId,
       shippingAddress: checkoutOrders.shippingAddress,
       status: checkoutOrders.status,
+      shipmentStatus: productShipments.status,
+      shipmentProviderStatus: productShipments.providerStatus,
+      shipmentTrackingNumber: productShipments.trackingNumber,
+      shipmentTrackingUrl: productShipments.trackingUrl,
+      shipmentQuotedShippingCents: productShipments.quotedShippingCents,
+      shipmentActualPostageCents: productShipments.actualPostageCents,
+      shipmentActualInsuranceCents: productShipments.actualInsuranceCents,
+      shipmentPackageSnapshot: productShipments.packageSnapshot,
+      shipmentSelectedPostageType: productShipments.selectedPostageType,
     })
     .from(checkoutOrders)
+    .leftJoin(productShipments, eq(productShipments.orderId, checkoutOrders.id))
     .where(where)
     .orderBy(desc(checkoutOrders.createdAt), desc(checkoutOrders.id))
     .limit(pagination.pageSize)
@@ -429,6 +450,25 @@ export async function listAdminProductOrders(
           ? null
           : presentShippingAddress(row.shippingAddress),
         status: getCheckoutOrderStatusPresentation(row.status),
+        shipment:
+          row.shipmentStatus === null
+            ? null
+            : {
+                status: row.shipmentStatus,
+                providerStatus: row.shipmentProviderStatus,
+                trackingNumber: row.shipmentTrackingNumber,
+                trackingUrl: row.shipmentTrackingUrl,
+                quotedShippingCents: row.shipmentQuotedShippingCents,
+                actualShippingCents:
+                  row.shipmentActualPostageCents === null &&
+                  row.shipmentActualInsuranceCents === null
+                    ? null
+                    : (row.shipmentActualPostageCents ?? 0) +
+                      (row.shipmentActualInsuranceCents ?? 0),
+                packageWeightGrams:
+                  row.shipmentPackageSnapshot?.totalWeightGrams ?? 0,
+                selectedPostageType: row.shipmentSelectedPostageType,
+              },
       };
     }),
     search,
