@@ -27,50 +27,73 @@ function toTrimmedString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function getVariantOptionValue(variant: TProductVariant, groupName: string): string | undefined {
-  const value = variant.options?.find((option) => toTrimmedString(option.name) === groupName)?.value;
+function getVariantOptionValue(
+  variant: TProductVariant,
+  groupName: string,
+): string | undefined {
+  const value = variant.options?.find(
+    (option) => toTrimmedString(option.name) === groupName,
+  )?.value;
   return toTrimmedString(value) ?? undefined;
 }
 
-function unique(values: Array<string | null>): string[] {
-  return Array.from(new Set(values.map(toTrimmedString).filter((value): value is string => value !== null)));
+function unique(values: Array<string | null | undefined>): string[] {
+  return Array.from(
+    new Set(
+      values
+        .map(toTrimmedString)
+        .filter((value): value is string => value !== null),
+    ),
+  );
 }
 
-function getOptionGroups(product: TProduct, variants: TProductVariant[]): OptionGroupViewModel[] {
-  const definedGroups = product.optionGroups?.flatMap((group, index) => {
-    if (typeof group.name !== "string") return [];
+function getOptionGroups(
+  product: TProduct,
+  variants: TProductVariant[],
+): OptionGroupViewModel[] {
+  const definedGroups =
+    product.optionGroups?.flatMap((group, index) => {
+      if (typeof group.name !== "string") return [];
 
-    const groupName = group.name.trim();
-    if (!groupName) return [];
+      const groupName = group.name.trim();
+      if (!groupName) return [];
 
-    const variantValues = variants.flatMap((variant) =>
-      variant.options?.filter((option) => toTrimmedString(option.name) === groupName).map((option) => option.value) ?? [],
-    );
+      const variantValues = variants.flatMap(
+        (variant) =>
+          variant.options
+            ?.filter((option) => toTrimmedString(option.name) === groupName)
+            .map((option) => option.value) ?? [],
+      );
 
-    return [
-      {
-        key: group._key || `${groupName}-${index}`,
-        name: groupName,
-        values: unique([...(group.values ?? []), ...variantValues]),
-      },
-    ];
-  }) ?? [];
+      return [
+        {
+          key: group._key || `${groupName}-${index}`,
+          name: groupName,
+          values: unique([...(group.values ?? []), ...variantValues]),
+        },
+      ];
+    }) ?? [];
 
   const knownGroupNames = new Set(definedGroups.map((group) => group.name));
-  const inferredGroups = variants.reduce<Record<string, string[]>>((groups, variant) => {
-    variant.options?.forEach((option) => {
-      if (typeof option.name !== "string" || typeof option.value !== "string") return;
+  const inferredGroups = variants.reduce<Record<string, string[]>>(
+    (groups, variant) => {
+      variant.options?.forEach((option) => {
+        if (typeof option.name !== "string" || typeof option.value !== "string")
+          return;
 
-      const optionName = option.name.trim();
-      const optionValue = option.value.trim();
-      if (!optionName || !optionValue || knownGroupNames.has(optionName)) return;
+        const optionName = option.name.trim();
+        const optionValue = option.value.trim();
+        if (!optionName || !optionValue || knownGroupNames.has(optionName))
+          return;
 
-      groups[optionName] ??= [];
-      groups[optionName].push(optionValue);
-    });
+        groups[optionName] ??= [];
+        groups[optionName].push(optionValue);
+      });
 
-    return groups;
-  }, {});
+      return groups;
+    },
+    {},
+  );
 
   return [
     ...definedGroups,
@@ -82,8 +105,13 @@ function getOptionGroups(product: TProduct, variants: TProductVariant[]): Option
   ].filter((group) => group.values.length > 0);
 }
 
-function variantMatchesOptions(variant: TProductVariant, options: Readonly<Record<string, string>>): boolean {
-  return Object.entries(options).every(([name, value]) => !value || getVariantOptionValue(variant, name) === value);
+function variantMatchesOptions(
+  variant: TProductVariant,
+  options: Readonly<Record<string, string>>,
+): boolean {
+  return Object.entries(options).every(
+    ([name, value]) => !value || getVariantOptionValue(variant, name) === value,
+  );
 }
 
 export function ProductVariantSelector({
@@ -96,8 +124,13 @@ export function ProductVariantSelector({
   className,
 }: ProductVariantSelectorProps): ReactElement | null {
   const variants = useMemo(() => product.variants ?? [], [product.variants]);
-  const optionGroups = useMemo(() => getOptionGroups(product, variants), [product, variants]);
-  const selectedVariant = selectedVariantId ? variants.find((variant) => variant._key === selectedVariantId) : undefined;
+  const optionGroups = useMemo(
+    () => getOptionGroups(product, variants),
+    [product, variants],
+  );
+  const selectedVariant = selectedVariantId
+    ? variants.find((variant) => variant._key === selectedVariantId)
+    : undefined;
 
   if (variants.length === 0 && optionGroups.length === 0) {
     return null;
@@ -109,11 +142,18 @@ export function ProductVariantSelector({
     onVariantSelect?.(variant);
   };
 
-  const handleOptionClick = (groupName: string, value: string, isAvailableForCheckout: boolean) => {
+  const handleOptionClick = (
+    groupName: string,
+    value: string,
+    isAvailableForCheckout: boolean,
+  ) => {
     if (readOnly || !isAvailableForCheckout) return;
 
     const nextOptions = { ...selectedOptions, [groupName]: value };
-    const matchingVariant = variants.find((variant) => variant.isAvailable && variantMatchesOptions(variant, nextOptions));
+    const matchingVariant = variants.find(
+      (variant) =>
+        variant.isAvailable && variantMatchesOptions(variant, nextOptions),
+    );
 
     onOptionsChange?.(nextOptions);
     if (matchingVariant) onVariantSelect?.(matchingVariant);
@@ -123,7 +163,10 @@ export function ProductVariantSelector({
     return (
       <div className={cn("space-y-6", className)}>
         <div>
-          <h2 className="section-subheading text-3xl" id="product-options-heading">
+          <h2
+            className="section-subheading text-3xl"
+            id="product-options-heading"
+          >
             Available Options
           </h2>
           {readOnly ? (
@@ -138,19 +181,42 @@ export function ProductVariantSelector({
             const groupHeadingId = `product-option-${group.key}`;
 
             return (
-              <section key={group.key} aria-labelledby={groupHeadingId} className="rounded-[24px] border border-lh-line bg-lh-white p-4 md:p-5">
-                <h3 id={groupHeadingId} className="mb-3 font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-primary">
+              <section
+                key={group.key}
+                aria-labelledby={groupHeadingId}
+                className="rounded-[24px] border border-lh-line bg-lh-white p-4 md:p-5"
+              >
+                <h3
+                  id={groupHeadingId}
+                  className="mb-3 font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-primary"
+                >
                   {group.name}
                 </h3>
                 {readOnly ? (
-                  <ul className="flex flex-wrap gap-2" aria-label={`${group.name} options`}>
+                  <ul
+                    className="flex flex-wrap gap-2"
+                    aria-label={`${group.name} options`}
+                  >
                     {group.values.map((value) => {
-                      const nextOptions = { ...selectedOptions, [group.name]: value };
-                      const hasVariantForValue = variants.length === 0 || variants.some((variant) => variantMatchesOptions(variant, nextOptions));
-                      const isAvailableForCheckout = product.isAvailable && (
-                        variants.length === 0 || variants.some((variant) => variant.isAvailable && variantMatchesOptions(variant, nextOptions))
-                      );
-                      const isUnavailable = !hasVariantForValue || !isAvailableForCheckout;
+                      const nextOptions = {
+                        ...selectedOptions,
+                        [group.name]: value,
+                      };
+                      const hasVariantForValue =
+                        variants.length === 0 ||
+                        variants.some((variant) =>
+                          variantMatchesOptions(variant, nextOptions),
+                        );
+                      const isAvailableForCheckout =
+                        product.isAvailable &&
+                        (variants.length === 0 ||
+                          variants.some(
+                            (variant) =>
+                              variant.isAvailable &&
+                              variantMatchesOptions(variant, nextOptions),
+                          ));
+                      const isUnavailable =
+                        !hasVariantForValue || !isAvailableForCheckout;
 
                       return (
                         <li
@@ -169,16 +235,37 @@ export function ProductVariantSelector({
                     })}
                   </ul>
                 ) : (
-                  <div className="flex flex-wrap gap-2" role="group" aria-label={`${group.name} options`}>
+                  <div
+                    className="flex flex-wrap gap-2"
+                    role="group"
+                    aria-label={`${group.name} options`}
+                  >
                     {group.values.map((value) => {
-                      const nextOptions = { ...selectedOptions, [group.name]: value };
-                      const selectedValue = selectedOptions[group.name] ?? (selectedVariant ? getVariantOptionValue(selectedVariant, group.name) : undefined);
+                      const nextOptions = {
+                        ...selectedOptions,
+                        [group.name]: value,
+                      };
+                      const selectedValue =
+                        selectedOptions[group.name] ??
+                        (selectedVariant
+                          ? getVariantOptionValue(selectedVariant, group.name)
+                          : undefined);
                       const isSelected = selectedValue === value;
-                      const hasVariantForValue = variants.length === 0 || variants.some((variant) => variantMatchesOptions(variant, nextOptions));
-                      const isAvailableForCheckout = product.isAvailable && (
-                        variants.length === 0 || variants.some((variant) => variant.isAvailable && variantMatchesOptions(variant, nextOptions))
-                      );
-                      const isUnavailable = !hasVariantForValue || !isAvailableForCheckout;
+                      const hasVariantForValue =
+                        variants.length === 0 ||
+                        variants.some((variant) =>
+                          variantMatchesOptions(variant, nextOptions),
+                        );
+                      const isAvailableForCheckout =
+                        product.isAvailable &&
+                        (variants.length === 0 ||
+                          variants.some(
+                            (variant) =>
+                              variant.isAvailable &&
+                              variantMatchesOptions(variant, nextOptions),
+                          ));
+                      const isUnavailable =
+                        !hasVariantForValue || !isAvailableForCheckout;
 
                       return (
                         <button
@@ -188,14 +275,24 @@ export function ProductVariantSelector({
                           aria-disabled={isUnavailable}
                           aria-pressed={isSelected}
                           aria-label={`${group.name}: ${value}${isUnavailable ? ", unavailable for checkout" : ""}`}
-                          onClick={() => handleOptionClick(group.name, value, isAvailableForCheckout)}
+                          onClick={() =>
+                            handleOptionClick(
+                              group.name,
+                              value,
+                              isAvailableForCheckout,
+                            )
+                          }
                           className={cn(
                             "rounded-full border px-4 py-2 font-body text-sm font-bold transition-colors focus-visible:outline-lh-primary",
                             isSelected
                               ? "border-lh-primary bg-lh-primary text-lh-white"
                               : "border-lh-line bg-lh-neutral-2/70 text-lh-shadow",
-                            !isSelected && !isUnavailable && "hover:border-lh-primary hover:bg-lh-primary-soft hover:text-lh-primary",
-                            isUnavailable && !isSelected && "border-lh-line bg-lh-neutral text-lh-muted line-through opacity-70",
+                            !isSelected &&
+                              !isUnavailable &&
+                              "hover:border-lh-primary hover:bg-lh-primary-soft hover:text-lh-primary",
+                            isUnavailable &&
+                              !isSelected &&
+                              "border-lh-line bg-lh-neutral text-lh-muted line-through opacity-70",
                             isUnavailable && "cursor-not-allowed",
                           )}
                         >
@@ -216,13 +313,12 @@ export function ProductVariantSelector({
   return (
     <div className={cn("space-y-6", className)}>
       <div className="space-y-3">
-        <h2 className="section-subheading text-3xl">
-          Choose option
-        </h2>
+        <h2 className="section-subheading text-3xl">Choose option</h2>
         {readOnly ? (
           <ul className="flex flex-wrap gap-2" aria-label="Product variants">
             {variants.map((variant) => {
-              const isUnavailable = !product.isAvailable || !variant.isAvailable;
+              const isUnavailable =
+                !product.isAvailable || !variant.isAvailable;
 
               return (
                 <li
@@ -245,10 +341,15 @@ export function ProductVariantSelector({
             })}
           </ul>
         ) : (
-          <div className="flex flex-wrap gap-2" role="group" aria-label="Product variants">
+          <div
+            className="flex flex-wrap gap-2"
+            role="group"
+            aria-label="Product variants"
+          >
             {variants.map((variant) => {
               const isSelected = selectedVariantId === variant._key;
-              const isUnavailable = !product.isAvailable || !variant.isAvailable;
+              const isUnavailable =
+                !product.isAvailable || !variant.isAvailable;
 
               return (
                 <button
@@ -263,8 +364,12 @@ export function ProductVariantSelector({
                     isSelected
                       ? "border-lh-primary bg-lh-primary text-lh-white"
                       : "border-lh-line bg-lh-neutral-2/70 text-lh-shadow",
-                    !isSelected && !isUnavailable && "hover:border-lh-primary hover:bg-lh-primary-soft hover:text-lh-primary",
-                    isUnavailable && !isSelected && "bg-lh-neutral text-lh-muted opacity-70",
+                    !isSelected &&
+                      !isUnavailable &&
+                      "hover:border-lh-primary hover:bg-lh-primary-soft hover:text-lh-primary",
+                    isUnavailable &&
+                      !isSelected &&
+                      "bg-lh-neutral text-lh-muted opacity-70",
                     isUnavailable && !isSelected && "cursor-not-allowed",
                   )}
                 >

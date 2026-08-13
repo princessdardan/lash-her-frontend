@@ -4,6 +4,7 @@ import { draftMode } from "next/headers";
 import { groq, type QueryParams } from "next-sanity";
 import { getSanityApiReadToken } from "@/sanity/env";
 import type { BookingSettings } from "@/lib/booking/types";
+import { normalizeProductVariantModel } from "@/lib/commerce/product-variant-model";
 import type {
   THomePage,
   TContactPage,
@@ -68,6 +69,7 @@ const PRODUCT_PROJECTION = groq`{
   discountPrice,
   sku,
   currency,
+  variantModel,
   collections[]{
     _key,
     "_id": @->_id,
@@ -833,15 +835,22 @@ async function getProducts(sort: ProductSort = "default"): Promise<TProduct[]> {
     isAvailable == true
   ] | order(${order}) ${PRODUCT_PROJECTION}`;
 
-  return sanityFetch<TProduct[]>(query, {}, ["product", "productCollection"]);
+  const products = await sanityFetch<TProduct[]>(query, {}, [
+    "product",
+    "productCollection",
+  ]);
+
+  return products.map(normalizeProductVariantModel);
 }
 
 async function getProductsByIds(ids: string[]): Promise<TProduct[]> {
   const query = groq`*[_type == "product" && _id in $ids] ${PRODUCT_PROJECTION}`;
-  return sanityFetch<TProduct[]>(query, { ids }, ["product"], {
+  const products = await sanityFetch<TProduct[]>(query, { ids }, ["product"], {
     mode: "published",
     stega: false,
   });
+
+  return products.map(normalizeProductVariantModel);
 }
 
 async function getPromotionCode(code: string): Promise<TPromotionCode | null> {
@@ -893,7 +902,11 @@ async function getProductsGroupedCatalog(): Promise<TProductsGroupedCatalog> {
 
 async function getProductBySlug(slug: string): Promise<TProduct | null> {
   const query = groq`*[_type == "product" && slug.current == $slug && isAvailable == true][0] ${PRODUCT_PROJECTION}`;
-  return sanityFetch<TProduct | null>(query, { slug }, ["product"]);
+  const product = await sanityFetch<TProduct | null>(query, { slug }, [
+    "product",
+  ]);
+
+  return product ? normalizeProductVariantModel(product) : null;
 }
 
 async function getAllProductSlugs(): Promise<Array<{ slug: string }>> {

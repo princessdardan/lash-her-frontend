@@ -419,7 +419,7 @@ export interface TProductOptionGroup {
 export interface TProductVariantOption {
   _key?: string;
   name: string | null;
-  value: string | null;
+  value?: string | null;
 }
 
 export interface TProductsPage {
@@ -489,6 +489,7 @@ export interface TProduct {
   discountPrice?: number | null;
   sku?: string;
   currency: TCommerceCurrency;
+  variantModel?: "concrete" | "grouped";
   collections?: TProductCollection[];
   optionGroups?: TProductOptionGroup[];
   variants?: TProductVariant[];

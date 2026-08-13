@@ -1,7 +1,11 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 
-import { product } from "./product";
+import {
+  product,
+  validateOptionGroupNames,
+  validateProductVariantConfiguration,
+} from "./product";
 
 type SchemaField = {
   name?: string;
@@ -15,7 +19,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isSchemaField(value: unknown): value is SchemaField {
-  return isRecord(value) && (value.name === undefined || typeof value.name === "string");
+  return (
+    isRecord(value) &&
+    (value.name === undefined || typeof value.name === "string")
+  );
 }
 
 function getSchemaField(name: string): SchemaField {
@@ -39,9 +46,148 @@ describe("product schema", () => {
 
   it("supports optional variant SKUs without requiring customer-facing generated codes", () => {
     const variants = getSchemaField("variants");
-    const variantObject = variants.of?.find((member) => member.type === "object");
-    const variantMember = variantObject?.fields?.find((field) => field.name === "sku");
+    const variantObject = variants.of?.find(
+      (member) => member.type === "object",
+    );
+    const variantMember = variantObject?.fields?.find(
+      (field) => field.name === "sku",
+    );
 
     assert.strictEqual(variantMember?.type, "string");
+  });
+
+  it("requires an explicit variant authoring model when variants are present", () => {
+    const variantModel = getSchemaField("variantModel");
+
+    assert.strictEqual(variantModel.type, "string");
+  });
+
+  it("validates grouped authoring constraints before publish", () => {
+    const groupedVariants = [
+      {
+        title: "Curl",
+        price: 22,
+        isAvailable: true,
+        options: [{ name: "C" }, { name: "CC" }],
+      },
+      {
+        title: "Length",
+        price: 22,
+        isAvailable: true,
+        options: [{ name: "8mm" }, { name: "9mm" }],
+      },
+    ];
+
+    assert.strictEqual(
+      validateProductVariantConfiguration(groupedVariants, {
+        variantModel: "grouped",
+        optionGroups: [{ name: "Curl" }, { name: "Length" }],
+      }),
+      true,
+    );
+    assert.match(
+      String(
+        validateProductVariantConfiguration(
+          [{ ...groupedVariants[0], sku: "GROUP-SKU" }, groupedVariants[1]],
+          { variantModel: "grouped" },
+        ),
+      ),
+      /cannot define merchant SKUs/,
+    );
+    assert.match(
+      String(
+        validateProductVariantConfiguration(
+          [groupedVariants[0], { ...groupedVariants[1], price: 23 }],
+          { variantModel: "grouped" },
+        ),
+      ),
+      /same price/,
+    );
+
+    assert.strictEqual(
+      validateProductVariantConfiguration(
+        [
+          {
+            title: "Finish",
+            price: 22,
+            isAvailable: true,
+            options: [{ name: "Natural" }, { name: "Glossy" }],
+          },
+          {
+            title: "Style",
+            price: 22,
+            isAvailable: true,
+            options: [{ name: "Natural" }, { name: "Dramatic" }],
+          },
+        ],
+        { variantModel: "grouped" },
+      ),
+      true,
+    );
+  });
+
+  it("rejects empty variant configurations that expose unpurchasable options", () => {
+    assert.match(
+      String(
+        validateProductVariantConfiguration([], { variantModel: "grouped" }),
+      ),
+      /requires at least one grouped Variant row/,
+    );
+    assert.match(
+      String(
+        validateProductVariantConfiguration(undefined, {
+          variantModel: "concrete",
+          optionGroups: [{ name: "Curl", values: ["C", "CC"] }],
+        }),
+      ),
+      /Option Groups require concrete Variants/,
+    );
+  });
+
+  it("rejects incomplete or duplicate concrete option tuples", () => {
+    assert.match(
+      String(
+        validateProductVariantConfiguration(
+          [
+            {
+              title: "C / 8mm",
+              options: [{ name: "Curl", value: "C" }, { name: "Length" }],
+            },
+          ],
+          { variantModel: "concrete" },
+        ),
+      ),
+      /both a non-blank group name and selected value/,
+    );
+
+    assert.match(
+      String(
+        validateProductVariantConfiguration(
+          [
+            {
+              title: "First",
+              options: [{ name: "Curl", value: "C" }],
+            },
+            {
+              title: "Duplicate",
+              options: [{ name: "Curl", value: "C" }],
+            },
+          ],
+          { variantModel: "concrete" },
+        ),
+      ),
+      /unique option combinations/,
+    );
+  });
+
+  it("rejects duplicate option-group names and values", () => {
+    assert.match(
+      String(validateOptionGroupNames([{ name: "Curl", values: ["C", "c"] }])),
+      /must be unique/,
+    );
+    assert.match(
+      String(validateOptionGroupNames([{ name: "Curl" }, { name: "curl" }])),
+      /names must be unique/,
+    );
   });
 });

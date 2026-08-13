@@ -227,7 +227,7 @@ Chit Chats provides live insured tracked product-shipping rates, staff label pur
 - `CHITCHATS_WORKER_CRON_SECRET`
 - Optional `CHITCHATS_TRACKED_POSTAGE_TYPES`
 
-`CHITCHATS_CHECKOUT_ENABLED` must remain false until migration `0032_fat_roulette.sql` is applied, package profiles are reviewed, and each purchasable Sanity product/variant has complete shipping metadata. `CHITCHATS_SHIPPING_ENABLED` keeps worker/admin processing active for existing shipments. U.S. shipping is separately fail-closed and requires per-item approval plus 10-digit HTS and manufacturer data. See `docs/chitchats-shipping-operations.md`.
+`CHITCHATS_CHECKOUT_ENABLED` must remain false until migration `0032_fat_roulette.sql` is applied, package profiles are reviewed, each purchasable Sanity product/variant has complete shipping metadata, and the proposed [shipping policy decisions](docs/chitchats-shipping-policy-decisions.md) are approved with all launch-blocking controls verified. `CHITCHATS_SHIPPING_ENABLED` keeps worker/admin processing active for existing shipments. U.S. shipping is separately fail-closed and requires per-item approval plus 10-digit HTS and manufacturer data. See the [shipping operations runbook](docs/chitchats-shipping-operations.md).
 
 ## Sanity CMS workflow
 
