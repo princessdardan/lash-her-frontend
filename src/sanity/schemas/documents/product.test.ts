@@ -8,7 +8,9 @@ import {
 } from "./product";
 
 type SchemaField = {
+  description?: string;
   name?: string;
+  title?: string;
   type?: string;
   of?: SchemaField[];
   fields?: SchemaField[];
@@ -54,6 +56,49 @@ describe("product schema", () => {
     );
 
     assert.strictEqual(variantMember?.type, "string");
+  });
+
+  it("gives every shipping and customs field clear editor guidance", () => {
+    const shipping = getSchemaField("shipping");
+    const expectedFields = [
+      "fulfillmentMode",
+      "weightGrams",
+      "packingUnits",
+      "minimumPackageTier",
+      "customsDescription",
+      "countryOfOrigin",
+      "usShippingApproved",
+      "hsTariffCode",
+      "manufacturerName",
+      "manufacturerAddress",
+      "manufacturerCity",
+      "manufacturerProvinceCode",
+      "manufacturerPostalCode",
+      "manufacturerCountryCode",
+      "hazardousMaterial",
+    ];
+
+    assert.match(shipping.description ?? "", /package selection/i);
+    for (const fieldName of expectedFields) {
+      const field = shipping.fields?.find(
+        (candidate) => candidate.name === fieldName,
+      );
+      assert.ok(field, `${fieldName} should be configured`);
+      assert.ok(
+        (field.title?.trim().length ?? 0) >= 12,
+        `${fieldName} should have a clear heading`,
+      );
+      assert.ok(
+        (field.description?.trim().length ?? 0) >= 80,
+        `${fieldName} should have detailed editor guidance`,
+      );
+    }
+
+    const packingUnits = shipping.fields?.find(
+      (field) => field.name === "packingUnits",
+    );
+    assert.match(packingUnits?.description ?? "", /multiplies.*quantity/i);
+    assert.match(packingUnits?.description ?? "", /lash tray/i);
   });
 
   it("requires an explicit variant authoring model when variants are present", () => {

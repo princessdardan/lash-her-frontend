@@ -11,7 +11,7 @@ export const product = defineType({
     { name: "media", title: "Media" },
     { name: "variants", title: "Variants" },
     { name: "details", title: "Details" },
-    { name: "shipping", title: "Shipping" },
+    { name: "shipping", title: "Shipping & Customs" },
     { name: "legacy", title: "Legacy Fields" },
     { name: "seo", title: "SEO" },
   ],
@@ -242,11 +242,11 @@ export const product = defineType({
     }),
     defineField({
       name: "shipping",
-      title: "Shipping and customs",
+      title: "Shipping, Packing & Customs",
       type: "object",
       group: "shipping",
       description:
-        "Operational metadata used to quote and buy Chit Chats postage.",
+        "Controls automated Chit Chats eligibility, package selection, and the customs information sent for cross-border orders. Complete these product-level defaults for every physical product; a concrete variant can replace the entire set with its own override.",
       fields: shippingMetadataFields(),
     }),
     defineField({
@@ -388,10 +388,10 @@ export const product = defineType({
             }),
             defineField({
               name: "shipping",
-              title: "Shipping override",
+              title: "Shipping, Packing & Customs Override",
               type: "object",
               description:
-                "Optional complete override for this variant. Leave empty to use product shipping metadata.",
+                "Optional complete metadata set for this concrete variant. Leave the whole section empty to use the product-level values. If you enter any override values, complete every required field because this object replaces the product-level set rather than merging with it. Example: use an override when a gift-box variant is heavier or requires a larger package than the standard product.",
               hidden: ({ document }) => document?.variantModel === "grouped",
               fields: shippingMetadataFields(),
             }),
@@ -815,13 +815,15 @@ function shippingMetadataFields() {
   return [
     defineField({
       name: "fulfillmentMode",
-      title: "Fulfillment mode",
+      title: "Fulfillment Method",
       type: "string",
       initialValue: "physical",
+      description:
+        "Choose “Ship with Chit Chats” only when this item can use automated checkout and all required packing and customs details below are complete. Choose “Manual fulfillment only” for pickup, digital items, regulated goods, or anything staff must quote and arrange outside the automated shipping flow.",
       options: {
         list: [
-          { title: "Physical shipping", value: "physical" },
-          { title: "Manual fulfillment", value: "manual" },
+          { title: "Ship with Chit Chats", value: "physical" },
+          { title: "Manual fulfillment only", value: "manual" },
         ],
         layout: "radio",
       },
@@ -829,89 +831,112 @@ function shippingMetadataFields() {
     }),
     defineField({
       name: "weightGrams",
-      title: "Item weight (grams)",
+      title: "Per-Item Product Weight (g)",
       type: "number",
+      description:
+        "Enter the weight of one sellable unit before adding the mailer or box. Checkout multiplies this value by the cart quantity, then adds the selected package profile’s empty-package weight. Example: enter 35 when one lash tray weighs 35 g.",
       validation: (Rule) => Rule.integer().min(1),
     }),
     defineField({
       name: "packingUnits",
-      title: "Packing units",
+      title: "Package Capacity Units per Item",
       type: "number",
       initialValue: 1,
-      description: "Relative space consumed in package profiles.",
+      description:
+        "A relative measure of how much package space one item uses. Checkout multiplies this number by the quantity and selects the smallest package profile with enough capacity. Use 1 for a standard small item, such as one lash tray; use 2 when an item takes roughly twice that packing space. Keep the scale consistent with the capacity units configured on package profiles.",
       validation: (Rule) => Rule.integer().min(1),
     }),
     defineField({
       name: "minimumPackageTier",
-      title: "Minimum package profile slug",
+      title: "Smallest Allowed Package Profile",
       type: "string",
+      description:
+        "Optional safety override that prevents checkout from choosing any lower-ranked package, even when its weight and capacity limits would otherwise fit. Enter the exact slug of a configured package profile, for example rigid-mailer if that profile exists. Leave blank when normal weight-and-capacity selection is sufficient.",
     }),
     defineField({
       name: "customsDescription",
-      title: "Customs description",
+      title: "Plain-Language Customs Item Description",
       type: "string",
+      description:
+        "Describe what one unit physically is for the customs declaration. Be specific, factual, and generic rather than using only a brand or product collection name. Example: “Synthetic eyelash extensions” is clearer than “Lash Her product” or “beauty item.”",
     }),
     defineField({
       name: "countryOfOrigin",
-      title: "Country of origin",
+      title: "Country Where the Item Was Made",
       type: "string",
-      description: "ISO 3166-1 alpha-2 code, for example CA or KR.",
+      description:
+        "Enter the uppercase two-letter country code for where the product was manufactured—not where it is stored or shipped from. Examples: CA for Canada or KR for South Korea.",
       validation: (Rule) =>
         Rule.regex(/^[A-Z]{2}$/, { name: "ISO country code" }),
     }),
     defineField({
       name: "usShippingApproved",
-      title: "Approved for U.S. shipping",
+      title: "Allow This Item in U.S. Checkout",
       type: "boolean",
       initialValue: false,
       description:
-        "Fail-closed allowlist. U.S. quoting also requires the global feature flag.",
+        "Enable only after the U.S. tariff classification and all manufacturer fields below have been reviewed for this item. When disabled, checkout will not quote U.S. delivery for carts containing it. U.S. quoting must also be enabled globally, so this setting never enables the destination by itself.",
     }),
     defineField({
       name: "hsTariffCode",
-      title: "10-digit HTS code",
+      title: "U.S. HTS Tariff Code (10 Digits)",
       type: "string",
+      description:
+        "Enter the item’s verified 10-digit U.S. Harmonized Tariff Schedule classification with no dots or spaces. For example, a code written as 1234.56.7890 would be entered as 1234567890; this number demonstrates formatting only and is not a classification to copy. Confirm the actual code with the manufacturer or a qualified trade source.",
       validation: (Rule) =>
         Rule.regex(/^\d{10}$/, { name: "10-digit HTS code" }),
     }),
     defineField({
       name: "manufacturerName",
-      title: "Manufacturer name",
+      title: "Manufacturer’s Legal Name",
       type: "string",
+      description:
+        "Enter the legal name of the company that made the item, not the retailer or distributor unless it is also the manufacturer. Example: “ABC Lashes Co., Ltd.”",
     }),
     defineField({
       name: "manufacturerAddress",
-      title: "Manufacturer address",
+      title: "Manufacturer’s Street Address",
       type: "text",
+      description:
+        "Enter the manufacturing facility’s street address only; city, province or state, postal code, and country have separate fields below. Example: “123 Export Road, Building 4.”",
     }),
     defineField({
       name: "manufacturerCity",
-      title: "Manufacturer city",
+      title: "Manufacturer’s City",
       type: "string",
+      description:
+        "Enter the city or municipality in the manufacturer’s address. Example: “Seoul” or “Toronto.”",
     }),
     defineField({
       name: "manufacturerProvinceCode",
-      title: "Manufacturer province/state code",
+      title: "Manufacturer’s Province or State Code",
       type: "string",
+      description:
+        "Enter the recognized province, state, or regional abbreviation for the manufacturer’s address. Examples: ON for Ontario or CA for California. Use the format supplied by the manufacturer for countries with different regional-code systems.",
     }),
     defineField({
       name: "manufacturerPostalCode",
-      title: "Manufacturer postal code",
+      title: "Manufacturer’s Postal or ZIP Code",
       type: "string",
+      description:
+        "Enter the postal or ZIP code exactly as used in the manufacturer’s address. Examples: M5V 2T6 for Canada or 90001 for the United States.",
     }),
     defineField({
       name: "manufacturerCountryCode",
-      title: "Manufacturer country code",
+      title: "Manufacturer’s Country (2-Letter Code)",
       type: "string",
+      description:
+        "Enter the uppercase two-letter country code for the manufacturer’s address. This is usually the same as Country Where the Item Was Made, but it must describe the manufacturer contact address. Examples: CA for Canada or KR for South Korea.",
       validation: (Rule) =>
         Rule.regex(/^[A-Z]{2}$/, { name: "ISO country code" }),
     }),
     defineField({
       name: "hazardousMaterial",
-      title: "Hazardous material",
+      title: "Contains Regulated or Hazardous Material",
       type: "boolean",
       initialValue: false,
-      description: "Hazardous items are rejected by automated quoting.",
+      description:
+        "Enable for items that may be regulated in transport, such as flammable adhesives or liquids, aerosols, lithium batteries, or pressurized containers. Any item marked Yes is blocked from automated Chit Chats quoting and requires manual fulfillment. Leave No only after confirming the product is not regulated for transport.",
     }),
   ];
 }
