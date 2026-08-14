@@ -2,13 +2,13 @@
 
 ## Policy dependency
 
-The selected operating rules, customer remedies, escalation times, funding limits, privacy deadline, and signature policy are defined in [Chit Chats shipping policy decisions](./chitchats-shipping-policy-decisions.md). Formal role approvals, carrier configuration, and staging acceptance remain pending. Do not enable Chit Chats checkout in production until the approval record is complete and every launch-blocking control in that document is configured and verified. P-07 follows the [signed address-change implementation plan](./chitchats-address-change-implementation-plan.md).
+The effective rules are [Product fulfillment policy P-01–P-11 — owner-operated amendment](./chitchats-shipping-policy-2026-08-14.md), together with the retained selections in [Chit Chats shipping policy decisions](./chitchats-shipping-policy-decisions.md). Nataliea Lavoie holds every operating and self-attestation role. Provider certification, tax approval, configuration, CMS readiness, staging acceptance, and operational evidence remain pending launch gates. P-07 follows the [signed address-change implementation plan](./chitchats-address-change-implementation-plan.md) as amended by the effective policy.
 
 ## Scope
 
 The integration supports one parcel per product order to Canada and, behind a separate gate, the United States. Customers choose a live Chit Chats rate that includes full tracking and confirmed insurance. Helcim charges discounted merchandise plus the complete Chit Chats `payment_amount`. Staff confirms measured weight and ship date before buying postage. Lash Her absorbs quote-to-purchase variance.
 
-It does not implement split shipments, partial fulfillment, batch labels, in-application claim submission, or supplemental customer charges. Claims are tracked locally and filed manually in Chit Chats. Customer refunds, signed address changes and decisions, return inspection, conditional signature, and replacement/reshipment generations are implemented. A customer-caused address change that increases postage uses full refund and a new checkout.
+It does not implement split shipments, partial fulfillment, batch labels, or in-application claim submission. Claims are tracked locally and filed manually in Chit Chats. Supplemental charges use typed child payment obligations; they must remain disabled until the product-tax and Helcim certification gates pass.
 
 ## Rollout gates
 
@@ -19,12 +19,12 @@ It does not implement split shipments, partial fulfillment, batch labels, in-app
 5. Populate every purchasable product and variant with fulfillment mode, item weight, packing units, customs description, and country of origin. A variant shipping object is a complete override; partial overrides are not merged.
 6. Dry-run and apply the product confirmation template update with `npm run resend:seed-templates` and `npm run resend:seed-templates -- --apply` so shipping and merchandise totals are both rendered.
 7. Configure a Chit Chats staging account, return address, branch, label format, account credits, and API token.
-8. Assign every policy duty, configure at least 18 months of Ontario holidays and branch closures, and review each enabled service's insurance, signature, and claim limits. Rates fail closed when this data is absent or older than 90 days.
+8. Assign every policy duty to Nataliea Lavoie, configure at least 21 months of statutory/observed dates and branch closures, and review each enabled service's insurance, signature, and claim limits. Rates fail closed when this data is absent or stale.
 9. Record the external Chit Chats CAD 25 threshold / CAD 100 reload setup, dedicated business card, issuer alerts, CAD 750 rolling-day control, CAD 1,500 monthly control, and 30-day pilot start.
 10. Configure the new encryption/token secrets and start with `SHIPPING_POLICY_ENFORCEMENT_MODE=observe`. `CHITCHATS_CHECKOUT_ENABLED=true` is rejected unless policy mode is `enforce`.
 11. Certify full, partial, and ambiguous Helcim refunds using original encrypted checkout IPs.
 12. Exercise the staging matrix below before enabling Canada in production.
-13. Keep U.S. shipping disabled until Chit Chats confirms the current DDP request contract for the account and every U.S.-approved SKU has a 10-digit HTS code and complete manufacturer address.
+13. Keep U.S. shipping disabled until Chit Chats certifies the DDU service allowlist and every U.S.-approved SKU has reviewed 10-digit HTS, origin, manufacturer, insurance, tariff, and FDA metadata where applicable.
 
 Production deployments reject a Chit Chats staging endpoint. There is no production mock mode.
 

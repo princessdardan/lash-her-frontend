@@ -1,11 +1,13 @@
 import "server-only";
 
 import { nanoid } from "nanoid";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { getPrivateDb } from "@/lib/private-db/client";
 import {
   checkoutOrders,
   productShippingCases,
+  productReplacementInventoryAttestations,
+  productShipmentJobs,
   productShipments,
   type ProductShippingCaseType,
   type ProductShipmentPurpose,
@@ -25,21 +27,23 @@ export async function openProductShippingCase(input: {
   createdByAdminUserId?: string;
 }) {
   const db = getPrivateDb();
+  const activeConditions = [
+    eq(productShippingCases.orderId, input.orderId),
+    eq(productShippingCases.type, input.type),
+    input.shipmentId
+      ? eq(productShippingCases.shipmentId, input.shipmentId)
+      : isNull(productShippingCases.shipmentId),
+    inArray(productShippingCases.status, [
+      "open",
+      "waiting_customer",
+      "waiting_provider",
+      "remedy_pending",
+    ]),
+  ];
   const [existing] = await db
     .select()
     .from(productShippingCases)
-    .where(
-      and(
-        eq(productShippingCases.orderId, input.orderId),
-        eq(productShippingCases.type, input.type),
-        inArray(productShippingCases.status, [
-          "open",
-          "waiting_customer",
-          "waiting_provider",
-          "remedy_pending",
-        ]),
-      ),
-    )
+    .where(and(...activeConditions))
     .limit(1);
   if (existing) return existing;
   const [created] = await db
@@ -47,6 +51,58 @@ export async function openProductShippingCase(input: {
     .values({
       ...input,
       cause: input.cause?.trim().slice(0, 500),
+    })
+    .onConflictDoNothing()
+    .returning();
+  if (created) return created;
+  const [concurrent] = await db
+    .select()
+    .from(productShippingCases)
+    .where(and(...activeConditions))
+    .limit(1);
+  if (!concurrent) throw new Error("Shipping case could not be opened");
+  return concurrent;
+}
+
+export async function attestReplacementInventory(input: {
+  caseId: string;
+  productId: string;
+  variantId?: string;
+  sku: string;
+  quantity: number;
+  actorAdminUserId: string;
+  expiresAt: Date;
+}) {
+  if (
+    !input.productId.trim() ||
+    !input.sku.trim() ||
+    !Number.isInteger(input.quantity) ||
+    input.quantity <= 0 ||
+    input.expiresAt <= new Date()
+  )
+    throw new Error("Inventory attestation is invalid");
+  const [created] = await getPrivateDb()
+    .insert(productReplacementInventoryAttestations)
+    .values({
+      caseId: input.caseId,
+      productId: input.productId.trim(),
+      variantId: input.variantId?.trim() || undefined,
+      sku: input.sku.trim(),
+      quantity: input.quantity,
+      attestedByAdminUserId: input.actorAdminUserId,
+      expiresAt: input.expiresAt,
+    })
+    .onConflictDoUpdate({
+      target: productReplacementInventoryAttestations.caseId,
+      set: {
+        productId: input.productId.trim(),
+        variantId: input.variantId?.trim() || null,
+        sku: input.sku.trim(),
+        quantity: input.quantity,
+        attestedByAdminUserId: input.actorAdminUserId,
+        expiresAt: input.expiresAt,
+        consumedAt: null,
+      },
     })
     .returning();
   return created!;
@@ -111,10 +167,8 @@ export async function updateProductShippingCase(input: {
 export async function createShipmentGeneration(input: {
   caseId: string;
   purpose: Extract<ProductShipmentPurpose, "replacement" | "reshipment">;
-  inventoryConfirmed: boolean;
+  inventoryAttestationId: string;
 }) {
-  if (!input.inventoryConfirmed)
-    throw new Error("Inventory must be confirmed before replacement");
   return getPrivateDb().transaction(async (tx) => {
     const [row] = await tx
       .select({ case: productShippingCases, order: checkoutOrders })
@@ -128,6 +182,24 @@ export async function createShipmentGeneration(input: {
       .limit(1);
     if (!row || !row.order.shippingAddress)
       throw new Error("Shipping case is not eligible for replacement");
+    const now = new Date();
+    const [attestation] = await tx
+      .update(productReplacementInventoryAttestations)
+      .set({ consumedAt: now })
+      .where(
+        and(
+          eq(
+            productReplacementInventoryAttestations.id,
+            input.inventoryAttestationId,
+          ),
+          eq(productReplacementInventoryAttestations.caseId, input.caseId),
+          isNull(productReplacementInventoryAttestations.consumedAt),
+          sql`${productReplacementInventoryAttestations.expiresAt} > ${now}`,
+        ),
+      )
+      .returning();
+    if (!attestation)
+      throw new Error("A current inventory attestation is required");
     const [original] = await tx
       .select()
       .from(productShipments)
@@ -175,6 +247,14 @@ export async function createShipmentGeneration(input: {
         updatedAt: new Date(),
       })
       .where(eq(productShippingCases.id, input.caseId));
+    await tx.insert(productShipmentJobs).values({
+      shipmentId: created!.id,
+      type: "replacement_prepare",
+      status: "queued",
+      idempotencyKey: `replacement-prepare/${created!.id}`,
+      operationPayloadHash: input.inventoryAttestationId,
+      payload: { inventoryAttestationId: input.inventoryAttestationId },
+    });
     return created!;
   });
 }

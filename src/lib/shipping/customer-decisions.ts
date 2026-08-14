@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, gte, inArray, isNull, sql } from "drizzle-orm";
 import { getPrivateDb } from "@/lib/private-db/client";
 import {
   checkoutOrders,
@@ -20,7 +20,10 @@ export interface IssuedCustomerDecision {
 export async function issueCustomerDecision(input: {
   orderReference: string;
   caseId?: string;
+  shipmentId?: string;
   kind: string;
+  scopeKey: string;
+  proposedConditions?: Record<string, unknown>;
   allowedOutcomes: string[];
   expiresAt: Date;
 }): Promise<IssuedCustomerDecision> {
@@ -36,6 +39,7 @@ export async function issueCustomerDecision(input: {
   if (!allowed.length || input.expiresAt <= new Date())
     throw new Error("Customer decision policy is invalid");
   const token = issueShippingCustomerToken();
+  const now = new Date();
   return getPrivateDb().transaction(async (tx) => {
     const [order] = await tx
       .select({ id: checkoutOrders.id, email: checkoutOrders.customerEmail })
@@ -43,13 +47,28 @@ export async function issueCustomerDecision(input: {
       .where(eq(checkoutOrders.orderId, input.orderReference))
       .limit(1);
     if (!order) throw new Error("Order was not found");
-    await tx
-      .update(productOrderCustomerDecisions)
-      .set({ status: "revoked", revokedAt: new Date(), updatedAt: new Date() })
+    const [recent] = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(productOrderCustomerDecisions)
       .where(
         and(
           eq(productOrderCustomerDecisions.orderId, order.id),
-          eq(productOrderCustomerDecisions.kind, input.kind),
+          gte(
+            productOrderCustomerDecisions.createdAt,
+            new Date(now.getTime() - 24 * 60 * 60_000),
+          ),
+        ),
+      );
+    if (Number(recent?.count ?? 0) >= 3) {
+      throw new Error("Customer-decision link issuance limit reached");
+    }
+    await tx
+      .update(productOrderCustomerDecisions)
+      .set({ status: "revoked", revokedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(productOrderCustomerDecisions.orderId, order.id),
+          eq(productOrderCustomerDecisions.scopeKey, input.scopeKey),
           eq(productOrderCustomerDecisions.status, "pending"),
         ),
       );
@@ -58,7 +77,10 @@ export async function issueCustomerDecision(input: {
       .values({
         orderId: order.id,
         caseId: input.caseId,
+        shipmentId: input.shipmentId,
         kind: input.kind,
+        scopeKey: input.scopeKey,
+        proposedConditions: input.proposedConditions,
         allowedOutcomes: allowed,
         tokenHash: hashShippingCustomerToken(token, "decision"),
         expiresAt: input.expiresAt,
@@ -66,6 +88,27 @@ export async function issueCustomerDecision(input: {
       .returning({ id: productOrderCustomerDecisions.id });
     return { id: created!.id, email: order.email, token };
   });
+}
+
+export async function validateCustomerDecisionBearer(
+  bearerToken: string,
+): Promise<boolean> {
+  const [row] = await getPrivateDb()
+    .select({ id: productOrderCustomerDecisions.id })
+    .from(productOrderCustomerDecisions)
+    .where(
+      and(
+        eq(
+          productOrderCustomerDecisions.tokenHash,
+          hashShippingCustomerToken(bearerToken, "decision"),
+        ),
+        eq(productOrderCustomerDecisions.status, "pending"),
+        gt(productOrderCustomerDecisions.expiresAt, new Date()),
+        isNull(productOrderCustomerDecisions.exchangedAt),
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
 }
 
 export async function exchangeCustomerDecisionToken(

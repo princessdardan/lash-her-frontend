@@ -14,37 +14,49 @@ const product: CatalogProduct = {
 
 describe("commerce cart validation", () => {
   it("builds a validated CAD cart from selected products", () => {
-    assert.deepEqual(buildValidatedCart([{ productId: "product-1", quantity: 2 }], [product]), {
-      currency: "CAD",
-      amount: 250,
-      lineItems: [
-        {
-          productId: "product-1",
-          sku: "LASH-CLASSIC",
-          description: "Classic Lash Set",
-          quantity: 2,
-          price: 125,
-          total: 250,
-        },
-      ],
-    });
+    assert.deepEqual(
+      buildValidatedCart([{ productId: "product-1", quantity: 2 }], [product]),
+      {
+        currency: "CAD",
+        amount: 250,
+        lineItems: [
+          {
+            productId: "product-1",
+            productTitle: "Classic Lash Set",
+            sku: "LASH-CLASSIC",
+            description: "Classic Lash Set",
+            quantity: 2,
+            price: 125,
+            total: 250,
+          },
+        ],
+      },
+    );
   });
 
   it("rejects empty carts", () => {
-    assert.throws(() => buildValidatedCart([], [product]), /Cart must contain at least one item/);
+    assert.throws(
+      () => buildValidatedCart([], [product]),
+      /Cart must contain at least one item/,
+    );
   });
 
   it("rejects products that are no longer available", () => {
     assert.throws(
-      () => buildValidatedCart([{ productId: "product-2", quantity: 1 }], [product]),
+      () =>
+        buildValidatedCart(
+          [{ productId: "product-2", quantity: 1 }],
+          [product],
+        ),
       /Product is no longer available/,
     );
 
     assert.throws(
       () =>
-        buildValidatedCart([{ productId: "product-1", quantity: 1 }], [
-          { ...product, isAvailable: false },
-        ]),
+        buildValidatedCart(
+          [{ productId: "product-1", quantity: 1 }],
+          [{ ...product, isAvailable: false }],
+        ),
       /Product is no longer available/,
     );
   });
@@ -82,6 +94,8 @@ describe("commerce cart validation", () => {
           {
             productId: "product-1",
             variantId: "volume",
+            productTitle: "Classic Lash Set",
+            variantTitle: "Volume",
             sku: "LASH-VOLUME-SET",
             description: "Classic Lash Set — Volume",
             quantity: 1,
@@ -95,7 +109,10 @@ describe("commerce cart validation", () => {
 
   it("applies manual product discounts before checkout totals", () => {
     assert.deepEqual(
-      buildValidatedCart([{ productId: "product-1", quantity: 2 }], [{ ...product, discountPrice: 100 }]),
+      buildValidatedCart(
+        [{ productId: "product-1", quantity: 2 }],
+        [{ ...product, discountPrice: 100 }],
+      ),
       {
         currency: "CAD",
         amount: 200,
@@ -104,6 +121,7 @@ describe("commerce cart validation", () => {
         lineItems: [
           {
             productId: "product-1",
+            productTitle: "Classic Lash Set",
             sku: "LASH-CLASSIC",
             description: "Classic Lash Set",
             quantity: 2,
@@ -145,6 +163,8 @@ describe("commerce cart validation", () => {
           {
             productId: "product-1",
             variantId: "classic",
+            productTitle: "Classic Lash Set",
+            variantTitle: "Classic",
             sku: "product-1:classic",
             description: "Classic Lash Set — Classic",
             quantity: 1,
@@ -183,6 +203,7 @@ describe("commerce cart validation", () => {
         lineItems: [
           {
             productId: "product-1",
+            productTitle: "Classic Lash Set",
             sku: "LASH-CLASSIC",
             description: "Classic Lash Set",
             quantity: 2,
@@ -236,6 +257,7 @@ describe("commerce cart validation", () => {
         lineItems: [
           {
             productId: "product-1",
+            productTitle: "Classic Lash Set",
             sku: "LASH-CLASSIC",
             description: "Classic Lash Set",
             quantity: 1,
@@ -244,6 +266,7 @@ describe("commerce cart validation", () => {
           },
           {
             productId: "product-2",
+            productTitle: "Volume Lash Set",
             sku: "product-2",
             description: "Volume Lash Set",
             quantity: 1,
@@ -257,26 +280,23 @@ describe("commerce cart validation", () => {
 
   it("ignores promotion codes that do not apply to products", () => {
     assert.deepEqual(
-      buildValidatedCart(
-        [{ productId: "product-1", quantity: 1 }],
-        [product],
-        {
-          promotionCode: {
-            _id: "promo-training",
-            code: "TRAINING10",
-            isEnabled: true,
-            discountType: "percentage",
-            amount: 10,
-            appliesTo: "trainingPrograms",
-          },
+      buildValidatedCart([{ productId: "product-1", quantity: 1 }], [product], {
+        promotionCode: {
+          _id: "promo-training",
+          code: "TRAINING10",
+          isEnabled: true,
+          discountType: "percentage",
+          amount: 10,
+          appliesTo: "trainingPrograms",
         },
-      ),
+      }),
       {
         currency: "CAD",
         amount: 125,
         lineItems: [
           {
             productId: "product-1",
+            productTitle: "Classic Lash Set",
             sku: "LASH-CLASSIC",
             description: "Classic Lash Set",
             quantity: 1,
@@ -317,6 +337,8 @@ describe("commerce cart validation", () => {
           {
             productId: "product-sku-less",
             variantId: "volume",
+            productTitle: "SKU-less Lash Kit",
+            variantTitle: "Volume Kit",
             sku: "product-sku-less:volume",
             description: "SKU-less Lash Kit — Volume Kit",
             quantity: 1,
@@ -343,24 +365,40 @@ describe("commerce cart validation", () => {
     };
 
     assert.throws(
-      () => buildValidatedCart([{ productId: "product-1", quantity: 1 }], [productWithVariants]),
+      () =>
+        buildValidatedCart(
+          [{ productId: "product-1", quantity: 1 }],
+          [productWithVariants],
+        ),
       /Please choose an available product option/,
     );
 
     assert.throws(
-      () => buildValidatedCart([{ productId: "product-1", variantId: "classic", quantity: 1 }], [productWithVariants]),
+      () =>
+        buildValidatedCart(
+          [{ productId: "product-1", variantId: "classic", quantity: 1 }],
+          [productWithVariants],
+        ),
       /Please choose an available product option/,
     );
   });
 
   it("rejects quantities outside the checkout bounds", () => {
     assert.throws(
-      () => buildValidatedCart([{ productId: "product-1", quantity: 0 }], [product]),
+      () =>
+        buildValidatedCart(
+          [{ productId: "product-1", quantity: 0 }],
+          [product],
+        ),
       /Quantity must be between 1 and 10/,
     );
 
     assert.throws(
-      () => buildValidatedCart([{ productId: "product-1", quantity: 11 }], [product]),
+      () =>
+        buildValidatedCart(
+          [{ productId: "product-1", quantity: 11 }],
+          [product],
+        ),
       /Quantity must be between 1 and 10/,
     );
   });

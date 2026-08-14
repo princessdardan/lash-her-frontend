@@ -4,6 +4,7 @@ import type {
   ValidatedCart,
 } from "@/lib/commerce/cart";
 import { buildValidatedCart } from "@/lib/commerce/cart";
+import { getProductCheckoutEligibility } from "@/lib/commerce/product-checkout-eligibility";
 import type {
   TProduct,
   TProductShippingMetadata,
@@ -163,44 +164,13 @@ function validateShippingMetadata(
   >
 > &
   TProductShippingMetadata {
-  if (!value || value.fulfillmentMode !== "physical")
-    throw new ShippingEligibilityError("Product requires manual fulfillment");
-  if (!Number.isInteger(value.weightGrams) || (value.weightGrams ?? 0) <= 0)
-    throw new ShippingEligibilityError("Product shipping weight is missing");
-  if (!Number.isInteger(value.packingUnits) || (value.packingUnits ?? 0) <= 0)
-    throw new ShippingEligibilityError("Product packing units are missing");
-  if (
-    !value.customsDescription?.trim() ||
-    !/^[A-Z]{2}$/.test(value.countryOfOrigin ?? "")
-  )
+  const eligibility = getProductCheckoutEligibility(value, countryCode);
+  if (eligibility.status !== "automated") {
     throw new ShippingEligibilityError(
-      "Product customs metadata is incomplete",
+      eligibility.status === "manual"
+        ? "Product requires manual fulfillment"
+        : `Product shipping metadata is incomplete (${eligibility.reason})`,
     );
-  if (value.hazardousMaterial)
-    throw new ShippingEligibilityError(
-      "Hazardous products require manual fulfillment",
-    );
-  if (countryCode === "US") {
-    if (!value.usShippingApproved)
-      throw new ShippingEligibilityError(
-        "A product is not approved for U.S. shipping",
-      );
-    if (!/^\d{10}$/.test(value.hsTariffCode ?? ""))
-      throw new ShippingEligibilityError("U.S. tariff metadata is incomplete");
-    if (
-      ![
-        value.manufacturerName,
-        value.manufacturerAddress,
-        value.manufacturerCity,
-        value.manufacturerProvinceCode,
-        value.manufacturerPostalCode,
-        value.manufacturerCountryCode,
-      ].every((entry) => entry?.trim())
-    ) {
-      throw new ShippingEligibilityError(
-        "U.S. manufacturer metadata is incomplete",
-      );
-    }
   }
 }
 

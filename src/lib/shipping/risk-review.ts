@@ -1,24 +1,33 @@
 import "server-only";
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { getPrivateDb } from "@/lib/private-db/client";
 import {
   adminUsers,
   checkoutOrders,
+  fulfillmentOwnerActions,
   productOrderRiskReviews,
-  shippingPolicyAssignments,
+  productPaymentRiskIncidents,
 } from "@/lib/private-db/schema";
+
+const COOLING_OFF_MS = 15 * 60_000;
 
 export async function recordProductOrderRiskReview(input: {
   orderReference: string;
   reviewerAdminUserId: string;
   decision: "clear_false_positive" | "escalate";
   rationale: string;
-}): Promise<{ cleared: boolean }> {
-  if (input.rationale.trim().length < 10)
+  stepUpAuthenticatedAt?: Date;
+  providerEvidenceAvailable?: boolean;
+  evidence?: Record<string, unknown>;
+}): Promise<{ cleared: boolean; coolingOffUntil?: string }> {
+  const rationale = input.rationale.trim().slice(0, 1_000);
+  if (rationale.length < 10) {
     throw new Error(
       "A documented rationale of at least 10 characters is required",
     );
+  }
+  const now = new Date();
   return getPrivateDb().transaction(async (tx) => {
     const [reviewer] = await tx
       .select({ role: adminUsers.role })
@@ -30,85 +39,184 @@ export async function recordProductOrderRiskReview(input: {
         ),
       )
       .limit(1);
-    if (!reviewer) throw new Error("Reviewer is not active");
-    if (reviewer.role !== "owner") {
-      const [assignment] = await tx
-        .select({ id: shippingPolicyAssignments.id })
-        .from(shippingPolicyAssignments)
-        .where(
-          and(
-            eq(
-              shippingPolicyAssignments.adminUserId,
-              input.reviewerAdminUserId,
-            ),
-            eq(shippingPolicyAssignments.duty, "payment_fraud_owner"),
-            eq(shippingPolicyAssignments.active, true),
-          ),
-        )
-        .limit(1);
-      if (!assignment)
-        throw new Error("Reviewer is not assigned to Payment/Fraud");
+    if (reviewer?.role !== "owner") {
+      throw new Error("The Business Owner must perform this review");
     }
-    const [order] = await tx
-      .select({ id: checkoutOrders.id })
-      .from(checkoutOrders)
-      .where(eq(checkoutOrders.orderId, input.orderReference))
-      .for("update")
-      .limit(1);
-    if (!order) throw new Error("Order was not found");
-    if (input.decision === "escalate") {
-      await tx
-        .update(checkoutOrders)
-        .set({
-          fraudClassification: "high",
-          fraudClearedAt: null,
-          fraudRiskReasons: sql`${checkoutOrders.fraudRiskReasons} || '["staff_escalation"]'::jsonb`,
-          updatedAt: new Date(),
-        })
-        .where(eq(checkoutOrders.id, order.id));
-    }
-    await tx
-      .insert(productOrderRiskReviews)
-      .values({
-        orderId: order.id,
-        reviewerAdminUserId: input.reviewerAdminUserId,
-        reviewerWasBusinessOwner: reviewer.role === "owner",
-        decision: input.decision,
-        rationale: input.rationale.trim().slice(0, 1000),
-      })
-      .onConflictDoUpdate({
-        target: [
-          productOrderRiskReviews.orderId,
-          productOrderRiskReviews.reviewerAdminUserId,
-        ],
-        set: {
-          reviewerWasBusinessOwner: reviewer.role === "owner",
-          decision: input.decision,
-          rationale: input.rationale.trim().slice(0, 1000),
-          createdAt: new Date(),
-        },
-      });
-    if (input.decision === "escalate") return { cleared: false };
-    const clearances = await tx
+    const [row] = await tx
       .select({
-        reviewerId: productOrderRiskReviews.reviewerAdminUserId,
-        owner: productOrderRiskReviews.reviewerWasBusinessOwner,
+        orderId: checkoutOrders.id,
+        incident: productPaymentRiskIncidents,
       })
-      .from(productOrderRiskReviews)
+      .from(checkoutOrders)
+      .innerJoin(
+        productPaymentRiskIncidents,
+        eq(productPaymentRiskIncidents.orderId, checkoutOrders.id),
+      )
       .where(
         and(
-          eq(productOrderRiskReviews.orderId, order.id),
-          eq(productOrderRiskReviews.decision, "clear_false_positive"),
+          eq(checkoutOrders.orderId, input.orderReference),
+          eq(productPaymentRiskIncidents.status, "review_required"),
         ),
-      );
-    const cleared =
-      new Set(clearances.map((entry) => entry.reviewerId)).size >= 2 &&
-      clearances.some((entry) => entry.owner);
-    if (cleared)
+      )
+      .orderBy(desc(productPaymentRiskIncidents.createdAt))
+      .for("update")
+      .limit(1);
+    if (!row) throw new Error("No active payment-risk incident was found");
+
+    const evidence = sanitizeEvidence(input.evidence);
+    if (input.decision === "escalate") {
+      await tx.insert(fulfillmentOwnerActions).values({
+        targetType: "payment_risk_incident",
+        targetId: row.incident.id,
+        action: "fraud_escalated",
+        adminUserId: input.reviewerAdminUserId,
+        policyVersion: row.incident.policyVersion,
+        rationale,
+        evidence,
+        stepUpAuthenticatedAt: input.stepUpAuthenticatedAt ?? now,
+        coolingOffUntil: now,
+        executedAt: now,
+      });
       await tx
-        .update(checkoutOrders)
-        .set({ fraudClearedAt: new Date(), updatedAt: new Date() })
-        .where(eq(checkoutOrders.id, order.id));
-    return { cleared };
+        .update(productPaymentRiskIncidents)
+        .set({ outcome: "escalated", rationale, updatedAt: now })
+        .where(eq(productPaymentRiskIncidents.id, row.incident.id));
+      return { cleared: false };
+    }
+
+    if (!input.stepUpAuthenticatedAt) {
+      throw new Error("Step-up authentication is required");
+    }
+    if (
+      !input.providerEvidenceAvailable ||
+      Object.keys(evidence).length === 0
+    ) {
+      throw new Error("Authoritative provider evidence is required");
+    }
+    const [proposal] = await tx
+      .select()
+      .from(fulfillmentOwnerActions)
+      .where(
+        and(
+          eq(fulfillmentOwnerActions.targetType, "payment_risk_incident"),
+          eq(fulfillmentOwnerActions.targetId, row.incident.id),
+          eq(fulfillmentOwnerActions.action, "fraud_clearance_proposed"),
+        ),
+      )
+      .orderBy(desc(fulfillmentOwnerActions.createdAt))
+      .limit(1);
+    if (!proposal) {
+      const coolingOffUntil = new Date(now.getTime() + COOLING_OFF_MS);
+      await tx.insert(fulfillmentOwnerActions).values({
+        targetType: "payment_risk_incident",
+        targetId: row.incident.id,
+        action: "fraud_clearance_proposed",
+        adminUserId: input.reviewerAdminUserId,
+        policyVersion: row.incident.policyVersion,
+        rationale,
+        evidence,
+        stepUpAuthenticatedAt: input.stepUpAuthenticatedAt,
+        coolingOffUntil,
+      });
+      await tx
+        .update(productPaymentRiskIncidents)
+        .set({
+          ownerAdminUserId: input.reviewerAdminUserId,
+          stepUpAuthenticatedAt: input.stepUpAuthenticatedAt,
+          coolingOffUntil,
+          rationale,
+          providerEvidence: evidence,
+          updatedAt: now,
+        })
+        .where(eq(productPaymentRiskIncidents.id, row.incident.id));
+      return { cleared: false, coolingOffUntil: coolingOffUntil.toISOString() };
+    }
+    if (proposal.coolingOffUntil > now) {
+      return {
+        cleared: false,
+        coolingOffUntil: proposal.coolingOffUntil.toISOString(),
+      };
+    }
+    const [execution] = await tx
+      .select({ id: fulfillmentOwnerActions.id })
+      .from(fulfillmentOwnerActions)
+      .where(
+        and(
+          eq(fulfillmentOwnerActions.targetType, "payment_risk_incident"),
+          eq(fulfillmentOwnerActions.targetId, row.incident.id),
+          eq(fulfillmentOwnerActions.action, "fraud_clearance_executed"),
+        ),
+      )
+      .limit(1);
+    if (execution) return { cleared: true };
+
+    await tx.insert(fulfillmentOwnerActions).values({
+      targetType: "payment_risk_incident",
+      targetId: row.incident.id,
+      action: "fraud_clearance_executed",
+      adminUserId: input.reviewerAdminUserId,
+      policyVersion: row.incident.policyVersion,
+      rationale,
+      evidence,
+      stepUpAuthenticatedAt: input.stepUpAuthenticatedAt,
+      coolingOffUntil: proposal.coolingOffUntil,
+      executedAt: now,
+    });
+    await tx.insert(productOrderRiskReviews).values({
+      orderId: row.orderId,
+      reviewerAdminUserId: input.reviewerAdminUserId,
+      reviewerWasBusinessOwner: true,
+      incidentId: row.incident.id,
+      stepUpAuthenticatedAt: input.stepUpAuthenticatedAt,
+      coolingOffUntil: proposal.coolingOffUntil,
+      providerEvidenceAvailable: true,
+      evidence,
+      decision: "clear_false_positive",
+      rationale,
+    });
+    await tx
+      .update(productPaymentRiskIncidents)
+      .set({
+        status: "cleared",
+        ownerAdminUserId: input.reviewerAdminUserId,
+        reviewedAt: now,
+        rationale,
+        outcome: "cleared",
+        providerEvidence: evidence,
+        updatedAt: now,
+      })
+      .where(eq(productPaymentRiskIncidents.id, row.incident.id));
+    await tx
+      .update(checkoutOrders)
+      .set({
+        paymentRiskStatus: "cleared",
+        paymentRiskAssessedAt: now,
+        paymentRiskSource: "manual",
+        fraudClassification: "low",
+        fraudClearedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(checkoutOrders.id, row.orderId));
+    return { cleared: true };
   });
+}
+
+function sanitizeEvidence(value: Record<string, unknown> | undefined) {
+  const allowedKeys = new Set([
+    "providerTransactionId",
+    "providerStatus",
+    "avsCode",
+    "cvvCode",
+    "evidenceReference",
+  ]);
+  return Object.fromEntries(
+    Object.entries(value ?? {}).flatMap(([key, entry]) =>
+      allowedKeys.has(key) &&
+      (typeof entry === "string" ||
+        typeof entry === "number" ||
+        typeof entry === "boolean")
+        ? [[key, entry]]
+        : [],
+    ),
+  );
 }

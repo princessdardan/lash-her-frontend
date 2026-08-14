@@ -228,15 +228,18 @@ export function createCheckoutPostHandler({
         return invalidPromotionCode();
       }
 
-      if (
-        dependenciesRequireShipping({
-          shippingEnabled,
-          validateShippingSelection,
-          createInitializingOrder,
-          finalizeInitializingOrder,
-        }) &&
-        !checkoutRequest.shippingQuote
-      ) {
+      const shippingWorkflowConfigured = dependenciesProvideShippingWorkflow({
+        validateShippingSelection,
+        createInitializingOrder,
+        finalizeInitializingOrder,
+      });
+      if (shippingWorkflowConfigured && !shippingEnabled) {
+        return NextResponse.json<CheckoutErrorBody>(
+          { error: "Product checkout is temporarily unavailable" },
+          { status: 503 },
+        );
+      }
+      if (shippingWorkflowConfigured && !checkoutRequest.shippingQuote) {
         return NextResponse.json<CheckoutErrorBody>(
           { error: "Select a current shipping rate" },
           { status: 409 },
@@ -575,14 +578,12 @@ function parseShippingQuote(
   return { token, fingerprint, rateId };
 }
 
-function dependenciesRequireShipping(input: {
-  shippingEnabled?: boolean;
+function dependenciesProvideShippingWorkflow(input: {
   validateShippingSelection?: unknown;
   createInitializingOrder?: unknown;
   finalizeInitializingOrder?: unknown;
 }): boolean {
   return Boolean(
-    input.shippingEnabled &&
     input.validateShippingSelection &&
     input.createInitializingOrder &&
     input.finalizeInitializingOrder,
@@ -681,6 +682,11 @@ function toCatalogProduct(product: TProduct): CatalogProduct {
     discountPrice: product.discountPrice,
     currency: product.currency,
     isAvailable: product.isAvailable,
+    checkoutMode:
+      product.shipping?.fulfillmentMode === "manual" ||
+      product.shipping?.hazardousMaterial
+        ? "manual"
+        : "automated",
     variants: product.variants?.map((variant) => ({
       id: variant._key,
       sku: variant.sku,
@@ -688,6 +694,16 @@ function toCatalogProduct(product: TProduct): CatalogProduct {
       price: variant.price,
       discountPrice: variant.discountPrice,
       isAvailable: variant.isAvailable,
+      options: variant.options?.flatMap((option) =>
+        option.name && option.value
+          ? [{ label: option.name, value: option.value }]
+          : [],
+      ),
+      checkoutMode:
+        (variant.shipping ?? product.shipping)?.fulfillmentMode === "manual" ||
+        (variant.shipping ?? product.shipping)?.hazardousMaterial
+          ? "manual"
+          : "automated",
     })),
   };
 }

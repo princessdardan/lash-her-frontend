@@ -54,6 +54,11 @@ export interface ChitChatsShipment {
   purchase_amount?: string | number | null;
   postage_fee?: string | number | null;
   insurance_fee?: string | number | null;
+  delivery_fee?: string | number | null;
+  tariff_fee?: string | number | null;
+  fda_prior_notification_fee?: string | number | null;
+  federal_tax?: string | number | null;
+  provincial_tax?: string | number | null;
   is_insured?: boolean | null;
   estimated_delivery_at?: string | null;
   postage_label_pdf_url?: string | null;
@@ -71,7 +76,14 @@ export interface ChitChatsRate {
   signature_confirmation_description?: string | null;
   is_insured?: boolean | null;
   payment_amount: string | number;
+  purchase_amount?: string | number | null;
+  postage_fee?: string | number | null;
   insurance_fee?: string | number | null;
+  delivery_fee?: string | number | null;
+  tariff_fee?: string | number | null;
+  fda_prior_notification_fee?: string | number | null;
+  federal_tax?: string | number | null;
+  provincial_tax?: string | number | null;
   [key: string]: unknown;
 }
 
@@ -86,9 +98,13 @@ export interface ChitChatsTrackingEvent {
 
 export interface ChitChatsReturn {
   id: string;
-  shipment_id?: string | null;
+  original_shipment?: { id?: string | null } | null;
   status?: string | null;
-  reason?: string | null;
+  return_reason?: string | null;
+  return_reason_note?: string | null;
+  resolution?: string | null;
+  resolved_at?: string | null;
+  updated_at?: string | null;
   created_at?: string | null;
   [key: string]: unknown;
 }

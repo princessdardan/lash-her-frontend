@@ -140,6 +140,8 @@ test("payment event processing status enum supports idempotent webhook handling"
     "duplicate",
     "ignored",
     "failed",
+    "review_required",
+    "retryable_failed",
   ]);
 });
 

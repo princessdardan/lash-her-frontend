@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requirePermission } from "@/lib/admin/auth";
 import { recordAdminAuditBestEffort } from "@/lib/admin/audit-log";
 import {
+  attestReplacementInventory,
   createShipmentGeneration,
   updateProductShippingCase,
 } from "@/lib/shipping/cases";
@@ -30,7 +31,22 @@ export async function POST(
   const { caseId } = await params;
   try {
     let result: { id: string };
-    if (body?.action === "replacement" || body?.action === "reshipment") {
+    if (body?.action === "attest_inventory") {
+      const expiresAt = new Date(String(body.expiresAt ?? ""));
+      result = await attestReplacementInventory({
+        caseId,
+        productId: String(body.productId ?? ""),
+        variantId:
+          typeof body.variantId === "string" ? body.variantId : undefined,
+        sku: String(body.sku ?? ""),
+        quantity: Number(body.quantity),
+        actorAdminUserId: actor.user.id,
+        expiresAt,
+      });
+    } else if (
+      body?.action === "replacement" ||
+      body?.action === "reshipment"
+    ) {
       if (body.action === "replacement" && body.inventoryConfirmed !== true) {
         const [caseOrder] = await getPrivateDb()
           .select({ orderReference: checkoutOrders.orderId })
@@ -58,7 +74,7 @@ export async function POST(
         result = await createShipmentGeneration({
           caseId,
           purpose: body.action,
-          inventoryConfirmed: body.inventoryConfirmed === true,
+          inventoryAttestationId: String(body.inventoryAttestationId ?? ""),
         });
       }
     } else if (

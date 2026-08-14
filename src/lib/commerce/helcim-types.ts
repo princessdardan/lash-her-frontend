@@ -55,6 +55,8 @@ export interface HelcimRefundRequest {
 export interface HelcimRefundResponse {
   transactionId: number | string;
   status?: string;
+  transactionType?: string;
+  originalTransactionId?: number | string;
   amount?: number;
   currency?: string;
   [key: string]: unknown;
@@ -70,4 +72,8 @@ export interface HelcimTransactionReconciliationFields {
   invoiceNumber?: string;
   status?: string;
   transactionId?: string;
+  transactionType?: string;
+  originalTransactionId?: string;
+  avsCode?: string;
+  cvvCode?: string;
 }

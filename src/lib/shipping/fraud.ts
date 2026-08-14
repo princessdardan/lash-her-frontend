@@ -1,50 +1,70 @@
 import "server-only";
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getPrivateDb } from "@/lib/private-db/client";
-import { checkoutOrders } from "@/lib/private-db/schema";
+import {
+  checkoutOrders,
+  productPaymentRiskIncidents,
+  shippingPolicySettings,
+} from "@/lib/private-db/schema";
 import type { HelcimPayloadValue } from "@/lib/commerce/helcim-types";
-
-const MISMATCH_VALUES = new Set([
-  "n",
-  "no",
-  "no_match",
-  "mismatch",
-  "not_matched",
-  "failed",
-  "declined",
-]);
+import { assessCertifiedCardEvidence } from "@/lib/commerce/helcim-contract";
 
 export async function classifyProductOrderPaymentRisk(
   orderReference: string,
   data: Record<string, HelcimPayloadValue>,
 ): Promise<string[]> {
-  const flags: string[] = [];
-  if (isMismatch(data.avsResponse ?? data.avsResult ?? data.avs))
-    flags.push("avs_mismatch");
-  if (isMismatch(data.cvvResponse ?? data.cvvResult ?? data.cvv))
-    flags.push("cvv_mismatch");
-  if (!flags.length) return flags;
-  await getPrivateDb()
-    .update(checkoutOrders)
-    .set({
-      fraudClassification: "high",
-      fraudClearedAt: null,
-      fraudRiskReasons: sql`${checkoutOrders.fraudRiskReasons} || ${JSON.stringify(flags)}::jsonb`,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(checkoutOrders.orderId, orderReference),
-        eq(checkoutOrders.purpose, "product"),
-      ),
-    );
-  return flags;
+  const assessment = assessCertifiedCardEvidence({
+    avsCode: text(data.avsResponse ?? data.avsResult ?? data.avs),
+    cvvCode: text(data.cvvResponse ?? data.cvvResult ?? data.cvv),
+  });
+  const now = new Date();
+  await getPrivateDb().transaction(async (tx) => {
+    const [order] = await tx
+      .update(checkoutOrders)
+      .set({
+        paymentRiskStatus: assessment.status,
+        paymentRiskAssessedAt: now,
+        paymentRiskSource: "client_callback",
+        fraudClassification: assessment.status === "cleared" ? "low" : "high",
+        fraudRiskReasons: assessment.reasonCodes,
+        fraudClearedAt: assessment.status === "cleared" ? now : null,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(checkoutOrders.orderId, orderReference),
+          eq(checkoutOrders.purpose, "product"),
+        ),
+      )
+      .returning({ id: checkoutOrders.id });
+    if (!order || assessment.status === "cleared") return;
+    const [settings] = await tx
+      .select({ version: shippingPolicySettings.policyVersion })
+      .from(shippingPolicySettings)
+      .where(eq(shippingPolicySettings.singletonKey, "default"))
+      .limit(1);
+    await tx
+      .insert(productPaymentRiskIncidents)
+      .values({
+        orderId: order.id,
+        incidentKey: `legacy-callback/${order.id}/${[...assessment.reasonCodes].sort().join(",")}`,
+        status: "review_required",
+        reasonCodes: assessment.reasonCodes,
+        providerEvidence: {
+          avsCode: assessment.avsCode,
+          cvvCode: assessment.cvvCode,
+        },
+        policyVersion: settings?.version ?? "unconfigured",
+        alertedAt: now,
+      })
+      .onConflictDoNothing({ target: productPaymentRiskIncidents.incidentKey });
+  });
+  return assessment.reasonCodes;
 }
 
-function isMismatch(value: HelcimPayloadValue | undefined): boolean {
-  if (value === null || value === undefined) return false;
-  return MISMATCH_VALUES.has(
-    String(value).trim().toLowerCase().replace(/\s+/g, "_"),
-  );
+function text(value: HelcimPayloadValue | undefined): string | undefined {
+  return typeof value === "string" || typeof value === "number"
+    ? String(value)
+    : undefined;
 }

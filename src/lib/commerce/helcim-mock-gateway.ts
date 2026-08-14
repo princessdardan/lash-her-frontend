@@ -197,10 +197,13 @@ export function createMockHelcimGateway({
           last4: "4242",
         },
         currency: transaction.currency,
+        avsResponse: transaction.status === "APPROVED" ? "Y" : "N",
+        cvvResponse: transaction.status === "APPROVED" ? "M" : "N",
         invoiceId: transaction.invoiceId,
         invoiceNumber: transaction.invoiceNumber,
         status: transaction.status,
         transactionId: transaction.transactionId,
+        transactionType: "purchase",
       } satisfies HelcimCardTransactionResponse;
     },
     async refundPayment(request, refundIdempotencyKey) {
@@ -236,13 +239,16 @@ export function buildMockHelcimSuccessPayload({
   const data = {
     amount,
     approved: status === "APPROVED",
+    avsResponse: status === "APPROVED" ? "Y" : "N",
     cardLast4: "4242",
     cardType: "Visa",
     currency,
+    cvvResponse: status === "APPROVED" ? "M" : "N",
     invoiceId: invoice.invoiceId,
     invoiceNumber: invoice.invoiceNumber,
     status,
     transactionId: transactionId ?? `mock_helcim_txn_${sequence}`,
+    transactionType: "purchase",
   };
 
   return {

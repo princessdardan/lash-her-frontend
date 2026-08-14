@@ -47,6 +47,7 @@ const launchEnv = {
   PAYMENT_RECONCILIATION_CRON_SECRET: "payment-reconciliation-cron-secret",
   CRON_SECRET: "vercel-cron-secret",
   BACKUP_RETENTION_DAYS: "30",
+  NEXT_PUBLIC_SITE_URL: "https://lashher.com",
 };
 
 test("validates local public Sanity environment", () => {
@@ -103,9 +104,11 @@ test("validates preview Chit Chats shipping configuration", () => {
     CHITCHATS_US_SHIPPING_ENABLED: "false",
     CHITCHATS_ENVIRONMENT: "staging",
     CHITCHATS_CLIENT_ID: "client-id",
+    CHITCHATS_BRANCH_ID: "branch-id",
     CHITCHATS_ACCESS_TOKEN: "access-token",
     CHITCHATS_QUOTE_SIGNING_SECRET: "quote-signing-secret-with-safe-length",
-    CHITCHATS_WORKER_CRON_SECRET: "worker-cron-secret",
+    CHITCHATS_WORKER_CRON_SECRET:
+      "worker-cron-secret-with-at-least-32-random-bytes",
     CHECKOUT_PII_ENCRYPTION_KEY: checkoutPiiKey,
     SHIPPING_DECISION_TOKEN_SECRET:
       "shipping-decision-secret-at-least-thirty-two-bytes",
@@ -134,6 +137,26 @@ test("fails when Chit Chats checkout is enabled without the shipping worker", ()
   );
 });
 
+test("rejects malformed independent product checkout admission flags", () => {
+  const result = runValidator({
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+    MANUAL_PRODUCT_CHECKOUT_ENABLED: "yes",
+    SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED: "1",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.combinedOutput,
+    /MANUAL_PRODUCT_CHECKOUT_ENABLED must be true or false/,
+  );
+  assert.match(
+    result.combinedOutput,
+    /SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED must be true or false/,
+  );
+});
+
 test("fails production Chit Chats shipping configured against staging", () => {
   const result = runValidator({
     ...launchEnv,
@@ -144,9 +167,11 @@ test("fails production Chit Chats shipping configured against staging", () => {
     CHITCHATS_US_SHIPPING_ENABLED: "false",
     CHITCHATS_ENVIRONMENT: "staging",
     CHITCHATS_CLIENT_ID: "client-id",
+    CHITCHATS_BRANCH_ID: "branch-id",
     CHITCHATS_ACCESS_TOKEN: "access-token",
     CHITCHATS_QUOTE_SIGNING_SECRET: "quote-signing-secret-with-safe-length",
-    CHITCHATS_WORKER_CRON_SECRET: "worker-cron-secret",
+    CHITCHATS_WORKER_CRON_SECRET:
+      "worker-cron-secret-with-at-least-32-random-bytes",
   });
 
   assert.notEqual(result.status, 0);

@@ -26,7 +26,7 @@ export async function assignShippingPolicyDuty(input: {
       .where(eq(adminUsers.id, input.actorAdminUserId))
       .limit(1);
     const [assignee] = await tx
-      .select({ id: adminUsers.id })
+      .select({ id: adminUsers.id, role: adminUsers.role })
       .from(adminUsers)
       .where(
         and(
@@ -35,8 +35,15 @@ export async function assignShippingPolicyDuty(input: {
         ),
       )
       .limit(1);
-    if (actor?.role !== "owner" || !assignee)
-      throw new Error("Only the Business Owner may assign active policy roles");
+    if (
+      actor?.role !== "owner" ||
+      !assignee ||
+      assignee.role !== "owner" ||
+      input.actorAdminUserId !== input.adminUserId
+    )
+      throw new Error(
+        "The active Business Owner must self-assign policy roles",
+      );
     await tx
       .update(shippingPolicyAssignments)
       .set({ active: false, updatedAt: new Date() })

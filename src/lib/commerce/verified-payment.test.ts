@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { persistVerifiedPayment, verifyHelcimPayment } from "./verified-payment";
+import {
+  persistVerifiedPayment,
+  verifyHelcimPayment,
+} from "./verified-payment";
 
 const order = {
   amount: 50,
@@ -11,12 +14,13 @@ const order = {
 };
 
 const validData = {
-  approved: true,
   amount: 50,
   currency: "CAD",
   invoiceId: 12345,
   invoiceNumber: "INV-12345",
+  status: "approved",
   transactionId: "txn_123",
+  transactionType: "purchase",
 };
 
 test("verifyHelcimPayment accepts an authenticated approved payment for the pending order", () => {
@@ -31,7 +35,7 @@ test("verifyHelcimPayment accepts an authenticated approved payment for the pend
   assert.deepEqual(result, { ok: true, transactionId: "txn_123" });
 });
 
-test("verifyHelcimPayment accepts HelcimPay payloads with APPROVAL status and invoice number only", () => {
+test("verifyHelcimPayment rejects uncertified status values", () => {
   const result = verifyHelcimPayment({
     data: {
       amount: "50.00",
@@ -39,6 +43,7 @@ test("verifyHelcimPayment accepts HelcimPay payloads with APPROVAL status and in
       invoiceNumber: "INV-12345",
       status: "APPROVAL",
       transactionId: "txn_123",
+      transactionType: "purchase",
     },
     hash: "valid-hash",
     order,
@@ -46,7 +51,7 @@ test("verifyHelcimPayment accepts HelcimPay payloads with APPROVAL status and in
     validateHash: () => true,
   });
 
-  assert.deepEqual(result, { ok: true, transactionId: "txn_123" });
+  assert.deepEqual(result, { ok: false, reason: "unapproved_payment" });
 });
 
 test("verifyHelcimPayment rejects a payload with a conflicting invoice id", () => {
@@ -63,7 +68,7 @@ test("verifyHelcimPayment rejects a payload with a conflicting invoice id", () =
 
 test("verifyHelcimPayment rejects a valid hash with an unapproved payment", () => {
   const result = verifyHelcimPayment({
-    data: { ...validData, approved: false },
+    data: { ...validData, status: "not approved" },
     hash: "valid-hash",
     order,
     secretToken: "secret-token",
@@ -100,11 +105,12 @@ test("verifyHelcimPayment rejects a valid hash with the wrong currency", () => {
 test("verifyHelcimPayment rejects a valid hash with missing currency", () => {
   const result = verifyHelcimPayment({
     data: {
-      approved: true,
       amount: 50,
       invoiceId: 12345,
       invoiceNumber: "INV-12345",
       transactionId: "txn_123",
+      status: "approved",
+      transactionType: "purchase",
     },
     hash: "valid-hash",
     order,
@@ -130,10 +136,11 @@ test("verifyHelcimPayment rejects a valid hash with the wrong invoice", () => {
 test("verifyHelcimPayment rejects a valid hash with missing invoice identifiers", () => {
   const result = verifyHelcimPayment({
     data: {
-      approved: true,
       amount: 50,
       currency: "CAD",
       transactionId: "txn_123",
+      status: "approved",
+      transactionType: "purchase",
     },
     hash: "valid-hash",
     order,
@@ -147,11 +154,12 @@ test("verifyHelcimPayment rejects a valid hash with missing invoice identifiers"
 test("verifyHelcimPayment rejects a valid hash with a missing transaction id", () => {
   const result = verifyHelcimPayment({
     data: {
-      approved: true,
       amount: 50,
       currency: "CAD",
       invoiceId: 12345,
       invoiceNumber: "INV-12345",
+      status: "approved",
+      transactionType: "purchase",
     },
     hash: "valid-hash",
     order,
@@ -160,6 +168,22 @@ test("verifyHelcimPayment rejects a valid hash with a missing transaction id", (
   });
 
   assert.deepEqual(result, { ok: false, reason: "missing_transaction_id" });
+});
+
+test("verifyHelcimPayment rejects refund and unknown transaction types", () => {
+  for (const transactionType of ["refund", "purchase_refund", ""]) {
+    const result = verifyHelcimPayment({
+      data: { ...validData, transactionType },
+      hash: "valid-hash",
+      order,
+      secretToken: "secret-token",
+      validateHash: () => true,
+    });
+    assert.deepEqual(result, {
+      ok: false,
+      reason: "unknown_transaction_type",
+    });
+  }
 });
 
 test("verifyHelcimPayment rejects an invalid hash before semantic payment checks", () => {
@@ -190,7 +214,12 @@ test("persistVerifiedPayment returns true when paid status is recorded", async (
 });
 
 test("persistVerifiedPayment logs reconciliation details when persistence fails", async () => {
-  const logs: Array<{ message: string; orderId: string; transactionId: string; error: string }> = [];
+  const logs: Array<{
+    message: string;
+    orderId: string;
+    transactionId: string;
+    error: string;
+  }> = [];
 
   const result = await persistVerifiedPayment({
     logError: (message, context) => {

@@ -6,6 +6,8 @@ import { getPrivateDb } from "@/lib/private-db/client";
 import {
   adminUsers,
   checkoutOrders,
+  fulfillmentOwnerActions,
+  orderPaymentObligations,
   productOrderAddressChangeRequests,
   productShipments,
   type CheckoutOrderShippingAddressSnapshot,
@@ -393,6 +395,27 @@ export async function exchangeAddressChangeToken(
   return updated ? sessionToken : null;
 }
 
+export async function validateAddressChangeBearer(
+  bearerToken: string,
+): Promise<boolean> {
+  const [row] = await getPrivateDb()
+    .select({ id: productOrderAddressChangeRequests.id })
+    .from(productOrderAddressChangeRequests)
+    .where(
+      and(
+        eq(
+          productOrderAddressChangeRequests.tokenHash,
+          hashShippingCustomerToken(bearerToken, "address-change"),
+        ),
+        eq(productOrderAddressChangeRequests.status, "pending_customer"),
+        isNull(productOrderAddressChangeRequests.exchangedAt),
+        gt(productOrderAddressChangeRequests.expiresAt, new Date()),
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
 export async function getAddressChange(sessionToken: string) {
   const [row] = await getPrivateDb()
     .select({
@@ -509,7 +532,14 @@ export async function approveAddressChange(input: {
   requestId: string;
   adminUserId: string;
   responsibility?: "customer" | "lash_her";
-}): Promise<{ complete: boolean }> {
+  rationale?: string;
+  stepUpAuthenticatedAt?: Date;
+  phoneCallbackCompleted?: boolean;
+  providerEvidenceAvailable?: boolean;
+  evidence?: Record<string, unknown>;
+}): Promise<{ complete: boolean; coolingOffUntil?: string }> {
+  const now = new Date();
+  const rationale = input.rationale?.trim().slice(0, 1_000) ?? "";
   return getPrivateDb().transaction(async (tx) => {
     const [actor] = await tx
       .select({ role: adminUsers.role })
@@ -521,50 +551,125 @@ export async function approveAddressChange(input: {
         ),
       )
       .limit(1);
-    if (!actor) throw new Error("Approver is not active");
+    if (actor?.role !== "owner")
+      throw new Error("The Business Owner must approve address changes");
     const [row] = await tx
-      .select()
+      .select({
+        request: productOrderAddressChangeRequests,
+        policyVersion: checkoutOrders.shippingPolicyVersion,
+      })
       .from(productOrderAddressChangeRequests)
+      .innerJoin(
+        checkoutOrders,
+        eq(productOrderAddressChangeRequests.orderId, checkoutOrders.id),
+      )
       .where(eq(productOrderAddressChangeRequests.id, input.requestId))
       .for("update")
       .limit(1);
-    if (!row || !["submitted", "risk_review"].includes(row.status))
+    if (!row || !["submitted", "risk_review"].includes(row.request.status))
       throw new Error("Address change is not awaiting approval");
-    if (!row.firstApprovedByAdminUserId) {
-      if (!input.responsibility)
-        throw new Error("Address-change cost responsibility is required");
-      const needsSecond = row.riskFlags.length > 0;
-      await tx
-        .update(productOrderAddressChangeRequests)
-        .set({
-          firstApprovedByAdminUserId: input.adminUserId,
-          firstApprovedAt: new Date(),
-          status: needsSecond ? "risk_review" : "approved",
-          updatedAt: new Date(),
-          providerReconciliation: {
-            ...(row.providerReconciliation ?? {}),
-            firstApproverWasBusinessOwner: actor.role === "owner",
-            responsibility: input.responsibility,
-          },
-        })
-        .where(eq(productOrderAddressChangeRequests.id, row.id));
-      return { complete: !needsSecond };
+    if (!input.responsibility)
+      throw new Error("Address-change cost responsibility is required");
+    if (rationale.length < 10)
+      throw new Error(
+        "A documented rationale of at least 10 characters is required",
+      );
+    const highRisk = row.request.riskFlags.length > 0;
+    const evidence = sanitizeAddressApprovalEvidence(input.evidence);
+    const policyVersion = row.policyVersion ?? "unconfigured";
+    if (highRisk) {
+      if (!input.stepUpAuthenticatedAt)
+        throw new Error("Step-up authentication is required");
+      if (!input.phoneCallbackCompleted)
+        throw new Error("Original-order-phone callback is required");
+      if (
+        !input.providerEvidenceAvailable ||
+        Object.keys(evidence).length === 0
+      )
+        throw new Error("Authoritative provider evidence is required");
+      if (!row.request.coolingOffUntil) {
+        const coolingOffUntil = new Date(now.getTime() + 15 * 60_000);
+        await tx.insert(fulfillmentOwnerActions).values({
+          targetType: "address_change",
+          targetId: row.request.id,
+          action: "address_approval_proposed",
+          adminUserId: input.adminUserId,
+          policyVersion,
+          rationale,
+          evidence,
+          stepUpAuthenticatedAt: input.stepUpAuthenticatedAt,
+          coolingOffUntil,
+        });
+        await tx
+          .update(productOrderAddressChangeRequests)
+          .set({
+            customerCaused: input.responsibility === "customer",
+            phoneCallbackCompletedAt: now,
+            stepUpAuthenticatedAt: input.stepUpAuthenticatedAt,
+            coolingOffUntil,
+            ownerRationale: rationale,
+            providerReconciliation: {
+              ...(row.request.providerReconciliation ?? {}),
+              responsibility: input.responsibility,
+              approvalEvidence: evidence,
+            },
+            updatedAt: now,
+          })
+          .where(eq(productOrderAddressChangeRequests.id, row.request.id));
+        return {
+          complete: false,
+          coolingOffUntil: coolingOffUntil.toISOString(),
+        };
+      }
+      if (row.request.coolingOffUntil > now) {
+        return {
+          complete: false,
+          coolingOffUntil: row.request.coolingOffUntil.toISOString(),
+        };
+      }
+      await tx.insert(fulfillmentOwnerActions).values({
+        targetType: "address_change",
+        targetId: row.request.id,
+        action: "address_approval_executed",
+        adminUserId: input.adminUserId,
+        policyVersion,
+        rationale,
+        evidence,
+        stepUpAuthenticatedAt: input.stepUpAuthenticatedAt,
+        coolingOffUntil: row.request.coolingOffUntil,
+        executedAt: now,
+      });
     }
-    if (row.firstApprovedByAdminUserId === input.adminUserId)
-      throw new Error("A distinct second approver is required");
-    const firstWasOwner =
-      row.providerReconciliation?.firstApproverWasBusinessOwner === true;
-    if (!firstWasOwner && actor.role !== "owner")
-      throw new Error("One high-risk approver must be the Business Owner");
     await tx
       .update(productOrderAddressChangeRequests)
       .set({
-        secondApprovedByAdminUserId: input.adminUserId,
-        secondApprovedAt: new Date(),
+        firstApprovedByAdminUserId: input.adminUserId,
+        firstApprovedAt: now,
         status: "approved",
-        updatedAt: new Date(),
+        customerCaused: input.responsibility === "customer",
+        ownerRationale: rationale,
+        updatedAt: now,
+        providerReconciliation: {
+          ...(row.request.providerReconciliation ?? {}),
+          responsibility: input.responsibility,
+          approvalEvidence: evidence,
+        },
       })
-      .where(eq(productOrderAddressChangeRequests.id, row.id));
+      .where(eq(productOrderAddressChangeRequests.id, row.request.id));
+    if (!highRisk) {
+      await tx.insert(fulfillmentOwnerActions).values({
+        targetType: "address_change",
+        targetId: row.request.id,
+        action: "address_approval_executed",
+        adminUserId: input.adminUserId,
+        policyVersion,
+        rationale,
+        evidence,
+        stepUpAuthenticatedAt: input.stepUpAuthenticatedAt ?? now,
+        coolingOffUntil: now,
+        executedAt: now,
+      });
+    }
     return { complete: true };
   });
 }
@@ -572,7 +677,8 @@ export async function approveAddressChange(input: {
 export async function applyApprovedAddressChange(requestId: string): Promise<{
   orderReference: string;
   refundDecreaseCents: number;
-  requiresNewCheckout: boolean;
+  requiresSupplementalPayment: boolean;
+  supplementalObligationId?: string;
 }> {
   return getPrivateDb().transaction(async (tx) => {
     const [row] = await tx
@@ -597,6 +703,7 @@ export async function applyApprovedAddressChange(requestId: string): Promise<{
       throw new Error("Address change is not approved");
     if (
       row.order.status !== "paid" ||
+      row.order.paymentRiskStatus !== "cleared" ||
       row.order.redactedAt ||
       hasCarrierHandoff(row.shipment)
     )
@@ -613,15 +720,95 @@ export async function applyApprovedAddressChange(requestId: string): Promise<{
     if (responsibility !== "customer" && responsibility !== "lash_her")
       throw new Error("Address-change cost responsibility is missing");
     if (difference > 0 && responsibility === "customer") {
-      await tx
-        .update(productOrderAddressChangeRequests)
-        .set({ status: "rejected", updatedAt: new Date() })
-        .where(eq(productOrderAddressChangeRequests.id, row.request.id));
-      return {
-        orderReference: row.order.orderId,
-        refundDecreaseCents: 0,
-        requiresNewCheckout: true,
-      };
+      const existing = row.request.supplementalObligationId
+        ? await tx.query.orderPaymentObligations.findFirst({
+            where: eq(
+              orderPaymentObligations.id,
+              row.request.supplementalObligationId,
+            ),
+          })
+        : null;
+      if (existing?.status !== "paid") {
+        if (
+          existing?.status === "pending" &&
+          existing.expiresAt &&
+          existing.expiresAt > new Date()
+        ) {
+          return {
+            orderReference: row.order.orderId,
+            refundDecreaseCents: 0,
+            requiresSupplementalPayment: true,
+            supplementalObligationId: existing.id,
+          };
+        }
+        if (existing) {
+          if (existing.status === "pending") {
+            await tx
+              .update(orderPaymentObligations)
+              .set({ status: "superseded", updatedAt: new Date() })
+              .where(eq(orderPaymentObligations.id, existing.id));
+          }
+          throw new Error(
+            "Supplemental offer expired; prepare a fresh replacement quote",
+          );
+        }
+        if (!row.order.shippingPolicyVersion || !row.order.taxPolicyVersion) {
+          throw new Error(
+            "Policy and tax snapshots are required for supplemental payment",
+          );
+        }
+        const offerExpiresAt = new Date(Date.now() + 24 * 60 * 60_000);
+        const [obligation] = await tx
+          .insert(orderPaymentObligations)
+          .values({
+            orderId: row.order.id,
+            purpose: "address_increase",
+            status: "pending",
+            merchandiseAmountCents: 0,
+            shippingAmountCents: difference,
+            taxAmountCents: 0,
+            totalAmountCents: difference,
+            currency: row.order.currency,
+            sourceWorkflow: `address_change/${row.request.id}`,
+            sourceReferenceId: row.request.id,
+            disclosureSnapshot: {
+              responsibility: "customer",
+              proposedAddressCountry:
+                row.request.proposedAddress.countryCode ??
+                row.request.proposedAddress.country,
+            },
+            taxPolicyVersion: row.order.taxPolicyVersion,
+            policyVersion: row.order.shippingPolicyVersion,
+            quoteVersion: 1,
+            expiresAt: offerExpiresAt,
+            idempotencyKey: `address-increase/${row.request.id}/${prepared.publicReference}/${difference}`,
+          })
+          .onConflictDoNothing({
+            target: orderPaymentObligations.idempotencyKey,
+          })
+          .returning({ id: orderPaymentObligations.id });
+        if (!obligation) {
+          throw new Error(
+            "A supplemental obligation already exists for this quote",
+          );
+        }
+        await tx
+          .update(productOrderAddressChangeRequests)
+          .set({
+            supplementalObligationId: obligation!.id,
+            offerExpiresAt,
+            reconciliationState: "awaiting_supplemental_payment",
+            customerCaused: true,
+            updatedAt: new Date(),
+          })
+          .where(eq(productOrderAddressChangeRequests.id, row.request.id));
+        return {
+          orderReference: row.order.orderId,
+          refundDecreaseCents: 0,
+          requiresSupplementalPayment: true,
+          supplementalObligationId: obligation!.id,
+        };
+      }
     }
     const [sequence] = await tx
       .select({
@@ -682,9 +869,31 @@ export async function applyApprovedAddressChange(requestId: string): Promise<{
     return {
       orderReference: row.order.orderId,
       refundDecreaseCents: difference <= -100 ? Math.abs(difference) : 0,
-      requiresNewCheckout: false,
+      requiresSupplementalPayment: false,
     };
   });
+}
+
+function sanitizeAddressApprovalEvidence(
+  value: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const allowedKeys = new Set([
+    "providerShipmentId",
+    "providerStatus",
+    "addressValidationReference",
+    "phoneCallbackReference",
+    "evidenceReference",
+  ]);
+  return Object.fromEntries(
+    Object.entries(value ?? {}).flatMap(([key, entry]) =>
+      allowedKeys.has(key) &&
+      (typeof entry === "string" ||
+        typeof entry === "number" ||
+        typeof entry === "boolean")
+        ? [[key, entry]]
+        : [],
+    ),
+  );
 }
 
 function addressChangeRecipient(input: {

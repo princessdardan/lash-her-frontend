@@ -27,6 +27,15 @@ export interface SendProductOrderConfirmationEmailInput {
   shippingAmount?: number;
   shippingAddress: CheckoutOrderShippingAddressSnapshot | null;
   totalAmount: number;
+  paymentRiskStatus?:
+    | "not_required"
+    | "pending"
+    | "cleared"
+    | "review_required";
+  promotionCode?: string | null;
+  promotionDiscount?: number;
+  manualDiscount?: number;
+  taxAmount?: number;
 }
 
 export interface SendProductOrderConfirmationEmailForOrderDependencies {
@@ -43,11 +52,16 @@ export const PRODUCT_ORDER_CONFIRMATION_EMAIL_SUBJECT =
 export async function sendProductOrderConfirmationEmail(
   input: SendProductOrderConfirmationEmailInput,
 ): Promise<void> {
+  const held =
+    input.paymentRiskStatus !== undefined &&
+    input.paymentRiskStatus !== "cleared";
   await sendTransactionalEmail({
     html: buildProductOrderConfirmationHtml(input),
     idempotencyKey: `product-confirmation:${input.orderId}`,
     replyTo: CUSTOMER_REPLY_TO_EMAIL,
-    subject: PRODUCT_ORDER_CONFIRMATION_EMAIL_SUBJECT,
+    subject: held
+      ? "Payment received for your Lash Her order"
+      : PRODUCT_ORDER_CONFIRMATION_EMAIL_SUBJECT,
     tags: [
       { name: "flow", value: "product_confirmation" },
       { name: "order_id", value: input.orderId },
@@ -105,6 +119,9 @@ const defaultSendProductOrderConfirmationEmailForOrderDependencies: SendProductO
 export function buildProductOrderConfirmationHtml(
   input: SendProductOrderConfirmationEmailInput,
 ): string {
+  const held =
+    input.paymentRiskStatus !== undefined &&
+    input.paymentRiskStatus !== "cleared";
   const formattedTotal = formatCurrency(input.totalAmount, input.currency);
   const shippingSummary = getShippingSummaryHtml(input);
   const itemRows = input.lineItems
@@ -120,7 +137,7 @@ export function buildProductOrderConfirmationHtml(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Your Lash Her order is confirmed</title>
+  <title>${held ? "Payment received" : "Your Lash Her order is confirmed"}</title>
 </head>
 <body style="margin:0;padding:0;background-color:#F5F1F5;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1C1318;">
   <table role="presentation" style="width:100%;border-collapse:collapse;">
@@ -131,13 +148,13 @@ export function buildProductOrderConfirmationHtml(
             <td style="padding:34px 32px;text-align:center;background-color:#1C1318;color:#FFFFFF;">
               ${getEmailProfileImageHtml()}
               <p style="margin:0 0 10px 0;font-size:12px;letter-spacing:0.22em;text-transform:uppercase;">Lash Her by Nataliea</p>
-              <h1 style="margin:0;font-family:'Bebas Neue','Arial Narrow',Impact,sans-serif;letter-spacing:0.04em;text-transform:uppercase;font-size:30px;font-weight:500;line-height:1.2;">Your order is confirmed</h1>
+              <h1 style="margin:0;font-family:'Bebas Neue','Arial Narrow',Impact,sans-serif;letter-spacing:0.04em;text-transform:uppercase;font-size:30px;font-weight:500;line-height:1.2;">${held ? "Payment received" : "Your order is confirmed"}</h1>
             </td>
           </tr>
           <tr>
             <td style="padding:34px 32px;">
               <p style="margin:0 0 18px 0;font-size:16px;line-height:1.7;">Hi ${escapeHtml(input.customerName)},</p>
-              <p style="margin:0 0 22px 0;font-size:15px;line-height:1.7;">Thank you for your Lash Her order. Your payment has been confirmed and your order is now being prepared for fulfillment.</p>
+              <p style="margin:0 0 22px 0;font-size:15px;line-height:1.7;">${held ? "Payment received; fulfillment confirmation is under review." : "Thank you for your Lash Her order. Your payment has been confirmed and your order is now being prepared for fulfillment."}</p>
               ${shippingAddress}
               <table role="presentation" style="width:100%;border-collapse:collapse;margin:28px 0;border-top:1px solid #E8E2E9;border-bottom:1px solid #E8E2E9;">
                 <thead>
@@ -154,7 +171,7 @@ export function buildProductOrderConfirmationHtml(
               ${shippingSummary}
               <p style="margin:0 0 18px 0;text-align:right;font-size:17px;line-height:1.7;"><strong>Total paid:</strong> ${escapeHtml(formattedTotal)}</p>
               <div style="margin:28px 0;padding:20px;border-left:4px solid #D4B483;background-color:#F5F1F5;">
-                <p style="margin:0;font-size:14px;line-height:1.7;">You will receive fulfillment updates as your order is prepared. If you have questions about your purchase, reply to this confirmation or contact Lash Her support with your order number.</p>
+                <p style="margin:0;font-size:14px;line-height:1.7;">${held ? "You will receive another update after the review is complete. If you have questions, reply with your order number." : "You will receive fulfillment updates as your order is prepared. If you have questions about your purchase, reply to this confirmation or contact Lash Her support with your order number."}</p>
               </div>
               <p style="margin:0;font-size:13px;line-height:1.7;color:#746A72;">Order ${escapeHtml(input.orderId)}</p>
             </td>
@@ -208,13 +225,18 @@ export function getProductOrderTemplateVariables(
 function getShippingSummaryHtml(
   input: SendProductOrderConfirmationEmailInput,
 ): string {
-  if (!input.shippingAmount || input.shippingAmount <= 0) return "";
   const merchandiseAmount =
-    input.merchandiseAmount ?? input.totalAmount - input.shippingAmount;
+    input.merchandiseAmount ??
+    input.totalAmount - (input.shippingAmount ?? 0) - (input.taxAmount ?? 0);
+  const promotionDiscount = input.promotionDiscount ?? 0;
+  const merchandiseBeforePromotion = merchandiseAmount + promotionDiscount;
+  const taxAmount = input.taxAmount ?? 0;
   return `
 <table role="presentation" style="width:100%;border-collapse:collapse;margin:0 0 10px 0;font-size:14px;line-height:1.7;">
-  <tr><td align="right" style="color:#746A72;">Merchandise</td><td align="right" style="width:120px;">${escapeHtml(formatCurrency(merchandiseAmount, input.currency))}</td></tr>
-  <tr><td align="right" style="color:#746A72;">Insured tracked shipping</td><td align="right">${escapeHtml(formatCurrency(input.shippingAmount, input.currency))}</td></tr>
+  <tr><td align="right" style="color:#746A72;">Merchandise</td><td align="right" style="width:120px;">${escapeHtml(formatCurrency(merchandiseBeforePromotion, input.currency))}</td></tr>
+  ${promotionDiscount > 0 ? `<tr><td align="right" style="color:#746A72;">Promotion${input.promotionCode ? ` (${escapeHtml(input.promotionCode)})` : ""}</td><td align="right">-${escapeHtml(formatCurrency(promotionDiscount, input.currency))}</td></tr>` : ""}
+  <tr><td align="right" style="color:#746A72;">${input.shippingAmount && input.shippingAmount > 0 ? "Insured tracked shipping" : "Shipping"}</td><td align="right">${escapeHtml(formatCurrency(input.shippingAmount ?? 0, input.currency))}</td></tr>
+  <tr><td align="right" style="color:#746A72;">Tax</td><td align="right">${escapeHtml(formatCurrency(taxAmount, input.currency))}</td></tr>
 </table>
   `.trim();
 }
@@ -241,9 +263,16 @@ function getLineItemRow(
   lineItem: CheckoutOrderLineItemSnapshot,
   currency: string,
 ): string {
+  const title = lineItem.productTitle ?? lineItem.description;
+  const details = [
+    lineItem.variantTitle,
+    ...(lineItem.selectedOptions ?? []).map(
+      (option) => `${option.label}: ${option.value}`,
+    ),
+  ].filter((value): value is string => Boolean(value));
   return `
 <tr>
-  <td style="padding:14px 0;border-top:1px solid #E8E2E9;font-size:15px;line-height:1.5;">${escapeHtml(lineItem.description)}</td>
+  <td style="padding:14px 0;border-top:1px solid #E8E2E9;font-size:15px;line-height:1.5;">${escapeHtml(title)}${details.length ? `<br><span style="font-size:13px;color:#746A72;">${details.map(escapeHtml).join(" · ")}</span>` : ""}</td>
   <td align="center" style="padding:14px 8px;border-top:1px solid #E8E2E9;font-size:15px;line-height:1.5;">${lineItem.quantity}</td>
   <td align="right" style="padding:14px 0;border-top:1px solid #E8E2E9;font-size:15px;line-height:1.5;">${escapeHtml(formatCurrency(lineItem.totalCents / 100, currency))}</td>
 </tr>

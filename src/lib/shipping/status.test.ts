@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  isAllowedShipmentTransition,
   normalizeChitChatsStatus,
   normalizeChitChatsTransition,
   stripSignedLabelUrls,
@@ -26,6 +27,17 @@ test("provider statuses map to fulfillment states without discarding raw state",
   assert.equal(
     normalizeChitChatsStatus({ id: "1", status: "unexpected_new_status" }),
     "manual_review",
+  );
+});
+
+test("directed shipment transitions permit recovery and reject regressions", () => {
+  assert.equal(isAllowedShipmentTransition("exception", "in_transit"), true);
+  assert.equal(isAllowedShipmentTransition("in_transit", "delivered"), true);
+  assert.equal(isAllowedShipmentTransition("delivered", "in_transit"), false);
+  assert.equal(isAllowedShipmentTransition("voided", "label_ready"), false);
+  assert.equal(
+    isAllowedShipmentTransition("refund_pending", "label_ready"),
+    false,
   );
 });
 

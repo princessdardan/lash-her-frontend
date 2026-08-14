@@ -18,6 +18,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         }
 
         token.googleEmailVerified = googleProfile?.email_verified === true;
+        token.adminAuthenticatedAt = Math.floor(Date.now() / 1000);
       }
 
       if (!token.providerUserId && typeof token.sub === "string") {
@@ -31,6 +32,10 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         session.user.providerUserId =
           typeof token.providerUserId === "string" ? token.providerUserId : "";
         session.user.isEmailVerified = token.googleEmailVerified === true;
+        session.user.authenticatedAt =
+          typeof token.adminAuthenticatedAt === "number"
+            ? token.adminAuthenticatedAt
+            : 0;
       }
 
       return session;
@@ -43,11 +48,11 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       const googleProfile = profile as GoogleIdentityProfile | undefined;
 
       return (
-        googleProfile?.email_verified === true
-        && typeof googleProfile.email === "string"
-        && googleProfile.email.trim().length > 0
-        && typeof googleProfile.sub === "string"
-        && googleProfile.sub.length > 0
+        googleProfile?.email_verified === true &&
+        typeof googleProfile.email === "string" &&
+        googleProfile.email.trim().length > 0 &&
+        typeof googleProfile.sub === "string" &&
+        googleProfile.sub.length > 0
       );
     },
   },

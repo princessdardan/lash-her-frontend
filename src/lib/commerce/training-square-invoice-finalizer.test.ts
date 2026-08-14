@@ -35,11 +35,23 @@ function createSquareInvoiceOrder(
     refundOriginIpCiphertext: null,
     atRiskValueCents: null,
     fraudClassification: "low",
+    paymentRiskStatus: "not_required",
+    paymentRiskAssessedAt: null,
+    paymentRiskSource: null,
     fraudRiskReasons: [],
     fulfillmentClearedAt: null,
     fraudClearedAt: null,
     shippingPolicyVersion: null,
+    taxPolicyVersion: null,
+    dduNoticeVersion: null,
+    fulfillmentMode: null,
+    manualFulfillmentStatus: null,
+    activeFulfillmentShipmentId: null,
     shippingAmountCents: 0,
+    taxAmountCents: 0,
+    promotionCode: null,
+    promotionDiscountCents: 0,
+    manualDiscountCents: 0,
     initializationStatus: "ready",
     initializationError: null,
     calendarEventId: null,
@@ -98,7 +110,7 @@ function createSquareInvoiceOrder(
     status: "pending",
     updatedAt: now,
     ...overrides,
-  };
+  } as CheckoutOrderRow;
 }
 
 function createPaidInvoiceDetails(

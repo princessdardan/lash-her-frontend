@@ -31,6 +31,8 @@ import {
 import { buildTrainingScheduleUrl } from "@/lib/training-checkout";
 import { activateShipmentForPaidOrder } from "@/lib/shipping/shipment-store";
 import { reconcileProductOrderRefund } from "@/lib/shipping/customer-refunds";
+import { classifyHelcimTransaction } from "@/lib/commerce/helcim-contract";
+import { finalizeProductPayment } from "@/lib/commerce/product-payment-finalizer";
 
 export const runtime = "nodejs";
 
@@ -39,6 +41,7 @@ const webhookPaymentMockStore = createPaymentMockStore();
 interface HelcimWebhookDependencies {
   activateShipmentForPaidOrder?: typeof activateShipmentForPaidOrder;
   finalizeAppointmentPaymentForOrder: typeof finalizeAppointmentPaymentForOrder;
+  finalizeProductPayment?: typeof finalizeProductPayment;
   getAppointmentHoldByCheckoutOrderPublicId?: typeof import("@/lib/booking/holds").getAppointmentHoldByCheckoutOrderPublicId;
   getCardTransaction: (
     cardTransactionId: string,
@@ -60,6 +63,7 @@ interface HelcimWebhookDependencies {
 const defaultDependencies: HelcimWebhookDependencies = {
   activateShipmentForPaidOrder,
   finalizeAppointmentPaymentForOrder,
+  finalizeProductPayment,
   getAppointmentHoldByCheckoutOrderPublicId: undefined,
   getCardTransaction: async (cardTransactionId, req) => {
     const gateway = await resolveHelcimWebhookGatewayForRequest(req);
@@ -219,8 +223,8 @@ async function reconcileRefundWebhook(
     !dependencies.reconcileProductOrderRefund ||
     !event.helcimTransactionId ||
     !event.originalTransactionId ||
-    !/refund/i.test(`${event.eventType} ${event.transactionType ?? ""}`) ||
-    !/(approved|refunded|success)/i.test(event.status ?? "")
+    classifyHelcimTransaction(event).kind !== "refund" ||
+    !classifyHelcimTransaction(event).successful
   )
     return;
   const amount = Number(event.amount);
@@ -312,11 +316,12 @@ async function recoverProductOrderConfirmationEmail(
   recordedEvent: HelcimWebhookEventRecordResult,
   dependencies: Pick<
     HelcimWebhookDependencies,
-    "activateShipmentForPaidOrder" | "sendProductOrderConfirmationEmailForOrder"
+    | "activateShipmentForPaidOrder"
+    | "sendProductOrderConfirmationEmailForOrder"
+    | "finalizeProductPayment"
   >,
 ): Promise<void> {
   if (
-    !recordedEvent.paid ||
     recordedEvent.matchedOrder === null ||
     recordedEvent.matchedOrder.paymentProvider !== "helcim" ||
     recordedEvent.matchedOrder.purpose !== "product" ||
@@ -325,9 +330,31 @@ async function recoverProductOrderConfirmationEmail(
     return;
   }
 
-  await dependencies.activateShipmentForPaidOrder?.(
-    recordedEvent.matchedOrder.orderId,
-  );
+  if (!dependencies.finalizeProductPayment) return;
+
+  const finalization = await dependencies.finalizeProductPayment({
+    orderReference: recordedEvent.matchedOrder.orderId,
+    transactionId: event.helcimTransactionId!,
+    source: "helcim_api",
+    data: {
+      amount: event.amount ?? null,
+      currency: event.currency ?? null,
+      status: event.status ?? null,
+      transactionType: event.transactionType ?? null,
+      originalTransactionId: event.originalTransactionId ?? null,
+      transactionId: event.helcimTransactionId ?? null,
+      avsResponse: event.avsCode ?? null,
+      cvvResponse: event.cvvCode ?? null,
+    },
+  });
+  if (!["applied", "already_applied"].includes(finalization.transition)) {
+    return;
+  }
+  if (finalization.riskStatus === "cleared") {
+    await dependencies.activateShipmentForPaidOrder?.(
+      recordedEvent.matchedOrder.orderId,
+    );
+  }
 
   await dependencies.sendProductOrderConfirmationEmailForOrder(
     recordedEvent.matchedOrder.orderId,
@@ -395,17 +422,8 @@ function isApprovedWebhookPayment(event: ParsedHelcimWebhook): boolean {
     return false;
   }
 
-  return (
-    event.status !== undefined &&
-    [
-      "approval",
-      "approved",
-      "completed",
-      "success",
-      "succeeded",
-      "true",
-    ].includes(event.status.trim().toLowerCase())
-  );
+  const classification = classifyHelcimTransaction(event);
+  return classification.kind === "purchase" && classification.successful;
 }
 
 function buildAbsoluteSchedulingUrl(

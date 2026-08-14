@@ -1,5 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requirePermission } from "@/lib/admin/auth";
+import {
+  requirePermission,
+  requireRecentAdminAuthentication,
+} from "@/lib/admin/auth";
 import { recordAdminAuditBestEffort } from "@/lib/admin/audit-log";
 import { approveAddressChange } from "@/lib/shipping/address-changes";
 
@@ -22,11 +25,22 @@ export async function POST(
     body?.responsibility === "customer" || body?.responsibility === "lash_her"
       ? body.responsibility
       : undefined;
+  const rationale = typeof body?.rationale === "string" ? body.rationale : "";
+  const evidence =
+    body?.evidence && typeof body.evidence === "object"
+      ? (body.evidence as Record<string, unknown>)
+      : undefined;
   try {
+    const stepUpAuthenticatedAt = await requireRecentAdminAuthentication();
     const result = await approveAddressChange({
       requestId,
       adminUserId: actor.user.id,
       responsibility,
+      rationale,
+      stepUpAuthenticatedAt,
+      phoneCallbackCompleted: body?.phoneCallbackCompleted === true,
+      providerEvidenceAvailable: body?.providerEvidenceAvailable === true,
+      evidence,
     });
     await recordAdminAuditBestEffort({
       action: "fulfillment.address_change_approved",

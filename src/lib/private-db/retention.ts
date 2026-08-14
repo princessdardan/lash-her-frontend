@@ -644,10 +644,10 @@ export async function runPrivateDataRetentionCleanup(
   input: { now?: Date } = {},
 ): Promise<PrivateDataRetentionCleanupSummary> {
   const now = input.now ?? new Date();
+  const shippingCount = await redactShippingPolicyPii(now);
   const summary = await createPrivateDataRetentionCleanup(
     createDrizzlePrivateDataRetentionRepository(),
   )({ now });
-  const shippingCount = await redactShippingPolicyPii(now);
   const operation: PrivateDataRetentionOperationResult = {
     count: shippingCount,
     cutoff: new Date(now.getTime() - 365 * DAY_MS).toISOString(),

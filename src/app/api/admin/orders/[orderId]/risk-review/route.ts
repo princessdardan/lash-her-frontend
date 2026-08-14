@@ -1,5 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requirePermission } from "@/lib/admin/auth";
+import {
+  requirePermission,
+  requireRecentAdminAuthentication,
+} from "@/lib/admin/auth";
 import { recordAdminAuditBestEffort } from "@/lib/admin/audit-log";
 import { recordProductOrderRiskReview } from "@/lib/shipping/risk-review";
 import { activateShipmentForPaidOrder } from "@/lib/shipping/shipment-store";
@@ -20,6 +23,10 @@ export async function POST(
   > | null;
   const decision = body?.decision;
   const rationale = typeof body?.rationale === "string" ? body.rationale : "";
+  const evidence =
+    body?.evidence && typeof body.evidence === "object"
+      ? (body.evidence as Record<string, unknown>)
+      : undefined;
   if (decision !== "clear_false_positive" && decision !== "escalate")
     return NextResponse.json(
       { error: "Risk decision is invalid" },
@@ -27,11 +34,18 @@ export async function POST(
     );
   const { orderId } = await params;
   try {
+    const stepUpAuthenticatedAt =
+      decision === "clear_false_positive"
+        ? await requireRecentAdminAuthentication()
+        : undefined;
     const result = await recordProductOrderRiskReview({
       orderReference: orderId,
       reviewerAdminUserId: actor.user.id,
       decision,
       rationale,
+      stepUpAuthenticatedAt,
+      providerEvidenceAvailable: body?.providerEvidenceAvailable === true,
+      evidence,
     });
     if (result.cleared) await activateShipmentForPaidOrder(orderId);
     await recordAdminAuditBestEffort({

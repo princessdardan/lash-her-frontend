@@ -11,6 +11,7 @@ import type { TProduct } from "@/types";
 
 const router: AppRouterInstance = {
   back: () => {},
+  bfcacheId: "test-bfcache",
   forward: () => {},
   refresh: () => {},
   push: () => {},

@@ -60,11 +60,69 @@ export const productShipmentJobStatus = pgEnum("product_shipment_job_status", [
 
 export const productShipmentJobType = pgEnum("product_shipment_job_type", [
   "create",
+  "quote_refresh",
   "purchase",
   "tracking",
   "refund",
   "cleanup",
+  "replacement_prepare",
+  "address_replace",
   "notification",
+]);
+
+export const paymentRiskStatus = pgEnum("payment_risk_status", [
+  "not_required",
+  "pending",
+  "cleared",
+  "review_required",
+]);
+
+export const orderPaymentObligationPurpose = pgEnum(
+  "order_payment_obligation_purpose",
+  ["primary", "manual_shipping", "address_increase"],
+);
+
+export const orderPaymentObligationStatus = pgEnum(
+  "order_payment_obligation_status",
+  [
+    "pending",
+    "paid",
+    "expired",
+    "superseded",
+    "cancelled",
+    "refunded",
+    "manual_review",
+  ],
+);
+
+export const productOrderAdjustmentDirection = pgEnum(
+  "product_order_adjustment_direction",
+  ["charge", "refund"],
+);
+
+export const productOrderAdjustmentComponent = pgEnum(
+  "product_order_adjustment_component",
+  ["merchandise", "tax", "outbound_shipping"],
+);
+
+export const productOrderAdjustmentStatus = pgEnum(
+  "product_order_adjustment_status",
+  [
+    "pending",
+    "reserved",
+    "processing",
+    "succeeded",
+    "failed",
+    "outcome_unknown",
+    "manual_review",
+    "cancelled",
+  ],
+);
+
+export const checkoutFulfillmentMode = pgEnum("checkout_fulfillment_mode", [
+  "automated_shipping",
+  "manual_pickup",
+  "manual_shipping",
 ]);
 
 export const productShipmentPurpose = pgEnum("product_shipment_purpose", [
@@ -74,10 +132,12 @@ export const productShipmentPurpose = pgEnum("product_shipment_purpose", [
 ]);
 
 export const shippingPolicyDuty = pgEnum("shipping_policy_duty", [
+  "business_owner",
   "operations_lead",
   "finance_owner",
   "payment_fraud_owner",
   "privacy_owner",
+  "security_owner",
 ]);
 
 export const shippingCalendarExceptionKind = pgEnum(
@@ -169,7 +229,15 @@ export const calendarFinalizationStatus = pgEnum(
 
 export const paymentEventProcessingStatus = pgEnum(
   "payment_event_processing_status",
-  ["received", "processed", "duplicate", "ignored", "failed"],
+  [
+    "received",
+    "processed",
+    "duplicate",
+    "ignored",
+    "failed",
+    "review_required",
+    "retryable_failed",
+  ],
 );
 
 export const trainingEnrollmentPurchaseKind = pgEnum(
@@ -360,6 +428,10 @@ export interface CheckoutOrderLineItemSnapshot {
   variantId?: string;
   sku: string;
   description: string;
+  productTitle?: string;
+  variantTitle?: string;
+  selectedOptions?: Array<{ label: string; value: string }>;
+  fulfillmentMode?: "automated" | "manual";
   quantity: number;
   unitPriceCents: number;
   originalUnitPriceCents?: number;
@@ -434,6 +506,7 @@ export interface ProductShipmentRateSnapshot {
 }
 
 export type ShippingRiskClassification = "low" | "high";
+export type PaymentRiskStatus = (typeof paymentRiskStatus.enumValues)[number];
 export type ProductShipmentPurpose =
   (typeof productShipmentPurpose.enumValues)[number];
 export type ShippingPolicyDuty = (typeof shippingPolicyDuty.enumValues)[number];
@@ -1375,6 +1448,12 @@ export const checkoutOrders = pgTable(
     amountCents: integer("amount_cents").notNull(),
     merchandiseAmountCents: integer("merchandise_amount_cents"),
     shippingAmountCents: integer("shipping_amount_cents").notNull().default(0),
+    taxAmountCents: integer("tax_amount_cents").notNull().default(0),
+    promotionCode: text("promotion_code"),
+    promotionDiscountCents: integer("promotion_discount_cents")
+      .notNull()
+      .default(0),
+    manualDiscountCents: integer("manual_discount_cents").notNull().default(0),
     currency: text("currency").notNull().default("CAD"),
     lineItems: jsonb("line_items")
       .$type<CheckoutOrderLineItemSnapshot[]>()
@@ -1385,6 +1464,13 @@ export const checkoutOrders = pgTable(
       .$type<ShippingRiskClassification>()
       .notNull()
       .default("low"),
+    paymentRiskStatus: paymentRiskStatus("payment_risk_status")
+      .notNull()
+      .default("not_required"),
+    paymentRiskAssessedAt: timestamp("payment_risk_assessed_at", {
+      withTimezone: true,
+    }),
+    paymentRiskSource: text("payment_risk_source"),
     fraudRiskReasons: jsonb("fraud_risk_reasons")
       .$type<string[]>()
       .notNull()
@@ -1394,6 +1480,15 @@ export const checkoutOrders = pgTable(
     }),
     fraudClearedAt: timestamp("fraud_cleared_at", { withTimezone: true }),
     shippingPolicyVersion: text("shipping_policy_version"),
+    taxPolicyVersion: text("tax_policy_version"),
+    dduNoticeVersion: text("ddu_notice_version"),
+    fulfillmentMode: checkoutFulfillmentMode("fulfillment_mode"),
+    manualFulfillmentStatus: text("manual_fulfillment_status"),
+    activeFulfillmentShipmentId: uuid(
+      "active_fulfillment_shipment_id",
+    ).references((): AnyPgColumn => productShipments.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -1421,6 +1516,11 @@ export const checkoutOrders = pgTable(
       table.paymentProvider,
       table.providerPaymentId,
     ),
+    uniqueIndex("checkout_orders_helcim_purchase_transaction_idx")
+      .on(table.helcimTransactionId)
+      .where(
+        sql`${table.paymentProvider} = 'helcim' AND ${table.helcimTransactionId} IS NOT NULL`,
+      ),
     uniqueIndex("checkout_orders_calendar_event_id_idx").on(
       table.calendarEventId,
     ),
@@ -1434,6 +1534,10 @@ export const checkoutOrders = pgTable(
       .where(
         sql`${table.status} = 'paid' AND ${table.paymentProvider} = 'square' AND ${table.purpose} IN ('appointment_deposit', 'appointment_full', 'appointment_custom_partial') AND ${table.calendarFinalizationStatus} NOT IN ('not_required', 'booked', 'manual_rebooked')`,
       ),
+    check(
+      "checkout_orders_commercial_components_nonnegative_check",
+      sql`${table.shippingAmountCents} >= 0 AND ${table.taxAmountCents} >= 0 AND ${table.promotionDiscountCents} >= 0 AND ${table.manualDiscountCents} >= 0`,
+    ),
   ],
 );
 
@@ -1452,6 +1556,12 @@ export const shippingPackageProfiles = pgTable(
     maxWeightGrams: integer("max_weight_grams").notNull(),
     capacityUnits: integer("capacity_units").notNull(),
     enabled: boolean("enabled").notNull().default(true),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    reviewedByAdminUserId: uuid("reviewed_by_admin_user_id").references(
+      () => adminUsers.id,
+      { onDelete: "set null" },
+    ),
+    evidenceReference: text("evidence_reference"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -1460,7 +1570,6 @@ export const shippingPackageProfiles = pgTable(
       .defaultNow(),
   },
   (table) => [
-    uniqueIndex("shipping_package_profiles_slug_idx").on(table.slug),
     index("shipping_package_profiles_enabled_rank_idx").on(
       table.enabled,
       table.rank,
@@ -1496,6 +1605,9 @@ export const productShipments = pgTable(
     providerShipmentId: text("provider_shipment_id").unique(),
     providerStatus: text("provider_status"),
     status: productShipmentStatus("status").notNull().default("quote_pending"),
+    stateVersion: integer("state_version").notNull().default(1),
+    providerEventAt: timestamp("provider_event_at", { withTimezone: true }),
+    lastPolledAt: timestamp("last_polled_at", { withTimezone: true }),
     destination: jsonb("destination")
       .$type<ProductShipmentDestinationSnapshot>()
       .notNull(),
@@ -1511,6 +1623,14 @@ export const productShipments = pgTable(
     quotedShippingCents: integer("quoted_shipping_cents"),
     actualPostageCents: integer("actual_postage_cents"),
     actualInsuranceCents: integer("actual_insurance_cents"),
+    actualPurchaseTotalCents: integer("actual_purchase_total_cents"),
+    actualDeliveryFeeCents: integer("actual_delivery_fee_cents"),
+    actualTariffFeeCents: integer("actual_tariff_fee_cents"),
+    actualFdaPriorNotificationFeeCents: integer(
+      "actual_fda_prior_notification_fee_cents",
+    ),
+    actualFederalTaxCents: integer("actual_federal_tax_cents"),
+    actualProvincialTaxCents: integer("actual_provincial_tax_cents"),
     trackingNumber: text("tracking_number"),
     trackingUrl: text("tracking_url"),
     rawShipment: jsonb("raw_shipment").$type<Record<string, unknown>>(),
@@ -1569,21 +1689,31 @@ export const productShipments = pgTable(
       .notNull()
       .defaultNow(),
     redactedAt: timestamp("redacted_at", { withTimezone: true }),
+    piiRedactionDueAt: timestamp("pii_redaction_due_at", {
+      withTimezone: true,
+    }),
   },
   (table) => [
     uniqueIndex("product_shipments_order_sequence_idx").on(
       table.orderId,
       table.sequence,
     ),
-    uniqueIndex("product_shipments_reference_idx").on(table.publicReference),
-    uniqueIndex("product_shipments_quote_token_hash_idx").on(
-      table.quoteTokenHash,
-    ),
     index("product_shipments_quote_fingerprint_idx").on(
       table.quoteFingerprint,
       table.quoteExpiresAt,
     ),
     index("product_shipments_poll_idx").on(table.status, table.updatedAt),
+    check(
+      "product_shipments_actual_costs_nonnegative_check",
+      sql`coalesce(${table.actualPurchaseTotalCents}, 0) >= 0
+        AND coalesce(${table.actualPostageCents}, 0) >= 0
+        AND coalesce(${table.actualInsuranceCents}, 0) >= 0
+        AND coalesce(${table.actualDeliveryFeeCents}, 0) >= 0
+        AND coalesce(${table.actualTariffFeeCents}, 0) >= 0
+        AND coalesce(${table.actualFdaPriorNotificationFeeCents}, 0) >= 0
+        AND coalesce(${table.actualFederalTaxCents}, 0) >= 0
+        AND coalesce(${table.actualProvincialTaxCents}, 0) >= 0`,
+    ),
   ],
 );
 
@@ -1627,6 +1757,12 @@ export const productShipmentJobs = pgTable(
       .notNull()
       .defaultNow(),
     leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    leaseOwner: text("lease_owner"),
+    stateVersion: integer("state_version").notNull().default(1),
+    operationPayloadHash: text("operation_payload_hash"),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
+    outcomeCode: text("outcome_code"),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
     lastError: text("last_error"),
     outcomeUnknown: boolean("outcome_unknown").notNull().default(false),
     payload: jsonb("payload").$type<Record<string, unknown>>(),
@@ -1638,9 +1774,6 @@ export const productShipmentJobs = pgTable(
       .defaultNow(),
   },
   (table) => [
-    uniqueIndex("product_shipment_jobs_idempotency_key_idx").on(
-      table.idempotencyKey,
-    ),
     index("product_shipment_jobs_claim_idx").on(
       table.status,
       table.availableAt,
@@ -1836,6 +1969,14 @@ export const productShippingCases = pgTable(
     shipmentId: uuid("shipment_id").references(() => productShipments.id, {
       onDelete: "set null",
     }),
+    sourceShipmentId: uuid("source_shipment_id").references(
+      () => productShipments.id,
+      { onDelete: "set null" },
+    ),
+    remedyShipmentId: uuid("remedy_shipment_id").references(
+      () => productShipments.id,
+      { onDelete: "set null" },
+    ),
     type: productShippingCaseType("type").notNull(),
     status: productShippingCaseStatus("status").notNull().default("open"),
     cause: text("cause"),
@@ -1875,6 +2016,230 @@ export const productShippingCases = pgTable(
       table.orderId,
       table.createdAt,
     ),
+    uniqueIndex("product_shipping_cases_one_active_idx")
+      .on(
+        table.orderId,
+        sql`coalesce(${table.shipmentId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+        table.type,
+      )
+      .where(
+        sql`${table.status} IN ('open', 'waiting_customer', 'waiting_provider', 'remedy_pending')`,
+      ),
+  ],
+);
+
+export const orderPaymentObligations = pgTable(
+  "order_payment_obligations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => checkoutOrders.id, { onDelete: "restrict" }),
+    purpose: orderPaymentObligationPurpose("purpose").notNull(),
+    status: orderPaymentObligationStatus("status").notNull().default("pending"),
+    merchandiseAmountCents: integer("merchandise_amount_cents")
+      .notNull()
+      .default(0),
+    shippingAmountCents: integer("shipping_amount_cents").notNull().default(0),
+    taxAmountCents: integer("tax_amount_cents").notNull().default(0),
+    totalAmountCents: integer("total_amount_cents").notNull(),
+    currency: text("currency").notNull().default("CAD"),
+    sourceWorkflow: text("source_workflow").notNull(),
+    sourceReferenceId: uuid("source_reference_id"),
+    disclosureSnapshot: jsonb("disclosure_snapshot").$type<
+      Record<string, unknown>
+    >(),
+    taxPolicyVersion: text("tax_policy_version").notNull(),
+    policyVersion: text("policy_version").notNull(),
+    quoteVersion: integer("quote_version").notNull().default(1),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    idempotencyKey: text("idempotency_key").notNull().unique(),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    redactedAt: timestamp("redacted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("order_payment_obligations_order_idx").on(
+      table.orderId,
+      table.createdAt,
+    ),
+    check(
+      "order_payment_obligations_components_check",
+      sql`${table.merchandiseAmountCents} >= 0 AND ${table.shippingAmountCents} >= 0 AND ${table.taxAmountCents} >= 0 AND ${table.totalAmountCents} = ${table.merchandiseAmountCents} + ${table.shippingAmountCents} + ${table.taxAmountCents}`,
+    ),
+  ],
+);
+
+export const orderPaymentTransactions = pgTable(
+  "order_payment_transactions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    obligationId: uuid("obligation_id")
+      .notNull()
+      .references(() => orderPaymentObligations.id, { onDelete: "restrict" }),
+    provider: paymentProvider("provider").notNull().default("helcim"),
+    providerTransactionId: text("provider_transaction_id").notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    currency: text("currency").notNull(),
+    originatingIpCiphertext: text("originating_ip_ciphertext"),
+    providerType: text("provider_type").notNull(),
+    providerStatus: text("provider_status").notNull(),
+    avsCode: text("avs_code"),
+    cvvCode: text("cvv_code"),
+    riskStatus: paymentRiskStatus("risk_status").notNull().default("pending"),
+    riskReasonCodes: jsonb("risk_reason_codes")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    redactedAt: timestamp("redacted_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("order_payment_transactions_provider_id_idx").on(
+      table.provider,
+      table.providerTransactionId,
+    ),
+    index("order_payment_transactions_obligation_idx").on(table.obligationId),
+    check(
+      "order_payment_transactions_amount_check",
+      sql`${table.amountCents} > 0`,
+    ),
+  ],
+);
+
+export const productOrderAdjustments = pgTable(
+  "product_order_adjustments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => checkoutOrders.id, { onDelete: "restrict" }),
+    direction: productOrderAdjustmentDirection("direction").notNull(),
+    component: productOrderAdjustmentComponent("component").notNull(),
+    reason: text("reason").notNull(),
+    sourceShipmentId: uuid("source_shipment_id").references(
+      () => productShipments.id,
+      { onDelete: "set null" },
+    ),
+    sourceCaseId: uuid("source_case_id").references(
+      () => productShippingCases.id,
+      { onDelete: "set null" },
+    ),
+    sourceAddressRequestId: uuid("source_address_request_id"),
+    amountCents: integer("amount_cents").notNull(),
+    status: productOrderAdjustmentStatus("status").notNull().default("pending"),
+    idempotencyKey: text("idempotency_key").notNull().unique(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    redactedAt: timestamp("redacted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("product_order_adjustments_order_idx").on(
+      table.orderId,
+      table.createdAt,
+    ),
+    check(
+      "product_order_adjustments_amount_check",
+      sql`${table.amountCents} > 0`,
+    ),
+  ],
+);
+
+export const productPaymentRiskIncidents = pgTable(
+  "product_payment_risk_incidents",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => checkoutOrders.id, { onDelete: "restrict" }),
+    paymentTransactionId: uuid("payment_transaction_id").references(
+      () => orderPaymentTransactions.id,
+      { onDelete: "set null" },
+    ),
+    incidentKey: text("incident_key").notNull().unique(),
+    status: paymentRiskStatus("status").notNull().default("review_required"),
+    reasonCodes: jsonb("reason_codes")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    providerEvidence:
+      jsonb("provider_evidence").$type<Record<string, unknown>>(),
+    policyVersion: text("policy_version").notNull(),
+    ownerAdminUserId: uuid("owner_admin_user_id").references(
+      () => adminUsers.id,
+      { onDelete: "set null" },
+    ),
+    stepUpAuthenticatedAt: timestamp("step_up_authenticated_at", {
+      withTimezone: true,
+    }),
+    coolingOffUntil: timestamp("cooling_off_until", { withTimezone: true }),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    rationale: text("rationale"),
+    outcome: text("outcome"),
+    alertedAt: timestamp("alerted_at", { withTimezone: true }),
+    redactedAt: timestamp("redacted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("product_payment_risk_incidents_queue_idx").on(
+      table.status,
+      table.createdAt,
+    ),
+  ],
+);
+
+export const fulfillmentOwnerActions = pgTable(
+  "fulfillment_owner_actions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    targetType: text("target_type").notNull(),
+    targetId: text("target_id").notNull(),
+    action: text("action").notNull(),
+    adminUserId: uuid("admin_user_id")
+      .notNull()
+      .references(() => adminUsers.id, { onDelete: "restrict" }),
+    policyVersion: text("policy_version").notNull(),
+    rationale: text("rationale").notNull(),
+    evidence: jsonb("evidence").$type<Record<string, unknown>>().notNull(),
+    stepUpAuthenticatedAt: timestamp("step_up_authenticated_at", {
+      withTimezone: true,
+    }).notNull(),
+    coolingOffUntil: timestamp("cooling_off_until", {
+      withTimezone: true,
+    }).notNull(),
+    executedAt: timestamp("executed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    redactedAt: timestamp("redacted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("fulfillment_owner_actions_target_idx").on(
+      table.targetType,
+      table.targetId,
+      table.createdAt,
+    ),
+    check(
+      "fulfillment_owner_actions_rationale_check",
+      sql`length(trim(${table.rationale})) >= 10`,
+    ),
   ],
 );
 
@@ -1895,7 +2260,18 @@ export const productOrderRefunds = pgTable(
     originalTransactionId: text("original_transaction_id").notNull(),
     status: productOrderRefundStatus("status").notNull().default("queued"),
     providerRefundId: text("provider_refund_id"),
+    paymentTransactionId: uuid("payment_transaction_id").references(
+      () => orderPaymentTransactions.id,
+      { onDelete: "restrict" },
+    ),
+    adjustmentId: uuid("adjustment_id").references(
+      () => productOrderAdjustments.id,
+      { onDelete: "restrict" },
+    ),
     attemptCount: integer("attempt_count").notNull().default(0),
+    stateVersion: integer("state_version").notNull().default(1),
+    leaseOwner: text("lease_owner"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
     firstAttemptedAt: timestamp("first_attempted_at", { withTimezone: true }),
     lastAttemptedAt: timestamp("last_attempted_at", { withTimezone: true }),
     unknownOutcomeAt: timestamp("unknown_outcome_at", { withTimezone: true }),
@@ -1912,10 +2288,14 @@ export const productOrderRefunds = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    redactedAt: timestamp("redacted_at", { withTimezone: true }),
   },
   (table) => [
     index("product_order_refunds_queue_idx").on(table.status, table.createdAt),
     index("product_order_refunds_order_idx").on(table.orderId, table.createdAt),
+    uniqueIndex("product_order_refunds_provider_refund_id_idx")
+      .on(table.providerRefundId)
+      .where(sql`${table.providerRefundId} IS NOT NULL`),
     check("product_order_refunds_amount_check", sql`${table.amountCents} > 0`),
     check(
       "product_order_refunds_kind_check",
@@ -1934,7 +2314,14 @@ export const productOrderCustomerDecisions = pgTable(
     caseId: uuid("case_id").references(() => productShippingCases.id, {
       onDelete: "set null",
     }),
+    shipmentId: uuid("shipment_id").references(() => productShipments.id, {
+      onDelete: "set null",
+    }),
     kind: text("kind").notNull(),
+    scopeKey: text("scope_key").notNull(),
+    proposedConditions: jsonb("proposed_conditions").$type<
+      Record<string, unknown>
+    >(),
     allowedOutcomes: jsonb("allowed_outcomes").$type<string[]>().notNull(),
     selectedOutcome: text("selected_outcome"),
     tokenHash: text("token_hash").notNull().unique(),
@@ -1944,6 +2331,8 @@ export const productOrderCustomerDecisions = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     exchangedAt: timestamp("exchanged_at", { withTimezone: true }),
     selectedAt: timestamp("selected_at", { withTimezone: true }),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -1961,6 +2350,10 @@ export const productOrderCustomerDecisions = pgTable(
     index("product_order_customer_decisions_order_idx").on(
       table.orderId,
       table.createdAt,
+    ),
+    uniqueIndex("product_order_customer_decisions_scope_idx").on(
+      table.orderId,
+      table.scopeKey,
     ),
   ],
 );
@@ -2005,6 +2398,33 @@ export const productOrderAddressChangeRequests = pgTable(
     providerReconciliation: jsonb("provider_reconciliation").$type<
       Record<string, unknown>
     >(),
+    reconciliationState: text("reconciliation_state")
+      .notNull()
+      .default("not_started"),
+    stateVersion: integer("state_version").notNull().default(1),
+    leaseOwner: text("lease_owner"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    attemptIdentity: text("attempt_identity"),
+    preparedShipmentId: uuid("prepared_shipment_id").references(
+      () => productShipments.id,
+      { onDelete: "set null" },
+    ),
+    oldPostageOutcome: text("old_postage_outcome"),
+    supplementalObligationId: uuid("supplemental_obligation_id").references(
+      () => orderPaymentObligations.id,
+      { onDelete: "set null" },
+    ),
+    cleanupOutcome: text("cleanup_outcome"),
+    customerCaused: boolean("customer_caused").notNull().default(false),
+    offerExpiresAt: timestamp("offer_expires_at", { withTimezone: true }),
+    phoneCallbackCompletedAt: timestamp("phone_callback_completed_at", {
+      withTimezone: true,
+    }),
+    stepUpAuthenticatedAt: timestamp("step_up_authenticated_at", {
+      withTimezone: true,
+    }),
+    coolingOffUntil: timestamp("cooling_off_until", { withTimezone: true }),
+    ownerRationale: text("owner_rationale"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -2022,10 +2442,6 @@ export const productOrderAddressChangeRequests = pgTable(
       table.status,
       table.expiresAt,
     ),
-    check(
-      "product_order_address_changes_distinct_approvers_check",
-      sql`${table.secondApprovedByAdminUserId} IS NULL OR ${table.firstApprovedByAdminUserId} IS NULL OR ${table.secondApprovedByAdminUserId} <> ${table.firstApprovedByAdminUserId}`,
-    ),
   ],
 );
 
@@ -2042,16 +2458,29 @@ export const productOrderRiskReviews = pgTable(
     reviewerWasBusinessOwner: boolean("reviewer_was_business_owner")
       .notNull()
       .default(false),
+    incidentId: uuid("incident_id").references(
+      () => productPaymentRiskIncidents.id,
+      { onDelete: "restrict" },
+    ),
+    stepUpAuthenticatedAt: timestamp("step_up_authenticated_at", {
+      withTimezone: true,
+    }),
+    coolingOffUntil: timestamp("cooling_off_until", { withTimezone: true }),
+    providerEvidenceAvailable: boolean("provider_evidence_available")
+      .notNull()
+      .default(false),
+    evidence: jsonb("evidence").$type<Record<string, unknown>>(),
     decision: text("decision").notNull(),
     rationale: text("rationale").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    redactedAt: timestamp("redacted_at", { withTimezone: true }),
   },
   (table) => [
-    uniqueIndex("product_order_risk_reviews_order_reviewer_idx").on(
-      table.orderId,
-      table.reviewerAdminUserId,
+    uniqueIndex("product_order_risk_reviews_incident_action_idx").on(
+      table.incidentId,
+      table.decision,
     ),
     check(
       "product_order_risk_reviews_decision_check",
@@ -2081,6 +2510,9 @@ export const shippingFundingReviews = pgTable(
       "calculated_five_business_day_spend_cents",
     ),
     notes: text("notes"),
+    externalEvidenceReference: text("external_evidence_reference"),
+    observedAt: timestamp("observed_at", { withTimezone: true }),
+    validUntil: timestamp("valid_until", { withTimezone: true }),
     recordedByAdminUserId: uuid("recorded_by_admin_user_id").references(
       () => adminUsers.id,
       { onDelete: "set null" },
@@ -2107,6 +2539,189 @@ export const shippingFundingReviews = pgTable(
     check(
       "shipping_funding_reviews_kind_check",
       sql`${table.kind} IN ('balance_check', 'reload', 'emergency_top_up', 'thirty_day_review')`,
+    ),
+  ],
+);
+
+export const fulfillmentPolicyVersions = pgTable(
+  "fulfillment_policy_versions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    version: text("version").notNull().unique(),
+    status: text("status").notNull().default("draft"),
+    ownerName: text("owner_name").notNull(),
+    policySnapshot: jsonb("policy_snapshot")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    privacyLegalAttestedAt: timestamp("privacy_legal_attested_at", {
+      withTimezone: true,
+    }),
+    securityAttestedAt: timestamp("security_attested_at", {
+      withTimezone: true,
+    }),
+    operationsAttestedAt: timestamp("operations_attested_at", {
+      withTimezone: true,
+    }),
+    effectiveAt: timestamp("effective_at", { withTimezone: true }),
+    supersededAt: timestamp("superseded_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("fulfillment_policy_versions_one_effective_idx")
+      .on(table.status)
+      .where(sql`${table.status} = 'effective'`),
+  ],
+);
+
+export const productTaxPolicyVersions = pgTable(
+  "product_tax_policy_versions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    version: text("version").notNull().unique(),
+    status: text("status").notNull().default("draft"),
+    coverage: jsonb("coverage").$type<Record<string, boolean>>().notNull(),
+    ownerName: text("owner_name").notNull(),
+    evidenceReference: text("evidence_reference").notNull(),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    effectiveAt: timestamp("effective_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("product_tax_policy_versions_status_idx").on(
+      table.status,
+      table.effectiveAt,
+    ),
+  ],
+);
+
+export const fulfillmentProviderCertifications = pgTable(
+  "fulfillment_provider_certifications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    provider: text("provider").notNull(),
+    environment: text("environment").notNull(),
+    scope: text("scope").notNull(),
+    version: text("version").notNull(),
+    evidenceReference: text("evidence_reference").notNull(),
+    certifiedByOwnerName: text("certified_by_owner_name").notNull(),
+    certifiedAt: timestamp("certified_at", { withTimezone: true }).notNull(),
+    validUntil: timestamp("valid_until", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("fulfillment_provider_certifications_identity_idx").on(
+      table.provider,
+      table.environment,
+      table.scope,
+      table.version,
+    ),
+  ],
+);
+
+export const productShipmentReturnObservations = pgTable(
+  "product_shipment_return_observations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    providerReturnId: text("provider_return_id").notNull().unique(),
+    shipmentId: uuid("shipment_id").references(() => productShipments.id, {
+      onDelete: "set null",
+    }),
+    caseId: uuid("case_id").references(() => productShippingCases.id, {
+      onDelete: "set null",
+    }),
+    providerStatus: text("provider_status"),
+    returnReason: text("return_reason"),
+    resolution: text("resolution"),
+    observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
+    providerUpdatedAt: timestamp("provider_updated_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("product_shipment_returns_shipment_idx").on(
+      table.shipmentId,
+      table.observedAt,
+    ),
+  ],
+);
+
+export const productReplacementInventoryAttestations = pgTable(
+  "product_replacement_inventory_attestations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    caseId: uuid("case_id")
+      .notNull()
+      .references(() => productShippingCases.id, { onDelete: "restrict" }),
+    productId: text("product_id").notNull(),
+    variantId: text("variant_id"),
+    sku: text("sku").notNull(),
+    quantity: integer("quantity").notNull(),
+    attestedByAdminUserId: uuid("attested_by_admin_user_id")
+      .notNull()
+      .references(() => adminUsers.id, { onDelete: "restrict" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("product_replacement_inventory_case_idx").on(table.caseId),
+    check(
+      "product_replacement_inventory_quantity_check",
+      sql`${table.quantity} > 0`,
+    ),
+  ],
+);
+
+export const customerEmailOutbox = pgTable(
+  "customer_email_outbox",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orderId: uuid("order_id").references(() => checkoutOrders.id, {
+      onDelete: "set null",
+    }),
+    kind: text("kind").notNull(),
+    recipientCiphertext: text("recipient_ciphertext").notNull(),
+    templateDataCiphertext: text("template_data_ciphertext").notNull(),
+    providerIdempotencyKey: text("provider_idempotency_key").notNull().unique(),
+    status: text("status").notNull().default("queued"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    availableAt: timestamp("available_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    leaseOwner: text("lease_owner"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    providerMessageId: text("provider_message_id"),
+    lastError: text("last_error"),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    redactionDueAt: timestamp("redaction_due_at", {
+      withTimezone: true,
+    }).notNull(),
+    redactedAt: timestamp("redacted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("customer_email_outbox_claim_idx").on(
+      table.status,
+      table.availableAt,
+      table.leaseExpiresAt,
     ),
   ],
 );

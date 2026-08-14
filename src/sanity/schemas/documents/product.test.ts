@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   product,
   validateOptionGroupNames,
+  validateProductCheckoutConfiguration,
   validateProductVariantConfiguration,
 } from "./product";
 
@@ -233,6 +234,67 @@ describe("product schema", () => {
     assert.match(
       String(validateOptionGroupNames([{ name: "Curl" }, { name: "curl" }])),
       /names must be unique/,
+    );
+  });
+
+  it("blocks available products with incomplete automated metadata", () => {
+    assert.strictEqual(
+      validateProductCheckoutConfiguration({
+        isAvailable: false,
+        shipping: { fulfillmentMode: "physical" },
+      }),
+      true,
+    );
+    assert.match(
+      String(
+        validateProductCheckoutConfiguration({
+          isAvailable: true,
+          shipping: { fulfillmentMode: "physical", weightGrams: 35 },
+        }),
+      ),
+      /metadata is complete.*missing_packing_units/i,
+    );
+    assert.strictEqual(
+      validateProductCheckoutConfiguration({
+        isAvailable: true,
+        shipping: { fulfillmentMode: "manual" },
+      }),
+      true,
+    );
+  });
+
+  it("requires complete variant overrides and U.S. approval data", () => {
+    const baseShipping = {
+      fulfillmentMode: "physical",
+      weightGrams: 35,
+      packingUnits: 1,
+      customsDescription: "Synthetic eyelash extensions",
+      countryOfOrigin: "KR",
+    };
+    assert.match(
+      String(
+        validateProductCheckoutConfiguration({
+          isAvailable: true,
+          shipping: baseShipping,
+          variants: [
+            {
+              title: "C / 8mm",
+              isAvailable: true,
+              shipping: { fulfillmentMode: "physical", weightGrams: 40 },
+            },
+          ],
+        }),
+      ),
+      /C \/ 8mm.*missing_packing_units/i,
+    );
+    assert.match(
+      String(
+        validateProductCheckoutConfiguration({
+          isAvailable: true,
+          shipping: { ...baseShipping, usShippingApproved: true },
+        }),
+      ),
+      /U\.S\..*missing_us_hts/i,
     );
   });
 });

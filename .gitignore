@@ -77,3 +77,4 @@ production-pre-cutover-backup.tar.gz
 staging-approved-cutover.tar.gz
 .tmp/
 docs/legal-drafts/
+.codex/

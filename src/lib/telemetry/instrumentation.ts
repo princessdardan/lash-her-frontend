@@ -59,7 +59,14 @@ export function startNodeTelemetry(): NodeSDK | undefined {
 
   const sdk = new NodeSDK({
     traceExporter,
-    instrumentations: [getNodeAutoInstrumentations()],
+    instrumentations: [
+      getNodeAutoInstrumentations({
+        "@opentelemetry/instrumentation-undici": {
+          ignoreRequestHook: (request) =>
+            isSignedChitChatsLabelRequest(request),
+        },
+      }),
+    ],
     resource: resourceFromAttributes({
       [ATTR_SERVICE_NAME]: serviceName,
     }),
@@ -70,6 +77,23 @@ export function startNodeTelemetry(): NodeSDK | undefined {
   setGlobalSdk(sdk);
 
   return sdk;
+}
+
+export function isSignedChitChatsLabelRequest(request: {
+  origin?: string;
+  path?: string;
+}): boolean {
+  try {
+    const url = new URL(request.path ?? "", request.origin);
+    return (
+      url.protocol === "https:" &&
+      (url.hostname === "chitchats.com" ||
+        url.hostname.endsWith(".chitchats.com")) &&
+      url.pathname.startsWith("/labels/shipments/")
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**

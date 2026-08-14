@@ -1,9 +1,13 @@
 import { defineArrayMember, defineField, defineType } from "sanity";
+import { getProductCheckoutEligibility } from "@/lib/commerce/product-checkout-eligibility";
+import type { TProductShippingMetadata } from "@/types";
 
 export const product = defineType({
   name: "product",
   title: "Product",
   type: "document",
+  validation: (Rule) =>
+    Rule.custom((value) => validateProductCheckoutConfiguration(value)),
   groups: [
     { name: "overview", title: "Overview" },
     { name: "pricing", title: "Pricing" },
@@ -809,6 +813,54 @@ function normalizeSchemaIdentity(value: unknown): string | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+export function validateProductCheckoutConfiguration(
+  documentInput: unknown,
+): true | string {
+  if (!isRecord(documentInput) || documentInput.isAvailable !== true)
+    return true;
+
+  const productShipping = isRecord(documentInput.shipping)
+    ? (documentInput.shipping as unknown as TProductShippingMetadata)
+    : undefined;
+  const variants = Array.isArray(documentInput.variants)
+    ? documentInput.variants.filter(isRecord)
+    : [];
+  const availableVariants = variants.filter(
+    (variant) => variant.isAvailable === true,
+  );
+
+  const effectiveMetadata =
+    availableVariants.length === 0
+      ? [{ label: "Product", metadata: productShipping }]
+      : availableVariants.map((variant, index) => {
+          const override = isRecord(variant.shipping)
+            ? (variant.shipping as unknown as TProductShippingMetadata)
+            : undefined;
+          return {
+            label: cleanSchemaString(variant.title) ?? `Variant ${index + 1}`,
+            metadata: override ?? productShipping,
+          };
+        });
+
+  for (const entry of effectiveMetadata) {
+    const eligibility = getProductCheckoutEligibility(entry.metadata);
+    if (eligibility.status === "invalid") {
+      return `${entry.label} cannot be available for checkout until its fulfillment metadata is complete (${eligibility.reason}).`;
+    }
+    if (
+      entry.metadata?.usShippingApproved &&
+      getProductCheckoutEligibility(entry.metadata, "US").status === "invalid"
+    ) {
+      const usEligibility = getProductCheckoutEligibility(entry.metadata, "US");
+      return `${entry.label} cannot be approved for U.S. checkout until all U.S. customs and manufacturer metadata is complete${
+        usEligibility.status === "invalid" ? ` (${usEligibility.reason})` : ""
+      }.`;
+    }
+  }
+
+  return true;
 }
 
 function shippingMetadataFields() {

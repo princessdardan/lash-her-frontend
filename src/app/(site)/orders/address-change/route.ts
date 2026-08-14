@@ -3,9 +3,14 @@ import {
   exchangeAddressChangeToken,
   getAddressChange,
   submitAddressChange,
+  validateAddressChangeBearer,
 } from "@/lib/shipping/address-changes";
 import { buildBookingAbuseKey } from "@/lib/security/trusted-client-ip";
-import { checkSignedShippingLinkRateLimit } from "@/lib/security/shipping-abuse-control";
+import {
+  checkSignedShippingLinkRateLimit,
+  isShippingLinkExchangeBlocked,
+  recordShippingLinkFailure,
+} from "@/lib/security/shipping-abuse-control";
 import type { CheckoutOrderShippingAddressSnapshot } from "@/lib/private-db/schema";
 
 export const runtime = "nodejs";
@@ -14,15 +19,15 @@ const COOKIE = "lh_address_change";
 export async function GET(req: NextRequest): Promise<Response> {
   const token = req.nextUrl.searchParams.get("token");
   if (token) {
-    if (!(await allowed(req, token))) return genericInvalid();
-    const sessionToken = await exchangeAddressChangeToken(token);
-    if (!sessionToken) return genericInvalid();
-    const response = NextResponse.redirect(
-      new URL("/orders/address-change", req.nextUrl.origin),
-      303,
+    if (
+      !(await allowed(req, token)) ||
+      !(await validateAddressChangeBearer(token))
+    ) {
+      return genericInvalid();
+    }
+    return html(
+      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open address change | Lash Her</title></head><body><main><h1>Open your address change</h1><p>Continue to submit the corrected destination for your order.</p><form method="post" action="/orders/address-change"><input type="hidden" name="action" value="exchange"><input type="hidden" name="token" value="${escapeHtml(token)}"><button type="submit">Continue securely</button></form></main></body></html>`,
     );
-    response.cookies.set(COOKIE, sessionToken, cookieOptions());
-    return secure(response);
   }
   const sessionToken = req.cookies.get(COOKIE)?.value ?? "";
   const request = sessionToken ? await getAddressChange(sessionToken) : null;
@@ -35,16 +40,40 @@ export async function GET(req: NextRequest): Promise<Response> {
 
 export async function POST(req: NextRequest): Promise<Response> {
   if (req.headers.get("origin") !== req.nextUrl.origin) return genericInvalid();
-  const sessionToken = req.cookies.get(COOKIE)?.value ?? "";
   const form = await req.formData().catch(() => null);
+  if (form?.get("action") === "exchange") {
+    const bearer = form.get("token");
+    if (
+      typeof bearer !== "string" ||
+      (await isShippingLinkExchangeBlocked()) ||
+      !(await allowed(req, bearer))
+    ) {
+      await recordShippingLinkFailure().catch(() => undefined);
+      return genericInvalid();
+    }
+    const sessionToken = await exchangeAddressChangeToken(bearer);
+    if (!sessionToken) {
+      await recordShippingLinkFailure().catch(() => undefined);
+      return genericInvalid();
+    }
+    const response = NextResponse.redirect(
+      new URL("/orders/address-change", req.nextUrl.origin),
+      303,
+    );
+    response.cookies.set(COOKIE, sessionToken, cookieOptions());
+    return secure(response);
+  }
+  const sessionToken = req.cookies.get(COOKIE)?.value ?? "";
   const proposedAddress = form ? parseAddress(form) : null;
   if (
     !sessionToken ||
     !proposedAddress ||
     !(await allowed(req, sessionToken)) ||
     !(await submitAddressChange({ sessionToken, proposedAddress }))
-  )
+  ) {
+    await recordShippingLinkFailure().catch(() => undefined);
     return genericInvalid();
+  }
   const response = html(
     '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Address received | Lash Her</title></head><body><main><h1>Your address was received</h1><p>The change is pending review. No further changes can be submitted with this link.</p></main></body></html>',
   );

@@ -9,6 +9,7 @@ const helperScript = String.raw`
     createCheckoutOrderStore,
     type CheckoutOrderRepository,
     type CheckoutOrderRow,
+    type HelcimPurchaseTransitionResult,
   } from "./src/lib/commerce/order-store.ts";
   import { decryptCheckoutSecret } from "./src/lib/commerce/checkout-secret.ts";
 
@@ -19,7 +20,7 @@ const helperScript = String.raw`
   type SquareInvoiceWebhookEventInsert = Parameters<CheckoutOrderRepository["createSquareInvoiceWebhookEvent"]>[0];
   type PaymentEventRecord = (CheckoutPaymentEventInsert | SquareInvoiceWebhookEventInsert) & {
     id: string;
-    processingStatus?: "duplicate" | "failed" | "ignored" | "processed" | "received";
+    processingStatus?: "duplicate" | "failed" | "ignored" | "processed" | "received" | "review_required" | "retryable_failed";
   };
 
   const cart: ValidatedCart = {
@@ -154,17 +155,26 @@ const helperScript = String.raw`
       )) ?? null;
     }
 
-    async markOrderPaid(orderId: string, helcimTransactionId: string): Promise<void> {
+    async markOrderPaid(orderId: string, helcimTransactionId: string): Promise<HelcimPurchaseTransitionResult> {
       if (this.failNextMarkPaid) {
         this.failNextMarkPaid = false;
         throw new Error("Paid transition failed");
       }
 
       const row = this.findOrderByOrderId(orderId);
+      if (row.status === "paid") {
+        return row.helcimTransactionId === helcimTransactionId
+          ? "already_applied"
+          : "transaction_conflict";
+      }
+      if (row.status === "cancelled" || row.status === "refunded") {
+        return "state_conflict";
+      }
       row.status = "paid";
       row.helcimTransactionId = helcimTransactionId;
       row.paidAt = new Date("2026-05-10T01:00:00.000Z");
       row.updatedAt = new Date("2026-05-10T01:00:00.000Z");
+      return "applied";
     }
 
     async markOrderVerificationFailed(orderId: string): Promise<void> {
@@ -482,7 +492,6 @@ test("private checkout store looks up pending orders by token hash only", () => 
   `);
 });
 
-
 test("private checkout store can recover paid appointment orders by checkout token", () => {
   runOrderStoreScenario(`
     const { repository, store } = createFakeStore();
@@ -587,7 +596,7 @@ test("private checkout store records idempotent webhook events once", () => {
   `);
 });
 
-test("private checkout store reconciles approved webhooks into paid orders", () => {
+test("product webhook recording defers payment mutation to the product finalizer", () => {
   runOrderStoreScenario(`
     const { repository, store } = createFakeStore();
     await store.createPendingOrder(pendingOrderInput);
@@ -600,6 +609,7 @@ test("private checkout store reconciles approved webhooks into paid orders", () 
       helcimInvoiceNumber: "INV-4242",
       helcimTransactionId: "txn-webhook-paid",
       status: "approved",
+      transactionType: "purchase",
     });
     const row = repository.rows[0];
 
@@ -608,12 +618,11 @@ test("private checkout store reconciles approved webhooks into paid orders", () 
     assert.equal(repository.events[0].orderId, row.id);
     assert.equal(repository.events[0].amountCents, 12345);
     assert.equal(repository.events[0].currency, "CAD");
-    assert.equal(row.status, "paid");
-    assert.equal(row.helcimTransactionId, "txn-webhook-paid");
-    assert.ok(row.paidAt instanceof Date);
+    assert.equal(row.status, "pending");
+    assert.equal(row.helcimTransactionId, null);
+    assert.equal(row.paidAt, null);
   `);
 });
-
 
 test("private checkout store exposes matched order details for webhook branching", () => {
   runOrderStoreScenario(`
@@ -631,6 +640,7 @@ test("private checkout store exposes matched order details for webhook branching
       helcimInvoiceNumber: "INV-4242",
       helcimTransactionId: "txn-webhook-appointment",
       status: "approved",
+      transactionType: "purchase",
     });
     const duplicate = await store.recordHelcimWebhookEventWithOrder({
       amount: "123.45",
@@ -640,6 +650,7 @@ test("private checkout store exposes matched order details for webhook branching
       helcimInvoiceNumber: "INV-4242",
       helcimTransactionId: "txn-webhook-appointment",
       status: "approved",
+      transactionType: "purchase",
     });
 
     assert.deepEqual(result, {
@@ -697,7 +708,6 @@ test("private checkout store ignores Square provider rows during Helcim webhook 
   `);
 });
 
-
 test("private checkout store reports duplicate paid appointment webhooks as finalization eligible", () => {
   runOrderStoreScenario(`
     const { repository, store } = createFakeStore();
@@ -714,6 +724,7 @@ test("private checkout store reports duplicate paid appointment webhooks as fina
       helcimInvoiceNumber: "INV-4242",
       helcimTransactionId: "txn-webhook-paid",
       status: "approved",
+      transactionType: "purchase",
     });
     const duplicate = await store.recordHelcimWebhookEventWithOrder({
       amount: "123.45",
@@ -723,6 +734,7 @@ test("private checkout store reports duplicate paid appointment webhooks as fina
       helcimInvoiceNumber: "INV-4242",
       helcimTransactionId: "txn-webhook-paid",
       status: "approved",
+      transactionType: "purchase",
     });
 
     assert.equal(first.recorded, true);
@@ -751,6 +763,7 @@ test("private checkout store can retry paid transition after duplicate webhook e
         helcimInvoiceNumber: "INV-4242",
         helcimTransactionId: "txn-webhook-retry",
         status: "approved",
+        transactionType: "purchase",
       }),
       /Paid transition failed/,
     );
@@ -765,6 +778,7 @@ test("private checkout store can retry paid transition after duplicate webhook e
       helcimInvoiceNumber: "INV-4242",
       helcimTransactionId: "txn-webhook-retry",
       status: "approved",
+      transactionType: "purchase",
     });
 
     assert.equal(duplicate.recorded, false);
@@ -786,6 +800,7 @@ test("private checkout store does not mark paid when webhook amount is missing",
       helcimInvoiceNumber: "INV-4242",
       helcimTransactionId: "txn-webhook-incomplete",
       status: "approved",
+      transactionType: "purchase",
     });
     const row = repository.rows[0];
 
@@ -807,6 +822,7 @@ test("private checkout store does not mark paid when webhook currency is missing
       helcimInvoiceNumber: "INV-4242",
       helcimTransactionId: "txn-webhook-incomplete",
       status: "approved",
+      transactionType: "purchase",
     });
     const row = repository.rows[0];
 

@@ -14,6 +14,7 @@ const SERVER_ONLY_TEST_FILES = new Set([
 ]);
 
 const DB_TEST_FILES = new Set([
+  "src/lib/commerce/product-payment-finalizer.db.test.ts",
   "src/lib/admin/employee-attribution-analytics.db.test.ts",
   "src/lib/admin/implicit-staff-provider.db.test.ts",
   "src/lib/admin/offering-resource-admin.db.test.ts",
@@ -27,6 +28,7 @@ const DB_TEST_FILES = new Set([
   "src/lib/private-db/booking-reservation-repository.db.test.ts",
   "src/lib/private-db/calendar-connection-repository.db.test.ts",
   "src/lib/private-db/card-on-file-repository.db.test.ts",
+  "src/lib/private-db/shipping-retention.db.test.ts",
 ]);
 
 const mode = process.argv[2] ?? "--no-db";

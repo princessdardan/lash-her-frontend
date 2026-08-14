@@ -33,7 +33,9 @@ const helperScript = String.raw`
   }
 
   async function runScenario({
+    activateShipmentForPaidOrder,
     finalizeAppointmentPaymentForOrder,
+    finalizeProductPayment,
     getCardTransaction,
     getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing,
     getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice,
@@ -54,12 +56,19 @@ const helperScript = String.raw`
     const sentSchedulingFailureAlerts = [];
     const reconciledRefunds = [];
     const handler = createHelcimWebhookPostHandler({
+      activateShipmentForPaidOrder: async (orderId) => {
+        if (activateShipmentForPaidOrder) await activateShipmentForPaidOrder(orderId);
+      },
       finalizeAppointmentPaymentForOrder: async (input) => {
         finalizedBookings.push(input);
         if (finalizeAppointmentPaymentForOrder) {
           return finalizeAppointmentPaymentForOrder(input);
         }
         return { ok: true, eventId: "calendar-event-1", status: "booked" };
+      },
+      finalizeProductPayment: async (input) => {
+        if (finalizeProductPayment) return finalizeProductPayment(input);
+        return { transition: "applied", riskStatus: "cleared" };
       },
       getCardTransaction,
       getVerifierToken: () => verifierToken,
@@ -359,6 +368,7 @@ test("Helcim webhook route does not send product confirmation for training order
         id: 25764674,
         invoiceNumber: "INV-TRAINING-4242",
         status: "APPROVED",
+        transactionType: "purchase",
       }),
       recordEvent: async () => ({
         matchedOrder: {
@@ -386,7 +396,7 @@ test("Helcim webhook route does not send product confirmation for training order
   `);
 });
 
-test("Helcim webhook route treats APPROVAL as an approved product payment", () => {
+test("Helcim webhook route rejects uncertified product status values", () => {
   runRouteScenario(`
     const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });
     const { handler, sentProductEmails } = await runScenario({
@@ -416,6 +426,50 @@ test("Helcim webhook route treats APPROVAL as an approved product payment", () =
     const response = await handler(createRequest(body));
 
     assert.equal(response.status, 200);
+    assert.deepEqual(sentProductEmails, []);
+  `);
+});
+
+test("Helcim webhook route finalizes an exact certified product purchase", () => {
+  runRouteScenario(`
+    const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });
+    const finalized = [];
+    const { handler, sentProductEmails } = await runScenario({
+      getCardTransaction: async () => ({
+        amount: "123.45",
+        avsResponse: "Y",
+        currency: "CAD",
+        cvvResponse: "M",
+        id: 25764674,
+        invoiceNumber: "INV-4242",
+        status: "APPROVED",
+        transactionType: "purchase",
+      }),
+      finalizeProductPayment: async (input) => {
+        finalized.push(input);
+        return { transition: "applied", riskStatus: "cleared" };
+      },
+      recordEvent: async () => ({
+        matchedOrder: {
+          _id: "checkout-order-product",
+          amount: 123.45,
+          currency: "CAD",
+          helcimInvoiceId: 4242,
+          helcimInvoiceNumber: "INV-4242",
+          orderId: "lh-product-123",
+          paymentProvider: "helcim",
+          purpose: "product",
+        },
+        paid: false,
+        recorded: true,
+      }),
+    });
+
+    const response = await handler(createRequest(body));
+
+    assert.equal(response.status, 200);
+    assert.equal(finalized.length, 1);
+    assert.equal(finalized[0].transactionId, "25764674");
     assert.deepEqual(sentProductEmails, ["lh-product-123"]);
   `);
 });
@@ -430,6 +484,7 @@ test("Helcim webhook route recovers missing training notification and sends paym
         id: 25764674,
         invoiceNumber: "INV-TRAINING-4242",
         status: "APPROVED",
+        transactionType: "purchase",
       }),
       getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing: async (input) => ({
         checkoutEmail: "client@example.com",
@@ -500,6 +555,7 @@ test("Helcim webhook route returns retryable status when training token issuance
         id: 25764674,
         invoiceNumber: "INV-TRAINING-4242",
         status: "APPROVED",
+        transactionType: "purchase",
       }),
       getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing: async () => ({
         checkoutEmail: "client@example.com",
@@ -533,6 +589,7 @@ test("Helcim webhook route returns retryable status when training program slug i
         id: 25764674,
         invoiceNumber: "INV-TRAINING-4242",
         status: "APPROVED",
+        transactionType: "purchase",
       }),
       getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing: async () => ({
         checkoutEmail: "client@example.com",
@@ -576,6 +633,7 @@ test("Helcim webhook route finalizes approved appointment webhook after event pe
         id: 25764674,
         invoiceNumber: "INV-APPT-4242",
         status: "APPROVED",
+        transactionType: "purchase",
       }),
       recordEvent: async () => ({
         matchedOrder: {
@@ -613,6 +671,7 @@ test("Helcim webhook route finalizes duplicate paid appointment events", () => {
         id: 25764674,
         invoiceNumber: "INV-APPT-4242",
         status: "APPROVED",
+        transactionType: "purchase",
       }),
       recordEvent: async () => ({
         matchedOrder: {
@@ -646,6 +705,7 @@ test("Helcim webhook route finalizes approved custom partial appointment webhook
         id: 25764674,
         invoiceNumber: "INV-APPT-4242",
         status: "APPROVED",
+        transactionType: "purchase",
       }),
       recordEvent: async () => ({
         matchedOrder: {
@@ -679,6 +739,7 @@ test("Helcim webhook route does not finalize Square appointment orders matched b
         id: 25764674,
         invoiceNumber: "INV-APPT-4242",
         status: "APPROVED",
+        transactionType: "purchase",
       }),
       recordEvent: async () => ({
         matchedOrder: {
@@ -714,6 +775,7 @@ test("Helcim webhook route does not finalize unmatched appointment events", () =
         id: 25764674,
         invoiceNumber: "INV-APPT-4242",
         status: "APPROVED",
+        transactionType: "purchase",
       }),
       recordEvent: async () => ({
         matchedOrder: null,
@@ -737,6 +799,7 @@ test("Helcim webhook route does not send duplicate training emails when notifica
         id: 25764674,
         invoiceNumber: "INV-TRAINING-4242",
         status: "APPROVED",
+        transactionType: "purchase",
       }),
       getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing: async () => null,
       recordEvent: async () => true,
@@ -761,6 +824,7 @@ test("Helcim webhook route sends admin alert when appointment finalization fails
         id: 25764674,
         invoiceNumber: "INV-APPT-4242",
         status: "APPROVED",
+        transactionType: "purchase",
       }),
       recordEvent: async () => ({
         matchedOrder: {
@@ -809,6 +873,7 @@ test("Helcim webhook route does not alert admin or confirm customer for finaliza
         id: 25764674,
         invoiceNumber: "INV-APPT-4242",
         status: "APPROVED",
+        transactionType: "purchase",
       }),
       recordEvent: async () => ({
         matchedOrder: {

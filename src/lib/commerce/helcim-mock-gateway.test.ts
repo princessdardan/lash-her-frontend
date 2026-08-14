@@ -9,19 +9,30 @@ import {
   signMockHelcimWebhook,
 } from "./helcim-mock-gateway";
 import { createHelcimResponseHash } from "./helcim-hash";
-import { mergeHelcimCardTransactionDetails, parseVerifiedHelcimWebhook, verifyHelcimWebhookSignature } from "./helcim-webhook";
+import {
+  mergeHelcimCardTransactionDetails,
+  parseVerifiedHelcimWebhook,
+  verifyHelcimWebhookSignature,
+} from "./helcim-webhook";
 import { verifyHelcimPayment } from "./verified-payment";
-import type { HelcimInvoiceRequest, HelcimPayInitializeRequest } from "./helcim-types";
+import type {
+  HelcimInvoiceRequest,
+  HelcimPayInitializeRequest,
+} from "./helcim-types";
 
 const invoiceRequest: HelcimInvoiceRequest = {
   type: "INVOICE",
   status: "DUE",
   currency: "CAD",
   notes: "Lash Her website checkout",
-  lineItems: [{ sku: "lash-kit", description: "Lash kit", quantity: 1, price: 125 }],
+  lineItems: [
+    { sku: "lash-kit", description: "Lash kit", quantity: 1, price: 125 },
+  ],
 };
 
-const initializeRequest = (invoiceNumber: string): HelcimPayInitializeRequest => ({
+const initializeRequest = (
+  invoiceNumber: string,
+): HelcimPayInitializeRequest => ({
   paymentType: "purchase",
   amount: 125,
   currency: "CAD",
@@ -35,44 +46,68 @@ test("mock Helcim gateway creates deterministic invoice/session IDs without live
   };
 
   try {
-    const store = createPaymentMockStore({ now: new Date("2026-05-23T12:00:00.000Z") });
+    const store = createPaymentMockStore({
+      now: new Date("2026-05-23T12:00:00.000Z"),
+    });
     const gateway = createMockHelcimGateway({ scenario: "success", store });
 
     const invoice = await gateway.createInvoice(invoiceRequest);
-    const session = await gateway.initializePay(initializeRequest(invoice.invoiceNumber));
+    const session = await gateway.initializePay(
+      initializeRequest(invoice.invoiceNumber),
+    );
 
-    assert.deepEqual(invoice, { invoiceId: 900001, invoiceNumber: "MOCK-INV-1" });
+    assert.deepEqual(invoice, {
+      invoiceId: 900001,
+      invoiceNumber: "MOCK-INV-1",
+    });
     assert.deepEqual(session, {
       checkoutToken: "mock_helcim_checkout_1",
       secretToken: "mock_helcim_secret_1",
     });
     assert.equal(store.providerOrders[0]?.provider, "helcim");
     assert.equal(store.providerOrders[0]?.status, "APPROVED");
-    assert.equal(store.providerTransactions[0]?.transactionId, "mock_helcim_txn_1");
+    assert.equal(
+      store.providerTransactions[0]?.transactionId,
+      "mock_helcim_txn_1",
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
 test("mock Helcim success payload validates through existing payment verification", async () => {
-  const store = createPaymentMockStore({ now: new Date("2026-05-23T12:00:00.000Z") });
+  const store = createPaymentMockStore({
+    now: new Date("2026-05-23T12:00:00.000Z"),
+  });
   const gateway = createMockHelcimGateway({ scenario: "success", store });
   const invoice = await gateway.createInvoice(invoiceRequest);
-  const session = await gateway.initializePay(initializeRequest(invoice.invoiceNumber));
-  const payload = buildMockHelcimSuccessPayload({ amount: 125, invoice, paySession: session });
+  const session = await gateway.initializePay(
+    initializeRequest(invoice.invoiceNumber),
+  );
+  const payload = buildMockHelcimSuccessPayload({
+    amount: 125,
+    invoice,
+    paySession: session,
+  });
 
   assert.deepEqual(payload.data, {
     amount: 125,
     approved: true,
+    avsResponse: "Y",
     cardLast4: "4242",
     cardType: "Visa",
     currency: "CAD",
+    cvvResponse: "M",
     invoiceId: 900001,
     invoiceNumber: "MOCK-INV-1",
     status: "APPROVED",
     transactionId: "mock_helcim_txn_1",
+    transactionType: "purchase",
   });
-  assert.equal(payload.hash, createHelcimResponseHash(payload.data, session.secretToken));
+  assert.equal(
+    payload.hash,
+    createHelcimResponseHash(payload.data, session.secretToken),
+  );
   assert.deepEqual(
     verifyHelcimPayment({
       data: payload.data,
@@ -98,11 +133,23 @@ test("mock Helcim non-success scenarios keep provider status names and fail as u
   } as const;
 
   for (const [scenario, status] of Object.entries(expectedStatuses)) {
-    const store = createPaymentMockStore({ now: new Date("2026-05-23T12:00:00.000Z") });
-    const gateway = createMockHelcimGateway({ scenario: scenario as keyof typeof expectedStatuses, store });
+    const store = createPaymentMockStore({
+      now: new Date("2026-05-23T12:00:00.000Z"),
+    });
+    const gateway = createMockHelcimGateway({
+      scenario: scenario as keyof typeof expectedStatuses,
+      store,
+    });
     const invoice = await gateway.createInvoice(invoiceRequest);
-    const session = await gateway.initializePay(initializeRequest(invoice.invoiceNumber));
-    const payload = buildMockHelcimSuccessPayload({ amount: 125, invoice, paySession: session, scenario: scenario as keyof typeof expectedStatuses });
+    const session = await gateway.initializePay(
+      initializeRequest(invoice.invoiceNumber),
+    );
+    const payload = buildMockHelcimSuccessPayload({
+      amount: 125,
+      invoice,
+      paySession: session,
+      scenario: scenario as keyof typeof expectedStatuses,
+    });
 
     assert.equal(payload.data.status, status);
     assert.equal(payload.data.approved, false);
@@ -130,12 +177,28 @@ test("mock Helcim sparse webhook verifies signature and merges fetched transacti
   const gateway = createMockHelcimGateway({ scenario: "success", store });
   const invoice = await gateway.createInvoice(invoiceRequest);
   await gateway.initializePay(initializeRequest(invoice.invoiceNumber));
-  const webhook = buildMockHelcimWebhook({ now, transactionId: "mock_helcim_txn_1" });
+  const webhook = buildMockHelcimWebhook({
+    now,
+    transactionId: "mock_helcim_txn_1",
+  });
   const headers = signMockHelcimWebhook({ ...webhook, verifierToken });
 
-  assert.equal(verifyHelcimWebhookSignature(headers, webhook.rawBody, verifierToken, now.getTime()), true);
   assert.equal(
-    verifyHelcimWebhookSignature({ ...headers, signature: "invalid" }, webhook.rawBody, verifierToken, now.getTime()),
+    verifyHelcimWebhookSignature(
+      headers,
+      webhook.rawBody,
+      verifierToken,
+      now.getTime(),
+    ),
+    true,
+  );
+  assert.equal(
+    verifyHelcimWebhookSignature(
+      { ...headers, signature: "invalid" },
+      webhook.rawBody,
+      verifierToken,
+      now.getTime(),
+    ),
     false,
   );
 
@@ -171,7 +234,11 @@ test("mock Helcim sparse webhook verifies signature and merges fetched transacti
 test("mock Helcim idempotency replays matching payloads inside five minutes", async () => {
   let current = new Date("2026-05-23T12:00:00.000Z");
   const store = createPaymentMockStore({ now: () => current });
-  const gateway = createMockHelcimGateway({ idempotencyKey: "idem-1", scenario: "success", store });
+  const gateway = createMockHelcimGateway({
+    idempotencyKey: "idem-1",
+    scenario: "success",
+    store,
+  });
 
   const first = await gateway.createInvoice(invoiceRequest);
   current = new Date("2026-05-23T12:04:59.000Z");
@@ -185,7 +252,11 @@ test("mock Helcim idempotency replays matching payloads inside five minutes", as
 test("mock Helcim idempotency rejects changed payloads inside five minutes", async () => {
   let current = new Date("2026-05-23T12:00:00.000Z");
   const store = createPaymentMockStore({ now: () => current });
-  const gateway = createMockHelcimGateway({ idempotencyKey: "idem-2", scenario: "success", store });
+  const gateway = createMockHelcimGateway({
+    idempotencyKey: "idem-2",
+    scenario: "success",
+    store,
+  });
 
   const first = await gateway.createInvoice(invoiceRequest);
   current = new Date("2026-05-23T12:04:59.000Z");
@@ -193,31 +264,45 @@ test("mock Helcim idempotency rejects changed payloads inside five minutes", asy
   await assert.rejects(
     gateway.createInvoice({
       ...invoiceRequest,
-      lineItems: [{ sku: "lash-kit", description: "Lash kit", quantity: 1, price: 130 }],
+      lineItems: [
+        { sku: "lash-kit", description: "Lash kit", quantity: 1, price: 130 },
+      ],
     }),
     (error: unknown) => {
       assert.equal(error instanceof Error, true);
       assert.equal((error as { status?: number }).status, 409);
-      assert.equal((error as { code?: string }).code, "HELCIM_IDEMPOTENCY_MISMATCH");
+      assert.equal(
+        (error as { code?: string }).code,
+        "HELCIM_IDEMPOTENCY_MISMATCH",
+      );
       assert.match((error as Error).message, /idempotency/i);
       return true;
     },
   );
 
-  assert.deepEqual(store.providerOrders.map((order) => order.orderId), [first.invoiceNumber]);
+  assert.deepEqual(
+    store.providerOrders.map((order) => order.orderId),
+    [first.invoiceNumber],
+  );
   assert.equal(store.idempotencyRecords.length, 1);
 });
 
 test("mock Helcim idempotency opens a new window at exactly five minutes", async () => {
   let current = new Date("2026-05-23T12:00:00.000Z");
   const store = createPaymentMockStore({ now: () => current });
-  const gateway = createMockHelcimGateway({ idempotencyKey: "idem-3", scenario: "success", store });
+  const gateway = createMockHelcimGateway({
+    idempotencyKey: "idem-3",
+    scenario: "success",
+    store,
+  });
 
   const first = await gateway.createInvoice(invoiceRequest);
   current = new Date("2026-05-23T12:05:00.000Z");
   const second = await gateway.createInvoice({
     ...invoiceRequest,
-    lineItems: [{ sku: "lash-kit", description: "Lash kit", quantity: 1, price: 130 }],
+    lineItems: [
+      { sku: "lash-kit", description: "Lash kit", quantity: 1, price: 130 },
+    ],
   });
 
   assert.notDeepEqual(second, first);
@@ -226,21 +311,29 @@ test("mock Helcim idempotency opens a new window at exactly five minutes", async
   assert.equal(store.providerOrders.length, 2);
 });
 
-
 test("mock Helcim store reset clears hidden invoice, transaction, and idempotency state", async () => {
   let current = new Date("2026-05-23T12:00:00.000Z");
   const store = createPaymentMockStore({ now: () => current });
-  const gateway = createMockHelcimGateway({ idempotencyKey: "idem-reset", scenario: "success", store });
+  const gateway = createMockHelcimGateway({
+    idempotencyKey: "idem-reset",
+    scenario: "success",
+    store,
+  });
 
   const invoice = await gateway.createInvoice(invoiceRequest);
-  const session = await gateway.initializePay(initializeRequest(invoice.invoiceNumber));
+  const session = await gateway.initializePay(
+    initializeRequest(invoice.invoiceNumber),
+  );
 
   assert.deepEqual(invoice, { invoiceId: 900001, invoiceNumber: "MOCK-INV-1" });
   assert.deepEqual(session, {
     checkoutToken: "mock_helcim_checkout_1",
     secretToken: "mock_helcim_secret_1",
   });
-  assert.equal((await gateway.getCardTransaction("mock_helcim_txn_1")).transactionId, "mock_helcim_txn_1");
+  assert.equal(
+    (await gateway.getCardTransaction("mock_helcim_txn_1")).transactionId,
+    "mock_helcim_txn_1",
+  );
 
   store.reset();
   current = new Date("2026-05-23T12:01:00.000Z");
@@ -252,12 +345,19 @@ test("mock Helcim store reset clears hidden invoice, transaction, and idempotenc
 
   const changedRequest: HelcimInvoiceRequest = {
     ...invoiceRequest,
-    lineItems: [{ sku: "lash-kit", description: "Lash kit", quantity: 1, price: 130 }],
+    lineItems: [
+      { sku: "lash-kit", description: "Lash kit", quantity: 1, price: 130 },
+    ],
   };
   const nextInvoice = await gateway.createInvoice(changedRequest);
-  const nextSession = await gateway.initializePay(initializeRequest(nextInvoice.invoiceNumber));
+  const nextSession = await gateway.initializePay(
+    initializeRequest(nextInvoice.invoiceNumber),
+  );
 
-  assert.deepEqual(nextInvoice, { invoiceId: 900001, invoiceNumber: "MOCK-INV-1" });
+  assert.deepEqual(nextInvoice, {
+    invoiceId: 900001,
+    invoiceNumber: "MOCK-INV-1",
+  });
   assert.deepEqual(nextSession, {
     checkoutToken: "mock_helcim_checkout_1",
     secretToken: "mock_helcim_secret_1",

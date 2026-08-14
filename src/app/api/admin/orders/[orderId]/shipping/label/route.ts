@@ -10,7 +10,7 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ orderId: string }> },
 ): Promise<Response> {
-  await requirePermission("fulfillment:view");
+  await requirePermission("fulfillment:manage");
   const { orderId } = await params;
   const shipment = await getShipmentForOrderReference(orderId);
   if (!shipment?.providerShipmentId)

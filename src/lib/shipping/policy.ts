@@ -74,10 +74,10 @@ export async function loadShippingPolicyContext(
     "",
   );
   const requiredCoverage = dayKey(
-    new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 18, 1)),
+    new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 21, 1)),
   );
   if (!coverageEnd || coverageEnd < requiredCoverage)
-    throw new Error("Shipping calendar has less than 18 months of coverage");
+    throw new Error("Shipping calendar has less than 21 months of coverage");
   return {
     mode: getShippingPolicyEnforcementMode(),
     settings,

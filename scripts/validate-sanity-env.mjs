@@ -44,6 +44,7 @@ const launchEnvVars = [
   "PAYMENT_RECONCILIATION_CRON_SECRET",
   "CRON_SECRET",
   "BACKUP_RETENTION_DAYS",
+  "NEXT_PUBLIC_SITE_URL",
 ];
 
 const squareLaunchEnvVars = [
@@ -58,6 +59,7 @@ const squareLaunchEnvVars = [
 const chitchatsLaunchEnvVars = [
   "CHITCHATS_ENVIRONMENT",
   "CHITCHATS_CLIENT_ID",
+  "CHITCHATS_BRANCH_ID",
   "CHITCHATS_ACCESS_TOKEN",
   "CHITCHATS_QUOTE_SIGNING_SECRET",
   "CHITCHATS_WORKER_CRON_SECRET",
@@ -71,6 +73,7 @@ const urlEnvVars = [
   "GOOGLE_REDIRECT_URI",
   "KV_REST_API_URL",
   "DATABASE_URL",
+  "NEXT_PUBLIC_SITE_URL",
 ];
 
 const emailEnvVars = ["FROM_EMAIL", "ADMIN_EMAIL"];
@@ -83,17 +86,24 @@ const isPaymentMockMode = paymentGatewayMode === "mock";
 const serviceBookingSquareEnabled = process.env.SERVICE_BOOKING_SQUARE_ENABLED;
 const serviceBookingModelMode =
   process.env.SERVICE_BOOKING_MODEL_MODE ?? "dual";
-const isSquareServiceBookingEnabled =
-  serviceBookingSquareEnabled === "true";
+const isSquareServiceBookingEnabled = serviceBookingSquareEnabled === "true";
 const chitchatsShippingEnabled = process.env.CHITCHATS_SHIPPING_ENABLED;
 const chitchatsCheckoutEnabled = process.env.CHITCHATS_CHECKOUT_ENABLED;
 const chitchatsUsShippingEnabled = process.env.CHITCHATS_US_SHIPPING_ENABLED;
+const manualProductCheckoutEnabled =
+  process.env.MANUAL_PRODUCT_CHECKOUT_ENABLED;
+const supplementalProductPaymentsEnabled =
+  process.env.SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED;
 const isChitchatsShippingEnabled = chitchatsShippingEnabled === "true";
 const requiredEnvVars = isLaunchEnvironment
   ? [
       ...publicSanityEnvVars,
-      ...(isPaymentMockMode ? launchEnvVarsWithoutLivePayment() : launchEnvVars),
-      ...(isSquareServiceBookingEnabled && !isPaymentMockMode ? squareLaunchEnvVars : []),
+      ...(isPaymentMockMode
+        ? launchEnvVarsWithoutLivePayment()
+        : launchEnvVars),
+      ...(isSquareServiceBookingEnabled && !isPaymentMockMode
+        ? squareLaunchEnvVars
+        : []),
       ...(isChitchatsShippingEnabled ? chitchatsLaunchEnvVars : []),
     ]
   : publicSanityEnvVars;
@@ -114,9 +124,12 @@ if (hasValue(process.env.NEXT_PUBLIC_SANITY_API_VERSION)) {
   validateApiVersion(process.env.NEXT_PUBLIC_SANITY_API_VERSION);
 }
 
-if (expectedDataset && process.env.NEXT_PUBLIC_SANITY_DATASET !== expectedDataset) {
+if (
+  expectedDataset &&
+  process.env.NEXT_PUBLIC_SANITY_DATASET !== expectedDataset
+) {
   errors.push(
-    `Invalid env var: NEXT_PUBLIC_SANITY_DATASET for Vercel ${vercelEnv}; expected ${expectedDataset}`
+    `Invalid env var: NEXT_PUBLIC_SANITY_DATASET for Vercel ${vercelEnv}; expected ${expectedDataset}`,
   );
 }
 
@@ -125,27 +138,31 @@ if (paymentGatewayMode !== "live" && paymentGatewayMode !== "mock") {
 }
 
 if (
-  serviceBookingModelMode !== "legacy"
-  && serviceBookingModelMode !== "dual"
-  && serviceBookingModelMode !== "operational"
+  serviceBookingModelMode !== "legacy" &&
+  serviceBookingModelMode !== "dual" &&
+  serviceBookingModelMode !== "operational"
 ) {
   errors.push(
-    "Malformed env var: SERVICE_BOOKING_MODEL_MODE must be legacy, dual, or operational"
+    "Malformed env var: SERVICE_BOOKING_MODEL_MODE must be legacy, dual, or operational",
   );
 }
 
 if (
-  serviceBookingSquareEnabled !== undefined
-  && serviceBookingSquareEnabled !== "true"
-  && serviceBookingSquareEnabled !== "false"
+  serviceBookingSquareEnabled !== undefined &&
+  serviceBookingSquareEnabled !== "true" &&
+  serviceBookingSquareEnabled !== "false"
 ) {
-  errors.push("Malformed env var: SERVICE_BOOKING_SQUARE_ENABLED must be true or false");
+  errors.push(
+    "Malformed env var: SERVICE_BOOKING_SQUARE_ENABLED must be true or false",
+  );
 }
 
 for (const [name, value] of [
   ["CHITCHATS_SHIPPING_ENABLED", chitchatsShippingEnabled],
   ["CHITCHATS_CHECKOUT_ENABLED", chitchatsCheckoutEnabled],
   ["CHITCHATS_US_SHIPPING_ENABLED", chitchatsUsShippingEnabled],
+  ["MANUAL_PRODUCT_CHECKOUT_ENABLED", manualProductCheckoutEnabled],
+  ["SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED", supplementalProductPaymentsEnabled],
 ]) {
   if (value !== undefined && value !== "true" && value !== "false") {
     errors.push(`Malformed env var: ${name} must be true or false`);
@@ -153,17 +170,24 @@ for (const [name, value] of [
 }
 
 if (chitchatsCheckoutEnabled === "true" && !isChitchatsShippingEnabled) {
-  errors.push("Invalid env vars: CHITCHATS_CHECKOUT_ENABLED requires CHITCHATS_SHIPPING_ENABLED=true");
+  errors.push(
+    "Invalid env vars: CHITCHATS_CHECKOUT_ENABLED requires CHITCHATS_SHIPPING_ENABLED=true",
+  );
 }
 
 if (
-  chitchatsCheckoutEnabled === "true"
-  && process.env.SHIPPING_POLICY_ENFORCEMENT_MODE !== "enforce"
+  chitchatsCheckoutEnabled === "true" &&
+  process.env.SHIPPING_POLICY_ENFORCEMENT_MODE !== "enforce"
 ) {
-  errors.push("Invalid env vars: CHITCHATS_CHECKOUT_ENABLED requires SHIPPING_POLICY_ENFORCEMENT_MODE=enforce");
+  errors.push(
+    "Invalid env vars: CHITCHATS_CHECKOUT_ENABLED requires SHIPPING_POLICY_ENFORCEMENT_MODE=enforce",
+  );
 }
 
-if (isPaymentMockMode && (process.env.NODE_ENV === "production" || vercelEnv === "production")) {
+if (
+  isPaymentMockMode &&
+  (process.env.NODE_ENV === "production" || vercelEnv === "production")
+) {
   errors.push("Payment mock mode is not allowed in production");
 }
 
@@ -190,16 +214,18 @@ if (isLaunchEnvironment) {
   if (hasValue(process.env.CHECKOUT_PII_ENCRYPTION_KEY)) {
     validateBase64EncryptionKey(
       "CHECKOUT_PII_ENCRYPTION_KEY",
-      process.env.CHECKOUT_PII_ENCRYPTION_KEY
+      process.env.CHECKOUT_PII_ENCRYPTION_KEY,
     );
   }
 
   if (
-    hasValue(process.env.BACKUP_RETENTION_DAYS)
-    && (!/^\d+$/.test(process.env.BACKUP_RETENTION_DAYS)
-      || Number(process.env.BACKUP_RETENTION_DAYS) > 30)
+    hasValue(process.env.BACKUP_RETENTION_DAYS) &&
+    (!/^\d+$/.test(process.env.BACKUP_RETENTION_DAYS) ||
+      Number(process.env.BACKUP_RETENTION_DAYS) > 30)
   ) {
-    errors.push("Malformed env var: BACKUP_RETENTION_DAYS must be an integer from 0 through 30");
+    errors.push(
+      "Malformed env var: BACKUP_RETENTION_DAYS must be an integer from 0 through 30",
+    );
   }
 
   if (hasValue(process.env.BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY)) {
@@ -214,13 +240,18 @@ if (isLaunchEnvironment) {
   }
 
   if (
-    hasValue(process.env.AUTH_SECRET)
-    && process.env.AUTH_SECRET.trim().length < 32
+    hasValue(process.env.AUTH_SECRET) &&
+    process.env.AUTH_SECRET.trim().length < 32
   ) {
-    errors.push("Malformed env var: AUTH_SECRET must be at least 32 characters");
+    errors.push(
+      "Malformed env var: AUTH_SECRET must be at least 32 characters",
+    );
   }
 
-  for (const name of ["HELCIM_GENERAL_API_TOKEN", "HELCIM_TRANSACTION_API_TOKEN"]) {
+  for (const name of [
+    "HELCIM_GENERAL_API_TOKEN",
+    "HELCIM_TRANSACTION_API_TOKEN",
+  ]) {
     if (hasValue(process.env[name])) {
       validateHelcimApiToken(name, process.env[name]);
     }
@@ -240,38 +271,83 @@ if (isLaunchEnvironment) {
   }
 
   if (isChitchatsShippingEnabled) {
-    if (process.env.CHITCHATS_ENVIRONMENT !== "staging" && process.env.CHITCHATS_ENVIRONMENT !== "production") {
-      errors.push("Malformed env var: CHITCHATS_ENVIRONMENT must be staging or production");
-    }
-    if (vercelEnv === "production" && process.env.CHITCHATS_ENVIRONMENT !== "production") {
-      errors.push("Invalid env var: production deployment requires CHITCHATS_ENVIRONMENT=production");
+    if (
+      process.env.CHITCHATS_ENVIRONMENT !== "staging" &&
+      process.env.CHITCHATS_ENVIRONMENT !== "production"
+    ) {
+      errors.push(
+        "Malformed env var: CHITCHATS_ENVIRONMENT must be staging or production",
+      );
     }
     if (
-      hasValue(process.env.CHITCHATS_QUOTE_SIGNING_SECRET)
-      && process.env.CHITCHATS_QUOTE_SIGNING_SECRET.trim().length < 32
+      vercelEnv === "production" &&
+      process.env.CHITCHATS_ENVIRONMENT !== "production"
     ) {
-      errors.push("Malformed env var: CHITCHATS_QUOTE_SIGNING_SECRET must be at least 32 characters");
+      errors.push(
+        "Invalid env var: production deployment requires CHITCHATS_ENVIRONMENT=production",
+      );
     }
-    if (!["off", "observe", "enforce"].includes(process.env.SHIPPING_POLICY_ENFORCEMENT_MODE)) {
-      errors.push("Malformed env var: SHIPPING_POLICY_ENFORCEMENT_MODE must be off, observe, or enforce");
+    if (
+      hasValue(process.env.CHITCHATS_QUOTE_SIGNING_SECRET) &&
+      !isStrongOperationalSecret(process.env.CHITCHATS_QUOTE_SIGNING_SECRET)
+    ) {
+      errors.push(
+        "Malformed env var: CHITCHATS_QUOTE_SIGNING_SECRET must be at least 32 random bytes",
+      );
     }
-    for (const name of ["SHIPPING_DECISION_TOKEN_SECRET", "ADDRESS_CHANGE_TOKEN_SECRET"]) {
-      if (hasValue(process.env[name]) && Buffer.byteLength(process.env[name].trim()) < 32) {
-        errors.push(`Malformed env var: ${name} must be at least 32 bytes`);
+    if (
+      !["off", "observe", "enforce"].includes(
+        process.env.SHIPPING_POLICY_ENFORCEMENT_MODE,
+      )
+    ) {
+      errors.push(
+        "Malformed env var: SHIPPING_POLICY_ENFORCEMENT_MODE must be off, observe, or enforce",
+      );
+    }
+    for (const name of [
+      "SHIPPING_DECISION_TOKEN_SECRET",
+      "ADDRESS_CHANGE_TOKEN_SECRET",
+    ]) {
+      if (
+        hasValue(process.env[name]) &&
+        !isStrongOperationalSecret(process.env[name])
+      ) {
+        errors.push(
+          `Malformed env var: ${name} must be at least 32 random bytes`,
+        );
       }
+    }
+    if (
+      hasValue(process.env.CHITCHATS_WORKER_CRON_SECRET) &&
+      !isStrongOperationalSecret(process.env.CHITCHATS_WORKER_CRON_SECRET)
+    ) {
+      errors.push(
+        "Malformed env var: CHITCHATS_WORKER_CRON_SECRET must be at least 32 random bytes",
+      );
+    }
+    if (
+      chitchatsCheckoutEnabled === "true" &&
+      hasValue(process.env.NEXT_PUBLIC_SITE_URL)
+    ) {
+      validateCanonicalHttpsOrigin(
+        "NEXT_PUBLIC_SITE_URL",
+        process.env.NEXT_PUBLIC_SITE_URL,
+      );
     }
   }
 }
 
 if (errors.length > 0) {
-  console.error(`[sanity-env] Environment validation failed:\n${errors.join("\n")}`);
+  console.error(
+    `[sanity-env] Environment validation failed:\n${errors.join("\n")}`,
+  );
   process.exit(1);
 }
 
 console.log(
   vercelEnv
     ? `[sanity-env] Vercel ${vercelEnv} environment validated`
-    : "[sanity-env] Local environment validated"
+    : "[sanity-env] Local environment validated",
 );
 
 function hasValue(value) {
@@ -280,13 +356,17 @@ function hasValue(value) {
 
 function validateProjectId(value) {
   if (value !== "3auncj84") {
-    errors.push("Malformed env var: NEXT_PUBLIC_SANITY_PROJECT_ID must match launch project ID");
+    errors.push(
+      "Malformed env var: NEXT_PUBLIC_SANITY_PROJECT_ID must match launch project ID",
+    );
   }
 }
 
 function validateApiVersion(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    errors.push("Malformed env var: NEXT_PUBLIC_SANITY_API_VERSION must use YYYY-MM-DD");
+    errors.push(
+      "Malformed env var: NEXT_PUBLIC_SANITY_API_VERSION must use YYYY-MM-DD",
+    );
   }
 }
 
@@ -298,6 +378,29 @@ function validateUrl(name, value) {
   }
 }
 
+function validateCanonicalHttpsOrigin(name, value) {
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol !== "https:" ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      (url.pathname !== "/" && url.pathname !== "")
+    ) {
+      throw new Error("not canonical");
+    }
+  } catch {
+    errors.push(`Malformed env var: ${name} must be a canonical HTTPS origin`);
+  }
+}
+
+function isStrongOperationalSecret(value) {
+  const normalized = value.trim();
+  return Buffer.byteLength(normalized) >= 32 && new Set(normalized).size >= 12;
+}
+
 function validateEmail(name, value) {
   if (!value.includes("@")) {
     errors.push(`Malformed env var: ${name} must include @`);
@@ -306,26 +409,27 @@ function validateEmail(name, value) {
 
 function validateBase64EncryptionKey(name, value) {
   if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value) || value.length % 4 !== 0) {
-    errors.push(
-      `Malformed env var: ${name} must be base64-encoded 32 bytes`
-    );
+    errors.push(`Malformed env var: ${name} must be base64-encoded 32 bytes`);
     return;
   }
 
   const key = Buffer.from(value, "base64");
 
   if (key.length !== 32 || key.toString("base64") !== value) {
-    errors.push(
-      `Malformed env var: ${name} must be base64-encoded 32 bytes`
-    );
+    errors.push(`Malformed env var: ${name} must be base64-encoded 32 bytes`);
   }
 }
 
 function validateEmailList(name, value) {
-  const entries = value.split(",").map((entry) => entry.trim()).filter(Boolean);
+  const entries = value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
 
   if (entries.length === 0 || entries.some((entry) => !entry.includes("@"))) {
-    errors.push(`Malformed env var: ${name} must be a comma-separated email list`);
+    errors.push(
+      `Malformed env var: ${name} must be a comma-separated email list`,
+    );
   }
 }
 
@@ -344,7 +448,7 @@ function validateHelcimApiToken(name, value) {
 
   if (trimmed.length < 32) {
     errors.push(
-      `Malformed env var: ${name} appears truncated; wrap Helcim tokens that contain # in quotes`
+      `Malformed env var: ${name} appears truncated; wrap Helcim tokens that contain # in quotes`,
     );
   }
 }
@@ -352,7 +456,7 @@ function validateHelcimApiToken(name, value) {
 function validateSquareEnvironment(value) {
   if (value !== "sandbox" && value !== "production") {
     errors.push(
-      "Malformed env var: SQUARE_ENVIRONMENT must be sandbox or production"
+      "Malformed env var: SQUARE_ENVIRONMENT must be sandbox or production",
     );
   }
 }
@@ -373,8 +477,9 @@ function validateHttpsUrl(name, value) {
 
 function launchEnvVarsWithoutLivePayment() {
   return launchEnvVars.filter(
-    (name) => name !== "HELCIM_GENERAL_API_TOKEN"
-      && name !== "HELCIM_TRANSACTION_API_TOKEN"
-      && name !== "HELCIM_WEBHOOK_VERIFIER_TOKEN"
+    (name) =>
+      name !== "HELCIM_GENERAL_API_TOKEN" &&
+      name !== "HELCIM_TRANSACTION_API_TOKEN" &&
+      name !== "HELCIM_WEBHOOK_VERIFIER_TOKEN",
   );
 }

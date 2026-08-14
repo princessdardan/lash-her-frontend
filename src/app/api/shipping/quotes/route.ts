@@ -30,6 +30,10 @@ import type { ShippingRecipient } from "@/lib/shipping/types";
 import { buildBookingAbuseKey } from "@/lib/security/trusted-client-ip";
 import { checkShippingQuoteRateLimit } from "@/lib/security/shipping-abuse-control";
 import { readBoundedJsonBody } from "@/lib/security/bounded-json-body";
+import {
+  assertCheckoutReadiness,
+  CheckoutNotReadyError,
+} from "@/lib/shipping/readiness";
 
 export const runtime = "nodejs";
 const SHIPPING_QUOTE_BODY_MAX_BYTES = 32_000;
@@ -61,6 +65,19 @@ export async function POST(req: NextRequest): Promise<Response> {
       { error: "Invalid shipping quote request" },
       { status: 400 },
     );
+  try {
+    await assertCheckoutReadiness({
+      destinationCountryCode: body.recipient.countryCode,
+    });
+  } catch (error) {
+    if (error instanceof CheckoutNotReadyError) {
+      return NextResponse.json(
+        { error: "Shipping checkout is not ready" },
+        { status: 503 },
+      );
+    }
+    throw error;
+  }
   const limiterKey = buildBookingAbuseKey({
     headers: req.headers,
     scope: "shipping-quotes",

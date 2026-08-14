@@ -5,7 +5,7 @@ on:
   pull_request:
     branches: [main]
 jobs:
-  lint-and-unit:
+  quality-and-unit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,8 +14,40 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - run: npx tsc --noEmit
       - run: npm run lint
       - run: npm run test:unit
+      - run: npx drizzle-kit check
+  database:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: lash_her_ci
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d lash_her_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/lash_her_ci?sslmode=disable
+      TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/lash_her_ci?sslmode=disable
+      PRIVATE_DB_MIGRATION_TARGET: local
+      PRIVATE_DB_MIGRATION_HOST: 127.0.0.1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run db:migrate
+      - run: npm run test:unit:db
   audit:
     runs-on: ubuntu-latest
     steps:
@@ -37,6 +69,31 @@ jobs:
       - run: npm ci
       - run: npm run build
         env:
+          CHITCHATS_CHECKOUT_ENABLED: "false"
+          CHITCHATS_US_SHIPPING_ENABLED: "false"
+          MANUAL_PRODUCT_CHECKOUT_ENABLED: "false"
+          SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED: "false"
+          NEXT_PUBLIC_SANITY_PROJECT_ID: 3auncj84
+          NEXT_PUBLIC_SANITY_DATASET: staging-2026-05-10
+          NEXT_PUBLIC_SANITY_API_VERSION: 2026-03-24
+          SANITY_API_READ_TOKEN: ${{ secrets.SANITY_API_READ_TOKEN }}
+  browser:
+    runs-on: ubuntu-latest
+    needs: [quality-and-unit, database, build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm test -- --project=chromium
+        env:
+          CHITCHATS_CHECKOUT_ENABLED: "false"
+          CHITCHATS_US_SHIPPING_ENABLED: "false"
+          MANUAL_PRODUCT_CHECKOUT_ENABLED: "false"
+          SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED: "false"
           NEXT_PUBLIC_SANITY_PROJECT_ID: 3auncj84
           NEXT_PUBLIC_SANITY_DATASET: staging-2026-05-10
           NEXT_PUBLIC_SANITY_API_VERSION: 2026-03-24

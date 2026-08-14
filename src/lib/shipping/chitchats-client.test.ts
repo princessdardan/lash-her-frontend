@@ -74,6 +74,8 @@ test("creates a Chit Chats shipment using the documented client-scoped contract"
   assert.equal(body.order_id, "lhq-reference");
   assert.equal(body.postage_type, "unknown");
   assert.equal(body.insurance_requested, true);
+  assert.equal("duties_paid_requested" in body, false);
+  assert.equal("vat_reference" in body, false);
   assert.equal(body.value, "24.00");
   assert.deepEqual(body.line_items, [
     {
@@ -87,6 +89,59 @@ test("creates a Chit Chats shipment using the documented client-scoped contract"
       weight: 60,
     },
   ]);
+});
+
+test("US rate discovery remains DDU and omits provider DDP fields", async () => {
+  let payload: Record<string, unknown> = {};
+  const usConfig = { ...config, usShippingEnabled: true };
+  const client = createChitChatsClient(usConfig, (async (_url, init) => {
+    payload = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return Response.json(
+      { shipment: { id: "shipment-us", status: "unpaid", rates: [] } },
+      { status: 201 },
+    );
+  }) as typeof fetch);
+  await client.createShipment({
+    recipient: {
+      name: "US Client",
+      email: "us@example.com",
+      phone: "+12125550100",
+      line1: "1 Main Street",
+      city: "Buffalo",
+      province: "NY",
+      postalCode: "14201",
+      country: "United States",
+      countryCode: "US",
+    },
+    packageSnapshot: {
+      profileId: "profile-1",
+      profileSlug: "small-mailer",
+      packageType: "parcel",
+      lengthCm: 23,
+      widthCm: 15,
+      heightCm: 4,
+      tareWeightGrams: 40,
+      totalWeightGrams: 100,
+    },
+    customsLines: [
+      {
+        productId: "product-1",
+        sku: "SKU-1",
+        description: "Lash cleanser",
+        quantity: 1,
+        unitValueCents: 2400,
+        unitWeightGrams: 60,
+        countryOfOrigin: "CA",
+        hsTariffCode: "3304990000",
+      },
+    ],
+    merchandiseValueCents: 2400,
+    orderReference: "lhq-us-reference",
+    signatureRequested: false,
+  });
+  assert.equal(payload.postage_type, "unknown");
+  assert.equal("duties_paid_requested" in payload, false);
+  assert.equal("vat_reference" in payload, false);
 });
 
 test("uses documented shipment lifecycle endpoints and response shapes", async () => {

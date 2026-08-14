@@ -18,6 +18,7 @@ import type { ProductShipmentStatus } from "./store-types";
 import type { ShippingPackageProfile } from "./types";
 import { loadShippingPolicyContext } from "./policy";
 import { computeShippingDeadlines } from "./policy-calendar";
+import { allowedShipmentSourceStatuses } from "./status";
 
 export type ProductShipmentRow = typeof productShipments.$inferSelect;
 export type ShipmentPurchaseClaim = ProductShipmentRow & {
@@ -201,8 +202,8 @@ export async function activateShipmentForPaidOrder(
       .select({
         id: checkoutOrders.id,
         paidAt: checkoutOrders.paidAt,
-        fraudClassification: checkoutOrders.fraudClassification,
-        fraudClearedAt: checkoutOrders.fraudClearedAt,
+        paymentRiskStatus: checkoutOrders.paymentRiskStatus,
+        activeFulfillmentShipmentId: checkoutOrders.activeFulfillmentShipmentId,
         fulfillmentClearedAt: checkoutOrders.fulfillmentClearedAt,
       })
       .from(checkoutOrders)
@@ -215,17 +216,10 @@ export async function activateShipmentForPaidOrder(
       )
       .for("update")
       .limit(1);
-    if (!order) return false;
-    const cleared =
-      order.fraudClassification === "low" || order.fraudClearedAt !== null;
-    if (!cleared) return false;
+    if (!order?.activeFulfillmentShipmentId) return false;
+    if (order.paymentRiskStatus !== "cleared") return false;
 
-    const clearedAt =
-      order.fulfillmentClearedAt ??
-      (order.fraudClassification === "high"
-        ? order.fraudClearedAt
-        : order.paidAt) ??
-      now;
+    const clearedAt = order.fulfillmentClearedAt ?? order.paidAt ?? now;
     const deadlines = computeShippingDeadlines({
       clearedAt,
       settings: policy.settings,
@@ -249,9 +243,15 @@ export async function activateShipmentForPaidOrder(
         and(
           eq(productShipments.orderId, order.id),
           eq(productShipments.status, "payment_pending"),
+          eq(productShipments.id, order.activeFulfillmentShipmentId),
         ),
       )
       .returning({ id: productShipments.id });
+    if (updated)
+      await tx
+        .update(checkoutOrders)
+        .set({ activeFulfillmentShipmentId: updated.id, updatedAt: now })
+        .where(eq(checkoutOrders.id, order.id));
     return Boolean(updated);
   });
 }
@@ -263,7 +263,12 @@ export async function getShipmentForOrderReference(
     .select({ shipment: productShipments })
     .from(productShipments)
     .innerJoin(checkoutOrders, eq(productShipments.orderId, checkoutOrders.id))
-    .where(eq(checkoutOrders.orderId, orderReference))
+    .where(
+      and(
+        eq(checkoutOrders.orderId, orderReference),
+        eq(productShipments.id, checkoutOrders.activeFulfillmentShipmentId),
+      ),
+    )
     .limit(1);
   return row?.shipment ?? null;
 }
@@ -278,6 +283,8 @@ export async function claimShipmentPurchase(
       atRiskValueCents: checkoutOrders.atRiskValueCents,
       fraudClassification: checkoutOrders.fraudClassification,
       fraudClearedAt: checkoutOrders.fraudClearedAt,
+      paymentRiskStatus: checkoutOrders.paymentRiskStatus,
+      activeFulfillmentShipmentId: checkoutOrders.activeFulfillmentShipmentId,
       merchandiseAmountCents: checkoutOrders.merchandiseAmountCents,
     })
     .from(checkoutOrders)
@@ -286,10 +293,11 @@ export async function claimShipmentPurchase(
         eq(checkoutOrders.orderId, orderReference),
         eq(checkoutOrders.status, "paid"),
         eq(checkoutOrders.purpose, "product"),
+        eq(checkoutOrders.paymentRiskStatus, "cleared"),
       ),
     )
     .limit(1);
-  if (!order) return null;
+  if (!order?.activeFulfillmentShipmentId) return null;
   const [shipment] = await getPrivateDb()
     .update(productShipments)
     .set({ status: "purchase_pending", updatedAt: new Date() })
@@ -297,6 +305,7 @@ export async function claimShipmentPurchase(
       and(
         eq(productShipments.orderId, order.id),
         eq(productShipments.status, "ready_for_staff"),
+        eq(productShipments.id, order.activeFulfillmentShipmentId),
       ),
     )
     .returning();
@@ -389,9 +398,18 @@ export async function updateShipmentFromProvider(input: {
   trackingUrl?: string | null;
   actualPostageCents?: number | null;
   actualInsuranceCents?: number | null;
+  actualPurchaseTotalCents?: number | null;
+  actualDeliveryFeeCents?: number | null;
+  actualTariffFeeCents?: number | null;
+  actualFdaPriorNotificationFeeCents?: number | null;
+  actualFederalTaxCents?: number | null;
+  actualProvincialTaxCents?: number | null;
   estimatedDeliveryAt?: string | null;
-}): Promise<void> {
-  await getPrivateDb()
+  providerEventAt?: Date | null;
+}): Promise<boolean> {
+  const now = new Date();
+  const providerEventAt = input.providerEventAt ?? now;
+  const updated = await getPrivateDb()
     .update(productShipments)
     .set({
       status: input.status,
@@ -407,6 +425,16 @@ export async function updateShipmentFromProvider(input: {
           : sanitizeTrackingUrl(input.trackingUrl),
       actualPostageCents: input.actualPostageCents ?? undefined,
       actualInsuranceCents: input.actualInsuranceCents ?? undefined,
+      actualPurchaseTotalCents: input.actualPurchaseTotalCents ?? undefined,
+      actualDeliveryFeeCents: input.actualDeliveryFeeCents ?? undefined,
+      actualTariffFeeCents: input.actualTariffFeeCents ?? undefined,
+      actualFdaPriorNotificationFeeCents:
+        input.actualFdaPriorNotificationFeeCents ?? undefined,
+      actualFederalTaxCents: input.actualFederalTaxCents ?? undefined,
+      actualProvincialTaxCents: input.actualProvincialTaxCents ?? undefined,
+      providerEventAt,
+      stateVersion: sql`${productShipments.stateVersion} + 1`,
+      lastPolledAt: now,
       latestEstimatedDeliveryAt:
         input.estimatedDeliveryAt === undefined
           ? undefined
@@ -439,9 +467,23 @@ export async function updateShipmentFromProvider(input: {
         input.status === "manual_review"
           ? sql`coalesce(${productShipments.manualReviewStartedAt}, now())`
           : undefined,
-      updatedAt: new Date(),
+      updatedAt: now,
     })
-    .where(eq(productShipments.id, input.id));
+    .where(
+      and(
+        eq(productShipments.id, input.id),
+        inArray(
+          productShipments.status,
+          allowedShipmentSourceStatuses(input.status),
+        ),
+        or(
+          isNull(productShipments.providerEventAt),
+          lte(productShipments.providerEventAt, providerEventAt),
+        ),
+      ),
+    )
+    .returning({ id: productShipments.id });
+  return updated.length === 1;
 }
 
 export async function enqueueShipmentJob(input: {
@@ -527,22 +569,121 @@ export async function listShipmentsDueForPolling(
 }
 
 export async function abandonExpiredQuotes(now = new Date()): Promise<number> {
-  const rows = await getPrivateDb()
-    .update(productShipments)
-    .set({ status: "abandoned", updatedAt: now })
-    .where(
-      and(
-        isNull(productShipments.orderId),
-        inArray(productShipments.status, [
-          "quoted",
-          "quote_pending",
-          "quote_unknown",
-        ]),
-        lte(productShipments.quoteExpiresAt, now),
-      ),
-    )
-    .returning({ id: productShipments.id });
-  return rows.length;
+  return getPrivateDb().transaction(async (tx) => {
+    const rows = await tx
+      .update(productShipments)
+      .set({ status: "abandoned", updatedAt: now })
+      .where(
+        and(
+          isNull(productShipments.orderId),
+          inArray(productShipments.status, [
+            "quoted",
+            "quote_pending",
+            "quote_unknown",
+          ]),
+          lte(productShipments.quoteExpiresAt, now),
+        ),
+      )
+      .returning({ id: productShipments.id });
+    if (rows.length)
+      await tx
+        .insert(productShipmentJobs)
+        .values(
+          rows.map(({ id }) => ({
+            shipmentId: id,
+            type: "cleanup" as const,
+            status: "queued" as const,
+            idempotencyKey: `quote-cleanup/${id}`,
+            operationPayloadHash: `quote-cleanup/${id}`,
+          })),
+        )
+        .onConflictDoNothing();
+    return rows.length;
+  });
+}
+
+export async function claimCleanupJobs(now = new Date(), limit = 25) {
+  const leaseOwner = `cleanup/${crypto.randomUUID()}`;
+  const leaseExpiresAt = new Date(now.getTime() + 5 * 60_000);
+  return getPrivateDb().transaction(async (tx) => {
+    const claimedIds = await tx.execute<{ id: string }>(sql`
+      select ${productShipmentJobs.id} as id
+      from ${productShipmentJobs}
+      where ${productShipmentJobs.type} = 'cleanup'
+        and (
+          ${productShipmentJobs.status} in ('queued', 'retryable_failed')
+          or (
+            ${productShipmentJobs.status} = 'processing'
+            and ${productShipmentJobs.leaseExpiresAt} < ${now}
+          )
+        )
+        and coalesce(${productShipmentJobs.nextAttemptAt}, ${productShipmentJobs.availableAt}) <= ${now}
+      order by ${productShipmentJobs.availableAt}, ${productShipmentJobs.id}
+      for update skip locked
+      limit ${limit}
+    `);
+    const ids = claimedIds.rows.map(({ id }) => id);
+    if (!ids.length) return [];
+    return tx
+      .update(productShipmentJobs)
+      .set({
+        status: "processing",
+        leaseOwner,
+        leaseExpiresAt,
+        attemptCount: sql`${productShipmentJobs.attemptCount} + 1`,
+        stateVersion: sql`${productShipmentJobs.stateVersion} + 1`,
+        updatedAt: now,
+      })
+      .where(inArray(productShipmentJobs.id, ids))
+      .returning();
+  });
+}
+
+export async function completeShipmentJob(
+  id: string,
+  input: { outcomeCode: string; manualReview?: boolean },
+): Promise<void> {
+  await getPrivateDb()
+    .update(productShipmentJobs)
+    .set({
+      status: input.manualReview ? "dead_letter" : "succeeded",
+      outcomeCode: input.outcomeCode,
+      completedAt: new Date(),
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(productShipmentJobs.id, id));
+}
+
+export async function retryShipmentJob(
+  id: string,
+  input: { error: string; retryAfterSeconds?: number | null },
+): Promise<void> {
+  const delaySeconds = Math.min(
+    24 * 60 * 60,
+    Math.max(60, input.retryAfterSeconds ?? 5 * 60),
+  );
+  await getPrivateDb()
+    .update(productShipmentJobs)
+    .set({
+      status: "retryable_failed",
+      lastError: input.error.slice(0, 1_000),
+      nextAttemptAt: new Date(Date.now() + delaySeconds * 1_000),
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(productShipmentJobs.id, id));
+}
+
+export async function getShipmentForCleanup(id: string) {
+  const [shipment] = await getPrivateDb()
+    .select()
+    .from(productShipments)
+    .where(eq(productShipments.id, id))
+    .limit(1);
+  return shipment ?? null;
 }
 
 export async function redactExpiredShipmentPii(

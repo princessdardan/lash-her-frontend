@@ -62,6 +62,22 @@ export async function requirePermission(
   });
 }
 
+export async function requireRecentAdminAuthentication(
+  maxAgeMs = 5 * 60_000,
+): Promise<Date> {
+  const { auth } = await import("@/auth");
+  const session = await auth();
+  const authenticatedAt = session?.user?.authenticatedAt;
+  if (typeof authenticatedAt !== "number" || authenticatedAt <= 0) {
+    throw new Error("Step-up authentication is required");
+  }
+  const authenticatedAtDate = new Date(authenticatedAt * 1_000);
+  if (Date.now() - authenticatedAtDate.getTime() > maxAgeMs) {
+    throw new Error("Step-up authentication has expired");
+  }
+  return authenticatedAtDate;
+}
+
 async function getRequestActor(): Promise<AdminActor> {
   const requestId = (await headers()).get(ADMIN_REQUEST_ID_HEADER);
 

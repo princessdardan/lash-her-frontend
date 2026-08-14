@@ -23,6 +23,9 @@ import {
 } from "@/lib/commerce/verified-payment";
 import type { VerifiablePendingOrder } from "@/lib/commerce/verified-payment";
 import type { HelcimPayloadValue } from "@/lib/commerce/helcim-types";
+import type { HelcimCardTransactionResponse } from "@/lib/commerce/helcim-types";
+import { getHelcimCardTransaction } from "@/lib/commerce/helcim-client";
+import { normalizeHelcimCardTransactionDetails } from "@/lib/commerce/helcim-webhook";
 import {
   buildServiceBookingConfirmationResolverUrl,
   buildServiceBookingConfirmationUrl,
@@ -30,6 +33,7 @@ import {
 } from "@/lib/training-checkout";
 import { activateShipmentForPaidOrder } from "@/lib/shipping/shipment-store";
 import { classifyProductOrderPaymentRisk } from "@/lib/shipping/fraud";
+import { finalizeProductPayment } from "@/lib/commerce/product-payment-finalizer";
 
 interface ValidatePaymentBody {
   checkoutToken: string;
@@ -46,9 +50,13 @@ type ValidatePaymentRequest = Request & {
 interface ValidatePaymentPostHandlerDependencies {
   activateShipmentForPaidOrder?: typeof activateShipmentForPaidOrder;
   finalizeAppointmentPaymentForOrder: typeof finalizeAppointmentPaymentForOrder;
+  finalizeProductPayment?: typeof finalizeProductPayment;
   getAppointmentHoldByCheckoutOrderPublicId: typeof getAppointmentHoldByCheckoutOrderPublicId;
   getOrIssueTrainingSchedulingTokenForPaidOrder: typeof getOrIssueTrainingSchedulingTokenForPaidOrder;
   getPendingOrderByCheckoutToken: typeof getPendingOrderByCheckoutToken;
+  getProductCardTransaction?: (
+    transactionId: string,
+  ) => Promise<HelcimCardTransactionResponse | null>;
   getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId: typeof getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId;
   logError: typeof console.error;
   markOrderPaid: typeof markOrderPaid;
@@ -125,18 +133,51 @@ export function createValidatePaymentPostHandler(
       });
 
       if (!payment.ok) {
-        await dependencies.markOrderVerificationFailed(order.orderId);
         return Response.json(
           { error: "Payment could not be verified" },
           { status: 400 },
         );
       }
 
-      const persisted = await dependencies.persistVerifiedPayment({
-        markPaid: dependencies.markOrderPaid,
-        orderId: order.orderId,
-        transactionId: payment.transactionId,
-      });
+      const authoritativeProductTransaction =
+        order.purpose === "product" && dependencies.getProductCardTransaction
+          ? await dependencies.getProductCardTransaction(payment.transactionId)
+          : null;
+      const productFinalization =
+        order.purpose === "product" && dependencies.finalizeProductPayment
+          ? await dependencies.finalizeProductPayment({
+              orderReference: order.orderId,
+              transactionId: payment.transactionId,
+              source: authoritativeProductTransaction
+                ? "helcim_api"
+                : "client_callback",
+              data: authoritativeProductTransaction
+                ? toFinalizationData(authoritativeProductTransaction)
+                : data,
+            })
+          : null;
+      const persisted = productFinalization
+        ? ["applied", "already_applied"].includes(
+            productFinalization.transition,
+          )
+        : await dependencies.persistVerifiedPayment({
+            markPaid: async (orderId, transactionId) => {
+              const transition = await dependencies.markOrderPaid(
+                orderId,
+                transactionId,
+              );
+              if (
+                transition !== "applied" &&
+                transition !== "already_applied"
+              ) {
+                throw new Error(
+                  `Payment transition requires review: ${transition}`,
+                );
+              }
+            },
+            orderId: order.orderId,
+            transactionId: payment.transactionId,
+          });
 
       if (!persisted) {
         return Response.json(
@@ -145,7 +186,7 @@ export function createValidatePaymentPostHandler(
         );
       }
 
-      if (order.purpose === "product")
+      if (order.purpose === "product" && !productFinalization)
         await dependencies.classifyProductOrderPaymentRisk?.(
           order.orderId,
           data,
@@ -311,6 +352,18 @@ export function createValidatePaymentPostHandler(
         );
       }
 
+      if (productFinalization && productFinalization.riskStatus !== "cleared") {
+        return Response.json(
+          {
+            message:
+              "Payment received; fulfillment confirmation is under review.",
+            orderId: order.orderId,
+            redirectUrl: `/products/confirmation?order=${encodeURIComponent(order.orderId)}`,
+          },
+          { status: 202 },
+        );
+      }
+
       return Response.json({
         orderId: order.orderId,
         redirectUrl: `/products/confirmation?order=${encodeURIComponent(order.orderId)}`,
@@ -329,10 +382,15 @@ export async function POST(req: NextRequest): Promise<Response> {
   return createValidatePaymentPostHandler({
     activateShipmentForPaidOrder,
     classifyProductOrderPaymentRisk,
+    finalizeProductPayment,
     finalizeAppointmentPaymentForOrder,
     getOrIssueTrainingSchedulingTokenForPaidOrder,
     getAppointmentHoldByCheckoutOrderPublicId,
     getPendingOrderByCheckoutToken,
+    getProductCardTransaction:
+      process.env.PAYMENT_GATEWAY_MODE === "mock"
+        ? undefined
+        : getHelcimCardTransaction,
     getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
     logError: console.error,
     markOrderPaid,
@@ -343,6 +401,15 @@ export async function POST(req: NextRequest): Promise<Response> {
     sendTrainingPaymentNotificationEmailsIfNeeded,
     verifyHelcimPayment,
   })(req);
+}
+
+function toFinalizationData(
+  details: HelcimCardTransactionResponse,
+): Record<string, HelcimPayloadValue> {
+  const normalized = normalizeHelcimCardTransactionDetails(details);
+  return Object.fromEntries(
+    Object.entries(normalized).filter(([, value]) => value !== undefined),
+  ) as Record<string, HelcimPayloadValue>;
 }
 
 async function getAppointmentBookingConfirmationRedirectUrl(input: {

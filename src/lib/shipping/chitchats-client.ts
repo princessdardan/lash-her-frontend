@@ -186,7 +186,6 @@ function toShipmentPayload(
     size_z: input.packageSnapshot.heightCm,
     insurance_requested: true,
     signature_requested: input.signatureRequested,
-    duties_paid_requested: input.recipient.countryCode === "US",
     postage_type: input.postageType ?? "unknown",
     ship_date: input.shipDate ?? "today",
     line_items: input.customsLines.map((line) => ({

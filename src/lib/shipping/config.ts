@@ -34,6 +34,14 @@ export function isChitChatsCheckoutEnabled(): boolean {
   );
 }
 
+export function isManualProductCheckoutEnabled(): boolean {
+  return process.env.MANUAL_PRODUCT_CHECKOUT_ENABLED === "true";
+}
+
+export function isSupplementalProductPaymentsEnabled(): boolean {
+  return process.env.SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED === "true";
+}
+
 export function getChitChatsConfig(): ChitChatsConfig {
   const environment = process.env.CHITCHATS_ENVIRONMENT ?? "staging";
   if (environment !== "staging" && environment !== "production") {

@@ -7,6 +7,7 @@ import {
   type ProductCartState,
 } from "./product-cart-provider";
 import {
+  LEGACY_PRODUCT_CART_STORAGE_KEY,
   PRODUCT_CART_STORAGE_KEY,
   loadProductCartItems,
   persistProductCartItems,
@@ -43,6 +44,7 @@ const throwingStorage = {
 const emptyState: ProductCartState = {
   items: [],
   isOpen: false,
+  limitMessage: null,
 };
 
 describe("product cart provider helpers", () => {
@@ -75,6 +77,7 @@ describe("product cart provider helpers", () => {
         { productId: "product-1", variantId: "volume", quantity: 1 },
       ],
       isOpen: true,
+      limitMessage: null,
     };
 
     assert.deepEqual(
@@ -86,6 +89,7 @@ describe("product cart provider helpers", () => {
       {
         items: [{ productId: "product-1", variantId: "volume", quantity: 1 }],
         isOpen: true,
+        limitMessage: null,
       },
     );
   });
@@ -94,6 +98,7 @@ describe("product cart provider helpers", () => {
     const state: ProductCartState = {
       items: [{ productId: "product-1", quantity: 2 }],
       isOpen: false,
+      limitMessage: null,
     };
 
     assert.deepEqual(
@@ -119,11 +124,13 @@ describe("product cart provider helpers", () => {
     const state: ProductCartState = {
       items: [{ productId: "product-1", quantity: 2 }],
       isOpen: true,
+      limitMessage: null,
     };
 
     assert.deepEqual(productCartReducer(state, { type: "clearCart" }), {
       items: [],
       isOpen: true,
+      limitMessage: null,
     });
   });
 
@@ -154,14 +161,53 @@ describe("product cart provider helpers", () => {
   it("falls back to an empty cart when storage access throws", () => {
     assert.deepEqual(loadProductCartItems(throwingStorage), []);
     assert.doesNotThrow(() => {
-      persistProductCartItems([{ productId: "product-1", quantity: 1 }], throwingStorage);
+      persistProductCartItems(
+        [{ productId: "product-1", quantity: 1 }],
+        throwingStorage,
+      );
     });
+  });
+
+  it("preserves every legacy line and blocks new distinct lines above the limit", () => {
+    const legacyItems = Array.from({ length: 21 }, (_, index) => ({
+      productId: `product-${index + 1}`,
+      quantity: 1,
+    }));
+    const storage = new MemoryStorage();
+    storage.setItem(
+      LEGACY_PRODUCT_CART_STORAGE_KEY,
+      JSON.stringify(legacyItems),
+    );
+
+    const loaded = loadProductCartItems(storage);
+    assert.equal(loaded.length, 21);
+
+    const hydrated = productCartReducer(emptyState, {
+      type: "hydrate",
+      items: loaded,
+    });
+    assert.equal(hydrated.items.length, 21);
+    assert.match(hydrated.limitMessage ?? "", /more than 20 distinct items/i);
+
+    const blocked = productCartReducer(hydrated, {
+      type: "addItem",
+      item: { productId: "product-22", quantity: 1 },
+    });
+    assert.equal(blocked.items.length, 21);
+    assert.equal(blocked.isOpen, true);
+
+    const quantityAllowed = productCartReducer(hydrated, {
+      type: "addItem",
+      item: { productId: "product-1", quantity: 1 },
+    });
+    assert.equal(quantityAllowed.items[0]?.quantity, 2);
   });
 
   it("creates isolated Buy Now payloads without mutating stored cart state", () => {
     const state: ProductCartState = {
       items: [{ productId: "product-1", quantity: 2 }],
       isOpen: false,
+      limitMessage: null,
     };
 
     const payload = createBuyNowPayload({
@@ -173,8 +219,13 @@ describe("product cart provider helpers", () => {
     payload[0].quantity = 3;
 
     assert.deepEqual(state.items, [{ productId: "product-1", quantity: 2 }]);
-    assert.deepEqual(createBuyNowPayload({ productId: "product-2", variantId: "classic", quantity: 12 }), [
-      { productId: "product-2", variantId: "classic", quantity: 10 },
-    ]);
+    assert.deepEqual(
+      createBuyNowPayload({
+        productId: "product-2",
+        variantId: "classic",
+        quantity: 12,
+      }),
+      [{ productId: "product-2", variantId: "classic", quantity: 10 }],
+    );
   });
 });

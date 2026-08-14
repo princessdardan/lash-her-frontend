@@ -29,7 +29,11 @@ export async function POST(req: NextRequest): Promise<Response> {
     return invalidCartPreviewRequest();
   }
 
-  if (!isRecord(body) || !Array.isArray(body.items) || body.items.length > MAX_CART_PREVIEW_ITEMS) {
+  if (
+    !isRecord(body) ||
+    !Array.isArray(body.items) ||
+    body.items.length > MAX_CART_PREVIEW_ITEMS
+  ) {
     return invalidCartPreviewRequest();
   }
 
@@ -84,6 +88,11 @@ function toCatalogProduct(product: TProduct): CatalogProduct {
     discountPrice: product.discountPrice,
     currency: product.currency,
     isAvailable: product.isAvailable,
+    checkoutMode:
+      product.shipping?.fulfillmentMode === "manual" ||
+      product.shipping?.hazardousMaterial
+        ? "manual"
+        : "automated",
     variants: product.variants?.map((variant) => ({
       id: variant._key,
       sku: variant.sku,
@@ -91,6 +100,16 @@ function toCatalogProduct(product: TProduct): CatalogProduct {
       price: variant.price,
       discountPrice: variant.discountPrice,
       isAvailable: variant.isAvailable,
+      options: variant.options?.flatMap((option) =>
+        option.name && option.value
+          ? [{ label: option.name, value: option.value }]
+          : [],
+      ),
+      checkoutMode:
+        (variant.shipping ?? product.shipping)?.fulfillmentMode === "manual" ||
+        (variant.shipping ?? product.shipping)?.hazardousMaterial
+          ? "manual"
+          : "automated",
     })),
   };
 }
@@ -100,7 +119,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isValidCartIdentifier(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0 && value.length <= MAX_CART_PREVIEW_ID_LENGTH;
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= MAX_CART_PREVIEW_ID_LENGTH
+  );
 }
 
 function invalidCartPreviewRequest(): NextResponse<CartPreviewErrorResponse> {

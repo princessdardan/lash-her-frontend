@@ -127,8 +127,9 @@ const helperScript = String.raw`
         markedPaidOrders.push({ orderId, transactionId });
         operationOrder.push("mark-paid");
         if (markOrderPaid) {
-          await markOrderPaid(orderId, transactionId);
+          return (await markOrderPaid(orderId, transactionId)) ?? "applied";
         }
+        return "applied";
       },
       markOrderVerificationFailed: async (orderId) => {
         markedFailedOrders.push(orderId);
@@ -255,7 +256,7 @@ test("checkout payment validation rejects Square provider orders before Helcim v
   `);
 });
 
-test("checkout payment validation rejects invalid hashes and marks order failed", () => {
+test("checkout payment validation rejects invalid hashes without downgrading the order", () => {
   runRouteScenario(`
     const { handler, markedFailedOrders } = await runScenario({
       verifyHelcimPayment: () => ({ ok: false, reason: "invalid_hash" }),
@@ -269,11 +270,11 @@ test("checkout payment validation rejects invalid hashes and marks order failed"
 
     assert.equal(response.status, 400);
     assert.deepEqual(await response.json(), { error: "Payment could not be verified" });
-    assert.deepEqual(markedFailedOrders, ["lh-order-123"]);
+    assert.deepEqual(markedFailedOrders, []);
   `);
 });
 
-test("checkout payment validation marks order failed for payment mismatches", () => {
+test("checkout payment validation rejects payment mismatches without downgrading the order", () => {
   runRouteScenario(`
     const { handler, markedFailedOrders, markedPaidOrders } = await runScenario({
       verifyHelcimPayment: () => ({ ok: false, reason: "wrong_amount" }),
@@ -286,7 +287,7 @@ test("checkout payment validation marks order failed for payment mismatches", ()
     }));
 
     assert.equal(response.status, 400);
-    assert.deepEqual(markedFailedOrders, ["lh-order-123"]);
+    assert.deepEqual(markedFailedOrders, []);
     assert.equal(markedPaidOrders.length, 0);
   `);
 });
@@ -313,7 +314,7 @@ test("checkout payment validation rejects mock Helcim decline and cancel payload
 
       assert.equal(response.status, 400);
       assert.deepEqual(await response.json(), { error: "Payment could not be verified" });
-      assert.deepEqual(markedFailedOrders, ["lh-order-123"]);
+      assert.deepEqual(markedFailedOrders, []);
       assert.deepEqual(markedPaidOrders, []);
     }
   `);
@@ -325,8 +326,9 @@ test("checkout payment validation accepts live HelcimPay payloads without invoic
       amount: "1130.00",
       currency: "CAD",
       invoiceNumber: "INV-4242",
-      status: "APPROVAL",
-      transactionId: "txn-live-123",
+        status: "APPROVED",
+        transactionId: "txn-live-123",
+        transactionType: "purchase",
     };
     const { handler, markedPaidOrders } = await runScenario({
       verifyHelcimPayment: realVerifyHelcimPayment,
@@ -367,7 +369,6 @@ test("checkout payment validation sends product confirmation email after persist
     assert.deepEqual(sentProductEmails, ["lh-order-123"]);
   `);
 });
-
 
 test("checkout payment validation finalizes appointment payments after persistence", () => {
   runRouteScenario(`
@@ -523,7 +524,6 @@ test("checkout payment validation falls back to service confirmation resolver fo
     });
   `);
 });
-
 
 test("checkout payment validation can confirm an already-paid appointment order", () => {
   runRouteScenario(`

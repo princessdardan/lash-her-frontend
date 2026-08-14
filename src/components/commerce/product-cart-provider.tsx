@@ -22,6 +22,7 @@ const MAX_QUANTITY = 10;
 export interface ProductCartState {
   items: CartInputItem[];
   isOpen: boolean;
+  limitMessage: string | null;
 }
 
 export type ProductCartInputItem = Omit<CartInputItem, "quantity"> & {
@@ -55,13 +56,13 @@ export interface ProductCartContextValue extends ProductCartState {
 const initialState: ProductCartState = {
   items: [],
   isOpen: false,
+  limitMessage: null,
 };
 
 const ProductCartContext = createContext<ProductCartContextValue | null>(null);
 
 export function ProductCartProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(productCartReducer, initialState);
-
   const hasHydratedRef = useRef(false);
 
   useEffect(() => {
@@ -70,8 +71,12 @@ export function ProductCartProvider({ children }: { children: ReactNode }) {
   }, [state.items]);
 
   useEffect(() => {
-    dispatch({ type: "hydrate", items: loadProductCartItems() });
-    hasHydratedRef.current = true;
+    const storedItems = normalizeCartItems(loadProductCartItems());
+    dispatch({ type: "hydrate", items: storedItems });
+    queueMicrotask(() => {
+      hasHydratedRef.current = true;
+      persistProductCartItems(storedItems);
+    });
   }, []);
 
   const value = useMemo<ProductCartContextValue>(
@@ -114,16 +119,27 @@ export function productCartReducer(
 ): ProductCartState {
   switch (action.type) {
     case "hydrate":
-      return { ...state, items: normalizeCartItems(action.items) };
-    case "addItem":
-      return { ...state, items: addCartItem(state.items, action.item) };
-    case "removeItem":
       return {
         ...state,
-        items: state.items.filter(
-          (item) =>
-            !isMatchingLineItem(item, action.productId, action.variantId),
-        ),
+        items: normalizeCartItems(action.items),
+        limitMessage:
+          action.items.length > MAX_CART_LINE_ITEMS
+            ? `This saved cart has more than ${MAX_CART_LINE_ITEMS} distinct items. Remove items before checkout.`
+            : null,
+      };
+    case "addItem":
+      return addCartItemState(state, action.item);
+    case "removeItem":
+      const remainingItems = state.items.filter(
+        (item) => !isMatchingLineItem(item, action.productId, action.variantId),
+      );
+      return {
+        ...state,
+        items: remainingItems,
+        limitMessage:
+          remainingItems.length > MAX_CART_LINE_ITEMS
+            ? state.limitMessage
+            : null,
       };
     case "updateQuantity":
       return {
@@ -135,7 +151,7 @@ export function productCartReducer(
         ),
       };
     case "clearCart":
-      return { ...state, items: [] };
+      return { ...state, items: [], limitMessage: null };
     case "openCart":
       return { ...state, isOpen: true };
     case "closeCart":
@@ -184,10 +200,48 @@ function addCartItem(
   );
 }
 
+function addCartItemState(
+  state: ProductCartState,
+  item: ProductCartInputItem,
+): ProductCartState {
+  const normalizedItem = normalizeCartInputItem(item);
+  const existingItem = state.items.some((candidate) =>
+    isMatchingLineItem(
+      candidate,
+      normalizedItem.productId,
+      normalizedItem.variantId,
+    ),
+  );
+  if (!existingItem && state.items.length >= MAX_CART_LINE_ITEMS) {
+    return {
+      ...state,
+      isOpen: true,
+      limitMessage: `A cart can contain at most ${MAX_CART_LINE_ITEMS} distinct items. Existing quantities can still be changed.`,
+    };
+  }
+  return {
+    ...state,
+    items: addCartItem(state.items, item),
+    limitMessage: null,
+  };
+}
+
 function normalizeCartItems(items: unknown[]): CartInputItem[] {
   return items.reduce<CartInputItem[]>((normalizedItems, item) => {
     if (!isCartInputLike(item)) return normalizedItems;
-    return addCartItem(normalizedItems, item);
+    const normalized = normalizeCartInputItem(item);
+    const existingIndex = normalizedItems.findIndex((candidate) =>
+      isMatchingLineItem(candidate, normalized.productId, normalized.variantId),
+    );
+    if (existingIndex < 0) return [...normalizedItems, normalized];
+    return normalizedItems.map((candidate, index) =>
+      index === existingIndex
+        ? {
+            ...candidate,
+            quantity: clampQuantity(candidate.quantity + normalized.quantity),
+          }
+        : candidate,
+    );
   }, []);
 }
 

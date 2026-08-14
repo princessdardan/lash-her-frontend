@@ -17,6 +17,7 @@ export interface CatalogProduct {
   currency: CommerceCurrency;
   isAvailable: boolean;
   variants?: CatalogProductVariant[];
+  checkoutMode?: "automated" | "manual";
 }
 
 export interface CatalogProductVariant {
@@ -26,6 +27,8 @@ export interface CatalogProductVariant {
   price: number | string;
   discountPrice?: number | string | null;
   isAvailable: boolean;
+  options?: Array<{ label: string; value: string }>;
+  checkoutMode?: "automated" | "manual";
 }
 
 export interface CartInputItem {
@@ -39,6 +42,10 @@ export interface ValidatedCartLineItem {
   variantId?: string;
   sku: string;
   description: string;
+  productTitle?: string;
+  variantTitle?: string;
+  selectedOptions?: Array<{ label: string; value: string }>;
+  checkoutMode?: "automated" | "manual";
   quantity: number;
   price: number;
   originalPrice?: number;
@@ -114,6 +121,12 @@ export function buildValidatedCart(
       ...(variant ? { variantId: variant.id } : {}),
       sku: resolveLineItemSku(product, variant),
       description,
+      productTitle: product.title,
+      ...(variant ? { variantTitle: variant.title } : {}),
+      ...(variant?.options?.length ? { selectedOptions: variant.options } : {}),
+      ...((variant?.checkoutMode ?? product.checkoutMode)
+        ? { checkoutMode: variant?.checkoutMode ?? product.checkoutMode }
+        : {}),
       quantity: item.quantity,
       price,
       ...(originalTotal !== undefined ? { originalPrice, originalTotal } : {}),

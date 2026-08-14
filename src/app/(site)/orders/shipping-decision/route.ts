@@ -3,9 +3,14 @@ import {
   exchangeCustomerDecisionToken,
   getCustomerDecision,
   selectCustomerDecision,
+  validateCustomerDecisionBearer,
 } from "@/lib/shipping/customer-decisions";
 import { buildBookingAbuseKey } from "@/lib/security/trusted-client-ip";
-import { checkSignedShippingLinkRateLimit } from "@/lib/security/shipping-abuse-control";
+import {
+  checkSignedShippingLinkRateLimit,
+  isShippingLinkExchangeBlocked,
+  recordShippingLinkFailure,
+} from "@/lib/security/shipping-abuse-control";
 
 export const runtime = "nodejs";
 const COOKIE = "lh_shipping_decision";
@@ -13,13 +18,15 @@ const COOKIE = "lh_shipping_decision";
 export async function GET(req: NextRequest): Promise<Response> {
   const token = req.nextUrl.searchParams.get("token");
   if (token) {
-    if (!(await allowed(req, token))) return genericInvalid();
-    const sessionToken = await exchangeCustomerDecisionToken(token);
-    if (!sessionToken) return genericInvalid();
-    const clean = new URL("/orders/shipping-decision", req.nextUrl.origin);
-    const response = NextResponse.redirect(clean, 303);
-    response.cookies.set(COOKIE, sessionToken, cookieOptions());
-    return secure(response);
+    if (
+      !(await allowed(req, token)) ||
+      !(await validateCustomerDecisionBearer(token))
+    ) {
+      return genericInvalid();
+    }
+    return html(
+      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open shipping decision | Lash Her</title></head><body><main><h1>Open your shipping decision</h1><p>Continue to view the decision for your order.</p><form method="post" action="/orders/shipping-decision"><input type="hidden" name="action" value="exchange"><input type="hidden" name="token" value="${escapeHtml(token)}"><button type="submit">Continue securely</button></form></main></body></html>`,
+    );
   }
   const sessionToken = req.cookies.get(COOKIE)?.value ?? "";
   const decision = sessionToken
@@ -33,16 +40,40 @@ export async function GET(req: NextRequest): Promise<Response> {
 
 export async function POST(req: NextRequest): Promise<Response> {
   if (req.headers.get("origin") !== req.nextUrl.origin) return genericInvalid();
-  const sessionToken = req.cookies.get(COOKIE)?.value ?? "";
   const form = await req.formData().catch(() => null);
+  if (form?.get("action") === "exchange") {
+    const bearer = form.get("token");
+    if (
+      typeof bearer !== "string" ||
+      (await isShippingLinkExchangeBlocked()) ||
+      !(await allowed(req, bearer))
+    ) {
+      await recordShippingLinkFailure().catch(() => undefined);
+      return genericInvalid();
+    }
+    const sessionToken = await exchangeCustomerDecisionToken(bearer);
+    if (!sessionToken) {
+      await recordShippingLinkFailure().catch(() => undefined);
+      return genericInvalid();
+    }
+    const response = NextResponse.redirect(
+      new URL("/orders/shipping-decision", req.nextUrl.origin),
+      303,
+    );
+    response.cookies.set(COOKIE, sessionToken, cookieOptions());
+    return secure(response);
+  }
+  const sessionToken = req.cookies.get(COOKIE)?.value ?? "";
   const outcome = form?.get("outcome");
   if (
     !sessionToken ||
     typeof outcome !== "string" ||
     !(await allowed(req, sessionToken)) ||
     !(await selectCustomerDecision(sessionToken, outcome))
-  )
+  ) {
+    await recordShippingLinkFailure().catch(() => undefined);
     return genericInvalid();
+  }
   const response = html(
     '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Choice received | Lash Her</title></head><body><main><h1>Your choice was received</h1><p>Lash Her will process it under the shipping policy.</p></main></body></html>',
   );

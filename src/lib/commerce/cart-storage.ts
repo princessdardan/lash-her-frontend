@@ -1,6 +1,7 @@
 import type { CartInputItem } from "./cart";
 
-export const PRODUCT_CART_STORAGE_KEY = "lash-her:product-cart:v1";
+export const LEGACY_PRODUCT_CART_STORAGE_KEY = "lash-her:product-cart:v1";
+export const PRODUCT_CART_STORAGE_KEY = "lash-her:product-cart:v2";
 export const PRODUCT_CART_EXPIRY_KEY = "lash-her:product-cart:expires-at";
 
 // 30 days in milliseconds
@@ -12,6 +13,13 @@ interface StorageLike {
   removeItem(key: string): void;
 }
 
+interface ProductCartStorageEnvelopeV2 {
+  version: 2;
+  items: CartInputItem[];
+  expiresAt: number;
+  updatedAt: number;
+}
+
 function getBrowserStorage(): StorageLike | null {
   if (typeof window === "undefined") return null;
 
@@ -20,16 +28,6 @@ function getBrowserStorage(): StorageLike | null {
   } catch {
     return null;
   }
-}
-
-function isStorageLike(value: unknown): value is StorageLike {
-  if (!value || typeof value !== "object") return false;
-  const storage = value as Partial<StorageLike>;
-  return (
-    typeof storage.getItem === "function" &&
-    typeof storage.setItem === "function" &&
-    typeof storage.removeItem === "function"
-  );
 }
 
 export function loadProductCartItems(
@@ -48,11 +46,18 @@ export function loadProductCartItems(
       }
     }
 
-    const rawItems = storage.getItem(PRODUCT_CART_STORAGE_KEY);
+    const rawItems =
+      storage.getItem(PRODUCT_CART_STORAGE_KEY) ??
+      storage.getItem(LEGACY_PRODUCT_CART_STORAGE_KEY);
     if (!rawItems) return [];
 
-    const parsedItems: unknown = JSON.parse(rawItems);
-    if (!Array.isArray(parsedItems)) {
+    const parsed: unknown = JSON.parse(rawItems);
+    const parsedItems = Array.isArray(parsed)
+      ? parsed
+      : isV2Envelope(parsed)
+        ? parsed.items
+        : null;
+    if (!parsedItems) {
       clearProductCartStorage(storage);
       return [];
     }
@@ -71,8 +76,17 @@ export function persistProductCartItems(
   if (!storage) return;
 
   try {
-    storage.setItem(PRODUCT_CART_STORAGE_KEY, JSON.stringify(items));
-    storage.setItem(PRODUCT_CART_EXPIRY_KEY, String(Date.now() + CART_TTL_MS));
+    const now = Date.now();
+    const expiresAt = now + CART_TTL_MS;
+    const envelope: ProductCartStorageEnvelopeV2 = {
+      version: 2,
+      items,
+      expiresAt,
+      updatedAt: now,
+    };
+    storage.setItem(PRODUCT_CART_STORAGE_KEY, JSON.stringify(envelope));
+    storage.removeItem(LEGACY_PRODUCT_CART_STORAGE_KEY);
+    storage.setItem(PRODUCT_CART_EXPIRY_KEY, String(expiresAt));
   } catch {
     // Storage write failures (e.g., quota exceeded, private mode) are silently ignored.
     // The cart remains functional in memory for the current session.
@@ -86,6 +100,7 @@ export function clearProductCartStorage(
 
   try {
     storage.removeItem(PRODUCT_CART_STORAGE_KEY);
+    storage.removeItem(LEGACY_PRODUCT_CART_STORAGE_KEY);
     storage.removeItem(PRODUCT_CART_EXPIRY_KEY);
   } catch {
     // If removal fails, the cart still resets in memory for this session.
@@ -98,14 +113,27 @@ export function resetStoredCart(
   if (!storage) return;
 
   try {
-    storage.setItem(PRODUCT_CART_STORAGE_KEY, JSON.stringify([]));
-    storage.setItem(PRODUCT_CART_EXPIRY_KEY, String(Date.now() + CART_TTL_MS));
+    persistProductCartItems([], storage);
   } catch {
     try {
       storage.removeItem(PRODUCT_CART_STORAGE_KEY);
+      storage.removeItem(LEGACY_PRODUCT_CART_STORAGE_KEY);
       storage.removeItem(PRODUCT_CART_EXPIRY_KEY);
     } catch {
       // If removing the key also fails, the cart still resets in memory for this session.
     }
   }
+}
+
+function isV2Envelope(value: unknown): value is ProductCartStorageEnvelopeV2 {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<ProductCartStorageEnvelopeV2>;
+  return (
+    candidate.version === 2 &&
+    Array.isArray(candidate.items) &&
+    typeof candidate.expiresAt === "number" &&
+    Number.isFinite(candidate.expiresAt) &&
+    typeof candidate.updatedAt === "number" &&
+    Number.isFinite(candidate.updatedAt)
+  );
 }

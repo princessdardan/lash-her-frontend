@@ -10,6 +10,8 @@ import {
   type HelcimGateway,
 } from "@/lib/commerce/helcim-gateway";
 import { HelcimApiError } from "@/lib/commerce/helcim-client";
+import { classifyHelcimTransaction } from "@/lib/commerce/helcim-contract";
+import { parseProviderMoneyCents } from "./provider-money";
 
 type ProductOrderRefundRow = typeof productOrderRefunds.$inferSelect;
 
@@ -50,6 +52,21 @@ export async function queueProductOrderRefund(input: {
       !order.refundOriginIpCiphertext
     )
       throw new Error("Order is not eligible for an automated Helcim refund");
+    if (input.amountCents === undefined) {
+      const [existingFull] = await tx
+        .select()
+        .from(productOrderRefunds)
+        .where(
+          and(
+            eq(productOrderRefunds.orderId, order.id),
+            eq(productOrderRefunds.kind, "full"),
+            eq(productOrderRefunds.amountCents, order.amountCents),
+            inArray(productOrderRefunds.status, RESERVED_REFUND_STATUSES),
+          ),
+        )
+        .limit(1);
+      if (existingFull) return existingFull;
+    }
     const [reserved] = await tx
       .select({
         total: sql<number>`coalesce(sum(${productOrderRefunds.amountCents}), 0)`,
@@ -62,6 +79,19 @@ export async function queueProductOrderRefund(input: {
         ),
       );
     const refundableCents = order.amountCents - Number(reserved?.total ?? 0);
+    if (input.amountCents === undefined && refundableCents === 0) {
+      const [existingReservation] = await tx
+        .select()
+        .from(productOrderRefunds)
+        .where(
+          and(
+            eq(productOrderRefunds.orderId, order.id),
+            inArray(productOrderRefunds.status, RESERVED_REFUND_STATUSES),
+          ),
+        )
+        .limit(1);
+      if (existingReservation) return existingReservation;
+    }
     const amountCents = input.amountCents ?? refundableCents;
     if (!Number.isInteger(amountCents) || amountCents <= 0)
       throw new Error("Refund amount must be a positive number of cents");
@@ -91,49 +121,41 @@ export async function processProductOrderRefund(
   gateway: HelcimGateway = createLiveHelcimGateway(),
 ): Promise<ProductOrderRefundRow> {
   const db = getPrivateDb();
-  const claimed = await db.transaction(async (tx) => {
-    const [row] = await tx
-      .select({ refund: productOrderRefunds, order: checkoutOrders })
-      .from(productOrderRefunds)
-      .innerJoin(
-        checkoutOrders,
-        eq(productOrderRefunds.orderId, checkoutOrders.id),
-      )
-      .where(eq(productOrderRefunds.id, refundId))
-      .for("update")
-      .limit(1);
-    if (!row || !["queued", "processing"].includes(row.refund.status))
-      throw new Error("Refund is not available for processing");
-    const now = new Date();
-    if (
-      row.refund.firstAttemptedAt &&
-      now.getTime() - row.refund.firstAttemptedAt.getTime() >= 5 * 60_000
-    ) {
-      await tx
-        .update(productOrderRefunds)
-        .set({
-          status: "manual_review",
-          lastErrorCode: "IDEMPOTENCY_WINDOW_EXPIRED",
-          updatedAt: now,
-        })
-        .where(eq(productOrderRefunds.id, refundId));
-      throw new Error("Helcim idempotency window expired; reconcile manually");
-    }
-    if (!row.order.refundOriginIpCiphertext)
-      throw new Error("Original checkout IP is unavailable");
-    const [updated] = await tx
-      .update(productOrderRefunds)
-      .set({
-        status: "processing",
-        firstAttemptedAt: row.refund.firstAttemptedAt ?? now,
-        lastAttemptedAt: now,
-        attemptCount: sql`${productOrderRefunds.attemptCount} + 1`,
-        updatedAt: now,
-      })
-      .where(eq(productOrderRefunds.id, refundId))
-      .returning();
-    return { refund: updated!, order: row.order };
-  });
+  const now = new Date();
+  const leaseOwner = randomUUID();
+  const leaseExpiresAt = new Date(now.getTime() + 5 * 60_000);
+  const [claimedRefund] = await db
+    .update(productOrderRefunds)
+    .set({
+      status: "processing",
+      leaseOwner,
+      leaseExpiresAt,
+      firstAttemptedAt: sql`coalesce(${productOrderRefunds.firstAttemptedAt}, ${now})`,
+      lastAttemptedAt: now,
+      attemptCount: sql`${productOrderRefunds.attemptCount} + 1`,
+      stateVersion: sql`${productOrderRefunds.stateVersion} + 1`,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(productOrderRefunds.id, refundId),
+        sql`(
+          ${productOrderRefunds.status} = 'queued'
+          OR (${productOrderRefunds.status} = 'processing' AND ${productOrderRefunds.leaseExpiresAt} < ${now})
+        )`,
+        sql`(${productOrderRefunds.firstAttemptedAt} IS NULL OR ${productOrderRefunds.firstAttemptedAt} > ${new Date(now.getTime() - 5 * 60_000)})`,
+      ),
+    )
+    .returning();
+  if (!claimedRefund) throw new Error("Refund is not available for processing");
+  const [order] = await db
+    .select()
+    .from(checkoutOrders)
+    .where(eq(checkoutOrders.id, claimedRefund.orderId))
+    .limit(1);
+  if (!order?.refundOriginIpCiphertext)
+    throw new Error("Original checkout IP is unavailable");
+  const claimed = { refund: claimedRefund, order };
 
   const originalTransactionId = Number(claimed.refund.originalTransactionId);
   if (
@@ -152,8 +174,22 @@ export async function processProductOrderRefund(
       claimed.refund.idempotencyKey,
     );
     const providerRefundId = String(response.transactionId ?? "");
-    if (!providerRefundId)
-      throw new Error("Helcim refund response is incomplete");
+    const responseOriginalId = String(response.originalTransactionId ?? "");
+    const responseAmountCents = parseProviderMoneyCents(response.amount);
+    const classification = classifyHelcimTransaction({
+      originalTransactionId: responseOriginalId,
+      status: response.status,
+      transactionType: response.transactionType,
+    });
+    if (
+      !providerRefundId ||
+      responseOriginalId !== claimed.refund.originalTransactionId ||
+      responseAmountCents !== claimed.refund.amountCents ||
+      response.currency?.toUpperCase() !== claimed.order.currency ||
+      classification.kind !== "refund" ||
+      !classification.successful
+    )
+      throw new Error("Helcim refund response requires reconciliation");
     return db.transaction(async (tx) => {
       const [updated] = await tx
         .update(productOrderRefunds)
@@ -162,6 +198,8 @@ export async function processProductOrderRefund(
           providerRefundId,
           succeededAt: new Date(),
           lastErrorCode: null,
+          leaseOwner: null,
+          leaseExpiresAt: null,
           updatedAt: new Date(),
         })
         .where(eq(productOrderRefunds.id, refundId))
@@ -181,7 +219,12 @@ export async function processProductOrderRefund(
         await tx
           .update(checkoutOrders)
           .set({ status: "refunded", updatedAt: new Date() })
-          .where(eq(checkoutOrders.id, claimed.order.id));
+          .where(
+            and(
+              eq(checkoutOrders.id, claimed.order.id),
+              eq(checkoutOrders.status, "paid"),
+            ),
+          );
       return updated!;
     });
   } catch (error) {
@@ -192,6 +235,8 @@ export async function processProductOrderRefund(
         status: deterministic ? "failed" : "outcome_unknown",
         unknownOutcomeAt: deterministic ? null : new Date(),
         lastErrorCode: refundErrorCode(error),
+        leaseOwner: null,
+        leaseExpiresAt: null,
         updatedAt: new Date(),
       })
       .where(eq(productOrderRefunds.id, refundId))
@@ -208,7 +253,24 @@ export async function reconcileProductOrderRefund(input: {
   if (!Number.isInteger(input.amountCents) || input.amountCents <= 0)
     return false;
   return getPrivateDb().transaction(async (tx) => {
-    const [match] = await tx
+    const [existingProviderMatch] = await tx
+      .select({ refund: productOrderRefunds, order: checkoutOrders })
+      .from(productOrderRefunds)
+      .innerJoin(
+        checkoutOrders,
+        eq(productOrderRefunds.orderId, checkoutOrders.id),
+      )
+      .where(eq(productOrderRefunds.providerRefundId, input.providerRefundId))
+      .for("update")
+      .limit(1);
+    if (existingProviderMatch) {
+      return (
+        existingProviderMatch.refund.originalTransactionId ===
+          input.originalTransactionId &&
+        existingProviderMatch.refund.amountCents === input.amountCents
+      );
+    }
+    const candidates = await tx
       .select({ refund: productOrderRefunds, order: checkoutOrders })
       .from(productOrderRefunds)
       .innerJoin(
@@ -229,8 +291,25 @@ export async function reconcileProductOrderRefund(input: {
         ),
       )
       .for("update")
-      .limit(1);
-    if (!match) return false;
+      .limit(10);
+    if (candidates.length !== 1) {
+      if (candidates.length > 1)
+        await tx
+          .update(productOrderRefunds)
+          .set({
+            status: "manual_review",
+            lastErrorCode: "AMBIGUOUS_PROVIDER_REFUND",
+            updatedAt: new Date(),
+          })
+          .where(
+            inArray(
+              productOrderRefunds.id,
+              candidates.map(({ refund }) => refund.id),
+            ),
+          );
+      return false;
+    }
+    const match = candidates[0]!;
     await tx
       .update(productOrderRefunds)
       .set({
@@ -257,7 +336,12 @@ export async function reconcileProductOrderRefund(input: {
       await tx
         .update(checkoutOrders)
         .set({ status: "refunded", updatedAt: new Date() })
-        .where(eq(checkoutOrders.id, match.order.id));
+        .where(
+          and(
+            eq(checkoutOrders.id, match.order.id),
+            eq(checkoutOrders.status, "paid"),
+          ),
+        );
     return true;
   });
 }

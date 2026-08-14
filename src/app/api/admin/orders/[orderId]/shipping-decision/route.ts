@@ -48,6 +48,14 @@ export async function POST(
     orderReference: orderId,
     caseId: typeof body?.caseId === "string" ? body.caseId : undefined,
     kind,
+    scopeKey:
+      typeof body?.scopeKey === "string" && body.scopeKey.trim()
+        ? body.scopeKey.trim()
+        : `${kind}/${typeof body?.caseId === "string" ? body.caseId : orderId}/${expiresAt.toISOString()}`,
+    proposedConditions:
+      body?.proposedConditions && typeof body.proposedConditions === "object"
+        ? (body.proposedConditions as Record<string, unknown>)
+        : undefined,
     allowedOutcomes,
     expiresAt,
   });

@@ -12,7 +12,7 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { formatCad } from "@/lib/commerce/money";
-import type { ValidatedCart } from "@/lib/commerce/cart";
+import { MAX_CART_LINE_ITEMS, type ValidatedCart } from "@/lib/commerce/cart";
 import { useProductCart } from "./product-cart-provider";
 
 interface CartPreviewResponse {
@@ -26,16 +26,32 @@ interface CartPreviewErrorState {
 
 export function CartSheet(): ReactElement {
   const router = useRouter();
-  const { items, isOpen, removeItem, updateQuantity, clearCart, closeCart } = useProductCart();
+  const {
+    items,
+    isOpen,
+    limitMessage,
+    removeItem,
+    updateQuantity,
+    clearCart,
+    closeCart,
+  } = useProductCart();
   const [promotionCodeInput, setPromotionCodeInput] = useState("");
-  const [redeemedPromotionCode, setRedeemedPromotionCode] = useState<string | undefined>();
-  const [promotionPreviewCart, setPromotionPreviewCart] = useState<ValidatedCart | null>(null);
-  const [promotionPreviewCartKey, setPromotionPreviewCartKey] = useState<string | undefined>();
-  const [promotionCodeError, setPromotionCodeError] = useState<string | null>(null);
+  const [redeemedPromotionCode, setRedeemedPromotionCode] = useState<
+    string | undefined
+  >();
+  const [promotionPreviewCart, setPromotionPreviewCart] =
+    useState<ValidatedCart | null>(null);
+  const [promotionPreviewCartKey, setPromotionPreviewCartKey] = useState<
+    string | undefined
+  >();
+  const [promotionCodeError, setPromotionCodeError] = useState<string | null>(
+    null,
+  );
   const [isApplyingPromotionCode, setIsApplyingPromotionCode] = useState(false);
   const [cartPreview, setCartPreview] = useState<ValidatedCart | null>(null);
   const [cartPreviewKey, setCartPreviewKey] = useState<string | undefined>();
-  const [cartPreviewError, setCartPreviewError] = useState<CartPreviewErrorState | null>(null);
+  const [cartPreviewError, setCartPreviewError] =
+    useState<CartPreviewErrorState | null>(null);
   const itemsKey = useMemo(() => JSON.stringify(items), [items]);
 
   useEffect(() => {
@@ -53,8 +69,12 @@ export function CartSheet(): ReactElement {
     })
       .then(async (response) => {
         if (!response.ok) {
-          const payload = await response.json().catch(() => null) as { error?: string } | null;
-          throw new Error(payload?.error ?? "We could not load your cart. Please try again.");
+          const payload = (await response.json().catch(() => null)) as {
+            error?: string;
+          } | null;
+          throw new Error(
+            payload?.error ?? "We could not load your cart. Please try again.",
+          );
         }
 
         return response.json() as Promise<CartPreviewResponse>;
@@ -71,7 +91,10 @@ export function CartSheet(): ReactElement {
         setCartPreviewKey(itemsKey);
         setCartPreviewError({
           key: itemsKey,
-          message: error instanceof Error ? error.message : "We could not load your cart. Please try again.",
+          message:
+            error instanceof Error
+              ? error.message
+              : "We could not load your cart. Please try again.",
         });
       });
 
@@ -82,17 +105,34 @@ export function CartSheet(): ReactElement {
     closeCart();
   };
 
-  const hasPromotionPreview = promotionPreviewCartKey === itemsKey && promotionPreviewCart !== null;
-  const activeRedeemedPromotionCode = hasPromotionPreview ? redeemedPromotionCode : undefined;
-  const hasCartPreview = isOpen && items.length > 0 && cartPreviewKey === itemsKey && cartPreview !== null;
+  const hasPromotionPreview =
+    promotionPreviewCartKey === itemsKey && promotionPreviewCart !== null;
+  const activeRedeemedPromotionCode = hasPromotionPreview
+    ? redeemedPromotionCode
+    : undefined;
+  const hasCartPreview =
+    isOpen &&
+    items.length > 0 &&
+    cartPreviewKey === itemsKey &&
+    cartPreview !== null;
   const validatedCart = hasCartPreview ? cartPreview : null;
-  const cartError = isOpen && items.length > 0 && cartPreviewError?.key === itemsKey ? cartPreviewError.message : null;
-  const isCartPreviewLoading = isOpen && items.length > 0 && !hasCartPreview && !cartError;
-  const displayedCart = hasPromotionPreview ? promotionPreviewCart : validatedCart;
+  const cartError =
+    isOpen && items.length > 0 && cartPreviewError?.key === itemsKey
+      ? cartPreviewError.message
+      : null;
+  const isCartPreviewLoading =
+    isOpen && items.length > 0 && !hasCartPreview && !cartError;
+  const displayedCart = hasPromotionPreview
+    ? promotionPreviewCart
+    : validatedCart;
 
   const handleCheckout = () => {
     closeCart();
-    router.push(activeRedeemedPromotionCode ? `/checkout?promotionCode=${encodeURIComponent(activeRedeemedPromotionCode)}` : "/checkout");
+    router.push(
+      activeRedeemedPromotionCode
+        ? `/checkout?promotionCode=${encodeURIComponent(activeRedeemedPromotionCode)}`
+        : "/checkout",
+    );
   };
 
   const handleApplyPromotionCode = async () => {
@@ -118,7 +158,10 @@ export function CartSheet(): ReactElement {
         return;
       }
 
-      const data = await response.json() as { promotionCode?: string; cart?: ValidatedCart };
+      const data = (await response.json()) as {
+        promotionCode?: string;
+        cart?: ValidatedCart;
+      };
       if (!data.promotionCode || !data.cart) {
         setPromotionCodeError("This code is not valid for your cart.");
         setRedeemedPromotionCode(undefined);
@@ -148,7 +191,10 @@ export function CartSheet(): ReactElement {
 
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
   const cartAmountBeforePromotion = displayedCart
-    ? Math.round((displayedCart.amount + (displayedCart.promotionDiscountAmount ?? 0)) * 100) / 100
+    ? Math.round(
+        (displayedCart.amount + (displayedCart.promotionDiscountAmount ?? 0)) *
+          100,
+      ) / 100
     : 0;
 
   return (
@@ -171,15 +217,24 @@ export function CartSheet(): ReactElement {
         <div className="flex-1 overflow-y-auto py-6" aria-live="polite">
           {items.length === 0 ? (
             <div className="rounded-[24px] border border-lh-line bg-lh-neutral-2/70 p-5">
-              <h3 className="font-heading text-2xl font-normal text-lh-shadow">Your cart is empty</h3>
+              <h3 className="font-heading text-2xl font-normal text-lh-shadow">
+                Your cart is empty
+              </h3>
               <p className="mt-2 font-body text-sm font-bold leading-6 text-lh-muted">
                 Add a product from the catalog to begin checkout.
               </p>
             </div>
           ) : cartError ? (
-            <p className="text-lh-accent text-sm font-body font-bold" role="alert">{cartError}</p>
+            <p
+              className="text-lh-accent text-sm font-body font-bold"
+              role="alert"
+            >
+              {cartError}
+            </p>
           ) : isCartPreviewLoading && !displayedCart ? (
-            <p className="text-lh-muted text-sm font-body font-bold">Loading your cart…</p>
+            <p className="text-lh-muted text-sm font-body font-bold">
+              Loading your cart…
+            </p>
           ) : displayedCart ? (
             <div className="flex flex-col gap-4">
               <ul className="divide-y divide-lh-line">
@@ -189,13 +244,21 @@ export function CartSheet(): ReactElement {
                     className="py-3 flex justify-between items-start"
                   >
                     <div className="flex-1">
-                      <p className="font-body font-bold text-lh-shadow">{lineItem.description}</p>
+                      <p className="font-body font-bold text-lh-shadow">
+                        {lineItem.description}
+                      </p>
                       <div className="mt-2 flex items-center gap-2">
-                        <span className="font-body text-sm font-bold text-lh-muted">Qty</span>
+                        <span className="font-body text-sm font-bold text-lh-muted">
+                          Qty
+                        </span>
                         <button
                           type="button"
                           onClick={() =>
-                            updateQuantity(lineItem.productId, lineItem.quantity - 1, lineItem.variantId)
+                            updateQuantity(
+                              lineItem.productId,
+                              lineItem.quantity - 1,
+                              lineItem.variantId,
+                            )
                           }
                           disabled={lineItem.quantity <= 1}
                           aria-label={`Decrease quantity for ${lineItem.description}`}
@@ -209,7 +272,11 @@ export function CartSheet(): ReactElement {
                         <button
                           type="button"
                           onClick={() =>
-                            updateQuantity(lineItem.productId, lineItem.quantity + 1, lineItem.variantId)
+                            updateQuantity(
+                              lineItem.productId,
+                              lineItem.quantity + 1,
+                              lineItem.variantId,
+                            )
                           }
                           disabled={lineItem.quantity >= 10}
                           aria-label={`Increase quantity for ${lineItem.description}`}
@@ -220,19 +287,27 @@ export function CartSheet(): ReactElement {
                         <span className="font-body text-sm font-bold text-lh-muted">
                           × {formatCad(lineItem.price)}
                           {lineItem.originalPrice ? (
-                            <span className="ml-2 line-through">{formatCad(lineItem.originalPrice)}</span>
+                            <span className="ml-2 line-through">
+                              {formatCad(lineItem.originalPrice)}
+                            </span>
                           ) : null}
                         </span>
                       </div>
                     </div>
                     <div className="text-right ml-4">
                       {lineItem.originalTotal ? (
-                        <p className="text-xs font-bold text-lh-muted line-through">{formatCad(lineItem.originalTotal)}</p>
+                        <p className="text-xs font-bold text-lh-muted line-through">
+                          {formatCad(lineItem.originalTotal)}
+                        </p>
                       ) : null}
-                      <p className="font-bold text-lh-shadow">{formatCad(lineItem.total)}</p>
+                      <p className="font-bold text-lh-shadow">
+                        {formatCad(lineItem.total)}
+                      </p>
                       <button
                         aria-label={`Remove ${lineItem.description} from cart`}
-                        onClick={() => removeItem(lineItem.productId, lineItem.variantId)}
+                        onClick={() =>
+                          removeItem(lineItem.productId, lineItem.variantId)
+                        }
                         className="text-xs text-lh-accent hover:underline mt-1 font-body"
                       >
                         Remove
@@ -244,14 +319,19 @@ export function CartSheet(): ReactElement {
 
               <div className="border-t border-lh-line pt-4 mt-2">
                 <div className="rounded-[22px] border border-lh-line bg-lh-neutral-2/60 p-4 mb-4">
-                  <label htmlFor="cart-promotion-code" className="block text-sm font-bold text-lh-primary mb-2">
+                  <label
+                    htmlFor="cart-promotion-code"
+                    className="block text-sm font-bold text-lh-primary mb-2"
+                  >
                     Promotion code
                   </label>
                   <div className="flex gap-2">
                     <Input
                       id="cart-promotion-code"
                       value={promotionCodeInput}
-                      onChange={(event) => setPromotionCodeInput(event.target.value.toUpperCase())}
+                      onChange={(event) =>
+                        setPromotionCodeInput(event.target.value.toUpperCase())
+                      }
                       placeholder="Enter code"
                       disabled={isApplyingPromotionCode}
                       autoComplete="off"
@@ -259,11 +339,23 @@ export function CartSheet(): ReactElement {
                     <Button
                       type="button"
                       variant="ghost"
-                      onClick={activeRedeemedPromotionCode ? handleRemovePromotionCode : handleApplyPromotionCode}
-                      disabled={isApplyingPromotionCode || (!activeRedeemedPromotionCode && !promotionCodeInput.trim())}
+                      onClick={
+                        activeRedeemedPromotionCode
+                          ? handleRemovePromotionCode
+                          : handleApplyPromotionCode
+                      }
+                      disabled={
+                        isApplyingPromotionCode ||
+                        (!activeRedeemedPromotionCode &&
+                          !promotionCodeInput.trim())
+                      }
                       className="rounded-full border-lh-primary/30 px-4 font-body text-xs uppercase tracking-[0.12em]"
                     >
-                      {isApplyingPromotionCode ? "Applying" : activeRedeemedPromotionCode ? "Remove" : "Apply"}
+                      {isApplyingPromotionCode
+                        ? "Applying"
+                        : activeRedeemedPromotionCode
+                          ? "Remove"
+                          : "Apply"}
                     </Button>
                   </div>
                   {activeRedeemedPromotionCode ? (
@@ -272,7 +364,10 @@ export function CartSheet(): ReactElement {
                     </p>
                   ) : null}
                   {promotionCodeError ? (
-                    <p className="mt-2 font-body text-xs font-bold text-lh-accent" role="alert">
+                    <p
+                      className="mt-2 font-body text-xs font-bold text-lh-accent"
+                      role="alert"
+                    >
                       {promotionCodeError}
                     </p>
                   ) : null}
@@ -280,20 +375,30 @@ export function CartSheet(): ReactElement {
                 {displayedCart.manualDiscountAmount ? (
                   <div className="mb-2 flex justify-between font-body text-sm font-bold text-lh-muted">
                     <span>Manual discounts</span>
-                    <span>-{formatCad(displayedCart.manualDiscountAmount)}</span>
+                    <span>
+                      -{formatCad(displayedCart.manualDiscountAmount)}
+                    </span>
                   </div>
                 ) : null}
-                {activeRedeemedPromotionCode && displayedCart.promotionDiscountAmount ? (
+                {activeRedeemedPromotionCode &&
+                displayedCart.promotionDiscountAmount ? (
                   <div className="mb-2 flex justify-between font-body text-sm font-bold text-lh-primary">
                     <span>Code {activeRedeemedPromotionCode}</span>
-                    <span>-{formatCad(displayedCart.promotionDiscountAmount)}</span>
+                    <span>
+                      -{formatCad(displayedCart.promotionDiscountAmount)}
+                    </span>
                   </div>
                 ) : null}
                 <div className="flex justify-between items-center mb-6 gap-4">
-                  <span className="font-bold text-xl text-lh-shadow">Total</span>
+                  <span className="font-bold text-xl text-lh-shadow">
+                    Total
+                  </span>
                   <span className="flex flex-wrap items-baseline justify-end gap-2 font-bold text-xl text-lh-primary">
-                    {activeRedeemedPromotionCode && displayedCart.promotionDiscountAmount ? (
-                      <span className="text-sm text-lh-muted line-through">{formatCad(cartAmountBeforePromotion)}</span>
+                    {activeRedeemedPromotionCode &&
+                    displayedCart.promotionDiscountAmount ? (
+                      <span className="text-sm text-lh-muted line-through">
+                        {formatCad(cartAmountBeforePromotion)}
+                      </span>
                     ) : null}
                     <span>{formatCad(displayedCart.amount)}</span>
                   </span>
@@ -301,32 +406,44 @@ export function CartSheet(): ReactElement {
               </div>
             </div>
           ) : null}
+          {limitMessage ? (
+            <p
+              className="mt-4 border border-lh-line bg-lh-neutral-2 p-3 text-sm text-lh-shadow"
+              role="status"
+            >
+              {limitMessage}
+            </p>
+          ) : null}
         </div>
 
-        {items.length > 0 && displayedCart && !cartError && (
-          <div className="border-t border-lh-line pt-5 space-y-4">
-            <p className="font-body text-sm font-bold leading-6 text-lh-muted">
-              Review your shipping details and complete secure payment on the checkout page.
-            </p>
+        {items.length > 0 &&
+          items.length <= MAX_CART_LINE_ITEMS &&
+          displayedCart &&
+          !cartError && (
+            <div className="border-t border-lh-line pt-5 space-y-4">
+              <p className="font-body text-sm font-bold leading-6 text-lh-muted">
+                Review your shipping details and complete secure payment on the
+                checkout page.
+              </p>
 
-            <div className="flex flex-col gap-2">
-              <Button
-                type="button"
-                onClick={handleCheckout}
-                className="h-12 w-full rounded-full bg-lh-primary px-6 font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-white hover:bg-lh-accent"
-              >
-                Checkout
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={clearCart}
-                className="text-lh-muted hover:text-lh-accent"
-              >
-                Clear Cart
-              </Button>
+              <div className="flex flex-col gap-2">
+                <Button
+                  type="button"
+                  onClick={handleCheckout}
+                  className="h-12 w-full rounded-full bg-lh-primary px-6 font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-white hover:bg-lh-accent"
+                >
+                  Checkout
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={clearCart}
+                  className="text-lh-muted hover:text-lh-accent"
+                >
+                  Clear Cart
+                </Button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
       </SheetContent>
     </Sheet>
   );

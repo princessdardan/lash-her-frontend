@@ -1,6 +1,6 @@
 # Signed address-change implementation plan
 
-Status: implemented; role approval and staging security acceptance pending  
+Status: implementation in progress; owner security/privacy self-attestation and staging acceptance pending
 Policy dependency: P-07 in `chitchats-shipping-policy-decisions.md`  
 Production effect: remains a launch blocker until acceptance evidence is recorded
 
@@ -17,7 +17,7 @@ The implementation must never collect card details. Until a secure supplemental-
 3. The initial link exchange sets a short-lived `HttpOnly`, `Secure`, `SameSite=Strict` cookie and redirects to a clean URL so the bearer token is not retained in browser history, referrers, analytics, or application logs.
 4. The customer sees the order reference and a masked current address, enters the proposed address, and submits it. The server validates origin, token state, expiry, order binding, address shape, and supported destination.
 5. Submission atomically consumes the token. Reuse, expiry, revocation, or a second submission returns a generic failure without exposing order details.
-6. The risk engine records triggered rules. A low-risk request made before postage purchase can be approved by one authorized staff member. A high-risk request requires two distinct approvals, including the Operations Lead or Business Owner.
+6. The risk engine records triggered rules. A high-risk request requires Nataliea's step-up authentication, original-order-phone callback, structured evidence, separate address and fraud actions, and a 15-minute cooling-off period.
 7. Approval does not overwrite history. It records old and new snapshots, actor IDs, timestamps, risk reasons, and the operational result.
 8. The original order email receives notifications when the request is submitted and when it is approved, rejected, expired, or cancelled.
 
@@ -28,7 +28,7 @@ Create `product_order_address_change_requests` in PostgreSQL with:
 - Request and order IDs; status: `pending_customer`, `submitted`, `review_required`, `approved`, `rejected`, `expired`, `revoked`, `cancelled`, or `applied`.
 - Keyed token hash, expiry, consumed timestamp, revocation timestamp, and attempt counters. Never store the raw token.
 - Original address snapshot, proposed address snapshot, normalized address fingerprint, and customer-provided reason.
-- Risk flags, risk score/classification, review notes, first and second approver IDs/timestamps, and applied timestamp.
+- Risk flags, risk score/classification, review notes, risk-incident identity, step-up and callback evidence, cooling-off timestamps, owner actions, and applied timestamp.
 - Postage state at request/submission/application time, added-cost result, and links to any void/refund/replacement shipment operations.
 - Creation/update timestamps and `redacted_at`.
 
@@ -59,7 +59,7 @@ Always require manual review when any selected P-07 condition applies:
 - Repeated address changes or a previously revoked/expired request.
 - Postage has already been purchased.
 
-High-risk requests require two distinct approvers, one of whom has the Operations Lead or Business Owner role. The system must prohibit self-approval from satisfying both approvals.
+Nataliea Lavoie is the sole reviewer. High-risk requests require the enhanced owner-only controls in policy version `P-01-P-11-owner-only-2026-08-14`; the system must preserve separate immutable address-approval and fraud-clearance actions.
 
 ## Shipment-state behavior
 

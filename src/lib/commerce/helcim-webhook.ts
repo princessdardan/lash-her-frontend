@@ -14,8 +14,10 @@ export interface HelcimWebhookHeaders {
 export interface VerifiedHelcimWebhook {
   amount?: number | string;
   approvalCode?: string;
+  avsCode?: string;
   cardLast4?: string;
   cardType?: string;
+  cvvCode?: string;
   currency?: string;
   eventId: string;
   eventType: string;
@@ -101,8 +103,10 @@ export function mergeHelcimCardTransactionDetails(
     ...event,
     amount: fields.amount ?? event.amount,
     approvalCode: fields.approvalCode ?? event.approvalCode,
+    avsCode: fields.avsCode ?? event.avsCode,
     cardLast4: fields.cardLast4 ?? event.cardLast4,
     cardType: fields.cardType ?? event.cardType,
+    cvvCode: fields.cvvCode ?? event.cvvCode,
     currency: fields.currency ?? event.currency,
     helcimInvoiceId: fields.invoiceId ?? event.helcimInvoiceId,
     helcimInvoiceNumber: fields.invoiceNumber ?? event.helcimInvoiceNumber,
@@ -162,6 +166,24 @@ export function normalizeHelcimCardTransactionDetails(
     status:
       getText(
         details.status ?? details.transactionStatus ?? details.approved,
+      ) ?? undefined,
+    transactionType:
+      getText(details.transactionType ?? details.type) ?? undefined,
+    originalTransactionId:
+      getText(
+        details.originalTransactionId ?? details.originalCardTransactionId,
+      ) ?? undefined,
+    avsCode:
+      getText(
+        details.avsResponse ??
+          details.avsResult ??
+          details.addressVerificationResult,
+      ) ?? undefined,
+    cvvCode:
+      getText(
+        details.cvvResponse ??
+          details.cvvResult ??
+          details.cvvVerificationResult,
       ) ?? undefined,
     transactionId:
       getText(

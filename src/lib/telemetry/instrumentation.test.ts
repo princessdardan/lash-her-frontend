@@ -4,10 +4,28 @@ import test from "node:test";
 import {
   __resetModuleLocalSdkForTests,
   getTelemetrySdk,
+  isSignedChitChatsLabelRequest,
   resetTelemetrySDKForTests,
   shutdownTelemetry,
   startNodeTelemetry,
 } from "./instrumentation";
+
+test("signed Chit Chats labels are excluded from Undici spans", () => {
+  assert.equal(
+    isSignedChitChatsLabelRequest({
+      origin: "https://staging.chitchats.com",
+      path: "/labels/shipments/abc.pdf?auth_token=do-not-export",
+    }),
+    true,
+  );
+  assert.equal(
+    isSignedChitChatsLabelRequest({
+      origin: "https://example.com",
+      path: "/labels/shipments/abc.pdf?auth_token=secret",
+    }),
+    false,
+  );
+});
 
 // Shared cleanup helper for same-process tests
 test.afterEach(async () => {

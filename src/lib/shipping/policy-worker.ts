@@ -6,6 +6,7 @@ import {
   checkoutOrders,
   productOrderCustomerDecisions,
   productOrderRefunds,
+  productShipmentReturnObservations,
   productShippingCases,
   productShipments,
   shippingFundingReviews,
@@ -78,6 +79,21 @@ export async function runShippingPolicyWorker(
     .orderBy(asc(productShipments.updatedAt))
     .limit(500);
 
+  if (policy.mode === "observe") {
+    result.manualReviewAlerts = shipments.filter(
+      ({ shipment }) => shipment.status === "manual_review",
+    ).length;
+    result.handoffMisses = shipments.filter(
+      ({ shipment }) =>
+        !shipment.acceptedAt &&
+        Boolean(
+          shipment.originalHandoffDeadlineAt &&
+          shipment.originalHandoffDeadlineAt <= now,
+        ),
+    ).length;
+    return result;
+  }
+
   for (const row of shipments) {
     try {
       if (row.shipment.status === "manual_review")
@@ -105,6 +121,7 @@ export async function runShippingPolicyWorker(
     () => alertCalendarCoverage(policy, now),
     () => alertClaimDeadlines(policy, now),
     () => alertServicePolicyReviews(now),
+    () => enforceP10Termination(now, result),
     () => alertPrivacyOverdue(now),
     () => alertUnknownRefunds(),
     () => sendBlockedFulfillmentUpdates(policy, now),
@@ -211,7 +228,9 @@ async function handleMissedHandoff(
     if (!existing && row.shipment.autoRefundDeadlineAt) {
       const issued = await issueCustomerDecision({
         orderReference: row.order.orderId,
+        shipmentId: row.shipment.id,
         kind: "missed_handoff",
+        scopeKey: `missed_handoff/${row.shipment.id}/${row.shipment.autoRefundDeadlineAt.toISOString()}`,
         allowedOutcomes: ["refund", "wait"],
         expiresAt: row.shipment.autoRefundDeadlineAt,
       });
@@ -305,6 +324,7 @@ async function ensureRemedyDecisions(
       orderReference: entry.orderReference,
       caseId: entry.caseId,
       kind: "loss_damage_remedy",
+      scopeKey: `loss_damage_remedy/${entry.caseId}/${expiresAt.toISOString()}`,
       allowedOutcomes: ["refund", "replacement"],
       expiresAt,
     });
@@ -561,30 +581,73 @@ async function pollReturns(
   result: ShippingPolicyWorkerResult,
 ): Promise<void> {
   if (mode === "off") return;
-  const returns =
-    await createChitChatsClient(getChitChatsConfig()).listReturns(1);
+  const returns = await listAllReturns();
   for (const item of returns) {
-    if (!item.shipment_id) continue;
+    const providerShipmentId = item.original_shipment?.id;
+    if (!item.id || !providerShipmentId)
+      throw new Error("Chit Chats returned a malformed return observation");
+    const [existingObservation] = await getPrivateDb()
+      .select({ id: productShipmentReturnObservations.id })
+      .from(productShipmentReturnObservations)
+      .where(eq(productShipmentReturnObservations.providerReturnId, item.id))
+      .limit(1);
+    if (existingObservation) continue;
     const [shipment] = await getPrivateDb()
       .select({ id: productShipments.id, orderId: productShipments.orderId })
       .from(productShipments)
-      .where(eq(productShipments.providerShipmentId, item.shipment_id))
+      .where(eq(productShipments.providerShipmentId, providerShipmentId))
       .limit(1);
-    if (!shipment?.orderId) continue;
-    const returnSignal =
-      `${item.reason ?? ""} ${item.status ?? ""}`.toLowerCase();
-    await openProductShippingCase({
+    if (!shipment?.orderId)
+      throw new Error("Chit Chats return could not be matched to a shipment");
+    if (mode === "observe") {
+      result.returnsObserved += 1;
+      continue;
+    }
+    const returnSignal = (item.return_reason ?? "").toLowerCase();
+    const shippingCase = await openProductShippingCase({
       orderId: shipment.orderId,
       shipmentId: shipment.id,
       type: returnSignal.includes("unclaim")
         ? "unclaimed"
-        : returnSignal.includes("refus")
-          ? "refused"
+        : returnSignal === "damaged"
+          ? "damage"
           : "return_to_sender",
       cause: "cause_pending_local_inspection",
     });
+    const providerUpdatedAt = item.updated_at
+      ? new Date(item.updated_at)
+      : null;
+    await getPrivateDb()
+      .insert(productShipmentReturnObservations)
+      .values({
+        providerReturnId: item.id,
+        shipmentId: shipment.id,
+        caseId: shippingCase.id,
+        providerStatus: item.status,
+        returnReason: item.return_reason,
+        resolution: item.resolution,
+        observedAt: new Date(),
+        providerUpdatedAt:
+          providerUpdatedAt && !Number.isNaN(providerUpdatedAt.getTime())
+            ? providerUpdatedAt
+            : null,
+      })
+      .onConflictDoNothing({
+        target: productShipmentReturnObservations.providerReturnId,
+      });
     result.returnsObserved += 1;
   }
+}
+
+async function listAllReturns() {
+  const client = createChitChatsClient(getChitChatsConfig());
+  const all: Awaited<ReturnType<typeof client.listReturns>> = [];
+  for (let page = 1; page <= 20; page += 1) {
+    const items = await client.listReturns(page);
+    all.push(...items);
+    if (items.length < 100) return all;
+  }
+  throw new Error("Chit Chats returns pagination exceeded the safety cap");
 }
 
 async function recordThirtyDayFundingReview(
@@ -605,7 +668,7 @@ async function recordThirtyDayFundingReview(
   if (existing) return;
   const [spend] = await getPrivateDb()
     .select({
-      total: sql<number>`coalesce(sum(coalesce(${productShipments.actualPostageCents}, 0) + coalesce(${productShipments.actualInsuranceCents}, 0)), 0)`,
+      total: sql<number>`coalesce(sum(coalesce(${productShipments.actualPurchaseTotalCents}, ${productShipments.actualPostageCents} + coalesce(${productShipments.actualInsuranceCents}, 0), 0)), 0)`,
     })
     .from(productShipments)
     .where(
@@ -754,6 +817,69 @@ async function alertPrivacyOverdue(now: Date): Promise<void> {
   });
 }
 
+async function enforceP10Termination(
+  now: Date,
+  result: ShippingPolicyWorkerResult,
+): Promise<void> {
+  const warningCutoff = new Date(now.getTime() - 335 * 24 * 60 * 60_000);
+  const refundCutoff = new Date(now.getTime() - 350 * 24 * 60 * 60_000);
+  const orders = await getPrivateDb()
+    .select({
+      id: checkoutOrders.id,
+      orderReference: checkoutOrders.orderId,
+      createdAt: checkoutOrders.createdAt,
+    })
+    .from(checkoutOrders)
+    .where(
+      and(
+        eq(checkoutOrders.purpose, "product"),
+        eq(checkoutOrders.status, "paid"),
+        lte(checkoutOrders.createdAt, warningCutoff),
+        sql`${checkoutOrders.redactedAt} is null`,
+        sql`(
+          exists (
+            select 1 from ${productShipments} s
+            where s.order_id = ${checkoutOrders.id}
+              and s.status not in ('delivered', 'voided', 'abandoned')
+          )
+          or exists (
+            select 1 from ${productShippingCases} c
+            where c.order_id = ${checkoutOrders.id}
+              and c.status not in ('resolved', 'cancelled')
+          )
+        )`,
+      ),
+    )
+    .limit(100);
+  for (const order of orders) {
+    const refundDue = order.createdAt <= refundCutoff;
+    await sendShippingPolicyAlert({
+      duties: ["operations_lead", "privacy_owner"],
+      critical: refundDue,
+      subject: refundDue
+        ? `P-10 termination required: ${order.orderReference}`
+        : `P-10 335-day warning: ${order.orderReference}`,
+      message: refundDue
+        ? "This unresolved order reached day 350. The system is initiating full refund/cancellation so settlement can complete before the day-365 PII cap."
+        : "This unresolved order reached day 335. Fulfill it, restore the original safe address, or prepare full refund/cancellation before day 365.",
+      idempotencyKey: `shipping-p10/${order.id}/${refundDue ? "350" : "335"}`,
+    });
+    if (!refundDue) continue;
+    const refund = await queueProductOrderRefund({
+      orderReference: order.orderReference,
+      reason: "P-10 unresolved-order termination before privacy hard cap",
+      automated: true,
+    });
+    if (refund.status === "queued") {
+      const processed = await processProductOrderRefund(refund.id);
+      if (processed.status === "succeeded") result.refundsProcessed += 1;
+      if (processed.status === "outcome_unknown") {
+        throw new Error("P-10 refund outcome requires manual reconciliation");
+      }
+    }
+  }
+}
+
 async function alertUnknownRefunds(): Promise<void> {
   const refunds = await getPrivateDb()
     .select({ id: productOrderRefunds.id })
@@ -878,13 +1004,17 @@ async function alertCalendarCoverage(
   now: Date,
 ): Promise<void> {
   const coverageEnd = new Date(`${policy.calendarCoverageEndsAt}T23:59:59Z`);
-  if (coverageEnd.getTime() - now.getTime() > 60 * 24 * 60 * 60_000) return;
+  const remainingMs = coverageEnd.getTime() - now.getTime();
+  if (remainingMs > 21 * 31 * 24 * 60 * 60_000) return;
+  const critical = remainingMs <= 60 * 24 * 60 * 60_000;
   await sendShippingPolicyAlert({
     duties: ["operations_lead"],
-    critical: true,
-    subject: "Shipping calendar coverage expires within 60 days",
-    message: `Calendar exceptions are configured only through ${policy.calendarCoverageEndsAt}. Add Ontario holidays and branch closures before rates fail closed.`,
-    idempotencyKey: `shipping-calendar-coverage/${policy.calendarCoverageEndsAt}`,
+    critical,
+    subject: critical
+      ? "Shipping calendar coverage is near exhaustion"
+      : "Shipping calendar coverage is below 21 months",
+    message: `Calendar exceptions are configured only through ${policy.calendarCoverageEndsAt}. Add statutory, observed, and branch-closure dates; checkout readiness requires at least 21 months.`,
+    idempotencyKey: `shipping-calendar-coverage/${policy.calendarCoverageEndsAt}/${critical ? "urgent" : "warning"}`,
   });
 }
 
@@ -892,11 +1022,7 @@ async function queueFullRefund(
   orderReference: string,
   reason: string,
 ): Promise<void> {
-  try {
-    await queueProductOrderRefund({ orderReference, reason, automated: true });
-  } catch {
-    // An existing reservation or terminal refund makes the action idempotent.
-  }
+  await queueProductOrderRefund({ orderReference, reason, automated: true });
 }
 
 function businessDeadline(

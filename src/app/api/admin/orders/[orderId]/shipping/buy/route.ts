@@ -9,7 +9,6 @@ import {
   loadShippingPolicyContext,
 } from "@/lib/shipping/policy";
 import { hasSignedCustomerDecision } from "@/lib/shipping/customer-decisions";
-import { queueProductOrderRefund } from "@/lib/shipping/customer-refunds";
 import {
   sendShippingCustomerUpdate,
   sendShippingPolicyAlert,
@@ -23,6 +22,7 @@ import {
   normalizeChitChatsStatus,
   stripSignedLabelUrls,
 } from "@/lib/shipping/status";
+import { parseProviderMoneyCents } from "@/lib/shipping/provider-money";
 
 export const runtime = "nodejs";
 
@@ -234,25 +234,22 @@ export async function POST(
       rawShipment: stripSignedLabelUrls(purchased),
       trackingNumber: purchased.carrier_tracking_code,
       trackingUrl: purchased.tracking_url,
-      actualPostageCents: moneyToCents(purchased.postage_fee),
-      actualInsuranceCents: moneyToCents(purchased.insurance_fee),
+      actualPurchaseTotalCents: parseProviderMoneyCents(
+        purchased.purchase_amount,
+      ),
+      actualPostageCents: parseProviderMoneyCents(purchased.postage_fee),
+      actualInsuranceCents: parseProviderMoneyCents(purchased.insurance_fee),
+      actualDeliveryFeeCents: parseProviderMoneyCents(purchased.delivery_fee),
+      actualTariffFeeCents: parseProviderMoneyCents(purchased.tariff_fee),
+      actualFdaPriorNotificationFeeCents: parseProviderMoneyCents(
+        purchased.fda_prior_notification_fee,
+      ),
+      actualFederalTaxCents: parseProviderMoneyCents(purchased.federal_tax),
+      actualProvincialTaxCents: parseProviderMoneyCents(
+        purchased.provincial_tax,
+      ),
       estimatedDeliveryAt: purchased.estimated_delivery_at,
     });
-    const serviceReductionCents =
-      (shipment.quotedShippingCents ?? selectedRate.paymentAmountCents) -
-      selectedRate.paymentAmountCents;
-    if (serviceReductionCents >= 100) {
-      try {
-        await queueProductOrderRefund({
-          orderReference: orderId,
-          amountCents: serviceReductionCents,
-          reason: "Shipping service price reduction",
-          automated: true,
-        });
-      } catch {
-        // Local refundable-balance locking makes repeat purchase recovery safe.
-      }
-    }
     if (!originalRate) {
       await sendShippingCustomerUpdate({
         to: shipment.orderCustomerEmail,
@@ -274,8 +271,9 @@ export async function POST(
         postageType: selectedRate.postageType,
         measuredWeightGrams,
         quotedShippingCents: shipment.quotedShippingCents,
-        actualShippingCents: selectedRate.paymentAmountCents,
-        serviceReductionCents: Math.max(0, serviceReductionCents),
+        settledPurchaseCents: parseProviderMoneyCents(
+          purchased.purchase_amount,
+        ),
         ...(alternateReason ? { alternateReason } : {}),
         ...(alternatePostageType ? { alternateConditionsUnchanged } : {}),
       },
@@ -322,12 +320,4 @@ export async function POST(
 function isSameOrigin(req: NextRequest): boolean {
   const origin = req.headers.get("origin");
   return origin !== null && origin === req.nextUrl.origin;
-}
-
-function moneyToCents(
-  value: string | number | null | undefined,
-): number | null {
-  if (value === null || value === undefined) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? Math.round(parsed * 100) : null;
 }

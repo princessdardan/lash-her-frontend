@@ -1,10 +1,10 @@
 # Chit Chats shipping policy decisions
 
-Status: stakeholder selections implemented; role approvals and staging evidence pending  
-Policy version: 2026-08-13  
+Status: superseded as an approval model; retained as the P-01–P-11 selection record
+Policy version: 2026-08-13, amended by `P-01-P-11-owner-only-2026-08-14`
 Applies to: Lash Her product orders fulfilled through Chit Chats
 
-The decision selections were recorded on 2026-08-13. They are not yet effective policy: named role approvals, legal/privacy review, implementation, and staging verification remain required. Chit Chats checkout must remain disabled in production until the approval record is completed and the launch-blocking controls in this document are implemented and verified.
+The decision selections were recorded on 2026-08-13. The effective owner-operated approval model and conflicting-rule amendments are defined in [Product fulfillment policy P-01–P-11 — owner-operated amendment](./chitchats-shipping-policy-2026-08-14.md). That amendment takes precedence. Production checkout remains disabled until its separate readiness gates and staging evidence are complete.
 
 Customer remedies in this document are minimum Lash Her commitments. They do not limit rights available under applicable consumer-protection law or card-network rules. Legal/privacy review is required before publication.
 
@@ -246,4 +246,4 @@ Carrier terms can change. Operations must re-verify claim deadlines, insurance l
 | Payment/Fraud Owner    |      | Pending  |      |                  |
 | Privacy/legal reviewer |      | Pending  |      |                  |
 
-This policy becomes effective only when all five roles approve it, every deviation is incorporated into a new version, and all launch blockers are verified in staging.
+This legacy approval table is superseded. Nataliea Lavoie holds all listed duties; owner self-attestations are not independent reviews. See policy version `P-01-P-11-owner-only-2026-08-14` for the effective approval control and remaining launch gates.

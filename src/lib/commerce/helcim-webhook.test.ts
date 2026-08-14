@@ -30,7 +30,10 @@ const headers = {
 const now = Number.parseInt(headers.timestamp, 10) * 1000;
 
 test("verifyHelcimWebhookSignature accepts a matching Helcim signature", () => {
-  assert.equal(verifyHelcimWebhookSignature(headers, rawBody, verifierToken, now), true);
+  assert.equal(
+    verifyHelcimWebhookSignature(headers, rawBody, verifierToken, now),
+    true,
+  );
 });
 
 test("verifyHelcimWebhookSignature accepts version-prefixed Helcim signatures", () => {
@@ -60,7 +63,10 @@ test("verifyHelcimWebhookSignature accepts one valid signature among multiple ca
 test("verifyHelcimWebhookSignature rejects mismatched signatures", () => {
   assert.equal(
     verifyHelcimWebhookSignature(
-      { ...headers, signature: createSignature(headers.id, headers.timestamp, "{}") },
+      {
+        ...headers,
+        signature: createSignature(headers.id, headers.timestamp, "{}"),
+      },
       rawBody,
       verifierToken,
       now,
@@ -75,7 +81,7 @@ test("verifyHelcimWebhookSignature rejects stale signed payloads", () => {
       headers,
       rawBody,
       verifierToken,
-      now + (11 * 60 * 60 * 1000),
+      now + 11 * 60 * 60 * 1000,
     ),
     false,
   );
@@ -95,7 +101,10 @@ test("parseVerifiedHelcimWebhook extracts only reconciliation fields", () => {
 });
 
 test("parseVerifiedHelcimWebhook accepts sparse cardTransaction webhook payloads", () => {
-  const sparseBody = JSON.stringify({ id: "25764674", type: "cardTransaction" });
+  const sparseBody = JSON.stringify({
+    id: "25764674",
+    type: "cardTransaction",
+  });
 
   assert.deepEqual(parseVerifiedHelcimWebhook(headers, sparseBody), {
     amount: undefined,
@@ -153,8 +162,14 @@ test("mergeHelcimCardTransactionDetails stores only minimal redacted reconciliat
     transactionId: "25764674",
   });
   assert.equal(Object.hasOwn(merged.payloadRedacted ?? {}, "cardToken"), false);
-  assert.equal(Object.hasOwn(merged.payloadRedacted ?? {}, "cardNumber"), false);
-  assert.equal(Object.hasOwn(merged.payloadRedacted ?? {}, "customerCode"), false);
+  assert.equal(
+    Object.hasOwn(merged.payloadRedacted ?? {}, "cardNumber"),
+    false,
+  );
+  assert.equal(
+    Object.hasOwn(merged.payloadRedacted ?? {}, "customerCode"),
+    false,
+  );
 });
 
 test("normalizeHelcimCardTransactionDetails derives last4 from top-level masked cardNumber when explicit last4 is absent", () => {
@@ -166,13 +181,17 @@ test("normalizeHelcimCardTransactionDetails derives last4 from top-level masked 
     {
       amount: undefined,
       approvalCode: undefined,
+      avsCode: undefined,
       cardLast4: "1111",
       cardType: undefined,
       currency: undefined,
+      cvvCode: undefined,
       invoiceId: undefined,
       invoiceNumber: undefined,
+      originalTransactionId: undefined,
       status: undefined,
       transactionId: "txn_123",
+      transactionType: undefined,
     },
   );
 });
@@ -188,13 +207,17 @@ test("normalizeHelcimCardTransactionDetails derives last4 from nested card.cardN
     {
       amount: undefined,
       approvalCode: undefined,
+      avsCode: undefined,
       cardLast4: "4242",
       cardType: undefined,
       currency: undefined,
+      cvvCode: undefined,
       invoiceId: undefined,
       invoiceNumber: undefined,
+      originalTransactionId: undefined,
       status: undefined,
       transactionId: "txn_4242",
+      transactionType: undefined,
     },
   );
 });
@@ -212,19 +235,25 @@ test("normalizeHelcimCardTransactionDetails keeps explicit last4 over cardNumber
     {
       amount: undefined,
       approvalCode: undefined,
+      avsCode: undefined,
       cardLast4: "9999",
       cardType: undefined,
       currency: undefined,
+      cvvCode: undefined,
       invoiceId: undefined,
       invoiceNumber: undefined,
+      originalTransactionId: undefined,
       status: undefined,
       transactionId: "txn_explicit",
+      transactionType: undefined,
     },
   );
 });
 
 test("getHelcimWebhookHeaders returns null when required signature headers are missing", () => {
-  const parsedHeaders = getHelcimWebhookHeaders(new Headers({ "webhook-id": "webhook_123" }));
+  const parsedHeaders = getHelcimWebhookHeaders(
+    new Headers({ "webhook-id": "webhook_123" }),
+  );
 
   assert.equal(parsedHeaders, null);
 });

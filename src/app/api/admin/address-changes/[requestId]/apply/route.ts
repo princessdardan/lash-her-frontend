@@ -25,19 +25,13 @@ export async function POST(
   try {
     await reconcileAddressChangePostage(requestId);
     const result = await applyApprovedAddressChange(requestId);
-    const providerDraftCleaned = result.requiresNewCheckout
-      ? await discardPreparedAddressChangeShipment(requestId)
-      : true;
+    const providerDraftCleaned = true;
     let refundStatus: string | null = null;
-    if (result.requiresNewCheckout || result.refundDecreaseCents >= 100) {
+    if (result.refundDecreaseCents >= 100) {
       const refund = await queueProductOrderRefund({
         orderReference: result.orderReference,
-        amountCents: result.requiresNewCheckout
-          ? undefined
-          : result.refundDecreaseCents,
-        reason: result.requiresNewCheckout
-          ? "Customer-caused address change increased postage; new checkout required"
-          : "Address change reduced shipping price",
+        amountCents: result.refundDecreaseCents,
+        reason: "Address change reduced shipping price",
         requestedByAdminUserId: actor.user.id,
       });
       refundStatus = (await processProductOrderRefund(refund.id)).status;
