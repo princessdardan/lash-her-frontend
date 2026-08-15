@@ -1,22 +1,23 @@
-import type {
-  CartInputItem,
-  CatalogProduct,
-  ValidatedCart,
-} from "@/lib/commerce/cart";
+import type { CartInputItem, ValidatedCart } from "@/lib/commerce/cart";
 import { buildValidatedCart } from "@/lib/commerce/cart";
 import { getProductCheckoutEligibility } from "@/lib/commerce/product-checkout-eligibility";
+import { toCheckoutCatalogProduct } from "@/lib/commerce/product-catalog";
 import type {
   TProduct,
   TProductShippingMetadata,
   TPromotionCode,
 } from "@/types";
-import type { ProductShipmentCustomsLineSnapshot } from "@/lib/private-db/schema";
+import type {
+  FulfillmentProviderCertificationContractSnapshot,
+  ProductShipmentCustomsLineSnapshot,
+} from "@/lib/private-db/schema";
 import {
   allocateDiscountedCustomsValues,
   splitCustomsLineValue,
 } from "./customs";
 import { selectSmallestPackage, type PackableLine } from "./packing";
 import { createShippingFingerprint } from "./quote-token";
+import type { CertifiedUsImportDisclosure } from "./quote-token";
 import type { ShippingPackageProfile, ShippingRecipient } from "./types";
 
 export interface PrepareShippingQuoteInput {
@@ -26,6 +27,9 @@ export interface PrepareShippingQuoteInput {
   recipient: ShippingRecipient;
   profiles: ShippingPackageProfile[];
   usShippingEnabled: boolean;
+  usImportDisclosure?: CertifiedUsImportDisclosure;
+  usShippingContract?: FulfillmentProviderCertificationContractSnapshot;
+  now?: Date;
 }
 
 export interface PreparedQuoteData {
@@ -34,6 +38,7 @@ export interface PreparedQuoteData {
   fingerprint: string;
   merchandiseValueCents: number;
   packageSnapshot: ReturnType<typeof selectSmallestPackage>;
+  usImportDisclosure?: CertifiedUsImportDisclosure;
 }
 
 export function prepareShippingQuote(
@@ -42,9 +47,35 @@ export function prepareShippingQuote(
   if (input.recipient.countryCode === "US" && !input.usShippingEnabled) {
     throw new ShippingEligibilityError("U.S. shipping is not enabled");
   }
+  if (
+    input.recipient.countryCode === "US" &&
+    (input.usImportDisclosure?.usImportTerms !== "DDU" ||
+      !input.usImportDisclosure.usImportDisclosureVersion.trim() ||
+      !input.usImportDisclosure.usImportDisclosureText.trim())
+  ) {
+    throw new ShippingEligibilityError(
+      "U.S. DDU shipping certification is unavailable",
+    );
+  }
+  if (
+    input.recipient.countryCode === "US" &&
+    input.usShippingContract?.importTerms !== "DDU"
+  ) {
+    throw new ShippingEligibilityError(
+      "U.S. SKU certification contract is unavailable",
+    );
+  }
+  if (
+    input.recipient.countryCode !== "US" &&
+    input.usImportDisclosure !== undefined
+  ) {
+    throw new ShippingEligibilityError(
+      "U.S. import disclosure cannot be applied to this destination",
+    );
+  }
   const cart = buildValidatedCart(
     input.items,
-    input.products.map(toCatalogProduct),
+    input.products.map(toCheckoutCatalogProduct),
     {
       promotionCode: input.promotionCode,
     },
@@ -59,7 +90,10 @@ export function prepareShippingQuote(
       (candidate) => candidate._key === line.variantId,
     );
     const shipping = variant?.shipping ?? product.shipping;
-    validateShippingMetadata(shipping, input.recipient.countryCode);
+    validateShippingMetadata(shipping, input.recipient.countryCode, {
+      now: input.now,
+      usShippingContract: input.usShippingContract,
+    });
     return { line, shipping } as {
       line: typeof line;
       shipping: Required<
@@ -128,6 +162,13 @@ export function prepareShippingQuote(
       ...(shipping.manufacturerCountryCode
         ? { manufacturerCountryCode: shipping.manufacturerCountryCode }
         : {}),
+      ...(shipping.usRegulatoryCertification
+        ? {
+            usRegulatoryCertification: toRegulatoryCertificationSnapshot(
+              shipping.usRegulatoryCertification,
+            ),
+          }
+        : {}),
     }));
   });
   const fingerprint = createShippingFingerprint({
@@ -137,6 +178,7 @@ export function prepareShippingQuote(
     packageSnapshot,
     customsLines,
     merchandiseValueCents,
+    ...(input.usImportDisclosure ?? {}),
   });
   return {
     cart,
@@ -144,6 +186,9 @@ export function prepareShippingQuote(
     fingerprint,
     merchandiseValueCents,
     packageSnapshot,
+    ...(input.usImportDisclosure
+      ? { usImportDisclosure: input.usImportDisclosure }
+      : {}),
   };
 }
 
@@ -157,6 +202,10 @@ export class ShippingEligibilityError extends Error {
 function validateShippingMetadata(
   value: TProductShippingMetadata | undefined,
   countryCode: "CA" | "US",
+  context: {
+    now?: Date;
+    usShippingContract?: FulfillmentProviderCertificationContractSnapshot;
+  },
 ): asserts value is Required<
   Pick<
     TProductShippingMetadata,
@@ -164,7 +213,11 @@ function validateShippingMetadata(
   >
 > &
   TProductShippingMetadata {
-  const eligibility = getProductCheckoutEligibility(value, countryCode);
+  const eligibility = getProductCheckoutEligibility(
+    value,
+    countryCode,
+    context,
+  );
   if (eligibility.status !== "automated") {
     throw new ShippingEligibilityError(
       eligibility.status === "manual"
@@ -174,30 +227,43 @@ function validateShippingMetadata(
   }
 }
 
-function toCatalogProduct(product: TProduct): CatalogProduct {
-  return {
-    id: product._id,
-    sku: product.sku,
-    title: product.title,
-    price: product.price,
-    discountPrice: product.discountPrice,
-    currency: product.currency,
-    isAvailable: product.isAvailable,
-    variants: product.variants?.map((variant) => ({
-      id: variant._key,
-      sku: variant.sku,
-      title: variant.title,
-      price: variant.price,
-      discountPrice: variant.discountPrice,
-      isAvailable: variant.isAvailable,
-    })),
-  };
-}
-
 function lineKey(productId: string, variantId?: string): string {
   return `${productId}:${variantId ?? "default"}`;
 }
 
 function toCents(value: number): number {
   return Math.round(value * 100);
+}
+
+function toRegulatoryCertificationSnapshot(
+  certification: NonNullable<
+    TProductShippingMetadata["usRegulatoryCertification"]
+  >,
+): NonNullable<
+  ProductShipmentCustomsLineSnapshot["usRegulatoryCertification"]
+> {
+  const details = certification.additionalTariffDetails;
+  return {
+    version: certification.version,
+    usShippingContractVersion: certification.usShippingContractVersion,
+    tariffMetadataSchemaVersion: certification.tariffMetadataSchemaVersion,
+    fdaRequirementsVersion: certification.fdaRequirementsVersion,
+    evidenceReference: certification.evidenceReference,
+    reviewedAt: certification.reviewedAt,
+    validUntil: certification.validUntil,
+    additionalTariffApplicability: certification.additionalTariffApplicability,
+    ...(details &&
+    Number.isInteger(details.steel) &&
+    Number.isInteger(details.copper) &&
+    Number.isInteger(details.aluminum)
+      ? {
+          additionalTariffDetails: {
+            steel: details.steel!,
+            copper: details.copper!,
+            aluminum: details.aluminum!,
+          },
+        }
+      : {}),
+    fdaApplicability: certification.fdaApplicability,
+  };
 }

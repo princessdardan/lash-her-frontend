@@ -385,15 +385,12 @@ function resolveCommonCommerceMetadata(
   const isAvailable = groups.every(
     (group) => group.source.isAvailable === true,
   );
-  const labels = groups
-    .map((group) => cleanString(group.source.availabilityLabel))
-    .filter((label): label is string => label !== null);
+  const labels = groups.map((group) =>
+    cleanString(group.source.availabilityLabel),
+  );
+  if (new Set(labels).size !== 1) return null;
   const availabilityLabel =
-    labels.length === groups.length && new Set(labels).size === 1
-      ? labels[0]
-      : isAvailable
-        ? undefined
-        : "Unavailable";
+    labels[0] ?? (isAvailable ? undefined : "Unavailable");
   const commonShipping = effectiveShipping[0];
   const usesProductShipping =
     stableSerialize(commonShipping) === stableSerialize(product.shipping);

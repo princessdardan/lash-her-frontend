@@ -5,6 +5,7 @@ import { loaders } from "@/data/loaders";
 import { SanityImage } from "@/components/ui/sanity-image";
 import { ProductDetailSections } from "@/components/commerce/product-detail-sections";
 import { ProductDetailPurchaseControls } from "@/components/commerce/product-detail-purchase-controls";
+import { resolveEffectivePrice } from "@/lib/commerce/cart";
 import { formatCad } from "@/lib/commerce/money";
 import { JsonLd, buildProductJsonLd } from "@/lib/structured-data";
 import type { TProduct } from "@/types";
@@ -30,12 +31,6 @@ interface ProductPriceDisplay {
   originalLabel?: string;
 }
 
-function getDiscountedPrice(price: number, discountPrice: unknown): number {
-  return typeof discountPrice === "number" && Number.isFinite(discountPrice) && discountPrice < price
-    ? discountPrice
-    : price;
-}
-
 function formatPriceRange(prices: number[]): string | null {
   if (prices.length === 0) return null;
 
@@ -53,22 +48,45 @@ function formatPriceRange(prices: number[]): string | null {
     : `${lowestPriceLabel} - ${highestPriceLabel}`;
 }
 
-function getProductPriceDisplay(product: { price?: number | null; discountPrice?: number | null; variants?: Array<{ price?: number | null; discountPrice?: number | null }> }): ProductPriceDisplay {
-  const variantPrices = product.variants
-    ?.map((variant) => {
-      if (typeof variant.price !== "number" || !Number.isFinite(variant.price)) return null;
+function getProductPriceDisplay(product: {
+  price?: number | null;
+  discountPrice?: number | null;
+  variants?: Array<{ price?: number | null; discountPrice?: number | null }>;
+}): ProductPriceDisplay {
+  const variantPrices =
+    product.variants
+      ?.map((variant) => {
+        if (
+          typeof variant.price !== "number" ||
+          !Number.isFinite(variant.price)
+        )
+          return null;
 
-      return {
-        current: getDiscountedPrice(variant.price, variant.discountPrice),
-        original: variant.price,
-      };
-    })
-    .filter((price): price is { current: number; original: number } => price !== null) ?? [];
+        try {
+          const resolved = resolveEffectivePrice(
+            variant.price,
+            variant.discountPrice,
+          );
+          return { current: resolved.price, original: variant.price };
+        } catch {
+          return null;
+        }
+      })
+      .filter(
+        (price): price is { current: number; original: number } =>
+          price !== null,
+      ) ?? [];
 
   if (variantPrices.length > 0) {
-    const currentLabel = formatPriceRange(variantPrices.map((price) => price.current)) ?? PRICE_UNAVAILABLE_LABEL;
-    const hasManualDiscount = variantPrices.some((price) => price.current < price.original);
-    const originalLabel = hasManualDiscount ? formatPriceRange(variantPrices.map((price) => price.original)) : null;
+    const currentLabel =
+      formatPriceRange(variantPrices.map((price) => price.current)) ??
+      PRICE_UNAVAILABLE_LABEL;
+    const hasManualDiscount = variantPrices.some(
+      (price) => price.current < price.original,
+    );
+    const originalLabel = hasManualDiscount
+      ? formatPriceRange(variantPrices.map((price) => price.original))
+      : null;
 
     return {
       currentLabel,
@@ -80,9 +98,19 @@ function getProductPriceDisplay(product: { price?: number | null; discountPrice?
     return { currentLabel: PRICE_UNAVAILABLE_LABEL };
   }
 
-  const currentPrice = getDiscountedPrice(product.price, product.discountPrice);
-  const currentLabel = formatDisplayPrice(currentPrice) ?? PRICE_UNAVAILABLE_LABEL;
-  const originalLabel = currentPrice < product.price ? formatDisplayPrice(product.price) : null;
+  let currentPrice: number;
+  try {
+    currentPrice = resolveEffectivePrice(
+      product.price,
+      product.discountPrice,
+    ).price;
+  } catch {
+    return { currentLabel: PRICE_UNAVAILABLE_LABEL };
+  }
+  const currentLabel =
+    formatDisplayPrice(currentPrice) ?? PRICE_UNAVAILABLE_LABEL;
+  const originalLabel =
+    currentPrice < product.price ? formatDisplayPrice(product.price) : null;
 
   return {
     currentLabel,
@@ -90,12 +118,20 @@ function getProductPriceDisplay(product: { price?: number | null; discountPrice?
   };
 }
 
-export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
   const { slug } = await params;
   const data = await loaders.getProductBySlug(slug);
 
   const title = data?.seo?.title || data?.title || "Product";
-  const description = data?.seo?.description || data?.shortDescription || data?.description || "Premium lash product";
+  const description =
+    data?.seo?.description ||
+    data?.shortDescription ||
+    data?.description ||
+    "Premium lash product";
 
   return {
     title,
@@ -107,7 +143,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export async function generateStaticParams() {
   const products = await loaders.getAllProductSlugs();
-  return products.map(p => ({ slug: p.slug }));
+  return products.map((p) => ({ slug: p.slug }));
 }
 
 function getDisplayImages(product: TProduct) {
@@ -116,10 +152,17 @@ function getDisplayImages(product: TProduct) {
 }
 
 function getAvailabilityLabel(product: TProduct): string {
-  return product.availabilityLabel || (product.isAvailable ? "Available now" : "Currently unavailable");
+  return (
+    product.availabilityLabel ||
+    (product.isAvailable ? "Available now" : "Currently unavailable")
+  );
 }
 
-export default async function ProductDetailPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function ProductDetailPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
   const { slug } = await params;
   const product = await loaders.getProductBySlug(slug);
 
@@ -129,15 +172,21 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
   const primaryImage = displayImages[0];
   const galleryImages = displayImages.slice(1, 5);
   const availabilityLabel = getAvailabilityLabel(product);
-  const collections = product.collections?.filter((collection) => collection.title).slice(0, 3) ?? [];
+  const collections =
+    product.collections?.filter((collection) => collection.title).slice(0, 3) ??
+    [];
   const priceDisplay = getProductPriceDisplay(product);
+  const productJsonLd = await buildProductJsonLd(product);
 
   return (
     <section className="min-h-screen bg-lh-neutral-2">
-      <JsonLd id="lash-her-product-json-ld" data={buildProductJsonLd(product)} />
+      <JsonLd id="lash-her-product-json-ld" data={productJsonLd} />
       <section className="section-shell-soft pt-12 md:pt-16 lg:pt-20">
         <div className="content-container">
-          <Link href="/products" className="mb-8 inline-flex items-center gap-2 font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-primary transition-colors hover:text-lh-accent">
+          <Link
+            href="/products"
+            className="mb-8 inline-flex items-center gap-2 font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-primary transition-colors hover:text-lh-accent"
+          >
             <span aria-hidden="true">←</span> Back to Catalog
           </Link>
 
@@ -145,18 +194,21 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
             <div className="space-y-5">
               <div className="relative min-h-[520px] overflow-hidden rounded-[28px] border border-lh-line bg-lh-shadow shadow-[0_24px_70px_rgba(28,19,24,0.10)] md:min-h-[660px]">
                 {primaryImage ? (
-                <SanityImage
+                  <SanityImage
                     image={primaryImage}
                     alt={primaryImage.alt || product.title}
-                  fill
+                    fill
                     priority
                     sizes="(min-width: 1024px) 54vw, 100vw"
                     className="object-cover"
-                />
+                  />
                 ) : (
                   <div className="absolute inset-0 bg-[radial-gradient(circle_at_72%_18%,var(--lh-light-soft),transparent_32%),linear-gradient(135deg,var(--lh-shadow),var(--lh-accent)_52%,var(--lh-primary))]" />
                 )}
-                <div className="absolute inset-0 bg-gradient-to-t from-lh-shadow/65 via-lh-shadow/10 to-transparent" aria-hidden="true" />
+                <div
+                  className="absolute inset-0 bg-gradient-to-t from-lh-shadow/65 via-lh-shadow/10 to-transparent"
+                  aria-hidden="true"
+                />
                 <div className="absolute left-5 top-5 flex flex-wrap gap-2 md:left-7 md:top-7">
                   {product.badgeLabel ? (
                     <span className="rounded-full bg-lh-light px-4 py-2 font-body text-xs font-bold uppercase tracking-[0.14em] text-lh-shadow">
@@ -172,20 +224,29 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
               </div>
 
               {galleryImages.length > 0 && (
-                <section className="grid grid-cols-2 gap-4 md:grid-cols-4" aria-label="Product gallery">
+                <section
+                  className="grid grid-cols-2 gap-4 md:grid-cols-4"
+                  aria-label="Product gallery"
+                >
                   {galleryImages.map((image, index) => (
-                    <div key={`${image.asset._ref}-${index}`} className="relative min-h-36 overflow-hidden rounded-[24px] border border-lh-line bg-lh-white shadow-[0_18px_50px_rgba(28,19,24,0.05)] md:min-h-44">
-                    <SanityImage
+                    <div
+                      key={`${image.asset._ref}-${index}`}
+                      className="relative min-h-36 overflow-hidden rounded-[24px] border border-lh-line bg-lh-white shadow-[0_18px_50px_rgba(28,19,24,0.05)] md:min-h-44"
+                    >
+                      <SanityImage
                         image={image}
-                        alt={image.alt || `${product.title} gallery image ${index + 2}`}
-                      fill
+                        alt={
+                          image.alt ||
+                          `${product.title} gallery image ${index + 2}`
+                        }
+                        fill
                         sizes="(min-width: 1024px) 14vw, 50vw"
-                      className="object-cover"
-                    />
-                  </div>
-                ))}
-              </section>
-            )}
+                        className="object-cover"
+                      />
+                    </div>
+                  ))}
+                </section>
+              )}
             </div>
 
             <aside className="lg:sticky lg:top-28">
@@ -226,7 +287,10 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
                       </span>
                     ) : null}
                     {collections.map((collection) => (
-                      <span key={collection._id} className="rounded-full border border-lh-line px-3 py-1.5 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-shadow/70">
+                      <span
+                        key={collection._id}
+                        className="rounded-full border border-lh-line px-3 py-1.5 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-shadow/70"
+                      >
                         {collection.title}
                       </span>
                     ))}
@@ -236,7 +300,9 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
                 {product.fulfillmentNote ? (
                   <div className="mt-8 border-l-2 border-lh-light bg-lh-light-soft/60 px-5 py-4">
                     <p className="font-body text-sm font-bold leading-7 text-lh-shadow/78">
-                      <span className="mr-2 uppercase tracking-[0.12em] text-lh-primary">Fulfillment</span>
+                      <span className="mr-2 uppercase tracking-[0.12em] text-lh-primary">
+                        Fulfillment
+                      </span>
                       {product.fulfillmentNote}
                     </p>
                   </div>
@@ -250,7 +316,8 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
                       {availabilityLabel}
                     </div>
                     <p className="mt-4 font-body text-xs font-bold leading-6 text-lh-muted">
-                      This piece is not available for online checkout right now. Return to the catalog to browse available selections.
+                      This piece is not available for online checkout right now.
+                      Return to the catalog to browse available selections.
                     </p>
                   </div>
                 )}
@@ -261,11 +328,17 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
       </section>
 
       {product.detailSections && product.detailSections.length > 0 && (
-        <section className="section-shell bg-lh-white py-12 md:py-16 lg:py-20" aria-labelledby="product-detail-sections-heading">
+        <section
+          className="section-shell bg-lh-white py-12 md:py-16 lg:py-20"
+          aria-labelledby="product-detail-sections-heading"
+        >
           <div className="content-container">
             <header className="mb-10 max-w-3xl">
               <p className="eyebrow-label mb-3">Product Notes</p>
-              <h2 id="product-detail-sections-heading" className="section-heading text-4xl md:text-5xl">
+              <h2
+                id="product-detail-sections-heading"
+                className="section-heading text-4xl md:text-5xl"
+              >
                 Details for a precise purchase.
               </h2>
             </header>

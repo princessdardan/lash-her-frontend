@@ -109,7 +109,12 @@ test("Resend seed payloads include template metadata, placeholders, and variable
 
     const product = findDefinition(definitions, "product_confirmation");
     assert.equal(product.envVar, "RESEND_TEMPLATE_PRODUCT_CONFIRMATION_ID");
-    assert.equal(product.payload.subject, "Your Lash Her order is confirmed");
+    assert.equal(product.payload.subject, "{{{EMAIL_SUBJECT}}}");
+    assert.deepEqual(findVariable(product, "EMAIL_SUBJECT"), {
+      fallbackValue: "Your Lash Her order is confirmed",
+      key: "EMAIL_SUBJECT",
+      type: "string",
+    });
     assert.equal(product.payload.html.includes("{{{LINE_ITEMS_HTML}}}"), true);
     assert.equal(product.payload.html.includes("{{{SHIPPING_ADDRESS_HTML}}}"), true);
     assert.equal(product.payload.html.includes("{{{ITEM_COUNT}}}"), false);
@@ -365,8 +370,15 @@ void (async () => {\n${assertions}\n})()`;
   delete env.RESEND_API_KEY;
 
   execFileSync(
-    "./node_modules/.bin/tsx",
-    ["--conditions=react-server", "--eval", scenario],
+    process.execPath,
+    [
+      "--conditions=react-server",
+      "--import",
+      "tsx",
+      "--input-type=module",
+      "--eval",
+      scenario,
+    ],
     {
       cwd: process.cwd(),
       env,

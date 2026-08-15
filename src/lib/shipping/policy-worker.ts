@@ -1,9 +1,23 @@
 import "server-only";
 
-import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import { getPrivateDb } from "@/lib/private-db/client";
 import {
   checkoutOrders,
+  productOrderAddressChangeRequests,
   productOrderCustomerDecisions,
   productOrderRefunds,
   productShipmentReturnObservations,
@@ -12,12 +26,19 @@ import {
   shippingFundingReviews,
   shippingServicePolicies,
 } from "@/lib/private-db/schema";
-import { openProductShippingCase } from "./cases";
-import { issueCustomerDecision } from "./customer-decisions";
-import { sendShippingCustomerLinkEmail } from "./customer-link-email";
+import {
+  openProductShippingCase,
+  resolveSettledInventoryUnavailableRefundCases,
+} from "./cases";
+import {
+  expirePendingCustomerDecisions,
+  issueCustomerDecision,
+  lossDamageRemedyDecisionTerms,
+} from "./customer-decisions";
 import {
   processProductOrderRefund,
   queueProductOrderRefund,
+  queueProductOrderRefundAllocations,
 } from "./customer-refunds";
 import { createChitChatsClient } from "./chitchats-client";
 import { getChitChatsConfig } from "./config";
@@ -34,6 +55,17 @@ import {
   sendShippingCustomerUpdate,
   sendShippingPolicyAlert,
 } from "./policy-alerts";
+import { mapChitChatsReturnReason } from "./return-rules";
+export { mapChitChatsReturnReason } from "./return-rules";
+import {
+  claimShippingPolicyJobs,
+  completeShippingPolicyJob,
+  enqueueDueShippingPolicyJobs,
+  failShippingPolicyJob,
+  renewShippingPolicyJobLease,
+  type ClaimedShippingPolicyJob,
+} from "./policy-jobs";
+import { runP10TerminationWorkflow } from "./p10-termination";
 
 export interface ShippingPolicyWorkerResult {
   manualReviewAlerts: number;
@@ -43,6 +75,10 @@ export interface ShippingPolicyWorkerResult {
   refundsProcessed: number;
   returnsObserved: number;
   failures: number;
+  tasksClaimed: number;
+  tasksCompleted: number;
+  tasksQueued: number;
+  tasksManualReview: number;
 }
 
 export async function runShippingPolicyWorker(
@@ -56,84 +92,199 @@ export async function runShippingPolicyWorker(
     refundsProcessed: 0,
     returnsObserved: 0,
     failures: 0,
+    tasksClaimed: 0,
+    tasksCompleted: 0,
+    tasksQueued: 0,
+    tasksManualReview: 0,
   };
   if (getShippingPolicyEnforcementMode() === "off") return result;
   const policy = await loadShippingPolicyContext(now);
-  const db = getPrivateDb();
-  const shipments = await db
-    .select({ shipment: productShipments, order: checkoutOrders })
-    .from(productShipments)
-    .innerJoin(checkoutOrders, eq(productShipments.orderId, checkoutOrders.id))
-    .where(
-      inArray(productShipments.status, [
-        "ready_for_staff",
-        "purchase_pending",
-        "label_ready",
-        "accepted",
-        "in_transit",
-        "exception",
-        "manual_review",
-        "delivered",
-      ]),
-    )
-    .orderBy(asc(productShipments.updatedAt))
-    .limit(500);
-
   if (policy.mode === "observe") {
-    result.manualReviewAlerts = shipments.filter(
-      ({ shipment }) => shipment.status === "manual_review",
-    ).length;
-    result.handoffMisses = shipments.filter(
-      ({ shipment }) =>
-        !shipment.acceptedAt &&
-        Boolean(
-          shipment.originalHandoffDeadlineAt &&
-          shipment.originalHandoffDeadlineAt <= now,
-        ),
-    ).length;
+    for await (const shipments of listPolicyShipmentPages()) {
+      result.manualReviewAlerts += shipments.filter(
+        ({ shipment }) => shipment.status === "manual_review",
+      ).length;
+      result.handoffMisses += shipments.filter(
+        ({ shipment }) =>
+          !shipment.acceptedAt &&
+          Boolean(
+            shipment.originalHandoffDeadlineAt &&
+            shipment.originalHandoffDeadlineAt <= now,
+          ),
+      ).length;
+    }
     return result;
   }
-
-  for (const row of shipments) {
+  result.tasksQueued = await enqueueDueShippingPolicyJobs(now);
+  const tasks = await claimShippingPolicyJobs({ now });
+  result.tasksClaimed = tasks.length;
+  for (const task of tasks) {
     try {
-      if (row.shipment.status === "manual_review")
-        await handleManualReview(row, policy, now, result);
-      if (
-        !row.shipment.acceptedAt &&
-        row.shipment.originalHandoffDeadlineAt &&
-        row.shipment.originalHandoffDeadlineAt <= now
-      )
-        await handleMissedHandoff(row, policy.mode, now, result);
-      await handleDelayAndLoss(row, policy, now, result);
-      await handleLateDelivery(row, policy, now, result);
-    } catch {
+      await withShippingPolicyJobLease(task, (checkpoint) =>
+        processPolicyTask(task, policy, now, result, checkpoint),
+      );
+      if (!(await completeShippingPolicyJob(task, new Date())))
+        throw new Error("Shipping policy task lease expired before completion");
+      result.tasksCompleted += 1;
+    } catch (error) {
       result.failures += 1;
-    }
-  }
-
-  for (const operation of [
-    () => expireCustomerDecisions(now, policy.mode, result),
-    () => ensureRemedyDecisions(policy, now),
-    () => processSelectedCustomerDecisions(policy.mode),
-    () => processQueuedRefunds(policy.mode, result),
-    () => pollReturns(policy.mode, result),
-    () => recordThirtyDayFundingReview(policy, now),
-    () => alertCalendarCoverage(policy, now),
-    () => alertClaimDeadlines(policy, now),
-    () => alertServicePolicyReviews(now),
-    () => enforceP10Termination(now, result),
-    () => alertPrivacyOverdue(now),
-    () => alertUnknownRefunds(),
-    () => sendBlockedFulfillmentUpdates(policy, now),
-    () => alertFundingControls(policy),
-  ]) {
-    try {
-      await operation();
-    } catch {
-      result.failures += 1;
+      const outcome = await failShippingPolicyJob({
+        job: task,
+        error,
+        now: new Date(),
+      });
+      if (outcome === "manual_review") {
+        result.tasksManualReview += 1;
+        await sendShippingPolicyAlert({
+          duties: ["operations_lead"],
+          critical: true,
+          subject: `Shipping policy task requires manual review: ${task.type}`,
+          message: `Task ${task.id} exhausted its retry policy. Review the durable task evidence before resuming automation.`,
+          idempotencyKey: `shipping-policy-task-manual/${task.id}`,
+        }).catch(() => undefined);
+      }
     }
   }
   return result;
+}
+
+type PolicyLeaseCheckpoint = () => Promise<void>;
+
+async function withShippingPolicyJobLease<T>(
+  task: ClaimedShippingPolicyJob,
+  work: (checkpoint: PolicyLeaseCheckpoint) => Promise<T>,
+): Promise<T> {
+  let lost = false;
+  let renewal: Promise<void> | null = null;
+  const checkpoint = (): Promise<void> => {
+    if (lost)
+      return Promise.reject(new Error("Shipping policy task lease was lost"));
+    if (renewal) return renewal;
+    renewal = (async () => {
+      if (!(await renewShippingPolicyJobLease(task, new Date()))) {
+        lost = true;
+        throw new Error("Shipping policy task lease was lost");
+      }
+    })().finally(() => {
+      renewal = null;
+    });
+    return renewal;
+  };
+  await checkpoint();
+  const heartbeat = setInterval(() => {
+    void checkpoint().catch(() => undefined);
+  }, 60_000);
+  heartbeat.unref?.();
+  try {
+    const value = await work(checkpoint);
+    await checkpoint();
+    return value;
+  } finally {
+    clearInterval(heartbeat);
+  }
+}
+
+const POLICY_SHIPMENT_PAGE_SIZE = 100;
+
+async function* listPolicyShipmentPages(): AsyncGenerator<ShipmentAndOrder[]> {
+  let afterId: string | null = null;
+  for (;;) {
+    const page = await getPrivateDb()
+      .select({ shipment: productShipments, order: checkoutOrders })
+      .from(productShipments)
+      .innerJoin(
+        checkoutOrders,
+        eq(productShipments.orderId, checkoutOrders.id),
+      )
+      .where(
+        and(
+          or(
+            inArray(productShipments.status, [
+              "ready_for_staff",
+              "purchase_pending",
+              "label_ready",
+              "accepted",
+              "in_transit",
+              "exception",
+              "manual_review",
+            ]),
+            and(
+              eq(productShipments.status, "delivered"),
+              isNotNull(productShipments.deliveredAt),
+              isNotNull(productShipments.latestEstimatedDeliveryAt),
+              gte(checkoutOrders.shippingAmountCents, 100),
+            ),
+          ),
+          afterId ? gt(productShipments.id, afterId) : undefined,
+        ),
+      )
+      .orderBy(asc(productShipments.id))
+      .limit(POLICY_SHIPMENT_PAGE_SIZE);
+    if (!page.length) return;
+    yield page;
+    afterId = page.at(-1)!.shipment.id;
+    if (page.length < POLICY_SHIPMENT_PAGE_SIZE) return;
+  }
+}
+
+async function processPolicyTask(
+  task: ClaimedShippingPolicyJob,
+  policy: Awaited<ReturnType<typeof loadShippingPolicyContext>>,
+  now: Date,
+  result: ShippingPolicyWorkerResult,
+  checkpoint: PolicyLeaseCheckpoint,
+): Promise<void> {
+  await checkpoint();
+  switch (task.type) {
+    case "deadlines":
+      for await (const shipments of listPolicyShipmentPages()) {
+        for (const row of shipments) {
+          await checkpoint();
+          if (row.shipment.status === "manual_review")
+            await handleManualReview(row, policy, now, result);
+          if (
+            !row.shipment.acceptedAt &&
+            row.shipment.originalHandoffDeadlineAt &&
+            row.shipment.originalHandoffDeadlineAt <= now
+          )
+            await handleMissedHandoff(row, policy.mode, now, result);
+          await handleDelayAndLoss(row, policy, now, result);
+          await handleLateDelivery(row, policy);
+        }
+      }
+      await enforceP10Termination(now, checkpoint);
+      return;
+    case "decisions":
+      await expireCustomerDecisions(now, policy.mode, result);
+      await processSelectedCustomerDecisions(policy.mode);
+      return;
+    case "remedies":
+      await ensureRemedyDecisions(policy, now);
+      return;
+    case "refunds":
+      await processQueuedRefunds(policy.mode, result, checkpoint);
+      await alertUnknownRefunds();
+      return;
+    case "returns":
+      await pollReturns(policy.mode, result);
+      return;
+    case "claims":
+      await alertClaimDeadlines(policy, now);
+      await alertServicePolicyReviews(now);
+      return;
+    case "funding":
+      await recordThirtyDayFundingReview(policy, now);
+      await alertFundingControls(policy);
+      return;
+    case "calendar":
+      await alertCalendarCoverage(policy, now);
+      return;
+    case "privacy":
+      await alertPrivacyOverdue(now);
+      return;
+    case "notifications":
+      await sendBlockedFulfillmentUpdates(policy, now);
+  }
 }
 
 async function handleManualReview(
@@ -208,66 +359,76 @@ async function handleMissedHandoff(
     cause: "carrier_handoff_deadline_missed",
     customerUpdateDueAt: now,
   });
-  if (!row.shipment.customerNotifiedAt && mode === "enforce") {
+  if (
+    mode === "enforce" &&
+    row.shipment.autoRefundDeadlineAt &&
+    row.shipment.autoRefundDeadlineAt > now
+  ) {
     const [existing] = await getPrivateDb()
       .select({ id: productOrderCustomerDecisions.id })
       .from(productOrderCustomerDecisions)
       .where(
         and(
           eq(productOrderCustomerDecisions.orderId, row.order.id),
+          eq(productOrderCustomerDecisions.shipmentId, row.shipment.id),
           eq(productOrderCustomerDecisions.kind, "missed_handoff"),
-          inArray(productOrderCustomerDecisions.status, [
-            "pending",
-            "selected",
-            "expired",
-            "revoked",
-          ]),
+          eq(productOrderCustomerDecisions.status, "pending"),
+          eq(
+            productOrderCustomerDecisions.scopeKey,
+            `missed_handoff/${row.shipment.id}/${row.shipment.autoRefundDeadlineAt.toISOString()}`,
+          ),
         ),
       )
       .limit(1);
     if (!existing && row.shipment.autoRefundDeadlineAt) {
-      const issued = await issueCustomerDecision({
+      await issueCustomerDecision({
         orderReference: row.order.orderId,
         shipmentId: row.shipment.id,
         kind: "missed_handoff",
         scopeKey: `missed_handoff/${row.shipment.id}/${row.shipment.autoRefundDeadlineAt.toISOString()}`,
         allowedOutcomes: ["refund", "wait"],
+        proposedConditions: {
+          waitUntil: businessDeadline(
+            row.shipment.autoRefundDeadlineAt,
+            policyWaitExtensionBusinessDays(),
+            await loadShippingPolicyContext(now),
+          ).toISOString(),
+        },
         expiresAt: row.shipment.autoRefundDeadlineAt,
-      });
-      const link = new URL("/orders/shipping-decision", publicOrigin());
-      link.searchParams.set("token", issued.token);
-      await sendShippingCustomerLinkEmail({
-        to: issued.email,
-        orderReference: row.order.orderId,
-        link: link.toString(),
-        purpose: "decision",
-        idempotencyKey: `shipping-handoff-decision/${issued.id}`,
+        notificationOrigin: publicOrigin(),
       });
     }
-    await getPrivateDb()
-      .update(productShipments)
-      .set({ customerNotifiedAt: now, updatedAt: now })
-      .where(eq(productShipments.id, row.shipment.id));
+    if (!row.shipment.customerNotifiedAt)
+      await getPrivateDb()
+        .update(productShipments)
+        .set({ customerNotifiedAt: now, updatedAt: now })
+        .where(eq(productShipments.id, row.shipment.id));
   }
   if (
     row.shipment.autoRefundDeadlineAt &&
     row.shipment.autoRefundDeadlineAt <= now
   ) {
-    const [choice] = await getPrivateDb()
-      .select({ id: productOrderCustomerDecisions.id })
-      .from(productOrderCustomerDecisions)
+    const [fresh] = await getPrivateDb()
+      .select({
+        deadline: productShipments.autoRefundDeadlineAt,
+        acceptedAt: productShipments.acceptedAt,
+      })
+      .from(productShipments)
       .where(
         and(
-          eq(productOrderCustomerDecisions.orderId, row.order.id),
-          eq(productOrderCustomerDecisions.status, "selected"),
-          inArray(productOrderCustomerDecisions.selectedOutcome, [
-            "wait",
-            "accept_substitute",
-          ]),
+          eq(productShipments.id, row.shipment.id),
+          eq(productShipments.orderId, row.order.id),
         ),
       )
       .limit(1);
-    if (!choice && mode === "enforce")
+    const supplementalExempt = await hasOpenAddressSupplement(row.order.id);
+    if (
+      mode === "enforce" &&
+      !fresh?.acceptedAt &&
+      fresh?.deadline &&
+      fresh.deadline <= now &&
+      !supplementalExempt
+    )
       await queueFullRefund(
         row.order.orderId,
         "Automatic refund after missed carrier handoff",
@@ -276,75 +437,108 @@ async function handleMissedHandoff(
   result.handoffMisses += 1;
 }
 
+async function hasOpenAddressSupplement(orderId: string): Promise<boolean> {
+  const [row] = await getPrivateDb()
+    .select({ id: productOrderAddressChangeRequests.id })
+    .from(productOrderAddressChangeRequests)
+    .where(
+      and(
+        eq(productOrderAddressChangeRequests.orderId, orderId),
+        eq(productOrderAddressChangeRequests.customerCaused, true),
+        eq(productOrderAddressChangeRequests.status, "approved"),
+        sql`(
+          coalesce(${productOrderAddressChangeRequests.postageDifferenceCents}, 0) > 0
+          or ${productOrderAddressChangeRequests.supplementalObligationId} is not null
+          or ${productOrderAddressChangeRequests.reconciliationState} in (
+            'awaiting_supplemental_payment',
+            'not_started'
+          )
+        )`,
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
+function policyWaitExtensionBusinessDays(): number {
+  return 2;
+}
+
 async function ensureRemedyDecisions(
   policy: Awaited<ReturnType<typeof loadShippingPolicyContext>>,
   now: Date,
 ): Promise<void> {
   if (policy.mode !== "enforce") return;
-  const cases = await getPrivateDb()
-    .select({
-      caseId: productShippingCases.id,
-      orderReference: checkoutOrders.orderId,
-      remedyDeadlineAt: productShippingCases.remedyDeadlineAt,
-    })
-    .from(productShippingCases)
-    .innerJoin(
-      checkoutOrders,
-      eq(productShippingCases.orderId, checkoutOrders.id),
-    )
-    .where(
-      and(
-        inArray(productShippingCases.type, ["loss", "damage"]),
-        inArray(productShippingCases.status, [
-          "open",
-          "waiting_customer",
-          "remedy_pending",
-        ]),
-      ),
-    )
-    .limit(100);
-  for (const entry of cases) {
-    const [existing] = await getPrivateDb()
-      .select({ id: productOrderCustomerDecisions.id })
-      .from(productOrderCustomerDecisions)
+  let afterCaseId: string | null = null;
+  for (;;) {
+    const cases = await getPrivateDb()
+      .select({
+        caseId: productShippingCases.id,
+        orderReference: checkoutOrders.orderId,
+        remedyDeadlineAt: productShippingCases.remedyDeadlineAt,
+      })
+      .from(productShippingCases)
+      .innerJoin(
+        checkoutOrders,
+        eq(productShippingCases.orderId, checkoutOrders.id),
+      )
       .where(
         and(
-          eq(productOrderCustomerDecisions.caseId, entry.caseId),
-          inArray(productOrderCustomerDecisions.status, [
-            "pending",
-            "selected",
+          inArray(productShippingCases.type, ["loss", "damage"]),
+          inArray(productShippingCases.status, [
+            "open",
+            "waiting_customer",
+            "remedy_pending",
           ]),
+          isNull(productShippingCases.fulfillmentQuarantinedAt),
+          afterCaseId ? gt(productShippingCases.id, afterCaseId) : undefined,
         ),
       )
-      .limit(1);
-    if (existing) continue;
-    const expiresAt =
-      entry.remedyDeadlineAt ?? businessDeadline(now, 2, policy);
-    const issued = await issueCustomerDecision({
-      orderReference: entry.orderReference,
-      caseId: entry.caseId,
-      kind: "loss_damage_remedy",
-      scopeKey: `loss_damage_remedy/${entry.caseId}/${expiresAt.toISOString()}`,
-      allowedOutcomes: ["refund", "replacement"],
-      expiresAt,
-    });
-    const link = new URL("/orders/shipping-decision", publicOrigin());
-    link.searchParams.set("token", issued.token);
-    await sendShippingCustomerLinkEmail({
-      to: issued.email,
-      orderReference: entry.orderReference,
-      link: link.toString(),
-      purpose: "decision",
-      idempotencyKey: `shipping-remedy-decision/${issued.id}`,
-    });
-    await getPrivateDb()
-      .update(productShippingCases)
-      .set({
-        status: "waiting_customer",
+      .orderBy(asc(productShippingCases.id))
+      .limit(100);
+    if (!cases.length) return;
+    afterCaseId = cases.at(-1)!.caseId;
+    for (const entry of cases) {
+      const [existing] = await getPrivateDb()
+        .select({ id: productOrderCustomerDecisions.id })
+        .from(productOrderCustomerDecisions)
+        .where(
+          and(
+            eq(productOrderCustomerDecisions.caseId, entry.caseId),
+            inArray(productOrderCustomerDecisions.status, [
+              "pending",
+              "selected",
+            ]),
+          ),
+        )
+        .limit(1);
+      if (existing) continue;
+      const expiresAt =
+        entry.remedyDeadlineAt ?? businessDeadline(now, 2, policy);
+      const decisionTerms = lossDamageRemedyDecisionTerms({
+        caseId: entry.caseId,
         remedyDeadlineAt: expiresAt,
-        updatedAt: now,
-      })
-      .where(eq(productShippingCases.id, entry.caseId));
+      });
+      await issueCustomerDecision({
+        orderReference: entry.orderReference,
+        caseId: entry.caseId,
+        kind: "loss_damage_remedy",
+        ...decisionTerms,
+        allowedOutcomes: ["refund", "replacement"],
+        expiresAt,
+        notificationOrigin: publicOrigin(),
+      });
+      await getPrivateDb()
+        .update(productShippingCases)
+        .set({
+          status: "waiting_customer",
+          remedyDeadlineAt: expiresAt,
+          stateVersion: sql`${productShippingCases.stateVersion} + 1`,
+          updatedAt: now,
+        })
+        .where(eq(productShippingCases.id, entry.caseId));
+    }
+    if (cases.length < 100) return;
   }
 }
 
@@ -352,35 +546,67 @@ async function processSelectedCustomerDecisions(
   mode: "off" | "observe" | "enforce",
 ): Promise<void> {
   if (mode !== "enforce") return;
-  const decisions = await getPrivateDb()
-    .select({
-      id: productOrderCustomerDecisions.id,
-      outcome: productOrderCustomerDecisions.selectedOutcome,
-      orderReference: checkoutOrders.orderId,
-      caseId: productOrderCustomerDecisions.caseId,
-    })
-    .from(productOrderCustomerDecisions)
-    .innerJoin(
-      checkoutOrders,
-      eq(productOrderCustomerDecisions.orderId, checkoutOrders.id),
-    )
-    .where(eq(productOrderCustomerDecisions.status, "selected"))
-    .limit(100);
-  for (const decision of decisions) {
-    if (decision.outcome !== "refund") continue;
-    await queueFullRefund(
-      decision.orderReference,
-      "Customer selected refund under shipping policy",
-    );
-    if (decision.caseId)
+  let afterDecisionId: string | null = null;
+  for (;;) {
+    const decisions = await getPrivateDb()
+      .select({
+        id: productOrderCustomerDecisions.id,
+        outcome: productOrderCustomerDecisions.selectedOutcome,
+        orderReference: checkoutOrders.orderId,
+        caseId: productOrderCustomerDecisions.caseId,
+      })
+      .from(productOrderCustomerDecisions)
+      .innerJoin(
+        checkoutOrders,
+        eq(productOrderCustomerDecisions.orderId, checkoutOrders.id),
+      )
+      .where(
+        and(
+          eq(productOrderCustomerDecisions.status, "selected"),
+          isNull(productOrderCustomerDecisions.processedAt),
+          afterDecisionId
+            ? gt(productOrderCustomerDecisions.id, afterDecisionId)
+            : undefined,
+        ),
+      )
+      .orderBy(asc(productOrderCustomerDecisions.id))
+      .limit(100);
+    if (!decisions.length) return;
+    afterDecisionId = decisions.at(-1)!.id;
+    for (const decision of decisions) {
+      if (decision.outcome !== "refund") continue;
+      await queueFullRefund(
+        decision.orderReference,
+        "Customer selected refund under shipping policy",
+        decision.caseId ?? undefined,
+      );
+      const now = new Date();
       await getPrivateDb()
-        .update(productShippingCases)
-        .set({
-          remedyChoice: "refund",
-          status: "remedy_pending",
-          updatedAt: new Date(),
-        })
-        .where(eq(productShippingCases.id, decision.caseId));
+        .update(productOrderCustomerDecisions)
+        .set({ consumedAt: now, processedAt: now, updatedAt: now })
+        .where(
+          and(
+            eq(productOrderCustomerDecisions.id, decision.id),
+            isNull(productOrderCustomerDecisions.processedAt),
+          ),
+        );
+      if (decision.caseId)
+        await getPrivateDb()
+          .update(productShippingCases)
+          .set({
+            remedyChoice: "refund",
+            status: "remedy_pending",
+            stateVersion: sql`${productShippingCases.stateVersion} + 1`,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(productShippingCases.id, decision.caseId),
+              isNull(productShippingCases.fulfillmentQuarantinedAt),
+            ),
+          );
+    }
+    if (decisions.length < 100) return;
   }
 }
 
@@ -421,10 +647,14 @@ async function handleDelayAndLoss(
           `${row.shipment.selectedPostageType}:${countryCode(row.shipment.destination)}`,
         )
       : null;
-    if (service && movement) {
-      const lossEligible = new Date(
-        movement.getTime() + service.claimWaitingDays * 24 * 60 * 60_000,
-      );
+    const claimWindow = shippingClaimWindow({
+      providerShipDateAt: row.shipment.providerShipDateAt,
+      purchasedAt: row.shipment.purchasedAt,
+      waitingDays: service?.claimWaitingDays ?? 0,
+      deadlineDays: service?.claimDeadlineDays ?? 0,
+    });
+    if (service && claimWindow) {
+      const lossEligible = claimWindow.eligibleAt;
       if (lossEligible <= now) {
         await openProductShippingCase({
           orderId: row.order.id,
@@ -432,9 +662,7 @@ async function handleDelayAndLoss(
           type: "loss",
           cause: "service_policy_claim_window_open",
           eligibleAt: lossEligible,
-          carrierDeadlineAt: new Date(
-            movement.getTime() + service.claimDeadlineDays * 24 * 60 * 60_000,
-          ),
+          carrierDeadlineAt: claimWindow.deadlineAt,
           customerUpdateDueAt: now,
           remedyDeadlineAt: businessDeadline(now, 2, policy),
         });
@@ -448,16 +676,19 @@ async function handleDelayAndLoss(
     ) {
       await sendShippingCustomerUpdate({
         to: row.order.customerEmail,
+        orderDatabaseId: row.order.id,
         orderReference: row.order.orderId,
         subject: "Delayed shipment update",
         message:
           "Your shipment is delayed. We are monitoring it and will update you again within two business days.",
         idempotencyKey: `shipping-delay-update/${delay.id}/${delay.customerUpdateDueAt.toISOString()}`,
+        now,
       });
       await getPrivateDb()
         .update(productShippingCases)
         .set({
           customerUpdateDueAt: businessDeadline(now, 2, policy),
+          stateVersion: sql`${productShippingCases.stateVersion} + 1`,
           updatedAt: now,
         })
         .where(eq(productShippingCases.id, delay.id));
@@ -465,11 +696,34 @@ async function handleDelayAndLoss(
   }
 }
 
+export function shippingClaimWindow(input: {
+  providerShipDateAt: Date | null;
+  purchasedAt: Date | null;
+  waitingDays: number;
+  deadlineDays: number;
+}): { eligibleAt: Date; deadlineAt: Date } | null {
+  if (
+    !input.providerShipDateAt ||
+    !input.purchasedAt ||
+    !Number.isInteger(input.waitingDays) ||
+    input.waitingDays < 0 ||
+    !Number.isInteger(input.deadlineDays) ||
+    input.deadlineDays <= 0
+  )
+    return null;
+  return {
+    eligibleAt: new Date(
+      input.providerShipDateAt.getTime() + input.waitingDays * 24 * 60 * 60_000,
+    ),
+    deadlineAt: new Date(
+      input.purchasedAt.getTime() + input.deadlineDays * 24 * 60 * 60_000,
+    ),
+  };
+}
+
 async function handleLateDelivery(
   row: ShipmentAndOrder,
   policy: Awaited<ReturnType<typeof loadShippingPolicyContext>>,
-  now: Date,
-  result: ShippingPolicyWorkerResult,
 ): Promise<void> {
   if (
     row.shipment.status !== "delivered" ||
@@ -493,19 +747,14 @@ async function handleLateDelivery(
         ),
       )
       .limit(1);
-    if (existing) return;
-    try {
-      const refund = await queueProductOrderRefund({
-        orderReference: row.order.orderId,
-        amountCents: row.order.shippingAmountCents,
-        reason,
-        automated: true,
-      });
-      await processProductOrderRefund(refund.id);
-      result.refundsProcessed += 1;
-    } catch {
-      // Existing ledger reservation makes this policy action idempotent.
-    }
+    if (existing || row.order.status === "refunded") return;
+    await queueProductOrderRefund({
+      orderReference: row.order.orderId,
+      amountCents: row.order.shippingAmountCents,
+      component: "outbound_shipping",
+      reason,
+      automated: true,
+    });
   }
 }
 
@@ -514,20 +763,8 @@ async function expireCustomerDecisions(
   mode: "off" | "observe" | "enforce",
   result: ShippingPolicyWorkerResult,
 ): Promise<void> {
-  const expired = await getPrivateDb()
-    .update(productOrderCustomerDecisions)
-    .set({ status: "expired", updatedAt: now })
-    .where(
-      and(
-        eq(productOrderCustomerDecisions.status, "pending"),
-        lte(productOrderCustomerDecisions.expiresAt, now),
-      ),
-    )
-    .returning({
-      orderId: productOrderCustomerDecisions.orderId,
-      caseId: productOrderCustomerDecisions.caseId,
-    });
   if (mode !== "enforce") return;
+  const expired = await expirePendingCustomerDecisions(now);
   for (const decision of expired) {
     if (!decision.caseId) continue;
     const [row] = await getPrivateDb()
@@ -542,11 +779,33 @@ async function expireCustomerDecisions(
       )
       .where(eq(productShippingCases.id, decision.caseId))
       .limit(1);
-    if (row && ["loss", "damage"].includes(row.type))
+    if (row && ["loss", "damage"].includes(row.type)) {
       await queueFullRefund(
         row.orderReference,
         "No response to loss or damage remedy choice",
+        decision.caseId,
       );
+      await getPrivateDb()
+        .update(productShippingCases)
+        .set({
+          remedyChoice: "refund",
+          status: "remedy_pending",
+          stateVersion: sql`${productShippingCases.stateVersion} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(productShippingCases.id, decision.caseId),
+            inArray(productShippingCases.status, [
+              "open",
+              "waiting_customer",
+              "waiting_provider",
+              "remedy_pending",
+            ]),
+            isNull(productShippingCases.fulfillmentQuarantinedAt),
+          ),
+        );
+    }
   }
   result.refundsProcessed += 0;
 }
@@ -554,6 +813,7 @@ async function expireCustomerDecisions(
 async function processQueuedRefunds(
   mode: "off" | "observe" | "enforce",
   result: ShippingPolicyWorkerResult,
+  checkpoint: PolicyLeaseCheckpoint = async () => undefined,
 ): Promise<void> {
   if (mode !== "enforce") return;
   const queued = await getPrivateDb()
@@ -563,17 +823,42 @@ async function processQueuedRefunds(
     .orderBy(asc(productOrderRefunds.createdAt))
     .limit(25);
   for (const row of queued) {
-    const refund = await processProductOrderRefund(row.id);
-    if (refund.status === "succeeded") result.refundsProcessed += 1;
-    if (refund.status === "outcome_unknown")
+    await checkpoint();
+    try {
+      const refund = await processProductOrderRefund(row.id);
+      if (refund.status === "succeeded") result.refundsProcessed += 1;
+      if (refund.status === "manual_review") {
+        result.failures += 1;
+        await sendShippingPolicyAlert({
+          duties: ["finance_owner"],
+          critical: true,
+          subject: "Helcim refund requires manual review",
+          message: `Refund ${row.id} has invalid or incomplete immutable payment evidence and was removed from the automatic queue.`,
+          idempotencyKey: `shipping-refund-manual-review/${row.id}`,
+        });
+      }
+      if (refund.status === "outcome_unknown") {
+        result.failures += 1;
+        await sendShippingPolicyAlert({
+          duties: ["finance_owner"],
+          critical: true,
+          subject: "Helcim refund outcome is unknown",
+          message: `Refund ${row.id} requires transaction reconciliation; do not resubmit it.`,
+          idempotencyKey: `shipping-refund-unknown/${row.id}`,
+        });
+      }
+    } catch {
+      result.failures += 1;
       await sendShippingPolicyAlert({
         duties: ["finance_owner"],
         critical: true,
-        subject: "Helcim refund outcome is unknown",
-        message: `Refund ${row.id} requires transaction reconciliation; do not resubmit it.`,
-        idempotencyKey: `shipping-refund-unknown/${row.id}`,
+        subject: "Helcim refund worker failed",
+        message: `Refund ${row.id} could not be processed. Later queued refunds were still attempted.`,
+        idempotencyKey: `shipping-refund-worker-failed/${row.id}`,
       });
+    }
   }
+  await resolveSettledInventoryUnavailableRefundCases();
 }
 
 async function pollReturns(
@@ -584,56 +869,85 @@ async function pollReturns(
   const returns = await listAllReturns();
   for (const item of returns) {
     const providerShipmentId = item.original_shipment?.id;
-    if (!item.id || !providerShipmentId)
-      throw new Error("Chit Chats returned a malformed return observation");
-    const [existingObservation] = await getPrivateDb()
-      .select({ id: productShipmentReturnObservations.id })
-      .from(productShipmentReturnObservations)
-      .where(eq(productShipmentReturnObservations.providerReturnId, item.id))
-      .limit(1);
-    if (existingObservation) continue;
-    const [shipment] = await getPrivateDb()
-      .select({ id: productShipments.id, orderId: productShipments.orderId })
-      .from(productShipments)
-      .where(eq(productShipments.providerShipmentId, providerShipmentId))
-      .limit(1);
-    if (!shipment?.orderId)
-      throw new Error("Chit Chats return could not be matched to a shipment");
+    if (!item.id) continue;
     if (mode === "observe") {
       result.returnsObserved += 1;
       continue;
     }
-    const returnSignal = (item.return_reason ?? "").toLowerCase();
-    const shippingCase = await openProductShippingCase({
-      orderId: shipment.orderId,
-      shipmentId: shipment.id,
-      type: returnSignal.includes("unclaim")
-        ? "unclaimed"
-        : returnSignal === "damaged"
-          ? "damage"
-          : "return_to_sender",
-      cause: "cause_pending_local_inspection",
-    });
+    const [shipment] = await getPrivateDb()
+      .select({ id: productShipments.id, orderId: productShipments.orderId })
+      .from(productShipments)
+      .where(
+        eq(
+          productShipments.providerShipmentId,
+          providerShipmentId ?? "missing",
+        ),
+      )
+      .limit(1);
     const providerUpdatedAt = item.updated_at
       ? new Date(item.updated_at)
       : null;
+    const normalizedProviderUpdatedAt =
+      providerUpdatedAt && !Number.isNaN(providerUpdatedAt.getTime())
+        ? providerUpdatedAt
+        : null;
+    let shippingCase: { id: string } | null = null;
+    let matchStatus: "matched" | "unmatched" | "manual_review" =
+      shipment?.orderId ? "matched" : "unmatched";
+    if (shipment?.orderId) {
+      try {
+        const mappedReturn = mapChitChatsReturnReason(item.return_reason);
+        shippingCase = await openProductShippingCase({
+          orderId: shipment.orderId,
+          shipmentId: shipment.id,
+          type: mappedReturn.type,
+          cause: mappedReturn.cause,
+        });
+      } catch {
+        matchStatus = "manual_review";
+        result.failures += 1;
+      }
+    }
     await getPrivateDb()
       .insert(productShipmentReturnObservations)
       .values({
         providerReturnId: item.id,
-        shipmentId: shipment.id,
-        caseId: shippingCase.id,
+        shipmentId: shipment?.id,
+        providerShipmentId,
+        matchStatus,
+        caseId: shippingCase?.id,
         providerStatus: item.status,
         returnReason: item.return_reason,
         resolution: item.resolution,
+        rawPayload: null,
         observedAt: new Date(),
-        providerUpdatedAt:
-          providerUpdatedAt && !Number.isNaN(providerUpdatedAt.getTime())
-            ? providerUpdatedAt
-            : null,
+        providerUpdatedAt: normalizedProviderUpdatedAt,
       })
-      .onConflictDoNothing({
+      .onConflictDoUpdate({
         target: productShipmentReturnObservations.providerReturnId,
+        set: {
+          shipmentId: shipment?.id ?? null,
+          providerShipmentId: providerShipmentId ?? null,
+          matchStatus,
+          caseId: shippingCase?.id ?? null,
+          providerStatus: item.status,
+          returnReason: item.return_reason,
+          resolution: item.resolution,
+          rawPayload: null,
+          providerUpdatedAt: normalizedProviderUpdatedAt,
+          stateVersion: sql`${productShipmentReturnObservations.stateVersion} + 1`,
+          updatedAt: new Date(),
+        },
+        setWhere: sql`
+          ${productShipmentReturnObservations.shipmentId} is distinct from ${shipment?.id ?? null}
+          or ${productShipmentReturnObservations.providerShipmentId} is distinct from ${providerShipmentId ?? null}
+          or ${productShipmentReturnObservations.matchStatus} is distinct from ${matchStatus}
+          or ${productShipmentReturnObservations.caseId} is distinct from ${shippingCase?.id ?? null}
+          or ${productShipmentReturnObservations.providerStatus} is distinct from ${item.status ?? null}
+          or ${productShipmentReturnObservations.returnReason} is distinct from ${item.return_reason ?? null}
+          or ${productShipmentReturnObservations.resolution} is distinct from ${item.resolution ?? null}
+          or ${productShipmentReturnObservations.providerUpdatedAt} is distinct from ${normalizedProviderUpdatedAt}
+        `,
       });
     result.returnsObserved += 1;
   }
@@ -728,40 +1042,49 @@ async function alertClaimDeadlines(
 ): Promise<void> {
   const warningCutoff = new Date(now.getTime() + 5 * 24 * 60 * 60_000);
   const urgentCutoff = businessDeadline(now, 1, policy);
-  const cases = await getPrivateDb()
-    .select({
-      id: productShippingCases.id,
-      deadline: productShippingCases.carrierDeadlineAt,
-      orderReference: checkoutOrders.orderId,
-    })
-    .from(productShippingCases)
-    .innerJoin(
-      checkoutOrders,
-      eq(productShippingCases.orderId, checkoutOrders.id),
-    )
-    .where(
-      and(
-        inArray(productShippingCases.type, ["loss", "damage", "claim"]),
-        inArray(productShippingCases.status, [
-          "open",
-          "waiting_customer",
-          "waiting_provider",
-          "remedy_pending",
-        ]),
-        lte(productShippingCases.carrierDeadlineAt, warningCutoff),
-      ),
-    )
-    .limit(100);
-  for (const entry of cases) {
-    if (!entry.deadline) continue;
-    const critical = entry.deadline <= urgentCutoff;
-    await sendShippingPolicyAlert({
-      duties: ["operations_lead"],
-      critical,
-      subject: `Carrier claim deadline: ${entry.orderReference}`,
-      message: `The locally tracked carrier claim deadline is ${entry.deadline.toISOString()}. Confirm the Chit Chats claim and evidence checklist before it expires.`,
-      idempotencyKey: `shipping-claim-deadline/${entry.id}/${critical ? "urgent" : "warning"}/${entry.deadline.toISOString()}`,
-    });
+  let afterCaseId: string | null = null;
+  for (;;) {
+    const cases = await getPrivateDb()
+      .select({
+        id: productShippingCases.id,
+        deadline: productShippingCases.carrierDeadlineAt,
+        orderReference: checkoutOrders.orderId,
+      })
+      .from(productShippingCases)
+      .innerJoin(
+        checkoutOrders,
+        eq(productShippingCases.orderId, checkoutOrders.id),
+      )
+      .where(
+        and(
+          inArray(productShippingCases.type, ["loss", "damage", "claim"]),
+          inArray(productShippingCases.status, [
+            "open",
+            "waiting_customer",
+            "waiting_provider",
+            "remedy_pending",
+          ]),
+          isNull(productShippingCases.fulfillmentQuarantinedAt),
+          lte(productShippingCases.carrierDeadlineAt, warningCutoff),
+          afterCaseId ? gt(productShippingCases.id, afterCaseId) : undefined,
+        ),
+      )
+      .orderBy(asc(productShippingCases.id))
+      .limit(100);
+    if (!cases.length) return;
+    afterCaseId = cases.at(-1)!.id;
+    for (const entry of cases) {
+      if (!entry.deadline) continue;
+      const critical = entry.deadline <= urgentCutoff;
+      await sendShippingPolicyAlert({
+        duties: ["operations_lead"],
+        critical,
+        subject: `Carrier claim deadline: ${entry.orderReference}`,
+        message: `The locally tracked carrier claim deadline is ${entry.deadline.toISOString()}. Confirm the Chit Chats claim and evidence checklist before it expires.`,
+        idempotencyKey: `shipping-claim-deadline/${entry.id}/${critical ? "urgent" : "warning"}/${entry.deadline.toISOString()}`,
+      });
+    }
+    if (cases.length < 100) return;
   }
 }
 
@@ -817,83 +1140,39 @@ async function alertPrivacyOverdue(now: Date): Promise<void> {
   });
 }
 
-async function enforceP10Termination(
+export async function enforceP10Termination(
   now: Date,
-  result: ShippingPolicyWorkerResult,
+  checkpoint: PolicyLeaseCheckpoint = async () => undefined,
 ): Promise<void> {
-  const warningCutoff = new Date(now.getTime() - 335 * 24 * 60 * 60_000);
-  const refundCutoff = new Date(now.getTime() - 350 * 24 * 60 * 60_000);
-  const orders = await getPrivateDb()
-    .select({
-      id: checkoutOrders.id,
-      orderReference: checkoutOrders.orderId,
-      createdAt: checkoutOrders.createdAt,
-    })
-    .from(checkoutOrders)
-    .where(
-      and(
-        eq(checkoutOrders.purpose, "product"),
-        eq(checkoutOrders.status, "paid"),
-        lte(checkoutOrders.createdAt, warningCutoff),
-        sql`${checkoutOrders.redactedAt} is null`,
-        sql`(
-          exists (
-            select 1 from ${productShipments} s
-            where s.order_id = ${checkoutOrders.id}
-              and s.status not in ('delivered', 'voided', 'abandoned')
-          )
-          or exists (
-            select 1 from ${productShippingCases} c
-            where c.order_id = ${checkoutOrders.id}
-              and c.status not in ('resolved', 'cancelled')
-          )
-        )`,
-      ),
-    )
-    .limit(100);
-  for (const order of orders) {
-    const refundDue = order.createdAt <= refundCutoff;
-    await sendShippingPolicyAlert({
-      duties: ["operations_lead", "privacy_owner"],
-      critical: refundDue,
-      subject: refundDue
-        ? `P-10 termination required: ${order.orderReference}`
-        : `P-10 335-day warning: ${order.orderReference}`,
-      message: refundDue
-        ? "This unresolved order reached day 350. The system is initiating full refund/cancellation so settlement can complete before the day-365 PII cap."
-        : "This unresolved order reached day 335. Fulfill it, restore the original safe address, or prepare full refund/cancellation before day 365.",
-      idempotencyKey: `shipping-p10/${order.id}/${refundDue ? "350" : "335"}`,
-    });
-    if (!refundDue) continue;
-    const refund = await queueProductOrderRefund({
-      orderReference: order.orderReference,
-      reason: "P-10 unresolved-order termination before privacy hard cap",
-      automated: true,
-    });
-    if (refund.status === "queued") {
-      const processed = await processProductOrderRefund(refund.id);
-      if (processed.status === "succeeded") result.refundsProcessed += 1;
-      if (processed.status === "outcome_unknown") {
-        throw new Error("P-10 refund outcome requires manual reconciliation");
-      }
-    }
-  }
+  await runP10TerminationWorkflow(now, checkpoint);
 }
 
 async function alertUnknownRefunds(): Promise<void> {
-  const refunds = await getPrivateDb()
-    .select({ id: productOrderRefunds.id })
-    .from(productOrderRefunds)
-    .where(eq(productOrderRefunds.status, "outcome_unknown"))
-    .limit(100);
-  for (const refund of refunds)
-    await sendShippingPolicyAlert({
-      duties: ["finance_owner"],
-      critical: true,
-      subject: "Helcim refund outcome is unknown",
-      message: `Refund ${refund.id} requires signed-webhook or transaction reconciliation. Do not submit a new refund.`,
-      idempotencyKey: `shipping-refund-unknown/${refund.id}`,
-    });
+  let afterRefundId: string | null = null;
+  for (;;) {
+    const refunds = await getPrivateDb()
+      .select({ id: productOrderRefunds.id })
+      .from(productOrderRefunds)
+      .where(
+        and(
+          eq(productOrderRefunds.status, "outcome_unknown"),
+          afterRefundId ? gt(productOrderRefunds.id, afterRefundId) : undefined,
+        ),
+      )
+      .orderBy(asc(productOrderRefunds.id))
+      .limit(100);
+    if (!refunds.length) return;
+    afterRefundId = refunds.at(-1)!.id;
+    for (const refund of refunds)
+      await sendShippingPolicyAlert({
+        duties: ["finance_owner"],
+        critical: true,
+        subject: "Helcim refund outcome is unknown",
+        message: `Refund ${refund.id} requires signed-webhook or transaction reconciliation. Do not submit a new refund.`,
+        idempotencyKey: `shipping-refund-unknown/${refund.id}`,
+      });
+    if (refunds.length < 100) return;
+  }
 }
 
 async function sendBlockedFulfillmentUpdates(
@@ -905,6 +1184,7 @@ async function sendBlockedFulfillmentUpdates(
     .select({
       caseId: productShippingCases.id,
       email: checkoutOrders.customerEmail,
+      orderDatabaseId: checkoutOrders.id,
       orderReference: checkoutOrders.orderId,
       dueAt: productShippingCases.customerUpdateDueAt,
     })
@@ -922,6 +1202,7 @@ async function sendBlockedFulfillmentUpdates(
           "waiting_provider",
           "remedy_pending",
         ]),
+        isNull(productShippingCases.fulfillmentQuarantinedAt),
         lte(productShippingCases.customerUpdateDueAt, now),
       ),
     )
@@ -930,16 +1211,19 @@ async function sendBlockedFulfillmentUpdates(
     if (!entry.dueAt) continue;
     await sendShippingCustomerUpdate({
       to: entry.email,
+      orderDatabaseId: entry.orderDatabaseId,
       orderReference: entry.orderReference,
       subject: "Shipping fulfillment update",
       message:
         "Your order remains under shipping review. We are not retrying an uncertain carrier charge and will send another update within one business day unless it is resolved sooner.",
       idempotencyKey: `shipping-blocked-update/${entry.caseId}/${entry.dueAt.toISOString()}`,
+      now,
     });
     await getPrivateDb()
       .update(productShippingCases)
       .set({
         customerUpdateDueAt: businessDeadline(now, 1, policy),
+        stateVersion: sql`${productShippingCases.stateVersion} + 1`,
         updatedAt: now,
       })
       .where(eq(productShippingCases.id, entry.caseId));
@@ -1003,9 +1287,11 @@ async function alertCalendarCoverage(
   policy: Awaited<ReturnType<typeof loadShippingPolicyContext>>,
   now: Date,
 ): Promise<void> {
-  const coverageEnd = new Date(`${policy.calendarCoverageEndsAt}T23:59:59Z`);
+  const coverageEnd = policy.calendarCoverageEndsAt
+    ? new Date(`${policy.calendarCoverageEndsAt}T23:59:59Z`)
+    : new Date(0);
   const remainingMs = coverageEnd.getTime() - now.getTime();
-  if (remainingMs > 21 * 31 * 24 * 60 * 60_000) return;
+  if (policy.calendarCoverageSufficient) return;
   const critical = remainingMs <= 60 * 24 * 60 * 60_000;
   await sendShippingPolicyAlert({
     duties: ["operations_lead"],
@@ -1013,16 +1299,22 @@ async function alertCalendarCoverage(
     subject: critical
       ? "Shipping calendar coverage is near exhaustion"
       : "Shipping calendar coverage is below 21 months",
-    message: `Calendar exceptions are configured only through ${policy.calendarCoverageEndsAt}. Add statutory, observed, and branch-closure dates; checkout readiness requires at least 21 months.`,
-    idempotencyKey: `shipping-calendar-coverage/${policy.calendarCoverageEndsAt}/${critical ? "urgent" : "warning"}`,
+    message: `Calendar exceptions are configured only through ${policy.calendarCoverageEndsAt || "no future date"}. Add statutory, observed, and branch-closure dates; checkout readiness requires at least 21 months. Existing deadline snapshots remain unchanged.`,
+    idempotencyKey: `shipping-calendar-coverage/${policy.calendarCoverageEndsAt || "missing"}/${critical ? "urgent" : "warning"}`,
   });
 }
 
 async function queueFullRefund(
   orderReference: string,
   reason: string,
+  caseId?: string,
 ): Promise<void> {
-  await queueProductOrderRefund({ orderReference, reason, automated: true });
+  await queueProductOrderRefundAllocations({
+    orderReference,
+    reason,
+    caseId,
+    automated: true,
+  });
 }
 
 function businessDeadline(

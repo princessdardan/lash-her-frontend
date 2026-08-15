@@ -4,7 +4,8 @@ import { requirePermission } from "@/lib/admin/auth";
 import { recordAdminAuditBestEffort } from "@/lib/admin/audit-log";
 import { getPrivateDb } from "@/lib/private-db/client";
 import { checkoutOrders } from "@/lib/private-db/schema";
-import { openProductShippingCase } from "@/lib/shipping/cases";
+import { openProductShippingCaseAsOperator } from "@/lib/shipping/cases";
+import { assertShippingPolicyMutationAllowed } from "@/lib/shipping/policy";
 
 const TYPES = new Set([
   "postage_failure",
@@ -27,6 +28,14 @@ export async function POST(
       { error: "Invalid request origin" },
       { status: 403 },
     );
+  try {
+    assertShippingPolicyMutationAllowed();
+  } catch {
+    return NextResponse.json(
+      { error: "Shipping policy mutations require enforce mode" },
+      { status: 409 },
+    );
+  }
   const body = (await req.json().catch(() => null)) as Record<
     string,
     unknown
@@ -44,13 +53,15 @@ export async function POST(
     .limit(1);
   if (!order)
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
-  const created = await openProductShippingCase({
+  const created = await openProductShippingCaseAsOperator({
     orderId: order.id,
     shipmentId:
       typeof body.shipmentId === "string" ? body.shipmentId : undefined,
-    type: body.type as Parameters<typeof openProductShippingCase>[0]["type"],
+    type: body.type as Parameters<
+      typeof openProductShippingCaseAsOperator
+    >[0]["type"],
     cause: typeof body.cause === "string" ? body.cause : undefined,
-    createdByAdminUserId: actor.user.id,
+    actorAdminUserId: actor.user.id,
   });
   await recordAdminAuditBestEffort({
     action: "fulfillment.shipping_case_opened",

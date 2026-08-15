@@ -34,6 +34,10 @@ import {
 import { activateShipmentForPaidOrder } from "@/lib/shipping/shipment-store";
 import { classifyProductOrderPaymentRisk } from "@/lib/shipping/fraud";
 import { finalizeProductPayment } from "@/lib/commerce/product-payment-finalizer";
+import { isPaymentMockMode } from "@/lib/env/private-checkout";
+import { readBoundedJsonBody } from "@/lib/security/bounded-json-body";
+
+const VALIDATE_PAYMENT_BODY_MAX_BYTES = 32 * 1024;
 
 interface ValidatePaymentBody {
   checkoutToken: string;
@@ -48,6 +52,7 @@ type ValidatePaymentRequest = Request & {
 };
 
 interface ValidatePaymentPostHandlerDependencies {
+  allowProductCallbackFallback?: boolean;
   activateShipmentForPaidOrder?: typeof activateShipmentForPaidOrder;
   finalizeAppointmentPaymentForOrder: typeof finalizeAppointmentPaymentForOrder;
   finalizeProductPayment?: typeof finalizeProductPayment;
@@ -97,7 +102,22 @@ export function createValidatePaymentPostHandler(
     req: ValidatePaymentRequest,
   ): Promise<Response> {
     try {
-      const body: unknown = await req.json();
+      const parsedBody = await readBoundedJsonBody(
+        req,
+        VALIDATE_PAYMENT_BODY_MAX_BYTES,
+      );
+      if (!parsedBody.ok) {
+        return Response.json(
+          {
+            error:
+              parsedBody.reason === "too_large"
+                ? "Request body is too large"
+                : "Invalid request body",
+          },
+          { status: parsedBody.reason === "too_large" ? 413 : 400 },
+        );
+      }
+      const body: unknown = parsedBody.value;
 
       if (!isValidBody(body)) {
         return Response.json(
@@ -133,29 +153,81 @@ export function createValidatePaymentPostHandler(
       });
 
       if (!payment.ok) {
+        const authenticatedUnknownTransactionId =
+          order.purpose === "product" &&
+          payment.reason !== "invalid_hash" &&
+          ["unknown_transaction_type", "unapproved_payment"].includes(
+            payment.reason,
+          )
+            ? paymentPayloadText(data.transactionId ?? data.id)
+            : null;
+        if (
+          authenticatedUnknownTransactionId &&
+          dependencies.finalizeProductPayment
+        ) {
+          await finalizeProductPaymentFromAuthoritativeEvidence({
+            dependencies,
+            orderReference: order.orderId,
+            obligationId: order.paymentObligationId,
+            transactionId: authenticatedUnknownTransactionId,
+            callbackData: data,
+          });
+          return Response.json(
+            {
+              orderId: order.orderId,
+              paymentStatus: "review_required",
+              error:
+                "Payment status was received and requires provider review.",
+            },
+            { status: 202 },
+          );
+        }
         return Response.json(
           { error: "Payment could not be verified" },
           { status: 400 },
         );
       }
 
-      const authoritativeProductTransaction =
-        order.purpose === "product" && dependencies.getProductCardTransaction
-          ? await dependencies.getProductCardTransaction(payment.transactionId)
-          : null;
       const productFinalization =
         order.purpose === "product" && dependencies.finalizeProductPayment
-          ? await dependencies.finalizeProductPayment({
+          ? await finalizeProductPaymentFromAuthoritativeEvidence({
+              dependencies,
               orderReference: order.orderId,
+              obligationId: order.paymentObligationId,
               transactionId: payment.transactionId,
-              source: authoritativeProductTransaction
-                ? "helcim_api"
-                : "client_callback",
-              data: authoritativeProductTransaction
-                ? toFinalizationData(authoritativeProductTransaction)
-                : data,
+              callbackData: data,
+              authenticatedCallbackIdentity: {
+                orderReference: order.orderId,
+                obligationId: order.paymentObligationId,
+                transactionId: payment.transactionId,
+              },
             })
           : null;
+      if (
+        productFinalization &&
+        ["outcome_unknown", "state_conflict", "transaction_conflict"].includes(
+          productFinalization.transition,
+        )
+      ) {
+        return Response.json(
+          {
+            orderId: order.orderId,
+            paymentStatus: "review_required",
+            error:
+              "Payment received; fulfillment confirmation is under review.",
+          },
+          { status: 202 },
+        );
+      }
+      if (productFinalization?.transition === "not_found") {
+        return Response.json(
+          {
+            paymentStatus: "review_required",
+            error: "Payment requires manual reconciliation.",
+          },
+          { status: 409 },
+        );
+      }
       const persisted = productFinalization
         ? ["applied", "already_applied"].includes(
             productFinalization.transition,
@@ -335,8 +407,6 @@ export function createValidatePaymentPostHandler(
         });
       }
 
-      await dependencies.activateShipmentForPaidOrder?.(order.orderId);
-
       try {
         await dependencies.sendProductOrderConfirmationEmailForOrder(
           order.orderId,
@@ -378,8 +448,18 @@ export function createValidatePaymentPostHandler(
   };
 }
 
+function paymentPayloadText(
+  value: HelcimPayloadValue | undefined,
+): string | null {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const text = String(value).trim();
+  return text || null;
+}
+
 export async function POST(req: NextRequest): Promise<Response> {
+  const paymentMockMode = isPaymentMockMode();
   return createValidatePaymentPostHandler({
+    allowProductCallbackFallback: paymentMockMode,
     activateShipmentForPaidOrder,
     classifyProductOrderPaymentRisk,
     finalizeProductPayment,
@@ -387,10 +467,9 @@ export async function POST(req: NextRequest): Promise<Response> {
     getOrIssueTrainingSchedulingTokenForPaidOrder,
     getAppointmentHoldByCheckoutOrderPublicId,
     getPendingOrderByCheckoutToken,
-    getProductCardTransaction:
-      process.env.PAYMENT_GATEWAY_MODE === "mock"
-        ? undefined
-        : getHelcimCardTransaction,
+    getProductCardTransaction: paymentMockMode
+      ? undefined
+      : getHelcimCardTransaction,
     getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
     logError: console.error,
     markOrderPaid,
@@ -403,13 +482,123 @@ export async function POST(req: NextRequest): Promise<Response> {
   })(req);
 }
 
-function toFinalizationData(
-  details: HelcimCardTransactionResponse,
-): Record<string, HelcimPayloadValue> {
-  const normalized = normalizeHelcimCardTransactionDetails(details);
-  return Object.fromEntries(
-    Object.entries(normalized).filter(([, value]) => value !== undefined),
-  ) as Record<string, HelcimPayloadValue>;
+async function finalizeProductPaymentFromAuthoritativeEvidence(input: {
+  dependencies: ValidatePaymentPostHandlerDependencies;
+  orderReference: string;
+  obligationId?: string;
+  transactionId: string;
+  callbackData: Record<string, HelcimPayloadValue>;
+  authenticatedCallbackIdentity?: {
+    orderReference: string;
+    obligationId?: string;
+    transactionId: string;
+  };
+}) {
+  const { dependencies } = input;
+  const finalize = dependencies.finalizeProductPayment;
+  if (!finalize) return null;
+
+  if (dependencies.allowProductCallbackFallback) {
+    return finalize({
+      orderReference: input.orderReference,
+      obligationId: input.obligationId,
+      transactionId: input.transactionId,
+      source: "client_callback",
+      data: input.callbackData,
+    });
+  }
+
+  if (!dependencies.getProductCardTransaction) {
+    return finalize({
+      orderReference: input.orderReference,
+      obligationId: input.obligationId,
+      transactionId: input.transactionId,
+      source: "helcim_api",
+      data: {},
+      authoritativeLookupFailure: "unavailable",
+      authenticatedCallbackIdentity: input.authenticatedCallbackIdentity,
+    });
+  }
+
+  let authoritative: HelcimCardTransactionResponse | null;
+  try {
+    authoritative = await dependencies.getProductCardTransaction(
+      input.transactionId,
+    );
+  } catch (error) {
+    dependencies.logError(
+      "[checkout] Authoritative product payment lookup failed",
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unknown Helcim lookup error",
+        orderId: input.orderReference,
+        transactionId: input.transactionId,
+      },
+    );
+    return finalize({
+      orderReference: input.orderReference,
+      obligationId: input.obligationId,
+      transactionId: input.transactionId,
+      source: "helcim_api",
+      data: {},
+      authoritativeLookupFailure: "request_failed",
+      authenticatedCallbackIdentity: input.authenticatedCallbackIdentity,
+    });
+  }
+
+  if (!authoritative) {
+    return finalize({
+      orderReference: input.orderReference,
+      obligationId: input.obligationId,
+      transactionId: input.transactionId,
+      source: "helcim_api",
+      data: {},
+      authoritativeLookupFailure: "not_found",
+      authenticatedCallbackIdentity: input.authenticatedCallbackIdentity,
+    });
+  }
+
+  const normalized = normalizeHelcimCardTransactionDetails(authoritative);
+  if (!authoritativeTransactionResponseIsWellFormed(normalized)) {
+    return finalize({
+      orderReference: input.orderReference,
+      obligationId: input.obligationId,
+      transactionId: input.transactionId,
+      source: "helcim_api",
+      data: {},
+      authoritativeLookupFailure: "malformed_response",
+      authenticatedCallbackIdentity: input.authenticatedCallbackIdentity,
+    });
+  }
+
+  return finalize({
+    orderReference: input.orderReference,
+    obligationId: input.obligationId,
+    transactionId: input.transactionId,
+    source: "helcim_api",
+    data: Object.fromEntries(
+      Object.entries(normalized).filter(([, value]) => value !== undefined),
+    ) as Record<string, HelcimPayloadValue>,
+    certifiedEvidence: {
+      avsCode: normalized.avsCode,
+      cvvCode: normalized.cvvCode,
+    },
+  });
+}
+
+function authoritativeTransactionResponseIsWellFormed(
+  details: ReturnType<typeof normalizeHelcimCardTransactionDetails>,
+): boolean {
+  return Boolean(
+    details.transactionId?.trim() &&
+    details.transactionType?.trim() &&
+    details.status?.trim() &&
+    (typeof details.amount === "string" ||
+      typeof details.amount === "number") &&
+    details.currency?.trim(),
+  );
 }
 
 async function getAppointmentBookingConfirmationRedirectUrl(input: {

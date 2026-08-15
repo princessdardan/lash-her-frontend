@@ -11,43 +11,61 @@ import {
   isShippingLinkExchangeBlocked,
   recordShippingLinkFailure,
 } from "@/lib/security/shipping-abuse-control";
+import { assertShippingPolicyMutationAllowed } from "@/lib/shipping/policy";
+import { renderCustomerDecisionConditions } from "./presentation";
 
 export const runtime = "nodejs";
 const COOKIE = "lh_shipping_decision";
+const BEARER_COOKIE = "lh_shipping_decision_bearer";
 
 export async function GET(req: NextRequest): Promise<Response> {
   const token = req.nextUrl.searchParams.get("token");
   if (token) {
+    if (await isShippingLinkExchangeBlocked()) return genericInvalid();
     if (
       !(await allowed(req, token)) ||
       !(await validateCustomerDecisionBearer(token))
     ) {
+      await recordShippingLinkFailure().catch(() => undefined);
       return genericInvalid();
     }
-    return html(
-      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open shipping decision | Lash Her</title></head><body><main><h1>Open your shipping decision</h1><p>Continue to view the decision for your order.</p><form method="post" action="/orders/shipping-decision"><input type="hidden" name="action" value="exchange"><input type="hidden" name="token" value="${escapeHtml(token)}"><button type="submit">Continue securely</button></form></main></body></html>`,
+    const response = NextResponse.redirect(
+      new URL("/orders/shipping-decision", req.nextUrl.origin),
+      303,
     );
+    response.cookies.set(BEARER_COOKIE, token, bearerCookieOptions());
+    return secure(response);
   }
   const sessionToken = req.cookies.get(COOKIE)?.value ?? "";
   const decision = sessionToken
     ? await getCustomerDecision(sessionToken)
     : null;
-  if (!decision) return genericInvalid();
+  if (!decision) {
+    if (!req.cookies.get(BEARER_COOKIE)?.value) return genericInvalid();
+    return html(
+      '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open shipping decision | Lash Her</title></head><body><main><h1>Open your shipping decision</h1><p>Continue to view the decision for your order.</p><form method="post" action="/orders/shipping-decision"><input type="hidden" name="action" value="exchange"><button type="submit">Continue securely</button></form></main></body></html>',
+    );
+  }
   return html(
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Shipping decision | Lash Her</title></head><body><main><h1>Choose how to proceed</h1><p>Select one option for this shipment. Your choice is final once submitted.</p><form method="post" action="/orders/shipping-decision">${decision.allowedOutcomes.map(option).join("")}<button type="submit">Confirm choice</button></form><p>This link expires ${escapeHtml(decision.expiresAt.toLocaleString("en-CA", { timeZone: "America/Toronto" }))}.</p></main></body></html>`,
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Shipping decision | Lash Her</title></head><body><main><h1>Choose how to proceed</h1><p>Select one option for this shipment. Your choice is final once submitted.</p><section aria-labelledby="decision-conditions"><h2 id="decision-conditions">Conditions</h2>${renderCustomerDecisionConditions(decision.kind, decision.scopeKey, decision.proposedConditions)}</section><form method="post" action="/orders/shipping-decision"><input type="hidden" name="scopeKey" value="${escapeHtml(decision.scopeKey)}"><input type="hidden" name="conditionsHash" value="${escapeHtml(decision.conditionsHash)}">${decision.allowedOutcomes.map(option).join("")}<button type="submit">Confirm choice</button></form><p>This link expires ${escapeHtml(decision.expiresAt.toLocaleString("en-CA", { timeZone: "America/Toronto" }))}.</p></main></body></html>`,
   );
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
-  if (req.headers.get("origin") !== req.nextUrl.origin) return genericInvalid();
+  if (req.headers.get("origin") !== req.nextUrl.origin) {
+    await recordShippingLinkFailure().catch(() => undefined);
+    return genericInvalid();
+  }
+  try {
+    assertShippingPolicyMutationAllowed();
+  } catch {
+    return genericInvalid();
+  }
   const form = await req.formData().catch(() => null);
   if (form?.get("action") === "exchange") {
-    const bearer = form.get("token");
-    if (
-      typeof bearer !== "string" ||
-      (await isShippingLinkExchangeBlocked()) ||
-      !(await allowed(req, bearer))
-    ) {
+    const bearer = req.cookies.get(BEARER_COOKIE)?.value;
+    if (await isShippingLinkExchangeBlocked()) return genericInvalid();
+    if (!bearer || !(await allowed(req, bearer))) {
       await recordShippingLinkFailure().catch(() => undefined);
       return genericInvalid();
     }
@@ -61,15 +79,28 @@ export async function POST(req: NextRequest): Promise<Response> {
       303,
     );
     response.cookies.set(COOKIE, sessionToken, cookieOptions());
+    response.cookies.set(BEARER_COOKIE, "", {
+      ...bearerCookieOptions(),
+      maxAge: 0,
+    });
     return secure(response);
   }
   const sessionToken = req.cookies.get(COOKIE)?.value ?? "";
   const outcome = form?.get("outcome");
+  const scopeKey = form?.get("scopeKey");
+  const conditionsHash = form?.get("conditionsHash");
   if (
     !sessionToken ||
     typeof outcome !== "string" ||
+    typeof scopeKey !== "string" ||
+    typeof conditionsHash !== "string" ||
     !(await allowed(req, sessionToken)) ||
-    !(await selectCustomerDecision(sessionToken, outcome))
+    !(await selectCustomerDecision(
+      sessionToken,
+      outcome,
+      scopeKey,
+      conditionsHash,
+    ))
   ) {
     await recordShippingLinkFailure().catch(() => undefined);
     return genericInvalid();
@@ -87,7 +118,9 @@ function option(value: string): string {
     replacement: "Receive a replacement",
     wait: "Continue waiting",
     accept_substitute: "Accept the substitute shipping service",
+    decline_substitute: "Decline the substitute shipping service",
     accept_signature: "Accept signature delivery",
+    decline_signature: "Decline signature delivery",
   };
   return `<label><input required type="radio" name="outcome" value="${escapeHtml(value)}"> ${escapeHtml(labels[value] ?? value)}</label><br>`;
 }
@@ -150,6 +183,16 @@ function cookieOptions() {
     sameSite: "strict" as const,
     path: "/orders/shipping-decision",
     maxAge: 2 * 24 * 60 * 60,
+  };
+}
+
+function bearerCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: true,
+    sameSite: "strict" as const,
+    path: "/orders/shipping-decision",
+    maxAge: 5 * 60,
   };
 }
 

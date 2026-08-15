@@ -78,3 +78,9 @@ staging-approved-cutover.tar.gz
 .tmp/
 docs/legal-drafts/
 .codex/
+docs/chitchats-address-change-implementation-plan.md
+docs/chitchats-shipping-operations.md
+docs/chitchats-shipping-policy-2026-08-14.md
+docs/chitchats-shipping-policy-decisions.md
+docs/launch-readiness-checklist.md
+docs/private-database-migration-runbook.md

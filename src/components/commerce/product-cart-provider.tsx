@@ -212,6 +212,22 @@ function addCartItemState(
       normalizedItem.variantId,
     ),
   );
+  const existingMode = state.items.find(
+    (candidate) => candidate.checkoutMode !== undefined,
+  )?.checkoutMode;
+  if (
+    !existingItem &&
+    existingMode !== undefined &&
+    normalizedItem.checkoutMode !== undefined &&
+    existingMode !== normalizedItem.checkoutMode
+  ) {
+    return {
+      ...state,
+      isOpen: true,
+      limitMessage:
+        "Items requiring manual fulfillment and shipped items must use separate carts.",
+    };
+  }
   if (!existingItem && state.items.length >= MAX_CART_LINE_ITEMS) {
     return {
       ...state,
@@ -250,6 +266,9 @@ function normalizeCartInputItem(item: ProductCartInputItem): CartInputItem {
     productId: item.productId,
     ...(item.variantId ? { variantId: item.variantId } : {}),
     quantity: clampQuantity(item.quantity ?? MIN_QUANTITY),
+    ...(item.checkoutMode === "automated" || item.checkoutMode === "manual"
+      ? { checkoutMode: item.checkoutMode }
+      : {}),
   };
 }
 
@@ -263,7 +282,10 @@ function isCartInputLike(item: unknown): item is ProductCartInputItem {
     (candidate.variantId === undefined ||
       typeof candidate.variantId === "string") &&
     typeof candidate.quantity === "number" &&
-    Number.isFinite(candidate.quantity)
+    Number.isFinite(candidate.quantity) &&
+    (candidate.checkoutMode === undefined ||
+      candidate.checkoutMode === "automated" ||
+      candidate.checkoutMode === "manual")
   );
 }
 

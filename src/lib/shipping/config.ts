@@ -1,13 +1,42 @@
 import "server-only";
 
+export const CHITCHATS_REGIONS = [
+  "british_columbia",
+  "alberta_saskatchewan",
+  "ontario_manitoba",
+  "quebec",
+  "atlantic",
+] as const;
+
+export type ChitChatsRegion = (typeof CHITCHATS_REGIONS)[number];
+export type ChitChatsEnvironment = "staging" | "production";
+
+export const CHITCHATS_REGION_LABELS = {
+  british_columbia: "British Columbia",
+  alberta_saskatchewan: "Alberta and Saskatchewan",
+  ontario_manitoba: "Ontario and Manitoba",
+  quebec: "Quebec",
+  atlantic: "Atlantic",
+} as const satisfies Record<ChitChatsRegion, string>;
+
 export interface ChitChatsConfig {
   accessToken: string;
   baseUrl: string;
   clientId: string;
-  environment: "staging" | "production";
+  environment: ChitChatsEnvironment;
   quoteSigningSecret: string;
   trackedPostageTypes: ReadonlySet<string>;
   usShippingEnabled: boolean;
+}
+
+export type ConfiguredChitChatsConfig = ChitChatsConfig & {
+  region: ChitChatsRegion;
+};
+
+export interface ChitChatsOperationalIdentity {
+  clientId: string;
+  environment: ChitChatsEnvironment;
+  region: ChitChatsRegion;
 }
 
 const DEFAULT_TRACKED_POSTAGE_TYPES = [
@@ -42,19 +71,10 @@ export function isSupplementalProductPaymentsEnabled(): boolean {
   return process.env.SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED === "true";
 }
 
-export function getChitChatsConfig(): ChitChatsConfig {
-  const environment = process.env.CHITCHATS_ENVIRONMENT ?? "staging";
-  if (environment !== "staging" && environment !== "production") {
-    throw new Error("CHITCHATS_ENVIRONMENT must be staging or production");
-  }
-
-  if (process.env.VERCEL_ENV === "production" && environment !== "production") {
-    throw new Error("Production deployment cannot use Chit Chats staging");
-  }
-
-  const clientId = required("CHITCHATS_CLIENT_ID");
+export function getChitChatsConfig(): ConfiguredChitChatsConfig {
+  const identity = getChitChatsOperationalIdentity();
   const host =
-    environment === "production"
+    identity.environment === "production"
       ? "https://chitchats.com"
       : "https://staging.chitchats.com";
   const configuredTypes = process.env.CHITCHATS_TRACKED_POSTAGE_TYPES?.split(
@@ -65,15 +85,46 @@ export function getChitChatsConfig(): ChitChatsConfig {
 
   return {
     accessToken: required("CHITCHATS_ACCESS_TOKEN"),
-    baseUrl: `${host}/api/v1/clients/${encodeURIComponent(clientId)}`,
-    clientId,
-    environment,
+    baseUrl: `${host}/api/v1/clients/${encodeURIComponent(identity.clientId)}`,
+    clientId: identity.clientId,
+    environment: identity.environment,
     quoteSigningSecret: required("CHITCHATS_QUOTE_SIGNING_SECRET"),
+    region: identity.region,
     trackedPostageTypes: new Set(
       configuredTypes?.length ? configuredTypes : DEFAULT_TRACKED_POSTAGE_TYPES,
     ),
     usShippingEnabled: process.env.CHITCHATS_US_SHIPPING_ENABLED === "true",
   };
+}
+
+export function getChitChatsOperationalIdentity(): ChitChatsOperationalIdentity {
+  const environment = process.env.CHITCHATS_ENVIRONMENT ?? "staging";
+  if (environment !== "staging" && environment !== "production") {
+    throw new Error("CHITCHATS_ENVIRONMENT must be staging or production");
+  }
+  if (process.env.VERCEL_ENV === "production" && environment !== "production") {
+    throw new Error("Production deployment cannot use Chit Chats staging");
+  }
+  return {
+    clientId: required("CHITCHATS_CLIENT_ID"),
+    environment,
+    region: getConfiguredChitChatsRegion(),
+  };
+}
+
+export function parseChitChatsRegion(value: string): ChitChatsRegion {
+  const region = value.trim();
+  if ((CHITCHATS_REGIONS as readonly string[]).includes(region)) {
+    return region as ChitChatsRegion;
+  }
+
+  throw new Error(
+    `CHITCHATS_REGION must be one of ${CHITCHATS_REGIONS.join(", ")}`,
+  );
+}
+
+export function getConfiguredChitChatsRegion(): ChitChatsRegion {
+  return parseChitChatsRegion(required("CHITCHATS_REGION"));
 }
 
 function required(name: string): string {

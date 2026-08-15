@@ -4,6 +4,10 @@ import type {
   HelcimCardTransactionResponse,
   HelcimTransactionReconciliationFields,
 } from "./helcim-types";
+import {
+  readCertifiedHelcimEvidenceField,
+  readCertifiedHelcimRefundCorrelationField,
+} from "./helcim-certified-contract";
 
 export interface HelcimWebhookHeaders {
   id: string;
@@ -24,6 +28,7 @@ export interface VerifiedHelcimWebhook {
   helcimInvoiceId?: number;
   helcimInvoiceNumber?: string;
   helcimTransactionId?: string;
+  merchantReference?: string;
   originalTransactionId?: string;
   payloadRedacted?: Record<string, unknown>;
   status?: string;
@@ -64,15 +69,24 @@ export function parseVerifiedHelcimWebhook(
     getText(payload.eventType) ??
     getText(payload.type) ??
     "helcim_webhook_received";
-  const transactionId = getText(data.transactionId) ?? getText(data.id);
+  const originalTransactionId = readCertifiedHelcimRefundCorrelationField(
+    data,
+    "originalTransactionIdFields",
+  );
+  const transactionId = originalTransactionId
+    ? readCertifiedHelcimRefundCorrelationField(data, "providerRefundIdFields")
+    : (getText(data.transactionId) ?? getText(data.id));
   const invoiceId = getNumber(data.invoiceId);
-  const originalTransactionId = getText(data.originalTransactionId);
   const transactionType = getText(data.transactionType);
 
   return {
     eventId: headers.id,
     eventType,
     helcimTransactionId: transactionId ?? undefined,
+    merchantReference: readCertifiedHelcimRefundCorrelationField(
+      data,
+      "merchantReferenceFields",
+    ),
     ...(originalTransactionId ? { originalTransactionId } : {}),
     helcimInvoiceId: invoiceId ?? undefined,
     helcimInvoiceNumber: getText(data.invoiceNumber) ?? undefined,
@@ -94,10 +108,15 @@ export function mergeHelcimCardTransactionDetails(
   details: HelcimCardTransactionResponse,
 ): VerifiedHelcimWebhook {
   const fields = normalizeHelcimCardTransactionDetails(details);
-  const originalTransactionId = getText(
-    details.originalTransactionId ?? details.originalCardTransactionId,
+  const originalTransactionId = readCertifiedHelcimRefundCorrelationField(
+    details,
+    "originalTransactionIdFields",
   );
   const transactionType = getText(details.transactionType ?? details.type);
+  const merchantReference = readCertifiedHelcimRefundCorrelationField(
+    details,
+    "merchantReferenceFields",
+  );
 
   return {
     ...event,
@@ -111,6 +130,7 @@ export function mergeHelcimCardTransactionDetails(
     helcimInvoiceId: fields.invoiceId ?? event.helcimInvoiceId,
     helcimInvoiceNumber: fields.invoiceNumber ?? event.helcimInvoiceNumber,
     helcimTransactionId: fields.transactionId ?? event.helcimTransactionId,
+    merchantReference: merchantReference ?? event.merchantReference,
     ...(originalTransactionId
       ? { originalTransactionId }
       : event.originalTransactionId
@@ -169,26 +189,23 @@ export function normalizeHelcimCardTransactionDetails(
       ) ?? undefined,
     transactionType:
       getText(details.transactionType ?? details.type) ?? undefined,
-    originalTransactionId:
-      getText(
-        details.originalTransactionId ?? details.originalCardTransactionId,
-      ) ?? undefined,
-    avsCode:
-      getText(
-        details.avsResponse ??
-          details.avsResult ??
-          details.addressVerificationResult,
-      ) ?? undefined,
-    cvvCode:
-      getText(
-        details.cvvResponse ??
-          details.cvvResult ??
-          details.cvvVerificationResult,
-      ) ?? undefined,
-    transactionId:
-      getText(
-        details.transactionId ?? details.cardTransactionId ?? details.id,
-      ) ?? undefined,
+    originalTransactionId: readCertifiedHelcimRefundCorrelationField(
+      details,
+      "originalTransactionIdFields",
+    ),
+    avsCode: readCertifiedHelcimEvidenceField(details, "avs"),
+    cvvCode: readCertifiedHelcimEvidenceField(details, "cvv"),
+    transactionId: readCertifiedHelcimRefundCorrelationField(
+      details,
+      "originalTransactionIdFields",
+    )
+      ? readCertifiedHelcimRefundCorrelationField(
+          details,
+          "providerRefundIdFields",
+        )
+      : (getText(
+          details.transactionId ?? details.cardTransactionId ?? details.id,
+        ) ?? undefined),
   };
 }
 

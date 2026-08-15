@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import type { CartInputItem } from "@/lib/commerce/cart";
 import { getHelcimPayEventOutcome } from "@/lib/commerce/helcim-pay-events";
 import type { HelcimPayloadValue } from "@/lib/commerce/helcim-types";
+import type { ProductCheckoutDisclosureInput } from "@/lib/commerce/product-checkout-disclosures";
+import { waitForProductPaymentOperation } from "@/lib/commerce/product-payment-operation";
 
 declare global {
   interface Window {
@@ -27,7 +29,9 @@ interface HelcimPayButtonProps {
     email: string;
     phone?: string;
   };
-  shippingAddress: ProductShippingAddress;
+  shippingAddress?: ProductShippingAddress;
+  fulfillmentMode: "automated_shipping" | "manual_pickup" | "manual_shipping";
+  disclosures: ProductCheckoutDisclosureInput;
   shippingQuote?: {
     token: string;
     fingerprint: string;
@@ -82,6 +86,8 @@ export function HelcimPayButton({
   promotionCode,
   customer,
   shippingAddress,
+  fulfillmentMode,
+  disclosures,
   shippingQuote,
   onPaid,
 }: HelcimPayButtonProps): ReactElement {
@@ -254,7 +260,9 @@ export function HelcimPayButton({
         body: JSON.stringify({
           customer,
           items,
-          shippingAddress,
+          fulfillmentMode,
+          disclosures,
+          ...(shippingAddress ? { shippingAddress } : {}),
           ...(shippingQuote ? { shippingQuote } : {}),
           ...(promotionCode ? { promotionCode } : {}),
         }),
@@ -268,11 +276,25 @@ export function HelcimPayButton({
         return;
       }
 
-      const data = (await res.json()) as { checkoutToken?: string };
+      let data = (await res.json()) as {
+        checkoutToken?: string;
+        operationId?: string;
+        status?: string;
+        error?: string;
+      };
+
+      if (res.status === 202 && data.operationId) {
+        data = await waitForProductPaymentOperation({
+          operationId: data.operationId,
+        });
+      }
 
       if (!data.checkoutToken) {
         setError(
-          "Unable to start checkout. Please review your cart and try again.",
+          data.status === "outcome_unknown"
+            ? "Payment setup requires review. Do not retry this checkout until Lash Her confirms its status."
+            : (data.error ??
+                "Unable to start checkout. Please review your cart and try again."),
         );
         setIsLoading(false);
         return;

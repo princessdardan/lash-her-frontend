@@ -3,12 +3,14 @@ import "server-only";
 import type {
   CheckoutOrderLineItemSnapshot,
   CheckoutOrderShippingAddressSnapshot,
+  UsImportDisclosureSnapshot,
 } from "@/lib/private-db/schema";
 import {
   claimProductOrderConfirmationEmail,
-  markProductOrderConfirmationEmailSent,
+  enqueuePaidProductOrderConfirmationEmail,
   recordProductOrderConfirmationEmailFailure,
 } from "@/lib/commerce/order-store";
+import { enqueueCustomerEmail } from "@/lib/commerce/customer-email-outbox";
 import { getConfiguredTransactionalTemplate } from "@/lib/resend-platform";
 import {
   CUSTOMER_REPLY_TO_EMAIL,
@@ -36,14 +38,16 @@ export interface SendProductOrderConfirmationEmailInput {
   promotionDiscount?: number;
   manualDiscount?: number;
   taxAmount?: number;
+  fulfillmentMode?: "automated_shipping" | "manual_pickup" | "manual_shipping";
+  usImportDisclosure?: UsImportDisclosureSnapshot | null;
 }
 
 export interface SendProductOrderConfirmationEmailForOrderDependencies {
   claimProductOrderConfirmationEmail: typeof claimProductOrderConfirmationEmail;
+  enqueuePaidProductOrderConfirmationEmail?: typeof enqueuePaidProductOrderConfirmationEmail;
+  enqueueCustomerEmail: typeof enqueueCustomerEmail;
   logError: typeof console.error;
-  markProductOrderConfirmationEmailSent: typeof markProductOrderConfirmationEmailSent;
   recordProductOrderConfirmationEmailFailure: typeof recordProductOrderConfirmationEmailFailure;
-  sendProductOrderConfirmationEmail: typeof sendProductOrderConfirmationEmail;
 }
 
 export const PRODUCT_ORDER_CONFIRMATION_EMAIL_SUBJECT =
@@ -51,17 +55,13 @@ export const PRODUCT_ORDER_CONFIRMATION_EMAIL_SUBJECT =
 
 export async function sendProductOrderConfirmationEmail(
   input: SendProductOrderConfirmationEmailInput,
-): Promise<void> {
-  const held =
-    input.paymentRiskStatus !== undefined &&
-    input.paymentRiskStatus !== "cleared";
-  await sendTransactionalEmail({
+): Promise<{ id: string }> {
+  const copy = getEmailCopy(input);
+  return sendTransactionalEmail({
     html: buildProductOrderConfirmationHtml(input),
     idempotencyKey: `product-confirmation:${input.orderId}`,
     replyTo: CUSTOMER_REPLY_TO_EMAIL,
-    subject: held
-      ? "Payment received for your Lash Her order"
-      : PRODUCT_ORDER_CONFIRMATION_EMAIL_SUBJECT,
+    subject: copy.subject,
     tags: [
       { name: "flow", value: "product_confirmation" },
       { name: "order_id", value: input.orderId },
@@ -75,10 +75,48 @@ export async function sendProductOrderConfirmationEmail(
   });
 }
 
+function getEmailCopy(input: SendProductOrderConfirmationEmailInput) {
+  const held =
+    input.paymentRiskStatus === "pending" ||
+    input.paymentRiskStatus === "review_required";
+  const manualPickup = input.fulfillmentMode === "manual_pickup";
+  const manualShipping = input.fulfillmentMode === "manual_shipping";
+  return {
+    subject: held
+      ? "Payment received for your Lash Her order"
+      : manualPickup
+        ? "Payment received — Lash Her pickup arrangement pending"
+        : manualShipping
+          ? "Payment received — Lash Her manual shipping arrangement pending"
+          : PRODUCT_ORDER_CONFIRMATION_EMAIL_SUBJECT,
+    heading: held
+      ? "Payment received"
+      : manualPickup
+        ? "Pickup arrangement pending"
+        : manualShipping
+          ? "Shipping arrangement pending"
+          : "Your order is confirmed",
+    introduction: held
+      ? "Payment received; fulfillment confirmation is under review."
+      : input.fulfillmentMode === "manual_pickup"
+        ? "Thank you for your Lash Her order. Your payment has been confirmed and pickup details will be arranged separately."
+        : input.fulfillmentMode === "manual_shipping"
+          ? "Thank you for your Lash Her order. Your merchandise payment has been confirmed. Shipping will be arranged separately and any approved shipping charge will use a separate secure payment request."
+          : "Thank you for your Lash Her order. Your payment has been confirmed and your order is now being prepared for fulfillment.",
+    nextSteps: held
+      ? "You will receive another update after the review is complete. If you have questions, reply with your order number."
+      : "You will receive fulfillment updates as your order is prepared. If you have questions about your purchase, reply to this confirmation or contact Lash Her support with your order number.",
+  };
+}
+
 export async function sendProductOrderConfirmationEmailForOrder(
   orderId: string,
   dependencies: SendProductOrderConfirmationEmailForOrderDependencies = defaultSendProductOrderConfirmationEmailForOrderDependencies,
 ): Promise<void> {
+  if (dependencies.enqueuePaidProductOrderConfirmationEmail) {
+    await dependencies.enqueuePaidProductOrderConfirmationEmail({ orderId });
+    return;
+  }
   const claimed = await dependencies.claimProductOrderConfirmationEmail({
     orderId,
   });
@@ -88,8 +126,13 @@ export async function sendProductOrderConfirmationEmailForOrder(
   }
 
   try {
-    await dependencies.sendProductOrderConfirmationEmail(claimed);
-    await dependencies.markProductOrderConfirmationEmailSent(orderId);
+    await dependencies.enqueueCustomerEmail({
+      kind: "product_order_confirmation",
+      orderDatabaseId: claimed.orderDatabaseId,
+      payload: claimed,
+      providerIdempotencyKey: `product-confirmation:${claimed.orderId}`,
+      recipient: claimed.customerEmail,
+    });
   } catch (error) {
     const message = getErrorMessage(error);
     await dependencies.recordProductOrderConfirmationEmailFailure({
@@ -110,18 +153,15 @@ export async function sendProductOrderConfirmationEmailForOrder(
 const defaultSendProductOrderConfirmationEmailForOrderDependencies: SendProductOrderConfirmationEmailForOrderDependencies =
   {
     claimProductOrderConfirmationEmail,
+    enqueuePaidProductOrderConfirmationEmail,
+    enqueueCustomerEmail,
     logError: console.error,
-    markProductOrderConfirmationEmailSent,
     recordProductOrderConfirmationEmailFailure,
-    sendProductOrderConfirmationEmail,
   };
 
 export function buildProductOrderConfirmationHtml(
   input: SendProductOrderConfirmationEmailInput,
 ): string {
-  const held =
-    input.paymentRiskStatus !== undefined &&
-    input.paymentRiskStatus !== "cleared";
   const formattedTotal = formatCurrency(input.totalAmount, input.currency);
   const shippingSummary = getShippingSummaryHtml(input);
   const itemRows = input.lineItems
@@ -130,6 +170,8 @@ export function buildProductOrderConfirmationHtml(
   const shippingAddress = input.shippingAddress
     ? getShippingAddressHtml(input.shippingAddress)
     : "";
+  const copy = getEmailCopy(input);
+  const importDisclosure = getImportDisclosureHtml(input);
 
   return `
 <!DOCTYPE html>
@@ -137,7 +179,7 @@ export function buildProductOrderConfirmationHtml(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${held ? "Payment received" : "Your Lash Her order is confirmed"}</title>
+  <title>${escapeHtml(copy.subject)}</title>
 </head>
 <body style="margin:0;padding:0;background-color:#F5F1F5;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1C1318;">
   <table role="presentation" style="width:100%;border-collapse:collapse;">
@@ -148,13 +190,13 @@ export function buildProductOrderConfirmationHtml(
             <td style="padding:34px 32px;text-align:center;background-color:#1C1318;color:#FFFFFF;">
               ${getEmailProfileImageHtml()}
               <p style="margin:0 0 10px 0;font-size:12px;letter-spacing:0.22em;text-transform:uppercase;">Lash Her by Nataliea</p>
-              <h1 style="margin:0;font-family:'Bebas Neue','Arial Narrow',Impact,sans-serif;letter-spacing:0.04em;text-transform:uppercase;font-size:30px;font-weight:500;line-height:1.2;">${held ? "Payment received" : "Your order is confirmed"}</h1>
+              <h1 style="margin:0;font-family:'Bebas Neue','Arial Narrow',Impact,sans-serif;letter-spacing:0.04em;text-transform:uppercase;font-size:30px;font-weight:500;line-height:1.2;">${escapeHtml(copy.heading)}</h1>
             </td>
           </tr>
           <tr>
             <td style="padding:34px 32px;">
               <p style="margin:0 0 18px 0;font-size:16px;line-height:1.7;">Hi ${escapeHtml(input.customerName)},</p>
-              <p style="margin:0 0 22px 0;font-size:15px;line-height:1.7;">${held ? "Payment received; fulfillment confirmation is under review." : "Thank you for your Lash Her order. Your payment has been confirmed and your order is now being prepared for fulfillment."}</p>
+              <p style="margin:0 0 22px 0;font-size:15px;line-height:1.7;">${escapeHtml(copy.introduction)}</p>
               ${shippingAddress}
               <table role="presentation" style="width:100%;border-collapse:collapse;margin:28px 0;border-top:1px solid #E8E2E9;border-bottom:1px solid #E8E2E9;">
                 <thead>
@@ -169,9 +211,10 @@ export function buildProductOrderConfirmationHtml(
                 </tbody>
               </table>
               ${shippingSummary}
+              ${importDisclosure}
               <p style="margin:0 0 18px 0;text-align:right;font-size:17px;line-height:1.7;"><strong>Total paid:</strong> ${escapeHtml(formattedTotal)}</p>
               <div style="margin:28px 0;padding:20px;border-left:4px solid #D4B483;background-color:#F5F1F5;">
-                <p style="margin:0;font-size:14px;line-height:1.7;">${held ? "You will receive another update after the review is complete. If you have questions, reply with your order number." : "You will receive fulfillment updates as your order is prepared. If you have questions about your purchase, reply to this confirmation or contact Lash Her support with your order number."}</p>
+                <p style="margin:0;font-size:14px;line-height:1.7;">${escapeHtml(copy.nextSteps)}</p>
               </div>
               <p style="margin:0;font-size:13px;line-height:1.7;color:#746A72;">Order ${escapeHtml(input.orderId)}</p>
             </td>
@@ -191,6 +234,7 @@ export function getProductOrderTemplateVariables(
   const lineItemsHtml = input.lineItems
     .map((lineItem) => getLineItemRow(lineItem, input.currency))
     .join("");
+  const copy = getEmailCopy(input);
 
   return {
     CURRENCY: escapeHtml(input.currency.toUpperCase()),
@@ -204,6 +248,12 @@ export function getProductOrderTemplateVariables(
       0,
     ),
     LINE_ITEMS_HTML: lineItemsHtml,
+    EMAIL_SUBJECT: copy.subject,
+    STATUS_HEADING: copy.heading,
+    INTRODUCTION: copy.introduction,
+    NEXT_STEPS: copy.nextSteps,
+    PRICING_SUMMARY_HTML: getShippingSummaryHtml(input),
+    IMPORT_DISCLOSURE_HTML: getImportDisclosureHtml(input),
     ORDER_ID: escapeHtml(input.orderId),
     SHIPPING_ADDRESS_HTML: input.shippingAddress
       ? getShippingAddressHtml(input.shippingAddress)
@@ -229,15 +279,31 @@ function getShippingSummaryHtml(
     input.merchandiseAmount ??
     input.totalAmount - (input.shippingAmount ?? 0) - (input.taxAmount ?? 0);
   const promotionDiscount = input.promotionDiscount ?? 0;
-  const merchandiseBeforePromotion = merchandiseAmount + promotionDiscount;
+  const manualDiscount = input.manualDiscount ?? 0;
+  const merchandiseBeforeDiscounts =
+    merchandiseAmount + promotionDiscount + manualDiscount;
   const taxAmount = input.taxAmount ?? 0;
   return `
 <table role="presentation" style="width:100%;border-collapse:collapse;margin:0 0 10px 0;font-size:14px;line-height:1.7;">
-  <tr><td align="right" style="color:#746A72;">Merchandise</td><td align="right" style="width:120px;">${escapeHtml(formatCurrency(merchandiseBeforePromotion, input.currency))}</td></tr>
+  <tr><td align="right" style="color:#746A72;">Merchandise</td><td align="right" style="width:120px;">${escapeHtml(formatCurrency(merchandiseBeforeDiscounts, input.currency))}</td></tr>
+  ${manualDiscount > 0 ? `<tr><td align="right" style="color:#746A72;">Sale discount</td><td align="right">-${escapeHtml(formatCurrency(manualDiscount, input.currency))}</td></tr>` : ""}
   ${promotionDiscount > 0 ? `<tr><td align="right" style="color:#746A72;">Promotion${input.promotionCode ? ` (${escapeHtml(input.promotionCode)})` : ""}</td><td align="right">-${escapeHtml(formatCurrency(promotionDiscount, input.currency))}</td></tr>` : ""}
-  <tr><td align="right" style="color:#746A72;">${input.shippingAmount && input.shippingAmount > 0 ? "Insured tracked shipping" : "Shipping"}</td><td align="right">${escapeHtml(formatCurrency(input.shippingAmount ?? 0, input.currency))}</td></tr>
+  <tr><td align="right" style="color:#746A72;">${input.fulfillmentMode === "manual_pickup" ? "Studio pickup" : input.fulfillmentMode === "manual_shipping" ? "Shipping arranged separately" : input.shippingAmount && input.shippingAmount > 0 ? "Insured tracked shipping" : "Shipping"}</td><td align="right">${input.fulfillmentMode === "manual_shipping" ? "Not charged" : escapeHtml(formatCurrency(input.shippingAmount ?? 0, input.currency))}</td></tr>
   <tr><td align="right" style="color:#746A72;">Tax</td><td align="right">${escapeHtml(formatCurrency(taxAmount, input.currency))}</td></tr>
 </table>
+  `.trim();
+}
+
+function getImportDisclosureHtml(
+  input: SendProductOrderConfirmationEmailInput,
+): string {
+  const disclosure = input.usImportDisclosure;
+  if (!disclosure) return "";
+  return `
+<div style="margin:20px 0;padding:18px;border:1px solid #D4B483;background-color:#F5F1F5;" data-import-terms="${escapeHtml(disclosure.terms)}" data-disclosure-version="${escapeHtml(disclosure.version)}">
+  <p style="margin:0 0 8px 0;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:#746A72;">U.S. import terms: ${escapeHtml(disclosure.terms)}</p>
+  <p style="margin:0;font-size:14px;line-height:1.7;">${escapeHtml(disclosure.text)}</p>
+</div>
   `.trim();
 }
 

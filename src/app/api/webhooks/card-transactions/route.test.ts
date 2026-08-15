@@ -39,6 +39,7 @@ const helperScript = String.raw`
     getCardTransaction,
     getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing,
     getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice,
+    markEventProcessingStatus,
     reconcileProductOrderRefund,
     recordEvent,
     sendBookingConfirmationEmailForOrder,
@@ -55,6 +56,7 @@ const helperScript = String.raw`
     const sentEmails = [];
     const sentSchedulingFailureAlerts = [];
     const reconciledRefunds = [];
+    const processingStatuses = [];
     const handler = createHelcimWebhookPostHandler({
       activateShipmentForPaidOrder: async (orderId) => {
         if (activateShipmentForPaidOrder) await activateShipmentForPaidOrder(orderId);
@@ -72,6 +74,10 @@ const helperScript = String.raw`
       },
       getCardTransaction,
       getVerifierToken: () => verifierToken,
+      markEventProcessingStatus: async (input) => {
+        processingStatuses.push(input);
+        if (markEventProcessingStatus) await markEventProcessingStatus(input);
+      },
       reconcileProductOrderRefund: async (input) => {
         reconciledRefunds.push(input);
         return reconcileProductOrderRefund ? reconcileProductOrderRefund(input) : true;
@@ -140,7 +146,7 @@ const helperScript = String.raw`
       },
     });
 
-    return { finalizedBookings, handler, reconciledRefunds, trainingNotifications, markedStaffAlerts, recorded, sentBookingEmails, sentEmails, sentProductEmails, sentSchedulingFailureAlerts };
+    return { finalizedBookings, handler, processingStatuses, reconciledRefunds, trainingNotifications, markedStaffAlerts, recorded, sentBookingEmails, sentEmails, sentProductEmails, sentSchedulingFailureAlerts };
   }
 `;
 
@@ -225,8 +231,35 @@ test("Helcim webhook route reconciles an ambiguous local refund from signed prov
     assert.equal(response.status, 200);
     assert.deepEqual(reconciledRefunds, [{
       amountCents: 1250,
+      currency: "CAD",
       originalTransactionId: "25764674",
       providerRefundId: "991122",
+    }]);
+  `);
+});
+
+test("Helcim webhook route durably flags an unmatched refund for review", () => {
+  runRouteScenario(`
+    const body = JSON.stringify({ id: "991123", type: "cardTransaction" });
+    const { handler, processingStatuses } = await runScenario({
+      getCardTransaction: async () => ({
+        amount: "-12.50",
+        currency: "CAD",
+        id: 991123,
+        originalTransactionId: 25764674,
+        status: "APPROVED",
+        transactionType: "refund",
+      }),
+      reconcileProductOrderRefund: async () => false,
+    });
+
+    const response = await handler(createRequest(body));
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(processingStatuses, [{
+      eventId: "webhook-route-test",
+      status: "review_required",
+      message: "Refund could not be uniquely correlated to a local ledger row",
     }]);
   `);
 });
@@ -924,3 +957,41 @@ function runRouteScenario(assertions: string): void {
     },
   );
 }
+
+test("Helcim webhook route rejects oversized bodies before provider or storage work", () => {
+  runRouteScenario(`
+    let providerCalls = 0;
+    const { handler, recorded } = await runScenario({
+      getCardTransaction: async () => {
+        providerCalls += 1;
+        return {};
+      },
+    });
+    const response = await handler(createRequest("x".repeat(64 * 1024 + 1)));
+    assert.equal(response.status, 413);
+    assert.equal(providerCalls, 0);
+    assert.equal(recorded.length, 0);
+  `);
+});
+
+test("Helcim webhook route quarantines an unmatched approved purchase", () => {
+  runRouteScenario(`
+    const body = JSON.stringify({ id: "purchase-unmatched", type: "cardTransaction" });
+    const { handler, processingStatuses } = await runScenario({
+      getCardTransaction: async () => ({
+        amount: "50.00",
+        currency: "CAD",
+        transactionId: "purchase-unmatched",
+        status: "approved",
+        transactionType: "purchase",
+      }),
+      recordEvent: async () => ({ matchedOrder: null, paid: false, recorded: true }),
+    });
+    const response = await handler(createRequest(body));
+    assert.equal(response.status, 200);
+    assert.equal(processingStatuses.some((entry) =>
+      entry.status === "review_required" &&
+      entry.reasonCode === "UNMATCHED_APPROVED_HELCIM_PURCHASE"
+    ), true);
+  `);
+});

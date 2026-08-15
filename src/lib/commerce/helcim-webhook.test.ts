@@ -96,6 +96,7 @@ test("parseVerifiedHelcimWebhook extracts only reconciliation fields", () => {
     helcimInvoiceId: 12345,
     helcimInvoiceNumber: "INV-12345",
     helcimTransactionId: "txn_123",
+    merchantReference: undefined,
     status: "APPROVED",
   });
 });
@@ -114,6 +115,7 @@ test("parseVerifiedHelcimWebhook accepts sparse cardTransaction webhook payloads
     helcimInvoiceId: undefined,
     helcimInvoiceNumber: undefined,
     helcimTransactionId: "25764674",
+    merchantReference: undefined,
     status: undefined,
   });
 });
@@ -248,6 +250,76 @@ test("normalizeHelcimCardTransactionDetails keeps explicit last4 over cardNumber
       transactionType: undefined,
     },
   );
+});
+
+test("certified nested evidence and refund correlation fields are exact and case-sensitive", () => {
+  const previous = process.env.HELCIM_PRODUCT_PAYMENTS_CONTRACT_JSON;
+  process.env.HELCIM_PRODUCT_PAYMENTS_CONTRACT_JSON = JSON.stringify({
+    contract: "helcim_product_payments",
+    version: "captured-v1",
+    evidenceReference: "sandbox-triple:captured-v1",
+    effectiveFrom: "2020-01-01T00:00:00.000Z",
+    effectiveUntil: "2099-01-01T00:00:00.000Z",
+    purchaseTransactionTypes: ["purchase"],
+    refundTransactionTypes: ["refund"],
+    purchaseSuccessfulStatuses: ["approved"],
+    refundSuccessfulStatuses: ["settled"],
+    avs: {
+      fieldNames: ["verification.avsResponse"],
+      matchCodes: ["y"],
+      mismatchCodes: ["n"],
+    },
+    cvv: {
+      fieldNames: ["verification.cvvResponse"],
+      matchCodes: ["m"],
+      mismatchCodes: ["n"],
+    },
+    refundCorrelation: {
+      providerRefundIdFields: ["refundTransactionId"],
+      originalTransactionIdFields: ["originalTransactionId"],
+      merchantReferenceFields: ["merchantReferenceCode"],
+    },
+  });
+  try {
+    const normalized = normalizeHelcimCardTransactionDetails({
+      avsResponse: "Y",
+      cvvResponse: "M",
+      verification: { avsResponse: "N", cvvResponse: "N" },
+      refundTransactionId: "refund-1",
+      originalTransactionId: "purchase-1",
+      transactionType: "refund",
+    });
+    assert.equal(normalized.avsCode, "N");
+    assert.equal(normalized.cvvCode, "N");
+    assert.equal(normalized.transactionId, "refund-1");
+    assert.equal(
+      normalizeHelcimCardTransactionDetails({
+        avsResponse: "Y",
+        cvvResponse: "M",
+      }).avsCode,
+      undefined,
+    );
+    const parsed = parseVerifiedHelcimWebhook(
+      headers,
+      JSON.stringify({
+        eventType: "cardTransaction",
+        data: {
+          transactionType: "refund",
+          refundTransactionId: "refund-2",
+          originalTransactionId: "purchase-2",
+          merchantReferenceCode: "refund/reservation-2",
+          merchantReference: "uncertified-reference",
+        },
+      }),
+    );
+    assert.equal(parsed.helcimTransactionId, "refund-2");
+    assert.equal(parsed.originalTransactionId, "purchase-2");
+    assert.equal(parsed.merchantReference, "refund/reservation-2");
+  } finally {
+    if (previous === undefined)
+      delete process.env.HELCIM_PRODUCT_PAYMENTS_CONTRACT_JSON;
+    else process.env.HELCIM_PRODUCT_PAYMENTS_CONTRACT_JSON = previous;
+  }
 });
 
 test("getHelcimWebhookHeaders returns null when required signature headers are missing", () => {

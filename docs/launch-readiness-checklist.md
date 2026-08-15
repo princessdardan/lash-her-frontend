@@ -21,6 +21,8 @@ This checklist must be completed and recorded for both Staging and Production en
 - [ ] `PAYMENT_RECONCILIATION_CRON_SECRET` is configured and is required to enable the payment reconciliation route; it is distinct from the generic `CRON_SECRET` used by Vercel scheduled cron. The route accepts either bearer when both secrets are configured, but the route-specific secret must be present for the route to be enabled or for manual/staff checks.
 - [ ] If `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true`, the code-required Square environment values are configured: `SQUARE_ENVIRONMENT`, `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, `SQUARE_WEBHOOK_SIGNATURE_KEY`, and `SQUARE_SERVICE_BOOKING_WEBHOOK_URL`. The shared `SQUARE_SERVICE_BOOKING_WEBHOOK_URL` is the endpoint Square delivers to for service booking, no-show, and training invoice events. Training Square Invoice alone does not require `SQUARE_SERVICE_BOOKING_RETURN_URL` or `SQUARE_APPLICATION_ID`.
 - [ ] `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `RESEND_SEGMENT_MARKETING_ID`, `FROM_EMAIL`, and `ADMIN_EMAIL` are configured.
+- [ ] When Chit Chats shipping is enabled, `CHITCHATS_REGION` is exactly one of `british_columbia`, `alberta_saskatchewan`, `ontario_manitoba`, `quebec`, or `atlantic`, and matches the account identified by the target `CHITCHATS_ENVIRONMENT` and `CHITCHATS_CLIENT_ID`.
+- [ ] No deployed configuration or readiness check depends on `CHITCHATS_BRANCH_ID`. It is removed only after the region-aware code and additive intake-location migration are deployed and the new owner attestation is healthy.
 - [ ] `VERCEL_ENV=preview node scripts/validate-sanity-env.mjs` passes for staging variables.
 - [ ] `VERCEL_ENV=production node scripts/validate-sanity-env.mjs` passes for production variables.
 - [ ] `npm run check:square-card-on-file-env` passes when Square service booking/card-on-file is enabled.
@@ -34,6 +36,9 @@ Use `docs/private-database-migration-runbook.md` for the complete migration proc
 - [ ] Backup and PITR capability is verified for the production target.
 - [ ] Migration approver is assigned and aware of the migration window.
 - [ ] Migration evidence template is ready for recording the run.
+- [ ] `select max(created_at) from drizzle.__drizzle_migrations` equals the `when` value of the final entry in `drizzle/meta/_journal.json`; confirming only migrations 0032/0033 is insufficient.
+- [ ] CI passed both zero-to-latest and data-bearing 0033-to-latest migration jobs, including legacy duplicate Helcim-identity quarantine assertions.
+- [ ] Every open `fulfillment_data_quarantine` row has a named owner and provider-backed resolution evidence; checkout remains disabled while payment ownership is ambiguous.
 - [ ] Staging smoke tests pass with the latest database schema.
 - [ ] Retention and redaction owner is identified.
 - [ ] Shared private PII tables are present for checkout orders, payment events, appointment holds, training enrollments, marketing contacts, contact submissions, and consent events.
@@ -88,6 +93,22 @@ Run these when `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true` in the target 
 - [ ] Production `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true` remains disabled until the certification report is approved and the staging smoke run shows no unresolved `manual_followup`, `charge_pending`, or provider mismatch states.
 
 ## Ecommerce Product Catalog Checks
+
+### Chit Chats region and intake-location gate
+
+- [ ] `CHITCHATS_REGION` was configured before deploying the region-aware application version; the additive migration was applied before that version started serving traffic.
+- [ ] Nataliea created the physical intake-location readiness record using recent step-up authentication and authoritative current evidence; the record was not seeded, inferred, or backfilled from an account, address, region, location search, or legacy branch value.
+- [ ] The active record's provider environment, client ID, and region exactly match runtime configuration; its owner and policy version are current, it is not revoked, and `validUntil` is no more than 90 days after attestation and remains in the future.
+- [ ] The attested name, full address, location type (`branch`, `drop_spot`, or `mail_in_hub`), rationale, and evidence reference were reviewed against the actual location where parcels first enter the Chit Chats network.
+- [ ] Calendar `branch_closure` entries cover announced closures of that physical intake location. Here, “branch” is a compatibility label for the physical branch, drop spot, or mail-in hub, not an API identifier.
+- [ ] `CHITCHATS_CHECKOUT_ENABLED` remains `false` until this gate and every other applicable shipping, payment, tax, CMS, certification, and staging-acceptance gate passes.
+- [ ] Audit staging OpenTelemetry exports, Vercel request/access logs, support exports, and retained traces for Chit Chats signed label URLs and customer bearer query parameters (`/orders/address-change`, `/orders/shipping-decision`, and `/orders/payment-offer`). Purge confirmed exposures under the approved incident process and retain non-secret purge evidence before launch.
+- [ ] Verify Vercel and every external log/trace drain suppresses or redacts `auth_token` and `token` query values for the protected routes. Application instrumentation suppression does not prove platform access-log redaction.
+- [ ] Add and pass a source-level branch-coverage gate for payment transitions, refunds, risk gates, shipment transitions, customer token exchange, retention terminalization, and job claiming. `scripts/verify-playwright-coverage.mjs` proves required browser scenarios ran without skips; it is not source branch coverage. Checkout remains blocked until the separate coverage report reaches the approved complete-branch threshold for these state machines.
+- [ ] Complete the remaining enabled-mode browser/provider matrix for manual-shipping supplements and pickup races, scanner-safe address and supplemental-offer exchange, replacement preparation, refund ambiguity/reconciliation, tracking exceptions/delivery, returns, customer notification delivery, and explicit-version admin operations. The current deterministic enabled suite covers Canada and U.S. DDU quote/payment/postage purchase plus manual-pickup payment/risk state; it does not satisfy this remaining launch gate.
+- [ ] `/admin/operations` shows every applicable queue with stable IDs, current versions, deadlines, and evidence; no overdue or evidence-free item is treated as ready.
+- [ ] Risk clearance and high-risk address approval demonstrate a fresh Google step-up followed by explicit retry against the refreshed queue state.
+- [ ] Rollback ownership is recorded separately for `CHITCHATS_CHECKOUT_ENABLED`, `CHITCHATS_US_SHIPPING_ENABLED`, `SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED`, and `MANUAL_PRODUCT_CHECKOUT_ENABLED`; `CHITCHATS_SHIPPING_ENABLED` remains enabled for already-paid work.
 
 - [ ] Product launch scope is recorded as collecting a shipping address for fulfillment while excluding taxes for general products, discounts, shipping-rate calculation, ACH, partial payments, refunds tooling, saved payment methods, and customer pre-linking.
 - [ ] Product catalog cards show the intended availability labels, variant options, SKU-backed pricing, and fulfillment notes from the target Sanity dataset.

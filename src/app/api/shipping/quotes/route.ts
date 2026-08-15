@@ -5,10 +5,6 @@ import { MAX_CART_LINE_ITEMS } from "@/lib/commerce/cart";
 import { isValidCheckoutEmail } from "@/lib/commerce/checkout-validation";
 import { parsePromotionCodeInput } from "@/lib/commerce/discounts";
 import {
-  createChitChatsClient,
-  ChitChatsApiError,
-} from "@/lib/shipping/chitchats-client";
-import {
   getChitChatsConfig,
   isChitChatsCheckoutEnabled,
 } from "@/lib/shipping/config";
@@ -16,27 +12,115 @@ import {
   prepareShippingQuote,
   ShippingEligibilityError,
 } from "@/lib/shipping/prepare-quote";
-import { issueShippingQuoteToken } from "@/lib/shipping/quote-token";
-import { selectCustomerRates } from "@/lib/shipping/rates";
-import { loadShippingPolicyContext } from "@/lib/shipping/policy";
 import {
-  completeQuote,
-  createQuoteDraft,
+  bindShippingFingerprintToContext,
+  parseShippingQuoteContextSnapshot,
+  type CertifiedUsImportDisclosure,
+} from "@/lib/shipping/quote-token";
+import {
+  createQuoteOperation,
+  getQuoteOperationByToken,
   listEnabledPackageProfiles,
-  markQuoteUnknown,
+  type ProductShipmentRow,
 } from "@/lib/shipping/shipment-store";
-import { stripSignedLabelUrls } from "@/lib/shipping/status";
 import type { ShippingRecipient } from "@/lib/shipping/types";
 import { buildBookingAbuseKey } from "@/lib/security/trusted-client-ip";
 import { checkShippingQuoteRateLimit } from "@/lib/security/shipping-abuse-control";
 import { readBoundedJsonBody } from "@/lib/security/bounded-json-body";
 import {
   assertCheckoutReadiness,
+  assertShippingQuoteContextCurrent,
+  assertUsShippingContractCurrent,
   CheckoutNotReadyError,
 } from "@/lib/shipping/readiness";
 
 export const runtime = "nodejs";
 const SHIPPING_QUOTE_BODY_MAX_BYTES = 32_000;
+
+export async function GET(req: NextRequest): Promise<Response> {
+  if (!isChitChatsCheckoutEnabled())
+    return NextResponse.json(
+      { error: "Shipping quotes are unavailable" },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
+  const operationId = req.nextUrl.searchParams.get("operationId")?.trim();
+  const quoteToken = req.nextUrl.searchParams.get("quoteToken")?.trim();
+  if (!operationId || !quoteToken)
+    return NextResponse.json(
+      { error: "Quote operation is invalid" },
+      { status: 400 },
+    );
+  const row = await getQuoteOperationByToken({ operationId, quoteToken });
+  if (!row)
+    return NextResponse.json(
+      { error: "Quote operation was not found" },
+      { status: 404 },
+    );
+  const disclosure = certifiedUsDisclosure(row.shipment);
+  if (row.shipment.destination.countryCode === "US" && !disclosure)
+    return NextResponse.json(
+      { error: "Certified U.S. DDU terms are no longer available" },
+      { status: 409, headers: { "Cache-Control": "no-store" } },
+    );
+  try {
+    const expectedContext = parseShippingQuoteContextSnapshot(
+      row.shipment.deadlinePolicySnapshot,
+    );
+    if (!expectedContext) {
+      throw new Error("Shipping quote context snapshot is missing");
+    }
+    await assertShippingQuoteContextCurrent({
+      destinationCountryCode: row.shipment.destination.countryCode,
+      expectedContext,
+      intakeLocationAttestationId: row.shipment.intakeLocationAttestationId,
+    });
+    if (row.shipment.destination.countryCode === "US") {
+      await assertUsShippingContractCurrent({
+        snapshot: row.shipment.usShippingContractSnapshot,
+      });
+    }
+  } catch {
+    return NextResponse.json(
+      { error: "Shipping quote is no longer current" },
+      { status: 409, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+  if (row.operation.status === "dead_letter")
+    return NextResponse.json(
+      {
+        error: "Shipping quote could not be completed",
+        status: row.operation.status,
+      },
+      { status: 409, headers: { "Cache-Control": "no-store" } },
+    );
+  if (row.operation.status !== "succeeded")
+    return NextResponse.json(
+      {
+        operationId,
+        shipmentId: row.shipment.id,
+        status: row.operation.status,
+        expiresAt: row.shipment.quoteExpiresAt.toISOString(),
+        ...(disclosure ?? {}),
+      },
+      {
+        status: 202,
+        headers: { "Cache-Control": "no-store", "Retry-After": "2" },
+      },
+    );
+  return NextResponse.json(
+    {
+      operationId,
+      shipmentId: row.shipment.id,
+      status: row.operation.status,
+      quoteToken,
+      fingerprint: row.shipment.quoteFingerprint,
+      expiresAt: row.shipment.quoteExpiresAt.toISOString(),
+      rates: row.shipment.rates.map(publicRate),
+      ...(disclosure ?? {}),
+    },
+    { headers: { "Cache-Control": "no-store" } },
+  );
+}
 
 export async function POST(req: NextRequest): Promise<Response> {
   if (!isChitChatsCheckoutEnabled())
@@ -66,9 +150,13 @@ export async function POST(req: NextRequest): Promise<Response> {
       { status: 400 },
     );
   try {
-    await assertCheckoutReadiness({
+    const readiness = await assertCheckoutReadiness({
       destinationCountryCode: body.recipient.countryCode,
     });
+    if (!readiness.quoteContext) {
+      throw new CheckoutNotReadyError(["shipping_quote_context_missing"]);
+    }
+    return await createQuote(req, body, readiness.quoteContext);
   } catch (error) {
     if (error instanceof CheckoutNotReadyError) {
       return NextResponse.json(
@@ -78,6 +166,13 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
     throw error;
   }
+}
+
+async function createQuote(
+  req: NextRequest,
+  body: NonNullable<ReturnType<typeof parseBody>>,
+  quoteContext: import("@/lib/shipping/quote-token").ShippingQuoteContext,
+): Promise<Response> {
   const limiterKey = buildBookingAbuseKey({
     headers: req.headers,
     scope: "shipping-quotes",
@@ -109,10 +204,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
   const config = getChitChatsConfig();
   const productIds = [...new Set(body.items.map((item) => item.productId))];
-  const [{ loaders }, profiles, policy] = await Promise.all([
+  const [{ loaders }, profiles] = await Promise.all([
     import("@/data/loaders"),
     listEnabledPackageProfiles(),
-    loadShippingPolicyContext(),
   ]);
   const [products, promotionCode] = await Promise.all([
     loaders.getProductsByIds(productIds),
@@ -126,14 +220,24 @@ export async function POST(req: NextRequest): Promise<Response> {
       { status: 422 },
     );
 
+  const preparedAt = new Date();
   let prepared;
   try {
+    const usImportDisclosure = certifiedUsDisclosureFromContext(
+      body.recipient.countryCode,
+      quoteContext,
+    );
     prepared = prepareShippingQuote({
       ...body,
       products,
       promotionCode,
       profiles,
       usShippingEnabled: config.usShippingEnabled,
+      now: preparedAt,
+      ...(quoteContext.usShippingContract
+        ? { usShippingContract: quoteContext.usShippingContract }
+        : {}),
+      ...(usImportDisclosure ? { usImportDisclosure } : {}),
     });
   } catch (error) {
     if (error instanceof ShippingEligibilityError || error instanceof Error) {
@@ -142,121 +246,83 @@ export async function POST(req: NextRequest): Promise<Response> {
     throw error;
   }
 
-  const quoteToken = issueShippingQuoteToken();
+  const quoteFingerprint = bindShippingFingerprintToContext(
+    prepared.fingerprint,
+    quoteContext,
+  );
   const publicReference = `lhq-${nanoid(14)}`;
-  const expiresAt = new Date(Date.now() + 15 * 60_000);
-  const draft = await createQuoteDraft({
+  const expiresAt = new Date(preparedAt.getTime() + 15 * 60_000);
+  const { shipment, operation, quoteToken } = await createQuoteOperation({
     publicReference,
-    quoteToken,
-    quoteFingerprint: prepared.fingerprint,
+    quoteFingerprint,
+    intakeLocationAttestationId: quoteContext.intakeLocationAttestationId,
     destination: body.recipient,
     packageSnapshot: prepared.packageSnapshot,
     customsLines: prepared.customsLines,
     expiresAt,
+    merchandiseValueCents: prepared.merchandiseValueCents,
+    quoteContextSnapshot: quoteContext,
+    signatureRequested:
+      prepared.merchandiseValueCents >=
+      quoteContext.shippingPolicySnapshot.signatureThresholdCents,
+    usShippingContractSnapshot: quoteContext.usShippingContract,
+    now: preparedAt,
   });
-  const client = createChitChatsClient(config);
-  try {
-    const shipment = await client.createShipment({
-      recipient: body.recipient,
-      packageSnapshot: prepared.packageSnapshot,
-      customsLines: prepared.customsLines,
-      merchandiseValueCents: prepared.merchandiseValueCents,
-      orderReference: publicReference,
-      signatureRequested:
-        prepared.merchandiseValueCents >=
-        policy.settings.signatureThresholdCents,
-    });
-    const rates = selectCustomerRates(
-      shipment.rates ?? [],
-      config.trackedPostageTypes,
-      {
-        atRiskValueCents: prepared.merchandiseValueCents,
-        destinationCountryCode: body.recipient.countryCode,
-        estimatedDeliveryAt: shipment.estimated_delivery_at,
-        servicePolicies: policy.servicePolicies,
-        signatureThresholdCents: policy.settings.signatureThresholdCents,
-      },
-    );
-    if (rates.length === 0) {
-      await markQuoteUnknown(draft.id, stripSignedLabelUrls(shipment));
-      return NextResponse.json(
-        { error: "No insured tracked service is available" },
-        { status: 422 },
-      );
-    }
-    await completeQuote({
-      id: draft.id,
-      providerShipmentId: shipment.id,
-      providerStatus: shipment.status,
-      rates,
-      rawShipment: stripSignedLabelUrls(shipment),
-    });
-    return NextResponse.json(
-      {
-        quoteToken,
-        fingerprint: prepared.fingerprint,
-        expiresAt: expiresAt.toISOString(),
-        rates: rates.map(publicRate),
-      },
-      { headers: { "Cache-Control": "no-store" } },
-    );
-  } catch (error) {
-    const recovered = await recoverAmbiguousCreate(client, publicReference);
-    if (recovered) {
-      const rates = selectCustomerRates(
-        recovered.rates ?? [],
-        config.trackedPostageTypes,
-        {
-          atRiskValueCents: prepared.merchandiseValueCents,
-          destinationCountryCode: body.recipient.countryCode,
-          estimatedDeliveryAt: recovered.estimated_delivery_at,
-          servicePolicies: policy.servicePolicies,
-          signatureThresholdCents: policy.settings.signatureThresholdCents,
-        },
-      );
-      if (rates.length > 0) {
-        await completeQuote({
-          id: draft.id,
-          providerShipmentId: recovered.id,
-          providerStatus: recovered.status,
-          rates,
-          rawShipment: stripSignedLabelUrls(recovered),
-        });
-        return NextResponse.json({
-          quoteToken,
-          fingerprint: prepared.fingerprint,
-          expiresAt: expiresAt.toISOString(),
-          rates: rates.map(publicRate),
-        });
-      }
-    }
-    await markQuoteUnknown(draft.id);
-    const retryAfter =
-      error instanceof ChitChatsApiError ? error.retryAfterSeconds : null;
-    return NextResponse.json(
-      { error: "Shipping provider is temporarily unavailable" },
-      {
-        status: 503,
-        ...(retryAfter
-          ? { headers: { "Retry-After": String(retryAfter) } }
-          : {}),
-      },
-    );
-  }
+  return NextResponse.json(
+    {
+      operationId: operation.id,
+      shipmentId: shipment.id,
+      status: operation.status,
+      quoteToken,
+      fingerprint: quoteFingerprint,
+      expiresAt: shipment.quoteExpiresAt.toISOString(),
+      ...(prepared.usImportDisclosure ?? {}),
+    },
+    {
+      status: 202,
+      headers: { "Cache-Control": "no-store", "Retry-After": "2" },
+    },
+  );
 }
 
-async function recoverAmbiguousCreate(
-  client: ReturnType<typeof createChitChatsClient>,
-  reference: string,
-) {
-  try {
-    const matches = (await client.findShipments(reference)).filter(
-      (shipment) => shipment.order_id === reference,
+function certifiedUsDisclosureFromContext(
+  countryCode: "CA" | "US",
+  context: import("@/lib/shipping/quote-token").ShippingQuoteContext,
+): CertifiedUsImportDisclosure | null {
+  if (countryCode !== "US") return null;
+  const contract = context.usShippingContract;
+  if (
+    contract?.importTerms !== "DDU" ||
+    !contract.disclosure.version.trim() ||
+    !contract.disclosure.text.trim()
+  ) {
+    throw new ShippingEligibilityError(
+      "Certified U.S. DDU shipping terms are unavailable",
     );
-    return matches.length === 1 ? matches[0] : null;
-  } catch {
-    return null;
   }
+  return {
+    usImportTerms: "DDU",
+    usImportDisclosureVersion: contract.disclosure.version,
+    usImportDisclosureText: contract.disclosure.text,
+  };
+}
+
+function certifiedUsDisclosure(
+  shipment: ProductShipmentRow,
+): CertifiedUsImportDisclosure | null {
+  if (shipment.destination.countryCode !== "US") return null;
+  const contract = shipment.usShippingContractSnapshot;
+  if (
+    contract?.importTerms !== "DDU" ||
+    !contract.disclosure.version.trim() ||
+    !contract.disclosure.text.trim()
+  )
+    return null;
+  return {
+    usImportTerms: "DDU",
+    usImportDisclosureVersion: contract.disclosure.version,
+    usImportDisclosureText: contract.disclosure.text,
+  };
 }
 
 function publicRate(rate: {

@@ -1,12 +1,16 @@
 import {
   createHelcimInvoice,
   getHelcimCardTransaction,
+  getHelcimInvoice,
+  getHelcimInvoicesByNumber,
   refundHelcimPayment,
   initializeHelcimPay,
 } from "./helcim-client";
 import type {
   HelcimCardTransactionResponse,
   HelcimInvoiceRequest,
+  HelcimInvoiceCollectionResponse,
+  HelcimInvoiceDetails,
   HelcimInvoiceResponse,
   HelcimPayInitializeRequest,
   HelcimPayInitializeResponse,
@@ -16,6 +20,10 @@ import type {
 
 export interface HelcimGateway {
   createInvoice(request: HelcimInvoiceRequest): Promise<HelcimInvoiceResponse>;
+  getInvoice?(invoiceId: number): Promise<HelcimInvoiceDetails>;
+  getInvoicesByNumber?(
+    invoiceNumber: string,
+  ): Promise<HelcimInvoiceCollectionResponse>;
   initializePay(
     request: HelcimPayInitializeRequest,
   ): Promise<HelcimPayInitializeResponse>;
@@ -31,6 +39,8 @@ export interface HelcimGateway {
 export function createLiveHelcimGateway(): HelcimGateway {
   return {
     createInvoice: createHelcimInvoice,
+    getInvoice: getHelcimInvoice,
+    getInvoicesByNumber: getHelcimInvoicesByNumber,
     initializePay: initializeHelcimPay,
     getCardTransaction: getHelcimCardTransaction,
     refundPayment: refundHelcimPayment,

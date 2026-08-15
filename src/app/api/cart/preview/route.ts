@@ -3,11 +3,11 @@ import { NextResponse, type NextRequest } from "next/server";
 import { loaders } from "@/data/loaders";
 import {
   buildValidatedCart,
+  MAX_CART_LINE_ITEMS,
   type CartInputItem,
-  type CatalogProduct,
   type ValidatedCart,
 } from "@/lib/commerce/cart";
-import type { TProduct } from "@/types";
+import { toCheckoutCatalogProduct } from "@/lib/commerce/product-catalog";
 
 interface CartPreviewResponse {
   cart: ValidatedCart;
@@ -17,7 +17,6 @@ interface CartPreviewErrorResponse {
   error: string;
 }
 
-const MAX_CART_PREVIEW_ITEMS = 20;
 const MAX_CART_PREVIEW_ID_LENGTH = 128;
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -32,7 +31,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (
     !isRecord(body) ||
     !Array.isArray(body.items) ||
-    body.items.length > MAX_CART_PREVIEW_ITEMS
+    body.items.length > MAX_CART_LINE_ITEMS
   ) {
     return invalidCartPreviewRequest();
   }
@@ -48,7 +47,10 @@ export async function POST(req: NextRequest): Promise<Response> {
   try {
     const productIds = Array.from(new Set(items.map((item) => item.productId)));
     const products = await loaders.getProductsByIds(productIds);
-    const cart = buildValidatedCart(items, products.map(toCatalogProduct));
+    const cart = buildValidatedCart(
+      items,
+      products.map(toCheckoutCatalogProduct),
+    );
 
     return NextResponse.json<CartPreviewResponse>({ cart });
   } catch {
@@ -76,41 +78,6 @@ function toCartInputItem(item: unknown): CartInputItem {
     productId: item.productId,
     variantId: item.variantId,
     quantity: item.quantity,
-  };
-}
-
-function toCatalogProduct(product: TProduct): CatalogProduct {
-  return {
-    id: product._id,
-    sku: product.sku,
-    title: product.title,
-    price: product.price,
-    discountPrice: product.discountPrice,
-    currency: product.currency,
-    isAvailable: product.isAvailable,
-    checkoutMode:
-      product.shipping?.fulfillmentMode === "manual" ||
-      product.shipping?.hazardousMaterial
-        ? "manual"
-        : "automated",
-    variants: product.variants?.map((variant) => ({
-      id: variant._key,
-      sku: variant.sku,
-      title: variant.title,
-      price: variant.price,
-      discountPrice: variant.discountPrice,
-      isAvailable: variant.isAvailable,
-      options: variant.options?.flatMap((option) =>
-        option.name && option.value
-          ? [{ label: option.name, value: option.value }]
-          : [],
-      ),
-      checkoutMode:
-        (variant.shipping ?? product.shipping)?.fulfillmentMode === "manual" ||
-        (variant.shipping ?? product.shipping)?.hazardousMaterial
-          ? "manual"
-          : "automated",
-    })),
   };
 }
 

@@ -12,42 +12,59 @@ import {
   recordShippingLinkFailure,
 } from "@/lib/security/shipping-abuse-control";
 import type { CheckoutOrderShippingAddressSnapshot } from "@/lib/private-db/schema";
+import { assertShippingPolicyMutationAllowed } from "@/lib/shipping/policy";
 
 export const runtime = "nodejs";
 const COOKIE = "lh_address_change";
+const BEARER_COOKIE = "lh_address_change_bearer";
 
 export async function GET(req: NextRequest): Promise<Response> {
   const token = req.nextUrl.searchParams.get("token");
   if (token) {
+    if (await isShippingLinkExchangeBlocked()) return genericInvalid();
     if (
       !(await allowed(req, token)) ||
       !(await validateAddressChangeBearer(token))
     ) {
+      await recordShippingLinkFailure().catch(() => undefined);
       return genericInvalid();
     }
-    return html(
-      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open address change | Lash Her</title></head><body><main><h1>Open your address change</h1><p>Continue to submit the corrected destination for your order.</p><form method="post" action="/orders/address-change"><input type="hidden" name="action" value="exchange"><input type="hidden" name="token" value="${escapeHtml(token)}"><button type="submit">Continue securely</button></form></main></body></html>`,
+    const response = NextResponse.redirect(
+      new URL("/orders/address-change", req.nextUrl.origin),
+      303,
     );
+    response.cookies.set(BEARER_COOKIE, token, bearerCookieOptions());
+    return secure(response);
   }
   const sessionToken = req.cookies.get(COOKIE)?.value ?? "";
   const request = sessionToken ? await getAddressChange(sessionToken) : null;
-  if (!request) return genericInvalid();
+  if (!request) {
+    if (!req.cookies.get(BEARER_COOKIE)?.value) return genericInvalid();
+    return html(
+      '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open address change | Lash Her</title></head><body><main><h1>Open your address change</h1><p>Continue to submit the corrected destination for your order.</p><form method="post" action="/orders/address-change"><input type="hidden" name="action" value="exchange"><button type="submit">Continue securely</button></form></main></body></html>',
+    );
+  }
   const address = request.originalAddress;
   return html(
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Change shipping address | Lash Her</title></head><body><main><h1>Change shipping address</h1><p>Current destination: ${escapeHtml(maskAddress(address))}</p><p>Submit the complete corrected address. It will be reviewed before use.</p><form method="post" action="/orders/address-change">${field("line1", "Address line 1", "", true)}${field("line2", "Address line 2", "", false)}${field("city", "City", "", true)}${field("province", "Province or state code", "", true)}${field("postalCode", "Postal or ZIP code", "", true)}<label>Country <select name="countryCode" required><option value="CA"${countryCode(address) === "CA" ? " selected" : ""}>Canada</option><option value="US"${countryCode(address) === "US" ? " selected" : ""}>United States</option></select></label><br><button type="submit">Submit address</button></form><p>This secure link expires ${escapeHtml(request.expiresAt.toLocaleString("en-CA", { timeZone: "America/Toronto" }))}.</p></main></body></html>`,
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Change shipping address | Lash Her</title></head><body><main><h1>Change shipping address</h1><p>Current destination: ${escapeHtml(maskAddress(address))}</p><p>Submit the complete corrected address in the same country. It will be reviewed before use.</p><p>Country changes cannot use this automated form. Contact Lash Her to keep the original safe address or request a full refund.</p><form method="post" action="/orders/address-change">${field("line1", "Address line 1", "", true)}${field("line2", "Address line 2", "", false)}${field("city", "City", "", true)}${field("province", "Province or state code", "", true)}${field("postalCode", "Postal or ZIP code", "", true)}<label>Country <select name="countryCode" required><option value="${countryCode(address)}" selected>${countryCode(address) === "CA" ? "Canada" : "United States"}</option></select></label><br><button type="submit">Submit address</button></form><p>This secure link expires ${escapeHtml(request.expiresAt.toLocaleString("en-CA", { timeZone: "America/Toronto" }))}.</p></main></body></html>`,
   );
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
-  if (req.headers.get("origin") !== req.nextUrl.origin) return genericInvalid();
+  if (req.headers.get("origin") !== req.nextUrl.origin) {
+    await recordShippingLinkFailure().catch(() => undefined);
+    return genericInvalid();
+  }
+  try {
+    assertShippingPolicyMutationAllowed();
+  } catch {
+    return genericInvalid();
+  }
   const form = await req.formData().catch(() => null);
   if (form?.get("action") === "exchange") {
-    const bearer = form.get("token");
-    if (
-      typeof bearer !== "string" ||
-      (await isShippingLinkExchangeBlocked()) ||
-      !(await allowed(req, bearer))
-    ) {
+    const bearer = req.cookies.get(BEARER_COOKIE)?.value;
+    if (await isShippingLinkExchangeBlocked()) return genericInvalid();
+    if (!bearer || !(await allowed(req, bearer))) {
       await recordShippingLinkFailure().catch(() => undefined);
       return genericInvalid();
     }
@@ -61,6 +78,10 @@ export async function POST(req: NextRequest): Promise<Response> {
       303,
     );
     response.cookies.set(COOKIE, sessionToken, cookieOptions());
+    response.cookies.set(BEARER_COOKIE, "", {
+      ...bearerCookieOptions(),
+      maxAge: 0,
+    });
     return secure(response);
   }
   const sessionToken = req.cookies.get(COOKIE)?.value ?? "";
@@ -192,6 +213,16 @@ function cookieOptions() {
     sameSite: "strict" as const,
     path: "/orders/address-change",
     maxAge: 30 * 60,
+  };
+}
+
+function bearerCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: true,
+    sameSite: "strict" as const,
+    path: "/orders/address-change",
+    maxAge: 5 * 60,
   };
 }
 

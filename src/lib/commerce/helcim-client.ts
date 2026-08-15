@@ -8,6 +8,8 @@ import {
 import type {
   HelcimCardTransactionResponse,
   HelcimInvoiceRequest,
+  HelcimInvoiceCollectionResponse,
+  HelcimInvoiceDetails,
   HelcimInvoiceResponse,
   HelcimPayInitializeRequest,
   HelcimPayInitializeResponse,
@@ -48,6 +50,32 @@ export async function createHelcimInvoice(
   return postHelcim<HelcimInvoiceRequest, HelcimInvoiceResponse>(
     "/invoices/",
     request,
+    getHelcimGeneralApiToken(),
+  );
+}
+
+export async function getHelcimInvoice(
+  invoiceId: number,
+): Promise<HelcimInvoiceDetails> {
+  if (!Number.isSafeInteger(invoiceId) || invoiceId <= 0) {
+    throw new Error("Invalid Helcim invoice ID");
+  }
+  return getHelcim<HelcimInvoiceDetails>(
+    `/invoices/${encodeURIComponent(String(invoiceId))}`,
+    getHelcimGeneralApiToken(),
+  );
+}
+
+export async function getHelcimInvoicesByNumber(
+  invoiceNumber: string,
+): Promise<HelcimInvoiceCollectionResponse> {
+  const normalized = invoiceNumber.trim();
+  if (!normalized || normalized.length > 200) {
+    throw new Error("Invalid Helcim invoice number");
+  }
+  const query = new URLSearchParams({ invoiceNumber: normalized });
+  return getHelcim<HelcimInvoiceCollectionResponse>(
+    `/invoices?${query.toString()}`,
     getHelcimGeneralApiToken(),
   );
 }

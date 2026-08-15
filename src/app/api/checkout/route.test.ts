@@ -19,6 +19,13 @@ const helperScript = String.raw`
     price: 24,
     currency: "CAD",
     isAvailable: true,
+    shipping: {
+      fulfillmentMode: "physical",
+      weightGrams: 35,
+      packingUnits: 1,
+      customsDescription: "Synthetic eyelash cleanser brush",
+      countryOfOrigin: "CA",
+    },
   };
 
   const shippingAddress = {
@@ -32,18 +39,30 @@ const helperScript = String.raw`
   function createRequest(body) {
     return new Request("http://localhost:3000/api/checkout", {
       method: "POST",
-      body: typeof body === "string" ? body : JSON.stringify(body),
+      body: typeof body === "string" ? body : JSON.stringify({
+        fulfillmentMode: "automated_shipping",
+        disclosures: {},
+        shippingQuote: {
+          token: "shipping-quote-token",
+          fingerprint: "a".repeat(64),
+          rateId: "rate-1",
+        },
+        ...body,
+      }),
     });
   }
 
   function runScenario({
-    createHelcimInvoice,
-    createPendingOrder,
+    createInitializingOrder,
     getProductsByIds,
     getPromotionCode,
-    initializeHelcimPay,
+    createInitializingManualOrder,
+    loadManualCheckoutPolicy,
+    markInitializationFailed,
+    validateShippingSelection,
   } = {}) {
     const fetchedProductIds = [];
+    const initializationFailures = [];
     const invoices = [];
     const orders = [];
     const paySessions = [];
@@ -61,32 +80,172 @@ const helperScript = String.raw`
         }
         return null;
       },
-      createHelcimInvoice: async (input) => {
-        invoices.push(input);
-        if (createHelcimInvoice) {
-          return createHelcimInvoice(input);
-        }
-        return { invoiceId: 4242, invoiceNumber: "INV-4242" };
-      },
-      initializeHelcimPay: async (input) => {
-        paySessions.push(input);
-        if (initializeHelcimPay) {
-          return initializeHelcimPay(input);
-        }
-        return { checkoutToken: "checkout-token-4242", secretToken: "secret-token-4242" };
-      },
-      createPendingOrder: async (input) => {
+      shippingEnabled: true,
+      validateShippingSelection: validateShippingSelection ?? (async () => ({
+        fingerprint: "a".repeat(64),
+      })),
+      createInitializingOrder: async (input) => {
         orders.push(input);
-        if (createPendingOrder) {
-          return createPendingOrder(input);
+        if (createInitializingOrder) {
+          return createInitializingOrder(input);
         }
-        return { _id: "pending-order-4242" };
+        return {
+          orderId: "lh-product-order",
+          primaryObligationId: "22222222-2222-4222-8222-222222222222",
+          shippingAmountCents: 1299,
+          totalAmountCents: Math.round(input.cart.amount * 100) + 1299,
+          shippingRateTitle: "Tracked shipping",
+        };
       },
+      finalizeInitializingOrder: async () => undefined,
+      markInitializationFailed: async (orderId, error) => {
+        initializationFailures.push({ orderId, error });
+        if (markInitializationFailed) {
+          await markInitializationFailed(orderId, error);
+        }
+      },
+      ...(createInitializingManualOrder ? { createInitializingManualOrder } : {}),
+      ...(loadManualCheckoutPolicy ? { loadManualCheckoutPolicy } : {}),
     });
 
-    return { fetchedProductIds, handler, invoices, orders, paySessions };
+    return {
+      fetchedProductIds,
+      handler,
+      initializationFailures,
+      invoices,
+      orders,
+      paySessions,
+    };
   }
 `;
+
+test("manual checkout requires exact explicit cancellation-policy acceptance and starts with pickup", () => {
+  runRouteScenario(`
+    const manualProduct = {
+      ...product,
+      shipping: { fulfillmentMode: "manual" },
+    };
+    let manualCreates = 0;
+    const { handler } = runScenario({
+      getProductsByIds: async () => [manualProduct],
+      createInitializingManualOrder: async () => {
+        manualCreates += 1;
+        throw new Error("should not reserve an unaccepted manual order");
+      },
+      loadManualCheckoutPolicy: async () => ({
+        enabled: true,
+        cancellationPolicyText: "Approved cancellation policy",
+        cancellationPolicyVersion: "manual-policy-v1",
+        cancellationPolicyTextHash: "a".repeat(64),
+        blockers: [],
+      }),
+    });
+    const base = {
+      customer: { name: "Nataliea Lash", email: "client@example.com" },
+      items: [{ productId: product._id, quantity: 1 }],
+      fulfillmentMode: "manual_pickup",
+      shippingQuote: undefined,
+    };
+
+    const missingAcceptance = await handler(createRequest({
+      ...base,
+      disclosures: { cancellationPolicyVersion: "manual-policy-v1" },
+    }));
+    assert.equal(missingAcceptance.status, 503);
+
+    const wrongHash = await handler(createRequest({
+      ...base,
+      disclosures: {
+        cancellationPolicyAccepted: true,
+        cancellationPolicyVersion: "manual-policy-v1",
+        cancellationPolicyTextHash: "b".repeat(64),
+      },
+    }));
+    assert.equal(wrongHash.status, 503);
+
+    const directManualShipping = await handler(createRequest({
+      ...base,
+      fulfillmentMode: "manual_shipping",
+      disclosures: {
+        cancellationPolicyAccepted: true,
+        cancellationPolicyVersion: "manual-policy-v1",
+        cancellationPolicyTextHash: "a".repeat(64),
+      },
+    }));
+    assert.equal(directManualShipping.status, 409);
+    assert.equal(manualCreates, 0);
+
+    let reservedInput;
+    const acceptedHandler = runScenario({
+      getProductsByIds: async () => [manualProduct],
+      createInitializingManualOrder: async (input) => {
+        reservedInput = input;
+        return {
+          orderId: "lh-manual-order",
+          primaryObligationId: "11111111-1111-4111-8111-111111111111",
+          shippingAmountCents: 0,
+          totalAmountCents: 2400,
+          shippingRateTitle: "Studio pickup",
+        };
+      },
+      loadManualCheckoutPolicy: async () => ({
+        enabled: true,
+        cancellationPolicyText: "Approved cancellation policy",
+        cancellationPolicyVersion: "manual-policy-v1",
+        cancellationPolicyTextHash: "a".repeat(64),
+        blockers: [],
+      }),
+    }).handler;
+    const accepted = await acceptedHandler(createRequest({
+      ...base,
+      disclosures: {
+        cancellationPolicyAccepted: true,
+        cancellationPolicyVersion: "manual-policy-v1",
+        cancellationPolicyTextHash: "a".repeat(64),
+      },
+    }));
+    assert.equal(accepted.status, 202);
+    assert.deepEqual(await accepted.json(), {
+      operationId: "11111111-1111-4111-8111-111111111111",
+      status: "queued",
+    });
+    assert.equal(reservedInput.fulfillmentMode, "manual_pickup");
+    assert.equal(reservedInput.cancellationPolicy.accepted, true);
+    assert.equal(reservedInput.cancellationPolicy.version, "manual-policy-v1");
+    assert.equal(reservedInput.cancellationPolicy.textHash, "a".repeat(64));
+    assert.ok(reservedInput.cancellationPolicy.presentedAt instanceof Date);
+    assert.match(
+      reservedInput.cancellationPolicy.requestEvidence,
+      /^checkout_post:[0-9a-f-]{36}$/i,
+    );
+  `);
+});
+
+test("automated checkout reconstruction omits an absent variant id so quote fingerprints remain stable", () => {
+  runRouteScenario(`
+    let validatedItems;
+    const { handler } = runScenario({
+      validateShippingSelection: async ({ request }) => {
+        validatedItems = request.items;
+        return { fingerprint: "a".repeat(64) };
+      },
+    });
+    const response = await handler(createRequest({
+      customer: {
+        name: "Nataliea Lash",
+        email: "client@example.com",
+        phone: "4165550100",
+      },
+      items: [{ productId: product._id, quantity: 1 }],
+      shippingAddress,
+    }));
+    assert.equal(response.status, 202);
+    assert.deepEqual(validatedItems, [
+      { productId: product._id, quantity: 1 },
+    ]);
+    assert.equal(Object.hasOwn(validatedItems[0], "variantId"), false);
+  `);
+});
 
 test("checkout route rejects invalid requests before downstream calls", () => {
   runRouteScenario(`
@@ -100,6 +259,16 @@ test("checkout route rejects invalid requests before downstream calls", () => {
     assert.equal(fetchedProductIds.length, 0);
     assert.equal(invoices.length, 0);
     assert.equal(paySessions.length, 0);
+    assert.equal(orders.length, 0);
+  `);
+});
+
+test("checkout route rejects oversized request bodies before downstream calls", () => {
+  runRouteScenario(`
+    const { fetchedProductIds, handler, orders } = runScenario();
+    const response = await handler(createRequest("x".repeat(64 * 1024 + 1)));
+    assert.equal(response.status, 413);
+    assert.equal(fetchedProductIds.length, 0);
     assert.equal(orders.length, 0);
   `);
 });
@@ -159,9 +328,9 @@ test("checkout route rejects malformed customer and shipping fields before downs
   `);
 });
 
-test("checkout route creates Helcim checkout for a valid cart", () => {
+test("checkout route reserves a durable payment operation for a valid cart", () => {
   runRouteScenario(`
-    const { fetchedProductIds, handler, invoices, orders, paySessions } = runScenario();
+    const { fetchedProductIds, handler, orders } = runScenario();
 
     const response = await handler(createRequest({
       customer: { name: "  Nataliea Lash  ", email: "client@example.com" },
@@ -170,42 +339,31 @@ test("checkout route creates Helcim checkout for a valid cart", () => {
     }));
     const body = await response.json();
 
-    assert.equal(response.status, 200);
-    assert.deepEqual(body, { checkoutToken: "checkout-token-4242" });
+    assert.equal(response.status, 202);
+    assert.deepEqual(body, {
+      operationId: "22222222-2222-4222-8222-222222222222",
+      status: "queued",
+    });
     assert.deepEqual(fetchedProductIds, [["product-lash-cleanser"]]);
-    assert.deepEqual(invoices, [{
-      currency: "CAD",
-      type: "INVOICE",
-      status: "DUE",
-      notes: "Lash Her website checkout",
-      lineItems: [{
-        sku: "product-lash-cleanser",
-        description: "Lash Cleanser",
-        quantity: 2,
-        price: 24,
-      }],
-    }]);
-    assert.deepEqual(paySessions, [{
-      paymentType: "purchase",
-      amount: 48,
-      currency: "CAD",
-      invoiceNumber: "INV-4242",
-    }]);
     assert.equal(orders.length, 1);
     assert.equal(orders[0].customerName, "Nataliea Lash");
     assert.equal(orders[0].customerEmail, "client@example.com");
-    assert.equal(orders[0].checkoutToken, "checkout-token-4242");
-    assert.equal(orders[0].secretToken, "secret-token-4242");
-    assert.equal(orders[0].helcimInvoiceId, 4242);
-    assert.equal(orders[0].helcimInvoiceNumber, "INV-4242");
-    assert.deepEqual(orders[0].shippingAddress, { ...shippingAddress, line2: "Suite 2" });
+    assert.deepEqual(orders[0].shippingAddress, {
+      ...shippingAddress,
+      province: "ON",
+      country: "Canada",
+      countryCode: "CA",
+      line2: "Suite 2",
+    });
+    assert.equal(orders[0].shippingQuoteToken, "shipping-quote-token");
+    assert.equal(orders[0].shippingRateId, "rate-1");
     assert.equal(orders[0].cart.amount, 48);
   `);
 });
 
-test("checkout route keeps promotion invoice totals aligned with Helcim Pay amount", () => {
+test("checkout route binds promotion totals to the durable payment reservation", () => {
   runRouteScenario(`
-    const { handler, invoices, orders, paySessions } = runScenario({
+    const { handler, orders } = runScenario({
       getPromotionCode: async (code) => ({
         _id: "promo-save10",
         code,
@@ -223,47 +381,23 @@ test("checkout route keeps promotion invoice totals aligned with Helcim Pay amou
       promotionCode: "SAVE10",
     }));
 
-    assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { checkoutToken: "checkout-token-4242" });
-    assert.deepEqual(invoices, [{
-      currency: "CAD",
-      type: "INVOICE",
-      status: "DUE",
-      notes: "Lash Her website checkout",
-      lineItems: [
-        {
-          sku: "product-lash-cleanser",
-          description: "Lash Cleanser",
-          quantity: 2,
-          price: 24,
-        },
-        {
-          sku: "SAVE10",
-          description: "Promotion code SAVE10",
-          quantity: 1,
-          price: -4.8,
-        },
-      ],
-    }]);
-    assert.deepEqual(paySessions, [{
-      paymentType: "purchase",
-      amount: 43.2,
-      currency: "CAD",
-      invoiceNumber: "INV-4242",
-    }]);
-    const invoiceTotal = invoices[0].lineItems.reduce((total, item) => total + item.price * item.quantity, 0);
-    assert.equal(invoiceTotal, paySessions[0].amount);
-    assert.equal(orders[0].cart.amount, paySessions[0].amount);
+    assert.equal(response.status, 202);
+    assert.deepEqual(await response.json(), {
+      operationId: "22222222-2222-4222-8222-222222222222",
+      status: "queued",
+    });
+    assert.equal(orders[0].cart.amount, 43.2);
     assert.equal(orders[0].cart.promotionCode, "SAVE10");
+    assert.equal(orders[0].cart.promotionDiscountAmount, 4.8);
   `);
 });
 
-test("checkout route creates Helcim checkout without Square secrets", () => {
+test("checkout route reserves product payment without Square secrets", () => {
   runRouteScenario(`
     assert.equal(process.env.SERVICE_BOOKING_SQUARE_ENABLED, "true");
     assert.equal(process.env.SQUARE_ACCESS_TOKEN, undefined);
 
-    const { handler, invoices, orders, paySessions } = runScenario();
+    const { handler, orders } = runScenario();
 
     const response = await handler(createRequest({
       customer: { name: "Nataliea Lash", email: "client@example.com" },
@@ -271,13 +405,12 @@ test("checkout route creates Helcim checkout without Square secrets", () => {
       items: [{ productId: "product-lash-cleanser", quantity: 1 }],
     }));
 
-    assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { checkoutToken: "checkout-token-4242" });
-    assert.equal(invoices.length, 1);
-    assert.equal(paySessions.length, 1);
+    assert.equal(response.status, 202);
+    assert.deepEqual(await response.json(), {
+      operationId: "22222222-2222-4222-8222-222222222222",
+      status: "queued",
+    });
     assert.equal(orders.length, 1);
-    assert.equal(orders[0].helcimInvoiceId, 4242);
-    assert.equal(orders[0].helcimInvoiceNumber, "INV-4242");
   `);
 });
 
@@ -473,111 +606,10 @@ test("checkout route returns a server failure when checkout input loading fails"
   `);
 });
 
-test("checkout route returns a generic failure when downstream checkout setup fails", () => {
+test("checkout route returns a generic failure when durable order reservation fails", () => {
   runRouteScenario(`
-    const { handler, invoices, orders, paySessions } = runScenario({
-      initializeHelcimPay: async () => {
-        throw new Error("Helcim unavailable");
-      },
-    });
-
-    const response = await handler(createRequest({
-      customer: { name: "Nataliea Lash", email: "client@example.com" },
-      shippingAddress,
-      items: [{ productId: "product-lash-cleanser", quantity: 1 }],
-    }));
-    const body = await response.json();
-
-    assert.equal(response.status, 502);
-    assert.deepEqual(body, { error: "Unable to start checkout" });
-    assert.equal(invoices.length, 1);
-    assert.equal(paySessions.length, 1);
-    assert.equal(orders.length, 0);
-  `);
-});
-
-test("checkout route rejects malformed Helcim invoice success responses before payment initialization", () => {
-  runRouteScenario(`
-    const originalConsoleLog = console.log;
-    const consoleCalls = [];
-    console.log = (...args) => {
-      consoleCalls.push(args);
-    };
-
-    try {
-      const { handler, invoices, orders, paySessions } = runScenario({
-        createHelcimInvoice: async () => null,
-      });
-
-      const response = await handler(createRequest({
-        customer: { name: "Nataliea Lash", email: "client@example.com" },
-        shippingAddress,
-        items: [{ productId: "product-lash-cleanser", quantity: 1 }],
-      }));
-
-      assert.equal(response.status, 502);
-      assert.deepEqual(await response.json(), { error: "Unable to start checkout" });
-      assert.equal(invoices.length, 1);
-      assert.equal(paySessions.length, 0);
-      assert.equal(orders.length, 0);
-      const logEntry = JSON.parse(consoleCalls[0][0]);
-      assert.equal(logEntry.level, "error");
-      assert.equal(logEntry.message, "[checkout] Unable to initialize checkout");
-      assert.equal(logEntry.stage, "create_helcim_invoice");
-      assert.equal(logEntry.error, "Checkout provider response invalid");
-      assert.equal(logEntry.errorName, "CheckoutProviderResponseError");
-      assert.equal(logEntry.missingFields, "invoiceId,invoiceNumber");
-      assert.equal(logEntry.provider, "helcim");
-      assert.equal(logEntry.providerEndpoint, "invoice");
-    } finally {
-      console.log = originalConsoleLog;
-    }
-  `);
-});
-
-test("checkout route rejects malformed Helcim Pay success responses before persistence", () => {
-  runRouteScenario(`
-    const originalConsoleLog = console.log;
-    const consoleCalls = [];
-    console.log = (...args) => {
-      consoleCalls.push(args);
-    };
-
-    try {
-      const { handler, invoices, orders, paySessions } = runScenario({
-        initializeHelcimPay: async () => null,
-      });
-
-      const response = await handler(createRequest({
-        customer: { name: "Nataliea Lash", email: "client@example.com" },
-        shippingAddress,
-        items: [{ productId: "product-lash-cleanser", quantity: 1 }],
-      }));
-
-      assert.equal(response.status, 502);
-      assert.deepEqual(await response.json(), { error: "Unable to start checkout" });
-      assert.equal(invoices.length, 1);
-      assert.equal(paySessions.length, 1);
-      assert.equal(orders.length, 0);
-      const logEntry = JSON.parse(consoleCalls[0][0]);
-      assert.equal(logEntry.level, "error");
-      assert.equal(logEntry.message, "[checkout] Unable to initialize checkout");
-      assert.equal(logEntry.stage, "initialize_helcim_pay");
-      assert.equal(logEntry.error, "Checkout provider response invalid");
-      assert.equal(logEntry.errorName, "CheckoutProviderResponseError");
-      assert.equal(logEntry.missingFields, "checkoutToken,secretToken");
-      assert.equal(logEntry.provider, "helcim");
-      assert.equal(logEntry.providerEndpoint, "helcim_pay");
-    } finally {
-      console.log = originalConsoleLog;
-    }
-  `);
-});
-
-test("checkout route returns a generic failure when pending order persistence fails", () => {
-  runRouteScenario(`
-    const { handler, invoices, orders, paySessions } = runScenario({
-      createPendingOrder: async () => {
+    const { handler, orders } = runScenario({
+      createInitializingOrder: async () => {
         throw new Error("Database unavailable");
       },
     });
@@ -591,8 +623,70 @@ test("checkout route returns a generic failure when pending order persistence fa
 
     assert.equal(response.status, 500);
     assert.deepEqual(body, { error: "Unable to start checkout" });
-    assert.equal(invoices.length, 1);
-    assert.equal(paySessions.length, 1);
+    assert.equal(orders.length, 1);
+  `);
+});
+
+test("checkout route rejects reservations without a durable payment operation", () => {
+  runRouteScenario(`
+    const originalConsoleLog = console.log;
+    const consoleCalls = [];
+    console.log = (...args) => {
+      consoleCalls.push(args);
+    };
+
+    try {
+      const { handler, initializationFailures, orders } = runScenario({
+        createInitializingOrder: async () => ({
+          orderId: "lh-product-order",
+          shippingAmountCents: 1299,
+          totalAmountCents: 3699,
+          shippingRateTitle: "Tracked shipping",
+        }),
+      });
+
+      const response = await handler(createRequest({
+        customer: { name: "Nataliea Lash", email: "client@example.com" },
+        shippingAddress,
+        items: [{ productId: "product-lash-cleanser", quantity: 1 }],
+      }));
+
+      assert.equal(response.status, 500);
+      assert.deepEqual(await response.json(), { error: "Unable to start checkout" });
+      assert.equal(orders.length, 1);
+      assert.deepEqual(initializationFailures, [{
+        orderId: "lh-product-order",
+        error: "Durable payment operation was not reserved",
+      }]);
+      const logEntry = JSON.parse(consoleCalls[0][0]);
+      assert.equal(logEntry.level, "error");
+      assert.equal(logEntry.message, "[checkout] Unable to initialize checkout");
+      assert.equal(logEntry.stage, "reserve_order");
+      assert.equal(logEntry.error, "Checkout initialization failed");
+      assert.equal(logEntry.errorName, "Error");
+    } finally {
+      console.log = originalConsoleLog;
+    }
+  `);
+});
+
+test("checkout route reports database failures from durable order reservation", () => {
+  runRouteScenario(`
+    const { handler, orders } = runScenario({
+      createInitializingOrder: async () => {
+        throw new Error("Database unavailable");
+      },
+    });
+
+    const response = await handler(createRequest({
+      customer: { name: "Nataliea Lash", email: "client@example.com" },
+      shippingAddress,
+      items: [{ productId: "product-lash-cleanser", quantity: 1 }],
+    }));
+    const body = await response.json();
+
+    assert.equal(response.status, 500);
+    assert.deepEqual(body, { error: "Unable to start checkout" });
     assert.equal(orders.length, 1);
   `);
 });
@@ -621,7 +715,7 @@ test("checkout route logs database causes without leaking query params", () => {
       );
 
       const { handler } = runScenario({
-        createPendingOrder: async () => {
+        createInitializingOrder: async () => {
           throw databaseError;
         },
       });
@@ -638,7 +732,7 @@ test("checkout route logs database causes without leaking query params", () => {
       const logEntry = JSON.parse(consoleCalls[0][0]);
       assert.equal(logEntry.level, "error");
       assert.equal(logEntry.message, "[checkout] Unable to initialize checkout");
-      assert.equal(logEntry.stage, "persist_order");
+      assert.equal(logEntry.stage, "reserve_order");
       assert.equal(logEntry.error, "Database query failed");
       assert.equal(logEntry.errorName, "DrizzleQueryError");
       assert.deepEqual(logEntry.cause, {
@@ -682,7 +776,7 @@ test("checkout route logs undefined checkout order columns without raw database 
       );
 
       const { handler } = runScenario({
-        createPendingOrder: async () => {
+        createInitializingOrder: async () => {
           throw databaseError;
         },
       });
@@ -699,7 +793,7 @@ test("checkout route logs undefined checkout order columns without raw database 
       const logEntry = JSON.parse(consoleCalls[0][0]);
       assert.equal(logEntry.level, "error");
       assert.equal(logEntry.message, "[checkout] Unable to initialize checkout");
-      assert.equal(logEntry.stage, "persist_order");
+      assert.equal(logEntry.stage, "reserve_order");
       assert.equal(logEntry.error, "Database query failed");
       assert.equal(logEntry.errorName, "DrizzleQueryError");
       assert.deepEqual(logEntry.cause, {
@@ -730,7 +824,7 @@ test("checkout route logs generic failure messages without leaking sensitive val
 
     try {
       const { handler } = runScenario({
-        initializeHelcimPay: async () => {
+        createInitializingOrder: async () => {
           throw new Error("Helcim unavailable for dardemiri@gmail.com with secret-token-4242");
         },
       });
@@ -741,13 +835,13 @@ test("checkout route logs generic failure messages without leaking sensitive val
         items: [{ productId: "product-lash-cleanser", quantity: 1 }],
       }));
 
-      assert.equal(response.status, 502);
+      assert.equal(response.status, 500);
       assert.deepEqual(await response.json(), { error: "Unable to start checkout" });
       assert.equal(consoleCalls.length, 1);
       const logEntry = JSON.parse(consoleCalls[0][0]);
       assert.equal(logEntry.level, "error");
       assert.equal(logEntry.message, "[checkout] Unable to initialize checkout");
-      assert.equal(logEntry.stage, "initialize_helcim_pay");
+      assert.equal(logEntry.stage, "reserve_order");
       assert.equal(logEntry.error, "Checkout initialization failed");
       assert.equal(logEntry.errorName, "Error");
 
@@ -791,9 +885,21 @@ function runRouteScenario(assertions: string): void {
   delete env.SQUARE_SERVICE_BOOKING_RETURN_URL;
   delete env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL;
 
-  execFileSync("./node_modules/.bin/tsx", ["--eval", scenario], {
-    cwd: process.cwd(),
-    env,
-    stdio: "pipe",
-  });
+  execFileSync(
+    process.execPath,
+    [
+      "--import",
+      "./scripts/register-server-only-test.mjs",
+      "--import",
+      "tsx",
+      "--input-type=module",
+      "--eval",
+      scenario,
+    ],
+    {
+      cwd: process.cwd(),
+      env,
+      stdio: "pipe",
+    },
+  );
 }

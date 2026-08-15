@@ -55,10 +55,6 @@ test("Google Calendar browser fixture refuses production activation", () => {
 test.describe("employee calendar self-service", () => {
   test.describe.configure({ mode: "serial" });
   test.skip(
-    ({ browserName }) => browserName !== "chromium",
-    "The stateful database workflow runs once in Chromium.",
-  );
-  test.skip(
     !hasTestDatabase,
     "Requires a migrated, isolated TEST_DATABASE_URL.",
   );

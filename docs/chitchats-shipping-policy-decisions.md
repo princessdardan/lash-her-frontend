@@ -6,7 +6,7 @@ Applies to: Lash Her product orders fulfilled through Chit Chats
 
 The decision selections were recorded on 2026-08-13. The effective owner-operated approval model and conflicting-rule amendments are defined in [Product fulfillment policy P-01–P-11 — owner-operated amendment](./chitchats-shipping-policy-2026-08-14.md). That amendment takes precedence. Production checkout remains disabled until its separate readiness gates and staging evidence are complete.
 
-Customer remedies in this document are minimum Lash Her commitments. They do not limit rights available under applicable consumer-protection law or card-network rules. Legal/privacy review is required before publication.
+Customer remedies in this document are minimum Lash Her commitments. They do not limit rights available under applicable consumer-protection law or card-network rules. Nataliea must record the required Privacy/Legal owner self-attestation before publication; it is not an independent review.
 
 ## Selection record
 
@@ -26,7 +26,7 @@ Customer remedies in this document are minimum Lash Her commitments. They do not
 
 ## Definitions
 
-- **Business day:** Monday through Friday, 09:00–17:00 America/Toronto, excluding Ontario statutory holidays and a day on which the configured Chit Chats branch has announced a closure.
+- **Business day:** Monday through Friday, 09:00–17:00 America/Toronto, excluding Ontario statutory holidays and a day on which the owner-attested physical Chit Chats intake location has announced a closure. The persisted `branch_closure` calendar term covers a branch, drop spot, or mail-in hub and does not imply a provider branch ID.
 - **Paid and cleared:** Helcim payment is reconciled, the address and required product shipping data are valid, and no payment-fraud hold is active.
 - **Carrier handoff:** the first physical Chit Chats acceptance scan or receipt. Buying or printing a label is not carrier handoff.
 - **Full refund:** merchandise, merchandise tax, and outbound shipping charged for the affected shipment, returned to the original payment method.
@@ -40,7 +40,7 @@ Selected decision (Option A):
 - Orders paid and cleared by 14:00 ET on a business day must receive carrier handoff by 17:00 ET on the next business day.
 - Orders paid after 14:00 ET are deemed received at 09:00 ET on the next business day and must receive carrier handoff by 17:00 ET on the following business day.
 - Weekend and holiday payments are deemed received at 09:00 ET on the next business day.
-- An announced Chit Chats branch closure pauses the handoff clock for that closure day. Staff must use another configured branch when practical; otherwise the customer-notification rule in P-08 applies.
+- An announced closure of the owner-attested physical intake location pauses the handoff clock for that closure day. Staff must use another verified and newly attested intake location when practical; otherwise the customer-notification rule in P-08 applies.
 - The public handling promise is **one to two business days after payment clears**. Transit time begins only after carrier handoff.
 - A label-created or postage-requested state must never be represented to a customer as shipped.
 
@@ -136,8 +136,8 @@ Selected decision (Option A):
 - Authenticate a change through a single-use signed link sent to the original order email. Until that control exists, accept only a reply from the original order email that includes the order number and original destination postal code; a staff member must call back using the order phone number for high-risk changes.
 - Do not accept address changes solely through social media, SMS, a new email address, or an inbound phone call.
 - Mandatory fraud review applies to a country or province change, order at-risk value of CAD 150 or more, freight forwarder/reshipper destination, email mismatch, repeated change, or a change after postage purchase.
-- A high-risk change requires approval by two staff members, one of whom is the Operations Lead or Business Owner.
-- Lash Her absorbs added cost caused by its own error. The customer is responsible for added cost caused by a customer-requested change, but payment must use a secure approved flow. Until supplemental charges are implemented, void and fully refund the order and require a new checkout instead of collecting card details manually.
+- A high-risk change requires Nataliea's action-and-target-bound step-up authentication, original-order-phone callback, authoritative provider evidence, structured rationale, a 15-minute cooling-off period, and separate immutable owner address-approval and fraud-clearance actions. Missing authoritative evidence blocks clearance.
+- Lash Her absorbs added cost caused by its own error. A customer-caused increase uses a separately priced, expiring `address_increase` Helcim obligation. The original fulfillment remains held while the request is open; expired offers may be superseded and repriced. After the supplemental payment clears, Lash Her absorbs later purchase increases and refunds an eligible decrease once through the typed adjustment ledger.
 - Once a label exists, staff must void/reconcile it before buying replacement postage. Never overwrite the audit history.
 
 Implementation must follow the [signed address-change implementation plan](./chitchats-address-change-implementation-plan.md). The signed-link workflow is a production launch blocker; the email-reply procedure is an interim staging/manual fallback only.
@@ -186,8 +186,9 @@ Selected decision (Option D):
 - Abandoned quote PII remains on the shorter 30-day schedule.
 - Logs, exports, email-system metadata, support attachments, and downloaded labels must use deletion schedules that cannot exceed the same absolute day-395 limit. Signed label URLs are never persisted.
 - Non-PII accounting and audit facts may be retained under the applicable financial-record schedule: internal IDs, timestamps, amounts, currency, status, provider identifiers, tracking status, and redaction evidence. Free text and raw provider payloads must be scrubbed because they can contain PII.
-- Open or non-terminal status does not extend the deadline. There is no automatic legal-hold exception. Any legally required exception must be approved as a separate policy change by the Business Owner and legal/privacy reviewer before day 365.
+- Open or non-terminal status does not extend the deadline. There is no automatic legal-hold exception. Any legally required exception must be proposed and approved by Nataliea as a new policy version, with the Privacy/Legal owner self-attestation recorded before day 365; this is not an independent review and cannot extend the existing record's cap.
 - The retention job records redaction counts and alerts on any overdue record. A daily query must prove that no unredacted record is beyond day 365.
+- Amendment `P-01-P-11-owner-only-p10-precap-2026-08-15` schedules owner/customer notice at day 350 and begins default refund/cancellation execution at day 360. This five-day buffer exists because the certified Helcim refund request needs the original checkout IP, which must be redacted unconditionally at day 365. It is an internal reconciliation buffer, not a provider SLA. Activation and customer notice are required because execution before day 365 shortens the prior default-action window; the hard cap itself is unchanged.
 
 The implementation now applies the 180-day terminal schedule and 365-day live cap. Production approval still requires evidence that database backups expire within 30 days and that downstream logs, exports, Resend history, downloaded labels, and support artifacts cannot exceed day 395.
 
@@ -217,7 +218,7 @@ Selection state: selected; owner approval pending
 | Substitute equivalence test, consent record, and shipping-difference refund | Implemented with fail-closed delivery parsing and signed decisions; Helcim certification pending      | Blocker until verified                                |
 | Customer replacement/refund workflow separate from postage refund           | Implemented with an independent Helcim refund ledger and shipment generations                         | Blocker until Helcim certification                    |
 | Claim case, deadline, evidence, and remedy audit                            | Implemented as a local durable queue; Chit Chats claim filing remains manual by API limitation        | Blocker until service policies are configured         |
-| Authenticated address-change workflow and fraud approvals                   | Implemented with signed links, provider reconciliation, and two-person high-risk review               | Blocker until security acceptance                     |
+| Authenticated address-change workflow and fraud approvals                   | Implemented with signed links, provider reconciliation, and enhanced owner-only high-risk controls    | Blocker until owner Security self-attestation         |
 | Credit balance/reload alerts and exposure controls                          | Recording and authority controls implemented; dashboard/card controls remain external evidence        | Blocker until external setup is recorded              |
 | Absolute created-date PII redaction and overdue alert                       | Implemented at 180-day terminal / 365-day live limits                                                 | Blocker until backup and downstream deletion evidence |
 | High-value/high-risk hold and conditional signature workflow                | Implemented at CAD 500 with service capability and insurance filtering                                | Blocker until eligible services are reviewed          |
@@ -236,14 +237,6 @@ Verified against Chit Chats material on 2026-08-13:
 
 Carrier terms can change. Operations must re-verify claim deadlines, insurance limits, eligible services, refund windows, return fees, and signature availability quarterly and record the review date.
 
-## Approval record
+## Archived approval model
 
-| Role                   | Name | Decision | Date | Notes/deviations |
-| ---------------------- | ---- | -------- | ---- | ---------------- |
-| Business Owner         |      | Pending  |      |                  |
-| Operations Lead        |      | Pending  |      |                  |
-| Finance Owner          |      | Pending  |      |                  |
-| Payment/Fraud Owner    |      | Pending  |      |                  |
-| Privacy/legal reviewer |      | Pending  |      |                  |
-
-This legacy approval table is superseded. Nataliea Lavoie holds all listed duties; owner self-attestations are not independent reviews. See policy version `P-01-P-11-owner-only-2026-08-14` for the effective approval control and remaining launch gates.
+The former distinct-role approval table is non-operative and intentionally omitted. Nataliea Lavoie permanently holds the Business Owner, Operations, Finance, Payment/Fraud, Privacy/Legal, and Security duties. The effective record must store her owner approval plus distinct Privacy/Legal and Security self-attestations. None may be described as independent review. See policy version `P-01-P-11-owner-only-2026-08-14` for the effective control and remaining launch gates.

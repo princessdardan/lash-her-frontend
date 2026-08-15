@@ -4,7 +4,7 @@ import test from "node:test";
 const helperScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { buildProductOrderConfirmationHtml } from "./src/lib/commerce/product-order-email.ts";
+  import { buildProductOrderConfirmationHtml, getProductOrderTemplateVariables } from "./src/lib/commerce/product-order-email.ts";
 `;
 
 test("product order confirmation email includes escaped order details", () => {
@@ -66,6 +66,44 @@ test("product order confirmation email includes escaped order details", () => {
   `);
 });
 
+test("configured product templates distinguish held, cleared, and manual orders", () => {
+  runProductOrderEmailScenario(`
+    const base = {
+      currency: "CAD",
+      customerEmail: "client@example.com",
+      customerName: "Client",
+      lineItems: [],
+      orderId: "lh-order-123",
+      shippingAddress: null,
+      totalAmount: 20,
+    };
+    const held = getProductOrderTemplateVariables({
+      ...base,
+      paymentRiskStatus: "review_required",
+      fulfillmentMode: "automated_shipping",
+    });
+    const cleared = getProductOrderTemplateVariables({
+      ...base,
+      paymentRiskStatus: "cleared",
+      fulfillmentMode: "automated_shipping",
+    });
+    const manual = getProductOrderTemplateVariables({
+      ...base,
+      paymentRiskStatus: "cleared",
+      fulfillmentMode: "manual_pickup",
+    });
+    const notRequired = getProductOrderTemplateVariables({
+      ...base,
+      paymentRiskStatus: "not_required",
+      fulfillmentMode: "manual_pickup",
+    });
+    assert.notEqual(held.EMAIL_SUBJECT, cleared.EMAIL_SUBJECT);
+    assert.notEqual(manual.EMAIL_SUBJECT, cleared.EMAIL_SUBJECT);
+    assert.match(String(manual.EMAIL_SUBJECT), /pickup arrangement pending/i);
+    assert.equal(notRequired.EMAIL_SUBJECT, manual.EMAIL_SUBJECT);
+  `);
+});
+
 function runProductOrderEmailScenario(assertions: string): void {
   const scenario = `${helperScript}\nvoid (async () => {\n${assertions}\n})()`;
   const env = { ...process.env };
@@ -74,8 +112,15 @@ function runProductOrderEmailScenario(assertions: string): void {
   env.NEXT_PUBLIC_SANITY_PROJECT_ID = "test-project";
 
   execFileSync(
-    "./node_modules/.bin/tsx",
-    ["--conditions=react-server", "--eval", scenario],
+    process.execPath,
+    [
+      "--conditions=react-server",
+      "--import",
+      "tsx",
+      "--input-type=module",
+      "--eval",
+      scenario,
+    ],
     {
       cwd: process.cwd(),
       env,

@@ -11,6 +11,7 @@ import {
   type ValidatedCart,
   type CartInputItem,
 } from "@/lib/commerce/cart";
+import { toCheckoutCatalogProduct } from "@/lib/commerce/product-catalog";
 import {
   CHECKOUT_CUSTOMER_NAME_MAX_LENGTH,
   CHECKOUT_EMAIL_MAX_LENGTH,
@@ -24,10 +25,13 @@ import {
 import type { TProduct } from "@/types";
 import { HelcimPayButton } from "@/components/commerce/helcim-pay-button";
 import { useProductCart } from "@/components/commerce/product-cart-provider";
+import type { UsImportTerms } from "@/lib/commerce/product-checkout-disclosures";
+import type { ManualProductCheckoutPolicy } from "@/lib/commerce/product-manual-checkout-config";
 
 interface CheckoutPageClientProps {
   products: TProduct[];
   shippingEnabled: boolean;
+  manualCheckoutPolicy: ManualProductCheckoutPolicy;
 }
 
 interface ShippingRate {
@@ -45,15 +49,21 @@ interface ShippingRate {
 }
 
 interface ShippingQuote {
+  operationId: string;
+  status: string;
   quoteToken: string;
   fingerprint: string;
   expiresAt: string;
   rates: ShippingRate[];
+  usImportTerms?: UsImportTerms;
+  usImportDisclosureVersion?: string;
+  usImportDisclosureText?: string;
 }
 
 function CheckoutContent({
   products,
   shippingEnabled,
+  manualCheckoutPolicy,
 }: CheckoutPageClientProps) {
   const searchParams = useSearchParams();
   const { items: cartItems, clearCart } = useProductCart();
@@ -101,6 +111,9 @@ function CheckoutContent({
     null,
   );
   const [isApplyingPromotionCode, setIsApplyingPromotionCode] = useState(false);
+  const manualFulfillmentMode = "manual_pickup" as const;
+  const [acceptedCancellationPolicy, setAcceptedCancellationPolicy] =
+    useState(false);
 
   // Build checkout items: either buy-now single item or full cart
   const checkoutItems = useMemo<CartInputItem[]>(() => {
@@ -131,23 +144,7 @@ function CheckoutContent({
     }
 
     try {
-      const catalogProducts = products.map((p) => ({
-        id: p._id,
-        sku: p.sku,
-        title: p.title,
-        price: p.price,
-        discountPrice: p.discountPrice,
-        currency: p.currency,
-        isAvailable: p.isAvailable,
-        variants: p.variants?.map((variant) => ({
-          id: variant._key,
-          sku: variant.sku,
-          title: variant.title,
-          price: variant.price,
-          discountPrice: variant.discountPrice,
-          isAvailable: variant.isAvailable,
-        })),
-      }));
+      const catalogProducts = products.map(toCheckoutCatalogProduct);
       return {
         cart: buildValidatedCart(checkoutItems, catalogProducts),
         error: null,
@@ -171,6 +168,12 @@ function CheckoutContent({
     ? redeemedPromotionCode
     : undefined;
   const displayedCart = hasPromotionPreview ? promotionPreviewCart : cart.cart;
+  const isManualCheckout = displayedCart?.checkoutMode === "manual";
+  const fulfillmentMode = isManualCheckout
+    ? manualFulfillmentMode
+    : "automated_shipping";
+  const requiresShippingAddress = fulfillmentMode !== "manual_pickup";
+  const requiresLiveShippingQuote = fulfillmentMode === "automated_shipping";
   const normalizedCustomerName = normalizeCheckoutText(customerName);
   const normalizedCustomerEmail = customerEmail.trim().toLowerCase();
   const normalizedShippingLine2 = normalizeCheckoutText(shippingLine2);
@@ -208,6 +211,8 @@ function CheckoutContent({
     ) &&
     isValidCheckoutText(shippingCountry, CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH),
   );
+  const requiresUsImportDisclosure =
+    requiresLiveShippingQuote && shippingCountry === "US";
   const hasValidCustomerDetails = Boolean(
     isValidCheckoutText(customerName, CHECKOUT_CUSTOMER_NAME_MAX_LENGTH) &&
     isValidCheckoutEmail(normalizedCustomerEmail),
@@ -240,6 +245,12 @@ function CheckoutContent({
     activeShippingQuote?.rates.find(
       (rate) => rate.id === selectedShippingRateId,
     ) ?? null;
+  const hasValidShippingDisclosure =
+    !requiresUsImportDisclosure ||
+    (requiresLiveShippingQuote &&
+      activeShippingQuote?.usImportTerms === "DDU" &&
+      Boolean(activeShippingQuote.usImportDisclosureVersion?.trim()) &&
+      Boolean(activeShippingQuote.usImportDisclosureText?.trim()));
   const shippingAmount = selectedShippingRate
     ? selectedShippingRate.amountCents / 100
     : 0;
@@ -308,6 +319,7 @@ function CheckoutContent({
 
   const handleLoadShippingRates = async () => {
     if (
+      !requiresLiveShippingQuote ||
       !displayedCart ||
       !hasValidCustomerDetails ||
       !hasValidShippingAddress ||
@@ -333,9 +345,21 @@ function CheckoutContent({
           shippingAddress,
         }),
       });
-      const data = (await response.json()) as Partial<ShippingQuote> & {
+      let data = (await response.json()) as Partial<ShippingQuote> & {
         error?: string;
       };
+      if (
+        response.status === 202 &&
+        data.operationId &&
+        data.quoteToken &&
+        data.expiresAt
+      ) {
+        data = await waitForShippingQuote({
+          operationId: data.operationId,
+          quoteToken: data.quoteToken,
+          expiresAt: data.expiresAt,
+        });
+      }
       if (
         !response.ok ||
         !data.quoteToken ||
@@ -617,7 +641,9 @@ function CheckoutContent({
                       ) : null}
                       <span>
                         {formatCad(
-                          shippingEnabled ? checkoutTotal : cartAmount,
+                          requiresLiveShippingQuote
+                            ? checkoutTotal
+                            : cartAmount,
                         )}
                       </span>
                     </span>
@@ -680,15 +706,29 @@ function CheckoutContent({
 
                 <div className="rounded-[24px] border border-lh-line bg-lh-neutral-2/60 p-5 md:p-6">
                   <div className="mb-5">
-                    <p className="eyebrow-label mb-2">Shipping</p>
+                    <p className="eyebrow-label mb-2">
+                      {isManualCheckout ? "Fulfillment" : "Shipping"}
+                    </p>
                     <h2 className="font-heading text-2xl font-normal text-lh-shadow">
-                      Where should we send it?
+                      {fulfillmentMode === "manual_pickup"
+                        ? "Arrange pickup"
+                        : "Where should we send it?"}
                     </h2>
                     <p className="mt-2 font-body text-sm font-bold leading-6 text-lh-muted">
-                      Physical products require a delivery address before secure
-                      payment opens.
+                      {fulfillmentMode === "manual_pickup"
+                        ? "Pickup details are confirmed after payment. No delivery address or shipping charge is collected now."
+                        : "Physical products require a delivery address before secure payment opens."}
                     </p>
                   </div>
+
+                  {isManualCheckout ? (
+                    <div className="mb-5 rounded-[18px] border border-lh-line bg-white p-4 text-sm text-lh-shadow">
+                      Free studio pickup is the initial fulfillment method.
+                      Optional shipping can be agreed and paid separately after
+                      the order is confirmed; pickup remains available until
+                      that supplemental payment succeeds.
+                    </div>
+                  ) : null}
 
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div className="sm:col-span-2">
@@ -706,6 +746,7 @@ function CheckoutContent({
                         maxLength={CHECKOUT_SHIPPING_LINE_MAX_LENGTH}
                         autoComplete="shipping address-line1"
                         placeholder="Street address"
+                        disabled={!requiresShippingAddress}
                       />
                     </div>
                     <div className="sm:col-span-2">
@@ -724,6 +765,7 @@ function CheckoutContent({
                         maxLength={CHECKOUT_SHIPPING_LINE_MAX_LENGTH}
                         autoComplete="shipping address-line2"
                         placeholder="Unit or buzzer"
+                        disabled={!requiresShippingAddress}
                       />
                     </div>
                     <div>
@@ -741,6 +783,7 @@ function CheckoutContent({
                         maxLength={CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH}
                         autoComplete="shipping address-level2"
                         placeholder="Toronto"
+                        disabled={!requiresShippingAddress}
                       />
                     </div>
                     <div>
@@ -758,6 +801,7 @@ function CheckoutContent({
                         maxLength={CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH}
                         autoComplete="shipping address-level1"
                         placeholder="ON"
+                        disabled={!requiresShippingAddress}
                       />
                     </div>
                     <div>
@@ -775,6 +819,7 @@ function CheckoutContent({
                         maxLength={CHECKOUT_SHIPPING_POSTAL_CODE_MAX_LENGTH}
                         autoComplete="shipping postal-code"
                         placeholder="M6E 2Y4"
+                        disabled={!requiresShippingAddress}
                       />
                     </div>
                     <div>
@@ -790,6 +835,7 @@ function CheckoutContent({
                         onChange={(e) => setShippingCountry(e.target.value)}
                         autoComplete="shipping country-name"
                         className="h-11 w-full rounded-md border border-lh-line bg-white px-3 text-sm text-lh-shadow"
+                        disabled={!requiresShippingAddress}
                       >
                         <option value="CA">Canada</option>
                         <option value="US">United States</option>
@@ -797,7 +843,22 @@ function CheckoutContent({
                     </div>
                   </div>
 
-                  {shippingEnabled ? (
+                  {requiresUsImportDisclosure &&
+                  activeShippingQuote?.usImportDisclosureVersion &&
+                  activeShippingQuote.usImportDisclosureText &&
+                  activeShippingQuote.usImportTerms ? (
+                    <div
+                      className="mt-5 rounded-[18px] border border-lh-accent/30 bg-lh-accent-soft p-4 text-sm font-bold leading-6 text-lh-shadow"
+                      data-disclosure-version={
+                        activeShippingQuote.usImportDisclosureVersion
+                      }
+                      data-import-terms={activeShippingQuote.usImportTerms}
+                    >
+                      {activeShippingQuote.usImportDisclosureText}
+                    </div>
+                  ) : null}
+
+                  {requiresLiveShippingQuote && shippingEnabled ? (
                     <div className="sm:col-span-2 border-t border-lh-line pt-5">
                       <Button
                         type="button"
@@ -875,14 +936,46 @@ function CheckoutContent({
                   ) : null}
                 </div>
 
+                {isManualCheckout ? (
+                  manualCheckoutPolicy.enabled &&
+                  manualCheckoutPolicy.cancellationPolicyText &&
+                  manualCheckoutPolicy.cancellationPolicyVersion ? (
+                    <label className="flex items-start gap-3 rounded-[18px] border border-lh-line bg-lh-white p-4 text-sm font-bold leading-6 text-lh-shadow">
+                      <input
+                        type="checkbox"
+                        className="mt-1"
+                        checked={acceptedCancellationPolicy}
+                        onChange={(event) =>
+                          setAcceptedCancellationPolicy(event.target.checked)
+                        }
+                      />
+                      <span>{manualCheckoutPolicy.cancellationPolicyText}</span>
+                    </label>
+                  ) : (
+                    <p
+                      className="rounded-[18px] border border-lh-accent/30 bg-lh-accent-soft p-4 text-sm font-bold leading-6 text-lh-accent"
+                      role="alert"
+                    >
+                      Manual checkout is unavailable until the current pickup
+                      and cancellation policy is approved.
+                    </p>
+                  )
+                ) : null}
+
                 <div className="mt-2">
                   <HelcimPayButton
                     disabled={
                       !displayedCart ||
                       !hasValidCustomerDetails ||
-                      !hasValidShippingAddress ||
-                      (shippingEnabled &&
-                        (!activeShippingQuote || !selectedShippingRateId))
+                      (requiresShippingAddress && !hasValidShippingAddress) ||
+                      (requiresLiveShippingQuote &&
+                        (!shippingEnabled ||
+                          !activeShippingQuote ||
+                          !selectedShippingRateId)) ||
+                      !hasValidShippingDisclosure ||
+                      (isManualCheckout &&
+                        (!manualCheckoutPolicy.enabled ||
+                          !acceptedCancellationPolicy))
                     }
                     items={checkoutItems}
                     customer={{
@@ -890,8 +983,38 @@ function CheckoutContent({
                       email: normalizedCustomerEmail,
                       phone: normalizeCheckoutText(customerPhone),
                     }}
-                    shippingAddress={shippingAddress}
+                    shippingAddress={
+                      requiresShippingAddress ? shippingAddress : undefined
+                    }
+                    fulfillmentMode={fulfillmentMode}
+                    disclosures={{
+                      ...(isManualCheckout &&
+                      manualCheckoutPolicy.cancellationPolicyVersion &&
+                      manualCheckoutPolicy.cancellationPolicyTextHash &&
+                      acceptedCancellationPolicy
+                        ? {
+                            cancellationPolicyAccepted: true,
+                            cancellationPolicyVersion:
+                              manualCheckoutPolicy.cancellationPolicyVersion,
+                            cancellationPolicyTextHash:
+                              manualCheckoutPolicy.cancellationPolicyTextHash,
+                          }
+                        : {}),
+                      ...(requiresUsImportDisclosure &&
+                      activeShippingQuote?.usImportTerms &&
+                      activeShippingQuote.usImportDisclosureVersion &&
+                      activeShippingQuote.usImportDisclosureText
+                        ? {
+                            usImportTerms: activeShippingQuote.usImportTerms,
+                            usImportDisclosureVersion:
+                              activeShippingQuote.usImportDisclosureVersion,
+                            usImportDisclosureText:
+                              activeShippingQuote.usImportDisclosureText,
+                          }
+                        : {}),
+                    }}
                     shippingQuote={
+                      requiresLiveShippingQuote &&
                       shippingEnabled &&
                       activeShippingQuote &&
                       selectedShippingRateId
@@ -922,9 +1045,41 @@ function CheckoutContent({
   );
 }
 
+async function waitForShippingQuote(input: {
+  operationId: string;
+  quoteToken: string;
+  expiresAt: string;
+}): Promise<Partial<ShippingQuote> & { error?: string }> {
+  const expiresAt = new Date(input.expiresAt).getTime();
+  if (!Number.isFinite(expiresAt))
+    return { error: "Shipping quote is invalid" };
+  while (Date.now() < expiresAt) {
+    await new Promise((resolve) => window.setTimeout(resolve, 2_000));
+    const params = new URLSearchParams({
+      operationId: input.operationId,
+      quoteToken: input.quoteToken,
+    });
+    const response = await fetch(`/api/shipping/quotes?${params.toString()}`, {
+      cache: "no-store",
+    });
+    const data = (await response.json()) as Partial<ShippingQuote> & {
+      error?: string;
+    };
+    if (response.status === 202) continue;
+    if (!response.ok)
+      return {
+        error:
+          data.error ?? "Shipping rates are unavailable. Please try again.",
+      };
+    return data;
+  }
+  return { error: "Shipping quote expired before rates were ready" };
+}
+
 export default function CheckoutPageClient({
   products,
   shippingEnabled,
+  manualCheckoutPolicy,
 }: CheckoutPageClientProps) {
   return (
     <Suspense
@@ -936,7 +1091,11 @@ export default function CheckoutPageClient({
         </section>
       }
     >
-      <CheckoutContent products={products} shippingEnabled={shippingEnabled} />
+      <CheckoutContent
+        products={products}
+        shippingEnabled={shippingEnabled}
+        manualCheckoutPolicy={manualCheckoutPolicy}
+      />
     </Suspense>
   );
 }

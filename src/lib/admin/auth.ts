@@ -1,6 +1,6 @@
 import "server-only";
 
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { after } from "next/server";
 
 import { getAdminOwnerEmails } from "@/lib/env/admin";
@@ -18,6 +18,10 @@ import {
 import { getAdminDeveloperActor } from "./developer-mode";
 import type { AdminPermissionAction } from "./permissions";
 import type { AdminActor, AdminIdentity } from "./types";
+import {
+  ADMIN_STEP_UP_PROOF_COOKIE,
+  consumeAdminStepUpProof,
+} from "./step-up-proof";
 
 export {
   assertAdminPermission,
@@ -62,7 +66,7 @@ export async function requirePermission(
   });
 }
 
-export async function requireRecentAdminAuthentication(
+export async function requireFreshAdminGoogleAuthentication(
   maxAgeMs = 5 * 60_000,
 ): Promise<Date> {
   const { auth } = await import("@/auth");
@@ -76,6 +80,31 @@ export async function requireRecentAdminAuthentication(
     throw new Error("Step-up authentication has expired");
   }
   return authenticatedAtDate;
+}
+
+export async function requireRecentAdminAuthentication(input: {
+  action: string;
+  maxAgeMs?: number;
+  target: string;
+}): Promise<Date> {
+  const authenticatedAt = await requireFreshAdminGoogleAuthentication(
+    input.maxAgeMs,
+  );
+  const actor = await requireAdminActor();
+  const cookieStore = await cookies();
+  const token = cookieStore.get(ADMIN_STEP_UP_PROOF_COOKIE)?.value;
+  if (!token) throw new Error("Step-up proof is required for this action");
+  try {
+    return await consumeAdminStepUpProof({
+      action: input.action,
+      actorAdminUserId: actor.user.id,
+      authenticatedAt,
+      target: input.target,
+      token,
+    });
+  } finally {
+    cookieStore.delete(ADMIN_STEP_UP_PROOF_COOKIE);
+  }
 }
 
 async function getRequestActor(): Promise<AdminActor> {

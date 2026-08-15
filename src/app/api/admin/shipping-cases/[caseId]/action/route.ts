@@ -3,34 +3,44 @@ import { requirePermission } from "@/lib/admin/auth";
 import { recordAdminAuditBestEffort } from "@/lib/admin/audit-log";
 import {
   attestReplacementInventory,
+  adoptReplacementShipment,
   createShipmentGeneration,
+  queueInventoryUnavailableRefund,
   updateProductShippingCase,
 } from "@/lib/shipping/cases";
-import { eq } from "drizzle-orm";
-import { getPrivateDb } from "@/lib/private-db/client";
-import { checkoutOrders, productShippingCases } from "@/lib/private-db/schema";
-import {
-  processProductOrderRefund,
-  queueProductOrderRefund,
-} from "@/lib/shipping/customer-refunds";
+import { assertShippingPolicyMutationAllowed } from "@/lib/shipping/policy";
+import { assertConfiguredFulfillmentOwner } from "@/lib/shipping/configured-owner";
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ caseId: string }> },
 ): Promise<Response> {
   const actor = await requirePermission("fulfillment:manage");
+  await assertConfiguredFulfillmentOwner(actor.user.id);
   if (req.headers.get("origin") !== req.nextUrl.origin)
     return NextResponse.json(
       { error: "Invalid request origin" },
       { status: 403 },
     );
+  try {
+    assertShippingPolicyMutationAllowed();
+  } catch {
+    return NextResponse.json(
+      { error: "Shipping policy mutations require enforce mode" },
+      { status: 409 },
+    );
+  }
   const body = (await req.json().catch(() => null)) as Record<
     string,
     unknown
   > | null;
   const { caseId } = await params;
   try {
-    let result: { id: string };
+    let result: {
+      id: string;
+      stateVersion?: number;
+      refundOperationIds?: string[];
+    };
     if (body?.action === "attest_inventory") {
       const expiresAt = new Date(String(body.expiresAt ?? ""));
       result = await attestReplacementInventory({
@@ -43,36 +53,37 @@ export async function POST(
         actorAdminUserId: actor.user.id,
         expiresAt,
       });
+    } else if (body?.action === "adopt_replacement") {
+      const sourceVersion = Number(body.expectedSourceStateVersion);
+      const remedyVersion = Number(body.expectedRemedyStateVersion);
+      if (
+        !Number.isInteger(sourceVersion) ||
+        sourceVersion < 1 ||
+        !Number.isInteger(remedyVersion) ||
+        remedyVersion < 1
+      )
+        throw new Error(
+          "Source and replacement generation versions are required",
+        );
+      result = await adoptReplacementShipment({
+        caseId,
+        actorAdminUserId: actor.user.id,
+        expectedSourceStateVersion: sourceVersion,
+        expectedRemedyStateVersion: remedyVersion,
+      });
     } else if (
       body?.action === "replacement" ||
       body?.action === "reshipment"
     ) {
       if (body.action === "replacement" && body.inventoryConfirmed !== true) {
-        const [caseOrder] = await getPrivateDb()
-          .select({ orderReference: checkoutOrders.orderId })
-          .from(productShippingCases)
-          .innerJoin(
-            checkoutOrders,
-            eq(productShippingCases.orderId, checkoutOrders.id),
-          )
-          .where(eq(productShippingCases.id, caseId))
-          .limit(1);
-        if (!caseOrder) throw new Error("Shipping case was not found");
-        const refund = await queueProductOrderRefund({
-          orderReference: caseOrder.orderReference,
-          reason: "Customer selected replacement but inventory was unavailable",
+        result = await queueInventoryUnavailableRefund({
           caseId,
-          automated: true,
-        });
-        await processProductOrderRefund(refund.id);
-        result = await updateProductShippingCase({
-          caseId,
-          action: "resolve",
-          remedyChoice: "refund_inventory_unavailable",
+          requestedByAdminUserId: actor.user.id,
         });
       } else {
         result = await createShipmentGeneration({
           caseId,
+          actorAdminUserId: actor.user.id,
           purpose: body.action,
           inventoryAttestationId: String(body.inventoryAttestationId ?? ""),
         });
@@ -82,8 +93,13 @@ export async function POST(
         String(body?.action),
       )
     ) {
+      const expectedStateVersion = Number(body?.expectedStateVersion);
+      if (!Number.isInteger(expectedStateVersion) || expectedStateVersion < 1)
+        throw new Error("Shipping case version is required");
       result = await updateProductShippingCase({
         caseId,
+        actorAdminUserId: actor.user.id,
+        expectedStateVersion,
         action: body!.action as "acknowledge" | "claim" | "inspect" | "resolve",
         cause: typeof body?.cause === "string" ? body.cause : undefined,
         providerClaimReference:
@@ -114,7 +130,14 @@ export async function POST(
       targetType: "product_shipping_case",
       metadata: { resultId: result.id },
     });
-    return NextResponse.json({ id: result.id });
+    return NextResponse.json(
+      {
+        id: result.id,
+        stateVersion: result.stateVersion,
+        refundOperationIds: result.refundOperationIds,
+      },
+      { status: result.refundOperationIds?.length ? 202 : 200 },
+    );
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Case action failed" },

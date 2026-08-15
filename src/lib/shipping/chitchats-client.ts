@@ -73,7 +73,7 @@ export function createChitChatsClient(
       throw new ChitChatsApiError(
         `Chit Chats request failed with ${response.status}`,
         response.status,
-        retryAfter && /^\d+$/.test(retryAfter) ? Number(retryAfter) : null,
+        parseRetryAfterSeconds(retryAfter),
         responseBody,
       );
     }
@@ -155,6 +155,18 @@ export function createChitChatsClient(
   };
 }
 
+export function parseRetryAfterSeconds(
+  value: string | null,
+  now = new Date(),
+): number | null {
+  if (!value) return null;
+  const normalized = value.trim();
+  if (/^\d+$/.test(normalized)) return Number(normalized);
+  const retryAt = new Date(normalized);
+  if (!Number.isFinite(retryAt.getTime())) return null;
+  return Math.max(0, Math.ceil((retryAt.getTime() - now.getTime()) / 1_000));
+}
+
 function toShipmentPayload(
   input: ChitChatsCreateShipmentInput,
 ): Record<string, unknown> {
@@ -188,23 +200,36 @@ function toShipmentPayload(
     signature_requested: input.signatureRequested,
     postage_type: input.postageType ?? "unknown",
     ship_date: input.shipDate ?? "today",
-    line_items: input.customsLines.map((line) => ({
-      quantity: line.quantity,
-      description: line.description,
-      value_amount: cents(line.unitValueCents),
-      currency_code: "cad",
-      hs_tariff_code: line.hsTariffCode,
-      sku_code: line.sku,
-      origin_country: line.countryOfOrigin,
-      weight_unit: "g",
-      weight: line.unitWeightGrams,
-      manufacturer_contact: line.manufacturerName,
-      manufacturer_street: line.manufacturerAddress,
-      manufacturer_city: line.manufacturerCity,
-      manufacturer_province_code: line.manufacturerProvinceCode,
-      manufacturer_postal_code: line.manufacturerPostalCode,
-      manufacturer_country_code: line.manufacturerCountryCode,
-    })),
+    line_items: input.customsLines.map((line) => {
+      const regulatory = line.usRegulatoryCertification;
+      return {
+        quantity: line.quantity,
+        description: line.description,
+        value_amount: cents(line.unitValueCents),
+        currency_code: "cad",
+        hs_tariff_code: line.hsTariffCode,
+        sku_code: line.sku,
+        origin_country: line.countryOfOrigin,
+        weight_unit: "g",
+        weight: line.unitWeightGrams,
+        manufacturer_contact: line.manufacturerName,
+        manufacturer_street: line.manufacturerAddress,
+        manufacturer_city: line.manufacturerCity,
+        manufacturer_province_code: line.manufacturerProvinceCode,
+        manufacturer_postal_code: line.manufacturerPostalCode,
+        manufacturer_country_code: line.manufacturerCountryCode,
+        ...(regulatory?.additionalTariffApplicability === "required" &&
+        regulatory.additionalTariffDetails
+          ? {
+              additional_tariff_details: {
+                steel: regulatory.additionalTariffDetails.steel,
+                copper: regulatory.additionalTariffDetails.copper,
+                aluminum: regulatory.additionalTariffDetails.aluminum,
+              },
+            }
+          : {}),
+      };
+    }),
   };
 }
 

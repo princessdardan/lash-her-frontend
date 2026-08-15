@@ -59,7 +59,7 @@ const squareLaunchEnvVars = [
 const chitchatsLaunchEnvVars = [
   "CHITCHATS_ENVIRONMENT",
   "CHITCHATS_CLIENT_ID",
-  "CHITCHATS_BRANCH_ID",
+  "CHITCHATS_REGION",
   "CHITCHATS_ACCESS_TOKEN",
   "CHITCHATS_QUOTE_SIGNING_SECRET",
   "CHITCHATS_WORKER_CRON_SECRET",
@@ -67,6 +67,15 @@ const chitchatsLaunchEnvVars = [
   "SHIPPING_DECISION_TOKEN_SECRET",
   "ADDRESS_CHANGE_TOKEN_SECRET",
   "SHIPPING_POLICY_ENFORCEMENT_MODE",
+];
+
+// Keep synchronized with CHITCHATS_REGIONS in src/lib/shipping/config.ts.
+const chitchatsRegions = [
+  "british_columbia",
+  "alberta_saskatchewan",
+  "ontario_manitoba",
+  "quebec",
+  "atlantic",
 ];
 
 const urlEnvVars = [
@@ -241,10 +250,10 @@ if (isLaunchEnvironment) {
 
   if (
     hasValue(process.env.AUTH_SECRET) &&
-    process.env.AUTH_SECRET.trim().length < 32
+    !isStrongOperationalSecret(process.env.AUTH_SECRET)
   ) {
     errors.push(
-      "Malformed env var: AUTH_SECRET must be at least 32 characters",
+      "Malformed env var: AUTH_SECRET must be at least 32 bytes with at least 12 distinct characters",
     );
   }
 
@@ -285,6 +294,14 @@ if (isLaunchEnvironment) {
     ) {
       errors.push(
         "Invalid env var: production deployment requires CHITCHATS_ENVIRONMENT=production",
+      );
+    }
+    if (
+      hasValue(process.env.CHITCHATS_REGION) &&
+      !chitchatsRegions.includes(process.env.CHITCHATS_REGION.trim())
+    ) {
+      errors.push(
+        `Malformed env var: CHITCHATS_REGION must be one of ${chitchatsRegions.join(", ")}`,
       );
     }
     if (

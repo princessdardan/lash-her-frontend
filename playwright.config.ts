@@ -8,11 +8,18 @@ import {
   ADMIN_CALENDAR_E2E_REDIS_ORIGIN,
   getAdminCalendarE2EDatabaseUrl,
 } from "./tests/support/admin-calendar-e2e-config";
+import { COMMERCE_E2E_HELCIM_CONTRACT_JSON } from "./tests/support/commerce-e2e-config";
 
 const googleCalendarFixturePreload = path.resolve(
   "tests/support/google-calendar-fetch-fixture.cjs",
 );
+const commerceProviderFixturePreload = path.resolve(
+  "tests/support/commerce-provider-fetch-fixture.cjs",
+);
 const adminCalendarE2EDatabaseUrl = getAdminCalendarE2EDatabaseUrl();
+const commerceEnabledE2E =
+  process.env.COMMERCE_E2E_ENABLED_MODE === "1" &&
+  adminCalendarE2EDatabaseUrl !== null;
 
 /**
  * Read environment variables from file.
@@ -36,7 +43,13 @@ export default defineConfig({
   /* Opt out of parallel tests on CI. */
   workers: process.env.CI ? 1 : undefined,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-  reporter: "html",
+  reporter: process.env.CI
+    ? [
+        ["line"],
+        ["json", { outputFile: "test-results/playwright-results.json" }],
+        ["html", { open: "never" }],
+      ]
+    : "html",
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('')`. */
@@ -99,6 +112,7 @@ export default defineConfig({
       NODE_OPTIONS: [
         process.env.NODE_OPTIONS,
         `--require=${googleCalendarFixturePreload}`,
+        `--require=${commerceProviderFixturePreload}`,
       ]
         .filter(Boolean)
         .join(" "),
@@ -120,6 +134,54 @@ export default defineConfig({
             KV_REST_API_TOKEN: "calendar-e2e-redis-token",
             KV_REST_API_URL: ADMIN_CALENDAR_E2E_REDIS_ORIGIN,
           }),
+      ...(commerceEnabledE2E
+        ? {
+            ADDRESS_CHANGE_TOKEN_SECRET:
+              "e2e-address-change-token-secret-0123456789ABCDEF",
+            ADMIN_OWNER_EMAILS: "commerce-e2e-owner@example.invalid",
+            CHECKOUT_PII_ENCRYPTION_KEY:
+              "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk=",
+            CHECKOUT_SECRET_ENCRYPTION_KEY:
+              "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+            CHITCHATS_ACCESS_TOKEN: "e2e-chitchats-access-token",
+            CHITCHATS_CHECKOUT_ENABLED: "true",
+            CHITCHATS_CLIENT_ID: "commerce-e2e-client",
+            CHITCHATS_ENVIRONMENT: "staging",
+            CHITCHATS_QUOTE_SIGNING_SECRET:
+              "e2e-quote-signing-secret-0123456789-ABCDEFGH",
+            CHITCHATS_REGION: "ontario_manitoba",
+            CHITCHATS_SHIPPING_ENABLED: "true",
+            CHITCHATS_TRACKED_POSTAGE_TYPES:
+              "chit_chats_canada_tracked,chit_chats_us_edge",
+            CHITCHATS_US_SHIPPING_ENABLED: "true",
+            CHITCHATS_WORKER_CRON_SECRET:
+              "e2e-worker-cron-secret-0123456789-ABCDEFGHIJ",
+            COMMERCE_E2E_CATALOG_FIXTURE: "1",
+            COMMERCE_E2E_ENABLED_MODE: "1",
+            COMMERCE_E2E_ISOLATED_TEST_DATABASE: "1",
+            COMMERCE_E2E_PROVIDER_FIXTURE: "1",
+            CRON_SECRET: "e2e-cron-secret-0123456789-ABCDEFGHIJKLMNOP",
+            ADMIN_EMAIL: "commerce-e2e-owner@example.invalid",
+            FROM_EMAIL: "Lash Her E2E <e2e@example.invalid>",
+            HELCIM_GENERAL_API_TOKEN:
+              "e2e-helcim-general-token-0123456789-ABCDEFGHIJ",
+            HELCIM_PRODUCT_PAYMENTS_CONTRACT_JSON:
+              COMMERCE_E2E_HELCIM_CONTRACT_JSON,
+            HELCIM_TRANSACTION_API_TOKEN:
+              "e2e-helcim-transaction-token-0123456789-ABCDEFG",
+            MANUAL_PRODUCT_CHECKOUT_ENABLED: "true",
+            NEXT_PUBLIC_SANITY_API_VERSION: "2026-03-24",
+            NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+            NEXT_PUBLIC_SANITY_PROJECT_ID: "3auncj84",
+            NEXT_PUBLIC_SITE_URL: "https://e2e.lashher.invalid",
+            PAYMENT_GATEWAY_MODE: "live",
+            RESEND_API_KEY: "re_e2e_deterministic_fixture",
+            SHIPPING_DECISION_TOKEN_SECRET:
+              "e2e-shipping-decision-secret-0123456789-ABCDEFGH",
+            SHIPPING_POLICY_ENFORCEMENT_MODE: "enforce",
+            SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED: "true",
+          }
+        : {}),
     },
     url: "http://localhost:3000",
     // The spawned process carries deterministic server-side transport fixtures.

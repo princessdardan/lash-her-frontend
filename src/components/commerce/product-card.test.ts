@@ -35,6 +35,13 @@ describe("ProductCard", () => {
       currency: "CAD",
       isAvailable: true,
       availabilityLabel: "In Stock",
+      shipping: {
+        fulfillmentMode: "physical",
+        weightGrams: 35,
+        packingUnits: 1,
+        customsDescription: "Synthetic eyelash extensions",
+        countryOfOrigin: "KR",
+      },
       fulfillmentNote: "Ships in 2 days",
       variants: [
         {
@@ -84,6 +91,13 @@ describe("ProductCard", () => {
       currency: "CAD",
       isAvailable: true,
       availabilityLabel: "In Stock",
+      shipping: {
+        fulfillmentMode: "physical",
+        weightGrams: 35,
+        packingUnits: 1,
+        customsDescription: "Synthetic eyelash extensions",
+        countryOfOrigin: "KR",
+      },
     };
 
     const html = renderProductCardToStaticMarkup(

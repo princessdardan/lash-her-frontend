@@ -5,13 +5,21 @@ import {
 } from "@/lib/admin/auth";
 import { recordAdminAuditBestEffort } from "@/lib/admin/audit-log";
 import { recordProductOrderRiskReview } from "@/lib/shipping/risk-review";
-import { activateShipmentForPaidOrder } from "@/lib/shipping/shipment-store";
+import { assertShippingPolicyMutationAllowed } from "@/lib/shipping/policy";
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ orderId: string }> },
 ): Promise<Response> {
   const actor = await requirePermission("fulfillment:manage");
+  try {
+    assertShippingPolicyMutationAllowed();
+  } catch {
+    return NextResponse.json(
+      { error: "Shipping policy mutations require enforce mode" },
+      { status: 409 },
+    );
+  }
   if (req.headers.get("origin") !== req.nextUrl.origin)
     return NextResponse.json(
       { error: "Invalid request origin" },
@@ -22,12 +30,18 @@ export async function POST(
     unknown
   > | null;
   const decision = body?.decision;
+  const incidentId =
+    typeof body?.incidentId === "string" ? body.incidentId.trim() : "";
+  const expectedIncidentStateVersion = Number(body?.stateVersion);
   const rationale = typeof body?.rationale === "string" ? body.rationale : "";
-  const evidence =
-    body?.evidence && typeof body.evidence === "object"
-      ? (body.evidence as Record<string, unknown>)
-      : undefined;
-  if (decision !== "clear_false_positive" && decision !== "escalate")
+  if (
+    (decision !== "clear_false_positive" && decision !== "escalate") ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      incidentId,
+    ) ||
+    !Number.isInteger(expectedIncidentStateVersion) ||
+    expectedIncidentStateVersion < 1
+  )
     return NextResponse.json(
       { error: "Risk decision is invalid" },
       { status: 400 },
@@ -36,18 +50,20 @@ export async function POST(
   try {
     const stepUpAuthenticatedAt =
       decision === "clear_false_positive"
-        ? await requireRecentAdminAuthentication()
+        ? await requireRecentAdminAuthentication({
+            action: "risk:clear_false_positive",
+            target: incidentId,
+          })
         : undefined;
     const result = await recordProductOrderRiskReview({
       orderReference: orderId,
+      incidentId,
+      expectedIncidentStateVersion,
       reviewerAdminUserId: actor.user.id,
       decision,
       rationale,
       stepUpAuthenticatedAt,
-      providerEvidenceAvailable: body?.providerEvidenceAvailable === true,
-      evidence,
     });
-    if (result.cleared) await activateShipmentForPaidOrder(orderId);
     await recordAdminAuditBestEffort({
       action: `fulfillment.risk_${decision}`,
       actor,

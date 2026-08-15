@@ -61,6 +61,11 @@ export interface ChitChatsShipment {
   provincial_tax?: string | number | null;
   is_insured?: boolean | null;
   estimated_delivery_at?: string | null;
+  updated_at?: string | null;
+  created_at?: string | null;
+  ship_date?: string | null;
+  postage_purchase_date?: string | null;
+  order_id?: string | null;
   postage_label_pdf_url?: string | null;
   rates?: ChitChatsRate[];
   tracking_events?: ChitChatsTrackingEvent[];

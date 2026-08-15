@@ -492,6 +492,7 @@ interface ProductVariantInput {
   discountPrice?: unknown;
   sku?: unknown;
   isAvailable?: unknown;
+  availabilityLabel?: unknown;
   options?: unknown;
   shipping?: unknown;
 }
@@ -674,6 +675,13 @@ function validateGroupedVariants(
 
   if (new Set(variants.map((variant) => variant.isAvailable)).size !== 1) {
     return "Grouped rows must use the same checkout availability.";
+  }
+  if (
+    new Set(
+      variants.map((variant) => cleanSchemaString(variant.availabilityLabel)),
+    ).size !== 1
+  ) {
+    return "Grouped rows must use the same availability label.";
   }
 
   return true;
@@ -981,6 +989,113 @@ function shippingMetadataFields() {
         "Enter the uppercase two-letter country code for the manufacturer’s address. This is usually the same as Country Where the Item Was Made, but it must describe the manufacturer contact address. Examples: CA for Canada or KR for South Korea.",
       validation: (Rule) =>
         Rule.regex(/^[A-Z]{2}$/, { name: "ISO country code" }),
+    }),
+    defineField({
+      name: "usRegulatoryCertification",
+      title: "U.S. SKU Regulatory Certification",
+      type: "object",
+      description:
+        "Record the evidence-backed regulatory review for this exact SKU or variant. Checkout verifies this record against the active certified U.S. shipping contract and blocks expired or mismatched reviews; never estimate tariff composition values.",
+      fields: [
+        defineField({
+          name: "version",
+          title: "Certification Version",
+          type: "string",
+          validation: (Rule) => Rule.required(),
+        }),
+        defineField({
+          name: "usShippingContractVersion",
+          title: "Certified U.S. Shipping Contract Version",
+          type: "string",
+          description:
+            "Enter the exact active U.S. shipping contract version against which this SKU was reviewed.",
+          validation: (Rule) => Rule.required(),
+        }),
+        defineField({
+          name: "tariffMetadataSchemaVersion",
+          title: "Tariff Metadata Schema Version",
+          type: "string",
+          description:
+            "Enter the exact tariff metadata schema version recorded in the certified U.S. shipping contract.",
+          validation: (Rule) => Rule.required(),
+        }),
+        defineField({
+          name: "fdaRequirementsVersion",
+          title: "FDA Requirements Version",
+          type: "string",
+          description:
+            "Enter the exact FDA requirements version recorded in the certified U.S. shipping contract.",
+          validation: (Rule) => Rule.required(),
+        }),
+        defineField({
+          name: "evidenceReference",
+          title: "Evidence Reference",
+          type: "string",
+          description:
+            "Reference the controlled manufacturer, broker, or provider evidence used for this SKU review. Do not paste secrets or customer data.",
+          validation: (Rule) => Rule.required(),
+        }),
+        defineField({
+          name: "reviewedAt",
+          title: "Reviewed At",
+          type: "datetime",
+          validation: (Rule) => Rule.required(),
+        }),
+        defineField({
+          name: "validUntil",
+          title: "Valid Until",
+          type: "datetime",
+          validation: (Rule) => Rule.required(),
+        }),
+        defineField({
+          name: "additionalTariffApplicability",
+          title: "Additional Metal Tariff Applicability",
+          type: "string",
+          options: {
+            layout: "radio",
+            list: [
+              {
+                title: "Not applicable under reviewed HTS",
+                value: "not_applicable",
+              },
+              { title: "Explicit composition required", value: "required" },
+            ],
+          },
+          validation: (Rule) => Rule.required(),
+        }),
+        defineField({
+          name: "additionalTariffDetails",
+          title: "Certified Metal Composition Percentages",
+          type: "object",
+          description:
+            "Enter only evidence-backed percentages required by the active provider contract. Explicit zero is valid; blank values are never interpreted as zero.",
+          hidden: ({ parent }) =>
+            parent?.additionalTariffApplicability !== "required",
+          fields: ["steel", "copper", "aluminum"].map((name) =>
+            defineField({
+              name,
+              title: `${name[0]?.toUpperCase()}${name.slice(1)} (%)`,
+              type: "number",
+              validation: (Rule) => Rule.required().integer().min(0).max(100),
+            }),
+          ),
+        }),
+        defineField({
+          name: "fdaApplicability",
+          title: "FDA Prior Notice Applicability",
+          type: "string",
+          description:
+            "Record whether FDA prior-notice assessment is inapplicable or is performed by the certified provider. This does not invent or send an unsupported FDA request field.",
+          options: {
+            layout: "radio",
+            list: [
+              { title: "Not applicable", value: "not_applicable" },
+              { title: "Provider assessed", value: "provider_assessed" },
+            ],
+          },
+          validation: (Rule) => Rule.required(),
+        }),
+      ],
     }),
     defineField({
       name: "hazardousMaterial",

@@ -150,6 +150,8 @@ function OrderCard({
       {order.shipment ? (
         <OrderShippingControls
           orderId={order.reference}
+          shipmentId={order.shipment.id}
+          stateVersion={order.shipment.stateVersion}
           status={order.shipment.status}
           defaultWeightGrams={order.shipment.packageWeightGrams}
           trackingNumber={order.shipment.trackingNumber}
@@ -263,6 +265,8 @@ function OrderTable({
                 {order.shipment ? (
                   <OrderShippingControls
                     orderId={order.reference}
+                    shipmentId={order.shipment.id}
+                    stateVersion={order.shipment.stateVersion}
                     status={order.shipment.status}
                     defaultWeightGrams={order.shipment.packageWeightGrams}
                     trackingNumber={order.shipment.trackingNumber}
@@ -291,7 +295,7 @@ function OrderOperations({
     `Open cases: ${operations.openCaseCount}`,
     `Refund: ${operations.latestRefundStatus ?? "none"}`,
     `Customer decision: ${operations.customerDecisionStatus ?? "none"}`,
-    `Address change: ${operations.addressChangeStatus ?? "none"}`,
+    `Address change: ${operations.addressChangeStatus ?? "none"}${operations.addressChangeReconciliationState ? ` / ${operations.addressChangeReconciliationState}` : ""}`,
     `Shipment history: ${operations.shipmentHistoryCount}`,
   ];
   if (order.shipment) {

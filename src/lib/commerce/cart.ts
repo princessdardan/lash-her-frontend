@@ -5,6 +5,10 @@ import {
   subtractCad,
   type PromotionCode,
 } from "./discounts";
+import {
+  resolveCheckoutModeFromLineItems,
+  type ProductCheckoutMode,
+} from "./product-checkout-eligibility";
 
 export type CommerceCurrency = "CAD";
 
@@ -17,7 +21,7 @@ export interface CatalogProduct {
   currency: CommerceCurrency;
   isAvailable: boolean;
   variants?: CatalogProductVariant[];
-  checkoutMode?: "automated" | "manual";
+  checkoutMode?: ProductCheckoutMode;
 }
 
 export interface CatalogProductVariant {
@@ -28,13 +32,14 @@ export interface CatalogProductVariant {
   discountPrice?: number | string | null;
   isAvailable: boolean;
   options?: Array<{ label: string; value: string }>;
-  checkoutMode?: "automated" | "manual";
+  checkoutMode?: ProductCheckoutMode;
 }
 
 export interface CartInputItem {
   productId: string;
   variantId?: string;
   quantity: number;
+  checkoutMode?: ProductCheckoutMode;
 }
 
 export interface ValidatedCartLineItem {
@@ -45,7 +50,7 @@ export interface ValidatedCartLineItem {
   productTitle?: string;
   variantTitle?: string;
   selectedOptions?: Array<{ label: string; value: string }>;
-  checkoutMode?: "automated" | "manual";
+  checkoutMode?: ProductCheckoutMode;
   quantity: number;
   price: number;
   originalPrice?: number;
@@ -56,6 +61,8 @@ export interface ValidatedCartLineItem {
 
 export interface ValidatedCart {
   currency: CommerceCurrency;
+  /** Product checkout only. Booking and training carts omit this. */
+  checkoutMode?: ProductCheckoutMode;
   amount: number;
   amountBeforePromotion?: number;
   originalAmount?: number;
@@ -105,7 +112,11 @@ export function buildValidatedCart(
 
     const variant = resolveVariant(product, item.variantId);
     const originalPrice = parseCad(variant?.price ?? product.price);
-    const price = resolveLineItemPrice(product, variant);
+    const pricing = resolveEffectivePrice(
+      variant?.price ?? product.price,
+      variant?.discountPrice ?? product.discountPrice,
+    );
+    const price = pricing.price;
     const manualDiscount = getManualDiscountAmount({ price, originalPrice });
     const description = variant
       ? `${product.title} — ${variant.title}`
@@ -136,6 +147,12 @@ export function buildValidatedCart(
   });
 
   const amount = addCad(lineItems.map((lineItem) => lineItem.total));
+  const hasExplicitCheckoutMode = lineItems.some(
+    (lineItem) => lineItem.checkoutMode !== undefined,
+  );
+  const checkoutMode = hasExplicitCheckoutMode
+    ? resolveCheckoutModeFromLineItems(lineItems)
+    : undefined;
   const originalAmount = addCad(
     lineItems.map((lineItem) => lineItem.originalTotal ?? lineItem.total),
   );
@@ -156,6 +173,7 @@ export function buildValidatedCart(
 
   return {
     currency: "CAD",
+    ...(checkoutMode ? { checkoutMode } : {}),
     amount: finalAmount,
     ...(promotionDiscountAmount > 0 ? { amountBeforePromotion: amount } : {}),
     ...(manualDiscountAmount > 0 || promotionDiscountAmount > 0
@@ -187,16 +205,23 @@ function getPromotionBaseAmount(
   );
 }
 
-function resolveLineItemPrice(
-  product: CatalogProduct,
-  variant: CatalogProductVariant | null,
-): number {
-  const price = parseCad(variant?.price ?? product.price);
-  const discountPriceInput = variant?.discountPrice ?? product.discountPrice;
-  if (discountPriceInput == null) return price;
+export function resolveEffectivePrice(
+  priceInput: number | string,
+  discountPriceInput?: number | string | null,
+): { price: number; originalPrice?: number; manualDiscount: number } {
+  const originalPrice = parseCad(priceInput);
+  if (discountPriceInput == null) {
+    return { price: originalPrice, manualDiscount: 0 };
+  }
 
   const discountPrice = parseCad(discountPriceInput);
-  return discountPrice < price ? discountPrice : price;
+  const price = discountPrice < originalPrice ? discountPrice : originalPrice;
+  const manualDiscount = getManualDiscountAmount({ price, originalPrice });
+  return {
+    price,
+    ...(manualDiscount > 0 ? { originalPrice } : {}),
+    manualDiscount,
+  };
 }
 
 function resolveVariant(

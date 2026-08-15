@@ -1,10 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requirePermission } from "@/lib/admin/auth";
 import { recordAdminAuditBestEffort } from "@/lib/admin/audit-log";
-import {
-  processProductOrderRefund,
-  queueProductOrderRefund,
-} from "@/lib/shipping/customer-refunds";
+import { queueProductOrderRefundAllocations } from "@/lib/shipping/customer-refunds";
+import { assertShippingPolicyMutationAllowed } from "@/lib/shipping/policy";
+import { assertConfiguredFulfillmentOwner } from "@/lib/shipping/configured-owner";
 
 export const runtime = "nodejs";
 
@@ -13,6 +12,15 @@ export async function POST(
   { params }: { params: Promise<{ orderId: string }> },
 ): Promise<Response> {
   const actor = await requirePermission("payments:refund");
+  await assertConfiguredFulfillmentOwner(actor.user.id);
+  try {
+    assertShippingPolicyMutationAllowed();
+  } catch {
+    return NextResponse.json(
+      { error: "Shipping policy mutations require enforce mode" },
+      { status: 409 },
+    );
+  }
   if (req.headers.get("origin") !== req.nextUrl.origin)
     return NextResponse.json(
       { error: "Invalid request origin" },
@@ -25,36 +33,66 @@ export async function POST(
   const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
   const amountCents =
     body?.amountCents === undefined ? undefined : Number(body.amountCents);
-  if (!reason || (amountCents !== undefined && !Number.isInteger(amountCents)))
+  const paymentTransactionId =
+    typeof body?.paymentTransactionId === "string"
+      ? body.paymentTransactionId.trim()
+      : undefined;
+  const component = ["merchandise", "tax", "outbound_shipping"].includes(
+    String(body?.component),
+  )
+    ? (body?.component as "merchandise" | "tax" | "outbound_shipping")
+    : undefined;
+  if (
+    !reason ||
+    (amountCents !== undefined && !Number.isInteger(amountCents)) ||
+    (paymentTransactionId !== undefined &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        paymentTransactionId,
+      ))
+  )
     return NextResponse.json(
       { error: "Refund reason and amount are invalid" },
       { status: 400 },
     );
   const { orderId } = await params;
   try {
-    const queued = await queueProductOrderRefund({
+    const queued = await queueProductOrderRefundAllocations({
       orderReference: orderId,
+      paymentTransactionId,
       amountCents,
+      component,
       reason,
       requestedByAdminUserId: actor.user.id,
     });
-    const result = await processProductOrderRefund(queued.id);
+    const result = queued[0];
+    if (!result) throw new Error("No refundable payment transaction was found");
     await recordAdminAuditBestEffort({
       action: "payments.product_refund",
       actor,
       domain: "payments",
-      outcome: result.status === "succeeded" ? "success" : "failure",
+      outcome: "success",
       targetId: result.id,
       targetType: "product_order_refund",
       metadata: {
         orderId,
         amountCents: result.amountCents,
-        status: result.status,
+        status: "queued",
+        refundCount: queued.length,
       },
     });
     return NextResponse.json(
-      { id: result.id, status: result.status },
-      { status: result.status === "succeeded" ? 200 : 202 },
+      {
+        id: result.id,
+        operationId: result.id,
+        status: "queued",
+        refunds: queued.map((refund) => ({
+          id: refund.id,
+          paymentTransactionId: refund.paymentTransactionId,
+          amountCents: refund.amountCents,
+          status: refund.status,
+        })),
+      },
+      { status: 202 },
     );
   } catch (error) {
     return NextResponse.json(

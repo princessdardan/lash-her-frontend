@@ -61,6 +61,10 @@ export function startNodeTelemetry(): NodeSDK | undefined {
     traceExporter,
     instrumentations: [
       getNodeAutoInstrumentations({
+        "@opentelemetry/instrumentation-http": {
+          ignoreIncomingRequestHook: (request) =>
+            isSensitiveCustomerBearerRequest(request),
+        },
         "@opentelemetry/instrumentation-undici": {
           ignoreRequestHook: (request) =>
             isSignedChitChatsLabelRequest(request),
@@ -77,6 +81,27 @@ export function startNodeTelemetry(): NodeSDK | undefined {
   setGlobalSdk(sdk);
 
   return sdk;
+}
+
+const SENSITIVE_CUSTOMER_BEARER_PATHS = new Set([
+  "/orders/address-change",
+  "/orders/payment-offer",
+  "/orders/payment-offer/exchange",
+  "/orders/shipping-decision",
+]);
+
+export function isSensitiveCustomerBearerRequest(request: {
+  url?: string;
+}): boolean {
+  try {
+    const url = new URL(request.url ?? "", "https://internal.invalid");
+    return (
+      SENSITIVE_CUSTOMER_BEARER_PATHS.has(url.pathname) &&
+      url.searchParams.has("token")
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function isSignedChitChatsLabelRequest(request: {

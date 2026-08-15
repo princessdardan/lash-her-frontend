@@ -8,7 +8,8 @@ export type BookingAbuseScope =
   | "promotion-attempts"
   | "shipping-quotes"
   | "shipping-decisions"
-  | "address-changes";
+  | "address-changes"
+  | "supplemental-payment-offer";
 
 interface HeaderReader {
   get(name: string): string | null;

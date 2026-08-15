@@ -76,6 +76,7 @@ describe("product schema", () => {
       "manufacturerProvinceCode",
       "manufacturerPostalCode",
       "manufacturerCountryCode",
+      "usRegulatoryCertification",
       "hazardousMaterial",
     ];
 
@@ -295,6 +296,26 @@ describe("product schema", () => {
         }),
       ),
       /U\.S\..*missing_us_hts/i,
+    );
+
+    assert.match(
+      String(
+        validateProductCheckoutConfiguration({
+          isAvailable: true,
+          shipping: {
+            ...baseShipping,
+            usShippingApproved: true,
+            hsTariffCode: "6704190000",
+            manufacturerName: "Reviewed Manufacturer",
+            manufacturerAddress: "123 Factory Road",
+            manufacturerCity: "Seoul",
+            manufacturerProvinceCode: "SE",
+            manufacturerPostalCode: "04524",
+            manufacturerCountryCode: "KR",
+          },
+        }),
+      ),
+      /missing_us_regulatory_certification/i,
     );
   });
 });

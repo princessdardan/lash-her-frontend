@@ -6,7 +6,9 @@ const invoiceRequest = {
   status: "DUE",
   currency: "CAD",
   notes: "Lash Her website checkout",
-  lineItems: [{ sku: "lash-kit", description: "Lash kit", quantity: 1, price: 125 }],
+  lineItems: [
+    { sku: "lash-kit", description: "Lash kit", quantity: 1, price: 125 },
+  ],
 };
 
 test("live Helcim gateway delegates to the existing client behavior", () => {
@@ -22,6 +24,12 @@ test("live Helcim gateway delegates to the existing client behavior", () => {
       if (String(input).endsWith("/invoices/")) {
         return Response.json({ invoiceId: 12345, invoiceNumber: "INV-12345" });
       }
+      if (String(input).endsWith("/invoices/12345")) {
+        return Response.json({ invoiceId: 12345, invoiceNumber: "INV-12345", amount: 125, currency: "CAD", status: "DUE" });
+      }
+      if (String(input).includes("/invoices?invoiceNumber=")) {
+        return Response.json([]);
+      }
       if (String(input).endsWith("/helcim-pay/initialize")) {
         return Response.json({ checkoutToken: "checkout-token", secretToken: "secret-token" });
       }
@@ -33,14 +41,20 @@ test("live Helcim gateway delegates to the existing client behavior", () => {
       const gateway = createLiveHelcimGateway();
       const invoice = await gateway.createInvoice(${JSON.stringify(invoiceRequest)});
       const session = await gateway.initializePay({ paymentType: "purchase", amount: 125, currency: "CAD", invoiceNumber: invoice.invoiceNumber });
+      const providerInvoice = await gateway.getInvoice(12345);
+      const matchingInvoices = await gateway.getInvoicesByNumber("LH-TEST");
       const transaction = await gateway.getCardTransaction("txn-live");
 
       assert.deepEqual(invoice, { invoiceId: 12345, invoiceNumber: "INV-12345" });
       assert.deepEqual(session, { checkoutToken: "checkout-token", secretToken: "secret-token" });
+      assert.equal(providerInvoice.invoiceId, 12345);
+      assert.deepEqual(matchingInvoices, []);
       assert.deepEqual(transaction, { id: "txn-live", status: "APPROVED" });
       assert.equal(String(calls[0].input), "https://api.helcim.com/v2/invoices/");
       assert.equal(String(calls[1].input), "https://api.helcim.com/v2/helcim-pay/initialize");
-      assert.equal(String(calls[2].input), "https://api.helcim.com/v2/card-transactions/txn-live");
+      assert.equal(String(calls[2].input), "https://api.helcim.com/v2/invoices/12345");
+      assert.equal(String(calls[3].input), "https://api.helcim.com/v2/invoices?invoiceNumber=LH-TEST");
+      assert.equal(String(calls[4].input), "https://api.helcim.com/v2/card-transactions/txn-live");
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -53,9 +67,13 @@ test("live Helcim gateway delegates to the existing client behavior", () => {
   env.HELCIM_GENERAL_API_TOKEN = "test-general-token-with-safe-length";
   env.HELCIM_TRANSACTION_API_TOKEN = "test-transaction-token-with-safe-length";
 
-  execFileSync("./node_modules/.bin/tsx", ["--conditions=react-server", "--eval", helperScript], {
-    cwd: process.cwd(),
-    env,
-    stdio: "pipe",
-  });
+  execFileSync(
+    "./node_modules/.bin/tsx",
+    ["--conditions=react-server", "--eval", helperScript],
+    {
+      cwd: process.cwd(),
+      env,
+      stdio: "pipe",
+    },
+  );
 });

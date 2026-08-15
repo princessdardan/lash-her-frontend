@@ -1,0 +1,2 @@
+ALTER TABLE "customer_email_outbox" ADD CONSTRAINT "customer_email_outbox_status_check" CHECK ("customer_email_outbox"."status" IN ('queued', 'sending', 'failed', 'dead_letter', 'sent'));--> statement-breakpoint
+ALTER TABLE "customer_email_outbox" ADD CONSTRAINT "customer_email_outbox_attempt_count_check" CHECK ("customer_email_outbox"."attempt_count" >= 0);

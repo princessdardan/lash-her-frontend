@@ -6,6 +6,7 @@ import {
   checkSlidingWindowRateLimitWithStore,
   type RateLimitDecision,
 } from "./kv-rate-limiter";
+import { sendShippingPolicyAlert } from "@/lib/shipping/policy-alerts";
 
 export async function checkShippingQuoteRateLimit(input: {
   key: string;
@@ -53,14 +54,18 @@ export async function checkSignedShippingLinkRateLimit(input: {
 
 export async function isShippingLinkExchangeBlocked(): Promise<boolean> {
   const redis = getRedis();
-  return Boolean(await redis.get("shipping-links:global-breaker"));
+  const blocked = Boolean(await redis.get("shipping-links:global-breaker"));
+  if (blocked) {
+    await enqueueShippingBreakerAlert(new Date()).catch(() => undefined);
+  }
+  return blocked;
 }
 
 export async function recordShippingLinkFailure(
   now = new Date(),
 ): Promise<void> {
   const redis = getRedis();
-  await redis.eval<string[], number>(
+  const count = await redis.eval<string[], number>(
     `local failures = KEYS[1]
 local breaker = KEYS[2]
 local now = tonumber(ARGV[1])
@@ -84,6 +89,22 @@ return count`,
       randomUUID(),
     ],
   );
+  if (count >= 50) {
+    await enqueueShippingBreakerAlert(now);
+  }
+}
+
+async function enqueueShippingBreakerAlert(now: Date): Promise<void> {
+  const bucket = Math.floor(now.getTime() / (15 * 60_000));
+  await sendShippingPolicyAlert({
+    duties: ["security_owner", "operations_lead"],
+    critical: true,
+    subject: "Shipping customer-link breaker activated",
+    message:
+      "Fifty failed shipping-link exchanges or submissions occurred within ten minutes. New bearer exchanges are blocked for fifteen minutes; existing authenticated sessions and admin operations remain available.",
+    idempotencyKey: `shipping-link-breaker/${bucket}`,
+    now,
+  });
 }
 
 function getRedis(): Redis {

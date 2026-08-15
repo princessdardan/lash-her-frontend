@@ -212,12 +212,19 @@ const SAMPLE_PRODUCT_CONFIRMATION: SendProductOrderConfirmationEmailInput = {
   orderId: "LH-PRODUCT-1001",
   shippingAmount: 12.5,
   shippingAddress: {
-    city: "Toronto",
-    country: "CA",
+    city: "Buffalo",
+    country: "US",
     line1: "100 Sample Street",
     line2: "Suite 5",
-    postalCode: "M5V 1A1",
-    province: "ON",
+    postalCode: "14201",
+    province: "NY",
+  },
+  fulfillmentMode: "automated_shipping",
+  usImportDisclosure: {
+    terms: "DDU",
+    version: "SAMPLE-CERTIFIED-IMPORT-DISCLOSURE",
+    text: "Sample certified import-terms disclosure text.",
+    presentedAt: "2026-06-15T14:30:00.000Z",
   },
   totalAmount: 76.5,
 };

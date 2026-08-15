@@ -201,6 +201,39 @@ describe("product cart provider helpers", () => {
       item: { productId: "product-1", quantity: 1 },
     });
     assert.equal(quantityAllowed.items[0]?.quantity, 2);
+
+    const reduced = productCartReducer(hydrated, {
+      type: "removeItem",
+      productId: "product-21",
+    });
+    assert.equal(reduced.items.length, 20);
+    assert.equal(reduced.limitMessage, null);
+    assert.deepEqual(
+      productCartReducer(reduced, { type: "clearCart" }).items,
+      [],
+    );
+  });
+
+  it("keeps automated and manual product lines in separate carts", () => {
+    const automated = productCartReducer(emptyState, {
+      type: "addItem",
+      item: {
+        productId: "shipped-product",
+        quantity: 1,
+        checkoutMode: "automated",
+      },
+    });
+    const rejected = productCartReducer(automated, {
+      type: "addItem",
+      item: {
+        productId: "pickup-product",
+        quantity: 1,
+        checkoutMode: "manual",
+      },
+    });
+    assert.deepEqual(rejected.items, automated.items);
+    assert.equal(rejected.isOpen, true);
+    assert.match(rejected.limitMessage ?? "", /separate carts/i);
   });
 
   it("creates isolated Buy Now payloads without mutating stored cart state", () => {

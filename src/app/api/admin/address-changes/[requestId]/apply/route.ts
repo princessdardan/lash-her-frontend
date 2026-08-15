@@ -1,41 +1,76 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requirePermission } from "@/lib/admin/auth";
+import {
+  requirePermission,
+  requireRecentAdminAuthentication,
+} from "@/lib/admin/auth";
 import { recordAdminAuditBestEffort } from "@/lib/admin/audit-log";
 import {
   applyApprovedAddressChange,
-  discardPreparedAddressChangeShipment,
   reconcileAddressChangePostage,
 } from "@/lib/shipping/address-changes";
-import {
-  processProductOrderRefund,
-  queueProductOrderRefund,
-} from "@/lib/shipping/customer-refunds";
+import { assertShippingPolicyMutationAllowed } from "@/lib/shipping/policy";
+import { assertConfiguredFulfillmentOwner } from "@/lib/shipping/configured-owner";
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ requestId: string }> },
 ): Promise<Response> {
   const actor = await requirePermission("fulfillment:manage");
+  await assertConfiguredFulfillmentOwner(actor.user.id);
   if (req.headers.get("origin") !== req.nextUrl.origin)
     return NextResponse.json(
       { error: "Invalid request origin" },
       { status: 403 },
     );
-  const { requestId } = await params;
   try {
-    await reconcileAddressChangePostage(requestId);
-    const result = await applyApprovedAddressChange(requestId);
-    const providerDraftCleaned = true;
-    let refundStatus: string | null = null;
-    if (result.refundDecreaseCents >= 100) {
-      const refund = await queueProductOrderRefund({
-        orderReference: result.orderReference,
-        amountCents: result.refundDecreaseCents,
-        reason: "Address change reduced shipping price",
-        requestedByAdminUserId: actor.user.id,
-      });
-      refundStatus = (await processProductOrderRefund(refund.id)).status;
+    assertShippingPolicyMutationAllowed();
+  } catch {
+    return NextResponse.json(
+      { error: "Shipping policy mutations require enforce mode" },
+      { status: 409 },
+    );
+  }
+  const { requestId } = await params;
+  const body = (await req.json().catch(() => null)) as Record<
+    string,
+    unknown
+  > | null;
+  const expectedStateVersion = body?.expectedStateVersion;
+  if (
+    typeof expectedStateVersion !== "number" ||
+    !Number.isInteger(expectedStateVersion) ||
+    expectedStateVersion < 1
+  ) {
+    return NextResponse.json(
+      { error: "A valid expectedStateVersion is required" },
+      { status: 400 },
+    );
+  }
+  try {
+    await requireRecentAdminAuthentication({
+      action: "fulfillment.address_change_apply",
+      target: JSON.stringify({ requestId, expectedStateVersion }),
+    });
+    const reconciliation = await reconcileAddressChangePostage(
+      requestId,
+      expectedStateVersion,
+    );
+    if (!reconciliation.prepared) {
+      return NextResponse.json(
+        {
+          status: reconciliation.awaitingDecision
+            ? "awaiting_customer_decision"
+            : "queued",
+          operationId: reconciliation.operationId,
+        },
+        { status: 202 },
+      );
     }
+    const result = await applyApprovedAddressChange({
+      requestId,
+      requestedByAdminUserId: actor.user.id,
+      expectedStateVersion,
+    });
     await recordAdminAuditBestEffort({
       action: "fulfillment.address_change_applied",
       actor,
@@ -43,12 +78,25 @@ export async function POST(
       outcome: "success",
       targetId: requestId,
       targetType: "product_order_address_change_request",
-      metadata: { ...result, refundStatus, providerDraftCleaned },
+      metadata: result,
     });
-    return NextResponse.json({ ...result, refundStatus, providerDraftCleaned });
+    return NextResponse.json(
+      {
+        ...result,
+        refundStatus: result.refundOperationIds?.length
+          ? "queued"
+          : "not_required",
+      },
+      {
+        status:
+          result.refundOperationIds?.length ||
+          result.preparedRefreshPending ||
+          result.preparedPurchasePending
+            ? 202
+            : 200,
+      },
+    );
   } catch (error) {
-    const providerDraftCleaned =
-      await discardPreparedAddressChangeShipment(requestId);
     await recordAdminAuditBestEffort({
       action: "fulfillment.address_change_applied",
       actor,
@@ -58,7 +106,6 @@ export async function POST(
         error instanceof Error ? error.message : "Address application failed",
       targetId: requestId,
       targetType: "product_order_address_change_request",
-      metadata: { providerDraftCleaned },
     });
     return NextResponse.json(
       {

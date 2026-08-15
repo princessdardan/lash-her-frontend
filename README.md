@@ -199,6 +199,31 @@ Product checkout and training checkout use Helcim:
 - `HELCIM_WEBHOOK_VERIFIER_TOKEN`
 
 `HELCIM_TRANSACTION_API_TOKEN` must come from a HelcimPay.js API Access Configuration with checkout integration enabled for the deployed site URL and purchase-capable Transaction Processing access.
+
+`HELCIM_PRODUCT_PAYMENTS_CONTRACT_JSON` must be the exact JSON snapshot from the active `helcim/product_payments` certification. It is not a secret, but it is release-controlled evidence and must not be guessed. Required shape:
+
+```ts
+{
+  contract: "helcim_product_payments";
+  version: string;
+  evidenceReference: string;
+  effectiveFrom: string;
+  effectiveUntil: string;
+  purchaseTransactionTypes: string[];
+  refundTransactionTypes: string[];
+  purchaseSuccessfulStatuses: string[];
+  refundSuccessfulStatuses: string[];
+  avs: { fieldNames: string[]; matchCodes: string[]; mismatchCodes: string[] };
+  cvv: { fieldNames: string[]; matchCodes: string[]; mismatchCodes: string[] };
+  refundCorrelation: {
+    providerRefundIdFields: string[];
+    originalTransactionIdFields: string[];
+    merchantReferenceFields: string[];
+  };
+}
+```
+
+The values must come from official documentation plus captured sandbox response/GET/webhook triples. Preview and production classification fail closed when this value is missing, expired, malformed, or different from the active database certification.
 Quote Helcim API token values in dotenv files because Helcim tokens can contain `#`, which dotenv treats as a comment marker when unquoted.
 
 Paid service bookings use Square only when enabled:
@@ -222,6 +247,7 @@ Chit Chats provides live insured tracked product-shipping rates, staff label pur
 - `CHITCHATS_US_SHIPPING_ENABLED`
 - `CHITCHATS_ENVIRONMENT=staging` or `production`
 - `CHITCHATS_CLIENT_ID`
+- `CHITCHATS_REGION=british_columbia|alberta_saskatchewan|ontario_manitoba|quebec|atlantic`
 - `CHITCHATS_ACCESS_TOKEN`
 - `CHITCHATS_QUOTE_SIGNING_SECRET`
 - `CHITCHATS_WORKER_CRON_SECRET`
@@ -232,7 +258,9 @@ Chit Chats provides live insured tracked product-shipping rates, staff label pur
 - `BACKUP_RETENTION_DAYS` (30 or less)
 - Optional `CHITCHATS_TRACKED_POSTAGE_TYPES`
 
-`CHITCHATS_CHECKOUT_ENABLED` must remain false until migrations `0032_fat_roulette.sql` and `0033_bored_dexter_bennett.sql` are applied, package profiles are reviewed, each purchasable Sanity product/variant has complete shipping metadata, and the selected [shipping policy decisions](docs/chitchats-shipping-policy-decisions.md) receive formal approval with all launch-blocking controls verified. Address changes must follow the [signed-link implementation plan](docs/chitchats-address-change-implementation-plan.md). `CHITCHATS_SHIPPING_ENABLED` keeps worker/admin processing active for existing shipments. U.S. shipping is separately fail-closed and requires per-item approval plus 10-digit HTS and manufacturer data. See the [shipping operations runbook](docs/chitchats-shipping-operations.md).
+`CHITCHATS_REGION` identifies the region selected in the matching Chit Chats account; it is not a provider branch ID and is not added to API shipment requests. The configured environment, client ID, and region must match exactly. Readiness also requires a current owner-attested physical intake-location record identifying the branch, drop spot, or mail-in hub where parcels first enter the Chit Chats network. That record is valid for at most 90 days and must include the verified name, address, and evidence reference. Do not seed, infer, or backfill an intake location from an address, account, region, or obsolete `CHITCHATS_BRANCH_ID` value.
+
+`CHITCHATS_CHECKOUT_ENABLED` must remain false until `npm run db:migrate` has applied every entry in `drizzle/meta/_journal.json` (not only the original `0032`/`0033` shipping migrations), quarantined upgrade conflicts have been reconciled, package profiles are reviewed, each purchasable Sanity product/variant has complete shipping metadata, and the selected [shipping policy decisions](docs/chitchats-shipping-policy-decisions.md) receive formal approval with all launch-blocking controls verified. Address changes must follow the [signed-link implementation plan](docs/chitchats-address-change-implementation-plan.md). `CHITCHATS_SHIPPING_ENABLED` keeps worker/admin processing active for existing shipments. U.S. shipping, supplemental product payments, and manual product checkout have independent fail-closed flags; disabling one must not be treated as permission to disable processing for already-paid orders. See the [shipping operations runbook](docs/chitchats-shipping-operations.md).
 
 ## Sanity CMS workflow
 

@@ -17,6 +17,7 @@ import {
 import { getPrivateDb } from "@/lib/private-db/client";
 
 import {
+  adminStepUpProofs,
   appointmentHolds,
   appointments,
   checkoutOrders,
@@ -336,6 +337,7 @@ export type PrivateDataRetentionOperation =
   | "appointmentsRedacted"
   | "checkoutOrdersPurged"
   | "checkoutOrdersRedacted"
+  | "expiredAdminStepUpProofsDeleted"
   | "shippingPolicyPiiRedacted"
   | "checkoutOrdersSoftDeleted"
   | "checkoutPaymentEventsDeleted"
@@ -567,6 +569,7 @@ export function getSoftDeletedCheckoutOrderPurgePredicate(
 ) {
   return and(
     isNotNull(checkoutOrders.deletedAt),
+    ne(checkoutOrders.purpose, "product"),
     lte(checkoutOrders.deletedAt, cutoff),
     inArray(
       checkoutOrders.calendarFinalizationStatus,
@@ -644,20 +647,31 @@ export async function runPrivateDataRetentionCleanup(
   input: { now?: Date } = {},
 ): Promise<PrivateDataRetentionCleanupSummary> {
   const now = input.now ?? new Date();
+  const deletedStepUpProofs = await getPrivateDb()
+    .delete(adminStepUpProofs)
+    .where(lte(adminStepUpProofs.expiresAt, now))
+    .returning({ id: adminStepUpProofs.id });
   const shippingCount = await redactShippingPolicyPii(now);
   const summary = await createPrivateDataRetentionCleanup(
     createDrizzlePrivateDataRetentionRepository(),
   )({ now });
-  const operation: PrivateDataRetentionOperationResult = {
+  const shippingOperation: PrivateDataRetentionOperationResult = {
     count: shippingCount,
     cutoff: new Date(now.getTime() - 365 * DAY_MS).toISOString(),
     operation: "shippingPolicyPiiRedacted",
     table: "shipping_policy_records",
   };
+  const stepUpOperation: PrivateDataRetentionOperationResult = {
+    count: deletedStepUpProofs.length,
+    cutoff: now.toISOString(),
+    operation: "expiredAdminStepUpProofsDeleted",
+    table: "admin_step_up_proofs",
+  };
   return {
     ...summary,
-    operations: [...summary.operations, operation],
-    totalAffected: summary.totalAffected + shippingCount,
+    operations: [...summary.operations, shippingOperation, stepUpOperation],
+    totalAffected:
+      summary.totalAffected + shippingCount + deletedStepUpProofs.length,
   };
 }
 

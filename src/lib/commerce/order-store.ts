@@ -21,6 +21,7 @@ import { getCheckoutSecretEncryptionKey } from "@/sanity/env";
 import {
   checkoutOrders,
   checkoutPaymentEvents,
+  fulfillmentDataQuarantine,
   orderPaymentObligations,
   productShipments,
 } from "@/lib/private-db/schema";
@@ -32,11 +33,29 @@ import {
   encryptCheckoutSecret,
 } from "./checkout-secret";
 import { parseCad } from "./money";
-import { hashShippingQuoteToken } from "@/lib/shipping/quote-token";
-import { loadShippingPolicyContext } from "@/lib/shipping/policy";
+import {
+  hashShippingQuoteToken,
+  parseShippingQuoteContextSnapshot,
+  shippingQuoteContextsEqual,
+} from "@/lib/shipping/quote-token";
 import { encryptCheckoutIp } from "./checkout-pii";
 import { classifyHelcimTransaction } from "./helcim-contract";
-import { assertCheckoutReadiness } from "@/lib/shipping/readiness";
+import {
+  assertCheckoutReadiness,
+  assertHelcimProductPaymentsCertificationInTransaction,
+  assertManualCheckoutReadinessInTransaction,
+  assertProductTaxPolicyApprovalInTransaction,
+  assertShippingQuoteContextAtCheckoutCommit,
+  evaluateManualCheckoutReadiness,
+} from "@/lib/shipping/readiness";
+import { enqueueCustomerEmail } from "./customer-email-outbox";
+
+export interface UsImportDisclosureSnapshot {
+  terms: "DDU";
+  version: string;
+  text: string;
+  presentedAt: Date;
+}
 
 const EMAIL_CLAIM_DURATION_MS = 5 * 60 * 1000;
 
@@ -61,15 +80,34 @@ export interface CreateInitializingProductOrderInput {
   shippingQuoteFingerprint: string;
   shippingRateId: string;
   refundOriginIp: string;
+  usImportDisclosure?: UsImportDisclosureSnapshot;
 }
 
 export interface InitializingProductOrderRecord {
   databaseId: string;
   orderId: string;
+  primaryObligationId: string;
   merchandiseAmountCents: number;
   shippingAmountCents: number;
   totalAmountCents: number;
   shippingRateTitle: string;
+}
+
+export interface CreateInitializingManualProductOrderInput {
+  customerName: string;
+  customerEmail: string;
+  customerPhone?: string;
+  cart: ValidatedCart;
+  fulfillmentMode: "manual_pickup";
+  cancellationPolicy: {
+    accepted: true;
+    version: string;
+    textHash: string;
+    presentedAt: Date;
+    requestEvidence: string;
+  };
+  usImportDisclosure?: UsImportDisclosureSnapshot;
+  refundOriginIp: string;
 }
 
 export interface CreatePendingSquareInvoiceOrderInput {
@@ -117,6 +155,7 @@ export interface PendingOrderRecord {
   paymentProvider: PaymentProvider;
   purpose: CheckoutOrderPurpose;
   shippingAddress: CheckoutOrderShippingAddressSnapshot | null;
+  paymentObligationId?: string;
 }
 
 export interface MatchedCheckoutOrderRecord {
@@ -128,6 +167,7 @@ export interface MatchedCheckoutOrderRecord {
   orderId: string;
   paymentProvider: PaymentProvider;
   purpose: CheckoutOrderPurpose;
+  paymentObligationId?: string;
 }
 
 export interface HelcimWebhookEventRecordResult {
@@ -164,6 +204,7 @@ export interface ClaimProductOrderConfirmationEmailInput {
 }
 
 export interface ProductOrderConfirmationEmailRecord {
+  orderDatabaseId: string;
   currency: ValidatedCart["currency"];
   customerEmail: string;
   customerName: string;
@@ -178,6 +219,10 @@ export interface ProductOrderConfirmationEmailRecord {
   promotionDiscount: number;
   manualDiscount: number;
   taxAmount: number;
+  fulfillmentMode: CheckoutOrderRow["fulfillmentMode"];
+  manualFulfillmentStatus: string | null;
+  cancellationPolicySnapshot: Record<string, unknown> | null;
+  usImportDisclosure: CheckoutOrderRow["usImportDisclosureSnapshot"];
 }
 
 export interface ProductOrderConfirmationEmailFailureInput {
@@ -274,6 +319,18 @@ export interface CheckoutOrderRepository {
   findCheckoutOrderByCheckoutTokenHash(
     checkoutTokenHash: string,
   ): Promise<CheckoutOrderRow | null>;
+  findPaymentObligationByCheckoutTokenHash?: (
+    checkoutTokenHash: string,
+  ) => Promise<{
+    order: CheckoutOrderRow;
+    obligation: typeof orderPaymentObligations.$inferSelect;
+  } | null>;
+  findPaymentObligationForWebhook?: (
+    input: HelcimWebhookEventInput,
+  ) => Promise<{
+    order: CheckoutOrderRow;
+    obligationId: string;
+  } | null>;
   findOrderByCorrelationId(
     correlationId: string,
   ): Promise<CheckoutOrderRow | null>;
@@ -595,15 +652,53 @@ export function createCheckoutOrderStore(
     },
 
     async getPendingOrderByCheckoutToken(checkoutToken) {
-      const order = await repository.findCheckoutOrderByCheckoutTokenHash(
-        hashCheckoutToken(checkoutToken),
-      );
+      const checkoutTokenHash = hashCheckoutToken(checkoutToken);
+      const order =
+        await repository.findCheckoutOrderByCheckoutTokenHash(
+          checkoutTokenHash,
+        );
 
-      if (!order || !isCheckoutTokenValidationEligible(order)) {
+      if (order && isCheckoutTokenValidationEligible(order)) {
+        return toPendingOrderRecord(order);
+      }
+      const supplemental =
+        await repository.findPaymentObligationByCheckoutTokenHash?.(
+          checkoutTokenHash,
+        );
+      if (
+        !supplemental ||
+        supplemental.order.fulfillmentQuarantinedAt !== null ||
+        supplemental.order.purpose !== "product" ||
+        !["paid", "cancelled", "refunded"].includes(
+          supplemental.order.status,
+        ) ||
+        supplemental.obligation.purpose === "primary" ||
+        !["pending", "expired", "superseded", "cancelled", "refunded"].includes(
+          supplemental.obligation.status,
+        ) ||
+        supplemental.obligation.initializationStatus !== "ready" ||
+        supplemental.obligation.quarantinedAt !== null
+      ) {
         return null;
       }
-
-      return toPendingOrderRecord(order);
+      if (
+        !supplemental.obligation.secretTokenCiphertext ||
+        supplemental.obligation.providerInvoiceId === null ||
+        supplemental.obligation.providerInvoiceNumber === null
+      ) {
+        return null;
+      }
+      return {
+        ...toPendingOrderRecord(supplemental.order),
+        paymentObligationId: supplemental.obligation.id,
+        secretToken: decryptCheckoutSecret(
+          supplemental.obligation.secretTokenCiphertext,
+        ),
+        helcimInvoiceId: supplemental.obligation.providerInvoiceId,
+        helcimInvoiceNumber: supplemental.obligation.providerInvoiceNumber,
+        amount: centsToCad(supplemental.obligation.totalAmountCents),
+        currency: supplemental.obligation.currency.toUpperCase() as "CAD",
+      };
     },
 
     async recordHelcimWebhookEvent(input) {
@@ -650,11 +745,35 @@ export async function createInitializingProductOrder(
 ): Promise<InitializingProductOrderRecord> {
   const db = getPrivateDb();
   const now = new Date();
-  const policy = await loadShippingPolicyContext(now);
   const destinationCountryCode =
     input.shippingAddress.countryCode === "US" ? "US" : "CA";
+  if (
+    (destinationCountryCode === "US" &&
+      !isValidUsImportDisclosure(input.usImportDisclosure)) ||
+    (destinationCountryCode !== "US" && input.usImportDisclosure !== undefined)
+  ) {
+    throw new ShippingQuoteConflictError(
+      "Required import-cost disclosure does not match the shipping quote",
+    );
+  }
   const readiness = await assertCheckoutReadiness({ destinationCountryCode });
+  const quoteContext = readiness.quoteContext;
+  if (!quoteContext) {
+    throw new ShippingQuoteConflictError(
+      "Shipping quote context is unavailable",
+    );
+  }
   return db.transaction(async (tx) => {
+    const commitReadiness = await assertShippingQuoteContextAtCheckoutCommit(
+      tx,
+      {
+        destinationCountryCode,
+        expectedContext: quoteContext,
+        now,
+      },
+    );
+    const helcimContract =
+      await assertHelcimProductPaymentsCertificationInTransaction(tx, now);
     const [quote] = await tx
       .select()
       .from(productShipments)
@@ -665,6 +784,10 @@ export async function createInitializingProductOrder(
             hashShippingQuoteToken(input.shippingQuoteToken),
           ),
           eq(productShipments.quoteFingerprint, input.shippingQuoteFingerprint),
+          eq(
+            productShipments.intakeLocationAttestationId,
+            quoteContext.intakeLocationAttestationId,
+          ),
           eq(productShipments.status, "quoted"),
           isNull(productShipments.orderId),
           sql`${productShipments.quoteExpiresAt} > ${now}`,
@@ -674,6 +797,23 @@ export async function createInitializingProductOrder(
       .limit(1);
     if (!quote)
       throw new ShippingQuoteConflictError("Shipping quote expired or changed");
+    const quoteContextSnapshot = parseShippingQuoteContextSnapshot(
+      quote.deadlinePolicySnapshot,
+    );
+    if (
+      !quoteContextSnapshot ||
+      !shippingQuoteContextsEqual(quoteContextSnapshot, quoteContext) ||
+      quote.calendarVersionId !== quoteContext.calendarVersionId
+    ) {
+      throw new ShippingQuoteConflictError(
+        "Shipping quote policy or calendar context changed",
+      );
+    }
+    await assertProductTaxPolicyApprovalInTransaction(
+      tx,
+      quoteContextSnapshot.taxPolicyApproval,
+      now,
+    );
     const rate = quote.rates.find(
       (candidate) => candidate.id === input.shippingRateId,
     );
@@ -716,11 +856,19 @@ export async function createInitializingProductOrder(
         atRiskValueCents: merchandiseAmountCents,
         fraudClassification: "low",
         paymentRiskStatus: "pending",
-        shippingPolicyVersion:
-          readiness.policyVersion ?? policy.settings.policyVersion,
-        taxPolicyVersion: readiness.taxPolicyVersion,
+        shippingPolicyVersion: commitReadiness.policyVersion!,
+        taxPolicyVersion: commitReadiness.taxPolicyVersion,
         dduNoticeVersion:
-          destinationCountryCode === "US" ? "DDU-2026-08-14" : null,
+          input.usImportDisclosure?.terms === "DDU"
+            ? input.usImportDisclosure.version
+            : null,
+        dduNoticePresentedAt:
+          input.usImportDisclosure?.terms === "DDU"
+            ? input.usImportDisclosure.presentedAt
+            : undefined,
+        usImportDisclosureSnapshot: input.usImportDisclosure
+          ? toStoredUsImportDisclosure(input.usImportDisclosure)
+          : undefined,
         fulfillmentMode: "automated_shipping",
       })
       .returning({ id: checkoutOrders.id });
@@ -753,31 +901,224 @@ export async function createInitializingProductOrder(
       .update(checkoutOrders)
       .set({ activeFulfillmentShipmentId: attached.id, updatedAt: now })
       .where(eq(checkoutOrders.id, order.id));
-    await tx.insert(orderPaymentObligations).values({
-      orderId: order.id,
-      purpose: "primary",
-      status: "pending",
-      merchandiseAmountCents,
-      shippingAmountCents,
-      taxAmountCents: 0,
-      totalAmountCents,
-      currency: input.cart.currency,
-      sourceWorkflow: "automated_product_checkout",
-      disclosureSnapshot: {
-        dduNoticeVersion:
-          destinationCountryCode === "US" ? "DDU-2026-08-14" : null,
-      },
-      taxPolicyVersion: readiness.taxPolicyVersion!,
-      policyVersion: readiness.policyVersion!,
-      idempotencyKey: `primary/${order.id}`,
-    });
+    const [obligation] = await tx
+      .insert(orderPaymentObligations)
+      .values({
+        orderId: order.id,
+        purpose: "primary",
+        status: "pending",
+        merchandiseAmountCents,
+        shippingAmountCents,
+        taxAmountCents: 0,
+        totalAmountCents,
+        currency: input.cart.currency,
+        sourceWorkflow: "automated_product_checkout",
+        disclosureSnapshot: {
+          helcimContract,
+          shippingQuoteContext: quoteContextSnapshot,
+          ...(input.usImportDisclosure
+            ? {
+                usImportDisclosure: {
+                  terms: input.usImportDisclosure.terms,
+                  version: input.usImportDisclosure.version,
+                  text: input.usImportDisclosure.text,
+                  presentedAt:
+                    input.usImportDisclosure.presentedAt.toISOString(),
+                },
+              }
+            : {}),
+        },
+        taxPolicyVersion: commitReadiness.taxPolicyVersion!,
+        policyVersion: commitReadiness.policyVersion!,
+        expiresAt: quote.quoteExpiresAt,
+        initializationStatus: "initializing",
+        idempotencyKey: `primary/${order.id}`,
+      })
+      .returning({ id: orderPaymentObligations.id });
+    if (!obligation)
+      throw new Error("Primary payment obligation was not created");
     return {
       databaseId: order.id,
       orderId,
+      primaryObligationId: obligation.id,
       merchandiseAmountCents,
       shippingAmountCents,
       totalAmountCents,
       shippingRateTitle: rate.title,
+    };
+  });
+}
+
+export async function createInitializingManualProductOrder(
+  input: CreateInitializingManualProductOrderInput,
+): Promise<InitializingProductOrderRecord> {
+  const now = new Date();
+  if (
+    input.fulfillmentMode !== "manual_pickup" ||
+    input.cancellationPolicy.accepted !== true ||
+    !/^checkout_post:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      input.cancellationPolicy.requestEvidence,
+    )
+  ) {
+    throw new Error(
+      "Manual checkout requires explicit policy acceptance and starts with studio pickup",
+    );
+  }
+  const readiness = await evaluateManualCheckoutReadiness({
+    catalogMetadataReady: input.cart.checkoutMode === "manual",
+    now,
+  });
+  if (
+    !readiness.ready ||
+    !readiness.policy ||
+    !readiness.taxPolicyApproval ||
+    !readiness.fulfillmentPolicyVersion
+  ) {
+    throw new Error("Manual product payment is not operationally ready");
+  }
+  const fulfillmentPolicyVersion = readiness.fulfillmentPolicyVersion;
+  const taxPolicyApprovalSnapshot = readiness.taxPolicyApproval;
+  const cancellationVersion = input.cancellationPolicy.version.trim();
+  if (!cancellationVersion) throw new Error("Cancellation policy is required");
+  if (
+    input.usImportDisclosure !== undefined &&
+    !isValidUsImportDisclosure(input.usImportDisclosure)
+  ) {
+    throw new Error("US import disclosure is invalid");
+  }
+  if (input.cart.currency !== "CAD") throw new Error("Unsupported currency");
+  const db = getPrivateDb();
+  const cancellationPolicy = readiness.policy;
+  if (
+    cancellationPolicy.version !== cancellationVersion ||
+    input.cancellationPolicy.textHash !== cancellationPolicy.textHash
+  ) {
+    throw new Error("Cancellation policy is not currently approved");
+  }
+  const cancellationPolicySnapshot = {
+    accepted: true,
+    version: cancellationPolicy.version,
+    text: cancellationPolicy.text,
+    textHash: cancellationPolicy.textHash,
+    approvalEvidenceReference: cancellationPolicy.evidenceReference,
+    approvedAt: cancellationPolicy.approvedAt.toISOString(),
+    effectiveAt: cancellationPolicy.effectiveAt.toISOString(),
+    presentedAt: input.cancellationPolicy.presentedAt.toISOString(),
+    acceptedAt: now.toISOString(),
+    requestEvidence: input.cancellationPolicy.requestEvidence,
+  };
+  const merchandiseAmountCents = toCents(input.cart.amount);
+  if (merchandiseAmountCents <= 0) {
+    throw new Error("Manual checkout total is invalid");
+  }
+  return db.transaction(async (tx) => {
+    const { helcimContract, taxPolicyApproval } =
+      await assertManualCheckoutReadinessInTransaction(
+        tx,
+        {
+          fulfillmentPolicyVersion,
+          manualPolicy: cancellationPolicy,
+          taxPolicyApproval: taxPolicyApprovalSnapshot,
+        },
+        now,
+      );
+    const orderId = `lh-${nanoid(12)}`;
+    const [order] = await tx
+      .insert(checkoutOrders)
+      .values({
+        orderId,
+        status: "pending",
+        initializationStatus: "initializing",
+        customerName: input.customerName,
+        customerEmail: input.customerEmail,
+        purpose: "product",
+        amountCents: merchandiseAmountCents,
+        merchandiseAmountCents,
+        shippingAmountCents: 0,
+        taxAmountCents: 0,
+        promotionCode: input.cart.promotionCode ?? null,
+        promotionDiscountCents: toCents(
+          input.cart.promotionDiscountAmount ?? 0,
+        ),
+        manualDiscountCents: toCents(input.cart.manualDiscountAmount ?? 0),
+        currency: input.cart.currency,
+        lineItems: toOrderLineItemSnapshots(input.cart),
+        paymentProvider: "helcim",
+        shippingAddress: undefined,
+        refundOriginIpCiphertext: encryptCheckoutIp(input.refundOriginIp),
+        atRiskValueCents: merchandiseAmountCents,
+        fraudClassification: "low",
+        paymentRiskStatus: "pending",
+        shippingPolicyVersion: fulfillmentPolicyVersion,
+        taxPolicyVersion: taxPolicyApproval.version,
+        dduNoticeVersion:
+          input.usImportDisclosure?.terms === "DDU"
+            ? input.usImportDisclosure.version
+            : undefined,
+        dduNoticePresentedAt:
+          input.usImportDisclosure?.terms === "DDU"
+            ? input.usImportDisclosure.presentedAt
+            : undefined,
+        usImportDisclosureSnapshot: input.usImportDisclosure
+          ? toStoredUsImportDisclosure(input.usImportDisclosure)
+          : undefined,
+        fulfillmentMode: input.fulfillmentMode,
+        manualFulfillmentStatus: "payment_pending",
+        cancellationPolicyVersion: cancellationVersion,
+        cancellationPolicySnapshot,
+      })
+      .returning({ id: checkoutOrders.id });
+    if (!order) throw new Error("Manual checkout order could not be created");
+    const [obligation] = await tx
+      .insert(orderPaymentObligations)
+      .values({
+        orderId: order.id,
+        purpose: "primary",
+        status: "pending",
+        merchandiseAmountCents,
+        shippingAmountCents: 0,
+        taxAmountCents: 0,
+        totalAmountCents: merchandiseAmountCents,
+        currency: input.cart.currency,
+        paymentProvider: "helcim",
+        initializationStatus: "initializing",
+        sourceWorkflow: input.fulfillmentMode,
+        disclosureSnapshot: {
+          helcimContract,
+          taxPolicyApproval,
+          cancellationPolicy: {
+            ...cancellationPolicySnapshot,
+          },
+          ...(input.usImportDisclosure
+            ? {
+                usImportDisclosure: {
+                  terms: input.usImportDisclosure.terms,
+                  version: input.usImportDisclosure.version,
+                  text: input.usImportDisclosure.text,
+                  presentedAt:
+                    input.usImportDisclosure.presentedAt.toISOString(),
+                },
+              }
+            : {}),
+        },
+        taxPolicyVersion: taxPolicyApproval.version,
+        policyVersion: fulfillmentPolicyVersion,
+        idempotencyKey: `primary/${order.id}`,
+      })
+      .returning({ id: orderPaymentObligations.id });
+    if (!obligation)
+      throw new Error("Primary payment obligation was not created");
+    return {
+      databaseId: order.id,
+      orderId,
+      primaryObligationId: obligation.id,
+      merchandiseAmountCents,
+      shippingAmountCents: 0,
+      totalAmountCents: merchandiseAmountCents,
+      shippingRateTitle:
+        input.fulfillmentMode === "manual_pickup"
+          ? "Pickup arranged after payment"
+          : "Shipping quoted separately",
     };
   });
 }
@@ -789,26 +1130,222 @@ export async function finalizeInitializingProductOrder(input: {
   helcimInvoiceId: number;
   helcimInvoiceNumber: string;
 }): Promise<void> {
-  const updated = await getPrivateDb()
-    .update(checkoutOrders)
+  await getPrivateDb().transaction(async (tx) => {
+    const [updated] = await tx
+      .update(checkoutOrders)
+      .set({
+        checkoutTokenHash: hashCheckoutToken(input.checkoutToken),
+        secretTokenCiphertext: encryptCheckoutSecret(input.secretToken),
+        helcimInvoiceId: input.helcimInvoiceId,
+        helcimInvoiceNumber: input.helcimInvoiceNumber,
+        initializationStatus: "ready",
+        initializationError: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(checkoutOrders.orderId, input.orderId),
+          eq(checkoutOrders.initializationStatus, "initializing"),
+        ),
+      )
+      .returning({ id: checkoutOrders.id });
+    if (!updated) {
+      throw new Error("Initializing checkout order could not be finalized");
+    }
+    const [obligation] = await tx
+      .update(orderPaymentObligations)
+      .set({
+        providerInvoiceId: input.helcimInvoiceId,
+        providerInvoiceNumber: input.helcimInvoiceNumber,
+        providerCheckoutId: input.checkoutToken,
+        checkoutTokenHash: hashCheckoutToken(input.checkoutToken),
+        secretTokenCiphertext: encryptCheckoutSecret(input.secretToken),
+        initializationStatus: "ready",
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(orderPaymentObligations.orderId, updated.id),
+          eq(orderPaymentObligations.purpose, "primary"),
+          eq(orderPaymentObligations.initializationStatus, "initializing"),
+          isNull(orderPaymentObligations.quarantinedAt),
+        ),
+      )
+      .returning({ id: orderPaymentObligations.id });
+    if (!obligation) {
+      throw new Error("Primary payment obligation could not be finalized");
+    }
+  });
+}
+
+export async function finalizeInitializingPaymentObligation(input: {
+  obligationId: string;
+  checkoutToken: string;
+  secretToken: string;
+  helcimInvoiceId: number;
+  helcimInvoiceNumber: string;
+  expectedLeaseOwner?: string;
+  expectedStateVersion?: number;
+}): Promise<void> {
+  const conditions = [
+    eq(orderPaymentObligations.id, input.obligationId),
+    inArray(orderPaymentObligations.purpose, [
+      "primary",
+      "manual_shipping",
+      "address_increase",
+    ]),
+    eq(orderPaymentObligations.status, "pending"),
+    eq(orderPaymentObligations.initializationStatus, "initializing"),
+    isNull(orderPaymentObligations.quarantinedAt),
+  ];
+  if (input.expectedLeaseOwner) {
+    conditions.push(
+      eq(
+        orderPaymentObligations.initializationLeaseOwner,
+        input.expectedLeaseOwner,
+      ),
+    );
+  }
+  if (input.expectedStateVersion !== undefined) {
+    conditions.push(
+      eq(
+        orderPaymentObligations.initializationStateVersion,
+        input.expectedStateVersion,
+      ),
+    );
+  }
+  await getPrivateDb().transaction(async (tx) => {
+    const now = new Date();
+    const [updated] = await tx
+      .update(orderPaymentObligations)
+      .set({
+        providerInvoiceId: input.helcimInvoiceId,
+        providerInvoiceNumber: input.helcimInvoiceNumber,
+        providerCheckoutId: input.checkoutToken,
+        checkoutTokenHash: hashCheckoutToken(input.checkoutToken),
+        secretTokenCiphertext: encryptCheckoutSecret(input.secretToken),
+        initializationStatus: "ready",
+        initializationOutcome: "succeeded",
+        initializationLeaseOwner: null,
+        initializationLeaseExpiresAt: null,
+        initializationLastError: null,
+        initializationStateVersion: sql`${orderPaymentObligations.initializationStateVersion} + 1`,
+        updatedAt: now,
+      })
+      .where(and(...conditions))
+      .returning({
+        id: orderPaymentObligations.id,
+        orderId: orderPaymentObligations.orderId,
+        purpose: orderPaymentObligations.purpose,
+      });
+    if (!updated) throw new Error("Payment obligation could not be finalized");
+    if (updated.purpose === "primary") {
+      const [order] = await tx
+        .update(checkoutOrders)
+        .set({
+          checkoutTokenHash: hashCheckoutToken(input.checkoutToken),
+          secretTokenCiphertext: encryptCheckoutSecret(input.secretToken),
+          helcimInvoiceId: input.helcimInvoiceId,
+          helcimInvoiceNumber: input.helcimInvoiceNumber,
+          initializationStatus: "ready",
+          initializationError: null,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(checkoutOrders.id, updated.orderId),
+            eq(checkoutOrders.initializationStatus, "initializing"),
+          ),
+        )
+        .returning({ id: checkoutOrders.id });
+      if (!order)
+        throw new Error("Primary checkout order could not be finalized");
+    }
+  });
+}
+
+export async function recordPaymentObligationInitializationInvoice(input: {
+  obligationId: string;
+  helcimInvoiceId: number;
+  helcimInvoiceNumber: string;
+  expectedLeaseOwner: string;
+  expectedStateVersion: number;
+}): Promise<number> {
+  const [updated] = await getPrivateDb()
+    .update(orderPaymentObligations)
     .set({
-      checkoutTokenHash: hashCheckoutToken(input.checkoutToken),
-      secretTokenCiphertext: encryptCheckoutSecret(input.secretToken),
-      helcimInvoiceId: input.helcimInvoiceId,
-      helcimInvoiceNumber: input.helcimInvoiceNumber,
-      initializationStatus: "ready",
-      initializationError: null,
+      providerInvoiceId: input.helcimInvoiceId,
+      providerInvoiceNumber: input.helcimInvoiceNumber,
+      initializationStateVersion: sql`${orderPaymentObligations.initializationStateVersion} + 1`,
       updatedAt: new Date(),
     })
     .where(
       and(
-        eq(checkoutOrders.orderId, input.orderId),
-        eq(checkoutOrders.initializationStatus, "initializing"),
+        eq(orderPaymentObligations.id, input.obligationId),
+        eq(orderPaymentObligations.status, "pending"),
+        eq(orderPaymentObligations.initializationStatus, "initializing"),
+        eq(orderPaymentObligations.initializationOutcome, "claimed"),
+        eq(
+          orderPaymentObligations.initializationLeaseOwner,
+          input.expectedLeaseOwner,
+        ),
+        eq(
+          orderPaymentObligations.initializationStateVersion,
+          input.expectedStateVersion,
+        ),
+        isNull(orderPaymentObligations.quarantinedAt),
       ),
     )
-    .returning({ id: checkoutOrders.id });
-  if (!updated.length)
-    throw new Error("Initializing checkout order could not be finalized");
+    .returning({
+      stateVersion: orderPaymentObligations.initializationStateVersion,
+    });
+  if (!updated) {
+    throw new Error("Payment obligation invoice evidence lost its lease");
+  }
+  return updated.stateVersion;
+}
+
+export async function markPaymentObligationInitializationFailed(input: {
+  obligationId: string;
+  expectedLeaseOwner?: string;
+  expectedStateVersion?: number;
+  outcome?: "failed" | "outcome_unknown" | "manual_review";
+  error?: string;
+}): Promise<void> {
+  const conditions = [
+    eq(orderPaymentObligations.id, input.obligationId),
+    eq(orderPaymentObligations.status, "pending"),
+    eq(orderPaymentObligations.initializationStatus, "initializing"),
+    isNull(orderPaymentObligations.quarantinedAt),
+  ];
+  if (input.expectedLeaseOwner) {
+    conditions.push(
+      eq(
+        orderPaymentObligations.initializationLeaseOwner,
+        input.expectedLeaseOwner,
+      ),
+    );
+  }
+  if (input.expectedStateVersion !== undefined) {
+    conditions.push(
+      eq(
+        orderPaymentObligations.initializationStateVersion,
+        input.expectedStateVersion,
+      ),
+    );
+  }
+  await getPrivateDb()
+    .update(orderPaymentObligations)
+    .set({
+      initializationStatus: "failed",
+      initializationOutcome: input.outcome ?? "failed",
+      initializationLastError: input.error?.slice(0, 500),
+      initializationLeaseOwner: null,
+      initializationLeaseExpiresAt: null,
+      initializationStateVersion: sql`${orderPaymentObligations.initializationStateVersion} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(and(...conditions));
 }
 
 export async function markProductOrderInitializationFailed(
@@ -833,6 +1370,22 @@ export async function markProductOrderInitializationFailed(
       )
       .returning({ id: checkoutOrders.id });
     if (order) {
+      await tx
+        .update(orderPaymentObligations)
+        .set({
+          status: "cancelled",
+          initializationStatus: "failed",
+          initializationOutcome: "failed",
+          initializationLastError: error.slice(0, 500),
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(orderPaymentObligations.orderId, order.id),
+            eq(orderPaymentObligations.purpose, "primary"),
+            eq(orderPaymentObligations.status, "pending"),
+          ),
+        );
       await tx
         .update(productShipments)
         .set({
@@ -950,6 +1503,44 @@ export async function recordHelcimWebhookEventWithOrder(
   return defaultOrderStore.recordHelcimWebhookEventWithOrder(input);
 }
 
+export async function markHelcimWebhookEventProcessingStatus(input: {
+  eventId: string;
+  status: "processed" | "review_required" | "retryable_failed";
+  message?: string;
+  reasonCode?: string;
+}): Promise<void> {
+  await getPrivateDb().transaction(async (tx) => {
+    const [event] = await tx
+      .update(checkoutPaymentEvents)
+      .set({
+        processingStatus: input.status,
+        message: input.message?.slice(0, 500),
+        processedAt: input.status === "processed" ? new Date() : null,
+      })
+      .where(
+        and(
+          eq(checkoutPaymentEvents.paymentProvider, "helcim"),
+          eq(checkoutPaymentEvents.idempotencyKey, input.eventId),
+        ),
+      )
+      .returning({ id: checkoutPaymentEvents.id });
+    if (input.status === "review_required" && event) {
+      await tx
+        .insert(fulfillmentDataQuarantine)
+        .values({
+          entityType: "checkout_payment_event",
+          entityId: event.id,
+          reasonCode: input.reasonCode ?? "UNMATCHED_APPROVED_HELCIM_REFUND",
+          evidence: {
+            providerEventId: input.eventId,
+            message: input.message?.slice(0, 500) ?? null,
+          },
+        })
+        .onConflictDoNothing();
+    }
+  });
+}
+
 export async function claimSquareInvoiceWebhookEvent(
   input: SquareInvoiceWebhookEventInput,
 ): Promise<SquareInvoiceWebhookEventClaimResult> {
@@ -966,7 +1557,10 @@ async function recordHelcimWebhookEventWithOrderInternal(
   repository: CheckoutOrderRepository,
   input: HelcimWebhookEventInput,
 ): Promise<HelcimWebhookEventRecordResult> {
-  const order = await repository.findOrderForWebhook(input);
+  const obligationMatch =
+    await repository.findPaymentObligationForWebhook?.(input);
+  const order =
+    obligationMatch?.order ?? (await repository.findOrderForWebhook(input));
   const amountCents = input.amount === undefined ? null : toCents(input.amount);
   const createdEvent = await repository.createWebhookEvent({
     orderId: order?.id ?? null,
@@ -991,7 +1585,14 @@ async function recordHelcimWebhookEventWithOrderInternal(
   });
 
   return {
-    matchedOrder: order ? toMatchedCheckoutOrderRecord(order) : null,
+    matchedOrder: order
+      ? {
+          ...toMatchedCheckoutOrderRecord(order),
+          ...(obligationMatch
+            ? { paymentObligationId: obligationMatch.obligationId }
+            : {}),
+        }
+      : null,
     paid,
     recorded: createdEvent !== null,
   };
@@ -1073,6 +1674,7 @@ function toProductOrderConfirmationEmailRecord(
   }
 
   return {
+    orderDatabaseId: order.id,
     currency,
     customerEmail: order.customerEmail,
     customerName: order.customerName,
@@ -1090,7 +1692,77 @@ function toProductOrderConfirmationEmailRecord(
     promotionDiscount: centsToCad(order.promotionDiscountCents),
     manualDiscount: centsToCad(order.manualDiscountCents),
     taxAmount: centsToCad(order.taxAmountCents),
+    fulfillmentMode: order.fulfillmentMode,
+    manualFulfillmentStatus: order.manualFulfillmentStatus,
+    cancellationPolicySnapshot: order.cancellationPolicySnapshot,
+    usImportDisclosure: order.usImportDisclosureSnapshot,
   };
+}
+
+export async function enqueuePaidProductOrderConfirmationEmail(input: {
+  orderId: string;
+  now?: Date;
+}): Promise<ProductOrderConfirmationEmailRecord | null> {
+  const now = input.now ?? new Date();
+  return getPrivateDb().transaction(async (tx) => {
+    const [claimedOrder] = await tx
+      .update(checkoutOrders)
+      .set({
+        productConfirmationEmailClaimedUntil: new Date(
+          now.getTime() + EMAIL_CLAIM_DURATION_MS,
+        ),
+        productConfirmationEmailLastError: null,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(checkoutOrders.orderId, input.orderId),
+          eq(checkoutOrders.status, "paid"),
+          eq(checkoutOrders.purpose, "product"),
+          isNull(checkoutOrders.productConfirmationEmailSentAt),
+          or(
+            isNull(checkoutOrders.productConfirmationEmailClaimedUntil),
+            lte(checkoutOrders.productConfirmationEmailClaimedUntil, now),
+          ),
+        ),
+      )
+      .returning();
+    if (!claimedOrder) return null;
+    const payload = toProductOrderConfirmationEmailRecord(claimedOrder);
+    await enqueueCustomerEmail(
+      {
+        kind: "product_order_confirmation",
+        orderDatabaseId: claimedOrder.id,
+        payload,
+        providerIdempotencyKey: `product-confirmation:${claimedOrder.orderId}`,
+        recipient: claimedOrder.customerEmail,
+        now,
+      },
+      tx,
+    );
+    return payload;
+  });
+}
+
+export async function listPaidProductOrdersMissingConfirmationOutbox(
+  input: {
+    limit?: number;
+  } = {},
+): Promise<string[]> {
+  const limit = Math.min(Math.max(input.limit ?? 25, 1), 100);
+  const rows = await getPrivateDb()
+    .select({ orderId: checkoutOrders.orderId })
+    .from(checkoutOrders)
+    .where(
+      and(
+        eq(checkoutOrders.status, "paid"),
+        eq(checkoutOrders.purpose, "product"),
+        isNull(checkoutOrders.productConfirmationEmailSentAt),
+      ),
+    )
+    .orderBy(checkoutOrders.updatedAt)
+    .limit(limit);
+  return rows.map((row) => row.orderId);
 }
 
 function createTrainingInvoiceLineItems(
@@ -1295,6 +1967,50 @@ function createDrizzleCheckoutOrderRepository(): CheckoutOrderRepository {
       return findOrderForWebhook(input);
     },
 
+    async findPaymentObligationForWebhook(input) {
+      if (
+        input.helcimInvoiceId === undefined &&
+        input.helcimInvoiceNumber === undefined
+      ) {
+        return null;
+      }
+      const conditions = [
+        input.helcimInvoiceId === undefined
+          ? undefined
+          : eq(
+              orderPaymentObligations.providerInvoiceId,
+              input.helcimInvoiceId,
+            ),
+        input.helcimInvoiceNumber === undefined
+          ? undefined
+          : eq(
+              orderPaymentObligations.providerInvoiceNumber,
+              input.helcimInvoiceNumber,
+            ),
+      ].filter((condition) => condition !== undefined);
+      const [match] = await getPrivateDb()
+        .select({
+          order: checkoutOrders,
+          obligationId: orderPaymentObligations.id,
+        })
+        .from(orderPaymentObligations)
+        .innerJoin(
+          checkoutOrders,
+          eq(orderPaymentObligations.orderId, checkoutOrders.id),
+        )
+        .where(
+          and(
+            eq(orderPaymentObligations.paymentProvider, "helcim"),
+            eq(orderPaymentObligations.initializationStatus, "ready"),
+            isNull(orderPaymentObligations.quarantinedAt),
+            isNull(checkoutOrders.fulfillmentQuarantinedAt),
+            ...conditions,
+          ),
+        )
+        .limit(1);
+      return match ?? null;
+    },
+
     async findCheckoutOrderByCheckoutTokenHash(checkoutTokenHash) {
       const [order] = await getPrivateDb()
         .select()
@@ -1302,12 +2018,40 @@ function createDrizzleCheckoutOrderRepository(): CheckoutOrderRepository {
         .where(
           and(
             eq(checkoutOrders.checkoutTokenHash, checkoutTokenHash),
-            inArray(checkoutOrders.status, ["pending", "paid"]),
+            inArray(checkoutOrders.status, [
+              "pending",
+              "paid",
+              "cancelled",
+              "refunded",
+            ]),
           ),
         )
         .limit(1);
 
       return order ?? null;
+    },
+
+    async findPaymentObligationByCheckoutTokenHash(checkoutTokenHash) {
+      const [match] = await getPrivateDb()
+        .select({
+          order: checkoutOrders,
+          obligation: orderPaymentObligations,
+        })
+        .from(orderPaymentObligations)
+        .innerJoin(
+          checkoutOrders,
+          eq(orderPaymentObligations.orderId, checkoutOrders.id),
+        )
+        .where(
+          and(
+            eq(orderPaymentObligations.checkoutTokenHash, checkoutTokenHash),
+            eq(orderPaymentObligations.paymentProvider, "helcim"),
+            isNull(orderPaymentObligations.quarantinedAt),
+            isNull(checkoutOrders.fulfillmentQuarantinedAt),
+          ),
+        )
+        .limit(1);
+      return match ?? null;
     },
 
     async findOrderBySquareInvoiceId(invoiceId) {
@@ -1548,7 +2292,11 @@ async function findOrderForWebhook(
     .select()
     .from(checkoutOrders)
     .where(
-      and(eq(checkoutOrders.paymentProvider, "helcim"), ...invoiceConditions),
+      and(
+        eq(checkoutOrders.paymentProvider, "helcim"),
+        isNull(checkoutOrders.fulfillmentQuarantinedAt),
+        ...invoiceConditions,
+      ),
     )
     .limit(1);
 
@@ -1576,7 +2324,10 @@ function hashPayload(payload: CheckoutPaymentEventPayload): string {
 }
 
 function isCheckoutTokenValidationEligible(order: CheckoutOrderRow): boolean {
-  if (order.paymentProvider !== "helcim") {
+  if (
+    order.paymentProvider !== "helcim" ||
+    order.fulfillmentQuarantinedAt !== null
+  ) {
     return false;
   }
 
@@ -1584,7 +2335,15 @@ function isCheckoutTokenValidationEligible(order: CheckoutOrderRow): boolean {
     return true;
   }
 
-  return order.status === "paid" && isAppointmentPurpose(order.purpose);
+  // Helcim webhooks can commit a product purchase before the browser callback.
+  // The checkout token and response hash still authenticate the browser path;
+  // finalizers enforce immutable provider transaction identity on replay.
+  return (
+    (order.status === "paid" &&
+      (order.purpose === "product" || isAppointmentPurpose(order.purpose))) ||
+    (["cancelled", "refunded"].includes(order.status) &&
+      order.purpose === "product")
+  );
 }
 
 function isAppointmentPurpose(purpose: CheckoutOrderPurpose): boolean {
@@ -1593,4 +2352,29 @@ function isAppointmentPurpose(purpose: CheckoutOrderPurpose): boolean {
     purpose === "appointment_full" ||
     purpose === "appointment_custom_partial"
   );
+}
+
+function isValidUsImportDisclosure(
+  value: UsImportDisclosureSnapshot | undefined,
+): value is UsImportDisclosureSnapshot {
+  return Boolean(
+    value &&
+    value.terms === "DDU" &&
+    value.version.trim() &&
+    value.text.trim() &&
+    !Number.isNaN(value.presentedAt.getTime()),
+  );
+}
+
+function toStoredUsImportDisclosure(value: UsImportDisclosureSnapshot) {
+  return {
+    terms: value.terms,
+    version: value.version.trim(),
+    text: value.text.trim(),
+    presentedAt: value.presentedAt.toISOString(),
+  };
+}
+
+export function hashManualCancellationPolicyText(text: string): string {
+  return createHash("sha256").update(text.trim(), "utf8").digest("hex");
 }

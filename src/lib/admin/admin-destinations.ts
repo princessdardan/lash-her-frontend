@@ -93,6 +93,24 @@ const ADMIN_DESTINATION_DEFINITIONS: readonly AdminDestinationDefinition[] = [
     navigation: true,
   },
   {
+    action: "fulfillment:view",
+    description:
+      "Work deadline-sorted product checkout, payment-risk, and shipping queues.",
+    group: "Daily work",
+    href: "/admin/operations",
+    keywords: [
+      "risk",
+      "shipping jobs",
+      "address changes",
+      "claims",
+      "refunds",
+      "funding",
+      "readiness",
+    ],
+    label: "Operations",
+    navigation: true,
+  },
+  {
     action: "payments:view",
     description:
       "Review training purchases, enrollments, and scheduling follow-up.",
@@ -221,6 +239,24 @@ const ADMIN_DESTINATION_DEFINITIONS: readonly AdminDestinationDefinition[] = [
     keywords: ["readiness", "setup", "online booking", "missing configuration"],
     label: "Booking health",
     navigation: true,
+  },
+  {
+    action: "fulfillment:view",
+    description:
+      "Review Chit Chats configuration and attest the physical parcel intake location.",
+    group: "Settings",
+    href: "/admin/shipping-readiness",
+    keywords: [
+      "shipping",
+      "chit chats",
+      "intake location",
+      "attestation",
+      "checkout blockers",
+      "region",
+    ],
+    label: "Shipping readiness",
+    navigation: true,
+    roles: ["owner"],
   },
   {
     action: "setup:view",

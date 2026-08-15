@@ -4,15 +4,23 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  isTerminalShipmentOperationStatus,
+  type ShipmentOperationStatus,
+} from "@/lib/shipping/operation-status";
 
 export function OrderShippingControls({
   orderId,
+  shipmentId,
+  stateVersion,
   status,
   defaultWeightGrams,
   trackingNumber,
   trackingUrl,
 }: {
   orderId: string;
+  shipmentId: string;
+  stateVersion: number;
   status: string;
   defaultWeightGrams: number;
   trackingNumber: string | null;
@@ -23,6 +31,7 @@ export function OrderShippingControls({
   const [shipDate, setShipDate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [operationStatus, setOperationStatus] = useState<string | null>(null);
   const [alternateRates, setAlternateRates] = useState<
     Array<{ id: string; title: string; amountCents: number }>
   >([]);
@@ -30,6 +39,44 @@ export function OrderShippingControls({
   const [alternateReason, setAlternateReason] = useState("");
   const [alternateConditionsUnchanged, setAlternateConditionsUnchanged] =
     useState(false);
+
+  const waitForOperation = async (operationId: string) => {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      const response = await fetch(
+        `/api/admin/orders/${encodeURIComponent(orderId)}/shipping/operations/${encodeURIComponent(operationId)}?${new URLSearchParams({ shipmentId }).toString()}`,
+        { cache: "no-store" },
+      );
+      const result = (await response.json()) as {
+        attemptCount?: number;
+        error?: string;
+        lastError?: string | null;
+        outcomeCode?: string | null;
+        outcomeUnknown?: boolean;
+        status?: ShipmentOperationStatus;
+      };
+      if (!response.ok || !result.status) {
+        throw new Error(result.error ?? "Operation status could not be loaded");
+      }
+      const detail = result.outcomeCode ?? result.status;
+      setOperationStatus(
+        `Operation ${operationId}: ${detail.replaceAll("_", " ")}${result.outcomeUnknown ? " (provider outcome unknown)" : ""}`,
+      );
+      if (isTerminalShipmentOperationStatus(result.status)) {
+        router.refresh();
+        if (result.status === "dead_letter") {
+          throw new Error(
+            result.lastError ??
+              "The operation requires manual review. Refresh for current state.",
+          );
+        }
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+    setOperationStatus(
+      `Operation ${operationId} is still queued. Refresh for current state.`,
+    );
+  };
 
   const buy = async () => {
     setBusy(true);
@@ -41,6 +88,8 @@ export function OrderShippingControls({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            shipmentId,
+            expectedStateVersion: stateVersion,
             measuredWeightGrams: Number(weight),
             shipDate,
             ...(alternatePostageType
@@ -55,6 +104,8 @@ export function OrderShippingControls({
       );
       const result = (await response.json()) as {
         error?: string;
+        operationId?: string;
+        status?: string;
         rates?: Array<{ id: string; title: string; amountCents: number }>;
       };
       if (!response.ok) {
@@ -65,9 +116,18 @@ export function OrderShippingControls({
         }
         return;
       }
-      router.refresh();
-    } catch {
-      setError("Postage could not be purchased");
+      setOperationStatus(
+        result.operationId && result.status
+          ? `Operation ${result.operationId}: ${result.status.replaceAll("_", " ")}`
+          : "Postage purchase queued",
+      );
+      if (result.operationId) await waitForOperation(result.operationId);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Postage could not be purchased",
+      );
     } finally {
       setBusy(false);
     }
@@ -85,14 +145,36 @@ export function OrderShippingControls({
     try {
       const response = await fetch(
         `/api/admin/orders/${encodeURIComponent(orderId)}/shipping/refund`,
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            shipmentId,
+            expectedStateVersion: stateVersion,
+          }),
+        },
       );
-      const result = (await response.json()) as { error?: string };
+      const result = (await response.json()) as {
+        error?: string;
+        operationId?: string;
+        status?: string;
+      };
       if (!response.ok)
         setError(result.error ?? "Postage refund could not be requested");
-      else router.refresh();
-    } catch {
-      setError("Postage refund could not be requested");
+      else {
+        setOperationStatus(
+          result.operationId && result.status
+            ? `Operation ${result.operationId}: ${result.status.replaceAll("_", " ")}`
+            : "Postage refund queued",
+        );
+        if (result.operationId) await waitForOperation(result.operationId);
+      }
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Postage refund could not be requested",
+      );
     } finally {
       setBusy(false);
     }
@@ -168,14 +250,9 @@ export function OrderShippingControls({
             variant="ghost"
             size="sm"
             disabled={busy}
-            onClick={() =>
-              postAction(
-                `/api/admin/orders/${encodeURIComponent(orderId)}/shipping/manual-review`,
-                "Manual review could not be acknowledged",
-              )
-            }
+            onClick={() => router.push("/admin/operations")}
           >
-            Acknowledge review
+            Review in operations workspace
           </Button>
         ) : null}
       </div>
@@ -233,6 +310,11 @@ export function OrderShippingControls({
           {error}
         </p>
       ) : null}
+      {operationStatus ? (
+        <p className="mt-2 text-xs text-lh-muted" role="status">
+          {operationStatus}
+        </p>
+      ) : null}
       {trackingNumber ? (
         <p className="mt-2 text-xs text-lh-muted">
           Tracking:{" "}
@@ -259,7 +341,7 @@ export function OrderShippingControls({
       ].includes(status) ? (
         <a
           className="mt-2 inline-block text-xs font-semibold text-lh-primary underline"
-          href={`/api/admin/orders/${encodeURIComponent(orderId)}/shipping/label`}
+          href={`/api/admin/orders/${encodeURIComponent(orderId)}/shipping/label?${new URLSearchParams({ shipmentId, expectedStateVersion: String(stateVersion) }).toString()}`}
           target="_blank"
           rel="noreferrer"
         >

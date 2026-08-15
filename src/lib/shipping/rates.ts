@@ -4,6 +4,7 @@ import {
   parseDeliveryMaxBusinessDays,
   signatureIsAvailable,
 } from "./policy-rules";
+import { parseProviderMoneyCents } from "./provider-money";
 import { type ShippingServicePolicy } from "./policy";
 
 export function selectCustomerRates(
@@ -21,8 +22,8 @@ export function selectCustomerRates(
     options.atRiskValueCents >= options.signatureThresholdCents;
   return rates
     .flatMap((rate) => {
-      const paymentAmountCents = moneyToCents(rate.payment_amount);
-      const insuranceFeeCents = moneyToCents(rate.insurance_fee ?? 0);
+      const paymentAmountCents = parseRateMoney(rate.payment_amount);
+      const insuranceFeeCents = parseRateMoney(rate.insurance_fee ?? 0);
       const tracked =
         trackedPostageTypes.has(rate.postage_type) &&
         /tracking/i.test(rate.tracking_type_description ?? "");
@@ -81,10 +82,12 @@ function validFutureInstant(value: string | null | undefined): string | null {
   return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
 }
 
-function moneyToCents(value: string | number): number {
-  const parsed = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(parsed)) return 0;
-  return Math.round(parsed * 100);
+function parseRateMoney(value: string | number): number {
+  try {
+    return parseProviderMoneyCents(value) ?? 0;
+  } catch {
+    return 0;
+  }
 }
 
 function stripUnknownUrls(rate: ChitChatsRate): Record<string, unknown> {

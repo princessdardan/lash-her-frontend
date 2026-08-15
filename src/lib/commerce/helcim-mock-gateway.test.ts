@@ -211,6 +211,7 @@ test("mock Helcim sparse webhook verifies signature and merges fetched transacti
     helcimInvoiceId: undefined,
     helcimInvoiceNumber: undefined,
     helcimTransactionId: "mock_helcim_txn_1",
+    merchantReference: undefined,
     status: undefined,
   });
 

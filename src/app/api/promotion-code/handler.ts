@@ -1,11 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import {
-  buildValidatedCart,
-  type CartInputItem,
-  type CatalogProduct,
-} from "@/lib/commerce/cart";
+import { buildValidatedCart, type CartInputItem } from "@/lib/commerce/cart";
 import { parsePromotionCodeInput } from "@/lib/commerce/discounts";
+import { toCheckoutCatalogProduct } from "@/lib/commerce/product-catalog";
 import { validateTrainingCheckoutRequest } from "@/lib/training-checkout";
 import type { TProduct, TPromotionCode, TTrainingProgram } from "@/types";
 
@@ -78,9 +75,13 @@ export function createPromotionCodePostHandler(dependencies: {
           new Set(items.map((item) => item.productId)),
         );
         const products = await dependencies.getProductsByIds(productIds);
-        const cart = buildValidatedCart(items, products.map(toCatalogProduct), {
-          promotionCode,
-        });
+        const cart = buildValidatedCart(
+          items,
+          products.map(toCheckoutCatalogProduct),
+          {
+            promotionCode,
+          },
+        );
 
         if (
           cart.promotionCode !== promotionCodeInput ||
@@ -155,41 +156,6 @@ function toCartInputItem(item: unknown): CartInputItem {
     productId: typeof item.productId === "string" ? item.productId : "",
     variantId: typeof item.variantId === "string" ? item.variantId : undefined,
     quantity: typeof item.quantity === "number" ? item.quantity : Number.NaN,
-  };
-}
-
-function toCatalogProduct(product: TProduct): CatalogProduct {
-  return {
-    id: product._id,
-    sku: product.sku,
-    title: product.title,
-    price: product.price,
-    discountPrice: product.discountPrice,
-    currency: product.currency,
-    isAvailable: product.isAvailable,
-    checkoutMode:
-      product.shipping?.fulfillmentMode === "manual" ||
-      product.shipping?.hazardousMaterial
-        ? "manual"
-        : "automated",
-    variants: product.variants?.map((variant) => ({
-      id: variant._key,
-      sku: variant.sku,
-      title: variant.title,
-      price: variant.price,
-      discountPrice: variant.discountPrice,
-      isAvailable: variant.isAvailable,
-      options: variant.options?.flatMap((option) =>
-        option.name && option.value
-          ? [{ label: option.name, value: option.value }]
-          : [],
-      ),
-      checkoutMode:
-        (variant.shipping ?? product.shipping)?.fulfillmentMode === "manual" ||
-        (variant.shipping ?? product.shipping)?.hazardousMaterial
-          ? "manual"
-          : "automated",
-    })),
   };
 }
 

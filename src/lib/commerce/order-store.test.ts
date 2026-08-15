@@ -87,8 +87,10 @@ const helperScript = String.raw`
         createdAt: now,
         deletedAt: null,
         failedAt: null,
-        finalizedAt: null,
-        helcimInvoiceId: values.helcimInvoiceId ?? null,
+          finalizedAt: null,
+          fulfillmentQuarantinedAt: null,
+          fulfillmentQuarantineReason: null,
+          helcimInvoiceId: values.helcimInvoiceId ?? null,
         helcimInvoiceNumber: values.helcimInvoiceNumber ?? null,
         helcimTransactionId: null,
         id,
@@ -469,7 +471,7 @@ test("private checkout store records appointment order purposes", () => {
   `);
 });
 
-test("private checkout store looks up pending orders by token hash only", () => {
+test("private checkout store looks up eligible orders by token hash only", () => {
   runOrderStoreScenario(`
     const { repository, store } = createFakeStore();
     await store.createPendingOrder(pendingOrderInput);
@@ -488,11 +490,11 @@ test("private checkout store looks up pending orders by token hash only", () => 
     assert.deepEqual(found.lineItems, row.lineItems);
 
     row.status = "paid";
-    assert.equal(await store.getPendingOrderByCheckoutToken(pendingOrderInput.checkoutToken), null);
+    assert.ok(await store.getPendingOrderByCheckoutToken(pendingOrderInput.checkoutToken));
   `);
 });
 
-test("private checkout store can recover paid appointment orders by checkout token", () => {
+test("private checkout store can recover paid appointment and product orders by checkout token", () => {
   runOrderStoreScenario(`
     const { repository, store } = createFakeStore();
     const appointment = await store.createPendingOrder({
@@ -515,7 +517,9 @@ test("private checkout store can recover paid appointment orders by checkout tok
     assert.ok(foundAppointment);
     assert.equal(foundAppointment.orderId, appointment.orderId);
     assert.equal(foundAppointment.purpose, "appointment_custom_partial");
-    assert.equal(foundProduct, null);
+    assert.ok(foundProduct);
+    assert.equal(foundProduct.orderId, product.orderId);
+    assert.equal(foundProduct.purpose, "product");
   `);
 });
 

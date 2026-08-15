@@ -53,9 +53,10 @@ export function CartSheet(): ReactElement {
   const [cartPreviewError, setCartPreviewError] =
     useState<CartPreviewErrorState | null>(null);
   const itemsKey = useMemo(() => JSON.stringify(items), [items]);
+  const isOverLimit = items.length > MAX_CART_LINE_ITEMS;
 
   useEffect(() => {
-    if (!isOpen || items.length === 0) {
+    if (!isOpen || items.length === 0 || isOverLimit) {
       return;
     }
 
@@ -99,7 +100,7 @@ export function CartSheet(): ReactElement {
       });
 
     return () => controller.abort();
-  }, [isOpen, items, itemsKey]);
+  }, [isOpen, isOverLimit, items, itemsKey]);
 
   const handleClose = () => {
     closeCart();
@@ -223,6 +224,40 @@ export function CartSheet(): ReactElement {
               <p className="mt-2 font-body text-sm font-bold leading-6 text-lh-muted">
                 Add a product from the catalog to begin checkout.
               </p>
+            </div>
+          ) : isOverLimit ? (
+            <div className="flex flex-col gap-4">
+              <p
+                className="text-sm font-bold leading-6 text-lh-accent"
+                role="alert"
+              >
+                This saved cart has more than {MAX_CART_LINE_ITEMS} distinct
+                items. Remove items before checkout.
+              </p>
+              <ul className="divide-y divide-lh-line rounded-[18px] border border-lh-line bg-lh-white px-4">
+                {items.map((item) => (
+                  <li
+                    key={`${item.productId}:${item.variantId ?? "default"}`}
+                    className="flex items-center justify-between gap-4 py-3"
+                  >
+                    <span className="min-w-0 font-body text-sm text-lh-shadow">
+                      Saved item {item.productId}
+                      {item.variantId ? ` / ${item.variantId}` : ""} · Qty{" "}
+                      {item.quantity}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeItem(item.productId, item.variantId)}
+                      className="shrink-0 text-xs font-bold text-lh-accent hover:underline"
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <Button type="button" variant="ghost" onClick={clearCart}>
+                Clear Cart
+              </Button>
             </div>
           ) : cartError ? (
             <p

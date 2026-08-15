@@ -8,7 +8,7 @@ Production effect: remains a launch blocker until acceptance evidence is recorde
 
 Allow a customer to propose a shipping-address change before carrier handoff through a single-use link delivered only to the original order email. Preserve the original address and every decision in an audit trail, require risk-based staff approval, and prevent an address mutation from bypassing postage reconciliation.
 
-The implementation must never collect card details. Until a secure supplemental-charge flow exists, a customer-requested change that increases the amount owed requires a full refund and a new checkout.
+The implementation must never collect card details. A customer-caused increase uses a separate, expiring `address_increase` Helcim obligation. The original fulfillment stays held while the request remains open; expired offers are superseded and may be repriced. Lash Her absorbs its own errors and any post-payment quote-to-purchase increase.
 
 ## Workflow
 
@@ -63,21 +63,21 @@ Nataliea Lavoie is the sole reviewer. High-risk requests require the enhanced ow
 
 ## Shipment-state behavior
 
-| Shipment condition                                                          | Required behavior                                                                                                                                                                                                                               |
-| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No postage/provider shipment created                                        | Apply approved address transactionally, update both checkout and shipment destination snapshots, invalidate old quotes/fingerprints, and obtain new rates.                                                                                      |
-| Provider shipment created but postage not purchased                         | Update the provider shipment or replace it safely, invalidate old rates, and record provider identifiers before applying locally.                                                                                                               |
-| Postage purchased/label ready but no carrier handoff                        | Do not apply immediately. Move to manual review, request eligible void/refund, reconcile the provider outcome, then create/requote against the approved address. If additional customer payment is required, refund and require a new checkout. |
-| `accepted`, `in_transit`, `delivered`, or other evidence of carrier handoff | Reject the normal address-change path. Record a best-effort intercept/return case; never promise that the address can be changed.                                                                                                               |
-| Provider outcome is ambiguous                                               | Stop automation and enter `manual_review`; do not buy replacement postage until reconciliation proves that duplicate shipment/postage cannot occur.                                                                                             |
+| Shipment condition                                                          | Required behavior                                                                                                                                                                                                                                                                                                   |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No postage/provider shipment created                                        | Apply approved address transactionally, update both checkout and shipment destination snapshots, invalidate old quotes/fingerprints, and obtain new rates.                                                                                                                                                          |
+| Provider shipment created but postage not purchased                         | Update the provider shipment or replace it safely, invalidate old rates, and record provider identifiers before applying locally.                                                                                                                                                                                   |
+| Postage purchased/label ready but no carrier handoff                        | Do not apply immediately. Move to manual review, request eligible void/refund, reconcile the provider outcome, then create/requote against the approved address. A customer-caused increase creates an `address_increase` obligation; do not apply the replacement until that exact obligation is paid and cleared. |
+| `accepted`, `in_transit`, `delivered`, or other evidence of carrier handoff | Reject the normal address-change path. Record a best-effort intercept/return case; never promise that the address can be changed.                                                                                                                                                                                   |
+| Provider outcome is ambiguous                                               | Stop automation and enter `manual_review`; do not buy replacement postage until reconciliation proves that duplicate shipment/postage cannot occur.                                                                                                                                                                 |
 
 Address application and shipment transition must use a database transaction with optimistic state checks. An approval becomes stale if order or shipment state changes before application and must return to review.
 
 ## Application surfaces
 
-- Protected Orders UI: start/resend/revoke link, display expiry and risk state, review a masked diff, approve/reject, perform second approval, and show postage reconciliation state.
+- Protected Orders UI: start/resend/revoke link, display expiry and risk state, review a masked diff, record the separate immutable owner address-approval and fraud-clearance actions, reject, and show postage reconciliation state.
 - Customer route: `/orders/address-change` with token exchange, clean form URL, submission confirmation, and expired/invalid states.
-- Admin API: create/resend/revoke, first approval, second approval, rejection, and apply/reconcile actions guarded by `fulfillment:manage` plus role checks.
+- Admin API: create/resend/revoke, owner address approval, separate owner fraud clearance, rejection, and apply/reconcile actions guarded by `fulfillment:manage`, owner authorization, action-and-target-bound step-up proof, and optimistic version checks.
 - Customer API: token exchange, request read, and submission endpoints with rate limits and generic errors.
 - Transactional email: original-email link, submission alert, approval/rejection, expiry, and final address-change confirmation.
 - Operations queue: unresolved request age, SLA deadline, risk class, approvers required, and linked postage/manual-review state.
@@ -87,23 +87,23 @@ Address application and shipment transition must use a database transaction with
 1. Add the schema, enum/state model, indexes, retention fields, and migration. Add repository methods with atomic token consumption and optimistic state transitions.
 2. Add token generation/exchange, validation, rate limits, origin/referrer protections, and security-focused unit tests.
 3. Add customer routes and transactional email templates. Confirm that messages always use the immutable original order email.
-4. Add fraud rules and two-person approval enforcement, including explicit role checks and audit events.
+4. Add fraud rules and enhanced owner-only enforcement: fresh action-and-target-bound step-up, original-order-phone callback, structured authoritative evidence, a 15-minute cooling-off period, and separate immutable address-approval and fraud-clearance actions.
 5. Add shipment orchestration for quote invalidation, provider update/replacement, purchased-label reconciliation, and handoff rejection.
 6. Add the protected Orders UI and manual-review queue integration.
 7. Add P-10 cleanup for address-change records and overdue-retention alerts.
-8. Run the staging acceptance matrix and complete an independent security/privacy review before removing the launch blocker.
+8. Run the staging acceptance matrix and record Nataliea's explicit Privacy/Legal and Security self-attestations before removing the launch blocker. These are owner self-attestations, not independent reviews.
 
 ## Required tests
 
 - Token entropy/format, keyed hashing, 30-minute expiry, revocation, single use, atomic double-submit handling, and clean-URL exchange.
 - Enumeration resistance, rate limiting, same-origin enforcement, cache/referrer headers, and confirmation that raw tokens/PII never enter logs.
 - Original-email delivery and notification behavior; email address cannot be changed by this flow.
-- Every fraud trigger, distinct two-person approval, stale approval, prohibited self-double-approval, and role authorization.
+- Every fraud trigger, separate address-approval and fraud-clearance action, action/target mismatch, replayed or expired step-up proof, missing callback/provider evidence, cooling-off enforcement, stale approval, and owner authorization.
 - Concurrent address approval versus postage purchase/acceptance; exactly one safe outcome.
 - Quote invalidation and recalculation; provider update/replace behavior; bought-label void/refund and ambiguous-outcome manual review.
-- Customer-caused versus Lash-Her-caused added cost and the refund/reorder fallback.
+- Customer-caused versus Lash-Her-caused added cost, expiring/reissued supplemental offers, paid-obligation gating, and one-time decrease refunds.
 - Day-365 live redaction, day-395 recoverability limit, shorter terminal deletion, and abandoned/expired request cleanup.
-- Playwright flows for ordinary approval, high-risk two-person approval, expiry, rejection, already-used link, and post-handoff denial.
+- Playwright flows for ordinary approval, high-risk enhanced owner-only approval, expiry, rejection, already-used link, unpaid supplement reissue, and post-handoff denial.
 
 ## Acceptance criteria
 
@@ -112,4 +112,4 @@ Address application and shipment transition must use a database transaction with
 - No address change can silently bypass fraud review, postage reconciliation, customer cost rules, or carrier-handoff restrictions.
 - Checkout and shipment address snapshots cannot diverge after a successful application.
 - The original address, proposed address, approvals, provider effects, and final result are auditable until P-10 redaction.
-- All required tests pass in staging, security/privacy reviewers sign off, and the production launch checklist records evidence.
+- All required tests pass in staging, Nataliea records distinct Security and Privacy/Legal owner self-attestations, and the production launch checklist records the evidence without representing it as independent review.

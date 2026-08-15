@@ -7,7 +7,10 @@ export const runtime = "nodejs";
 export async function GET(req: Request): Promise<Response> {
   if (!authorized(req)) return new Response(null, { status: 401 });
   try {
-    return NextResponse.json(await runShippingPolicyWorker());
+    const result = await runShippingPolicyWorker();
+    return NextResponse.json(result, {
+      status: result.failures > 0 ? 503 : 200,
+    });
   } catch (error) {
     return NextResponse.json(
       {

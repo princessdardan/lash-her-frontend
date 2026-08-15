@@ -1,4 +1,7 @@
 import { createImageUrlBuilder } from "@sanity/image-url";
+import { resolveEffectivePrice } from "@/lib/commerce/cart";
+import { getProductCheckoutEligibility } from "@/lib/commerce/product-checkout-eligibility";
+import { loadManualProductCheckoutPolicy } from "@/lib/commerce/product-manual-checkout-config";
 import { client } from "@/sanity/lib/client";
 import type {
   THomePage,
@@ -82,9 +85,10 @@ export function buildOrganizationJsonLd(
   };
 }
 
-export function buildProductCollectionJsonLd(
+export async function buildProductCollectionJsonLd(
   products: TProduct[],
-): JsonLdObject | null {
+): Promise<JsonLdObject | null> {
+  const manualCheckoutEnabled = await resolveManualCheckoutEnabled(products);
   const itemListElement = products.map((product, index) => ({
     "@type": "ListItem",
     position: index + 1,
@@ -94,7 +98,7 @@ export function buildProductCollectionJsonLd(
       name: product.title,
       description: product.shortDescription || product.description,
       image: getImageUrl(product.image),
-      offers: buildProductOffer(product),
+      offers: buildProductOffer(product, manualCheckoutEnabled),
     },
   }));
 
@@ -109,8 +113,11 @@ export function buildProductCollectionJsonLd(
   };
 }
 
-export function buildProductJsonLd(product: TProduct): JsonLdObject {
+export async function buildProductJsonLd(
+  product: TProduct,
+): Promise<JsonLdObject> {
   const imageUrls = getProductImageUrls(product);
+  const manualCheckoutEnabled = await resolveManualCheckoutEnabled([product]);
 
   return {
     "@context": "https://schema.org",
@@ -128,7 +135,7 @@ export function buildProductJsonLd(product: TProduct): JsonLdObject {
       ?.map((collection) => collection.title)
       .filter(Boolean)
       .join(", "),
-    offers: buildProductOffer(product),
+    offers: buildProductOffer(product, manualCheckoutEnabled),
   };
 }
 
@@ -267,11 +274,19 @@ function getProductImageUrls(product: TProduct): string[] {
     .filter((url): url is string => Boolean(url));
 }
 
-function buildProductOffer(product: TProduct): JsonLdObject | undefined {
+function buildProductOffer(
+  product: TProduct,
+  manualCheckoutEnabled: boolean,
+): JsonLdObject | undefined {
   const variantPrices = (product.variants ?? [])
     .map((variant) => ({
       price: getCommercePrice(variant.price, variant.discountPrice),
-      isAvailable: variant.isAvailable,
+      isAvailable:
+        variant.isAvailable &&
+        isCheckoutEligible(
+          variant.shipping ?? product.shipping,
+          manualCheckoutEnabled,
+        ),
     }))
     .filter(
       (variant): variant is { price: number; isAvailable: boolean } =>
@@ -319,6 +334,9 @@ function buildProductOffer(product: TProduct): JsonLdObject | undefined {
     };
   }
 
+  if (!isCheckoutEligible(product.shipping, manualCheckoutEnabled)) {
+    return undefined;
+  }
   const price = getCommercePrice(product.price, product.discountPrice);
   if (typeof price !== "number") return undefined;
 
@@ -386,13 +404,46 @@ function getCommercePrice(
   price: unknown,
   discountPrice: unknown,
 ): number | undefined {
-  if (typeof price !== "number" || !Number.isFinite(price)) return undefined;
+  if (
+    (typeof price !== "number" && typeof price !== "string") ||
+    (discountPrice !== undefined &&
+      discountPrice !== null &&
+      typeof discountPrice !== "number" &&
+      typeof discountPrice !== "string")
+  ) {
+    return undefined;
+  }
+  try {
+    return resolveEffectivePrice(price, discountPrice).price;
+  } catch {
+    return undefined;
+  }
+}
 
-  return typeof discountPrice === "number" &&
-    Number.isFinite(discountPrice) &&
-    discountPrice < price
-    ? discountPrice
-    : price;
+function isCheckoutEligible(
+  metadata: TProduct["shipping"],
+  manualCheckoutEnabled: boolean,
+): boolean {
+  const eligibility = getProductCheckoutEligibility(metadata);
+  return (
+    eligibility.status === "automated" ||
+    (eligibility.status === "manual" && manualCheckoutEnabled)
+  );
+}
+
+async function resolveManualCheckoutEnabled(
+  products: TProduct[],
+): Promise<boolean> {
+  const hasManualProduct = products.some((product) =>
+    [product.shipping, ...(product.variants ?? []).map((item) => item.shipping)]
+      .filter(Boolean)
+      .some(
+        (metadata) =>
+          getProductCheckoutEligibility(metadata).status === "manual",
+      ),
+  );
+  if (!hasManualProduct) return false;
+  return (await loadManualProductCheckoutPolicy()).enabled;
 }
 
 function cleanJsonLd(value: JsonLdValue | undefined): JsonLdValue | undefined {

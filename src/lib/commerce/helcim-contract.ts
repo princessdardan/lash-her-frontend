@@ -26,16 +26,23 @@ export function classifyHelcimTransaction(input: {
     "HELCIM_CERTIFIED_REFUND_TYPES",
     DEFAULT_REFUND_TYPES,
   );
-  const successStatuses = configuredValues(
-    "HELCIM_CERTIFIED_SUCCESS_STATUSES",
+  const purchaseSuccessStatuses = configuredValues(
+    "HELCIM_CERTIFIED_PURCHASE_SUCCESS_STATUSES",
     DEFAULT_SUCCESS_STATUSES,
   );
+  const refundSuccessStatuses = configuredValues(
+    "HELCIM_CERTIFIED_REFUND_SUCCESS_STATUSES",
+    DEFAULT_SUCCESS_STATUSES,
+  );
+  const hasOriginalTransaction = Boolean(input.originalTransactionId?.trim());
   const kind =
-    normalizedType && purchaseTypes.has(normalizedType)
+    normalizedType &&
+    purchaseTypes.has(normalizedType) &&
+    !hasOriginalTransaction
       ? "purchase"
       : normalizedType &&
           refundTypes.has(normalizedType) &&
-          Boolean(input.originalTransactionId?.trim())
+          hasOriginalTransaction
         ? "refund"
         : "unknown";
   return {
@@ -43,7 +50,10 @@ export function classifyHelcimTransaction(input: {
     successful: Boolean(
       kind !== "unknown" &&
       normalizedStatus &&
-      successStatuses.has(normalizedStatus),
+      (kind === "purchase"
+        ? purchaseSuccessStatuses
+        : refundSuccessStatuses
+      ).has(normalizedStatus),
     ),
     normalizedStatus,
     normalizedType,
@@ -82,12 +92,69 @@ export function assessCertifiedCardEvidence(input: {
   };
 }
 
+export function assessCertifiedOwnerReviewEvidence(input: {
+  avsCode?: string;
+  cvvCode?: string;
+}): {
+  available: boolean;
+  avsCode: string | null;
+  cvvCode: string | null;
+  reasonCodes: string[];
+} {
+  const assessment = assessCertifiedCardEvidence(input);
+  if (assessment.status === "cleared") {
+    return { available: true, ...assessment };
+  }
+  const avsMismatches = configuredValues(
+    "HELCIM_CERTIFIED_AVS_MISMATCH_CODES",
+    [],
+  );
+  const cvvMismatches = configuredValues(
+    "HELCIM_CERTIFIED_CVV_MISMATCH_CODES",
+    [],
+  );
+  const avsAvailable = Boolean(
+    assessment.avsCode &&
+    (configuredValues("HELCIM_CERTIFIED_AVS_MATCH_CODES", ["y"]).has(
+      assessment.avsCode.toLowerCase(),
+    ) ||
+      avsMismatches.has(assessment.avsCode.toLowerCase())),
+  );
+  const cvvAvailable = Boolean(
+    assessment.cvvCode &&
+    (configuredValues("HELCIM_CERTIFIED_CVV_MATCH_CODES", ["m"]).has(
+      assessment.cvvCode.toLowerCase(),
+    ) ||
+      cvvMismatches.has(assessment.cvvCode.toLowerCase())),
+  );
+  return { available: avsAvailable && cvvAvailable, ...assessment };
+}
+
 function configuredValues(name: string, defaults: string[]): Set<string> {
-  const configured = process.env[name]
-    ?.split(",")
-    .map(normalizeContractValue)
-    .filter((value): value is string => Boolean(value));
-  return new Set(configured?.length ? configured : defaults);
+  const contract = getConfiguredHelcimProductPaymentsContract();
+  if (contract && helcimContractIsEffective(contract)) {
+    const values = {
+      HELCIM_CERTIFIED_PURCHASE_TYPES: contract.purchaseTransactionTypes,
+      HELCIM_CERTIFIED_REFUND_TYPES: contract.refundTransactionTypes,
+      HELCIM_CERTIFIED_PURCHASE_SUCCESS_STATUSES:
+        contract.purchaseSuccessfulStatuses,
+      HELCIM_CERTIFIED_REFUND_SUCCESS_STATUSES:
+        contract.refundSuccessfulStatuses,
+      HELCIM_CERTIFIED_AVS_MATCH_CODES: contract.avs.matchCodes,
+      HELCIM_CERTIFIED_CVV_MATCH_CODES: contract.cvv.matchCodes,
+      HELCIM_CERTIFIED_AVS_MISMATCH_CODES: contract.avs.mismatchCodes,
+      HELCIM_CERTIFIED_CVV_MISMATCH_CODES: contract.cvv.mismatchCodes,
+    }[name];
+    return new Set(values ?? []);
+  }
+  if (
+    process.env.VERCEL_ENV === "production" ||
+    process.env.VERCEL_ENV === "preview" ||
+    process.env.NODE_ENV === "production"
+  ) {
+    return new Set();
+  }
+  return new Set(defaults);
 }
 
 function normalizeContractValue(value: string | undefined): string | null {
@@ -101,3 +168,7 @@ function normalizeEvidenceCode(value: string | undefined): string | null {
     ? normalized
     : null;
 }
+import {
+  getConfiguredHelcimProductPaymentsContract,
+  helcimContractIsEffective,
+} from "./helcim-certified-contract";

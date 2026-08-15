@@ -1,33 +1,33 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requirePermission } from "@/lib/admin/auth";
-import { recordAdminAuditBestEffort } from "@/lib/admin/audit-log";
-import { acknowledgeShipmentManualReview } from "@/lib/shipping/shipment-store";
+import { assertConfiguredFulfillmentOwner } from "@/lib/shipping/configured-owner";
+import { assertShippingPolicyMutationAllowed } from "@/lib/shipping/policy";
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ orderId: string }> },
+  context: { params: Promise<{ orderId: string }> },
 ): Promise<Response> {
+  void context;
   const actor = await requirePermission("fulfillment:manage");
+  await assertConfiguredFulfillmentOwner(actor.user.id);
   if (req.headers.get("origin") !== req.nextUrl.origin)
     return NextResponse.json(
       { error: "Invalid request origin" },
       { status: 403 },
     );
-  const { orderId } = await params;
-  const shipmentId = await acknowledgeShipmentManualReview(orderId);
-  if (!shipmentId)
+  try {
+    assertShippingPolicyMutationAllowed();
+  } catch {
     return NextResponse.json(
-      { error: "Shipment is not in manual review" },
+      { error: "Shipping policy mutations require enforce mode" },
       { status: 409 },
     );
-  await recordAdminAuditBestEffort({
-    action: "fulfillment.manual_review_acknowledged",
-    actor,
-    domain: "fulfillment",
-    outcome: "success",
-    targetId: shipmentId,
-    targetType: "product_shipment",
-    metadata: { orderId },
-  });
-  return NextResponse.json({ acknowledged: true });
+  }
+  return NextResponse.json(
+    {
+      error:
+        "Use the operations workspace to acknowledge the exact shipment version with evidence and step-up authentication",
+    },
+    { status: 409 },
+  );
 }

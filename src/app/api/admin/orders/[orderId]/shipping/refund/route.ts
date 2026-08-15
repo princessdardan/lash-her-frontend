@@ -1,79 +1,78 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requirePermission } from "@/lib/admin/auth";
 import { recordAdminAuditBestEffort } from "@/lib/admin/audit-log";
-import { createChitChatsClient } from "@/lib/shipping/chitchats-client";
-import { getChitChatsConfig } from "@/lib/shipping/config";
+import { enqueueRefundOperationForOrder } from "@/lib/shipping/shipment-store";
 import {
-  claimShipmentRefund,
-  updateShipmentFromProvider,
-} from "@/lib/shipping/shipment-store";
-import {
-  normalizeChitChatsStatus,
-  stripSignedLabelUrls,
-} from "@/lib/shipping/status";
+  assertShippingPolicyMutationAllowed,
+  ShippingPolicyMutationBlockedError,
+} from "@/lib/shipping/policy";
+import { assertConfiguredFulfillmentOwner } from "@/lib/shipping/configured-owner";
+
+export const runtime = "nodejs";
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ orderId: string }> },
 ): Promise<Response> {
   const actor = await requirePermission("fulfillment:manage");
+  await assertConfiguredFulfillmentOwner(actor.user.id);
+  try {
+    assertShippingPolicyMutationAllowed();
+  } catch (error) {
+    if (error instanceof ShippingPolicyMutationBlockedError)
+      return NextResponse.json(
+        { error: "Shipping operations are read-only" },
+        { status: 503 },
+      );
+    throw error;
+  }
   if (req.headers.get("origin") !== req.nextUrl.origin)
     return NextResponse.json(
       { error: "Invalid request origin" },
       { status: 403 },
     );
   const { orderId } = await params;
-  const shipment = await claimShipmentRefund(orderId);
-  if (!shipment?.providerShipmentId)
+  const body = (await req.json().catch(() => null)) as Record<
+    string,
+    unknown
+  > | null;
+  const shipmentId =
+    typeof body?.shipmentId === "string" ? body.shipmentId : "";
+  const expectedStateVersion = Number(body?.expectedStateVersion);
+  if (
+    !shipmentId ||
+    !Number.isInteger(expectedStateVersion) ||
+    expectedStateVersion < 1
+  )
     return NextResponse.json(
-      { error: "Shipment cannot be refunded" },
+      { error: "Shipment generation and expected version are required" },
+      { status: 400 },
+    );
+  const operation = await enqueueRefundOperationForOrder({
+    orderReference: orderId,
+    shipmentId,
+    expectedStateVersion,
+    idempotencyKey: `postage-refund/${shipmentId}/${expectedStateVersion}`,
+  });
+  if (!operation)
+    return NextResponse.json(
+      { error: "Shipment changed or is not the refundable active generation" },
       { status: 409 },
     );
-  try {
-    const provider = await createChitChatsClient(
-      getChitChatsConfig(),
-    ).refundShipment(shipment.providerShipmentId);
-    const status = normalizeChitChatsStatus(provider);
-    await updateShipmentFromProvider({
-      id: shipment.id,
-      status: status === "voided" ? "voided" : "refund_pending",
-      providerStatus: provider.status,
-      rawShipment: stripSignedLabelUrls(provider),
-      trackingNumber: provider.carrier_tracking_code,
-      trackingUrl: provider.tracking_url,
-    });
-    await recordAdminAuditBestEffort({
-      action: "fulfillment.postage_refund",
-      actor,
-      domain: "fulfillment",
-      outcome: "success",
-      targetId: shipment.id,
-      targetType: "product_shipment",
-      metadata: { orderId },
-    });
-    return NextResponse.json({
-      status: status === "voided" ? "voided" : "refund_pending",
-    });
-  } catch (error) {
-    await updateShipmentFromProvider({
-      id: shipment.id,
-      status: "manual_review",
-      providerStatus: shipment.providerStatus ?? "unknown",
-      rawShipment: shipment.rawShipment ?? {},
-    });
-    await recordAdminAuditBestEffort({
-      action: "fulfillment.postage_refund",
-      actor,
-      domain: "fulfillment",
-      outcome: "failure",
-      reason: error instanceof Error ? error.message : "Unknown error",
-      targetId: shipment.id,
-      targetType: "product_shipment",
-      metadata: { orderId, refundOutcomeUnknown: true },
-    });
-    return NextResponse.json(
-      { error: "Postage refund outcome is unknown and requires review" },
-      { status: 503 },
-    );
-  }
+  await recordAdminAuditBestEffort({
+    action: "fulfillment.postage_refund_queued",
+    actor,
+    domain: "fulfillment",
+    outcome: "success",
+    targetId: shipmentId,
+    targetType: "product_shipment",
+    metadata: { orderId, operationId: operation.id, expectedStateVersion },
+  });
+  return NextResponse.json(
+    { operationId: operation.id, shipmentId, status: operation.status },
+    {
+      status: 202,
+      headers: { "Cache-Control": "no-store", "Retry-After": "2" },
+    },
+  );
 }

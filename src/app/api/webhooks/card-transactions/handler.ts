@@ -3,6 +3,7 @@ import { getHelcimWebhookVerifierToken } from "@/lib/env/private-checkout";
 import type { HelcimGateway } from "@/lib/commerce/helcim-gateway";
 import {
   recordHelcimWebhookEventWithOrder,
+  markHelcimWebhookEventProcessingStatus,
   type HelcimWebhookEventRecordResult,
 } from "@/lib/commerce/order-store";
 import {
@@ -33,10 +34,12 @@ import { activateShipmentForPaidOrder } from "@/lib/shipping/shipment-store";
 import { reconcileProductOrderRefund } from "@/lib/shipping/customer-refunds";
 import { classifyHelcimTransaction } from "@/lib/commerce/helcim-contract";
 import { finalizeProductPayment } from "@/lib/commerce/product-payment-finalizer";
+import { parseProviderMoneyCents } from "@/lib/shipping/provider-money";
 
 export const runtime = "nodejs";
 
 const webhookPaymentMockStore = createPaymentMockStore();
+const HELCIM_WEBHOOK_MAX_BODY_BYTES = 64 * 1024;
 
 interface HelcimWebhookDependencies {
   activateShipmentForPaidOrder?: typeof activateShipmentForPaidOrder;
@@ -51,6 +54,7 @@ interface HelcimWebhookDependencies {
   getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing: typeof getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing;
   getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice: typeof getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice;
   recordEvent: typeof recordHelcimWebhookEventWithOrder;
+  markEventProcessingStatus?: typeof markHelcimWebhookEventProcessingStatus;
   reconcileProductOrderRefund?: typeof reconcileProductOrderRefund;
   sendBookingConfirmationEmailForOrder: typeof sendBookingConfirmationEmailForOrder;
   sendBookingSchedulingFailureAdminEmail?: (
@@ -74,6 +78,7 @@ const defaultDependencies: HelcimWebhookDependencies = {
     getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing,
   getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice,
   recordEvent: recordHelcimWebhookEventWithOrder,
+  markEventProcessingStatus: markHelcimWebhookEventProcessingStatus,
   reconcileProductOrderRefund,
   sendBookingConfirmationEmailForOrder,
   sendBookingSchedulingFailureAdminEmail,
@@ -94,7 +99,18 @@ export function createHelcimWebhookPostHandler(
       return new Response(null, { status: 401 });
     }
 
-    const rawBody = await req.text();
+    let rawBody: string;
+    try {
+      rawBody = await readBoundedRequestText(
+        req,
+        HELCIM_WEBHOOK_MAX_BODY_BYTES,
+      );
+    } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) {
+        return new Response(null, { status: 413 });
+      }
+      return new Response(null, { status: 400 });
+    }
     const isValidSignature = verifyHelcimWebhookSignature(
       headers,
       rawBody,
@@ -140,6 +156,24 @@ export function createHelcimWebhookPostHandler(
       log("warn", "[helcim-webhook] Storage failed", {
         error: error instanceof Error ? error.message : String(error),
       });
+      return new Response(null, { status: 503 });
+    }
+
+    try {
+      await quarantinePaymentEventWhenRequired(
+        eventForStorage,
+        recordedEvent,
+        dependencies,
+      );
+    } catch (error) {
+      log(
+        "error",
+        "[helcim-webhook] Payment reconciliation quarantine failed",
+        {
+          error: error instanceof Error ? error.message : String(error),
+          eventId: eventForStorage.eventId,
+        },
+      );
       return new Response(null, { status: 503 });
     }
 
@@ -213,26 +247,135 @@ export function createHelcimWebhookPostHandler(
   };
 }
 
+class RequestBodyTooLargeError extends Error {}
+
+async function readBoundedRequestText(
+  req: Request,
+  maximumBytes: number,
+): Promise<string> {
+  const declaredLength = Number(req.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > maximumBytes) {
+    throw new RequestBodyTooLargeError();
+  }
+  if (!req.body) return "";
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maximumBytes) {
+      await reader.cancel();
+      throw new RequestBodyTooLargeError();
+    }
+    chunks.push(value);
+  }
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder("utf-8", { fatal: true }).decode(body);
+}
+
 type ParsedHelcimWebhook = ReturnType<typeof parseVerifiedHelcimWebhook>;
+
+async function quarantinePaymentEventWhenRequired(
+  event: ParsedHelcimWebhook,
+  recorded: HelcimWebhookEventRecordResult,
+  dependencies: Pick<HelcimWebhookDependencies, "markEventProcessingStatus">,
+): Promise<void> {
+  const classification = classifyHelcimTransaction(event);
+  const missingProductObligation = Boolean(
+    classification.kind === "purchase" &&
+    classification.successful &&
+    recorded.matchedOrder?.purpose === "product" &&
+    !recorded.matchedOrder.paymentObligationId,
+  );
+  if (
+    classification.kind !== "unknown" &&
+    !(
+      classification.kind === "purchase" &&
+      classification.successful &&
+      recorded.matchedOrder === null
+    ) &&
+    !missingProductObligation
+  ) {
+    return;
+  }
+  const reasonCode =
+    classification.kind === "unknown"
+      ? "HELCIM_PAYMENT_CONTRACT_UNKNOWN"
+      : missingProductObligation
+        ? "HELCIM_PURCHASE_OBLIGATION_AMBIGUOUS"
+        : "UNMATCHED_APPROVED_HELCIM_PURCHASE";
+  await dependencies.markEventProcessingStatus?.({
+    eventId: event.eventId,
+    status: "review_required",
+    reasonCode,
+    message:
+      classification.kind === "unknown"
+        ? "Helcim transaction type or status is outside the certified contract"
+        : missingProductObligation
+          ? "Approved product purchase could not be correlated to one obligation"
+          : "Approved Helcim purchase could not be matched to a local order",
+  });
+}
 
 async function reconcileRefundWebhook(
   event: ParsedHelcimWebhook,
-  dependencies: Pick<HelcimWebhookDependencies, "reconcileProductOrderRefund">,
+  dependencies: Pick<
+    HelcimWebhookDependencies,
+    "reconcileProductOrderRefund" | "markEventProcessingStatus"
+  >,
 ): Promise<void> {
+  const classification = classifyHelcimTransaction(event);
+  if (classification.kind !== "refund") return;
+  let amountCents: number | null = null;
+  try {
+    const rawAmount = String(event.amount ?? "").trim();
+    amountCents = parseProviderMoneyCents(
+      rawAmount.startsWith("-") ? rawAmount.slice(1) : rawAmount,
+    );
+  } catch {
+    amountCents = null;
+  }
   if (
     !dependencies.reconcileProductOrderRefund ||
     !event.helcimTransactionId ||
     !event.originalTransactionId ||
-    classifyHelcimTransaction(event).kind !== "refund" ||
-    !classifyHelcimTransaction(event).successful
-  )
+    !classification.successful ||
+    amountCents === null ||
+    amountCents <= 0 ||
+    !event.currency?.trim()
+  ) {
+    await dependencies.markEventProcessingStatus?.({
+      eventId: event.eventId,
+      status: "review_required",
+      message: "Refund provider evidence was incomplete or unsuccessful",
+    });
     return;
-  const amount = Number(event.amount);
-  if (!Number.isFinite(amount) || amount === 0) return;
-  await dependencies.reconcileProductOrderRefund({
+  }
+  const reconciled = await dependencies.reconcileProductOrderRefund({
     originalTransactionId: event.originalTransactionId,
     providerRefundId: event.helcimTransactionId,
-    amountCents: Math.round(Math.abs(amount) * 100),
+    amountCents,
+    currency: event.currency,
+    ...(event.merchantReference
+      ? { providerMerchantReference: event.merchantReference }
+      : {}),
+  });
+  await dependencies.markEventProcessingStatus?.({
+    eventId: event.eventId,
+    status: reconciled ? "processed" : "review_required",
+    ...(!reconciled
+      ? {
+          message:
+            "Refund could not be uniquely correlated to a local ledger row",
+        }
+      : {}),
   });
 }
 
@@ -319,6 +462,7 @@ async function recoverProductOrderConfirmationEmail(
     | "activateShipmentForPaidOrder"
     | "sendProductOrderConfirmationEmailForOrder"
     | "finalizeProductPayment"
+    | "markEventProcessingStatus"
   >,
 ): Promise<void> {
   if (
@@ -330,35 +474,63 @@ async function recoverProductOrderConfirmationEmail(
     return;
   }
 
-  if (!dependencies.finalizeProductPayment) return;
-
-  const finalization = await dependencies.finalizeProductPayment({
-    orderReference: recordedEvent.matchedOrder.orderId,
-    transactionId: event.helcimTransactionId!,
-    source: "helcim_api",
-    data: {
-      amount: event.amount ?? null,
-      currency: event.currency ?? null,
-      status: event.status ?? null,
-      transactionType: event.transactionType ?? null,
-      originalTransactionId: event.originalTransactionId ?? null,
-      transactionId: event.helcimTransactionId ?? null,
-      avsResponse: event.avsCode ?? null,
-      cvvResponse: event.cvvCode ?? null,
-    },
-  });
-  if (!["applied", "already_applied"].includes(finalization.transition)) {
-    return;
+  if (!dependencies.finalizeProductPayment) {
+    await dependencies.markEventProcessingStatus?.({
+      eventId: event.eventId,
+      status: "retryable_failed",
+      message: "Product payment finalizer was unavailable",
+    });
+    throw new Error("Product payment finalizer was unavailable");
   }
-  if (finalization.riskStatus === "cleared") {
-    await dependencies.activateShipmentForPaidOrder?.(
+
+  try {
+    const finalization = await dependencies.finalizeProductPayment({
+      orderReference: recordedEvent.matchedOrder.orderId,
+      obligationId: recordedEvent.matchedOrder.paymentObligationId,
+      transactionId: event.helcimTransactionId!,
+      source: "helcim_api",
+      certifiedEvidence: {
+        avsCode: event.avsCode,
+        cvvCode: event.cvvCode,
+      },
+      data: {
+        amount: event.amount ?? null,
+        currency: event.currency ?? null,
+        status: event.status ?? null,
+        transactionType: event.transactionType ?? null,
+        originalTransactionId: event.originalTransactionId ?? null,
+        transactionId: event.helcimTransactionId ?? null,
+        avsResponse: event.avsCode ?? null,
+        cvvResponse: event.cvvCode ?? null,
+      },
+    });
+    if (!["applied", "already_applied"].includes(finalization.transition)) {
+      await dependencies.markEventProcessingStatus?.({
+        eventId: event.eventId,
+        status: "review_required",
+        reasonCode: "PRODUCT_PAYMENT_FINALIZATION_CONFLICT",
+        message: `Product payment finalization returned ${finalization.transition}`,
+      });
+      return;
+    }
+    await dependencies.sendProductOrderConfirmationEmailForOrder(
       recordedEvent.matchedOrder.orderId,
     );
+    await dependencies.markEventProcessingStatus?.({
+      eventId: event.eventId,
+      status: "processed",
+    });
+  } catch (error) {
+    await dependencies.markEventProcessingStatus?.({
+      eventId: event.eventId,
+      status: "retryable_failed",
+      message:
+        error instanceof Error
+          ? error.message
+          : "Product payment finalization failed",
+    });
+    throw error;
   }
-
-  await dependencies.sendProductOrderConfirmationEmailForOrder(
-    recordedEvent.matchedOrder.orderId,
-  );
 }
 
 async function recoverTrainingPaymentNotification(

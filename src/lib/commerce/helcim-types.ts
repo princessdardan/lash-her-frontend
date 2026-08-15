@@ -17,6 +17,7 @@ export interface HelcimInvoiceRequest {
   type: "INVOICE";
   status: "DUE";
   currency: "CAD";
+  invoiceNumber?: string;
   notes: string;
   lineItems: HelcimInvoiceLineItem[];
 }
@@ -25,6 +26,26 @@ export interface HelcimInvoiceResponse {
   invoiceId: number;
   invoiceNumber: string;
 }
+
+export interface HelcimInvoiceDetails {
+  amount?: number | string;
+  currency?: string;
+  invoiceId?: number | string;
+  invoiceNumber?: string;
+  lineItems?: Array<Record<string, unknown>>;
+  notes?: string;
+  status?: string;
+  type?: string;
+  [key: string]: unknown;
+}
+
+export type HelcimInvoiceCollectionResponse =
+  | HelcimInvoiceDetails[]
+  | {
+      data?: HelcimInvoiceDetails[];
+      invoices?: HelcimInvoiceDetails[];
+      [key: string]: unknown;
+    };
 
 export interface HelcimPayInitializeRequest {
   paymentType: "purchase";
