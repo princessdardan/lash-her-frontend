@@ -507,24 +507,23 @@ export async function processProductOrderRefund(
         response,
         "providerRefundIdFields",
       ) ?? "";
-    const responseOriginalId =
-      readCertifiedHelcimRefundCorrelationField(
-        response,
-        "originalTransactionIdFields",
-      ) ?? "";
+    const responseOriginalId = readCertifiedHelcimRefundCorrelationField(
+      response,
+      "originalTransactionIdFields",
+    );
     const responseMerchantReference = readCertifiedHelcimRefundCorrelationField(
       response,
       "merchantReferenceFields",
     );
     const responseAmountCents = parseProviderMoneyCents(response.amount);
     const classification = classifyHelcimTransaction({
-      originalTransactionId: responseOriginalId,
       status: response.status,
-      transactionType: response.transactionType,
+      transactionType: response.type ?? response.transactionType,
     });
     if (
       !providerRefundId ||
-      responseOriginalId !== claimedRefund.originalTransactionId ||
+      (responseOriginalId !== undefined &&
+        responseOriginalId !== claimedRefund.originalTransactionId) ||
       (responseMerchantReference !== undefined &&
         responseMerchantReference !== claimedRefund.idempotencyKey) ||
       responseAmountCents !== claimedRefund.amountCents ||
@@ -653,13 +652,23 @@ async function markRefundOutcomeUnknown(
 }
 
 export async function reconcileProductOrderRefund(input: {
-  originalTransactionId: string;
+  originalTransactionId?: string;
   providerRefundId: string;
   amountCents: number;
   currency: string;
+  providerInvoiceNumber?: string;
   providerMerchantReference?: string;
 }): Promise<boolean> {
-  if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) {
+  const providerRefundId = input.providerRefundId.trim();
+  const originalTransactionId = input.originalTransactionId?.trim();
+  const providerInvoiceNumber = input.providerInvoiceNumber?.trim();
+  const currency = input.currency.trim().toUpperCase();
+  if (
+    !providerRefundId ||
+    !currency ||
+    !Number.isInteger(input.amountCents) ||
+    input.amountCents <= 0
+  ) {
     return false;
   }
   return getPrivateDb().transaction(async (tx) => {
@@ -678,7 +687,7 @@ export async function reconcileProductOrderRefund(input: {
       )
       .where(
         and(
-          eq(productOrderRefunds.providerRefundId, input.providerRefundId),
+          eq(productOrderRefunds.providerRefundId, providerRefundId),
           isNull(productOrderRefunds.fulfillmentQuarantinedAt),
         ),
       )
@@ -686,11 +695,11 @@ export async function reconcileProductOrderRefund(input: {
       .limit(1);
     if (existingProviderMatch) {
       return (
-        existingProviderMatch.refund.originalTransactionId ===
-          input.originalTransactionId &&
+        (!originalTransactionId ||
+          existingProviderMatch.refund.originalTransactionId ===
+            originalTransactionId) &&
         existingProviderMatch.refund.amountCents === input.amountCents &&
-        existingProviderMatch.currency.toUpperCase() ===
-          input.currency.toUpperCase() &&
+        existingProviderMatch.currency.toUpperCase() === currency &&
         existingProviderMatch.refund.status === "succeeded"
       );
     }
@@ -728,20 +737,22 @@ export async function reconcileProductOrderRefund(input: {
       if (referenceMatches.length !== 1) return false;
       const referenceMatch = referenceMatches[0]!;
       if (
-        referenceMatch.refund.originalTransactionId !==
-          input.originalTransactionId ||
+        (originalTransactionId &&
+          referenceMatch.refund.originalTransactionId !==
+            originalTransactionId) ||
         referenceMatch.refund.amountCents !== input.amountCents ||
-        referenceMatch.transaction.currency.toUpperCase() !==
-          input.currency.toUpperCase()
+        referenceMatch.transaction.currency.toUpperCase() !== currency
       ) {
         return false;
       }
       return settleReconciledRefund(
         tx,
         referenceMatch.refund,
-        input.providerRefundId,
+        providerRefundId,
       );
     }
+
+    if (!originalTransactionId && !providerInvoiceNumber) return false;
 
     const candidates = await tx
       .select({ refund: productOrderRefunds })
@@ -763,16 +774,24 @@ export async function reconcileProductOrderRefund(input: {
       )
       .where(
         and(
-          eq(
-            orderPaymentTransactions.providerTransactionId,
-            input.originalTransactionId,
-          ),
-          eq(
-            productOrderRefunds.originalTransactionId,
-            input.originalTransactionId,
-          ),
+          eq(orderPaymentTransactions.provider, "helcim"),
+          ...(originalTransactionId
+            ? [
+                eq(
+                  orderPaymentTransactions.providerTransactionId,
+                  originalTransactionId,
+                ),
+                eq(
+                  productOrderRefunds.originalTransactionId,
+                  originalTransactionId,
+                ),
+              ]
+            : []),
+          ...(providerInvoiceNumber
+            ? [eq(checkoutOrders.helcimInvoiceNumber, providerInvoiceNumber)]
+            : []),
           eq(productOrderRefunds.amountCents, input.amountCents),
-          eq(orderPaymentTransactions.currency, input.currency.toUpperCase()),
+          eq(orderPaymentTransactions.currency, currency),
           isNull(orderPaymentObligations.quarantinedAt),
           isNull(checkoutOrders.fulfillmentQuarantinedAt),
           isNull(productOrderRefunds.fulfillmentQuarantinedAt),
@@ -814,11 +833,7 @@ export async function reconcileProductOrderRefund(input: {
       }
       return false;
     }
-    return settleReconciledRefund(
-      tx,
-      candidates[0]!.refund,
-      input.providerRefundId,
-    );
+    return settleReconciledRefund(tx, candidates[0]!.refund, providerRefundId);
   });
 }
 

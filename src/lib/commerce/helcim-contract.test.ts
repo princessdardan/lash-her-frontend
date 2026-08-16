@@ -35,8 +35,8 @@ test("Helcim contract identity uses the caller's readiness timestamp", () => {
     },
     refundCorrelation: {
       providerRefundIdFields: ["transactionId"],
-      originalTransactionIdFields: ["originalTransactionId"],
-      merchantReferenceFields: ["merchantReference"],
+      originalTransactionIdFields: [],
+      merchantReferenceFields: [],
     },
   });
   try {
@@ -88,7 +88,7 @@ test("Helcim classification requires exact certified type and status", () => {
   assert.equal(
     classifyHelcimTransaction({ transactionType: "refund", status: "approved" })
       .kind,
-    "unknown",
+    "refund",
   );
   assert.equal(
     classifyHelcimTransaction({

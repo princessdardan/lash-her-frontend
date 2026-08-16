@@ -35,6 +35,26 @@ test("verifyHelcimPayment accepts an authenticated approved payment for the pend
   assert.deepEqual(result, { ok: true, transactionId: "txn_123" });
 });
 
+test("verifyHelcimPayment accepts Helcim's captured type field", () => {
+  const result = verifyHelcimPayment({
+    data: {
+      amount: 50,
+      currency: "CAD",
+      invoiceId: 12345,
+      invoiceNumber: "INV-12345",
+      status: "approved",
+      transactionId: "txn_123",
+      type: "purchase",
+    },
+    hash: "valid-hash",
+    order,
+    secretToken: "secret-token",
+    validateHash: () => true,
+  });
+
+  assert.deepEqual(result, { ok: true, transactionId: "txn_123" });
+});
+
 test("verifyHelcimPayment rejects uncertified status values", () => {
   const result = verifyHelcimPayment({
     data: {

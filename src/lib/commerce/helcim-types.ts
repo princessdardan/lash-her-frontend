@@ -76,9 +76,10 @@ export interface HelcimRefundRequest {
 export interface HelcimRefundResponse {
   transactionId: number | string;
   status?: string;
+  type?: string;
   transactionType?: string;
   originalTransactionId?: number | string;
-  amount?: number;
+  amount?: number | string;
   currency?: string;
   [key: string]: unknown;
 }

@@ -40,9 +40,7 @@ export function classifyHelcimTransaction(input: {
     purchaseTypes.has(normalizedType) &&
     !hasOriginalTransaction
       ? "purchase"
-      : normalizedType &&
-          refundTypes.has(normalizedType) &&
-          hasOriginalTransaction
+      : normalizedType && refundTypes.has(normalizedType)
         ? "refund"
         : "unknown";
   return {

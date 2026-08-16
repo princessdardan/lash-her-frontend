@@ -53,6 +53,7 @@ const scenario = String.raw`
 
   async function seed(orderId, captures) {
     const amountCents = captures.reduce((total, capture) => total + capture.amountCents, 0);
+    const invoiceNumber = "INV-" + orderId;
     const [order] = await db.insert(checkoutOrders).values({
       orderId,
       purpose: "product",
@@ -65,6 +66,7 @@ const scenario = String.raw`
       currency: "CAD",
       lineItems: [],
       paymentProvider: "helcim",
+      helcimInvoiceNumber: invoiceNumber,
       helcimTransactionId: captures[0].providerTransactionId,
       refundOriginIpCiphertext: encryptCheckoutIp("192.0.2.10"),
       paymentRiskStatus: "cleared",
@@ -105,10 +107,10 @@ const scenario = String.raw`
       }).returning();
       result.push(transaction);
     }
-    return { order, transactions: result };
+    return { invoiceNumber, order, transactions: result };
   }
 
-  function gatewayFor(refundId, originalTransactionId, amountCents, counter) {
+  function gatewayFor(refundId, amountCents, counter) {
     return {
       createInvoice: async () => { throw new Error("unused"); },
       initializePay: async () => { throw new Error("unused"); },
@@ -118,11 +120,10 @@ const scenario = String.raw`
         assert.equal(idempotencyKey, refundId);
         return {
           transactionId: "990001",
-          originalTransactionId,
           amount: (amountCents / 100).toFixed(2),
           currency: "CAD",
           status: "APPROVED",
-          transactionType: "REFUND",
+          type: "refund",
         };
       },
     };
@@ -179,7 +180,6 @@ const scenario = String.raw`
     const counter = { calls: 0 };
     const gateway = gatewayFor(
       concurrentRefund.idempotencyKey,
-      "920001",
       3400,
       counter,
     );
@@ -272,10 +272,10 @@ const scenario = String.raw`
     const processing = processProductOrderRefund(raceRefund.id, deferredGateway);
     await providerStarted;
     assert.equal(await reconcileProductOrderRefund({
-      originalTransactionId: "930001",
       providerRefundId: "993001",
       amountCents: 1800,
       currency: "CAD",
+      providerInvoiceNumber: race.invoiceNumber,
     }), true);
     rejectProvider(new Error("late transport failure"));
     const racedResult = await processing;

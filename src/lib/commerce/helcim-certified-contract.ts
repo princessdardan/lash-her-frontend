@@ -29,22 +29,25 @@ export function parseHelcimProductPaymentsContract(
   }
   const avs = parseEvidenceVocabulary(value.avs);
   const cvv = parseEvidenceVocabulary(value.cvv);
-  const refundCorrelation = isRecord(value.refundCorrelation)
-    ? {
-        providerRefundIdFields: stringArray(
-          value.refundCorrelation.providerRefundIdFields,
-          false,
-        ),
-        originalTransactionIdFields: stringArray(
-          value.refundCorrelation.originalTransactionIdFields,
-          false,
-        ),
-        merchantReferenceFields: stringArray(
-          value.refundCorrelation.merchantReferenceFields,
-          false,
-        ),
-      }
+  const providerRefundIdFields = isRecord(value.refundCorrelation)
+    ? exactFieldArray(value.refundCorrelation.providerRefundIdFields)
     : null;
+  const originalTransactionIdFields = isRecord(value.refundCorrelation)
+    ? exactFieldArray(value.refundCorrelation.originalTransactionIdFields)
+    : null;
+  const merchantReferenceFields = isRecord(value.refundCorrelation)
+    ? exactFieldArray(value.refundCorrelation.merchantReferenceFields)
+    : null;
+  const refundCorrelation =
+    providerRefundIdFields &&
+    originalTransactionIdFields &&
+    merchantReferenceFields
+      ? {
+          providerRefundIdFields,
+          originalTransactionIdFields,
+          merchantReferenceFields,
+        }
+      : null;
   const parsed = {
     contract: value.contract,
     version: clean(value.version),
@@ -71,8 +74,6 @@ export function parseHelcimProductPaymentsContract(
     !parsed.cvv ||
     !parsed.refundCorrelation ||
     !parsed.refundCorrelation.providerRefundIdFields.length ||
-    !parsed.refundCorrelation.originalTransactionIdFields.length ||
-    !parsed.refundCorrelation.merchantReferenceFields.length ||
     overlaps(parsed.purchaseTransactionTypes, parsed.refundTransactionTypes) ||
     overlaps(parsed.avs.matchCodes, parsed.avs.mismatchCodes) ||
     overlaps(parsed.cvv.matchCodes, parsed.cvv.mismatchCodes)
@@ -186,6 +187,14 @@ function stringArray(value: unknown, normalize = true): string[] {
     })
     .filter(Boolean);
   return normalized.length === new Set(normalized).size ? normalized : [];
+}
+
+function exactFieldArray(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const fields = value.map((entry) => clean(entry));
+  if (fields.some((entry) => entry === null)) return null;
+  const parsed = fields as string[];
+  return parsed.length === new Set(parsed).size ? parsed : null;
 }
 
 function clean(value: unknown): string | null {

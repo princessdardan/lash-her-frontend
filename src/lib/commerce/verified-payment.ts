@@ -72,7 +72,8 @@ export function validateVerifiedPaymentSemantics(
   order: VerifiablePendingOrder,
 ): VerifiedPaymentValidation {
   const classification = classifyHelcimTransaction({
-    transactionType: getTextValue(data.transactionType) ?? undefined,
+    transactionType:
+      getTextValue(data.type ?? data.transactionType) ?? undefined,
     status:
       getTextValue(
         data.status ?? data.paymentStatus ?? data.transactionStatus,

@@ -345,7 +345,6 @@ async function reconcileRefundWebhook(
   if (
     !dependencies.reconcileProductOrderRefund ||
     !event.helcimTransactionId ||
-    !event.originalTransactionId ||
     !classification.successful ||
     amountCents === null ||
     amountCents <= 0 ||
@@ -359,10 +358,15 @@ async function reconcileRefundWebhook(
     return;
   }
   const reconciled = await dependencies.reconcileProductOrderRefund({
-    originalTransactionId: event.originalTransactionId,
     providerRefundId: event.helcimTransactionId,
     amountCents,
     currency: event.currency,
+    ...(event.originalTransactionId
+      ? { originalTransactionId: event.originalTransactionId }
+      : {}),
+    ...(event.helcimInvoiceNumber
+      ? { providerInvoiceNumber: event.helcimInvoiceNumber }
+      : {}),
     ...(event.merchantReference
       ? { providerMerchantReference: event.merchantReference }
       : {}),

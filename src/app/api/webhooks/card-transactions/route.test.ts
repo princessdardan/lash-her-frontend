@@ -212,17 +212,17 @@ test("Helcim webhook route returns retryable status when private persistence fai
   `);
 });
 
-test("Helcim webhook route reconciles an ambiguous local refund from signed provider details", () => {
+test("Helcim webhook route reconciles a captured refund through invoice ledger evidence", () => {
   runRouteScenario(`
     const body = JSON.stringify({ id: "991122", type: "cardTransaction" });
     const { handler, reconciledRefunds } = await runScenario({
       getCardTransaction: async () => ({
         amount: "-12.50",
         currency: "CAD",
-        id: 991122,
-        originalTransactionId: 25764674,
+        invoiceNumber: "INV-4242",
         status: "APPROVED",
-        transactionType: "refund",
+        transactionId: 991122,
+        type: "refund",
       }),
     });
 
@@ -232,7 +232,7 @@ test("Helcim webhook route reconciles an ambiguous local refund from signed prov
     assert.deepEqual(reconciledRefunds, [{
       amountCents: 1250,
       currency: "CAD",
-      originalTransactionId: "25764674",
+      providerInvoiceNumber: "INV-4242",
       providerRefundId: "991122",
     }]);
   `);
