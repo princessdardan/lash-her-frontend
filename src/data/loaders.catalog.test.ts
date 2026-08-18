@@ -42,9 +42,12 @@ describe("catalog loader contract", () => {
     assert.match(productProjection, /sku/);
     assert.match(
       productProjection,
-      /variants\[\]\{ _key, title, sku, price, discountPrice, isAvailable, availabilityLabel, options\[\]\{ _key, name, value \}, shipping \}/,
+      /^\s{2}options\[\]\{ _key, name, values \},$/m,
     );
-    assert.match(productProjection, /^\s{2}variantModel,$/m);
+    assert.match(
+      productProjection,
+      /variantOverrides\[\]\{ _key, select\[\]\{ _key, name, value \}, price, discountPrice, sku, isAvailable, availabilityLabel, shipping \}/,
+    );
     assert.match(productProjection, /^\s{2}shipping,$/m);
   });
 

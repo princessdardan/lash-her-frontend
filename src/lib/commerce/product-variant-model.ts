@@ -3,407 +3,260 @@ import { stegaClean } from "@sanity/client/stega";
 
 import type {
   TProduct,
-  TProductOptionGroup,
+  TProductOption,
   TProductShippingMetadata,
   TProductVariant,
   TProductVariantOption,
+  TProductVariantOverride,
 } from "@/types";
 
 const MAX_DERIVED_VARIANTS = 100;
 const DERIVED_KEY_PREFIX = "derived_v1_";
 const CONFIGURATION_UNAVAILABLE_LABEL = "Option configuration unavailable";
 
-interface GroupedChoice {
-  readonly key: string;
+interface AxisChoice {
   readonly value: string;
   readonly normalizedValue: string;
 }
 
-interface GroupedVariant {
-  readonly key: string;
+interface OptionAxis {
   readonly name: string;
   readonly normalizedName: string;
-  readonly choices: GroupedChoice[];
-  readonly source: TProductVariant;
+  readonly choices: AxisChoice[];
 }
 
-interface CommerceMetadata {
-  readonly price: number;
-  readonly discountPrice: number | null;
-  readonly isAvailable: boolean;
+interface ResolvedOverride {
+  readonly price?: number;
+  readonly discountPrice?: number | null;
+  readonly sku?: string;
+  readonly isAvailable?: boolean;
   readonly availabilityLabel?: string;
   readonly shipping?: TProductShippingMetadata;
 }
 
-type VariantClassification =
-  | { readonly kind: "canonical" }
-  | { readonly kind: "grouped"; readonly groups: GroupedVariant[] }
-  | { readonly kind: "invalid" };
-
 /**
- * Converts the legacy grouped authoring shape used by existing product drafts
- * into the concrete variant tuples required by cart, checkout, and shipping.
- * Canonical products are returned by reference without modification.
+ * Expands a product's authored option axes into the concrete purchasable
+ * variants that cart, checkout, and shipping consume. Combinations inherit the
+ * product-level price, stock, and shipping unless a sparse `variantOverrides`
+ * entry targets that exact combination. Products with no options are returned
+ * untouched (a single purchasable item).
  */
 export function normalizeProductVariantModel(product: TProduct): TProduct {
-  const cleanedProduct = cleanOptionPaths(product);
-  const classification = classifyVariants(cleanedProduct);
-  if (classification.kind === "canonical") return cleanedProduct;
-  if (classification.kind === "invalid") {
-    return quarantineProduct(cleanedProduct, cleanedProduct.optionGroups ?? []);
+  const cleaned = cleanProduct(product);
+  const axes = parseAxes(cleaned.options);
+
+  // No options -> single purchasable product, nothing to derive.
+  if (axes !== null && axes.length === 0) {
+    return cleaned.variants === undefined
+      ? cleaned
+      : { ...cleaned, variants: undefined };
   }
 
-  const groups = classification.groups;
+  if (axes === null) return quarantineProduct(cleaned);
 
-  const orderedGroups = orderGroups(groups, cleanedProduct.optionGroups);
-  const optionGroups = orderedGroups.map(toOptionGroup);
-  const combinationCount = orderedGroups.reduce(
-    (count, group) => count * group.choices.length,
+  const combinationCount = axes.reduce(
+    (count, axis) => count * axis.choices.length,
     1,
   );
-
   if (combinationCount > MAX_DERIVED_VARIANTS) {
-    return quarantineProduct(cleanedProduct, optionGroups);
+    return quarantineProduct(cleaned);
   }
 
-  const commerce = resolveCommonCommerceMetadata(cleanedProduct, orderedGroups);
-  const variants = buildDerivedVariants(
-    cleanedProduct,
-    orderedGroups,
-    commerce,
-  );
+  const overrides = indexOverrides(cleaned.variantOverrides, axes);
+  const variants = buildVariants(cleaned, axes, overrides);
 
-  if (!commerce || variants.length !== combinationCount) {
-    return {
-      ...cleanedProduct,
-      isAvailable: false,
-      availabilityLabel: CONFIGURATION_UNAVAILABLE_LABEL,
-      optionGroups,
-      variants: variants.map((variant) => ({
-        ...variant,
-        isAvailable: false,
-        availabilityLabel: CONFIGURATION_UNAVAILABLE_LABEL,
-      })),
-    };
-  }
-
-  return {
-    ...cleanedProduct,
-    optionGroups,
-    variants,
-  };
+  return { ...cleaned, variants };
 }
 
-function classifyVariants(product: TProduct): VariantClassification {
-  const variants = product.variants ?? [];
-  const declaredGroups = validateDeclaredGroups(product.optionGroups);
-  if (!declaredGroups) return { kind: "invalid" };
+function parseAxes(options: TProductOption[] | undefined): OptionAxis[] | null {
+  if (!options || options.length === 0) return [];
+  if (options.length > 2) return null;
 
-  if (product.variantModel === "concrete") {
-    return isCanonical(variants, declaredGroups.names)
-      ? { kind: "canonical" }
-      : { kind: "invalid" };
-  }
+  const axes: OptionAxis[] = [];
+  const seenNames = new Set<string>();
 
-  const grouped = parseGroupedVariants(variants);
-  if (product.variantModel === "grouped") {
-    return grouped &&
-      (declaredGroups.names.size === 0 ||
-        declaredGroupsMatch(grouped, declaredGroups.names))
-      ? { kind: "grouped", groups: grouped }
-      : { kind: "invalid" };
-  }
-
-  if (isCanonical(variants, declaredGroups.names)) {
-    return { kind: "canonical" };
-  }
-
-  if (!grouped) return { kind: "invalid" };
-
-  const declaredTitlesMatch =
-    declaredGroups.names.size > 0 &&
-    declaredGroupsMatch(grouped, declaredGroups.names);
-  if (declaredTitlesMatch) return { kind: "grouped", groups: grouped };
-
-  if (variants.length < 2) return { kind: "invalid" };
-
-  const hasOnlyMultiChoiceGroups = grouped.every(
-    (group) => group.choices.length >= 2,
-  );
-
-  return hasOnlyMultiChoiceGroups && haveDisjointChoiceNames(grouped)
-    ? { kind: "grouped", groups: grouped }
-    : { kind: "invalid" };
-}
-
-function validateDeclaredGroups(
-  optionGroups: TProductOptionGroup[] | undefined,
-): { readonly names: ReadonlySet<string> } | null {
-  const names = new Set<string>();
-
-  for (const group of optionGroups ?? []) {
-    const name = normalizeIdentity(group.name);
-    if (!name || names.has(name)) return null;
-    names.add(name);
-
-    const values = new Set<string>();
-    for (const value of group.values ?? []) {
-      const normalizedValue = normalizeIdentity(value);
-      if (!normalizedValue || values.has(normalizedValue)) return null;
-      values.add(normalizedValue);
-    }
-  }
-
-  return { names };
-}
-
-function parseGroupedVariants(
-  variants: TProductVariant[],
-): GroupedVariant[] | null {
-  if (variants.length === 0) return null;
-
-  const groups: GroupedVariant[] = [];
-  const seenGroupNames = new Set<string>();
-
-  for (const [variantIndex, variant] of variants.entries()) {
-    const name = cleanString(variant.title);
+  for (const option of options) {
+    const name = cleanString(option.name);
     const normalizedName = normalizeIdentity(name);
-    const options = variant.options ?? [];
+    if (!name || !normalizedName || seenNames.has(normalizedName)) return null;
+    seenNames.add(normalizedName);
 
-    if (
-      !name ||
-      !normalizedName ||
-      seenGroupNames.has(normalizedName) ||
-      options.length === 0
-    ) {
-      return null;
-    }
-    seenGroupNames.add(normalizedName);
-
-    const choices: GroupedChoice[] = [];
+    const choices: AxisChoice[] = [];
     const seenValues = new Set<string>();
-    let valueMode: "missing" | "self" | null = null;
-
-    for (const [optionIndex, option] of options.entries()) {
-      const authoredName = cleanString(option.name);
-      const authoredValue = cleanString(option.value);
-      const normalizedAuthoredName = normalizeIdentity(authoredName);
-      const normalizedAuthoredValue = normalizeIdentity(authoredValue);
-      const optionMode = authoredValue === null ? "missing" : "self";
-      const value = authoredValue ?? authoredName;
+    for (const rawValue of option.values ?? []) {
+      const value = cleanString(rawValue);
       const normalizedValue = normalizeIdentity(value);
-
-      if (
-        !authoredName ||
-        !normalizedAuthoredName ||
-        !value ||
-        !normalizedValue ||
-        (optionMode === "self" &&
-          normalizedAuthoredName !== normalizedAuthoredValue) ||
-        (valueMode !== null && valueMode !== optionMode) ||
-        seenValues.has(normalizedValue)
-      ) {
+      if (!value || !normalizedValue || seenValues.has(normalizedValue)) {
         return null;
       }
-
-      valueMode = optionMode;
       seenValues.add(normalizedValue);
-      choices.push({
-        key:
-          cleanString(option._key) ??
-          `choice_${optionIndex}_${shortHash(normalizedValue)}`,
-        value,
-        normalizedValue,
-      });
+      choices.push({ value, normalizedValue });
     }
 
-    groups.push({
-      key:
-        cleanString(variant._key) ??
-        `group_${variantIndex}_${shortHash(normalizedName)}`,
-      name,
-      normalizedName,
-      choices,
-      source: variant,
-    });
+    if (choices.length === 0) return null;
+    axes.push({ name, normalizedName, choices });
   }
 
-  return groups;
+  return axes;
 }
 
-function haveDisjointChoiceNames(groups: GroupedVariant[]): boolean {
-  const seen = new Set<string>();
+function indexOverrides(
+  overrides: TProductVariantOverride[] | undefined,
+  axes: OptionAxis[],
+): Map<string, ResolvedOverride> {
+  const byFingerprint = new Map<string, ResolvedOverride>();
+  if (!overrides) return byFingerprint;
 
-  for (const group of groups) {
-    for (const choice of group.choices) {
-      if (seen.has(choice.normalizedValue)) return false;
-      seen.add(choice.normalizedValue);
-    }
-  }
+  const axisNames = new Set(axes.map((axis) => axis.normalizedName));
 
-  return true;
-}
+  for (const override of overrides) {
+    const selection = new Map<string, string>();
+    let malformed = false;
 
-function declaredGroupsMatch(
-  groups: GroupedVariant[],
-  declaredNames: ReadonlySet<string>,
-): boolean {
-  return (
-    groups.length === declaredNames.size &&
-    groups.every((group) => declaredNames.has(group.normalizedName))
-  );
-}
-
-function isCanonical(
-  variants: TProductVariant[],
-  declaredGroupNames: ReadonlySet<string>,
-): boolean {
-  if (variants.length === 0) return declaredGroupNames.size === 0;
-
-  const optionCounts = variants.map((variant) => variant.options?.length ?? 0);
-  if (optionCounts.every((count) => count === 0)) {
-    return declaredGroupNames.size === 0;
-  }
-  if (optionCounts.some((count) => count === 0)) return false;
-
-  let expectedNames: Set<string> | null = null;
-  const seenTuples = new Set<string>();
-
-  for (const variant of variants) {
-    const valuesByName = new Map<string, string>();
-
-    for (const option of variant.options ?? []) {
-      const name = normalizeIdentity(option.name);
-      const value = normalizeIdentity(option.value);
-      if (!name || !value || valuesByName.has(name)) return false;
-      valuesByName.set(name, value);
+    for (const option of override.select ?? []) {
+      const name = normalizeIdentity(cleanString(option.name));
+      const value = normalizeIdentity(cleanString(option.value));
+      if (!name || !value || !axisNames.has(name) || selection.has(name)) {
+        malformed = true;
+        break;
+      }
+      selection.set(name, value);
     }
 
-    const names = new Set(valuesByName.keys());
-    if (!expectedNames) {
-      expectedNames = names;
-    } else if (!setsEqual(expectedNames, names)) {
-      return false;
-    }
+    // An override must pin exactly one full combination to apply.
+    if (malformed || selection.size !== axes.length) continue;
 
-    const tuple = [...valuesByName.entries()]
-      .sort(([left], [right]) => compareCodePoints(left, right))
-      .map(([name, value]) => [name, value]);
-    const fingerprint = JSON.stringify(tuple);
-    if (seenTuples.has(fingerprint)) return false;
-    seenTuples.add(fingerprint);
+    const fingerprint = fingerprintSelection(selection);
+    if (byFingerprint.has(fingerprint)) continue; // first authored wins
+    byFingerprint.set(fingerprint, resolveOverride(override));
   }
 
-  return (
-    expectedNames !== null &&
-    (declaredGroupNames.size === 0 ||
-      setsEqual(expectedNames, declaredGroupNames))
-  );
+  return byFingerprint;
 }
 
-function setsEqual(
-  left: ReadonlySet<string>,
-  right: ReadonlySet<string>,
-): boolean {
-  return (
-    left.size === right.size && [...left].every((value) => right.has(value))
-  );
-}
+function resolveOverride(override: TProductVariantOverride): ResolvedOverride {
+  const price = toPositiveNumber(override.price);
+  const shipping = hasShippingOverride(override.shipping)
+    ? override.shipping
+    : undefined;
+  const sku = cleanString(override.sku) ?? undefined;
+  const availabilityLabel =
+    cleanString(override.availabilityLabel) ?? undefined;
 
-function orderGroups(
-  groups: GroupedVariant[],
-  authoredGroups: TProductOptionGroup[] | undefined,
-): GroupedVariant[] {
-  const authoredOrder = new Map<string, number>();
-  for (const [index, group] of (authoredGroups ?? []).entries()) {
-    const name = normalizeIdentity(group.name);
-    if (name && !authoredOrder.has(name)) authoredOrder.set(name, index);
-  }
-
-  return groups
-    .map((group, sourceIndex) => ({ group, sourceIndex }))
-    .sort((left, right) => {
-      const leftOrder = authoredOrder.get(left.group.normalizedName);
-      const rightOrder = authoredOrder.get(right.group.normalizedName);
-      if (leftOrder !== undefined && rightOrder !== undefined)
-        return leftOrder - rightOrder;
-      if (leftOrder !== undefined) return -1;
-      if (rightOrder !== undefined) return 1;
-      return left.sourceIndex - right.sourceIndex;
-    })
-    .map(({ group }) => group);
-}
-
-function toOptionGroup(group: GroupedVariant): TProductOptionGroup {
   return {
-    _key: group.key,
-    name: group.name,
-    values: group.choices.map((choice) => choice.value),
+    ...(price !== null ? { price } : {}),
+    ...(override.discountPrice === undefined
+      ? {}
+      : { discountPrice: toPositiveNumber(override.discountPrice) }),
+    ...(sku ? { sku } : {}),
+    ...(typeof override.isAvailable === "boolean"
+      ? { isAvailable: override.isAvailable }
+      : {}),
+    ...(availabilityLabel ? { availabilityLabel } : {}),
+    ...(shipping ? { shipping } : {}),
   };
 }
 
-function resolveCommonCommerceMetadata(
+function buildVariants(
   product: TProduct,
-  groups: GroupedVariant[],
-): CommerceMetadata | null {
-  if (groups.some((group) => cleanString(group.source.sku) !== null))
-    return null;
+  axes: OptionAxis[],
+  overrides: Map<string, ResolvedOverride>,
+): TProductVariant[] {
+  const publishedProductId = product._id.replace(/^drafts\./, "");
+  const basePrice = toPositiveNumber(product.price) ?? 0;
+  const productDiscount = toPositiveNumber(product.discountPrice);
 
-  const prices = groups.map((group) => toCents(group.source.price));
-  if (prices.some((price) => price === null)) return null;
-  const priceCents = prices[0];
-  if (priceCents === null || prices.some((price) => price !== priceCents))
-    return null;
+  return cartesianSelections(axes).map((selection) => {
+    const normalizedSelection = new Map(
+      selection.map(({ axis, choice }) => [
+        axis.normalizedName,
+        choice.normalizedValue,
+      ]),
+    );
+    const override =
+      overrides.get(fingerprintSelection(normalizedSelection)) ?? {};
 
-  const discounts = groups.map((group) =>
-    toOptionalCents(group.source.discountPrice ?? product.discountPrice),
+    const options: TProductVariantOption[] = selection.map(
+      ({ axis, choice }) => ({
+        _key: `option_${shortHash(axis.normalizedName)}`,
+        name: axis.name,
+        value: choice.value,
+      }),
+    );
+
+    const price = override.price ?? basePrice;
+    const usesOwnPrice = override.price !== undefined;
+    const rawDiscount = usesOwnPrice
+      ? (override.discountPrice ?? null)
+      : (override.discountPrice ?? productDiscount ?? null);
+    const discountPrice =
+      typeof rawDiscount === "number" && rawDiscount < price
+        ? rawDiscount
+        : null;
+    const isAvailable = product.isAvailable && (override.isAvailable ?? true);
+
+    return {
+      _key: derivedVariantKey(publishedProductId, normalizedSelection),
+      title: selection.map(({ choice }) => choice.value).join(" / "),
+      price,
+      discountPrice,
+      isAvailable,
+      options,
+      ...(override.sku ? { sku: override.sku } : {}),
+      ...(override.availabilityLabel
+        ? { availabilityLabel: override.availabilityLabel }
+        : {}),
+      ...(override.shipping ? { shipping: override.shipping } : {}),
+    };
+  });
+}
+
+function cartesianSelections(
+  axes: OptionAxis[],
+): Array<Array<{ axis: OptionAxis; choice: AxisChoice }>> {
+  return axes.reduce<Array<Array<{ axis: OptionAxis; choice: AxisChoice }>>>(
+    (selections, axis) =>
+      selections.flatMap((selection) =>
+        axis.choices.map((choice) => [...selection, { axis, choice }]),
+      ),
+    [[]],
   );
-  const discountCents = discounts[0];
-  if (
-    discounts.some(
-      (discount) => discount === INVALID_CENTS || discount !== discountCents,
-    ) ||
-    (typeof discountCents === "number" && discountCents >= priceCents)
-  ) {
-    return null;
-  }
+}
 
-  const effectiveShipping = groups.map((group) =>
-    hasShippingOverride(group.source.shipping)
-      ? group.source.shipping
-      : product.shipping,
-  );
-  const shippingFingerprint = stableSerialize(effectiveShipping[0]);
-  if (
-    effectiveShipping.some(
-      (shipping) => stableSerialize(shipping) !== shippingFingerprint,
-    )
-  ) {
-    return null;
-  }
+/**
+ * Stable per-combination key. Kept byte-for-byte compatible with the previous
+ * derived scheme so any `variantId` already stored in a cart or order still
+ * resolves after the schema change.
+ */
+function derivedVariantKey(
+  publishedProductId: string,
+  normalizedSelection: ReadonlyMap<string, string>,
+): string {
+  const canonicalSelection = [...normalizedSelection.entries()]
+    .map(([name, value]) => [name, value])
+    .sort(([left], [right]) => compareCodePoints(left, right));
+  const digest = createHash("sha256")
+    .update(JSON.stringify([publishedProductId, 1, canonicalSelection]))
+    .digest("hex")
+    .slice(0, 32);
 
-  const isAvailable = groups.every(
-    (group) => group.source.isAvailable === true,
-  );
-  const labels = groups.map((group) =>
-    cleanString(group.source.availabilityLabel),
-  );
-  if (new Set(labels).size !== 1) return null;
-  const availabilityLabel =
-    labels[0] ?? (isAvailable ? undefined : "Unavailable");
-  const commonShipping = effectiveShipping[0];
-  const usesProductShipping =
-    stableSerialize(commonShipping) === stableSerialize(product.shipping);
+  return `${DERIVED_KEY_PREFIX}${digest}`;
+}
 
+function fingerprintSelection(selection: ReadonlyMap<string, string>): string {
+  return JSON.stringify(
+    [...selection.entries()].sort(([left], [right]) =>
+      compareCodePoints(left, right),
+    ),
+  );
+}
+
+function quarantineProduct(product: TProduct): TProduct {
   return {
-    price: priceCents / 100,
-    discountPrice:
-      typeof discountCents === "number" ? discountCents / 100 : null,
-    isAvailable,
-    ...(availabilityLabel ? { availabilityLabel } : {}),
-    ...(!usesProductShipping && commonShipping
-      ? { shipping: commonShipping }
-      : {}),
+    ...product,
+    isAvailable: false,
+    availabilityLabel: CONFIGURATION_UNAVAILABLE_LABEL,
+    variants: [],
   };
 }
 
@@ -422,113 +275,78 @@ function hasShippingOverride(
   );
 }
 
-const INVALID_CENTS = Symbol("invalid-cents");
-
-function toOptionalCents(
-  value: number | null | undefined,
-): number | null | typeof INVALID_CENTS {
-  if (value === undefined || value === null) return null;
-  return toCents(value) ?? INVALID_CENTS;
+function toPositiveNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : null;
 }
 
-function toCents(value: unknown): number | null {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-    return null;
+function cleanProduct(product: TProduct): TProduct {
+  const options = cleanOptions(product.options);
+  const variantOverrides = cleanOverrides(product.variantOverrides);
+
+  if (
+    options === product.options &&
+    variantOverrides === product.variantOverrides
+  ) {
+    return product;
   }
 
-  const cents = Math.round(value * 100);
-  return Math.abs(value - cents / 100) < 1e-9 ? cents : null;
-}
-
-function buildDerivedVariants(
-  product: TProduct,
-  groups: GroupedVariant[],
-  commerce: CommerceMetadata | null,
-): TProductVariant[] {
-  const selections = cartesianSelections(groups);
-  const seenKeys = new Set<string>();
-  const fallbackPrice =
-    typeof product.price === "number" && Number.isFinite(product.price)
-      ? product.price
-      : 0;
-
-  return selections.flatMap((selection) => {
-    const key = derivedVariantKey(product._id, selection);
-    if (seenKeys.has(key)) return [];
-    seenKeys.add(key);
-
-    const options: TProductVariantOption[] = selection.map(
-      ({ group, choice }) => ({
-        _key: `option_${shortHash(group.normalizedName)}`,
-        name: group.name,
-        value: choice.value,
-      }),
-    );
-
-    return [
-      {
-        _key: key,
-        title: selection.map(({ choice }) => choice.value).join(" / "),
-        price: commerce?.price ?? fallbackPrice,
-        discountPrice: commerce?.discountPrice ?? null,
-        isAvailable: commerce?.isAvailable ?? false,
-        ...(commerce?.availabilityLabel
-          ? { availabilityLabel: commerce.availabilityLabel }
-          : {}),
-        options,
-        ...(commerce?.shipping ? { shipping: commerce.shipping } : {}),
-      },
-    ];
-  });
-}
-
-function cartesianSelections(
-  groups: GroupedVariant[],
-): Array<Array<{ group: GroupedVariant; choice: GroupedChoice }>> {
-  return groups.reduce<
-    Array<Array<{ group: GroupedVariant; choice: GroupedChoice }>>
-  >(
-    (selections, group) =>
-      selections.flatMap((selection) =>
-        group.choices.map((choice) => [...selection, { group, choice }]),
-      ),
-    [[]],
-  );
-}
-
-function derivedVariantKey(
-  productId: string,
-  selection: Array<{ group: GroupedVariant; choice: GroupedChoice }>,
-): string {
-  const canonicalSelection = selection
-    .map(({ group, choice }) => [group.normalizedName, choice.normalizedValue])
-    .sort(([leftGroup], [rightGroup]) =>
-      compareCodePoints(leftGroup, rightGroup),
-    );
-  const publishedProductId = productId.replace(/^drafts\./, "");
-  const digest = createHash("sha256")
-    .update(JSON.stringify([publishedProductId, 1, canonicalSelection]))
-    .digest("hex")
-    .slice(0, 32);
-
-  return `${DERIVED_KEY_PREFIX}${digest}`;
-}
-
-function quarantineProduct(
-  product: TProduct,
-  optionGroups: TProductOptionGroup[],
-): TProduct {
   return {
     ...product,
-    isAvailable: false,
-    availabilityLabel: CONFIGURATION_UNAVAILABLE_LABEL,
-    optionGroups,
-    variants: product.variants?.map((variant) => ({
-      ...variant,
-      isAvailable: false,
-      availabilityLabel: CONFIGURATION_UNAVAILABLE_LABEL,
-    })),
+    ...(options === undefined ? {} : { options }),
+    ...(variantOverrides === undefined ? {} : { variantOverrides }),
   };
+}
+
+function cleanOptions(
+  options: TProductOption[] | undefined,
+): TProductOption[] | undefined {
+  if (!options) return options;
+  let changed = false;
+
+  const cleaned = options.map((option) => {
+    const name = cleanStegaValue(option.name);
+    const values = option.values?.map((value) => cleanStegaValue(value));
+    const valuesChanged = values?.some(
+      (value, index) => value !== option.values?.[index],
+    );
+    if (name === option.name && !valuesChanged) return option;
+
+    changed = true;
+    return { ...option, name, ...(values === undefined ? {} : { values }) };
+  });
+
+  return changed ? cleaned : options;
+}
+
+function cleanOverrides(
+  overrides: TProductVariantOverride[] | undefined,
+): TProductVariantOverride[] | undefined {
+  if (!overrides) return overrides;
+  let changed = false;
+
+  const cleaned = overrides.map((override) => {
+    if (!override.select) return override;
+    let selectChanged = false;
+    const select = override.select.map((option) => {
+      const name = cleanStegaValue(option.name);
+      const value = cleanStegaValue(option.value);
+      if (name === option.name && value === option.value) return option;
+      selectChanged = true;
+      return { ...option, name, value };
+    });
+    if (!selectChanged) return override;
+
+    changed = true;
+    return { ...override, select };
+  });
+
+  return changed ? cleaned : overrides;
+}
+
+function cleanStegaValue<T extends string | null | undefined>(value: T): T {
+  return (typeof value === "string" ? stegaClean(value) : value) as T;
 }
 
 function cleanString(value: unknown): string | null {
@@ -537,104 +355,12 @@ function cleanString(value: unknown): string | null {
   return cleaned.length > 0 ? cleaned : null;
 }
 
-function cleanOptionPaths(product: TProduct): TProduct {
-  const variantModel = cleanStegaValue(product.variantModel);
-  const optionGroups = cleanOptionGroups(product.optionGroups);
-  const variants = cleanVariantOptions(product.variants);
-
-  if (
-    variantModel === product.variantModel &&
-    optionGroups === product.optionGroups &&
-    variants === product.variants
-  ) {
-    return product;
-  }
-
-  return {
-    ...product,
-    ...(variantModel === undefined ? {} : { variantModel }),
-    ...(optionGroups === undefined ? {} : { optionGroups }),
-    ...(variants === undefined ? {} : { variants }),
-  };
-}
-
-function cleanOptionGroups(
-  groups: TProductOptionGroup[] | undefined,
-): TProductOptionGroup[] | undefined {
-  if (!groups) return groups;
-  let changed = false;
-
-  const cleanedGroups = groups.map((group) => {
-    const name = cleanStegaValue(group.name);
-    const values = group.values?.map((value) => cleanStegaValue(value));
-    const valuesChanged = values?.some(
-      (value, index) => value !== group.values?.[index],
-    );
-    if (name === group.name && !valuesChanged) return group;
-
-    changed = true;
-    return {
-      ...group,
-      name,
-      ...(values === undefined ? {} : { values }),
-    };
-  });
-
-  return changed ? cleanedGroups : groups;
-}
-
-function cleanVariantOptions(
-  variants: TProductVariant[] | undefined,
-): TProductVariant[] | undefined {
-  if (!variants) return variants;
-  let variantsChanged = false;
-
-  const cleanedVariants = variants.map((variant) => {
-    if (!variant.options) return variant;
-    let optionsChanged = false;
-    const options = variant.options.map((option) => {
-      const name = cleanStegaValue(option.name);
-      const value = cleanStegaValue(option.value);
-      if (name === option.name && value === option.value) return option;
-
-      optionsChanged = true;
-      return { ...option, name, value };
-    });
-    if (!optionsChanged) return variant;
-
-    variantsChanged = true;
-    return { ...variant, options };
-  });
-
-  return variantsChanged ? cleanedVariants : variants;
-}
-
-function cleanStegaValue<T extends string | null | undefined>(value: T): T {
-  return (typeof value === "string" ? stegaClean(value) : value) as T;
-}
-
 function normalizeIdentity(value: unknown): string | null {
   return cleanString(value)?.toLowerCase() ?? null;
 }
 
 function shortHash(value: string): string {
   return createHash("sha256").update(value).digest("hex").slice(0, 12);
-}
-
-function stableSerialize(value: unknown): string {
-  return JSON.stringify(sortObjectKeys(value)) ?? "undefined";
-}
-
-function sortObjectKeys(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortObjectKeys);
-  if (!value || typeof value !== "object") return value;
-
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .filter(([, entryValue]) => entryValue !== undefined)
-      .sort(([left], [right]) => compareCodePoints(left, right))
-      .map(([key, entryValue]) => [key, sortObjectKeys(entryValue)]),
-  );
 }
 
 function compareCodePoints(left: string, right: string): number {

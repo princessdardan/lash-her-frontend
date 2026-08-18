@@ -8,8 +8,8 @@ import type { TProduct } from "@/types";
 import { ProductVariantSelector } from "./product-variant-selector";
 
 describe("ProductVariantSelector", () => {
-  it("renders grouped nested choices as selectable option groups on product detail pages", () => {
-    const product = normalizeProductVariantModel(createGroupedProduct());
+  it("renders option axes as selectable option groups on product detail pages", () => {
+    const product = normalizeProductVariantModel(createTwoAxisProduct());
     const html = renderToStaticMarkup(
       React.createElement(ProductVariantSelector, { product }),
     );
@@ -32,7 +32,7 @@ describe("ProductVariantSelector", () => {
   });
 });
 
-function createGroupedProduct(): TProduct {
+function createTwoAxisProduct(): TProduct {
   return {
     _id: "prod-grouped",
     title: "Cashmere Flat Lashes",
@@ -41,27 +41,9 @@ function createGroupedProduct(): TProduct {
     price: 22,
     currency: "CAD",
     isAvailable: true,
-    variants: [
-      {
-        _key: "curl-group",
-        title: "Curl",
-        price: 22,
-        isAvailable: true,
-        options: [
-          { _key: "cc-curl", name: "CC Curl", value: null },
-          { _key: "c-curl", name: "C Curl", value: null },
-        ],
-      },
-      {
-        _key: "length-group",
-        title: "Length",
-        price: 22,
-        isAvailable: true,
-        options: [
-          { _key: "8mm", name: "8mm", value: null },
-          { _key: "9mm", name: "9mm", value: null },
-        ],
-      },
+    options: [
+      { _key: "curl", name: "Curl", values: ["CC Curl", "C Curl"] },
+      { _key: "length", name: "Length", values: ["8mm", "9mm"] },
     ],
   };
 }

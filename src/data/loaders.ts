@@ -70,7 +70,6 @@ const PRODUCT_PROJECTION = groq`{
   discountPrice,
   sku,
   currency,
-  variantModel,
   collections[]{
     _key,
     "_id": @->_id,
@@ -79,8 +78,8 @@ const PRODUCT_PROJECTION = groq`{
     "description": @->description,
     "displayOrder": @->displayOrder
   },
-  optionGroups[]{ _key, name, values },
-  variants[]{ _key, title, sku, price, discountPrice, isAvailable, availabilityLabel, options[]{ _key, name, value }, shipping },
+  options[]{ _key, name, values },
+  variantOverrides[]{ _key, select[]{ _key, name, value }, price, discountPrice, sku, isAvailable, availabilityLabel, shipping },
   isAvailable,
   availabilityLabel,
   fulfillmentNote,

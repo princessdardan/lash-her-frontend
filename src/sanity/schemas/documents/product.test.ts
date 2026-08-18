@@ -3,9 +3,9 @@ import { describe, it } from "node:test";
 
 import {
   product,
-  validateOptionGroupNames,
+  validateOptionAxes,
   validateProductCheckoutConfiguration,
-  validateProductVariantConfiguration,
+  validateVariantOverrides,
 } from "./product";
 
 type SchemaField = {
@@ -15,6 +15,7 @@ type SchemaField = {
   type?: string;
   of?: SchemaField[];
   fields?: SchemaField[];
+  validation?: unknown;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -41,22 +42,33 @@ function getSchemaField(name: string): SchemaField {
 }
 
 describe("product schema", () => {
-  it("supports optional merchant SKUs for canonical checkout reconciliation", () => {
+  it("supports optional merchant SKUs for checkout reconciliation", () => {
     const sku = getSchemaField("sku");
 
     assert.strictEqual(sku.type, "string");
   });
 
-  it("supports optional variant SKUs without requiring customer-facing generated codes", () => {
-    const variants = getSchemaField("variants");
-    const variantObject = variants.of?.find(
+  it("models options as an array of at most two axes", () => {
+    const options = getSchemaField("options");
+
+    assert.strictEqual(options.type, "array");
+    const optionObject = options.of?.find((member) => member.type === "object");
+    const name = optionObject?.fields?.find((field) => field.name === "name");
+    const values = optionObject?.fields?.find(
+      (field) => field.name === "values",
+    );
+    assert.strictEqual(name?.type, "string");
+    assert.strictEqual(values?.type, "array");
+  });
+
+  it("supports optional per-combination override SKUs", () => {
+    const overrides = getSchemaField("variantOverrides");
+    const overrideObject = overrides.of?.find(
       (member) => member.type === "object",
     );
-    const variantMember = variantObject?.fields?.find(
-      (field) => field.name === "sku",
-    );
+    const sku = overrideObject?.fields?.find((field) => field.name === "sku");
 
-    assert.strictEqual(variantMember?.type, "string");
+    assert.strictEqual(sku?.type, "string");
   });
 
   it("gives every shipping and customs field clear editor guidance", () => {
@@ -103,138 +115,171 @@ describe("product schema", () => {
     assert.match(packingUnits?.description ?? "", /lash tray/i);
   });
 
-  it("requires an explicit variant authoring model when variants are present", () => {
-    const variantModel = getSchemaField("variantModel");
-
-    assert.strictEqual(variantModel.type, "string");
-  });
-
-  it("validates grouped authoring constraints before publish", () => {
-    const groupedVariants = [
-      {
-        title: "Curl",
-        price: 22,
-        isAvailable: true,
-        options: [{ name: "C" }, { name: "CC" }],
-      },
-      {
-        title: "Length",
-        price: 22,
-        isAvailable: true,
-        options: [{ name: "8mm" }, { name: "9mm" }],
-      },
-    ];
-
+  it("accepts zero, one, or two well-formed option axes", () => {
+    assert.strictEqual(validateOptionAxes(undefined), true);
+    assert.strictEqual(validateOptionAxes([]), true);
     assert.strictEqual(
-      validateProductVariantConfiguration(groupedVariants, {
-        variantModel: "grouped",
-        optionGroups: [{ name: "Curl" }, { name: "Length" }],
-      }),
+      validateOptionAxes([{ name: "Size", values: ["S", "M", "L"] }]),
       true,
     );
-    assert.match(
-      String(
-        validateProductVariantConfiguration(
-          [{ ...groupedVariants[0], sku: "GROUP-SKU" }, groupedVariants[1]],
-          { variantModel: "grouped" },
-        ),
-      ),
-      /cannot define merchant SKUs/,
-    );
-    assert.match(
-      String(
-        validateProductVariantConfiguration(
-          [groupedVariants[0], { ...groupedVariants[1], price: 23 }],
-          { variantModel: "grouped" },
-        ),
-      ),
-      /same price/,
-    );
-
     assert.strictEqual(
-      validateProductVariantConfiguration(
-        [
-          {
-            title: "Finish",
-            price: 22,
-            isAvailable: true,
-            options: [{ name: "Natural" }, { name: "Glossy" }],
-          },
-          {
-            title: "Style",
-            price: 22,
-            isAvailable: true,
-            options: [{ name: "Natural" }, { name: "Dramatic" }],
-          },
-        ],
-        { variantModel: "grouped" },
-      ),
+      validateOptionAxes([
+        { name: "Curl", values: ["C", "CC"] },
+        { name: "Length", values: ["8mm", "9mm"] },
+      ]),
       true,
     );
   });
 
-  it("rejects empty variant configurations that expose unpurchasable options", () => {
+  it("rejects malformed option axes before publish", () => {
     assert.match(
       String(
-        validateProductVariantConfiguration([], { variantModel: "grouped" }),
+        validateOptionAxes([
+          { name: "Curl", values: ["C"] },
+          { name: "Length", values: ["8mm"] },
+          { name: "Finish", values: ["Natural"] },
+        ]),
       ),
-      /requires at least one grouped Variant row/,
+      /at most two options/,
     );
     assert.match(
       String(
-        validateProductVariantConfiguration(undefined, {
-          variantModel: "concrete",
-          optionGroups: [{ name: "Curl", values: ["C", "CC"] }],
-        }),
+        validateOptionAxes([
+          { name: "Curl", values: ["C", "CC"] },
+          { name: "curl", values: ["D"] },
+        ]),
       ),
-      /Option Groups require concrete Variants/,
+      /names must be unique/,
     );
-  });
-
-  it("rejects incomplete or duplicate concrete option tuples", () => {
     assert.match(
-      String(
-        validateProductVariantConfiguration(
-          [
-            {
-              title: "C / 8mm",
-              options: [{ name: "Curl", value: "C" }, { name: "Length" }],
-            },
-          ],
-          { variantModel: "concrete" },
-        ),
-      ),
-      /both a non-blank group name and selected value/,
-    );
-
-    assert.match(
-      String(
-        validateProductVariantConfiguration(
-          [
-            {
-              title: "First",
-              options: [{ name: "Curl", value: "C" }],
-            },
-            {
-              title: "Duplicate",
-              options: [{ name: "Curl", value: "C" }],
-            },
-          ],
-          { variantModel: "concrete" },
-        ),
-      ),
-      /unique option combinations/,
-    );
-  });
-
-  it("rejects duplicate option-group names and values", () => {
-    assert.match(
-      String(validateOptionGroupNames([{ name: "Curl", values: ["C", "c"] }])),
+      String(validateOptionAxes([{ name: "Curl", values: ["C", "c"] }])),
       /must be unique/,
     );
     assert.match(
-      String(validateOptionGroupNames([{ name: "Curl" }, { name: "curl" }])),
-      /names must be unique/,
+      String(validateOptionAxes([{ name: "Curl", values: [] }])),
+      /at least one value/,
+    );
+  });
+
+  it("validates that overrides pin a real, unique combination", () => {
+    const options = [
+      { name: "Curl", values: ["C", "CC"] },
+      { name: "Length", values: ["8mm", "9mm"] },
+    ];
+
+    assert.strictEqual(
+      validateVariantOverrides(
+        [
+          {
+            select: [
+              { name: "Curl", value: "C" },
+              { name: "Length", value: "8mm" },
+            ],
+            price: 30,
+          },
+        ],
+        { options },
+      ),
+      true,
+    );
+
+    assert.match(
+      String(
+        validateVariantOverrides([{ select: [{ name: "Curl", value: "C" }] }], {
+          options,
+        }),
+      ),
+      /one full combination/,
+    );
+
+    assert.match(
+      String(
+        validateVariantOverrides(
+          [
+            {
+              select: [
+                { name: "Curl", value: "C" },
+                { name: "Length", value: "12mm" },
+              ],
+            },
+          ],
+          { options },
+        ),
+      ),
+      /not a valid value/,
+    );
+
+    assert.match(
+      String(
+        validateVariantOverrides(
+          [
+            {
+              select: [
+                { name: "Curl", value: "C" },
+                { name: "Length", value: "8mm" },
+              ],
+            },
+            {
+              select: [
+                { name: "Length", value: "8mm" },
+                { name: "Curl", value: "C" },
+              ],
+            },
+          ],
+          { options },
+        ),
+      ),
+      /same combination/,
+    );
+
+    assert.match(
+      String(
+        validateVariantOverrides(
+          [
+            {
+              select: [
+                { name: "Curl", value: "C" },
+                { name: "Length", value: "8mm" },
+              ],
+              price: 20,
+              discountPrice: 25,
+            },
+          ],
+          { options },
+        ),
+      ),
+      /discount price must be lower/,
+    );
+
+    // An override that only sets a discount inherits the product price; the
+    // discount must still be lower than that inherited price.
+    assert.match(
+      String(
+        validateVariantOverrides(
+          [
+            {
+              select: [
+                { name: "Curl", value: "C" },
+                { name: "Length", value: "8mm" },
+              ],
+              discountPrice: 40,
+            },
+          ],
+          { options, price: 30 },
+        ),
+      ),
+      /discount price must be lower/,
+    );
+  });
+
+  it("rejects overrides on a product with no options", () => {
+    assert.match(
+      String(
+        validateVariantOverrides([{ select: [{ name: "Curl", value: "C" }] }], {
+          options: [],
+        }),
+      ),
+      /Add product Options/,
     );
   });
 
@@ -264,7 +309,7 @@ describe("product schema", () => {
     );
   });
 
-  it("requires complete variant overrides and U.S. approval data", () => {
+  it("requires complete override shipping and U.S. approval data", () => {
     const baseShipping = {
       fulfillmentMode: "physical",
       weightGrams: 35,
@@ -277,9 +322,12 @@ describe("product schema", () => {
         validateProductCheckoutConfiguration({
           isAvailable: true,
           shipping: baseShipping,
-          variants: [
+          variantOverrides: [
             {
-              title: "C / 8mm",
+              select: [
+                { name: "Curl", value: "C" },
+                { name: "Length", value: "8mm" },
+              ],
               isAvailable: true,
               shipping: { fulfillmentMode: "physical", weightGrams: 40 },
             },

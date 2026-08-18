@@ -118,7 +118,7 @@ describe("ProductCard", () => {
     );
   });
 
-  it("renders every grouped nested option as a concrete catalog dropdown choice", async () => {
+  it("renders every derived combination as a concrete catalog dropdown choice", async () => {
     process.env.NEXT_PUBLIC_SANITY_DATASET = "test-dataset";
     process.env.NEXT_PUBLIC_SANITY_PROJECT_ID = "test-project";
 
@@ -131,27 +131,9 @@ describe("ProductCard", () => {
       price: 22,
       currency: "CAD",
       isAvailable: true,
-      variants: [
-        {
-          _key: "curl-group",
-          title: "Curl",
-          price: 22,
-          isAvailable: true,
-          options: [
-            { _key: "cc-curl", name: "CC Curl", value: null },
-            { _key: "c-curl", name: "C Curl", value: null },
-          ],
-        },
-        {
-          _key: "length-group",
-          title: "Length",
-          price: 22,
-          isAvailable: true,
-          options: [
-            { _key: "8mm", name: "8mm", value: null },
-            { _key: "9mm", name: "9mm", value: null },
-          ],
-        },
+      options: [
+        { _key: "curl", name: "Curl", values: ["CC Curl", "C Curl"] },
+        { _key: "length", name: "Length", values: ["8mm", "9mm"] },
       ],
     });
 

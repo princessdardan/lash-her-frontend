@@ -52,7 +52,7 @@ function getOptionGroups(
   variants: TProductVariant[],
 ): OptionGroupViewModel[] {
   const definedGroups =
-    product.optionGroups?.flatMap((group, index) => {
+    product.options?.flatMap((group, index) => {
       if (typeof group.name !== "string") return [];
 
       const groupName = group.name.trim();

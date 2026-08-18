@@ -2,355 +2,221 @@ import assert from "node:assert";
 import { describe, it } from "node:test";
 import { vercelStegaCombine } from "@vercel/stega";
 
-import type { TProduct, TProductVariant } from "@/types";
+import type { TProduct, TProductOption, TProductVariant } from "@/types";
 import { buildValidatedCart } from "./cart";
 import { normalizeProductVariantModel } from "./product-variant-model";
 
 describe("normalizeProductVariantModel", () => {
-  it("returns canonical concrete variants unchanged", () => {
-    const product = createProduct({
-      optionGroups: [
-        { _key: "curl", name: "Curl", values: ["C", "CC"] },
-        { _key: "length", name: "Length", values: ["8mm", "9mm"] },
-      ],
-      variants: [
-        concreteVariant("c-8", "C / 8mm", "C", "8mm"),
-        concreteVariant("cc-9", "CC / 9mm", "CC", "9mm"),
-      ],
-    });
+  it("returns a product with no options untouched", () => {
+    const product = createProduct();
 
     assert.strictEqual(normalizeProductVariantModel(product), product);
   });
 
-  it("keeps title-only canonical variants without option groups unchanged", () => {
+  it("strips a stray derived variants array from an options-free product", () => {
     const product = createProduct({
       variants: [
-        {
-          _key: "single",
-          title: "Standard",
-          price: 22,
-          isAvailable: true,
-        },
-      ],
-    });
-
-    assert.strictEqual(normalizeProductVariantModel(product), product);
-  });
-
-  it("quarantines an incomplete canonical option row", () => {
-    const product = createProduct({
-      optionGroups: [
-        { _key: "curl", name: "Curl", values: ["C", "CC"] },
-        { _key: "length", name: "Length", values: ["8mm", "9mm"] },
-      ],
-      variants: [
-        concreteVariant("c-8", "C / 8mm", "C", "8mm"),
-        {
-          ...concreteVariant("cc-9", "CC / 9mm", "CC", "9mm"),
-          options: [
-            { _key: "cc-9-curl", name: "Curl", value: "CC" },
-            { _key: "cc-9-length", name: "Length" },
-          ],
-        },
+        { _key: "stale", title: "Stale", price: 22, isAvailable: true },
       ],
     });
 
     const normalized = normalizeProductVariantModel(product);
-    assertQuarantined(normalized);
-    assert.equal(normalized.variants?.length, 2);
-    assert.equal(normalized.variants?.[1]?._key, "cc-9");
+    assert.strictEqual(normalized.variants, undefined);
   });
 
-  it("expands grouped choices into deterministic concrete combinations", () => {
-    const normalized = normalizeProductVariantModel(createGroupedProduct());
-
-    assert.deepEqual(
-      normalized.optionGroups?.map((group) => ({
-        name: group.name,
-        values: group.values,
-      })),
-      [
-        { name: "Curl", values: ["CC Curl", "C Curl"] },
-        { name: "Length", values: ["8mm", "9mm"] },
-      ],
+  it("expands one axis into a variant per value", () => {
+    const normalized = normalizeProductVariantModel(
+      createProduct({
+        options: [{ _key: "size", name: "Size", values: ["S", "M", "L"] }],
+      }),
     );
+
+    assert.equal(normalized.variants?.length, 3);
+    assert.deepEqual(
+      normalized.variants?.map((variant) => variant.title),
+      ["S", "M", "L"],
+    );
+    assert.ok(
+      normalized.variants?.every((variant) => variant.price === 22),
+      "combinations inherit the product price by default",
+    );
+  });
+
+  it("expands two axes into the cartesian product", () => {
+    const normalized = normalizeProductVariantModel(createTwoAxisProduct());
+
+    assert.equal(normalized.variants?.length, 4);
     assert.deepEqual(
       normalized.variants?.map((variant) => variant.title),
       ["CC Curl / 8mm", "CC Curl / 9mm", "C Curl / 8mm", "C Curl / 9mm"],
     );
-    assert.equal(normalized.variants?.length, 4);
-
-    for (const variant of normalized.variants ?? []) {
-      assert.match(variant._key, /^derived_v1_[a-f0-9]{32}$/);
-      assert.ok(variant._key.length <= 128);
-      assert.equal(variant.price, 22);
-      assert.equal(variant.isAvailable, true);
-      assert.deepEqual(
-        variant.options?.map((option) => option.name),
-        ["Curl", "Length"],
-      );
-    }
+    assert.deepEqual(
+      normalized.variants?.[0]?.options?.map((option) => ({
+        name: option.name,
+        value: option.value,
+      })),
+      [
+        { name: "Curl", value: "CC Curl" },
+        { name: "Length", value: "8mm" },
+      ],
+    );
   });
 
-  it("handles the production draft shape with explicit and missing option values", () => {
+  it("inherits the product discount price across combinations", () => {
     const normalized = normalizeProductVariantModel(
       createProduct({
-        optionGroups: [
-          { _key: "curl-order", name: "Curl", values: ["C", "CC"] },
-          { _key: "length-order", name: "Length", values: ["17mm", "12mm"] },
-        ],
-        variants: [
+        discountPrice: 18,
+        options: [{ name: "Size", values: ["S", "M"] }],
+      }),
+    );
+
+    assert.ok(
+      normalized.variants?.every((variant) => variant.discountPrice === 18),
+    );
+  });
+
+  it("applies a per-combination price override and leaves others on the default", () => {
+    const normalized = normalizeProductVariantModel(
+      createTwoAxisProduct({
+        variantOverrides: [
           {
-            _key: "length-group",
-            title: "Length",
-            price: 17,
-            isAvailable: true,
-            options: [
-              { _key: "mixed", name: "Mixed 7-14mm" },
-              { _key: "8mm", name: "8mm" },
-              { _key: "9mm", name: "9mm" },
-              { _key: "10mm", name: "10mm" },
-              { _key: "11mm", name: "11mm" },
-              { _key: "12mm", name: "12mm" },
-              { _key: "13mm", name: "13mm" },
-              { _key: "14mm", name: "14mm" },
+            select: [
+              { name: "Curl", value: "C Curl" },
+              { name: "Length", value: "9mm" },
             ],
-          },
-          {
-            _key: "curl-group",
-            title: "Curl",
-            price: 17,
-            isAvailable: true,
-            options: [
-              { _key: "c", name: "C", value: "C" },
-              { _key: "cc", name: "CC", value: "CC" },
-            ],
+            price: 30,
           },
         ],
-        price: 17,
       }),
     );
 
-    assert.deepEqual(
-      normalized.optionGroups?.map((group) => group.name),
-      ["Curl", "Length"],
+    const overridden = normalized.variants?.find(
+      (variant) => variant.title === "C Curl / 9mm",
     );
-    assert.deepEqual(normalized.optionGroups?.[1]?.values, [
-      "Mixed 7-14mm",
-      "8mm",
-      "9mm",
-      "10mm",
-      "11mm",
-      "12mm",
-      "13mm",
-      "14mm",
-    ]);
-    assert.equal(normalized.variants?.length, 16);
-    assert.equal(normalized.variants?.[0]?.title, "C / Mixed 7-14mm");
-    assert.equal(normalized.variants?.[7]?.title, "C / 14mm");
-    assert.equal(normalized.variants?.[8]?.title, "CC / Mixed 7-14mm");
-    assert.equal(normalized.variants?.[15]?.title, "CC / 14mm");
+    const inherited = normalized.variants?.find(
+      (variant) => variant.title === "CC Curl / 8mm",
+    );
+    assert.equal(overridden?.price, 30);
+    assert.equal(inherited?.price, 22);
   });
 
-  it("expands declared one-choice grouped rows", () => {
+  it("marks only the targeted combination sold out", () => {
     const normalized = normalizeProductVariantModel(
-      createProduct({
-        optionGroups: [
-          { _key: "curl", name: "Curl", values: ["C"] },
-          { _key: "length", name: "Length", values: ["8mm"] },
-        ],
-        variants: [
-          groupedVariant("curl-group", "Curl", ["C"]),
-          groupedVariant("length-group", "Length", ["8mm"]),
+      createTwoAxisProduct({
+        variantOverrides: [
+          {
+            select: [
+              { name: "Curl", value: "CC Curl" },
+              { name: "Length", value: "8mm" },
+            ],
+            isAvailable: false,
+            availabilityLabel: "Sold out",
+          },
         ],
       }),
     );
 
-    assert.equal(normalized.variants?.length, 1);
-    assert.match(normalized.variants?.[0]?._key ?? "", /^derived_v1_/);
-    assert.equal(normalized.variants?.[0]?.title, "C / 8mm");
+    const soldOut = normalized.variants?.find(
+      (variant) => variant.title === "CC Curl / 8mm",
+    );
+    assert.equal(soldOut?.isAvailable, false);
+    assert.equal(soldOut?.availabilityLabel, "Sold out");
+    assert.equal(
+      normalized.variants?.filter((variant) => variant.isAvailable).length,
+      3,
+    );
   });
 
-  it("expands one declared parent with multiple choices", () => {
+  it("carries an override SKU and shipping onto the matched combination only", () => {
     const normalized = normalizeProductVariantModel(
-      createProduct({
-        optionGroups: [{ _key: "curl", name: "Curl", values: ["C", "CC"] }],
-        variants: [groupedVariant("curl-group", "Curl", ["C", "CC"])],
+      createTwoAxisProduct({
+        variantOverrides: [
+          {
+            select: [
+              { name: "Curl", value: "C Curl" },
+              { name: "Length", value: "8mm" },
+            ],
+            sku: "C-8-SKU",
+            shipping: { fulfillmentMode: "physical", weightGrams: 60 },
+          },
+        ],
       }),
     );
 
-    assert.deepEqual(
-      normalized.variants?.map((variant) => variant.title),
-      ["C", "CC"],
+    const overridden = normalized.variants?.find(
+      (variant) => variant.title === "C Curl / 8mm",
     );
+    assert.equal(overridden?.sku, "C-8-SKU");
+    assert.equal(overridden?.shipping?.weightGrams, 60);
     assert.ok(
-      normalized.variants?.every((variant) =>
-        variant._key.startsWith("derived_v1_"),
-      ),
+      normalized.variants
+        ?.filter((variant) => variant.title !== "C Curl / 8mm")
+        .every(
+          (variant) =>
+            variant.sku === undefined && variant.shipping === undefined,
+        ),
     );
   });
 
-  it("honors the explicit grouped and concrete discriminators", () => {
-    const grouped = createProduct({
-      variantModel: "grouped",
-      variants: [groupedVariant("curl-group", "Curl", ["C", "CC"])],
-    });
-    const concrete = createProduct({
-      ...grouped,
-      variantModel: "concrete",
-    });
+  it("treats an empty override shipping object as no override", () => {
+    const normalized = normalizeProductVariantModel(
+      createTwoAxisProduct({
+        shipping: { fulfillmentMode: "physical", weightGrams: 25 },
+        variantOverrides: [
+          {
+            select: [
+              { name: "Curl", value: "C Curl" },
+              { name: "Length", value: "8mm" },
+            ],
+            shipping: {} as TProductVariant["shipping"],
+          },
+        ],
+      }),
+    );
 
-    const normalizedGrouped = normalizeProductVariantModel(grouped);
-    assert.equal(normalizedGrouped.variants?.length, 2);
     assert.ok(
-      normalizedGrouped.variants?.every((variant) =>
-        variant._key.startsWith("derived_v1_"),
-      ),
+      normalized.variants?.every((variant) => variant.shipping === undefined),
     );
-    assertQuarantined(normalizeProductVariantModel(concrete));
   });
 
-  it("cleans a stega-encoded grouped discriminator before classification", () => {
+  it("marks every combination unavailable when the product is unavailable", () => {
     const normalized = normalizeProductVariantModel(
-      createProduct({
-        variantModel: vercelStegaCombine(
-          "grouped",
-          { origin: "test" },
-          false,
-        ) as TProduct["variantModel"],
-        variants: [groupedVariant("curl-group", "Curl", ["C"])],
-      }),
+      createTwoAxisProduct({ isAvailable: false }),
     );
 
-    assert.equal(normalized.variantModel, "grouped");
-    assert.equal(normalized.variants?.length, 1);
-    assert.match(normalized.variants?.[0]?._key ?? "", /^derived_v1_/);
+    assert.ok(normalized.variants?.every((variant) => !variant.isAvailable));
   });
 
-  it("allows repeated choice labels for explicitly grouped variants", () => {
+  it("ignores overrides that do not match a full combination", () => {
     const normalized = normalizeProductVariantModel(
-      createProduct({
-        variantModel: "grouped",
-        variants: [
-          groupedVariant("finish", "Finish", ["Natural", "Bold"]),
-          groupedVariant("density", "Density", ["Natural", "Full"]),
+      createTwoAxisProduct({
+        variantOverrides: [
+          // Missing the Length axis -> not a full combination -> ignored.
+          { select: [{ name: "Curl", value: "C Curl" }], price: 99 },
+          // Unknown value -> ignored.
+          {
+            select: [
+              { name: "Curl", value: "D Curl" },
+              { name: "Length", value: "8mm" },
+            ],
+            price: 99,
+          },
         ],
       }),
     );
 
-    assert.equal(normalized.variants?.length, 4);
-    assert.equal(normalized.variants?.[0]?.title, "Natural / Natural");
+    assert.ok(normalized.variants?.every((variant) => variant.price === 22));
   });
 
-  it("allows repeated choice labels for exact declared legacy groups", () => {
-    const normalized = normalizeProductVariantModel(
-      createProduct({
-        optionGroups: [
-          { name: "Finish", values: ["Natural", "Bold"] },
-          { name: "Density", values: ["Natural", "Full"] },
-        ],
-        variants: [
-          groupedVariant("finish", "Finish", ["Natural", "Bold"]),
-          groupedVariant("density", "Density", ["Natural", "Full"]),
-        ],
-      }),
-    );
-
-    assert.equal(normalized.variants?.length, 4);
-    assert.equal(normalized.variants?.[0]?.title, "Natural / Natural");
-  });
-
-  for (const [label, variants] of [
-    [
-      "duplicate groups",
-      [
-        groupedVariant("curl-a", "Curl", ["C", "CC"]),
-        groupedVariant("curl-b", "curl", ["D", "DD"]),
-      ],
-    ],
-    [
-      "duplicate choices",
-      [
-        groupedVariant("curl", "Curl", ["C", "c"]),
-        groupedVariant("length", "Length", ["8mm", "9mm"]),
-      ],
-    ],
-    [
-      "overlapping choices",
-      [
-        groupedVariant("curl", "Curl", ["C", "CC"]),
-        groupedVariant("style", "Style", ["C", "D"]),
-      ],
-    ],
-  ] as const) {
-    it(`quarantines grouped data with ${label}`, () => {
-      assertQuarantined(
-        normalizeProductVariantModel(
-          createProduct({
-            variants: variants.map((variant) => ({ ...variant })),
-          }),
-        ),
-      );
-    });
-  }
-
-  it("quarantines mixed missing and self-valued choices within a group", () => {
-    const product = createGroupedProduct();
-    product.variants![0] = {
-      ...product.variants![0],
-      options: [
-        { _key: "cc", name: "CC Curl" },
-        { _key: "c", name: "C Curl", value: "C Curl" },
-      ],
-    };
-
-    assertQuarantined(normalizeProductVariantModel(product));
-  });
-
-  it("rejects raw group IDs through cart validation", () => {
-    const normalized = normalizeProductVariantModel(createGroupedProduct());
-    assert.equal(normalized.isAvailable, true);
-
-    assert.throws(
-      () =>
-        buildValidatedCart(
-          [
-            {
-              productId: normalized._id,
-              variantId: "curl-group",
-              quantity: 1,
-            },
-          ],
-          [
-            {
-              id: normalized._id,
-              title: normalized.title,
-              price: normalized.price,
-              currency: normalized.currency,
-              isAvailable: normalized.isAvailable,
-              variants: normalized.variants?.map((variant) => ({
-                id: variant._key,
-                title: variant.title,
-                price: variant.price,
-                isAvailable: variant.isAvailable,
-              })),
-            },
-          ],
-        ),
-      /Please choose an available product option/,
-    );
-  });
-
-  it("keeps synthetic IDs stable across draft IDs and authored reordering", () => {
-    const original = createGroupedProduct();
-    const reordered: TProduct = {
-      ...createGroupedProduct(),
+  it("keeps derived IDs stable across draft IDs and authored reordering", () => {
+    const original = createTwoAxisProduct();
+    const reordered = createProduct({
       _id: `drafts.${original._id}`,
-      variants: [...(original.variants ?? [])].reverse().map((variant) => ({
-        ...variant,
-        options: [...(variant.options ?? [])].reverse(),
-      })),
-    };
+      options: [
+        { name: "Length", values: ["9mm", "8mm"] },
+        { name: "Curl", values: ["C Curl", "CC Curl"] },
+      ],
+    });
 
     const originalIds = normalizeProductVariantModel(original)
       .variants?.map((variant) => variant._key)
@@ -362,21 +228,19 @@ describe("normalizeProductVariantModel", () => {
     assert.deepEqual(reorderedIds, originalIds);
   });
 
-  it("keeps non-ASCII synthetic IDs stable without locale-sensitive sorting", () => {
+  it("keeps non-ASCII derived IDs stable without locale-sensitive sorting", () => {
     const original = createProduct({
-      variantModel: "grouped",
-      variants: [
-        groupedVariant("thickness", "Épaisseur", ["Léger", "Épais"]),
-        groupedVariant("length", "長さ", ["八ミリ", "九ミリ"]),
+      options: [
+        { name: "Épaisseur", values: ["Léger", "Épais"] },
+        { name: "長さ", values: ["八ミリ", "九ミリ"] },
       ],
     });
-    const reordered: TProduct = {
-      ...original,
-      variants: [...(original.variants ?? [])].reverse().map((variant) => ({
-        ...variant,
-        options: [...(variant.options ?? [])].reverse(),
-      })),
-    };
+    const reordered = createProduct({
+      options: [
+        { name: "長さ", values: ["九ミリ", "八ミリ"] },
+        { name: "Épaisseur", values: ["Épais", "Léger"] },
+      ],
+    });
 
     const originalIds = normalizeProductVariantModel(original)
       .variants?.map((variant) => variant._key)
@@ -388,48 +252,36 @@ describe("normalizeProductVariantModel", () => {
     assert.deepEqual(reorderedIds, originalIds);
   });
 
-  it("cleans stega from option paths and preserves already-clean references", () => {
+  it("cleans stega from options and overrides", () => {
     const cleanProduct = createProduct({
-      optionGroups: [{ name: "Curl", values: ["C"] }],
-      variants: [
-        {
-          _key: "c",
-          title: "C",
-          price: 22,
-          isAvailable: true,
-          options: [{ name: "Curl", value: "C" }],
-        },
-      ],
+      options: [{ name: "Curl", values: ["C"] }],
     });
+    // No stega -> options array identity preserved (no needless copy).
     assert.strictEqual(
-      normalizeProductVariantModel(cleanProduct),
-      cleanProduct,
+      normalizeProductVariantModel(cleanProduct).options,
+      cleanProduct.options,
     );
 
     const encoded = (value: string) =>
       vercelStegaCombine(value, { origin: "test" }, false);
-    const stegaProduct: TProduct = {
-      ...cleanProduct,
-      optionGroups: [{ name: encoded("Curl"), values: [encoded("C")] }],
-      variants: [
-        {
-          ...cleanProduct.variants![0],
-          options: [{ name: encoded("Curl"), value: encoded("C") }],
-        },
-      ],
-    };
+    const stegaProduct = createProduct({
+      options: [{ name: encoded("Curl"), values: [encoded("C")] }],
+    });
 
     const normalized = normalizeProductVariantModel(stegaProduct);
-    assert.notStrictEqual(normalized, stegaProduct);
-    assert.equal(normalized.optionGroups?.[0]?.name, "Curl");
-    assert.deepEqual(normalized.optionGroups?.[0]?.values, ["C"]);
-    assert.deepEqual(normalized.variants?.[0]?.options, [
-      { name: "Curl", value: "C" },
-    ]);
+    assert.equal(normalized.options?.[0]?.name, "Curl");
+    assert.deepEqual(normalized.options?.[0]?.values, ["C"]);
+    assert.deepEqual(
+      normalized.variants?.[0]?.options?.map((option) => ({
+        name: option.name,
+        value: option.value,
+      })),
+      [{ name: "Curl", value: "C" }],
+    );
   });
 
-  it("resolves a generated combination through the existing authoritative cart contract", () => {
-    const product = normalizeProductVariantModel(createGroupedProduct());
+  it("resolves a generated combination through the authoritative cart contract", () => {
+    const product = normalizeProductVariantModel(createTwoAxisProduct());
     const selected = product.variants?.find(
       (variant) => variant.title === "CC Curl / 8mm",
     );
@@ -464,203 +316,99 @@ describe("normalizeProductVariantModel", () => {
     assert.equal(cart.amount, 44);
   });
 
-  it("marks derived combinations unavailable when any required group is unavailable", () => {
-    const product = createGroupedProduct();
-    product.variants![1] = {
-      ...product.variants![1],
-      isAvailable: false,
-      availabilityLabel: "Sold out",
-    };
+  it("rejects an unknown variant ID through cart validation", () => {
+    const product = normalizeProductVariantModel(createTwoAxisProduct());
 
-    const normalized = normalizeProductVariantModel(product);
-    assert.ok(normalized.variants?.every((variant) => !variant.isAvailable));
-  });
-
-  it("treats empty variant shipping objects as no override", () => {
-    const product = createGroupedProduct();
-    product.shipping = {
-      fulfillmentMode: "physical",
-      weightGrams: 25,
-    };
-    product.variants![0] = {
-      ...product.variants![0],
-      shipping: {} as TProductVariant["shipping"],
-    };
-    product.variants![1] = {
-      ...product.variants![1],
-      shipping: {
-        _type: "productShipping",
-        customsDescription: "",
-      } as unknown as TProductVariant["shipping"],
-    };
-
-    const normalized = normalizeProductVariantModel(product);
-    assert.equal(normalized.isAvailable, true);
-    assert.strictEqual(normalized.shipping, product.shipping);
-    assert.ok(
-      normalized.variants?.every((variant) => variant.shipping === undefined),
+    assert.throws(
+      () =>
+        buildValidatedCart(
+          [
+            {
+              productId: product._id,
+              variantId: "not-a-real-key",
+              quantity: 1,
+            },
+          ],
+          [
+            {
+              id: product._id,
+              title: product.title,
+              price: product.price,
+              currency: product.currency,
+              isAvailable: product.isAvailable,
+              variants: product.variants?.map((variant) => ({
+                id: variant._key,
+                title: variant.title,
+                price: variant.price,
+                isAvailable: variant.isAvailable,
+              })),
+            },
+          ],
+        ),
+      /Please choose an available product option/,
     );
   });
 
-  for (const [label, mutate] of [
+  const quarantineCases: Array<[string, TProductOption[]]> = [
     [
-      "conflicting prices",
-      (product: TProduct) => {
-        product.variants![1] = { ...product.variants![1], price: 24 };
-      },
+      "more than two axes",
+      [
+        { name: "Curl", values: ["C"] },
+        { name: "Length", values: ["8mm"] },
+        { name: "Finish", values: ["Natural"] },
+      ],
     ],
     [
-      "container SKUs",
-      (product: TProduct) => {
-        product.variants![0] = { ...product.variants![0], sku: "GROUP-SKU" };
-      },
+      "duplicate axis names",
+      [
+        { name: "Curl", values: ["C", "CC"] },
+        { name: "curl", values: ["D"] },
+      ],
     ],
-    [
-      "conflicting shipping overrides",
-      (product: TProduct) => {
-        product.variants![0] = {
-          ...product.variants![0],
-          shipping: { fulfillmentMode: "physical", weightGrams: 10 },
-        };
-        product.variants![1] = {
-          ...product.variants![1],
-          shipping: { fulfillmentMode: "physical", weightGrams: 20 },
-        };
-      },
-    ],
-    [
-      "conflicting discounts",
-      (product: TProduct) => {
-        product.variants![0] = {
-          ...product.variants![0],
-          discountPrice: 18,
-        };
-        product.variants![1] = {
-          ...product.variants![1],
-          discountPrice: 19,
-        };
-      },
-    ],
-    [
-      "an invalid-cent price",
-      (product: TProduct) => {
-        product.variants![0] = {
-          ...product.variants![0],
-          price: 22.001,
-        };
-      },
-    ],
-  ] as const) {
-    it(`fails closed for grouped choices with ${label}`, () => {
-      const product = createGroupedProduct();
-      mutate(product);
-
-      const normalized = normalizeProductVariantModel(product);
-      assert.equal(normalized.isAvailable, false);
-      assert.equal(
-        normalized.availabilityLabel,
-        "Option configuration unavailable",
+    ["duplicate values", [{ name: "Curl", values: ["C", "c"] }]],
+    ["a blank value", [{ name: "Curl", values: ["C", "   "] }]],
+    ["an empty axis", [{ name: "Curl", values: [] }]],
+  ];
+  for (const [label, options] of quarantineCases) {
+    it(`quarantines a product with ${label}`, () => {
+      assertQuarantined(
+        normalizeProductVariantModel(createProduct({ options })),
       );
-      assert.ok(normalized.variants?.every((variant) => !variant.isAvailable));
     });
   }
 
-  it("caps grouped expansion and fails closed", () => {
-    const choices = Array.from({ length: 11 }, (_, index) => ({
-      _key: `choice-${index}`,
-      name: `Choice ${index}`,
-    }));
-    const product = createProduct({
-      variants: [
-        {
-          _key: "a",
-          title: "A",
-          price: 22,
-          isAvailable: true,
-          options: choices,
-        },
-        {
-          _key: "b",
-          title: "B",
-          price: 22,
-          isAvailable: true,
-          options: choices.map((option) => ({
-            ...option,
-            _key: `b-${option._key}`,
-            name: `B ${option.name}`,
-          })),
-        },
-      ],
-    });
+  it("caps expansion and fails closed", () => {
+    const normalized = normalizeProductVariantModel(
+      createProduct({
+        options: [
+          {
+            name: "Curl",
+            values: Array.from({ length: 11 }, (_, index) => `C${index}`),
+          },
+          {
+            name: "Length",
+            values: Array.from({ length: 10 }, (_, index) => `${index}mm`),
+          },
+        ],
+      }),
+    );
 
-    const normalized = normalizeProductVariantModel(product);
     assert.equal(normalized.isAvailable, false);
-    assert.equal(normalized.variants?.length, 2);
-    assert.ok(normalized.variants?.every((variant) => !variant.isAvailable));
+    assert.equal(
+      normalized.availabilityLabel,
+      "Option configuration unavailable",
+    );
   });
 });
 
-function createGroupedProduct(): TProduct {
+function createTwoAxisProduct(overrides: Partial<TProduct> = {}): TProduct {
   return createProduct({
-    variants: [
-      {
-        _key: "curl-group",
-        title: "Curl",
-        price: 22,
-        isAvailable: true,
-        options: [
-          { _key: "cc-curl", name: "CC Curl", value: null },
-          { _key: "c-curl", name: "C Curl", value: null },
-        ],
-      },
-      {
-        _key: "length-group",
-        title: "Length",
-        price: 22,
-        isAvailable: true,
-        options: [
-          { _key: "8mm", name: "8mm", value: null },
-          { _key: "9mm", name: "9mm", value: null },
-        ],
-      },
-    ],
-  });
-}
-
-function concreteVariant(
-  key: string,
-  title: string,
-  curl: string,
-  length: string,
-): TProductVariant {
-  return {
-    _key: key,
-    title,
-    price: 22,
-    isAvailable: true,
     options: [
-      { _key: `${key}-curl`, name: "Curl", value: curl },
-      { _key: `${key}-length`, name: "Length", value: length },
+      { _key: "curl", name: "Curl", values: ["CC Curl", "C Curl"] },
+      { _key: "length", name: "Length", values: ["8mm", "9mm"] },
     ],
-  };
-}
-
-function groupedVariant(
-  key: string,
-  title: string,
-  choices: readonly string[],
-): TProductVariant {
-  return {
-    _key: key,
-    title,
-    price: 22,
-    isAvailable: true,
-    options: choices.map((choice, index) => ({
-      _key: `${key}-${index}`,
-      name: choice,
-      value: null,
-    })),
-  };
+    ...overrides,
+  });
 }
 
 function assertQuarantined(product: TProduct): void {

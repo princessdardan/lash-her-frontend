@@ -36,7 +36,7 @@ function getRequiredOptionNames(
   variants: TProductVariant[],
 ): string[] {
   const names = [
-    ...(product.optionGroups?.map((group) => group.name) ?? []),
+    ...(product.options?.map((group) => group.name) ?? []),
     ...variants.flatMap(
       (variant) => variant.options?.map((option) => option.name) ?? [],
     ),

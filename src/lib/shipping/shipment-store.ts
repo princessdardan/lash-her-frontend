@@ -2038,16 +2038,6 @@ export async function reconcileP10RacedShipmentPurchase(input: {
           leaseOwner: null,
           leaseExpiresAt: null,
           stateVersion: sql`${productShipmentJobs.stateVersion} + 1`,
-          fundingReservationStatus: context.job.fundingAttestationId
-            ? "settled"
-            : undefined,
-          reservedFundingCents: context.job.fundingAttestationId
-            ? input.actualPurchaseTotalCents
-            : undefined,
-          fundingSettledAt: context.job.fundingAttestationId ? now : undefined,
-          fundingReleasedAt: context.job.fundingAttestationId
-            ? null
-            : undefined,
           updatedAt: now,
         })
         .where(eq(productShipmentJobs.id, context.job.id));
@@ -2100,16 +2090,6 @@ export async function reconcileP10RacedShipmentPurchase(input: {
         leaseOwner: null,
         leaseExpiresAt: null,
         stateVersion: sql`${productShipmentJobs.stateVersion} + 1`,
-        fundingReservationStatus:
-          failedWithoutSpend &&
-          context.job.fundingReservationStatus === "reserved"
-            ? "released"
-            : undefined,
-        fundingReleasedAt:
-          failedWithoutSpend &&
-          context.job.fundingReservationStatus === "reserved"
-            ? now
-            : undefined,
         updatedAt: now,
       })
       .where(eq(productShipmentJobs.id, context.job.id));
@@ -2632,11 +2612,6 @@ export async function retryShipmentJob(
       .limit(1);
     if (!current) return { status: "fenced" as const };
     const outcomeUnknown = input.outcomeUnknown ?? current.outcomeUnknown;
-    const releaseFunding =
-      exhausted &&
-      current.type === "purchase" &&
-      current.fundingReservationStatus === "reserved" &&
-      !outcomeUnknown;
     const [updated] = await tx
       .update(productShipmentJobs)
       .set({
@@ -2648,8 +2623,6 @@ export async function retryShipmentJob(
         outcomeCode: exhausted ? "attempts_exhausted" : undefined,
         completedAt: exhausted ? now : undefined,
         outcomeUnknown,
-        fundingReservationStatus: releaseFunding ? "released" : undefined,
-        fundingReleasedAt: releaseFunding ? now : undefined,
         leaseOwner: null,
         leaseExpiresAt: null,
         updatedAt: now,
@@ -2673,17 +2646,12 @@ export async function retryShipmentJob(
           sql`${productShipments.status} not in ('delivered', 'voided', 'abandoned')`,
         ),
       );
-    const fundingReservation =
-      current.type !== "purchase" ||
-      current.fundingReservationStatus !== "reserved"
-        ? "not_applicable"
-        : releaseFunding
-          ? "released"
-          : "retained";
+    // Funding reservations were removed; the dead-letter contract keeps the
+    // field for callers but it is always "not_applicable".
     return {
       status: "dead_lettered" as const,
       outcomeUnknown,
-      fundingReservation,
+      fundingReservation: "not_applicable" as const,
     };
   });
 }

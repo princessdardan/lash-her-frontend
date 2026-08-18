@@ -422,16 +422,6 @@ async function fenceP10ShipmentPurchasesInTransaction(
         leaseOwner: null,
         leaseExpiresAt: null,
         stateVersion: sql`${productShipmentJobs.stateVersion} + 1`,
-        fundingReservationStatus:
-          job.fundingReservationStatus === "reserved" &&
-          !retainForReconciliation
-            ? "released"
-            : undefined,
-        fundingReleasedAt:
-          job.fundingReservationStatus === "reserved" &&
-          !retainForReconciliation
-            ? now
-            : undefined,
         updatedAt: now,
       })
       .where(eq(productShipmentJobs.id, job.id));
@@ -493,14 +483,6 @@ async function fenceP10ShipmentPurchasesInTransaction(
           status: "succeeded",
           outcomeCode: "p10_purchase_settled_refund_queued",
           outcomeUnknown: false,
-          fundingReservationStatus: job.fundingAttestationId
-            ? "settled"
-            : undefined,
-          reservedFundingCents: job.fundingAttestationId
-            ? shipment.actualPurchaseTotalCents
-            : undefined,
-          fundingSettledAt: job.fundingAttestationId ? now : undefined,
-          fundingReleasedAt: job.fundingAttestationId ? null : undefined,
           updatedAt: now,
         })
         .where(eq(productShipmentJobs.id, job.id));

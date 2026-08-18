@@ -78,19 +78,6 @@ export const paymentRiskStatus = pgEnum("payment_risk_status", [
   "review_required",
 ]);
 
-export const chitChatsRegion = pgEnum("chitchats_region", [
-  "british_columbia",
-  "alberta_saskatchewan",
-  "ontario_manitoba",
-  "quebec",
-  "atlantic",
-]);
-
-export const chitChatsIntakeLocationType = pgEnum(
-  "chitchats_intake_location_type",
-  ["branch", "drop_spot", "mail_in_hub"],
-);
-
 export const orderPaymentObligationPurpose = pgEnum(
   "order_payment_obligation_purpose",
   ["primary", "manual_shipping", "address_increase"],
@@ -208,11 +195,6 @@ export const productOrderAddressChangeStatus = pgEnum(
     "expired",
     "revoked",
   ],
-);
-
-export const shippingFundingReviewStatus = pgEnum(
-  "shipping_funding_review_status",
-  ["recorded", "recommended", "approved", "applied", "rejected"],
 );
 
 export const checkoutOrderPurpose = pgEnum("checkout_order_purpose", [
@@ -2049,18 +2031,6 @@ export const productShipmentJobs = pgTable(
     reconciliationRequestedAt: timestamp("reconciliation_requested_at", {
       withTimezone: true,
     }),
-    fundingAttestationId: uuid("funding_attestation_id"),
-    reservedFundingCents: integer("reserved_funding_cents"),
-    fundingReservationStatus: text("funding_reservation_status"),
-    fundingReservedAt: timestamp("funding_reserved_at", {
-      withTimezone: true,
-    }),
-    fundingSettledAt: timestamp("funding_settled_at", {
-      withTimezone: true,
-    }),
-    fundingReleasedAt: timestamp("funding_released_at", {
-      withTimezone: true,
-    }),
     payload: jsonb("payload").$type<Record<string, unknown>>(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -2080,30 +2050,6 @@ export const productShipmentJobs = pgTable(
       table.status,
       table.availableAt,
       table.leaseExpiresAt,
-    ),
-    index("product_shipment_jobs_active_funding_idx")
-      .on(table.fundingAttestationId, table.fundingReservationStatus)
-      .where(sql`${table.fundingReservationStatus} = 'reserved'`),
-    check(
-      "product_shipment_jobs_funding_reservation_check",
-      sql`(
-        ${table.fundingReservationStatus} IS NULL
-        AND ${table.fundingAttestationId} IS NULL
-        AND ${table.reservedFundingCents} IS NULL
-        AND ${table.fundingReservedAt} IS NULL
-        AND ${table.fundingSettledAt} IS NULL
-        AND ${table.fundingReleasedAt} IS NULL
-      ) OR (
-        ${table.fundingReservationStatus} IN ('reserved', 'settled', 'released')
-        AND ${table.fundingAttestationId} IS NOT NULL
-        AND ${table.reservedFundingCents} > 0
-        AND ${table.fundingReservedAt} IS NOT NULL
-        AND (
-          (${table.fundingReservationStatus} = 'reserved' AND ${table.fundingSettledAt} IS NULL AND ${table.fundingReleasedAt} IS NULL)
-          OR (${table.fundingReservationStatus} = 'settled' AND ${table.fundingSettledAt} IS NOT NULL AND ${table.fundingReleasedAt} IS NULL)
-          OR (${table.fundingReservationStatus} = 'released' AND ${table.fundingSettledAt} IS NULL AND ${table.fundingReleasedAt} IS NOT NULL)
-        )
-      )`,
     ),
     check(
       "product_shipment_jobs_reconciliation_evidence_check",

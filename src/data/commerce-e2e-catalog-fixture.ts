@@ -14,7 +14,6 @@ const PRODUCTS: readonly TProduct[] = [
     price: 24,
     sku: "E2E-CA-KIT",
     currency: "CAD",
-    variantModel: "concrete",
     isAvailable: true,
     availabilityLabel: "In stock",
     shipping: {
@@ -37,7 +36,6 @@ const PRODUCTS: readonly TProduct[] = [
     price: 28,
     sku: "E2E-US-KIT",
     currency: "CAD",
-    variantModel: "concrete",
     isAvailable: true,
     availabilityLabel: "In stock",
     shipping: {
@@ -79,7 +77,6 @@ const PRODUCTS: readonly TProduct[] = [
     price: 32,
     sku: "E2E-MANUAL",
     currency: "CAD",
-    variantModel: "concrete",
     isAvailable: true,
     availabilityLabel: "In stock",
     shipping: { fulfillmentMode: "manual" },
