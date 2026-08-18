@@ -28,7 +28,11 @@ import {
   expectedOntarioClosureDates,
   type ShippingCalendarClosure,
 } from "@/lib/shipping/calendar-validation";
-import { CHITCHATS_INTAKE_ATTESTATION_STATEMENT_VERSION } from "@/lib/shipping/intake-location";
+// Legacy intake-location attestation statement version. The intake-location
+// module was removed with the config-driven policy migration; this fixture
+// still writes the (now-unread) attestation row for isolated E2E setup.
+const CHITCHATS_INTAKE_ATTESTATION_STATEMENT_VERSION =
+  "chitchats-intake-location/v1";
 import {
   COMMERCE_E2E_HELCIM_CONTRACT,
   COMMERCE_E2E_MANUAL_POLICY_TEXT,
