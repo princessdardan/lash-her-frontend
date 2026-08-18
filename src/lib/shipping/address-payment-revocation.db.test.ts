@@ -20,7 +20,6 @@ const scenario = String.raw`
     productPaymentRiskIncidents,
     productShipmentJobs,
     productShipments,
-    shippingPolicyAssignments,
   } from "./src/lib/private-db/schema.ts";
   import { issueAddressChange, revokeAddressChanges } from "./src/lib/shipping/address-changes.ts";
 
@@ -87,14 +86,6 @@ const scenario = String.raw`
       set: { status: "active" },
     }).returning({ id: adminUsers.id });
     process.env.ADMIN_OWNER_EMAILS = ownerEmail;
-    await db.insert(shippingPolicyAssignments).values([
-      "business_owner", "operations_lead", "finance_owner",
-      "payment_fraud_owner", "privacy_owner", "security_owner",
-    ].map((duty) => ({
-      duty,
-      adminUserId: owner.id,
-      assignedByAdminUserId: owner.id,
-    }))).onConflictDoNothing();
     const orderReference = prefix + "order";
     const [order] = await db.insert(checkoutOrders).values({
       orderId: orderReference,

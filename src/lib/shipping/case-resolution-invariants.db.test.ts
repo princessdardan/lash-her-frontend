@@ -19,7 +19,6 @@ const scenario = String.raw`
     productShippingCases,
     productShipmentJobs,
     productShipments,
-    shippingPolicyAssignments,
   } from "./src/lib/private-db/schema.ts";
   import { adoptReplacementShipment, queueInventoryUnavailableRefund, updateProductShippingCase } from "./src/lib/shipping/cases.ts";
 
@@ -157,14 +156,6 @@ const scenario = String.raw`
       status: "active",
     }).returning({ id: adminUsers.id });
     ownerId = owner.id;
-    await db.insert(shippingPolicyAssignments).values([
-      "business_owner",
-      "operations_lead",
-      "finance_owner",
-      "payment_fraud_owner",
-      "privacy_owner",
-      "security_owner",
-    ].map((duty) => ({ adminUserId: ownerId, duty, active: true })));
 
     const workflowOrder = await createOrder("type-workflows");
     const [workflowShipment] = await db.insert(productShipments).values({
@@ -457,7 +448,6 @@ const scenario = String.raw`
       await db.delete(checkoutOrders).where(inArray(checkoutOrders.id, orderIds));
     }
     if (ownerId) {
-      await db.delete(shippingPolicyAssignments).where(eq(shippingPolicyAssignments.adminUserId, ownerId));
       await db.delete(adminUsers).where(eq(adminUsers.id, ownerId));
     }
     await closePrivateDbPool();

@@ -18,7 +18,6 @@ const scenario = String.raw`
     productOrderAdjustments,
     productOrderRefunds,
     productShippingCases,
-    shippingPolicyAssignments,
   } from "./src/lib/private-db/schema.ts";
   import { processProductOrderRefund } from "./src/lib/shipping/customer-refunds.ts";
   import { queueInventoryUnavailableRefund, resolveSettledInventoryUnavailableRefundCases } from "./src/lib/shipping/cases.ts";
@@ -57,18 +56,6 @@ const scenario = String.raw`
     }).returning({ id: adminUsers.id, email: adminUsers.email });
     ownerId = owner.id;
     process.env.ADMIN_OWNER_EMAILS = owner.email;
-    await db.insert(shippingPolicyAssignments).values([
-      "business_owner",
-      "operations_lead",
-      "finance_owner",
-      "payment_fraud_owner",
-      "privacy_owner",
-      "security_owner",
-    ].map((duty) => ({
-      duty,
-      adminUserId: owner.id,
-      assignedByAdminUserId: owner.id,
-    })));
     const encryptedIp = encryptCheckoutIp("192.0.2.73");
     const [order] = await db.insert(checkoutOrders).values({
       orderId: "lh-case-refund-" + fixture,
@@ -179,9 +166,6 @@ const scenario = String.raw`
       await db.delete(checkoutOrders).where(eq(checkoutOrders.id, orderId));
     }
     if (ownerId) {
-      await db.delete(shippingPolicyAssignments).where(
-        eq(shippingPolicyAssignments.adminUserId, ownerId),
-      );
       await db.delete(adminUsers).where(eq(adminUsers.id, ownerId));
     }
     await closePrivateDbPool();

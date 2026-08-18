@@ -13,7 +13,6 @@ const scenario = String.raw`
     adminUsers,
     checkoutOrders,
     productShippingCases,
-    shippingPolicyAssignments,
   } from "./src/lib/private-db/schema.ts";
   import { updateProductShippingCase } from "./src/lib/shipping/cases.ts";
 
@@ -35,18 +34,6 @@ const scenario = String.raw`
       status: "active",
     }).returning({ id: adminUsers.id });
     ownerId = owner.id;
-    await db.insert(shippingPolicyAssignments).values([
-      "business_owner",
-      "operations_lead",
-      "finance_owner",
-      "payment_fraud_owner",
-      "privacy_owner",
-      "security_owner",
-    ].map((duty) => ({
-      adminUserId: ownerId,
-      duty,
-      active: true,
-    })));
     const [order] = await db.insert(checkoutOrders).values({
       orderId: "lh-case-concurrency-" + fixture,
       purpose: "product",
@@ -127,7 +114,6 @@ const scenario = String.raw`
     if (caseId) await db.delete(productShippingCases).where(eq(productShippingCases.id, caseId));
     if (orderId) await db.delete(checkoutOrders).where(eq(checkoutOrders.id, orderId));
     if (ownerId) {
-      await db.delete(shippingPolicyAssignments).where(eq(shippingPolicyAssignments.adminUserId, ownerId));
       await db.delete(adminUsers).where(eq(adminUsers.id, ownerId));
     }
     await closePrivateDbPool();

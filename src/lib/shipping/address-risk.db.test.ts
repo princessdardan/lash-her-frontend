@@ -19,7 +19,6 @@ const scenario = String.raw`
     productOrderAddressChangeRequests,
     productPaymentRiskIncidents,
     productShipments,
-    shippingPolicyAssignments,
   } from "./src/lib/private-db/schema.ts";
   import { approveAddressChange, recordAddressPhoneCallbackEvidence } from "./src/lib/shipping/address-changes.ts";
 
@@ -45,18 +44,6 @@ const scenario = String.raw`
     }).returning({ id: adminUsers.id });
     ownerId = owner.id;
     process.env.ADMIN_OWNER_EMAILS = "address-risk-" + fixture + "@example.invalid";
-    await db.insert(shippingPolicyAssignments).values([
-      "business_owner",
-      "operations_lead",
-      "finance_owner",
-      "payment_fraud_owner",
-      "privacy_owner",
-      "security_owner",
-    ].map((duty) => ({
-      duty,
-      adminUserId: owner.id,
-      assignedByAdminUserId: owner.id,
-    })));
     const [order] = await db.insert(checkoutOrders).values({
       orderId: "lh-address-risk-" + fixture,
       purpose: "product",
@@ -247,9 +234,6 @@ const scenario = String.raw`
       await db.delete(checkoutOrders).where(eq(checkoutOrders.id, orderId));
     }
     if (ownerId) {
-      await db.delete(shippingPolicyAssignments).where(
-        eq(shippingPolicyAssignments.adminUserId, ownerId),
-      );
       await db.delete(adminUsers).where(eq(adminUsers.id, ownerId));
     }
     await closePrivateDbPool();

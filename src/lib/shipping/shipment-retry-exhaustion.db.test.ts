@@ -12,7 +12,6 @@ const scenario = String.raw`
   import {
     productShipmentJobs,
     productShipments,
-    shippingFundingReviews,
   } from "./src/lib/private-db/schema.ts";
   import {
     MAX_SHIPMENT_OPERATION_ATTEMPTS,
@@ -28,7 +27,6 @@ const scenario = String.raw`
   const prefix = "lh-shipment-retry-exhaustion-" + crypto.randomUUID();
   const now = new Date();
   const shipmentIds = [];
-  let fundingId;
   const destination = {
     name: "Test Customer",
     email: "customer@example.invalid",
@@ -74,27 +72,11 @@ const scenario = String.raw`
       leaseOwner: prefix + "-worker-" + suffix,
       leaseExpiresAt: new Date(now.getTime() + 60_000),
       outcomeUnknown,
-      fundingAttestationId: fundingId,
-      reservedFundingCents: 200,
-      fundingReservationStatus: "reserved",
-      fundingReservedAt: now,
     }).returning();
     return { shipment, job };
   }
 
   try {
-    const [funding] = await db.insert(shippingFundingReviews).values({
-      kind: "balance_check",
-      status: "recorded",
-      balanceCents: 1_000,
-      calculatedTwoBusinessDaySpendCents: 100,
-      calculatedFiveBusinessDaySpendCents: 200,
-      externalEvidenceReference: prefix + "-evidence",
-      observedAt: now,
-      validUntil: new Date(now.getTime() + 60_000),
-    }).returning();
-    fundingId = funding.id;
-
     const known = await fixture("known", false);
     const knownResult = await retryShipmentJob(known.job.id, {
       error: "known provider rejection",
@@ -108,7 +90,7 @@ const scenario = String.raw`
     assert.deepEqual(knownResult, {
       status: "dead_lettered",
       outcomeUnknown: false,
-      fundingReservation: "released",
+      fundingReservation: "not_applicable",
     });
 
     const ambiguous = await fixture("ambiguous", true);
@@ -124,7 +106,7 @@ const scenario = String.raw`
     assert.deepEqual(ambiguousResult, {
       status: "dead_lettered",
       outcomeUnknown: true,
-      fundingReservation: "retained",
+      fundingReservation: "not_applicable",
     });
 
     const [knownJob, ambiguousJob, knownShipment, ambiguousShipment] =
@@ -135,11 +117,7 @@ const scenario = String.raw`
         db.query.productShipments.findFirst({ where: eq(productShipments.id, ambiguous.shipment.id) }),
       ]);
     assert.equal(knownJob.status, "dead_letter");
-    assert.equal(knownJob.fundingReservationStatus, "released");
-    assert.ok(knownJob.fundingReleasedAt);
     assert.equal(ambiguousJob.status, "dead_letter");
-    assert.equal(ambiguousJob.fundingReservationStatus, "reserved");
-    assert.equal(ambiguousJob.fundingReleasedAt, null);
     assert.equal(knownShipment.status, "manual_review");
     assert.equal(ambiguousShipment.status, "manual_review");
 
@@ -170,15 +148,12 @@ const scenario = String.raw`
       await db.delete(productShipmentJobs).where(inArray(productShipmentJobs.shipmentId, shipmentIds));
       await db.delete(productShipments).where(inArray(productShipments.id, shipmentIds));
     }
-    if (fundingId) {
-      await db.delete(shippingFundingReviews).where(eq(shippingFundingReviews.id, fundingId));
-    }
     await closePrivateDbPool();
   }
 `;
 
 test(
-  "retry exhaustion atomically dead-letters and retains funding only for ambiguity",
+  "retry exhaustion atomically dead-letters and routes shipments to manual review",
   { skip: dbTestSkipReason },
   () => {
     execFileSync(

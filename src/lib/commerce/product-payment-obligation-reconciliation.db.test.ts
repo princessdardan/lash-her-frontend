@@ -15,7 +15,6 @@ const scenario = String.raw`
     checkoutOrders,
     fulfillmentOwnerActions,
     orderPaymentObligations,
-    shippingPolicyAssignments,
   } from "./src/lib/private-db/schema.ts";
   import {
     preparePaymentObligationInitializationReconciliation,
@@ -107,18 +106,6 @@ const scenario = String.raw`
       status: "active",
     }).returning({ id: adminUsers.id });
     ownerId = owner.id;
-    await db.insert(shippingPolicyAssignments).values([
-      "business_owner",
-      "operations_lead",
-      "finance_owner",
-      "payment_fraud_owner",
-      "privacy_owner",
-      "security_owner",
-    ].map((duty) => ({
-      duty,
-      adminUserId: owner.id,
-      assignedByAdminUserId: owner.id,
-    })));
 
     const createUnknown = await seed("create-unknown", null);
     const recoveredCreate = await prepareAndCommit(fixture, {
@@ -267,7 +254,6 @@ const scenario = String.raw`
     ));
     await db.delete(checkoutOrders).where(like(checkoutOrders.orderId, prefix + "%"));
     if (ownerId) {
-      await db.delete(shippingPolicyAssignments).where(eq(shippingPolicyAssignments.adminUserId, ownerId));
       await db.delete(adminUsers).where(eq(adminUsers.id, ownerId));
     }
     await closePrivateDbPool();

@@ -23,10 +23,7 @@ const scenario = String.raw`
     productOrderTerminationWorkflows,
     productShipmentJobs,
     productShipments,
-    shippingFundingReviews,
-    shippingPolicyAssignments,
     shippingPolicySettings,
-    shippingServicePolicies,
   } from "./src/lib/private-db/schema.ts";
   import { processProductOrderRefund } from "./src/lib/shipping/customer-refunds.ts";
   import { processClaimedShipmentOperation } from "./src/lib/shipping/operation-worker.ts";
@@ -61,9 +58,7 @@ const scenario = String.raw`
   let unknownOrderId;
   let raceOrderId;
   let policyId;
-  let servicePolicyId;
   let raceOperationId;
-  const fundingReviewIds = [];
 
   async function cleanup() {
     if (raceOperationId) {
@@ -100,14 +95,6 @@ const scenario = String.raw`
       await db.update(checkoutOrders).set({ activeFulfillmentShipmentId: null }).where(eq(checkoutOrders.id, cleanupOrderId));
       await db.delete(productShipments).where(eq(productShipments.orderId, cleanupOrderId));
       await db.delete(checkoutOrders).where(eq(checkoutOrders.id, cleanupOrderId));
-    }
-    if (servicePolicyId) await db.delete(shippingServicePolicies).where(eq(shippingServicePolicies.id, servicePolicyId));
-    for (const fundingReviewId of fundingReviewIds.reverse()) {
-      await db.delete(shippingFundingReviews).where(eq(shippingFundingReviews.id, fundingReviewId));
-    }
-    if (ownerProviderId) {
-      const [owner] = await db.select({ id: adminUsers.id }).from(adminUsers).where(eq(adminUsers.providerUserId, ownerProviderId)).limit(1);
-      if (owner) await db.delete(shippingPolicyAssignments).where(eq(shippingPolicyAssignments.adminUserId, owner.id));
     }
     if (policyId) await db.delete(fulfillmentPolicyVersions).where(eq(fulfillmentPolicyVersions.id, policyId));
     await db.delete(adminUsers).where(eq(adminUsers.providerUserId, ownerProviderId));
@@ -190,10 +177,6 @@ const scenario = String.raw`
       status: "active",
     }).returning({ id: adminUsers.id, email: adminUsers.email });
     process.env.ADMIN_OWNER_EMAILS = owner.email;
-    await db.insert(shippingPolicyAssignments).values([
-      "business_owner", "operations_lead", "finance_owner",
-      "payment_fraud_owner", "privacy_owner", "security_owner",
-    ].map((duty) => ({ duty, adminUserId: owner.id, assignedByAdminUserId: owner.id })));
     const [policy] = await db.insert(fulfillmentPolicyVersions).values({
       version: "p10-precap-test-" + fixtureId,
       status: "effective",
@@ -337,45 +320,8 @@ const scenario = String.raw`
     await enforceP10Termination(now);
     assert.equal((await db.select({ status: productShipments.status }).from(productShipments).where(eq(productShipments.id, shipmentId)))[0].status, "abandoned");
 
-    const racePostageType = "p10_race_" + fixtureId.replaceAll("-", "");
+    const racePostageType = "chit_chats_canada_tracked";
     process.env.CHITCHATS_TRACKED_POSTAGE_TYPES = racePostageType;
-    const [servicePolicy] = await db.insert(shippingServicePolicies).values({
-      postageType: racePostageType,
-      destinationCountryCode: "CA",
-      trackingRequired: true,
-      insuranceLimitCents: 100000,
-      signatureCapable: false,
-      claimWaitingDays: 1,
-      claimDeadlineDays: 30,
-      reviewedAt: now,
-      reviewedByAdminUserId: owner.id,
-      reviewStepUpAuthenticatedAt: now,
-      evidenceReference: "test://p10-race/service",
-      reviewEvidenceHash: "a".repeat(64),
-      reviewEvidenceVersion: "p10-race-v1",
-      reviewAction: "approve_shipping_service_policy",
-      enabled: true,
-    }).returning({ id: shippingServicePolicies.id });
-    servicePolicyId = servicePolicy.id;
-    const [forecast] = await db.insert(shippingFundingReviews).values({
-      kind: "thirty_day_review",
-      status: "recorded",
-      observedAt: now,
-      validUntil: new Date(now.getTime() + 24 * 60 * 60_000),
-    }).returning({ id: shippingFundingReviews.id });
-    fundingReviewIds.push(forecast.id);
-    const [funding] = await db.insert(shippingFundingReviews).values({
-      kind: "balance_check",
-      status: "recorded",
-      balanceCents: 100000,
-      calculatedTwoBusinessDaySpendCents: 1000,
-      calculatedFiveBusinessDaySpendCents: 2000,
-      forecastReviewId: forecast.id,
-      externalEvidenceReference: "test://p10-race/funding",
-      observedAt: now,
-      validUntil: new Date(now.getTime() + 24 * 60 * 60_000),
-    }).returning({ id: shippingFundingReviews.id });
-    fundingReviewIds.push(funding.id);
     raceOrderId = await seedAgedOrder(
       "lh-p10-purchase-race-" + fixtureId,
       "951008",
@@ -537,8 +483,6 @@ const scenario = String.raw`
     assert.equal("postage_label_pdf_url" in raceShipmentAfter.rawShipment, false);
     assert.equal(racePurchaseAfter.status, "succeeded");
     assert.equal(racePurchaseAfter.outcomeCode, "p10_purchase_settled_refund_queued");
-    assert.equal(racePurchaseAfter.fundingReservationStatus, "settled");
-    assert.equal(racePurchaseAfter.reservedFundingCents, 200);
     const racePostageRefunds = await db.select().from(productShipmentJobs)
       .where(eq(productShipmentJobs.idempotencyKey, "p10-postage-refund/" + raceOperation.id));
     assert.equal(racePostageRefunds.length, 1);

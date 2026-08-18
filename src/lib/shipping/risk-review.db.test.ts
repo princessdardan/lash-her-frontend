@@ -14,7 +14,6 @@ const scenario = String.raw`
     checkoutOrders,
     fulfillmentOwnerActions,
     productPaymentRiskIncidents,
-    shippingPolicyAssignments,
   } from "./src/lib/private-db/schema.ts";
   import { recordProductOrderRiskReview } from "./src/lib/shipping/risk-review.ts";
 
@@ -37,18 +36,6 @@ const scenario = String.raw`
     }).returning({ id: adminUsers.id });
     ownerId = owner.id;
     process.env.ADMIN_OWNER_EMAILS = ownerEmail;
-    await db.insert(shippingPolicyAssignments).values([
-      "business_owner",
-      "operations_lead",
-      "finance_owner",
-      "payment_fraud_owner",
-      "privacy_owner",
-      "security_owner",
-    ].map((duty) => ({
-      duty,
-      adminUserId: owner.id,
-      assignedByAdminUserId: owner.id,
-    })));
 
     const [order] = await db.insert(checkoutOrders).values({
       orderId: "lh-risk-review-" + fixture,
@@ -132,9 +119,6 @@ const scenario = String.raw`
     }
     if (orderId) await db.delete(checkoutOrders).where(eq(checkoutOrders.id, orderId));
     if (ownerId) {
-      await db.delete(shippingPolicyAssignments).where(
-        eq(shippingPolicyAssignments.adminUserId, ownerId),
-      );
       await db.delete(adminUsers).where(eq(adminUsers.id, ownerId));
     }
     await closePrivateDbPool();

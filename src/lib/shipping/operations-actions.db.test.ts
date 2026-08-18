@@ -15,7 +15,6 @@ const scenario = String.raw`
     productShipmentJobs,
     productShipmentReturnObservations,
     productShipments,
-    shippingPolicyAssignments,
   } from "./src/lib/private-db/schema.ts";
   import {
     recordFulfillmentOperationReview,
@@ -43,18 +42,6 @@ const scenario = String.raw`
     }).returning({ id: adminUsers.id });
     ownerId = owner.id;
     process.env.ADMIN_OWNER_EMAILS = email;
-    await db.insert(shippingPolicyAssignments).values([
-      "business_owner",
-      "operations_lead",
-      "finance_owner",
-      "payment_fraud_owner",
-      "privacy_owner",
-      "security_owner",
-    ].map((duty) => ({
-      duty,
-      adminUserId: owner.id,
-      assignedByAdminUserId: owner.id,
-    })));
 
     const [shipment] = await db.insert(productShipments).values({
       publicReference: "operations-actions-shipment-" + fixture,
@@ -159,7 +146,6 @@ const scenario = String.raw`
     if (jobId) await db.delete(productShipmentJobs).where(eq(productShipmentJobs.id, jobId));
     if (shipmentId) await db.delete(productShipments).where(eq(productShipments.id, shipmentId));
     if (ownerId) {
-      await db.delete(shippingPolicyAssignments).where(eq(shippingPolicyAssignments.adminUserId, ownerId));
       await db.delete(adminUsers).where(eq(adminUsers.id, ownerId));
     }
     await closePrivateDbPool();
@@ -170,10 +156,21 @@ test(
   "operation reviews use CAS and never duplicate reconciliation or return resolution",
   { skip: dbTestSkipReason },
   () => {
-    execFileSync(process.execPath, ["--import", "tsx", "--eval", scenario], {
-      cwd: process.cwd(),
-      env: process.env,
-      stdio: "inherit",
-    });
+    execFileSync(
+      process.execPath,
+      [
+        "--conditions=react-server",
+        "--import",
+        "tsx",
+        "--input-type=module",
+        "--eval",
+        scenario,
+      ],
+      {
+        cwd: process.cwd(),
+        env: process.env,
+        stdio: "inherit",
+      },
+    );
   },
 );
