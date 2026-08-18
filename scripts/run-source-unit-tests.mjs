@@ -86,7 +86,6 @@ const DB_TEST_FILES = new Set([
   "src/lib/shipping/case-resolution-invariants.db.test.ts",
   "src/lib/shipping/cases-concurrency.db.test.ts",
   "src/lib/shipping/frozen-activation.db.test.ts",
-  "src/lib/shipping/funding-reservations.db.test.ts",
   "src/lib/shipping/manual-checkout-readiness.db.test.ts",
   "src/lib/shipping/operation-worker.db.test.ts",
   "src/lib/shipping/operations-actions.db.test.ts",

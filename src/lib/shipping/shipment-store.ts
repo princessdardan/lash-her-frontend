@@ -29,7 +29,6 @@ import {
   productShipmentJobs,
   productShipments,
   productShippingCases,
-  shippingFundingReviews,
   shippingCalendarVersions,
   shippingPackageProfiles,
   type ProductShipmentDestinationSnapshot,
@@ -1405,50 +1404,9 @@ export async function enqueuePurchaseOperationForOrder(input: {
       )
       .limit(1);
     if (addressHold) return null;
-    const [funding] = await tx
-      .select()
-      .from(shippingFundingReviews)
-      .where(
-        and(
-          eq(shippingFundingReviews.kind, "balance_check"),
-          eq(shippingFundingReviews.status, "recorded"),
-          isNotNull(shippingFundingReviews.externalEvidenceReference),
-          lte(shippingFundingReviews.observedAt, now),
-          gt(shippingFundingReviews.validUntil, now),
-        ),
-      )
-      .orderBy(desc(shippingFundingReviews.observedAt))
-      .for("update")
-      .limit(1);
-    const [failedReload] = await tx
-      .select({ id: shippingFundingReviews.id })
-      .from(shippingFundingReviews)
-      .where(
-        and(
-          eq(shippingFundingReviews.kind, "reload"),
-          eq(shippingFundingReviews.status, "rejected"),
-          funding?.observedAt
-            ? gt(shippingFundingReviews.createdAt, funding.observedAt)
-            : sql`true`,
-        ),
-      )
-      .limit(1);
-    const [reserved] = await tx
-      .select({
-        cents: sql<number>`coalesce(sum(${productShipmentJobs.reservedFundingCents}), 0)`,
-      })
-      .from(productShipmentJobs)
-      .where(
-        funding
-          ? and(
-              eq(productShipmentJobs.fundingAttestationId, funding.id),
-              inArray(productShipmentJobs.fundingReservationStatus, [
-                "reserved",
-                "settled",
-              ]),
-            )
-          : sql`false`,
-      );
+    // Funding gate removed: Chit Chats account balance + auto-reload prevents
+    // overspend on the provider side, so label purchase is no longer gated on a
+    // local funding reservation.
     const [candidateShipment] = await tx
       .select({ quotedShippingCents: productShipments.quotedShippingCents })
       .from(productShipments)
@@ -1459,19 +1417,7 @@ export async function enqueuePurchaseOperationForOrder(input: {
       candidateShipment.quotedShippingCents > 0
         ? candidateShipment.quotedShippingCents
         : null;
-    if (
-      !funding ||
-      funding.balanceCents === null ||
-      funding.calculatedTwoBusinessDaySpendCents === null ||
-      !funding.forecastReviewId ||
-      failedReload ||
-      purchaseAmountCents === null ||
-      funding.balanceCents -
-        Number(reserved?.cents ?? 0) -
-        purchaseAmountCents <
-        funding.calculatedTwoBusinessDaySpendCents
-    )
-      return null;
+    if (purchaseAmountCents === null) return null;
     const [shipment] = await tx
       .update(productShipments)
       .set({
@@ -1506,10 +1452,6 @@ export async function enqueuePurchaseOperationForOrder(input: {
         idempotencyKey: input.idempotencyKey,
         operationPayloadHash: payloadHash,
         payload,
-        fundingAttestationId: funding.id,
-        reservedFundingCents: purchaseAmountCents,
-        fundingReservationStatus: "reserved",
-        fundingReservedAt: now,
       })
       .onConflictDoNothing({ target: productShipmentJobs.idempotencyKey })
       .returning();
@@ -1609,61 +1551,8 @@ export async function enqueuePreparedAddressPurchaseInTransaction(
   if (await p10TerminationBlocksOrderInTransaction(tx, order.id, input.now))
     return null;
 
-  const [funding] = await tx
-    .select()
-    .from(shippingFundingReviews)
-    .where(
-      and(
-        eq(shippingFundingReviews.kind, "balance_check"),
-        eq(shippingFundingReviews.status, "recorded"),
-        isNotNull(shippingFundingReviews.externalEvidenceReference),
-        lte(shippingFundingReviews.observedAt, input.now),
-        gt(shippingFundingReviews.validUntil, input.now),
-      ),
-    )
-    .orderBy(desc(shippingFundingReviews.observedAt))
-    .for("update")
-    .limit(1);
-  const [failedReload] = await tx
-    .select({ id: shippingFundingReviews.id })
-    .from(shippingFundingReviews)
-    .where(
-      and(
-        eq(shippingFundingReviews.kind, "reload"),
-        eq(shippingFundingReviews.status, "rejected"),
-        funding?.observedAt
-          ? gt(shippingFundingReviews.createdAt, funding.observedAt)
-          : sql`true`,
-      ),
-    )
-    .limit(1);
-  const [reserved] = await tx
-    .select({
-      cents: sql<number>`coalesce(sum(${productShipmentJobs.reservedFundingCents}), 0)`,
-    })
-    .from(productShipmentJobs)
-    .where(
-      funding
-        ? and(
-            eq(productShipmentJobs.fundingAttestationId, funding.id),
-            inArray(productShipmentJobs.fundingReservationStatus, [
-              "reserved",
-              "settled",
-            ]),
-          )
-        : sql`false`,
-    );
+  // Funding gate removed — Chit Chats account balance + auto-reload guards spend.
   const purchaseAmountCents = prepared.quotedShippingCents;
-  if (
-    !funding ||
-    funding.balanceCents === null ||
-    funding.calculatedTwoBusinessDaySpendCents === null ||
-    !funding.forecastReviewId ||
-    failedReload ||
-    funding.balanceCents - Number(reserved?.cents ?? 0) - purchaseAmountCents <
-      funding.calculatedTwoBusinessDaySpendCents
-  )
-    return null;
   const [purchasePending] = await tx
     .update(productShipments)
     .set({
@@ -1700,10 +1589,6 @@ export async function enqueuePreparedAddressPurchaseInTransaction(
       idempotencyKey,
       operationPayloadHash: hashOperationPayload(payload),
       payload,
-      fundingAttestationId: funding.id,
-      reservedFundingCents: purchaseAmountCents,
-      fundingReservationStatus: "reserved",
-      fundingReservedAt: input.now,
     })
     .returning();
   await tx
@@ -1754,13 +1639,12 @@ export async function recheckShipmentPurchaseFunding(input: {
           eq(productShipmentJobs.status, "processing"),
           eq(productShipmentJobs.leaseOwner, input.leaseOwner),
           eq(productShipmentJobs.stateVersion, input.expectedStateVersion),
-          eq(productShipmentJobs.fundingReservationStatus, "reserved"),
           gt(productShipmentJobs.leaseExpiresAt, now),
         ),
       )
       .for("update")
       .limit(1);
-    if (!job?.fundingAttestationId) return false;
+    if (!job) return false;
     const [executionContext] = await tx
       .select({
         orderId: checkoutOrders.id,
@@ -1877,80 +1761,9 @@ export async function recheckShipmentPurchaseFunding(input: {
         .limit(1);
       if (addressHold) return false;
     }
-    const [funding] = await tx
-      .select()
-      .from(shippingFundingReviews)
-      .where(
-        and(
-          eq(shippingFundingReviews.id, job.fundingAttestationId),
-          eq(shippingFundingReviews.kind, "balance_check"),
-          eq(shippingFundingReviews.status, "recorded"),
-          isNotNull(shippingFundingReviews.externalEvidenceReference),
-          lte(shippingFundingReviews.observedAt, now),
-          gt(shippingFundingReviews.validUntil, now),
-        ),
-      )
-      .for("update")
-      .limit(1);
-    if (
-      !funding ||
-      funding.balanceCents === null ||
-      funding.calculatedTwoBusinessDaySpendCents === null ||
-      !funding.forecastReviewId
-    )
-      return false;
-    const [failedReload] = await tx
-      .select({ id: shippingFundingReviews.id })
-      .from(shippingFundingReviews)
-      .where(
-        and(
-          eq(shippingFundingReviews.kind, "reload"),
-          eq(shippingFundingReviews.status, "rejected"),
-          funding.observedAt
-            ? gt(shippingFundingReviews.createdAt, funding.observedAt)
-            : sql`true`,
-        ),
-      )
-      .limit(1);
-    if (failedReload) return false;
-    const [reserved] = await tx
-      .select({
-        cents: sql<number>`coalesce(sum(${productShipmentJobs.reservedFundingCents}), 0)`,
-      })
-      .from(productShipmentJobs)
-      .where(
-        and(
-          eq(
-            productShipmentJobs.fundingAttestationId,
-            job.fundingAttestationId,
-          ),
-          inArray(productShipmentJobs.fundingReservationStatus, [
-            "reserved",
-            "settled",
-          ]),
-          sql`${productShipmentJobs.id} <> ${job.id}`,
-        ),
-      );
-    if (
-      funding.balanceCents -
-        Number(reserved?.cents ?? 0) -
-        input.requiredAmountCents <
-      funding.calculatedTwoBusinessDaySpendCents
-    )
-      return false;
-    const [updated] = await tx
-      .update(productShipmentJobs)
-      .set({ reservedFundingCents: input.requiredAmountCents, updatedAt: now })
-      .where(
-        and(
-          eq(productShipmentJobs.id, job.id),
-          eq(productShipmentJobs.leaseOwner, input.leaseOwner),
-          eq(productShipmentJobs.stateVersion, input.expectedStateVersion),
-          eq(productShipmentJobs.fundingReservationStatus, "reserved"),
-        ),
-      )
-      .returning({ id: productShipmentJobs.id });
-    return Boolean(updated);
+    // Funding gate removed — no local balance reservation. Execution-context
+    // and address-authorization checks above are the purchase preconditions.
+    return true;
   });
 }
 
@@ -2017,34 +1830,16 @@ async function replacementRemedyAllowsPurchase(
   return !refund && !adjustment;
 }
 
-export async function finalizeShipmentFundingReservation(input: {
+// Funding gate removed: there is no local funding reservation to settle or
+// release, so this is a vacuous success. Retained for call-site compatibility.
+export async function finalizeShipmentFundingReservation(_input: {
   operationId: string;
   leaseOwner: string;
   expectedStateVersion: number;
   outcome: "settled" | "released";
   now?: Date;
 }): Promise<boolean> {
-  const now = input.now ?? new Date();
-  const [updated] = await getPrivateDb()
-    .update(productShipmentJobs)
-    .set({
-      fundingReservationStatus: input.outcome,
-      fundingSettledAt: input.outcome === "settled" ? now : null,
-      fundingReleasedAt: input.outcome === "released" ? now : null,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(productShipmentJobs.id, input.operationId),
-        eq(productShipmentJobs.status, "processing"),
-        eq(productShipmentJobs.leaseOwner, input.leaseOwner),
-        eq(productShipmentJobs.stateVersion, input.expectedStateVersion),
-        eq(productShipmentJobs.fundingReservationStatus, "reserved"),
-        gt(productShipmentJobs.leaseExpiresAt, now),
-      ),
-    )
-    .returning({ id: productShipmentJobs.id });
-  return Boolean(updated);
+  return true;
 }
 
 export async function markShipmentPurchaseProviderCallIntent(input: {
@@ -2072,7 +1867,6 @@ export async function markShipmentPurchaseProviderCallIntent(input: {
           eq(productShipmentJobs.status, "processing"),
           eq(productShipmentJobs.leaseOwner, input.leaseOwner),
           eq(productShipmentJobs.stateVersion, input.expectedStateVersion),
-          eq(productShipmentJobs.fundingReservationStatus, "reserved"),
           gt(productShipmentJobs.leaseExpiresAt, now),
         ),
       )
