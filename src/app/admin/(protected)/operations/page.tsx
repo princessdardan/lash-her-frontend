@@ -24,7 +24,6 @@ const QUEUE_LABELS: Record<AdminFulfillmentQueueKey, string> = {
     "Cases, claims, replacements, and returns",
   refunds: "Refunds",
   "manual-fulfillment": "Manual pickup and shipping",
-  funding: "Funding",
   "calendar-tax-policy-readiness": "Calendar, tax, and policy readiness",
 };
 

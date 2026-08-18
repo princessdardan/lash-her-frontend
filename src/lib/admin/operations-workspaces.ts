@@ -191,7 +191,6 @@ export const ADMIN_FULFILLMENT_QUEUE_KEYS = [
   "cases-claims-replacements-returns",
   "refunds",
   "manual-fulfillment",
-  "funding",
   "calendar-tax-policy-readiness",
 ] as const;
 
@@ -968,24 +967,6 @@ export async function listAdminFulfillmentOperations(
         where orders.fulfillment_mode in ('manual_pickup', 'manual_shipping')
           and coalesce(orders.manual_fulfillment_status, 'not_started') not in ('dispatched', 'completed', 'cancelled')
           and orders.deleted_at is null
-
-        union all
-
-        select
-          'funding', funding.id::text, funding.kind,
-          (initcap(replace(funding.kind, '_', ' ')) || ' funding review'),
-          ('Status ' || funding.status::text),
-          null::text,
-          coalesce(funding.valid_until, funding.observed_at, funding.created_at),
-          1,
-          (funding.id::text || ':1:' || extract(epoch from funding.updated_at)::bigint::text),
-          array_remove(array[
-            case when funding.balance_cents is not null then 'Balance: ' || funding.balance_cents::text || ' cents' end,
-            case when funding.calculated_two_business_day_spend_cents is not null then 'Two-day spend: ' || funding.calculated_two_business_day_spend_cents::text || ' cents' end,
-            case when funding.external_evidence_reference is not null then 'Evidence: ' || funding.external_evidence_reference end
-          ], null)::text[]
-        from shipping_funding_reviews funding
-        where funding.status in ('recommended', 'approved')
       )
       ${boundedFulfillmentQueueSelectionSql()}
     `),

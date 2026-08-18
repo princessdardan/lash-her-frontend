@@ -44,13 +44,9 @@ import {
   checkoutOrders,
   checkoutPaymentEvents,
   checkoutOrderPurpose,
-  chitChatsIntakeLocationAttestations,
-  chitChatsIntakeLocationType,
-  chitChatsRegion,
   fulfillmentDataQuarantine,
   fulfillmentProviderCertifications,
   fulfillmentRiskAlertOutbox,
-  manualFulfillmentPolicyVersions,
   marketingConsentEvents,
   marketingContactSyncJobs,
   noShowChargeStatus,
@@ -955,68 +951,6 @@ test("policy and no-show evidence can link to durable appointments", () => {
   );
 });
 
-test("Chit Chats intake readiness uses a constrained owner-attestation record", () => {
-  assert.deepEqual(chitChatsRegion.enumValues, [
-    "british_columbia",
-    "alberta_saskatchewan",
-    "ontario_manitoba",
-    "quebec",
-    "atlantic",
-  ]);
-  assert.deepEqual(chitChatsIntakeLocationType.enumValues, [
-    "branch",
-    "drop_spot",
-    "mail_in_hub",
-  ]);
-
-  const columns = Object.keys(chitChatsIntakeLocationAttestations);
-  for (const column of [
-    "providerEnvironment",
-    "providerClientId",
-    "region",
-    "locationName",
-    "locationAddress",
-    "locationType",
-    "evidenceReference",
-    "rationale",
-    "statementVersion",
-    "policyVersion",
-    "attestedByAdminUserId",
-    "attestedByOwnerName",
-    "stepUpAuthenticatedAt",
-    "attestedAt",
-    "validUntil",
-    "revokedAt",
-    "revokedByAdminUserId",
-    "revocationReason",
-  ]) {
-    assert.ok(columns.includes(column), `${column} should be persisted`);
-  }
-
-  const config = getTableConfig(chitChatsIntakeLocationAttestations);
-  assert.ok(
-    config.indexes.some(
-      (index) =>
-        index.config.name ===
-          "chitchats_intake_locations_one_active_environment_idx" &&
-        index.config.unique &&
-        index.config.where,
-    ),
-  );
-  const checks = config.checks.map((check) => check.name).sort();
-  for (const name of [
-    "chitchats_intake_locations_environment_check",
-    "chitchats_intake_locations_required_text_check",
-    "chitchats_intake_locations_rationale_check",
-    "chitchats_intake_locations_revocation_check",
-    "chitchats_intake_locations_step_up_check",
-    "chitchats_intake_locations_validity_check",
-  ]) {
-    assert.ok(checks.includes(name), `${name} should be enforced`);
-  }
-  assert.equal(config.foreignKeys.length, 3);
-});
-
 test("intake-location migration creates no manufactured attestation", () => {
   const migrationSql = readFileSync(
     new URL("../../../drizzle/0041_illegal_pestilence.sql", import.meta.url),
@@ -1073,9 +1007,6 @@ test("shipping cases expose a checked optimistic-concurrency version", () => {
 });
 
 test("readiness evidence tables expose immutable version foundations", () => {
-  assert.ok(
-    Object.keys(manualFulfillmentPolicyVersions).includes("policyTextHash"),
-  );
   assert.ok(Object.keys(shippingCalendarVersions).includes("closureDates"));
   assert.ok(
     Object.keys(fulfillmentProviderCertifications).includes("contractSnapshot"),
@@ -1097,40 +1028,6 @@ test("readiness evidence tables expose immutable version foundations", () => {
     providerChecks.includes(
       "fulfillment_provider_certifications_helcim_contract_snapshot_check",
     ),
-  );
-
-  const manualPolicyChecks = getTableConfig(
-    manualFulfillmentPolicyVersions,
-  ).checks.map((constraint) => constraint.name);
-  assert.ok(
-    manualPolicyChecks.includes(
-      "manual_fulfillment_policy_versions_effective_evidence_check",
-    ),
-  );
-  const manualPolicyMigration = readFileSync(
-    new URL("../../../drizzle/0047_plain_wither.sql", import.meta.url),
-    "utf8",
-  );
-  assert.match(manualPolicyMigration, /SET "status" = 'draft'/);
-  assert.match(
-    manualPolicyMigration,
-    /policy_text_hash[\s\S]*\^\[0-9a-f\]\{64\}\$/,
-  );
-  assert.match(
-    manualPolicyMigration,
-    /VALIDATE CONSTRAINT "manual_fulfillment_policy_versions_effective_evidence_check"/,
-  );
-  const privacyDeadlineMigration = readFileSync(
-    new URL("../../../drizzle/0050_long_scrambler.sql", import.meta.url),
-    "utf8",
-  );
-  assert.match(
-    privacyDeadlineMigration,
-    /effective_policy_evidence_unverifiable[\s\S]*SET[\s\S]*"status" = 'draft'[\s\S]*"effective_at" = NULL[\s\S]*"superseded_at" = NULL/,
-  );
-  assert.match(
-    privacyDeadlineMigration,
-    /ADD CONSTRAINT "manual_fulfillment_policy_versions_effective_evidence_check"[\s\S]*NOT VALID;[\s\S]*VALIDATE CONSTRAINT "manual_fulfillment_policy_versions_effective_evidence_check"/,
   );
 });
 

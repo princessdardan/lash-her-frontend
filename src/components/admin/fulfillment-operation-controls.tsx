@@ -10,7 +10,6 @@ type ActionKind =
   | "risk"
   | "address"
   | "case"
-  | "funding"
   | "manual"
   | "notification"
   | "payment-initialization-reconciliation"
@@ -103,7 +102,6 @@ export function FulfillmentOperationControls({
           {actionKind === "risk" ? <RiskFields /> : null}
           {actionKind === "address" ? <AddressFields /> : null}
           {actionKind === "case" ? <CaseFields /> : null}
-          {actionKind === "funding" ? <FundingFields /> : null}
           {actionKind === "manual" ? <ManualFields mode={item.kind} /> : null}
           {actionKind === "notification" ? (
             <p className="text-xs text-lh-muted">
@@ -255,15 +253,6 @@ function CaseFields() {
         ))}
       </fieldset>
     </>
-  );
-}
-
-function FundingFields() {
-  return (
-    <label className="flex min-h-11 items-center gap-2 text-sm font-semibold">
-      <input name="markApplied" type="checkbox" />
-      Mark the approved funding change applied
-    </label>
   );
 }
 
@@ -504,7 +493,6 @@ export function getFulfillmentOperationActionKind(
   if (item.queue === "risk" && item.orderReference) return "risk";
   if (item.queue === "addresses-and-supplements") return "address";
   if (item.queue === "cases-claims-replacements-returns") return "case";
-  if (item.queue === "funding") return "funding";
   if (item.queue === "manual-fulfillment" && item.orderReference)
     return "manual";
   if (item.queue === "notifications" && item.kind === "dead_letter")
@@ -525,7 +513,7 @@ function actionLabel(kind: ActionKind): string {
   if (kind === "return-review") return "Resolve return observation";
   if (kind === "payment-initialization-reconciliation")
     return "Reconcile payment initialization";
-  return "Approve funding";
+  throw new Error(`Unsupported fulfillment action kind: ${kind}`);
 }
 
 export function buildFulfillmentOperationRequest(
@@ -666,10 +654,7 @@ export function buildFulfillmentOperationRequest(
       url: operation.url,
     };
   }
-  return {
-    body: { markApplied: form.get("markApplied") === "on" },
-    url: `/api/admin/shipping/funding-reviews/${encodeURIComponent(item.id)}/approve`,
-  };
+  throw new Error(`Unsupported fulfillment action kind: ${kind}`);
 }
 
 function isOperationReview(kind: ActionKind): boolean {

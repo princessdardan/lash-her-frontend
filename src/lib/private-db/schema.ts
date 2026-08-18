@@ -1527,50 +1527,6 @@ export const bookingResourceCalendarAssignments = pgTable(
   ],
 );
 
-export const manualFulfillmentPolicyVersions = pgTable(
-  "manual_fulfillment_policy_versions",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    version: text("version").notNull().unique(),
-    status: text("status").notNull().default("draft"),
-    policySnapshot: jsonb("policy_snapshot")
-      .$type<Record<string, unknown>>()
-      .notNull(),
-    policyTextHash: text("policy_text_hash"),
-    evidenceReference: text("evidence_reference"),
-    approvedByAdminUserId: uuid("approved_by_admin_user_id").references(
-      () => adminUsers.id,
-      { onDelete: "restrict" },
-    ),
-    approvalStepUpAuthenticatedAt: timestamp(
-      "approval_step_up_authenticated_at",
-      { withTimezone: true },
-    ),
-    approvalEvidenceHash: text("approval_evidence_hash"),
-    approvalEvidenceVersion: text("approval_evidence_version"),
-    approvalAction: text("approval_action"),
-    approvedAt: timestamp("approved_at", { withTimezone: true }),
-    effectiveAt: timestamp("effective_at", { withTimezone: true }),
-    supersededAt: timestamp("superseded_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => [
-    uniqueIndex("manual_fulfillment_policy_versions_one_effective_idx")
-      .on(table.status)
-      .where(sql`${table.status} = 'effective'`),
-    check(
-      "manual_fulfillment_policy_versions_status_check",
-      sql`${table.status} IN ('draft', 'effective', 'superseded')`,
-    ),
-    check(
-      "manual_fulfillment_policy_versions_effective_evidence_check",
-      sql`${table.status} <> 'effective' OR (${table.effectiveAt} IS NOT NULL AND ${table.approvedAt} IS NOT NULL AND ${table.effectiveAt} >= ${table.approvedAt} AND ${table.approvedByAdminUserId} IS NOT NULL AND ${table.approvalStepUpAuthenticatedAt} IS NOT NULL AND ${table.approvalStepUpAuthenticatedAt} <= ${table.approvedAt} AND ${table.approvalStepUpAuthenticatedAt} >= ${table.approvedAt} - interval '5 minutes' AND ${table.approvalEvidenceHash} ~ '^[0-9a-f]{64}$' AND length(trim(${table.approvalEvidenceVersion})) > 0 AND ${table.approvalAction} = 'approve_manual_fulfillment_policy' AND ${table.policyTextHash} ~ '^[0-9a-f]{64}$' AND length(trim(${table.evidenceReference})) > 0 AND jsonb_typeof(${table.policySnapshot} -> 'cancellationPolicyText') = 'string' AND length(trim(${table.policySnapshot} ->> 'cancellationPolicyText')) > 0 AND ${table.supersededAt} IS NULL)`,
-    ),
-  ],
-);
-
 export const checkoutOrders = pgTable(
   "checkout_orders",
   {
@@ -1661,10 +1617,7 @@ export const checkoutOrders = pgTable(
     dduNoticeVersion: text("ddu_notice_version"),
     fulfillmentMode: checkoutFulfillmentMode("fulfillment_mode"),
     manualFulfillmentStatus: text("manual_fulfillment_status"),
-    cancellationPolicyVersion: text("cancellation_policy_version").references(
-      () => manualFulfillmentPolicyVersions.version,
-      { onDelete: "restrict" },
-    ),
+    cancellationPolicyVersion: text("cancellation_policy_version"),
     cancellationPolicyAcceptedAt: timestamp("cancellation_policy_accepted_at", {
       withTimezone: true,
     }),
@@ -1857,11 +1810,7 @@ export const productShipments = pgTable(
     orderId: uuid("order_id").references(() => checkoutOrders.id, {
       onDelete: "set null",
     }),
-    intakeLocationAttestationId: uuid(
-      "intake_location_attestation_id",
-    ).references(() => chitChatsIntakeLocationAttestations.id, {
-      onDelete: "restrict",
-    }),
+    intakeLocationAttestationId: uuid("intake_location_attestation_id"),
     sequence: integer("sequence").notNull().default(0),
     purpose: productShipmentPurpose("purpose").notNull().default("original"),
     supersedesShipmentId: uuid("supersedes_shipment_id").references(
@@ -2100,10 +2049,7 @@ export const productShipmentJobs = pgTable(
     reconciliationRequestedAt: timestamp("reconciliation_requested_at", {
       withTimezone: true,
     }),
-    fundingAttestationId: uuid("funding_attestation_id").references(
-      (): AnyPgColumn => shippingFundingReviews.id,
-      { onDelete: "restrict" },
-    ),
+    fundingAttestationId: uuid("funding_attestation_id"),
     reservedFundingCents: integer("reserved_funding_cents"),
     fundingReservationStatus: text("funding_reservation_status"),
     fundingReservedAt: timestamp("funding_reserved_at", {
@@ -2288,88 +2234,6 @@ export const shippingCalendarExceptions = pgTable(
     uniqueIndex("shipping_calendar_exceptions_date_kind_idx").on(
       table.exceptionDate,
       table.kind,
-    ),
-  ],
-);
-
-export const shippingServicePolicies = pgTable(
-  "shipping_service_policies",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    postageType: text("postage_type").notNull(),
-    destinationCountryCode: text("destination_country_code").notNull(),
-    trackingRequired: boolean("tracking_required").notNull().default(true),
-    insuranceLimitCents: integer("insurance_limit_cents").notNull(),
-    signatureCapable: boolean("signature_capable").notNull().default(false),
-    claimWaitingDays: integer("claim_waiting_days").notNull(),
-    claimDeadlineDays: integer("claim_deadline_days").notNull(),
-    reviewedAt: timestamp("reviewed_at", { withTimezone: true }).notNull(),
-    reviewedByAdminUserId: uuid("reviewed_by_admin_user_id").references(
-      () => adminUsers.id,
-      { onDelete: "restrict" },
-    ),
-    reviewStepUpAuthenticatedAt: timestamp("review_step_up_authenticated_at", {
-      withTimezone: true,
-    }),
-    evidenceReference: text("evidence_reference"),
-    reviewEvidenceHash: text("review_evidence_hash"),
-    reviewEvidenceVersion: text("review_evidence_version"),
-    reviewAction: text("review_action"),
-    enabled: boolean("enabled").notNull().default(false),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => [
-    uniqueIndex("shipping_service_policies_type_destination_idx").on(
-      table.postageType,
-      table.destinationCountryCode,
-    ),
-    check(
-      "shipping_service_policies_country_check",
-      sql`${table.destinationCountryCode} IN ('CA', 'US')`,
-    ),
-    check(
-      "shipping_service_policies_values_check",
-      sql`${table.insuranceLimitCents} > 0 AND ${table.claimWaitingDays} >= 0 AND ${table.claimDeadlineDays} > ${table.claimWaitingDays}`,
-    ),
-    check(
-      "shipping_service_policies_enabled_evidence_check",
-      sql`${table.enabled} = false OR (${table.reviewedByAdminUserId} IS NOT NULL AND ${table.reviewStepUpAuthenticatedAt} IS NOT NULL AND ${table.reviewStepUpAuthenticatedAt} <= ${table.reviewedAt} AND ${table.reviewStepUpAuthenticatedAt} >= ${table.reviewedAt} - interval '5 minutes' AND length(trim(${table.evidenceReference})) > 0 AND ${table.reviewEvidenceHash} ~ '^[0-9a-f]{64}$' AND length(trim(${table.reviewEvidenceVersion})) > 0 AND ${table.reviewAction} = 'approve_shipping_service_policy')`,
-    ),
-  ],
-);
-
-export const shippingPolicyAssignments = pgTable(
-  "shipping_policy_assignments",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    duty: shippingPolicyDuty("duty").notNull(),
-    adminUserId: uuid("admin_user_id")
-      .notNull()
-      .references(() => adminUsers.id, { onDelete: "restrict" }),
-    active: boolean("active").notNull().default(true),
-    assignedByAdminUserId: uuid("assigned_by_admin_user_id").references(
-      () => adminUsers.id,
-      { onDelete: "set null" },
-    ),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => [
-    uniqueIndex("shipping_policy_assignments_active_duty_idx")
-      .on(table.duty)
-      .where(sql`${table.active} = true`),
-    index("shipping_policy_assignments_user_idx").on(
-      table.adminUserId,
-      table.active,
     ),
   ],
 );
@@ -3346,60 +3210,6 @@ export const productOrderRiskReviews = pgTable(
   ],
 );
 
-export const shippingFundingReviews = pgTable(
-  "shipping_funding_reviews",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    kind: text("kind").notNull(),
-    status: shippingFundingReviewStatus("status").notNull().default("recorded"),
-    balanceCents: integer("balance_cents"),
-    reloadThresholdCents: integer("reload_threshold_cents"),
-    reloadAmountCents: integer("reload_amount_cents"),
-    topUpAmountCents: integer("top_up_amount_cents"),
-    calculatedTwoBusinessDaySpendCents: integer(
-      "calculated_two_business_day_spend_cents",
-    ),
-    calculatedFiveBusinessDaySpendCents: integer(
-      "calculated_five_business_day_spend_cents",
-    ),
-    forecastReviewId: uuid("forecast_review_id").references(
-      (): AnyPgColumn => shippingFundingReviews.id,
-      { onDelete: "restrict" },
-    ),
-    notes: text("notes"),
-    externalEvidenceReference: text("external_evidence_reference"),
-    observedAt: timestamp("observed_at", { withTimezone: true }),
-    validUntil: timestamp("valid_until", { withTimezone: true }),
-    recordedByAdminUserId: uuid("recorded_by_admin_user_id").references(
-      () => adminUsers.id,
-      { onDelete: "set null" },
-    ),
-    financeApprovedByAdminUserId: uuid(
-      "finance_approved_by_admin_user_id",
-    ).references(() => adminUsers.id, { onDelete: "set null" }),
-    businessOwnerApprovedByAdminUserId: uuid(
-      "business_owner_approved_by_admin_user_id",
-    ).references(() => adminUsers.id, { onDelete: "set null" }),
-    appliedAt: timestamp("applied_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => [
-    index("shipping_funding_reviews_kind_created_idx").on(
-      table.kind,
-      table.createdAt,
-    ),
-    check(
-      "shipping_funding_reviews_kind_check",
-      sql`${table.kind} IN ('balance_check', 'reload', 'emergency_top_up', 'thirty_day_review')`,
-    ),
-  ],
-);
-
 export const fulfillmentPolicyVersions = pgTable(
   "fulfillment_policy_versions",
   {
@@ -3441,54 +3251,6 @@ export const fulfillmentPolicyVersions = pgTable(
     check(
       "fulfillment_policy_versions_effective_evidence_check",
       sql`${table.status} <> 'effective' OR (${table.effectiveAt} IS NOT NULL AND ${table.privacyLegalAttestedAt} IS NOT NULL AND ${table.securityAttestedAt} IS NOT NULL AND ${table.operationsAttestedAt} IS NOT NULL AND ${table.attestedByAdminUserId} IS NOT NULL AND length(trim(${table.attestationEvidenceReference})) > 0 AND ${table.supersededAt} IS NULL)`,
-    ),
-  ],
-);
-
-export const productTaxPolicyVersions = pgTable(
-  "product_tax_policy_versions",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    version: text("version").notNull().unique(),
-    status: text("status").notNull().default("draft"),
-    coverage: jsonb("coverage").$type<Record<string, boolean>>().notNull(),
-    ownerName: text("owner_name").notNull(),
-    evidenceReference: text("evidence_reference").notNull(),
-    approvedByAdminUserId: uuid("approved_by_admin_user_id").references(
-      () => adminUsers.id,
-      { onDelete: "restrict" },
-    ),
-    approvalStepUpAuthenticatedAt: timestamp(
-      "approval_step_up_authenticated_at",
-      {
-        withTimezone: true,
-      },
-    ),
-    approvalEvidenceHash: text("approval_evidence_hash"),
-    approvalEvidenceVersion: text("approval_evidence_version"),
-    approvalAction: text("approval_action"),
-    approvedAt: timestamp("approved_at", { withTimezone: true }),
-    effectiveAt: timestamp("effective_at", { withTimezone: true }),
-    supersededAt: timestamp("superseded_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => [
-    uniqueIndex("product_tax_policy_versions_one_effective_idx")
-      .on(table.status)
-      .where(sql`${table.status} = 'effective'`),
-    index("product_tax_policy_versions_status_idx").on(
-      table.status,
-      table.effectiveAt,
-    ),
-    check(
-      "product_tax_policy_versions_status_check",
-      sql`${table.status} IN ('draft', 'effective', 'superseded')`,
-    ),
-    check(
-      "product_tax_policy_versions_effective_evidence_check",
-      sql`${table.status} <> 'effective' OR (${table.approvedByAdminUserId} IS NOT NULL AND ${table.approvalStepUpAuthenticatedAt} IS NOT NULL AND ${table.approvedAt} IS NOT NULL AND ${table.approvalStepUpAuthenticatedAt} <= ${table.approvedAt} AND ${table.approvalStepUpAuthenticatedAt} >= ${table.approvedAt} - interval '5 minutes' AND ${table.effectiveAt} IS NOT NULL AND ${table.effectiveAt} >= ${table.approvedAt} AND ${table.supersededAt} IS NULL AND length(trim(${table.evidenceReference})) > 0 AND ${table.approvalEvidenceHash} ~ '^[0-9a-f]{64}$' AND length(trim(${table.approvalEvidenceVersion})) > 0 AND ${table.approvalAction} = 'approve_product_tax_policy' AND ${table.coverage} @> '{"merchandise":true,"shipping":true,"supplements":true,"usOrders":true,"componentRefunds":true}'::jsonb)`,
     ),
   ],
 );
@@ -3540,97 +3302,6 @@ export const fulfillmentProviderCertifications = pgTable(
     check(
       "fulfillment_provider_certifications_active_owner_evidence_check",
       sql`${table.revokedAt} IS NOT NULL OR (${table.certifiedByAdminUserId} IS NOT NULL AND ${table.certificationStepUpAuthenticatedAt} IS NOT NULL AND ${table.certificationStepUpAuthenticatedAt} <= ${table.certifiedAt} AND ${table.certificationStepUpAuthenticatedAt} >= ${table.certifiedAt} - interval '5 minutes' AND ${table.certificationEvidenceHash} ~ '^[0-9a-f]{64}$' AND length(trim(${table.certificationEvidenceVersion})) > 0 AND ${table.certificationAction} = 'certify_fulfillment_provider')`,
-    ),
-  ],
-);
-
-export const chitChatsIntakeLocationAttestations = pgTable(
-  "chitchats_intake_location_attestations",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    providerEnvironment: text("provider_environment").notNull(),
-    providerClientId: text("provider_client_id").notNull(),
-    region: chitChatsRegion("region").notNull(),
-    locationName: text("location_name").notNull(),
-    locationAddress: text("location_address").notNull(),
-    locationType: chitChatsIntakeLocationType("location_type").notNull(),
-    evidenceReference: text("evidence_reference").notNull(),
-    rationale: text("rationale").notNull(),
-    statementVersion: text("statement_version").notNull(),
-    policyVersion: text("policy_version")
-      .notNull()
-      .references(() => fulfillmentPolicyVersions.version, {
-        onDelete: "restrict",
-      }),
-    attestedByAdminUserId: uuid("attested_by_admin_user_id")
-      .notNull()
-      .references(() => adminUsers.id, { onDelete: "restrict" }),
-    attestedByOwnerName: text("attested_by_owner_name").notNull(),
-    stepUpAuthenticatedAt: timestamp("step_up_authenticated_at", {
-      withTimezone: true,
-    }).notNull(),
-    attestedAt: timestamp("attested_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    validUntil: timestamp("valid_until", { withTimezone: true }).notNull(),
-    revokedAt: timestamp("revoked_at", { withTimezone: true }),
-    revokedByAdminUserId: uuid("revoked_by_admin_user_id").references(
-      () => adminUsers.id,
-      { onDelete: "restrict" },
-    ),
-    revocationReason: text("revocation_reason"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => [
-    uniqueIndex("chitchats_intake_locations_one_active_environment_idx")
-      .on(table.providerEnvironment)
-      .where(sql`${table.revokedAt} IS NULL`),
-    index("chitchats_intake_locations_readiness_idx").on(
-      table.providerEnvironment,
-      table.providerClientId,
-      table.region,
-      table.validUntil,
-    ),
-    check(
-      "chitchats_intake_locations_environment_check",
-      sql`${table.providerEnvironment} IN ('staging', 'production')`,
-    ),
-    check(
-      "chitchats_intake_locations_required_text_check",
-      sql`length(trim(${table.providerClientId})) > 0
-        AND length(trim(${table.locationName})) > 0
-        AND length(trim(${table.locationAddress})) > 0
-        AND length(trim(${table.evidenceReference})) > 0
-        AND length(trim(${table.statementVersion})) > 0
-        AND length(trim(${table.attestedByOwnerName})) > 0`,
-    ),
-    check(
-      "chitchats_intake_locations_rationale_check",
-      sql`length(trim(${table.rationale})) >= 10`,
-    ),
-    check(
-      "chitchats_intake_locations_step_up_check",
-      sql`${table.stepUpAuthenticatedAt} <= ${table.attestedAt}
-        AND ${table.stepUpAuthenticatedAt} >= ${table.attestedAt} - interval '5 minutes'`,
-    ),
-    check(
-      "chitchats_intake_locations_validity_check",
-      sql`${table.validUntil} > ${table.attestedAt}
-        AND ${table.validUntil} <= ${table.attestedAt} + interval '90 days'`,
-    ),
-    check(
-      "chitchats_intake_locations_revocation_check",
-      sql`(
-          ${table.revokedAt} IS NULL
-          AND ${table.revokedByAdminUserId} IS NULL
-          AND ${table.revocationReason} IS NULL
-        ) OR (
-          ${table.revokedAt} >= ${table.attestedAt}
-          AND ${table.revokedByAdminUserId} IS NOT NULL
-          AND length(trim(${table.revocationReason})) >= 10
-        )`,
     ),
   ],
 );
