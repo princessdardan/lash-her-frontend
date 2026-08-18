@@ -24,12 +24,7 @@ const TEST_HELCIM_PRODUCT_PAYMENTS_CONTRACT_JSON = JSON.stringify({
 
 const SERVER_ONLY_TEST_FILES = new Set([
   "src/app/api/cron/customer-email-outbox/route.test.ts",
-  "src/app/api/admin/shipping/intake-location/handler.test.ts",
   "src/app/api/admin/shipping/operation-reviews/handler.test.ts",
-  "src/app/api/admin/shipping/funding-reviews/handler.test.ts",
-  "src/app/api/admin/shipping/funding-reviews/approval-handler.test.ts",
-  "src/app/api/admin/shipping/policy/policy-route-contract.test.ts",
-  "src/app/api/admin/shipping/readiness-controls/handler.test.ts",
   "src/app/(site)/orders/payment-offer/interstitial/route.test.ts",
   "src/lib/admin/implicit-staff-provider.test.ts",
   "src/lib/admin/square-team-selection.test.ts",
