@@ -3,7 +3,6 @@ import "server-only";
 import {
   and,
   asc,
-  desc,
   eq,
   gt,
   gte,
@@ -23,8 +22,6 @@ import {
   productShipmentReturnObservations,
   productShippingCases,
   productShipments,
-  shippingFundingReviews,
-  shippingServicePolicies,
 } from "@/lib/private-db/schema";
 import {
   openProductShippingCase,
@@ -270,11 +267,6 @@ async function processPolicyTask(
       return;
     case "claims":
       await alertClaimDeadlines(policy, now);
-      await alertServicePolicyReviews(now);
-      return;
-    case "funding":
-      await recordThirtyDayFundingReview(policy, now);
-      await alertFundingControls(policy);
       return;
     case "calendar":
       await alertCalendarCoverage(policy, now);
@@ -964,78 +956,6 @@ async function listAllReturns() {
   throw new Error("Chit Chats returns pagination exceeded the safety cap");
 }
 
-async function recordThirtyDayFundingReview(
-  policy: Awaited<ReturnType<typeof loadShippingPolicyContext>>,
-  now: Date,
-): Promise<void> {
-  if (
-    !policy.settings.pilotStartedAt ||
-    now.getTime() - policy.settings.pilotStartedAt.getTime() <
-      30 * 24 * 60 * 60_000
-  )
-    return;
-  const [existing] = await getPrivateDb()
-    .select({ id: shippingFundingReviews.id })
-    .from(shippingFundingReviews)
-    .where(eq(shippingFundingReviews.kind, "thirty_day_review"))
-    .limit(1);
-  if (existing) return;
-  const [spend] = await getPrivateDb()
-    .select({
-      total: sql<number>`coalesce(sum(coalesce(${productShipments.actualPurchaseTotalCents}, ${productShipments.actualPostageCents} + coalesce(${productShipments.actualInsuranceCents}, 0), 0)), 0)`,
-    })
-    .from(productShipments)
-    .where(
-      and(
-        gte(
-          productShipments.purchasedAt,
-          new Date(now.getTime() - 30 * 24 * 60 * 60_000),
-        ),
-        lte(productShipments.purchasedAt, now),
-      ),
-    );
-  const daily = Number(spend?.total ?? 0) / 22;
-  const calculatedThreshold = roundUp25(daily * 2);
-  const calculatedReload = roundUp25(daily * 5);
-  const guardedThreshold = clamp(calculatedThreshold, 2_500, 25_000);
-  const guardedReload = clamp(calculatedReload, 10_000, 100_000);
-  const exceedsCap =
-    guardedThreshold + guardedReload >
-    policy.settings.fundingMaximumBalanceCents;
-  const threshold = exceedsCap
-    ? Math.min(
-        guardedThreshold,
-        policy.settings.fundingMaximumBalanceCents - 10_000,
-      )
-    : guardedThreshold;
-  const reload = exceedsCap
-    ? policy.settings.fundingMaximumBalanceCents - threshold
-    : guardedReload;
-  const [created] = await getPrivateDb()
-    .insert(shippingFundingReviews)
-    .values({
-      kind: "thirty_day_review",
-      status: "recommended",
-      calculatedTwoBusinessDaySpendCents: calculatedThreshold,
-      calculatedFiveBusinessDaySpendCents: calculatedReload,
-      reloadThresholdCents: threshold,
-      reloadAmountCents: reload,
-      notes: exceedsCap
-        ? "Recommendation was capped at CAD 500; exceeding it requires Finance and Business Owner approval"
-        : "Finance must record the values applied in the Chit Chats dashboard",
-    })
-    .returning({ id: shippingFundingReviews.id });
-  if (created)
-    await sendShippingPolicyAlert({
-      duties: ["finance_owner"],
-      critical: exceedsCap,
-      subject: "Chit Chats 30-day funding review is ready",
-      message:
-        "The calculated two-day threshold and five-day reload recommendation is ready for Finance review and dashboard recording.",
-      idempotencyKey: `shipping-funding-thirty-day/${created.id}`,
-    });
-}
-
 async function alertClaimDeadlines(
   policy: Awaited<ReturnType<typeof loadShippingPolicyContext>>,
   now: Date,
@@ -1085,35 +1005,6 @@ async function alertClaimDeadlines(
       });
     }
     if (cases.length < 100) return;
-  }
-}
-
-async function alertServicePolicyReviews(now: Date): Promise<void> {
-  const reviewDueBefore = new Date(now.getTime() - 76 * 24 * 60 * 60_000);
-  const policies = await getPrivateDb()
-    .select({
-      id: shippingServicePolicies.id,
-      postageType: shippingServicePolicies.postageType,
-      country: shippingServicePolicies.destinationCountryCode,
-      reviewedAt: shippingServicePolicies.reviewedAt,
-    })
-    .from(shippingServicePolicies)
-    .where(
-      and(
-        eq(shippingServicePolicies.enabled, true),
-        lte(shippingServicePolicies.reviewedAt, reviewDueBefore),
-      ),
-    );
-  for (const service of policies) {
-    const critical =
-      service.reviewedAt <= new Date(now.getTime() - 90 * 24 * 60 * 60_000);
-    await sendShippingPolicyAlert({
-      duties: ["operations_lead"],
-      critical,
-      subject: `Shipping service policy review: ${service.postageType}`,
-      message: `${service.postageType} for ${service.country} is due for its 90-day insurance, signature, and claim-rule review. Rates fail closed once stale.`,
-      idempotencyKey: `shipping-service-review/${service.id}/${critical ? "overdue" : "due"}/${service.reviewedAt.toISOString()}`,
-    });
   }
 }
 
@@ -1230,59 +1121,6 @@ async function sendBlockedFulfillmentUpdates(
   }
 }
 
-async function alertFundingControls(
-  policy: Awaited<ReturnType<typeof loadShippingPolicyContext>>,
-): Promise<void> {
-  const [failedReload] = await getPrivateDb()
-    .select()
-    .from(shippingFundingReviews)
-    .where(
-      and(
-        eq(shippingFundingReviews.kind, "reload"),
-        eq(shippingFundingReviews.status, "rejected"),
-      ),
-    )
-    .orderBy(desc(shippingFundingReviews.createdAt))
-    .limit(1);
-  if (failedReload) {
-    await sendShippingPolicyAlert({
-      duties: ["finance_owner"],
-      critical: true,
-      subject: "Chit Chats reload failed",
-      message:
-        "The recorded account reload failed. Stop postage purchases that depend on unavailable credit and complete a controlled funding review.",
-      idempotencyKey: `shipping-reload-failed/${failedReload.id}`,
-    });
-  }
-  const [latestBalance] = await getPrivateDb()
-    .select()
-    .from(shippingFundingReviews)
-    .where(eq(shippingFundingReviews.kind, "balance_check"))
-    .orderBy(desc(shippingFundingReviews.createdAt))
-    .limit(1);
-  if (!latestBalance || latestBalance.balanceCents === null) return;
-  const [forecast] = await getPrivateDb()
-    .select({
-      amount: shippingFundingReviews.calculatedTwoBusinessDaySpendCents,
-    })
-    .from(shippingFundingReviews)
-    .where(eq(shippingFundingReviews.kind, "thirty_day_review"))
-    .orderBy(desc(shippingFundingReviews.createdAt))
-    .limit(1);
-  const minimum = Math.max(
-    policy.settings.fundingReloadThresholdCents,
-    forecast?.amount ?? 0,
-  );
-  if (latestBalance.balanceCents >= minimum) return;
-  await sendShippingPolicyAlert({
-    duties: ["finance_owner"],
-    critical: true,
-    subject: "Chit Chats balance is below the two-day forecast",
-    message: `The recorded balance is below the controlled two-business-day forecast of CAD ${(minimum / 100).toFixed(2)}.`,
-    idempotencyKey: `shipping-balance-low/${latestBalance.id}`,
-  });
-}
-
 async function alertCalendarCoverage(
   policy: Awaited<ReturnType<typeof loadShippingPolicyContext>>,
   now: Date,
@@ -1344,14 +1182,6 @@ function countryCode(destination: {
     destination.countryCode ??
     (destination.country.toUpperCase() === "CANADA" ? "CA" : "US")
   );
-}
-
-function roundUp25(value: number): number {
-  return Math.ceil(Math.max(0, value) / 2500) * 2500;
-}
-
-function clamp(value: number, minimum: number, maximum: number): number {
-  return Math.min(maximum, Math.max(minimum, value));
 }
 
 function publicOrigin(): string {

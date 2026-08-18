@@ -13,7 +13,6 @@ export type ShippingPolicyJobType =
   | "refunds"
   | "returns"
   | "claims"
-  | "funding"
   | "calendar"
   | "privacy"
   | "notifications";
@@ -33,7 +32,6 @@ const CADENCE_MS: Record<ShippingPolicyJobType, number> = {
   refunds: 5 * 60_000,
   returns: 60 * 60_000,
   claims: 60 * 60_000,
-  funding: 24 * 60 * 60_000,
   calendar: 24 * 60 * 60_000,
   privacy: 60 * 60_000,
   notifications: 60 * 60_000,

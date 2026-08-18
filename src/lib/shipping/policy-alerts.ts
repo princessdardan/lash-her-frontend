@@ -1,19 +1,25 @@
 import "server-only";
 
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { getPrivateDb } from "@/lib/private-db/client";
-import {
-  adminUsers,
-  shippingPolicyAssignments,
-  type ShippingPolicyDuty,
-} from "@/lib/private-db/schema";
+import { adminUsers, type ShippingPolicyDuty } from "@/lib/private-db/schema";
+import { configuredOwnerEmails } from "@/lib/shipping/configured-owner";
 import { escapeHtml, sendTransactionalEmail } from "@/lib/transactional-email";
 import {
   enqueueCustomerEmail,
   type CustomerEmailOutboxTransaction,
 } from "@/lib/commerce/customer-email-outbox";
 
+/**
+ * Shipping policy alerts route to the fulfillment owner.
+ *
+ * Duty-based routing (`shipping_policy_assignments`) has been removed: for a
+ * solo-operator business every duty was held by the same person, so alerts are
+ * delivered to the active `role='owner'` admins (and any address configured via
+ * `ADMIN_OWNER_EMAILS`). The `duties` field is retained on the input for caller
+ * compatibility and to describe the alert, but no longer selects recipients.
+ */
 export async function sendShippingPolicyAlert(input: {
   duties: ShippingPolicyDuty[];
   subject: string;
@@ -27,25 +33,24 @@ export async function sendShippingPolicyAlert(input: {
   const rows = await executor
     .select({ email: adminUsers.email })
     .from(adminUsers)
-    .leftJoin(
-      shippingPolicyAssignments,
-      and(
-        eq(shippingPolicyAssignments.adminUserId, adminUsers.id),
-        eq(shippingPolicyAssignments.active, true),
-      ),
-    )
-    .where(
-      and(
-        eq(adminUsers.status, "active"),
-        or(
-          inArray(shippingPolicyAssignments.duty, input.duties),
-          ...(input.critical ? [eq(adminUsers.role, "owner")] : []),
+    .where(and(eq(adminUsers.status, "active"), eq(adminUsers.role, "owner")));
+  const recipients = [
+    ...new Set(
+      rows
+        .map((row) => row.email)
+        .filter(
+          (email): email is string =>
+            typeof email === "string" && email.trim().length > 0,
         ),
-      ),
-    );
-  const recipients = [...new Set(rows.map((row) => row.email))];
+    ),
+  ];
+  if (!recipients.length) {
+    // Fall back to the explicitly configured owner mailbox when no active
+    // owner admin row is present (e.g. seeded environments).
+    recipients.push(...configuredOwnerEmails());
+  }
   if (!recipients.length)
-    throw new Error("Shipping policy role has no active assignee");
+    throw new Error("No active fulfillment owner to receive shipping alerts");
   await Promise.all(
     recipients.map((recipient) =>
       enqueueCustomerEmail(
