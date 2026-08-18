@@ -9,14 +9,10 @@ const scenario = String.raw`
   import assert from "node:assert/strict";
   import { eq } from "drizzle-orm";
   import { closePrivateDbPool, getPrivateDb } from "./src/lib/private-db/client.ts";
-  import {
-    checkoutOrders,
-    fulfillmentPolicyVersions,
-    productShipments,
-    shippingCalendarVersions,
-  } from "./src/lib/private-db/schema.ts";
+  import { checkoutOrders, productShipments } from "./src/lib/private-db/schema.ts";
   import { activateShipmentForPaidOrder } from "./src/lib/shipping/shipment-store.ts";
   import { computeShippingDeadlines } from "./src/lib/shipping/policy-calendar.ts";
+  import { PRODUCT_SHIPPING_POLICY_VERSION } from "./src/lib/shipping/product-shipping-config.ts";
 
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL.includes("?")
     ? process.env.TEST_DATABASE_URL + "&sslmode=disable"
@@ -24,7 +20,6 @@ const scenario = String.raw`
 
   const db = getPrivateDb();
   const prefix = "lh-frozen-activation-" + crypto.randomUUID();
-  const policyVersion = prefix + "-policy";
   const clearedAt = new Date("2026-08-17T14:00:00.000Z");
   const originalClosures = [
     { date: "2026-08-18", kind: "branch_closure", label: "Test closure" },
@@ -40,72 +35,76 @@ const scenario = String.raw`
     signatureThresholdCents: 50_000,
     timezone: "America/Toronto",
   };
-  let orderId;
-  let shipmentId;
-  let calendarVersionId;
+  const baseContext = (policyVersion) => ({
+    calendarVersionId: PRODUCT_SHIPPING_POLICY_VERSION,
+    fundingAttestationId: "source-controlled-config",
+    helcimProductPaymentsContract: {
+      contract: "helcim_product_payments",
+      version: "helcim-product-payments-v1",
+      evidenceReference: "test/helcim/product-payments/v1",
+      effectiveFrom: "2026-01-01T00:00:00.000Z",
+      effectiveUntil: "2028-01-01T00:00:00.000Z",
+      purchaseTransactionTypes: ["purchase"],
+      refundTransactionTypes: ["refund"],
+      purchaseSuccessfulStatuses: ["approved"],
+      refundSuccessfulStatuses: ["approved"],
+      avs: { fieldNames: ["avsResponse"], matchCodes: ["m"], mismatchCodes: ["n"] },
+      cvv: { fieldNames: ["cvvResponse"], matchCodes: ["m"], mismatchCodes: ["n"] },
+      refundCorrelation: {
+        providerRefundIdFields: ["transactionId"],
+        originalTransactionIdFields: ["originalTransactionId"],
+        merchantReferenceFields: ["merchantReference"],
+      },
+    },
+    intakeLocationAttestationId: "source-controlled-config",
+    packageProfileApprovals: [],
+    policyVersion,
+    providerCertificationApprovals: [],
+    region: "ontario_manitoba",
+    servicePolicies: [],
+    shippingPolicySnapshot: frozenPolicy,
+    taxPolicyApproval: {
+      approvalAction: "approve_product_tax_policy",
+      approvalEvidenceHash: "c".repeat(64),
+      approvalEvidenceVersion: "v1",
+      approvalStepUpAuthenticatedAt: "2026-08-14T11:59:00.000Z",
+      approvedAt: "2026-08-14T12:00:00.000Z",
+      approvedByAdminUserId: "source-controlled-config",
+      coverage: { merchandise: true, shipping: true, supplements: true, usOrders: true, componentRefunds: true },
+      effectiveAt: "2026-08-14T12:00:00.000Z",
+      evidenceReference: "evidence/tax/v1",
+      ownerName: "Configured Owner",
+      version: "tax-v1",
+    },
+    taxPolicyVersion: "tax-v1",
+    usShippingContract: null,
+  });
+  const destination = {
+    name: "Test Customer",
+    email: "customer@example.invalid",
+    phone: "+14165550100",
+    line1: "100 Test Street",
+    city: "Toronto",
+    province: "ON",
+    postalCode: "M5V 1A1",
+    country: "Canada",
+    countryCode: "CA",
+  };
+  const packageSnapshot = {
+    profileId: "profile",
+    profileSlug: "profile",
+    packageType: "parcel",
+    lengthCm: 10,
+    widthCm: 10,
+    heightCm: 10,
+    tareWeightGrams: 10,
+    totalWeightGrams: 100,
+  };
 
-  try {
-    await db.insert(fulfillmentPolicyVersions).values({
-      version: policyVersion,
-      status: "draft",
-      ownerName: "Test Owner",
-      policySnapshot: {},
-    });
-    const [calendar] = await db.insert(shippingCalendarVersions).values({
-      version: prefix + "-calendar",
-      status: "draft",
-      timezone: "America/Toronto",
-      coverageStartsOn: "2026-01-01",
-      coverageEndsOn: "2028-12-31",
-      closureDates: originalClosures,
-    }).returning();
-    calendarVersionId = calendar.id;
-    const quoteContext = {
-      calendarVersionId: calendar.id,
-      fundingAttestationId: "44444444-4444-4444-8444-444444444444",
-      helcimProductPaymentsContract: {
-        contract: "helcim_product_payments",
-        version: "helcim-product-payments-v1",
-        evidenceReference: "test/helcim/product-payments/v1",
-        effectiveFrom: "2026-01-01T00:00:00.000Z",
-        effectiveUntil: "2028-01-01T00:00:00.000Z",
-        purchaseTransactionTypes: ["purchase"],
-        refundTransactionTypes: ["refund"],
-        purchaseSuccessfulStatuses: ["approved"],
-        refundSuccessfulStatuses: ["approved"],
-        avs: { fieldNames: ["avsResponse"], matchCodes: ["m"], mismatchCodes: ["n"] },
-        cvv: { fieldNames: ["cvvResponse"], matchCodes: ["m"], mismatchCodes: ["n"] },
-        refundCorrelation: {
-          providerRefundIdFields: ["transactionId"],
-          originalTransactionIdFields: ["originalTransactionId"],
-          merchantReferenceFields: ["merchantReference"],
-        },
-      },
-      intakeLocationAttestationId: "11111111-1111-4111-8111-111111111111",
-      packageProfileApprovals: [],
-      policyVersion,
-      providerCertificationApprovals: [],
-      region: "ontario_manitoba",
-      servicePolicies: [],
-      shippingPolicySnapshot: frozenPolicy,
-      taxPolicyApproval: {
-        approvalAction: "approve_product_tax_policy",
-        approvalEvidenceHash: "c".repeat(64),
-        approvalEvidenceVersion: "v1",
-        approvalStepUpAuthenticatedAt: "2026-08-14T11:59:00.000Z",
-        approvedAt: "2026-08-14T12:00:00.000Z",
-        approvedByAdminUserId: "11111111-1111-4111-8111-111111111111",
-        coverage: { merchandise: true, shipping: true, supplements: true, usOrders: true, componentRefunds: true },
-        effectiveAt: "2026-08-14T12:00:00.000Z",
-        evidenceReference: "evidence/tax/v1",
-        ownerName: "Test Owner",
-        version: "tax-v1",
-      },
-      taxPolicyVersion: "tax-v1",
-      usShippingContract: null,
-    };
+  const created = [];
+  async function seedOrderAndShipment(suffix, policyVersion) {
     const [order] = await db.insert(checkoutOrders).values({
-      orderId: prefix + "-order",
+      orderId: prefix + suffix + "-order",
       purpose: "product",
       status: "paid",
       paidAt: clearedAt,
@@ -120,67 +119,47 @@ const scenario = String.raw`
       shippingPolicyVersion: policyVersion,
       taxPolicyVersion: "tax-v1",
     }).returning();
-    orderId = order.id;
     const [shipment] = await db.insert(productShipments).values({
       orderId: order.id,
-      publicReference: prefix + "-shipment",
-      quoteTokenHash: prefix + "-token",
-      quoteFingerprint: prefix + "-fingerprint",
+      publicReference: prefix + suffix + "-shipment",
+      quoteTokenHash: prefix + suffix + "-token",
+      quoteFingerprint: prefix + suffix + "-fingerprint",
       status: "payment_pending",
-      destination: {
-        name: "Test Customer",
-        email: "customer@example.invalid",
-        phone: "+14165550100",
-        line1: "100 Test Street",
-        city: "Toronto",
-        province: "ON",
-        postalCode: "M5V 1A1",
-        country: "Canada",
-        countryCode: "CA",
-      },
-      packageSnapshot: {
-        profileId: "profile",
-        profileSlug: "profile",
-        packageType: "parcel",
-        lengthCm: 10,
-        widthCm: 10,
-        heightCm: 10,
-        tareWeightGrams: 10,
-        totalWeightGrams: 100,
-      },
+      destination,
+      packageSnapshot,
       customsLines: [],
       rates: [],
       quoteExpiresAt: new Date("2026-08-17T15:00:00.000Z"),
-      calendarVersionId: calendar.id,
-      deadlinePolicySnapshot: quoteContext,
+      calendarVersionId: null,
+      deadlinePolicySnapshot: baseContext(policyVersion),
     }).returning();
-    shipmentId = shipment.id;
-    await db.update(checkoutOrders).set({
-      activeFulfillmentShipmentId: shipment.id,
-    }).where(eq(checkoutOrders.id, order.id));
+    await db.update(checkoutOrders)
+      .set({ activeFulfillmentShipmentId: shipment.id })
+      .where(eq(checkoutOrders.id, order.id));
+    created.push({ orderId: order.id, shipmentId: shipment.id });
+    return { order, shipment };
+  }
 
-    await db.update(shippingCalendarVersions).set({
-      closureDates: [
-        ...originalClosures,
-        { date: "2026-08-19", kind: "branch_closure", label: "Late edit" },
-      ],
-    }).where(eq(shippingCalendarVersions.id, calendar.id));
+  try {
+    // Fail-closed when the frozen snapshot's policy version no longer matches
+    // the current source-controlled config (change-detection).
+    const stale = await seedOrderAndShipment("-stale", "stale-policy-version");
     assert.equal(
-      await activateShipmentForPaidOrder(order.orderId),
+      await activateShipmentForPaidOrder(stale.order.orderId),
       false,
-      "an edited frozen calendar must fail closed instead of rewriting the commitment",
+      "a shipment frozen under a superseded policy version must fail closed",
     );
-    const held = await db.query.productShipments.findFirst({
-      where: eq(productShipments.id, shipment.id),
+    const heldStale = await db.query.productShipments.findFirst({
+      where: eq(productShipments.id, stale.shipment.id),
     });
-    assert.equal(held.status, "payment_pending");
+    assert.equal(heldStale.status, "payment_pending");
 
-    await db.update(shippingCalendarVersions).set({
-      closureDates: originalClosures,
-    }).where(eq(shippingCalendarVersions.id, calendar.id));
-    assert.equal(await activateShipmentForPaidOrder(order.orderId), true);
+    // Current config version: activation succeeds and deadlines come from the
+    // frozen snapshot.
+    const current = await seedOrderAndShipment("-current", PRODUCT_SHIPPING_POLICY_VERSION);
+    assert.equal(await activateShipmentForPaidOrder(current.order.orderId), true);
     const activated = await db.query.productShipments.findFirst({
-      where: eq(productShipments.id, shipment.id),
+      where: eq(productShipments.id, current.shipment.id),
     });
     const expected = computeShippingDeadlines({
       clearedAt,
@@ -197,29 +176,19 @@ const scenario = String.raw`
       expected.autoRefundDeadlineAt.toISOString(),
     );
   } finally {
-    if (orderId) {
-      await db.update(checkoutOrders).set({ activeFulfillmentShipmentId: null }).where(
-        eq(checkoutOrders.id, orderId),
-      );
-    }
-    if (shipmentId) {
+    for (const { orderId, shipmentId } of created) {
+      await db.update(checkoutOrders)
+        .set({ activeFulfillmentShipmentId: null })
+        .where(eq(checkoutOrders.id, orderId));
       await db.delete(productShipments).where(eq(productShipments.id, shipmentId));
+      await db.delete(checkoutOrders).where(eq(checkoutOrders.id, orderId));
     }
-    if (orderId) await db.delete(checkoutOrders).where(eq(checkoutOrders.id, orderId));
-    if (calendarVersionId) {
-      await db.delete(shippingCalendarVersions).where(
-        eq(shippingCalendarVersions.id, calendarVersionId),
-      );
-    }
-    await db.delete(fulfillmentPolicyVersions).where(
-      eq(fulfillmentPolicyVersions.version, policyVersion),
-    );
     await closePrivateDbPool();
   }
 `;
 
 test(
-  "shipment activation uses the frozen policy and calendar snapshot",
+  "shipment activation uses the frozen policy snapshot and fails closed on a superseded policy version",
   { skip: dbTestSkipReason },
   () => {
     execFileSync(

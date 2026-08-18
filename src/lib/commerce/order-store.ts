@@ -36,7 +36,6 @@ import { parseCad } from "./money";
 import {
   hashShippingQuoteToken,
   parseShippingQuoteContextSnapshot,
-  shippingQuoteContextsEqual,
 } from "@/lib/shipping/quote-token";
 import { encryptCheckoutIp } from "./checkout-pii";
 import { classifyHelcimTransaction } from "./helcim-contract";
@@ -790,10 +789,7 @@ export async function createInitializingProductOrder(
             hashShippingQuoteToken(input.shippingQuoteToken),
           ),
           eq(productShipments.quoteFingerprint, input.shippingQuoteFingerprint),
-          eq(
-            productShipments.intakeLocationAttestationId,
-            quoteContext.intakeLocationAttestationId,
-          ),
+          isNull(productShipments.intakeLocationAttestationId),
           eq(productShipments.status, "quoted"),
           isNull(productShipments.orderId),
           sql`${productShipments.quoteExpiresAt} > ${now}`,
@@ -806,10 +802,15 @@ export async function createInitializingProductOrder(
     const quoteContextSnapshot = parseShippingQuoteContextSnapshot(
       quote.deadlinePolicySnapshot,
     );
+    // Config-driven change-detection: the stored snapshot's policy/tax versions
+    // must still match the current context. Deep-equality is intentionally not
+    // used — the snapshot's closureDates are `now`-derived and would spuriously
+    // differ across the quote→commit gap. The authoritative config-version check
+    // runs in assertShippingQuoteContextAtCheckoutCommit below.
     if (
       !quoteContextSnapshot ||
-      !shippingQuoteContextsEqual(quoteContextSnapshot, quoteContext) ||
-      quote.calendarVersionId !== quoteContext.calendarVersionId
+      quoteContextSnapshot.policyVersion !== quoteContext.policyVersion ||
+      quoteContextSnapshot.taxPolicyVersion !== quoteContext.taxPolicyVersion
     ) {
       throw new ShippingQuoteConflictError(
         "Shipping quote policy or calendar context changed",

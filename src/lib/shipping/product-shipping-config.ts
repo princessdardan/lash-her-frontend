@@ -23,6 +23,7 @@ import {
   type ShippingCalendarClosure,
 } from "./calendar-validation";
 import type { ShippingServicePolicy } from "./policy";
+import type { FulfillmentProviderCertificationContractSnapshot } from "@/lib/private-db/schema";
 
 /** Bump when any operational value below changes (audit/debug aid only). */
 export const PRODUCT_SHIPPING_POLICY_VERSION = "product-shipping-config-v1";
@@ -38,6 +39,11 @@ export interface ProductShippingSettings {
   autoRefundBusinessDays: number;
   signatureThresholdCents: number;
   addressReviewThresholdCents: number;
+  manualReviewAlertCoverageHours: number;
+  manualReviewEscalationCoverageHours: number;
+  fundingReloadThresholdCents: number;
+  fundingMaximumBalanceCents: number;
+  pilotStartedAt: Date | null;
   /** Freight-forwarder / reshipper address fragments that force manual review. */
   forwarderPatterns: string[];
 }
@@ -53,6 +59,11 @@ export const PRODUCT_SHIPPING_SETTINGS: ProductShippingSettings = {
   autoRefundBusinessDays: 2,
   signatureThresholdCents: 50_000, // CAD 500 (P-11)
   addressReviewThresholdCents: 15_000, // CAD 150 (P-07)
+  manualReviewAlertCoverageHours: 2,
+  manualReviewEscalationCoverageHours: 4,
+  fundingReloadThresholdCents: 2_500,
+  fundingMaximumBalanceCents: 50_000,
+  pilotStartedAt: null,
   forwarderPatterns: [],
 };
 
@@ -113,6 +124,24 @@ function svc(
     ...overrides,
   };
 }
+
+/**
+ * Manual (studio pickup) checkout cancellation/refund policy shown to the
+ * customer. Null keeps manual checkout disabled even when the flag is on — set
+ * the finalized policy text before enabling `MANUAL_PRODUCT_CHECKOUT_ENABLED`.
+ */
+export const PRODUCT_MANUAL_CANCELLATION_POLICY: {
+  version: string;
+  text: string;
+} | null = null;
+
+/**
+ * Certified U.S. DDU shipping contract snapshot (import terms + disclosure).
+ * Null keeps U.S. shipping disabled even when `CHITCHATS_US_SHIPPING_ENABLED` is
+ * on — populate the reviewed DDU contract before enabling U.S. checkout.
+ */
+export const PRODUCT_SHIPPING_US_DDU_CONTRACT: FulfillmentProviderCertificationContractSnapshot | null =
+  null;
 
 /** Key used by `selectCustomerRates` / `getServicePolicy`. */
 export function productShippingServiceKey(

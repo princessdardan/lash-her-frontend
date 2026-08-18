@@ -1,14 +1,12 @@
 import "server-only";
 
-import { and, desc, eq, gte, isNull, lte } from "drizzle-orm";
-import { getPrivateDb } from "@/lib/private-db/client";
 import {
-  shippingCalendarExceptions,
-  shippingCalendarVersions,
-  shippingPolicySettings,
-  shippingServicePolicies,
-} from "@/lib/private-db/schema";
-import { calendarCoverageComplete } from "./calendar-validation";
+  PRODUCT_SHIPPING_POLICY_VERSION,
+  PRODUCT_SHIPPING_SETTINGS,
+  getProductShippingClosureDates,
+  getProductShippingServicePolicyMap,
+  type ProductShippingSettings,
+} from "./product-shipping-config";
 
 export {
   isEquivalentSubstitution,
@@ -31,7 +29,7 @@ export interface ShippingServicePolicy {
 
 export interface ShippingPolicyContext {
   mode: ShippingPolicyEnforcementMode;
-  settings: typeof shippingPolicySettings.$inferSelect;
+  settings: ProductShippingSettings;
   closedDates: Set<string>;
   servicePolicies: Map<string, ShippingServicePolicy>;
   calendarCoverageEndsAt: string;
@@ -71,83 +69,32 @@ export class ShippingPolicyMutationBlockedError extends Error {
   }
 }
 
+// Kept async for call-site compatibility (all callers `await` it).
 export async function loadShippingPolicyContext(
   now = new Date(),
 ): Promise<ShippingPolicyContext> {
-  const db = getPrivateDb();
-  const staleBefore = new Date(now.getTime() - 90 * 24 * 60 * 60_000);
-  const [settings, exceptions, services, calendarVersion] = await Promise.all([
-    db.query.shippingPolicySettings.findFirst({
-      where: eq(shippingPolicySettings.singletonKey, "default"),
-    }),
-    db.select().from(shippingCalendarExceptions),
-    db
-      .select()
-      .from(shippingServicePolicies)
-      .where(
-        and(
-          eq(shippingServicePolicies.enabled, true),
-          gte(shippingServicePolicies.reviewedAt, staleBefore),
-        ),
-      ),
-    db.query.shippingCalendarVersions.findFirst({
-      where: and(
-        eq(shippingCalendarVersions.status, "effective"),
-        lte(shippingCalendarVersions.effectiveAt, now),
-        isNull(shippingCalendarVersions.supersededAt),
-      ),
-      orderBy: [desc(shippingCalendarVersions.effectiveAt)],
-    }),
-  ]);
-  if (!settings) throw new Error("Shipping policy settings are not configured");
-  const legacyCoverageEnd = exceptions.reduce(
-    (latest, entry) =>
-      entry.exceptionDate > latest ? entry.exceptionDate : latest,
-    "",
-  );
-  const coverageEnd = calendarVersion?.coverageEndsOn ?? legacyCoverageEnd;
-  const closureDates =
-    calendarVersion?.closureDates ??
-    exceptions.map((entry) => ({
-      date: entry.exceptionDate,
-      kind: entry.kind,
-      label: entry.label,
-    }));
-  const calendarIsComplete = Boolean(
-    calendarVersion &&
-    calendarCoverageComplete(
-      {
-        coverageStartsOn: calendarVersion.coverageStartsOn,
-        coverageEndsOn: calendarVersion.coverageEndsOn,
-        closureDates: calendarVersion.closureDates,
-      },
-      now,
-    ),
-  );
+  const settings = PRODUCT_SHIPPING_SETTINGS;
+  const closureDates = getProductShippingClosureDates(now);
+  const coverageEnd = closureDates.at(-1)?.date ?? "";
   return {
     mode: getShippingPolicyEnforcementMode(),
     settings,
     closedDates: new Set(closureDates.map((entry) => entry.date)),
-    servicePolicies: new Map(
-      services.map((service) => [
-        serviceKey(service.postageType, service.destinationCountryCode),
-        service,
-      ]),
-    ),
+    servicePolicies: getProductShippingServicePolicyMap(now),
     calendarCoverageEndsAt: coverageEnd,
-    calendarCoverageSufficient: calendarIsComplete,
-    calendarVersionId: calendarVersion?.id ?? null,
-    calendarVersion: calendarVersion?.version ?? null,
+    calendarCoverageSufficient: true,
+    calendarVersionId: PRODUCT_SHIPPING_POLICY_VERSION,
+    calendarVersion: PRODUCT_SHIPPING_POLICY_VERSION,
     deadlinePolicySnapshot: {
-      calendarVersion: calendarVersion?.version ?? "legacy",
-      timezone: calendarVersion?.timezone ?? "America/Toronto",
-      coverageStartsOn: calendarVersion?.coverageStartsOn ?? null,
+      calendarVersion: PRODUCT_SHIPPING_POLICY_VERSION,
+      timezone: settings.timezone,
+      coverageStartsOn: now.toISOString().slice(0, 10),
       coverageEndsOn: coverageEnd || null,
       closureDates,
       beforeCutoffHandoffBusinessDays: settings.beforeCutoffHandoffBusinessDays,
       afterCutoffHandoffBusinessDays: settings.afterCutoffHandoffBusinessDays,
       autoRefundBusinessDays: settings.autoRefundBusinessDays,
-      policyVersion: settings.policyVersion,
+      policyVersion: PRODUCT_SHIPPING_POLICY_VERSION,
     },
   };
 }

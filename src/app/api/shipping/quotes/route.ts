@@ -293,7 +293,9 @@ async function createQuote(
   const { shipment, operation, quoteToken } = await createQuoteOperation({
     publicReference,
     quoteFingerprint,
-    intakeLocationAttestationId: quoteContext.intakeLocationAttestationId,
+    // Config-driven policy has no attestation rows; the uuid FK column stays
+    // null. The quote is keyed by token hash + fingerprint.
+    intakeLocationAttestationId: null,
     destination: body.recipient,
     packageSnapshot: prepared.packageSnapshot,
     customsLines: prepared.customsLines,

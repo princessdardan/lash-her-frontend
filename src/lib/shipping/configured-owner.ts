@@ -1,22 +1,21 @@
 import "server-only";
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { getPrivateDb } from "@/lib/private-db/client";
-import {
-  adminUsers,
-  shippingPolicyAssignments,
-  type ShippingPolicyDuty,
-} from "@/lib/private-db/schema";
+import { adminUsers } from "@/lib/private-db/schema";
 
-const REQUIRED_OWNER_DUTIES: ShippingPolicyDuty[] = [
-  "business_owner",
-  "operations_lead",
-  "finance_owner",
-  "payment_fraud_owner",
-  "privacy_owner",
-  "security_owner",
-];
+/**
+ * Owner gate for fulfillment/shipping admin actions.
+ *
+ * Simplified for a solo-operator business: the "owner" is any active admin
+ * whose email is listed in `ADMIN_OWNER_EMAILS`. The former model — exactly one
+ * active `role='owner'` admin holding six separately-assigned duties in
+ * `shipping_policy_assignments`, verified via step-up — was separation-of-duties
+ * ceremony that protects nothing when one person holds every duty, and it
+ * created a bootstrap deadlock (assigning the first duty required already
+ * holding all six). Function names are unchanged so callers are unaffected.
+ */
 
 type PrivateDbTransaction = Parameters<
   Parameters<ReturnType<typeof getPrivateDb>["transaction"]>[0]
@@ -28,16 +27,31 @@ export interface ConfiguredFulfillmentOwner {
   email: string;
 }
 
-interface OwnerDutyAssignment {
-  adminUserId: string;
-  duty: ShippingPolicyDuty;
+export function configuredOwnerEmails(): string[] {
+  return [
+    ...new Set(
+      (process.env.ADMIN_OWNER_EMAILS ?? "")
+        .split(",")
+        .map((value) => value.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ];
+}
+
+export function isConfiguredOwnerEmail(
+  email: string | null | undefined,
+  configuredEmails: string[] = configuredOwnerEmails(),
+): boolean {
+  if (typeof email !== "string") return false;
+  const normalized = email.trim().toLowerCase();
+  return normalized.length > 0 && configuredEmails.includes(normalized);
 }
 
 export async function assertConfiguredFulfillmentOwner(
   actorAdminUserId: string,
 ): Promise<ConfiguredFulfillmentOwner> {
   return getPrivateDb().transaction((tx) =>
-    assertConfiguredFulfillmentOwnerInTransaction(tx, actorAdminUserId),
+    assertConfiguredOwnerIdentityInTransaction(tx, actorAdminUserId),
   );
 }
 
@@ -49,134 +63,40 @@ export async function assertConfiguredOwnerIdentity(
   );
 }
 
+// Duty assignments no longer exist; the fulfillment-owner check is the identity
+// check. Kept as a distinct export for callers that referenced it.
 export async function assertConfiguredFulfillmentOwnerInTransaction(
   tx: PrivateDbTransaction,
   actorAdminUserId: string,
 ): Promise<ConfiguredFulfillmentOwner> {
-  const owner = await assertConfiguredOwnerIdentityInTransaction(
-    tx,
-    actorAdminUserId,
-  );
-  const assignments = await tx
-    .select({
-      adminUserId: shippingPolicyAssignments.adminUserId,
-      duty: shippingPolicyAssignments.duty,
-    })
-    .from(shippingPolicyAssignments)
-    .where(
-      and(
-        eq(shippingPolicyAssignments.active, true),
-        inArray(shippingPolicyAssignments.duty, REQUIRED_OWNER_DUTIES),
-      ),
-    );
-  const resolvedOwner = resolveConfiguredFulfillmentOwner({
-    actorAdminUserId,
-    assignments,
-    configuredEmails: [owner.email],
-    owners: [owner],
-  });
-  if (!resolvedOwner) {
-    throw new Error(
-      "The sole configured fulfillment owner must perform this action",
-    );
-  }
-  return resolvedOwner;
+  return assertConfiguredOwnerIdentityInTransaction(tx, actorAdminUserId);
 }
 
 export async function assertConfiguredOwnerIdentityInTransaction(
   tx: PrivateDbTransaction,
   actorAdminUserId: string,
 ): Promise<ConfiguredFulfillmentOwner> {
-  await tx.execute(sql`
-    lock table admin_users, shipping_policy_assignments in share mode
-  `);
-  const owners = await tx
+  const configuredEmails = configuredOwnerEmails();
+  if (configuredEmails.length === 0) {
+    throw new Error(
+      "No fulfillment owner is configured (set ADMIN_OWNER_EMAILS)",
+    );
+  }
+  const [actor] = await tx
     .select({
       id: adminUsers.id,
       displayName: adminUsers.displayName,
       email: adminUsers.email,
     })
     .from(adminUsers)
-    .where(and(eq(adminUsers.role, "owner"), eq(adminUsers.status, "active")));
-  const configuredEmails = configuredOwnerEmails();
-  const owner = resolveConfiguredOwnerIdentity({
-    actorAdminUserId,
-    configuredEmails,
-    owners,
-  });
-  if (!owner) {
+    .where(
+      and(eq(adminUsers.id, actorAdminUserId), eq(adminUsers.status, "active")),
+    )
+    .limit(1);
+  if (!actor || !isConfiguredOwnerEmail(actor.email, configuredEmails)) {
     throw new Error(
-      "The sole configured fulfillment owner must perform this action",
+      "The configured fulfillment owner must perform this action",
     );
   }
-  return owner;
-}
-
-export function resolveConfiguredOwnerIdentity(input: {
-  actorAdminUserId: string;
-  configuredEmails: string[];
-  owners: ConfiguredFulfillmentOwner[];
-}): ConfiguredFulfillmentOwner | null {
-  const configuredEmails = [
-    ...new Set(
-      input.configuredEmails
-        .map((email) => email.trim().toLowerCase())
-        .filter(Boolean),
-    ),
-  ];
-  const owner = input.owners[0];
-  if (
-    configuredEmails.length !== 1 ||
-    input.owners.length !== 1 ||
-    !owner ||
-    owner.id !== input.actorAdminUserId ||
-    owner.email.trim().toLowerCase() !== configuredEmails[0]
-  ) {
-    return null;
-  }
-  return owner;
-}
-
-export function resolveConfiguredFulfillmentOwner(input: {
-  actorAdminUserId: string;
-  assignments: OwnerDutyAssignment[];
-  configuredEmails: string[];
-  owners: ConfiguredFulfillmentOwner[];
-}): ConfiguredFulfillmentOwner | null {
-  const configuredEmails = [
-    ...new Set(
-      input.configuredEmails
-        .map((email) => email.trim().toLowerCase())
-        .filter(Boolean),
-    ),
-  ];
-  const owner = input.owners[0];
-  const assignments = input.assignments;
-  const assignedDuties = new Set(
-    assignments.map((assignment) => assignment.duty),
-  );
-  if (
-    configuredEmails.length !== 1 ||
-    input.owners.length !== 1 ||
-    !owner ||
-    owner.id !== input.actorAdminUserId ||
-    owner.email.trim().toLowerCase() !== configuredEmails[0] ||
-    assignments.length !== REQUIRED_OWNER_DUTIES.length ||
-    assignments.some((assignment) => assignment.adminUserId !== owner.id) ||
-    REQUIRED_OWNER_DUTIES.some((duty) => !assignedDuties.has(duty))
-  ) {
-    return null;
-  }
-  return owner;
-}
-
-function configuredOwnerEmails(): string[] {
-  return [
-    ...new Set(
-      (process.env.ADMIN_OWNER_EMAILS ?? "")
-        .split(",")
-        .map((value) => value.trim().toLowerCase())
-        .filter(Boolean),
-    ),
-  ];
+  return actor;
 }

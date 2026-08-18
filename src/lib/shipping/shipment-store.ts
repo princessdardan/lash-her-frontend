@@ -19,7 +19,6 @@ import { getPrivateDb } from "@/lib/private-db/client";
 import { enqueueCustomerEmail } from "@/lib/commerce/customer-email-outbox";
 import {
   checkoutOrders,
-  fulfillmentPolicyVersions,
   orderPaymentObligations,
   orderPaymentTransactions,
   productOrderAdjustments,
@@ -48,6 +47,7 @@ import {
 import type { ProductShipmentStatus } from "./store-types";
 import type { ShippingPackageProfile } from "./types";
 import { computeShippingDeadlines } from "./policy-calendar";
+import { PRODUCT_SHIPPING_POLICY_VERSION } from "./product-shipping-config";
 import { allowedShipmentSourceStatuses } from "./status";
 import { p10TerminationBlocksOrderInTransaction } from "./p10-termination";
 import { sendShippingPolicyAlert } from "./policy-alerts";
@@ -220,7 +220,10 @@ export async function createQuoteOperation(input: {
         customsLines: input.customsLines,
         rates: [],
         quoteExpiresAt: input.expiresAt,
-        calendarVersionId: input.quoteContextSnapshot.calendarVersionId,
+        // The uuid FK column referenced attested calendar-version rows, which
+        // no longer exist under config-driven policy. Change-detection now uses
+        // the version string in the snapshot (deadlinePolicySnapshot).
+        calendarVersionId: null,
         deadlinePolicySnapshot: input.quoteContextSnapshot as unknown as Record<
           string,
           unknown
@@ -666,34 +669,18 @@ export async function activateShipmentForPaidOrderInTransaction(
   const quoteContext = parseShippingQuoteContextSnapshot(
     shipment.deadlinePolicySnapshot,
   );
+  // Config-driven policy: the frozen snapshot is authoritative for this
+  // shipment's deadlines. Verify only that the snapshot's versions still match
+  // the current source-controlled config (change-detection), then compute
+  // deadlines from the frozen closures.
   if (
     !quoteContext ||
-    shipment.calendarVersionId !== quoteContext.calendarVersionId ||
-    order.shippingPolicyVersion !== quoteContext.policyVersion
+    order.shippingPolicyVersion !== quoteContext.policyVersion ||
+    quoteContext.policyVersion !== PRODUCT_SHIPPING_POLICY_VERSION ||
+    quoteContext.calendarVersionId !== PRODUCT_SHIPPING_POLICY_VERSION
   )
     return false;
-  const [[calendarVersion], [policyVersion]] = await Promise.all([
-    tx
-      .select()
-      .from(shippingCalendarVersions)
-      .where(eq(shippingCalendarVersions.id, quoteContext.calendarVersionId))
-      .limit(1),
-    tx
-      .select({ version: fulfillmentPolicyVersions.version })
-      .from(fulfillmentPolicyVersions)
-      .where(eq(fulfillmentPolicyVersions.version, quoteContext.policyVersion))
-      .limit(1),
-  ]);
   const frozen = quoteContext.shippingPolicySnapshot;
-  if (
-    !calendarVersion ||
-    !policyVersion ||
-    calendarVersion.timezone !== frozen.timezone ||
-    calendarVersion.closureDates.length !== frozen.closureDates.length ||
-    JSON.stringify(calendarVersion.closureDates) !==
-      JSON.stringify(frozen.closureDates)
-  )
-    return false;
 
   const clearedAt = order.fulfillmentClearedAt ?? order.paidAt ?? now;
   const deadlines = computeShippingDeadlines({
