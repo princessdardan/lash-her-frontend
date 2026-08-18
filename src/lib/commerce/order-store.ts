@@ -49,6 +49,11 @@ import {
   evaluateManualCheckoutReadiness,
 } from "@/lib/shipping/readiness";
 import { enqueueCustomerEmail } from "./customer-email-outbox";
+import {
+  assertProductTaxPolicyVersionImplemented,
+  calculateProductTax,
+  STUDIO_PICKUP_TAX_JURISDICTION,
+} from "./product-tax-policy";
 
 export interface UsImportDisclosureSnapshot {
   terms: "DDU";
@@ -89,6 +94,7 @@ export interface InitializingProductOrderRecord {
   primaryObligationId: string;
   merchandiseAmountCents: number;
   shippingAmountCents: number;
+  taxAmountCents: number;
   totalAmountCents: number;
   shippingRateTitle: string;
 }
@@ -825,7 +831,17 @@ export async function createInitializingProductOrder(
     const orderId = `lh-${nanoid(12)}`;
     const merchandiseAmountCents = toCents(input.cart.amount);
     const shippingAmountCents = rate.paymentAmountCents;
-    const totalAmountCents = merchandiseAmountCents + shippingAmountCents;
+    assertProductTaxPolicyVersionImplemented(commitReadiness.taxPolicyVersion!);
+    // Shipping is taxable in Canada at the destination rate, so tax on the
+    // combined merchandise + shipping base. US destinations collect no tax.
+    const taxQuote = calculateProductTax({
+      destinationCountry: destinationCountryCode,
+      destinationRegionCode: input.shippingAddress.province,
+      taxableAmountCents: merchandiseAmountCents + shippingAmountCents,
+    });
+    const taxAmountCents = taxQuote.taxAmountCents;
+    const totalAmountCents =
+      merchandiseAmountCents + shippingAmountCents + taxAmountCents;
     const [order] = await tx
       .insert(checkoutOrders)
       .values({
@@ -847,7 +863,7 @@ export async function createInitializingProductOrder(
           input.cart.promotionDiscountAmount ?? 0,
         ),
         manualDiscountCents: toCents(input.cart.manualDiscountAmount ?? 0),
-        taxAmountCents: 0,
+        taxAmountCents,
         currency: input.cart.currency,
         lineItems: toOrderLineItemSnapshots(input.cart),
         paymentProvider: "helcim",
@@ -909,13 +925,14 @@ export async function createInitializingProductOrder(
         status: "pending",
         merchandiseAmountCents,
         shippingAmountCents,
-        taxAmountCents: 0,
+        taxAmountCents,
         totalAmountCents,
         currency: input.cart.currency,
         sourceWorkflow: "automated_product_checkout",
         disclosureSnapshot: {
           helcimContract,
           shippingQuoteContext: quoteContextSnapshot,
+          tax: taxQuote,
           ...(input.usImportDisclosure
             ? {
                 usImportDisclosure: {
@@ -943,6 +960,7 @@ export async function createInitializingProductOrder(
       primaryObligationId: obligation.id,
       merchandiseAmountCents,
       shippingAmountCents,
+      taxAmountCents,
       totalAmountCents,
       shippingRateTitle: rate.title,
     };
@@ -1022,6 +1040,16 @@ export async function createInitializingManualProductOrder(
         },
         now,
       );
+    assertProductTaxPolicyVersionImplemented(taxPolicyApproval.version);
+    // Manual pickup is fulfilled from the studio, so the place of supply is the
+    // studio's province (Ontario). No shipping component for pickup.
+    const taxQuote = calculateProductTax({
+      destinationCountry: STUDIO_PICKUP_TAX_JURISDICTION.country,
+      destinationRegionCode: STUDIO_PICKUP_TAX_JURISDICTION.region,
+      taxableAmountCents: merchandiseAmountCents,
+    });
+    const taxAmountCents = taxQuote.taxAmountCents;
+    const totalAmountCents = merchandiseAmountCents + taxAmountCents;
     const orderId = `lh-${nanoid(12)}`;
     const [order] = await tx
       .insert(checkoutOrders)
@@ -1032,10 +1060,10 @@ export async function createInitializingManualProductOrder(
         customerName: input.customerName,
         customerEmail: input.customerEmail,
         purpose: "product",
-        amountCents: merchandiseAmountCents,
+        amountCents: totalAmountCents,
         merchandiseAmountCents,
         shippingAmountCents: 0,
-        taxAmountCents: 0,
+        taxAmountCents,
         promotionCode: input.cart.promotionCode ?? null,
         promotionDiscountCents: toCents(
           input.cart.promotionDiscountAmount ?? 0,
@@ -1077,8 +1105,8 @@ export async function createInitializingManualProductOrder(
         status: "pending",
         merchandiseAmountCents,
         shippingAmountCents: 0,
-        taxAmountCents: 0,
-        totalAmountCents: merchandiseAmountCents,
+        taxAmountCents,
+        totalAmountCents,
         currency: input.cart.currency,
         paymentProvider: "helcim",
         initializationStatus: "initializing",
@@ -1086,6 +1114,7 @@ export async function createInitializingManualProductOrder(
         disclosureSnapshot: {
           helcimContract,
           taxPolicyApproval,
+          tax: taxQuote,
           cancellationPolicy: {
             ...cancellationPolicySnapshot,
           },
@@ -1114,7 +1143,8 @@ export async function createInitializingManualProductOrder(
       primaryObligationId: obligation.id,
       merchandiseAmountCents,
       shippingAmountCents: 0,
-      totalAmountCents: merchandiseAmountCents,
+      taxAmountCents,
+      totalAmountCents,
       shippingRateTitle:
         input.fulfillmentMode === "manual_pickup"
           ? "Pickup arranged after payment"

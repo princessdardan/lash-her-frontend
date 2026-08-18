@@ -9,10 +9,12 @@ import { cn } from "@/lib/utils";
 import { formatCad } from "@/lib/commerce/money";
 import { resolveEffectivePrice } from "@/lib/commerce/cart";
 import { getProductCheckoutEligibility } from "@/lib/commerce/product-checkout-eligibility";
+import type { ProductCheckoutAvailability } from "@/lib/shipping/config";
 import type { TProduct, TProductVariant } from "@/types";
 
 interface ProductCardProps {
   product: TProduct;
+  checkoutAvailability: ProductCheckoutAvailability;
   onAdd?: (product: TProduct, variant?: TProductVariant) => void;
 }
 
@@ -32,6 +34,7 @@ function formatDisplayPrice(value: unknown): string {
 
 export function ProductCard({
   product,
+  checkoutAvailability,
   onAdd,
 }: ProductCardProps): ReactElement {
   const router = useRouter();
@@ -55,13 +58,28 @@ export function ProductCard({
   const checkoutEligibility = getProductCheckoutEligibility(
     selectedVariant?.shipping ?? product.shipping,
   );
+  const checkoutModeEnabled =
+    checkoutEligibility.status === "automated"
+      ? checkoutAvailability.automated
+      : checkoutEligibility.status === "manual"
+        ? checkoutAvailability.manual
+        : false;
   const canAdd =
     product.isAvailable &&
     (variants.length === 0 || Boolean(selectedVariant?.isAvailable)) &&
-    checkoutEligibility.status !== "invalid";
+    checkoutEligibility.status !== "invalid" &&
+    checkoutModeEnabled;
   const availabilityLabel =
     product.availabilityLabel ||
     (product.isAvailable ? "Ready to ship" : "Unavailable");
+  // When the item is otherwise purchasable but its checkout mode is disabled,
+  // show a distinct label rather than a misleading availability label.
+  const ctaUnavailableLabel =
+    product.isAvailable &&
+    checkoutEligibility.status !== "invalid" &&
+    !checkoutModeEnabled
+      ? "Checkout unavailable"
+      : availabilityLabel;
 
   const handleBuyNow = () => {
     if (!canAdd) return;
@@ -215,7 +233,7 @@ export function ProductCard({
               aria-label={
                 canAdd
                   ? `Add to Cart: ${product.title}`
-                  : `${product.title} ${availabilityLabel}`
+                  : `${product.title} ${ctaUnavailableLabel}`
               }
               className={cn(
                 "w-full rounded-full px-6 py-3 uppercase tracking-[0.12em]",
@@ -224,7 +242,7 @@ export function ProductCard({
                   : "bg-lh-neutral text-lh-muted",
               )}
             >
-              {canAdd ? "Add to Cart" : availabilityLabel}
+              {canAdd ? "Add to Cart" : ctaUnavailableLabel}
             </Button>
           ) : (
             <div className="flex flex-col gap-2">
@@ -247,7 +265,7 @@ export function ProductCard({
                 aria-label={
                   canAdd
                     ? `Buy now: ${product.title}`
-                    : `${product.title} ${availabilityLabel}`
+                    : `${product.title} ${ctaUnavailableLabel}`
                 }
                 className={cn(
                   "w-full rounded-full border-lh-primary/30 px-6 py-3 uppercase tracking-[0.12em]",

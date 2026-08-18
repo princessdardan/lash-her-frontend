@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { getProductCheckoutEligibility } from "@/lib/commerce/product-checkout-eligibility";
+import type { ProductCheckoutAvailability } from "@/lib/shipping/config";
 import type { TProduct, TProductVariant } from "@/types";
 import { ProductVariantSelector } from "./product-variant-selector";
 import { useProductCart } from "./product-cart-provider";
@@ -15,6 +16,7 @@ const MAX_QUANTITY = 10;
 
 interface ProductDetailPurchaseControlsProps {
   readonly product: TProduct;
+  readonly checkoutAvailability: ProductCheckoutAvailability;
 }
 
 function clampQuantity(value: number): number {
@@ -65,6 +67,7 @@ function variantMatchesSelectedOptions(
 
 export function ProductDetailPurchaseControls({
   product,
+  checkoutAvailability,
 }: ProductDetailPurchaseControlsProps): ReactElement {
   const router = useRouter();
   const { addItem, openCart } = useProductCart();
@@ -102,10 +105,24 @@ export function ProductDetailPurchaseControls({
       selectedVariantMatchesOptions &&
       (requiredOptionNames.length === 0 || hasCompleteOptions),
     );
+  const checkoutModeEnabled =
+    checkoutEligibility.status === "automated"
+      ? checkoutAvailability.automated
+      : checkoutEligibility.status === "manual"
+        ? checkoutAvailability.manual
+        : false;
   const canPurchase =
     product.isAvailable &&
     hasRequiredVariantSelection &&
-    checkoutEligibility.status !== "invalid";
+    checkoutEligibility.status !== "invalid" &&
+    checkoutModeEnabled;
+  // Distinguish "make a selection" from "checkout is turned off" so an
+  // otherwise-purchasable item doesn't show a misleading prompt.
+  const checkoutDisabledForMode =
+    product.isAvailable &&
+    hasRequiredVariantSelection &&
+    checkoutEligibility.status !== "invalid" &&
+    !checkoutModeEnabled;
   const selectionMessageId = `${product._id}-purchase-selection-message`;
   const quantityLabelId = `${product._id}-quantity-label`;
 
@@ -241,10 +258,12 @@ export function ProductDetailPurchaseControls({
             ? checkoutEligibility.status === "manual"
               ? "This item requires manual fulfillment. Checkout collects payment for the item; pickup or separately arranged shipping follows confirmation."
               : "Ready for secure checkout. Add this selection to the cart or start a single-item checkout."
-            : hasVariants
-              ? "Choose an available product option before adding this item to cart or buying now."
-              : product.availabilityLabel ||
-                "This product is currently unavailable."}
+            : checkoutDisabledForMode
+              ? "Online checkout for this item isn't available right now. Please check back soon."
+              : hasVariants
+                ? "Choose an available product option before adding this item to cart or buying now."
+                : product.availabilityLabel ||
+                  "This product is currently unavailable."}
         </p>
       </div>
     </div>

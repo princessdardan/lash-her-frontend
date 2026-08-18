@@ -5,6 +5,7 @@ import { loaders } from "@/data/loaders";
 import { SanityImage } from "@/components/ui/sanity-image";
 import { ProductDetailSections } from "@/components/commerce/product-detail-sections";
 import { ProductDetailPurchaseControls } from "@/components/commerce/product-detail-purchase-controls";
+import { getProductCheckoutAvailability } from "@/lib/shipping/config";
 import { resolveEffectivePrice } from "@/lib/commerce/cart";
 import { formatCad } from "@/lib/commerce/money";
 import { JsonLd, buildProductJsonLd } from "@/lib/structured-data";
@@ -309,7 +310,10 @@ export default async function ProductDetailPage({
                 ) : null}
 
                 {product.isAvailable ? (
-                  <ProductDetailPurchaseControls product={product} />
+                  <ProductDetailPurchaseControls
+                    product={product}
+                    checkoutAvailability={getProductCheckoutAvailability()}
+                  />
                 ) : (
                   <div className="mt-8 border-t border-lh-line pt-6">
                     <div className="rounded-full border border-lh-accent px-6 py-4 text-center font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-accent">

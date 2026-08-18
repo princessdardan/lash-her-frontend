@@ -28,10 +28,18 @@ import { useProductCart } from "@/components/commerce/product-cart-provider";
 import type { UsImportTerms } from "@/lib/commerce/product-checkout-disclosures";
 import type { ManualProductCheckoutPolicy } from "@/lib/commerce/product-manual-checkout-config";
 
+interface CheckoutTaxContext {
+  rate: number;
+  name: string;
+  collected: boolean;
+}
+
 interface CheckoutPageClientProps {
   products: TProduct[];
   shippingEnabled: boolean;
   manualCheckoutPolicy: ManualProductCheckoutPolicy;
+  /** Fixed tax for in-studio pickup (studio place of supply, Ontario). */
+  pickupTax: { rate: number; name: string };
 }
 
 interface ShippingRate {
@@ -55,6 +63,12 @@ interface ShippingQuote {
   fingerprint: string;
   expiresAt: string;
   rates: ShippingRate[];
+  tax?: {
+    rate: number;
+    name: string;
+    collected: boolean;
+    jurisdiction: string;
+  };
   usImportTerms?: UsImportTerms;
   usImportDisclosureVersion?: string;
   usImportDisclosureText?: string;
@@ -64,6 +78,7 @@ function CheckoutContent({
   products,
   shippingEnabled,
   manualCheckoutPolicy,
+  pickupTax,
 }: CheckoutPageClientProps) {
   const searchParams = useSearchParams();
   const { items: cartItems, clearCart } = useProductCart();
@@ -254,7 +269,26 @@ function CheckoutContent({
   const shippingAmount = selectedShippingRate
     ? selectedShippingRate.amountCents / 100
     : 0;
-  const checkoutTotal = Math.round((cartAmount + shippingAmount) * 100) / 100;
+  // Destination tax context: from the live quote for shipped orders, or the
+  // fixed studio (Ontario) rate for pickup. The server owns the rate; we apply
+  // it to the same cents base the server uses so the displayed total matches
+  // the amount charged at order creation.
+  const taxContext: CheckoutTaxContext | null = isManualCheckout
+    ? {
+        rate: pickupTax.rate,
+        name: pickupTax.name,
+        collected: pickupTax.rate > 0,
+      }
+    : (activeShippingQuote?.tax ?? null);
+  const taxableBaseCents =
+    Math.round(cartAmount * 100) + (selectedShippingRate?.amountCents ?? 0);
+  const taxAmountCents =
+    taxContext?.collected && taxableBaseCents > 0
+      ? Math.round(taxableBaseCents * taxContext.rate)
+      : 0;
+  const taxAmount = taxAmountCents / 100;
+  const checkoutTotal =
+    (Math.round((cartAmount + shippingAmount) * 100) + taxAmountCents) / 100;
   const cartAmountBeforePromotion = displayedCart
     ? Math.round(
         (displayedCart.amount + (displayedCart.promotionDiscountAmount ?? 0)) *
@@ -628,6 +662,12 @@ function CheckoutContent({
                       </span>
                     </div>
                   ) : null}
+                  {taxAmountCents > 0 && taxContext ? (
+                    <div className="mb-2 flex justify-between font-body text-sm font-bold text-lh-muted">
+                      <span>Tax ({taxContext.name})</span>
+                      <span>{formatCad(taxAmount)}</span>
+                    </div>
+                  ) : null}
                   <div className="flex justify-between items-center gap-4">
                     <span className="font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-muted">
                       Total
@@ -639,13 +679,7 @@ function CheckoutContent({
                           {formatCad(cartAmountBeforePromotion)}
                         </span>
                       ) : null}
-                      <span>
-                        {formatCad(
-                          requiresLiveShippingQuote
-                            ? checkoutTotal
-                            : cartAmount,
-                        )}
-                      </span>
+                      <span>{formatCad(checkoutTotal)}</span>
                     </span>
                   </div>
                 </div>
@@ -1080,6 +1114,7 @@ export default function CheckoutPageClient({
   products,
   shippingEnabled,
   manualCheckoutPolicy,
+  pickupTax,
 }: CheckoutPageClientProps) {
   return (
     <Suspense
@@ -1095,6 +1130,7 @@ export default function CheckoutPageClient({
         products={products}
         shippingEnabled={shippingEnabled}
         manualCheckoutPolicy={manualCheckoutPolicy}
+        pickupTax={pickupTax}
       />
     </Suspense>
   );

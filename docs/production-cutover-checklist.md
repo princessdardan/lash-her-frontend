@@ -158,6 +158,40 @@ Verify production-scoped values in Vercel/provider dashboards. Record presence, 
 - [ ] `HELCIM_TRANSACTION_API_TOKEN`
 - [ ] `CHECKOUT_SECRET_ENCRYPTION_KEY`
 - [ ] `HELCIM_WEBHOOK_VERIFIER_TOKEN`
+- [ ] `HELCIM_PRODUCT_PAYMENTS_CONTRACT_JSON` set to the exact owner-certified product-payment contract snapshot. Product checkout is **non-functional** until this is present and matches the active `product` certification (see Phase 3). Without it every transaction classifies as `unknown` and never finalizes (fail-closed).
+
+### Chit Chats Shipping and Product Checkout
+
+All product-shipping/checkout controls default off and fail closed. Product checkout stays inert until these are set and the readiness/attestation gates in Phase 3 pass. See `.env.local.example` for the annotated source of truth.
+
+Feature admission (keep off until certified — see `docs/chitchats-shipping-policy-decisions.md`):
+
+- [ ] `CHITCHATS_SHIPPING_ENABLED=true`
+- [ ] `CHITCHATS_CHECKOUT_ENABLED=true`
+- [ ] `CHITCHATS_US_SHIPPING_ENABLED` matches the US-shipping launch decision.
+- [ ] `MANUAL_PRODUCT_CHECKOUT_ENABLED` matches the manual-pickup launch decision.
+- [ ] `SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED` matches the supplemental-payments launch decision.
+- [ ] `SHIPPING_POLICY_ENFORCEMENT_MODE=enforce` (off/observe/enforce). `CHITCHATS_CHECKOUT_ENABLED=true` requires `enforce`; readiness treats a non-enforce mode as a blocker.
+
+Chit Chats account and provider:
+
+- [ ] `CHITCHATS_ENVIRONMENT=production` (required — the app throws on a production deploy if this is not `production`).
+- [ ] `CHITCHATS_CLIENT_ID` (production account).
+- [ ] `CHITCHATS_ACCESS_TOKEN` (production account).
+- [ ] `CHITCHATS_REGION` matches the account region where shipments enter the network (one of `british_columbia`, `alberta_saskatchewan`, `ontario_manitoba`, `quebec`, `atlantic`).
+- [ ] Optional `CHITCHATS_TRACKED_POSTAGE_TYPES` allowlist only if overriding source defaults.
+
+Secrets and signed-link keys (generate distinct 32+ byte secrets per purpose; never reuse):
+
+- [ ] `CHITCHATS_QUOTE_SIGNING_SECRET`
+- [ ] `CHITCHATS_WORKER_CRON_SECRET` (bearer for the shipping worker/policy crons; the routes also accept the generic `CRON_SECRET`).
+- [ ] `CHECKOUT_PII_ENCRYPTION_KEY` — a **real** `openssl rand -base64 32` value. Do not ship the all-zeros placeholder from `.env.local.example`; validation checks shape only, not entropy. Do not reuse `CHECKOUT_SECRET_ENCRYPTION_KEY` or the booking credential key.
+- [ ] `SHIPPING_DECISION_TOKEN_SECRET`
+- [ ] `ADDRESS_CHANGE_TOKEN_SECRET`
+
+Product tax (destination-based GST/HST; no US tax):
+
+- [ ] An **effective** `product_tax_policy_versions` row exists whose `version` exactly equals the implemented `PRODUCT_TAX_POLICY_VERSION` (`product-tax-ca-gst-hst-destination-v1` in `src/lib/commerce/product-tax-policy.ts`), owner-approved with step-up evidence and `coverage @> {merchandise,shipping,supplements,usOrders,componentRefunds}` all true. Checkout asserts the code version matches the attested version and fails closed otherwise. If provincial rates change, ship a new version string + fresh owner attestation.
 
 ### Square
 
@@ -375,6 +409,7 @@ Use approved test data only and redact all customer/payment details in evidence.
 ## Phase 10: Monitoring, Rollback, Failure Handling, and Evidence Capture
 
 - [ ] Monitor Vercel runtime logs for `/api/revalidate`, `/api/webhooks/card-transactions`, `/api/webhooks/square`, booking routes, checkout routes, form actions, email retries, and private-data retention cron.
+- [ ] Monitor the new scheduled jobs (Vercel Cron, authorized by `CRON_SECRET`/`CHITCHATS_WORKER_CRON_SECRET`): `/api/cron/chitchats-shipping` (every minute; dormant unless shipping enabled + enforce), `/api/cron/shipping-policy` (every 15 min), and `/api/cron/customer-email-outbox` (every 5 min). A `503` from any of these signals dead-letters/retries/unknown-outcomes needing review.
 - [ ] Monitor provider dashboards for Helcim, Square, Resend, Google OAuth/API, Upstash, Sanity webhook deliveries, and database health.
 - [ ] If Sanity import is wrong but production app is otherwise stable, stop content edits and decide whether to re-import from `./production-pre-cutover-backup.tar.gz` or roll forward with a corrected staging export.
 - [ ] If DB migration fails, stop and follow `docs/private-database-migration-runbook.md`; do not manually edit production schema.

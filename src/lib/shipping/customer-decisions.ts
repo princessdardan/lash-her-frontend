@@ -53,6 +53,18 @@ export type CustomerDecisionKind =
   | "service_substitution"
   | "signature_requirement";
 
+// Kinds owned by the shipping customer-decision flow. Supplemental payment
+// offers live in the same table and are hashed with the same "decision" secret,
+// so every token lookup here must constrain to these kinds; otherwise a
+// customer's `supplemental_payment` bearer would validate/exchange against the
+// decision flow, corrupting the offer and breaking their real payment path.
+export const CUSTOMER_DECISION_KINDS = [
+  "missed_handoff",
+  "loss_damage_remedy",
+  "service_substitution",
+  "signature_requirement",
+] as const satisfies readonly CustomerDecisionKind[];
+
 export type CustomerDecisionExecutor = Parameters<
   Parameters<ReturnType<typeof getPrivateDb>["transaction"]>[0]
 >[0];
@@ -249,6 +261,7 @@ export async function validateCustomerDecisionBearer(
     .from(productOrderCustomerDecisions)
     .where(
       and(
+        inArray(productOrderCustomerDecisions.kind, CUSTOMER_DECISION_KINDS),
         eq(
           productOrderCustomerDecisions.tokenHash,
           hashShippingCustomerToken(bearerToken, "decision"),
@@ -276,6 +289,7 @@ export async function exchangeCustomerDecisionToken(
     })
     .where(
       and(
+        inArray(productOrderCustomerDecisions.kind, CUSTOMER_DECISION_KINDS),
         eq(
           productOrderCustomerDecisions.tokenHash,
           hashShippingCustomerToken(bearerToken, "decision"),
@@ -350,6 +364,7 @@ export async function getCustomerDecision(sessionToken: string) {
     .from(productOrderCustomerDecisions)
     .where(
       and(
+        inArray(productOrderCustomerDecisions.kind, CUSTOMER_DECISION_KINDS),
         eq(
           productOrderCustomerDecisions.tokenHash,
           hashShippingCustomerToken(sessionToken, "decision"),
@@ -380,6 +395,7 @@ export async function selectCustomerDecision(
       .from(productOrderCustomerDecisions)
       .where(
         and(
+          inArray(productOrderCustomerDecisions.kind, CUSTOMER_DECISION_KINDS),
           eq(
             productOrderCustomerDecisions.tokenHash,
             hashShippingCustomerToken(sessionToken, "decision"),

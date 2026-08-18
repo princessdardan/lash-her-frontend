@@ -87,6 +87,29 @@ test("verifyHelcimWebhookSignature rejects stale signed payloads", () => {
   );
 });
 
+test("verifyHelcimWebhookSignature rejects payloads outside the 5-minute window", () => {
+  // 10 minutes old — previously accepted under the 10-hour window.
+  assert.equal(
+    verifyHelcimWebhookSignature(
+      headers,
+      rawBody,
+      verifierToken,
+      now + 10 * 60 * 1000,
+    ),
+    false,
+  );
+  // Within tolerance (2 minutes of clock skew) still verifies.
+  assert.equal(
+    verifyHelcimWebhookSignature(
+      headers,
+      rawBody,
+      verifierToken,
+      now + 2 * 60 * 1000,
+    ),
+    true,
+  );
+});
+
 test("parseVerifiedHelcimWebhook extracts only reconciliation fields", () => {
   assert.deepEqual(parseVerifiedHelcimWebhook(headers, rawBody), {
     amount: "50.00",

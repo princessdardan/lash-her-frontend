@@ -24,6 +24,10 @@ import {
   type ProductShipmentRow,
 } from "@/lib/shipping/shipment-store";
 import type { ShippingRecipient } from "@/lib/shipping/types";
+import {
+  calculateProductTax,
+  normalizeCanadianProvinceCode,
+} from "@/lib/commerce/product-tax-policy";
 import { buildBookingAbuseKey } from "@/lib/security/trusted-client-ip";
 import { checkShippingQuoteRateLimit } from "@/lib/security/shipping-abuse-control";
 import { readBoundedJsonBody } from "@/lib/security/bounded-json-body";
@@ -107,6 +111,7 @@ export async function GET(req: NextRequest): Promise<Response> {
         headers: { "Cache-Control": "no-store", "Retry-After": "2" },
       },
     );
+  const quoteTax = buildQuoteTaxContext(row.shipment.destination);
   return NextResponse.json(
     {
       operationId,
@@ -116,10 +121,43 @@ export async function GET(req: NextRequest): Promise<Response> {
       fingerprint: row.shipment.quoteFingerprint,
       expiresAt: row.shipment.quoteExpiresAt.toISOString(),
       rates: row.shipment.rates.map(publicRate),
+      ...(quoteTax ? { tax: quoteTax } : {}),
       ...(disclosure ?? {}),
     },
     { headers: { "Cache-Control": "no-store" } },
   );
+}
+
+/**
+ * Destination tax context for the checkout summary. The server owns the rate;
+ * the client multiplies it by (merchandise + shipping) so the displayed total
+ * matches the amount charged at order creation. Returns null when the province
+ * cannot be resolved so the GET never 500s on a malformed address.
+ */
+function buildQuoteTaxContext(destination: {
+  countryCode?: "CA" | "US";
+  province: string;
+}): {
+  rate: number;
+  name: string;
+  collected: boolean;
+  jurisdiction: string;
+} | null {
+  try {
+    const quote = calculateProductTax({
+      destinationCountry: destination.countryCode ?? "CA",
+      destinationRegionCode: destination.province,
+      taxableAmountCents: 0,
+    });
+    return {
+      rate: quote.taxRate,
+      name: quote.taxName,
+      collected: quote.collected,
+      jurisdiction: quote.jurisdiction,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -429,6 +467,13 @@ function parseBody(value: unknown): {
     countryCode,
   };
   if (!/^[A-Z]{2}$/.test(recipient.province)) return null;
+  // Reject unknown Canadian provinces at quote time so tax is resolvable and the
+  // customer gets a clean rejection rather than a hard error at payment.
+  if (
+    recipient.countryCode === "CA" &&
+    !normalizeCanadianProvinceCode(recipient.province)
+  )
+    return null;
   const promotionCode = parsePromotionCodeInput(body.promotionCode);
   if (promotionCode === null) return null;
   return { items, recipient, ...(promotionCode ? { promotionCode } : {}) };

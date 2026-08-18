@@ -3,8 +3,9 @@
 Status: superseded as an approval model; retained as the P-01–P-11 selection record
 Policy version: 2026-08-13, amended by `P-01-P-11-owner-only-2026-08-14`
 Applies to: Lash Her product orders fulfilled through Chit Chats
+Owner approval: P-01–P-11 recorded as owner-approved on 2026-08-17.
 
-The decision selections were recorded on 2026-08-13. The effective owner-operated approval model and conflicting-rule amendments are defined in [Product fulfillment policy P-01–P-11 — owner-operated amendment](./chitchats-shipping-policy-2026-08-14.md). That amendment takes precedence. Production checkout remains disabled until its separate readiness gates and staging evidence are complete.
+The decision selections were recorded on 2026-08-13. All eleven decisions (P-01–P-11) are recorded as owner-approved on 2026-08-17. **This is the human-readable decision record only.** It does not by itself satisfy the runtime readiness gate, which independently requires the owner's step-up-authenticated database attestations (effective fulfillment policy version, product tax policy version, shipping-policy duty assignments, provider certifications, intake-location and funding attestations, and calendar version) created through the protected admin flow — those are not fabricated here. The effective owner-operated approval model and conflicting-rule amendments are defined in [Product fulfillment policy P-01–P-11 — owner-operated amendment](./chitchats-shipping-policy-2026-08-14.md). That amendment takes precedence. Production checkout remains disabled until those readiness gates and staging evidence are complete.
 
 Customer remedies in this document are minimum Lash Her commitments. They do not limit rights available under applicable consumer-protection law or card-network rules. Nataliea must record the required Privacy/Legal owner self-attestation before publication; it is not an independent review.
 
@@ -45,7 +46,7 @@ Selected decision (Option A):
 - A label-created or postage-requested state must never be represented to a customer as shipped.
 
 Owner: Operations Lead  
-Selection state: selected; owner approval pending
+Selection state: selected; owner approved (recorded 2026-08-17)
 
 ## P-02 — Postage failure and manual review after payment
 
@@ -59,7 +60,7 @@ Selected decision (Option A):
 - Provider credit, refund, or investigation timing never delays the customer remedy.
 
 Owner: Operations Lead  
-Selection state: selected; owner approval pending
+Selection state: selected; owner approved (recorded 2026-08-17)
 
 ## P-03 — Substitute service and customer consent
 
@@ -73,7 +74,7 @@ Selected decision (Option A):
 - Consent must be recorded through the original order email or a signed order-management link. No response within one business day results in the P-02 wait-or-refund process; silence is not consent.
 
 Owner: Operations Lead  
-Selection state: selected; owner approval pending
+Selection state: selected; owner approved (recorded 2026-08-17)
 
 ## P-04 — Shipment remedy schedule
 
@@ -92,7 +93,7 @@ Selected decision (Option A):
 Orders must not be marked delivered solely because a provider webhook is missing. Staff use carrier evidence and the audit trail when resolving a disputed state.
 
 Owner: Business Owner  
-Selection state: selected; owner approval pending
+Selection state: selected; owner approved (recorded 2026-08-17)
 
 ## P-05 — Insurance claim ownership and advance remedy
 
@@ -105,7 +106,7 @@ Selected decision (Option A):
 - For orders above the service's insurable limit, automated fulfillment is blocked. The Business Owner must approve a fully insured alternative or refund the order.
 
 Owner: Business Owner  
-Selection state: selected; owner approval pending
+Selection state: selected; owner approved (recorded 2026-08-17)
 
 ## P-06 — Postage-refund and customer-refund matrix
 
@@ -126,7 +127,7 @@ Selected decision (Option A):
 Postage credits and customer refunds are separate financial events and require separate audit entries.
 
 Owner: Finance Owner and Business Owner  
-Selection state: selected; owner approval pending
+Selection state: selected; owner approved (recorded 2026-08-17)
 
 ## P-07 — Address changes, fraud review, and added cost
 
@@ -143,7 +144,7 @@ Selected decision (Option A):
 Implementation must follow the [signed address-change implementation plan](./chitchats-address-change-implementation-plan.md). The signed-link workflow is a production launch blocker; the email-reply procedure is an interim staging/manual fallback only.
 
 Owner: Operations Lead and Payment/Fraud Owner  
-Selection state: selected; owner approval pending
+Selection state: selected; owner approved (recorded 2026-08-17)
 
 ## P-08 — Manual-review coverage and escalation
 
@@ -158,7 +159,7 @@ Selected decision (Option A):
 - Weekend/holiday emergency coverage is not assumed. A Friday after-cutoff order follows P-01; a known paid-order incident that could cause duplicate postage or loss of funds is escalated immediately to the Business Owner.
 
 Owner: Operations Lead  
-Selection state: selected; owner approval pending
+Selection state: selected; owner approved (recorded 2026-08-17)
 
 ## P-09 — Chit Chats credit auto-reload and emergency authority
 
@@ -174,7 +175,7 @@ Selected decision (Option A pilot, then Option D):
 - After 30 production days, Finance moves to Option D and reviews it monthly using trailing 30-day settled postage: threshold equals two average business days of postage and reload amount equals five average business days of postage. Round each upward to the next CAD 25. Apply a CAD 25–250 threshold guardrail and a CAD 100–1,000 reload guardrail. The CAD 500 intended-balance limit and funding-exposure limits remain in force unless Finance and the Business Owner approve revised limits. If a calculated reload would exceed an approved limit, require manual approval instead of reloading automatically.
 
 Owner: Finance Owner  
-Selection state: selected; owner approval pending
+Selection state: selected; owner approved (recorded 2026-08-17)
 
 ## P-10 — Absolute PII-retention limit
 
@@ -193,7 +194,7 @@ Selected decision (Option D):
 The implementation now applies the 180-day terminal schedule and 365-day live cap. Production approval still requires evidence that database backups expire within 30 days and that downstream logs, exports, Resend history, downloaded labels, and support artifacts cannot exceed day 395.
 
 Owner: Privacy Owner  
-Selection state: selected; owner approval pending
+Selection state: selected; owner approved (recorded 2026-08-17)
 
 ## P-11 — Signature for high-value and high-risk orders
 
@@ -207,7 +208,7 @@ Selected decision (Option A, CAD 500 threshold):
 - Orders above the carrier's insurance limit remain blocked under P-05 regardless of signature.
 
 Owner: Payment/Fraud Owner and Business Owner  
-Selection state: selected; owner approval pending
+Selection state: selected; owner approved (recorded 2026-08-17)
 
 ## Required system controls before production enablement
 

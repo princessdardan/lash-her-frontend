@@ -37,7 +37,9 @@ export interface VerifiedHelcimWebhook {
 
 type WebhookPayload = Record<string, unknown>;
 
-const HELCIM_WEBHOOK_MAX_AGE_MS = 10 * 60 * 60 * 1000;
+// Accept signed webhooks within a tight ±5 minute window (tolerates minor clock
+// skew both ways). Replay is additionally deduped by webhook id downstream.
+const HELCIM_WEBHOOK_MAX_AGE_MS = 5 * 60 * 1000;
 
 export function verifyHelcimWebhookSignature(
   headers: HelcimWebhookHeaders,

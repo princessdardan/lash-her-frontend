@@ -16,6 +16,23 @@ export const runtime = "nodejs";
 
 export async function GET(req: Request): Promise<Response> {
   if (!authorized(req)) return new Response(null, { status: 401 });
+  try {
+    return await runShippingWorkerCron();
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: "Shipping worker failed",
+        incident: createHash("sha256")
+          .update(error instanceof Error ? error.message : "unknown")
+          .digest("hex")
+          .slice(0, 12),
+      },
+      { status: 503 },
+    );
+  }
+}
+
+async function runShippingWorkerCron(): Promise<Response> {
   const now = new Date();
   const riskAlerts = await drainProductPaymentRiskAlerts(now);
   const mode = getShippingPolicyEnforcementMode();

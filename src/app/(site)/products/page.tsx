@@ -2,6 +2,7 @@ import type { ReactElement } from "react";
 import { ProductCatalogShell } from "@/components/commerce/product-catalog-shell";
 import { loaders, type ProductSort } from "@/data/loaders";
 import { JsonLd, buildProductCollectionJsonLd } from "@/lib/structured-data";
+import { getProductCheckoutAvailability } from "@/lib/shipping/config";
 
 export const revalidate = 300;
 
@@ -56,6 +57,7 @@ export default async function ProductsPage({
         pageData={pageData}
         products={products}
         sort={sort}
+        checkoutAvailability={getProductCheckoutAvailability()}
       />
     </>
   );

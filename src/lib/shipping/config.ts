@@ -67,6 +67,23 @@ export function isManualProductCheckoutEnabled(): boolean {
   return process.env.MANUAL_PRODUCT_CHECKOUT_ENABLED === "true";
 }
 
+export interface ProductCheckoutAvailability {
+  automated: boolean;
+  manual: boolean;
+}
+
+/**
+ * Whether each product checkout mode is currently enabled. Storefront buy
+ * controls consult this so they don't present active CTAs that dead-end at a
+ * 503 when checkout is disabled.
+ */
+export function getProductCheckoutAvailability(): ProductCheckoutAvailability {
+  return {
+    automated: isChitChatsCheckoutEnabled(),
+    manual: isManualProductCheckoutEnabled(),
+  };
+}
+
 export function isSupplementalProductPaymentsEnabled(): boolean {
   return process.env.SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED === "true";
 }

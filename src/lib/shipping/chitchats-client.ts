@@ -99,9 +99,12 @@ export function createChitChatsClient(
       return assertShipment(result.shipment);
     },
     async findShipments(query) {
-      return request<ChitChatsShipment[]>(
-        `/shipments?limit=100&page=1&q=${encodeURIComponent(query)}`,
-      );
+      // Chit Chats returns the list wrapped as { shipments: [...] }; older/other
+      // responses may be a bare array. Tolerate both, matching listReturns.
+      const result = await request<
+        ChitChatsShipment[] | { shipments: ChitChatsShipment[] }
+      >(`/shipments?limit=100&page=1&q=${encodeURIComponent(query)}`);
+      return Array.isArray(result) ? result : (result.shipments ?? []);
     },
     async refreshShipment(id, input) {
       const result = await request<{ shipment: ChitChatsShipment }>(
