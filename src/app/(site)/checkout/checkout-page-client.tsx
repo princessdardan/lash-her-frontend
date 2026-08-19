@@ -34,10 +34,18 @@ interface CheckoutTaxContext {
   collected: boolean;
 }
 
+interface CheckoutTermsRequirement {
+  version: string;
+  text: string;
+  textHash: string;
+}
+
 interface CheckoutPageClientProps {
   products: TProduct[];
   shippingEnabled: boolean;
   manualCheckoutPolicy: ManualProductCheckoutPolicy;
+  /** Terms-of-sale assent the customer must accept at checkout (Reg. 17/05). */
+  termsRequirement: CheckoutTermsRequirement;
   /** Fixed tax for in-studio pickup (studio place of supply, Ontario). */
   pickupTax: { rate: number; name: string };
 }
@@ -78,6 +86,7 @@ function CheckoutContent({
   products,
   shippingEnabled,
   manualCheckoutPolicy,
+  termsRequirement,
   pickupTax,
 }: CheckoutPageClientProps) {
   const searchParams = useSearchParams();
@@ -129,6 +138,7 @@ function CheckoutContent({
   const manualFulfillmentMode = "manual_pickup" as const;
   const [acceptedCancellationPolicy, setAcceptedCancellationPolicy] =
     useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   // Build checkout items: either buy-now single item or full cart
   const checkoutItems = useMemo<CartInputItem[]>(() => {
@@ -996,11 +1006,33 @@ function CheckoutContent({
                   )
                 ) : null}
 
+                <label className="flex items-start gap-3 rounded-[18px] border border-lh-line bg-lh-white p-4 text-sm font-bold leading-6 text-lh-shadow">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={acceptedTerms}
+                    onChange={(event) => setAcceptedTerms(event.target.checked)}
+                  />
+                  <span>
+                    {termsRequirement.text}{" "}
+                    <a
+                      href="/policies/terms"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline"
+                    >
+                      Read the Terms and Conditions
+                    </a>
+                    .
+                  </span>
+                </label>
+
                 <div className="mt-2">
                   <HelcimPayButton
                     disabled={
                       !displayedCart ||
                       !hasValidCustomerDetails ||
+                      !acceptedTerms ||
                       (requiresShippingAddress && !hasValidShippingAddress) ||
                       (requiresLiveShippingQuote &&
                         (!shippingEnabled ||
@@ -1022,6 +1054,13 @@ function CheckoutContent({
                     }
                     fulfillmentMode={fulfillmentMode}
                     disclosures={{
+                      ...(acceptedTerms
+                        ? {
+                            termsAccepted: true,
+                            termsVersion: termsRequirement.version,
+                            termsTextHash: termsRequirement.textHash,
+                          }
+                        : {}),
                       ...(isManualCheckout &&
                       manualCheckoutPolicy.cancellationPolicyVersion &&
                       manualCheckoutPolicy.cancellationPolicyTextHash &&
@@ -1114,6 +1153,7 @@ export default function CheckoutPageClient({
   products,
   shippingEnabled,
   manualCheckoutPolicy,
+  termsRequirement,
   pickupTax,
 }: CheckoutPageClientProps) {
   return (
@@ -1130,6 +1170,7 @@ export default function CheckoutPageClient({
         products={products}
         shippingEnabled={shippingEnabled}
         manualCheckoutPolicy={manualCheckoutPolicy}
+        termsRequirement={termsRequirement}
         pickupTax={pickupTax}
       />
     </Suspense>

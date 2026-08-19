@@ -53,12 +53,62 @@ import {
   calculateProductTax,
   STUDIO_PICKUP_TAX_JURISDICTION,
 } from "./product-tax-policy";
+import { getProductCheckoutTermsRequirement } from "./product-checkout-terms";
 
 export interface UsImportDisclosureSnapshot {
   terms: "DDU";
   version: string;
   text: string;
   presentedAt: Date;
+}
+
+/**
+ * Customer acceptance of the source-controlled Terms of sale, captured at
+ * checkout for Ontario Reg. 17/05 provability. `requestEvidence` ties the
+ * assent to the checkout request that produced it (same value as the
+ * cancellation-policy evidence for manual orders).
+ */
+export interface ProductCheckoutTermsAssentInput {
+  accepted: true;
+  version: string;
+  textHash: string;
+  presentedAt: Date;
+  requestEvidence: string;
+}
+
+const CHECKOUT_REQUEST_EVIDENCE_PATTERN =
+  /^checkout_post:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Re-validates the accepted Terms assent against the current source-controlled
+ * requirement (version + SHA-256 of text) and returns the JSON snapshot to
+ * persist. Throws if acceptance is missing or does not match — order creation
+ * must not proceed without a provable, current assent.
+ */
+function buildProductCheckoutTermsSnapshot(
+  input: ProductCheckoutTermsAssentInput,
+  now: Date,
+): Record<string, string | boolean> {
+  const requirement = getProductCheckoutTermsRequirement();
+  if (
+    input.accepted !== true ||
+    input.version !== requirement.version ||
+    input.textHash !== requirement.textHash ||
+    !CHECKOUT_REQUEST_EVIDENCE_PATTERN.test(input.requestEvidence)
+  ) {
+    throw new Error(
+      "Checkout terms acceptance is required and must match the current terms",
+    );
+  }
+  return {
+    accepted: true,
+    version: requirement.version,
+    text: requirement.text,
+    textHash: requirement.textHash,
+    presentedAt: input.presentedAt.toISOString(),
+    acceptedAt: now.toISOString(),
+    requestEvidence: input.requestEvidence,
+  };
 }
 
 const EMAIL_CLAIM_DURATION_MS = 5 * 60 * 1000;
@@ -84,6 +134,7 @@ export interface CreateInitializingProductOrderInput {
   shippingQuoteFingerprint: string;
   shippingRateId: string;
   refundOriginIp: string;
+  termsAssent: ProductCheckoutTermsAssentInput;
   usImportDisclosure?: UsImportDisclosureSnapshot;
 }
 
@@ -111,6 +162,7 @@ export interface CreateInitializingManualProductOrderInput {
     presentedAt: Date;
     requestEvidence: string;
   };
+  termsAssent: ProductCheckoutTermsAssentInput;
   usImportDisclosure?: UsImportDisclosureSnapshot;
   refundOriginIp: string;
 }
@@ -761,6 +813,10 @@ export async function createInitializingProductOrder(
       "Required import-cost disclosure does not match the shipping quote",
     );
   }
+  const termsSnapshot = buildProductCheckoutTermsSnapshot(
+    input.termsAssent,
+    now,
+  );
   const readiness = await assertCheckoutReadiness({ destinationCountryCode });
   const quoteContext = readiness.quoteContext;
   if (!quoteContext) {
@@ -885,6 +941,9 @@ export async function createInitializingProductOrder(
         usImportDisclosureSnapshot: input.usImportDisclosure
           ? toStoredUsImportDisclosure(input.usImportDisclosure)
           : undefined,
+        termsVersion: termsSnapshot.version as string,
+        termsAcceptedAt: now,
+        termsSnapshot,
         fulfillmentMode: "automated_shipping",
       })
       .returning({ id: checkoutOrders.id });
@@ -1025,6 +1084,10 @@ export async function createInitializingManualProductOrder(
     acceptedAt: now.toISOString(),
     requestEvidence: input.cancellationPolicy.requestEvidence,
   };
+  const termsSnapshot = buildProductCheckoutTermsSnapshot(
+    input.termsAssent,
+    now,
+  );
   const merchandiseAmountCents = toCents(input.cart.amount);
   if (merchandiseAmountCents <= 0) {
     throw new Error("Manual checkout total is invalid");
@@ -1094,6 +1157,9 @@ export async function createInitializingManualProductOrder(
         manualFulfillmentStatus: "payment_pending",
         cancellationPolicyVersion: cancellationVersion,
         cancellationPolicySnapshot,
+        termsVersion: termsSnapshot.version as string,
+        termsAcceptedAt: now,
+        termsSnapshot,
       })
       .returning({ id: checkoutOrders.id });
     if (!order) throw new Error("Manual checkout order could not be created");

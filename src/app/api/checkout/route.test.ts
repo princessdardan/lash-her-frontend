@@ -36,18 +36,36 @@ const helperScript = String.raw`
     country: "Canada",
   };
 
+  const TERMS_REQUIREMENT = {
+    version: "terms-test-v1",
+    text: "Test terms of sale",
+    textHash: "a".repeat(64),
+  };
+  const TERMS_DISCLOSURE = {
+    termsAccepted: true,
+    termsVersion: TERMS_REQUIREMENT.version,
+    termsTextHash: TERMS_REQUIREMENT.textHash,
+  };
+
   function createRequest(body) {
+    if (typeof body === "string") {
+      return new Request("http://localhost:3000/api/checkout", {
+        method: "POST",
+        body,
+      });
+    }
+    const { disclosures, ...rest } = body ?? {};
     return new Request("http://localhost:3000/api/checkout", {
       method: "POST",
-      body: typeof body === "string" ? body : JSON.stringify({
+      body: JSON.stringify({
         fulfillmentMode: "automated_shipping",
-        disclosures: {},
         shippingQuote: {
           token: "shipping-quote-token",
           fingerprint: "a".repeat(64),
           rateId: "rate-1",
         },
-        ...body,
+        ...rest,
+        disclosures: { ...TERMS_DISCLOSURE, ...(disclosures ?? {}) },
       }),
     });
   }
@@ -58,6 +76,7 @@ const helperScript = String.raw`
     getPromotionCode,
     createInitializingManualOrder,
     loadManualCheckoutPolicy,
+    loadTermsRequirement,
     markInitializationFailed,
     validateShippingSelection,
   } = {}) {
@@ -106,6 +125,7 @@ const helperScript = String.raw`
       },
       ...(createInitializingManualOrder ? { createInitializingManualOrder } : {}),
       ...(loadManualCheckoutPolicy ? { loadManualCheckoutPolicy } : {}),
+      loadTermsRequirement: loadTermsRequirement ?? (() => TERMS_REQUIREMENT),
     });
 
     return {
@@ -218,6 +238,59 @@ test("manual checkout requires exact explicit cancellation-policy acceptance and
       reservedInput.cancellationPolicy.requestEvidence,
       /^checkout_post:[0-9a-f-]{36}$/i,
     );
+    assert.equal(reservedInput.termsAssent.accepted, true);
+    assert.equal(reservedInput.termsAssent.version, "terms-test-v1");
+    assert.equal(reservedInput.termsAssent.textHash, "a".repeat(64));
+    assert.ok(reservedInput.termsAssent.presentedAt instanceof Date);
+    assert.equal(
+      reservedInput.termsAssent.requestEvidence,
+      reservedInput.cancellationPolicy.requestEvidence,
+    );
+  `);
+});
+
+test("checkout rejects orders without a current Terms-of-sale acceptance", () => {
+  runRouteScenario(`
+    let reserves = 0;
+    const { handler } = runScenario({
+      createInitializingOrder: async () => {
+        reserves += 1;
+        throw new Error("should not reserve without terms acceptance");
+      },
+    });
+    const base = {
+      customer: {
+        name: "Nataliea Lash",
+        email: "client@example.com",
+        phone: "4165550100",
+      },
+      items: [{ productId: product._id, quantity: 1 }],
+      shippingAddress,
+    };
+
+    const missing = await handler(createRequest({
+      ...base,
+      disclosures: {
+        termsAccepted: undefined,
+        termsVersion: undefined,
+        termsTextHash: undefined,
+      },
+    }));
+    assert.equal(missing.status, 409);
+
+    const staleVersion = await handler(createRequest({
+      ...base,
+      disclosures: { termsVersion: "terms-test-v0" },
+    }));
+    assert.equal(staleVersion.status, 409);
+
+    const wrongHash = await handler(createRequest({
+      ...base,
+      disclosures: { termsTextHash: "b".repeat(64) },
+    }));
+    assert.equal(wrongHash.status, 409);
+
+    assert.equal(reserves, 0);
   `);
 });
 

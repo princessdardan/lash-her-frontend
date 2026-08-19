@@ -14,7 +14,10 @@ import {
   type Page,
 } from "@playwright/test";
 
-import { COMMERCE_E2E_MANUAL_POLICY_TEXT } from "./support/commerce-e2e-config";
+import {
+  COMMERCE_E2E_MANUAL_POLICY_TEXT,
+  COMMERCE_E2E_TERMS_DISCLOSURE,
+} from "./support/commerce-e2e-config";
 import { ADMIN_CALENDAR_E2E_AUTH_SECRET } from "./support/admin-calendar-e2e-config";
 import {
   PRODUCT_MANUAL_CANCELLATION_POLICY,
@@ -92,7 +95,7 @@ test.describe("enabled database-backed commerce workflows", () => {
     const checkoutStart = await request.post("/api/checkout", {
       data: {
         customer,
-        disclosures: {},
+        disclosures: { ...COMMERCE_E2E_TERMS_DISCLOSURE },
         fulfillmentMode: "automated_shipping",
         items,
         shippingAddress,
@@ -155,6 +158,7 @@ test.describe("enabled database-backed commerce workflows", () => {
           phone: "4165550101",
         },
         disclosures: {
+          ...COMMERCE_E2E_TERMS_DISCLOSURE,
           cancellationPolicyAccepted: true,
           cancellationPolicyTextHash: manualPolicyHash,
           cancellationPolicyVersion: manualPolicyVersion,
@@ -755,6 +759,7 @@ test.describe("enabled database-backed commerce workflows", () => {
       data: {
         customer,
         disclosures: {
+          ...COMMERCE_E2E_TERMS_DISCLOSURE,
           usImportDisclosureText: quote.usImportDisclosureText,
           usImportDisclosureVersion: quote.usImportDisclosureVersion,
           usImportTerms: quote.usImportTerms,
@@ -1694,7 +1699,7 @@ async function createFreshCanadaAutomatedOrder(
   const checkoutStart = await request.post("/api/checkout", {
     data: {
       customer,
-      disclosures: {},
+      disclosures: { ...COMMERCE_E2E_TERMS_DISCLOSURE },
       fulfillmentMode: "automated_shipping",
       items,
       shippingAddress,
@@ -1735,6 +1740,7 @@ async function createFreshManualPickupOrder(
         phone: "4165550188",
       },
       disclosures: {
+        ...COMMERCE_E2E_TERMS_DISCLOSURE,
         cancellationPolicyAccepted: true,
         cancellationPolicyTextHash: manualPolicyHash,
         cancellationPolicyVersion: manualPolicyVersion,

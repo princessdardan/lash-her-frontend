@@ -12,6 +12,10 @@ import { toCheckoutCatalogProduct } from "@/lib/commerce/product-catalog";
 import type { UsImportTerms } from "@/lib/commerce/product-checkout-disclosures";
 import { loadManualProductCheckoutPolicy } from "@/lib/commerce/product-manual-checkout-config";
 import {
+  getProductCheckoutTermsRequirement,
+  type ProductCheckoutTermsRequirement,
+} from "@/lib/commerce/product-checkout-terms";
+import {
   CHECKOUT_CUSTOMER_NAME_MAX_LENGTH,
   CHECKOUT_SHIPPING_LINE_MAX_LENGTH,
   CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH,
@@ -57,6 +61,9 @@ interface CheckoutRequestBody {
     cancellationPolicyAccepted?: boolean;
     cancellationPolicyVersion?: string;
     cancellationPolicyTextHash?: string;
+    termsAccepted?: boolean;
+    termsVersion?: string;
+    termsTextHash?: string;
     usImportTerms?: UsImportTerms;
     usImportDisclosureVersion?: string;
     usImportDisclosureText?: string;
@@ -111,6 +118,7 @@ interface CheckoutPostHandlerDependencies {
     shippingQuoteFingerprint: string;
     shippingRateId: string;
     refundOriginIp: string;
+    termsAssent: ProductCheckoutTermsAssent;
     usImportDisclosure?: {
       terms: UsImportTerms;
       version: string;
@@ -137,6 +145,7 @@ interface CheckoutPostHandlerDependencies {
       presentedAt: Date;
       requestEvidence: string;
     };
+    termsAssent: ProductCheckoutTermsAssent;
     refundOriginIp: string;
   }) => Promise<{
     orderId: string;
@@ -154,6 +163,15 @@ interface CheckoutPostHandlerDependencies {
   }) => Promise<void>;
   markInitializationFailed?: (orderId: string, error: string) => Promise<void>;
   loadManualCheckoutPolicy?: typeof loadManualProductCheckoutPolicy;
+  loadTermsRequirement?: () => ProductCheckoutTermsRequirement;
+}
+
+interface ProductCheckoutTermsAssent {
+  accepted: true;
+  version: string;
+  textHash: string;
+  presentedAt: Date;
+  requestEvidence: string;
 }
 
 type CheckoutInitializationStage =
@@ -178,6 +196,7 @@ export function createCheckoutPostHandler({
   finalizeInitializingOrder,
   markInitializationFailed,
   loadManualCheckoutPolicy = loadManualProductCheckoutPolicy,
+  loadTermsRequirement = getProductCheckoutTermsRequirement,
 }: CheckoutPostHandlerDependencies): (req: NextRequest) => Promise<Response> {
   return async function checkoutPostHandler(
     req: NextRequest,
@@ -319,6 +338,33 @@ export function createCheckoutPostHandler({
         }
       }
 
+      // Ontario Reg. 17/05 (Internet agreements): the customer must expressly
+      // accept the current Terms of sale at checkout, and the accepted version +
+      // text hash are recorded on the order for provability. Required for every
+      // product checkout path (manual pickup and automated shipping alike).
+      const termsRequirement = loadTermsRequirement();
+      if (
+        checkoutRequest.disclosures.termsAccepted !== true ||
+        checkoutRequest.disclosures.termsVersion !== termsRequirement.version ||
+        checkoutRequest.disclosures.termsTextHash !== termsRequirement.textHash
+      ) {
+        return NextResponse.json<CheckoutErrorBody>(
+          {
+            error:
+              "You must accept the current Terms and Conditions to complete checkout",
+          },
+          { status: 409 },
+        );
+      }
+      const checkoutRequestEvidence = `checkout_post:${randomUUID()}`;
+      const termsAssent = {
+        accepted: true as const,
+        version: termsRequirement.version,
+        textHash: termsRequirement.textHash,
+        presentedAt: new Date(),
+        requestEvidence: checkoutRequestEvidence,
+      };
+
       let initializingOrder: Awaited<
         ReturnType<NonNullable<typeof createInitializingOrder>>
       > | null = null;
@@ -344,8 +390,9 @@ export function createCheckoutPostHandler({
             version: manualPolicy!.cancellationPolicyVersion!,
             textHash: manualPolicy!.cancellationPolicyTextHash!,
             presentedAt: new Date(),
-            requestEvidence: `checkout_post:${randomUUID()}`,
+            requestEvidence: checkoutRequestEvidence,
           },
+          termsAssent,
           refundOriginIp: refundOriginIp ?? "127.0.0.1",
         });
         initializingOrder = manualOrder;
@@ -403,6 +450,7 @@ export function createCheckoutPostHandler({
           shippingQuoteFingerprint: currentFingerprint,
           shippingRateId: checkoutRequest.shippingQuote.rateId,
           refundOriginIp: refundOriginIp ?? "127.0.0.1",
+          termsAssent,
           ...(validatedSelection.usImportTerms &&
           validatedSelection.usImportDisclosureVersion &&
           validatedSelection.usImportDisclosureText
@@ -691,6 +739,22 @@ function parseDisclosures(
   ) {
     return null;
   }
+  const termsVersion = parseOptionalCheckoutText(value.termsVersion, 100);
+  const termsAccepted =
+    value.termsAccepted === true
+      ? true
+      : value.termsAccepted === undefined
+        ? undefined
+        : null;
+  const termsTextHash = parseOptionalCheckoutText(value.termsTextHash, 64);
+  if (
+    termsVersion === null ||
+    termsAccepted === null ||
+    termsTextHash === null ||
+    (termsTextHash !== undefined && !/^[0-9a-f]{64}$/.test(termsTextHash))
+  ) {
+    return null;
+  }
   const usImportTerms =
     value.usImportTerms === "DDU"
       ? value.usImportTerms
@@ -717,6 +781,9 @@ function parseDisclosures(
       : {}),
     ...(cancellationPolicyVersion ? { cancellationPolicyVersion } : {}),
     ...(cancellationPolicyTextHash ? { cancellationPolicyTextHash } : {}),
+    ...(termsAccepted ? { termsAccepted: true as const } : {}),
+    ...(termsVersion ? { termsVersion } : {}),
+    ...(termsTextHash ? { termsTextHash } : {}),
     ...(usImportTerms ? { usImportTerms } : {}),
     ...(usImportDisclosureVersion ? { usImportDisclosureVersion } : {}),
     ...(usImportDisclosureText ? { usImportDisclosureText } : {}),

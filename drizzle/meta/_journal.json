@@ -470,6 +470,13 @@
       "when": 1787097681783,
       "tag": "0066_foamy_excalibur",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1787160103859,
+      "tag": "0067_tranquil_iron_patriot",
+      "breakpoints": true
     }
   ]
 }

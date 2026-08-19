@@ -357,6 +357,8 @@ test.describe("Product Detail Page", () => {
     await page.getByLabel(/Postal code/i).fill("M6E 2Y4");
     await page.getByLabel(/^Country$/i).selectOption("CA");
 
+    await page.getByRole("checkbox", { name: /Terms and Conditions/i }).check();
+
     const checkout = page.getByRole("button", { name: /checkout/i });
     await expect(checkout).toBeEnabled();
     await checkout.click();

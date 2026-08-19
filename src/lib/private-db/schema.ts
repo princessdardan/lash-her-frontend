@@ -1606,6 +1606,11 @@ export const checkoutOrders = pgTable(
     cancellationPolicySnapshot: jsonb("cancellation_policy_snapshot").$type<
       Record<string, unknown>
     >(),
+    termsVersion: text("terms_version"),
+    termsAcceptedAt: timestamp("terms_accepted_at", {
+      withTimezone: true,
+    }),
+    termsSnapshot: jsonb("terms_snapshot").$type<Record<string, unknown>>(),
     dduNoticePresentedAt: timestamp("ddu_notice_presented_at", {
       withTimezone: true,
     }),

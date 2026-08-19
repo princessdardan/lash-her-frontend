@@ -138,17 +138,19 @@ export const PRODUCT_MANUAL_CANCELLATION_POLICY: {
   version: string;
   text: string;
 } | null = {
-  version: "manual-pickup-cancellation-2026-08",
-  text: "Payment is received now. Pickup is arranged separately, and cancellation is approved by default before accepted irreversible customization or product preparation begins.",
+  version: "manual-pickup-cancellation-2026-08-18",
+  text: "You pay now and collect your order in person at the studio. You can cancel for a full refund any time before we begin preparing or personalizing your order. Ready-made items stay fully refundable until you collect them. Made-to-order or personalized items can't be refunded once we've started making them, because they can't be resold. Approved refunds go to your original payment card — we start them within 2 business days, and your bank usually posts them within 5–10 business days. If an order isn't collected, we hold it for 30 days and send reminders; after that we treat it as cancelled — ready-made items are refunded to your card, and personalized items follow the made-to-order rule above. None of this affects your rights if an item is damaged, faulty, or not as described.",
 };
 
 /**
  * Certified U.S. DDU shipping contract snapshot (import terms + disclosure).
  * Non-null enables U.S. shipping when `CHITCHATS_US_SHIPPING_ENABLED` is on.
  *
- * ⚠️ CONFIRM the `disclosure.text` and the schema `version` strings with the
- * business/legal owner before production. Editing any field invalidates in-flight
- * U.S. quotes by design (they re-derive). SKU-level
+ * The `disclosure.text` + `disclosure.version` below are legal-approved
+ * (`us-ddu-disclosure-2026-08`); bump `version` on any future wording change so
+ * customer acceptance records stay unambiguous. ⚠️ CONFIRM the schema `version`
+ * strings with the business/legal owner before production. Editing any field
+ * invalidates in-flight U.S. quotes by design (they re-derive). SKU-level
  * `usRegulatoryCertification.*Version` values on U.S. products must match the
  * `version` / `tariffMetadataSchema.version` / `fdaRequirements.version` here
  * (see docs/us-shipping-regulatory-data-contract.md).
@@ -162,7 +164,7 @@ export const PRODUCT_SHIPPING_US_DDU_CONTRACT: FulfillmentProviderCertificationC
     importTerms: "DDU",
     disclosure: {
       version: "us-ddu-disclosure-2026-08",
-      text: "U.S. orders ship DDU. Duties, taxes, and brokerage may be collected from the recipient on delivery.",
+      text: "Your order ships from Canada on Delivered Duty Unpaid (DDU) terms: any U.S. import duties, taxes, and carrier brokerage/customs fees are not included in the price, are the recipient's responsibility, and are usually collected by the carrier on or before delivery. Lash Her does not collect or remit these charges and cannot predict the amount, the amount charged depends on your destination and carrier. If you return an item, any duties, taxes, or brokerage fees you already paid are charged by the carrier or customs, not by Lash Her, and are not refundable by us.",
     },
     allowedServiceCodes: [
       "chit_chats_us_edge",

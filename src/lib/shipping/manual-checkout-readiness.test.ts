@@ -2,16 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { evaluateManualCheckoutReadiness } from "./readiness";
+import { PRODUCT_MANUAL_CANCELLATION_POLICY } from "./product-shipping-config";
 
 /**
  * Manual product checkout readiness is now config/env-driven (Phase 2): it reads
  * no owner-attested DB records. These tests pin the blocker logic of
  * `evaluateManualCheckoutReadiness` against the source-controlled config.
  *
- * `PRODUCT_MANUAL_CANCELLATION_POLICY` is intentionally `null` until the
- * finalized cancellation policy is committed, so readiness can never be `true`
- * here — the strongest assertion available is that a fully-valid runtime leaves
- * `manual_policy_not_configured` as the SOLE blocker.
+ * `PRODUCT_MANUAL_CANCELLATION_POLICY` is now committed (finalized cancellation
+ * policy), so a fully-valid runtime is `ready` with no blockers; the tests below
+ * derive the expected policy version from the config to avoid drift.
  */
 
 const NOW = new Date("2026-08-15T16:00:00.000Z");
@@ -59,17 +59,21 @@ function validEnv(): NodeJS.ProcessEnv {
   };
 }
 
-test("a fully-valid runtime leaves only the unconfigured manual policy blocking", () => {
+test("a fully-valid runtime with the committed manual policy is ready", () => {
   process.env.SHIPPING_POLICY_ENFORCEMENT_MODE = "enforce";
   return evaluateManualCheckoutReadiness({
     catalogMetadataReady: true,
     env: validEnv(),
     now: NOW,
   }).then((result) => {
-    assert.equal(result.ready, false);
-    assert.deepEqual(result.blockers, ["manual_policy_not_configured"]);
-    assert.equal(result.policy, null);
-    // Version metadata is always the source-controlled config version.
+    assert.equal(result.ready, true);
+    assert.deepEqual(result.blockers, []);
+    assert.ok(result.policy);
+    // The readiness policy mirrors the source-controlled config exactly.
+    assert.equal(
+      result.policy?.version,
+      PRODUCT_MANUAL_CANCELLATION_POLICY?.version,
+    );
     assert.ok(result.taxPolicyVersion);
     assert.ok(result.taxPolicyApproval);
   });
@@ -89,7 +93,6 @@ test("disabled flag, dormant policy mode, and incomplete catalog each add a bloc
       "manual_checkout_flag_disabled",
       "policy_not_enforced",
       "catalog_metadata_incomplete",
-      "manual_policy_not_configured",
     ]) {
       assert.ok(
         result.blockers.includes(blocker),

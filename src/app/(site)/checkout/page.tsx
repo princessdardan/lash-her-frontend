@@ -3,6 +3,7 @@ import { loaders } from "@/data/loaders";
 import CheckoutPageClient from "./checkout-page-client";
 import { isChitChatsCheckoutEnabled } from "@/lib/shipping/config";
 import { loadManualProductCheckoutPolicy } from "@/lib/commerce/product-manual-checkout-config";
+import { getProductCheckoutTermsRequirement } from "@/lib/commerce/product-checkout-terms";
 import {
   calculateProductTax,
   STUDIO_PICKUP_TAX_JURISDICTION,
@@ -16,6 +17,7 @@ export const metadata: Metadata = {
 export default async function CheckoutPage() {
   const products = await loaders.getProducts();
   const manualCheckoutPolicy = await loadManualProductCheckoutPolicy();
+  const termsRequirement = getProductCheckoutTermsRequirement();
   // In-studio pickup is fulfilled from Ontario, so the pickup tax is fixed by
   // the studio's place of supply. The server owns the rate; the client applies
   // it to the merchandise total for the summary.
@@ -30,6 +32,7 @@ export default async function CheckoutPage() {
       products={products}
       shippingEnabled={isChitChatsCheckoutEnabled()}
       manualCheckoutPolicy={manualCheckoutPolicy}
+      termsRequirement={termsRequirement}
       pickupTax={{
         rate: pickupTaxQuote.taxRate,
         name: pickupTaxQuote.taxName,
