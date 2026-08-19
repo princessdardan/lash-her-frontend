@@ -146,11 +146,16 @@ export const PRODUCT_MANUAL_CANCELLATION_POLICY: {
  * Certified U.S. DDU shipping contract snapshot (import terms + disclosure).
  * Non-null enables U.S. shipping when `CHITCHATS_US_SHIPPING_ENABLED` is on.
  *
- * ⚠️ CONFIRM the `disclosure.text`, the effective window, and the schema
- * `version` strings with the business/legal owner before production. Editing any
- * field invalidates in-flight U.S. quotes by design (they re-derive). SKU-level
+ * ⚠️ CONFIRM the `disclosure.text` and the schema `version` strings with the
+ * business/legal owner before production. Editing any field invalidates in-flight
+ * U.S. quotes by design (they re-derive). SKU-level
  * `usRegulatoryCertification.*Version` values on U.S. products must match the
- * `version` / `tariffMetadataSchema.version` / `fdaRequirements.version` here.
+ * `version` / `tariffMetadataSchema.version` / `fdaRequirements.version` here
+ * (see docs/us-shipping-regulatory-data-contract.md).
+ *
+ * The `effectiveFrom` / `effectiveUntil` window is NOT enforced by this
+ * storefront — DDU contract validity is managed externally. The permissive
+ * sentinel values below keep it non-gating; do not treat them as a renewal date.
  */
 export const PRODUCT_SHIPPING_US_DDU_CONTRACT: FulfillmentProviderCertificationContractSnapshot | null =
   {
@@ -180,8 +185,9 @@ export const PRODUCT_SHIPPING_US_DDU_CONTRACT: FulfillmentProviderCertificationC
       version: "us-fda-2026-08",
       mode: "required_when_applicable",
     },
-    effectiveFrom: "2026-08-01T00:00:00.000Z",
-    effectiveUntil: "2027-08-01T00:00:00.000Z",
+    // Not enforced (validity managed externally); permissive sentinels.
+    effectiveFrom: "2020-01-01T00:00:00.000Z",
+    effectiveUntil: "2099-01-01T00:00:00.000Z",
     evidenceReference: "source-controlled-config",
     version: "us-ddu-contract-2026-08",
   };

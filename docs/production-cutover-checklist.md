@@ -162,7 +162,7 @@ Verify production-scoped values in Vercel/provider dashboards. Record presence, 
 
 ### Chit Chats Shipping and Product Checkout
 
-All product-shipping/checkout controls default off and fail closed. Product checkout stays inert until these are set and the readiness/attestation gates in Phase 3 pass. See `.env.local.example` for the annotated source of truth.
+All product-shipping/checkout controls default off and fail closed. Product checkout stays inert until these are set and the source-controlled shipping config (`src/lib/shipping/product-shipping-config.ts`) and tax config (`src/lib/commerce/product-tax-policy.ts`) are populated and business-confirmed. Shipping/checkout readiness is now **source-controlled config, not owner-attested DB records** — there are no runtime attestation, duty-assignment, or funding-reservation gates to clear; the former attestation/duty/funding tables were dropped by migrations `0062`–`0066` (see Phase 3). See `.env.local.example` for the annotated source of truth.
 
 Feature admission (keep off until certified — see `docs/chitchats-shipping-policy-decisions.md`):
 
@@ -172,6 +172,7 @@ Feature admission (keep off until certified — see `docs/chitchats-shipping-pol
 - [ ] `MANUAL_PRODUCT_CHECKOUT_ENABLED` matches the manual-pickup launch decision.
 - [ ] `SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED` matches the supplemental-payments launch decision.
 - [ ] `SHIPPING_POLICY_ENFORCEMENT_MODE=enforce` (off/observe/enforce). `CHITCHATS_CHECKOUT_ENABLED=true` requires `enforce`; readiness treats a non-enforce mode as a blocker.
+- [ ] Source shipping config is populated and business/legal-confirmed in `src/lib/shipping/product-shipping-config.ts`: `PRODUCT_SHIPPING_US_DDU_CONTRACT` (required for `CHITCHATS_US_SHIPPING_ENABLED`) and `PRODUCT_MANUAL_CANCELLATION_POLICY` (required for `MANUAL_PRODUCT_CHECKOUT_ENABLED`) are non-null with confirmed disclosure/policy text, effective window, and schema versions; `PRODUCT_SHIPPING_SERVICE_POLICIES` insurance limits and signature capability are verified against Chit Chats' published per-service coverage. Setting a flag without its populated config leaves the feature blocked by design. There is no runtime attestation, duty assignment, or funding reservation to create. Bump `PRODUCT_SHIPPING_POLICY_VERSION` on any change.
 
 Chit Chats account and provider:
 
@@ -191,7 +192,7 @@ Secrets and signed-link keys (generate distinct 32+ byte secrets per purpose; ne
 
 Product tax (destination-based GST/HST; no US tax):
 
-- [ ] An **effective** `product_tax_policy_versions` row exists whose `version` exactly equals the implemented `PRODUCT_TAX_POLICY_VERSION` (`product-tax-ca-gst-hst-destination-v1` in `src/lib/commerce/product-tax-policy.ts`), owner-approved with step-up evidence and `coverage @> {merchandise,shipping,supplements,usOrders,componentRefunds}` all true. Checkout asserts the code version matches the attested version and fails closed otherwise. If provincial rates change, ship a new version string + fresh owner attestation.
+- [ ] The destination-based GST/HST rate table in `src/lib/commerce/product-tax-policy.ts` is business/accountant-confirmed and its `PRODUCT_TAX_POLICY_VERSION` (`product-tax-ca-gst-hst-destination-v1`) matches the rates in force. Tax is now **source-controlled config, not an owner-attested `product_tax_policy_versions` DB row** — that table was dropped by the shipping-teardown migrations (`0062`–`0066`). Change detection between quote and checkout-commit is version-based; checkout still fails closed on an unimplemented version or unknown province. If provincial rates change, bump `PRODUCT_TAX_POLICY_VERSION` in the same commit.
 
 ### Square
 
@@ -215,6 +216,7 @@ Use `docs/private-database-migration-runbook.md` as the detailed source of truth
 - [ ] Verify production DB identity in the provider dashboard: project, branch, database name, and host label.
 - [ ] Verify production backup/PITR availability before any migration.
 - [ ] Review committed migration files in `drizzle/` and confirm expected files are present.
+- [ ] Understand that the shipping-teardown migrations `0062`–`0066` are **irreversible** `DROP TABLE`/`DROP COLUMN` operations on tables/columns holding production rows (attestation, duty-assignment, funding-review, service-policy, tax-policy, manual-policy, and intake-location records; the `product_shipment_jobs` funding columns; and `product_shipments.intake_location_attestation_id`). The retained source config in `src/lib/shipping/product-shipping-config.ts` / `src/lib/commerce/product-tax-policy.ts` supersedes their runtime use. Capture a verified pre-drop snapshot/row-count and confirm no audit/compliance retention obligation before applying in production (see `docs/launch-readiness-checklist.md` → Private Database Migration Readiness).
 - [ ] Confirm staging already ran the same migration set successfully.
 - [ ] Confirm production `DATABASE_URL` host matches `<verified-production-host>` without exposing the full URL.
 - [ ] Apply needed migrations only with the production guard variables.

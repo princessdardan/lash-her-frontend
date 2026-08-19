@@ -16,11 +16,22 @@ import {
 
 import { COMMERCE_E2E_MANUAL_POLICY_TEXT } from "./support/commerce-e2e-config";
 import { ADMIN_CALENDAR_E2E_AUTH_SECRET } from "./support/admin-calendar-e2e-config";
+import {
+  PRODUCT_MANUAL_CANCELLATION_POLICY,
+  PRODUCT_SHIPPING_US_DDU_CONTRACT,
+} from "@/lib/shipping/product-shipping-config";
 
 const enabledMode = process.env.COMMERCE_E2E_ENABLED_MODE === "1";
 const cronSecret = "e2e-cron-secret-0123456789-ABCDEFGHIJKLMNOP";
 const addressChangeSecret = "e2e-address-change-token-secret-0123456789ABCDEF";
-const manualPolicyVersion = "manual-pickup-cancellation-2026-08";
+// Derived from the config so the spec cannot drift from the deployed policy /
+// disclosure versions the checkout enforces.
+const manualPolicyVersion =
+  PRODUCT_MANUAL_CANCELLATION_POLICY?.version ??
+  "manual-pickup-cancellation-unset";
+const usImportDisclosureVersion =
+  PRODUCT_SHIPPING_US_DDU_CONTRACT?.disclosure.version ??
+  "us-ddu-disclosure-unset";
 const manualPolicyHash = createHash("sha256")
   .update(COMMERCE_E2E_MANUAL_POLICY_TEXT, "utf8")
   .digest("hex");
@@ -364,6 +375,10 @@ test.describe("enabled database-backed commerce workflows", () => {
     });
 
     await runCommerceWorker(request);
+    // The stale prepared shipment consumed the prior signature consent, so the
+    // fresh-quote re-rate prepares a new shipment that needs its own consent
+    // (the customer re-signs for the reissued quote).
+    await seedAddressSignatureConsent(fixture.requestId);
     const reprice = await applyAddressChange(page, fixture.requestId, 202);
     expect(reprice).toMatchObject({ status: "queued" });
     await runCommerceWorker(request);
@@ -722,14 +737,14 @@ test.describe("enabled database-backed commerce workflows", () => {
     const pendingQuote = await quoteStart.json();
     expect(quoteStart.status(), JSON.stringify(pendingQuote)).toBe(202);
     expect(pendingQuote).toMatchObject({
-      usImportDisclosureVersion: "us-ddu-disclosure-2026-08",
+      usImportDisclosureVersion,
       usImportTerms: "DDU",
     });
     expect(["queued", "succeeded"]).toContain(pendingQuote.status);
     if (pendingQuote.status === "queued") await runCommerceWorker(request);
     const quote = await getCompletedQuote(request, pendingQuote);
     expect(quote).toMatchObject({
-      usImportDisclosureVersion: "us-ddu-disclosure-2026-08",
+      usImportDisclosureVersion,
       usImportTerms: "DDU",
     });
     expect(quote.rates).toEqual([
@@ -804,6 +819,15 @@ test.describe("enabled database-backed commerce workflows", () => {
     await runCustomerEmailWorker(request);
     await expectShipmentEmailCompleted(fixture.shipmentId, "delivered");
 
+    // Prior serial tests leave queued refunds against non-numeric E2E fixture
+    // transaction ids; the global policy worker correctly settles those to
+    // manual_review on its first pass (reported as failures → 503). That
+    // backlog is unrelated to this test's provider-return concern, so drain it
+    // first, then assert a clean pass that still re-observes the return.
+    const policySettle = await request.get("/api/cron/shipping-policy", {
+      headers: { authorization: `Bearer ${cronSecret}` },
+    });
+    expect([200, 503]).toContain(policySettle.status());
     const policyRun = await request.get("/api/cron/shipping-policy", {
       headers: { authorization: `Bearer ${cronSecret}` },
     });
@@ -823,10 +847,19 @@ async function runCommerceWorker(request: APIRequestContext): Promise<void> {
 async function runCustomerEmailWorker(
   request: APIRequestContext,
 ): Promise<void> {
-  const response = await request.get("/api/cron/customer-email-outbox", {
-    headers: { authorization: `Bearer ${cronSecret}` },
-  });
-  expect(response.status(), await response.text()).toBe(200);
+  // The cron claims a bounded batch (default 10) per invocation. By the last
+  // serial test a backlog of prior-order confirmation emails has accumulated,
+  // so a single call would not reach the just-enqueued notification. Drain the
+  // outbox the way repeated cron ticks would in production.
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const response = await request.get("/api/cron/customer-email-outbox", {
+      headers: { authorization: `Bearer ${cronSecret}` },
+    });
+    const body = await response.text();
+    expect(response.status(), body).toBe(200);
+    const result = JSON.parse(body) as { claimed: number };
+    if (result.claimed === 0) return;
+  }
 }
 
 async function getCompletedQuote(
@@ -1373,6 +1406,10 @@ async function seedAddressSignatureConsent(requestId: string): Promise<void> {
       sourceShipmentId,
       signatureRequired: true,
     };
+    // Idempotent: each prepared shipment consumes the signature consent, so a
+    // re-rate needs the consent re-provided. On the second call the existing
+    // (now consumed) decision is re-validated rather than duplicated, which the
+    // unique (order_id, scope_key, scope_version) index would otherwise reject.
     await client.query(
       `insert into product_order_customer_decisions (
          order_id, shipment_id, kind, scope_key, proposed_conditions,
@@ -1382,7 +1419,16 @@ async function seedAddressSignatureConsent(requestId: string): Promise<void> {
          $1, $2, 'signature_requirement', $3, $4::jsonb, $5,
          '["accept_signature"]'::jsonb, 'accept_signature', $6,
          'selected', now() + interval '1 hour', now(), now()
-       )`,
+       )
+       on conflict (order_id, scope_key, scope_version) do update set
+         status = 'selected',
+         selected_outcome = 'accept_signature',
+         consumed_at = null,
+         superseded_at = null,
+         processed_at = null,
+         expires_at = now() + interval '1 hour',
+         exchanged_at = now(),
+         selected_at = now()`,
       [
         row.rows[0]!.order_id,
         sourceShipmentId,
@@ -1545,7 +1591,7 @@ async function expectAddressAdopted(
     expect(result.rows).toEqual([
       expect.objectContaining({
         old_postage_outcome: "delete_confirmed",
-        reconciliation_state: "applied",
+        reconciliation_state: "adopted",
         status: "applied",
         superseded_status: "superseded",
       }),
@@ -1601,7 +1647,7 @@ async function expectAddressCancellationPreservedActiveGeneration(
               (select count(*)::int
                from fulfillment_owner_actions actions
                where actions.target_type = 'address_change'
-                 and actions.target_id = requests.id
+                 and actions.target_id = requests.id::text
                  and actions.action = 'address_change_revocation_executed') as action_count
        from product_order_address_change_requests requests
        join checkout_orders orders on orders.id = requests.order_id

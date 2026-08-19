@@ -1,11 +1,21 @@
+import { PRODUCT_SHIPPING_US_DDU_CONTRACT } from "@/lib/shipping/product-shipping-config";
 import type { TProduct } from "@/types";
 
-// These U.S. SKU-certification versions must match the active
+// The U.S. SKU-certification versions must match the active
 // PRODUCT_SHIPPING_US_DDU_CONTRACT (version / tariffMetadataSchema.version /
 // fdaRequirements.version); product-checkout-eligibility enforces the match.
-export const COMMERCE_E2E_US_CONTRACT_VERSION = "us-ddu-contract-2026-08";
-export const COMMERCE_E2E_TARIFF_SCHEMA_VERSION = "us-tariff-schema-2026-08";
-export const COMMERCE_E2E_FDA_REQUIREMENTS_VERSION = "us-fda-2026-08";
+// Derive them from the config so they cannot drift. This module is also loaded
+// on non-E2E paths (see loaders.ts) and the contract may be null (U.S. shipping
+// disabled), so guard the access — the "-unset" sentinels only surface when the
+// fixture is exercised without an active U.S. contract, where no U.S. SKU is
+// eligible anyway.
+export const COMMERCE_E2E_US_CONTRACT_VERSION =
+  PRODUCT_SHIPPING_US_DDU_CONTRACT?.version ?? "us-ddu-contract-unset";
+export const COMMERCE_E2E_TARIFF_SCHEMA_VERSION =
+  PRODUCT_SHIPPING_US_DDU_CONTRACT?.tariffMetadataSchema.version ??
+  "us-tariff-schema-unset";
+export const COMMERCE_E2E_FDA_REQUIREMENTS_VERSION =
+  PRODUCT_SHIPPING_US_DDU_CONTRACT?.fdaRequirements.version ?? "us-fda-unset";
 
 const PRODUCTS: readonly TProduct[] = [
   {

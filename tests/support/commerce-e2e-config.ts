@@ -1,7 +1,12 @@
 import type { HelcimProductPaymentsCertificationContractSnapshot } from "@/lib/private-db/schema";
+import { PRODUCT_MANUAL_CANCELLATION_POLICY } from "@/lib/shipping/product-shipping-config";
 
+// Derived from the config so the fixture cannot drift from the policy text the
+// checkout re-validates (version + SHA-256 of text). The policy may be null
+// (manual checkout disabled); the E2E suite enables it, so the sentinel only
+// guards the type.
 export const COMMERCE_E2E_MANUAL_POLICY_TEXT =
-  "Payment is received now. Pickup is arranged separately, and cancellation is approved by default before accepted irreversible customization or product preparation begins.";
+  PRODUCT_MANUAL_CANCELLATION_POLICY?.text ?? "";
 
 export const COMMERCE_E2E_HELCIM_CONTRACT = {
   contract: "helcim_product_payments",

@@ -3361,6 +3361,7 @@ export async function applyApprovedAddressChange(input: {
   preparedRefreshPending?: boolean;
   preparedPurchasePending?: boolean;
   operationId?: string;
+  freshQuoteRequired?: boolean;
 }> {
   const requestId = input.requestId;
   const applied = await getPrivateDb().transaction(async (tx) => {
@@ -3977,9 +3978,16 @@ export async function applyApprovedAddressChange(input: {
             applied.stalePreparedShipmentStateVersion,
         },
       });
-    throw new Error(
-      "Supplemental offer expired; a fresh replacement quote is required",
-    );
+    // The stale supplemental offer has been superseded and its shipment cleanup
+    // enqueued. This is a normal state transition (not a failure): signal the
+    // caller that a fresh re-rate is required so they can re-price, rather than
+    // surfacing it as an error.
+    return {
+      orderReference: applied.orderReference,
+      refundDecreaseCents: applied.refundDecreaseCents,
+      requiresSupplementalPayment: false,
+      freshQuoteRequired: true,
+    };
   }
   if (
     "oldPostageReconciliationPending" in applied &&

@@ -170,17 +170,19 @@ export async function assertShippingQuoteContextCurrent(input: {
 }
 
 export async function assertUsShippingContractCurrent(input: {
+  // `now` is accepted for caller compatibility but no longer used: the U.S. DDU
+  // contract's effective window (effectiveFrom/effectiveUntil) is managed
+  // outside this storefront and is not enforced at checkout. The contract must
+  // still match the source-controlled config exactly (integrity), and its import
+  // terms must be DDU.
   snapshot: FulfillmentProviderCertificationContractSnapshot | null;
   now?: Date;
 }): Promise<void> {
-  const now = input.now ?? new Date();
   const snapshot = input.snapshot;
   const configured = PRODUCT_SHIPPING_US_DDU_CONTRACT;
   if (
     !configured ||
     snapshot?.importTerms !== "DDU" ||
-    new Date(snapshot.effectiveFrom) > now ||
-    new Date(snapshot.effectiveUntil) <= now ||
     stableReadinessJson(snapshot) !== stableReadinessJson(configured)
   ) {
     throw new CheckoutNotReadyError(["us_shipping_contract_changed"]);

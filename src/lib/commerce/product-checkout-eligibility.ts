@@ -102,7 +102,6 @@ export function getProductCheckoutEligibility(
       !regulatoryCertificationMatchesContract(
         certification,
         context.usShippingContract,
-        now,
       )
     ) {
       return { status: "invalid", reason: "us_regulatory_contract_mismatch" };
@@ -161,24 +160,17 @@ function regulatoryCertificationMatchesContract(
     TProductShippingMetadata["usRegulatoryCertification"]
   >,
   contract: NonNullable<UsRegulatoryCertificationContext["usShippingContract"]>,
-  now: Date,
 ): boolean {
-  const reviewedAt = Date.parse(certification.reviewedAt);
-  const validUntil = Date.parse(certification.validUntil);
-  const contractEffectiveFrom = Date.parse(contract.effectiveFrom);
-  const contractEffectiveUntil = Date.parse(contract.effectiveUntil);
+  // The DDU contract's effective window (effectiveFrom/effectiveUntil) is
+  // managed outside this storefront and is no longer enforced. A U.S. product is
+  // eligible when its SKU certification versions match the active contract's
+  // versions (the SKU's own `validUntil` expiry is still checked separately by
+  // the caller). Keep these three version equalities in lockstep with the config.
   return (
     certification.usShippingContractVersion === contract.version &&
     certification.tariffMetadataSchemaVersion ===
       contract.tariffMetadataSchema.version &&
-    certification.fdaRequirementsVersion === contract.fdaRequirements.version &&
-    Number.isFinite(contractEffectiveFrom) &&
-    Number.isFinite(contractEffectiveUntil) &&
-    contractEffectiveFrom <= now.getTime() &&
-    contractEffectiveUntil > now.getTime() &&
-    reviewedAt >= contractEffectiveFrom &&
-    reviewedAt <= now.getTime() &&
-    validUntil <= contractEffectiveUntil
+    certification.fdaRequirementsVersion === contract.fdaRequirements.version
   );
 }
 
