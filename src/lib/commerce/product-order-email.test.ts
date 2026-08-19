@@ -66,6 +66,44 @@ test("product order confirmation email includes escaped order details", () => {
   `);
 });
 
+test("product order confirmation email carries the accepted terms of sale", () => {
+  runProductOrderEmailScenario(`
+    const base = {
+      currency: "CAD",
+      customerEmail: "client@example.com",
+      customerName: "Client",
+      lineItems: [],
+      orderId: "lh-order-123",
+      shippingAddress: null,
+      totalAmount: 20,
+      fulfillmentMode: "manual_pickup",
+      termsSnapshot: {
+        accepted: true,
+        version: "product-checkout-terms-2026-08-18",
+        text: "I agree to the <Terms> & refund policy shown at checkout.",
+        textHash: "0000000000000000000000000000000000000000000000000000000000000000",
+        presentedAt: "2026-06-15T14:29:00.000Z",
+        acceptedAt: "2026-06-15T18:30:00.000Z",
+        requestEvidence: "checkout_post:00000000-0000-4000-8000-000000000000",
+      },
+    };
+    const html = buildProductOrderConfirmationHtml(base);
+    assert.match(html, /Terms of sale you accepted/);
+    assert.match(html, /I agree to the &lt;Terms&gt; &amp; refund policy/);
+    assert.equal(html.includes("<Terms>"), false);
+    assert.match(html, /Version product-checkout-terms-2026-08-18/);
+    assert.match(html, /Accepted /);
+    assert.match(html, /data-terms-version="product-checkout-terms-2026-08-18"/);
+
+    const variables = getProductOrderTemplateVariables(base);
+    assert.match(String(variables.TERMS_ACCEPTANCE_HTML), /Terms of sale you accepted/);
+
+    // Orders without a captured assent render no terms block.
+    const withoutTerms = buildProductOrderConfirmationHtml({ ...base, termsSnapshot: null });
+    assert.equal(withoutTerms.includes("Terms of sale you accepted"), false);
+  `);
+});
+
 test("configured product templates distinguish held, cleared, and manual orders", () => {
   runProductOrderEmailScenario(`
     const base = {

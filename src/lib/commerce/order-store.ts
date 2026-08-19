@@ -280,6 +280,7 @@ export interface ProductOrderConfirmationEmailRecord {
   manualFulfillmentStatus: string | null;
   cancellationPolicySnapshot: Record<string, unknown> | null;
   usImportDisclosure: CheckoutOrderRow["usImportDisclosureSnapshot"];
+  termsSnapshot: CheckoutOrderRow["termsSnapshot"];
 }
 
 export interface ProductOrderConfirmationEmailFailureInput {
@@ -1792,6 +1793,7 @@ function toProductOrderConfirmationEmailRecord(
     manualFulfillmentStatus: order.manualFulfillmentStatus,
     cancellationPolicySnapshot: order.cancellationPolicySnapshot,
     usImportDisclosure: order.usImportDisclosureSnapshot,
+    termsSnapshot: order.termsSnapshot,
   };
 }
 

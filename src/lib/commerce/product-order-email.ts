@@ -40,6 +40,13 @@ export interface SendProductOrderConfirmationEmailInput {
   taxAmount?: number;
   fulfillmentMode?: "automated_shipping" | "manual_pickup" | "manual_shipping";
   usImportDisclosure?: UsImportDisclosureSnapshot | null;
+  /**
+   * The Terms-of-sale assent the customer accepted at checkout, persisted on the
+   * order. Rendered into the confirmation email so the customer receives a
+   * durable, retainable copy of the accepted terms (Ontario Reg. 17/05, s. 33).
+   * Read defensively — this is the raw stored JSON snapshot.
+   */
+  termsSnapshot?: Record<string, unknown> | null;
 }
 
 export interface SendProductOrderConfirmationEmailForOrderDependencies {
@@ -172,6 +179,7 @@ export function buildProductOrderConfirmationHtml(
     : "";
   const copy = getEmailCopy(input);
   const importDisclosure = getImportDisclosureHtml(input);
+  const termsAcceptance = getTermsAcceptanceHtml(input);
 
   return `
 <!DOCTYPE html>
@@ -213,6 +221,7 @@ export function buildProductOrderConfirmationHtml(
               ${shippingSummary}
               ${importDisclosure}
               <p style="margin:0 0 18px 0;text-align:right;font-size:17px;line-height:1.7;"><strong>Total paid:</strong> ${escapeHtml(formattedTotal)}</p>
+              ${termsAcceptance}
               <div style="margin:28px 0;padding:20px;border-left:4px solid #D4B483;background-color:#F5F1F5;">
                 <p style="margin:0;font-size:14px;line-height:1.7;">${escapeHtml(copy.nextSteps)}</p>
               </div>
@@ -254,6 +263,7 @@ export function getProductOrderTemplateVariables(
     NEXT_STEPS: copy.nextSteps,
     PRICING_SUMMARY_HTML: getShippingSummaryHtml(input),
     IMPORT_DISCLOSURE_HTML: getImportDisclosureHtml(input),
+    TERMS_ACCEPTANCE_HTML: getTermsAcceptanceHtml(input),
     ORDER_ID: escapeHtml(input.orderId),
     SHIPPING_ADDRESS_HTML: input.shippingAddress
       ? getShippingAddressHtml(input.shippingAddress)
@@ -305,6 +315,47 @@ function getImportDisclosureHtml(
   <p style="margin:0;font-size:14px;line-height:1.7;">${escapeHtml(disclosure.text)}</p>
 </div>
   `.trim();
+}
+
+/**
+ * Renders the Terms-of-sale assent the customer accepted at checkout so the
+ * confirmation email doubles as their durable, retainable copy (Ontario
+ * Reg. 17/05, s. 33). The stored snapshot is untyped JSON, so every field is
+ * read defensively and the block is omitted if the accepted text is missing.
+ */
+function getTermsAcceptanceHtml(
+  input: SendProductOrderConfirmationEmailInput,
+): string {
+  const snapshot = input.termsSnapshot;
+  if (!snapshot || snapshot.accepted !== true) return "";
+  const text = typeof snapshot.text === "string" ? snapshot.text : "";
+  if (!text) return "";
+  const version = typeof snapshot.version === "string" ? snapshot.version : "";
+  const acceptedOn =
+    typeof snapshot.acceptedAt === "string"
+      ? formatAcceptedTimestamp(snapshot.acceptedAt)
+      : "";
+  const provenance = [
+    acceptedOn ? `Accepted ${acceptedOn}` : "",
+    version ? `Version ${version}` : "",
+  ].filter(Boolean);
+  return `
+<div style="margin:20px 0;padding:18px;border:1px solid #D4B483;background-color:#F5F1F5;" data-terms-version="${escapeHtml(version)}">
+  <p style="margin:0 0 8px 0;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:#746A72;">Terms of sale you accepted</p>
+  <p style="margin:0${provenance.length ? " 0 8px 0" : ""};font-size:14px;line-height:1.7;">${escapeHtml(text)}</p>
+  ${provenance.length ? `<p style="margin:0;font-size:13px;line-height:1.7;color:#746A72;">${escapeHtml(provenance.join(" · "))}</p>` : ""}
+</div>
+  `.trim();
+}
+
+function formatAcceptedTimestamp(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", {
+    dateStyle: "long",
+    timeStyle: "short",
+    timeZone: "America/Toronto",
+  }).format(date);
 }
 
 function getShippingAddressHtml(

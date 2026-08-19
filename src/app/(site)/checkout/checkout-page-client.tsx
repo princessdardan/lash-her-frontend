@@ -1016,7 +1016,7 @@ function CheckoutContent({
                   <span>
                     {termsRequirement.text}{" "}
                     <a
-                      href="/policies/terms"
+                      href="/policies/terms-and-conditions"
                       target="_blank"
                       rel="noreferrer"
                       className="underline"
