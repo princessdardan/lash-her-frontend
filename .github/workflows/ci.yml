@@ -55,8 +55,8 @@ jobs:
         run: |
           createdb --host=127.0.0.1 --username=postgres lash_her_ci_lineage
           npm run db:migrate
-          migration_timestamp="$(node --print="JSON.parse(require('node:fs').readFileSync('drizzle/meta/_journal.json', 'utf8')).entries.find((entry) => entry.tag === '0034_lying_amphibian').when")"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_lineage --set=ON_ERROR_STOP=1 --set=migration_timestamp="$migration_timestamp" --command="update drizzle.__drizzle_migrations set hash = 'ci-divergent-0034-hash' where created_at = :'migration_timestamp'::bigint"
+          migration_timestamp="$(node -p 'JSON.parse(require("node:fs").readFileSync("drizzle/meta/_journal.json","utf8")).entries.find((e) => e.tag === "0034_lying_amphibian").when')"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_lineage --set=ON_ERROR_STOP=1 --command="update drizzle.__drizzle_migrations set hash = 'ci-divergent-0034-hash' where created_at = ${migration_timestamp}::bigint"
           lineage_output="$RUNNER_TEMP/private-db-lineage-output.txt"
           if npm run db:migrate >"$lineage_output" 2>&1; then
             echo "migration unexpectedly accepted a divergent applied hash"
@@ -472,7 +472,8 @@ jobs:
             )
             and reason_code = 'duplicate_active_provider_certification_scope';
           SQL
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --set=expected_latest="$(node --print="JSON.parse(require('node:fs').readFileSync('drizzle/meta/_journal.json', 'utf8')).entries.at(-1).when")" --tuples-only --command="select case when max(created_at) = :'expected_latest'::bigint then 'latest-migration-ok' else (1/0)::text end from drizzle.__drizzle_migrations"
+          expected_latest="$(node -p 'JSON.parse(require("node:fs").readFileSync("drizzle/meta/_journal.json","utf8")).entries.at(-1).when')"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when max(created_at) = ${expected_latest}::bigint then 'latest-migration-ok' else (1/0)::text end from drizzle.__drizzle_migrations"
         env:
           DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/lash_her_ci_upgrade?sslmode=disable
           PGPASSWORD: postgres
