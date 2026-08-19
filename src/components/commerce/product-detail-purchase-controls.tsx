@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { getProductCheckoutEligibility } from "@/lib/commerce/product-checkout-eligibility";
+import type { ProductCheckoutAvailability } from "@/lib/shipping/config";
 import type { TProduct, TProductVariant } from "@/types";
 import { ProductVariantSelector } from "./product-variant-selector";
 import { useProductCart } from "./product-cart-provider";
@@ -14,6 +16,7 @@ const MAX_QUANTITY = 10;
 
 interface ProductDetailPurchaseControlsProps {
   readonly product: TProduct;
+  readonly checkoutAvailability: ProductCheckoutAvailability;
 }
 
 function clampQuantity(value: number): number {
@@ -28,41 +31,98 @@ function toTrimmedString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function getRequiredOptionNames(product: TProduct, variants: TProductVariant[]): string[] {
+function getRequiredOptionNames(
+  product: TProduct,
+  variants: TProductVariant[],
+): string[] {
   const names = [
-    ...(product.optionGroups?.map((group) => group.name) ?? []),
-    ...variants.flatMap((variant) => variant.options?.map((option) => option.name) ?? []),
+    ...(product.options?.map((group) => group.name) ?? []),
+    ...variants.flatMap(
+      (variant) => variant.options?.map((option) => option.name) ?? [],
+    ),
   ];
 
-  return Array.from(new Set(names.map(toTrimmedString).filter((name): name is string => name !== null)));
+  return Array.from(
+    new Set(
+      names
+        .map(toTrimmedString)
+        .filter((name): name is string => name !== null),
+    ),
+  );
 }
 
-function variantMatchesSelectedOptions(variant: TProductVariant, selectedOptions: Readonly<Record<string, string>>): boolean {
+function variantMatchesSelectedOptions(
+  variant: TProductVariant,
+  selectedOptions: Readonly<Record<string, string>>,
+): boolean {
   return Object.entries(selectedOptions).every(([name, value]) => {
     if (!value) return true;
-    return variant.options?.some((option) => toTrimmedString(option.name) === name && toTrimmedString(option.value) === value);
+    return variant.options?.some(
+      (option) =>
+        toTrimmedString(option.name) === name &&
+        toTrimmedString(option.value) === value,
+    );
   });
 }
 
-export function ProductDetailPurchaseControls({ product }: ProductDetailPurchaseControlsProps): ReactElement {
+export function ProductDetailPurchaseControls({
+  product,
+  checkoutAvailability,
+}: ProductDetailPurchaseControlsProps): ReactElement {
   const router = useRouter();
   const { addItem, openCart } = useProductCart();
-  const variants = useMemo(() => product.variants?.filter((variant) => variant.title) ?? [], [product.variants]);
-  const requiredOptionNames = useMemo(() => getRequiredOptionNames(product, variants), [product, variants]);
+  const variants = useMemo(
+    () => product.variants?.filter((variant) => variant.title) ?? [],
+    [product.variants],
+  );
+  const requiredOptionNames = useMemo(
+    () => getRequiredOptionNames(product, variants),
+    [product, variants],
+  );
   const [selectedVariantId, setSelectedVariantId] = useState("");
-  const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
+  const [selectedOptions, setSelectedOptions] = useState<
+    Record<string, string>
+  >({});
   const [quantity, setQuantity] = useState(MIN_QUANTITY);
 
-  const selectedVariant = variants.find((variant) => variant._key === selectedVariantId);
-  const hasVariants = variants.length > 0;
-  const hasCompleteOptions = requiredOptionNames.every((name) => Boolean(selectedOptions[name]));
-  const selectedVariantMatchesOptions = selectedVariant ? variantMatchesSelectedOptions(selectedVariant, selectedOptions) : false;
-  const hasRequiredVariantSelection = !hasVariants || Boolean(
-    selectedVariant?.isAvailable &&
-    selectedVariantMatchesOptions &&
-    (requiredOptionNames.length === 0 || hasCompleteOptions),
+  const selectedVariant = variants.find(
+    (variant) => variant._key === selectedVariantId,
   );
-  const canPurchase = product.isAvailable && hasRequiredVariantSelection;
+  const checkoutEligibility = getProductCheckoutEligibility(
+    selectedVariant?.shipping ?? product.shipping,
+  );
+  const hasVariants = variants.length > 0;
+  const hasCompleteOptions = requiredOptionNames.every((name) =>
+    Boolean(selectedOptions[name]),
+  );
+  const selectedVariantMatchesOptions = selectedVariant
+    ? variantMatchesSelectedOptions(selectedVariant, selectedOptions)
+    : false;
+  const hasRequiredVariantSelection =
+    !hasVariants ||
+    Boolean(
+      selectedVariant?.isAvailable &&
+      selectedVariantMatchesOptions &&
+      (requiredOptionNames.length === 0 || hasCompleteOptions),
+    );
+  const checkoutModeEnabled =
+    checkoutEligibility.status === "automated"
+      ? checkoutAvailability.automated
+      : checkoutEligibility.status === "manual"
+        ? checkoutAvailability.manual
+        : false;
+  const canPurchase =
+    product.isAvailable &&
+    hasRequiredVariantSelection &&
+    checkoutEligibility.status !== "invalid" &&
+    checkoutModeEnabled;
+  // Distinguish "make a selection" from "checkout is turned off" so an
+  // otherwise-purchasable item doesn't show a misleading prompt.
+  const checkoutDisabledForMode =
+    product.isAvailable &&
+    hasRequiredVariantSelection &&
+    checkoutEligibility.status !== "invalid" &&
+    !checkoutModeEnabled;
   const selectionMessageId = `${product._id}-purchase-selection-message`;
   const quantityLabelId = `${product._id}-quantity-label`;
 
@@ -70,6 +130,9 @@ export function ProductDetailPurchaseControls({ product }: ProductDetailPurchase
     productId: product._id,
     ...(selectedVariant ? { variantId: selectedVariant._key } : {}),
     quantity,
+    ...(checkoutEligibility.status !== "invalid"
+      ? { checkoutMode: checkoutEligibility.status }
+      : {}),
   };
 
   const handleVariantSelect = (variant: TProductVariant) => {
@@ -134,7 +197,9 @@ export function ProductDetailPurchaseControls({ product }: ProductDetailPurchase
       <div className="mt-8 rounded-[24px] border border-lh-line bg-lh-neutral-2/70 p-5 md:p-6">
         <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
           <label className="block md:w-32" htmlFor={`${product._id}-quantity`}>
-            <span id={quantityLabelId} className="eyebrow-label mb-2 block">Quantity</span>
+            <span id={quantityLabelId} className="eyebrow-label mb-2 block">
+              Quantity
+            </span>
             <Input
               id={`${product._id}-quantity`}
               type="number"
@@ -156,10 +221,14 @@ export function ProductDetailPurchaseControls({ product }: ProductDetailPurchase
               aria-describedby={selectionMessageId}
               className={cn(
                 "h-12 rounded-full px-6 font-body text-sm uppercase tracking-[0.12em]",
-                canPurchase ? "bg-lh-primary text-lh-white hover:bg-lh-accent" : "bg-lh-neutral text-lh-muted",
+                canPurchase
+                  ? "bg-lh-primary text-lh-white hover:bg-lh-accent"
+                  : "bg-lh-neutral text-lh-muted",
               )}
             >
-              Add to Cart
+              {checkoutEligibility.status === "manual"
+                ? "Add Pickup Item"
+                : "Add to Cart"}
             </Button>
             <Button
               type="button"
@@ -169,7 +238,9 @@ export function ProductDetailPurchaseControls({ product }: ProductDetailPurchase
               aria-describedby={selectionMessageId}
               className="h-12 rounded-full border-lh-primary/30 px-6 font-body text-sm uppercase tracking-[0.12em] hover:bg-lh-primary-soft hover:text-lh-primary"
             >
-              Buy Now
+              {checkoutEligibility.status === "manual"
+                ? "Arrange Pickup"
+                : "Buy Now"}
             </Button>
           </div>
         </div>
@@ -184,10 +255,15 @@ export function ProductDetailPurchaseControls({ product }: ProductDetailPurchase
           )}
         >
           {canPurchase
-            ? "Ready for secure checkout. Add this selection to the cart or start a single-item checkout."
-            : hasVariants
-              ? "Choose an available product option before adding this item to cart or buying now."
-              : product.availabilityLabel || "This product is currently unavailable."}
+            ? checkoutEligibility.status === "manual"
+              ? "This item requires manual fulfillment. Checkout collects payment for the item; pickup or separately arranged shipping follows confirmation."
+              : "Ready for secure checkout. Add this selection to the cart or start a single-item checkout."
+            : checkoutDisabledForMode
+              ? "Online checkout for this item isn't available right now. Please check back soon."
+              : hasVariants
+                ? "Choose an available product option before adding this item to cart or buying now."
+                : product.availabilityLabel ||
+                  "This product is currently unavailable."}
         </p>
       </div>
     </div>

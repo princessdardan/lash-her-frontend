@@ -1,0 +1,16 @@
+export type ProductShipmentStatus =
+  | "quote_pending"
+  | "quoted"
+  | "quote_unknown"
+  | "payment_pending"
+  | "ready_for_staff"
+  | "purchase_pending"
+  | "label_ready"
+  | "accepted"
+  | "in_transit"
+  | "delivered"
+  | "exception"
+  | "refund_pending"
+  | "voided"
+  | "abandoned"
+  | "manual_review";

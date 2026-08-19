@@ -158,6 +158,41 @@ Verify production-scoped values in Vercel/provider dashboards. Record presence, 
 - [ ] `HELCIM_TRANSACTION_API_TOKEN`
 - [ ] `CHECKOUT_SECRET_ENCRYPTION_KEY`
 - [ ] `HELCIM_WEBHOOK_VERIFIER_TOKEN`
+- [ ] `HELCIM_PRODUCT_PAYMENTS_CONTRACT_JSON` set to the exact owner-certified product-payment contract snapshot. Product checkout is **non-functional** until this is present and matches the active `product` certification (see Phase 3). Without it every transaction classifies as `unknown` and never finalizes (fail-closed).
+
+### Chit Chats Shipping and Product Checkout
+
+All product-shipping/checkout controls default off and fail closed. Product checkout stays inert until these are set and the source-controlled shipping config (`src/lib/shipping/product-shipping-config.ts`) and tax config (`src/lib/commerce/product-tax-policy.ts`) are populated and business-confirmed. Shipping/checkout readiness is now **source-controlled config, not owner-attested DB records** — there are no runtime attestation, duty-assignment, or funding-reservation gates to clear; the former attestation/duty/funding tables were dropped by migrations `0062`–`0066` (see Phase 3). See `.env.local.example` for the annotated source of truth.
+
+Feature admission (keep off until certified — see `docs/chitchats-shipping-policy-decisions.md`):
+
+- [ ] `CHITCHATS_SHIPPING_ENABLED=true`
+- [ ] `CHITCHATS_CHECKOUT_ENABLED=true`
+- [ ] `CHITCHATS_US_SHIPPING_ENABLED` matches the US-shipping launch decision.
+- [ ] `MANUAL_PRODUCT_CHECKOUT_ENABLED` matches the manual-pickup launch decision.
+- [ ] `SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED` matches the supplemental-payments launch decision.
+- [ ] `SHIPPING_POLICY_ENFORCEMENT_MODE=enforce` (off/observe/enforce). `CHITCHATS_CHECKOUT_ENABLED=true` requires `enforce`; readiness treats a non-enforce mode as a blocker.
+- [ ] Source shipping config is populated and business/legal-confirmed in `src/lib/shipping/product-shipping-config.ts`: `PRODUCT_SHIPPING_US_DDU_CONTRACT` (required for `CHITCHATS_US_SHIPPING_ENABLED`) and `PRODUCT_MANUAL_CANCELLATION_POLICY` (required for `MANUAL_PRODUCT_CHECKOUT_ENABLED`) are non-null with confirmed disclosure/policy text, effective window, and schema versions; `PRODUCT_SHIPPING_SERVICE_POLICIES` insurance limits and signature capability are verified against Chit Chats' published per-service coverage. Setting a flag without its populated config leaves the feature blocked by design. There is no runtime attestation, duty assignment, or funding reservation to create. Bump `PRODUCT_SHIPPING_POLICY_VERSION` on any change.
+
+Chit Chats account and provider:
+
+- [ ] `CHITCHATS_ENVIRONMENT=production` (required — the app throws on a production deploy if this is not `production`).
+- [ ] `CHITCHATS_CLIENT_ID` (production account).
+- [ ] `CHITCHATS_ACCESS_TOKEN` (production account).
+- [ ] `CHITCHATS_REGION` matches the account region where shipments enter the network (one of `british_columbia`, `alberta_saskatchewan`, `ontario_manitoba`, `quebec`, `atlantic`).
+- [ ] Optional `CHITCHATS_TRACKED_POSTAGE_TYPES` allowlist only if overriding source defaults.
+
+Secrets and signed-link keys (generate distinct 32+ byte secrets per purpose; never reuse):
+
+- [ ] `CHITCHATS_QUOTE_SIGNING_SECRET`
+- [ ] `CHITCHATS_WORKER_CRON_SECRET` (bearer for the shipping worker/policy crons; the routes also accept the generic `CRON_SECRET`).
+- [ ] `CHECKOUT_PII_ENCRYPTION_KEY` — a **real** `openssl rand -base64 32` value. Do not ship the all-zeros placeholder from `.env.local.example`; validation checks shape only, not entropy. Do not reuse `CHECKOUT_SECRET_ENCRYPTION_KEY` or the booking credential key.
+- [ ] `SHIPPING_DECISION_TOKEN_SECRET`
+- [ ] `ADDRESS_CHANGE_TOKEN_SECRET`
+
+Product tax (destination-based GST/HST; no US tax):
+
+- [ ] The destination-based GST/HST rate table in `src/lib/commerce/product-tax-policy.ts` is business/accountant-confirmed and its `PRODUCT_TAX_POLICY_VERSION` (`product-tax-ca-gst-hst-destination-v1`) matches the rates in force. Tax is now **source-controlled config, not an owner-attested `product_tax_policy_versions` DB row** — that table was dropped by the shipping-teardown migrations (`0062`–`0066`). Change detection between quote and checkout-commit is version-based; checkout still fails closed on an unimplemented version or unknown province. If provincial rates change, bump `PRODUCT_TAX_POLICY_VERSION` in the same commit.
 
 ### Square
 
@@ -181,6 +216,7 @@ Use `docs/private-database-migration-runbook.md` as the detailed source of truth
 - [ ] Verify production DB identity in the provider dashboard: project, branch, database name, and host label.
 - [ ] Verify production backup/PITR availability before any migration.
 - [ ] Review committed migration files in `drizzle/` and confirm expected files are present.
+- [ ] Understand that the shipping-teardown migrations `0062`–`0066` are **irreversible** `DROP TABLE`/`DROP COLUMN` operations on tables/columns holding production rows (attestation, duty-assignment, funding-review, service-policy, tax-policy, manual-policy, and intake-location records; the `product_shipment_jobs` funding columns; and `product_shipments.intake_location_attestation_id`). The retained source config in `src/lib/shipping/product-shipping-config.ts` / `src/lib/commerce/product-tax-policy.ts` supersedes their runtime use. Capture a verified pre-drop snapshot/row-count and confirm no audit/compliance retention obligation before applying in production (see `docs/launch-readiness-checklist.md` → Private Database Migration Readiness).
 - [ ] Confirm staging already ran the same migration set successfully.
 - [ ] Confirm production `DATABASE_URL` host matches `<verified-production-host>` without exposing the full URL.
 - [ ] Apply needed migrations only with the production guard variables.
@@ -375,6 +411,7 @@ Use approved test data only and redact all customer/payment details in evidence.
 ## Phase 10: Monitoring, Rollback, Failure Handling, and Evidence Capture
 
 - [ ] Monitor Vercel runtime logs for `/api/revalidate`, `/api/webhooks/card-transactions`, `/api/webhooks/square`, booking routes, checkout routes, form actions, email retries, and private-data retention cron.
+- [ ] Monitor the new scheduled jobs (Vercel Cron, authorized by `CRON_SECRET`/`CHITCHATS_WORKER_CRON_SECRET`): `/api/cron/chitchats-shipping` (every minute; dormant unless shipping enabled + enforce), `/api/cron/shipping-policy` (every 15 min), and `/api/cron/customer-email-outbox` (every 5 min). A `503` from any of these signals dead-letters/retries/unknown-outcomes needing review.
 - [ ] Monitor provider dashboards for Helcim, Square, Resend, Google OAuth/API, Upstash, Sanity webhook deliveries, and database health.
 - [ ] If Sanity import is wrong but production app is otherwise stable, stop content edits and decide whether to re-import from `./production-pre-cutover-backup.tar.gz` or roll forward with a corrected staging export.
 - [ ] If DB migration fails, stop and follow `docs/private-database-migration-runbook.md`; do not manually edit production schema.

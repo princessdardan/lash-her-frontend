@@ -127,6 +127,43 @@ test("owner search includes the activity history destination", () => {
   assert.equal(activity?.navigation, true);
 });
 
+test("shipping readiness is an owner-only Settings destination", () => {
+  const ownerDestinations = getVisibleAdminDestinations(createActor("owner"));
+  const shippingReadiness = ownerDestinations.find(
+    (destination) => destination.label === "Shipping readiness",
+  );
+
+  assert.deepEqual(shippingReadiness, {
+    activePaths: undefined,
+    description:
+      "Review Chit Chats configuration and attest the physical parcel intake location.",
+    group: "Settings",
+    href: "/admin/shipping-readiness",
+    keywords: [
+      "shipping",
+      "chit chats",
+      "intake location",
+      "attestation",
+      "checkout blockers",
+      "region",
+    ],
+    label: "Shipping readiness",
+    navigation: true,
+  });
+  assert.equal(
+    getVisibleAdminDestinations(createActor("admin")).some(
+      (destination) => destination.label === "Shipping readiness",
+    ),
+    false,
+  );
+  assert.equal(
+    getVisibleAdminDestinations(createActor("employee")).some(
+      (destination) => destination.label === "Shipping readiness",
+    ),
+    false,
+  );
+});
+
 test("curated settings and subsection results use existing deep links", () => {
   const destinations = getVisibleAdminDestinations(createActor("owner"));
 

@@ -38,7 +38,11 @@ interface MobileNavigationProps {
   showCartButton?: boolean;
 }
 
-export function MobileNavigation({ ctaButton, menuItems = [], showCartButton = true }: MobileNavigationProps) {
+export function MobileNavigation({
+  ctaButton,
+  menuItems = [],
+  showCartButton = true,
+}: MobileNavigationProps) {
   const pathname = usePathname();
   const { isActive: isHeaderActive } = useHeaderContext();
   const { items, openCart } = useProductCart();
@@ -73,16 +77,19 @@ export function MobileNavigation({ ctaButton, menuItems = [], showCartButton = t
         <button
           className={cn(
             "p-2 rounded-md transition-colors min-w-11 min-h-11 flex items-center justify-center",
-              isHeaderActive
+            isHeaderActive
               ? "text-lh-shadow hover:bg-lh-neutral"
-              : "text-lh-white hover:bg-white/10"
+              : "text-lh-white hover:bg-white/10",
           )}
           aria-label="Toggle menu"
         >
           <Menu className="h-6 w-6" aria-hidden="true" />
         </button>
       </SheetTrigger>
-      <SheetContent side="right" className="w-[300px] sm:w-[400px] flex flex-col h-full">
+      <SheetContent
+        side="right"
+        className="w-[300px] sm:w-[400px] flex flex-col h-full"
+      >
         <SheetHeader>
           <SheetTitle className="text-lh-primary">
             <Link href="/" onClick={() => setOpen(false)}>
@@ -93,7 +100,10 @@ export function MobileNavigation({ ctaButton, menuItems = [], showCartButton = t
             Mobile navigation links, cart access, and booking shortcut.
           </SheetDescription>
         </SheetHeader>
-        <nav className="flex flex-col gap-2 flex-1 overflow-y-auto py-4" aria-label="Mobile navigation">
+        <nav
+          className="flex flex-col gap-2 flex-1 overflow-y-auto py-4"
+          aria-label="Mobile navigation"
+        >
           {menuItems.map((item) => {
             // Render simple menu link
             if (isMenuLink(item)) {
@@ -107,7 +117,7 @@ export function MobileNavigation({ ctaButton, menuItems = [], showCartButton = t
                     "text-xl font-heading tracking-wide transition-colors py-3 px-4 rounded-md",
                     isActive
                       ? "bg-lh-neutral text-lh-primary"
-                      : "text-lh-shadow hover:bg-lh-neutral hover:text-lh-primary"
+                      : "text-lh-shadow hover:bg-lh-neutral hover:text-lh-primary",
                   )}
                 >
                   {item.title}
@@ -119,9 +129,9 @@ export function MobileNavigation({ ctaButton, menuItems = [], showCartButton = t
             if (isMenuDropdown(item)) {
               const { sections } = item;
               if (!sections || sections.length === 0) return null;
-              
-              const isSubLinkActive = sections.some((section) => 
-                section.links?.some((link) => pathname === link.url)
+
+              const isSubLinkActive = sections.some((section) =>
+                section.links?.some((link) => pathname === link.url),
               );
               const isExpanded = expandedItem === item._key;
 
@@ -137,7 +147,7 @@ export function MobileNavigation({ ctaButton, menuItems = [], showCartButton = t
                         "text-xl font-heading tracking-wide transition-colors py-3 px-4 rounded-md flex-1 text-left",
                         isSubLinkActive
                           ? "bg-lh-neutral text-lh-primary"
-                          : "text-lh-shadow hover:bg-lh-neutral hover:text-lh-primary"
+                          : "text-lh-shadow hover:bg-lh-neutral hover:text-lh-primary",
                       )}
                     >
                       {item.title}
@@ -152,7 +162,7 @@ export function MobileNavigation({ ctaButton, menuItems = [], showCartButton = t
                       <ChevronDown
                         className={cn(
                           "h-5 w-5 transition-transform",
-                          isExpanded && "rotate-180"
+                          isExpanded && "rotate-180",
                         )}
                         aria-hidden="true"
                       />
@@ -161,33 +171,43 @@ export function MobileNavigation({ ctaButton, menuItems = [], showCartButton = t
 
                   {/* Dropdown Content */}
                   {isExpanded && (
-                    <div id={`mobile-submenu-${item._key}`} className="ml-4 mt-1 flex flex-col gap-1" role="region" aria-label={`${item.title} submenu`}>
+                    <div
+                      id={`mobile-submenu-${item._key}`}
+                      className="ml-4 mt-1 flex flex-col gap-1"
+                      role="region"
+                      aria-label={`${item.title} submenu`}
+                    >
                       {sections.map((section, index) => (
-                        <div key={section._key || index} className="mb-2 last:mb-0">
+                        <div
+                          key={section._key || index}
+                          className="mb-2 last:mb-0"
+                        >
                           {section.heading && (
                             <div className="px-4 py-2 text-[11px] font-heading text-lh-light uppercase tracking-[0.28em]">
                               {section.heading}
                             </div>
                           )}
                           <div className="flex flex-col gap-1">
-                            {section.links && section.links.length > 0 && section.links.map((link, linkIndex) => {
-                              const isLinkActive = pathname === link.url;
-                              return (
-                                <Link
-                                  key={link._key || linkIndex}
-                                  href={link.url}
-                                  onClick={() => setOpen(false)}
-                                  className={cn(
-                                    "text-lg font-heading transition-colors py-2.5 px-4 rounded-md block",
-                                    isLinkActive
-                                      ? "bg-lh-neutral text-lh-primary"
-                                      : "text-lh-shadow hover:bg-lh-neutral hover:text-lh-primary"
-                                  )}
-                                >
-                                  {link.name}
-                                </Link>
-                              );
-                            })}
+                            {section.links &&
+                              section.links.length > 0 &&
+                              section.links.map((link, linkIndex) => {
+                                const isLinkActive = pathname === link.url;
+                                return (
+                                  <Link
+                                    key={link._key || linkIndex}
+                                    href={link.url}
+                                    onClick={() => setOpen(false)}
+                                    className={cn(
+                                      "text-lg font-heading transition-colors py-2.5 px-4 rounded-md block",
+                                      isLinkActive
+                                        ? "bg-lh-neutral text-lh-primary"
+                                        : "text-lh-shadow hover:bg-lh-neutral hover:text-lh-primary",
+                                    )}
+                                  >
+                                    {link.name}
+                                  </Link>
+                                );
+                              })}
                           </div>
                         </div>
                       ))}
@@ -205,6 +225,11 @@ export function MobileNavigation({ ctaButton, menuItems = [], showCartButton = t
             <Button
               type="button"
               variant="ghost"
+              aria-label={
+                itemCount > 0
+                  ? `Open cart with ${itemCount} items`
+                  : "Open cart"
+              }
               onClick={() => {
                 openCart();
                 setOpen(false);
@@ -223,7 +248,11 @@ export function MobileNavigation({ ctaButton, menuItems = [], showCartButton = t
               ) : null}
             </Button>
           ) : null}
-          <Button asChild variant="primary" className="w-full font-sans font-bold text-base px-4 py-6">
+          <Button
+            asChild
+            variant="primary"
+            className="w-full font-sans font-bold text-base px-4 py-6"
+          >
             <Link href={ctaButton.href} onClick={() => setOpen(false)}>
               {ctaButton.label}
             </Link>

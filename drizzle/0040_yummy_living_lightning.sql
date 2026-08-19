@@ -1,0 +1,1 @@
+ALTER TABLE "checkout_orders" ADD CONSTRAINT "checkout_orders_commercial_components_nonnegative_check" CHECK ("checkout_orders"."shipping_amount_cents" >= 0 AND "checkout_orders"."tax_amount_cents" >= 0 AND "checkout_orders"."promotion_discount_cents" >= 0 AND "checkout_orders"."manual_discount_cents" >= 0);

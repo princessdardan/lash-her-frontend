@@ -2,11 +2,18 @@ import { describe, it } from "node:test";
 import assert from "node:assert";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { AppRouterContext, type AppRouterInstance } from "next/dist/shared/lib/app-router-context.shared-runtime";
+import {
+  AppRouterContext,
+  type AppRouterInstance,
+} from "next/dist/shared/lib/app-router-context.shared-runtime";
+import { normalizeProductVariantModel } from "@/lib/commerce/product-variant-model";
 import type { TProduct } from "@/types";
+
+const enabledCheckoutAvailability = { automated: true, manual: true } as const;
 
 const router: AppRouterInstance = {
   back: () => {},
+  bfcacheId: "test-bfcache",
   forward: () => {},
   refresh: () => {},
   push: () => {},
@@ -30,6 +37,13 @@ describe("ProductCard", () => {
       currency: "CAD",
       isAvailable: true,
       availabilityLabel: "In Stock",
+      shipping: {
+        fulfillmentMode: "physical",
+        weightGrams: 35,
+        packingUnits: 1,
+        customsDescription: "Synthetic eyelash extensions",
+        countryOfOrigin: "KR",
+      },
       fulfillmentNote: "Ships in 2 days",
       variants: [
         {
@@ -51,8 +65,9 @@ describe("ProductCard", () => {
     const html = renderProductCardToStaticMarkup(
       React.createElement(ProductCard, {
         product,
+        checkoutAvailability: enabledCheckoutAvailability,
         onAdd: () => {},
-      })
+      }),
     );
 
     assert.ok(html.includes("In Stock"), "Missing availability label");
@@ -79,13 +94,112 @@ describe("ProductCard", () => {
       currency: "CAD",
       isAvailable: true,
       availabilityLabel: "In Stock",
+      shipping: {
+        fulfillmentMode: "physical",
+        weightGrams: 35,
+        packingUnits: 1,
+        customsDescription: "Synthetic eyelash extensions",
+        countryOfOrigin: "KR",
+      },
     };
 
-    const html = renderProductCardToStaticMarkup(React.createElement(ProductCard, { product }));
+    const html = renderProductCardToStaticMarkup(
+      React.createElement(ProductCard, {
+        product,
+        checkoutAvailability: enabledCheckoutAvailability,
+      }),
+    );
 
     assert.ok(html.includes("View Details"), "Missing product detail action");
     assert.ok(html.includes("Buy Now"), "Missing buy-now action");
-    assert.ok(html.includes("aria-label=\"Buy now: Test Product\""), "Missing buy-now accessible label");
+    assert.ok(
+      html.includes('aria-label="Buy now: Test Product"'),
+      "Missing buy-now accessible label",
+    );
+  });
+
+  it("renders every derived combination as a concrete catalog dropdown choice", async () => {
+    process.env.NEXT_PUBLIC_SANITY_DATASET = "test-dataset";
+    process.env.NEXT_PUBLIC_SANITY_PROJECT_ID = "test-project";
+
+    const { ProductCard } = await import("./product-card");
+    const product = normalizeProductVariantModel({
+      _id: "prod-grouped",
+      title: "Cashmere Flat Lashes",
+      description: "Test Description",
+      slug: "cashmere-flat-lashes",
+      price: 22,
+      currency: "CAD",
+      isAvailable: true,
+      options: [
+        { _key: "curl", name: "Curl", values: ["CC Curl", "C Curl"] },
+        { _key: "length", name: "Length", values: ["8mm", "9mm"] },
+      ],
+    });
+
+    const html = renderProductCardToStaticMarkup(
+      React.createElement(ProductCard, {
+        product,
+        checkoutAvailability: enabledCheckoutAvailability,
+      }),
+    );
+
+    for (const label of [
+      "CC Curl / 8mm",
+      "CC Curl / 9mm",
+      "C Curl / 8mm",
+      "C Curl / 9mm",
+    ]) {
+      assert.ok(
+        html.includes(label),
+        `Missing grouped dropdown choice: ${label}`,
+      );
+    }
+  });
+
+  it("disables the buy action and shows a checkout-unavailable label when the checkout mode is turned off", async () => {
+    process.env.NEXT_PUBLIC_SANITY_DATASET = "test-dataset";
+    process.env.NEXT_PUBLIC_SANITY_PROJECT_ID = "test-project";
+
+    const { ProductCard } = await import("./product-card");
+
+    const product: TProduct = {
+      _id: "prod-gated",
+      title: "Gated Product",
+      description: "Test Description",
+      slug: "gated-product",
+      price: 100,
+      currency: "CAD",
+      isAvailable: true,
+      availabilityLabel: "In Stock",
+      shipping: {
+        fulfillmentMode: "physical",
+        weightGrams: 35,
+        packingUnits: 1,
+        customsDescription: "Synthetic eyelash extensions",
+        countryOfOrigin: "KR",
+      },
+    };
+
+    const html = renderProductCardToStaticMarkup(
+      React.createElement(ProductCard, {
+        product,
+        checkoutAvailability: { automated: false, manual: false },
+      }),
+    );
+
+    assert.ok(
+      html.includes("Checkout unavailable"),
+      "Missing checkout-unavailable label",
+    );
+    assert.ok(
+      html.includes('disabled=""'),
+      "Buy action should be disabled when checkout is off",
+    );
+    assert.ok(
+      !html.includes('aria-label="Buy now: Gated Product"'),
+      "Buy-now action should not be enabled when checkout is off",
+    );
   });
 });
 

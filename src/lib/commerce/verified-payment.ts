@@ -1,5 +1,6 @@
 import { validateHelcimResponseHash } from "./helcim-hash";
 import type { HelcimPayloadValue } from "./helcim-types";
+import { classifyHelcimTransaction } from "./helcim-contract";
 import { parseCad } from "./money";
 
 interface VerifiedPaymentPersistenceContext {
@@ -9,7 +10,10 @@ interface VerifiedPaymentPersistenceContext {
 }
 
 interface PersistVerifiedPaymentInput {
-  logError?: (message: string, context: VerifiedPaymentPersistenceContext) => void;
+  logError?: (
+    message: string,
+    context: VerifiedPaymentPersistenceContext,
+  ) => void;
   markPaid: (orderId: string, transactionId: string) => Promise<void>;
   orderId: string;
   transactionId: string;
@@ -24,6 +28,7 @@ export interface VerifiablePendingOrder {
 
 export type VerifiedPaymentFailureReason =
   | "invalid_hash"
+  | "unknown_transaction_type"
   | "unapproved_payment"
   | "missing_transaction_id"
   | "wrong_amount"
@@ -46,8 +51,6 @@ interface VerifyHelcimPaymentInput {
   ) => boolean;
 }
 
-const APPROVED_TEXT_VALUES = new Set(["approval", "approved", "completed", "success", "succeeded", "true"]);
-
 export function verifyHelcimPayment({
   data,
   hash,
@@ -68,7 +71,18 @@ export function validateVerifiedPaymentSemantics(
   data: Record<string, HelcimPayloadValue>,
   order: VerifiablePendingOrder,
 ): VerifiedPaymentValidation {
-  if (!hasApprovedPaymentIndicator(data)) {
+  const classification = classifyHelcimTransaction({
+    transactionType:
+      getTextValue(data.type ?? data.transactionType) ?? undefined,
+    status:
+      getTextValue(
+        data.status ?? data.paymentStatus ?? data.transactionStatus,
+      ) ?? undefined,
+  });
+  if (classification.kind !== "purchase") {
+    return { ok: false, reason: "unknown_transaction_type" };
+  }
+  if (!classification.successful) {
     return { ok: false, reason: "unapproved_payment" };
   }
 
@@ -104,7 +118,8 @@ export async function persistVerifiedPayment({
     return true;
   } catch (error) {
     logError("[checkout] Verified payment could not be persisted", {
-      error: error instanceof Error ? error.message : "Unknown persistence error",
+      error:
+        error instanceof Error ? error.message : "Unknown persistence error",
       orderId,
       transactionId,
     });
@@ -112,21 +127,10 @@ export async function persistVerifiedPayment({
   }
 }
 
-function hasApprovedPaymentIndicator(data: Record<string, HelcimPayloadValue>): boolean {
-  if (data.approved === true) {
-    return true;
-  }
-
-  if (typeof data.approved === "string") {
-    return APPROVED_TEXT_VALUES.has(data.approved.trim().toLowerCase());
-  }
-
-  const status = getTextValue(data.status ?? data.paymentStatus ?? data.transactionStatus);
-
-  return status !== null && APPROVED_TEXT_VALUES.has(status.trim().toLowerCase());
-}
-
-function amountMatches(paymentAmount: HelcimPayloadValue | undefined, orderAmount: number): boolean {
+function amountMatches(
+  paymentAmount: HelcimPayloadValue | undefined,
+  orderAmount: number,
+): boolean {
   if (typeof paymentAmount !== "number" && typeof paymentAmount !== "string") {
     return false;
   }
@@ -142,10 +146,16 @@ function amountMatches(paymentAmount: HelcimPayloadValue | undefined, orderAmoun
   }
 }
 
-function currencyMatches(paymentCurrency: HelcimPayloadValue | undefined, orderCurrency: string): boolean {
+function currencyMatches(
+  paymentCurrency: HelcimPayloadValue | undefined,
+  orderCurrency: string,
+): boolean {
   const currency = getTextValue(paymentCurrency);
 
-  return currency !== null && currency.trim().toUpperCase() === orderCurrency.toUpperCase();
+  return (
+    currency !== null &&
+    currency.trim().toUpperCase() === orderCurrency.toUpperCase()
+  );
 }
 
 function invoiceMatches(

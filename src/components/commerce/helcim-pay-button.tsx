@@ -7,10 +7,15 @@ import { Button } from "@/components/ui/button";
 import type { CartInputItem } from "@/lib/commerce/cart";
 import { getHelcimPayEventOutcome } from "@/lib/commerce/helcim-pay-events";
 import type { HelcimPayloadValue } from "@/lib/commerce/helcim-types";
+import type { ProductCheckoutDisclosureInput } from "@/lib/commerce/product-checkout-disclosures";
+import { waitForProductPaymentOperation } from "@/lib/commerce/product-payment-operation";
 
 declare global {
   interface Window {
-    appendHelcimPayIframe?: (checkoutToken: string, allowExit?: boolean) => void;
+    appendHelcimPayIframe?: (
+      checkoutToken: string,
+      allowExit?: boolean,
+    ) => void;
     removeHelcimPayIframe?: () => void;
   }
 }
@@ -22,14 +27,25 @@ interface HelcimPayButtonProps {
   customer: {
     name: string;
     email: string;
+    phone?: string;
   };
-  shippingAddress: ProductShippingAddress;
+  shippingAddress?: ProductShippingAddress;
+  fulfillmentMode: "automated_shipping" | "manual_pickup" | "manual_shipping";
+  disclosures: ProductCheckoutDisclosureInput;
+  shippingQuote?: {
+    token: string;
+    fingerprint: string;
+    rateId: string;
+  };
   onPaid: () => void;
 }
 
-const PAYMENT_INCOMPLETE_ERROR = "Payment was not completed. Please try again or use another payment method.";
-const PAYMENT_SCRIPT_ERROR = "Secure payment could not load. Please retry or contact us for help.";
-const HELCIM_PAY_SCRIPT_SRC = "https://secure.helcim.app/helcim-pay/services/start.js";
+const PAYMENT_INCOMPLETE_ERROR =
+  "Payment was not completed. Please try again or use another payment method.";
+const PAYMENT_SCRIPT_ERROR =
+  "Secure payment could not load. Please retry or contact us for help.";
+const HELCIM_PAY_SCRIPT_SRC =
+  "https://secure.helcim.app/helcim-pay/services/start.js";
 
 export interface ProductShippingAddress {
   line1: string;
@@ -49,7 +65,9 @@ function isHelcimPayloadValue(value: unknown): value is HelcimPayloadValue {
   );
 }
 
-function parsePayloadData(value: unknown): Record<string, HelcimPayloadValue> | undefined {
+function parsePayloadData(
+  value: unknown,
+): Record<string, HelcimPayloadValue> | undefined {
   if (!value || typeof value !== "object") return undefined;
 
   const record = value as Record<string, unknown>;
@@ -68,6 +86,9 @@ export function HelcimPayButton({
   promotionCode,
   customer,
   shippingAddress,
+  fulfillmentMode,
+  disclosures,
+  shippingQuote,
   onPaid,
 }: HelcimPayButtonProps): ReactElement {
   const router = useRouter();
@@ -88,7 +109,8 @@ export function HelcimPayButton({
 
       let parsedData: unknown;
       try {
-        parsedData = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+        parsedData =
+          typeof event.data === "string" ? JSON.parse(event.data) : event.data;
       } catch {
         return;
       }
@@ -127,14 +149,18 @@ export function HelcimPayButton({
           try {
             eventMessage = JSON.parse(eventMessage);
           } catch {
-            setError("Payment could not be verified. Please contact Lash Her before retrying.");
+            setError(
+              "Payment could not be verified. Please contact Lash Her before retrying.",
+            );
             setIsLoading(false);
             return;
           }
         }
 
         if (!eventMessage || typeof eventMessage !== "object") {
-          setError("Payment could not be verified. Please contact Lash Her before retrying.");
+          setError(
+            "Payment could not be verified. Please contact Lash Her before retrying.",
+          );
           setIsLoading(false);
           return;
         }
@@ -144,20 +170,31 @@ export function HelcimPayButton({
         let payloadData: Record<string, HelcimPayloadValue> | undefined;
         let payloadHash: string | undefined;
 
-        if (msgObj.data && typeof msgObj.data === "object" && "hash" in msgObj.data) {
+        if (
+          msgObj.data &&
+          typeof msgObj.data === "object" &&
+          "hash" in msgObj.data
+        ) {
           const innerData = msgObj.data as Record<string, unknown>;
           const innerPayloadData = parsePayloadData(innerData.data);
           if (innerPayloadData) {
             payloadData = innerPayloadData;
-            payloadHash = typeof innerData.hash === "string" ? innerData.hash : undefined;
+            payloadHash =
+              typeof innerData.hash === "string" ? innerData.hash : undefined;
           }
-        } else if (msgObj.data && typeof msgObj.data === "object" && typeof msgObj.hash === "string") {
+        } else if (
+          msgObj.data &&
+          typeof msgObj.data === "object" &&
+          typeof msgObj.hash === "string"
+        ) {
           payloadData = parsePayloadData(msgObj.data);
           payloadHash = msgObj.hash;
         }
 
         if (!payloadData || !payloadHash) {
-          setError("Payment could not be verified. Please contact Lash Her before retrying.");
+          setError(
+            "Payment could not be verified. Please contact Lash Her before retrying.",
+          );
           setIsLoading(false);
           return;
         }
@@ -174,12 +211,17 @@ export function HelcimPayButton({
           });
 
           if (!res.ok) {
-            setError("Payment could not be verified. Please contact Lash Her before retrying.");
+            setError(
+              "Payment could not be verified. Please contact Lash Her before retrying.",
+            );
             setIsLoading(false);
             return;
           }
 
-          const result = await res.json() as { orderId?: string; redirectUrl?: string };
+          const result = (await res.json()) as {
+            orderId?: string;
+            redirectUrl?: string;
+          };
 
           window.removeHelcimPayIframe?.();
 
@@ -188,12 +230,16 @@ export function HelcimPayButton({
           if (result.redirectUrl) {
             router.push(result.redirectUrl);
           } else if (result.orderId) {
-            router.push(`/products/confirmation?order=${encodeURIComponent(result.orderId)}`);
+            router.push(
+              `/products/confirmation?order=${encodeURIComponent(result.orderId)}`,
+            );
           } else {
             router.push("/products/confirmation");
           }
         } catch {
-          setError("Payment could not be verified. Please contact Lash Her before retrying.");
+          setError(
+            "Payment could not be verified. Please contact Lash Her before retrying.",
+          );
           setIsLoading(false);
         }
       }
@@ -214,21 +260,42 @@ export function HelcimPayButton({
         body: JSON.stringify({
           customer,
           items,
-          shippingAddress,
+          fulfillmentMode,
+          disclosures,
+          ...(shippingAddress ? { shippingAddress } : {}),
+          ...(shippingQuote ? { shippingQuote } : {}),
           ...(promotionCode ? { promotionCode } : {}),
         }),
       });
 
       if (!res.ok) {
-        setError("Unable to start checkout. Please review your cart and try again.");
+        setError(
+          "Unable to start checkout. Please review your cart and try again.",
+        );
         setIsLoading(false);
         return;
       }
 
-      const data = await res.json() as { checkoutToken?: string };
+      let data = (await res.json()) as {
+        checkoutToken?: string;
+        operationId?: string;
+        status?: string;
+        error?: string;
+      };
+
+      if (res.status === 202 && data.operationId) {
+        data = await waitForProductPaymentOperation({
+          operationId: data.operationId,
+        });
+      }
 
       if (!data.checkoutToken) {
-        setError("Unable to start checkout. Please review your cart and try again.");
+        setError(
+          data.status === "outcome_unknown"
+            ? "Payment setup requires review. Do not retry this checkout until Lash Her confirms its status."
+            : (data.error ??
+                "Unable to start checkout. Please review your cart and try again."),
+        );
         setIsLoading(false);
         return;
       }
@@ -238,12 +305,16 @@ export function HelcimPayButton({
       if (window.appendHelcimPayIframe) {
         window.appendHelcimPayIframe(data.checkoutToken, true);
       } else {
-        setError("Unable to start checkout. Please review your cart and try again.");
+        setError(
+          "Unable to start checkout. Please review your cart and try again.",
+        );
         setCheckoutToken(null);
         setIsLoading(false);
       }
     } catch {
-      setError("Unable to start checkout. Please review your cart and try again.");
+      setError(
+        "Unable to start checkout. Please review your cart and try again.",
+      );
       setIsLoading(false);
     }
   };
@@ -281,14 +352,18 @@ export function HelcimPayButton({
       />
 
       {error ? (
-        <div className="rounded-[18px] border border-lh-accent/20 bg-lh-accent-soft p-3 text-sm font-bold leading-6 text-lh-accent" role="alert">
+        <div
+          className="rounded-[18px] border border-lh-accent/20 bg-lh-accent-soft p-3 text-sm font-bold leading-6 text-lh-accent"
+          role="alert"
+        >
           {error}
         </div>
       ) : null}
 
       {!isScriptReady && !scriptLoadFailed ? (
         <p className="text-sm font-bold leading-6 text-lh-muted" role="status">
-          Loading secure payment. If this takes more than a moment, refresh or contact us for help.
+          Loading secure payment. If this takes more than a moment, refresh or
+          contact us for help.
         </p>
       ) : null}
 
@@ -296,7 +371,12 @@ export function HelcimPayButton({
         <div className="flex flex-col gap-2 rounded-[18px] border border-lh-line bg-lh-neutral-2/70 p-3 text-sm font-bold leading-6 text-lh-muted sm:flex-row sm:items-center sm:justify-between">
           <span>Payment is temporarily unavailable.</span>
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={handleRetryScript}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleRetryScript}
+            >
               Retry payment
             </Button>
             <Button asChild variant="ghost" size="sm">

@@ -17,6 +17,7 @@ import {
 import { getPrivateDb } from "@/lib/private-db/client";
 
 import {
+  adminStepUpProofs,
   appointmentHolds,
   appointments,
   checkoutOrders,
@@ -32,6 +33,7 @@ import {
   type CheckoutOrderStatus,
   type TrainingEnrollmentSchedulingStatus,
 } from "./schema";
+import { redactShippingPolicyPii } from "./shipping-retention";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const REDACTED_TEXT = "[redacted]";
@@ -143,7 +145,8 @@ const REDACTED_MARKETING_SUBMISSION_PAYLOAD = {
 
 export const PRIVATE_DATA_RETENTION_WINDOWS = {
   checkoutOrders: {
-    redactAfterDays: 395,
+    redactAfterDays: 365,
+    redactAfterTerminalDays: 180,
     softDeleteAfterDays: 2555,
     purgeAfterDeletedDays: 30,
   },
@@ -334,6 +337,8 @@ export type PrivateDataRetentionOperation =
   | "appointmentsRedacted"
   | "checkoutOrdersPurged"
   | "checkoutOrdersRedacted"
+  | "expiredAdminStepUpProofsDeleted"
+  | "shippingPolicyPiiRedacted"
   | "checkoutOrdersSoftDeleted"
   | "checkoutPaymentEventsDeleted"
   | "checkoutPaymentEventsPayloadScrubbed"
@@ -564,6 +569,7 @@ export function getSoftDeletedCheckoutOrderPurgePredicate(
 ) {
   return and(
     isNotNull(checkoutOrders.deletedAt),
+    ne(checkoutOrders.purpose, "product"),
     lte(checkoutOrders.deletedAt, cutoff),
     inArray(
       checkoutOrders.calendarFinalizationStatus,
@@ -640,9 +646,33 @@ export function getTerminalAppointmentRedactionPredicate(cutoff: Date) {
 export async function runPrivateDataRetentionCleanup(
   input: { now?: Date } = {},
 ): Promise<PrivateDataRetentionCleanupSummary> {
-  return createPrivateDataRetentionCleanup(
+  const now = input.now ?? new Date();
+  const deletedStepUpProofs = await getPrivateDb()
+    .delete(adminStepUpProofs)
+    .where(lte(adminStepUpProofs.expiresAt, now))
+    .returning({ id: adminStepUpProofs.id });
+  const shippingCount = await redactShippingPolicyPii(now);
+  const summary = await createPrivateDataRetentionCleanup(
     createDrizzlePrivateDataRetentionRepository(),
-  )(input);
+  )({ now });
+  const shippingOperation: PrivateDataRetentionOperationResult = {
+    count: shippingCount,
+    cutoff: new Date(now.getTime() - 365 * DAY_MS).toISOString(),
+    operation: "shippingPolicyPiiRedacted",
+    table: "shipping_policy_records",
+  };
+  const stepUpOperation: PrivateDataRetentionOperationResult = {
+    count: deletedStepUpProofs.length,
+    cutoff: now.toISOString(),
+    operation: "expiredAdminStepUpProofsDeleted",
+    table: "admin_step_up_proofs",
+  };
+  return {
+    ...summary,
+    operations: [...summary.operations, shippingOperation, stepUpOperation],
+    totalAffected:
+      summary.totalAffected + shippingCount + deletedStepUpProofs.length,
+  };
 }
 
 function createDrizzlePrivateDataRetentionRepository(): PrivateDataRetentionCleanupRepository {

@@ -23,8 +23,35 @@ Do not use this runbook for Sanity content/schema deployment or the legacy Strap
 - Run migrations against staging first, then smoke test before production.
 - Do not use schema push for production. Use committed/generated SQL migration files only.
 - Do not manually edit production database schema to fix a failed migration.
+- Do not edit an applied migration file or its `drizzle.__drizzle_migrations`
+  row. The migration runner verifies the required active lineage plus narrowly
+  scoped, explicitly audited historical entries and hash variants. It stops on
+  any other mismatch, unknown entry, duplicate timestamp, or required gap.
 - Do not paste full connection strings, passwords, or secrets into tickets, docs, PRs, or chat.
 - Do not run migration scripts just to inspect behavior.
+
+The 2026-08-15 staging lineage audit confirmed this deployed history:
+
+- The abandoned `admin-dashboard-app` lineage left exact journal entries at
+  timestamps `1780454716621` and `1780520000000`. Migration `0018_grey_xorn`
+  already reconciles the abandoned schema, so these journal entries are
+  accepted as optional historical provenance and are not applied to clean
+  databases.
+- Staging applied an earlier `0016_bitter_yellow_claw` revision with hash
+  `223b503a8609f1f3451550a6ce9c133b89fe501b206dd147731d36f295fc09f3`.
+  Migration `0024_private_db_lineage_reconciliation` additively creates the two
+  indexes omitted by that revision. The runner accepts this exact historical
+  hash only while the local `0016` file retains its canonical committed hash.
+- Migrations `0032_fat_roulette` through `0035_tricky_photon` are deployed and
+  immutable. Staging's `0034` and `0035` hashes match their committed files.
+  Quarantine and filtered-uniqueness changes must remain in later additive
+  migrations, including `0041`, `0044`, and `0046`; do not move them backward
+  into `0034` or `0035`.
+
+Before any other environment rollout, inventory its complete migration journal.
+If `0034` or `0035` is present, its hash must match the committed file exactly.
+If the environment contains any historical row or hash not explicitly audited
+in `src/lib/private-db/migration-lineage.ts`, stop and reconcile it additively.
 
 ## Commands
 
@@ -70,6 +97,7 @@ Complete this before every staging or production migration:
 - [ ] Repository is on the intended branch and contains the expected migration file.
 - [ ] `git status --short` has been reviewed so unrelated local changes are understood.
 - [ ] Migration file has been reviewed in `drizzle/`.
+- [ ] The target's complete migration journal has been inventoried; any applied `0034`/`0035` row matches the committed hash and any legacy entry is explicitly audited above.
 - [ ] Target environment is identified: staging or production.
 - [ ] `DATABASE_URL` host/project/branch is verified without exposing the secret.
 - [ ] Production backup/PITR status is verified before any production run.

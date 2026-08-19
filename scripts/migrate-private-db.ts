@@ -5,6 +5,11 @@ import { readMigrationFiles, type MigrationMeta } from "drizzle-orm/migrator";
 import { Pool, type PoolClient } from "pg";
 
 import { createPrivateDbPoolConfig } from "../src/lib/private-db/pool-config";
+import {
+  assertAppliedMigrationLineage,
+  buildExpectedPrivateDbMigrationLineage,
+  type AppliedMigrationLineageRow,
+} from "../src/lib/private-db/migration-lineage";
 
 const KNOWN_TARGETS = new Set(["local", "staging", "production"]);
 const MIGRATION_LOCK_NAME = "lash-her:private-db:migrations";
@@ -63,10 +68,13 @@ async function migrateSequentially(
       )
     `);
 
-    const latest = await client.query<{ created_at: string | null }>(
-      "SELECT created_at FROM drizzle.__drizzle_migrations ORDER BY created_at DESC NULLS LAST LIMIT 1",
+    const applied = await client.query<AppliedMigrationLineageRow>(
+      "SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at ASC NULLS FIRST, id ASC",
     );
-    let latestAppliedAt = Number(latest.rows[0]?.created_at ?? 0);
+    let latestAppliedAt = assertAppliedMigrationLineage(
+      buildExpectedPrivateDbMigrationLineage(migrations),
+      applied.rows,
+    );
 
     for (const migration of migrations) {
       if (migration.folderMillis <= latestAppliedAt) {
@@ -124,22 +132,42 @@ function readNamedMigrationFiles(): NamedMigrationMeta[] {
     journal.entries.map((entry) => [entry.when, entry.tag]),
   );
 
-  return readMigrationFiles({ migrationsFolder: MIGRATIONS_FOLDER }).map(
-    (migration) => {
-      const tag = tagsByTimestamp.get(migration.folderMillis);
+  const migrations = readMigrationFiles({
+    migrationsFolder: MIGRATIONS_FOLDER,
+  }).map((migration) => {
+    const tag = tagsByTimestamp.get(migration.folderMillis);
 
-      if (!tag) {
-        throw new Error(
-          `Migration journal is missing a tag for timestamp ${migration.folderMillis}.`,
-        );
-      }
+    if (!tag) {
+      throw new Error(
+        `Migration journal is missing a tag for timestamp ${migration.folderMillis}.`,
+      );
+    }
 
-      return {
-        ...migration,
-        tag,
-      };
-    },
+    return {
+      ...migration,
+      tag,
+    };
+  });
+  const maximumTag = process.env.PRIVATE_DB_MIGRATION_MAX_TAG?.trim();
+
+  if (!maximumTag) {
+    return migrations;
+  }
+
+  if (process.env.CI !== "true") {
+    throw new Error(
+      "PRIVATE_DB_MIGRATION_MAX_TAG is restricted to CI migration-upgrade verification.",
+    );
+  }
+
+  const maximumIndex = migrations.findIndex(
+    (migration) => migration.tag === maximumTag,
   );
+  if (maximumIndex < 0) {
+    throw new Error(`Unknown PRIVATE_DB_MIGRATION_MAX_TAG: ${maximumTag}`);
+  }
+
+  return migrations.slice(0, maximumIndex + 1);
 }
 
 function getCheckoutDatabaseUrl(): string {

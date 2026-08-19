@@ -8,9 +8,13 @@ import {
 import type {
   HelcimCardTransactionResponse,
   HelcimInvoiceRequest,
+  HelcimInvoiceCollectionResponse,
+  HelcimInvoiceDetails,
   HelcimInvoiceResponse,
   HelcimPayInitializeRequest,
   HelcimPayInitializeResponse,
+  HelcimRefundRequest,
+  HelcimRefundResponse,
 } from "./helcim-types";
 
 const HELCIM_API_BASE_URL = "https://api.helcim.com/v2";
@@ -31,7 +35,7 @@ export class HelcimApiError extends Error {
     status: number;
   }) {
     super(
-      `Helcim API request failed with status ${status} for ${path}${responseError ? `: ${responseError}` : ""}`
+      `Helcim API request failed with status ${status} for ${path}${responseError ? `: ${responseError}` : ""}`,
     );
     this.name = "HelcimApiError";
     this.path = path;
@@ -46,6 +50,32 @@ export async function createHelcimInvoice(
   return postHelcim<HelcimInvoiceRequest, HelcimInvoiceResponse>(
     "/invoices/",
     request,
+    getHelcimGeneralApiToken(),
+  );
+}
+
+export async function getHelcimInvoice(
+  invoiceId: number,
+): Promise<HelcimInvoiceDetails> {
+  if (!Number.isSafeInteger(invoiceId) || invoiceId <= 0) {
+    throw new Error("Invalid Helcim invoice ID");
+  }
+  return getHelcim<HelcimInvoiceDetails>(
+    `/invoices/${encodeURIComponent(String(invoiceId))}`,
+    getHelcimGeneralApiToken(),
+  );
+}
+
+export async function getHelcimInvoicesByNumber(
+  invoiceNumber: string,
+): Promise<HelcimInvoiceCollectionResponse> {
+  const normalized = invoiceNumber.trim();
+  if (!normalized || normalized.length > 200) {
+    throw new Error("Invalid Helcim invoice number");
+  }
+  const query = new URLSearchParams({ invoiceNumber: normalized });
+  return getHelcim<HelcimInvoiceCollectionResponse>(
+    `/invoices?${query.toString()}`,
     getHelcimGeneralApiToken(),
   );
 }
@@ -69,7 +99,24 @@ export async function getHelcimCardTransaction(
   );
 }
 
-async function getHelcim<TResponse>(path: string, apiToken: string): Promise<TResponse> {
+export async function refundHelcimPayment(
+  request: HelcimRefundRequest,
+  idempotencyKey: string,
+): Promise<HelcimRefundResponse> {
+  if (!/^[0-9a-f-]{25,36}$/i.test(idempotencyKey))
+    throw new Error("Invalid Helcim refund idempotency key");
+  return postHelcim<HelcimRefundRequest, HelcimRefundResponse>(
+    "/payment/refund",
+    request,
+    getHelcimTransactionApiToken(),
+    { "idempotency-key": idempotencyKey },
+  );
+}
+
+async function getHelcim<TResponse>(
+  path: string,
+  apiToken: string,
+): Promise<TResponse> {
   const response = await fetchHelcim(`${HELCIM_API_BASE_URL}${path}`, {
     method: "GET",
     headers: {
@@ -90,6 +137,7 @@ async function postHelcim<TRequest, TResponse>(
   path: string,
   request: TRequest,
   apiToken: string,
+  extraHeaders: Record<string, string> = {},
 ): Promise<TResponse> {
   const response = await fetchHelcim(`${HELCIM_API_BASE_URL}${path}`, {
     method: "POST",
@@ -97,6 +145,7 @@ async function postHelcim<TRequest, TResponse>(
       "api-token": apiToken,
       accept: "application/json",
       "content-type": "application/json",
+      ...extraHeaders,
     },
     body: JSON.stringify(request),
     cache: "no-store",
@@ -109,7 +158,10 @@ async function postHelcim<TRequest, TResponse>(
   return (await response.json()) as TResponse;
 }
 
-async function fetchHelcim(input: string, init: RequestInit): Promise<Response> {
+async function fetchHelcim(
+  input: string,
+  init: RequestInit,
+): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), HELCIM_API_TIMEOUT_MS);
 
@@ -120,7 +172,10 @@ async function fetchHelcim(input: string, init: RequestInit): Promise<Response> 
   }
 }
 
-async function createHelcimApiError(path: string, response: Response): Promise<HelcimApiError> {
+async function createHelcimApiError(
+  path: string,
+  response: Response,
+): Promise<HelcimApiError> {
   return new HelcimApiError({
     path,
     responseError: summarizeHelcimErrorBody(await response.text()),
@@ -182,5 +237,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function limitHelcimErrorSummary(value: string): string {
   const normalized = value.replace(/\s+/g, " ").trim();
 
-  return normalized.length > 240 ? `${normalized.slice(0, 237)}...` : normalized;
+  return normalized.length > 240
+    ? `${normalized.slice(0, 237)}...`
+    : normalized;
 }

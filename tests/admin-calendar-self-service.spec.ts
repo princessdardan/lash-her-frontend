@@ -55,10 +55,6 @@ test("Google Calendar browser fixture refuses production activation", () => {
 test.describe("employee calendar self-service", () => {
   test.describe.configure({ mode: "serial" });
   test.skip(
-    ({ browserName }) => browserName !== "chromium",
-    "The stateful database workflow runs once in Chromium.",
-  );
-  test.skip(
     !hasTestDatabase,
     "Requires a migrated, isolated TEST_DATABASE_URL.",
   );
@@ -82,7 +78,9 @@ test.describe("employee calendar self-service", () => {
     await expect(
       page.getByRole("heading", { name: "My availability" }),
     ).toBeVisible();
-    await expect(page.getByText("Contractor", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Showing calendars for Calendar E2E Contractor."),
+    ).toBeVisible();
     await expect(page.getByText(/\bEmployees?\b/i)).toHaveCount(0);
 
     const oauthRequest = page.waitForRequest((request) => {

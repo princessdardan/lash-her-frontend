@@ -59,7 +59,18 @@ export function startNodeTelemetry(): NodeSDK | undefined {
 
   const sdk = new NodeSDK({
     traceExporter,
-    instrumentations: [getNodeAutoInstrumentations()],
+    instrumentations: [
+      getNodeAutoInstrumentations({
+        "@opentelemetry/instrumentation-http": {
+          ignoreIncomingRequestHook: (request) =>
+            isSensitiveCustomerBearerRequest(request),
+        },
+        "@opentelemetry/instrumentation-undici": {
+          ignoreRequestHook: (request) =>
+            isSignedChitChatsLabelRequest(request),
+        },
+      }),
+    ],
     resource: resourceFromAttributes({
       [ATTR_SERVICE_NAME]: serviceName,
     }),
@@ -70,6 +81,44 @@ export function startNodeTelemetry(): NodeSDK | undefined {
   setGlobalSdk(sdk);
 
   return sdk;
+}
+
+const SENSITIVE_CUSTOMER_BEARER_PATHS = new Set([
+  "/orders/address-change",
+  "/orders/payment-offer",
+  "/orders/payment-offer/exchange",
+  "/orders/shipping-decision",
+]);
+
+export function isSensitiveCustomerBearerRequest(request: {
+  url?: string;
+}): boolean {
+  try {
+    const url = new URL(request.url ?? "", "https://internal.invalid");
+    return (
+      SENSITIVE_CUSTOMER_BEARER_PATHS.has(url.pathname) &&
+      url.searchParams.has("token")
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function isSignedChitChatsLabelRequest(request: {
+  origin?: string;
+  path?: string;
+}): boolean {
+  try {
+    const url = new URL(request.path ?? "", request.origin);
+    return (
+      url.protocol === "https:" &&
+      (url.hostname === "chitchats.com" ||
+        url.hostname.endsWith(".chitchats.com")) &&
+      url.pathname.startsWith("/labels/shipments/")
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**

@@ -85,7 +85,11 @@ const helperScript = String.raw`
 
 test("private data retention windows define every scheduled table action", () => {
   runRetentionScenario(`
-    assert.equal(PRIVATE_DATA_RETENTION_WINDOWS.checkoutOrders.redactAfterDays, 395);
+    assert.equal(PRIVATE_DATA_RETENTION_WINDOWS.checkoutOrders.redactAfterDays, 365);
+    assert.equal(
+      PRIVATE_DATA_RETENTION_WINDOWS.checkoutOrders.redactAfterTerminalDays,
+      180,
+    );
     assert.equal(PRIVATE_DATA_RETENTION_WINDOWS.checkoutOrders.softDeleteAfterDays, 2555);
     assert.equal(PRIVATE_DATA_RETENTION_WINDOWS.checkoutPaymentEvents.scrubPayloadAfterDays, 90);
     assert.equal(PRIVATE_DATA_RETENTION_WINDOWS.appointmentHolds.deleteAbandonedAfterDays, 30);
@@ -139,7 +143,7 @@ test("private data retention cutoffs subtract configured UTC windows", () => {
     assert.equal(cutoffs.marketingSubmissionNonConsentingDeleteCutoff.toISOString(), "2025-11-29T12:00:00.000Z");
     assert.equal(cutoffs.marketingContactSyncJobRedactCutoff.toISOString(), "2025-04-28T12:00:00.000Z");
     assert.equal(cutoffs.marketingContactSyncJobDeleteCutoff.toISOString(), "2019-05-30T12:00:00.000Z");
-    assert.equal(cutoffs.checkoutOrderRedactCutoff.toISOString(), "2025-04-28T12:00:00.000Z");
+    assert.equal(cutoffs.checkoutOrderRedactCutoff.toISOString(), "2025-05-28T12:00:00.000Z");
     assert.equal(cutoffs.checkoutOrderSoftDeleteCutoff.toISOString(), "2019-05-30T12:00:00.000Z");
   `);
 });
@@ -203,7 +207,8 @@ test("private data retention checkout purge preserves unresolved linked records"
     const normalizedParams = query.params.map((param) => param instanceof Date ? param.toISOString() : param);
 
     assert.equal(query.sql.includes('"checkout_orders"."deleted_at" is not null'), true);
-    assert.equal(query.sql.includes('"checkout_orders"."deleted_at" <= $1'), true);
+    assert.equal(query.sql.includes('"checkout_orders"."purpose" <>'), true);
+    assert.equal(query.sql.includes('"checkout_orders"."deleted_at" <='), true);
     assert.equal(query.sql.includes('"checkout_orders"."calendar_finalization_status" in'), true);
     assert.equal(query.sql.includes('not exists'), true);
     assert.equal(query.sql.includes('from "checkout_payment_events"'), true);
@@ -240,6 +245,7 @@ test("private data retention checkout purge preserves unresolved linked records"
       "2026-04-28T12:00:00.000Z",
       "2024-05-28T12:00:00.000Z",
       "2019-05-30T12:00:00.000Z",
+      "product",
       "not_required",
       "booked",
       "manual_rebooked",

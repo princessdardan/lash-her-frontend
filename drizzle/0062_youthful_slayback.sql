@@ -1,0 +1,5 @@
+ALTER TABLE "checkout_orders" DROP CONSTRAINT "checkout_orders_cancellation_policy_version_manual_fulfillment_policy_versions_version_fk";
+--> statement-breakpoint
+ALTER TABLE "product_shipment_jobs" DROP CONSTRAINT "product_shipment_jobs_funding_attestation_id_shipping_funding_reviews_id_fk";
+--> statement-breakpoint
+ALTER TABLE "product_shipments" DROP CONSTRAINT "product_shipments_intake_location_attestation_id_chitchats_intake_location_attestations_id_fk";

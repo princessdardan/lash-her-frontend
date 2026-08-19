@@ -1,12 +1,24 @@
+import { randomUUID } from "node:crypto";
+
 import { NextResponse, type NextRequest } from "next/server";
 
 import { log } from "@/lib/logging/logger";
 import {
   buildValidatedCart,
   type CartInputItem,
-  type CatalogProduct,
   type ValidatedCart,
 } from "@/lib/commerce/cart";
+import { toCheckoutCatalogProduct } from "@/lib/commerce/product-catalog";
+import type { UsImportTerms } from "@/lib/commerce/product-checkout-disclosures";
+import { loadManualProductCheckoutPolicy } from "@/lib/commerce/product-manual-checkout-config";
+import {
+  getProductCheckoutTermsRequirement,
+  type ProductCheckoutTermsRequirement,
+} from "@/lib/commerce/product-checkout-terms";
+import {
+  getShippedRefundPolicyRequirement,
+  type ShippedRefundPolicyRequirement,
+} from "@/lib/commerce/product-shipped-refund-policy";
 import {
   CHECKOUT_CUSTOMER_NAME_MAX_LENGTH,
   CHECKOUT_SHIPPING_LINE_MAX_LENGTH,
@@ -19,13 +31,18 @@ import {
 import { parsePromotionCodeInput } from "@/lib/commerce/discounts";
 import type { HelcimGateway } from "@/lib/commerce/helcim-gateway";
 import { createPaymentMockStore } from "@/lib/payment-mocks/in-memory-store";
+import { ShippingQuoteConflictError } from "@/lib/shipping/errors";
+import { getTrustedClientIp } from "@/lib/security/trusted-client-ip";
+import { readBoundedJsonBody } from "@/lib/security/bounded-json-body";
 import type { TProduct, TPromotionCode } from "@/types";
 
 const checkoutPaymentMockStore = createPaymentMockStore();
+const CHECKOUT_BODY_MAX_BYTES = 64 * 1024;
 
 interface CheckoutCustomerInput {
   name: string;
   email: string;
+  phone?: string;
 }
 
 interface CheckoutShippingAddressInput {
@@ -35,18 +52,37 @@ interface CheckoutShippingAddressInput {
   province: string;
   postalCode: string;
   country: string;
+  countryCode?: "CA" | "US";
+  phone?: string;
 }
 
 interface CheckoutRequestBody {
   customer: CheckoutCustomerInput;
   items: CartInputItem[];
-  shippingAddress: CheckoutShippingAddressInput;
+  shippingAddress?: CheckoutShippingAddressInput;
+  fulfillmentMode: "automated_shipping" | "manual_pickup" | "manual_shipping";
+  disclosures: {
+    cancellationPolicyAccepted?: boolean;
+    cancellationPolicyVersion?: string;
+    cancellationPolicyTextHash?: string;
+    termsAccepted?: boolean;
+    termsVersion?: string;
+    termsTextHash?: string;
+    usImportTerms?: UsImportTerms;
+    usImportDisclosureVersion?: string;
+    usImportDisclosureText?: string;
+  };
   promotionCode?: string;
+  shippingQuote?: {
+    token: string;
+    fingerprint: string;
+    rateId: string;
+  };
 }
 
-interface CheckoutResponseBody {
-  checkoutToken: string;
-}
+type CheckoutResponseBody =
+  | { checkoutToken: string }
+  | { operationId: string; status: "queued" };
 
 interface CheckoutErrorBody {
   error: string;
@@ -56,9 +92,6 @@ interface CheckoutErrorLog {
   cause?: CheckoutErrorLogCause;
   error: string;
   errorName?: string;
-  missingFields?: string;
-  provider?: "helcim";
-  providerEndpoint?: CheckoutProviderEndpoint;
 }
 
 interface CheckoutErrorLogCause {
@@ -74,83 +107,122 @@ interface CheckoutErrorLogCause {
 interface CheckoutPostHandlerDependencies {
   getProductsByIds: (ids: string[]) => Promise<TProduct[]>;
   getPromotionCode: (code: string) => Promise<TPromotionCode | null>;
-  createHelcimInvoice: (
-    input: CheckoutInvoiceInput,
-  ) => Promise<CheckoutInvoice>;
-  initializeHelcimPay: (
-    input: CheckoutPaySessionInput,
-  ) => Promise<CheckoutPaySession>;
-  createPendingOrder: (input: CheckoutPendingOrderInput) => Promise<unknown>;
+  shippingEnabled?: boolean;
+  validateShippingSelection?: (input: {
+    request: CheckoutRequestBody;
+    products: TProduct[];
+    promotionCode: TPromotionCode | null;
+  }) => Promise<string | ValidatedShippingSelection>;
+  createInitializingOrder?: (input: {
+    customerName: string;
+    customerEmail: string;
+    cart: ValidatedCart;
+    shippingAddress: CheckoutShippingAddressInput;
+    shippingQuoteToken: string;
+    shippingQuoteFingerprint: string;
+    shippingRateId: string;
+    refundOriginIp: string;
+    termsAssent: ProductCheckoutTermsAssent;
+    refundPolicy: ProductRefundPolicyAssent;
+    usImportDisclosure?: {
+      terms: UsImportTerms;
+      version: string;
+      text: string;
+      presentedAt: Date;
+    };
+  }) => Promise<{
+    orderId: string;
+    primaryObligationId: string;
+    shippingAmountCents: number;
+    totalAmountCents: number;
+    shippingRateTitle: string;
+  }>;
+  createInitializingManualOrder?: (input: {
+    customerName: string;
+    customerEmail: string;
+    customerPhone?: string;
+    cart: ValidatedCart;
+    fulfillmentMode: "manual_pickup";
+    cancellationPolicy: {
+      accepted: true;
+      version: string;
+      textHash: string;
+      presentedAt: Date;
+      requestEvidence: string;
+    };
+    termsAssent: ProductCheckoutTermsAssent;
+    refundOriginIp: string;
+  }) => Promise<{
+    orderId: string;
+    primaryObligationId: string;
+    shippingAmountCents: number;
+    totalAmountCents: number;
+    shippingRateTitle: string;
+  }>;
+  finalizeInitializingOrder?: (input: {
+    orderId: string;
+    checkoutToken: string;
+    secretToken: string;
+    helcimInvoiceId: number;
+    helcimInvoiceNumber: string;
+  }) => Promise<void>;
+  markInitializationFailed?: (orderId: string, error: string) => Promise<void>;
+  loadManualCheckoutPolicy?: typeof loadManualProductCheckoutPolicy;
+  loadTermsRequirement?: () => ProductCheckoutTermsRequirement;
+  loadShippedRefundPolicyRequirement?: () => ShippedRefundPolicyRequirement;
 }
+
+interface ProductCheckoutTermsAssent {
+  accepted: true;
+  version: string;
+  textHash: string;
+  presentedAt: Date;
+  requestEvidence: string;
+}
+
+type ProductRefundPolicyAssent = ProductCheckoutTermsAssent;
 
 type CheckoutInitializationStage =
   | "prepare_checkout"
   | "load_checkout_inputs"
-  | "create_helcim_invoice"
-  | "initialize_helcim_pay"
-  | "persist_order";
-type CheckoutProviderEndpoint = "invoice" | "helcim_pay";
+  | "reserve_order";
 
-interface CheckoutInvoiceInput {
-  currency: "CAD";
-  type: "INVOICE";
-  status: "DUE";
-  notes: string;
-  lineItems: Array<{
-    sku: string;
-    description: string;
-    quantity: number;
-    price: number;
-    discountCode?: string;
-  }>;
-}
-
-interface CheckoutInvoice {
-  invoiceId: number;
-  invoiceNumber: string;
-}
-
-interface CheckoutPaySessionInput {
-  paymentType: "purchase";
-  amount: number;
-  currency: "CAD";
-  invoiceNumber: string;
-}
-
-interface CheckoutPaySession {
-  checkoutToken: string;
-  secretToken: string;
-}
-
-interface CheckoutPendingOrderInput {
-  customerName: string;
-  customerEmail: string;
-  checkoutToken: string;
-  secretToken: string;
-  helcimInvoiceId: number;
-  helcimInvoiceNumber: string;
-  cart: ValidatedCart;
-  shippingAddress: CheckoutShippingAddressInput;
+interface ValidatedShippingSelection {
+  fingerprint: string;
+  usImportTerms?: UsImportTerms;
+  usImportDisclosureVersion?: string;
+  usImportDisclosureText?: string;
 }
 
 export function createCheckoutPostHandler({
   getProductsByIds,
   getPromotionCode,
-  createHelcimInvoice,
-  initializeHelcimPay,
-  createPendingOrder,
+  shippingEnabled,
+  validateShippingSelection,
+  createInitializingOrder,
+  createInitializingManualOrder,
+  finalizeInitializingOrder,
+  markInitializationFailed,
+  loadManualCheckoutPolicy = loadManualProductCheckoutPolicy,
+  loadTermsRequirement = getProductCheckoutTermsRequirement,
+  loadShippedRefundPolicyRequirement = getShippedRefundPolicyRequirement,
 }: CheckoutPostHandlerDependencies): (req: NextRequest) => Promise<Response> {
   return async function checkoutPostHandler(
     req: NextRequest,
   ): Promise<Response> {
-    let body: unknown;
     let stage: CheckoutInitializationStage = "prepare_checkout";
+    let initializingOrderId: string | null = null;
 
-    try {
-      body = await req.json();
-    } catch {
-      return invalidCheckoutRequest();
+    const parsedBody = await readBoundedJsonBody(req, CHECKOUT_BODY_MAX_BYTES);
+    if (!parsedBody.ok) {
+      return parsedBody.reason === "too_large"
+        ? NextResponse.json(
+            { error: "Checkout request body is too large" },
+            { status: 413 },
+          )
+        : invalidCheckoutRequest();
     }
+    const body = parsedBody.value;
 
     const checkoutRequest = parseCheckoutRequest(body);
 
@@ -170,7 +242,7 @@ export function createCheckoutPostHandler({
           : Promise.resolve(null),
       ]);
       stage = "prepare_checkout";
-      const catalogProducts = products.map(toCatalogProduct);
+      const catalogProducts = products.map(toCheckoutCatalogProduct);
       const cart = buildValidatedCart(checkoutRequest.items, catalogProducts, {
         promotionCode,
       });
@@ -182,103 +254,406 @@ export function createCheckoutPostHandler({
         return invalidPromotionCode();
       }
 
-      const invoiceLineItems = cart.lineItems.map(
-        ({ sku, description, quantity, price }) => ({
-          sku,
-          description,
-          quantity,
-          price,
-        }),
-      );
-
-      if (cart.promotionCode && cart.promotionDiscountAmount) {
-        invoiceLineItems.push({
-          sku: cart.promotionCode,
-          description: `Promotion code ${cart.promotionCode}`,
-          quantity: 1,
-          price: -cart.promotionDiscountAmount,
-        });
+      const shippingWorkflowConfigured = dependenciesProvideShippingWorkflow({
+        validateShippingSelection,
+        createInitializingOrder,
+        finalizeInitializingOrder,
+      });
+      const isManualCheckout = cart.checkoutMode === "manual";
+      if (
+        isManualCheckout &&
+        checkoutRequest.fulfillmentMode === "automated_shipping"
+      ) {
+        return invalidFulfillmentMode();
+      }
+      if (
+        isManualCheckout &&
+        checkoutRequest.fulfillmentMode !== "manual_pickup"
+      ) {
+        return NextResponse.json<CheckoutErrorBody>(
+          {
+            error:
+              "Manual products start with free studio pickup; optional shipping is arranged after payment",
+          },
+          { status: 409 },
+        );
+      }
+      if (
+        !isManualCheckout &&
+        checkoutRequest.fulfillmentMode !== "automated_shipping"
+      ) {
+        return invalidFulfillmentMode();
       }
 
-      stage = "create_helcim_invoice";
-      const invoice = validateCheckoutInvoice(
-        await createHelcimInvoice({
-          currency: "CAD",
-          type: "INVOICE",
-          status: "DUE",
-          notes: "Lash Her website checkout",
-          lineItems: invoiceLineItems,
-        }),
+      const manualPolicy = isManualCheckout
+        ? await loadManualCheckoutPolicy()
+        : null;
+      if (isManualCheckout) {
+        if (
+          !manualPolicy?.enabled ||
+          !manualPolicy.cancellationPolicyVersion ||
+          !manualPolicy.cancellationPolicyTextHash ||
+          checkoutRequest.disclosures.cancellationPolicyAccepted !== true ||
+          checkoutRequest.disclosures.cancellationPolicyVersion !==
+            manualPolicy.cancellationPolicyVersion ||
+          checkoutRequest.disclosures.cancellationPolicyTextHash !==
+            manualPolicy.cancellationPolicyTextHash ||
+          !createInitializingManualOrder
+        ) {
+          return NextResponse.json<CheckoutErrorBody>(
+            { error: "Manual product checkout is temporarily unavailable" },
+            { status: 503 },
+          );
+        }
+        if (checkoutRequest.shippingQuote) return invalidFulfillmentMode();
+      }
+
+      if (!isManualCheckout && shippingWorkflowConfigured && !shippingEnabled) {
+        return NextResponse.json<CheckoutErrorBody>(
+          { error: "Product checkout is temporarily unavailable" },
+          { status: 503 },
+        );
+      }
+      if (
+        !isManualCheckout &&
+        shippingWorkflowConfigured &&
+        (!checkoutRequest.shippingQuote || !checkoutRequest.shippingAddress)
+      ) {
+        return NextResponse.json<CheckoutErrorBody>(
+          { error: "Select a current shipping rate" },
+          { status: 409 },
+        );
+      }
+      if (!isManualCheckout && checkoutRequest.shippingAddress) {
+        const isUs =
+          getShippingCountryCode(checkoutRequest.shippingAddress) === "US";
+        const disclosure = checkoutRequest.disclosures;
+        const hasCompleteUsDisclosure = Boolean(
+          disclosure.usImportTerms === "DDU" &&
+          disclosure.usImportDisclosureVersion?.trim() &&
+          disclosure.usImportDisclosureText?.trim(),
+        );
+        if (
+          (isUs && !hasCompleteUsDisclosure) ||
+          (!isUs &&
+            (disclosure.usImportTerms ||
+              disclosure.usImportDisclosureVersion ||
+              disclosure.usImportDisclosureText))
+        ) {
+          return NextResponse.json<CheckoutErrorBody>(
+            { error: "Required import-cost disclosure is missing" },
+            { status: 409 },
+          );
+        }
+      }
+
+      // Ontario Reg. 17/05 (Internet agreements): the customer must expressly
+      // accept the current Terms of sale at checkout, and the accepted version +
+      // text hash are recorded on the order for provability. Required for every
+      // product checkout path (manual pickup and automated shipping alike).
+      const termsRequirement = loadTermsRequirement();
+      if (
+        checkoutRequest.disclosures.termsAccepted !== true ||
+        checkoutRequest.disclosures.termsVersion !== termsRequirement.version ||
+        checkoutRequest.disclosures.termsTextHash !== termsRequirement.textHash
+      ) {
+        return NextResponse.json<CheckoutErrorBody>(
+          {
+            error:
+              "You must accept the current Terms and Conditions to complete checkout",
+          },
+          { status: 409 },
+        );
+      }
+      const checkoutRequestEvidence = `checkout_post:${randomUUID()}`;
+      const termsAssent = {
+        accepted: true as const,
+        version: termsRequirement.version,
+        textHash: termsRequirement.textHash,
+        presentedAt: new Date(),
+        requestEvidence: checkoutRequestEvidence,
+      };
+
+      // Shipped (automated_shipping) orders present a versioned refund/cancellation
+      // policy at checkout, the counterpart to the manual-pickup cancellation
+      // policy validated above. Both reuse the `cancellationPolicy*` disclosure
+      // fields — the policy shown depends on the fulfillment mode — so every
+      // product checkout path records a provable, current refund-policy assent.
+      let shippedRefundPolicyAssent: ProductRefundPolicyAssent | null = null;
+      if (!isManualCheckout) {
+        const refundPolicyRequirement = loadShippedRefundPolicyRequirement();
+        if (
+          checkoutRequest.disclosures.cancellationPolicyAccepted !== true ||
+          checkoutRequest.disclosures.cancellationPolicyVersion !==
+            refundPolicyRequirement.version ||
+          checkoutRequest.disclosures.cancellationPolicyTextHash !==
+            refundPolicyRequirement.textHash
+        ) {
+          return NextResponse.json<CheckoutErrorBody>(
+            {
+              error:
+                "You must accept the current refund policy to complete checkout",
+            },
+            { status: 409 },
+          );
+        }
+        shippedRefundPolicyAssent = {
+          accepted: true as const,
+          version: refundPolicyRequirement.version,
+          textHash: refundPolicyRequirement.textHash,
+          presentedAt: new Date(),
+          requestEvidence: checkoutRequestEvidence,
+        };
+      }
+
+      let initializingOrder: Awaited<
+        ReturnType<NonNullable<typeof createInitializingOrder>>
+      > | null = null;
+      if (isManualCheckout && createInitializingManualOrder) {
+        stage = "reserve_order";
+        const refundOriginIp = getTrustedClientIp(req.headers);
+        if (!refundOriginIp && process.env.VERCEL_ENV === "production") {
+          return NextResponse.json<CheckoutErrorBody>(
+            { error: "Checkout is temporarily unavailable" },
+            { status: 503 },
+          );
+        }
+        const manualOrder = await createInitializingManualOrder({
+          customerName: checkoutRequest.customer.name,
+          customerEmail: checkoutRequest.customer.email,
+          ...(checkoutRequest.customer.phone
+            ? { customerPhone: checkoutRequest.customer.phone }
+            : {}),
+          cart,
+          fulfillmentMode: "manual_pickup",
+          cancellationPolicy: {
+            accepted: true,
+            version: manualPolicy!.cancellationPolicyVersion!,
+            textHash: manualPolicy!.cancellationPolicyTextHash!,
+            presentedAt: new Date(),
+            requestEvidence: checkoutRequestEvidence,
+          },
+          termsAssent,
+          refundOriginIp: refundOriginIp ?? "127.0.0.1",
+        });
+        initializingOrder = manualOrder;
+        initializingOrderId = manualOrder.orderId;
+      } else if (
+        shippingEnabled &&
+        validateShippingSelection &&
+        createInitializingOrder &&
+        finalizeInitializingOrder &&
+        checkoutRequest.shippingQuote
+      ) {
+        const validatedSelection = normalizeValidatedShippingSelection(
+          await validateShippingSelection({
+            request: checkoutRequest,
+            products,
+            promotionCode,
+          }),
+        );
+        const currentFingerprint = validatedSelection.fingerprint;
+        if (currentFingerprint !== checkoutRequest.shippingQuote.fingerprint) {
+          return NextResponse.json<CheckoutErrorBody>(
+            { error: "Shipping quote changed" },
+            { status: 409 },
+          );
+        }
+        if (
+          getShippingCountryCode(checkoutRequest.shippingAddress!) === "US" &&
+          !shippingDisclosureMatchesRequest(
+            validatedSelection,
+            checkoutRequest.disclosures,
+          )
+        ) {
+          return NextResponse.json<CheckoutErrorBody>(
+            { error: "Required import-cost disclosure changed" },
+            { status: 409 },
+          );
+        }
+        stage = "reserve_order";
+        // Non-manual carts always pass through the refund-policy validation
+        // above, so the assent is present here; assert it explicitly rather than
+        // relying on a non-local invariant via `!`.
+        if (!shippedRefundPolicyAssent) {
+          throw new Error("Shipped refund-policy assent was not captured");
+        }
+        const refundOriginIp = getTrustedClientIp(req.headers);
+        if (!refundOriginIp && process.env.VERCEL_ENV === "production") {
+          return NextResponse.json<CheckoutErrorBody>(
+            { error: "Checkout is temporarily unavailable" },
+            { status: 503 },
+          );
+        }
+        initializingOrder = await createInitializingOrder({
+          customerName: checkoutRequest.customer.name,
+          customerEmail: checkoutRequest.customer.email,
+          cart,
+          shippingAddress: normalizeShippingAddress(
+            checkoutRequest.shippingAddress!,
+            checkoutRequest.customer.phone,
+          ),
+          shippingQuoteToken: checkoutRequest.shippingQuote.token,
+          shippingQuoteFingerprint: currentFingerprint,
+          shippingRateId: checkoutRequest.shippingQuote.rateId,
+          refundOriginIp: refundOriginIp ?? "127.0.0.1",
+          termsAssent,
+          refundPolicy: shippedRefundPolicyAssent,
+          ...(validatedSelection.usImportTerms &&
+          validatedSelection.usImportDisclosureVersion &&
+          validatedSelection.usImportDisclosureText
+            ? {
+                usImportDisclosure: {
+                  terms: validatedSelection.usImportTerms,
+                  version: validatedSelection.usImportDisclosureVersion,
+                  text: validatedSelection.usImportDisclosureText,
+                  presentedAt: new Date(),
+                },
+              }
+            : {}),
+        });
+        initializingOrderId = initializingOrder.orderId;
+      }
+
+      if (initializingOrder) {
+        if (!("primaryObligationId" in initializingOrder)) {
+          throw new Error("Durable payment operation was not reserved");
+        }
+        return NextResponse.json<CheckoutResponseBody>(
+          {
+            operationId: initializingOrder.primaryObligationId,
+            status: "queued",
+          },
+          { status: 202 },
+        );
+      }
+
+      return NextResponse.json<CheckoutErrorBody>(
+        { error: "Durable product payment initialization is unavailable" },
+        { status: 503 },
       );
-
-      stage = "initialize_helcim_pay";
-      const helcimPaySession = validateCheckoutPaySession(
-        await initializeHelcimPay({
-          paymentType: "purchase",
-          amount: cart.amount,
-          currency: "CAD",
-          invoiceNumber: invoice.invoiceNumber,
-        }),
-      );
-
-      stage = "persist_order";
-      await createPendingOrder({
-        customerName: checkoutRequest.customer.name,
-        customerEmail: checkoutRequest.customer.email,
-        checkoutToken: helcimPaySession.checkoutToken,
-        secretToken: helcimPaySession.secretToken,
-        helcimInvoiceId: invoice.invoiceId,
-        helcimInvoiceNumber: invoice.invoiceNumber,
-        cart,
-        shippingAddress: checkoutRequest.shippingAddress,
-      });
-
-      return NextResponse.json<CheckoutResponseBody>({
-        checkoutToken: helcimPaySession.checkoutToken,
-      });
     } catch (error) {
+      if (initializingOrderId && markInitializationFailed) {
+        await markInitializationFailed(
+          initializingOrderId,
+          error instanceof Error
+            ? error.message
+            : "Unknown initialization error",
+        ).catch(() => undefined);
+      }
       log("error", "[checkout] Unable to initialize checkout", {
         stage,
         ...summarizeCheckoutError(error),
       });
 
       return NextResponse.json<CheckoutErrorBody>(
-        { error: "Unable to start checkout" },
-        { status: getCheckoutFailureStatus(stage) },
+        {
+          error:
+            error instanceof ShippingQuoteConflictError
+              ? error.message
+              : "Unable to start checkout",
+        },
+        {
+          status:
+            error instanceof ShippingQuoteConflictError
+              ? 409
+              : getCheckoutFailureStatus(stage),
+        },
       );
     }
   };
 }
 
-class CheckoutProviderResponseError extends Error {
-  readonly missingFields: string;
-  readonly provider = "helcim";
-  readonly providerEndpoint: CheckoutProviderEndpoint;
-
-  constructor(
-    providerEndpoint: CheckoutProviderEndpoint,
-    missingFields: string[],
-  ) {
-    super("Checkout provider response missing required fields");
-    this.name = "CheckoutProviderResponseError";
-    this.providerEndpoint = providerEndpoint;
-    this.missingFields = missingFields.join(",");
-  }
-}
-
 export async function POST(req: NextRequest): Promise<Response> {
-  const [{ loaders }, gateway, { createPendingOrder }] = await Promise.all([
+  const [{ loaders }, orderStore, shippingConfig] = await Promise.all([
     import("@/data/loaders"),
-    resolveCheckoutHelcimGatewayForRequest(req),
     import("@/lib/commerce/order-store"),
+    import("@/lib/shipping/config"),
   ]);
 
   return createCheckoutPostHandler({
     getProductsByIds: loaders.getProductsByIds,
     getPromotionCode: loaders.getPromotionCode,
-    createHelcimInvoice: gateway.createInvoice,
-    initializeHelcimPay: gateway.initializePay,
-    createPendingOrder,
+    shippingEnabled: shippingConfig.isChitChatsCheckoutEnabled(),
+    validateShippingSelection: async ({ request, products, promotionCode }) => {
+      const [
+        { listEnabledPackageProfiles },
+        { prepareShippingQuote },
+        { getChitChatsConfig },
+        { assertCheckoutReadiness },
+        { bindShippingFingerprintToContext },
+      ] = await Promise.all([
+        import("@/lib/shipping/shipment-store"),
+        import("@/lib/shipping/prepare-quote"),
+        import("@/lib/shipping/config"),
+        import("@/lib/shipping/readiness"),
+        import("@/lib/shipping/quote-token"),
+      ]);
+      if (!request.customer.phone)
+        throw new Error("Customer phone is required for shipping");
+      if (!request.shippingAddress) {
+        throw new ShippingQuoteConflictError("Shipping address is required");
+      }
+      const countryCode = getShippingCountryCode(request.shippingAddress);
+      const readiness = await assertCheckoutReadiness({
+        destinationCountryCode: countryCode,
+      }).catch(() => {
+        throw new ShippingQuoteConflictError(
+          "Shipping checkout is not operationally ready",
+        );
+      });
+      if (!readiness.quoteContext) {
+        throw new ShippingQuoteConflictError(
+          "Shipping quote context is unavailable",
+        );
+      }
+      const contract = readiness.quoteContext.usShippingContract;
+      if (countryCode === "US" && contract?.importTerms !== "DDU") {
+        throw new ShippingQuoteConflictError(
+          "Certified U.S. DDU shipping terms are unavailable",
+        );
+      }
+      const usImportDisclosure =
+        countryCode === "US" && contract
+          ? {
+              usImportTerms: "DDU" as const,
+              usImportDisclosureVersion: contract.disclosure.version,
+              usImportDisclosureText: contract.disclosure.text,
+            }
+          : undefined;
+      const preparedAt = new Date();
+      const prepared = prepareShippingQuote({
+        items: request.items,
+        products,
+        promotionCode,
+        profiles: await listEnabledPackageProfiles(),
+        usShippingEnabled: getChitChatsConfig().usShippingEnabled,
+        now: preparedAt,
+        ...(contract ? { usShippingContract: contract } : {}),
+        recipient: {
+          ...request.shippingAddress,
+          province: normalizeProvinceCode(request.shippingAddress.province),
+          postalCode: request.shippingAddress.postalCode.toUpperCase(),
+          countryCode,
+          name: request.customer.name,
+          email: request.customer.email,
+          phone: request.customer.phone,
+        },
+        ...(usImportDisclosure ? { usImportDisclosure } : {}),
+      });
+      return {
+        fingerprint: bindShippingFingerprintToContext(
+          prepared.fingerprint,
+          readiness.quoteContext,
+        ),
+        ...(usImportDisclosure ?? {}),
+      };
+    },
+    createInitializingOrder: orderStore.createInitializingProductOrder,
+    createInitializingManualOrder:
+      orderStore.createInitializingManualProductOrder,
+    finalizeInitializingOrder: orderStore.finalizeInitializingProductOrder,
+    markInitializationFailed: orderStore.markProductOrderInitializationFailed,
   })(req);
 }
 
@@ -325,8 +700,7 @@ function parseCheckoutRequest(body: unknown): CheckoutRequestBody | null {
   if (
     !isRecord(body) ||
     !isRecord(body.customer) ||
-    !Array.isArray(body.items) ||
-    !isRecord(body.shippingAddress)
+    !Array.isArray(body.items)
   ) {
     return null;
   }
@@ -339,25 +713,175 @@ function parseCheckoutRequest(body: unknown): CheckoutRequestBody | null {
     typeof body.customer.email === "string"
       ? body.customer.email.trim().toLowerCase()
       : null;
-  const shippingAddress = parseShippingAddress(body.shippingAddress);
+  const shippingAddress =
+    body.shippingAddress === undefined
+      ? undefined
+      : isRecord(body.shippingAddress)
+        ? parseShippingAddress(body.shippingAddress)
+        : null;
   const promotionCode = parsePromotionCodeInput(body.promotionCode);
+  const phone = parseOptionalCheckoutText(body.customer.phone, 30);
+  const shippingQuote = parseShippingQuote(body.shippingQuote);
+  const fulfillmentMode = parseFulfillmentMode(body.fulfillmentMode);
+  const disclosures = parseDisclosures(body.disclosures);
 
   if (
     name === null ||
     email === null ||
     !isValidCheckoutEmail(email) ||
     shippingAddress === null ||
-    promotionCode === null
+    promotionCode === null ||
+    phone === null ||
+    shippingQuote === null ||
+    fulfillmentMode === null ||
+    disclosures === null
   ) {
     return null;
   }
 
   return {
-    customer: { name, email },
+    customer: { name, email, ...(phone ? { phone } : {}) },
     items: body.items.map(toCartInputItem),
-    shippingAddress,
+    ...(shippingAddress ? { shippingAddress } : {}),
+    fulfillmentMode,
+    disclosures,
     ...(promotionCode ? { promotionCode } : {}),
+    ...(shippingQuote ? { shippingQuote } : {}),
   };
+}
+
+function parseFulfillmentMode(
+  value: unknown,
+): CheckoutRequestBody["fulfillmentMode"] | null {
+  return value === "automated_shipping" ||
+    value === "manual_pickup" ||
+    value === "manual_shipping"
+    ? value
+    : null;
+}
+
+function parseDisclosures(
+  value: unknown,
+): CheckoutRequestBody["disclosures"] | null {
+  if (!isRecord(value)) return null;
+  const cancellationPolicyVersion = parseOptionalCheckoutText(
+    value.cancellationPolicyVersion,
+    100,
+  );
+  if (cancellationPolicyVersion === null) return null;
+  const cancellationPolicyAccepted =
+    value.cancellationPolicyAccepted === true
+      ? true
+      : value.cancellationPolicyAccepted === undefined
+        ? undefined
+        : null;
+  const cancellationPolicyTextHash = parseOptionalCheckoutText(
+    value.cancellationPolicyTextHash,
+    64,
+  );
+  if (
+    cancellationPolicyAccepted === null ||
+    cancellationPolicyTextHash === null ||
+    (cancellationPolicyTextHash !== undefined &&
+      !/^[0-9a-f]{64}$/.test(cancellationPolicyTextHash))
+  ) {
+    return null;
+  }
+  const termsVersion = parseOptionalCheckoutText(value.termsVersion, 100);
+  const termsAccepted =
+    value.termsAccepted === true
+      ? true
+      : value.termsAccepted === undefined
+        ? undefined
+        : null;
+  const termsTextHash = parseOptionalCheckoutText(value.termsTextHash, 64);
+  if (
+    termsVersion === null ||
+    termsAccepted === null ||
+    termsTextHash === null ||
+    (termsTextHash !== undefined && !/^[0-9a-f]{64}$/.test(termsTextHash))
+  ) {
+    return null;
+  }
+  const usImportTerms =
+    value.usImportTerms === "DDU"
+      ? value.usImportTerms
+      : value.usImportTerms === undefined
+        ? undefined
+        : null;
+  const usImportDisclosureVersion = parseOptionalCheckoutText(
+    value.usImportDisclosureVersion,
+    100,
+  );
+  const usImportDisclosureText = parseOptionalCheckoutText(
+    value.usImportDisclosureText,
+    2_000,
+  );
+  if (
+    usImportTerms === null ||
+    usImportDisclosureVersion === null ||
+    usImportDisclosureText === null
+  )
+    return null;
+  return {
+    ...(cancellationPolicyAccepted
+      ? { cancellationPolicyAccepted: true as const }
+      : {}),
+    ...(cancellationPolicyVersion ? { cancellationPolicyVersion } : {}),
+    ...(cancellationPolicyTextHash ? { cancellationPolicyTextHash } : {}),
+    ...(termsAccepted ? { termsAccepted: true as const } : {}),
+    ...(termsVersion ? { termsVersion } : {}),
+    ...(termsTextHash ? { termsTextHash } : {}),
+    ...(usImportTerms ? { usImportTerms } : {}),
+    ...(usImportDisclosureVersion ? { usImportDisclosureVersion } : {}),
+    ...(usImportDisclosureText ? { usImportDisclosureText } : {}),
+  };
+}
+
+function normalizeValidatedShippingSelection(
+  value: string | ValidatedShippingSelection,
+): ValidatedShippingSelection {
+  return typeof value === "string" ? { fingerprint: value } : value;
+}
+
+function shippingDisclosureMatchesRequest(
+  validated: ValidatedShippingSelection,
+  requested: CheckoutRequestBody["disclosures"],
+): boolean {
+  return (
+    validated.usImportTerms === "DDU" &&
+    validated.usImportTerms === requested.usImportTerms &&
+    Boolean(validated.usImportDisclosureVersion?.trim()) &&
+    validated.usImportDisclosureVersion ===
+      requested.usImportDisclosureVersion &&
+    Boolean(validated.usImportDisclosureText?.trim()) &&
+    validated.usImportDisclosureText === requested.usImportDisclosureText
+  );
+}
+
+function parseShippingQuote(
+  value: unknown,
+): CheckoutRequestBody["shippingQuote"] | null {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) return null;
+  const token = typeof value.token === "string" ? value.token.trim() : "";
+  const fingerprint =
+    typeof value.fingerprint === "string" ? value.fingerprint.trim() : "";
+  const rateId = typeof value.rateId === "string" ? value.rateId.trim() : "";
+  if (!token || !/^[a-f0-9]{64}$/.test(fingerprint) || !rateId) return null;
+  return { token, fingerprint, rateId };
+}
+
+function dependenciesProvideShippingWorkflow(input: {
+  validateShippingSelection?: unknown;
+  createInitializingOrder?: unknown;
+  finalizeInitializingOrder?: unknown;
+}): boolean {
+  return Boolean(
+    input.validateShippingSelection &&
+    input.createInitializingOrder &&
+    input.finalizeInitializingOrder,
+  );
 }
 
 function parseShippingAddress(
@@ -393,6 +917,15 @@ function parseShippingAddress(
   ) {
     return null;
   }
+  const normalizedCountry = country.trim().toUpperCase();
+  if (
+    normalizedCountry !== "CA" &&
+    normalizedCountry !== "CANADA" &&
+    normalizedCountry !== "US" &&
+    normalizedCountry !== "UNITED STATES"
+  ) {
+    return null;
+  }
 
   const line2 = parseOptionalCheckoutText(
     value.line2,
@@ -408,9 +941,53 @@ function parseShippingAddress(
     ...(line2 ? { line2 } : {}),
     city,
     province,
-    postalCode,
+    postalCode: postalCode.toUpperCase(),
     country,
   };
+}
+
+function normalizeShippingAddress(
+  address: CheckoutShippingAddressInput,
+  phone?: string,
+): CheckoutShippingAddressInput {
+  const countryCode = getShippingCountryCode(address);
+  return {
+    ...address,
+    province: normalizeProvinceCode(address.province),
+    postalCode: address.postalCode.toUpperCase(),
+    country: countryCode === "US" ? "United States" : "Canada",
+    countryCode,
+    ...(phone ? { phone } : {}),
+  };
+}
+
+function getShippingCountryCode(
+  address: CheckoutShippingAddressInput,
+): "CA" | "US" {
+  const country = address.country.trim().toUpperCase();
+  return address.countryCode === "US" ||
+    country === "US" ||
+    country === "UNITED STATES"
+    ? "US"
+    : "CA";
+}
+
+function normalizeProvinceCode(value: string): string {
+  const normalized = value.trim().toUpperCase();
+  const names: Record<string, string> = {
+    ONTARIO: "ON",
+    QUEBEC: "QC",
+    ALBERTA: "AB",
+    "BRITISH COLUMBIA": "BC",
+    MANITOBA: "MB",
+    SASKATCHEWAN: "SK",
+    "NOVA SCOTIA": "NS",
+    "NEW BRUNSWICK": "NB",
+    NEWFOUNDLAND: "NL",
+    "NEWFOUNDLAND AND LABRADOR": "NL",
+    "PRINCE EDWARD ISLAND": "PE",
+  };
+  return names[normalized] ?? normalized;
 }
 
 function toCartInputItem(item: unknown): CartInputItem {
@@ -420,79 +997,11 @@ function toCartInputItem(item: unknown): CartInputItem {
 
   return {
     productId: typeof item.productId === "string" ? item.productId : "",
-    variantId: typeof item.variantId === "string" ? item.variantId : undefined,
+    ...(typeof item.variantId === "string"
+      ? { variantId: item.variantId }
+      : {}),
     quantity: typeof item.quantity === "number" ? item.quantity : Number.NaN,
   };
-}
-
-function toCatalogProduct(product: TProduct): CatalogProduct {
-  return {
-    id: product._id,
-    sku: product.sku,
-    title: product.title,
-    price: product.price,
-    discountPrice: product.discountPrice,
-    currency: product.currency,
-    isAvailable: product.isAvailable,
-    variants: product.variants?.map((variant) => ({
-      id: variant._key,
-      sku: variant.sku,
-      title: variant.title,
-      price: variant.price,
-      discountPrice: variant.discountPrice,
-      isAvailable: variant.isAvailable,
-    })),
-  };
-}
-
-function validateCheckoutInvoice(invoice: unknown): CheckoutInvoice {
-  const invoiceRecord = isRecord(invoice) ? invoice : null;
-  const invoiceId =
-    typeof invoiceRecord?.invoiceId === "number" &&
-    Number.isSafeInteger(invoiceRecord.invoiceId)
-      ? invoiceRecord.invoiceId
-      : null;
-  const invoiceNumber = isNonEmptyString(invoiceRecord?.invoiceNumber)
-    ? invoiceRecord.invoiceNumber
-    : null;
-
-  if (invoiceId === null || invoiceNumber === null) {
-    const missingFields: string[] = [];
-    if (invoiceId === null) missingFields.push("invoiceId");
-    if (invoiceNumber === null) missingFields.push("invoiceNumber");
-    throw new CheckoutProviderResponseError("invoice", missingFields);
-  }
-
-  return {
-    invoiceId,
-    invoiceNumber,
-  };
-}
-
-function validateCheckoutPaySession(session: unknown): CheckoutPaySession {
-  const sessionRecord = isRecord(session) ? session : null;
-  const checkoutToken = isNonEmptyString(sessionRecord?.checkoutToken)
-    ? sessionRecord.checkoutToken
-    : null;
-  const secretToken = isNonEmptyString(sessionRecord?.secretToken)
-    ? sessionRecord.secretToken
-    : null;
-
-  if (checkoutToken === null || secretToken === null) {
-    const missingFields: string[] = [];
-    if (checkoutToken === null) missingFields.push("checkoutToken");
-    if (secretToken === null) missingFields.push("secretToken");
-    throw new CheckoutProviderResponseError("helcim_pay", missingFields);
-  }
-
-  return {
-    checkoutToken,
-    secretToken,
-  };
-}
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
 }
 
 function summarizeCheckoutError(error: unknown): CheckoutErrorLog {
@@ -509,21 +1018,6 @@ function summarizeCheckoutError(error: unknown): CheckoutErrorLog {
     error: summarizeCheckoutErrorMessage(error),
     ...(errorName ? { errorName } : {}),
     ...(cause ? { cause } : {}),
-    ...summarizeCheckoutProviderResponseError(error),
-  };
-}
-
-function summarizeCheckoutProviderResponseError(
-  error: Error,
-): Pick<CheckoutErrorLog, "missingFields" | "provider" | "providerEndpoint"> {
-  if (!(error instanceof CheckoutProviderResponseError)) {
-    return {};
-  }
-
-  return {
-    missingFields: error.missingFields,
-    provider: error.provider,
-    providerEndpoint: error.providerEndpoint,
   };
 }
 
@@ -583,10 +1077,6 @@ function setSafeLogField(
 }
 
 function summarizeCheckoutErrorMessage(error: Error): string {
-  if (error instanceof CheckoutProviderResponseError) {
-    return "Checkout provider response invalid";
-  }
-
   if (error.message.includes("Failed query:")) {
     return "Database query failed";
   }
@@ -595,14 +1085,9 @@ function summarizeCheckoutErrorMessage(error: Error): string {
 }
 
 function getCheckoutFailureStatus(stage: CheckoutInitializationStage): number {
-  if (stage === "load_checkout_inputs" || stage === "persist_order") {
+  if (stage === "load_checkout_inputs" || stage === "reserve_order") {
     return 500;
   }
-
-  if (stage === "create_helcim_invoice" || stage === "initialize_helcim_pay") {
-    return 502;
-  }
-
   return 400;
 }
 
@@ -624,6 +1109,13 @@ function invalidPromotionCode(): NextResponse<CheckoutErrorBody> {
   return NextResponse.json<CheckoutErrorBody>(
     { error: "Invalid promotion code" },
     { status: 400 },
+  );
+}
+
+function invalidFulfillmentMode(): NextResponse<CheckoutErrorBody> {
+  return NextResponse.json<CheckoutErrorBody>(
+    { error: "Cart items require a different fulfillment method" },
+    { status: 409 },
   );
 }
 

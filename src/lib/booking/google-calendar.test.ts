@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { google } from "googleapis";
 
 import { buildBookingEventPayload } from "./google-calendar-event-payload";
 import type { BookingHoldRecord } from "./holds";
@@ -28,6 +29,57 @@ test("createOAuthClient configures the OAuth transporter to use globalThis.fetch
     /transporterOptions\s*:\s*\{[\s\S]*?fetchImplementation\s*:\s*globalThis\.fetch/,
     "expected createOAuthClient to pass transporterOptions.fetchImplementation: globalThis.fetch to google.auth.OAuth2",
   );
+});
+
+test("googleapis retains the OAuth and Calendar API surface used by bookings", () => {
+  const oauthClient = new google.auth.OAuth2({
+    clientId: "google-client-id",
+    clientSecret: "google-client-secret",
+    redirectUri: "https://example.com/api/booking/google/callback",
+    transporterOptions: {
+      fetchImplementation: globalThis.fetch,
+    },
+  });
+  const consentUrl = new URL(
+    oauthClient.generateAuthUrl({
+      access_type: "offline",
+      include_granted_scopes: true,
+      prompt: "consent",
+      scope: [
+        "openid",
+        "email",
+        "https://www.googleapis.com/auth/calendar.events",
+        "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+      ],
+      state: "signed-admin-state",
+    }),
+  );
+
+  assert.equal(consentUrl.origin, "https://accounts.google.com");
+  assert.equal(consentUrl.searchParams.get("access_type"), "offline");
+  assert.equal(consentUrl.searchParams.get("prompt"), "consent");
+  assert.equal(consentUrl.searchParams.get("state"), "signed-admin-state");
+  assert.equal(consentUrl.searchParams.get("include_granted_scopes"), "true");
+
+  const scopes = new Set(consentUrl.searchParams.get("scope")?.split(" "));
+  assert.equal(scopes.has("openid"), true);
+  assert.equal(scopes.has("email"), true);
+  assert.equal(
+    scopes.has("https://www.googleapis.com/auth/calendar.events"),
+    true,
+  );
+  assert.equal(
+    scopes.has(
+      "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+    ),
+    true,
+  );
+
+  const calendar = google.calendar({ version: "v3", auth: oauthClient });
+
+  assert.equal(typeof calendar.calendarList.list, "function");
+  assert.equal(typeof calendar.events.list, "function");
+  assert.equal(typeof calendar.events.insert, "function");
 });
 
 test("calendar setup lists canonical IDs from the active connection", () => {

@@ -1,0 +1,1 @@
+ALTER TABLE "product_shipments" DROP COLUMN "intake_location_attestation_id";

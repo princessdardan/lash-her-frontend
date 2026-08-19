@@ -7,10 +7,14 @@ import { Button } from "@/components/ui/button";
 import { SanityImage } from "@/components/ui/sanity-image";
 import { cn } from "@/lib/utils";
 import { formatCad } from "@/lib/commerce/money";
+import { resolveEffectivePrice } from "@/lib/commerce/cart";
+import { getProductCheckoutEligibility } from "@/lib/commerce/product-checkout-eligibility";
+import type { ProductCheckoutAvailability } from "@/lib/shipping/config";
 import type { TProduct, TProductVariant } from "@/types";
 
 interface ProductCardProps {
   product: TProduct;
+  checkoutAvailability: ProductCheckoutAvailability;
   onAdd?: (product: TProduct, variant?: TProductVariant) => void;
 }
 
@@ -28,14 +32,11 @@ function formatDisplayPrice(value: unknown): string {
   }
 }
 
-function getDiscountedPrice(price: unknown, discountPrice: unknown): number | null {
-  if (typeof price !== "number" || !Number.isFinite(price)) return null;
-  if (typeof discountPrice !== "number" || !Number.isFinite(discountPrice)) return null;
-
-  return discountPrice < price ? discountPrice : null;
-}
-
-export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement {
+export function ProductCard({
+  product,
+  checkoutAvailability,
+  onAdd,
+}: ProductCardProps): ReactElement {
   const router = useRouter();
   const productHref = `/products/${product.slug}`;
   const variants = useMemo(
@@ -43,13 +44,42 @@ export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement 
     [product.variants],
   );
   const availableVariants = variants.filter((variant) => variant.isAvailable);
-  const [selectedVariantId, setSelectedVariantId] = useState(availableVariants[0]?._key ?? "");
-  const selectedVariant = variants.find((variant) => variant._key === selectedVariantId);
+  const [selectedVariantId, setSelectedVariantId] = useState(
+    availableVariants[0]?._key ?? "",
+  );
+  const selectedVariant = variants.find(
+    (variant) => variant._key === selectedVariantId,
+  );
   const price = selectedVariant?.price ?? product.price;
   const discountPrice = selectedVariant?.discountPrice ?? product.discountPrice;
-  const effectiveDiscountPrice = getDiscountedPrice(price, discountPrice);
-  const canAdd = product.isAvailable && (variants.length === 0 || Boolean(selectedVariant?.isAvailable));
-  const availabilityLabel = product.availabilityLabel || (product.isAvailable ? "Ready to ship" : "Unavailable");
+  const pricing = resolveEffectivePrice(price, discountPrice);
+  const effectiveDiscountPrice =
+    pricing.manualDiscount > 0 ? pricing.price : null;
+  const checkoutEligibility = getProductCheckoutEligibility(
+    selectedVariant?.shipping ?? product.shipping,
+  );
+  const checkoutModeEnabled =
+    checkoutEligibility.status === "automated"
+      ? checkoutAvailability.automated
+      : checkoutEligibility.status === "manual"
+        ? checkoutAvailability.manual
+        : false;
+  const canAdd =
+    product.isAvailable &&
+    (variants.length === 0 || Boolean(selectedVariant?.isAvailable)) &&
+    checkoutEligibility.status !== "invalid" &&
+    checkoutModeEnabled;
+  const availabilityLabel =
+    product.availabilityLabel ||
+    (product.isAvailable ? "Ready to ship" : "Unavailable");
+  // When the item is otherwise purchasable but its checkout mode is disabled,
+  // show a distinct label rather than a misleading availability label.
+  const ctaUnavailableLabel =
+    product.isAvailable &&
+    checkoutEligibility.status !== "invalid" &&
+    !checkoutModeEnabled
+      ? "Checkout unavailable"
+      : availabilityLabel;
 
   const handleBuyNow = () => {
     if (!canAdd) return;
@@ -85,7 +115,10 @@ export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement 
         ) : (
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_78%_18%,var(--lh-light-soft),transparent_32%),linear-gradient(135deg,var(--lh-neutral-2),var(--lh-neutral))]" />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-lh-shadow/70 via-lh-shadow/10 to-transparent" aria-hidden="true" />
+        <div
+          className="absolute inset-0 bg-gradient-to-t from-lh-shadow/70 via-lh-shadow/10 to-transparent"
+          aria-hidden="true"
+        />
         <div className="absolute left-5 top-5 flex flex-wrap gap-2">
           {product.badgeLabel ? (
             <span className="rounded-full bg-lh-light px-3 py-1 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-shadow">
@@ -104,7 +137,10 @@ export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement 
         <div className="mb-4">
           <p className="eyebrow-label mb-2">Product</p>
           <h3 className="section-subheading text-3xl leading-none md:text-4xl">
-            <Link href={productHref} className="transition-colors hover:text-lh-primary">
+            <Link
+              href={productHref}
+              className="transition-colors hover:text-lh-primary"
+            >
               {product.title}
             </Link>
           </h3>
@@ -126,7 +162,10 @@ export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement 
             </span>
           ) : null}
           {product.collections?.slice(0, 2).map((collection) => (
-            <span key={collection._id} className="rounded-full border border-lh-line px-3 py-1 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-shadow/70">
+            <span
+              key={collection._id}
+              className="rounded-full border border-lh-line px-3 py-1 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-shadow/70"
+            >
               {collection.title}
             </span>
           ))}
@@ -153,9 +192,19 @@ export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement 
                 </option>
               )}
               {variants.map((variant) => (
-                <option key={variant._key} value={variant._key} disabled={!variant.isAvailable}>
-                  {variant.title} - {formatDisplayPrice(getDiscountedPrice(variant.price, variant.discountPrice) ?? variant.price)}
-                  {!variant.isAvailable ? ` - ${variant.availabilityLabel || "Unavailable"}` : ""}
+                <option
+                  key={variant._key}
+                  value={variant._key}
+                  disabled={!variant.isAvailable}
+                >
+                  {variant.title} -{" "}
+                  {formatDisplayPrice(
+                    resolveEffectivePrice(variant.price, variant.discountPrice)
+                      .price,
+                  )}
+                  {!variant.isAvailable
+                    ? ` - ${variant.availabilityLabel || "Unavailable"}`
+                    : ""}
                 </option>
               ))}
             </select>
@@ -164,10 +213,14 @@ export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement 
 
         <div className="mt-auto rounded-[24px] border border-lh-line bg-lh-neutral-2/70 p-4">
           <div className="mb-4 flex items-center justify-between gap-4">
-            <span className="font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-muted">Price</span>
+            <span className="font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-muted">
+              Price
+            </span>
             <span className="flex flex-col items-end gap-1 font-body text-xl font-bold text-lh-shadow">
               {effectiveDiscountPrice !== null ? (
-                <span className="text-sm text-lh-muted line-through">{formatDisplayPrice(price)}</span>
+                <span className="text-sm text-lh-muted line-through">
+                  {formatDisplayPrice(price)}
+                </span>
               ) : null}
               <span>{formatDisplayPrice(effectiveDiscountPrice ?? price)}</span>
             </span>
@@ -177,18 +230,30 @@ export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement 
               type="button"
               onClick={() => onAdd(product, selectedVariant)}
               disabled={!canAdd}
-              aria-label={canAdd ? `Add to Cart: ${product.title}` : `${product.title} ${availabilityLabel}`}
+              aria-label={
+                canAdd
+                  ? `Add to Cart: ${product.title}`
+                  : `${product.title} ${ctaUnavailableLabel}`
+              }
               className={cn(
                 "w-full rounded-full px-6 py-3 uppercase tracking-[0.12em]",
-                canAdd ? "bg-lh-primary text-lh-white hover:bg-lh-accent" : "bg-lh-neutral text-lh-muted",
+                canAdd
+                  ? "bg-lh-primary text-lh-white hover:bg-lh-accent"
+                  : "bg-lh-neutral text-lh-muted",
               )}
             >
-              {canAdd ? "Add to Cart" : availabilityLabel}
+              {canAdd ? "Add to Cart" : ctaUnavailableLabel}
             </Button>
           ) : (
             <div className="flex flex-col gap-2">
-              <Button asChild className="w-full rounded-full bg-lh-primary px-6 py-3 uppercase tracking-[0.12em] text-lh-white hover:bg-lh-accent">
-                <Link href={productHref} aria-label={`View details for ${product.title}`}>
+              <Button
+                asChild
+                className="w-full rounded-full bg-lh-primary px-6 py-3 uppercase tracking-[0.12em] text-lh-white hover:bg-lh-accent"
+              >
+                <Link
+                  href={productHref}
+                  aria-label={`View details for ${product.title}`}
+                >
                   View Details
                 </Link>
               </Button>
@@ -197,13 +262,21 @@ export function ProductCard({ product, onAdd }: ProductCardProps): ReactElement 
                 variant="ghost"
                 onClick={handleBuyNow}
                 disabled={!canAdd}
-                aria-label={canAdd ? `Buy now: ${product.title}` : `${product.title} ${availabilityLabel}`}
+                aria-label={
+                  canAdd
+                    ? `Buy now: ${product.title}`
+                    : `${product.title} ${ctaUnavailableLabel}`
+                }
                 className={cn(
                   "w-full rounded-full border-lh-primary/30 px-6 py-3 uppercase tracking-[0.12em]",
-                  canAdd ? "hover:bg-lh-primary-soft hover:text-lh-primary" : "bg-lh-neutral text-lh-muted",
+                  canAdd
+                    ? "hover:bg-lh-primary-soft hover:text-lh-primary"
+                    : "bg-lh-neutral text-lh-muted",
                 )}
               >
-                Buy Now
+                {checkoutEligibility.status === "manual"
+                  ? "Arrange Pickup"
+                  : "Buy Now"}
               </Button>
             </div>
           )}

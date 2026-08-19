@@ -3,16 +3,66 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
 
+const TEST_HELCIM_PRODUCT_PAYMENTS_CONTRACT_JSON = JSON.stringify({
+  contract: "helcim_product_payments",
+  version: "test-contract-v1",
+  evidenceReference: "test-fixture-only",
+  effectiveFrom: "2020-01-01T00:00:00.000Z",
+  effectiveUntil: "2099-01-01T00:00:00.000Z",
+  purchaseTransactionTypes: ["purchase"],
+  refundTransactionTypes: ["refund"],
+  purchaseSuccessfulStatuses: ["approved"],
+  refundSuccessfulStatuses: ["approved"],
+  avs: { fieldNames: ["avsResponse"], matchCodes: ["y"], mismatchCodes: ["n"] },
+  cvv: { fieldNames: ["cvvResponse"], matchCodes: ["m"], mismatchCodes: ["n"] },
+  refundCorrelation: {
+    providerRefundIdFields: ["transactionId"],
+    originalTransactionIdFields: ["originalTransactionId"],
+    merchantReferenceFields: ["merchantReference"],
+  },
+});
+
 const SERVER_ONLY_TEST_FILES = new Set([
+  "src/app/api/cron/customer-email-outbox/route.test.ts",
+  "src/app/api/admin/shipping/operation-reviews/handler.test.ts",
+  "src/app/(site)/orders/payment-offer/interstitial/route.test.ts",
   "src/lib/admin/implicit-staff-provider.test.ts",
   "src/lib/admin/square-team-selection.test.ts",
+  "src/lib/admin/step-up-proof.test.ts",
   "src/lib/booking/operations/model-mode.test.ts",
   "src/lib/booking/operations/public-offerings.test.ts",
   "src/lib/booking/operations/sanity-service-link.test.ts",
   "src/lib/booking/square-team-client.test.ts",
+  "src/lib/commerce/helcim-contract.test.ts",
+  "src/lib/commerce/helcim-mock-gateway.test.ts",
+  "src/lib/commerce/supplemental-payment-offer-link-handler.test.ts",
+  "src/lib/commerce/verified-payment.test.ts",
+  "src/lib/shipping/address-approval-step-up.test.ts",
+  "src/lib/shipping/address-changes.test.ts",
+  "src/lib/shipping/cases.test.ts",
+  "src/lib/shipping/chitchats-client.test.ts",
+  "src/lib/shipping/config.test.ts",
+  "src/lib/shipping/configured-owner.test.ts",
+  "src/lib/shipping/configured-quote-context.test.ts",
+  "src/lib/shipping/manual-checkout-readiness.test.ts",
+  "src/lib/shipping/operation-worker.test.ts",
+  "src/lib/shipping/p10-termination.test.ts",
+  "src/lib/shipping/policy-mode.test.ts",
+  "src/lib/shipping/policy-worker.test.ts",
+  "src/lib/shipping/prepare-quote.test.ts",
+  "src/lib/shipping/quote-token.test.ts",
+  "src/lib/shipping/shipment-store.test.ts",
+  "src/lib/structured-data.test.ts",
 ]);
 
 const DB_TEST_FILES = new Set([
+  "src/data/commerce-e2e-catalog-fixture.test.ts",
+  "src/lib/admin/step-up-proof.db.test.ts",
+  "src/lib/admin/operations-workspaces.db.test.ts",
+  "src/lib/commerce/customer-email-outbox.db.test.ts",
+  "src/lib/commerce/product-payment-finalizer.db.test.ts",
+  "src/lib/commerce/product-order-creation.db.test.ts",
+  "src/lib/commerce/product-payment-obligation-reconciliation.db.test.ts",
   "src/lib/admin/employee-attribution-analytics.db.test.ts",
   "src/lib/admin/implicit-staff-provider.db.test.ts",
   "src/lib/admin/offering-resource-admin.db.test.ts",
@@ -26,6 +76,27 @@ const DB_TEST_FILES = new Set([
   "src/lib/private-db/booking-reservation-repository.db.test.ts",
   "src/lib/private-db/calendar-connection-repository.db.test.ts",
   "src/lib/private-db/card-on-file-repository.db.test.ts",
+  "src/lib/private-db/shipping-retention.db.test.ts",
+  "src/lib/shipping/address-payment-revocation.db.test.ts",
+  "src/lib/shipping/address-service-decisions.db.test.ts",
+  "src/lib/shipping/address-signature-decisions.db.test.ts",
+  "src/lib/shipping/customer-decisions.db.test.ts",
+  "src/lib/shipping/customer-refunds.db.test.ts",
+  "src/lib/shipping/address-risk.db.test.ts",
+  "src/lib/shipping/case-refund-remedy.db.test.ts",
+  "src/lib/shipping/case-resolution-invariants.db.test.ts",
+  "src/lib/shipping/cases-concurrency.db.test.ts",
+  "src/lib/shipping/frozen-activation.db.test.ts",
+  "src/lib/shipping/operation-worker.db.test.ts",
+  "src/lib/shipping/operations-actions.db.test.ts",
+  "src/lib/shipping/policy-jobs.db.test.ts",
+  "src/lib/shipping/policy-p10.db.test.ts",
+  "src/lib/shipping/provider-event-ordering.db.test.ts",
+  "src/lib/shipping/quote-reuse.db.test.ts",
+  "src/lib/shipping/risk-review.db.test.ts",
+  "src/lib/shipping/shipment-operations.db.test.ts",
+  "src/lib/shipping/shipment-retry-exhaustion.db.test.ts",
+  "src/lib/shipping/shipment-variance-refund-gate.db.test.ts",
 ]);
 
 const mode = process.argv[2] ?? "--no-db";
@@ -90,7 +161,10 @@ const dbTestFiles = testFiles.filter((file) => DB_TEST_FILES.has(file));
 
 if (mode === "--no-db") {
   runTests(regularTestFiles, []);
-  runTests(serverOnlyTestFiles, ["--conditions=react-server"]);
+  runTests(serverOnlyTestFiles, [
+    "--import",
+    "./scripts/register-server-only-test.mjs",
+  ]);
 } else {
   if (!process.env.TEST_DATABASE_URL) {
     throw new Error(
@@ -121,13 +195,28 @@ function runTests(files, nodeOptions) {
   if (files.length === 0) {
     return;
   }
+  const needsServerTestEnvironment =
+    mode === "--db-only" ||
+    nodeOptions.includes("./scripts/register-server-only-test.mjs");
 
   const result = spawnSync(
     process.execPath,
     [...nodeOptions, "--import", "tsx", "--test", ...files],
     {
       cwd: process.cwd(),
-      env: process.env,
+      env:
+        needsServerTestEnvironment
+          ? {
+              ...process.env,
+              NEXT_PUBLIC_SANITY_DATASET:
+                process.env.NEXT_PUBLIC_SANITY_DATASET ?? "test-dataset",
+              NEXT_PUBLIC_SANITY_PROJECT_ID:
+                process.env.NEXT_PUBLIC_SANITY_PROJECT_ID ?? "test-project",
+              HELCIM_PRODUCT_PAYMENTS_CONTRACT_JSON:
+                process.env.HELCIM_PRODUCT_PAYMENTS_CONTRACT_JSON ??
+                TEST_HELCIM_PRODUCT_PAYMENTS_CONTRACT_JSON,
+            }
+          : process.env,
       stdio: "inherit",
     },
   );

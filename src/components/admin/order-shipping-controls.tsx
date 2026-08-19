@@ -1,0 +1,365 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  isTerminalShipmentOperationStatus,
+  type ShipmentOperationStatus,
+} from "@/lib/shipping/operation-status";
+
+export function OrderShippingControls({
+  orderId,
+  shipmentId,
+  stateVersion,
+  status,
+  defaultWeightGrams,
+  trackingNumber,
+  trackingUrl,
+}: {
+  orderId: string;
+  shipmentId: string;
+  stateVersion: number;
+  status: string;
+  defaultWeightGrams: number;
+  trackingNumber: string | null;
+  trackingUrl: string | null;
+}) {
+  const router = useRouter();
+  const [weight, setWeight] = useState(String(defaultWeightGrams || ""));
+  const [shipDate, setShipDate] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [operationStatus, setOperationStatus] = useState<string | null>(null);
+  const [alternateRates, setAlternateRates] = useState<
+    Array<{ id: string; title: string; amountCents: number }>
+  >([]);
+  const [alternatePostageType, setAlternatePostageType] = useState("");
+  const [alternateReason, setAlternateReason] = useState("");
+  const [alternateConditionsUnchanged, setAlternateConditionsUnchanged] =
+    useState(false);
+
+  const waitForOperation = async (operationId: string) => {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      const response = await fetch(
+        `/api/admin/orders/${encodeURIComponent(orderId)}/shipping/operations/${encodeURIComponent(operationId)}?${new URLSearchParams({ shipmentId }).toString()}`,
+        { cache: "no-store" },
+      );
+      const result = (await response.json()) as {
+        attemptCount?: number;
+        error?: string;
+        lastError?: string | null;
+        outcomeCode?: string | null;
+        outcomeUnknown?: boolean;
+        status?: ShipmentOperationStatus;
+      };
+      if (!response.ok || !result.status) {
+        throw new Error(result.error ?? "Operation status could not be loaded");
+      }
+      const detail = result.outcomeCode ?? result.status;
+      setOperationStatus(
+        `Operation ${operationId}: ${detail.replaceAll("_", " ")}${result.outcomeUnknown ? " (provider outcome unknown)" : ""}`,
+      );
+      if (isTerminalShipmentOperationStatus(result.status)) {
+        router.refresh();
+        if (result.status === "dead_letter") {
+          throw new Error(
+            result.lastError ??
+              "The operation requires manual review. Refresh for current state.",
+          );
+        }
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+    setOperationStatus(
+      `Operation ${operationId} is still queued. Refresh for current state.`,
+    );
+  };
+
+  const buy = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/admin/orders/${encodeURIComponent(orderId)}/shipping/buy`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            shipmentId,
+            expectedStateVersion: stateVersion,
+            measuredWeightGrams: Number(weight),
+            shipDate,
+            ...(alternatePostageType
+              ? {
+                  alternatePostageType,
+                  alternateReason,
+                  alternateConditionsUnchanged,
+                }
+              : {}),
+          }),
+        },
+      );
+      const result = (await response.json()) as {
+        error?: string;
+        operationId?: string;
+        status?: string;
+        rates?: Array<{ id: string; title: string; amountCents: number }>;
+      };
+      if (!response.ok) {
+        setError(result.error ?? "Postage could not be purchased");
+        if (result.rates?.length) {
+          setAlternateRates(result.rates);
+          setAlternatePostageType(result.rates[0]?.id ?? "");
+        }
+        return;
+      }
+      setOperationStatus(
+        result.operationId && result.status
+          ? `Operation ${result.operationId}: ${result.status.replaceAll("_", " ")}`
+          : "Postage purchase queued",
+      );
+      if (result.operationId) await waitForOperation(result.operationId);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Postage could not be purchased",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const refundPostage = async () => {
+    if (
+      !window.confirm(
+        "Request a Chit Chats postage refund? This does not refund the customer's Helcim payment.",
+      )
+    )
+      return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/admin/orders/${encodeURIComponent(orderId)}/shipping/refund`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            shipmentId,
+            expectedStateVersion: stateVersion,
+          }),
+        },
+      );
+      const result = (await response.json()) as {
+        error?: string;
+        operationId?: string;
+        status?: string;
+      };
+      if (!response.ok)
+        setError(result.error ?? "Postage refund could not be requested");
+      else {
+        setOperationStatus(
+          result.operationId && result.status
+            ? `Operation ${result.operationId}: ${result.status.replaceAll("_", " ")}`
+            : "Postage refund queued",
+        );
+        if (result.operationId) await waitForOperation(result.operationId);
+      }
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Postage refund could not be requested",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const postAction = async (path: string, failure: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(path, { method: "POST" });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) setError(result.error ?? failure);
+      else router.refresh();
+    } catch {
+      setError(failure);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 border-t border-lh-line pt-3">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-lh-muted">
+        Fulfillment: {status.replaceAll("_", " ")}
+      </p>
+      {status === "ready_for_staff" ? (
+        <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+          <Input
+            aria-label="Measured package weight in grams"
+            inputMode="numeric"
+            min={1}
+            max={50000}
+            type="number"
+            value={weight}
+            onChange={(event) => setWeight(event.target.value)}
+          />
+          <Input
+            aria-label="Ship date"
+            type="date"
+            value={shipDate}
+            onChange={(event) => setShipDate(event.target.value)}
+          />
+          <Button
+            type="button"
+            size="sm"
+            disabled={busy || Number(weight) <= 0 || !shipDate}
+            onClick={buy}
+          >
+            {busy ? "Buying..." : "Buy label"}
+          </Button>
+        </div>
+      ) : null}
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={
+            busy || ["accepted", "in_transit", "delivered"].includes(status)
+          }
+          onClick={() =>
+            postAction(
+              `/api/admin/orders/${encodeURIComponent(orderId)}/address-change`,
+              "Address-change link could not be sent",
+            )
+          }
+        >
+          Send address-change link
+        </Button>
+        {status === "manual_review" ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() => router.push("/admin/operations")}
+          >
+            Review in operations workspace
+          </Button>
+        ) : null}
+      </div>
+      {status === "ready_for_staff" && alternateRates.length > 0 ? (
+        <div className="mt-3 grid gap-2">
+          <label
+            className="text-xs font-semibold text-lh-muted"
+            htmlFor={`alternate-rate-${orderId}`}
+          >
+            Insured tracked alternative
+          </label>
+          <select
+            id={`alternate-rate-${orderId}`}
+            className="h-11 rounded-md border border-lh-line bg-white px-3 text-sm"
+            value={alternatePostageType}
+            onChange={(event) => setAlternatePostageType(event.target.value)}
+          >
+            {alternateRates.map((rate) => (
+              <option key={rate.id} value={rate.id}>
+                {rate.title} —{" "}
+                {(rate.amountCents / 100).toLocaleString("en-CA", {
+                  style: "currency",
+                  currency: "CAD",
+                })}
+              </option>
+            ))}
+          </select>
+          <Input
+            aria-label="Reason for changing shipping service"
+            value={alternateReason}
+            onChange={(event) => setAlternateReason(event.target.value)}
+            placeholder="Required reason for service change"
+            maxLength={500}
+          />
+          <label className="flex items-start gap-2 text-xs text-lh-muted">
+            <input
+              type="checkbox"
+              checked={alternateConditionsUnchanged}
+              onChange={(event) =>
+                setAlternateConditionsUnchanged(event.target.checked)
+              }
+            />
+            Confirm this service adds no pickup, duty, brokerage, or signature
+            condition. Equal-or-faster delivery and insurance are checked by the
+            server.
+          </label>
+          <p className="text-xs text-lh-muted">
+            Lash Her absorbs increases. Reductions of at least CAD 1 are queued
+            to the customer-refund ledger.
+          </p>
+        </div>
+      ) : null}
+      {error ? (
+        <p className="mt-2 text-xs font-semibold text-lh-accent" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {operationStatus ? (
+        <p className="mt-2 text-xs text-lh-muted" role="status">
+          {operationStatus}
+        </p>
+      ) : null}
+      {trackingNumber ? (
+        <p className="mt-2 text-xs text-lh-muted">
+          Tracking:{" "}
+          {trackingUrl ? (
+            <a
+              className="font-semibold text-lh-primary underline"
+              href={trackingUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              {trackingNumber}
+            </a>
+          ) : (
+            trackingNumber
+          )}
+        </p>
+      ) : null}
+      {[
+        "label_ready",
+        "accepted",
+        "in_transit",
+        "delivered",
+        "exception",
+      ].includes(status) ? (
+        <a
+          className="mt-2 inline-block text-xs font-semibold text-lh-primary underline"
+          href={`/api/admin/orders/${encodeURIComponent(orderId)}/shipping/label?${new URLSearchParams({ shipmentId, expectedStateVersion: String(stateVersion) }).toString()}`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Open shipping label
+        </a>
+      ) : null}
+      {["label_ready", "exception"].includes(status) ? (
+        <Button
+          className="ml-3 mt-2"
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={busy}
+          onClick={refundPostage}
+        >
+          Request postage refund
+        </Button>
+      ) : null}
+    </div>
+  );
+}

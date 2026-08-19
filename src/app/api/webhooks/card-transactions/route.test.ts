@@ -33,10 +33,14 @@ const helperScript = String.raw`
   }
 
   async function runScenario({
+    activateShipmentForPaidOrder,
     finalizeAppointmentPaymentForOrder,
+    finalizeProductPayment,
     getCardTransaction,
     getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing,
     getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice,
+    markEventProcessingStatus,
+    reconcileProductOrderRefund,
     recordEvent,
     sendBookingConfirmationEmailForOrder,
     sendProductOrderConfirmationEmailForOrder,
@@ -51,7 +55,12 @@ const helperScript = String.raw`
     const markedStaffAlerts = [];
     const sentEmails = [];
     const sentSchedulingFailureAlerts = [];
+    const reconciledRefunds = [];
+    const processingStatuses = [];
     const handler = createHelcimWebhookPostHandler({
+      activateShipmentForPaidOrder: async (orderId) => {
+        if (activateShipmentForPaidOrder) await activateShipmentForPaidOrder(orderId);
+      },
       finalizeAppointmentPaymentForOrder: async (input) => {
         finalizedBookings.push(input);
         if (finalizeAppointmentPaymentForOrder) {
@@ -59,8 +68,20 @@ const helperScript = String.raw`
         }
         return { ok: true, eventId: "calendar-event-1", status: "booked" };
       },
+      finalizeProductPayment: async (input) => {
+        if (finalizeProductPayment) return finalizeProductPayment(input);
+        return { transition: "applied", riskStatus: "cleared" };
+      },
       getCardTransaction,
       getVerifierToken: () => verifierToken,
+      markEventProcessingStatus: async (input) => {
+        processingStatuses.push(input);
+        if (markEventProcessingStatus) await markEventProcessingStatus(input);
+      },
+      reconcileProductOrderRefund: async (input) => {
+        reconciledRefunds.push(input);
+        return reconcileProductOrderRefund ? reconcileProductOrderRefund(input) : true;
+      },
       getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice: async (input) => {
         if (getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice) {
           return getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice(input);
@@ -125,7 +146,7 @@ const helperScript = String.raw`
       },
     });
 
-    return { finalizedBookings, handler, trainingNotifications, markedStaffAlerts, recorded, sentBookingEmails, sentEmails, sentProductEmails, sentSchedulingFailureAlerts };
+    return { finalizedBookings, handler, processingStatuses, reconciledRefunds, trainingNotifications, markedStaffAlerts, recorded, sentBookingEmails, sentEmails, sentProductEmails, sentSchedulingFailureAlerts };
   }
 `;
 
@@ -188,6 +209,58 @@ test("Helcim webhook route returns retryable status when private persistence fai
       status: "APPROVED",
       transactionId: "25764674",
     });
+  `);
+});
+
+test("Helcim webhook route reconciles a captured refund through invoice ledger evidence", () => {
+  runRouteScenario(`
+    const body = JSON.stringify({ id: "991122", type: "cardTransaction" });
+    const { handler, reconciledRefunds } = await runScenario({
+      getCardTransaction: async () => ({
+        amount: "-12.50",
+        currency: "CAD",
+        invoiceNumber: "INV-4242",
+        status: "APPROVED",
+        transactionId: 991122,
+        type: "refund",
+      }),
+    });
+
+    const response = await handler(createRequest(body));
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(reconciledRefunds, [{
+      amountCents: 1250,
+      currency: "CAD",
+      providerInvoiceNumber: "INV-4242",
+      providerRefundId: "991122",
+    }]);
+  `);
+});
+
+test("Helcim webhook route durably flags an unmatched refund for review", () => {
+  runRouteScenario(`
+    const body = JSON.stringify({ id: "991123", type: "cardTransaction" });
+    const { handler, processingStatuses } = await runScenario({
+      getCardTransaction: async () => ({
+        amount: "-12.50",
+        currency: "CAD",
+        id: 991123,
+        originalTransactionId: 25764674,
+        status: "APPROVED",
+        transactionType: "refund",
+      }),
+      reconcileProductOrderRefund: async () => false,
+    });
+
+    const response = await handler(createRequest(body));
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(processingStatuses, [{
+      eventId: "webhook-route-test",
+      status: "review_required",
+      message: "Refund could not be uniquely correlated to a local ledger row",
+    }]);
   `);
 });
 
@@ -328,6 +401,7 @@ test("Helcim webhook route does not send product confirmation for training order
         id: 25764674,
         invoiceNumber: "INV-TRAINING-4242",
         status: "APPROVED",
+        transactionType: "purchase",
       }),
       recordEvent: async () => ({
         matchedOrder: {
@@ -355,7 +429,7 @@ test("Helcim webhook route does not send product confirmation for training order
   `);
 });
 
-test("Helcim webhook route treats APPROVAL as an approved product payment", () => {
+test("Helcim webhook route rejects uncertified product status values", () => {
   runRouteScenario(`
     const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });
     const { handler, sentProductEmails } = await runScenario({
@@ -385,6 +459,50 @@ test("Helcim webhook route treats APPROVAL as an approved product payment", () =
     const response = await handler(createRequest(body));
 
     assert.equal(response.status, 200);
+    assert.deepEqual(sentProductEmails, []);
+  `);
+});
+
+test("Helcim webhook route finalizes an exact certified product purchase", () => {
+  runRouteScenario(`
+    const body = JSON.stringify({ id: "25764674", type: "cardTransaction" });
+    const finalized = [];
+    const { handler, sentProductEmails } = await runScenario({
+      getCardTransaction: async () => ({
+        amount: "123.45",
+        avsResponse: "Y",
+        currency: "CAD",
+        cvvResponse: "M",
+        id: 25764674,
+        invoiceNumber: "INV-4242",
+        status: "APPROVED",
+        transactionType: "purchase",
+      }),
+      finalizeProductPayment: async (input) => {
+        finalized.push(input);
+        return { transition: "applied", riskStatus: "cleared" };
+      },
+      recordEvent: async () => ({
+        matchedOrder: {
+          _id: "checkout-order-product",
+          amount: 123.45,
+          currency: "CAD",
+          helcimInvoiceId: 4242,
+          helcimInvoiceNumber: "INV-4242",
+          orderId: "lh-product-123",
+          paymentProvider: "helcim",
+          purpose: "product",
+        },
+        paid: false,
+        recorded: true,
+      }),
+    });
+
+    const response = await handler(createRequest(body));
+
+    assert.equal(response.status, 200);
+    assert.equal(finalized.length, 1);
+    assert.equal(finalized[0].transactionId, "25764674");
     assert.deepEqual(sentProductEmails, ["lh-product-123"]);
   `);
 });
@@ -399,6 +517,7 @@ test("Helcim webhook route recovers missing training notification and sends paym
         id: 25764674,
         invoiceNumber: "INV-TRAINING-4242",
         status: "APPROVED",
+        transactionType: "purchase",
       }),
       getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing: async (input) => ({
         checkoutEmail: "client@example.com",
@@ -469,6 +588,7 @@ test("Helcim webhook route returns retryable status when training token issuance
         id: 25764674,
         invoiceNumber: "INV-TRAINING-4242",
         status: "APPROVED",
+        transactionType: "purchase",
       }),
       getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing: async () => ({
         checkoutEmail: "client@example.com",
@@ -502,6 +622,7 @@ test("Helcim webhook route returns retryable status when training program slug i
         id: 25764674,
         invoiceNumber: "INV-TRAINING-4242",
         status: "APPROVED",
+        transactionType: "purchase",
       }),
       getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing: async () => ({
         checkoutEmail: "client@example.com",
@@ -545,6 +666,7 @@ test("Helcim webhook route finalizes approved appointment webhook after event pe
         id: 25764674,
         invoiceNumber: "INV-APPT-4242",
         status: "APPROVED",
+        transactionType: "purchase",
       }),
       recordEvent: async () => ({
         matchedOrder: {
@@ -582,6 +704,7 @@ test("Helcim webhook route finalizes duplicate paid appointment events", () => {
         id: 25764674,
         invoiceNumber: "INV-APPT-4242",
         status: "APPROVED",
+        transactionType: "purchase",
       }),
       recordEvent: async () => ({
         matchedOrder: {
@@ -615,6 +738,7 @@ test("Helcim webhook route finalizes approved custom partial appointment webhook
         id: 25764674,
         invoiceNumber: "INV-APPT-4242",
         status: "APPROVED",
+        transactionType: "purchase",
       }),
       recordEvent: async () => ({
         matchedOrder: {
@@ -648,6 +772,7 @@ test("Helcim webhook route does not finalize Square appointment orders matched b
         id: 25764674,
         invoiceNumber: "INV-APPT-4242",
         status: "APPROVED",
+        transactionType: "purchase",
       }),
       recordEvent: async () => ({
         matchedOrder: {
@@ -683,6 +808,7 @@ test("Helcim webhook route does not finalize unmatched appointment events", () =
         id: 25764674,
         invoiceNumber: "INV-APPT-4242",
         status: "APPROVED",
+        transactionType: "purchase",
       }),
       recordEvent: async () => ({
         matchedOrder: null,
@@ -706,6 +832,7 @@ test("Helcim webhook route does not send duplicate training emails when notifica
         id: 25764674,
         invoiceNumber: "INV-TRAINING-4242",
         status: "APPROVED",
+        transactionType: "purchase",
       }),
       getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing: async () => null,
       recordEvent: async () => true,
@@ -730,6 +857,7 @@ test("Helcim webhook route sends admin alert when appointment finalization fails
         id: 25764674,
         invoiceNumber: "INV-APPT-4242",
         status: "APPROVED",
+        transactionType: "purchase",
       }),
       recordEvent: async () => ({
         matchedOrder: {
@@ -778,6 +906,7 @@ test("Helcim webhook route does not alert admin or confirm customer for finaliza
         id: 25764674,
         invoiceNumber: "INV-APPT-4242",
         status: "APPROVED",
+        transactionType: "purchase",
       }),
       recordEvent: async () => ({
         matchedOrder: {
@@ -828,3 +957,41 @@ function runRouteScenario(assertions: string): void {
     },
   );
 }
+
+test("Helcim webhook route rejects oversized bodies before provider or storage work", () => {
+  runRouteScenario(`
+    let providerCalls = 0;
+    const { handler, recorded } = await runScenario({
+      getCardTransaction: async () => {
+        providerCalls += 1;
+        return {};
+      },
+    });
+    const response = await handler(createRequest("x".repeat(64 * 1024 + 1)));
+    assert.equal(response.status, 413);
+    assert.equal(providerCalls, 0);
+    assert.equal(recorded.length, 0);
+  `);
+});
+
+test("Helcim webhook route quarantines an unmatched approved purchase", () => {
+  runRouteScenario(`
+    const body = JSON.stringify({ id: "purchase-unmatched", type: "cardTransaction" });
+    const { handler, processingStatuses } = await runScenario({
+      getCardTransaction: async () => ({
+        amount: "50.00",
+        currency: "CAD",
+        transactionId: "purchase-unmatched",
+        status: "approved",
+        transactionType: "purchase",
+      }),
+      recordEvent: async () => ({ matchedOrder: null, paid: false, recorded: true }),
+    });
+    const response = await handler(createRequest(body));
+    assert.equal(response.status, 200);
+    assert.equal(processingStatuses.some((entry) =>
+      entry.status === "review_required" &&
+      entry.reasonCode === "UNMATCHED_APPROVED_HELCIM_PURCHASE"
+    ), true);
+  `);
+});

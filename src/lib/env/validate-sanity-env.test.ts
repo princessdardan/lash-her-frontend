@@ -7,6 +7,7 @@ import test from "node:test";
 
 const scriptPath = join(process.cwd(), "scripts/validate-sanity-env.mjs");
 const checkoutKey = Buffer.alloc(32, 7).toString("base64");
+const checkoutPiiKey = Buffer.alloc(32, 9).toString("base64");
 const calendarCredentialKey = Buffer.alloc(32, 11).toString("base64");
 const secretValue = "super-secret-value-that-must-not-appear";
 
@@ -45,6 +46,8 @@ const launchEnv = {
   HELCIM_WEBHOOK_VERIFIER_TOKEN: "helcim-webhook-verifier-token",
   PAYMENT_RECONCILIATION_CRON_SECRET: "payment-reconciliation-cron-secret",
   CRON_SECRET: "vercel-cron-secret",
+  BACKUP_RETENTION_DAYS: "30",
+  NEXT_PUBLIC_SITE_URL: "https://lashher.com",
 };
 
 test("validates local public Sanity environment", () => {
@@ -89,6 +92,214 @@ test("validates preview launch environment", () => {
 
   assert.equal(result.status, 0);
   assert.match(result.stdout, /Vercel preview environment validated/);
+});
+
+test("validates preview Chit Chats shipping configuration", () => {
+  const result = runValidator({
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+    CHITCHATS_SHIPPING_ENABLED: "true",
+    CHITCHATS_CHECKOUT_ENABLED: "true",
+    CHITCHATS_US_SHIPPING_ENABLED: "false",
+    CHITCHATS_ENVIRONMENT: "staging",
+    CHITCHATS_CLIENT_ID: "client-id",
+    CHITCHATS_REGION: "ontario_manitoba",
+    CHITCHATS_ACCESS_TOKEN: "access-token",
+    CHITCHATS_QUOTE_SIGNING_SECRET: "quote-signing-secret-with-safe-length",
+    CHITCHATS_WORKER_CRON_SECRET:
+      "worker-cron-secret-with-at-least-32-random-bytes",
+    CHECKOUT_PII_ENCRYPTION_KEY: checkoutPiiKey,
+    SHIPPING_DECISION_TOKEN_SECRET:
+      "shipping-decision-secret-at-least-thirty-two-bytes",
+    ADDRESS_CHANGE_TOKEN_SECRET:
+      "address-change-secret-at-least-thirty-two-bytes",
+    SHIPPING_POLICY_ENFORCEMENT_MODE: "enforce",
+  });
+
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Vercel preview environment validated/);
+});
+
+test("accepts every canonical Chit Chats region", () => {
+  for (const region of [
+    "british_columbia",
+    "alberta_saskatchewan",
+    "ontario_manitoba",
+    "quebec",
+    "atlantic",
+  ]) {
+    const result = runValidator({
+      ...launchEnv,
+      VERCEL_ENV: "preview",
+      NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+      CHITCHATS_SHIPPING_ENABLED: "true",
+      CHITCHATS_CHECKOUT_ENABLED: "false",
+      CHITCHATS_US_SHIPPING_ENABLED: "false",
+      CHITCHATS_ENVIRONMENT: "staging",
+      CHITCHATS_CLIENT_ID: "client-id",
+      CHITCHATS_REGION: region,
+      CHITCHATS_ACCESS_TOKEN: "access-token",
+      CHITCHATS_QUOTE_SIGNING_SECRET:
+        "quote-signing-secret-with-at-least-32-bytes",
+      CHITCHATS_WORKER_CRON_SECRET:
+        "worker-cron-secret-with-at-least-32-random-bytes",
+      CHECKOUT_PII_ENCRYPTION_KEY: checkoutPiiKey,
+      SHIPPING_DECISION_TOKEN_SECRET:
+        "shipping-decision-secret-at-least-thirty-two-bytes",
+      ADDRESS_CHANGE_TOKEN_SECRET:
+        "address-change-secret-at-least-thirty-two-bytes",
+      SHIPPING_POLICY_ENFORCEMENT_MODE: "observe",
+    });
+
+    assert.equal(result.status, 0, `${region}: ${result.combinedOutput}`);
+  }
+});
+
+test("normalizes surrounding whitespace in the configured Chit Chats region", () => {
+  const result = runValidator({
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+    CHITCHATS_SHIPPING_ENABLED: "true",
+    CHITCHATS_CHECKOUT_ENABLED: "false",
+    CHITCHATS_US_SHIPPING_ENABLED: "false",
+    CHITCHATS_ENVIRONMENT: "staging",
+    CHITCHATS_CLIENT_ID: "client-id",
+    CHITCHATS_REGION: "  ontario_manitoba  ",
+    CHITCHATS_ACCESS_TOKEN: "access-token",
+    CHITCHATS_QUOTE_SIGNING_SECRET:
+      "quote-signing-secret-with-at-least-32-bytes",
+    CHITCHATS_WORKER_CRON_SECRET:
+      "worker-cron-secret-with-at-least-32-random-bytes",
+    CHECKOUT_PII_ENCRYPTION_KEY: checkoutPiiKey,
+    SHIPPING_DECISION_TOKEN_SECRET:
+      "shipping-decision-secret-at-least-thirty-two-bytes",
+    ADDRESS_CHANGE_TOKEN_SECRET:
+      "address-change-secret-at-least-thirty-two-bytes",
+    SHIPPING_POLICY_ENFORCEMENT_MODE: "observe",
+  });
+
+  assert.equal(result.status, 0, result.combinedOutput);
+});
+
+test("rejects a Chit Chats region outside the canonical allowlist", () => {
+  const result = runValidator({
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+    CHITCHATS_SHIPPING_ENABLED: "true",
+    CHITCHATS_CHECKOUT_ENABLED: "false",
+    CHITCHATS_US_SHIPPING_ENABLED: "false",
+    CHITCHATS_ENVIRONMENT: "staging",
+    CHITCHATS_CLIENT_ID: "client-id",
+    CHITCHATS_REGION: "ontario",
+    CHITCHATS_ACCESS_TOKEN: "access-token",
+    CHITCHATS_QUOTE_SIGNING_SECRET:
+      "quote-signing-secret-with-at-least-32-bytes",
+    CHITCHATS_WORKER_CRON_SECRET:
+      "worker-cron-secret-with-at-least-32-random-bytes",
+    CHECKOUT_PII_ENCRYPTION_KEY: checkoutPiiKey,
+    SHIPPING_DECISION_TOKEN_SECRET:
+      "shipping-decision-secret-at-least-thirty-two-bytes",
+    ADDRESS_CHANGE_TOKEN_SECRET:
+      "address-change-secret-at-least-thirty-two-bytes",
+    SHIPPING_POLICY_ENFORCEMENT_MODE: "observe",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.combinedOutput,
+    /CHITCHATS_REGION must be one of british_columbia, alberta_saskatchewan, ontario_manitoba, quebec, atlantic/,
+  );
+});
+
+test("does not accept the obsolete branch ID in place of a region", () => {
+  const result = runValidator({
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+    CHITCHATS_SHIPPING_ENABLED: "true",
+    CHITCHATS_CHECKOUT_ENABLED: "false",
+    CHITCHATS_US_SHIPPING_ENABLED: "false",
+    CHITCHATS_ENVIRONMENT: "staging",
+    CHITCHATS_CLIENT_ID: "client-id",
+    CHITCHATS_BRANCH_ID: "unsupported-branch-id",
+    CHITCHATS_ACCESS_TOKEN: "access-token",
+    CHITCHATS_QUOTE_SIGNING_SECRET:
+      "quote-signing-secret-with-at-least-32-bytes",
+    CHITCHATS_WORKER_CRON_SECRET:
+      "worker-cron-secret-with-at-least-32-random-bytes",
+    CHECKOUT_PII_ENCRYPTION_KEY: checkoutPiiKey,
+    SHIPPING_DECISION_TOKEN_SECRET:
+      "shipping-decision-secret-at-least-thirty-two-bytes",
+    ADDRESS_CHANGE_TOKEN_SECRET:
+      "address-change-secret-at-least-thirty-two-bytes",
+    SHIPPING_POLICY_ENFORCEMENT_MODE: "observe",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.combinedOutput, /Missing env var: CHITCHATS_REGION/);
+});
+
+test("fails when Chit Chats checkout is enabled without the shipping worker", () => {
+  const result = runValidator({
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+    CHITCHATS_SHIPPING_ENABLED: "false",
+    CHITCHATS_CHECKOUT_ENABLED: "true",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.combinedOutput,
+    /CHITCHATS_CHECKOUT_ENABLED requires CHITCHATS_SHIPPING_ENABLED=true/,
+  );
+});
+
+test("rejects malformed independent product checkout admission flags", () => {
+  const result = runValidator({
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+    MANUAL_PRODUCT_CHECKOUT_ENABLED: "yes",
+    SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED: "1",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.combinedOutput,
+    /MANUAL_PRODUCT_CHECKOUT_ENABLED must be true or false/,
+  );
+  assert.match(
+    result.combinedOutput,
+    /SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED must be true or false/,
+  );
+});
+
+test("fails production Chit Chats shipping configured against staging", () => {
+  const result = runValidator({
+    ...launchEnv,
+    VERCEL_ENV: "production",
+    NEXT_PUBLIC_SANITY_DATASET: "production",
+    CHITCHATS_SHIPPING_ENABLED: "true",
+    CHITCHATS_CHECKOUT_ENABLED: "false",
+    CHITCHATS_US_SHIPPING_ENABLED: "false",
+    CHITCHATS_ENVIRONMENT: "staging",
+    CHITCHATS_CLIENT_ID: "client-id",
+    CHITCHATS_REGION: "ontario_manitoba",
+    CHITCHATS_ACCESS_TOKEN: "access-token",
+    CHITCHATS_QUOTE_SIGNING_SECRET: "quote-signing-secret-with-safe-length",
+    CHITCHATS_WORKER_CRON_SECRET:
+      "worker-cron-secret-with-at-least-32-random-bytes",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.combinedOutput,
+    /requires CHITCHATS_ENVIRONMENT=production/,
+  );
 });
 
 test("fails launch environment when Square service booking flag is blank", () => {
@@ -333,7 +544,7 @@ test("fails launch environment without Auth.js identity configuration", () => {
   assert.match(result.combinedOutput, /Missing env var: AUTH_SECRET/);
 });
 
-test("fails launch environment with a short Auth.js secret", () => {
+test("fails launch environment with a weak Auth.js secret", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
@@ -342,7 +553,34 @@ test("fails launch environment with a short Auth.js secret", () => {
   });
 
   assert.notEqual(result.status, 0);
-  assert.match(result.combinedOutput, /AUTH_SECRET must be at least 32 characters/);
+  assert.match(
+    result.combinedOutput,
+    /AUTH_SECRET must be at least 32 bytes with at least 12 distinct characters/,
+  );
+});
+
+test("fails launch environment with a repeated 32-byte Auth.js secret", () => {
+  const result = runValidator({
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+    AUTH_SECRET: "a".repeat(32),
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.combinedOutput, /at least 12 distinct characters/);
+});
+
+test("fails launch environment with a low-diversity Auth.js secret", () => {
+  const result = runValidator({
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+    AUTH_SECRET: "abcd".repeat(8),
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.combinedOutput, /at least 12 distinct characters/);
 });
 
 test("fails an unknown service booking model rollout mode", () => {

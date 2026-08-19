@@ -5,6 +5,7 @@ declare module "next-auth" {
     user: DefaultSession["user"] & {
       isEmailVerified: boolean;
       providerUserId: string;
+      authenticatedAt: number;
     };
   }
 }
@@ -13,6 +14,7 @@ declare module "next-auth/jwt" {
   interface JWT {
     googleEmailVerified?: boolean;
     providerUserId?: string;
+    adminAuthenticatedAt?: number;
   }
 }
 

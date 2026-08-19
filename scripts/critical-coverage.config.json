@@ -1,0 +1,22 @@
+{
+  "all": true,
+  "clean": true,
+  "excludeAfterRemap": true,
+  "extension": [".ts"],
+  "include": [
+    "src/lib/commerce/product-payment-finalizer.ts",
+    "src/lib/commerce/product-payment-operation.ts",
+    "src/lib/private-db/shipping-retention.ts",
+    "src/lib/shipping/customer-decisions.ts",
+    "src/lib/shipping/customer-refunds.ts",
+    "src/lib/shipping/operation-worker.ts",
+    "src/lib/shipping/policy-jobs.ts",
+    "src/lib/shipping/quote-token.ts",
+    "src/lib/shipping/risk-review.ts",
+    "src/lib/shipping/shipment-store.ts",
+    "src/lib/shipping/status.ts"
+  ],
+  "reportDir": "coverage/critical",
+  "reporter": ["text", "json-summary"],
+  "tempDirectory": "coverage/critical/tmp"
+}

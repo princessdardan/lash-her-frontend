@@ -144,7 +144,9 @@ export function createMockHelcimGateway({
     async initializePay(request) {
       clearHiddenStateAfterStoreReset(store, state);
       const createdAt = clock();
-      const sequence = getSequenceFromInvoiceNumber(request.invoiceNumber) ?? store.nextSequence();
+      const sequence =
+        getSequenceFromInvoiceNumber(request.invoiceNumber) ??
+        store.nextSequence();
       const invoice = state.invoices.get(request.invoiceNumber)?.response;
       const transactionId = `mock_helcim_txn_${sequence}`;
       const status = statusForScenario(scenario);
@@ -179,22 +181,44 @@ export function createMockHelcimGateway({
       const transaction = state.transactions.get(cardTransactionId);
 
       if (!transaction) {
-        throw new Error(`Mock Helcim card transaction not found: ${cardTransactionId}`);
+        throw new Error(
+          `Mock Helcim card transaction not found: ${cardTransactionId}`,
+        );
       }
 
       return {
         amount: transaction.amount,
-        approvalCode: approvalCodeForScenario(transaction.scenario, transaction.sequence),
+        approvalCode: approvalCodeForScenario(
+          transaction.scenario,
+          transaction.sequence,
+        ),
         card: {
           brand: "Visa",
           last4: "4242",
         },
         currency: transaction.currency,
+        avsResponse: transaction.status === "APPROVED" ? "Y" : "N",
+        cvvResponse: transaction.status === "APPROVED" ? "M" : "N",
         invoiceId: transaction.invoiceId,
         invoiceNumber: transaction.invoiceNumber,
         status: transaction.status,
         transactionId: transaction.transactionId,
+        transactionType: "purchase",
       } satisfies HelcimCardTransactionResponse;
+    },
+    async refundPayment(request, refundIdempotencyKey) {
+      clearHiddenStateAfterStoreReset(store, state);
+      const original = state.transactions.get(
+        String(request.originalTransactionId),
+      );
+      const sequence = store.nextSequence();
+      return {
+        transactionId: `mock_helcim_refund_${sequence}`,
+        status: original?.status === "DECLINED" ? "DECLINED" : "APPROVED",
+        amount: request.amount,
+        currency: "CAD",
+        idempotencyKey: refundIdempotencyKey,
+      };
     },
   };
 }
@@ -207,20 +231,24 @@ export function buildMockHelcimSuccessPayload({
   scenario = "success",
   transactionId,
 }: BuildMockHelcimSuccessPayloadInput): HelcimPaySuccessPayload {
-  const sequence = getSequenceFromSecretToken(paySession.secretToken)
-    ?? getSequenceFromInvoiceNumber(invoice.invoiceNumber)
-    ?? 1;
+  const sequence =
+    getSequenceFromSecretToken(paySession.secretToken) ??
+    getSequenceFromInvoiceNumber(invoice.invoiceNumber) ??
+    1;
   const status = statusForScenario(scenario);
   const data = {
     amount,
     approved: status === "APPROVED",
+    avsResponse: status === "APPROVED" ? "Y" : "N",
     cardLast4: "4242",
     cardType: "Visa",
     currency,
+    cvvResponse: status === "APPROVED" ? "M" : "N",
     invoiceId: invoice.invoiceId,
     invoiceNumber: invoice.invoiceNumber,
     status,
     transactionId: transactionId ?? `mock_helcim_txn_${sequence}`,
+    transactionType: "purchase",
   };
 
   return {
@@ -303,7 +331,10 @@ function getStoreState(store: PaymentMockStore): MockHelcimStoreState {
   return created;
 }
 
-function clearHiddenStateAfterStoreReset(store: PaymentMockStore, state: MockHelcimStoreState): void {
+function clearHiddenStateAfterStoreReset(
+  store: PaymentMockStore,
+  state: MockHelcimStoreState,
+): void {
   if (!isPublicStoreEmpty(store) || isHiddenStateEmpty(state)) {
     return;
   }
@@ -314,16 +345,20 @@ function clearHiddenStateAfterStoreReset(store: PaymentMockStore, state: MockHel
 }
 
 function isPublicStoreEmpty(store: PaymentMockStore): boolean {
-  return store.idempotencyRecords.length === 0
-    && store.providerOrders.length === 0
-    && store.providerTransactions.length === 0
-    && store.webhookEventRecords.length === 0;
+  return (
+    store.idempotencyRecords.length === 0 &&
+    store.providerOrders.length === 0 &&
+    store.providerTransactions.length === 0 &&
+    store.webhookEventRecords.length === 0
+  );
 }
 
 function isHiddenStateEmpty(state: MockHelcimStoreState): boolean {
-  return state.idempotency.size === 0
-    && state.invoices.size === 0
-    && state.transactions.size === 0;
+  return (
+    state.idempotency.size === 0 &&
+    state.invoices.size === 0 &&
+    state.transactions.size === 0
+  );
 }
 
 function hashPayload(payload: unknown): string {
@@ -338,14 +373,20 @@ function stableStringify(value: unknown): string {
   if (value !== null && typeof value === "object") {
     return `{${Object.entries(value as Record<string, unknown>)
       .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`)
+      .map(
+        ([key, entryValue]) =>
+          `${JSON.stringify(key)}:${stableStringify(entryValue)}`,
+      )
       .join(",")}}`;
   }
 
   return JSON.stringify(value);
 }
 
-function normalizeClock(now: Date | (() => Date) | undefined, store: PaymentMockStore): () => Date {
+function normalizeClock(
+  now: Date | (() => Date) | undefined,
+  store: PaymentMockStore,
+): () => Date {
   if (typeof now === "function") {
     return () => new Date(now().getTime());
   }
@@ -372,8 +413,13 @@ function statusForScenario(scenario: PaymentMockScenario): string {
   }
 }
 
-function approvalCodeForScenario(scenario: PaymentMockScenario, sequence: number): string | undefined {
-  return statusForScenario(scenario) === "APPROVED" ? `MOCK-APPROVAL-${sequence}` : undefined;
+function approvalCodeForScenario(
+  scenario: PaymentMockScenario,
+  sequence: number,
+): string | undefined {
+  return statusForScenario(scenario) === "APPROVED"
+    ? `MOCK-APPROVAL-${sequence}`
+    : undefined;
 }
 
 function getSequenceFromInvoiceNumber(invoiceNumber: string): number | null {

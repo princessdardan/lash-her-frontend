@@ -42,7 +42,44 @@ describe("catalog loader contract", () => {
     assert.match(productProjection, /sku/);
     assert.match(
       productProjection,
-      /variants\[\]\{ _key, title, sku, price, discountPrice, isAvailable, availabilityLabel, options\[\]\{ _key, name, value \} \}/,
+      /^\s{2}options\[\]\{ _key, name, values \},$/m,
+    );
+    assert.match(
+      productProjection,
+      /variantOverrides\[\]\{ _key, select\[\]\{ _key, name, value \}, price, discountPrice, sku, isAvailable, availabilityLabel, shipping \}/,
+    );
+    assert.match(productProjection, /^\s{2}shipping,$/m);
+  });
+
+  it("normalizes grouped product options at every public and checkout product boundary", () => {
+    for (const loaderName of [
+      "getProducts",
+      "getProductsByIds",
+      "getProductBySlug",
+    ]) {
+      assert.match(
+        getFunctionSource(loaderName),
+        /normalizeProductVariantModel/,
+        `${loaderName} should normalize the shared commerce variant shape`,
+      );
+    }
+
+    const controlStringKeysStart = loadersSource.indexOf(
+      "const CONTROL_STRING_KEYS",
+    );
+    const controlStringKeysEnd = loadersSource.indexOf(
+      "]);",
+      controlStringKeysStart,
+    );
+    const controlStringKeys = loadersSource.slice(
+      controlStringKeysStart,
+      controlStringKeysEnd,
+    );
+
+    assert.doesNotMatch(
+      controlStringKeys,
+      /"name"/,
+      "unrelated name fields should retain draft visual-edit metadata",
     );
   });
 
@@ -122,7 +159,7 @@ describe("catalog loader contract", () => {
 });
 
 function getFunctionSource(name: string): string {
-  const start = loadersSource.indexOf(`async function ${name}`);
+  const start = loadersSource.indexOf(`async function ${name}(`);
   assert.notStrictEqual(start, -1, `${name} should exist`);
 
   const end = loadersSource.indexOf("\nasync function ", start + 1);

@@ -7,7 +7,10 @@ const helperScript = String.raw`
   import {
     createHelcimInvoice,
     getHelcimCardTransaction,
+    getHelcimInvoice,
+    getHelcimInvoicesByNumber,
     initializeHelcimPay,
+    refundHelcimPayment,
   } from "./src/lib/commerce/helcim-client.ts";
 
   const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
@@ -17,6 +20,14 @@ const helperScript = String.raw`
     calls.push({ input, init });
     if (String(input).endsWith("/invoices/")) {
       return Response.json({ invoiceId: 12345, invoiceNumber: "INV-12345" });
+    }
+
+    if (String(input).endsWith("/invoices/12345")) {
+      return Response.json({ invoiceId: 12345, invoiceNumber: "INV-12345", amount: 125, currency: "CAD", status: "DUE" });
+    }
+
+    if (String(input).includes("/invoices?invoiceNumber=")) {
+      return Response.json([]);
     }
 
     if (String(input).endsWith("/helcim-pay/initialize")) {
@@ -41,13 +52,22 @@ const helperScript = String.raw`
       currency: "CAD",
       invoiceNumber: invoice.invoiceNumber,
     });
+    const providerInvoice = await getHelcimInvoice(12345);
+    const matchingInvoices = await getHelcimInvoicesByNumber("LH-TEST");
     const response = await getHelcimCardTransaction("25764674");
+    const refund = await refundHelcimPayment(
+      { originalTransactionId: 25764674, amount: 12.5, ipAddress: "203.0.113.10", ecommerce: true },
+      "123e4567-e89b-12d3-a456-426614174000",
+    );
     const invoiceCall = calls[0];
     const checkoutCall = calls[1];
 
     assert.deepEqual(invoice, { invoiceId: 12345, invoiceNumber: "INV-12345" });
     assert.deepEqual(checkout, { checkoutToken: "checkout-token", secretToken: "secret-token" });
+    assert.equal(providerInvoice.invoiceId, 12345);
+    assert.deepEqual(matchingInvoices, []);
     assert.deepEqual(response, { id: 25764674, status: "APPROVED" });
+    assert.deepEqual(refund, { id: 25764674, status: "APPROVED" });
     assert.ok(invoiceCall);
     assert.equal(String(invoiceCall.input), "https://api.helcim.com/v2/invoices/");
     assert.equal(invoiceCall.init?.method, "POST");
@@ -58,7 +78,12 @@ const helperScript = String.raw`
     assert.equal(checkoutCall.init?.method, "POST");
     assert.equal(new Headers(checkoutCall.init?.headers).get("api-token"), "test-transaction-token-with-safe-length");
 
-    const call = calls[2];
+    const invoiceLookupCall = calls[2];
+    assert.equal(String(invoiceLookupCall.input), "https://api.helcim.com/v2/invoices/12345");
+    const invoiceSearchCall = calls[3];
+    assert.equal(String(invoiceSearchCall.input), "https://api.helcim.com/v2/invoices?invoiceNumber=LH-TEST");
+
+    const call = calls[4];
     assert.ok(call);
     assert.equal(String(call.input), "https://api.helcim.com/v2/card-transactions/25764674");
     assert.equal(call.init?.method, "GET");
@@ -69,6 +94,19 @@ const helperScript = String.raw`
     assert.equal(headers.get("api-token"), "test-general-token-with-safe-length");
     assert.equal(headers.get("accept"), "application/json");
     assert.equal(headers.has("content-type"), false);
+
+    const refundCall = calls[5];
+    assert.ok(refundCall);
+    assert.equal(String(refundCall.input), "https://api.helcim.com/v2/payment/refund");
+    assert.equal(refundCall.init?.method, "POST");
+    assert.equal(new Headers(refundCall.init?.headers).get("api-token"), "test-transaction-token-with-safe-length");
+    assert.equal(new Headers(refundCall.init?.headers).get("idempotency-key"), "123e4567-e89b-12d3-a456-426614174000");
+    assert.deepEqual(JSON.parse(String(refundCall.init?.body)), {
+      originalTransactionId: 25764674,
+      amount: 12.5,
+      ipAddress: "203.0.113.10",
+      ecommerce: true,
+    });
   } finally {
     globalThis.fetch = originalFetch;
   }

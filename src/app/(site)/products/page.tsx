@@ -2,6 +2,7 @@ import type { ReactElement } from "react";
 import { ProductCatalogShell } from "@/components/commerce/product-catalog-shell";
 import { loaders, type ProductSort } from "@/data/loaders";
 import { JsonLd, buildProductCollectionJsonLd } from "@/lib/structured-data";
+import { getProductCheckoutAvailability } from "@/lib/shipping/config";
 
 export const revalidate = 300;
 
@@ -13,7 +14,12 @@ interface ProductsPageProps {
   searchParams: ProductsSearchParams;
 }
 
-const SORT_VALUES = new Set<ProductSort>(["default", "titleAsc", "priceAsc", "priceDesc"]);
+const SORT_VALUES = new Set<ProductSort>([
+  "default",
+  "titleAsc",
+  "priceAsc",
+  "priceDesc",
+]);
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) return value[0];
@@ -22,10 +28,14 @@ function firstParam(value: string | string[] | undefined): string | undefined {
 
 function getSort(value: string | string[] | undefined): ProductSort {
   const sort = firstParam(value)?.trim();
-  return sort && SORT_VALUES.has(sort as ProductSort) ? (sort as ProductSort) : "default";
+  return sort && SORT_VALUES.has(sort as ProductSort)
+    ? (sort as ProductSort)
+    : "default";
 }
 
-export default async function ProductsPage({ searchParams }: ProductsPageProps): Promise<ReactElement> {
+export default async function ProductsPage({
+  searchParams,
+}: ProductsPageProps): Promise<ReactElement> {
   const params = await searchParams;
   const sort = getSort(params.sort);
 
@@ -33,17 +43,21 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps):
     loaders.getProductsPageData(),
     loaders.getProducts(sort),
   ]);
-  const productCollectionJsonLd = buildProductCollectionJsonLd(products);
+  const productCollectionJsonLd = await buildProductCollectionJsonLd(products);
 
   return (
     <>
       {productCollectionJsonLd && (
-        <JsonLd id="lash-her-product-list-json-ld" data={productCollectionJsonLd} />
+        <JsonLd
+          id="lash-her-product-list-json-ld"
+          data={productCollectionJsonLd}
+        />
       )}
       <ProductCatalogShell
         pageData={pageData}
         products={products}
         sort={sort}
+        checkoutAvailability={getProductCheckoutAvailability()}
       />
     </>
   );

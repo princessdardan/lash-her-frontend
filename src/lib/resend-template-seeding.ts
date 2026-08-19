@@ -208,16 +208,35 @@ const SAMPLE_PRODUCT_CONFIRMATION: SendProductOrderConfirmationEmailInput = {
       unitPriceCents: 6400,
     },
   ],
+  merchandiseAmount: 64,
   orderId: "LH-PRODUCT-1001",
+  shippingAmount: 12.5,
   shippingAddress: {
-    city: "Toronto",
-    country: "CA",
+    city: "Buffalo",
+    country: "US",
     line1: "100 Sample Street",
     line2: "Suite 5",
-    postalCode: "M5V 1A1",
-    province: "ON",
+    postalCode: "14201",
+    province: "NY",
   },
-  totalAmount: 64,
+  fulfillmentMode: "automated_shipping",
+  usImportDisclosure: {
+    terms: "DDU",
+    version: "SAMPLE-CERTIFIED-IMPORT-DISCLOSURE",
+    text: "Sample certified import-terms disclosure text.",
+    presentedAt: "2026-06-15T14:30:00.000Z",
+  },
+  termsSnapshot: {
+    accepted: true,
+    version: "product-checkout-terms-2026-08-18",
+    text: "Sample Terms-of-sale assent statement the customer accepted at checkout.",
+    textHash:
+      "0000000000000000000000000000000000000000000000000000000000000000",
+    presentedAt: "2026-06-15T14:29:00.000Z",
+    acceptedAt: "2026-06-15T14:30:00.000Z",
+    requestEvidence: "checkout_post:00000000-0000-4000-8000-000000000000",
+  },
+  totalAmount: 76.5,
 };
 
 const SAMPLE_TRAINING_PAYMENT: SendTrainingPaymentNotificationEmailsInput = {

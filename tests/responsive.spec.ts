@@ -1,37 +1,42 @@
-import { test, expect } from '@playwright/test';
-import { setupApiMocks } from './utils/api-mocks';
+import { test, expect } from "@playwright/test";
+import { setupApiMocks } from "./utils/api-mocks";
 
 const pages = [
-  { path: '/', name: 'Homepage' },
-  { path: '/contact', name: 'Contact' },
-  { path: '/gallery', name: 'Gallery' },
-  { path: '/training-programs', name: 'Training Programs' },
+  { path: "/", name: "Homepage" },
+  { path: "/contact", name: "Contact" },
+  { path: "/gallery", name: "Gallery" },
+  { path: "/training-programs", name: "Training Programs" },
 ];
 
 const viewports = {
-  mobile: { width: 375, height: 667, name: 'Mobile (iPhone SE)' },
-  mobileLarge: { width: 414, height: 896, name: 'Mobile Large (iPhone XR)' },
-  tablet: { width: 768, height: 1024, name: 'Tablet (iPad)' },
-  tabletLandscape: { width: 1024, height: 768, name: 'Tablet Landscape' },
-  desktop: { width: 1280, height: 720, name: 'Desktop' },
-  desktopLarge: { width: 1920, height: 1080, name: 'Desktop Large' },
+  mobile: { width: 375, height: 667, name: "Mobile (iPhone SE)" },
+  mobileLarge: { width: 414, height: 896, name: "Mobile Large (iPhone XR)" },
+  tablet: { width: 768, height: 1024, name: "Tablet (iPad)" },
+  tabletLandscape: { width: 1024, height: 768, name: "Tablet Landscape" },
+  desktop: { width: 1280, height: 720, name: "Desktop" },
+  desktopLarge: { width: 1920, height: 1080, name: "Desktop Large" },
 };
 
-test.describe('Responsive Design Tests', () => {
+test.describe("Responsive Design Tests", () => {
   for (const [deviceType, viewport] of Object.entries(viewports)) {
     test.describe(`${viewport.name} (${viewport.width}x${viewport.height})`, () => {
       test.beforeEach(async ({ page }) => {
         await setupApiMocks(page);
-        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        await page.setViewportSize({
+          width: viewport.width,
+          height: viewport.height,
+        });
       });
 
       for (const pageInfo of pages) {
-        test(`should render ${pageInfo.name} page correctly`, async ({ page }) => {
+        test(`should render ${pageInfo.name} page correctly`, async ({
+          page,
+        }) => {
           await page.goto(pageInfo.path);
-          await page.waitForLoadState('networkidle');
+          await page.waitForLoadState("networkidle");
 
           // Main content should be visible
-          const main = page.locator('main, body');
+          const main = page.locator("main, body");
           await expect(main.first()).toBeVisible();
 
           // Take a screenshot for visual regression (optional)
@@ -39,21 +44,25 @@ test.describe('Responsive Design Tests', () => {
         });
       }
 
-      test('should not have horizontal scroll', async ({ page }) => {
-        await page.goto('/');
-        await page.waitForLoadState('networkidle');
+      test("should not have horizontal scroll", async ({ page }) => {
+        await page.goto("/");
+        await page.waitForLoadState("networkidle");
 
         // Check if page width exceeds viewport
-        const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
-        const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
+        const scrollWidth = await page.evaluate(
+          () => document.documentElement.scrollWidth,
+        );
+        const clientWidth = await page.evaluate(
+          () => document.documentElement.clientWidth,
+        );
 
         // Allow for small differences due to scrollbar
         expect(scrollWidth).toBeLessThanOrEqual(clientWidth + 20);
       });
 
-      test('should have readable text size', async ({ page }) => {
-        await page.goto('/');
-        await page.waitForLoadState('networkidle');
+      test("should have readable text size", async ({ page }) => {
+        await page.goto("/");
+        await page.waitForLoadState("networkidle");
 
         // Check font size of body text
         const fontSize = await page.evaluate(() => {
@@ -64,17 +73,19 @@ test.describe('Responsive Design Tests', () => {
         const fontSizeNum = parseFloat(fontSize);
 
         // Minimum readable font size is typically 14-16px
-        if (deviceType.includes('mobile')) {
+        if (deviceType.includes("mobile")) {
           expect(fontSizeNum).toBeGreaterThanOrEqual(14);
         } else {
           expect(fontSizeNum).toBeGreaterThanOrEqual(14);
         }
       });
 
-      test('should have touch-friendly buttons on mobile/tablet', async ({ page }) => {
-        if (deviceType.includes('mobile') || deviceType.includes('tablet')) {
-          await page.goto('/contact');
-          await page.waitForLoadState('networkidle');
+      test("should have touch-friendly buttons on mobile/tablet", async ({
+        page,
+      }) => {
+        if (deviceType.includes("mobile") || deviceType.includes("tablet")) {
+          await page.goto("/contact");
+          await page.waitForLoadState("networkidle");
 
           // Check button sizes
           const buttons = page.locator('button, a[role="button"]');
@@ -83,7 +94,9 @@ test.describe('Responsive Design Tests', () => {
           if (buttonCount > 0) {
             for (let i = 0; i < Math.min(buttonCount, 3); i++) {
               const button = buttons.nth(i);
-              if (await button.isVisible({ timeout: 1000 }).catch(() => false)) {
+              if (
+                await button.isVisible({ timeout: 1000 }).catch(() => false)
+              ) {
                 const box = await button.boundingBox();
 
                 if (box) {
@@ -100,19 +113,21 @@ test.describe('Responsive Design Tests', () => {
   }
 });
 
-test.describe('Cross-Device Navigation', () => {
+test.describe("Cross-Device Navigation", () => {
   test.beforeEach(async ({ page }) => {
     await setupApiMocks(page);
   });
 
-  test('should switch between mobile and desktop views smoothly', async ({ page }) => {
+  test("should switch between mobile and desktop views smoothly", async ({
+    page,
+  }) => {
     // Start mobile
     await page.setViewportSize({ width: 375, height: 667 });
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await page.goto("/");
+    await page.waitForLoadState("networkidle");
 
     // On mobile, look for header (nav might be hidden)
-    const mobileHeader = page.locator('header');
+    const mobileHeader = page.getByRole("banner");
     await expect(mobileHeader).toBeVisible();
 
     // Switch to desktop
@@ -120,42 +135,42 @@ test.describe('Cross-Device Navigation', () => {
     await page.waitForTimeout(500);
 
     // On desktop, navigation should be visible
-    const desktopNav = page.locator('header');
+    const desktopNav = page.getByRole("banner");
     await expect(desktopNav).toBeVisible();
   });
 
-  test('should handle orientation changes', async ({ page }) => {
+  test("should handle orientation changes", async ({ page }) => {
     // Portrait
     await page.setViewportSize({ width: 375, height: 667 });
-    await page.goto('/gallery');
-    await page.waitForLoadState('networkidle');
+    await page.goto("/gallery");
+    await page.waitForLoadState("networkidle");
 
-    await expect(page.locator('main')).toBeVisible();
+    await expect(page.locator("main")).toBeVisible();
 
     // Landscape
     await page.setViewportSize({ width: 667, height: 375 });
     await page.waitForTimeout(500);
 
-    await expect(page.locator('main')).toBeVisible();
+    await expect(page.locator("main")).toBeVisible();
   });
 });
 
-test.describe('Image Responsiveness', () => {
+test.describe("Image Responsiveness", () => {
   test.beforeEach(async ({ page }) => {
     await setupApiMocks(page);
   });
 
-  test('should load appropriate image sizes for mobile', async ({ page }) => {
+  test("should load appropriate image sizes for mobile", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
-    await page.goto('/gallery');
-    await page.waitForLoadState('networkidle');
+    await page.goto("/gallery");
+    await page.waitForLoadState("networkidle");
 
-    const images = page.locator('img');
+    const images = page.locator("img");
     const imageCount = await images.count();
 
     if (imageCount > 0) {
       const firstImage = images.first();
-      const src = await firstImage.getAttribute('src');
+      const src = await firstImage.getAttribute("src");
 
       // Next.js Image component should serve optimized images
       // Check if image URL contains optimization parameters
@@ -166,12 +181,12 @@ test.describe('Image Responsiveness', () => {
     }
   });
 
-  test('should not exceed viewport width', async ({ page }) => {
+  test("should not exceed viewport width", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
-    await page.goto('/gallery');
-    await page.waitForLoadState('networkidle');
+    await page.goto("/gallery");
+    await page.waitForLoadState("networkidle");
 
-    const images = page.locator('img');
+    const images = page.locator("img");
     const imageCount = await images.count();
 
     if (imageCount > 0) {
@@ -190,21 +205,21 @@ test.describe('Image Responsiveness', () => {
   });
 });
 
-test.describe('Form Responsiveness', () => {
+test.describe("Form Responsiveness", () => {
   test.beforeEach(async ({ page }) => {
     await setupApiMocks(page);
   });
 
-  test('should display form fields properly on mobile', async ({ page }) => {
+  test("should display form fields properly on mobile", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
-    await page.goto('/contact');
-    await page.waitForLoadState('networkidle');
+    await page.goto("/contact");
+    await page.waitForLoadState("networkidle");
 
-    const form = page.locator('form').first();
+    const form = page.locator("form").first();
     const hasForm = await form.isVisible({ timeout: 2000 }).catch(() => false);
 
     if (hasForm) {
-      const inputs = form.locator('input, textarea');
+      const inputs = form.locator("input, textarea");
       const inputCount = await inputs.count();
 
       if (inputCount > 0) {
@@ -223,12 +238,12 @@ test.describe('Form Responsiveness', () => {
     }
   });
 
-  test('should stack form fields vertically on mobile', async ({ page }) => {
+  test("should stack form fields vertically on mobile", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
-    await page.goto('/contact');
-    await page.waitForLoadState('networkidle');
+    await page.goto("/contact");
+    await page.waitForLoadState("networkidle");
 
-    const form = page.locator('form').first();
+    const form = page.locator("form").first();
     const hasForm = await form.isVisible({ timeout: 2000 }).catch(() => false);
 
     if (hasForm) {
@@ -238,12 +253,14 @@ test.describe('Form Responsiveness', () => {
   });
 });
 
-test.describe('Typography Responsiveness', () => {
+test.describe("Typography Responsiveness", () => {
   test.beforeEach(async ({ page }) => {
     await setupApiMocks(page);
   });
 
-  test('should scale headings appropriately across devices', async ({ page }) => {
+  test("should scale headings appropriately across devices", async ({
+    page,
+  }) => {
     const devices = [
       { width: 375, height: 667 },
       { width: 1280, height: 720 },
@@ -251,10 +268,10 @@ test.describe('Typography Responsiveness', () => {
 
     for (const device of devices) {
       await page.setViewportSize(device);
-      await page.goto('/');
-      await page.waitForLoadState('networkidle');
+      await page.goto("/");
+      await page.waitForLoadState("networkidle");
 
-      const h1 = page.locator('h1').first();
+      const h1 = page.locator("h1").first();
       const hasH1 = await h1.isVisible({ timeout: 1000 }).catch(() => false);
 
       if (hasH1) {
@@ -268,14 +285,16 @@ test.describe('Typography Responsiveness', () => {
     }
   });
 
-  test('should maintain line length for readability', async ({ page }) => {
+  test("should maintain line length for readability", async ({ page }) => {
     await page.setViewportSize({ width: 1920, height: 1080 });
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await page.goto("/");
+    await page.waitForLoadState("networkidle");
 
     // Check if text content has max-width for readability
-    const paragraphs = page.locator('p').first();
-    const hasParagraph = await paragraphs.isVisible({ timeout: 1000 }).catch(() => false);
+    const paragraphs = page.locator("p").first();
+    const hasParagraph = await paragraphs
+      .isVisible({ timeout: 1000 })
+      .catch(() => false);
 
     if (hasParagraph) {
       const box = await paragraphs.boundingBox();

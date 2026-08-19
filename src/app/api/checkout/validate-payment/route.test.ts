@@ -65,9 +65,13 @@ const helperScript = String.raw`
   }
 
   async function runScenario({
+    allowProductCallbackFallback,
+    activateShipmentForPaidOrder,
     finalizeAppointmentPaymentForOrder,
+    finalizeProductPayment,
     getAppointmentHoldByCheckoutOrderPublicId,
     getPendingOrderByCheckoutToken,
+    getProductCardTransaction,
     getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
     markOrderPaid,
     markOrderVerificationFailed,
@@ -87,8 +91,17 @@ const helperScript = String.raw`
     const operationOrder = [];
     const sentEmails = [];
     const sentProductEmails = [];
+    const activatedShipments = [];
+    const finalizedProductPayments = [];
 
     const handler = createValidatePaymentPostHandler({
+      allowProductCallbackFallback,
+      activateShipmentForPaidOrder: async (orderId) => {
+        activatedShipments.push(orderId);
+        if (activateShipmentForPaidOrder) {
+          await activateShipmentForPaidOrder(orderId);
+        }
+      },
       finalizeAppointmentPaymentForOrder: async (input) => {
         finalizedBookings.push(input);
         if (finalizeAppointmentPaymentForOrder) {
@@ -108,6 +121,9 @@ const helperScript = String.raw`
         }
         return pendingOrder;
       },
+      ...(getProductCardTransaction
+        ? { getProductCardTransaction }
+        : {}),
       getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId: async (orderId) => {
         if (getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId) {
           return getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId(orderId);
@@ -127,8 +143,9 @@ const helperScript = String.raw`
         markedPaidOrders.push({ orderId, transactionId });
         operationOrder.push("mark-paid");
         if (markOrderPaid) {
-          await markOrderPaid(orderId, transactionId);
+          return (await markOrderPaid(orderId, transactionId)) ?? "applied";
         }
+        return "applied";
       },
       markOrderVerificationFailed: async (orderId) => {
         markedFailedOrders.push(orderId);
@@ -179,9 +196,17 @@ const helperScript = String.raw`
         }
         return { ok: true, transactionId: "txn-verified-123" };
       },
+      ...(finalizeProductPayment
+        ? {
+            finalizeProductPayment: async (input) => {
+              finalizedProductPayments.push(input);
+              return finalizeProductPayment(input);
+            },
+          }
+        : {}),
     });
 
-    return { errors, finalizedBookings, handler, markedFailedOrders, markedPaidOrders, markedStaffAlerts, operationOrder, sentBookingEmails, sentEmails, sentProductEmails };
+    return { activatedShipments, errors, finalizedBookings, finalizedProductPayments, handler, markedFailedOrders, markedPaidOrders, markedStaffAlerts, operationOrder, sentBookingEmails, sentEmails, sentProductEmails };
   }
 `;
 
@@ -201,6 +226,53 @@ test("checkout payment validation rejects invalid request bodies before lookup",
     assert.deepEqual(await response.json(), { error: "Invalid request body" });
     assert.equal(lookupCount, 0);
     assert.equal(markedPaidOrders.length, 0);
+  `);
+});
+
+test("checkout payment validation rejects oversized bodies before lookup", () => {
+  runRouteScenario(`
+    let lookupCount = 0;
+    const { handler } = await runScenario({
+      getPendingOrderByCheckoutToken: async () => {
+        lookupCount += 1;
+        return pendingOrder;
+      },
+    });
+    const response = await handler(createRequest({
+      checkoutToken: "checkout-token",
+      data: { padding: "x".repeat(32 * 1024) },
+      hash: "hash",
+    }));
+    assert.equal(response.status, 413);
+    assert.equal(lookupCount, 0);
+  `);
+});
+
+test("hash-authenticated unknown product payment values enter durable review", () => {
+  runRouteScenario(`
+    const { handler, finalizedProductPayments } = await runScenario({
+      allowProductCallbackFallback: true,
+      verifyHelcimPayment: () => ({
+        ok: false,
+        reason: "unknown_transaction_type",
+      }),
+      finalizeProductPayment: async () => ({
+        transition: "transaction_conflict",
+        riskStatus: "review_required",
+      }),
+    });
+    const response = await handler(createRequest({
+      checkoutToken: "checkout-token",
+      data: {
+        ...approvedPaymentData,
+        transactionType: "uncertified-type",
+      },
+      hash: "valid-hash",
+    }));
+    assert.equal(response.status, 202);
+    assert.equal(finalizedProductPayments.length, 1);
+    assert.equal(finalizedProductPayments[0].transactionId, "txn-verified-123");
+    assert.equal(finalizedProductPayments[0].source, "client_callback");
   `);
 });
 
@@ -255,7 +327,7 @@ test("checkout payment validation rejects Square provider orders before Helcim v
   `);
 });
 
-test("checkout payment validation rejects invalid hashes and marks order failed", () => {
+test("checkout payment validation rejects invalid hashes without downgrading the order", () => {
   runRouteScenario(`
     const { handler, markedFailedOrders } = await runScenario({
       verifyHelcimPayment: () => ({ ok: false, reason: "invalid_hash" }),
@@ -269,11 +341,11 @@ test("checkout payment validation rejects invalid hashes and marks order failed"
 
     assert.equal(response.status, 400);
     assert.deepEqual(await response.json(), { error: "Payment could not be verified" });
-    assert.deepEqual(markedFailedOrders, ["lh-order-123"]);
+    assert.deepEqual(markedFailedOrders, []);
   `);
 });
 
-test("checkout payment validation marks order failed for payment mismatches", () => {
+test("checkout payment validation rejects payment mismatches without downgrading the order", () => {
   runRouteScenario(`
     const { handler, markedFailedOrders, markedPaidOrders } = await runScenario({
       verifyHelcimPayment: () => ({ ok: false, reason: "wrong_amount" }),
@@ -286,7 +358,7 @@ test("checkout payment validation marks order failed for payment mismatches", ()
     }));
 
     assert.equal(response.status, 400);
-    assert.deepEqual(markedFailedOrders, ["lh-order-123"]);
+    assert.deepEqual(markedFailedOrders, []);
     assert.equal(markedPaidOrders.length, 0);
   `);
 });
@@ -313,7 +385,7 @@ test("checkout payment validation rejects mock Helcim decline and cancel payload
 
       assert.equal(response.status, 400);
       assert.deepEqual(await response.json(), { error: "Payment could not be verified" });
-      assert.deepEqual(markedFailedOrders, ["lh-order-123"]);
+      assert.deepEqual(markedFailedOrders, []);
       assert.deepEqual(markedPaidOrders, []);
     }
   `);
@@ -325,8 +397,9 @@ test("checkout payment validation accepts live HelcimPay payloads without invoic
       amount: "1130.00",
       currency: "CAD",
       invoiceNumber: "INV-4242",
-      status: "APPROVAL",
-      transactionId: "txn-live-123",
+        status: "APPROVED",
+        transactionId: "txn-live-123",
+        transactionType: "purchase",
     };
     const { handler, markedPaidOrders } = await runScenario({
       verifyHelcimPayment: realVerifyHelcimPayment,
@@ -368,6 +441,320 @@ test("checkout payment validation sends product confirmation email after persist
   `);
 });
 
+test("product validation uses authoritative obligation evidence and holds shipment on risk review", () => {
+  runRouteScenario(`
+    const order = { ...pendingOrder, paymentObligationId: "obligation-shipping-1" };
+    const {
+      activatedShipments,
+      finalizedProductPayments,
+      handler,
+      sentProductEmails,
+    } = await runScenario({
+      getPendingOrderByCheckoutToken: async () => order,
+      getProductCardTransaction: async () => ({
+        id: 25764674,
+        amount: "1130.00",
+        currency: "CAD",
+        status: "APPROVED",
+        transactionType: "purchase",
+        avsResponse: "U",
+        cvvResponse: "P",
+      }),
+      finalizeProductPayment: async () => ({
+        transition: "applied",
+        riskStatus: "review_required",
+        obligationId: "obligation-shipping-1",
+      }),
+    });
+
+    const response = await handler(createRequest({
+      checkoutToken: "checkout-token",
+      data: approvedPaymentData,
+      hash: "hash",
+    }));
+
+    assert.equal(response.status, 202);
+    assert.equal(activatedShipments.length, 0);
+    assert.deepEqual(sentProductEmails, [pendingOrder.orderId]);
+    assert.equal(finalizedProductPayments.length, 1);
+    assert.equal(
+      finalizedProductPayments[0].obligationId,
+      "obligation-shipping-1",
+    );
+    assert.equal(finalizedProductPayments[0].source, "helcim_api");
+    assert.equal(finalizedProductPayments[0].data.transactionId, "25764674");
+  `);
+});
+
+for (const scenario of ["not_found", "malformed_response", "request_failed"]) {
+  test(`non-mock product validation records ${scenario} authoritative lookup as outcome unknown`, () => {
+    runRouteScenario(`
+      const {
+        activatedShipments,
+        finalizedProductPayments,
+        handler,
+        markedPaidOrders,
+        sentProductEmails,
+      } = await runScenario({
+        getProductCardTransaction: async () => {
+          if (${JSON.stringify(scenario)} === "request_failed") {
+            throw new Error("provider unavailable");
+          }
+          if (${JSON.stringify(scenario)} === "malformed_response") return {};
+          return null;
+        },
+        finalizeProductPayment: async (input) => ({
+          transition: input.authoritativeLookupFailure
+            ? "outcome_unknown"
+            : "applied",
+          riskStatus: input.authoritativeLookupFailure
+            ? "review_required"
+            : "cleared",
+        }),
+      });
+
+      const response = await handler(createRequest({
+        checkoutToken: "checkout-token",
+        data: approvedPaymentData,
+        hash: "hash",
+      }));
+
+      assert.equal(response.status, 202);
+      assert.equal(finalizedProductPayments.length, 1);
+      assert.equal(finalizedProductPayments[0].source, "helcim_api");
+      assert.equal(
+        finalizedProductPayments[0].authoritativeLookupFailure,
+        ${JSON.stringify(scenario)},
+      );
+      assert.deepEqual(markedPaidOrders, []);
+      assert.deepEqual(activatedShipments, []);
+      assert.deepEqual(sentProductEmails, []);
+    `);
+  });
+}
+
+for (const scenario of ["malformed_response", "request_failed"]) {
+  test(`authenticated webhook-first product replay survives ${scenario} without changing payment risk`, () => {
+    runRouteScenario(`
+      const paidOrder = {
+        ...pendingOrder,
+        paymentObligationId: "obligation-webhook-first",
+        status: "paid",
+        helcimTransactionId: "txn-verified-123",
+      };
+      const { finalizedProductPayments, handler, markedPaidOrders, sentProductEmails } =
+        await runScenario({
+          getPendingOrderByCheckoutToken: async () => paidOrder,
+          getProductCardTransaction: async () => {
+            if (${JSON.stringify(scenario)} === "request_failed") {
+              throw new Error("provider temporarily unavailable");
+            }
+            return {};
+          },
+          finalizeProductPayment: async (input) => {
+            assert.deepEqual(input.authenticatedCallbackIdentity, {
+              orderReference: paidOrder.orderId,
+              obligationId: paidOrder.paymentObligationId,
+              transactionId: paidOrder.helcimTransactionId,
+            });
+            return {
+              transition: "already_applied",
+              riskStatus: "cleared",
+              obligationId: paidOrder.paymentObligationId,
+            };
+          },
+        });
+
+      const response = await handler(createRequest({
+        checkoutToken: "checkout-token",
+        data: approvedPaymentData,
+        hash: "authenticated-hash",
+      }));
+
+      assert.equal(response.status, 200);
+      assert.equal(finalizedProductPayments.length, 1);
+      assert.equal(
+        finalizedProductPayments[0].authoritativeLookupFailure,
+        ${JSON.stringify(scenario)},
+      );
+      assert.deepEqual(markedPaidOrders, []);
+      assert.deepEqual(sentProductEmails, [paidOrder.orderId]);
+    `);
+  });
+}
+
+test("invalid browser replay cannot use the existing-transaction outage path", () => {
+  runRouteScenario(`
+    const paidOrder = {
+      ...pendingOrder,
+      paymentObligationId: "obligation-webhook-first-invalid",
+      status: "paid",
+      helcimTransactionId: "txn-verified-123",
+    };
+    let lookupCount = 0;
+    const { finalizedProductPayments, handler, sentProductEmails } = await runScenario({
+      getPendingOrderByCheckoutToken: async () => paidOrder,
+      getProductCardTransaction: async () => {
+        lookupCount += 1;
+        throw new Error("provider temporarily unavailable");
+      },
+      verifyHelcimPayment: () => ({ ok: false, reason: "invalid_hash" }),
+      finalizeProductPayment: async () => {
+        throw new Error("unsigned replay must not reach product finalization");
+      },
+    });
+
+    const response = await handler(createRequest({
+      checkoutToken: "checkout-token",
+      data: approvedPaymentData,
+      hash: "invalid-hash",
+    }));
+
+    assert.equal(response.status, 400);
+    assert.equal(lookupCount, 0);
+    assert.deepEqual(finalizedProductPayments, []);
+    assert.deepEqual(sentProductEmails, []);
+  `);
+});
+
+test("authenticated callback-first payment and later replay avoid a second payment transition", () => {
+  runRouteScenario(`
+    let finalized = false;
+    let lookupCount = 0;
+    const { finalizedProductPayments, handler, markedPaidOrders, sentProductEmails } =
+      await runScenario({
+        getProductCardTransaction: async () => {
+          lookupCount += 1;
+          if (lookupCount === 1) {
+            return {
+              id: "txn-verified-123",
+              amount: "1130.00",
+              currency: "CAD",
+              status: "APPROVED",
+              transactionType: "purchase",
+              avsResponse: "Y",
+              cvvResponse: "M",
+            };
+          }
+          throw new Error("provider temporarily unavailable");
+        },
+        finalizeProductPayment: async (input) => {
+          if (!finalized) {
+            assert.equal(input.authoritativeLookupFailure, undefined);
+            finalized = true;
+            return { transition: "applied", riskStatus: "cleared" };
+          }
+          assert.equal(input.authoritativeLookupFailure, "request_failed");
+          assert.equal(
+            input.authenticatedCallbackIdentity.transactionId,
+            "txn-verified-123",
+          );
+          return { transition: "already_applied", riskStatus: "cleared" };
+        },
+      });
+
+    const requestBody = {
+      checkoutToken: "checkout-token",
+      data: approvedPaymentData,
+      hash: "authenticated-hash",
+    };
+    assert.equal((await handler(createRequest(requestBody))).status, 200);
+    assert.equal((await handler(createRequest(requestBody))).status, 200);
+    assert.equal(finalizedProductPayments.length, 2);
+    assert.deepEqual(markedPaidOrders, []);
+    assert.deepEqual(sentProductEmails, [pendingOrder.orderId, pendingOrder.orderId]);
+  `);
+});
+
+test("product callback evidence is used only when mock fallback is explicit", () => {
+  runRouteScenario(`
+    const { finalizedProductPayments, handler } = await runScenario({
+      allowProductCallbackFallback: true,
+      getProductCardTransaction: async () => {
+        throw new Error("mock mode must not query Helcim");
+      },
+      finalizeProductPayment: async () => ({
+        transition: "applied",
+        riskStatus: "cleared",
+      }),
+    });
+    const response = await handler(createRequest({
+      checkoutToken: "checkout-token",
+      data: approvedPaymentData,
+      hash: "hash",
+    }));
+    assert.equal(response.status, 200);
+    assert.equal(finalizedProductPayments.length, 1);
+    assert.equal(finalizedProductPayments[0].source, "client_callback");
+  `);
+});
+
+test("non-mock product validation does not fall back when authoritative lookup is unconfigured", () => {
+  runRouteScenario(`
+    const { finalizedProductPayments, handler, sentProductEmails } =
+      await runScenario({
+        finalizeProductPayment: async (input) => ({
+          transition: input.authoritativeLookupFailure
+            ? "outcome_unknown"
+            : "applied",
+          riskStatus: "review_required",
+        }),
+      });
+    const response = await handler(createRequest({
+      checkoutToken: "checkout-token",
+      data: approvedPaymentData,
+      hash: "hash",
+    }));
+    assert.equal(response.status, 202);
+    assert.equal(finalizedProductPayments.length, 1);
+    assert.equal(finalizedProductPayments[0].source, "helcim_api");
+    assert.equal(
+      finalizedProductPayments[0].authoritativeLookupFailure,
+      "unavailable",
+    );
+    assert.deepEqual(sentProductEmails, []);
+  `);
+});
+
+test("durable product payment conflicts return review without fulfillment side effects", () => {
+  runRouteScenario(`
+    const {
+      activatedShipments,
+      handler,
+      sentProductEmails,
+    } = await runScenario({
+      getProductCardTransaction: async () => ({
+        id: 25764675,
+        amount: "1130.00",
+        currency: "CAD",
+        status: "APPROVED",
+        transactionType: "purchase",
+        avsResponse: "Y",
+        cvvResponse: "M",
+      }),
+      finalizeProductPayment: async () => ({
+        transition: "state_conflict",
+        riskStatus: "review_required",
+        obligationId: "obligation-late-capture",
+      }),
+    });
+
+    const response = await handler(createRequest({
+      checkoutToken: "checkout-token",
+      data: approvedPaymentData,
+      hash: "hash",
+    }));
+
+    assert.equal(response.status, 202);
+    assert.deepEqual(await response.json(), {
+      orderId: pendingOrder.orderId,
+      paymentStatus: "review_required",
+      error: "Payment received; fulfillment confirmation is under review.",
+    });
+    assert.equal(activatedShipments.length, 0);
+    assert.equal(sentProductEmails.length, 0);
+  `);
+});
 
 test("checkout payment validation finalizes appointment payments after persistence", () => {
   runRouteScenario(`
@@ -523,7 +910,6 @@ test("checkout payment validation falls back to service confirmation resolver fo
     });
   `);
 });
-
 
 test("checkout payment validation can confirm an already-paid appointment order", () => {
   runRouteScenario(`
@@ -881,8 +1267,15 @@ function runRouteScenario(assertions: string): void {
   env.NEXT_PUBLIC_SANITY_PROJECT_ID = "test-project";
 
   execFileSync(
-    "./node_modules/.bin/tsx",
-    ["--conditions=react-server", "--eval", scenario],
+    process.execPath,
+    [
+      "--conditions=react-server",
+      "--import",
+      "tsx",
+      "--input-type=module",
+      "--eval",
+      scenario,
+    ],
     {
       cwd: process.cwd(),
       env,

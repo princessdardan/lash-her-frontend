@@ -4,6 +4,8 @@ import { draftMode } from "next/headers";
 import { groq, type QueryParams } from "next-sanity";
 import { getSanityApiReadToken } from "@/sanity/env";
 import type { BookingSettings } from "@/lib/booking/types";
+import { normalizeProductVariantModel } from "@/lib/commerce/product-variant-model";
+import { getCommerceE2eCatalogFixture } from "./commerce-e2e-catalog-fixture";
 import type {
   THomePage,
   TContactPage,
@@ -76,11 +78,12 @@ const PRODUCT_PROJECTION = groq`{
     "description": @->description,
     "displayOrder": @->displayOrder
   },
-  optionGroups[]{ _key, name, values },
-  variants[]{ _key, title, sku, price, discountPrice, isAvailable, availabilityLabel, options[]{ _key, name, value } },
+  options[]{ _key, name, values },
+  variantOverrides[]{ _key, select[]{ _key, name, value }, price, discountPrice, sku, isAvailable, availabilityLabel, shipping },
   isAvailable,
   availabilityLabel,
   fulfillmentNote,
+  shipping,
   displayOrder,
   image{ asset, hotspot, crop, alt },
   gallery[]{ asset, hotspot, crop, alt },
@@ -826,21 +829,35 @@ function getProductOrder(sort: ProductSort | undefined): string {
 }
 
 async function getProducts(sort: ProductSort = "default"): Promise<TProduct[]> {
+  const fixture = getCommerceE2eCatalogFixture();
+  if (fixture) return sortProducts(fixture, sort);
   const order = getProductOrder(sort);
   const query = groq`*[
     _type == "product" &&
     isAvailable == true
   ] | order(${order}) ${PRODUCT_PROJECTION}`;
 
-  return sanityFetch<TProduct[]>(query, {}, ["product", "productCollection"]);
+  const products = await sanityFetch<TProduct[]>(query, {}, [
+    "product",
+    "productCollection",
+  ]);
+
+  return products.map(normalizeProductVariantModel);
 }
 
 async function getProductsByIds(ids: string[]): Promise<TProduct[]> {
+  const fixture = getCommerceE2eCatalogFixture();
+  if (fixture) {
+    const requested = new Set(ids);
+    return fixture.filter((product) => requested.has(product._id));
+  }
   const query = groq`*[_type == "product" && _id in $ids] ${PRODUCT_PROJECTION}`;
-  return sanityFetch<TProduct[]>(query, { ids }, ["product"], {
+  const products = await sanityFetch<TProduct[]>(query, { ids }, ["product"], {
     mode: "published",
     stega: false,
   });
+
+  return products.map(normalizeProductVariantModel);
 }
 
 async function getPromotionCode(code: string): Promise<TPromotionCode | null> {
@@ -891,15 +908,39 @@ async function getProductsGroupedCatalog(): Promise<TProductsGroupedCatalog> {
 }
 
 async function getProductBySlug(slug: string): Promise<TProduct | null> {
+  const fixture = getCommerceE2eCatalogFixture();
+  if (fixture) return fixture.find((product) => product.slug === slug) ?? null;
   const query = groq`*[_type == "product" && slug.current == $slug && isAvailable == true][0] ${PRODUCT_PROJECTION}`;
-  return sanityFetch<TProduct | null>(query, { slug }, ["product"]);
+  const product = await sanityFetch<TProduct | null>(query, { slug }, [
+    "product",
+  ]);
+
+  return product ? normalizeProductVariantModel(product) : null;
 }
 
 async function getAllProductSlugs(): Promise<Array<{ slug: string }>> {
+  const fixture = getCommerceE2eCatalogFixture();
+  if (fixture) return fixture.map(({ slug }) => ({ slug }));
   const query = groq`*[_type == "product" && isAvailable == true]{
     "slug": slug.current
   }`;
   return sanityStaticFetch<Array<{ slug: string }>>(query, {}, ["product"]);
+}
+
+function sortProducts(products: TProduct[], sort: ProductSort): TProduct[] {
+  return products.sort((left, right) => {
+    if (sort === "titleAsc") return left.title.localeCompare(right.title);
+    if (sort === "priceAsc" || sort === "priceDesc") {
+      const difference = left.price - right.price;
+      if (difference !== 0)
+        return sort === "priceAsc" ? difference : -difference;
+      return left.title.localeCompare(right.title);
+    }
+    const order =
+      (left.displayOrder ?? Number.MAX_SAFE_INTEGER) -
+      (right.displayOrder ?? Number.MAX_SAFE_INTEGER);
+    return order || left.title.localeCompare(right.title);
+  });
 }
 
 async function getServiceBySlug(

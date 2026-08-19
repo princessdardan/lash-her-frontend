@@ -5,7 +5,11 @@ export type BookingAbuseScope =
   | "active-holds"
   | "availability"
   | "hold-attempts"
-  | "promotion-attempts";
+  | "promotion-attempts"
+  | "shipping-quotes"
+  | "shipping-decisions"
+  | "address-changes"
+  | "supplemental-payment-offer";
 
 interface HeaderReader {
   get(name: string): string | null;

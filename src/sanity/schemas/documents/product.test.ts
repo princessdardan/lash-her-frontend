@@ -1,13 +1,21 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 
-import { product } from "./product";
+import {
+  product,
+  validateOptionAxes,
+  validateProductCheckoutConfiguration,
+  validateVariantOverrides,
+} from "./product";
 
 type SchemaField = {
+  description?: string;
   name?: string;
+  title?: string;
   type?: string;
   of?: SchemaField[];
   fields?: SchemaField[];
+  validation?: unknown;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -15,7 +23,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isSchemaField(value: unknown): value is SchemaField {
-  return isRecord(value) && (value.name === undefined || typeof value.name === "string");
+  return (
+    isRecord(value) &&
+    (value.name === undefined || typeof value.name === "string")
+  );
 }
 
 function getSchemaField(name: string): SchemaField {
@@ -31,17 +42,328 @@ function getSchemaField(name: string): SchemaField {
 }
 
 describe("product schema", () => {
-  it("supports optional merchant SKUs for canonical checkout reconciliation", () => {
+  it("supports optional merchant SKUs for checkout reconciliation", () => {
     const sku = getSchemaField("sku");
 
     assert.strictEqual(sku.type, "string");
   });
 
-  it("supports optional variant SKUs without requiring customer-facing generated codes", () => {
-    const variants = getSchemaField("variants");
-    const variantObject = variants.of?.find((member) => member.type === "object");
-    const variantMember = variantObject?.fields?.find((field) => field.name === "sku");
+  it("models options as an array of at most two axes", () => {
+    const options = getSchemaField("options");
 
-    assert.strictEqual(variantMember?.type, "string");
+    assert.strictEqual(options.type, "array");
+    const optionObject = options.of?.find((member) => member.type === "object");
+    const name = optionObject?.fields?.find((field) => field.name === "name");
+    const values = optionObject?.fields?.find(
+      (field) => field.name === "values",
+    );
+    assert.strictEqual(name?.type, "string");
+    assert.strictEqual(values?.type, "array");
+  });
+
+  it("supports optional per-combination override SKUs", () => {
+    const overrides = getSchemaField("variantOverrides");
+    const overrideObject = overrides.of?.find(
+      (member) => member.type === "object",
+    );
+    const sku = overrideObject?.fields?.find((field) => field.name === "sku");
+
+    assert.strictEqual(sku?.type, "string");
+  });
+
+  it("gives every shipping and customs field clear editor guidance", () => {
+    const shipping = getSchemaField("shipping");
+    const expectedFields = [
+      "fulfillmentMode",
+      "weightGrams",
+      "packingUnits",
+      "minimumPackageTier",
+      "customsDescription",
+      "countryOfOrigin",
+      "usShippingApproved",
+      "hsTariffCode",
+      "manufacturerName",
+      "manufacturerAddress",
+      "manufacturerCity",
+      "manufacturerProvinceCode",
+      "manufacturerPostalCode",
+      "manufacturerCountryCode",
+      "usRegulatoryCertification",
+      "hazardousMaterial",
+    ];
+
+    assert.match(shipping.description ?? "", /package selection/i);
+    for (const fieldName of expectedFields) {
+      const field = shipping.fields?.find(
+        (candidate) => candidate.name === fieldName,
+      );
+      assert.ok(field, `${fieldName} should be configured`);
+      assert.ok(
+        (field.title?.trim().length ?? 0) >= 12,
+        `${fieldName} should have a clear heading`,
+      );
+      assert.ok(
+        (field.description?.trim().length ?? 0) >= 80,
+        `${fieldName} should have detailed editor guidance`,
+      );
+    }
+
+    const packingUnits = shipping.fields?.find(
+      (field) => field.name === "packingUnits",
+    );
+    assert.match(packingUnits?.description ?? "", /multiplies.*quantity/i);
+    assert.match(packingUnits?.description ?? "", /lash tray/i);
+  });
+
+  it("accepts zero, one, or two well-formed option axes", () => {
+    assert.strictEqual(validateOptionAxes(undefined), true);
+    assert.strictEqual(validateOptionAxes([]), true);
+    assert.strictEqual(
+      validateOptionAxes([{ name: "Size", values: ["S", "M", "L"] }]),
+      true,
+    );
+    assert.strictEqual(
+      validateOptionAxes([
+        { name: "Curl", values: ["C", "CC"] },
+        { name: "Length", values: ["8mm", "9mm"] },
+      ]),
+      true,
+    );
+  });
+
+  it("rejects malformed option axes before publish", () => {
+    assert.match(
+      String(
+        validateOptionAxes([
+          { name: "Curl", values: ["C"] },
+          { name: "Length", values: ["8mm"] },
+          { name: "Finish", values: ["Natural"] },
+        ]),
+      ),
+      /at most two options/,
+    );
+    assert.match(
+      String(
+        validateOptionAxes([
+          { name: "Curl", values: ["C", "CC"] },
+          { name: "curl", values: ["D"] },
+        ]),
+      ),
+      /names must be unique/,
+    );
+    assert.match(
+      String(validateOptionAxes([{ name: "Curl", values: ["C", "c"] }])),
+      /must be unique/,
+    );
+    assert.match(
+      String(validateOptionAxes([{ name: "Curl", values: [] }])),
+      /at least one value/,
+    );
+  });
+
+  it("validates that overrides pin a real, unique combination", () => {
+    const options = [
+      { name: "Curl", values: ["C", "CC"] },
+      { name: "Length", values: ["8mm", "9mm"] },
+    ];
+
+    assert.strictEqual(
+      validateVariantOverrides(
+        [
+          {
+            select: [
+              { name: "Curl", value: "C" },
+              { name: "Length", value: "8mm" },
+            ],
+            price: 30,
+          },
+        ],
+        { options },
+      ),
+      true,
+    );
+
+    assert.match(
+      String(
+        validateVariantOverrides([{ select: [{ name: "Curl", value: "C" }] }], {
+          options,
+        }),
+      ),
+      /one full combination/,
+    );
+
+    assert.match(
+      String(
+        validateVariantOverrides(
+          [
+            {
+              select: [
+                { name: "Curl", value: "C" },
+                { name: "Length", value: "12mm" },
+              ],
+            },
+          ],
+          { options },
+        ),
+      ),
+      /not a valid value/,
+    );
+
+    assert.match(
+      String(
+        validateVariantOverrides(
+          [
+            {
+              select: [
+                { name: "Curl", value: "C" },
+                { name: "Length", value: "8mm" },
+              ],
+            },
+            {
+              select: [
+                { name: "Length", value: "8mm" },
+                { name: "Curl", value: "C" },
+              ],
+            },
+          ],
+          { options },
+        ),
+      ),
+      /same combination/,
+    );
+
+    assert.match(
+      String(
+        validateVariantOverrides(
+          [
+            {
+              select: [
+                { name: "Curl", value: "C" },
+                { name: "Length", value: "8mm" },
+              ],
+              price: 20,
+              discountPrice: 25,
+            },
+          ],
+          { options },
+        ),
+      ),
+      /discount price must be lower/,
+    );
+
+    // An override that only sets a discount inherits the product price; the
+    // discount must still be lower than that inherited price.
+    assert.match(
+      String(
+        validateVariantOverrides(
+          [
+            {
+              select: [
+                { name: "Curl", value: "C" },
+                { name: "Length", value: "8mm" },
+              ],
+              discountPrice: 40,
+            },
+          ],
+          { options, price: 30 },
+        ),
+      ),
+      /discount price must be lower/,
+    );
+  });
+
+  it("rejects overrides on a product with no options", () => {
+    assert.match(
+      String(
+        validateVariantOverrides([{ select: [{ name: "Curl", value: "C" }] }], {
+          options: [],
+        }),
+      ),
+      /Add product Options/,
+    );
+  });
+
+  it("blocks available products with incomplete automated metadata", () => {
+    assert.strictEqual(
+      validateProductCheckoutConfiguration({
+        isAvailable: false,
+        shipping: { fulfillmentMode: "physical" },
+      }),
+      true,
+    );
+    assert.match(
+      String(
+        validateProductCheckoutConfiguration({
+          isAvailable: true,
+          shipping: { fulfillmentMode: "physical", weightGrams: 35 },
+        }),
+      ),
+      /metadata is complete.*missing_packing_units/i,
+    );
+    assert.strictEqual(
+      validateProductCheckoutConfiguration({
+        isAvailable: true,
+        shipping: { fulfillmentMode: "manual" },
+      }),
+      true,
+    );
+  });
+
+  it("requires complete override shipping and U.S. approval data", () => {
+    const baseShipping = {
+      fulfillmentMode: "physical",
+      weightGrams: 35,
+      packingUnits: 1,
+      customsDescription: "Synthetic eyelash extensions",
+      countryOfOrigin: "KR",
+    };
+    assert.match(
+      String(
+        validateProductCheckoutConfiguration({
+          isAvailable: true,
+          shipping: baseShipping,
+          variantOverrides: [
+            {
+              select: [
+                { name: "Curl", value: "C" },
+                { name: "Length", value: "8mm" },
+              ],
+              isAvailable: true,
+              shipping: { fulfillmentMode: "physical", weightGrams: 40 },
+            },
+          ],
+        }),
+      ),
+      /C \/ 8mm.*missing_packing_units/i,
+    );
+    assert.match(
+      String(
+        validateProductCheckoutConfiguration({
+          isAvailable: true,
+          shipping: { ...baseShipping, usShippingApproved: true },
+        }),
+      ),
+      /U\.S\..*missing_us_hts/i,
+    );
+
+    assert.match(
+      String(
+        validateProductCheckoutConfiguration({
+          isAvailable: true,
+          shipping: {
+            ...baseShipping,
+            usShippingApproved: true,
+            hsTariffCode: "6704190000",
+            manufacturerName: "Reviewed Manufacturer",
+            manufacturerAddress: "123 Factory Road",
+            manufacturerCity: "Seoul",
+            manufacturerProvinceCode: "SE",
+            manufacturerPostalCode: "04524",
+            manufacturerCountryCode: "KR",
+          },
+        }),
+      ),
+      /missing_us_regulatory_certification/i,
+    );
   });
 });

@@ -410,16 +410,42 @@ export interface TProductCollection {
   displayOrder?: number;
 }
 
-export interface TProductOptionGroup {
+/**
+ * An authored option axis (e.g. "Curl" or "Length"). A product carries at most
+ * two of these; the purchasable variants are the cartesian product of their
+ * values. This is the single source of truth editors author.
+ */
+export interface TProductOption {
   _key?: string;
   name: string | null;
-  values?: Array<string | null>;
+  values: Array<string | null>;
 }
 
+/**
+ * A single axis selection on a variant (e.g. { name: "Curl", value: "C" }).
+ * Used both on derived variants and to identify an override's target
+ * combination.
+ */
 export interface TProductVariantOption {
   _key?: string;
   name: string | null;
-  value: string | null;
+  value?: string | null;
+}
+
+/**
+ * Sparse, per-combination deviation from the product defaults. Editors add one
+ * only when a specific combination needs its own price, stock, SKU, or
+ * shipping; every unlisted combination inherits the product-level values.
+ */
+export interface TProductVariantOverride {
+  _key?: string;
+  select: TProductVariantOption[];
+  price?: number | null;
+  discountPrice?: number | null;
+  sku?: string;
+  isAvailable?: boolean;
+  availabilityLabel?: string;
+  shipping?: TProductShippingMetadata;
 }
 
 export interface TProductsPage {
@@ -456,6 +482,43 @@ export interface TProductVariant {
   isAvailable: boolean;
   availabilityLabel?: string;
   options?: TProductVariantOption[];
+  shipping?: TProductShippingMetadata;
+}
+
+export interface TProductShippingMetadata {
+  fulfillmentMode: "physical" | "manual";
+  weightGrams?: number;
+  packingUnits?: number;
+  minimumPackageTier?: string;
+  customsDescription?: string;
+  countryOfOrigin?: string;
+  usShippingApproved?: boolean;
+  hsTariffCode?: string;
+  manufacturerName?: string;
+  manufacturerAddress?: string;
+  manufacturerCity?: string;
+  manufacturerProvinceCode?: string;
+  manufacturerPostalCode?: string;
+  manufacturerCountryCode?: string;
+  usRegulatoryCertification?: TProductUsRegulatoryCertification;
+  hazardousMaterial?: boolean;
+}
+
+export interface TProductUsRegulatoryCertification {
+  version: string;
+  usShippingContractVersion: string;
+  tariffMetadataSchemaVersion: string;
+  fdaRequirementsVersion: string;
+  evidenceReference: string;
+  reviewedAt: string;
+  validUntil: string;
+  additionalTariffApplicability: "not_applicable" | "required";
+  additionalTariffDetails?: {
+    steel?: number;
+    copper?: number;
+    aluminum?: number;
+  };
+  fdaApplicability: "not_applicable" | "provider_assessed";
 }
 
 export interface TProduct {
@@ -471,11 +534,16 @@ export interface TProduct {
   sku?: string;
   currency: TCommerceCurrency;
   collections?: TProductCollection[];
-  optionGroups?: TProductOptionGroup[];
+  /** Authored option axes (0, 1, or 2). The single source of truth. */
+  options?: TProductOption[];
+  /** Sparse per-combination overrides; empty for most products. */
+  variantOverrides?: TProductVariantOverride[];
+  /** Derived purchasable combinations, produced by normalizeProductVariantModel. */
   variants?: TProductVariant[];
   isAvailable: boolean;
   availabilityLabel?: string;
   fulfillmentNote?: string;
+  shipping?: TProductShippingMetadata;
   displayOrder?: number;
   image?: TSanityImage;
   gallery?: TSanityImage[];

@@ -44,12 +44,23 @@ import {
   checkoutOrders,
   checkoutPaymentEvents,
   checkoutOrderPurpose,
+  fulfillmentDataQuarantine,
+  fulfillmentProviderCertifications,
+  fulfillmentRiskAlertOutbox,
   marketingConsentEvents,
   marketingContactSyncJobs,
   noShowChargeStatus,
+  orderPaymentObligations,
   paymentEventProcessingStatus,
   paymentProvider,
+  productOrderCustomerDecisions,
+  productOrderRefunds,
+  productShipmentJobs,
+  productShipmentReturnObservations,
+  productShipments,
+  productShippingCases,
   savedPaymentMethodStatus,
+  shippingCalendarVersions,
   squareTeamMemberMappingStatus,
 } from "./schema";
 
@@ -140,6 +151,8 @@ test("payment event processing status enum supports idempotent webhook handling"
     "duplicate",
     "ignored",
     "failed",
+    "review_required",
+    "retryable_failed",
   ]);
 });
 
@@ -935,5 +948,360 @@ test("policy and no-show evidence can link to durable appointments", () => {
     noShowForeignKeys.includes(
       "booking_no_show_charge_records_appointment_id_appointments_id_fk",
     ),
+  );
+});
+
+test("intake-location migration creates no manufactured attestation", () => {
+  const migrationSql = readFileSync(
+    new URL("../../../drizzle/0041_illegal_pestilence.sql", import.meta.url),
+    "utf8",
+  );
+  assert.match(migrationSql, /chitchats_intake_location_attestations/);
+  assert.doesNotMatch(
+    migrationSql,
+    /INSERT\s+INTO\s+"?chitchats_intake_location_attestations"?/i,
+  );
+});
+
+test("product fulfillment identity indexes exclude compatibility quarantine", () => {
+  const obligationIndex = getTableConfig(orderPaymentObligations).indexes.find(
+    (index) =>
+      index.config.name === "order_payment_obligations_one_primary_idx",
+  );
+  const checkoutIndex = getTableConfig(checkoutOrders).indexes.find(
+    (index) =>
+      index.config.name === "checkout_orders_helcim_purchase_transaction_idx",
+  );
+  const caseIndex = getTableConfig(productShippingCases).indexes.find(
+    (index) => index.config.name === "product_shipping_cases_one_active_idx",
+  );
+  const refundIndex = getTableConfig(productOrderRefunds).indexes.find(
+    (index) =>
+      index.config.name === "product_order_refunds_provider_refund_id_idx",
+  );
+
+  for (const index of [
+    obligationIndex,
+    checkoutIndex,
+    caseIndex,
+    refundIndex,
+  ]) {
+    assert.ok(index?.config.unique);
+    assert.ok(index.config.where);
+  }
+  assert.ok(Object.keys(fulfillmentDataQuarantine).includes("redactedAt"));
+  assert.ok(
+    Object.keys(productOrderRefunds).includes("fulfillmentQuarantinedAt"),
+  );
+});
+
+test("shipping cases expose a checked optimistic-concurrency version", () => {
+  const config = getTableConfig(productShippingCases);
+  assert.ok(Object.keys(productShippingCases).includes("stateVersion"));
+  assert.ok(
+    config.checks.some(
+      (constraint) =>
+        constraint.name === "product_shipping_cases_state_version_check",
+    ),
+  );
+});
+
+test("readiness evidence tables expose immutable version foundations", () => {
+  assert.ok(Object.keys(shippingCalendarVersions).includes("closureDates"));
+  assert.ok(
+    Object.keys(fulfillmentProviderCertifications).includes("contractSnapshot"),
+  );
+  assert.ok(
+    Object.keys(productShipments).includes("usShippingContractSnapshot"),
+  );
+  assert.ok(Object.keys(fulfillmentRiskAlertOutbox).includes("redactionDueAt"));
+
+  const providerChecks = getTableConfig(
+    fulfillmentProviderCertifications,
+  ).checks.map((constraint) => constraint.name);
+  assert.ok(
+    providerChecks.includes(
+      "fulfillment_provider_certifications_us_contract_snapshot_check",
+    ),
+  );
+  assert.ok(
+    providerChecks.includes(
+      "fulfillment_provider_certifications_helcim_contract_snapshot_check",
+    ),
+  );
+});
+
+test("provider certification identity permits revoked history but only one active scope", () => {
+  const config = getTableConfig(fulfillmentProviderCertifications);
+  const activeScopeIndex = config.indexes.find(
+    (index) =>
+      index.config.name ===
+      "fulfillment_provider_certifications_one_active_scope_idx",
+  );
+
+  assert.ok(activeScopeIndex?.config.unique);
+  assert.ok(activeScopeIndex.config.where);
+  assert.deepEqual(
+    activeScopeIndex.config.columns.map((column) =>
+      "name" in column ? column.name : undefined,
+    ),
+    ["provider", "environment", "scope"],
+  );
+  assert.ok(
+    !config.indexes.some(
+      (index) =>
+        index.config.name ===
+        "fulfillment_provider_certifications_identity_idx",
+    ),
+  );
+
+  const migrationSql = readFileSync(
+    new URL("../../../drizzle/0058_worthless_shriek.sql", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    migrationSql,
+    /DROP INDEX "fulfillment_provider_certifications_identity_idx"/,
+  );
+  assert.match(
+    migrationSql,
+    /CREATE UNIQUE INDEX "fulfillment_provider_certifications_one_active_scope_idx"[\s\S]*\("provider","environment","scope"\)[\s\S]*WHERE[\s\S]*"revoked_at" IS NULL/,
+  );
+  assert.match(migrationSql, /duplicate_active_provider_certification_scope/);
+  assert.match(migrationSql, /HAVING count\(\*\) > 1/);
+  assert.match(
+    migrationSql,
+    /SET "revoked_at" = GREATEST\(now\(\), certification\."certified_at"\)/,
+  );
+  assert.doesNotMatch(migrationSql, /to_jsonb\s*\(/i);
+  assert.doesNotMatch(
+    migrationSql,
+    /customer_(?:name|email)|shipping_address|evidence_reference|certified_by_owner_name/i,
+  );
+});
+
+test("operations actions use complete evidence groups and versioned return observations", () => {
+  const expectedChecks = [
+    [
+      productOrderCustomerDecisions,
+      "product_order_customer_decisions_legal_follow_up_evidence_check",
+    ],
+    [productOrderRefunds, "product_order_refunds_manual_review_evidence_check"],
+    [
+      productShipmentJobs,
+      "product_shipment_jobs_reconciliation_evidence_check",
+    ],
+    [
+      productShipmentReturnObservations,
+      "product_shipment_returns_admin_resolution_check",
+    ],
+    [
+      productShipmentReturnObservations,
+      "product_shipment_returns_state_version_check",
+    ],
+    [productShipments, "product_shipments_manual_review_evidence_check"],
+  ] as const;
+
+  for (const [table, checkName] of expectedChecks) {
+    assert.ok(
+      getTableConfig(table).checks.some(
+        (constraint) => constraint.name === checkName,
+      ),
+      `${checkName} should be enforced`,
+    );
+  }
+  assert.ok(
+    Object.keys(productShipmentReturnObservations).includes("stateVersion"),
+  );
+  assert.ok(
+    Object.keys(productShipmentReturnObservations).includes(
+      "resolvedStateVersion",
+    ),
+  );
+
+  const migrationSql = readFileSync(
+    new URL("../../../drizzle/0059_eminent_praxagora.sql", import.meta.url),
+    "utf8",
+  );
+  for (const [, checkName] of expectedChecks) {
+    assert.match(migrationSql, new RegExp(checkName));
+  }
+  assert.match(
+    migrationSql,
+    /ADD COLUMN "state_version" integer DEFAULT 1 NOT NULL/,
+  );
+  assert.match(migrationSql, /ADD COLUMN "resolved_state_version" integer/);
+  assert.doesNotMatch(migrationSql, /^(?:UPDATE|DELETE|INSERT)\s/im);
+});
+
+test("0060 closes nullable operational-evidence checks without rewriting 0059", () => {
+  const migrationSql = readFileSync(
+    new URL("../../../drizzle/0060_clever_magma.sql", import.meta.url),
+    "utf8",
+  );
+  const requiredNonNullColumns = [
+    "legal_follow_up_evidence_reference",
+    "legal_follow_up_rationale",
+    "legal_follow_up_by_admin_user_id",
+    "legal_follow_up_step_up_authenticated_at",
+    "legal_follow_up_recorded_at",
+    "manual_review_evidence_reference",
+    "manual_review_rationale",
+    "manual_review_by_admin_user_id",
+    "manual_review_step_up_authenticated_at",
+    "manual_review_recorded_at",
+    "reconciliation_evidence_reference",
+    "reconciliation_rationale",
+    "reconciliation_requested_by_admin_user_id",
+    "reconciliation_step_up_authenticated_at",
+    "reconciliation_requested_at",
+    "admin_resolution_action",
+    "admin_resolution_evidence_reference",
+    "admin_resolution_rationale",
+    "resolved_by_admin_user_id",
+    "resolution_step_up_authenticated_at",
+    "resolved_at",
+    "resolved_state_version",
+    "manual_review_acknowledged_at",
+  ];
+
+  for (const column of requiredNonNullColumns) {
+    assert.match(
+      migrationSql,
+      new RegExp(`"${column}" IS NOT NULL`),
+      `${column} must be required in the complete evidence branch`,
+    );
+  }
+  assert.match(
+    migrationSql,
+    /legacy_primary_obligation_without_authoritative_transaction/,
+  );
+  assert.match(
+    migrationSql,
+    /transaction\."provider_transaction_id" = CASE[\s\S]*orders\."helcim_transaction_id"[\s\S]*orders\."provider_payment_id"/,
+  );
+  assert.doesNotMatch(migrationSql, /INSERT INTO "order_payment_transactions"/);
+});
+
+test("day-395 verification covers every redacted 0059 operational evidence field", () => {
+  const retentionSource = readFileSync(
+    new URL("./shipping-retention.ts", import.meta.url),
+    "utf8",
+  );
+  const absoluteVerifier = retentionSource.slice(
+    retentionSource.indexOf("const absoluteViolations"),
+    retentionSource.indexOf("if (Number(absoluteViolations"),
+  );
+  const requiredColumns = [
+    "legal_follow_up_evidence_reference",
+    "legal_follow_up_rationale",
+    "legal_follow_up_by_admin_user_id",
+    "legal_follow_up_step_up_authenticated_at",
+    "legal_follow_up_recorded_at",
+    "manual_review_evidence_reference",
+    "manual_review_rationale",
+    "manual_review_by_admin_user_id",
+    "manual_review_step_up_authenticated_at",
+    "manual_review_recorded_at",
+    "reconciliation_evidence_reference",
+    "reconciliation_rationale",
+    "reconciliation_requested_by_admin_user_id",
+    "reconciliation_step_up_authenticated_at",
+    "reconciliation_requested_at",
+    "admin_resolution_action",
+    "admin_resolution_evidence_reference",
+    "admin_resolution_rationale",
+    "resolved_by_admin_user_id",
+    "resolution_step_up_authenticated_at",
+    "resolved_at",
+    "resolved_state_version",
+  ];
+
+  for (const column of requiredColumns) {
+    assert.match(absoluteVerifier, new RegExp(`\\b${column}\\b`));
+  }
+});
+
+test("0061 removes legacy Helcim reconciliation text outside retention-managed records", () => {
+  const migrationSql = readFileSync(
+    new URL(
+      "../../../drizzle/0061_helcim_reconciliation_retention.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  assert.match(migrationSql, /payment_obligation\.initialization\.%/);
+  assert.match(migrationSql, /legacyReconciliationEvidenceRedacted/);
+  assert.match(
+    migrationSql,
+    /initialization_last_error" = NULL[\s\S]*redacted_at" IS NOT NULL/,
+  );
+  const retentionSource = readFileSync(
+    new URL("./shipping-retention.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(retentionSource, /initializationLastError: null/);
+  assert.match(retentionSource, /initialization_last_error is not null/);
+});
+
+test("compatibility migrations preserve duplicate provider identity and history", () => {
+  // The duplicate-provider quarantine rebuilds, the obligation quarantine
+  // rebuild, and the legacy-evidence redaction markers were consolidated into
+  // 0050_long_scrambler.sql (they never shipped as standalone 0035/0041
+  // migrations). Scope each group to the exact fulfillment_data_quarantine
+  // statements it guards so the assertions below still target only their
+  // intended SQL and are not tripped by unrelated statements in the same file.
+  const compatibilityMigrationStatements = readFileSync(
+    new URL("../../../drizzle/0050_long_scrambler.sql", import.meta.url),
+    "utf8",
+  ).split("--> statement-breakpoint");
+  const quarantineSql = compatibilityMigrationStatements
+    .filter(
+      (statement) =>
+        /UPDATE "fulfillment_data_quarantine"/.test(statement) &&
+        /"entity_type" = '(?:checkout_order|product_shipping_case|product_order_refund)'/.test(
+          statement,
+        ),
+    )
+    .join("\n");
+  const obligationSql = compatibilityMigrationStatements
+    .filter(
+      (statement) =>
+        /UPDATE "fulfillment_data_quarantine"/.test(statement) &&
+        /"entity_type" = 'order_payment_obligation'/.test(statement),
+    )
+    .join("\n");
+
+  assert.match(quarantineSql, /duplicate_helcim_transaction_id/);
+  assert.match(quarantineSql, /duplicate_active_case_scope/);
+  assert.match(quarantineSql, /duplicate_provider_refund_id/);
+  assert.doesNotMatch(quarantineSql, /to_jsonb\((?:o|c|r)\)/);
+  assert.equal((quarantineSql.match(/jsonb_build_object\(/g) ?? []).length, 3);
+  assert.doesNotMatch(
+    quarantineSql,
+    /customer_name|customer_email|shipping_address|checkout_token_hash|secret_token_ciphertext|refund_origin_ip_ciphertext|\bc\."cause"|evidence_checklist|\br\."reason"|last_error_code/,
+  );
+  assert.doesNotMatch(
+    quarantineSql,
+    /SET[\s\S]{0,300}"(?:helcim_transaction_id|provider_refund_id|status)"\s*=/,
+  );
+  assert.doesNotMatch(obligationSql, /to_jsonb\((?:obligation|orders)\)/);
+  assert.doesNotMatch(
+    obligationSql,
+    /'checkout_token_hash'|'secret_token_ciphertext'|'disclosure_snapshot'|'customer_name'|'customer_email'|'shipping_address'|'line_items'/,
+  );
+  const deadlineSql = compatibilityMigrationStatements.join(
+    "--> statement-breakpoint",
+  );
+  assert.match(
+    deadlineSql,
+    /legacy_evidence_redacted[\s\S]*duplicate_helcim_transaction_id/,
+  );
+  assert.match(deadlineSql, /duplicate_active_case_scope/);
+  assert.match(deadlineSql, /duplicate_provider_refund_id/);
+  assert.match(deadlineSql, /duplicate_primary_obligation/);
+  assert.doesNotMatch(
+    obligationSql,
+    /"quarantine_reason" = 'duplicate_primary_obligation',[\s\S]{0,100}"status"\s*=/,
   );
 });

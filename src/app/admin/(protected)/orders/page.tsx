@@ -9,6 +9,7 @@ import {
   type AdminProductOrderRow,
 } from "@/lib/admin/operations-workspaces";
 import { requireAdminPagePermission } from "@/lib/admin/page-authorization";
+import { OrderShippingControls } from "@/components/admin/order-shipping-controls";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -23,7 +24,7 @@ interface AdminOrdersPageProps {
 export default async function AdminOrdersPage({
   searchParams,
 }: AdminOrdersPageProps) {
-  await requireAdminPagePermission("payments:view");
+  await requireAdminPagePermission("fulfillment:view");
   const params = await searchParams;
   const result = await listAdminProductOrders({
     page: parsePositivePage(firstString(params.page)),
@@ -35,9 +36,8 @@ export default async function AdminOrdersPage({
       <AdminWorkspaceHeader
         description={
           <p>
-            Product purchases, payment state, and customer confirmation
-            delivery. Fulfillment is not tracked, so this page does not label
-            orders as shipped or complete.
+            Product purchases, payment state, Chit Chats label purchase,
+            tracking, and customer confirmation delivery.
           </p>
         }
         eyebrow="Daily work"
@@ -146,6 +146,18 @@ function OrderCard({
       </dl>
 
       <OrderDetails order={order} />
+      <OrderOperations order={order} timezone={timezone} />
+      {order.shipment ? (
+        <OrderShippingControls
+          orderId={order.reference}
+          shipmentId={order.shipment.id}
+          stateVersion={order.shipment.stateVersion}
+          status={order.shipment.status}
+          defaultWeightGrams={order.shipment.packageWeightGrams}
+          trackingNumber={order.shipment.trackingNumber}
+          trackingUrl={order.shipment.trackingUrl}
+        />
+      ) : null}
     </article>
   );
 }
@@ -249,12 +261,68 @@ function OrderTable({
                     {order.confirmation.description}
                   </p>
                 ) : null}
+                <OrderOperations order={order} timezone={timezone} />
+                {order.shipment ? (
+                  <OrderShippingControls
+                    orderId={order.reference}
+                    shipmentId={order.shipment.id}
+                    stateVersion={order.shipment.stateVersion}
+                    status={order.shipment.status}
+                    defaultWeightGrams={order.shipment.packageWeightGrams}
+                    trackingNumber={order.shipment.trackingNumber}
+                    trackingUrl={order.shipment.trackingUrl}
+                  />
+                ) : null}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
+  );
+}
+
+function OrderOperations({
+  order,
+  timezone,
+}: {
+  order: AdminProductOrderRow;
+  timezone: string;
+}) {
+  const operations = order.operations;
+  const items = [
+    `Risk: ${operations.fraudClassification}${operations.fraudRiskReasons.length ? ` (${operations.fraudRiskReasons.join(", ")})` : ""}`,
+    `Open cases: ${operations.openCaseCount}`,
+    `Refund: ${operations.latestRefundStatus ?? "none"}`,
+    `Customer decision: ${operations.customerDecisionStatus ?? "none"}`,
+    `Address change: ${operations.addressChangeStatus ?? "none"}${operations.addressChangeReconciliationState ? ` / ${operations.addressChangeReconciliationState}` : ""}`,
+    `Shipment history: ${operations.shipmentHistoryCount}`,
+  ];
+  if (order.shipment) {
+    items.push(
+      `Active shipment: ${order.shipment.purpose} #${order.shipment.sequence}`,
+      `Signature: ${order.shipment.signatureRequired ? "required" : "not required"}`,
+    );
+    if (order.shipment.handoffDeadlineAt)
+      items.push(
+        `Handoff deadline: ${formatDateTime(order.shipment.handoffDeadlineAt, timezone)}`,
+      );
+    if (order.shipment.autoRefundDeadlineAt)
+      items.push(
+        `Auto-refund deadline: ${formatDateTime(order.shipment.autoRefundDeadlineAt, timezone)}`,
+      );
+  }
+  return (
+    <details className="mt-3 border-t border-lh-line pt-1">
+      <summary className="min-h-11 cursor-pointer py-3 text-xs font-semibold uppercase tracking-[0.12em] text-lh-primary">
+        Policy queue
+      </summary>
+      <ul className="space-y-1 text-xs text-lh-muted">
+        {items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
