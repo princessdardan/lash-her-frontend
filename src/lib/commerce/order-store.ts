@@ -255,6 +255,35 @@ export interface SquareInvoiceProviderMetadata extends CheckoutProviderMetadata 
   squareInvoiceVersion: number | null;
 }
 
+/**
+ * Provider metadata for a primary-training order paid through the embedded
+ * Square Web Payments SDK card flow (distinct from the Afterpay/BNPL invoice
+ * flow above).
+ */
+export interface SquareCardProviderMetadata extends CheckoutProviderMetadata {
+  amountCents: number;
+  correlationId: string;
+  currency: "CAD";
+  finalizationStatus: SquareInvoiceFinalizationStatus;
+  flow: "training_square_card";
+  programSlug: string;
+}
+
+export interface CreatePendingSquareTrainingCardOrderInput {
+  customerName: string;
+  customerEmail: string;
+  programSlug: string;
+  amountCents: number;
+  merchandiseAmountCents: number;
+  taxAmountCents: number;
+  cart: ValidatedCart;
+}
+
+export interface PendingSquareTrainingCardOrderRecord {
+  databaseId: string;
+  orderId: string;
+}
+
 export interface PendingOrderRecord {
   _id: string;
   orderId: string;
@@ -1575,6 +1604,59 @@ export async function createPendingSquareInvoiceOrder(
   input: CreatePendingSquareInvoiceOrderInput,
 ): Promise<PendingOrderRecord> {
   return defaultOrderStore.createPendingSquareInvoiceOrder(input);
+}
+
+/**
+ * Reserve a pending primary-training order paid through the embedded Square
+ * card flow. The generated public `orderId` is also the payment reference; the
+ * order is finalized to paid by {@link finalizeSquareTrainingCardPayment} after
+ * the Square authorization is captured.
+ */
+export async function createPendingSquareTrainingCardOrder(
+  input: CreatePendingSquareTrainingCardOrderInput,
+): Promise<PendingSquareTrainingCardOrderRecord> {
+  const db = getPrivateDb();
+  const orderId = `lh-${nanoid(12)}`;
+  const providerMetadata: SquareCardProviderMetadata = {
+    amountCents: input.amountCents,
+    correlationId: orderId,
+    currency: "CAD",
+    finalizationStatus: "pending",
+    flow: "training_square_card",
+    programSlug: input.programSlug,
+  };
+
+  const [order] = await db
+    .insert(checkoutOrders)
+    .values({
+      orderId,
+      status: "pending",
+      checkoutTokenHash: null,
+      secretTokenCiphertext: null,
+      helcimInvoiceId: null,
+      helcimInvoiceNumber: null,
+      customerName: input.customerName,
+      customerEmail: input.customerEmail,
+      purpose: "training",
+      amountCents: input.amountCents,
+      merchandiseAmountCents: input.merchandiseAmountCents,
+      shippingAmountCents: 0,
+      taxAmountCents: input.taxAmountCents,
+      promotionCode: input.cart.promotionCode ?? null,
+      promotionDiscountCents: toCents(input.cart.promotionDiscountAmount ?? 0),
+      manualDiscountCents: toCents(input.cart.manualDiscountAmount ?? 0),
+      currency: "CAD",
+      lineItems: toOrderLineItemSnapshots(input.cart),
+      paymentProvider: "square",
+      providerStatus: "pending",
+      providerMetadata,
+    })
+    .returning({ id: checkoutOrders.id });
+  if (!order) {
+    throw new Error("Square training order could not be created");
+  }
+
+  return { databaseId: order.id, orderId };
 }
 
 export async function markOrderPaid(

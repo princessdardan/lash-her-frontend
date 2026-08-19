@@ -223,7 +223,7 @@ test("a failed confirmation email does not fail the charge", async () => {
   assert.deepEqual(harness.captures, ["sq-pay-1"]);
   assert.ok(
     harness.errors.some((entry) =>
-      entry.message.includes("confirmation email"),
+      entry.message.includes("success side effect"),
     ),
   );
 });

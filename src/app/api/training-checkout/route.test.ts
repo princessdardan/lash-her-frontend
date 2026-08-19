@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -305,17 +306,24 @@ test("training checkout route returns a generic failure when enrollment write fa
   `);
 });
 
-test("training checkout route remains Helcim-only and does not import Square modules", () => {
-  const routeSource = readFileSync("src/app/api/training-checkout/handler.ts", "utf8");
+test("training checkout route charges the primary training path through Square", () => {
+  const routeSource = readFileSync(
+    "src/app/api/training-checkout/handler.ts",
+    "utf8",
+  );
 
-  assertNoSquareImports(routeSource);
+  // The Helcim -> Square migration reverses the former provider boundary: the
+  // primary training path now captures payment through the Square card flow.
+  // (The Afterpay/BNPL invoice endpoint remains a separate secondary path.)
+  assert.ok(
+    routeSource.includes("createLiveSquareTrainingCharger"),
+    "training route should wire the Square training charger",
+  );
+  assert.ok(
+    routeSource.includes("isSquareCommerceCheckoutEnabled"),
+    "training route should gate the Square charge on the commerce flag",
+  );
 });
-
-function assertNoSquareImports(routeSource: string): void {
-  if (/square|Square|SQUARE/.test(routeSource)) {
-    throw new Error("Helcim-only checkout route must not import or reference Square");
-  }
-}
 
 function runRouteScenario(assertions: string): void {
   const scenario = `${helperScript}\nvoid (async () => {\n${assertions}\n})()`;
@@ -333,13 +341,9 @@ function runRouteScenario(assertions: string): void {
   delete env.SQUARE_SERVICE_BOOKING_RETURN_URL;
   delete env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL;
 
-  execFileSync(
-    "./node_modules/.bin/tsx",
-    ["--eval", scenario],
-    {
-      cwd: process.cwd(),
-      env,
-      stdio: "pipe",
-    },
-  );
+  execFileSync("./node_modules/.bin/tsx", ["--eval", scenario], {
+    cwd: process.cwd(),
+    env,
+    stdio: "pipe",
+  });
 }

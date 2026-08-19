@@ -2,12 +2,18 @@ import type {
   SquareCreatePaymentRequest,
   SquareCreatePaymentResponse,
 } from "@/lib/payments/square/payments-client";
+import {
+  authorizeCaptureSquarePayment,
+  type SquarePaymentChargeDependencies,
+} from "@/lib/payments/square/square-payment-charge";
 import type {
   FinalizeSquareProductPaymentInput,
   FinalizeSquareProductPaymentResult,
 } from "@/lib/commerce/square-product-finalizer";
 
 const SQUARE_AUTHORIZED_STATUS = "APPROVED";
+
+type ProductTransition = FinalizeSquareProductPaymentResult["transition"];
 
 /**
  * Deterministic Square idempotency key for a reserved product order. Stable
@@ -57,135 +63,37 @@ export interface ChargeSquareProductOrderDependencies {
 }
 
 /**
- * Authorize → verify → record locally → capture. Money is only captured after
- * the local money-ledger commit succeeds, so a finalize failure can be undone
- * by voiding the (uncaptured) authorization — there are no orphaned captures.
+ * Charge a reserved product order. Thin wrapper over the shared
+ * {@link authorizeCaptureSquarePayment} core, supplying the product
+ * money-ledger finalizer and the confirmation-email side effect.
  */
 export async function chargeSquareProductOrder(
   input: ChargeSquareProductOrderInput,
   dependencies: ChargeSquareProductOrderDependencies,
 ): Promise<ChargeSquareProductOrderResult> {
-  const idempotencyKey = squareCommerceIdempotencyKey(input.orderReference);
-
-  let payment: SquareCreatePaymentResponse["payment"];
-  try {
-    const response = await dependencies.authorizePayment({
-      idempotency_key: idempotencyKey,
-      source_id: input.sourceId,
-      amount_money: {
-        amount: input.amountCents,
-        currency: input.currency,
-      },
-      autocomplete: false,
-      reference_id: input.orderReference,
-      ...(input.verificationToken
-        ? { verification_token: input.verificationToken }
-        : {}),
-    });
-    payment = response.payment;
-  } catch (error) {
-    dependencies.logError("[checkout] Square commerce authorization failed", {
-      orderReference: input.orderReference,
-      error: getErrorMessage(error),
-    });
-    // A post-authorize network failure may have left a hold; void it by key.
-    await voidByKeySafe(dependencies, idempotencyKey);
-    return { ok: false, reason: "payment_failed" };
-  }
-
-  // Server-authoritative verification of the authorization Square granted.
-  if (payment.status !== SQUARE_AUTHORIZED_STATUS) {
-    dependencies.logError("[checkout] Square commerce not authorized", {
-      orderReference: input.orderReference,
-      status: payment.status,
-    });
-    await voidSafe(dependencies, payment.id);
-    return { ok: false, reason: "payment_not_authorized" };
-  }
-  if (
-    payment.amount_money.amount !== input.amountCents ||
-    payment.amount_money.currency.toUpperCase() !== input.currency.toUpperCase()
-  ) {
-    dependencies.logError("[checkout] Square commerce amount mismatch", {
-      orderReference: input.orderReference,
-    });
-    await voidSafe(dependencies, payment.id);
-    return { ok: false, reason: "amount_mismatch" };
-  }
-
-  // Record the money locally BEFORE capturing, so a finalize failure leaves an
-  // uncaptured authorization we can void rather than a captured orphan.
-  let finalized: FinalizeSquareProductPaymentResult;
-  try {
-    finalized = await dependencies.finalize({
-      orderReference: input.orderReference,
-      squarePaymentId: payment.id,
-      amountCents: payment.amount_money.amount,
-      currency: payment.amount_money.currency,
-      providerType: payment.source_type ?? "CARD",
-      providerStatus: payment.status,
-    });
-  } catch (error) {
-    dependencies.logError("[checkout] Square commerce finalization threw", {
-      orderReference: input.orderReference,
-      squarePaymentId: payment.id,
-      error: getErrorMessage(error),
-    });
-    await voidSafe(dependencies, payment.id);
-    return { ok: false, reason: "finalize_failed" };
-  }
-
-  if (
-    finalized.transition !== "applied" &&
-    finalized.transition !== "already_applied"
-  ) {
-    dependencies.logError("[checkout] Square commerce finalization conflict", {
-      orderReference: input.orderReference,
-      transition: finalized.transition,
-      squarePaymentId: payment.id,
-    });
-    await voidSafe(dependencies, payment.id);
-    return { ok: false, reason: finalized.transition };
-  }
-
-  // Ledger committed. Capture the held funds. `already_applied` means a prior
-  // run already recorded (and captured) this payment, so do not re-capture.
-  if (finalized.transition === "applied") {
-    try {
-      await dependencies.capturePayment(payment.id, payment.version_token);
-    } catch (error) {
-      // Rare: the order is recorded paid but capture did not complete. Do not
-      // void (that would contradict the paid order + activated shipment) — the
-      // Square webhook / reconciliation sweep must complete or flag it.
-      dependencies.logError(
-        "[checkout] Square commerce capture after finalize failed",
-        {
-          orderReference: input.orderReference,
-          squarePaymentId: payment.id,
-          error: getErrorMessage(error),
-        },
-      );
-    }
-  }
-
-  // Confirmation email is a non-blocking side effect (enqueued to the outbox).
-  try {
-    await dependencies.sendConfirmationEmail(input.orderReference);
-  } catch (error) {
-    dependencies.logError(
-      "[checkout] Square order confirmation email enqueue failed",
-      {
-        orderReference: input.orderReference,
-        error: getErrorMessage(error),
-      },
-    );
-  }
-
-  return {
-    ok: true,
-    squarePaymentId: payment.id,
-    transition: finalized.transition,
+  const coreDependencies: SquarePaymentChargeDependencies<ProductTransition> = {
+    authorizePayment: dependencies.authorizePayment,
+    capturePayment: dependencies.capturePayment,
+    voidPayment: dependencies.voidPayment,
+    voidPaymentByIdempotencyKey: dependencies.voidPaymentByIdempotencyKey,
+    finalize: dependencies.finalize,
+    onSuccess: dependencies.sendConfirmationEmail,
+    logError: dependencies.logError,
   };
+
+  return authorizeCaptureSquarePayment<ProductTransition>(
+    {
+      orderReference: input.orderReference,
+      amountCents: input.amountCents,
+      currency: input.currency,
+      sourceId: input.sourceId,
+      ...(input.verificationToken
+        ? { verificationToken: input.verificationToken }
+        : {}),
+      idempotencyKey: squareCommerceIdempotencyKey(input.orderReference),
+    },
+    coreDependencies,
+  );
 }
 
 /**
@@ -257,41 +165,4 @@ export function createLiveSquareProductCharger(): (
       logError,
     });
   };
-}
-
-async function voidSafe(
-  dependencies: Pick<
-    ChargeSquareProductOrderDependencies,
-    "voidPayment" | "logError"
-  >,
-  paymentId: string,
-): Promise<void> {
-  try {
-    await dependencies.voidPayment(paymentId);
-  } catch (error) {
-    dependencies.logError("[checkout] Square commerce void failed", {
-      squarePaymentId: paymentId,
-      error: getErrorMessage(error),
-    });
-  }
-}
-
-async function voidByKeySafe(
-  dependencies: Pick<
-    ChargeSquareProductOrderDependencies,
-    "voidPaymentByIdempotencyKey" | "logError"
-  >,
-  idempotencyKey: string,
-): Promise<void> {
-  try {
-    await dependencies.voidPaymentByIdempotencyKey(idempotencyKey);
-  } catch (error) {
-    dependencies.logError("[checkout] Square commerce void-by-key failed", {
-      error: getErrorMessage(error),
-    });
-  }
-}
-
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Unknown Square charge error";
 }
