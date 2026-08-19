@@ -14,7 +14,11 @@ export interface SquareMoney {
 export interface SquareCreatePaymentRequest {
   idempotency_key: string;
   source_id: string;
-  customer_id: string;
+  /**
+   * Required for card-on-file booking charges. Optional for one-time commerce
+   * sales (product / primary-training checkout), where no customer is stored.
+   */
+  customer_id?: string;
   amount_money: SquareMoney;
   autocomplete?: boolean;
   verification_token?: string;
@@ -99,10 +103,7 @@ export function createSquarePaymentsClient(
       );
     },
     async cancelPaymentByIdempotencyKey(idempotencyKey) {
-      await postSquare<
-        { idempotency_key: string },
-        Record<string, never>
-      >(
+      await postSquare<{ idempotency_key: string }, Record<string, never>>(
         env,
         "/v2/payments/cancel",
         { idempotency_key: idempotencyKey },
@@ -113,6 +114,20 @@ export function createSquarePaymentsClient(
 }
 
 export async function createSquareCardOnFilePayment(
+  env: SquarePaymentsClientEnv,
+  request: SquareCreatePaymentRequest,
+): Promise<SquareCreatePaymentResponse> {
+  return createSquarePaymentsClient(env).createCardOnFilePayment(request);
+}
+
+/**
+ * One-time sale for product / primary-training checkout. Hits the same
+ * `/v2/payments` endpoint as the booking charge, but the source is a single-use
+ * card nonce from the Web Payments SDK (`tokenize({ intent: "CHARGE" })`) and no
+ * stored `customer_id` is required. Pass `autocomplete: true` to capture
+ * immediately.
+ */
+export async function createSquareCommercePayment(
   env: SquarePaymentsClientEnv,
   request: SquareCreatePaymentRequest,
 ): Promise<SquareCreatePaymentResponse> {
@@ -214,9 +229,7 @@ function isSquareGetPaymentResponse(
   return isSquarePaymentResponse(value);
 }
 
-function isSquareEmptyResponse(
-  value: unknown,
-): value is Record<string, never> {
+function isSquareEmptyResponse(value: unknown): value is Record<string, never> {
   return isRecord(value) && Object.keys(value).length === 0;
 }
 

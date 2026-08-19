@@ -163,6 +163,13 @@ export interface CreatePendingOrderInput {
 export interface CreateInitializingProductOrderInput {
   customerName: string;
   customerEmail: string;
+  /**
+   * Payment gateway for this order. Defaults to "helcim" for the legacy
+   * async-invoice flow; "square" reserves the order ready for the synchronous
+   * Web Payments SDK charge (no provider invoice pre-initialization, and no
+   * Helcim certified-contract gate).
+   */
+  provider?: PaymentProvider;
   cart: ValidatedCart;
   shippingAddress: CheckoutOrderShippingAddressSnapshot;
   shippingQuoteToken: string;
@@ -191,6 +198,7 @@ export interface InitializingProductOrderRecord {
   databaseId: string;
   orderId: string;
   primaryObligationId: string;
+  currency: ValidatedCart["currency"];
   merchandiseAmountCents: number;
   shippingAmountCents: number;
   taxAmountCents: number;
@@ -887,8 +895,13 @@ export async function createInitializingProductOrder(
         now,
       },
     );
+    const provider: PaymentProvider = input.provider ?? "helcim";
+    // Square commerce runs under the lighter verified-payment fulfillment gate,
+    // so it does not require (or record) the Helcim certified-contract snapshot.
     const helcimContract =
-      await assertHelcimProductPaymentsCertificationInTransaction(tx, now);
+      provider === "square"
+        ? null
+        : await assertHelcimProductPaymentsCertificationInTransaction(tx, now);
     const [quote] = await tx
       .select()
       .from(productShipments)
@@ -957,7 +970,7 @@ export async function createInitializingProductOrder(
       .values({
         orderId,
         status: "pending",
-        initializationStatus: "initializing",
+        initializationStatus: provider === "square" ? "ready" : "initializing",
         checkoutTokenHash: null,
         secretTokenCiphertext: null,
         helcimInvoiceId: null,
@@ -976,7 +989,7 @@ export async function createInitializingProductOrder(
         taxAmountCents,
         currency: input.cart.currency,
         lineItems: toOrderLineItemSnapshots(input.cart),
-        paymentProvider: "helcim",
+        paymentProvider: provider,
         shippingAddress: input.shippingAddress,
         refundOriginIpCiphertext: encryptCheckoutIp(input.refundOriginIp),
         atRiskValueCents: merchandiseAmountCents,
@@ -1043,9 +1056,10 @@ export async function createInitializingProductOrder(
         taxAmountCents,
         totalAmountCents,
         currency: input.cart.currency,
+        paymentProvider: provider,
         sourceWorkflow: "automated_product_checkout",
         disclosureSnapshot: {
-          helcimContract,
+          ...(helcimContract ? { helcimContract } : {}),
           shippingQuoteContext: quoteContextSnapshot,
           tax: taxQuote,
           cancellationPolicy: { ...refundPolicySnapshot },
@@ -1064,7 +1078,7 @@ export async function createInitializingProductOrder(
         taxPolicyVersion: commitReadiness.taxPolicyVersion!,
         policyVersion: commitReadiness.policyVersion!,
         expiresAt: quote.quoteExpiresAt,
-        initializationStatus: "initializing",
+        initializationStatus: provider === "square" ? "ready" : "initializing",
         idempotencyKey: `primary/${order.id}`,
       })
       .returning({ id: orderPaymentObligations.id });
@@ -1074,6 +1088,7 @@ export async function createInitializingProductOrder(
       databaseId: order.id,
       orderId,
       primaryObligationId: obligation.id,
+      currency: input.cart.currency,
       merchandiseAmountCents,
       shippingAmountCents,
       taxAmountCents,
@@ -1264,6 +1279,7 @@ export async function createInitializingManualProductOrder(
       databaseId: order.id,
       orderId,
       primaryObligationId: obligation.id,
+      currency: input.cart.currency,
       merchandiseAmountCents,
       shippingAmountCents: 0,
       taxAmountCents,

@@ -78,11 +78,21 @@ interface CheckoutRequestBody {
     fingerprint: string;
     rateId: string;
   };
+  /**
+   * Square Web Payments SDK card nonce. When present (and Square commerce
+   * checkout is enabled), the order is reserved and charged synchronously
+   * through Square rather than returning the legacy async-invoice operation.
+   */
+  payment?: {
+    sourceId: string;
+    verificationToken?: string;
+  };
 }
 
 type CheckoutResponseBody =
   | { checkoutToken: string }
-  | { operationId: string; status: "queued" };
+  | { operationId: string; status: "queued" }
+  | { orderId: string; status: "paid" };
 
 interface CheckoutErrorBody {
   error: string;
@@ -116,6 +126,7 @@ interface CheckoutPostHandlerDependencies {
   createInitializingOrder?: (input: {
     customerName: string;
     customerEmail: string;
+    provider?: "helcim" | "square";
     cart: ValidatedCart;
     shippingAddress: CheckoutShippingAddressInput;
     shippingQuoteToken: string;
@@ -133,6 +144,7 @@ interface CheckoutPostHandlerDependencies {
   }) => Promise<{
     orderId: string;
     primaryObligationId: string;
+    currency: "CAD";
     shippingAmountCents: number;
     totalAmountCents: number;
     shippingRateTitle: string;
@@ -155,6 +167,7 @@ interface CheckoutPostHandlerDependencies {
   }) => Promise<{
     orderId: string;
     primaryObligationId: string;
+    currency: "CAD";
     shippingAmountCents: number;
     totalAmountCents: number;
     shippingRateTitle: string;
@@ -170,6 +183,19 @@ interface CheckoutPostHandlerDependencies {
   loadManualCheckoutPolicy?: typeof loadManualProductCheckoutPolicy;
   loadTermsRequirement?: () => ProductCheckoutTermsRequirement;
   loadShippedRefundPolicyRequirement?: () => ShippedRefundPolicyRequirement;
+  /** When true, a request carrying `payment.sourceId` is charged via Square. */
+  squareCommerceEnabled?: boolean;
+  chargeSquareProductOrder?: (input: {
+    orderReference: string;
+    amountCents: number;
+    currency: "CAD";
+    sourceId: string;
+    verificationToken?: string;
+  }) => Promise<
+    | { ok: true; squarePaymentId: string; transition: string }
+    | { ok: false; reason: string }
+  >;
+  markOrderVerificationFailed?: (orderId: string) => Promise<void>;
 }
 
 interface ProductCheckoutTermsAssent {
@@ -206,6 +232,9 @@ export function createCheckoutPostHandler({
   loadManualCheckoutPolicy = loadManualProductCheckoutPolicy,
   loadTermsRequirement = getProductCheckoutTermsRequirement,
   loadShippedRefundPolicyRequirement = getShippedRefundPolicyRequirement,
+  squareCommerceEnabled,
+  chargeSquareProductOrder,
+  markOrderVerificationFailed: markOrderVerificationFailedDep,
 }: CheckoutPostHandlerDependencies): (req: NextRequest) => Promise<Response> {
   return async function checkoutPostHandler(
     req: NextRequest,
@@ -406,6 +435,16 @@ export function createCheckoutPostHandler({
         };
       }
 
+      // Square commerce charges synchronously through the Web Payments SDK when
+      // the request carries a card nonce. Manual pickup stays on the legacy
+      // async path during the staged migration.
+      const useSquareCommerce = Boolean(
+        squareCommerceEnabled &&
+        chargeSquareProductOrder &&
+        checkoutRequest.payment?.sourceId &&
+        !isManualCheckout,
+      );
+
       let initializingOrder: Awaited<
         ReturnType<NonNullable<typeof createInitializingOrder>>
       > | null = null;
@@ -488,6 +527,7 @@ export function createCheckoutPostHandler({
         initializingOrder = await createInitializingOrder({
           customerName: checkoutRequest.customer.name,
           customerEmail: checkoutRequest.customer.email,
+          ...(useSquareCommerce ? { provider: "square" as const } : {}),
           cart,
           shippingAddress: normalizeShippingAddress(
             checkoutRequest.shippingAddress!,
@@ -519,6 +559,45 @@ export function createCheckoutPostHandler({
         if (!("primaryObligationId" in initializingOrder)) {
           throw new Error("Durable payment operation was not reserved");
         }
+
+        if (
+          useSquareCommerce &&
+          chargeSquareProductOrder &&
+          checkoutRequest.payment?.sourceId
+        ) {
+          const charge = await chargeSquareProductOrder({
+            orderReference: initializingOrder.orderId,
+            amountCents: initializingOrder.totalAmountCents,
+            currency: initializingOrder.currency,
+            sourceId: checkoutRequest.payment.sourceId,
+            ...(checkoutRequest.payment.verificationToken
+              ? {
+                  verificationToken: checkoutRequest.payment.verificationToken,
+                }
+              : {}),
+          });
+
+          if (!charge.ok) {
+            // The captured payment did not clear; release the reserved order so
+            // the customer sees a clean failure. (Known limitation: the attached
+            // shipping quote is not yet released here — tracked for follow-up.)
+            if (markOrderVerificationFailedDep) {
+              await markOrderVerificationFailedDep(
+                initializingOrder.orderId,
+              ).catch(() => undefined);
+            }
+            return NextResponse.json<CheckoutErrorBody>(
+              { error: "Payment could not be completed" },
+              { status: 402 },
+            );
+          }
+
+          return NextResponse.json<CheckoutResponseBody>(
+            { orderId: initializingOrder.orderId, status: "paid" },
+            { status: 200 },
+          );
+        }
+
         return NextResponse.json<CheckoutResponseBody>(
           {
             operationId: initializingOrder.primaryObligationId,
@@ -565,14 +644,33 @@ export function createCheckoutPostHandler({
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
-  const [{ loaders }, orderStore, shippingConfig] = await Promise.all([
+  const [
+    { loaders },
+    orderStore,
+    shippingConfig,
+    privateCheckout,
+    squareCommerce,
+  ] = await Promise.all([
     import("@/data/loaders"),
     import("@/lib/commerce/order-store"),
     import("@/lib/shipping/config"),
+    import("@/lib/env/private-checkout"),
+    import("@/lib/commerce/square-commerce-checkout"),
   ]);
+
+  const squareCommerceEnabled =
+    privateCheckout.isSquareCommerceCheckoutEnabled();
 
   return createCheckoutPostHandler({
     getProductsByIds: loaders.getProductsByIds,
+    squareCommerceEnabled,
+    ...(squareCommerceEnabled
+      ? {
+          chargeSquareProductOrder:
+            squareCommerce.createLiveSquareProductCharger(),
+          markOrderVerificationFailed: orderStore.markOrderVerificationFailed,
+        }
+      : {}),
     getPromotionCode: loaders.getPromotionCode,
     shippingEnabled: shippingConfig.isChitChatsCheckoutEnabled(),
     validateShippingSelection: async ({ request, products, promotionCode }) => {
@@ -724,6 +822,7 @@ function parseCheckoutRequest(body: unknown): CheckoutRequestBody | null {
   const shippingQuote = parseShippingQuote(body.shippingQuote);
   const fulfillmentMode = parseFulfillmentMode(body.fulfillmentMode);
   const disclosures = parseDisclosures(body.disclosures);
+  const payment = parsePaymentInput(body.payment);
 
   if (
     name === null ||
@@ -734,7 +833,8 @@ function parseCheckoutRequest(body: unknown): CheckoutRequestBody | null {
     phone === null ||
     shippingQuote === null ||
     fulfillmentMode === null ||
-    disclosures === null
+    disclosures === null ||
+    payment === null
   ) {
     return null;
   }
@@ -747,6 +847,30 @@ function parseCheckoutRequest(body: unknown): CheckoutRequestBody | null {
     disclosures,
     ...(promotionCode ? { promotionCode } : {}),
     ...(shippingQuote ? { shippingQuote } : {}),
+    ...(payment ? { payment } : {}),
+  };
+}
+
+function parsePaymentInput(
+  value: unknown,
+): CheckoutRequestBody["payment"] | null {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) return null;
+  const sourceId =
+    typeof value.sourceId === "string" ? value.sourceId.trim() : "";
+  if (!sourceId || sourceId.length > 512) return null;
+  const verificationToken =
+    value.verificationToken === undefined
+      ? undefined
+      : typeof value.verificationToken === "string" &&
+          value.verificationToken.trim().length > 0 &&
+          value.verificationToken.length <= 2048
+        ? value.verificationToken.trim()
+        : null;
+  if (verificationToken === null) return null;
+  return {
+    sourceId,
+    ...(verificationToken ? { verificationToken } : {}),
   };
 }
 

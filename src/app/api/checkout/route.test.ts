@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -994,19 +995,21 @@ test("checkout route logs generic failure messages without leaking sensitive val
   `);
 });
 
-test("product checkout route remains Helcim-only and does not import Square modules", () => {
+test("product checkout route charges product orders through Square", () => {
   const routeSource = readFileSync("src/app/api/checkout/handler.ts", "utf8");
 
-  assertNoSquareImports(routeSource);
+  // The Helcim -> Square migration intentionally reverses the former
+  // "product checkout must not reference Square" provider boundary: product
+  // checkout now captures payment through the Square Web Payments SDK.
+  assert.ok(
+    routeSource.includes("createLiveSquareProductCharger"),
+    "checkout route should wire the Square commerce charger",
+  );
+  assert.ok(
+    routeSource.includes("isSquareCommerceCheckoutEnabled"),
+    "checkout route should gate the Square charge on the commerce flag",
+  );
 });
-
-function assertNoSquareImports(routeSource: string): void {
-  if (/square|Square|SQUARE/.test(routeSource)) {
-    throw new Error(
-      "Helcim-only checkout route must not import or reference Square",
-    );
-  }
-}
 
 function runRouteScenario(assertions: string): void {
   const scenario = `${helperScript}\nvoid (async () => {\n${assertions}\n})()`;
