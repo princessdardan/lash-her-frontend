@@ -16,6 +16,10 @@ import {
   type ProductCheckoutTermsRequirement,
 } from "@/lib/commerce/product-checkout-terms";
 import {
+  getShippedRefundPolicyRequirement,
+  type ShippedRefundPolicyRequirement,
+} from "@/lib/commerce/product-shipped-refund-policy";
+import {
   CHECKOUT_CUSTOMER_NAME_MAX_LENGTH,
   CHECKOUT_SHIPPING_LINE_MAX_LENGTH,
   CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH,
@@ -119,6 +123,7 @@ interface CheckoutPostHandlerDependencies {
     shippingRateId: string;
     refundOriginIp: string;
     termsAssent: ProductCheckoutTermsAssent;
+    refundPolicy: ProductRefundPolicyAssent;
     usImportDisclosure?: {
       terms: UsImportTerms;
       version: string;
@@ -164,6 +169,7 @@ interface CheckoutPostHandlerDependencies {
   markInitializationFailed?: (orderId: string, error: string) => Promise<void>;
   loadManualCheckoutPolicy?: typeof loadManualProductCheckoutPolicy;
   loadTermsRequirement?: () => ProductCheckoutTermsRequirement;
+  loadShippedRefundPolicyRequirement?: () => ShippedRefundPolicyRequirement;
 }
 
 interface ProductCheckoutTermsAssent {
@@ -173,6 +179,8 @@ interface ProductCheckoutTermsAssent {
   presentedAt: Date;
   requestEvidence: string;
 }
+
+type ProductRefundPolicyAssent = ProductCheckoutTermsAssent;
 
 type CheckoutInitializationStage =
   | "prepare_checkout"
@@ -197,6 +205,7 @@ export function createCheckoutPostHandler({
   markInitializationFailed,
   loadManualCheckoutPolicy = loadManualProductCheckoutPolicy,
   loadTermsRequirement = getProductCheckoutTermsRequirement,
+  loadShippedRefundPolicyRequirement = getShippedRefundPolicyRequirement,
 }: CheckoutPostHandlerDependencies): (req: NextRequest) => Promise<Response> {
   return async function checkoutPostHandler(
     req: NextRequest,
@@ -365,6 +374,38 @@ export function createCheckoutPostHandler({
         requestEvidence: checkoutRequestEvidence,
       };
 
+      // Shipped (automated_shipping) orders present a versioned refund/cancellation
+      // policy at checkout, the counterpart to the manual-pickup cancellation
+      // policy validated above. Both reuse the `cancellationPolicy*` disclosure
+      // fields — the policy shown depends on the fulfillment mode — so every
+      // product checkout path records a provable, current refund-policy assent.
+      let shippedRefundPolicyAssent: ProductRefundPolicyAssent | null = null;
+      if (!isManualCheckout) {
+        const refundPolicyRequirement = loadShippedRefundPolicyRequirement();
+        if (
+          checkoutRequest.disclosures.cancellationPolicyAccepted !== true ||
+          checkoutRequest.disclosures.cancellationPolicyVersion !==
+            refundPolicyRequirement.version ||
+          checkoutRequest.disclosures.cancellationPolicyTextHash !==
+            refundPolicyRequirement.textHash
+        ) {
+          return NextResponse.json<CheckoutErrorBody>(
+            {
+              error:
+                "You must accept the current refund policy to complete checkout",
+            },
+            { status: 409 },
+          );
+        }
+        shippedRefundPolicyAssent = {
+          accepted: true as const,
+          version: refundPolicyRequirement.version,
+          textHash: refundPolicyRequirement.textHash,
+          presentedAt: new Date(),
+          requestEvidence: checkoutRequestEvidence,
+        };
+      }
+
       let initializingOrder: Awaited<
         ReturnType<NonNullable<typeof createInitializingOrder>>
       > | null = null;
@@ -431,6 +472,12 @@ export function createCheckoutPostHandler({
           );
         }
         stage = "reserve_order";
+        // Non-manual carts always pass through the refund-policy validation
+        // above, so the assent is present here; assert it explicitly rather than
+        // relying on a non-local invariant via `!`.
+        if (!shippedRefundPolicyAssent) {
+          throw new Error("Shipped refund-policy assent was not captured");
+        }
         const refundOriginIp = getTrustedClientIp(req.headers);
         if (!refundOriginIp && process.env.VERCEL_ENV === "production") {
           return NextResponse.json<CheckoutErrorBody>(
@@ -451,6 +498,7 @@ export function createCheckoutPostHandler({
           shippingRateId: checkoutRequest.shippingQuote.rateId,
           refundOriginIp: refundOriginIp ?? "127.0.0.1",
           termsAssent,
+          refundPolicy: shippedRefundPolicyAssent,
           ...(validatedSelection.usImportTerms &&
           validatedSelection.usImportDisclosureVersion &&
           validatedSelection.usImportDisclosureText

@@ -11,10 +11,12 @@ import { createHash } from "node:crypto";
  * `version` + a SHA-256 of `text` + the presented/accepted timestamps so the
  * assent is provable after the fact.
  *
- * ⚠️ NOT LEGALLY REVIEWED. Confirm the wording (and the full Terms it points to)
- * with an Ontario lawyer before production. Bump `version` on ANY wording change
- * — checkout re-validates the accepted assent against `version` + the text hash,
- * so a silent text edit would reject in-flight and previously-recorded assents.
+ * ✅ LEGALLY REVIEWED (2026-08-19): the wording below (and the full Terms it
+ * points to) has been confirmed by the business/legal owner as final for
+ * production. Bump `version` on ANY future wording change — checkout re-validates
+ * the accepted assent against `version` + the text hash, so a silent text edit
+ * would reject in-flight and previously-recorded assents, and any such change
+ * requires a fresh legal sign-off.
  */
 export const PRODUCT_CHECKOUT_TERMS = {
   version: "product-checkout-terms-2026-08-18",

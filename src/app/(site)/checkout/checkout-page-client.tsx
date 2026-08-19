@@ -46,6 +46,8 @@ interface CheckoutPageClientProps {
   manualCheckoutPolicy: ManualProductCheckoutPolicy;
   /** Terms-of-sale assent the customer must accept at checkout (Reg. 17/05). */
   termsRequirement: CheckoutTermsRequirement;
+  /** Versioned refund/cancellation policy for shipped (automated) orders. */
+  shippedRefundPolicy: CheckoutTermsRequirement;
   /** Fixed tax for in-studio pickup (studio place of supply, Ontario). */
   pickupTax: { rate: number; name: string };
 }
@@ -87,6 +89,7 @@ function CheckoutContent({
   shippingEnabled,
   manualCheckoutPolicy,
   termsRequirement,
+  shippedRefundPolicy,
   pickupTax,
 }: CheckoutPageClientProps) {
   const searchParams = useSearchParams();
@@ -138,6 +141,7 @@ function CheckoutContent({
   const manualFulfillmentMode = "manual_pickup" as const;
   const [acceptedCancellationPolicy, setAcceptedCancellationPolicy] =
     useState(false);
+  const [acceptedRefundPolicy, setAcceptedRefundPolicy] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   // Build checkout items: either buy-now single item or full cart
@@ -1004,7 +1008,19 @@ function CheckoutContent({
                       and cancellation policy is approved.
                     </p>
                   )
-                ) : null}
+                ) : (
+                  <label className="flex items-start gap-3 rounded-[18px] border border-lh-line bg-lh-white p-4 text-sm font-bold leading-6 text-lh-shadow">
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={acceptedRefundPolicy}
+                      onChange={(event) =>
+                        setAcceptedRefundPolicy(event.target.checked)
+                      }
+                    />
+                    <span>{shippedRefundPolicy.text}</span>
+                  </label>
+                )}
 
                 <label className="flex items-start gap-3 rounded-[18px] border border-lh-line bg-lh-white p-4 text-sm font-bold leading-6 text-lh-shadow">
                   <input
@@ -1041,7 +1057,8 @@ function CheckoutContent({
                       !hasValidShippingDisclosure ||
                       (isManualCheckout &&
                         (!manualCheckoutPolicy.enabled ||
-                          !acceptedCancellationPolicy))
+                          !acceptedCancellationPolicy)) ||
+                      (!isManualCheckout && !acceptedRefundPolicy)
                     }
                     items={checkoutItems}
                     customer={{
@@ -1071,6 +1088,15 @@ function CheckoutContent({
                               manualCheckoutPolicy.cancellationPolicyVersion,
                             cancellationPolicyTextHash:
                               manualCheckoutPolicy.cancellationPolicyTextHash,
+                          }
+                        : {}),
+                      ...(!isManualCheckout && acceptedRefundPolicy
+                        ? {
+                            cancellationPolicyAccepted: true,
+                            cancellationPolicyVersion:
+                              shippedRefundPolicy.version,
+                            cancellationPolicyTextHash:
+                              shippedRefundPolicy.textHash,
                           }
                         : {}),
                       ...(requiresUsImportDisclosure &&
@@ -1154,6 +1180,7 @@ export default function CheckoutPageClient({
   shippingEnabled,
   manualCheckoutPolicy,
   termsRequirement,
+  shippedRefundPolicy,
   pickupTax,
 }: CheckoutPageClientProps) {
   return (
@@ -1171,6 +1198,7 @@ export default function CheckoutPageClient({
         shippingEnabled={shippingEnabled}
         manualCheckoutPolicy={manualCheckoutPolicy}
         termsRequirement={termsRequirement}
+        shippedRefundPolicy={shippedRefundPolicy}
         pickupTax={pickupTax}
       />
     </Suspense>

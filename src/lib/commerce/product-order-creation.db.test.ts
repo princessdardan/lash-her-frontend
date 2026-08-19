@@ -16,6 +16,8 @@ const scenario = String.raw`
   import { closePrivateDbPool, getPrivateDb } from "./src/lib/private-db/client.ts";
   import { checkoutOrders, orderPaymentObligations, productShipments } from "./src/lib/private-db/schema.ts";
   import { createInitializingProductOrder } from "./src/lib/commerce/order-store.ts";
+  import { getProductCheckoutTermsRequirement } from "./src/lib/commerce/product-checkout-terms.ts";
+  import { getShippedRefundPolicyRequirement } from "./src/lib/commerce/product-shipped-refund-policy.ts";
   import { buildConfiguredQuoteContext } from "./src/lib/shipping/configured-quote-context.ts";
   import { hashShippingQuoteToken } from "./src/lib/shipping/quote-token.ts";
   import { parseHelcimProductPaymentsContract } from "./src/lib/commerce/helcim-certified-contract.ts";
@@ -140,6 +142,20 @@ const scenario = String.raw`
       shippingQuoteFingerprint: fingerprint,
       shippingRateId: rate.id,
       refundOriginIp: "203.0.113.7",
+      termsAssent: {
+        accepted: true,
+        version: getProductCheckoutTermsRequirement().version,
+        textHash: getProductCheckoutTermsRequirement().textHash,
+        presentedAt: now,
+        requestEvidence: "checkout_post:00000000-0000-4000-8000-000000000000",
+      },
+      refundPolicy: {
+        accepted: true,
+        version: getShippedRefundPolicyRequirement().version,
+        textHash: getShippedRefundPolicyRequirement().textHash,
+        presentedAt: now,
+        requestEvidence: "checkout_post:00000000-0000-4000-8000-000000000000",
+      },
     });
     createdOrderId = result.databaseId;
 

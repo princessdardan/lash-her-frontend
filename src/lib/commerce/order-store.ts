@@ -54,6 +54,7 @@ import {
   STUDIO_PICKUP_TAX_JURISDICTION,
 } from "./product-tax-policy";
 import { getProductCheckoutTermsRequirement } from "./product-checkout-terms";
+import { getShippedRefundPolicyRequirement } from "./product-shipped-refund-policy";
 
 export interface UsImportDisclosureSnapshot {
   terms: "DDU";
@@ -111,6 +112,40 @@ function buildProductCheckoutTermsSnapshot(
   };
 }
 
+/**
+ * Re-validates the accepted shipped-order refund policy against the current
+ * source-controlled requirement (version + SHA-256 of text) and returns the JSON
+ * snapshot to persist in the shared `cancellationPolicySnapshot` column. Throws
+ * if acceptance is missing or does not match — shipped order creation must not
+ * proceed without a provable, current refund-policy assent (the shipped-order
+ * counterpart to the manual-pickup cancellation policy).
+ */
+function buildShippedRefundPolicySnapshot(
+  input: ProductRefundPolicyAssentInput,
+  now: Date,
+): Record<string, string | boolean> {
+  const requirement = getShippedRefundPolicyRequirement();
+  if (
+    input.accepted !== true ||
+    input.version !== requirement.version ||
+    input.textHash !== requirement.textHash ||
+    !CHECKOUT_REQUEST_EVIDENCE_PATTERN.test(input.requestEvidence)
+  ) {
+    throw new Error(
+      "Checkout refund-policy acceptance is required and must match the current policy",
+    );
+  }
+  return {
+    accepted: true,
+    version: requirement.version,
+    text: requirement.text,
+    textHash: requirement.textHash,
+    presentedAt: input.presentedAt.toISOString(),
+    acceptedAt: now.toISOString(),
+    requestEvidence: input.requestEvidence,
+  };
+}
+
 const EMAIL_CLAIM_DURATION_MS = 5 * 60 * 1000;
 
 export interface CreatePendingOrderInput {
@@ -135,7 +170,21 @@ export interface CreateInitializingProductOrderInput {
   shippingRateId: string;
   refundOriginIp: string;
   termsAssent: ProductCheckoutTermsAssentInput;
+  /**
+   * Shipped-order refund/cancellation policy the customer accepted at checkout,
+   * re-validated against the current source-controlled requirement and stored on
+   * the order (same columns as the manual-pickup cancellation policy).
+   */
+  refundPolicy: ProductRefundPolicyAssentInput;
   usImportDisclosure?: UsImportDisclosureSnapshot;
+}
+
+export interface ProductRefundPolicyAssentInput {
+  accepted: true;
+  version: string;
+  textHash: string;
+  presentedAt: Date;
+  requestEvidence: string;
 }
 
 export interface InitializingProductOrderRecord {
@@ -818,6 +867,10 @@ export async function createInitializingProductOrder(
     input.termsAssent,
     now,
   );
+  const refundPolicySnapshot = buildShippedRefundPolicySnapshot(
+    input.refundPolicy,
+    now,
+  );
   const readiness = await assertCheckoutReadiness({ destinationCountryCode });
   const quoteContext = readiness.quoteContext;
   if (!quoteContext) {
@@ -945,6 +998,8 @@ export async function createInitializingProductOrder(
         termsVersion: termsSnapshot.version as string,
         termsAcceptedAt: now,
         termsSnapshot,
+        cancellationPolicyVersion: refundPolicySnapshot.version as string,
+        cancellationPolicySnapshot: refundPolicySnapshot,
         fulfillmentMode: "automated_shipping",
       })
       .returning({ id: checkoutOrders.id });
@@ -993,6 +1048,7 @@ export async function createInitializingProductOrder(
           helcimContract,
           shippingQuoteContext: quoteContextSnapshot,
           tax: taxQuote,
+          cancellationPolicy: { ...refundPolicySnapshot },
           ...(input.usImportDisclosure
             ? {
                 usImportDisclosure: {

@@ -130,9 +130,12 @@ function svc(
  * customer. Non-null enables manual checkout when `MANUAL_PRODUCT_CHECKOUT_ENABLED`
  * is on.
  *
- * ⚠️ CONFIRM the final `text` wording and `version` with the business/legal owner
- * before production. Bump `version` on any wording change (checkout re-validates
- * the accepted policy against `version` + a SHA-256 of `text`).
+ * ✅ LEGALLY REVIEWED (2026-08-19): the business/legal owner has confirmed the
+ * `text` wording and `version` below as final for production. Do NOT edit `text`
+ * without bumping `version` — checkout re-validates the accepted policy against
+ * `version` + a SHA-256 of `text`, so a silent edit rejects in-flight and
+ * previously-recorded assents. Any future wording change requires a fresh
+ * legal sign-off plus a new `version`.
  */
 export const PRODUCT_MANUAL_CANCELLATION_POLICY: {
   version: string;
@@ -140,6 +143,30 @@ export const PRODUCT_MANUAL_CANCELLATION_POLICY: {
 } | null = {
   version: "manual-pickup-cancellation-2026-08-18",
   text: "You pay now and collect your order in person at the studio. You can cancel for a full refund any time before we begin preparing or personalizing your order. Ready-made items stay fully refundable until you collect them. Made-to-order or personalized items can't be refunded once we've started making them, because they can't be resold. Approved refunds go to your original payment card — we start them within 2 business days, and your bank usually posts them within 5–10 business days. If an order isn't collected, we hold it for 30 days and send reminders; after that we treat it as cancelled — ready-made items are refunded to your card, and personalized items follow the made-to-order rule above. None of this affects your rights if an item is damaged, faulty, or not as described.",
+};
+
+/**
+ * Shipped-order (automated_shipping) cancellation/refund policy shown to the
+ * customer at checkout and accepted with a versioned SHA-256 hash — the
+ * shipped-order counterpart to {@link PRODUCT_MANUAL_CANCELLATION_POLICY}. Its
+ * substance mirrors the retainable refund terms on the public Terms page so the
+ * two stay consistent (refund to original card, 2 / 5–10 business-day timing,
+ * made-to-order non-refundable, cross-border duties non-refundable by us).
+ *
+ * ✅ LEGALLY REVIEWED (2026-08-19): the business/legal owner has confirmed the
+ * `text` wording and `version` below as final for production. Do NOT edit `text`
+ * without bumping `version` — checkout re-validates the accepted policy against
+ * `version` + a SHA-256 of `text`, so a silent edit rejects in-flight and
+ * previously-recorded assents. Any future wording change requires a fresh
+ * legal sign-off plus a new `version`, and must stay consistent with the public
+ * Terms & Conditions page (Sanity policyPage slug `terms-and-conditions`).
+ */
+export const PRODUCT_SHIPPED_REFUND_POLICY: {
+  version: string;
+  text: string;
+} = {
+  version: "shipped-order-refund-2026-08-19",
+  text: "You pay now and we ship your order to the address you provide. You can cancel for a full refund any time before your order enters preparation or is handed to the carrier. Ready-made items are refundable while your order is still with us, and once delivered may be returned in unused condition after you contact us for instructions. Made-to-order or personalized items can't be refunded once we've started making them, because they can't be resold. Return shipping is your responsibility unless the item is damaged, faulty, or not as described, or the law requires otherwise. Approved refunds go to your original payment card — we start them within 2 business days, and your bank usually posts them within 5–10 business days. For orders shipped outside Canada, any import duties, taxes, or brokerage fees you already paid are collected by the carrier or customs and are not refundable by us. None of this affects your rights if an item is damaged, faulty, or not as described.",
 };
 
 /**

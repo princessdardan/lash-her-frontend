@@ -46,6 +46,16 @@ const helperScript = String.raw`
     termsVersion: TERMS_REQUIREMENT.version,
     termsTextHash: TERMS_REQUIREMENT.textHash,
   };
+  const SHIPPED_REFUND_REQUIREMENT = {
+    version: "shipped-refund-test-v1",
+    text: "Test shipped-order refund policy",
+    textHash: "c".repeat(64),
+  };
+  const SHIPPED_REFUND_DISCLOSURE = {
+    cancellationPolicyAccepted: true,
+    cancellationPolicyVersion: SHIPPED_REFUND_REQUIREMENT.version,
+    cancellationPolicyTextHash: SHIPPED_REFUND_REQUIREMENT.textHash,
+  };
 
   function createRequest(body) {
     if (typeof body === "string") {
@@ -55,6 +65,11 @@ const helperScript = String.raw`
       });
     }
     const { disclosures, ...rest } = body ?? {};
+    const effectiveMode = rest.fulfillmentMode ?? "automated_shipping";
+    const baseDisclosure =
+      effectiveMode === "automated_shipping"
+        ? { ...TERMS_DISCLOSURE, ...SHIPPED_REFUND_DISCLOSURE }
+        : TERMS_DISCLOSURE;
     return new Request("http://localhost:3000/api/checkout", {
       method: "POST",
       body: JSON.stringify({
@@ -65,7 +80,7 @@ const helperScript = String.raw`
           rateId: "rate-1",
         },
         ...rest,
-        disclosures: { ...TERMS_DISCLOSURE, ...(disclosures ?? {}) },
+        disclosures: { ...baseDisclosure, ...(disclosures ?? {}) },
       }),
     });
   }
@@ -77,6 +92,7 @@ const helperScript = String.raw`
     createInitializingManualOrder,
     loadManualCheckoutPolicy,
     loadTermsRequirement,
+    loadShippedRefundPolicyRequirement,
     markInitializationFailed,
     validateShippingSelection,
   } = {}) {
@@ -126,6 +142,9 @@ const helperScript = String.raw`
       ...(createInitializingManualOrder ? { createInitializingManualOrder } : {}),
       ...(loadManualCheckoutPolicy ? { loadManualCheckoutPolicy } : {}),
       loadTermsRequirement: loadTermsRequirement ?? (() => TERMS_REQUIREMENT),
+      loadShippedRefundPolicyRequirement:
+        loadShippedRefundPolicyRequirement ??
+        (() => SHIPPED_REFUND_REQUIREMENT),
     });
 
     return {
@@ -431,6 +450,53 @@ test("checkout route reserves a durable payment operation for a valid cart", () 
     assert.equal(orders[0].shippingQuoteToken, "shipping-quote-token");
     assert.equal(orders[0].shippingRateId, "rate-1");
     assert.equal(orders[0].cart.amount, 48);
+    assert.equal(orders[0].refundPolicy.accepted, true);
+    assert.equal(orders[0].refundPolicy.version, "shipped-refund-test-v1");
+    assert.equal(orders[0].refundPolicy.textHash, "c".repeat(64));
+    assert.ok(orders[0].refundPolicy.presentedAt instanceof Date);
+    assert.equal(
+      orders[0].refundPolicy.requestEvidence,
+      orders[0].termsAssent.requestEvidence,
+    );
+  `);
+});
+
+test("shipped checkout rejects orders without a current refund-policy acceptance", () => {
+  runRouteScenario(`
+    let reserves = 0;
+    const { handler } = runScenario({
+      createInitializingOrder: async () => {
+        reserves += 1;
+        throw new Error("should not reserve without refund-policy acceptance");
+      },
+    });
+    const base = {
+      customer: { name: "Nataliea Lash", email: "client@example.com" },
+      items: [{ productId: product._id, quantity: 1 }],
+    };
+
+    const missing = await handler(createRequest({
+      ...base,
+      disclosures: {
+        cancellationPolicyAccepted: undefined,
+        cancellationPolicyVersion: undefined,
+        cancellationPolicyTextHash: undefined,
+      },
+    }));
+    assert.equal(missing.status, 409);
+
+    const wrongVersion = await handler(createRequest({
+      ...base,
+      disclosures: { cancellationPolicyVersion: "shipped-refund-test-v0" },
+    }));
+    assert.equal(wrongVersion.status, 409);
+
+    const wrongHash = await handler(createRequest({
+      ...base,
+      disclosures: { cancellationPolicyTextHash: "d".repeat(64) },
+    }));
+    assert.equal(wrongHash.status, 409);
+    assert.equal(reserves, 0);
   `);
 });
 

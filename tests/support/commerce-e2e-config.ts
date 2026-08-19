@@ -1,6 +1,7 @@
 import type { HelcimProductPaymentsCertificationContractSnapshot } from "@/lib/private-db/schema";
 import { PRODUCT_MANUAL_CANCELLATION_POLICY } from "@/lib/shipping/product-shipping-config";
 import { getProductCheckoutTermsRequirement } from "@/lib/commerce/product-checkout-terms";
+import { getShippedRefundPolicyRequirement } from "@/lib/commerce/product-shipped-refund-policy";
 
 // Derived from the config so the fixture cannot drift from the policy text the
 // checkout re-validates (version + SHA-256 of text). The policy may be null
@@ -17,6 +18,17 @@ export const COMMERCE_E2E_TERMS_DISCLOSURE = {
   termsAccepted: true as const,
   termsVersion: COMMERCE_E2E_TERMS.version,
   termsTextHash: COMMERCE_E2E_TERMS.textHash,
+};
+
+// Shipped-order refund/cancellation policy assent required on every automated
+// (shipped) product checkout. Derived from the source-controlled requirement so
+// version + text hash always match what the checkout re-validates. Spread into
+// automated_shipping checkout POST bodies (manual pickup uses the manual policy).
+const COMMERCE_E2E_SHIPPED_REFUND = getShippedRefundPolicyRequirement();
+export const COMMERCE_E2E_SHIPPED_REFUND_DISCLOSURE = {
+  cancellationPolicyAccepted: true as const,
+  cancellationPolicyVersion: COMMERCE_E2E_SHIPPED_REFUND.version,
+  cancellationPolicyTextHash: COMMERCE_E2E_SHIPPED_REFUND.textHash,
 };
 
 export const COMMERCE_E2E_HELCIM_CONTRACT = {

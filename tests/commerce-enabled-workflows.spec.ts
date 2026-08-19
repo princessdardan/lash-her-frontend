@@ -17,6 +17,7 @@ import {
 import {
   COMMERCE_E2E_MANUAL_POLICY_TEXT,
   COMMERCE_E2E_TERMS_DISCLOSURE,
+  COMMERCE_E2E_SHIPPED_REFUND_DISCLOSURE,
 } from "./support/commerce-e2e-config";
 import { ADMIN_CALENDAR_E2E_AUTH_SECRET } from "./support/admin-calendar-e2e-config";
 import {
@@ -95,7 +96,10 @@ test.describe("enabled database-backed commerce workflows", () => {
     const checkoutStart = await request.post("/api/checkout", {
       data: {
         customer,
-        disclosures: { ...COMMERCE_E2E_TERMS_DISCLOSURE },
+        disclosures: {
+          ...COMMERCE_E2E_TERMS_DISCLOSURE,
+          ...COMMERCE_E2E_SHIPPED_REFUND_DISCLOSURE,
+        },
         fulfillmentMode: "automated_shipping",
         items,
         shippingAddress,
@@ -760,6 +764,7 @@ test.describe("enabled database-backed commerce workflows", () => {
         customer,
         disclosures: {
           ...COMMERCE_E2E_TERMS_DISCLOSURE,
+          ...COMMERCE_E2E_SHIPPED_REFUND_DISCLOSURE,
           usImportDisclosureText: quote.usImportDisclosureText,
           usImportDisclosureVersion: quote.usImportDisclosureVersion,
           usImportTerms: quote.usImportTerms,
@@ -1699,7 +1704,10 @@ async function createFreshCanadaAutomatedOrder(
   const checkoutStart = await request.post("/api/checkout", {
     data: {
       customer,
-      disclosures: { ...COMMERCE_E2E_TERMS_DISCLOSURE },
+      disclosures: {
+        ...COMMERCE_E2E_TERMS_DISCLOSURE,
+        ...COMMERCE_E2E_SHIPPED_REFUND_DISCLOSURE,
+      },
       fulfillmentMode: "automated_shipping",
       items,
       shippingAddress,
