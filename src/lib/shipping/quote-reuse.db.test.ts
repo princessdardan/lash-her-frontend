@@ -42,8 +42,6 @@ const scenario = String.raw`
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 15 * 60_000);
     const quoteContextSnapshot = {
-      calendarVersionId: calendar.id,
-      fundingAttestationId: "44444444-4444-4444-8444-444444444444",
       helcimProductPaymentsContract: {
         contract: "helcim_product_payments",
         version: "helcim-product-payments-v1",
@@ -62,10 +60,7 @@ const scenario = String.raw`
           merchantReferenceFields: ["merchantReference"],
         },
       },
-      intakeLocationAttestationId: "11111111-1111-4111-8111-111111111111",
-      packageProfileApprovals: [],
       policyVersion: "test-policy-v1",
-      providerCertificationApprovals: [],
       region: "ontario_manitoba",
       servicePolicies: [],
       shippingPolicySnapshot: {
@@ -97,7 +92,6 @@ const scenario = String.raw`
     };
     const base = {
       quoteFingerprint: prefix + "-fingerprint",
-      intakeLocationAttestationId: null,
       destination: {
         name: "Test Customer",
         email: "customer@example.invalid",

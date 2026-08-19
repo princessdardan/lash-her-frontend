@@ -66,13 +66,8 @@ function quoteContext(
   overrides: Partial<ShippingQuoteContext> = {},
 ): ShippingQuoteContext {
   return {
-    calendarVersionId: "33333333-3333-4333-8333-333333333333",
-    fundingAttestationId: "44444444-4444-4444-8444-444444444444",
     helcimProductPaymentsContract,
-    intakeLocationAttestationId: "11111111-1111-4111-8111-111111111111",
-    packageProfileApprovals: [],
     policyVersion: "policy-v1",
-    providerCertificationApprovals: [],
     region: "ontario_manitoba",
     servicePolicies: [],
     shippingPolicySnapshot: {
@@ -159,19 +154,12 @@ test("shipping fingerprint binds certified import terms and disclosure text", ()
   );
 });
 
-test("shipping fingerprint binds the local intake attestation and region", () => {
+test("shipping fingerprint binds the region", () => {
   const fingerprint = createShippingFingerprint({
     recipient: { countryCode: "CA", postalCode: "M5V2T6" },
   });
   const context = quoteContext();
 
-  assert.notEqual(
-    bindShippingFingerprintToContext(fingerprint, context),
-    bindShippingFingerprintToContext(fingerprint, {
-      ...context,
-      intakeLocationAttestationId: "22222222-2222-4222-8222-222222222222",
-    }),
-  );
   assert.notEqual(
     bindShippingFingerprintToContext(fingerprint, context),
     bindShippingFingerprintToContext(fingerprint, {
@@ -237,18 +225,6 @@ test("quote context accepts and fingerprints readiness-produced service-policy e
   const reviewerId = "11111111-1111-4111-8111-111111111111";
   const evidenceHash = "a".repeat(64);
   const context = quoteContext({
-    packageProfileApprovals: [
-      {
-        id: "22222222-2222-4222-8222-222222222222",
-        reviewedAt,
-        reviewedByAdminUserId: reviewerId,
-        reviewStepUpAuthenticatedAt: reviewedAt,
-        evidenceReference: "evidence/package/v1",
-        reviewEvidenceHash: evidenceHash,
-        reviewEvidenceVersion: "v1",
-        reviewAction: "approve_shipping_package_profile",
-      },
-    ],
     servicePolicies: [
       {
         claimDeadlineDays: 30,
@@ -272,9 +248,10 @@ test("quote context accepts and fingerprints readiness-produced service-policy e
     bindShippingFingerprintToContext("fingerprint", context),
     bindShippingFingerprintToContext("fingerprint", {
       ...context,
-      packageProfileApprovals: context.packageProfileApprovals.map(
-        (approval) => ({ ...approval, reviewEvidenceHash: "b".repeat(64) }),
-      ),
+      servicePolicies: context.servicePolicies.map((service) => ({
+        ...service,
+        reviewEvidenceHash: "b".repeat(64),
+      })),
     }),
   );
   assert.deepEqual(parseShippingQuoteContextSnapshot(context), context);
@@ -311,37 +288,5 @@ test("shipping fingerprint binds the full product-tax approval identity", () => 
       },
     }),
     null,
-  );
-});
-
-test("shipping fingerprint binds provider certification owner evidence", () => {
-  const context = quoteContext({
-    providerCertificationApprovals: [
-      {
-        certificationAction: "certify_fulfillment_provider",
-        certificationEvidenceHash: "e".repeat(64),
-        certificationEvidenceVersion: "v1",
-        certificationStepUpAuthenticatedAt: "2026-08-14T11:59:00.000Z",
-        certifiedAt: "2026-08-14T12:00:00.000Z",
-        certifiedByAdminUserId: "11111111-1111-4111-8111-111111111111",
-        environment: "staging",
-        evidenceReference: "evidence/helcim/v1",
-        provider: "helcim",
-        scope: "product_payments",
-        validUntil: "2027-08-14T12:00:00.000Z",
-        version: "helcim-product-payments-v1",
-      },
-    ],
-  });
-  assert.notEqual(
-    bindShippingFingerprintToContext("fingerprint", context),
-    bindShippingFingerprintToContext("fingerprint", {
-      ...context,
-      providerCertificationApprovals:
-        context.providerCertificationApprovals.map((approval) => ({
-          ...approval,
-          certificationEvidenceHash: "f".repeat(64),
-        })),
-    }),
   );
 });

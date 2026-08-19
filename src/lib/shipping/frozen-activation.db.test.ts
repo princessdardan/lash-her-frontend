@@ -36,8 +36,6 @@ const scenario = String.raw`
     timezone: "America/Toronto",
   };
   const baseContext = (policyVersion) => ({
-    calendarVersionId: PRODUCT_SHIPPING_POLICY_VERSION,
-    fundingAttestationId: "source-controlled-config",
     helcimProductPaymentsContract: {
       contract: "helcim_product_payments",
       version: "helcim-product-payments-v1",
@@ -56,10 +54,7 @@ const scenario = String.raw`
         merchantReferenceFields: ["merchantReference"],
       },
     },
-    intakeLocationAttestationId: "source-controlled-config",
-    packageProfileApprovals: [],
     policyVersion,
-    providerCertificationApprovals: [],
     region: "ontario_manitoba",
     servicePolicies: [],
     shippingPolicySnapshot: frozenPolicy,

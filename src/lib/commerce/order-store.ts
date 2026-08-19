@@ -789,7 +789,6 @@ export async function createInitializingProductOrder(
             hashShippingQuoteToken(input.shippingQuoteToken),
           ),
           eq(productShipments.quoteFingerprint, input.shippingQuoteFingerprint),
-          isNull(productShipments.intakeLocationAttestationId),
           eq(productShipments.status, "quoted"),
           isNull(productShipments.orderId),
           sql`${productShipments.quoteExpiresAt} > ${now}`,

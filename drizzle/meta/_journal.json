@@ -463,6 +463,13 @@
       "when": 1787094836764,
       "tag": "0065_dark_kabuki",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1787097681783,
+      "tag": "0066_foamy_excalibur",
+      "breakpoints": true
     }
   ]
 }

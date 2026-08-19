@@ -484,8 +484,6 @@ export async function processAddressReplaceOperation(input: {
     await assertShippingQuoteContextCurrent({
       destinationCountryCode: proposedCountryCode,
       expectedContext: sourceQuoteContext,
-      intakeLocationAttestationId:
-        sourceQuoteContext.intakeLocationAttestationId,
       now: input.observedAt,
     });
     await assertAddressProviderMutationFence({
@@ -839,8 +837,6 @@ export async function processAddressReplaceOperation(input: {
       await assertShippingQuoteContextCurrent({
         destinationCountryCode: proposedCountryCode,
         expectedContext: sourceQuoteContext,
-        intakeLocationAttestationId:
-          sourceQuoteContext.intakeLocationAttestationId,
         now: input.observedAt,
       });
       const [order] = await tx
@@ -1566,7 +1562,6 @@ async function refreshPreparedAddressChangeShipment(input: {
   await assertShippingQuoteContextCurrent({
     destinationCountryCode,
     expectedContext: quoteContext,
-    intakeLocationAttestationId: quoteContext.intakeLocationAttestationId,
     now: input.observedAt,
   });
   await assertAddressProviderMutationFence({
@@ -1718,7 +1713,6 @@ async function refreshPreparedAddressChangeShipment(input: {
       await assertShippingQuoteContextCurrent({
         destinationCountryCode,
         expectedContext: quoteContext,
-        intakeLocationAttestationId: quoteContext.intakeLocationAttestationId,
         now: input.observedAt,
       });
       const [lockedOrder] = await tx
@@ -1900,8 +1894,6 @@ async function assertAddressProviderMutationFence(input: {
     await assertShippingQuoteContextCurrent({
       destinationCountryCode: input.destinationCountryCode,
       expectedContext: input.quoteContext,
-      intakeLocationAttestationId:
-        input.quoteContext.intakeLocationAttestationId,
       now: input.now,
     });
     const [request] = await tx

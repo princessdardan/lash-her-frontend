@@ -145,7 +145,6 @@ export async function assertCheckoutReadiness(input: {
 export async function assertShippingQuoteContextCurrent(input: {
   destinationCountryCode?: "CA" | "US";
   expectedContext?: ShippingQuoteContext | null;
-  intakeLocationAttestationId: string | null;
   now?: Date;
 }): Promise<ShippingQuoteContext | null> {
   const now = input.now ?? new Date();

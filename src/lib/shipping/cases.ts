@@ -1277,7 +1277,6 @@ export async function processReplacementPrepareOperation(input: {
       await assertShippingQuoteContextCurrent({
         destinationCountryCode: recipient.countryCode,
         expectedContext: quoteContext,
-        intakeLocationAttestationId: quoteContext.intakeLocationAttestationId,
         now: input.observedAt,
       });
       const [shippingCase] = await tx
@@ -1420,8 +1419,6 @@ async function assertReplacementProviderMutationFence(input: {
     await assertShippingQuoteContextCurrent({
       destinationCountryCode: input.destinationCountryCode,
       expectedContext: input.quoteContext,
-      intakeLocationAttestationId:
-        input.quoteContext.intakeLocationAttestationId,
       now: input.now,
     });
     const [shippingCase] = await tx

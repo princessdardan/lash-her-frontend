@@ -9,35 +9,8 @@ import type {
 import { getChitChatsConfig, type ChitChatsRegion } from "./config";
 
 export interface ShippingQuoteContext {
-  calendarVersionId: string;
-  fundingAttestationId: string;
   helcimProductPaymentsContract: HelcimProductPaymentsCertificationContractSnapshot;
-  intakeLocationAttestationId: string;
-  packageProfileApprovals: Array<{
-    evidenceReference: string;
-    id: string;
-    reviewAction: "approve_shipping_package_profile";
-    reviewEvidenceHash: string;
-    reviewEvidenceVersion: string;
-    reviewedAt: string;
-    reviewedByAdminUserId: string;
-    reviewStepUpAuthenticatedAt: string;
-  }>;
   policyVersion: string;
-  providerCertificationApprovals: Array<{
-    certificationAction: "certify_fulfillment_provider";
-    certificationEvidenceHash: string;
-    certificationEvidenceVersion: string;
-    certificationStepUpAuthenticatedAt: string;
-    certifiedAt: string;
-    certifiedByAdminUserId: string;
-    environment: string;
-    evidenceReference: string;
-    provider: string;
-    scope: string;
-    validUntil: string;
-    version: string;
-  }>;
   region: ChitChatsRegion;
   servicePolicies: Array<{
     claimDeadlineDays: number;
@@ -121,13 +94,8 @@ export function bindShippingFingerprintToContext(
 ): string {
   return createShippingFingerprint({
     fingerprint,
-    calendarVersionId: context.calendarVersionId,
-    fundingAttestationId: context.fundingAttestationId,
     helcimProductPaymentsContract: context.helcimProductPaymentsContract,
-    intakeLocationAttestationId: context.intakeLocationAttestationId,
-    packageProfileApprovals: context.packageProfileApprovals,
     policyVersion: context.policyVersion,
-    providerCertificationApprovals: context.providerCertificationApprovals,
     region: context.region,
     servicePolicies: context.servicePolicies,
     shippingPolicySnapshot: context.shippingPolicySnapshot,
@@ -151,19 +119,10 @@ export function parseShippingQuoteContextSnapshot(
   const context = value as Record<string, unknown>;
   const snapshot = context.shippingPolicySnapshot;
   if (
-    !isNonEmptyString(context.calendarVersionId) ||
-    !isNonEmptyString(context.fundingAttestationId) ||
     !parseHelcimProductPaymentsContract(
       context.helcimProductPaymentsContract,
     ) ||
-    !isNonEmptyString(context.intakeLocationAttestationId) ||
-    !Array.isArray(context.packageProfileApprovals) ||
-    !context.packageProfileApprovals.every(isPackageProfileApprovalSnapshot) ||
     !isNonEmptyString(context.policyVersion) ||
-    !Array.isArray(context.providerCertificationApprovals) ||
-    !context.providerCertificationApprovals.every(
-      isProviderCertificationApprovalSnapshot,
-    ) ||
     !isNonEmptyString(context.taxPolicyVersion) ||
     !isTaxPolicyApprovalSnapshot(context.taxPolicyApproval) ||
     !isRegion(context.region) ||
@@ -214,21 +173,6 @@ function isServicePolicySnapshot(value: unknown): boolean {
   );
 }
 
-function isPackageProfileApprovalSnapshot(value: unknown): boolean {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const row = value as Record<string, unknown>;
-  return (
-    isNonEmptyString(row.id) &&
-    isNonEmptyString(row.evidenceReference) &&
-    row.reviewAction === "approve_shipping_package_profile" &&
-    isEvidenceHash(row.reviewEvidenceHash) &&
-    isNonEmptyString(row.reviewEvidenceVersion) &&
-    isInstant(row.reviewedAt) &&
-    isNonEmptyString(row.reviewedByAdminUserId) &&
-    isInstant(row.reviewStepUpAuthenticatedAt)
-  );
-}
-
 function isTaxPolicyApprovalSnapshot(value: unknown): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const row = value as Record<string, unknown>;
@@ -253,25 +197,6 @@ function isTaxPolicyApprovalSnapshot(value: unknown): boolean {
       "usOrders",
       "componentRefunds",
     ].every((key) => (coverage as Record<string, unknown>)[key] === true)
-  );
-}
-
-function isProviderCertificationApprovalSnapshot(value: unknown): boolean {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const row = value as Record<string, unknown>;
-  return (
-    isNonEmptyString(row.provider) &&
-    isNonEmptyString(row.environment) &&
-    isNonEmptyString(row.scope) &&
-    isNonEmptyString(row.version) &&
-    isNonEmptyString(row.evidenceReference) &&
-    isNonEmptyString(row.certifiedByAdminUserId) &&
-    isInstant(row.certificationStepUpAuthenticatedAt) &&
-    isInstant(row.certifiedAt) &&
-    isInstant(row.validUntil) &&
-    isEvidenceHash(row.certificationEvidenceHash) &&
-    isNonEmptyString(row.certificationEvidenceVersion) &&
-    row.certificationAction === "certify_fulfillment_provider"
   );
 }
 

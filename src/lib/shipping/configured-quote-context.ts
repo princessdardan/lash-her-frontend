@@ -93,13 +93,8 @@ export function buildConfiguredQuoteContext(input: {
     .sort((left, right) => left.postageType.localeCompare(right.postageType));
 
   return {
-    calendarVersionId: PRODUCT_SHIPPING_POLICY_VERSION,
-    fundingAttestationId: CONFIG_MARKER,
     helcimProductPaymentsContract: input.helcimProductPaymentsContract,
-    intakeLocationAttestationId: CONFIG_MARKER,
-    packageProfileApprovals: [],
     policyVersion: PRODUCT_SHIPPING_POLICY_VERSION,
-    providerCertificationApprovals: [],
     region: input.region,
     servicePolicies,
     shippingPolicySnapshot: {

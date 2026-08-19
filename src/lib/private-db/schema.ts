@@ -1792,7 +1792,6 @@ export const productShipments = pgTable(
     orderId: uuid("order_id").references(() => checkoutOrders.id, {
       onDelete: "set null",
     }),
-    intakeLocationAttestationId: uuid("intake_location_attestation_id"),
     sequence: integer("sequence").notNull().default(0),
     purpose: productShipmentPurpose("purpose").notNull().default("original"),
     supersedesShipmentId: uuid("supersedes_shipment_id").references(

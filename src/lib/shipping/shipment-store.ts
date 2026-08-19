@@ -75,65 +75,9 @@ export async function listEnabledPackageProfiles(): Promise<
     .orderBy(asc(shippingPackageProfiles.rank));
 }
 
-export async function findReusableQuote(
-  input: {
-    fingerprint: string;
-    intakeLocationAttestationId: string;
-  },
-  now = new Date(),
-): Promise<ProductShipmentRow | null> {
-  const [row] = await getPrivateDb()
-    .select()
-    .from(productShipments)
-    .where(
-      and(
-        eq(productShipments.quoteFingerprint, input.fingerprint),
-        eq(
-          productShipments.intakeLocationAttestationId,
-          input.intakeLocationAttestationId,
-        ),
-        eq(productShipments.status, "quoted"),
-        isNull(productShipments.orderId),
-        gt(productShipments.quoteExpiresAt, now),
-      ),
-    )
-    .orderBy(asc(productShipments.createdAt))
-    .limit(1);
-  return row ?? null;
-}
-
-export async function createQuoteDraft(input: {
-  publicReference: string;
-  quoteToken: string;
-  quoteFingerprint: string;
-  intakeLocationAttestationId: string;
-  destination: ProductShipmentDestinationSnapshot;
-  packageSnapshot: ProductShipmentPackageSnapshot;
-  customsLines: ProductShipmentCustomsLineSnapshot[];
-  expiresAt: Date;
-}): Promise<ProductShipmentRow> {
-  const [row] = await getPrivateDb()
-    .insert(productShipments)
-    .values({
-      publicReference: input.publicReference,
-      intakeLocationAttestationId: input.intakeLocationAttestationId,
-      quoteTokenHash: hashShippingQuoteToken(input.quoteToken),
-      quoteFingerprint: input.quoteFingerprint,
-      destination: input.destination,
-      packageSnapshot: input.packageSnapshot,
-      customsLines: input.customsLines,
-      rates: [],
-      quoteExpiresAt: input.expiresAt,
-      status: "quote_pending",
-    })
-    .returning();
-  return row;
-}
-
 export async function createQuoteOperation(input: {
   publicReference: string;
   quoteFingerprint: string;
-  intakeLocationAttestationId: string | null;
   destination: ProductShipmentDestinationSnapshot;
   packageSnapshot: ProductShipmentPackageSnapshot;
   customsLines: ProductShipmentCustomsLineSnapshot[];
@@ -160,12 +104,6 @@ export async function createQuoteOperation(input: {
       .where(
         and(
           eq(productShipments.quoteFingerprint, input.quoteFingerprint),
-          input.intakeLocationAttestationId
-            ? eq(
-                productShipments.intakeLocationAttestationId,
-                input.intakeLocationAttestationId,
-              )
-            : isNull(productShipments.intakeLocationAttestationId),
           inArray(productShipments.status, ["quote_pending", "quoted"]),
           isNull(productShipments.orderId),
           gt(productShipments.quoteExpiresAt, now),
@@ -211,7 +149,6 @@ export async function createQuoteOperation(input: {
       .insert(productShipments)
       .values({
         publicReference: input.publicReference,
-        intakeLocationAttestationId: input.intakeLocationAttestationId,
         quoteTokenHash,
         quoteFingerprint: input.quoteFingerprint,
         destination: input.destination,
@@ -234,7 +171,6 @@ export async function createQuoteOperation(input: {
       .returning();
     if (!shipment) throw new Error("Shipping quote draft could not be created");
     const payload = {
-      intakeLocationAttestationId: input.intakeLocationAttestationId,
       merchandiseValueCents: input.merchandiseValueCents,
       signatureRequested: input.signatureRequested,
       expectedShipmentStateVersion: shipment.stateVersion,
@@ -528,86 +464,6 @@ export async function markShipmentOperationManualReview(input: {
   return updated.length === 1;
 }
 
-export async function getValidQuoteByToken(
-  token: string,
-  intakeLocationAttestationId: string,
-  now = new Date(),
-): Promise<ProductShipmentRow | null> {
-  const [row] = await getPrivateDb()
-    .select()
-    .from(productShipments)
-    .where(
-      and(
-        eq(productShipments.quoteTokenHash, hashShippingQuoteToken(token)),
-        eq(
-          productShipments.intakeLocationAttestationId,
-          intakeLocationAttestationId,
-        ),
-        eq(productShipments.status, "quoted"),
-        isNull(productShipments.orderId),
-        gt(productShipments.quoteExpiresAt, now),
-      ),
-    )
-    .limit(1);
-  return row ?? null;
-}
-
-export async function attachQuoteToOrder(input: {
-  orderDatabaseId: string;
-  quoteToken: string;
-  selectedRateId: string;
-  expectedFingerprint: string;
-  intakeLocationAttestationId: string;
-}): Promise<ProductShipmentRow | null> {
-  return getPrivateDb().transaction(async (tx) => {
-    const [quote] = await tx
-      .select()
-      .from(productShipments)
-      .where(
-        and(
-          eq(
-            productShipments.quoteTokenHash,
-            hashShippingQuoteToken(input.quoteToken),
-          ),
-          eq(productShipments.quoteFingerprint, input.expectedFingerprint),
-          eq(
-            productShipments.intakeLocationAttestationId,
-            input.intakeLocationAttestationId,
-          ),
-          eq(productShipments.status, "quoted"),
-          isNull(productShipments.orderId),
-          gt(productShipments.quoteExpiresAt, new Date()),
-        ),
-      )
-      .for("update")
-      .limit(1);
-    if (!quote) return null;
-    const rate = quote.rates.find(
-      (candidate) => candidate.id === input.selectedRateId,
-    );
-    if (!rate || !rate.insured || !rate.tracked) return null;
-    const [updated] = await tx
-      .update(productShipments)
-      .set({
-        orderId: input.orderDatabaseId,
-        selectedRateId: rate.id,
-        selectedPostageType: rate.postageType,
-        quotedShippingCents: rate.paymentAmountCents,
-        status: "payment_pending",
-        stateVersion: sql`${productShipments.stateVersion} + 1`,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(productShipments.id, quote.id),
-          isNull(productShipments.orderId),
-        ),
-      )
-      .returning();
-    return updated ?? null;
-  });
-}
-
 export async function activateShipmentForPaidOrder(
   orderId: string,
 ): Promise<boolean> {
@@ -675,8 +531,7 @@ export async function activateShipmentForPaidOrderInTransaction(
   if (
     !quoteContext ||
     order.shippingPolicyVersion !== quoteContext.policyVersion ||
-    quoteContext.policyVersion !== PRODUCT_SHIPPING_POLICY_VERSION ||
-    quoteContext.calendarVersionId !== PRODUCT_SHIPPING_POLICY_VERSION
+    quoteContext.policyVersion !== PRODUCT_SHIPPING_POLICY_VERSION
   )
     return false;
   const frozen = quoteContext.shippingPolicySnapshot;
@@ -1134,7 +989,6 @@ export async function enqueueUnpaidProviderDraftCleanup(input: {
         quoteFingerprint: `cleanup:${input.publicReference}`,
         providerShipmentId: input.providerShipmentId,
         providerStatus: input.providerStatus,
-        intakeLocationAttestationId: input.source.intakeLocationAttestationId,
         destination: input.destination,
         packageSnapshot: input.source.packageSnapshot,
         customsLines: input.source.customsLines,

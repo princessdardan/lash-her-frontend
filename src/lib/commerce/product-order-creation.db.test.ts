@@ -109,7 +109,6 @@ const scenario = String.raw`
       rates: [rate],
       quoteExpiresAt: new Date(now.getTime() + 15 * 60_000),
       calendarVersionId: null,
-      intakeLocationAttestationId: null,
       deadlinePolicySnapshot: context,
     }).returning();
 

@@ -1145,7 +1145,6 @@ async function requireCurrentShippingQuoteContext(
     await assertCurrent({
       destinationCountryCode: countryCode(shipment.destination),
       ...(expectedContext ? { expectedContext } : {}),
-      intakeLocationAttestationId: shipment.intakeLocationAttestationId,
       now,
     });
     if (countryCode(shipment.destination) === "US") {

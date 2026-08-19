@@ -76,7 +76,6 @@ export async function GET(req: NextRequest): Promise<Response> {
     await assertShippingQuoteContextCurrent({
       destinationCountryCode: row.shipment.destination.countryCode,
       expectedContext,
-      intakeLocationAttestationId: row.shipment.intakeLocationAttestationId,
     });
     if (row.shipment.destination.countryCode === "US") {
       await assertUsShippingContractCurrent({
@@ -293,9 +292,6 @@ async function createQuote(
   const { shipment, operation, quoteToken } = await createQuoteOperation({
     publicReference,
     quoteFingerprint,
-    // Config-driven policy has no attestation rows; the uuid FK column stays
-    // null. The quote is keyed by token hash + fingerprint.
-    intakeLocationAttestationId: null,
     destination: body.recipient,
     packageSnapshot: prepared.packageSnapshot,
     customsLines: prepared.customsLines,
