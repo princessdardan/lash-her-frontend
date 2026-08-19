@@ -1,8 +1,11 @@
 import type { TProduct } from "@/types";
 
-export const COMMERCE_E2E_US_CONTRACT_VERSION = "e2e-us-contract-v1";
-export const COMMERCE_E2E_TARIFF_SCHEMA_VERSION = "e2e-tariff-v1";
-export const COMMERCE_E2E_FDA_REQUIREMENTS_VERSION = "e2e-fda-v1";
+// These U.S. SKU-certification versions must match the active
+// PRODUCT_SHIPPING_US_DDU_CONTRACT (version / tariffMetadataSchema.version /
+// fdaRequirements.version); product-checkout-eligibility enforces the match.
+export const COMMERCE_E2E_US_CONTRACT_VERSION = "us-ddu-contract-2026-08";
+export const COMMERCE_E2E_TARIFF_SCHEMA_VERSION = "us-tariff-schema-2026-08";
+export const COMMERCE_E2E_FDA_REQUIREMENTS_VERSION = "us-fda-2026-08";
 
 const PRODUCTS: readonly TProduct[] = [
   {

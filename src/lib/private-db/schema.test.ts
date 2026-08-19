@@ -1245,14 +1245,32 @@ test("0061 removes legacy Helcim reconciliation text outside retention-managed r
 });
 
 test("compatibility migrations preserve duplicate provider identity and history", () => {
-  const quarantineSql = readFileSync(
-    new URL("../../../drizzle/0035_tricky_photon.sql", import.meta.url),
+  // The duplicate-provider quarantine rebuilds, the obligation quarantine
+  // rebuild, and the legacy-evidence redaction markers were consolidated into
+  // 0050_long_scrambler.sql (they never shipped as standalone 0035/0041
+  // migrations). Scope each group to the exact fulfillment_data_quarantine
+  // statements it guards so the assertions below still target only their
+  // intended SQL and are not tripped by unrelated statements in the same file.
+  const compatibilityMigrationStatements = readFileSync(
+    new URL("../../../drizzle/0050_long_scrambler.sql", import.meta.url),
     "utf8",
-  );
-  const obligationSql = readFileSync(
-    new URL("../../../drizzle/0041_illegal_pestilence.sql", import.meta.url),
-    "utf8",
-  );
+  ).split("--> statement-breakpoint");
+  const quarantineSql = compatibilityMigrationStatements
+    .filter(
+      (statement) =>
+        /UPDATE "fulfillment_data_quarantine"/.test(statement) &&
+        /"entity_type" = '(?:checkout_order|product_shipping_case|product_order_refund)'/.test(
+          statement,
+        ),
+    )
+    .join("\n");
+  const obligationSql = compatibilityMigrationStatements
+    .filter(
+      (statement) =>
+        /UPDATE "fulfillment_data_quarantine"/.test(statement) &&
+        /"entity_type" = 'order_payment_obligation'/.test(statement),
+    )
+    .join("\n");
 
   assert.match(quarantineSql, /duplicate_helcim_transaction_id/);
   assert.match(quarantineSql, /duplicate_active_case_scope/);
@@ -1272,9 +1290,8 @@ test("compatibility migrations preserve duplicate provider identity and history"
     obligationSql,
     /'checkout_token_hash'|'secret_token_ciphertext'|'disclosure_snapshot'|'customer_name'|'customer_email'|'shipping_address'|'line_items'/,
   );
-  const deadlineSql = readFileSync(
-    new URL("../../../drizzle/0050_long_scrambler.sql", import.meta.url),
-    "utf8",
+  const deadlineSql = compatibilityMigrationStatements.join(
+    "--> statement-breakpoint",
   );
   assert.match(
     deadlineSql,

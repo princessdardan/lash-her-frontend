@@ -20,7 +20,7 @@ import { ADMIN_CALENDAR_E2E_AUTH_SECRET } from "./support/admin-calendar-e2e-con
 const enabledMode = process.env.COMMERCE_E2E_ENABLED_MODE === "1";
 const cronSecret = "e2e-cron-secret-0123456789-ABCDEFGHIJKLMNOP";
 const addressChangeSecret = "e2e-address-change-token-secret-0123456789ABCDEF";
-const manualPolicyVersion = "commerce-e2e-manual-policy-v1";
+const manualPolicyVersion = "manual-pickup-cancellation-2026-08";
 const manualPolicyHash = createHash("sha256")
   .update(COMMERCE_E2E_MANUAL_POLICY_TEXT, "utf8")
   .digest("hex");
@@ -722,14 +722,14 @@ test.describe("enabled database-backed commerce workflows", () => {
     const pendingQuote = await quoteStart.json();
     expect(quoteStart.status(), JSON.stringify(pendingQuote)).toBe(202);
     expect(pendingQuote).toMatchObject({
-      usImportDisclosureVersion: "commerce-e2e-ddu-notice-v1",
+      usImportDisclosureVersion: "us-ddu-disclosure-2026-08",
       usImportTerms: "DDU",
     });
     expect(["queued", "succeeded"]).toContain(pendingQuote.status);
     if (pendingQuote.status === "queued") await runCommerceWorker(request);
     const quote = await getCompletedQuote(request, pendingQuote);
     expect(quote).toMatchObject({
-      usImportDisclosureVersion: "commerce-e2e-ddu-notice-v1",
+      usImportDisclosureVersion: "us-ddu-disclosure-2026-08",
       usImportTerms: "DDU",
     });
     expect(quote.rates).toEqual([

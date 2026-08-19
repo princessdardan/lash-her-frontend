@@ -127,21 +127,64 @@ function svc(
 
 /**
  * Manual (studio pickup) checkout cancellation/refund policy shown to the
- * customer. Null keeps manual checkout disabled even when the flag is on — set
- * the finalized policy text before enabling `MANUAL_PRODUCT_CHECKOUT_ENABLED`.
+ * customer. Non-null enables manual checkout when `MANUAL_PRODUCT_CHECKOUT_ENABLED`
+ * is on.
+ *
+ * ⚠️ CONFIRM the final `text` wording and `version` with the business/legal owner
+ * before production. Bump `version` on any wording change (checkout re-validates
+ * the accepted policy against `version` + a SHA-256 of `text`).
  */
 export const PRODUCT_MANUAL_CANCELLATION_POLICY: {
   version: string;
   text: string;
-} | null = null;
+} | null = {
+  version: "manual-pickup-cancellation-2026-08",
+  text: "Payment is received now. Pickup is arranged separately, and cancellation is approved by default before accepted irreversible customization or product preparation begins.",
+};
 
 /**
  * Certified U.S. DDU shipping contract snapshot (import terms + disclosure).
- * Null keeps U.S. shipping disabled even when `CHITCHATS_US_SHIPPING_ENABLED` is
- * on — populate the reviewed DDU contract before enabling U.S. checkout.
+ * Non-null enables U.S. shipping when `CHITCHATS_US_SHIPPING_ENABLED` is on.
+ *
+ * ⚠️ CONFIRM the `disclosure.text`, the effective window, and the schema
+ * `version` strings with the business/legal owner before production. Editing any
+ * field invalidates in-flight U.S. quotes by design (they re-derive). SKU-level
+ * `usRegulatoryCertification.*Version` values on U.S. products must match the
+ * `version` / `tariffMetadataSchema.version` / `fdaRequirements.version` here.
  */
 export const PRODUCT_SHIPPING_US_DDU_CONTRACT: FulfillmentProviderCertificationContractSnapshot | null =
-  null;
+  {
+    importTerms: "DDU",
+    disclosure: {
+      version: "us-ddu-disclosure-2026-08",
+      text: "U.S. orders ship DDU. Duties, taxes, and brokerage may be collected from the recipient on delivery.",
+    },
+    allowedServiceCodes: [
+      "chit_chats_us_edge",
+      "chit_chats_us_connect",
+      "chit_chats_us_select",
+      "canada_post_tracked_packet_usa",
+      "canada_post_expedited_parcel_usa",
+      "usps_ground_advantage",
+      "usps_priority",
+      "usps_express",
+    ],
+    trackedRequired: true,
+    insuredRequired: true,
+    tariffMetadataSchema: {
+      version: "us-tariff-schema-2026-08",
+      additionalTariffDetails: "required_when_applicable",
+      fields: ["steel", "copper", "aluminum"],
+    },
+    fdaRequirements: {
+      version: "us-fda-2026-08",
+      mode: "required_when_applicable",
+    },
+    effectiveFrom: "2026-08-01T00:00:00.000Z",
+    effectiveUntil: "2027-08-01T00:00:00.000Z",
+    evidenceReference: "source-controlled-config",
+    version: "us-ddu-contract-2026-08",
+  };
 
 /** Key used by `selectCustomerRates` / `getServicePolicy`. */
 export function productShippingServiceKey(
