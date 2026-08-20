@@ -4252,18 +4252,29 @@ async function lockNetCustomerShippingLedger(
     )
     .for("update");
   const obligationIds = obligations.map((obligation) => obligation.id);
-  const transactions = obligationIds.length
-    ? await tx
-        .select()
-        .from(orderPaymentTransactions)
-        .where(
-          and(
-            inArray(orderPaymentTransactions.obligationId, obligationIds),
-            eq(orderPaymentTransactions.provider, "helcim"),
-          ),
-        )
-        .for("update")
-    : [];
+  // The authoritative captures are recorded under the order's own single
+  // payment gateway (square today, helcim for historical orders). Read the
+  // provider from the order, not an obligation: address_increase obligations
+  // are always minted on Square regardless of the order's original gateway,
+  // so obligations[0] would misrepresent a historical Helcim order.
+  const [order] = await tx
+    .select({ paymentProvider: checkoutOrders.paymentProvider })
+    .from(checkoutOrders)
+    .where(eq(checkoutOrders.id, orderId));
+  const orderPaymentProvider = order?.paymentProvider;
+  const transactions =
+    obligationIds.length && orderPaymentProvider
+      ? await tx
+          .select()
+          .from(orderPaymentTransactions)
+          .where(
+            and(
+              inArray(orderPaymentTransactions.obligationId, obligationIds),
+              eq(orderPaymentTransactions.provider, orderPaymentProvider),
+            ),
+          )
+          .for("update")
+      : [];
   const obligationById = new Map(
     obligations.map((obligation) => [obligation.id, obligation]),
   );

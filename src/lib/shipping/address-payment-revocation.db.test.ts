@@ -99,7 +99,7 @@ const scenario = String.raw`
       shippingAmountCents: 1_000,
       currency: "CAD",
       lineItems: [],
-      paymentProvider: "helcim",
+      paymentProvider: "square",
       paymentRiskStatus: "cleared",
       fulfillmentMode: "automated_shipping",
       shippingAddress: address,
@@ -152,6 +152,7 @@ const scenario = String.raw`
       taxPolicyVersion: "test-tax-v1",
       policyVersion: "test-policy-v1",
       initializationStatus: "ready",
+      paymentProvider: "square",
       idempotencyKey: "address-increase/" + request.id,
     }).returning();
 
@@ -169,6 +170,7 @@ const scenario = String.raw`
       taxPolicyVersion: "test-tax-v1",
       policyVersion: "test-policy-v1",
       initializationStatus: "ready",
+      paymentProvider: "square",
       idempotencyKey: "address-increase-captured/" + request.id,
     }).returning();
     const [primaryObligation] = await db.insert(orderPaymentObligations).values({
@@ -184,12 +186,13 @@ const scenario = String.raw`
       taxPolicyVersion: "test-tax-v1",
       policyVersion: "test-policy-v1",
       initializationStatus: "ready",
+      paymentProvider: "square",
       idempotencyKey: "primary/" + request.id,
       paidAt: new Date(),
     }).returning();
     await db.insert(orderPaymentTransactions).values({
       obligationId: primaryObligation.id,
-      provider: "helcim",
+      provider: "square",
       providerTransactionId: "address-revoke-primary-" + request.id,
       amountCents: 10_000,
       currency: "CAD",
@@ -225,7 +228,7 @@ const scenario = String.raw`
       }).where(eq(orderPaymentObligations.id, capturedObligation.id));
       await tx.insert(orderPaymentTransactions).values({
         obligationId: capturedObligation.id,
-        provider: "helcim",
+        provider: "square",
         providerTransactionId: "address-revoke-capture-" + request.id,
         amountCents: 700,
         currency: "CAD",

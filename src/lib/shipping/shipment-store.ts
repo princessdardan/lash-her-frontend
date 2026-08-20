@@ -2737,7 +2737,9 @@ export async function getCustomerPaidShipmentShippingContext(
       orderPaymentTransactions,
       and(
         eq(orderPaymentTransactions.obligationId, orderPaymentObligations.id),
-        eq(orderPaymentTransactions.provider, "helcim"),
+        // The authoritative capture is recorded under the order's own gateway
+        // (square today, helcim for historical orders).
+        eq(orderPaymentTransactions.provider, checkoutOrders.paymentProvider),
         eq(orderPaymentTransactions.riskStatus, "cleared"),
       ),
     )

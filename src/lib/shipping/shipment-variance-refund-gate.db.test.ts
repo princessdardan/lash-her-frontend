@@ -60,6 +60,7 @@ const scenario = String.raw`
       shippingAmountCents: 200,
       atRiskValueCents: 1_000,
       lineItems: [],
+      paymentProvider: "square",
       paymentRiskStatus: "cleared",
     }).returning();
     orderId = order.id;
@@ -107,12 +108,13 @@ const scenario = String.raw`
       sourceWorkflow: "automated_product_checkout",
       taxPolicyVersion: "tax-test",
       policyVersion: "policy-test",
+      paymentProvider: "square",
       idempotencyKey: prefix + "-primary",
       paidAt: now,
     }).returning();
     const [transaction] = await db.insert(orderPaymentTransactions).values({
       obligationId: obligation.id,
-      provider: "helcim",
+      provider: "square",
       providerTransactionId: prefix + "-purchase",
       amountCents: 1_200,
       currency: "CAD",
