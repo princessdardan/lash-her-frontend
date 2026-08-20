@@ -38,9 +38,6 @@ const launchEnvVars = [
   "CHECKOUT_SECRET_ENCRYPTION_KEY",
   "BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY",
   "SERVICE_BOOKING_MODEL_MODE",
-  "HELCIM_GENERAL_API_TOKEN",
-  "HELCIM_TRANSACTION_API_TOKEN",
-  "HELCIM_WEBHOOK_VERIFIER_TOKEN",
   "PAYMENT_RECONCILIATION_CRON_SECRET",
   "CRON_SECRET",
   "BACKUP_RETENTION_DAYS",
@@ -107,9 +104,7 @@ const isChitchatsShippingEnabled = chitchatsShippingEnabled === "true";
 const requiredEnvVars = isLaunchEnvironment
   ? [
       ...publicSanityEnvVars,
-      ...(isPaymentMockMode
-        ? launchEnvVarsWithoutLivePayment()
-        : launchEnvVars),
+      ...launchEnvVars,
       ...(isSquareServiceBookingEnabled && !isPaymentMockMode
         ? squareLaunchEnvVars
         : []),
@@ -255,15 +250,6 @@ if (isLaunchEnvironment) {
     errors.push(
       "Malformed env var: AUTH_SECRET must be at least 32 bytes with at least 12 distinct characters",
     );
-  }
-
-  for (const name of [
-    "HELCIM_GENERAL_API_TOKEN",
-    "HELCIM_TRANSACTION_API_TOKEN",
-  ]) {
-    if (hasValue(process.env[name])) {
-      validateHelcimApiToken(name, process.env[name]);
-    }
   }
 
   if (isSquareServiceBookingEnabled) {
@@ -450,26 +436,6 @@ function validateEmailList(name, value) {
   }
 }
 
-function validateHelcimApiToken(name, value) {
-  const trimmed = value.trim();
-
-  if (trimmed.length === 0) {
-    errors.push(`Missing env var: ${name}`);
-    return;
-  }
-
-  if (/\s/.test(trimmed)) {
-    errors.push(`Malformed env var: ${name} must not contain whitespace`);
-    return;
-  }
-
-  if (trimmed.length < 32) {
-    errors.push(
-      `Malformed env var: ${name} appears truncated; wrap Helcim tokens that contain # in quotes`,
-    );
-  }
-}
-
 function validateSquareEnvironment(value) {
   if (value !== "sandbox" && value !== "production") {
     errors.push(
@@ -492,11 +458,3 @@ function validateHttpsUrl(name, value) {
   }
 }
 
-function launchEnvVarsWithoutLivePayment() {
-  return launchEnvVars.filter(
-    (name) =>
-      name !== "HELCIM_GENERAL_API_TOKEN" &&
-      name !== "HELCIM_TRANSACTION_API_TOKEN" &&
-      name !== "HELCIM_WEBHOOK_VERIFIER_TOKEN",
-  );
-}

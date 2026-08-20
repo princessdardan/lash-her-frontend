@@ -19,7 +19,6 @@ function createEnv() {
   return {
     accessToken: "access-token",
     environment: "sandbox" as const,
-    helcimLegacyCutoffAt: null,
     locationId: "loc_123",
     serviceBookingReturnUrl: "https://example.com/api/booking/square/return",
     serviceBookingWebhookUrl: "https://example.com/api/webhooks/square",

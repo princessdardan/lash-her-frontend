@@ -959,7 +959,7 @@ export function createDrizzleBookingFinalizerRepository(): BookingFinalizerRepos
         throw new Error("Booking hold could not be marked paid.");
       }
 
-      const paymentProvider = hold.paymentProvider ?? "helcim";
+      const paymentProvider = hold.paymentProvider ?? "square";
       await confirmOperationalAppointment({
         calendar: { status: "pending" },
         holdId: hold.id,

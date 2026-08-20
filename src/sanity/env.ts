@@ -62,23 +62,7 @@ export function getBookingEnv(): {
   };
 }
 
-/** Lazy — only asserts when server-side Helcim general API requests need it. */
-export function getHelcimGeneralApiToken(): string {
-  return assertHelcimApiToken(
-    process.env.HELCIM_GENERAL_API_TOKEN,
-    "HELCIM_GENERAL_API_TOKEN",
-  );
-}
-
-/** Lazy — only asserts when server-side HelcimPay transaction requests need it. */
-export function getHelcimTransactionApiToken(): string {
-  return assertHelcimApiToken(
-    process.env.HELCIM_TRANSACTION_API_TOKEN,
-    "HELCIM_TRANSACTION_API_TOKEN",
-  );
-}
-
-/** Lazy — only asserts when checkout validation needs persisted Helcim secrets. */
+/** Lazy — only asserts when checkout validation needs persisted secrets. */
 export function getCheckoutSecretEncryptionKey(): Buffer {
   return getEncryptionKey(
     "CHECKOUT_SECRET_ENCRYPTION_KEY",
@@ -107,26 +91,6 @@ function assertValue<T>(v: T | undefined, errorMessage: string): T {
     throw new Error(errorMessage);
   }
   return v;
-}
-
-function assertHelcimApiToken(value: string | undefined, name: string): string {
-  const token = assertValue(value, `Missing env var: ${name}`).trim();
-
-  if (token.length === 0) {
-    throw new Error(`Missing env var: ${name}`);
-  }
-
-  if (/\s/.test(token)) {
-    throw new Error(`Malformed env var: ${name} must not contain whitespace`);
-  }
-
-  if (token.length < 32) {
-    throw new Error(
-      `Malformed env var: ${name} appears truncated; wrap Helcim tokens that contain # in quotes`,
-    );
-  }
-
-  return token;
 }
 
 function getEncryptionKey(name: string, value: string | undefined): Buffer {

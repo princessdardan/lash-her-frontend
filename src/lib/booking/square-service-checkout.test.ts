@@ -58,7 +58,6 @@ const helperScript = String.raw`
       getEnv: () => ({
         accessToken: "square-secret-token",
         environment: "sandbox",
-        helcimLegacyCutoffAt: null,
         locationId: "LOC123",
         serviceBookingReturnUrl: "https://lashher.test/api/booking/square/return",
         serviceBookingWebhookUrl: "https://lashher.test/api/webhooks/square",

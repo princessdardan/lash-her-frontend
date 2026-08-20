@@ -10,13 +10,6 @@ export function getCheckoutDatabaseUrl(): string {
   return assertValue(process.env.DATABASE_URL, "Missing env var: DATABASE_URL");
 }
 
-export function getHelcimWebhookVerifierToken(): string {
-  return assertValue(
-    process.env.HELCIM_WEBHOOK_VERIFIER_TOKEN,
-    "Missing env var: HELCIM_WEBHOOK_VERIFIER_TOKEN",
-  );
-}
-
 export function getEmailRetrySecret(): string {
   return assertValue(
     process.env.EMAIL_RETRY_SECRET,
@@ -287,8 +280,6 @@ export function getSquareServiceBookingEnv(): SquareServiceBookingEnv | null {
       process.env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL,
       "SQUARE_SERVICE_BOOKING_WEBHOOK_URL",
     ),
-    helcimLegacyCutoffAt:
-      process.env.SERVICE_BOOKING_HELCIM_LEGACY_CUTOFF_AT ?? null,
   };
 }
 
@@ -400,7 +391,6 @@ type SquareServiceBookingEnv = {
   webhookSignatureKey: string;
   serviceBookingReturnUrl: string;
   serviceBookingWebhookUrl: string;
-  helcimLegacyCutoffAt: string | null;
 };
 
 type TrainingAfterpaySquareInvoiceEnv = {

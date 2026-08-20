@@ -359,7 +359,7 @@ export async function finalizeAppointmentPaymentForOrder(
                     checkoutOrderPublicId:
                       paidHold.checkoutOrderPublicId ?? undefined,
                     holdId: paidHold.id,
-                    paymentProvider: paidHold.paymentProvider ?? "helcim",
+                    paymentProvider: paidHold.paymentProvider ?? "square",
                   },
                   bookingTypeLabel: getBookingTypeLabel(paidHold),
                   customer: paidHold.customer,

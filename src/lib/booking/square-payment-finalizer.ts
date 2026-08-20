@@ -129,7 +129,6 @@ interface SquarePaymentFinalizerDependencies {
 interface SquareServiceBookingEnv {
   accessToken: string;
   environment: "sandbox" | "production";
-  helcimLegacyCutoffAt: string | null;
   locationId: string;
   serviceBookingReturnUrl: string;
   serviceBookingWebhookUrl: string;
