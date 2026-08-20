@@ -23,7 +23,6 @@ import {
   normalizeCheckoutText,
 } from "@/lib/commerce/checkout-validation";
 import type { TProduct } from "@/types";
-import { HelcimPayButton } from "@/components/commerce/helcim-pay-button";
 import { SquareProductPayButton } from "@/components/commerce/square-product-pay-button";
 import { useProductCart } from "@/components/commerce/product-cart-provider";
 import type {
@@ -54,8 +53,6 @@ interface CheckoutPageClientProps {
   shippedRefundPolicy: CheckoutTermsRequirement;
   /** Fixed tax for in-studio pickup (studio place of supply, Ontario). */
   pickupTax: { rate: number; name: string };
-  /** When true, checkout captures payment through the Square card flow. */
-  squareCommerceEnabled: boolean;
 }
 
 interface ShippingRate {
@@ -97,7 +94,6 @@ function CheckoutContent({
   termsRequirement,
   shippedRefundPolicy,
   pickupTax,
-  squareCommerceEnabled,
 }: CheckoutPageClientProps) {
   const searchParams = useSearchParams();
   const { items: cartItems, clearCart } = useProductCart();
@@ -1125,32 +1121,18 @@ function CheckoutContent({
                 </label>
 
                 <div className="mt-2">
-                  {squareCommerceEnabled ? (
-                    <SquareProductPayButton
-                      disabled={payButtonDisabled}
-                      amountCents={checkoutTotalCents}
-                      items={checkoutItems}
-                      customer={payButtonCustomer}
-                      shippingAddress={payButtonShippingAddress}
-                      fulfillmentMode={fulfillmentMode}
-                      disclosures={payButtonDisclosures}
-                      shippingQuote={payButtonShippingQuote}
-                      promotionCode={activeRedeemedPromotionCode}
-                      onPaid={payButtonOnPaid}
-                    />
-                  ) : (
-                    <HelcimPayButton
-                      disabled={payButtonDisabled}
-                      items={checkoutItems}
-                      customer={payButtonCustomer}
-                      shippingAddress={payButtonShippingAddress}
-                      fulfillmentMode={fulfillmentMode}
-                      disclosures={payButtonDisclosures}
-                      shippingQuote={payButtonShippingQuote}
-                      promotionCode={activeRedeemedPromotionCode}
-                      onPaid={payButtonOnPaid}
-                    />
-                  )}
+                  <SquareProductPayButton
+                    disabled={payButtonDisabled}
+                    amountCents={checkoutTotalCents}
+                    items={checkoutItems}
+                    customer={payButtonCustomer}
+                    shippingAddress={payButtonShippingAddress}
+                    fulfillmentMode={fulfillmentMode}
+                    disclosures={payButtonDisclosures}
+                    shippingQuote={payButtonShippingQuote}
+                    promotionCode={activeRedeemedPromotionCode}
+                    onPaid={payButtonOnPaid}
+                  />
                 </div>
 
                 {isBuyNow ? (
@@ -1206,7 +1188,6 @@ export default function CheckoutPageClient({
   termsRequirement,
   shippedRefundPolicy,
   pickupTax,
-  squareCommerceEnabled,
 }: CheckoutPageClientProps) {
   return (
     <Suspense
@@ -1225,7 +1206,6 @@ export default function CheckoutPageClient({
         termsRequirement={termsRequirement}
         shippedRefundPolicy={shippedRefundPolicy}
         pickupTax={pickupTax}
-        squareCommerceEnabled={squareCommerceEnabled}
       />
     </Suspense>
   );

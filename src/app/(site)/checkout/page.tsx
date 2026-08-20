@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { loaders } from "@/data/loaders";
 import CheckoutPageClient from "./checkout-page-client";
 import { isChitChatsCheckoutEnabled } from "@/lib/shipping/config";
-import { isSquareCommerceCheckoutEnabled } from "@/lib/env/private-checkout";
 import { loadManualProductCheckoutPolicy } from "@/lib/commerce/product-manual-checkout-config";
 import { getProductCheckoutTermsRequirement } from "@/lib/commerce/product-checkout-terms";
 import { getShippedRefundPolicyRequirement } from "@/lib/commerce/product-shipped-refund-policy";
@@ -41,7 +40,6 @@ export default async function CheckoutPage() {
         rate: pickupTaxQuote.taxRate,
         name: pickupTaxQuote.taxName,
       }}
-      squareCommerceEnabled={isSquareCommerceCheckoutEnabled()}
     />
   );
 }
