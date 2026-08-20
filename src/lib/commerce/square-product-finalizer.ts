@@ -14,13 +14,13 @@ import { activateShipmentForPaidOrderInTransaction } from "@/lib/shipping/shipme
  * Square product-payment finalizer.
  *
  * The authoritative money-ledger writer for product checkout paid through
- * Square's embedded card flow. It mirrors the transactional guarantees of the
- * (Helcim) {@link finalizeProductPayment} — amount/currency verification against
- * the reserved obligation, idempotent ledger insert keyed on the Square payment
- * id, and paid-state transition + shipment activation — but under the lighter
+ * Square's embedded card flow. It provides the transactional guarantees product
+ * checkout requires — amount/currency verification against the reserved
+ * obligation, idempotent ledger insert keyed on the Square payment id, and
+ * paid-state transition + shipment activation — under the lighter
  * verified-payment fulfillment gate: a captured Square payment whose amount and
  * currency match the obligation is treated as cleared. There is no certified
- * AVS/CVV contract assessment (that was Helcim-specific).
+ * AVS/CVV contract assessment.
  *
  * Callers must have already verified with Square that the payment is captured
  * (status COMPLETED) before invoking this; the amount/currency re-check here is

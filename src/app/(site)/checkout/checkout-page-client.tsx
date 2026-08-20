@@ -513,8 +513,7 @@ function CheckoutContent({
     promotionCodeError,
   ]);
 
-  // Shared props for the checkout pay button, so the Helcim and Square variants
-  // stay in lockstep during the migration (only the component differs).
+  // Shared props for the Square checkout pay button.
   const payButtonDisabled =
     !displayedCart ||
     !hasValidCustomerDetails ||

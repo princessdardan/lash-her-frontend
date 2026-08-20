@@ -1058,7 +1058,7 @@ async function alertUnknownRefunds(): Promise<void> {
       await sendShippingPolicyAlert({
         duties: ["finance_owner"],
         critical: true,
-        subject: "Helcim refund outcome is unknown",
+        subject: "Square refund outcome is unknown",
         message: `Refund ${refund.id} requires signed-webhook or transaction reconciliation. Do not submit a new refund.`,
         idempotencyKey: `shipping-refund-unknown/${refund.id}`,
       });

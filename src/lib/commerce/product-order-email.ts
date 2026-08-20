@@ -72,7 +72,7 @@ export async function sendProductOrderConfirmationEmail(
     tags: [
       { name: "flow", value: "product_confirmation" },
       { name: "order_id", value: input.orderId },
-      { name: "payment_provider", value: "helcim" },
+      { name: "payment_provider", value: "square" },
     ],
     template: getConfiguredTransactionalTemplate(
       "product_confirmation",

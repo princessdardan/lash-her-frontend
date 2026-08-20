@@ -120,7 +120,7 @@ interface CheckoutPostHandlerDependencies {
   createInitializingOrder?: (input: {
     customerName: string;
     customerEmail: string;
-    provider?: "helcim" | "square";
+    provider?: "square";
     cart: ValidatedCart;
     shippingAddress: CheckoutShippingAddressInput;
     shippingQuoteToken: string;
@@ -545,7 +545,7 @@ export function createCheckoutPostHandler({
 
         // Square is the only gateway. If the request carried no card nonce (or
         // Square commerce is disabled), checkout is unavailable — there is no
-        // Helcim fallback.
+        // fallback gateway.
         if (
           !useSquareCommerce ||
           !chargeSquareProductOrder ||

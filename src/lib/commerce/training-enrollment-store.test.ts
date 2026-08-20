@@ -26,9 +26,9 @@ const helperScript = String.raw`
     customerName: "Client Name",
     deletedAt: null,
     failedAt: null,
-    helcimInvoiceId: 4242,
-    helcimInvoiceNumber: "INV-4242",
-    helcimTransactionId: "txn-paid-123",
+    helcimInvoiceId: null,
+    helcimInvoiceNumber: null,
+    helcimTransactionId: null,
     id: "checkout-order-1",
     lineItems: [
       {
@@ -42,7 +42,7 @@ const helperScript = String.raw`
     ],
     orderId: "lh-training-123",
     paidAt: new Date("2026-05-10T00:10:00.000Z"),
-    paymentProvider: "helcim",
+    paymentProvider: "square",
     redactedAt: null,
     secretTokenCiphertext: "v1:encrypted",
     status: "paid",
@@ -85,23 +85,6 @@ const helperScript = String.raw`
 
       this.enrollments.push(enrollment);
       return enrollment;
-    }
-
-    async findPaidPendingEnrollmentByHelcimInvoice(input): Promise<TrainingEnrollmentWithCheckoutOrder | null> {
-      const invoiceIdMatches = input.helcimInvoiceId === undefined || this.checkoutOrder.helcimInvoiceId === input.helcimInvoiceId;
-      const invoiceNumberMatches = input.helcimInvoiceNumber === undefined || this.checkoutOrder.helcimInvoiceNumber === input.helcimInvoiceNumber;
-      const enrollment = this.enrollments.find((candidate) => (
-        (input.helcimInvoiceId !== undefined || input.helcimInvoiceNumber !== undefined)
-        && invoiceIdMatches
-        && invoiceNumberMatches
-        && this.checkoutOrder.paymentProvider === "helcim"
-        && this.checkoutOrder.status === "paid"
-        && candidate.checkoutOrderId === this.checkoutOrder.id
-        && candidate.schedulingStatus === "pending"
-        && candidate.tokenUsedAt === null
-      ));
-
-      return enrollment ? { checkoutOrder: this.checkoutOrder, enrollment } : null;
     }
 
     async findPaidPendingEnrollmentByPublicOrderId(orderId: string): Promise<TrainingEnrollmentWithCheckoutOrder | null> {
@@ -527,27 +510,6 @@ test("training enrollment store gets paid pending confirmations by public order 
     assert.equal(await store.getPaidPendingConfirmationByPublicOrderId(checkoutOrder.orderId), null);
     repository.checkoutOrder.status = "paid";
     assert.equal(await store.getPaidPendingConfirmationByPublicOrderId("lh-missing"), null);
-  `);
-});
-
-test("training enrollment store does not issue Helcim invoice tokens for Square orders", () => {
-  runTrainingEnrollmentStoreScenario(`
-    const { repository, store } = createFakeStore();
-    await store.createEnrollment(createEnrollmentInput);
-    repository.checkoutOrder.paymentProvider = "square";
-
-    const found = await store.getPaidPendingNotificationByHelcimInvoiceIfMissing({
-      helcimInvoiceId: 4242,
-      helcimInvoiceNumber: "INV-4242",
-    });
-    const issued = await store.issueSchedulingTokenForPaidHelcimInvoiceIfMissing({
-      helcimInvoiceId: 4242,
-      helcimInvoiceNumber: "INV-4242",
-    }, now);
-
-    assert.equal(found, null);
-    assert.equal(issued, null);
-    assert.equal(repository.enrollments[0].schedulingTokenHash, null);
   `);
 });
 

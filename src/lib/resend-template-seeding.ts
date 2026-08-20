@@ -243,7 +243,7 @@ const SAMPLE_TRAINING_PAYMENT: SendTrainingPaymentNotificationEmailsInput = {
   customerEmail: "paid.student@example.com",
   customerName: "Casey Training",
   orderId: "LH-TRAINING-1001",
-  paymentProvider: "helcim",
+  paymentProvider: "square",
   programTitle: "Classic Lash Training",
   schedulingUrl: "https://lashher.com/training/schedule/sample-token",
 };

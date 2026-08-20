@@ -1,5 +1,5 @@
 /**
- * Destination-based sales-tax policy for product checkout (Helcim).
+ * Destination-based sales-tax policy for product checkout.
  *
  * Model (owner-attested via `product_tax_policy_versions`; this module encodes
  * the rates that a given attested `version` stands for):

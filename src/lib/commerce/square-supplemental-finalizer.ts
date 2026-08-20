@@ -20,8 +20,7 @@ import {
  * Square supplemental-obligation finalizer.
  *
  * Finalizes a paid Square payment link for a NON-primary payment obligation
- * (a post-order shipping top-up or address-change increase). Mirrors the
- * supplemental branch of the (Helcim) product finalizer under the lighter
+ * (a post-order shipping top-up or address-change increase) under the lighter
  * verified-payment gate: verify amount/currency against the obligation, insert
  * the money-ledger row idempotently on the Square payment id, and then EITHER
  * apply the fulfillment transition (fresh, in-window payment) OR — for a

@@ -1,7 +1,13 @@
 import "server-only";
 
 import { getConfiguredTransactionalTemplate } from "@/lib/resend-platform";
-import { CUSTOMER_REPLY_TO_EMAIL, escapeHtml, getEmailConfig, getEmailProfileImageHtml, sendTransactionalEmail } from "@/lib/transactional-email";
+import {
+  CUSTOMER_REPLY_TO_EMAIL,
+  escapeHtml,
+  getEmailConfig,
+  getEmailProfileImageHtml,
+  sendTransactionalEmail,
+} from "@/lib/transactional-email";
 
 export interface SendTrainingPaymentNotificationEmailsInput {
   customerEmail: string;
@@ -12,7 +18,8 @@ export interface SendTrainingPaymentNotificationEmailsInput {
   schedulingUrl: string;
 }
 
-export const TRAINING_PAYMENT_CUSTOMER_EMAIL_SUBJECT = "Your Lash Her training payment is confirmed";
+export const TRAINING_PAYMENT_CUSTOMER_EMAIL_SUBJECT =
+  "Your Lash Her training payment is confirmed";
 
 export async function sendTrainingPaymentNotificationEmails(
   input: SendTrainingPaymentNotificationEmailsInput,
@@ -37,7 +44,7 @@ export async function sendTrainingCustomerPaymentEmail(
     tags: [
       { name: "flow", value: "training_payment_customer" },
       { name: "order_id", value: input.orderId },
-      { name: "payment_provider", value: input.paymentProvider ?? "helcim" },
+      { name: "payment_provider", value: input.paymentProvider ?? "square" },
     ],
     template: getConfiguredTransactionalTemplate(
       "training_payment_customer",
@@ -57,7 +64,7 @@ export async function sendTrainingAdminPaymentEmail(
     tags: [
       { name: "flow", value: "training_payment_admin" },
       { name: "order_id", value: input.orderId },
-      { name: "payment_provider", value: input.paymentProvider ?? "helcim" },
+      { name: "payment_provider", value: input.paymentProvider ?? "square" },
     ],
     template: getConfiguredTransactionalTemplate(
       "training_payment_admin",
@@ -72,10 +79,12 @@ export function getTrainingPaymentTemplateVariables(
 ): Record<string, unknown> {
   return {
     CUSTOMER_EMAIL: escapeHtml(input.customerEmail),
-    CUSTOMER_FIRST_NAME: escapeHtml(input.customerName.trim().split(/\s+/)[0] ?? ""),
+    CUSTOMER_FIRST_NAME: escapeHtml(
+      input.customerName.trim().split(/\s+/)[0] ?? "",
+    ),
     CUSTOMER_NAME: escapeHtml(input.customerName),
     ORDER_ID: escapeHtml(input.orderId),
-    PAYMENT_PROVIDER: escapeHtml(input.paymentProvider ?? "helcim"),
+    PAYMENT_PROVIDER: escapeHtml(input.paymentProvider ?? "square"),
     PROGRAM_TITLE: escapeHtml(input.programTitle),
     SCHEDULING_URL: escapeHtml(input.schedulingUrl),
   };

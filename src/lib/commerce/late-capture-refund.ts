@@ -51,9 +51,8 @@ export function classifyLateSupplementalReason(
 
 /**
  * Reserve a compensating refund for captured funds that can no longer be applied
- * to fulfillment. Idempotent per payment transaction + component. Ported from the
- * (Helcim) product finalizer so the Square supplemental flow keeps the same
- * fund-safety guarantee.
+ * to fulfillment. Idempotent per payment transaction + component, so the Square
+ * supplemental flow never strands captured funds.
  */
 export async function reserveLateCaptureRefund(
   tx: DbTransaction,
