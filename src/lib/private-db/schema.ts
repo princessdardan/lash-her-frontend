@@ -548,33 +548,6 @@ export interface FulfillmentProviderCertificationContractSnapshot {
   version: string;
 }
 
-export interface HelcimProductPaymentsCertificationContractSnapshot {
-  contract: "helcim_product_payments";
-  version: string;
-  evidenceReference: string;
-  effectiveFrom: string;
-  effectiveUntil: string;
-  purchaseTransactionTypes: string[];
-  refundTransactionTypes: string[];
-  purchaseSuccessfulStatuses: string[];
-  refundSuccessfulStatuses: string[];
-  avs: {
-    fieldNames: string[];
-    matchCodes: string[];
-    mismatchCodes: string[];
-  };
-  cvv: {
-    fieldNames: string[];
-    matchCodes: string[];
-    mismatchCodes: string[];
-  };
-  refundCorrelation: {
-    providerRefundIdFields: string[];
-    originalTransactionIdFields: string[];
-    merchantReferenceFields: string[];
-  };
-}
-
 export interface ProductTaxPolicyApprovalSnapshot {
   version: string;
   coverage: Record<string, boolean>;
@@ -3214,10 +3187,10 @@ export const fulfillmentProviderCertifications = pgTable(
     scope: text("scope").notNull(),
     version: text("version").notNull(),
     evidenceReference: text("evidence_reference").notNull(),
-    contractSnapshot: jsonb("contract_snapshot").$type<
-      | FulfillmentProviderCertificationContractSnapshot
-      | HelcimProductPaymentsCertificationContractSnapshot
-    >(),
+    contractSnapshot:
+      jsonb(
+        "contract_snapshot",
+      ).$type<FulfillmentProviderCertificationContractSnapshot>(),
     certifiedByOwnerName: text("certified_by_owner_name").notNull(),
     certifiedByAdminUserId: uuid("certified_by_admin_user_id").references(
       () => adminUsers.id,

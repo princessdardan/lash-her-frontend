@@ -20,7 +20,6 @@ const scenario = String.raw`
   import { getShippedRefundPolicyRequirement } from "./src/lib/commerce/product-shipped-refund-policy.ts";
   import { buildConfiguredQuoteContext } from "./src/lib/shipping/configured-quote-context.ts";
   import { hashShippingQuoteToken } from "./src/lib/shipping/quote-token.ts";
-  import { parseHelcimProductPaymentsContract } from "./src/lib/commerce/helcim-certified-contract.ts";
 
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL.includes("?")
     ? process.env.TEST_DATABASE_URL + "&sslmode=disable"
@@ -41,19 +40,12 @@ const scenario = String.raw`
     CRON_SECRET: strong,
     CHECKOUT_SECRET_ENCRYPTION_KEY: key32,
     CHECKOUT_PII_ENCRYPTION_KEY: key32,
-    HELCIM_GENERAL_API_TOKEN: "helcim-general-token",
-    HELCIM_TRANSACTION_API_TOKEN: "helcim-transaction-token",
     CHITCHATS_ENVIRONMENT: "staging",
     CHITCHATS_CLIENT_ID: "123456",
     CHITCHATS_ACCESS_TOKEN: "chitchats-access-token",
     CHITCHATS_REGION: "ontario_manitoba",
   });
   delete process.env.VERCEL_ENV;
-
-  const contract = parseHelcimProductPaymentsContract(
-    JSON.parse(process.env.HELCIM_PRODUCT_PAYMENTS_CONTRACT_JSON),
-  );
-  assert.ok(contract, "runner must provide an effective Helcim contract");
 
   const db = getPrivateDb();
   const prefix = "lh-order-creation-" + crypto.randomUUID();
@@ -63,7 +55,6 @@ const scenario = String.raw`
   const context = buildConfiguredQuoteContext({
     destinationCountryCode: "CA",
     region: "ontario_manitoba",
-    helcimProductPaymentsContract: contract,
     now,
   });
   const rate = {

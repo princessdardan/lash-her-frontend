@@ -3,25 +3,6 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
 
-const TEST_HELCIM_PRODUCT_PAYMENTS_CONTRACT_JSON = JSON.stringify({
-  contract: "helcim_product_payments",
-  version: "test-contract-v1",
-  evidenceReference: "test-fixture-only",
-  effectiveFrom: "2020-01-01T00:00:00.000Z",
-  effectiveUntil: "2099-01-01T00:00:00.000Z",
-  purchaseTransactionTypes: ["purchase"],
-  refundTransactionTypes: ["refund"],
-  purchaseSuccessfulStatuses: ["approved"],
-  refundSuccessfulStatuses: ["approved"],
-  avs: { fieldNames: ["avsResponse"], matchCodes: ["y"], mismatchCodes: ["n"] },
-  cvv: { fieldNames: ["cvvResponse"], matchCodes: ["m"], mismatchCodes: ["n"] },
-  refundCorrelation: {
-    providerRefundIdFields: ["transactionId"],
-    originalTransactionIdFields: ["originalTransactionId"],
-    merchantReferenceFields: ["merchantReference"],
-  },
-});
-
 const SERVER_ONLY_TEST_FILES = new Set([
   "src/app/api/cron/customer-email-outbox/route.test.ts",
   "src/app/api/admin/shipping/operation-reviews/handler.test.ts",
@@ -33,10 +14,7 @@ const SERVER_ONLY_TEST_FILES = new Set([
   "src/lib/booking/operations/public-offerings.test.ts",
   "src/lib/booking/operations/sanity-service-link.test.ts",
   "src/lib/booking/square-team-client.test.ts",
-  "src/lib/commerce/helcim-contract.test.ts",
-  "src/lib/commerce/helcim-mock-gateway.test.ts",
   "src/lib/commerce/supplemental-payment-offer-link-handler.test.ts",
-  "src/lib/commerce/verified-payment.test.ts",
   "src/lib/shipping/address-approval-step-up.test.ts",
   "src/lib/shipping/address-changes.test.ts",
   "src/lib/shipping/cases.test.ts",
@@ -210,9 +188,6 @@ function runTests(files, nodeOptions) {
                 process.env.NEXT_PUBLIC_SANITY_DATASET ?? "test-dataset",
               NEXT_PUBLIC_SANITY_PROJECT_ID:
                 process.env.NEXT_PUBLIC_SANITY_PROJECT_ID ?? "test-project",
-              HELCIM_PRODUCT_PAYMENTS_CONTRACT_JSON:
-                process.env.HELCIM_PRODUCT_PAYMENTS_CONTRACT_JSON ??
-                TEST_HELCIM_PRODUCT_PAYMENTS_CONTRACT_JSON,
             }
           : process.env,
       stdio: "inherit",

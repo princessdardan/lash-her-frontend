@@ -16,10 +16,7 @@
 
 import type { ChitChatsRegion } from "./config";
 import type { ShippingQuoteContext } from "./quote-token";
-import type {
-  FulfillmentProviderCertificationContractSnapshot,
-  HelcimProductPaymentsCertificationContractSnapshot,
-} from "@/lib/private-db/schema";
+import type { FulfillmentProviderCertificationContractSnapshot } from "@/lib/private-db/schema";
 import { PRODUCT_TAX_POLICY_VERSION } from "@/lib/commerce/product-tax-policy";
 import {
   PRODUCT_SHIPPING_POLICY_VERSION,
@@ -65,7 +62,6 @@ export function configuredTaxPolicyApproval(): ShippingQuoteContext["taxPolicyAp
 export function buildConfiguredQuoteContext(input: {
   destinationCountryCode: "CA" | "US";
   region: ChitChatsRegion;
-  helcimProductPaymentsContract: HelcimProductPaymentsCertificationContractSnapshot;
   usShippingContract?: FulfillmentProviderCertificationContractSnapshot | null;
   now?: Date;
 }): ShippingQuoteContext {
@@ -93,7 +89,6 @@ export function buildConfiguredQuoteContext(input: {
     .sort((left, right) => left.postageType.localeCompare(right.postageType));
 
   return {
-    helcimProductPaymentsContract: input.helcimProductPaymentsContract,
     policyVersion: PRODUCT_SHIPPING_POLICY_VERSION,
     region: input.region,
     servicePolicies,

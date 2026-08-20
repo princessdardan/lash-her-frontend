@@ -22,7 +22,13 @@ import {
   expectedOntarioClosureDates,
   type ShippingCalendarClosure,
 } from "@/lib/shipping/calendar-validation";
-import { COMMERCE_E2E_HELCIM_CONTRACT } from "../tests/support/commerce-e2e-config";
+
+// Provider-certification effective window for the E2E fixtures. These bound the
+// Chit Chats Canada + U.S. DDU certification rows the enabled checkout suite
+// relies on; the fixture is invalid (and the seed refuses to run) once `now`
+// passes `usContractValidUntil`.
+const CERTIFICATION_EFFECTIVE_FROM = "2026-08-01T00:00:00.000Z";
+const CERTIFICATION_EFFECTIVE_UNTIL = "2027-08-01T00:00:00.000Z";
 
 const OWNER_EMAIL = "commerce-e2e-owner@example.invalid";
 const POLICY_VERSION = "commerce-e2e-owner-policy-v1";
@@ -32,10 +38,8 @@ async function main(): Promise<void> {
   assertIsolatedFixtureDatabase();
   const now = new Date();
   const attestedAt = new Date(now.getTime() - 60_000);
-  const certifiedAt = new Date(COMMERCE_E2E_HELCIM_CONTRACT.effectiveFrom);
-  const usContractValidUntil = new Date(
-    COMMERCE_E2E_HELCIM_CONTRACT.effectiveUntil,
-  );
+  const certifiedAt = new Date(CERTIFICATION_EFFECTIVE_FROM);
+  const usContractValidUntil = new Date(CERTIFICATION_EFFECTIVE_UNTIL);
   if (now >= usContractValidUntil) {
     throw new Error("Commerce E2E U.S. certification fixture has expired");
   }
@@ -130,22 +134,6 @@ async function main(): Promise<void> {
     });
 
     await tx.insert(fulfillmentProviderCertifications).values([
-      {
-        certifiedAt,
-        certificationAction: "certify_fulfillment_provider",
-        certificationEvidenceHash: evidenceHash("e2e-helcim-certification-v1"),
-        certificationEvidenceVersion: "e2e-provider-certification-v1",
-        certificationStepUpAuthenticatedAt: certifiedAt,
-        certifiedByAdminUserId: owner.id,
-        certifiedByOwnerName: "Nataliea Lavoie",
-        contractSnapshot: COMMERCE_E2E_HELCIM_CONTRACT,
-        environment: "staging",
-        evidenceReference: COMMERCE_E2E_HELCIM_CONTRACT.evidenceReference,
-        provider: "helcim",
-        scope: "product_payments",
-        validUntil: usContractValidUntil,
-        version: COMMERCE_E2E_HELCIM_CONTRACT.version,
-      },
       {
         certifiedAt,
         certificationAction: "certify_fulfillment_provider",
