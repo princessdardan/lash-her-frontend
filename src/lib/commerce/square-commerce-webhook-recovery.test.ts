@@ -12,6 +12,7 @@ interface Harness {
   trainingFinalizeCalls: number;
   productEmails: string[];
   trainingNotifies: string[];
+  supplementalObligations: string[];
 }
 
 function createHarness(overrides: {
@@ -20,10 +21,16 @@ function createHarness(overrides: {
     | "already_applied"
     | "amount_or_currency_mismatch";
   trainingTransition?: "applied" | "already_applied" | "transaction_conflict";
+  supplementalTransition?:
+    | "applied"
+    | "already_applied"
+    | "state_conflict"
+    | "late_capture_refunded";
   sideEffectError?: Error;
 }): Harness {
   const productEmails: string[] = [];
   const trainingNotifies: string[] = [];
+  const supplementalObligations: string[] = [];
   let productFinalizeCalls = 0;
   let trainingFinalizeCalls = 0;
 
@@ -44,6 +51,10 @@ function createHarness(overrides: {
       if (overrides.sideEffectError) throw overrides.sideEffectError;
       trainingNotifies.push(orderReference);
     },
+    async finalizeSupplemental(input) {
+      supplementalObligations.push(input.obligationId);
+      return { transition: overrides.supplementalTransition ?? "applied" };
+    },
     logError() {},
   };
 
@@ -57,6 +68,7 @@ function createHarness(overrides: {
     },
     productEmails,
     trainingNotifies,
+    supplementalObligations,
   } as Harness;
 }
 
@@ -154,4 +166,57 @@ test("reports retryable when the side effect fails so Square redelivers", async 
     status: "retryable",
     reason: "side_effect_failed",
   });
+});
+
+test("recovers a completed supplemental obligation without a side effect", async () => {
+  const harness = createHarness({});
+
+  const result = await recoverSquareCommercePayment(
+    {
+      ...productPayment,
+      orderReference: "obl-1",
+      kind: "supplemental_obligation",
+    },
+    harness.deps,
+  );
+
+  assert.deepEqual(result, { status: "recovered" });
+  assert.deepEqual(harness.supplementalObligations, ["obl-1"]);
+  assert.deepEqual(harness.productEmails, []);
+  assert.deepEqual(harness.trainingNotifies, []);
+});
+
+test("reports a supplemental conflict without a side effect", async () => {
+  const harness = createHarness({ supplementalTransition: "state_conflict" });
+
+  const result = await recoverSquareCommercePayment(
+    {
+      ...productPayment,
+      orderReference: "obl-2",
+      kind: "supplemental_obligation",
+    },
+    harness.deps,
+  );
+
+  assert.deepEqual(result, { status: "conflict", reason: "state_conflict" });
+  assert.deepEqual(harness.supplementalObligations, ["obl-2"]);
+});
+
+test("acknowledges a late-capture-refunded supplemental payment", async () => {
+  const harness = createHarness({
+    supplementalTransition: "late_capture_refunded",
+  });
+
+  const result = await recoverSquareCommercePayment(
+    {
+      ...productPayment,
+      orderReference: "obl-3",
+      kind: "supplemental_obligation",
+    },
+    harness.deps,
+  );
+
+  // Money recorded + refund reserved by the finalizer; webhook acknowledges.
+  assert.deepEqual(result, { status: "recovered" });
+  assert.deepEqual(harness.supplementalObligations, ["obl-3"]);
 });

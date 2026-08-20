@@ -1466,6 +1466,61 @@ export async function finalizeInitializingPaymentObligation(input: {
   });
 }
 
+/**
+ * Mark a supplemental payment obligation ready to pay via a Square hosted
+ * payment link. Stores the link id on `providerCheckoutId` and the pay URL in
+ * the obligation's disclosure snapshot (so the poll route can hand the customer
+ * the redirect). Guarded on the initialization lease + state version.
+ */
+export async function finalizeInitializingSquareObligation(input: {
+  obligationId: string;
+  paymentLinkId: string;
+  paymentLinkUrl: string;
+  expectedLeaseOwner: string;
+  expectedStateVersion: number;
+}): Promise<void> {
+  const now = new Date();
+  const [updated] = await getPrivateDb()
+    .update(orderPaymentObligations)
+    .set({
+      providerCheckoutId: input.paymentLinkId,
+      disclosureSnapshot: sql`coalesce(${orderPaymentObligations.disclosureSnapshot}, '{}'::jsonb) || ${JSON.stringify(
+        { squarePaymentLinkUrl: input.paymentLinkUrl },
+      )}::jsonb`,
+      initializationStatus: "ready",
+      initializationOutcome: "succeeded",
+      initializationLeaseOwner: null,
+      initializationLeaseExpiresAt: null,
+      initializationLastError: null,
+      initializationStateVersion: sql`${orderPaymentObligations.initializationStateVersion} + 1`,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(orderPaymentObligations.id, input.obligationId),
+        inArray(orderPaymentObligations.purpose, [
+          "manual_shipping",
+          "address_increase",
+        ]),
+        eq(orderPaymentObligations.status, "pending"),
+        eq(orderPaymentObligations.initializationStatus, "initializing"),
+        isNull(orderPaymentObligations.quarantinedAt),
+        eq(
+          orderPaymentObligations.initializationLeaseOwner,
+          input.expectedLeaseOwner,
+        ),
+        eq(
+          orderPaymentObligations.initializationStateVersion,
+          input.expectedStateVersion,
+        ),
+      ),
+    )
+    .returning({ id: orderPaymentObligations.id });
+  if (!updated) {
+    throw new Error("Square payment-link obligation could not be finalized");
+  }
+}
+
 export async function recordPaymentObligationInitializationInvoice(input: {
   obligationId: string;
   helcimInvoiceId: number;
@@ -1766,6 +1821,34 @@ export const SQUARE_CAPTURED_PROVIDER_STATUS = "COMPLETED";
  * re-checked forever.
  */
 export const SQUARE_UNCOLLECTED_PROVIDER_STATUS = "UNCOLLECTED";
+
+/**
+ * Returns the obligation id if `reference` identifies a non-primary Square
+ * payment obligation (a supplemental top-up whose Square payment link's
+ * `reference_id` is the obligation id). Status-agnostic on purpose so a replayed
+ * webhook still routes to the finalizer (which re-checks state); the finalizer
+ * is the authority on whether to apply, refund, or no-op.
+ */
+export async function findSquareSupplementalObligationByReference(
+  reference: string,
+): Promise<string | null> {
+  const [obligation] = await getPrivateDb()
+    .select({ id: orderPaymentObligations.id })
+    .from(orderPaymentObligations)
+    .where(
+      and(
+        eq(orderPaymentObligations.id, reference),
+        eq(orderPaymentObligations.paymentProvider, "square"),
+        inArray(orderPaymentObligations.purpose, [
+          "manual_shipping",
+          "address_increase",
+        ]),
+      ),
+    )
+    .limit(1);
+
+  return obligation?.id ?? null;
+}
 
 export interface UncapturedSquareCommerceOrder {
   orderId: string;

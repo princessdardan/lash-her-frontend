@@ -3,14 +3,14 @@ import test from "node:test";
 
 import { waitForProductPaymentOperation } from "./product-payment-operation";
 
-test("payment operation polling waits through exact pending states and returns the checkout token", async () => {
+test("payment operation polling waits through exact pending states and returns the payment url", async () => {
   const responses = [
     jsonResponse(202, { operationId: "operation-1", status: "queued" }),
     jsonResponse(202, { operationId: "operation-1", status: "processing" }),
     jsonResponse(200, {
       operationId: "operation-1",
       status: "ready",
-      checkoutToken: "checkout-token",
+      paymentUrl: "https://square.link/pay",
     }),
   ];
   const requests: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
@@ -30,7 +30,7 @@ test("payment operation polling waits through exact pending states and returns t
   assert.deepEqual(result, {
     operationId: "operation-1",
     status: "ready",
-    checkoutToken: "checkout-token",
+    paymentUrl: "https://square.link/pay",
   });
   assert.deepEqual(delays, [2_000, 2_000, 2_000]);
   assert.equal(requests.length, 3);

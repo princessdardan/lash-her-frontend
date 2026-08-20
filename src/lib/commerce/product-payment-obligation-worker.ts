@@ -1,27 +1,19 @@
 import "server-only";
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { and, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 
-import { HelcimApiError } from "./helcim-client";
-import { createLiveHelcimGateway, type HelcimGateway } from "./helcim-gateway";
 import {
-  finalizeInitializingPaymentObligation,
+  finalizeInitializingSquareObligation,
   markPaymentObligationInitializationFailed,
-  recordPaymentObligationInitializationInvoice,
 } from "./order-store";
 import { getPrivateDb } from "@/lib/private-db/client";
 import {
   checkoutOrders,
   orderPaymentObligations,
 } from "@/lib/private-db/schema";
-import { paymentObligationMatchesConfiguredHelcimContract } from "./helcim-certified-contract";
-import { assertHelcimProductPaymentsCertificationInTransaction } from "@/lib/shipping/readiness";
-import { paymentObligationInitializationProviderPhase } from "./product-payment-obligation-initialization-plan";
-import {
-  buildPaymentObligationInvoicePlan,
-  paymentObligationInitializationPayloadHash,
-} from "./product-payment-invoice-plan";
+import { getSquareCommerceEnv } from "@/lib/env/private-checkout";
+import { createSquareClient } from "@/lib/booking/square-client";
 
 const LEASE_MS = 5 * 60_000;
 
@@ -34,11 +26,15 @@ export interface PaymentObligationInitializationResult {
   outcomeUnknown: number;
 }
 
+/**
+ * Initializes pending supplemental payment obligations by creating a Square
+ * hosted payment link for each, then marking the obligation ready with the
+ * link URL. Runs from the shipping cron.
+ */
 export async function runPaymentObligationInitializationWorker(
   input: {
     now?: Date;
     limit?: number;
-    gateway?: HelcimGateway;
   } = {},
 ): Promise<PaymentObligationInitializationResult> {
   const now = input.now ?? new Date();
@@ -52,9 +48,8 @@ export async function runPaymentObligationInitializationWorker(
     failed: 0,
     outcomeUnknown: 0,
   };
-  const gateway = input.gateway ?? createLiveHelcimGateway();
   for (const claim of claims) {
-    const outcome = await processClaim(claim, gateway);
+    const outcome = await processClaim(claim);
     result[outcome] += 1;
   }
   return result;
@@ -115,19 +110,14 @@ async function claimPaymentObligationInitializations(
           lte(orderPaymentObligations.initializationNextAttemptAt, now),
           isNull(orderPaymentObligations.quarantinedAt),
           isNull(checkoutOrders.fulfillmentQuarantinedAt),
+          // Supplemental Square obligations only: primary product orders reserve
+          // ready and charge synchronously through the Square card flow.
+          eq(orderPaymentObligations.paymentProvider, "square"),
+          sql`${orderPaymentObligations.purpose} <> 'primary'`,
+          eq(checkoutOrders.status, "paid"),
           or(
-            and(
-              eq(orderPaymentObligations.purpose, "primary"),
-              eq(checkoutOrders.status, "pending"),
-            ),
-            and(
-              sql`${orderPaymentObligations.purpose} <> 'primary'`,
-              eq(checkoutOrders.status, "paid"),
-              or(
-                sql`${orderPaymentObligations.purpose} <> 'manual_shipping'`,
-                sql`coalesce(${checkoutOrders.manualFulfillmentStatus}, '') not in ('dispatched', 'cancelled')`,
-              ),
-            ),
+            sql`${orderPaymentObligations.purpose} <> 'manual_shipping'`,
+            sql`coalesce(${checkoutOrders.manualFulfillmentStatus}, '') not in ('dispatched', 'cancelled')`,
           ),
           or(
             isNull(orderPaymentObligations.expiresAt),
@@ -150,7 +140,7 @@ async function claimPaymentObligationInitializations(
           initializationAttemptCount: sql`${orderPaymentObligations.initializationAttemptCount} + 1`,
           initializationPayloadHash:
             candidate.initializationPayloadHash ??
-            paymentObligationInitializationPayloadHash(candidate),
+            obligationInitializationPayloadHash(candidate),
           initializationStateVersion: sql`${orderPaymentObligations.initializationStateVersion} + 1`,
           updatedAt: now,
         })
@@ -174,120 +164,70 @@ interface ClaimedInitialization {
 
 async function processClaim(
   claim: ClaimedInitialization,
-  gateway: HelcimGateway,
 ): Promise<"succeeded" | "failed" | "outcomeUnknown"> {
-  let expectedStateVersion = claim.obligation.initializationStateVersion;
-  let phase = "load_order";
+  const expectedStateVersion = claim.obligation.initializationStateVersion;
+  let phase = "load_env";
   try {
-    phase = "certification_readiness";
-    try {
-      await getPrivateDb().transaction((tx) =>
-        assertHelcimProductPaymentsCertificationInTransaction(tx),
-      );
-    } catch {
+    const env = getSquareCommerceEnv();
+    if (env === null) {
       throw new DeterministicInitializationError(
-        "Certified Helcim owner evidence is unavailable or stale",
+        "Square commerce checkout is not enabled",
       );
     }
-    phase = "load_order";
-    const [order] = await getPrivateDb()
-      .select({
-        orderId: checkoutOrders.orderId,
-        lineItems: checkoutOrders.lineItems,
-        promotionCode: checkoutOrders.promotionCode,
-        promotionDiscountCents: checkoutOrders.promotionDiscountCents,
-        shippingAmountCents: checkoutOrders.shippingAmountCents,
-      })
-      .from(checkoutOrders)
-      .where(eq(checkoutOrders.id, claim.obligation.orderId))
-      .limit(1);
-    if (!order)
-      throw new DeterministicInitializationError("Order was not found");
     if (claim.obligation.currency.toUpperCase() !== "CAD") {
       throw new DeterministicInitializationError(
-        "Only certified CAD Helcim obligations may be initialized",
+        "Only CAD obligations may be initialized",
       );
     }
-    if (
-      !paymentObligationMatchesConfiguredHelcimContract(
-        claim.obligation.disclosureSnapshot,
-      )
-    ) {
-      throw new DeterministicInitializationError(
-        "Payment obligation Helcim certification snapshot is missing or stale",
-      );
-    }
-    phase = "build_invoice";
-    const invoicePlan = buildPaymentObligationInvoicePlan(
-      claim.obligation,
-      order,
-    );
-    const providerPhase = paymentObligationInitializationProviderPhase(
-      claim.obligation,
-    );
-    if (providerPhase === "manual_review") {
-      throw new AmbiguousInitializationError(
-        "Local Helcim invoice identity is incomplete",
-      );
-    }
-    let invoice =
-      providerPhase === "initialize_pay"
-        ? {
-            invoiceId: claim.obligation.providerInvoiceId!,
-            invoiceNumber: claim.obligation.providerInvoiceNumber!,
-          }
-        : null;
-    if (!invoice) {
-      phase = "create_invoice";
-      invoice = await gateway.createInvoice(invoicePlan.request);
-      if (
-        !Number.isSafeInteger(invoice.invoiceId) ||
-        typeof invoice.invoiceNumber !== "string" ||
-        !invoice.invoiceNumber.trim()
-      ) {
-        throw new AmbiguousInitializationError(
-          "Helcim invoice response was incomplete",
-        );
-      }
-      expectedStateVersion = await recordPaymentObligationInitializationInvoice(
-        {
-          obligationId: claim.obligation.id,
-          helcimInvoiceId: invoice.invoiceId,
-          helcimInvoiceNumber: invoice.invoiceNumber,
-          expectedLeaseOwner: claim.leaseOwner,
-          expectedStateVersion,
-        },
-      );
-    }
-    phase = "initialize_pay";
-    const session = await gateway.initializePay({
-      paymentType: "purchase",
-      amount: claim.obligation.totalAmountCents / 100,
-      currency: "CAD",
-      invoiceNumber: invoice.invoiceNumber,
+
+    phase = "create_payment_link";
+    const client = createSquareClient({
+      accessToken: env.accessToken,
+      environment: env.environment,
     });
-    if (!session.checkoutToken?.trim() || !session.secretToken?.trim()) {
+    const returnUrl = resolvePaymentReturnUrl();
+    const { payment_link: paymentLink } = await client.createPaymentLink({
+      idempotency_key: `obligation-link/${claim.obligation.id}`,
+      order: {
+        location_id: env.locationId,
+        reference_id: claim.obligation.id,
+        line_items: [
+          {
+            name: supplementalLineItemName(claim.obligation.purpose),
+            quantity: "1",
+            base_price_money: {
+              amount: claim.obligation.totalAmountCents,
+              currency: "CAD",
+            },
+          },
+        ],
+        metadata: {
+          obligationId: claim.obligation.id,
+          purpose: claim.obligation.purpose,
+        },
+      },
+      checkout_options: {
+        ...(returnUrl ? { redirect_url: returnUrl } : {}),
+      },
+    });
+
+    if (!paymentLink.id?.trim() || !paymentLink.url?.trim()) {
       throw new AmbiguousInitializationError(
-        "Helcim payment session response was incomplete",
+        "Square payment link response was incomplete",
       );
     }
-    await finalizeInitializingPaymentObligation({
+
+    phase = "finalize";
+    await finalizeInitializingSquareObligation({
       obligationId: claim.obligation.id,
-      checkoutToken: session.checkoutToken,
-      secretToken: session.secretToken,
-      helcimInvoiceId: invoice.invoiceId,
-      helcimInvoiceNumber: invoice.invoiceNumber,
+      paymentLinkId: paymentLink.id,
+      paymentLinkUrl: paymentLink.url,
       expectedLeaseOwner: claim.leaseOwner,
       expectedStateVersion,
     });
     return "succeeded";
   } catch (error) {
-    const deterministic =
-      error instanceof DeterministicInitializationError ||
-      (error instanceof HelcimApiError &&
-        error.status >= 400 &&
-        error.status < 500 &&
-        error.status !== 409);
+    const deterministic = error instanceof DeterministicInitializationError;
     await markPaymentObligationInitializationFailed({
       obligationId: claim.obligation.id,
       expectedLeaseOwner: claim.leaseOwner,
@@ -297,6 +237,40 @@ async function processClaim(
     });
     return deterministic ? "failed" : "outcomeUnknown";
   }
+}
+
+function obligationInitializationPayloadHash(obligation: Obligation): string {
+  return `sq1:${createHash("sha256")
+    .update(
+      JSON.stringify({
+        currency: obligation.currency.toUpperCase(),
+        id: obligation.id,
+        policyVersion: obligation.policyVersion,
+        purpose: obligation.purpose,
+        taxPolicyVersion: obligation.taxPolicyVersion,
+        totalAmountCents: obligation.totalAmountCents,
+      }),
+      "utf8",
+    )
+    .digest("hex")}`;
+}
+
+function supplementalLineItemName(purpose: string): string {
+  return purpose === "manual_shipping"
+    ? "Shipping"
+    : purpose === "address_increase"
+      ? "Shipping adjustment"
+      : "Order payment";
+}
+
+function resolvePaymentReturnUrl(): string | null {
+  const origin =
+    process.env.NEXT_PUBLIC_SITE_URL ??
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined);
+  if (origin === undefined || origin.length === 0) {
+    return null;
+  }
+  return new URL("/orders/payment-offer/paid", origin).toString();
 }
 
 class DeterministicInitializationError extends Error {}
