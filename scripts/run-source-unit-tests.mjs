@@ -60,7 +60,6 @@ const DB_TEST_FILES = new Set([
   "src/lib/admin/step-up-proof.db.test.ts",
   "src/lib/admin/operations-workspaces.db.test.ts",
   "src/lib/commerce/customer-email-outbox.db.test.ts",
-  "src/lib/commerce/product-payment-finalizer.db.test.ts",
   "src/lib/commerce/product-order-creation.db.test.ts",
   "src/lib/admin/employee-attribution-analytics.db.test.ts",
   "src/lib/admin/implicit-staff-provider.db.test.ts",

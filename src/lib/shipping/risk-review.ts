@@ -2,22 +2,13 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
-import { getHelcimCardTransaction } from "@/lib/commerce/helcim-client";
-import {
-  assessCertifiedOwnerReviewEvidence,
-  classifyHelcimTransaction,
-} from "@/lib/commerce/helcim-contract";
-import { normalizeHelcimCardTransactionDetails } from "@/lib/commerce/helcim-webhook";
-import type { HelcimCardTransactionResponse } from "@/lib/commerce/helcim-types";
 import { getPrivateDb } from "@/lib/private-db/client";
 import {
   checkoutOrders,
   fulfillmentOwnerActions,
-  orderPaymentTransactions,
   productOrderRiskReviews,
   productPaymentRiskIncidents,
 } from "@/lib/private-db/schema";
-import { parseProviderMoneyCents } from "./provider-money";
 import { activateShipmentForPaidOrderInTransaction } from "./shipment-store";
 import {
   assertConfiguredFulfillmentOwner,
@@ -26,24 +17,15 @@ import {
 
 const COOLING_OFF_MS = 15 * 60_000;
 
-export interface ProductRiskReviewDependencies {
-  getCardTransaction?: (
-    transactionId: string,
-  ) => Promise<HelcimCardTransactionResponse>;
-}
-
-export async function recordProductOrderRiskReview(
-  input: {
-    orderReference: string;
-    incidentId: string;
-    expectedIncidentStateVersion: number;
-    reviewerAdminUserId: string;
-    decision: "clear_false_positive" | "escalate";
-    rationale: string;
-    stepUpAuthenticatedAt?: Date;
-  },
-  dependencies: ProductRiskReviewDependencies = {},
-): Promise<{ cleared: boolean; coolingOffUntil?: string }> {
+export async function recordProductOrderRiskReview(input: {
+  orderReference: string;
+  incidentId: string;
+  expectedIncidentStateVersion: number;
+  reviewerAdminUserId: string;
+  decision: "clear_false_positive" | "escalate";
+  rationale: string;
+  stepUpAuthenticatedAt?: Date;
+}): Promise<{ cleared: boolean; coolingOffUntil?: string }> {
   const rationale = input.rationale.trim().slice(0, 1_000);
   if (rationale.length < 10) {
     throw new Error(
@@ -64,13 +46,12 @@ export async function recordProductOrderRiskReview(
     input.expectedIncidentStateVersion,
   );
   if (!context) throw new Error("No active payment-risk incident was found");
-  const providerEvidence =
-    input.decision === "clear_false_positive"
-      ? await loadAuthoritativeProviderEvidence(
-          context,
-          dependencies.getCardTransaction ?? getHelcimCardTransaction,
-        )
-      : {};
+  // Fraud clearance is gated on owner identity, step-up auth, a cooling-off
+  // window, and the two-phase propose→execute handshake. The former Helcim
+  // AVS/CVV provider-evidence gate is dropped: Square commerce payments clear on
+  // capture and never raise these incidents, and the remaining incident source
+  // (high-risk address changes) carries no card-verification evidence.
+  const providerEvidence: Record<string, unknown> = {};
 
   const now = new Date();
   return getPrivateDb().transaction(async (tx) => {
@@ -265,7 +246,7 @@ export async function recordProductOrderRiskReview(
       incidentId: incident.id,
       stepUpAuthenticatedAt: input.stepUpAuthenticatedAt,
       coolingOffUntil: proposal!.coolingOffUntil,
-      providerEvidenceAvailable: true,
+      providerEvidenceAvailable: false,
       evidence: providerEvidence,
       decision: "clear_false_positive",
       rationale,
@@ -322,9 +303,6 @@ export async function recordProductOrderRiskReview(
 interface ReviewContext {
   incidentId: string;
   orderId: string;
-  providerTransactionId: string;
-  expectedAmountCents: number;
-  expectedCurrency: string;
 }
 
 async function loadReviewContext(
@@ -335,24 +313,12 @@ async function loadReviewContext(
   const [row] = await getPrivateDb()
     .select({
       orderId: checkoutOrders.id,
-      orderAmountCents: checkoutOrders.amountCents,
-      orderCurrency: checkoutOrders.currency,
       incident: productPaymentRiskIncidents,
-      transactionProviderId: orderPaymentTransactions.providerTransactionId,
-      transactionAmountCents: orderPaymentTransactions.amountCents,
-      transactionCurrency: orderPaymentTransactions.currency,
     })
     .from(checkoutOrders)
     .innerJoin(
       productPaymentRiskIncidents,
       eq(productPaymentRiskIncidents.orderId, checkoutOrders.id),
-    )
-    .leftJoin(
-      orderPaymentTransactions,
-      eq(
-        orderPaymentTransactions.id,
-        productPaymentRiskIncidents.paymentTransactionId,
-      ),
     )
     .where(
       and(
@@ -368,73 +334,9 @@ async function loadReviewContext(
     .orderBy(desc(productPaymentRiskIncidents.createdAt))
     .limit(1);
   if (!row) return null;
-  const evidence = row.incident.providerEvidence ?? {};
-  const providerTransactionId =
-    row.transactionProviderId ??
-    readEvidenceText(evidence.providerTransactionId);
-  if (!providerTransactionId) {
-    throw new Error("Risk incident has no immutable provider transaction ID");
-  }
   return {
     incidentId: row.incident.id,
     orderId: row.orderId,
-    providerTransactionId,
-    expectedAmountCents: row.transactionAmountCents ?? row.orderAmountCents,
-    expectedCurrency: (
-      row.transactionCurrency ?? row.orderCurrency
-    ).toUpperCase(),
-  };
-}
-
-async function loadAuthoritativeProviderEvidence(
-  context: ReviewContext,
-  getCardTransaction: (
-    transactionId: string,
-  ) => Promise<HelcimCardTransactionResponse>,
-): Promise<Record<string, unknown>> {
-  const details = normalizeHelcimCardTransactionDetails(
-    await getCardTransaction(context.providerTransactionId),
-  );
-  const classification = classifyHelcimTransaction({
-    originalTransactionId: details.originalTransactionId,
-    status: details.status,
-    transactionType: details.transactionType,
-  });
-  let amountCents: number | null = null;
-  try {
-    amountCents = parseProviderMoneyCents(details.amount);
-  } catch {
-    amountCents = null;
-  }
-  if (
-    details.transactionId !== context.providerTransactionId ||
-    classification.kind !== "purchase" ||
-    !classification.successful ||
-    amountCents !== context.expectedAmountCents ||
-    details.currency?.toUpperCase() !== context.expectedCurrency
-  ) {
-    throw new Error(
-      "Authoritative Helcim evidence does not match the incident",
-    );
-  }
-  const cardAssessment = assessCertifiedOwnerReviewEvidence({
-    avsCode: details.avsCode,
-    cvvCode: details.cvvCode,
-  });
-  if (!cardAssessment.available) {
-    throw new Error(
-      "Authoritative AVS/CVV evidence is missing, unknown, or unsupported",
-    );
-  }
-  return {
-    providerTransactionId: context.providerTransactionId,
-    providerStatus: classification.normalizedStatus,
-    providerType: classification.normalizedType,
-    amountCents,
-    currency: context.expectedCurrency,
-    avsCode: details.avsCode ?? null,
-    cvvCode: details.cvvCode ?? null,
-    reasonCodes: cardAssessment.reasonCodes,
   };
 }
 
@@ -460,10 +362,6 @@ async function hasOtherActiveIncident(
     )
     .limit(1);
   return Boolean(active);
-}
-
-function readEvidenceText(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function readEvidenceInteger(value: unknown): number | null {
