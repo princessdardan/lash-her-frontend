@@ -895,8 +895,8 @@ export async function listAdminFulfillmentOperations(
         union all
 
         select
-          'provider-jobs', obligation.id::text, 'helcim-initialization-' || coalesce(obligation.initialization_outcome, 'queued'),
-          ('Helcim payment initialization for ' || orders.order_id),
+          'provider-jobs', obligation.id::text, 'payment-initialization-' || coalesce(obligation.initialization_outcome, 'queued'),
+          ('Payment initialization for ' || orders.order_id),
           ('Status ' || obligation.initialization_status::text || '; outcome ' || coalesce(obligation.initialization_outcome, 'queued')),
           orders.order_id,
           coalesce(obligation.initialization_lease_expires_at, obligation.updated_at),
@@ -916,6 +916,7 @@ export async function listAdminFulfillmentOperations(
         join checkout_orders orders on orders.id = obligation.order_id
         where obligation.initialization_status = 'failed'
           and obligation.initialization_outcome in ('failed', 'outcome_unknown', 'manual_review')
+          and obligation.payment_provider = 'square'
           and obligation.quarantined_at is null
 
         union all
@@ -1055,14 +1056,14 @@ function getFulfillmentLegalNextActions(
   row: RawFulfillmentOperationRow,
 ): string[] {
   if (
-    row.kind === "helcim-initialization-outcome_unknown" ||
-    row.kind === "helcim-initialization-manual_review"
+    row.kind === "payment-initialization-outcome_unknown" ||
+    row.kind === "payment-initialization-manual_review"
   ) {
     return [
-      "Use the exact payment-obligation initialization reconciliation control. Adoption requires a live matching Helcim invoice lookup. Reissue is limited to an exact deterministic invoice-number search with zero results; an ambiguous HelcimPay session requires manual provider handoff.",
+      "Use the payment-obligation initialization reconciliation control. Reconcile-and-retry re-queues the obligation for an idempotent Square payment-link re-mint (matched by reference_id, adopting the existing link or creating it); record manual handoff when the obligation must leave the automated flow.",
     ];
   }
-  if (row.kind === "helcim-initialization-failed") {
+  if (row.kind === "payment-initialization-failed") {
     return [
       "Correct the deterministic validation or readiness failure. This state is not eligible for ambiguous provider-mutation reissue.",
     ];
