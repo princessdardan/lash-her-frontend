@@ -33,10 +33,10 @@ Main capabilities:
 - **Embedded Sanity Studio**: available at `/studio` and configured from source in `src/sanity/sanity.config.ts`.
 - **Sanity-backed page rendering**: public routes load CMS content through shared loader functions and typed projections.
 - **Service booking flow**: availability lookup, hold creation, checkout handoff, payment reconciliation, and Google Calendar finalization.
-- **Product checkout**: Helcim-backed checkout for catalog purchases.
-- **Training checkout**: Helcim-backed enrollment purchase flow.
+- **Product checkout**: Square-backed checkout for catalog purchases.
+- **Training checkout**: Square-backed enrollment purchase flow.
 - **Private database storage**: Drizzle/PostgreSQL persistence for sensitive and operational records.
-- **Webhook handling**: Sanity revalidation, Helcim card transaction handling, and Square service-booking webhook handling.
+- **Webhook handling**: Sanity revalidation and Square webhook handling for product checkout, training checkout, and service booking.
 - **Transactional email**: Resend-backed customer, provider, and admin notifications.
 
 ## How the application works
@@ -58,8 +58,7 @@ Customer submissions, checkout records, payment events, consent events, enrollme
 The app integrates with:
 
 - **Sanity** for content and Studio.
-- **Helcim** for product and training checkout.
-- **Square** for paid service booking when `SERVICE_BOOKING_SQUARE_ENABLED=true`.
+- **Square** for product and training checkout (Web Payments SDK) when `SQUARE_COMMERCE_ENABLED=true`, and for paid service booking when `SERVICE_BOOKING_SQUARE_ENABLED=true`.
 - **Google Calendar** for final appointment creation after booking payment reconciliation.
 - **Upstash Redis/KV** for booking OAuth token persistence.
 - **Resend** for transactional email.
@@ -191,40 +190,16 @@ Set `DATABASE_URL` to the Neon/PostgreSQL database used for private operational 
 - Mock mode is server-only and rejected in production.
 - Dev-only mock controls are `x-lash-payment-mock-scenario` and `mockPaymentScenario`.
 
-Product checkout and training checkout use Helcim:
+Product checkout and training checkout use Square (Web Payments SDK), enabled with `SQUARE_COMMERCE_ENABLED=true`:
 
-- `HELCIM_GENERAL_API_TOKEN`
-- `HELCIM_TRANSACTION_API_TOKEN`
+- `SQUARE_ENVIRONMENT` (`sandbox` or `production`)
+- `SQUARE_ACCESS_TOKEN`
+- `SQUARE_LOCATION_ID`
+- `SQUARE_APPLICATION_ID`
+- `SQUARE_WEBHOOK_SIGNATURE_KEY`
 - `CHECKOUT_SECRET_ENCRYPTION_KEY`
-- `HELCIM_WEBHOOK_VERIFIER_TOKEN`
 
-`HELCIM_TRANSACTION_API_TOKEN` must come from a HelcimPay.js API Access Configuration with checkout integration enabled for the deployed site URL and purchase-capable Transaction Processing access.
-
-`HELCIM_PRODUCT_PAYMENTS_CONTRACT_JSON` must be the exact JSON snapshot from the active `helcim/product_payments` certification. It is not a secret, but it is release-controlled evidence and must not be guessed. Required shape:
-
-```ts
-{
-  contract: "helcim_product_payments";
-  version: string;
-  evidenceReference: string;
-  effectiveFrom: string;
-  effectiveUntil: string;
-  purchaseTransactionTypes: string[];
-  refundTransactionTypes: string[];
-  purchaseSuccessfulStatuses: string[];
-  refundSuccessfulStatuses: string[];
-  avs: { fieldNames: string[]; matchCodes: string[]; mismatchCodes: string[] };
-  cvv: { fieldNames: string[]; matchCodes: string[]; mismatchCodes: string[] };
-  refundCorrelation: {
-    providerRefundIdFields: string[];
-    originalTransactionIdFields: string[];
-    merchantReferenceFields: string[];
-  };
-}
-```
-
-The values must come from official documentation plus captured sandbox response/GET/webhook triples. Preview and production classification fail closed when this value is missing, expired, malformed, or different from the active database certification.
-Quote Helcim API token values in dotenv files because Helcim tokens can contain `#`, which dotenv treats as a comment marker when unquoted.
+`SQUARE_APPLICATION_ID` and `SQUARE_LOCATION_ID` are served to the browser through `/api/checkout/square/config` so the Web Payments SDK can tokenize the card in Square's own iframe; the card PAN never reaches the server. The server uses `SQUARE_ACCESS_TOKEN` for the authorize/capture and refund calls, recomputing the charged amount from trusted order state. Product checkout, training checkout, the optional training Afterpay invoice, and service booking all share the single Square webhook endpoint (`/api/webhooks/square`), verified with `SQUARE_WEBHOOK_SIGNATURE_KEY`.
 
 Paid service bookings use Square only when enabled:
 
@@ -236,7 +211,7 @@ Paid service bookings use Square only when enabled:
 - `SQUARE_SERVICE_BOOKING_RETURN_URL`
 - `SQUARE_SERVICE_BOOKING_WEBHOOK_URL`
 
-Helcim webhook delivery must target `/api/webhooks/card-transactions` and must not contain `helcim` in the URL.
+All Square events (product, training, and service booking) are delivered to the single webhook endpoint `/api/webhooks/square`.
 
 ### Product shipping
 
@@ -314,11 +289,11 @@ Important areas:
 
 ### Product checkout
 
-Product checkout is Helcim-backed and exposed through `src/app/api/checkout`. Product content and shipping/customs metadata come from Sanity. Orders, quotes, package profiles, labels, and tracking state are private PostgreSQL data. Chit Chats quote creation is exposed through `src/app/api/shipping/quotes` when enabled.
+Product checkout is Square-backed and exposed through `src/app/api/checkout`. Product content and shipping/customs metadata come from Sanity. Orders, quotes, package profiles, labels, and tracking state are private PostgreSQL data. Chit Chats quote creation is exposed through `src/app/api/shipping/quotes` when enabled.
 
 ### Training checkout
 
-Training program pages live under `/training-programs`; `/training` redirects there. Training checkout is Helcim-backed through `src/app/api/training-checkout`, with enrollment/payment records stored privately.
+Training program pages live under `/training-programs`; `/training` redirects there. Training checkout is Square-backed through `src/app/api/training-checkout`, with enrollment/payment records stored privately.
 
 ### Privacy boundary
 
@@ -423,7 +398,7 @@ Do not promote if:
 - `docs/booking-system-setup-guide.md` - environment setup for booking, payment, calendar, and email services.
 - `docs/booking-training-calendar-configuration-guide.md` - code-derived steps for configuring service booking and training Google Appointment Schedule pages.
 - `docs/square-service-booking-setup.md` - Square service-booking environment variables and webhook setup for local, staging, and production.
-- `docs/booking-payment-provider-split.md` - Helcim/Square provider split.
+- `docs/booking-payment-provider-split.md` - Square payment provider boundaries.
 - `docs/google-calendar-oauth-env-setup.md` - Google Calendar OAuth setup.
 - `docs/private-database-migration-runbook.md` - private DB migration process.
 - `docs/resend-transactional-email-setup.md` - Resend transactional email domain, environment, and delivery recovery setup.
