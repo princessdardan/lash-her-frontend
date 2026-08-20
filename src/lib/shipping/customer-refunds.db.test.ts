@@ -12,6 +12,7 @@ const scenario = String.raw`
   import { closePrivateDbPool, getPrivateDb } from "./src/lib/private-db/client.ts";
   import {
     checkoutOrders,
+    customerEmailOutbox,
     orderPaymentObligations,
     orderPaymentTransactions,
     productOrderAdjustments,
@@ -25,10 +26,16 @@ const scenario = String.raw`
 
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
   process.env.CHECKOUT_PII_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
+  process.env.CHECKOUT_SECRET_ENCRYPTION_KEY = Buffer.alloc(32, 11).toString("base64");
+  process.env.ADMIN_OWNER_EMAILS = "finance-refund-test@example.invalid";
   const db = getPrivateDb();
   const prefix = "lh-remediation-refund-";
+  const ambiguousAlertKeyPrefix = "shipping-refund-ambiguous/sq-refund-ambiguous-980001/";
 
   async function cleanup() {
+    await db.delete(customerEmailOutbox).where(
+      like(customerEmailOutbox.providerIdempotencyKey, ambiguousAlertKeyPrefix + "%"),
+    );
     await db.execute(sql.raw(
       "DELETE FROM product_order_refunds WHERE order_id IN " +
       "(SELECT id FROM checkout_orders WHERE order_id LIKE 'lh-remediation-refund-%')",
@@ -380,6 +387,54 @@ const scenario = String.raw`
       .where(eq(productOrderRefunds.id, untypedRefund.id));
     assert.equal(untypedAfter.status, "manual_review");
     assert.equal(untypedAfter.providerRefundId, "sq-refund-995001");
+
+    // Two same-amount transient refunds against one payment both settle at
+    // Square; the COMPLETED webhook cannot disambiguate by provider refund id,
+    // so reconcile parks both in manual_review AND raises a finance alert
+    // instead of stranding the completed refund silently.
+    const ambiguousCompleted = await seed(prefix + "ambiguous-completed", [
+      { providerTransactionId: "980001", amountCents: 3000 },
+    ]);
+    const [ambiguousA] = await queueProductOrderRefundAllocations({
+      orderReference: prefix + "ambiguous-completed",
+      paymentTransactionId: ambiguousCompleted.transactions[0].id,
+      amountCents: 500,
+      reason: "Ambiguous completed A",
+    });
+    const [ambiguousB] = await queueProductOrderRefundAllocations({
+      orderReference: prefix + "ambiguous-completed",
+      paymentTransactionId: ambiguousCompleted.transactions[0].id,
+      amountCents: 500,
+      reason: "Ambiguous completed B",
+    });
+    const transientRefunder = {
+      refundPayment: async () => ({ ok: false, deterministic: false, code: "OUTCOME_UNKNOWN" }),
+    };
+    await processProductOrderRefund(ambiguousA.id, transientRefunder);
+    await processProductOrderRefund(ambiguousB.id, transientRefunder);
+    const beforeReconcile = await db.select({
+      status: productOrderRefunds.status,
+      providerRefundId: productOrderRefunds.providerRefundId,
+    }).from(productOrderRefunds).where(inArray(productOrderRefunds.id, [ambiguousA.id, ambiguousB.id]));
+    assert.deepEqual(beforeReconcile.map((row) => row.status), ["outcome_unknown", "outcome_unknown"]);
+    assert.deepEqual(beforeReconcile.map((row) => row.providerRefundId), [null, null]);
+
+    assert.equal(await reconcileProductOrderRefund({
+      originalTransactionId: "980001",
+      providerRefundId: "sq-refund-ambiguous-980001",
+      amountCents: 500,
+      currency: "CAD",
+    }), false);
+    const ambiguousRows = await db.select({
+      status: productOrderRefunds.status,
+      lastErrorCode: productOrderRefunds.lastErrorCode,
+    }).from(productOrderRefunds).where(inArray(productOrderRefunds.id, [ambiguousA.id, ambiguousB.id]));
+    assert.deepEqual(ambiguousRows.map((row) => row.status), ["manual_review", "manual_review"]);
+    assert.deepEqual(ambiguousRows.map((row) => row.lastErrorCode), ["AMBIGUOUS_PROVIDER_REFUND", "AMBIGUOUS_PROVIDER_REFUND"]);
+    const ambiguousAlerts = await db.select().from(customerEmailOutbox)
+      .where(like(customerEmailOutbox.providerIdempotencyKey, ambiguousAlertKeyPrefix + "%"));
+    assert.ok(ambiguousAlerts.length >= 1, "expected a finance alert for the ambiguous refund");
+    assert.ok(ambiguousAlerts.every((row) => row.kind === "shipping_policy_alert" && row.status === "queued"));
   } finally {
     await cleanup();
     await closePrivateDbPool();

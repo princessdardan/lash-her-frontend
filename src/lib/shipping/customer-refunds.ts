@@ -17,6 +17,7 @@ import {
   createSquareProductRefunder,
   type SquareProductRefunder,
 } from "@/lib/payments/square/product-refund";
+import { sendShippingPolicyAlert } from "./policy-alerts";
 
 type ProductOrderRefundRow = typeof productOrderRefunds.$inferSelect;
 export type ProductRefundDbTransaction = Parameters<
@@ -834,6 +835,20 @@ export async function reconcileProductOrderRefund(input: {
             .set({ status: "manual_review", updatedAt: new Date() })
             .where(inArray(productOrderAdjustments.id, adjustmentIds));
         }
+        // A COMPLETED Square refund that maps to more than one reserved refund
+        // cannot be linked automatically (e.g. two same-amount transient
+        // failures against one payment that both settled). The rows are parked
+        // in manual_review here, but nothing else watches non-queued rows — so
+        // surface a critical finance alert, keyed by the provider refund id so
+        // a retried webhook does not re-notify.
+        await sendShippingPolicyAlert({
+          duties: ["finance_owner"],
+          critical: true,
+          subject: "Square refund could not be auto-linked",
+          message: `Completed Square refund ${providerRefundId} (${input.amountCents} cents ${currency}) matched ${candidates.length} reserved refunds and was parked in manual review. Reconcile it by hand.`,
+          idempotencyKey: `shipping-refund-ambiguous/${providerRefundId}`,
+          executor: tx,
+        });
       }
       return false;
     }
