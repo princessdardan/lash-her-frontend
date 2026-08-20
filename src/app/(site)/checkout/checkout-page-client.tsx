@@ -24,8 +24,12 @@ import {
 } from "@/lib/commerce/checkout-validation";
 import type { TProduct } from "@/types";
 import { HelcimPayButton } from "@/components/commerce/helcim-pay-button";
+import { SquareProductPayButton } from "@/components/commerce/square-product-pay-button";
 import { useProductCart } from "@/components/commerce/product-cart-provider";
-import type { UsImportTerms } from "@/lib/commerce/product-checkout-disclosures";
+import type {
+  ProductCheckoutDisclosureInput,
+  UsImportTerms,
+} from "@/lib/commerce/product-checkout-disclosures";
 import type { ManualProductCheckoutPolicy } from "@/lib/commerce/product-manual-checkout-config";
 
 interface CheckoutTaxContext {
@@ -50,6 +54,8 @@ interface CheckoutPageClientProps {
   shippedRefundPolicy: CheckoutTermsRequirement;
   /** Fixed tax for in-studio pickup (studio place of supply, Ontario). */
   pickupTax: { rate: number; name: string };
+  /** When true, checkout captures payment through the Square card flow. */
+  squareCommerceEnabled: boolean;
 }
 
 interface ShippingRate {
@@ -91,6 +97,7 @@ function CheckoutContent({
   termsRequirement,
   shippedRefundPolicy,
   pickupTax,
+  squareCommerceEnabled,
 }: CheckoutPageClientProps) {
   const searchParams = useSearchParams();
   const { items: cartItems, clearCart } = useProductCart();
@@ -509,6 +516,80 @@ function CheckoutContent({
     initialPromotionCode,
     promotionCodeError,
   ]);
+
+  // Shared props for the checkout pay button, so the Helcim and Square variants
+  // stay in lockstep during the migration (only the component differs).
+  const payButtonDisabled =
+    !displayedCart ||
+    !hasValidCustomerDetails ||
+    !acceptedTerms ||
+    (requiresShippingAddress && !hasValidShippingAddress) ||
+    (requiresLiveShippingQuote &&
+      (!shippingEnabled || !activeShippingQuote || !selectedShippingRateId)) ||
+    !hasValidShippingDisclosure ||
+    (isManualCheckout &&
+      (!manualCheckoutPolicy.enabled || !acceptedCancellationPolicy)) ||
+    (!isManualCheckout && !acceptedRefundPolicy);
+  const payButtonCustomer = {
+    name: normalizedCustomerName,
+    email: normalizedCustomerEmail,
+    phone: normalizeCheckoutText(customerPhone),
+  };
+  const payButtonShippingAddress = requiresShippingAddress
+    ? shippingAddress
+    : undefined;
+  const payButtonDisclosures: ProductCheckoutDisclosureInput = {
+    ...(acceptedTerms
+      ? {
+          termsAccepted: true,
+          termsVersion: termsRequirement.version,
+          termsTextHash: termsRequirement.textHash,
+        }
+      : {}),
+    ...(isManualCheckout &&
+    manualCheckoutPolicy.cancellationPolicyVersion &&
+    manualCheckoutPolicy.cancellationPolicyTextHash &&
+    acceptedCancellationPolicy
+      ? {
+          cancellationPolicyAccepted: true,
+          cancellationPolicyVersion:
+            manualCheckoutPolicy.cancellationPolicyVersion,
+          cancellationPolicyTextHash:
+            manualCheckoutPolicy.cancellationPolicyTextHash,
+        }
+      : {}),
+    ...(!isManualCheckout && acceptedRefundPolicy
+      ? {
+          cancellationPolicyAccepted: true,
+          cancellationPolicyVersion: shippedRefundPolicy.version,
+          cancellationPolicyTextHash: shippedRefundPolicy.textHash,
+        }
+      : {}),
+    ...(requiresUsImportDisclosure &&
+    activeShippingQuote?.usImportTerms &&
+    activeShippingQuote.usImportDisclosureVersion &&
+    activeShippingQuote.usImportDisclosureText
+      ? {
+          usImportTerms: activeShippingQuote.usImportTerms,
+          usImportDisclosureVersion:
+            activeShippingQuote.usImportDisclosureVersion,
+          usImportDisclosureText: activeShippingQuote.usImportDisclosureText,
+        }
+      : {}),
+  };
+  const payButtonShippingQuote =
+    requiresLiveShippingQuote &&
+    shippingEnabled &&
+    activeShippingQuote &&
+    selectedShippingRateId
+      ? {
+          token: activeShippingQuote.quoteToken,
+          fingerprint: activeShippingQuote.fingerprint,
+          rateId: selectedShippingRateId,
+        }
+      : undefined;
+  const payButtonOnPaid = isBuyNow ? () => undefined : clearCart;
+  const checkoutTotalCents = Math.round(checkoutTotal * 100);
 
   if (checkoutItems.length === 0) {
     return (
@@ -1044,89 +1125,32 @@ function CheckoutContent({
                 </label>
 
                 <div className="mt-2">
-                  <HelcimPayButton
-                    disabled={
-                      !displayedCart ||
-                      !hasValidCustomerDetails ||
-                      !acceptedTerms ||
-                      (requiresShippingAddress && !hasValidShippingAddress) ||
-                      (requiresLiveShippingQuote &&
-                        (!shippingEnabled ||
-                          !activeShippingQuote ||
-                          !selectedShippingRateId)) ||
-                      !hasValidShippingDisclosure ||
-                      (isManualCheckout &&
-                        (!manualCheckoutPolicy.enabled ||
-                          !acceptedCancellationPolicy)) ||
-                      (!isManualCheckout && !acceptedRefundPolicy)
-                    }
-                    items={checkoutItems}
-                    customer={{
-                      name: normalizedCustomerName,
-                      email: normalizedCustomerEmail,
-                      phone: normalizeCheckoutText(customerPhone),
-                    }}
-                    shippingAddress={
-                      requiresShippingAddress ? shippingAddress : undefined
-                    }
-                    fulfillmentMode={fulfillmentMode}
-                    disclosures={{
-                      ...(acceptedTerms
-                        ? {
-                            termsAccepted: true,
-                            termsVersion: termsRequirement.version,
-                            termsTextHash: termsRequirement.textHash,
-                          }
-                        : {}),
-                      ...(isManualCheckout &&
-                      manualCheckoutPolicy.cancellationPolicyVersion &&
-                      manualCheckoutPolicy.cancellationPolicyTextHash &&
-                      acceptedCancellationPolicy
-                        ? {
-                            cancellationPolicyAccepted: true,
-                            cancellationPolicyVersion:
-                              manualCheckoutPolicy.cancellationPolicyVersion,
-                            cancellationPolicyTextHash:
-                              manualCheckoutPolicy.cancellationPolicyTextHash,
-                          }
-                        : {}),
-                      ...(!isManualCheckout && acceptedRefundPolicy
-                        ? {
-                            cancellationPolicyAccepted: true,
-                            cancellationPolicyVersion:
-                              shippedRefundPolicy.version,
-                            cancellationPolicyTextHash:
-                              shippedRefundPolicy.textHash,
-                          }
-                        : {}),
-                      ...(requiresUsImportDisclosure &&
-                      activeShippingQuote?.usImportTerms &&
-                      activeShippingQuote.usImportDisclosureVersion &&
-                      activeShippingQuote.usImportDisclosureText
-                        ? {
-                            usImportTerms: activeShippingQuote.usImportTerms,
-                            usImportDisclosureVersion:
-                              activeShippingQuote.usImportDisclosureVersion,
-                            usImportDisclosureText:
-                              activeShippingQuote.usImportDisclosureText,
-                          }
-                        : {}),
-                    }}
-                    shippingQuote={
-                      requiresLiveShippingQuote &&
-                      shippingEnabled &&
-                      activeShippingQuote &&
-                      selectedShippingRateId
-                        ? {
-                            token: activeShippingQuote.quoteToken,
-                            fingerprint: activeShippingQuote.fingerprint,
-                            rateId: selectedShippingRateId,
-                          }
-                        : undefined
-                    }
-                    promotionCode={activeRedeemedPromotionCode}
-                    onPaid={isBuyNow ? () => undefined : clearCart}
-                  />
+                  {squareCommerceEnabled ? (
+                    <SquareProductPayButton
+                      disabled={payButtonDisabled}
+                      amountCents={checkoutTotalCents}
+                      items={checkoutItems}
+                      customer={payButtonCustomer}
+                      shippingAddress={payButtonShippingAddress}
+                      fulfillmentMode={fulfillmentMode}
+                      disclosures={payButtonDisclosures}
+                      shippingQuote={payButtonShippingQuote}
+                      promotionCode={activeRedeemedPromotionCode}
+                      onPaid={payButtonOnPaid}
+                    />
+                  ) : (
+                    <HelcimPayButton
+                      disabled={payButtonDisabled}
+                      items={checkoutItems}
+                      customer={payButtonCustomer}
+                      shippingAddress={payButtonShippingAddress}
+                      fulfillmentMode={fulfillmentMode}
+                      disclosures={payButtonDisclosures}
+                      shippingQuote={payButtonShippingQuote}
+                      promotionCode={activeRedeemedPromotionCode}
+                      onPaid={payButtonOnPaid}
+                    />
+                  )}
                 </div>
 
                 {isBuyNow ? (
@@ -1182,6 +1206,7 @@ export default function CheckoutPageClient({
   termsRequirement,
   shippedRefundPolicy,
   pickupTax,
+  squareCommerceEnabled,
 }: CheckoutPageClientProps) {
   return (
     <Suspense
@@ -1200,6 +1225,7 @@ export default function CheckoutPageClient({
         termsRequirement={termsRequirement}
         shippedRefundPolicy={shippedRefundPolicy}
         pickupTax={pickupTax}
+        squareCommerceEnabled={squareCommerceEnabled}
       />
     </Suspense>
   );

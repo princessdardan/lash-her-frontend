@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { TrainingHelcimPayButton } from "@/components/commerce/training-helcim-pay-button";
+import { SquareTrainingPayButton } from "@/components/commerce/square-training-pay-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +18,7 @@ interface CheckoutFormProps {
   total: number;
   currency: string;
   afterpaySquareInvoiceEnabled?: boolean;
+  squareCommerceEnabled?: boolean;
 }
 
 function getSquareInvoicePublicUrl(value: unknown): string | null {
@@ -45,6 +47,7 @@ export function CheckoutForm({
   total,
   currency,
   afterpaySquareInvoiceEnabled = false,
+  squareCommerceEnabled = false,
 }: CheckoutFormProps) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -383,14 +386,26 @@ export function CheckoutForm({
           </div>
         </div>
 
-        <TrainingHelcimPayButton
-          disabled={!isValid}
-          programSlug={programSlug}
-          clientPrice={clientPrice}
-          promotionCode={redeemedPromotionCode}
-          customer={{ name, email }}
-          onPaid={() => {}}
-        />
+        {squareCommerceEnabled ? (
+          <SquareTrainingPayButton
+            disabled={!isValid}
+            programSlug={programSlug}
+            clientPrice={clientPrice}
+            promotionCode={redeemedPromotionCode}
+            amountCents={Math.round(discountedTotal * 100)}
+            customer={{ name, email }}
+            onPaid={() => {}}
+          />
+        ) : (
+          <TrainingHelcimPayButton
+            disabled={!isValid}
+            programSlug={programSlug}
+            clientPrice={clientPrice}
+            promotionCode={redeemedPromotionCode}
+            customer={{ name, email }}
+            onPaid={() => {}}
+          />
+        )}
 
         {afterpaySquareInvoiceEnabled ? (
           <div className="rounded-[24px] border border-lh-line bg-lh-neutral-2/60 p-5">
