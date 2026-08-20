@@ -42,7 +42,6 @@ import {
   parseShippingQuoteContextSnapshot,
 } from "./quote-token";
 import {
-  assertHelcimProductPaymentsCertificationInTransaction,
   assertProductTaxPolicyApprovalInTransaction,
   assertShippingQuoteContextCurrent,
   lockShippingCheckoutReadinessConfiguration,
@@ -3551,11 +3550,6 @@ export async function applyApprovedAddressChange(input: {
             primaryQuoteContext.taxPolicyApproval,
             obligationNow,
           );
-        const helcimContractIdentity =
-          await assertHelcimProductPaymentsCertificationInTransaction(
-            tx,
-            obligationNow,
-          );
         const offerExpiresAt = new Date(
           obligationNow.getTime() + 24 * 60 * 60_000,
         );
@@ -3570,10 +3564,10 @@ export async function applyApprovedAddressChange(input: {
             taxAmountCents: 0,
             totalAmountCents: difference,
             currency: row.order.currency,
+            paymentProvider: "square",
             sourceWorkflow: `address_change/${row.request.id}`,
             sourceReferenceId: row.request.id,
             disclosureSnapshot: {
-              helcimContract: helcimContractIdentity,
               taxPolicyApproval,
               responsibility: "customer",
               proposedAddressCountry:

@@ -51,7 +51,6 @@ import { encryptCheckoutIp } from "./checkout-pii";
 import { classifyHelcimTransaction } from "./helcim-contract";
 import {
   assertCheckoutReadiness,
-  assertHelcimProductPaymentsCertificationInTransaction,
   assertManualCheckoutReadinessInTransaction,
   assertProductTaxPolicyApprovalInTransaction,
   assertShippingQuoteContextAtCheckoutCommit,
@@ -934,13 +933,9 @@ export async function createInitializingProductOrder(
         now,
       },
     );
-    const provider: PaymentProvider = input.provider ?? "helcim";
-    // Square commerce runs under the lighter verified-payment fulfillment gate,
-    // so it does not require (or record) the Helcim certified-contract snapshot.
-    const helcimContract =
-      provider === "square"
-        ? null
-        : await assertHelcimProductPaymentsCertificationInTransaction(tx, now);
+    // Square is the only payment gateway; product orders run under the lighter
+    // verified-payment fulfillment gate and record no certified-contract snapshot.
+    const provider: PaymentProvider = input.provider ?? "square";
     const [quote] = await tx
       .select()
       .from(productShipments)
@@ -1098,7 +1093,6 @@ export async function createInitializingProductOrder(
         paymentProvider: provider,
         sourceWorkflow: "automated_product_checkout",
         disclosureSnapshot: {
-          ...(helcimContract ? { helcimContract } : {}),
           shippingQuoteContext: quoteContextSnapshot,
           tax: taxQuote,
           cancellationPolicy: { ...refundPolicySnapshot },
