@@ -50,6 +50,16 @@ export interface SquarePaymentChargeDependencies<T extends string> {
   voidPaymentByIdempotencyKey: (idempotencyKey: string) => Promise<void>;
   /** Record the payment in the local ledger. Runs before capture. */
   finalize: (input: SquareFinalizeInput) => Promise<{ transition: T }>;
+  /**
+   * Record that the funds were actually captured (e.g. flip the order's provider
+   * status to COMPLETED), so the capture-reconciliation sweep can distinguish a
+   * captured order from a paid-but-uncaptured one. Runs only after a successful
+   * capture; failures here are non-fatal (the sweep still recovers).
+   */
+  onCaptured?: (
+    orderReference: string,
+    squarePaymentId: string,
+  ) => Promise<void>;
   /** Non-blocking side effect after a successful record (email/notifications). */
   onSuccess: (orderReference: string) => Promise<void>;
   logError: (message: string, meta: Record<string, unknown>) => void;
@@ -146,6 +156,19 @@ export async function authorizeCaptureSquarePayment<T extends string>(
   if (finalized.transition === "applied") {
     try {
       await dependencies.capturePayment(payment.id, payment.version_token);
+      if (dependencies.onCaptured) {
+        try {
+          await dependencies.onCaptured(input.orderReference, payment.id);
+        } catch (error) {
+          // Non-fatal: the order is captured; only the COMPLETED marker is
+          // missing, so the reconciliation sweep will re-confirm and mark it.
+          dependencies.logError("[square-charge] mark-captured failed", {
+            orderReference: input.orderReference,
+            squarePaymentId: payment.id,
+            error: getErrorMessage(error),
+          });
+        }
+      }
     } catch (error) {
       // Rare: the order is recorded paid but capture did not complete. Do not
       // void (that would contradict the paid order) — the Square webhook /

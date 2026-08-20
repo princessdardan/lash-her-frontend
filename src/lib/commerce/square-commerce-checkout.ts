@@ -58,6 +58,10 @@ export interface ChargeSquareProductOrderDependencies {
   finalize: (
     input: FinalizeSquareProductPaymentInput,
   ) => Promise<FinalizeSquareProductPaymentResult>;
+  onCaptured?: (
+    orderReference: string,
+    squarePaymentId: string,
+  ) => Promise<void>;
   sendConfirmationEmail: (orderId: string) => Promise<void>;
   logError: (message: string, meta: Record<string, unknown>) => void;
 }
@@ -77,6 +81,7 @@ export async function chargeSquareProductOrder(
     voidPayment: dependencies.voidPayment,
     voidPaymentByIdempotencyKey: dependencies.voidPaymentByIdempotencyKey,
     finalize: dependencies.finalize,
+    onCaptured: dependencies.onCaptured,
     onSuccess: dependencies.sendConfirmationEmail,
     logError: dependencies.logError,
   };
@@ -111,12 +116,14 @@ export function createLiveSquareProductCharger(): (
       { createSquareCommercePayment, createSquarePaymentsClient },
       { finalizeSquareProductPayment },
       { sendProductOrderConfirmationEmailForOrder },
+      { markSquareCommerceOrderCaptured },
       { log },
     ] = await Promise.all([
       import("@/lib/env/private-checkout"),
       import("@/lib/payments/square/payments-client"),
       import("@/lib/commerce/square-product-finalizer"),
       import("@/lib/commerce/product-order-email"),
+      import("@/lib/commerce/order-store"),
       import("@/lib/logging/logger"),
     ]);
 
@@ -143,6 +150,7 @@ export function createLiveSquareProductCharger(): (
         voidPayment: async () => undefined,
         voidPaymentByIdempotencyKey: async () => undefined,
         finalize: finalizeSquareProductPayment,
+        onCaptured: markSquareCommerceOrderCaptured,
         sendConfirmationEmail: sendProductOrderConfirmationEmailForOrder,
         logError,
       });
@@ -161,6 +169,7 @@ export function createLiveSquareProductCharger(): (
       voidPaymentByIdempotencyKey: (idempotencyKey) =>
         client.cancelPaymentByIdempotencyKey(idempotencyKey),
       finalize: finalizeSquareProductPayment,
+      onCaptured: markSquareCommerceOrderCaptured,
       sendConfirmationEmail: sendProductOrderConfirmationEmailForOrder,
       logError,
     });

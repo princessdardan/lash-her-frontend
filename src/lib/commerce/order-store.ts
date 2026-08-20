@@ -4,7 +4,17 @@ import { ShippingQuoteConflictError } from "@/lib/shipping/errors";
 
 import { createHash, createHmac } from "node:crypto";
 
-import { and, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  notInArray,
+  or,
+  sql,
+} from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 import type {
@@ -1734,6 +1744,142 @@ export async function findOrderByCorrelationId(
   correlationId: string,
 ): Promise<CheckoutOrderRow | null> {
   return defaultOrderStore.findOrderByCorrelationId(correlationId);
+}
+
+/**
+ * Look up a checkout order by its public `orderId` (the value used as the Square
+ * payment `reference_id`). Used by the Square webhook to reconcile commerce
+ * payments back to their local order.
+ */
+export async function findCheckoutOrderByOrderId(
+  orderId: string,
+): Promise<CheckoutOrderRow | null> {
+  const [order] = await getPrivateDb()
+    .select()
+    .from(checkoutOrders)
+    .where(eq(checkoutOrders.orderId, orderId))
+    .limit(1);
+
+  return order ?? null;
+}
+
+/** Square provider status marking a commerce order's funds as captured. */
+export const SQUARE_CAPTURED_PROVIDER_STATUS = "COMPLETED";
+/**
+ * Square provider status marking a paid commerce order whose authorization was
+ * lost (canceled/failed) before capture — funds are uncollected and the order
+ * needs manual intervention. Excluded from the capture sweep so it is not
+ * re-checked forever.
+ */
+export const SQUARE_UNCOLLECTED_PROVIDER_STATUS = "UNCOLLECTED";
+
+export interface UncapturedSquareCommerceOrder {
+  orderId: string;
+  purpose: CheckoutOrderPurpose;
+  providerPaymentId: string;
+  providerMetadata: CheckoutProviderMetadata | null;
+}
+
+/**
+ * Square commerce orders that are locally `paid` but whose provider status is
+ * not yet `COMPLETED` — i.e. the synchronous capture did not confirm. The
+ * capture-reconciliation sweep re-checks these against Square and completes or
+ * flags them. `paidBefore` avoids racing an in-flight synchronous charge.
+ */
+export async function findUncapturedSquareCommerceOrders(input: {
+  paidBefore: Date;
+  limit: number;
+}): Promise<UncapturedSquareCommerceOrder[]> {
+  const rows = await getPrivateDb()
+    .select({
+      orderId: checkoutOrders.orderId,
+      purpose: checkoutOrders.purpose,
+      providerPaymentId: checkoutOrders.providerPaymentId,
+      providerMetadata: checkoutOrders.providerMetadata,
+    })
+    .from(checkoutOrders)
+    .where(
+      and(
+        eq(checkoutOrders.paymentProvider, "square"),
+        eq(checkoutOrders.status, "paid"),
+        inArray(checkoutOrders.purpose, ["product", "training"]),
+        isNotNull(checkoutOrders.providerPaymentId),
+        // Exclude both the confirmed-captured terminal state and the
+        // uncollected (lost-authorization) terminal state so neither is
+        // re-swept forever.
+        notInArray(checkoutOrders.providerStatus, [
+          SQUARE_CAPTURED_PROVIDER_STATUS,
+          SQUARE_UNCOLLECTED_PROVIDER_STATUS,
+        ]),
+        lte(checkoutOrders.paidAt, input.paidBefore),
+      ),
+    )
+    // Oldest-first so a limited sweep is deterministic and drains the backlog.
+    .orderBy(checkoutOrders.paidAt)
+    .limit(input.limit);
+
+  return rows.flatMap((row) =>
+    row.providerPaymentId === null
+      ? []
+      : [
+          {
+            orderId: row.orderId,
+            purpose: row.purpose,
+            providerPaymentId: row.providerPaymentId,
+            providerMetadata: row.providerMetadata,
+          },
+        ],
+  );
+}
+
+/**
+ * Flip a paid Square commerce order's provider status to `COMPLETED`, recording
+ * that the authorized funds were captured. Guarded on the order id + payment id
+ * so it never touches a different order or payment.
+ */
+export async function markSquareCommerceOrderCaptured(
+  orderReference: string,
+  squarePaymentId: string,
+): Promise<void> {
+  await setSquareCommerceOrderProviderStatus(
+    orderReference,
+    squarePaymentId,
+    SQUARE_CAPTURED_PROVIDER_STATUS,
+  );
+}
+
+/**
+ * Mark a paid Square commerce order as uncollected (its authorization was lost
+ * before capture). Terminal: drops the order out of the capture sweep so it is
+ * not re-checked, leaving it for manual follow-up.
+ */
+export async function markSquareCommerceOrderUncollected(
+  orderReference: string,
+  squarePaymentId: string,
+): Promise<void> {
+  await setSquareCommerceOrderProviderStatus(
+    orderReference,
+    squarePaymentId,
+    SQUARE_UNCOLLECTED_PROVIDER_STATUS,
+  );
+}
+
+async function setSquareCommerceOrderProviderStatus(
+  orderReference: string,
+  squarePaymentId: string,
+  providerStatus: string,
+): Promise<void> {
+  await getPrivateDb()
+    .update(checkoutOrders)
+    .set({ providerStatus, updatedAt: new Date() })
+    .where(
+      and(
+        eq(checkoutOrders.orderId, orderReference),
+        eq(checkoutOrders.paymentProvider, "square"),
+        eq(checkoutOrders.providerPaymentId, squarePaymentId),
+        eq(checkoutOrders.status, "paid"),
+      ),
+    );
 }
 
 export async function getPendingOrderByCheckoutToken(

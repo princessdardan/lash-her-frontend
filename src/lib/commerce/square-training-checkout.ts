@@ -50,6 +50,10 @@ export interface ChargeSquareTrainingOrderDependencies {
   finalize: (
     input: FinalizeSquareTrainingCardPaymentInput,
   ) => Promise<FinalizeSquareTrainingCardPaymentResult>;
+  onCaptured?: (
+    orderReference: string,
+    squarePaymentId: string,
+  ) => Promise<void>;
   sendNotifications: (orderReference: string) => Promise<void>;
   logError: (message: string, meta: Record<string, unknown>) => void;
 }
@@ -70,6 +74,7 @@ export async function chargeSquareTrainingOrder(
       voidPayment: dependencies.voidPayment,
       voidPaymentByIdempotencyKey: dependencies.voidPaymentByIdempotencyKey,
       finalize: dependencies.finalize,
+      onCaptured: dependencies.onCaptured,
       onSuccess: dependencies.sendNotifications,
       logError: dependencies.logError,
     };
@@ -103,12 +108,14 @@ export function createLiveSquareTrainingCharger(): (
       { createSquareCommercePayment, createSquarePaymentsClient },
       { finalizeSquareTrainingCardPayment },
       { notifyPaidTrainingOrder },
+      { markSquareCommerceOrderCaptured },
       { log },
     ] = await Promise.all([
       import("@/lib/env/private-checkout"),
       import("@/lib/payments/square/payments-client"),
       import("@/lib/commerce/square-training-card-finalizer"),
       import("@/lib/commerce/training-paid-notification"),
+      import("@/lib/commerce/order-store"),
       import("@/lib/logging/logger"),
     ]);
 
@@ -137,6 +144,7 @@ export function createLiveSquareTrainingCharger(): (
         voidPayment: async () => undefined,
         voidPaymentByIdempotencyKey: async () => undefined,
         finalize: finalizeSquareTrainingCardPayment,
+        onCaptured: markSquareCommerceOrderCaptured,
         sendNotifications,
         logError,
       });
@@ -155,6 +163,7 @@ export function createLiveSquareTrainingCharger(): (
       voidPaymentByIdempotencyKey: (idempotencyKey) =>
         client.cancelPaymentByIdempotencyKey(idempotencyKey),
       finalize: finalizeSquareTrainingCardPayment,
+      onCaptured: markSquareCommerceOrderCaptured,
       sendNotifications,
       logError,
     });

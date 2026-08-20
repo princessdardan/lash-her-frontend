@@ -853,6 +853,7 @@ test("Square webhook env resolver accepts training invoice webhooks without serv
   assert.deepEqual(env, {
     notificationUrl: webhookUrl,
     serviceBookingEnabled: false,
+    commerceEnabled: false,
     webhookSignatureKey: signatureKey,
   });
 });
@@ -1254,6 +1255,140 @@ test("Square webhook falls back to legacy service finalizer when no-show finaliz
         data: {
           object: {
             payment: { id: "sq-payment-unknown", order_id: "sq-order-unknown" },
+          },
+        },
+      }),
+    ),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(bookingFinalizerCalls.length, 1);
+});
+
+test("Square webhook recovers a completed commerce product payment", async () => {
+  const recoveries: unknown[] = [];
+  const lookups: string[] = [];
+  const handler = createHandler([], {
+    getEnv: () => ({
+      notificationUrl: webhookUrl,
+      webhookSignatureKey: signatureKey,
+      commerceEnabled: true,
+      serviceBookingEnabled: true,
+    }),
+    findCheckoutOrderByOrderId: async (orderId) => {
+      lookups.push(orderId);
+      return {
+        orderId,
+        paymentProvider: "square",
+        purpose: "product",
+        providerMetadata: null,
+      } as unknown as CheckoutOrderRow;
+    },
+    recoverSquareCommercePayment: async (input) => {
+      recoveries.push(input);
+      return { status: "recovered" };
+    },
+  });
+
+  const response = await handler(
+    createSignedRequest(
+      JSON.stringify({
+        event_id: "evt_commerce_1",
+        type: "payment.updated",
+        data: {
+          object: {
+            payment: {
+              id: "sq-pay-777",
+              status: "COMPLETED",
+              reference_id: "lh-order-1",
+              amount_money: { amount: 5000, currency: "CAD" },
+            },
+          },
+        },
+      }),
+    ),
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(lookups, ["lh-order-1"]);
+  assert.deepEqual(recoveries, [
+    {
+      orderReference: "lh-order-1",
+      kind: "product",
+      squarePaymentId: "sq-pay-777",
+      status: "COMPLETED",
+      amountCents: 5000,
+      currency: "CAD",
+    },
+  ]);
+});
+
+test("Square webhook asks Square to retry when commerce recovery is retryable", async () => {
+  const handler = createHandler([], {
+    getEnv: () => ({
+      notificationUrl: webhookUrl,
+      webhookSignatureKey: signatureKey,
+      commerceEnabled: true,
+      serviceBookingEnabled: true,
+    }),
+    findCheckoutOrderByOrderId: async (orderId) =>
+      ({
+        orderId,
+        paymentProvider: "square",
+        purpose: "training",
+        providerMetadata: { flow: "training_square_card" },
+      }) as unknown as CheckoutOrderRow,
+    recoverSquareCommercePayment: async () => ({ status: "retryable" }),
+  });
+
+  const response = await handler(
+    createSignedRequest(
+      JSON.stringify({
+        event_id: "evt_commerce_2",
+        type: "payment.updated",
+        data: {
+          object: {
+            payment: {
+              id: "sq-pay-778",
+              status: "COMPLETED",
+              reference_id: "lh-train-1",
+              amount_money: { amount: 120000, currency: "CAD" },
+            },
+          },
+        },
+      }),
+    ),
+  );
+
+  assert.equal(response.status, 503);
+});
+
+test("Square webhook falls through to booking handling for a non-commerce payment order", async () => {
+  const bookingFinalizerCalls: unknown[] = [];
+  const handler = createHandler(bookingFinalizerCalls, {
+    getEnv: () => ({
+      notificationUrl: webhookUrl,
+      webhookSignatureKey: signatureKey,
+      commerceEnabled: true,
+      serviceBookingEnabled: true,
+    }),
+    findCheckoutOrderByOrderId: async () => null,
+    recoverSquareCommercePayment: async () => ({ status: "recovered" }),
+  });
+
+  const response = await handler(
+    createSignedRequest(
+      JSON.stringify({
+        event_id: "evt_booking_1",
+        type: "payment.updated",
+        data: {
+          object: {
+            payment: {
+              id: "sq-pay-booking",
+              status: "COMPLETED",
+              reference_id: "lh-booking-1",
+              amount_money: { amount: 8000, currency: "CAD" },
+            },
           },
         },
       }),

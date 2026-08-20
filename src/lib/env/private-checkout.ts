@@ -138,6 +138,26 @@ export function getSquareCommerceConfig(): SquareCommerceConfig | null {
 }
 
 /**
+ * Webhook verification env for Square commerce (product/training) payments.
+ * Reuses the single Square webhook endpoint URL + signature key that all Square
+ * flows share (Square posts every event to one notification URL).
+ */
+export function getSquareCommerceWebhookEnv(): SquareCommerceWebhookEnv | null {
+  if (!isSquareCommerceCheckoutEnabled()) return null;
+
+  return {
+    notificationUrl: assertUrlValue(
+      process.env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL,
+      "SQUARE_SERVICE_BOOKING_WEBHOOK_URL",
+    ),
+    webhookSignatureKey: assertValue(
+      process.env.SQUARE_WEBHOOK_SIGNATURE_KEY,
+      "Missing env var: SQUARE_WEBHOOK_SIGNATURE_KEY",
+    ),
+  };
+}
+
+/**
  * Server-only Square credentials for product and primary-training checkout.
  */
 export function getSquareCommerceEnv(): SquareCommerceEnv | null {
@@ -365,6 +385,11 @@ export type SquareCommerceEnv = {
   environment: "sandbox" | "production";
   accessToken: string;
   locationId: string;
+  webhookSignatureKey: string;
+};
+
+export type SquareCommerceWebhookEnv = {
+  notificationUrl: string;
   webhookSignatureKey: string;
 };
 
