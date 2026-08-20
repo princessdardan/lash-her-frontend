@@ -48,6 +48,43 @@ export interface SquareGetPaymentResponse {
   payment: SquarePayment;
 }
 
+export interface SquareRefund {
+  id: string;
+  status: string;
+  payment_id?: string;
+  order_id?: string;
+  amount_money: SquareMoney;
+}
+
+export interface SquareRefundPaymentRequest {
+  idempotency_key: string;
+  payment_id: string;
+  amount_money: SquareMoney;
+  reason?: string;
+}
+
+export interface SquareRefundPaymentResponse {
+  refund: SquareRefund;
+}
+
+/**
+ * Thrown by {@link SquarePaymentsClient.refundPayment} when Square rejects the
+ * request with a non-2xx status. Preserves the HTTP status (and Square error
+ * code when present) so callers can classify a deterministic client error
+ * (4xx, excluding 409 conflicts) from a transient/unknown outcome.
+ */
+export class SquareApiError extends Error {
+  readonly status: number;
+  readonly code: string | undefined;
+
+  constructor(status: number, code?: string) {
+    super(`Square API request failed with status ${status}`);
+    this.name = "SquareApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
 export interface SquarePaymentsClientEnv {
   accessToken: string;
   environment: "sandbox" | "production";
@@ -64,6 +101,9 @@ export interface SquarePaymentsClient {
   ): Promise<SquareGetPaymentResponse>;
   cancelPayment(paymentId: string): Promise<SquareGetPaymentResponse>;
   cancelPaymentByIdempotencyKey(idempotencyKey: string): Promise<void>;
+  refundPayment(
+    request: SquareRefundPaymentRequest,
+  ): Promise<SquareRefundPaymentResponse>;
 }
 
 export function createSquarePaymentsClient(
@@ -109,6 +149,12 @@ export function createSquarePaymentsClient(
         { idempotency_key: idempotencyKey },
         isSquareEmptyResponse,
       );
+    },
+    async refundPayment(request) {
+      return postSquareWithStatus<
+        SquareRefundPaymentRequest,
+        SquareRefundPaymentResponse
+      >(env, "/v2/refunds", request, isSquareRefundPaymentResponse);
     },
   };
 }
@@ -160,6 +206,69 @@ async function postSquare<TRequest, TResponse>(
 
   if (!response.ok) {
     throw new Error(`Square API request failed with status ${response.status}`);
+  }
+
+  let body: unknown;
+
+  try {
+    body = await response.json();
+  } catch {
+    throw new Error("Square API response was malformed");
+  }
+
+  if (!validateResponse(body)) {
+    throw new Error("Square API response was malformed");
+  }
+
+  return body;
+}
+
+/**
+ * POST variant that preserves the HTTP status on failure by throwing a
+ * {@link SquareApiError}. Used for refunds, where the caller must distinguish a
+ * deterministic client rejection (4xx) from a transient/unknown outcome so a
+ * refund is never silently double-issued or falsely marked failed.
+ */
+async function postSquareWithStatus<TRequest, TResponse>(
+  env: SquarePaymentsClientEnv,
+  path: string,
+  request: TRequest,
+  validateResponse: (value: unknown) => value is TResponse,
+): Promise<TResponse> {
+  let response: Response;
+
+  try {
+    response = await fetch(`${SQUARE_BASE_URLS[env.environment]}${path}`, {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${env.accessToken}`,
+        "content-type": "application/json",
+        "square-version": SQUARE_VERSION,
+      },
+      body: JSON.stringify(request),
+      cache: "no-store",
+    });
+  } catch {
+    throw new Error("Square API request failed before receiving a response");
+  }
+
+  if (!response.ok) {
+    let code: string | undefined;
+    try {
+      const errorBody: unknown = await response.json();
+      if (
+        isRecord(errorBody) &&
+        Array.isArray(errorBody.errors) &&
+        isRecord(errorBody.errors[0]) &&
+        typeof errorBody.errors[0].code === "string"
+      ) {
+        code = errorBody.errors[0].code;
+      }
+    } catch {
+      // Non-JSON error body; status alone drives classification.
+    }
+    throw new SquareApiError(response.status, code);
   }
 
   let body: unknown;
@@ -231,6 +340,49 @@ function isSquareGetPaymentResponse(
 
 function isSquareEmptyResponse(value: unknown): value is Record<string, never> {
   return isRecord(value) && Object.keys(value).length === 0;
+}
+
+function isSquareRefundPaymentResponse(
+  value: unknown,
+): value is SquareRefundPaymentResponse {
+  if (!isRecord(value) || !isRecord(value.refund)) {
+    return false;
+  }
+
+  const refund = value.refund;
+
+  if (typeof refund.id !== "string" || typeof refund.status !== "string") {
+    return false;
+  }
+
+  if (!isRecord(refund.amount_money)) {
+    return false;
+  }
+
+  if (
+    typeof refund.amount_money.amount !== "number" ||
+    typeof refund.amount_money.currency !== "string"
+  ) {
+    return false;
+  }
+
+  if (
+    "payment_id" in refund &&
+    refund.payment_id !== undefined &&
+    typeof refund.payment_id !== "string"
+  ) {
+    return false;
+  }
+
+  if (
+    "order_id" in refund &&
+    refund.order_id !== undefined &&
+    typeof refund.order_id !== "string"
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 function isSquarePaymentResponse(

@@ -661,6 +661,9 @@ function createFakes(initialHolds: BookingHoldRecord[] = [createHold()]): {
       );
       if (accepted !== undefined) accepted.cancelled = true;
     },
+    async refundPayment() {
+      throw new Error("refundPayment is not supported by this fake");
+    },
     async createCardOnFilePayment(
       request: SquareCreatePaymentRequest,
     ): Promise<SquareCreatePaymentResponse> {
