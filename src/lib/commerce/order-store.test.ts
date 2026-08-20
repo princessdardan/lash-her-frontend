@@ -9,16 +9,14 @@ const helperScript = String.raw`
     createCheckoutOrderStore,
     type CheckoutOrderRepository,
     type CheckoutOrderRow,
-    type HelcimPurchaseTransitionResult,
   } from "./src/lib/commerce/order-store.ts";
   import { decryptCheckoutSecret } from "./src/lib/commerce/checkout-secret.ts";
 
   import type { ValidatedCart } from "./src/lib/commerce/cart.ts";
 
   type CheckoutOrderInsert = Parameters<CheckoutOrderRepository["createCheckoutOrder"]>[0];
-  type CheckoutPaymentEventInsert = Parameters<CheckoutOrderRepository["createWebhookEvent"]>[0];
   type SquareInvoiceWebhookEventInsert = Parameters<CheckoutOrderRepository["createSquareInvoiceWebhookEvent"]>[0];
-  type PaymentEventRecord = (CheckoutPaymentEventInsert | SquareInvoiceWebhookEventInsert) & {
+  type PaymentEventRecord = SquareInvoiceWebhookEventInsert & {
     id: string;
     processingStatus?: "duplicate" | "failed" | "ignored" | "processed" | "received" | "review_required" | "retryable_failed";
   };
@@ -47,16 +45,6 @@ const helperScript = String.raw`
     ],
   };
 
-  const pendingOrderInput = {
-    cart,
-    checkoutToken: "checkout-token-123",
-    customerEmail: "client@example.com",
-    customerName: "Client Name",
-    helcimInvoiceId: 4242,
-    helcimInvoiceNumber: "INV-4242",
-    secretToken: "secret-token-123",
-  };
-
   const pendingSquareInvoiceOrderInput = {
     amountCents: 249900,
     checkoutToken: "square-checkout-token-123",
@@ -72,7 +60,6 @@ const helperScript = String.raw`
   };
 
   class FakeCheckoutOrderRepository implements CheckoutOrderRepository {
-    failNextMarkPaid = false;
     readonly events: PaymentEventRecord[] = [];
     readonly rows: CheckoutOrderRow[] = [];
 
@@ -112,16 +99,6 @@ const helperScript = String.raw`
       return { id };
     }
 
-    async createWebhookEvent(values: CheckoutPaymentEventInsert): Promise<{ id: string } | null> {
-      if (this.events.some((event) => event.idempotencyKey === values.idempotencyKey)) {
-        return null;
-      }
-
-      const id = "payment-event-" + (this.events.length + 1);
-      this.events.push({ ...values, id });
-      return { id };
-    }
-
     async createSquareInvoiceWebhookEvent(values: SquareInvoiceWebhookEventInsert): Promise<{ id: string } | null> {
       if (this.events.some((event) => event.paymentProvider === "square" && event.providerEventId === values.eventId)) {
         return null;
@@ -137,46 +114,11 @@ const helperScript = String.raw`
       return { duplicate: true, processingStatus: event?.processingStatus ?? "received" };
     }
 
-    async findOrderForWebhook(input: Parameters<CheckoutOrderRepository["findOrderForWebhook"]>[0]): Promise<CheckoutOrderRow | null> {
-      if (input.helcimInvoiceId === undefined && input.helcimInvoiceNumber === undefined) {
-        return null;
-      }
-
-      return this.rows.find((row) => (
-        row.paymentProvider === "helcim"
-        &&
-        (input.helcimInvoiceId === undefined || row.helcimInvoiceId === input.helcimInvoiceId)
-        && (input.helcimInvoiceNumber === undefined || row.helcimInvoiceNumber === input.helcimInvoiceNumber)
-      )) ?? null;
-    }
-
     async findCheckoutOrderByCheckoutTokenHash(checkoutTokenHash: string): Promise<CheckoutOrderRow | null> {
       return this.rows.find((row) => (
         row.checkoutTokenHash === checkoutTokenHash
         && (row.status === "pending" || row.status === "paid")
       )) ?? null;
-    }
-
-    async markOrderPaid(orderId: string, helcimTransactionId: string): Promise<HelcimPurchaseTransitionResult> {
-      if (this.failNextMarkPaid) {
-        this.failNextMarkPaid = false;
-        throw new Error("Paid transition failed");
-      }
-
-      const row = this.findOrderByOrderId(orderId);
-      if (row.status === "paid") {
-        return row.helcimTransactionId === helcimTransactionId
-          ? "already_applied"
-          : "transaction_conflict";
-      }
-      if (row.status === "cancelled" || row.status === "refunded") {
-        return "state_conflict";
-      }
-      row.status = "paid";
-      row.helcimTransactionId = helcimTransactionId;
-      row.paidAt = new Date("2026-05-10T01:00:00.000Z");
-      row.updatedAt = new Date("2026-05-10T01:00:00.000Z");
-      return "applied";
     }
 
     async markOrderVerificationFailed(orderId: string): Promise<void> {
@@ -266,29 +208,6 @@ const helperScript = String.raw`
     };
   }
 `;
-
-test("private checkout store creates pending orders with hashed tokens and cent amounts", () => {
-  runOrderStoreScenario(`
-    const { repository, store } = createFakeStore();
-    const created = await store.createPendingOrder(pendingOrderInput);
-    const row = repository.rows[0];
-
-    assert.equal(created._id, "checkout-order-1");
-    assert.match(created.orderId, /^lh-/);
-    assert.equal(created.secretToken, pendingOrderInput.secretToken);
-    assert.equal(created.amount, 123.45);
-    assert.equal(created.currency, "CAD");
-    assert.equal(created.purpose, "product");
-    assert.equal(row.status, "pending");
-    assert.equal(row.paymentProvider, "helcim");
-    assert.equal(row.purpose, "product");
-    assert.equal(row.amountCents, 12345);
-    assert.equal(row.lineItems[0].unitPriceCents, 10000);
-    assert.equal(row.lineItems[1].totalCents, 2345);
-    assert.match(row.checkoutTokenHash, /^[a-f0-9]{64}$/);
-    assert.notEqual(row.checkoutTokenHash, pendingOrderInput.checkoutToken);
-  `);
-});
 
 test("private checkout store creates pending Square invoice training orders idempotently", () => {
   runOrderStoreScenario(`
@@ -391,7 +310,6 @@ test("private checkout store marks Square invoice finalization failures idempote
 test("private checkout store looks up Square invoice orders by invoice and correlation identifiers", () => {
   runOrderStoreScenario(`
     const { repository, store } = createFakeStore();
-    await store.createPendingOrder(pendingOrderInput);
     const created = await store.createPendingSquareInvoiceOrder(pendingSquareInvoiceOrderInput);
 
     const byInvoice = await store.findOrderBySquareInvoiceId("square-invoice-123");
@@ -452,452 +370,6 @@ test("private checkout store records Square invoice webhook events processed", (
     assert.equal(repository.events.length, 1);
     assert.equal(repository.events[0].providerEventId, "square-invoice-event-processed");
     assert.equal(repository.events[0].processingStatus, "processed");
-  `);
-});
-
-test("private checkout store records appointment order purposes", () => {
-  runOrderStoreScenario(`
-    for (const purpose of ["appointment_deposit", "appointment_full", "appointment_custom_partial"]) {
-      const { repository, store } = createFakeStore();
-      const created = await store.createPendingOrder({
-        ...pendingOrderInput,
-        purpose,
-      });
-      const row = repository.rows[0];
-
-      assert.equal(created.purpose, purpose);
-      assert.equal(row.purpose, purpose);
-    }
-  `);
-});
-
-test("private checkout store looks up eligible orders by token hash only", () => {
-  runOrderStoreScenario(`
-    const { repository, store } = createFakeStore();
-    await store.createPendingOrder(pendingOrderInput);
-    const row = repository.rows[0];
-
-    assert.equal(await store.getPendingOrderByCheckoutToken("wrong-token"), null);
-    assert.equal(repository.rows.some((candidate) => candidate.checkoutTokenHash === pendingOrderInput.checkoutToken), false);
-
-    const found = await store.getPendingOrderByCheckoutToken(pendingOrderInput.checkoutToken);
-    assert.ok(found);
-    assert.equal(found._id, row.id);
-    assert.equal(found.orderId, row.orderId);
-    assert.equal(found.amount, 123.45);
-    assert.equal(found.customerEmail, "client@example.com");
-    assert.equal(found.customerName, "Client Name");
-    assert.deepEqual(found.lineItems, row.lineItems);
-
-    row.status = "paid";
-    assert.ok(await store.getPendingOrderByCheckoutToken(pendingOrderInput.checkoutToken));
-  `);
-});
-
-test("private checkout store can recover paid appointment and product orders by checkout token", () => {
-  runOrderStoreScenario(`
-    const { repository, store } = createFakeStore();
-    const appointment = await store.createPendingOrder({
-      ...pendingOrderInput,
-      purpose: "appointment_custom_partial",
-    });
-    const product = await store.createPendingOrder({
-      ...pendingOrderInput,
-      checkoutToken: "product-token",
-      helcimInvoiceId: 5252,
-      helcimInvoiceNumber: "INV-5252",
-    });
-
-    await store.markOrderPaid(appointment.orderId, "txn-appointment-paid");
-    await store.markOrderPaid(product.orderId, "txn-product-paid");
-
-    const foundAppointment = await store.getPendingOrderByCheckoutToken(pendingOrderInput.checkoutToken);
-    const foundProduct = await store.getPendingOrderByCheckoutToken("product-token");
-
-    assert.ok(foundAppointment);
-    assert.equal(foundAppointment.orderId, appointment.orderId);
-    assert.equal(foundAppointment.purpose, "appointment_custom_partial");
-    assert.ok(foundProduct);
-    assert.equal(foundProduct.orderId, product.orderId);
-    assert.equal(foundProduct.purpose, "product");
-  `);
-});
-
-test("private checkout store decrypts secret tokens only at the read boundary", () => {
-  runOrderStoreScenario(`
-    const { repository, store } = createFakeStore();
-    await store.createPendingOrder(pendingOrderInput);
-    const row = repository.rows[0];
-
-    assert.match(row.secretTokenCiphertext, /^v1:/);
-    assert.notEqual(row.secretTokenCiphertext, pendingOrderInput.secretToken);
-    assert.equal(decryptCheckoutSecret(row.secretTokenCiphertext), pendingOrderInput.secretToken);
-
-    const found = await store.getPendingOrderByCheckoutToken(pendingOrderInput.checkoutToken);
-    assert.ok(found);
-    assert.equal(found.secretToken, pendingOrderInput.secretToken);
-  `);
-});
-
-test("private checkout store marks orders paid", () => {
-  runOrderStoreScenario(`
-    const { repository, store } = createFakeStore();
-    const created = await store.createPendingOrder(pendingOrderInput);
-
-    await store.markOrderPaid(created.orderId, "txn-paid-123");
-    const row = repository.rows[0];
-
-    assert.equal(row.status, "paid");
-    assert.equal(row.helcimTransactionId, "txn-paid-123");
-    assert.ok(row.paidAt instanceof Date);
-    assert.equal(row.failedAt, null);
-  `);
-});
-
-test("private checkout store marks verification failures", () => {
-  runOrderStoreScenario(`
-    const { repository, store } = createFakeStore();
-    const created = await store.createPendingOrder(pendingOrderInput);
-
-    await store.markOrderVerificationFailed(created.orderId);
-    const row = repository.rows[0];
-
-    assert.equal(row.status, "verification_failed");
-    assert.ok(row.failedAt instanceof Date);
-    assert.equal(row.paidAt, null);
-  `);
-});
-
-test("private checkout store records idempotent webhook events once", () => {
-  runOrderStoreScenario(`
-    const { repository, store } = createFakeStore();
-
-    const first = await store.recordHelcimWebhookEvent({
-      amount: "123.45",
-      currency: "cad",
-      eventId: "event-duplicate",
-      eventType: "payment.updated",
-      helcimInvoiceId: 9999,
-      helcimTransactionId: "txn-webhook-123",
-      status: "APPROVAL",
-    });
-    const second = await store.recordHelcimWebhookEvent({
-      amount: "123.45",
-      currency: "cad",
-      eventId: "event-duplicate",
-      eventType: "payment.updated",
-      helcimInvoiceId: 9999,
-      helcimTransactionId: "txn-webhook-123",
-      status: "approved",
-    });
-
-    assert.equal(first, true);
-    assert.equal(second, false);
-    assert.equal(repository.events.length, 1);
-    assert.equal(repository.events[0].amountCents, 12345);
-    assert.equal(repository.events[0].currency, "CAD");
-    assert.equal(repository.events[0].orderId, null);
-  `);
-});
-
-test("product webhook recording defers payment mutation to the product finalizer", () => {
-  runOrderStoreScenario(`
-    const { repository, store } = createFakeStore();
-    await store.createPendingOrder(pendingOrderInput);
-
-    const recorded = await store.recordHelcimWebhookEvent({
-      amount: "123.45",
-      currency: "cad",
-      eventId: "event-approved",
-      eventType: "payment.updated",
-      helcimInvoiceNumber: "INV-4242",
-      helcimTransactionId: "txn-webhook-paid",
-      status: "approved",
-      transactionType: "purchase",
-    });
-    const row = repository.rows[0];
-
-    assert.equal(recorded, true);
-    assert.equal(repository.events.length, 1);
-    assert.equal(repository.events[0].orderId, row.id);
-    assert.equal(repository.events[0].amountCents, 12345);
-    assert.equal(repository.events[0].currency, "CAD");
-    assert.equal(row.status, "pending");
-    assert.equal(row.helcimTransactionId, null);
-    assert.equal(row.paidAt, null);
-  `);
-});
-
-test("private checkout store exposes matched order details for webhook branching", () => {
-  runOrderStoreScenario(`
-    const { repository, store } = createFakeStore();
-    const created = await store.createPendingOrder({
-      ...pendingOrderInput,
-      purpose: "appointment_full",
-    });
-
-    const result = await store.recordHelcimWebhookEventWithOrder({
-      amount: "123.45",
-      currency: "cad",
-      eventId: "event-appointment-approved",
-      eventType: "cardTransaction",
-      helcimInvoiceNumber: "INV-4242",
-      helcimTransactionId: "txn-webhook-appointment",
-      status: "approved",
-      transactionType: "purchase",
-    });
-    const duplicate = await store.recordHelcimWebhookEventWithOrder({
-      amount: "123.45",
-      currency: "cad",
-      eventId: "event-appointment-approved",
-      eventType: "cardTransaction",
-      helcimInvoiceNumber: "INV-4242",
-      helcimTransactionId: "txn-webhook-appointment",
-      status: "approved",
-      transactionType: "purchase",
-    });
-
-    assert.deepEqual(result, {
-      matchedOrder: {
-        _id: created._id,
-        amount: 123.45,
-        currency: "CAD",
-        helcimInvoiceId: 4242,
-        helcimInvoiceNumber: "INV-4242",
-        orderId: created.orderId,
-        paymentProvider: "helcim",
-        purpose: "appointment_full",
-      },
-      paid: true,
-      recorded: true,
-    });
-    assert.equal(duplicate.recorded, false);
-    assert.equal(duplicate.paid, true);
-    assert.equal(duplicate.matchedOrder?.purpose, "appointment_full");
-    assert.equal(await store.recordHelcimWebhookEvent({
-      amount: "123.45",
-      currency: "cad",
-      eventId: "event-boolean-contract",
-      eventType: "cardTransaction",
-      helcimInvoiceNumber: "INV-4242",
-      helcimTransactionId: "txn-webhook-boolean",
-      status: "approved",
-    }), true);
-  `);
-});
-
-test("private checkout store ignores Square provider rows during Helcim webhook reconciliation", () => {
-  runOrderStoreScenario(`
-    const { repository, store } = createFakeStore();
-    await store.createPendingOrder(pendingOrderInput);
-    repository.rows[0].paymentProvider = "square";
-    repository.rows[0].purpose = "appointment_deposit";
-
-    const result = await store.recordHelcimWebhookEventWithOrder({
-      amount: "123.45",
-      currency: "CAD",
-      eventId: "event-square-provider-ignored",
-      eventType: "cardTransaction",
-      helcimInvoiceNumber: "INV-4242",
-      helcimTransactionId: "txn-square-must-not-finalize",
-      status: "approved",
-    });
-
-    assert.equal(result.recorded, true);
-    assert.equal(result.paid, false);
-    assert.equal(result.matchedOrder, null);
-    assert.equal(repository.events[0].orderId, null);
-    assert.equal(repository.rows[0].status, "pending");
-    assert.equal(repository.rows[0].helcimTransactionId, null);
-  `);
-});
-
-test("private checkout store reports duplicate paid appointment webhooks as finalization eligible", () => {
-  runOrderStoreScenario(`
-    const { repository, store } = createFakeStore();
-    await store.createPendingOrder({
-      ...pendingOrderInput,
-      purpose: "appointment_full",
-    });
-
-    const first = await store.recordHelcimWebhookEventWithOrder({
-      amount: "123.45",
-      currency: "CAD",
-      eventId: "event-paid-duplicate",
-      eventType: "cardTransaction",
-      helcimInvoiceNumber: "INV-4242",
-      helcimTransactionId: "txn-webhook-paid",
-      status: "approved",
-      transactionType: "purchase",
-    });
-    const duplicate = await store.recordHelcimWebhookEventWithOrder({
-      amount: "123.45",
-      currency: "CAD",
-      eventId: "event-paid-duplicate",
-      eventType: "cardTransaction",
-      helcimInvoiceNumber: "INV-4242",
-      helcimTransactionId: "txn-webhook-paid",
-      status: "approved",
-      transactionType: "purchase",
-    });
-
-    assert.equal(first.recorded, true);
-    assert.equal(first.paid, true);
-    assert.equal(duplicate.recorded, false);
-    assert.equal(duplicate.paid, true);
-    assert.equal(duplicate.matchedOrder?.purpose, "appointment_full");
-  `);
-});
-
-test("private checkout store can retry paid transition after duplicate webhook event", () => {
-  runOrderStoreScenario(`
-    const { repository, store } = createFakeStore();
-    await store.createPendingOrder({
-      ...pendingOrderInput,
-      purpose: "appointment_deposit",
-    });
-    repository.failNextMarkPaid = true;
-
-    await assert.rejects(
-      () => store.recordHelcimWebhookEventWithOrder({
-        amount: "123.45",
-        currency: "CAD",
-        eventId: "event-transition-retry",
-        eventType: "cardTransaction",
-        helcimInvoiceNumber: "INV-4242",
-        helcimTransactionId: "txn-webhook-retry",
-        status: "approved",
-        transactionType: "purchase",
-      }),
-      /Paid transition failed/,
-    );
-    assert.equal(repository.events.length, 1);
-    assert.equal(repository.rows[0].status, "pending");
-
-    const duplicate = await store.recordHelcimWebhookEventWithOrder({
-      amount: "123.45",
-      currency: "CAD",
-      eventId: "event-transition-retry",
-      eventType: "cardTransaction",
-      helcimInvoiceNumber: "INV-4242",
-      helcimTransactionId: "txn-webhook-retry",
-      status: "approved",
-      transactionType: "purchase",
-    });
-
-    assert.equal(duplicate.recorded, false);
-    assert.equal(duplicate.paid, true);
-    assert.equal(repository.rows[0].status, "paid");
-    assert.equal(repository.rows[0].helcimTransactionId, "txn-webhook-retry");
-  `);
-});
-
-test("private checkout store does not mark paid when webhook amount is missing", () => {
-  runOrderStoreScenario(`
-    const { repository, store } = createFakeStore();
-    await store.createPendingOrder(pendingOrderInput);
-
-    const recorded = await store.recordHelcimWebhookEvent({
-      currency: "CAD",
-      eventId: "event-missing-amount",
-      eventType: "payment.updated",
-      helcimInvoiceNumber: "INV-4242",
-      helcimTransactionId: "txn-webhook-incomplete",
-      status: "approved",
-      transactionType: "purchase",
-    });
-    const row = repository.rows[0];
-
-    assert.equal(recorded, true);
-    assert.equal(row.status, "pending");
-    assert.equal(row.helcimTransactionId, null);
-  `);
-});
-
-test("private checkout store does not mark paid when webhook currency is missing", () => {
-  runOrderStoreScenario(`
-    const { repository, store } = createFakeStore();
-    await store.createPendingOrder(pendingOrderInput);
-
-    const recorded = await store.recordHelcimWebhookEvent({
-      amount: "123.45",
-      eventId: "event-missing-currency",
-      eventType: "payment.updated",
-      helcimInvoiceNumber: "INV-4242",
-      helcimTransactionId: "txn-webhook-incomplete",
-      status: "approved",
-      transactionType: "purchase",
-    });
-    const row = repository.rows[0];
-
-    assert.equal(recorded, true);
-    assert.equal(row.status, "pending");
-    assert.equal(row.helcimTransactionId, null);
-  `);
-});
-
-test("private checkout store does not match conflicting webhook invoice identifiers", () => {
-  runOrderStoreScenario(`
-    const { repository, store } = createFakeStore();
-    await store.createPendingOrder(pendingOrderInput);
-
-    const recorded = await store.recordHelcimWebhookEvent({
-      amount: "123.45",
-      currency: "CAD",
-      eventId: "event-conflicting-invoice",
-      eventType: "payment.updated",
-      helcimInvoiceId: 9999,
-      helcimInvoiceNumber: "INV-4242",
-      helcimTransactionId: "txn-webhook-conflict",
-      status: "approved",
-    });
-    const row = repository.rows[0];
-
-    assert.equal(recorded, true);
-    assert.equal(repository.events[0].orderId, null);
-    assert.equal(row.status, "pending");
-    assert.equal(row.helcimTransactionId, null);
-  `);
-});
-
-test("private checkout store persists redacted webhook payload details only", () => {
-  runOrderStoreScenario(`
-    const { repository, store } = createFakeStore();
-    await store.createPendingOrder(pendingOrderInput);
-
-    await store.recordHelcimWebhookEvent({
-      amount: "123.45",
-      currency: "CAD",
-      eventId: "event-redacted-payload",
-      eventType: "cardTransaction",
-      helcimInvoiceNumber: "INV-4242",
-      helcimTransactionId: "txn-webhook-paid",
-      payloadRedacted: {
-        amount: "123.45",
-        approvalCode: "APPROVAL-123",
-        cardLast4: "1111",
-        cardType: "Visa",
-        currency: "CAD",
-        invoiceNumber: "INV-4242",
-        status: "APPROVED",
-        transactionId: "txn-webhook-paid",
-      },
-      status: "approved",
-    });
-
-    assert.deepEqual(repository.events[0].payloadRedacted, {
-      amount: "123.45",
-      approvalCode: "APPROVAL-123",
-      cardLast4: "1111",
-      cardType: "Visa",
-      currency: "CAD",
-      invoiceNumber: "INV-4242",
-      status: "APPROVED",
-      transactionId: "txn-webhook-paid",
-    });
-    assert.equal(Object.hasOwn(repository.events[0].payloadRedacted ?? {}, "cardToken"), false);
-    assert.equal(Object.hasOwn(repository.events[0].payloadRedacted ?? {}, "cardNumber"), false);
-    assert.equal(Object.hasOwn(repository.events[0].payloadRedacted ?? {}, "customerCode"), false);
   `);
 });
 

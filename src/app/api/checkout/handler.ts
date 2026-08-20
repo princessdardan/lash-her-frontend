@@ -166,13 +166,6 @@ interface CheckoutPostHandlerDependencies {
     totalAmountCents: number;
     shippingRateTitle: string;
   }>;
-  finalizeInitializingOrder?: (input: {
-    orderId: string;
-    checkoutToken: string;
-    secretToken: string;
-    helcimInvoiceId: number;
-    helcimInvoiceNumber: string;
-  }) => Promise<void>;
   markInitializationFailed?: (orderId: string, error: string) => Promise<void>;
   loadManualCheckoutPolicy?: typeof loadManualProductCheckoutPolicy;
   loadTermsRequirement?: () => ProductCheckoutTermsRequirement;
@@ -221,7 +214,6 @@ export function createCheckoutPostHandler({
   validateShippingSelection,
   createInitializingOrder,
   createInitializingManualOrder,
-  finalizeInitializingOrder,
   markInitializationFailed,
   loadManualCheckoutPolicy = loadManualProductCheckoutPolicy,
   loadTermsRequirement = getProductCheckoutTermsRequirement,
@@ -280,7 +272,6 @@ export function createCheckoutPostHandler({
       const shippingWorkflowConfigured = dependenciesProvideShippingWorkflow({
         validateShippingSelection,
         createInitializingOrder,
-        finalizeInitializingOrder,
       });
       const isManualCheckout = cart.checkoutMode === "manual";
       if (
@@ -474,7 +465,6 @@ export function createCheckoutPostHandler({
         shippingEnabled &&
         validateShippingSelection &&
         createInitializingOrder &&
-        finalizeInitializingOrder &&
         checkoutRequest.shippingQuote
       ) {
         const validatedSelection = normalizeValidatedShippingSelection(
@@ -746,7 +736,6 @@ export async function POST(req: NextRequest): Promise<Response> {
     createInitializingOrder: orderStore.createInitializingProductOrder,
     createInitializingManualOrder:
       orderStore.createInitializingManualProductOrder,
-    finalizeInitializingOrder: orderStore.finalizeInitializingProductOrder,
     markInitializationFailed: orderStore.markProductOrderInitializationFailed,
   })(req);
 }
@@ -956,12 +945,9 @@ function parseShippingQuote(
 function dependenciesProvideShippingWorkflow(input: {
   validateShippingSelection?: unknown;
   createInitializingOrder?: unknown;
-  finalizeInitializingOrder?: unknown;
 }): boolean {
   return Boolean(
-    input.validateShippingSelection &&
-    input.createInitializingOrder &&
-    input.finalizeInitializingOrder,
+    input.validateShippingSelection && input.createInitializingOrder,
   );
 }
 
