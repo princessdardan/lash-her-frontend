@@ -904,8 +904,6 @@ export async function listAdminFulfillmentOperations(
           (obligation.id::text || ':' || obligation.initialization_state_version::text || ':' || extract(epoch from obligation.updated_at)::bigint::text),
           array_remove(array[
             'Merchant reference: ' || obligation.id::text,
-            case when obligation.provider_invoice_id is not null then 'Provider invoice ID: ' || obligation.provider_invoice_id::text end,
-            case when obligation.provider_invoice_number is not null then 'Provider invoice number: ' || obligation.provider_invoice_number end,
             case when obligation.initialization_payload_hash is not null then 'Payload hash: ' || obligation.initialization_payload_hash end,
             case when obligation.initialization_last_error is not null then 'Last error: ' || obligation.initialization_last_error end,
             'Attempts: ' || obligation.initialization_attempt_count::text,

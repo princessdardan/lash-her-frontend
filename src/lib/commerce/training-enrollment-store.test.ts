@@ -26,9 +26,6 @@ const helperScript = String.raw`
     customerName: "Client Name",
     deletedAt: null,
     failedAt: null,
-    helcimInvoiceId: null,
-    helcimInvoiceNumber: null,
-    helcimTransactionId: null,
     id: "checkout-order-1",
     lineItems: [
       {

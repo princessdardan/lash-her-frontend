@@ -2382,21 +2382,19 @@ async function seedManualShippingOfferForPickupRace(
       `insert into order_payment_obligations (
          order_id, purpose, status, merchandise_amount_cents,
          shipping_amount_cents, tax_amount_cents, total_amount_cents,
-         currency, provider_invoice_id, provider_invoice_number,
+         currency,
          provider_checkout_id, checkout_token_hash, secret_token_ciphertext,
          initialization_status, initialization_outcome, source_workflow,
          disclosure_snapshot, tax_policy_version, policy_version, expires_at,
          idempotency_key
        ) values (
-         $1, 'manual_shipping', 'pending', 0, $2, 0, $2, 'CAD', $3, $4,
-         $5, $6, $7, 'ready', 'succeeded', 'commerce_e2e_pickup_race',
-         $8::jsonb, $9, $10, $11, $12
+         $1, 'manual_shipping', 'pending', 0, $2, 0, $2, 'CAD',
+         $3, $4, $5, 'ready', 'succeeded', 'commerce_e2e_pickup_race',
+         $6::jsonb, $7, $8, $9, $10
        ) returning id`,
       [
         current.id,
         amountCents,
-        800000 + sequence,
-        `E2E-INV-${sequence}`,
         checkoutToken,
         createHmac("sha256", checkoutKey)
           .update(checkoutToken, "utf8")

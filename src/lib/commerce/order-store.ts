@@ -282,8 +282,6 @@ export interface PendingOrderRecord {
   _id: string;
   orderId: string;
   secretToken: string;
-  helcimInvoiceId: number | null;
-  helcimInvoiceNumber: string | null;
   amount: number;
   currency: ValidatedCart["currency"];
   customerEmail: string;
@@ -352,8 +350,6 @@ type CheckoutOrderBaseInsert = {
   currency: ValidatedCart["currency"];
   customerEmail: string;
   customerName: string;
-  helcimInvoiceId?: number | null;
-  helcimInvoiceNumber?: string | null;
   lineItems: CheckoutOrderLineItemSnapshot[];
   orderId: string;
   paymentProvider: PaymentProvider;
@@ -502,8 +498,6 @@ export function createCheckoutOrderStore(
         currency: "CAD",
         customerEmail: input.customerEmail,
         customerName: input.customerName,
-        helcimInvoiceId: null,
-        helcimInvoiceNumber: null,
         lineItems,
         orderId,
         paymentProvider: "square",
@@ -520,8 +514,6 @@ export function createCheckoutOrderStore(
         _id: createdOrder.id,
         orderId,
         secretToken: input.secretToken,
-        helcimInvoiceId: null,
-        helcimInvoiceNumber: null,
         amount: centsToCad(input.amountCents),
         currency: "CAD",
         customerEmail: input.customerEmail,
@@ -734,8 +726,6 @@ export async function createInitializingProductOrder(
         initializationStatus: provider === "square" ? "ready" : "initializing",
         checkoutTokenHash: null,
         secretTokenCiphertext: null,
-        helcimInvoiceId: null,
-        helcimInvoiceNumber: null,
         customerName: input.customerName,
         customerEmail: input.customerEmail,
         purpose: "product",
@@ -1236,8 +1226,6 @@ export async function createPendingSquareTrainingCardOrder(
       status: "pending",
       checkoutTokenHash: null,
       secretTokenCiphertext: null,
-      helcimInvoiceId: null,
-      helcimInvoiceNumber: null,
       customerName: input.customerName,
       customerEmail: input.customerEmail,
       purpose: "training",
@@ -1980,8 +1968,6 @@ function toPendingOrderRecord(
     _id: pendingOrder.id,
     orderId: pendingOrder.orderId,
     secretToken: decryptCheckoutSecret(pendingOrder.secretTokenCiphertext),
-    helcimInvoiceId: pendingOrder.helcimInvoiceId,
-    helcimInvoiceNumber: pendingOrder.helcimInvoiceNumber,
     amount: centsToCad(pendingOrder.amountCents),
     currency,
     customerEmail: pendingOrder.customerEmail,

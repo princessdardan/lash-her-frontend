@@ -410,7 +410,6 @@ test("appointment hold transitions redact token and card metadata before persist
     now,
     reconciliationMetadata: {
       rawWebhookBody: "raw-body",
-      helcimTransactionId: "txn_123",
     },
     status: "payment_failed",
   });
@@ -431,7 +430,6 @@ test("appointment hold transitions redact token and card metadata before persist
   });
   assert.deepEqual(transition.reconciliationMetadata, {
     rawWebhookBody: "[redacted]",
-    helcimTransactionId: "txn_123",
   });
   assert.equal(
     repository.findHold("failed-hold")?.paymentFailedAt?.toISOString(),
@@ -477,7 +475,6 @@ test("appointment hold finalizer repository maps payment and booking transitions
 
   assert.equal(hold.state, "booked");
   assert.equal(hold.finalizationStatus, "booked");
-  assert.equal(hold.helcimTransactionId, "txn-finalizer");
   assert.equal(hold.googleEventId, "calendar-event-finalizer");
   assert.deepEqual(hold.reconciliationMetadata, {
     payment: {
@@ -523,7 +520,6 @@ test("appointment hold finalizer repository preserves payment when booking fails
 
   assert.equal(hold.state, "booking_failed");
   assert.equal(hold.finalizationStatus, "failed");
-  assert.equal(hold.helcimTransactionId, "txn-finalizer");
   assert.equal(hold.failureReason, "Calendar unavailable");
   assert.deepEqual(hold.failureMetadata, { error: "Calendar unavailable" });
 });
@@ -681,11 +677,6 @@ class FakeLifecycleHoldRepository
     record.checkoutOrderId = input.checkoutOrderId ?? record.checkoutOrderId;
     record.checkoutOrderPublicId =
       input.checkoutOrderPublicId ?? record.checkoutOrderPublicId;
-    record.helcimInvoiceId = input.helcimInvoiceId ?? record.helcimInvoiceId;
-    record.helcimInvoiceNumber =
-      input.helcimInvoiceNumber ?? record.helcimInvoiceNumber;
-    record.helcimTransactionId =
-      input.helcimTransactionId ?? record.helcimTransactionId;
     record.googleEventId = input.googleEventId ?? record.googleEventId;
     record.failureReason = input.failureReason ?? record.failureReason;
     record.failureMetadata = input.failureMetadata ?? record.failureMetadata;

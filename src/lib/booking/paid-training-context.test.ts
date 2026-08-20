@@ -49,9 +49,6 @@ const pendingEnrollment: PendingTrainingEnrollmentRecord = {
     deletedAt: null,
     failedAt: null,
     finalizedAt: null,
-    helcimInvoiceId: 4242,
-    helcimInvoiceNumber: "INV-4242",
-    helcimTransactionId: "txn-paid-123",
     id: "checkout-order-1",
     lineItems: [
       {

@@ -764,9 +764,6 @@ function createPendingSquareInvoiceOrder(input: {
     deletedAt: null,
     failedAt: null,
     finalizedAt: null,
-    helcimInvoiceId: null,
-    helcimInvoiceNumber: null,
-    helcimTransactionId: null,
     id: "checkout-order-db-id",
     lineItems: [
       {

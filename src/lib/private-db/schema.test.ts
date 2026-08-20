@@ -172,18 +172,7 @@ test("checkout orders schema exposes provider and calendar finalization fields",
   assert.ok(columnNames.includes("calendarFinalizationStatus"));
   assert.ok(columnNames.includes("calendarEventId"));
   assert.ok(columnNames.includes("finalizedAt"));
-  assert.ok(columnNames.includes("helcimInvoiceId"));
-  assert.ok(columnNames.includes("helcimInvoiceNumber"));
-  assert.ok(columnNames.includes("helcimTransactionId"));
   assert.ok(columnNames.includes("shippingAddress"));
-});
-
-test("checkout order Helcim invoice fields are retained but provider-specific", () => {
-  assert.ok(Object.keys(checkoutOrders).includes("helcimInvoiceId"));
-  assert.ok(Object.keys(checkoutOrders).includes("helcimInvoiceNumber"));
-  assert.equal(checkoutOrders.helcimInvoiceId.notNull, false);
-  assert.equal(checkoutOrders.helcimInvoiceNumber.notNull, false);
-  assert.equal(checkoutOrders.helcimTransactionId.notNull, false);
 });
 
 test("Square checkout orders can be represented without Helcim invoice identifiers", () => {
@@ -203,8 +192,6 @@ test("Square checkout orders can be represented without Helcim invoice identifie
     status: "pending",
   };
 
-  assert.equal(squareOrder.helcimInvoiceId, undefined);
-  assert.equal(squareOrder.helcimInvoiceNumber, undefined);
   assert.equal(squareOrder.paymentProvider, "square");
 });
 
@@ -221,7 +208,6 @@ test("checkout payment events schema exposes provider event dedupe fields", () =
   assert.ok(columnNames.includes("payloadSanitized"));
   assert.ok(columnNames.includes("processingStatus"));
   assert.ok(columnNames.includes("processedAt"));
-  assert.ok(columnNames.includes("helcimTransactionId"));
 });
 
 test("appointment holds schema exposes required lifecycle and reconciliation fields", () => {
@@ -240,9 +226,6 @@ test("appointment holds schema exposes required lifecycle and reconciliation fie
   assert.ok(columnNames.includes("expiresAt"));
   assert.ok(columnNames.includes("checkoutOrderId"));
   assert.ok(columnNames.includes("checkoutOrderPublicId"));
-  assert.ok(columnNames.includes("helcimInvoiceId"));
-  assert.ok(columnNames.includes("helcimInvoiceNumber"));
-  assert.ok(columnNames.includes("helcimTransactionId"));
   assert.ok(columnNames.includes("paymentProvider"));
   assert.ok(columnNames.includes("squarePaymentLinkId"));
   assert.ok(columnNames.includes("squarePaymentLinkUrl"));
@@ -968,10 +951,6 @@ test("product fulfillment identity indexes exclude compatibility quarantine", ()
     (index) =>
       index.config.name === "order_payment_obligations_one_primary_idx",
   );
-  const checkoutIndex = getTableConfig(checkoutOrders).indexes.find(
-    (index) =>
-      index.config.name === "checkout_orders_helcim_purchase_transaction_idx",
-  );
   const caseIndex = getTableConfig(productShippingCases).indexes.find(
     (index) => index.config.name === "product_shipping_cases_one_active_idx",
   );
@@ -980,12 +959,7 @@ test("product fulfillment identity indexes exclude compatibility quarantine", ()
       index.config.name === "product_order_refunds_provider_refund_id_idx",
   );
 
-  for (const index of [
-    obligationIndex,
-    checkoutIndex,
-    caseIndex,
-    refundIndex,
-  ]) {
+  for (const index of [obligationIndex, caseIndex, refundIndex]) {
     assert.ok(index?.config.unique);
     assert.ok(index.config.where);
   }

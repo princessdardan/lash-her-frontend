@@ -74,9 +74,6 @@ export interface BookingHoldRecord {
   finalizationStatus?: CalendarFinalizationStatus | null;
   googleEventId: string | null;
   googleCalendarId?: string | null;
-  helcimInvoiceId?: number | null;
-  helcimInvoiceNumber?: string | null;
-  helcimTransactionId?: string | null;
   id: string;
   manualFollowupAt?: Date | null;
   manualReviewReason?: string | null;
@@ -138,9 +135,6 @@ export interface TransitionAppointmentHoldInput {
   finalizationReason?: string;
   finalizationStatus?: CalendarFinalizationStatus;
   googleEventId?: string;
-  helcimInvoiceId?: number;
-  helcimInvoiceNumber?: string;
-  helcimTransactionId?: string;
   holdId: string;
   now: Date;
   paymentProvider?: PaymentProvider;
@@ -758,7 +752,6 @@ export function createAppointmentHoldFinalizerRepository(
     async recordPaidPendingBooking(input) {
       const updated = await dependencies.transitionHold({
         finalizationStatus: "paid_calendar_pending",
-        helcimTransactionId: input.payment.transactionId,
         holdId: input.holdId,
         now: input.now,
         reconciliationMetadata: {
@@ -975,7 +968,7 @@ export function createDrizzleBookingFinalizerRepository(): BookingFinalizerRepos
           providerOrderId:
             paymentProvider === "square"
               ? (hold.squareOrderId ?? undefined)
-              : (hold.helcimInvoiceNumber ?? undefined),
+              : undefined,
           providerPaymentId: input.payment.transactionId,
         },
         source: `${paymentProvider}_hosted_checkout`,
@@ -1315,9 +1308,6 @@ function toBookingHoldRecord(row: AppointmentHoldRow): BookingHoldRecord {
     finalizationStatus: row.finalizationStatus,
     googleCalendarId: row.googleCalendarId,
     googleEventId: row.googleEventId,
-    helcimInvoiceId: row.helcimInvoiceId,
-    helcimInvoiceNumber: row.helcimInvoiceNumber,
-    helcimTransactionId: row.helcimTransactionId,
     id: row.id,
     manualFollowupAt: row.manualFollowupAt,
     manualReviewReason: row.manualReviewReason,
@@ -1364,18 +1354,6 @@ function toAppointmentHoldUpdate(
 
   if (input.checkoutOrderPublicId !== undefined) {
     update.checkoutOrderPublicId = input.checkoutOrderPublicId;
-  }
-
-  if (input.helcimInvoiceId !== undefined) {
-    update.helcimInvoiceId = input.helcimInvoiceId;
-  }
-
-  if (input.helcimInvoiceNumber !== undefined) {
-    update.helcimInvoiceNumber = input.helcimInvoiceNumber;
-  }
-
-  if (input.helcimTransactionId !== undefined) {
-    update.helcimTransactionId = input.helcimTransactionId;
   }
 
   if (input.googleEventId !== undefined) {

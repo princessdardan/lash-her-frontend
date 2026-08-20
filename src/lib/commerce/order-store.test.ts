@@ -77,9 +77,6 @@ const helperScript = String.raw`
           finalizedAt: null,
           fulfillmentQuarantinedAt: null,
           fulfillmentQuarantineReason: null,
-          helcimInvoiceId: values.helcimInvoiceId ?? null,
-        helcimInvoiceNumber: values.helcimInvoiceNumber ?? null,
-        helcimTransactionId: null,
         id,
         paidAt: null,
         providerCheckoutId: values.providerCheckoutId ?? null,
@@ -233,8 +230,6 @@ test("private checkout store creates pending Square invoice training orders idem
     assert.equal(row.providerCheckoutId, "square-invoice-123");
     assert.equal(row.providerOrderId, "square-order-123");
     assert.equal(row.providerStatus, "draft");
-    assert.equal(row.helcimInvoiceId, null);
-    assert.equal(row.helcimInvoiceNumber, null);
     assert.match(row.checkoutTokenHash, /^[a-f0-9]{64}$/);
     assert.notEqual(row.checkoutTokenHash, pendingSquareInvoiceOrderInput.checkoutToken);
     assert.deepEqual(row.providerMetadata, {
