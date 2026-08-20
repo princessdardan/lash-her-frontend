@@ -1198,7 +1198,7 @@ export async function createInitializingManualProductOrder(
     throw new Error("Manual checkout total is invalid");
   }
   return db.transaction(async (tx) => {
-    const { helcimContract, taxPolicyApproval } =
+    const { taxPolicyApproval } =
       await assertManualCheckoutReadinessInTransaction(
         tx,
         {
@@ -1224,7 +1224,7 @@ export async function createInitializingManualProductOrder(
       .values({
         orderId,
         status: "pending",
-        initializationStatus: "initializing",
+        initializationStatus: "ready",
         customerName: input.customerName,
         customerEmail: input.customerEmail,
         purpose: "product",
@@ -1239,7 +1239,7 @@ export async function createInitializingManualProductOrder(
         manualDiscountCents: toCents(input.cart.manualDiscountAmount ?? 0),
         currency: input.cart.currency,
         lineItems: toOrderLineItemSnapshots(input.cart),
-        paymentProvider: "helcim",
+        paymentProvider: "square",
         shippingAddress: undefined,
         refundOriginIpCiphertext: encryptCheckoutIp(input.refundOriginIp),
         atRiskValueCents: merchandiseAmountCents,
@@ -1279,11 +1279,10 @@ export async function createInitializingManualProductOrder(
         taxAmountCents,
         totalAmountCents,
         currency: input.cart.currency,
-        paymentProvider: "helcim",
-        initializationStatus: "initializing",
+        paymentProvider: "square",
+        initializationStatus: "ready",
         sourceWorkflow: input.fulfillmentMode,
         disclosureSnapshot: {
-          helcimContract,
           taxPolicyApproval,
           tax: taxQuote,
           cancellationPolicy: {

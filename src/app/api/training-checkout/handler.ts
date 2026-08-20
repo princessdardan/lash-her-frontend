@@ -2,21 +2,14 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import type { ValidatedCart } from "@/lib/commerce/cart";
 import { parsePromotionCodeInput } from "@/lib/commerce/discounts";
-import type { HelcimGateway } from "@/lib/commerce/helcim-gateway";
-import { createPaymentMockStore } from "@/lib/payment-mocks/in-memory-store";
 import {
-  TRAINING_CHECKOUT_TAX_RATE,
   validateTrainingCheckoutRequest,
   type TrainingCheckoutQuote,
 } from "@/lib/training-checkout";
 import type { TTrainingProgram } from "@/types";
 import type { TPromotionCode } from "@/types";
 
-const trainingCheckoutPaymentMockStore = createPaymentMockStore();
-
-type TrainingCheckoutResponseBody =
-  | { checkoutToken: string }
-  | { orderId: string; status: "paid" };
+type TrainingCheckoutResponseBody = { orderId: string; status: "paid" };
 
 interface TrainingCheckoutErrorBody {
   error: string;
@@ -30,15 +23,6 @@ interface TrainingCheckoutPaymentInput {
 interface TrainingCheckoutPostHandlerDependencies {
   getTrainingProgramBySlug: (slug: string) => Promise<TTrainingProgram | null>;
   getPromotionCode: (code: string) => Promise<TPromotionCode | null>;
-  createHelcimInvoice: (
-    input: TrainingCheckoutInvoiceInput,
-  ) => Promise<TrainingCheckoutInvoice>;
-  initializeHelcimPay: (
-    input: TrainingCheckoutPaySessionInput,
-  ) => Promise<TrainingCheckoutPaySession>;
-  createPendingOrder: (
-    input: TrainingCheckoutPendingOrderInput,
-  ) => Promise<TrainingCheckoutPendingOrder>;
   createTrainingEnrollment: (
     input: TrainingCheckoutEnrollmentInput,
   ) => Promise<unknown>;
@@ -67,55 +51,6 @@ interface TrainingCheckoutPostHandlerDependencies {
   markTrainingOrderVerificationFailed?: (orderId: string) => Promise<void>;
 }
 
-interface TrainingCheckoutInvoiceInput {
-  currency: "CAD";
-  type: "INVOICE";
-  status: "DUE";
-  notes: string;
-  lineItems: Array<{
-    sku: string;
-    description: string;
-    quantity: number;
-    price: number;
-    discountCode?: string;
-    taxAmount: number;
-    taxName: string;
-    taxRate: number;
-  }>;
-}
-
-interface TrainingCheckoutInvoice {
-  invoiceId: number;
-  invoiceNumber: string;
-}
-
-interface TrainingCheckoutPaySessionInput {
-  paymentType: "purchase";
-  amount: number;
-  currency: "CAD";
-  invoiceNumber: string;
-}
-
-interface TrainingCheckoutPaySession {
-  checkoutToken: string;
-  secretToken: string;
-}
-
-interface TrainingCheckoutPendingOrderInput {
-  customerName: string;
-  customerEmail: string;
-  checkoutToken: string;
-  secretToken: string;
-  helcimInvoiceId: number;
-  helcimInvoiceNumber: string;
-  cart: ValidatedCart;
-  purpose: "training";
-}
-
-interface TrainingCheckoutPendingOrder {
-  _id: string;
-}
-
 interface TrainingCheckoutEnrollmentInput {
   checkoutEmail: string;
   checkoutOrderId: string;
@@ -136,9 +71,6 @@ interface TrainingCheckoutEnrollmentInput {
 export function createTrainingCheckoutPostHandler({
   getTrainingProgramBySlug,
   getPromotionCode,
-  createHelcimInvoice,
-  initializeHelcimPay,
-  createPendingOrder,
   createTrainingEnrollment,
   squareCommerceEnabled,
   reserveSquareTrainingOrder,
@@ -241,7 +173,7 @@ export function createTrainingCheckoutPostHandler({
             ? { verificationToken: payment.verificationToken }
             : {}),
           // Server-derived origin (not the client Origin header) for the URL
-          // embedded in the scheduling email, matching the product/Helcim path.
+          // embedded in the scheduling email, matching the product checkout path.
           origin: resolveTrainingRequestOrigin(req),
         });
 
@@ -263,65 +195,14 @@ export function createTrainingCheckoutPostHandler({
         });
       }
 
-      const invoice = await createHelcimInvoice({
-        currency: "CAD",
-        type: "INVOICE",
-        status: "DUE",
-        notes: `Lash Her training checkout: ${quote.programTitle}`,
-        lineItems: [
-          {
-            sku: quote.productSku,
-            description: quote.productTitle,
-            quantity: 1,
-            price: quote.subtotal,
-            ...(quote.promotionCode
-              ? { discountCode: quote.promotionCode }
-              : {}),
-            taxAmount: quote.tax,
-            taxName: "Ontario HST",
-            taxRate: TRAINING_CHECKOUT_TAX_RATE,
-          },
-        ],
-      });
-
-      const helcimPaySession = await initializeHelcimPay({
-        paymentType: "purchase",
-        amount: quote.total,
-        currency: "CAD",
-        invoiceNumber: invoice.invoiceNumber,
-      });
-
-      const pendingOrder = await createPendingOrder({
-        customerName: quote.customerName,
-        customerEmail: quote.customerEmail,
-        checkoutToken: helcimPaySession.checkoutToken,
-        secretToken: helcimPaySession.secretToken,
-        helcimInvoiceId: invoice.invoiceId,
-        helcimInvoiceNumber: invoice.invoiceNumber,
-        cart: toTrainingCart(quote),
-        purpose: "training",
-      });
-
-      await createTrainingEnrollment({
-        checkoutEmail: quote.customerEmail,
-        checkoutOrderId: pendingOrder._id,
-        programSnapshot: {
-          id: quote.programId,
-          slug: quote.programSlug,
-          title: quote.programTitle,
-        },
-        productSnapshot: {
-          id: quote.productId,
-          title: quote.productTitle,
-          sku: quote.productSku,
-          priceCents: toCents(quote.subtotal),
-          currency: quote.currency,
-        },
-      });
-
-      return NextResponse.json<TrainingCheckoutResponseBody>({
-        checkoutToken: helcimPaySession.checkoutToken,
-      });
+      // Square is the only training checkout gateway. Reaching here means the
+      // request carried no card nonce or Square commerce checkout is disabled.
+      return NextResponse.json<TrainingCheckoutErrorBody>(
+        payment
+          ? { error: "Training checkout is temporarily unavailable" }
+          : { error: "Invalid training checkout request" },
+        { status: payment ? 503 : 400 },
+      );
     } catch (error) {
       console.error("[training-checkout] Unable to initialize checkout", {
         error:
@@ -341,14 +222,12 @@ export function createTrainingCheckoutPostHandler({
 export async function POST(req: NextRequest): Promise<Response> {
   const [
     { loaders },
-    gateway,
     orderStore,
     { createTrainingEnrollment },
     privateCheckout,
     squareTraining,
   ] = await Promise.all([
     import("@/data/loaders"),
-    resolveTrainingCheckoutHelcimGatewayForRequest(req),
     import("@/lib/commerce/order-store"),
     import("@/lib/commerce/training-enrollment-store"),
     import("@/lib/env/private-checkout"),
@@ -365,9 +244,6 @@ export async function POST(req: NextRequest): Promise<Response> {
         stega: false,
       }),
     getPromotionCode: loaders.getPromotionCode,
-    createHelcimInvoice: gateway.createInvoice,
-    initializeHelcimPay: gateway.initializePay,
-    createPendingOrder: orderStore.createPendingOrder,
     createTrainingEnrollment,
     squareCommerceEnabled,
     ...(squareCommerceEnabled
@@ -381,45 +257,6 @@ export async function POST(req: NextRequest): Promise<Response> {
         }
       : {}),
   })(req);
-}
-
-export async function resolveTrainingCheckoutHelcimGatewayForRequest(
-  req: Request,
-): Promise<HelcimGateway> {
-  const runtimeControls = await import("@/lib/payment-mocks/runtime-controls");
-  const runtimeEnvironment = getPaymentMockRuntimeEnvironment();
-
-  runtimeControls.assertPaymentMockAllowed({
-    env: runtimeEnvironment,
-    request: req,
-  });
-
-  if (
-    runtimeControls.resolvePaymentGatewayMode(runtimeEnvironment) !== "mock"
-  ) {
-    const liveGateway = await import("@/lib/commerce/helcim-gateway");
-    return liveGateway.createLiveHelcimGateway();
-  }
-
-  const mockGateway = await import("@/lib/commerce/helcim-mock-gateway");
-
-  return mockGateway.createMockHelcimGateway({
-    scenario: runtimeControls.resolvePaymentMockScenario({
-      env: runtimeEnvironment,
-      now: new Date(),
-      request: req,
-    }),
-    store: trainingCheckoutPaymentMockStore,
-  });
-}
-
-function getPaymentMockRuntimeEnvironment() {
-  return {
-    NODE_ENV: process.env.NODE_ENV,
-    PAYMENT_GATEWAY_MODE: process.env.PAYMENT_GATEWAY_MODE,
-    PAYMENT_MOCK_DEFAULT_SCENARIO: process.env.PAYMENT_MOCK_DEFAULT_SCENARIO,
-    VERCEL_ENV: process.env.VERCEL_ENV,
-  };
 }
 
 function resolveTrainingRequestOrigin(req: NextRequest): string {

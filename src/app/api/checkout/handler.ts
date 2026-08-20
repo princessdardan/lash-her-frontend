@@ -29,14 +29,11 @@ import {
   parseOptionalCheckoutText,
 } from "@/lib/commerce/checkout-validation";
 import { parsePromotionCodeInput } from "@/lib/commerce/discounts";
-import type { HelcimGateway } from "@/lib/commerce/helcim-gateway";
-import { createPaymentMockStore } from "@/lib/payment-mocks/in-memory-store";
 import { ShippingQuoteConflictError } from "@/lib/shipping/errors";
 import { getTrustedClientIp } from "@/lib/security/trusted-client-ip";
 import { readBoundedJsonBody } from "@/lib/security/bounded-json-body";
 import type { TProduct, TPromotionCode } from "@/types";
 
-const checkoutPaymentMockStore = createPaymentMockStore();
 const CHECKOUT_BODY_MAX_BYTES = 64 * 1024;
 
 interface CheckoutCustomerInput {
@@ -89,10 +86,7 @@ interface CheckoutRequestBody {
   };
 }
 
-type CheckoutResponseBody =
-  | { checkoutToken: string }
-  | { operationId: string; status: "queued" }
-  | { orderId: string; status: "paid" };
+type CheckoutResponseBody = { orderId: string; status: "paid" };
 
 interface CheckoutErrorBody {
   error: string;
@@ -436,13 +430,12 @@ export function createCheckoutPostHandler({
       }
 
       // Square commerce charges synchronously through the Web Payments SDK when
-      // the request carries a card nonce. Manual pickup stays on the legacy
-      // async path during the staged migration.
+      // the request carries a card nonce — both automated shipping and manual
+      // pickup.
       const useSquareCommerce = Boolean(
         squareCommerceEnabled &&
         chargeSquareProductOrder &&
-        checkoutRequest.payment?.sourceId &&
-        !isManualCheckout,
+        checkoutRequest.payment?.sourceId,
       );
 
       let initializingOrder: Awaited<
@@ -560,50 +553,53 @@ export function createCheckoutPostHandler({
           throw new Error("Durable payment operation was not reserved");
         }
 
+        // Square is the only gateway. If the request carried no card nonce (or
+        // Square commerce is disabled), checkout is unavailable — there is no
+        // Helcim fallback.
         if (
-          useSquareCommerce &&
-          chargeSquareProductOrder &&
-          checkoutRequest.payment?.sourceId
+          !useSquareCommerce ||
+          !chargeSquareProductOrder ||
+          !checkoutRequest.payment?.sourceId
         ) {
-          const charge = await chargeSquareProductOrder({
-            orderReference: initializingOrder.orderId,
-            amountCents: initializingOrder.totalAmountCents,
-            currency: initializingOrder.currency,
-            sourceId: checkoutRequest.payment.sourceId,
-            ...(checkoutRequest.payment.verificationToken
-              ? {
-                  verificationToken: checkoutRequest.payment.verificationToken,
-                }
-              : {}),
-          });
-
-          if (!charge.ok) {
-            // The captured payment did not clear; release the reserved order so
-            // the customer sees a clean failure. (Known limitation: the attached
-            // shipping quote is not yet released here — tracked for follow-up.)
-            if (markOrderVerificationFailedDep) {
-              await markOrderVerificationFailedDep(
-                initializingOrder.orderId,
-              ).catch(() => undefined);
-            }
-            return NextResponse.json<CheckoutErrorBody>(
-              { error: "Payment could not be completed" },
-              { status: 402 },
-            );
+          if (markOrderVerificationFailedDep) {
+            await markOrderVerificationFailedDep(
+              initializingOrder.orderId,
+            ).catch(() => undefined);
           }
+          return NextResponse.json<CheckoutErrorBody>(
+            { error: "Checkout is temporarily unavailable" },
+            { status: 503 },
+          );
+        }
 
-          return NextResponse.json<CheckoutResponseBody>(
-            { orderId: initializingOrder.orderId, status: "paid" },
-            { status: 200 },
+        const charge = await chargeSquareProductOrder({
+          orderReference: initializingOrder.orderId,
+          amountCents: initializingOrder.totalAmountCents,
+          currency: initializingOrder.currency,
+          sourceId: checkoutRequest.payment.sourceId,
+          ...(checkoutRequest.payment.verificationToken
+            ? { verificationToken: checkoutRequest.payment.verificationToken }
+            : {}),
+        });
+
+        if (!charge.ok) {
+          // The captured payment did not clear; release the reserved order so
+          // the customer sees a clean failure. (Known limitation: the attached
+          // shipping quote is not yet released here — tracked for follow-up.)
+          if (markOrderVerificationFailedDep) {
+            await markOrderVerificationFailedDep(
+              initializingOrder.orderId,
+            ).catch(() => undefined);
+          }
+          return NextResponse.json<CheckoutErrorBody>(
+            { error: "Payment could not be completed" },
+            { status: 402 },
           );
         }
 
         return NextResponse.json<CheckoutResponseBody>(
-          {
-            operationId: initializingOrder.primaryObligationId,
-            status: "queued",
-          },
-          { status: 202 },
+          { orderId: initializingOrder.orderId, status: "paid" },
+          { status: 200 },
         );
       }
 
@@ -753,45 +749,6 @@ export async function POST(req: NextRequest): Promise<Response> {
     finalizeInitializingOrder: orderStore.finalizeInitializingProductOrder,
     markInitializationFailed: orderStore.markProductOrderInitializationFailed,
   })(req);
-}
-
-export async function resolveCheckoutHelcimGatewayForRequest(
-  req: Request,
-): Promise<HelcimGateway> {
-  const runtimeControls = await import("@/lib/payment-mocks/runtime-controls");
-  const runtimeEnvironment = getPaymentMockRuntimeEnvironment();
-
-  runtimeControls.assertPaymentMockAllowed({
-    env: runtimeEnvironment,
-    request: req,
-  });
-
-  if (
-    runtimeControls.resolvePaymentGatewayMode(runtimeEnvironment) !== "mock"
-  ) {
-    const liveGateway = await import("@/lib/commerce/helcim-gateway");
-    return liveGateway.createLiveHelcimGateway();
-  }
-
-  const mockGateway = await import("@/lib/commerce/helcim-mock-gateway");
-
-  return mockGateway.createMockHelcimGateway({
-    scenario: runtimeControls.resolvePaymentMockScenario({
-      env: runtimeEnvironment,
-      now: new Date(),
-      request: req,
-    }),
-    store: checkoutPaymentMockStore,
-  });
-}
-
-function getPaymentMockRuntimeEnvironment() {
-  return {
-    NODE_ENV: process.env.NODE_ENV,
-    PAYMENT_GATEWAY_MODE: process.env.PAYMENT_GATEWAY_MODE,
-    PAYMENT_MOCK_DEFAULT_SCENARIO: process.env.PAYMENT_MOCK_DEFAULT_SCENARIO,
-    VERCEL_ENV: process.env.VERCEL_ENV,
-  };
 }
 
 function parseCheckoutRequest(body: unknown): CheckoutRequestBody | null {
