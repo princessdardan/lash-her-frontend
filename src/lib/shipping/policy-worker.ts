@@ -824,7 +824,7 @@ async function processQueuedRefunds(
         await sendShippingPolicyAlert({
           duties: ["finance_owner"],
           critical: true,
-          subject: "Helcim refund requires manual review",
+          subject: "Square refund requires manual review",
           message: `Refund ${row.id} has invalid or incomplete immutable payment evidence and was removed from the automatic queue.`,
           idempotencyKey: `shipping-refund-manual-review/${row.id}`,
         });
@@ -834,7 +834,7 @@ async function processQueuedRefunds(
         await sendShippingPolicyAlert({
           duties: ["finance_owner"],
           critical: true,
-          subject: "Helcim refund outcome is unknown",
+          subject: "Square refund outcome is unknown",
           message: `Refund ${row.id} requires transaction reconciliation; do not resubmit it.`,
           idempotencyKey: `shipping-refund-unknown/${row.id}`,
         });
@@ -844,7 +844,7 @@ async function processQueuedRefunds(
       await sendShippingPolicyAlert({
         duties: ["finance_owner"],
         critical: true,
-        subject: "Helcim refund worker failed",
+        subject: "Square refund worker failed",
         message: `Refund ${row.id} could not be processed. Later queued refunds were still attempted.`,
         idempotencyKey: `shipping-refund-worker-failed/${row.id}`,
       });

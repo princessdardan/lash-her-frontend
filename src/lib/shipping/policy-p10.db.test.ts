@@ -100,18 +100,15 @@ const scenario = String.raw`
     await db.delete(adminUsers).where(eq(adminUsers.providerUserId, ownerProviderId));
   }
 
-  function gateway(providerRefundId, originalTransactionId, amountCents) {
+  function gateway(providerRefundId) {
     return {
-      createInvoice: async () => { throw new Error("unused"); },
-      initializePay: async () => { throw new Error("unused"); },
-      getCardTransaction: async () => { throw new Error("unused"); },
-      refundPayment: async () => ({
-        transactionId: providerRefundId,
-        originalTransactionId,
-        amount: (amountCents / 100).toFixed(2),
-        currency: "CAD",
-        status: "APPROVED",
-        transactionType: "REFUND",
+      refundPayment: async (input) => ({
+        ok: true,
+        refundId: providerRefundId,
+        paymentId: input.paymentId,
+        amountCents: input.amountCents,
+        currency: input.currency,
+        settled: true,
       }),
     };
   }
@@ -128,8 +125,8 @@ const scenario = String.raw`
       shippingAmountCents: 0,
       currency: "CAD",
       lineItems: [],
-      paymentProvider: "helcim",
-      helcimTransactionId: providerTransactionId,
+      paymentProvider: "square",
+      providerPaymentId: providerTransactionId,
       refundOriginIpCiphertext: encryptCheckoutIp("192.0.2.45"),
       paidAt: new Date(now.getTime() - 365 * 24 * 60 * 60_000),
       createdAt: new Date(now.getTime() - 366 * 24 * 60 * 60_000),
@@ -153,7 +150,7 @@ const scenario = String.raw`
     }).returning({ id: orderPaymentObligations.id });
     await db.insert(orderPaymentTransactions).values({
       obligationId: obligation.id,
-      provider: "helcim",
+      provider: "square",
       providerTransactionId,
       amountCents: 1000,
       currency: "CAD",
@@ -208,8 +205,8 @@ const scenario = String.raw`
       shippingAmountCents: 2500,
       currency: "CAD",
       lineItems: [],
-      paymentProvider: "helcim",
-      helcimTransactionId: "951001",
+      paymentProvider: "square",
+      providerPaymentId: "951001",
       refundOriginIpCiphertext: encryptedIp,
       paymentRiskStatus: "cleared",
       fulfillmentMode: "automated_shipping",
@@ -271,7 +268,7 @@ const scenario = String.raw`
       }).returning({ id: orderPaymentObligations.id });
       const [transaction] = await db.insert(orderPaymentTransactions).values({
         obligationId: obligation.id,
-        provider: "helcim",
+        provider: "square",
         providerTransactionId: capture.providerTransactionId,
         amountCents: totalAmountCents,
         currency: "CAD",
@@ -548,10 +545,11 @@ const scenario = String.raw`
     assert.ok(redactedRefund);
     assert.ok(unknownRefund);
     const unknownResult = await processProductOrderRefund(unknownRefund.id, {
-      ...gateway("995107", "951007", 1000),
-      refundPayment: async () => {
-        throw new Error("simulated ambiguous provider transport failure");
-      },
+      refundPayment: async () => ({
+        ok: false,
+        deterministic: false,
+        code: "OUTCOME_UNKNOWN",
+      }),
     });
     assert.equal(unknownResult.status, "outcome_unknown");
     await enforceP10Termination(now);
@@ -564,10 +562,9 @@ const scenario = String.raw`
     await redactShippingPolicyPii(now);
     let providerCalled = false;
     const redactedResult = await processProductOrderRefund(redactedRefund.id, {
-      ...gateway("995106", "951006", 1000),
       refundPayment: async () => {
         providerCalled = true;
-        throw new Error("must not call provider without original IP");
+        throw new Error("must not refund a redacted order");
       },
     });
     assert.equal(providerCalled, false);

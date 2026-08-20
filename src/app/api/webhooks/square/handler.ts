@@ -107,6 +107,17 @@ interface SquareWebhookDependencies {
     squareRefundId: string;
     status: string;
   }) => Promise<{ duplicate: boolean }>;
+  /**
+   * Settle the matching product-order refund when Square reports a refund
+   * COMPLETED. Idempotent; returns false when no product refund matches (e.g. a
+   * booking refund). Throws only on infrastructure failure.
+   */
+  reconcileProductRefund?: (input: {
+    originalTransactionId: string;
+    providerRefundId: string;
+    amountCents: number;
+    currency: string;
+  }) => Promise<boolean>;
   recordSquareInvoiceWebhookEventProcessed: (
     input: SquareInvoiceWebhookEventInput,
   ) => Promise<void>;
@@ -260,6 +271,11 @@ export const defaultDependencies: SquareWebhookDependencies = {
       await import("@/lib/private-db/square-refund-event-repository");
     return recordSquareRefundEvent(input);
   },
+  async reconcileProductRefund(input) {
+    const { reconcileProductOrderRefund } =
+      await import("@/lib/shipping/customer-refunds");
+    return reconcileProductOrderRefund(input);
+  },
   async getEnv() {
     const [
       { getSquareServiceBookingRuntimeEnv },
@@ -360,6 +376,38 @@ export function createSquareWebhookPostHandler(
           refundId: event.refund.refundId,
         });
         return new Response(null, { status: 503 });
+      }
+
+      // Settle the matching product refund once Square reports it COMPLETED.
+      // This confirms a refund we issued as PENDING and is a safety net for a
+      // synchronous completion the issuing request missed. A no-match returns
+      // false (e.g. a booking refund); only infrastructure failures 503 so
+      // Square retries — the persistence above is idempotent.
+      if (
+        event.refund.status.toUpperCase() === "COMPLETED" &&
+        dependencies.reconcileProductRefund !== undefined
+      ) {
+        try {
+          await dependencies.reconcileProductRefund({
+            originalTransactionId: event.refund.paymentId,
+            providerRefundId: event.refund.refundId,
+            amountCents: event.refund.amountCents,
+            currency: event.refund.currency,
+          });
+        } catch (error) {
+          console.error(
+            "[square-webhook] Product refund reconciliation failed",
+            {
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Unknown reconciliation error",
+              eventId: event.eventId,
+              refundId: event.refund.refundId,
+            },
+          );
+          return new Response(null, { status: 503 });
+        }
       }
 
       return new Response(null, { status: 200 });

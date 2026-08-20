@@ -11,15 +11,12 @@ import {
   productOrderRefunds,
   productShippingCases,
 } from "@/lib/private-db/schema";
-import { decryptCheckoutIp } from "@/lib/commerce/checkout-pii";
+import { getSquareCommerceEnv } from "@/lib/env/private-checkout";
+import { createSquarePaymentsClient } from "@/lib/payments/square/payments-client";
 import {
-  createLiveHelcimGateway,
-  type HelcimGateway,
-} from "@/lib/commerce/helcim-gateway";
-import { HelcimApiError } from "@/lib/commerce/helcim-client";
-import { classifyHelcimTransaction } from "@/lib/commerce/helcim-contract";
-import { readCertifiedHelcimRefundCorrelationField } from "@/lib/commerce/helcim-certified-contract";
-import { parseProviderMoneyCents } from "./provider-money";
+  createSquareProductRefunder,
+  type SquareProductRefunder,
+} from "@/lib/payments/square/product-refund";
 
 type ProductOrderRefundRow = typeof productOrderRefunds.$inferSelect;
 export type ProductRefundDbTransaction = Parameters<
@@ -48,6 +45,19 @@ const RESERVED_REFUND_STATUSES = [
   "outcome_unknown",
   "manual_review",
 ] as const;
+
+function createLiveSquareProductRefunder(): SquareProductRefunder {
+  const env = getSquareCommerceEnv();
+  if (env === null) {
+    throw new Error("Square commerce refunds are not enabled");
+  }
+  return createSquareProductRefunder(
+    createSquarePaymentsClient({
+      accessToken: env.accessToken,
+      environment: env.environment,
+    }),
+  );
+}
 
 export async function queueProductOrderRefund(
   input: QueueProductOrderRefundInput,
@@ -106,8 +116,8 @@ export async function queueProductOrderRefundAllocationsInTransaction(
     )
     .for("update")
     .limit(1);
-  if (!order || order.paymentProvider !== "helcim") {
-    throw new Error("Order is not eligible for an automated Helcim refund");
+  if (!order || order.paymentProvider !== "square") {
+    throw new Error("Order is not eligible for an automated Square refund");
   }
   if (input.caseId) {
     const [shippingCase] = await tx
@@ -152,7 +162,7 @@ export async function queueProductOrderRefundAllocationsInTransaction(
       and(
         eq(orderPaymentObligations.orderId, order.id),
         isNull(orderPaymentObligations.quarantinedAt),
-        eq(orderPaymentTransactions.provider, "helcim"),
+        eq(orderPaymentTransactions.provider, "square"),
         ...(input.paymentTransactionId
           ? [eq(orderPaymentTransactions.id, input.paymentTransactionId)]
           : []),
@@ -160,7 +170,7 @@ export async function queueProductOrderRefundAllocationsInTransaction(
     )
     .for("update");
   if (!payments.length) {
-    throw new Error("No immutable Helcim payment transaction was found");
+    throw new Error("No immutable Square payment transaction was found");
   }
 
   const allocations: Array<{
@@ -354,7 +364,7 @@ export async function queueProductOrderRefundAllocationsInTransaction(
 
 export async function processProductOrderRefund(
   refundId: string,
-  gateway: HelcimGateway = createLiveHelcimGateway(),
+  refunder: SquareProductRefunder = createLiveSquareProductRefunder(),
 ): Promise<ProductOrderRefundRow> {
   const db = getPrivateDb();
   const now = new Date();
@@ -384,7 +394,7 @@ export async function processProductOrderRefund(
       and(
         eq(productOrderRefunds.id, refundId),
         eq(productOrderRefunds.orderId, checkoutOrders.id),
-        eq(orderPaymentTransactions.provider, "helcim"),
+        eq(orderPaymentTransactions.provider, "square"),
         isNull(orderPaymentObligations.quarantinedAt),
         isNull(checkoutOrders.fulfillmentQuarantinedAt),
         isNull(productOrderRefunds.fulfillmentQuarantinedAt),
@@ -416,14 +426,15 @@ export async function processProductOrderRefund(
     }
     return candidate.refund;
   }
-  const ipCiphertext =
-    candidate.transaction.originatingIpCiphertext ??
-    candidate.order.refundOriginIpCiphertext;
   if (!candidate.refund.adjustmentId) {
     return markRefundForManualReview(refundId, "UNTYPED_REFUND_RESERVATION");
   }
-  if (!ipCiphertext) {
-    return markRefundForManualReview(refundId, "ORIGINAL_IP_UNAVAILABLE");
+  // A PII-redacted order is at end-of-life; never auto-move money against it —
+  // route any still-queued refund to a human. (The former Helcim path blocked
+  // here implicitly because redaction removed the cardholder IP it required;
+  // Square needs no IP, so the guard is now explicit.)
+  if (candidate.order.redactedAt !== null) {
+    return markRefundForManualReview(refundId, "ORDER_REDACTED_BEFORE_REFUND");
   }
   if (
     candidate.refund.originalTransactionId !==
@@ -431,24 +442,10 @@ export async function processProductOrderRefund(
   ) {
     return markRefundForManualReview(refundId, "TRANSACTION_IDENTITY_MISMATCH");
   }
-  const originalTransactionId = Number(
-    candidate.transaction.providerTransactionId,
-  );
-  if (
-    !Number.isSafeInteger(originalTransactionId) ||
-    originalTransactionId <= 0
-  ) {
-    return markRefundForManualReview(
-      refundId,
-      "INVALID_PROVIDER_TRANSACTION_ID",
-    );
-  }
-  let ipAddress: string;
-  try {
-    ipAddress = decryptCheckoutIp(ipCiphertext);
-  } catch {
-    return markRefundForManualReview(refundId, "ORIGINAL_IP_UNREADABLE");
-  }
+  // The original Square capture's payment id — the refund targets exactly this
+  // payment. Square refunds carry no cardholder IP (unlike the former Helcim
+  // ecommerce refund), so no IP evidence is decrypted or required here.
+  const paymentId = candidate.transaction.providerTransactionId;
 
   const leaseOwner = randomUUID();
   const leaseExpiresAt = new Date(now.getTime() + REFUND_LEASE_MS);
@@ -492,77 +489,84 @@ export async function processProductOrderRefund(
   });
   if (!claimedRefund) throw new Error("Refund is not available for processing");
 
-  try {
-    const response = await gateway.refundPayment(
-      {
-        originalTransactionId,
-        amount: claimedRefund.amountCents / 100,
-        ipAddress,
-        ecommerce: true,
-      },
-      claimedRefund.idempotencyKey,
-    );
-    const providerRefundId =
-      readCertifiedHelcimRefundCorrelationField(
-        response,
-        "providerRefundIdFields",
-      ) ?? "";
-    const responseOriginalId = readCertifiedHelcimRefundCorrelationField(
-      response,
-      "originalTransactionIdFields",
-    );
-    const responseMerchantReference = readCertifiedHelcimRefundCorrelationField(
-      response,
-      "merchantReferenceFields",
-    );
-    const responseAmountCents = parseProviderMoneyCents(response.amount);
-    const classification = classifyHelcimTransaction({
-      status: response.status,
-      transactionType: response.type ?? response.transactionType,
-    });
-    if (
-      !providerRefundId ||
-      (responseOriginalId !== undefined &&
-        responseOriginalId !== claimedRefund.originalTransactionId) ||
-      (responseMerchantReference !== undefined &&
-        responseMerchantReference !== claimedRefund.idempotencyKey) ||
-      responseAmountCents !== claimedRefund.amountCents ||
-      response.currency?.toUpperCase() !==
-        candidate.transaction.currency.toUpperCase() ||
-      classification.kind !== "refund" ||
-      !classification.successful
-    ) {
-      throw new Error("Helcim refund response requires reconciliation");
-    }
-    return db.transaction(async (tx) => {
-      const updated = await completeClaimedRefund(tx, {
-        refund: claimedRefund,
-        leaseOwner,
-        status: "succeeded",
-        providerRefundId,
-        now: new Date(),
-      });
-      if (updated.status === "succeeded") {
-        await updateRefundedFinancialState(tx, updated.orderId);
-      }
-      return updated;
-    });
-  } catch (error) {
-    const deterministic =
-      error instanceof HelcimApiError &&
-      error.status >= 400 &&
-      error.status < 500 &&
-      error.status !== 409;
+  // The refunder never throws — it classifies API/network failures. The
+  // deterministic Square idempotency key (`claimedRefund.idempotencyKey`)
+  // guarantees a retried attempt reuses the same refund rather than issuing a
+  // second one.
+  const outcome = await refunder.refundPayment({
+    paymentId,
+    amountCents: claimedRefund.amountCents,
+    currency: candidate.transaction.currency,
+    idempotencyKey: claimedRefund.idempotencyKey,
+  });
+
+  if (!outcome.ok) {
+    // Deterministic client rejection → manual review. A transient/unknown
+    // outcome may have moved money, so it is outcome_unknown pending the
+    // refund.updated webhook — never silently retried as a fresh refund.
     return db.transaction(async (tx) =>
       completeClaimedRefund(tx, {
         refund: claimedRefund,
         leaseOwner,
-        status: deterministic ? "manual_review" : "outcome_unknown",
-        errorCode: refundErrorCode(error),
+        status: outcome.deterministic ? "manual_review" : "outcome_unknown",
+        errorCode: outcome.code,
         now: new Date(),
       }),
     );
   }
+
+  // Correlation gate: the refund Square issued must target the exact captured
+  // payment for the reserved amount and currency. A mismatch means money may
+  // have moved against a different reservation — record the provider refund id
+  // and defer to reconciliation rather than closing the row as succeeded.
+  if (
+    !outcome.refundId ||
+    outcome.paymentId !== paymentId ||
+    outcome.amountCents !== claimedRefund.amountCents ||
+    outcome.currency.toUpperCase() !==
+      candidate.transaction.currency.toUpperCase()
+  ) {
+    return db.transaction(async (tx) =>
+      completeClaimedRefund(tx, {
+        refund: claimedRefund,
+        leaseOwner,
+        status: "outcome_unknown",
+        ...(outcome.refundId ? { providerRefundId: outcome.refundId } : {}),
+        errorCode: "REFUND_REQUIRES_RECONCILIATION",
+        now: new Date(),
+      }),
+    );
+  }
+
+  // A PENDING refund is accepted but not yet final: store the provider refund
+  // id and let the refund.updated webhook settle it to succeeded, so money is
+  // never marked returned before Square confirms it.
+  if (!outcome.settled) {
+    return db.transaction(async (tx) =>
+      completeClaimedRefund(tx, {
+        refund: claimedRefund,
+        leaseOwner,
+        status: "outcome_unknown",
+        providerRefundId: outcome.refundId,
+        errorCode: "REFUND_PENDING_PROVIDER_SETTLEMENT",
+        now: new Date(),
+      }),
+    );
+  }
+
+  return db.transaction(async (tx) => {
+    const updated = await completeClaimedRefund(tx, {
+      refund: claimedRefund,
+      leaseOwner,
+      status: "succeeded",
+      providerRefundId: outcome.refundId,
+      now: new Date(),
+    });
+    if (updated.status === "succeeded") {
+      await updateRefundedFinancialState(tx, updated.orderId);
+    }
+    return updated;
+  });
 }
 
 async function markRefundForManualReview(
@@ -652,16 +656,15 @@ async function markRefundOutcomeUnknown(
 }
 
 export async function reconcileProductOrderRefund(input: {
+  /** Square payment id of the original capture (from `refund.payment_id`). */
   originalTransactionId?: string;
   providerRefundId: string;
   amountCents: number;
   currency: string;
-  providerInvoiceNumber?: string;
   providerMerchantReference?: string;
 }): Promise<boolean> {
   const providerRefundId = input.providerRefundId.trim();
   const originalTransactionId = input.originalTransactionId?.trim();
-  const providerInvoiceNumber = input.providerInvoiceNumber?.trim();
   const currency = input.currency.trim().toUpperCase();
   if (
     !providerRefundId ||
@@ -694,14 +697,25 @@ export async function reconcileProductOrderRefund(input: {
       .for("update")
       .limit(1);
     if (existingProviderMatch) {
-      return (
+      const refund = existingProviderMatch.refund;
+      const correlates =
         (!originalTransactionId ||
-          existingProviderMatch.refund.originalTransactionId ===
-            originalTransactionId) &&
-        existingProviderMatch.refund.amountCents === input.amountCents &&
-        existingProviderMatch.currency.toUpperCase() === currency &&
-        existingProviderMatch.refund.status === "succeeded"
-      );
+          refund.originalTransactionId === originalTransactionId) &&
+        refund.amountCents === input.amountCents &&
+        existingProviderMatch.currency.toUpperCase() === currency;
+      if (!correlates) return false;
+      // Idempotent re-delivery of an already-settled refund.
+      if (refund.status === "succeeded") return true;
+      // A refund we issued that Square reported PENDING (recorded as
+      // outcome_unknown with this provider refund id) now settles to succeeded.
+      if (
+        refund.status === "queued" ||
+        refund.status === "processing" ||
+        refund.status === "outcome_unknown"
+      ) {
+        return settleReconciledRefund(tx, refund, providerRefundId);
+      }
+      return false;
     }
 
     if (
@@ -752,7 +766,7 @@ export async function reconcileProductOrderRefund(input: {
       );
     }
 
-    if (!originalTransactionId && !providerInvoiceNumber) return false;
+    if (!originalTransactionId) return false;
 
     const candidates = await tx
       .select({ refund: productOrderRefunds })
@@ -774,22 +788,12 @@ export async function reconcileProductOrderRefund(input: {
       )
       .where(
         and(
-          eq(orderPaymentTransactions.provider, "helcim"),
-          ...(originalTransactionId
-            ? [
-                eq(
-                  orderPaymentTransactions.providerTransactionId,
-                  originalTransactionId,
-                ),
-                eq(
-                  productOrderRefunds.originalTransactionId,
-                  originalTransactionId,
-                ),
-              ]
-            : []),
-          ...(providerInvoiceNumber
-            ? [eq(checkoutOrders.helcimInvoiceNumber, providerInvoiceNumber)]
-            : []),
+          eq(orderPaymentTransactions.provider, "square"),
+          eq(
+            orderPaymentTransactions.providerTransactionId,
+            originalTransactionId,
+          ),
+          eq(productOrderRefunds.originalTransactionId, originalTransactionId),
           eq(productOrderRefunds.amountCents, input.amountCents),
           eq(orderPaymentTransactions.currency, currency),
           isNull(orderPaymentObligations.quarantinedAt),
@@ -1052,12 +1056,6 @@ async function updateRefundedFinancialState(
         and(eq(checkoutOrders.id, orderId), eq(checkoutOrders.status, "paid")),
       );
   }
-}
-
-function refundErrorCode(error: unknown): string {
-  if (error instanceof HelcimApiError) return `HELCIM_${error.status}`;
-  if (error instanceof Error && error.name === "AbortError") return "TIMEOUT";
-  return "OUTCOME_UNKNOWN";
 }
 
 function semanticRefundUuid(value: string): string {

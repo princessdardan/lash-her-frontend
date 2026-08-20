@@ -119,13 +119,14 @@ test("Square 4xx API error is deterministic and carries the Square code", () => 
   `);
 });
 
-test("Square 409 conflict is a transient (non-deterministic) outcome", () => {
+test("Square 409 conflict and 429 rate limit are transient (non-deterministic)", () => {
   runRefundScenario(`
-    const client = clientThrowing(squareApiError(409, "CONFLICT"));
-    const outcome = await createSquareProductRefunder(client).refundPayment(baseInput);
-
-    assert.equal(outcome.ok, false);
-    assert.equal(outcome.deterministic, false);
+    for (const status of [409, 429]) {
+      const client = clientThrowing(squareApiError(status, "RATE_LIMITED"));
+      const outcome = await createSquareProductRefunder(client).refundPayment(baseInput);
+      assert.equal(outcome.ok, false, "status " + status + " should be a failure");
+      assert.equal(outcome.deterministic, false, "status " + status + " should be transient");
+    }
   `);
 });
 

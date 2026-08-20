@@ -10,8 +10,6 @@ const scenario = String.raw`
   import assert from "node:assert/strict";
   import { eq, inArray, like, sql } from "drizzle-orm";
   import { closePrivateDbPool, getPrivateDb } from "./src/lib/private-db/client.ts";
-  import { encryptCheckoutIp } from "./src/lib/commerce/checkout-pii.ts";
-  import { HelcimApiError } from "./src/lib/commerce/helcim-client.ts";
   import {
     checkoutOrders,
     orderPaymentObligations,
@@ -53,7 +51,6 @@ const scenario = String.raw`
 
   async function seed(orderId, captures) {
     const amountCents = captures.reduce((total, capture) => total + capture.amountCents, 0);
-    const invoiceNumber = "INV-" + orderId;
     const [order] = await db.insert(checkoutOrders).values({
       orderId,
       purpose: "product",
@@ -65,10 +62,8 @@ const scenario = String.raw`
       shippingAmountCents: 0,
       currency: "CAD",
       lineItems: [],
-      paymentProvider: "helcim",
-      helcimInvoiceNumber: invoiceNumber,
-      helcimTransactionId: captures[0].providerTransactionId,
-      refundOriginIpCiphertext: encryptCheckoutIp("192.0.2.10"),
+      paymentProvider: "square",
+      providerPaymentId: captures[0].providerTransactionId,
       paymentRiskStatus: "cleared",
       fulfillmentMode: "manual_shipping",
       paidAt: new Date(),
@@ -94,36 +89,35 @@ const scenario = String.raw`
       }).returning({ id: orderPaymentObligations.id });
       const [transaction] = await db.insert(orderPaymentTransactions).values({
         obligationId: obligation.id,
-        provider: "helcim",
+        provider: "square",
         providerTransactionId: capture.providerTransactionId,
         amountCents: capture.amountCents,
         currency: "CAD",
-        originatingIpCiphertext: encryptCheckoutIp("192.0.2.10"),
-        providerType: "PURCHASE",
-        providerStatus: "APPROVED",
+        providerType: "PAYMENT",
+        providerStatus: "COMPLETED",
         riskStatus: "cleared",
         riskReasonCodes: [],
         capturedAt: new Date(),
       }).returning();
       result.push(transaction);
     }
-    return { invoiceNumber, order, transactions: result };
+    return { order, transactions: result };
   }
 
-  function gatewayFor(refundId, amountCents, counter) {
+  // A settled (COMPLETED) Square refund. Echoes the request's payment id, amount,
+  // and currency so the caller's correlation gate passes.
+  function settledRefunder(refundId, counter, expectedIdempotencyKey) {
     return {
-      createInvoice: async () => { throw new Error("unused"); },
-      initializePay: async () => { throw new Error("unused"); },
-      getCardTransaction: async () => { throw new Error("unused"); },
-      refundPayment: async (_request, idempotencyKey) => {
+      refundPayment: async (input) => {
         counter.calls += 1;
-        assert.equal(idempotencyKey, refundId);
+        assert.equal(input.idempotencyKey, expectedIdempotencyKey);
         return {
-          transactionId: "990001",
-          amount: (amountCents / 100).toFixed(2),
-          currency: "CAD",
-          status: "APPROVED",
-          type: "refund",
+          ok: true,
+          refundId,
+          paymentId: input.paymentId,
+          amountCents: input.amountCents,
+          currency: input.currency,
+          settled: true,
         };
       },
     };
@@ -178,19 +172,20 @@ const scenario = String.raw`
       reason: "Concurrent refund",
     });
     const counter = { calls: 0 };
-    const gateway = gatewayFor(
-      concurrentRefund.idempotencyKey,
-      3400,
+    const refunder = settledRefunder(
+      "sq-refund-990001",
       counter,
+      concurrentRefund.idempotencyKey,
     );
     await Promise.allSettled([
-      processProductOrderRefund(concurrentRefund.id, gateway),
-      processProductOrderRefund(concurrentRefund.id, gateway),
+      processProductOrderRefund(concurrentRefund.id, refunder),
+      processProductOrderRefund(concurrentRefund.id, refunder),
     ]);
     assert.equal(counter.calls, 1);
     const [completed] = await db.select().from(productOrderRefunds)
       .where(eq(productOrderRefunds.id, concurrentRefund.id));
     assert.equal(completed.status, "succeeded");
+    assert.equal(completed.providerRefundId, "sq-refund-990001");
     assert.equal(completed.paymentTransactionId, concurrentSeed.transactions[0].id);
 
     await seed(prefix + "provider-rejected", [
@@ -201,18 +196,14 @@ const scenario = String.raw`
       reason: "Provider rejection remains actionable",
     });
     const rejected = await processProductOrderRefund(rejectedRefund.id, {
-      createInvoice: async () => { throw new Error("unused"); },
-      initializePay: async () => { throw new Error("unused"); },
-      getCardTransaction: async () => { throw new Error("unused"); },
-      refundPayment: async () => {
-        throw new HelcimApiError({
-          path: "/payment/refund",
-          responseError: "refund rejected",
-          status: 422,
-        });
-      },
+      refundPayment: async () => ({
+        ok: false,
+        deterministic: true,
+        code: "SQUARE_PAYMENT_NOT_REFUNDABLE",
+      }),
     });
     assert.equal(rejected.status, "manual_review");
+    assert.equal(rejected.lastErrorCode, "SQUARE_PAYMENT_NOT_REFUNDABLE");
     const rejectedAgain = await queueProductOrderRefundAllocations({
       orderReference: prefix + "provider-rejected",
       reason: "Provider rejection remains actionable",
@@ -221,6 +212,58 @@ const scenario = String.raw`
     const rejectedRows = await db.select().from(productOrderRefunds)
       .where(eq(productOrderRefunds.orderId, rejected.orderId));
     assert.equal(rejectedRows.length, 1);
+
+    // A transient/unknown provider outcome may have moved money: it must land in
+    // outcome_unknown (awaiting the refund.updated webhook), never manual_review.
+    await seed(prefix + "provider-transient", [
+      { providerTransactionId: "925101", amountCents: 1500 },
+    ]);
+    const [transientRefund] = await queueProductOrderRefundAllocations({
+      orderReference: prefix + "provider-transient",
+      reason: "Transient provider failure",
+    });
+    const transient = await processProductOrderRefund(transientRefund.id, {
+      refundPayment: async () => ({
+        ok: false,
+        deterministic: false,
+        code: "OUTCOME_UNKNOWN",
+      }),
+    });
+    assert.equal(transient.status, "outcome_unknown");
+
+    // A PENDING Square refund is accepted but not settled: the row records the
+    // provider refund id and waits for the refund.updated webhook to settle it.
+    const pendingSeed = await seed(prefix + "pending", [
+      { providerTransactionId: "925201", amountCents: 1700 },
+    ]);
+    const [pendingRefund] = await queueProductOrderRefundAllocations({
+      orderReference: prefix + "pending",
+      reason: "Pending Square refund",
+    });
+    const pending = await processProductOrderRefund(pendingRefund.id, {
+      refundPayment: async (input) => ({
+        ok: true,
+        refundId: "sq-refund-992001",
+        paymentId: input.paymentId,
+        amountCents: input.amountCents,
+        currency: input.currency,
+        settled: false,
+      }),
+    });
+    assert.equal(pending.status, "outcome_unknown");
+    assert.equal(pending.providerRefundId, "sq-refund-992001");
+    // The refund.updated COMPLETED webhook settles the pending refund by its
+    // provider refund id.
+    assert.equal(await reconcileProductOrderRefund({
+      originalTransactionId: "925201",
+      providerRefundId: "sq-refund-992001",
+      amountCents: 1700,
+      currency: "CAD",
+    }), true);
+    const [pendingAfter] = await db.select().from(productOrderRefunds)
+      .where(eq(productOrderRefunds.id, pendingRefund.id));
+    assert.equal(pendingAfter.status, "succeeded");
+    assert.equal(pendingSeed.transactions.length, 1);
 
     await seed(prefix + "expired-lease", [
       { providerTransactionId: "926001", amountCents: 2200 },
@@ -238,9 +281,6 @@ const scenario = String.raw`
     const expiredLeaseResult = await processProductOrderRefund(
       expiredLeaseRefund.id,
       {
-        createInvoice: async () => { throw new Error("unused"); },
-        initializePay: async () => { throw new Error("unused"); },
-        getCardTransaction: async () => { throw new Error("unused"); },
         refundPayment: async () => {
           expiredLeaseProviderCalls += 1;
           throw new Error("must not be called");
@@ -257,30 +297,31 @@ const scenario = String.raw`
       orderReference: prefix + "race",
       reason: "Webhook race",
     });
-    let rejectProvider;
+    let resolveProvider;
     let providerStartedResolve;
     const providerStarted = new Promise((resolve) => { providerStartedResolve = resolve; });
-    const deferredGateway = {
-      createInvoice: async () => { throw new Error("unused"); },
-      initializePay: async () => { throw new Error("unused"); },
-      getCardTransaction: async () => { throw new Error("unused"); },
+    const deferredRefunder = {
       refundPayment: async () => {
         providerStartedResolve();
-        return new Promise((_resolve, reject) => { rejectProvider = reject; });
+        return new Promise((resolve) => { resolveProvider = resolve; });
       },
     };
-    const processing = processProductOrderRefund(raceRefund.id, deferredGateway);
+    const processing = processProductOrderRefund(raceRefund.id, deferredRefunder);
     await providerStarted;
+    // The refund.updated webhook settles the in-flight refund by its Square
+    // payment id before the issuing request returns.
     assert.equal(await reconcileProductOrderRefund({
-      providerRefundId: "993001",
+      originalTransactionId: race.transactions[0].providerTransactionId,
+      providerRefundId: "sq-refund-993001",
       amountCents: 1800,
       currency: "CAD",
-      providerInvoiceNumber: race.invoiceNumber,
     }), true);
-    rejectProvider(new Error("late transport failure"));
+    // The issuing request then resolves to a transient outcome; its guarded
+    // completion no-ops because reconciliation already settled the row.
+    resolveProvider({ ok: false, deterministic: false, code: "OUTCOME_UNKNOWN" });
     const racedResult = await processing;
     assert.equal(racedResult.status, "succeeded");
-    assert.equal(racedResult.providerRefundId, "993001");
+    assert.equal(racedResult.providerRefundId, "sq-refund-993001");
     assert.equal(racedResult.paymentTransactionId, race.transactions[0].id);
 
     const ambiguous = await seed(prefix + "ambiguous", [
@@ -308,7 +349,7 @@ const scenario = String.raw`
     ]);
     assert.equal(await reconcileProductOrderRefund({
       originalTransactionId: "940001",
-      providerRefundId: "994001",
+      providerRefundId: "sq-refund-994001",
       amountCents: 111,
       currency: "CAD",
     }), false);
@@ -331,14 +372,14 @@ const scenario = String.raw`
     }).returning();
     assert.equal(await reconcileProductOrderRefund({
       originalTransactionId: "950001",
-      providerRefundId: "995001",
+      providerRefundId: "sq-refund-995001",
       amountCents: 1200,
       currency: "CAD",
     }), false);
     const [untypedAfter] = await db.select().from(productOrderRefunds)
       .where(eq(productOrderRefunds.id, untypedRefund.id));
     assert.equal(untypedAfter.status, "manual_review");
-    assert.equal(untypedAfter.providerRefundId, "995001");
+    assert.equal(untypedAfter.providerRefundId, "sq-refund-995001");
   } finally {
     await cleanup();
     await closePrivateDbPool();

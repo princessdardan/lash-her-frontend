@@ -115,10 +115,14 @@ export function createSquareProductRefunder(
 
 function classifySquareRefundError(error: unknown): SquareProductRefundOutcome {
   if (isSquareApiError(error)) {
-    // 4xx (except 409 conflict) is a deterministic client rejection; 409 and
-    // 5xx are transient/unknown and safe to retry without double-refunding.
+    // A 4xx is a deterministic client rejection EXCEPT 409 (conflict) and 429
+    // (rate limit) — those, like 5xx and network errors, moved no money and are
+    // transient/unknown, so they are retried rather than sent to manual review.
     const deterministic =
-      error.status >= 400 && error.status < 500 && error.status !== 409;
+      error.status >= 400 &&
+      error.status < 500 &&
+      error.status !== 409 &&
+      error.status !== 429;
     return {
       ok: false,
       deterministic,
