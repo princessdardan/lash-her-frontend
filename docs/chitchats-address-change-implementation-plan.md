@@ -8,7 +8,7 @@ Production effect: remains a launch blocker until acceptance evidence is recorde
 
 Allow a customer to propose a shipping-address change before carrier handoff through a single-use link delivered only to the original order email. Preserve the original address and every decision in an audit trail, require risk-based staff approval, and prevent an address mutation from bypassing postage reconciliation.
 
-The implementation must never collect card details. A customer-caused increase uses a separate, expiring `address_increase` Helcim obligation. The original fulfillment stays held while the request remains open; expired offers are superseded and may be repriced. Lash Her absorbs its own errors and any post-payment quote-to-purchase increase.
+The implementation must never collect card details. A customer-caused increase uses a separate, expiring `address_increase` obligation collected on a Square payment link. The original fulfillment stays held while the request remains open; expired offers are superseded and may be repriced. Lash Her absorbs its own errors and any post-payment quote-to-purchase increase.
 
 ## Workflow
 

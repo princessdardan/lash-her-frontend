@@ -92,7 +92,7 @@ Minimum checks:
 - `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `RESEND_SEGMENT_MARKETING_ID`, `FROM_EMAIL`, and `ADMIN_EMAIL` are production-approved.
 - Google OAuth variables use production callback URLs.
 - `PAYMENT_GATEWAY_MODE` is not `mock` in production.
-- Helcim production tokens and webhook verifier are present.
+- If Square product/training checkout is enabled (`SQUARE_COMMERCE_ENABLED=true`), the production Square access token, location, application ID, and webhook signature key are present.
 - `PAYMENT_RECONCILIATION_CRON_SECRET` is configured and is required to enable the payment reconciliation route; it is distinct from the generic `CRON_SECRET` used by Vercel scheduled cron. The route accepts either bearer when both secrets are configured, but the route-specific secret must be present to enable the route or for manual/staff checks.
 - If Square service booking is enabled, Square production environment, access token, location, webhook signature key, return URL, and webhook URL all point to the same production Square application.
 
@@ -170,8 +170,8 @@ Run the public smoke matrix against production after import and deployment:
 
 Run production-safe private-flow smoke checks with approved test data only:
 
-- Product checkout handoff and Helcim webhook path.
-- Training checkout handoff and Helcim webhook path.
+- Product checkout charge (Square Web Payments SDK) and `/api/webhooks/square` reconciliation path.
+- Training checkout charge (Square Web Payments SDK) and `/api/webhooks/square` reconciliation path.
 - Service booking hold, Square checkout return/webhook reconciliation, and Calendar finalization where Square booking is enabled.
 - General inquiry, training inquiry, contact popup, and booking marketing opt-in/no-opt-in flows writing to private DB only.
 - No new Sanity documents of legacy private submission types are created.

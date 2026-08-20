@@ -104,7 +104,7 @@ Implementation notes from the code:
 - `SQUARE_SERVICE_BOOKING_RETURN_URL` is used by the legacy/fallback hosted checkout path.
 - `SQUARE_SERVICE_BOOKING_WEBHOOK_URL` must parse as a valid URL; it receives Square webhook events for both the card-on-file no-show invoice finalizer and the legacy hosted checkout reconciler.
 - `PAYMENT_GATEWAY_MODE=mock` is for local/dev mock payment flows only. Keep production on `live`.
-- Product checkout and standard training checkout are Helcim-backed; do not add `NEXT_PUBLIC_SQUARE_*` variables.
+- Product checkout and standard training checkout are Square-backed (Web Payments SDK) when `SQUARE_COMMERCE_ENABLED=true`, reusing the server-only Square values above. The application ID and location are served to the browser through `/api/checkout/square/config`, so do not add `NEXT_PUBLIC_SQUARE_*` variables.
 
 ### 3. Connect Google Calendar OAuth
 
