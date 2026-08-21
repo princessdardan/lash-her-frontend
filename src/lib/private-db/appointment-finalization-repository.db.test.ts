@@ -1052,6 +1052,9 @@ test(
         async refundPayment() {
           throw new Error("refundPayment is not supported by this fake");
         },
+        async listPayments() {
+          throw new Error("listPayments is not supported by this fake");
+        },
         async completePayment() {
           return {
             payment: {
@@ -1313,6 +1316,9 @@ test(
         },
         async refundPayment() {
           throw new Error("refundPayment is not supported by this fake");
+        },
+        async listPayments() {
+          throw new Error("listPayments is not supported by this fake");
         },
         async completePayment() {
           providerCalls.push("payments.complete");
@@ -1797,6 +1803,10 @@ for (const expectedBookingStatus of ["booked", "manual_followup"] as const) {
           },
           async refundPayment() {
             throw new Error("refundPayment is not supported by this fake");
+          },
+          async listPayments() {
+            providerCalls.push("payments.list");
+            throw new Error("Recovery must not list Square payments");
           },
           async completePayment() {
             providerCalls.push("payments.complete");

@@ -24,6 +24,7 @@ const helperScript = String.raw`
   }) {
     const parseBodyCalls = [];
     const revalidatedTags = [];
+    const syncedStockIds = [];
     const handler = createRevalidatePostHandler({
       getWebhookSecret,
       parseBody: async (req, secret, waitForContentLakeEventualConsistency) => {
@@ -33,9 +34,12 @@ const helperScript = String.raw`
       revalidateTag: (tag, profile) => {
         revalidatedTags.push({ tag, profile });
       },
+      syncProductStock: (id) => {
+        syncedStockIds.push(id);
+      },
     });
 
-    return { handler, parseBodyCalls, revalidatedTags };
+    return { handler, parseBodyCalls, revalidatedTags, syncedStockIds };
   }
 `;
 
@@ -56,6 +60,49 @@ test("Sanity revalidate route revalidates mapped tags for a valid signature", ()
     assert.equal(parseBodyCalls[0].waitForContentLakeEventualConsistency, true);
     assert.deepEqual(revalidatedTags, [{ tag: "homePage", profile: { expire: 0 } }]);
     await assertEmptyResponseBody(response);
+  `);
+});
+
+test("Sanity revalidate route reconciles product stock on a product publish", () => {
+  runRouteScenario(`
+    const { handler, revalidatedTags, syncedStockIds } = runScenario({
+      body: { _type: "product", _id: "product-123" },
+      isValidSignature: true,
+    });
+
+    const response = await handler(createRequest());
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(revalidatedTags, [{ tag: "product", profile: { expire: 0 } }]);
+    assert.deepEqual(syncedStockIds, ["product-123"]);
+  `);
+});
+
+test("Sanity revalidate route does not sync stock for non-product docs", () => {
+  runRouteScenario(`
+    const { handler, syncedStockIds } = runScenario({
+      body: { _type: "homePage", _id: "home-1" },
+      isValidSignature: true,
+    });
+
+    await handler(createRequest());
+
+    assert.equal(syncedStockIds.length, 0);
+  `);
+});
+
+test("Sanity revalidate route revalidates a product without an _id but skips the stock sync", () => {
+  runRouteScenario(`
+    const { handler, revalidatedTags, syncedStockIds } = runScenario({
+      body: { _type: "product" },
+      isValidSignature: true,
+    });
+
+    const response = await handler(createRequest());
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(revalidatedTags, [{ tag: "product", profile: { expire: 0 } }]);
+    assert.equal(syncedStockIds.length, 0);
   `);
 });
 

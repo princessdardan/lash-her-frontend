@@ -1,7 +1,6 @@
 import type { NextRequest } from "next/server";
 
 import { log } from "@/lib/logging/logger";
-import type { TProduct } from "@/types";
 
 interface InventorySyncWebhookDependencies {
   getWebhookSecret: () => string;
@@ -10,26 +9,24 @@ interface InventorySyncWebhookDependencies {
     secret: string,
     waitForContentLakeEventualConsistency?: boolean,
   ) => Promise<{ body: T | null; isValidSignature: boolean | null }>;
-  getProductForStockSync: (id: string) => Promise<TProduct | null>;
-  syncProductStockFromProduct: (product: TProduct) => Promise<unknown>;
-  untrackProductStock: (id: string) => Promise<unknown>;
+  syncProductStock: (id: string) => Promise<void>;
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
-  const [{ parseBody }, { getWebhookSecret }, { loaders }, sync] =
-    await Promise.all([
-      import("next-sanity/webhook"),
-      import("@/sanity/env"),
-      import("@/data/loaders"),
-      import("@/lib/commerce/product-stock-sync"),
-    ]);
+  const [
+    { parseBody },
+    { getWebhookSecret },
+    { syncProductStockForPublishedId },
+  ] = await Promise.all([
+    import("next-sanity/webhook"),
+    import("@/sanity/env"),
+    import("@/lib/commerce/product-stock-sync"),
+  ]);
 
   return createInventorySyncPostHandler({
     getWebhookSecret,
     parseBody,
-    getProductForStockSync: loaders.getProductForStockSync,
-    syncProductStockFromProduct: sync.syncProductStockFromProduct,
-    untrackProductStock: sync.untrackProductStock,
+    syncProductStock: syncProductStockForPublishedId,
   })(req);
 }
 
@@ -74,14 +71,8 @@ export function createInventorySyncPostHandler(
     }
 
     try {
-      const product = await dependencies.getProductForStockSync(id);
-      if (product) {
-        // Present (published) -> seed/reset from the authored set-point.
-        await dependencies.syncProductStockFromProduct(product);
-      } else {
-        // Deleted or unpublished -> untrack so it stops gating checkout.
-        await dependencies.untrackProductStock(id);
-      }
+      // Seeds/resets from the set-point when present, untracks when gone.
+      await dependencies.syncProductStock(id);
     } catch (error) {
       log("error", "[inventory-sync] Stock sync failed", {
         error: error instanceof Error ? error.message : "unknown",

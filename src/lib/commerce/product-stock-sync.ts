@@ -170,6 +170,26 @@ async function applyTargets(
 }
 
 /**
+ * Fetch a product by its published id and reconcile its stock: sync from the
+ * authored set-points when it exists, or untrack it when it's gone
+ * (deleted/unpublished). This is the shared entry point for both the dedicated
+ * inventory-sync webhook and the fold-in on the revalidate webhook. `loaders` is
+ * imported dynamically so this module stays importable by DB tests without
+ * pulling in the Sanity read-env at module load.
+ */
+export async function syncProductStockForPublishedId(
+  id: string,
+): Promise<void> {
+  const { loaders } = await import("@/data/loaders");
+  const product = await loaders.getProductForStockSync(id);
+  if (product) {
+    await syncProductStockFromProduct(product);
+  } else {
+    await untrackProductStock(id);
+  }
+}
+
+/**
  * Untrack every stock row for a product (deleted/unpublished in Sanity). Rows
  * with an outstanding reservation are kept until released.
  */
