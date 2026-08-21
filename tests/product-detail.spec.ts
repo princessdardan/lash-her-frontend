@@ -297,17 +297,6 @@ test.describe("Product Detail Page", () => {
       return;
     }
 
-    await page.route(
-      "https://secure.helcim.app/helcim-pay/services/start.js",
-      async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/javascript",
-          body: "window.appendHelcimPayIframe = window.appendHelcimPayIframe || function () {}; window.removeHelcimPayIframe = window.removeHelcimPayIframe || function () {};",
-        });
-      },
-    );
-
     let checkoutPayload: unknown;
     await page.route("**/api/checkout", async (route) => {
       checkoutPayload = route.request().postDataJSON();

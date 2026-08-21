@@ -6,7 +6,6 @@ const SLOT_END = "2030-06-15T17:30:00.000Z";
 const PAYMENT_SESSION_REFERENCE = "pay_sess_card_on_file_handoff";
 const PAYMENT_PAGE_URL = `/services/${SERVICE_SLUG}/booking/payment?session=${PAYMENT_SESSION_REFERENCE}`;
 const FORBIDDEN_PAYMENT_HOSTS = new Set([
-  "api.helcim.com",
   "connect.squareup.com",
   "connect.squareupsandbox.com",
 ]);

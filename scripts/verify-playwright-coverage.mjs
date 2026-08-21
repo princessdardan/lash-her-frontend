@@ -3,6 +3,13 @@ import path from "node:path";
 
 const REPORT_PATH = "test-results/playwright-results.json";
 const REQUIRED_PROJECTS = ["chromium", "firefox", "webkit"];
+// NOTE: The Helcim->Square payment migration retired the obsolete Helcim
+// `checkout.spec.ts` (3 scenarios) and `commerce-enabled-workflows.spec.ts`
+// (10 scenarios) suites, which drove the deleted `/api/checkout/validate-payment`
+// flow. Their entries were removed from this required list. The remaining
+// scenarios (admin self-service, admin operations, and the Square service-booking
+// payment page) still run and stay gated. When the Square commerce E2E harness
+// lands, add its critical scenarios here.
 const REQUIRED_SCENARIOS = [
   [
     "admin-calendar-self-service.spec.ts",
@@ -19,58 +26,6 @@ const REQUIRED_SCENARIOS = [
   [
     "admin-operations.spec.ts",
     "shows the exact step-up action and target without executing it",
-  ],
-  [
-    "checkout.spec.ts",
-    "handles checkout initialization failure without clearing cart",
-  ],
-  [
-    "checkout.spec.ts",
-    "forwards successful Helcim events to validation and routes to confirmation",
-  ],
-  [
-    "checkout.spec.ts",
-    "keeps cart visible when Helcim reports a declined payment",
-  ],
-  [
-    "commerce-enabled-workflows.spec.ts",
-    "enabled Canada checkout completes real quote and payment operation polling",
-  ],
-  [
-    "commerce-enabled-workflows.spec.ts",
-    "enabled manual pickup completes real payment initialization and risk clearance",
-  ],
-  [
-    "commerce-enabled-workflows.spec.ts",
-    "address scanner prefetch is non-consuming and explicit exchange submits a high-risk incident",
-  ],
-  [
-    "commerce-enabled-workflows.spec.ts",
-    "replacement inventory fallback route reserves a complete typed full refund",
-  ],
-  [
-    "commerce-enabled-workflows.spec.ts",
-    "replacement attestation prepares and adopts a purchasable labeled generation",
-  ],
-  [
-    "commerce-enabled-workflows.spec.ts",
-    "address cancellation requires exact owner step-up and preserves the active generation",
-  ],
-  [
-    "commerce-enabled-workflows.spec.ts",
-    "admin operation mutation rejects a stale case version and requires conflict refresh",
-  ],
-  [
-    "commerce-enabled-workflows.spec.ts",
-    "supplemental offer exchange is explicit and a late payment after pickup is reserved for refund",
-  ],
-  [
-    "commerce-enabled-workflows.spec.ts",
-    "enabled U.S. checkout snapshots DDU terms and completes certified payment",
-  ],
-  [
-    "commerce-enabled-workflows.spec.ts",
-    "tracking exception recovers to delivery, sends durable emails, and records the provider return",
   ],
   [
     "service-booking-payment-page.spec.ts",

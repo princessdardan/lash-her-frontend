@@ -31,7 +31,6 @@ const CONFIRMATION_URL = `http://localhost:3000${CONFIRMATION_PATH}`;
 const WEBHOOK_URL = "http://localhost:3000/api/webhooks/square";
 const WEBHOOK_SIGNATURE_KEY = "mock-square-webhook-signature-key";
 const FORBIDDEN_PAYMENT_HOSTS = new Set([
-  "api.helcim.com",
   "connect.squareup.com",
   "connect.squareupsandbox.com",
 ]);
@@ -394,7 +393,6 @@ async function setupMockTrainingAfterpayFlow(
                 </label>
               </form>
               <section aria-label="Payment options" data-testid="training-payment-options">
-                <button id="helcim" type="button" disabled>Secure Payment</button>
                 <div aria-label="Secondary option">
                   <button id="afterpay" type="button" aria-describedby="training-afterpay-invoice-note" disabled>Pay with Afterpay</button>
                   <p id="training-afterpay-invoice-note">Afterpay availability is determined by Square at checkout. Your enrollment will be activated once the invoice is paid.</p>
@@ -405,11 +403,9 @@ async function setupMockTrainingAfterpayFlow(
                 const nameInput = document.getElementById('name');
                 const emailInput = document.getElementById('email');
                 const terms = document.getElementById('terms');
-                const helcim = document.getElementById('helcim');
                 const afterpay = document.getElementById('afterpay');
                 function syncValidity() {
                   const valid = nameInput.value.trim().length > 0 && emailInput.value.includes('@') && terms.checked;
-                  helcim.disabled = !valid;
                   afterpay.disabled = !valid;
                 }
                 [nameInput, emailInput].forEach((field) => field.addEventListener('input', syncValidity));
@@ -593,9 +589,6 @@ test.describe("Training Afterpay Square Invoice checkout", () => {
     ).toBeVisible();
     const paymentOptions = page.getByTestId("training-payment-options");
     await expect(
-      paymentOptions.getByRole("button", { name: /Secure Payment/i }),
-    ).toBeVisible();
-    await expect(
       paymentOptions.getByRole("button", { name: /Pay with Afterpay/i }),
     ).toBeVisible();
     await expect(page.locator("#training-afterpay-invoice-note")).toContainText(
@@ -606,9 +599,6 @@ test.describe("Training Afterpay Square Invoice checkout", () => {
     await page.getByLabel("Email Address").fill(CUSTOMER_EMAIL);
     await page.getByLabel(/I acknowledge the terms/i).check();
 
-    await expect(
-      paymentOptions.getByRole("button", { name: /Secure Payment/i }),
-    ).toBeEnabled();
     await expect(
       paymentOptions.getByRole("button", { name: /Pay with Afterpay/i }),
     ).toBeEnabled();
