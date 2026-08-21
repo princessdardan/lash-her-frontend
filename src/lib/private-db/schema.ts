@@ -1766,7 +1766,7 @@ export const shippingPackageProfiles = pgTable(
     heightCm: integer("height_cm").notNull(),
     tareWeightGrams: integer("tare_weight_grams").notNull(),
     maxWeightGrams: integer("max_weight_grams").notNull(),
-    capacityUnits: integer("capacity_units").notNull(),
+    acceptsRigid: boolean("accepts_rigid").notNull().default(true),
     enabled: boolean("enabled").notNull().default(true),
     reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
     reviewedByAdminUserId: uuid("reviewed_by_admin_user_id").references(
@@ -1798,7 +1798,7 @@ export const shippingPackageProfiles = pgTable(
     ),
     check(
       "shipping_package_profiles_capacity_check",
-      sql`${table.capacityUnits} > 0 AND ${table.maxWeightGrams} > 0 AND ${table.tareWeightGrams} >= 0`,
+      sql`${table.maxWeightGrams} > 0 AND ${table.tareWeightGrams} >= 0`,
     ),
     check(
       "shipping_package_profiles_enabled_evidence_check",

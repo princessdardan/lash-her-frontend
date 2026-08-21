@@ -9,7 +9,10 @@ import {
 const complete = {
   fulfillmentMode: "physical" as const,
   weightGrams: 35,
-  packingUnits: 1,
+  lengthCm: 12,
+  widthCm: 8,
+  heightCm: 3,
+  isRigid: true,
   customsDescription: "Synthetic eyelash extensions",
   countryOfOrigin: "KR",
 };
@@ -25,6 +28,13 @@ describe("product checkout eligibility", () => {
       {
         status: "invalid",
         reason: "missing_weight",
+      },
+    );
+    assert.deepEqual(
+      getProductCheckoutEligibility({ ...complete, heightCm: undefined }),
+      {
+        status: "invalid",
+        reason: "missing_dimensions",
       },
     );
     assert.equal(getProductCheckoutEligibility(complete).status, "automated");

@@ -23,7 +23,10 @@ const helperScript = String.raw`
     shipping: {
       fulfillmentMode: "physical",
       weightGrams: 35,
-      packingUnits: 1,
+      lengthCm: 12,
+      widthCm: 8,
+      heightCm: 3,
+      isRigid: true,
       customsDescription: "Synthetic eyelash cleanser brush",
       countryOfOrigin: "CA",
     },

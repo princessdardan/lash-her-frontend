@@ -95,8 +95,10 @@ describe("product schema", () => {
     const expectedFields = [
       "fulfillmentMode",
       "weightGrams",
-      "packingUnits",
-      "minimumPackageTier",
+      "lengthCm",
+      "widthCm",
+      "heightCm",
+      "isRigid",
       "customsDescription",
       "countryOfOrigin",
       "usShippingApproved",
@@ -127,11 +129,14 @@ describe("product schema", () => {
       );
     }
 
-    const packingUnits = shipping.fields?.find(
-      (field) => field.name === "packingUnits",
+    const lengthCm = shipping.fields?.find(
+      (field) => field.name === "lengthCm",
     );
-    assert.match(packingUnits?.description ?? "", /multiplies.*quantity/i);
-    assert.match(packingUnits?.description ?? "", /lash tray/i);
+    assert.match(lengthCm?.description ?? "", /smallest box/i);
+    assert.match(lengthCm?.description ?? "", /lash tray/i);
+
+    const isRigid = shipping.fields?.find((field) => field.name === "isRigid");
+    assert.match(isRigid?.description ?? "", /rigid-capable|bendable/i);
   });
 
   it("accepts zero, one, or two well-formed option axes", () => {
@@ -317,7 +322,7 @@ describe("product schema", () => {
           shipping: { fulfillmentMode: "physical", weightGrams: 35 },
         }),
       ),
-      /metadata is complete.*missing_packing_units/i,
+      /metadata is complete.*missing_dimensions/i,
     );
     assert.strictEqual(
       validateProductCheckoutConfiguration({
@@ -332,7 +337,10 @@ describe("product schema", () => {
     const baseShipping = {
       fulfillmentMode: "physical",
       weightGrams: 35,
-      packingUnits: 1,
+      lengthCm: 12,
+      widthCm: 8,
+      heightCm: 3,
+      isRigid: true,
       customsDescription: "Synthetic eyelash extensions",
       countryOfOrigin: "KR",
     };
@@ -353,7 +361,7 @@ describe("product schema", () => {
           ],
         }),
       ),
-      /C \/ 8mm.*missing_packing_units/i,
+      /C \/ 8mm.*missing_dimensions/i,
     );
     assert.match(
       String(
