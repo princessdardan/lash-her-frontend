@@ -78,6 +78,7 @@ const DB_TEST_FILES = new Set([
   "src/lib/shipping/quote-reuse.db.test.ts",
   "src/lib/shipping/risk-review.db.test.ts",
   "src/lib/shipping/shipment-operations.db.test.ts",
+  "src/lib/shipping/shipment-store.db.test.ts",
   "src/lib/shipping/shipment-retry-exhaustion.db.test.ts",
   "src/lib/shipping/shipment-variance-refund-gate.db.test.ts",
 ]);
