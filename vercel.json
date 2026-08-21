@@ -27,6 +27,10 @@
     {
       "path": "/api/cron/product-stock-reservations",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/admin/marketing-contact-sync",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
