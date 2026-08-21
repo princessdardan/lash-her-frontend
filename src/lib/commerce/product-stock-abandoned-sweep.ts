@@ -4,6 +4,7 @@ import { and, eq, isNotNull, isNull, lt } from "drizzle-orm";
 
 import { getPrivateDb } from "@/lib/private-db/client";
 import { log } from "@/lib/logging/logger";
+import type { SquarePayment } from "@/lib/payments/square/payments-client";
 import {
   checkoutOrders,
   orderPaymentObligations,
@@ -35,10 +36,39 @@ export interface AbandonedStockSweepResult {
   failed: number;
 }
 
+/**
+ * What the payment provider (Square) authoritatively knows about an order:
+ * - "captured": a COMPLETED payment exists — the order may be genuinely paid.
+ * - "authorized": an APPROVED (held, uncaptured) payment exists — it may still
+ *   capture, so the reservation must not be released yet.
+ * - "absent": the provider has no live claim on funds for this order.
+ */
+export type ProviderPaymentVerdict = "captured" | "authorized" | "absent";
+
+export interface AbandonedOrderProviderCheck {
+  orderReference: string;
+  /** Order creation time — bounds the provider lookup window by payment date. */
+  createdAt: Date;
+}
+
+export type AbandonedOrderProviderVerifier = (
+  input: AbandonedOrderProviderCheck,
+) => Promise<ProviderPaymentVerdict>;
+
 export interface AbandonedStockSweepOptions {
   now?: Date;
   graceMs?: number;
   limit?: number;
+  /**
+   * Optional provider re-verification (mitigation for the W3 double-failure).
+   * Before an order is cancelled, this re-checks Square for a captured/authorized
+   * payment keyed on the order's reference; a positive verdict skips the
+   * cancellation so a genuinely-paid order is never swept. Best-effort: a thrown
+   * error is treated as "unverified" and the sweep proceeds — a wrongful
+   * cancellation is still backstopped by the late-capture refund path in the
+   * finalizer, which auto-refunds any capture that lands on a cancelled order.
+   */
+  verifyProviderPayment?: AbandonedOrderProviderVerifier;
 }
 
 export async function releaseAbandonedProductStockReservations(
@@ -51,7 +81,10 @@ export async function releaseAbandonedProductStockReservations(
   const db = getPrivateDb();
 
   const candidates = await db
-    .select({ orderId: checkoutOrders.orderId })
+    .select({
+      orderId: checkoutOrders.orderId,
+      createdAt: checkoutOrders.createdAt,
+    })
     .from(checkoutOrders)
     .innerJoin(
       orderPaymentObligations,
@@ -82,6 +115,42 @@ export async function releaseAbandonedProductStockReservations(
     // Isolate each order: one failing cancellation (e.g. a lock timeout) must
     // not abort the rest of the batch.
     try {
+      // Provider re-verification (W3): a captured/authorized Square payment for
+      // this order means it may be genuinely paid despite carrying no local
+      // payment row (the synchronous finalize crashed before recording it and
+      // the webhook is delayed past the grace). Do NOT cancel it. Run this
+      // BEFORE the row-locked cancellation transaction so the lock is never held
+      // across the network round-trip. Failures fall through to "absent" so the
+      // sweep still makes progress; the finalizer's late-capture refund backstops
+      // a wrongful cancellation.
+      if (options.verifyProviderPayment) {
+        let verdict: ProviderPaymentVerdict = "absent";
+        try {
+          verdict = await options.verifyProviderPayment({
+            orderReference: candidate.orderId,
+            createdAt: candidate.createdAt,
+          });
+        } catch (error) {
+          log(
+            "warn",
+            "[product-stock-sweep] Provider re-verification failed; proceeding",
+            {
+              orderId: candidate.orderId,
+              error: error instanceof Error ? error.message : "unknown",
+            },
+          );
+        }
+        if (verdict !== "absent") {
+          skipped += 1;
+          log(
+            "info",
+            "[product-stock-sweep] Skipped cancel: provider reports a payment",
+            { orderId: candidate.orderId, verdict },
+          );
+          continue;
+        }
+      }
+
       const outcome = await releaseAbandonedOrder(candidate.orderId, now);
       if (outcome === "released") {
         released += 1;
@@ -191,4 +260,110 @@ async function releaseAbandonedOrder(
 
     return "released";
   });
+}
+
+// Square records a payment (authorization) at charge time, so its `created_at`
+// tracks the order's creation, not its later capture. A window around the
+// order's createdAt reliably contains the payment while bounding the scan.
+const PROVIDER_LOOKBACK_MS = 15 * 60 * 1000; // 15 min before creation
+const PROVIDER_LOOKAHEAD_MS = 24 * 60 * 60 * 1000; // 24 h after creation
+const PROVIDER_PAGE_LIMIT = 100;
+const PROVIDER_MAX_PAGES = 4;
+
+type SquarePaymentsReader = Pick<
+  import("@/lib/payments/square/payments-client").SquarePaymentsClient,
+  "listPayments"
+>;
+
+/**
+ * Live sweep wiring: resolves Square commerce credentials and re-verifies each
+ * abandoned order against Square before cancelling it (W3 defense-in-depth).
+ * When Square commerce is disabled the verifier is omitted and the sweep behaves
+ * exactly as before — the finalizer's late-capture refund remains the backstop.
+ */
+export async function runAbandonedProductStockSweep(
+  options: AbandonedStockSweepOptions = {},
+): Promise<AbandonedStockSweepResult> {
+  const [{ getSquareCommerceEnv }, { createSquarePaymentsClient }] =
+    await Promise.all([
+      import("@/lib/env/private-checkout"),
+      import("@/lib/payments/square/payments-client"),
+    ]);
+
+  const env = getSquareCommerceEnv();
+  if (env === null) {
+    return releaseAbandonedProductStockReservations(options);
+  }
+
+  const client = createSquarePaymentsClient(env);
+  return releaseAbandonedProductStockReservations({
+    ...options,
+    verifyProviderPayment: (input) =>
+      verifySquareCommercePayment(client, input),
+  });
+}
+
+/**
+ * Resolve what Square knows about an abandoned order's payment to a sweep
+ * verdict, looking the payment up by the order's Square reference (the order has
+ * no local payment id). A CANCELED/FAILED payment carries no live claim on funds
+ * and is treated as "absent" so the reservation can be cleaned up.
+ */
+export async function verifySquareCommercePayment(
+  client: SquarePaymentsReader,
+  input: AbandonedOrderProviderCheck,
+): Promise<ProviderPaymentVerdict> {
+  const payment = await findSquareCommercePaymentByReference(client, input);
+  if (!payment) return "absent";
+  const status = payment.status.toUpperCase();
+  if (status === "COMPLETED") return "captured";
+  if (status === "APPROVED" || status === "AUTHORIZED") return "authorized";
+  return "absent";
+}
+
+async function findSquareCommercePaymentByReference(
+  client: SquarePaymentsReader,
+  input: AbandonedOrderProviderCheck,
+) {
+  const beginTime = new Date(
+    input.createdAt.getTime() - PROVIDER_LOOKBACK_MS,
+  ).toISOString();
+  const endTime = new Date(
+    input.createdAt.getTime() + PROVIDER_LOOKAHEAD_MS,
+  ).toISOString();
+
+  let cursor: string | undefined;
+  // Prefer a LIVE payment for the reference over a dead one: a COMPLETED capture
+  // wins outright; an APPROVED (held) authorization is remembered while we keep
+  // scanning for a capture. A CANCELED/FAILED attempt for the same reference must
+  // never shadow a later capture and cause a paid order to be swept. (In practice
+  // the deterministic idempotency key yields one payment per reference, so this
+  // only matters as defense in depth.)
+  let heldAuthorization: SquarePayment | null = null;
+  for (let page = 0; page < PROVIDER_MAX_PAGES; page += 1) {
+    const response = await client.listPayments({
+      beginTime,
+      endTime,
+      sortOrder: "ASC",
+      limit: PROVIDER_PAGE_LIMIT,
+      ...(cursor ? { cursor } : {}),
+    });
+    for (const payment of response.payments) {
+      if (payment.reference_id !== input.orderReference) continue;
+      const status = payment.status.toUpperCase();
+      if (status === "COMPLETED") return payment;
+      if (
+        (status === "APPROVED" || status === "AUTHORIZED") &&
+        heldAuthorization === null
+      ) {
+        heldAuthorization = payment;
+      }
+    }
+    if (!response.cursor) break;
+    cursor = response.cursor;
+  }
+  // No capture found within the page budget: surface a held authorization if we
+  // saw one, else report not-found and let the finalizer's late-capture refund
+  // backstop the rare miss.
+  return heldAuthorization;
 }

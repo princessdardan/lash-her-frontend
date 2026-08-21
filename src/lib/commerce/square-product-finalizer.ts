@@ -10,6 +10,29 @@ import {
 } from "@/lib/private-db/schema";
 import { activateShipmentForPaidOrderInTransaction } from "@/lib/shipping/shipment-store";
 import { commitProductStockForOrderInTransaction } from "./product-stock-store";
+import { reserveLateCaptureRefund } from "./late-capture-refund";
+
+const SQUARE_COMPLETED_STATUS = "COMPLETED";
+
+/**
+ * Terminal, non-fulfillable states a primary product obligation/order can be in
+ * when a captured Square payment finally lands. The abandoned-stock sweep sets
+ * both the order and its primary obligation to `cancelled`; a manual cancel or a
+ * prior refund can also produce these. A captured payment for one of these is a
+ * late capture — it must be recorded and refunded, never fulfilled.
+ */
+function isTerminalPrimaryLateCapture(
+  orderStatus: string,
+  obligationStatus: string,
+): boolean {
+  return (
+    orderStatus === "cancelled" ||
+    orderStatus === "refunded" ||
+    obligationStatus === "cancelled" ||
+    obligationStatus === "superseded" ||
+    obligationStatus === "refunded"
+  );
+}
 
 /**
  * Square product-payment finalizer.
@@ -44,6 +67,7 @@ export interface FinalizeSquareProductPaymentInput {
 export type SquareProductPaymentTransition =
   | "applied"
   | "already_applied"
+  | "late_capture_refunded"
   | "not_found"
   | "amount_or_currency_mismatch"
   | "transaction_conflict"
@@ -133,6 +157,14 @@ export async function finalizeSquareProductPayment(
         order.status === "paid" &&
         order.providerPaymentId === input.squarePaymentId;
       if (!stateMatches) {
+        // A recorded payment whose order never reached `paid`. The late-capture
+        // branch below records the money and reserves the compensating refund in
+        // the same transaction, so a webhook redelivery for a terminal
+        // (swept/cancelled) order is an idempotent acknowledgement here — not a
+        // spurious conflict that would strand the already-reserved refund.
+        if (isTerminalPrimaryLateCapture(order.status, obligation.status)) {
+          return { transition: "already_applied" as const };
+        }
         return { transition: "state_conflict" as const };
       }
 
@@ -155,6 +187,59 @@ export async function finalizeSquareProductPayment(
     }
 
     if (order.status !== "pending" || obligation.status !== "pending") {
+      // W3 double-failure window: a captured Square payment arrives for a product
+      // order that is no longer awaiting it. If the order/obligation reached a
+      // terminal state (the abandoned-stock sweep cancels a genuinely-paid order
+      // during a prolonged webhook outage, because the synchronous finalize had
+      // crashed before recording the payment), this is a LATE CAPTURE. Record the
+      // money and reserve a compensating refund so the customer is never charged
+      // for a cancelled order — mirroring the supplemental late-capture path.
+      //
+      // Gated on a genuinely CAPTURED (COMPLETED) payment: the synchronous charge
+      // core calls this finalizer with an APPROVED (authorized, UNcaptured)
+      // payment before it captures, and voids that authorization if finalize does
+      // not `apply`. Reserving a refund for an uncaptured authorization would
+      // refund money that was never taken, so an APPROVED payment must fall
+      // through to `state_conflict` (→ the charge core voids the hold) instead.
+      if (
+        input.providerStatus.toUpperCase() === SQUARE_COMPLETED_STATUS &&
+        isTerminalPrimaryLateCapture(order.status, obligation.status)
+      ) {
+        const [lateTransaction] = await tx
+          .insert(orderPaymentTransactions)
+          .values({
+            obligationId: obligation.id,
+            provider: "square",
+            providerTransactionId: input.squarePaymentId,
+            amountCents: obligation.totalAmountCents,
+            currency: obligation.currency.toUpperCase(),
+            originatingIpCiphertext: order.refundOriginIpCiphertext,
+            providerType: input.providerType,
+            providerStatus: input.providerStatus,
+            riskStatus: "cleared",
+            riskReasonCodes: [],
+            capturedAt: now,
+          })
+          .returning({ id: orderPaymentTransactions.id });
+        if (!lateTransaction) {
+          return { transition: "state_conflict" as const };
+        }
+
+        // Compensating refund for the captured funds — never fulfillment. Stock
+        // was already released by the sweep, so this path must NOT commit stock.
+        // Idempotent per (payment transaction, component); a webhook replay lands
+        // in the already_applied branch above and never re-reserves.
+        await reserveLateCaptureRefund(tx, {
+          orderId: order.id,
+          obligation,
+          paymentTransactionId: lateTransaction.id,
+          providerTransactionId: input.squarePaymentId,
+          amountCents: obligation.totalAmountCents,
+          reason: "late_capture_after_terminal_primary",
+        });
+
+        return { transition: "late_capture_refunded" as const };
+      }
       return { transition: "state_conflict" as const };
     }
 

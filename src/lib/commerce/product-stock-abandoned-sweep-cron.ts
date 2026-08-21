@@ -4,10 +4,10 @@ import { timingSafeEqual } from "node:crypto";
 
 import { NextResponse } from "next/server";
 
-import { releaseAbandonedProductStockReservations } from "./product-stock-abandoned-sweep";
+import { runAbandonedProductStockSweep } from "./product-stock-abandoned-sweep";
 
 export function createAbandonedProductStockCronHandler(
-  sweep: typeof releaseAbandonedProductStockReservations = releaseAbandonedProductStockReservations,
+  sweep: typeof runAbandonedProductStockSweep = runAbandonedProductStockSweep,
 ): (request: Request) => Promise<Response> {
   return async function abandonedProductStockCronHandler(
     request: Request,

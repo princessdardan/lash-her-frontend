@@ -85,6 +85,24 @@ export class SquareApiError extends Error {
   }
 }
 
+export interface SquareListPaymentsParams {
+  /** RFC3339 lower bound on payment `created_at` (inclusive). */
+  beginTime?: string;
+  /** RFC3339 upper bound on payment `created_at` (inclusive). */
+  endTime?: string;
+  /** "ASC" | "DESC" over `created_at`. Square defaults to "DESC". */
+  sortOrder?: "ASC" | "DESC";
+  /** Opaque pagination cursor from a prior page. */
+  cursor?: string;
+  /** Page size (Square caps this server-side). */
+  limit?: number;
+}
+
+export interface SquareListPaymentsResponse {
+  payments: SquarePayment[];
+  cursor?: string;
+}
+
 export interface SquarePaymentsClientEnv {
   accessToken: string;
   environment: "sandbox" | "production";
@@ -95,6 +113,15 @@ export interface SquarePaymentsClient {
     request: SquareCreatePaymentRequest,
   ): Promise<SquareCreatePaymentResponse>;
   getPayment(paymentId: string): Promise<SquareGetPaymentResponse>;
+  /**
+   * List payments over a `created_at` window (one page). Square offers no
+   * server-side filter on `reference_id`, so the caller pages this and matches
+   * the reference client-side. Parsing is lenient: an account payment whose
+   * shape the validator does not recognize is skipped, never failing the read.
+   */
+  listPayments(
+    params: SquareListPaymentsParams,
+  ): Promise<SquareListPaymentsResponse>;
   completePayment(
     paymentId: string,
     versionToken?: string,
@@ -122,6 +149,29 @@ export function createSquarePaymentsClient(
         `/v2/payments/${encodeURIComponent(paymentId)}`,
         isSquareGetPaymentResponse,
       );
+    },
+    async listPayments(params) {
+      const query = new URLSearchParams();
+      if (params.beginTime) query.set("begin_time", params.beginTime);
+      if (params.endTime) query.set("end_time", params.endTime);
+      if (params.sortOrder) query.set("sort_order", params.sortOrder);
+      if (params.cursor) query.set("cursor", params.cursor);
+      if (params.limit !== undefined) query.set("limit", String(params.limit));
+      const suffix = query.toString();
+      const envelope = await getSquare<SquareListPaymentsEnvelope>(
+        env,
+        `/v2/payments${suffix ? `?${suffix}` : ""}`,
+        isSquareListPaymentsEnvelope,
+      );
+      const payments = Array.isArray(envelope.payments)
+        ? envelope.payments.filter(isSquarePayment)
+        : [];
+      return {
+        payments,
+        ...(typeof envelope.cursor === "string"
+          ? { cursor: envelope.cursor }
+          : {}),
+      };
     },
     async completePayment(paymentId, versionToken) {
       const query = versionToken
@@ -336,6 +386,38 @@ function isSquareGetPaymentResponse(
   value: unknown,
 ): value is SquareGetPaymentResponse {
   return isSquarePaymentResponse(value);
+}
+
+/**
+ * Raw ListPayments envelope. Deliberately lenient — `payments` need only be an
+ * array (its items are validated and filtered by the caller) and `cursor` a
+ * string when present — so one unrecognized account payment never fails the
+ * whole read. An empty body (no payments in the window) is valid.
+ */
+interface SquareListPaymentsEnvelope {
+  payments?: unknown[];
+  cursor?: unknown;
+}
+
+function isSquareListPaymentsEnvelope(
+  value: unknown,
+): value is SquareListPaymentsEnvelope {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if ("payments" in value && value.payments !== undefined) {
+    if (!Array.isArray(value.payments)) {
+      return false;
+    }
+  }
+  if (
+    "cursor" in value &&
+    value.cursor !== undefined &&
+    typeof value.cursor !== "string"
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function isSquareEmptyResponse(value: unknown): value is Record<string, never> {

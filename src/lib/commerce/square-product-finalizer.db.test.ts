@@ -17,6 +17,8 @@ const scenario = String.raw`
     checkoutOrders,
     orderPaymentObligations,
     orderPaymentTransactions,
+    productOrderAdjustments,
+    productOrderRefunds,
   } from "./src/lib/private-db/schema.ts";
   import { finalizeSquareProductPayment } from "./src/lib/commerce/square-product-finalizer.ts";
 
@@ -197,8 +199,92 @@ const scenario = String.raw`
       providerStatus: "COMPLETED",
     });
     assert.equal(notFound.transition, "not_found");
+
+    // ---- late_capture_refunded: W3 double-failure. A captured payment lands on
+    // an order the abandoned-stock sweep already cancelled (finalize had crashed
+    // before recording it, and the webhook was delayed past the grace). The
+    // finalizer must record the money and reserve a compensating refund, never
+    // fulfill — and never charge the customer for a cancelled order. ----
+    const late = await seed("late", 5000);
+    await db.update(checkoutOrders).set({ status: "cancelled" })
+      .where(eq(checkoutOrders.id, late.order.id));
+    await db.update(orderPaymentObligations).set({ status: "cancelled" })
+      .where(eq(orderPaymentObligations.id, late.obligation.id));
+    const latePaymentId = "sq-late-capture-" + fixture;
+    const lateResult = await finalizeSquareProductPayment({
+      orderReference: late.order.orderId,
+      squarePaymentId: latePaymentId,
+      amountCents: 5000,
+      currency: "CAD",
+      providerType: "CARD",
+      providerStatus: "COMPLETED",
+    });
+    assert.equal(lateResult.transition, "late_capture_refunded");
+    // The captured money is recorded on the ledger.
+    const [lateTxn] = await db.select().from(orderPaymentTransactions)
+      .where(eq(orderPaymentTransactions.providerTransactionId, latePaymentId));
+    assert.ok(lateTxn, "a late capture must record the captured funds");
+    assert.equal(lateTxn.obligationId, late.obligation.id);
+    assert.equal(lateTxn.amountCents, 5000);
+    // Exactly one compensating refund is reserved for the full captured amount.
+    const lateRefunds = await db.select().from(productOrderRefunds)
+      .where(eq(productOrderRefunds.paymentTransactionId, lateTxn.id));
+    assert.equal(lateRefunds.length, 1, "one refund reserved for the captured funds");
+    assert.equal(lateRefunds[0].amountCents, 5000);
+    assert.equal(lateRefunds[0].reason, "late_capture_after_terminal_primary");
+    assert.equal(lateRefunds[0].status, "queued");
+    assert.equal(lateRefunds[0].originalTransactionId, latePaymentId);
+    // The order is NOT resurrected to paid, and its stock is never committed.
+    const [stillCancelled] = await db.select().from(checkoutOrders)
+      .where(eq(checkoutOrders.id, late.order.id));
+    assert.equal(stillCancelled.status, "cancelled");
+
+    // A webhook redelivery of the same late capture is idempotent: it neither
+    // records a second ledger row nor reserves a second refund.
+    const lateReplay = await finalizeSquareProductPayment({
+      orderReference: late.order.orderId,
+      squarePaymentId: latePaymentId,
+      amountCents: 5000,
+      currency: "CAD",
+      providerType: "CARD",
+      providerStatus: "COMPLETED",
+    });
+    assert.equal(lateReplay.transition, "already_applied");
+    const lateTxnsAfter = await db.select().from(orderPaymentTransactions)
+      .where(eq(orderPaymentTransactions.providerTransactionId, latePaymentId));
+    assert.equal(lateTxnsAfter.length, 1, "no second ledger row on replay");
+    const lateRefundsAfter = await db.select().from(productOrderRefunds)
+      .where(eq(productOrderRefunds.paymentTransactionId, lateTxn.id));
+    assert.equal(lateRefundsAfter.length, 1, "refund reserved exactly once");
+
+    // ---- an UNcaptured (APPROVED) authorization for a cancelled order must NOT
+    // reserve a refund: the synchronous charge core finalizes an authorization
+    // BEFORE capturing, then voids it if finalize does not apply. Reserving a
+    // refund here would refund money that was never taken. ----
+    const authorized = await seed("authorized", 5000);
+    await db.update(checkoutOrders).set({ status: "cancelled" })
+      .where(eq(checkoutOrders.id, authorized.order.id));
+    await db.update(orderPaymentObligations).set({ status: "cancelled" })
+      .where(eq(orderPaymentObligations.id, authorized.obligation.id));
+    const authorizedResult = await finalizeSquareProductPayment({
+      orderReference: authorized.order.orderId,
+      squarePaymentId: "sq-authorized-" + fixture,
+      amountCents: 5000,
+      currency: "CAD",
+      providerType: "CARD",
+      providerStatus: "APPROVED",
+    });
+    assert.equal(authorizedResult.transition, "state_conflict");
+    const authorizedTxns = await db.select().from(orderPaymentTransactions)
+      .where(eq(orderPaymentTransactions.obligationId, authorized.obligation.id));
+    assert.equal(authorizedTxns.length, 0, "an uncaptured authorization records no ledger row");
+    const authorizedRefunds = await db.select().from(productOrderRefunds)
+      .where(eq(productOrderRefunds.orderId, authorized.order.id));
+    assert.equal(authorizedRefunds.length, 0, "an uncaptured authorization reserves no refund");
   } finally {
     for (const orderId of createdOrderIds) {
+      await db.delete(productOrderRefunds).where(eq(productOrderRefunds.orderId, orderId));
+      await db.delete(productOrderAdjustments).where(eq(productOrderAdjustments.orderId, orderId));
       await db.execute(sql.raw(
         "DELETE FROM order_payment_transactions WHERE obligation_id IN (SELECT id FROM order_payment_obligations WHERE order_id = '" + orderId + "')",
       ));
@@ -210,7 +296,7 @@ const scenario = String.raw`
 `;
 
 test(
-  "Square product finalizer verifies amount/currency, writes the cleared ledger once, and fences payment-id conflicts",
+  "Square product finalizer verifies amount/currency, writes the cleared ledger once, fences payment-id conflicts, and refunds a late capture on a swept order exactly once",
   { skip: dbTestSkipReason },
   () => {
     execFileSync(

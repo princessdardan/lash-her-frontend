@@ -118,6 +118,16 @@ export async function recoverSquareCommercePayment(
       ? (await dependencies.finalizeProduct(finalizeInput)).transition
       : (await dependencies.finalizeTraining(finalizeInput)).transition;
 
+  // A captured payment that landed on a terminal (e.g. abandoned-stock-swept)
+  // product order is a late capture: the product finalizer recorded the money
+  // and reserved a compensating refund. Acknowledge it WITHOUT the order-success
+  // side effect — the order is cancelled/refunded, so a confirmation email/
+  // notification would be wrong. (Only the product finalizer emits this; the
+  // training finalizer cannot.)
+  if (transition === "late_capture_refunded") {
+    return { status: "recovered" };
+  }
+
   if (transition !== "applied" && transition !== "already_applied") {
     dependencies.logError("[square-webhook] commerce recovery conflict", {
       orderReference: input.orderReference,
