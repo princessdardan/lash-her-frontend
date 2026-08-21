@@ -4,7 +4,6 @@
   "excludeAfterRemap": true,
   "extension": [".ts"],
   "include": [
-    "src/lib/commerce/product-payment-finalizer.ts",
     "src/lib/commerce/product-payment-operation.ts",
     "src/lib/private-db/shipping-retention.ts",
     "src/lib/shipping/customer-decisions.ts",

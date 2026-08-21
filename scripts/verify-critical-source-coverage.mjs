@@ -7,7 +7,9 @@ const REPORT_PATH = "coverage/critical/coverage-summary.json";
 // untested payment, refund, retention, token, or job-claiming implementation.
 // Raise these floors as additional failure paths are added to the test matrix.
 const REQUIRED_BRANCH_COVERAGE = new Map([
-  ["src/lib/commerce/product-payment-finalizer.ts", 68],
+  // product-payment-finalizer.ts was the Helcim product finalizer, deleted in
+  // the Helcim->Square cutover (commit aa59555); its Square replacements
+  // (square-product-finalizer.ts et al.) carry their own DB coverage.
   ["src/lib/commerce/product-payment-operation.ts", 70],
   ["src/lib/private-db/shipping-retention.ts", 65],
   ["src/lib/shipping/customer-decisions.ts", 55],
