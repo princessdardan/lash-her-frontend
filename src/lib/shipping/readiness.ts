@@ -403,6 +403,27 @@ function addFinancialRuntimeBlockers(
       blockers.push(`secret_invalid:${name}`);
     }
   }
+  // When Square commerce checkout is enabled, its credentials must be present or
+  // checkout would report "ready" and only fail later at authorize time. Gated
+  // on the enable flag so environments with commerce off are unaffected.
+  if (env.SQUARE_COMMERCE_ENABLED === "true") {
+    if (
+      env.SQUARE_ENVIRONMENT !== "sandbox" &&
+      env.SQUARE_ENVIRONMENT !== "production"
+    ) {
+      blockers.push("payment_config_invalid:SQUARE_ENVIRONMENT");
+    }
+    for (const name of [
+      "SQUARE_ACCESS_TOKEN",
+      "SQUARE_LOCATION_ID",
+      "SQUARE_APPLICATION_ID",
+      "SQUARE_WEBHOOK_SIGNATURE_KEY",
+    ] as const) {
+      if (!env[name]?.trim()) {
+        blockers.push(`payment_config_missing:${name}`);
+      }
+    }
+  }
 }
 
 function stableReadinessJson(value: unknown): string {

@@ -1058,7 +1058,7 @@ function getFulfillmentLegalNextActions(
     row.kind === "payment-initialization-manual_review"
   ) {
     return [
-      "Use the payment-obligation initialization reconciliation control. Reconcile-and-retry re-queues the obligation for an idempotent Square payment-link re-mint (matched by reference_id, adopting the existing link or creating it); record manual handoff when the obligation must leave the automated flow.",
+      "Use the payment-obligation initialization reconciliation control. Reconcile-and-retry re-queues the obligation for an idempotent Square payment-link re-mint (the deterministic idempotency key returns the same link rather than creating a second); record manual handoff when the obligation must leave the automated flow.",
     ];
   }
   if (row.kind === "payment-initialization-failed") {

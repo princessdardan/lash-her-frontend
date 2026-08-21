@@ -2970,6 +2970,11 @@ export async function approveAddressChange(input: {
         now.getTime() - input.stepUpAuthenticatedAt.getTime() > 5 * 60_000
       )
         throw new Error("Step-up authentication has expired");
+      // Square commerce captures never carry AVS/CVV codes (the former Helcim
+      // evidence gate was dropped in risk-review.ts for the same reason). Keep
+      // the authoritative-capture requirement — a cleared provider transaction
+      // with its id/type/status — but no longer require card-verification codes
+      // Square does not provide, so the high-risk approval path stays usable.
       if (
         !transactions.length ||
         transactions.some(
@@ -2977,8 +2982,6 @@ export async function approveAddressChange(input: {
             !transaction.providerTransactionId ||
             !transaction.providerType ||
             !transaction.providerStatus ||
-            !transaction.avsCode ||
-            !transaction.cvvCode ||
             transaction.riskStatus !== "cleared",
         )
       )

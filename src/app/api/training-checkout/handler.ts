@@ -36,6 +36,7 @@ interface TrainingCheckoutPostHandlerDependencies {
     merchandiseAmountCents: number;
     taxAmountCents: number;
     cart: ValidatedCart;
+    reservationKey?: string;
   }) => Promise<{ orderId: string; databaseId: string }>;
   chargeSquareTrainingOrder?: (input: {
     orderReference: string;
@@ -131,6 +132,10 @@ export function createTrainingCheckoutPostHandler({
       // Square embedded-card path: reserve the order + enrollment, then charge
       // synchronously. Manual Afterpay/BNPL stays on its own invoice endpoint.
       const payment = parseTrainingPayment(body);
+      // Client-supplied per-attempt idempotency token. When present, the reserve
+      // makes the order deterministic so a retry of the same attempt (lost HTTP
+      // response → re-click) reuses the same order and Square dedupes the charge.
+      const reservationKey = parseReservationKey(body);
       if (
         squareCommerceEnabled &&
         reserveSquareTrainingOrder &&
@@ -145,6 +150,7 @@ export function createTrainingCheckoutPostHandler({
           merchandiseAmountCents: toCents(quote.subtotal),
           taxAmountCents: toCents(quote.tax),
           cart: toTrainingCart(quote),
+          ...(reservationKey ? { reservationKey } : {}),
         });
 
         await createTrainingEnrollment({
@@ -290,6 +296,23 @@ function parseTrainingPayment(
     sourceId,
     ...(verificationToken ? { verificationToken } : {}),
   };
+}
+
+/**
+ * Client-supplied per-attempt reservation/idempotency token. Optional: absent or
+ * malformed values fall back to random reservation (older clients / Afterpay must
+ * keep working), so this returns undefined rather than failing the request.
+ */
+function parseReservationKey(body: unknown): string | undefined {
+  if (!isRecord(body) || typeof body.reservationKey !== "string") {
+    return undefined;
+  }
+
+  const reservationKey = body.reservationKey.trim();
+
+  return reservationKey.length > 0 && reservationKey.length <= 200
+    ? reservationKey
+    : undefined;
 }
 
 function parseProgramSlug(body: unknown): string | null {

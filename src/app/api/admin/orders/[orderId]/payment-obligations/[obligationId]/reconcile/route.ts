@@ -79,8 +79,13 @@ export async function POST(
     !Number.isInteger(expectedStateVersion) ||
     expectedStateVersion < 1 ||
     evidenceReference.length < 6 ||
-    rationale.length < 10
+    evidenceReference.length > 500 ||
+    rationale.length < 10 ||
+    rationale.length > 1_000
   ) {
+    // Bound both fields to the same limits the service enforces, BEFORE the
+    // one-use step-up proof is minted/consumed below — otherwise an over-length
+    // field would burn a step-up proof only to fail the service's guard.
     return NextResponse.json(
       { error: "Version, evidence, and rationale are required" },
       { status: 400 },

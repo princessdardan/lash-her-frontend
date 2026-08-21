@@ -62,6 +62,12 @@ export function SquareProductPayButton({
 }: SquareProductPayButtonProps): ReactElement {
   const router = useRouter();
   const formRef = useRef<SquareCommerceCardFormHandle>(null);
+  // Stable per-attempt idempotency token: kept across retries of the same
+  // attempt (so a re-click after a lost response reuses the same order and
+  // Square dedupes the charge), reset only after a fully successful payment so a
+  // genuine later purchase reserves a fresh order. Only the manual-pickup server
+  // path consumes it; the automated-shipping path is idempotent via its quote.
+  const reservationKeyRef = useRef<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
   const [isCardReady, setIsCardReady] = useState(false);
   const [isUnavailable, setIsUnavailable] = useState(false);
@@ -71,6 +77,9 @@ export function SquareProductPayButton({
 
   const handleTokenized = useCallback(
     async ({ sourceId, verificationToken }: SquareCommerceTokenResult) => {
+      if (!reservationKeyRef.current) {
+        reservationKeyRef.current = crypto.randomUUID();
+      }
       const res = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -79,6 +88,7 @@ export function SquareProductPayButton({
           items,
           fulfillmentMode,
           disclosures,
+          reservationKey: reservationKeyRef.current,
           ...(shippingAddress ? { shippingAddress } : {}),
           ...(shippingQuote ? { shippingQuote } : {}),
           ...(promotionCode ? { promotionCode } : {}),
@@ -105,6 +115,10 @@ export function SquareProductPayButton({
           "Payment could not be verified. Please contact Lash Her before retrying.",
         );
       }
+
+      // Payment fully succeeded — drop the token so any genuine later purchase
+      // mints a fresh one and reserves a new order.
+      reservationKeyRef.current = undefined;
 
       onPaid();
       router.push(

@@ -849,6 +849,39 @@ export async function reconcileProductOrderRefund(input: {
           idempotencyKey: `shipping-refund-ambiguous/${providerRefundId}`,
           executor: tx,
         });
+      } else {
+        // Zero candidates. Only orderPaymentTransactions rows exist for product
+        // orders (bookings settle through appointment_holds/checkout_payment_events),
+        // so a genuine service-booking refund has no matching row here and the
+        // silent return below is correct. But a COMPLETED refund that DOES match a
+        // product-order payment yet no reserved refund row means money left the
+        // merchant out-of-band (e.g. an operator issued it from the Square
+        // Dashboard) while the order stays `paid` and nothing else watches it —
+        // surface a finance alert, keyed by the provider refund id so a retried
+        // webhook does not re-notify.
+        const [productPayment] = await tx
+          .select({ id: orderPaymentTransactions.id })
+          .from(orderPaymentTransactions)
+          .where(
+            and(
+              eq(orderPaymentTransactions.provider, "square"),
+              eq(
+                orderPaymentTransactions.providerTransactionId,
+                originalTransactionId,
+              ),
+            ),
+          )
+          .limit(1);
+        if (productPayment) {
+          await sendShippingPolicyAlert({
+            duties: ["finance_owner"],
+            critical: true,
+            subject: "Unlinked Square refund on a product order",
+            message: `Completed Square refund ${providerRefundId} (${input.amountCents} cents ${currency}) settled against product-order payment ${originalTransactionId} but matched no reserved refund. It was likely issued out-of-band (e.g. the Square Dashboard); reconcile the order's refund state by hand.`,
+            idempotencyKey: `shipping-refund-unlinked/${providerRefundId}`,
+            executor: tx,
+          });
+        }
       }
       return false;
     }

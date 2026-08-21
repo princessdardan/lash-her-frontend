@@ -76,6 +76,12 @@ interface CheckoutRequestBody {
     rateId: string;
   };
   /**
+   * Client-supplied per-attempt idempotency token. When present on a
+   * manual-pickup checkout, the reserved order's id is derived from it so a
+   * retry of the same attempt reuses the order instead of double-charging.
+   */
+  reservationKey?: string;
+  /**
    * Square Web Payments SDK card nonce. When present (and Square commerce
    * checkout is enabled), the order is reserved and charged synchronously
    * through Square rather than returning the legacy async-invoice operation.
@@ -147,6 +153,7 @@ interface CheckoutPostHandlerDependencies {
     customerName: string;
     customerEmail: string;
     customerPhone?: string;
+    reservationKey?: string;
     cart: ValidatedCart;
     fulfillmentMode: "manual_pickup";
     cancellationPolicy: {
@@ -446,6 +453,9 @@ export function createCheckoutPostHandler({
           customerEmail: checkoutRequest.customer.email,
           ...(checkoutRequest.customer.phone
             ? { customerPhone: checkoutRequest.customer.phone }
+            : {}),
+          ...(checkoutRequest.reservationKey
+            ? { reservationKey: checkoutRequest.reservationKey }
             : {}),
           cart,
           fulfillmentMode: "manual_pickup",
@@ -769,6 +779,7 @@ function parseCheckoutRequest(body: unknown): CheckoutRequestBody | null {
   const fulfillmentMode = parseFulfillmentMode(body.fulfillmentMode);
   const disclosures = parseDisclosures(body.disclosures);
   const payment = parsePaymentInput(body.payment);
+  const reservationKey = parseReservationKey(body.reservationKey);
 
   if (
     name === null ||
@@ -793,8 +804,26 @@ function parseCheckoutRequest(body: unknown): CheckoutRequestBody | null {
     disclosures,
     ...(promotionCode ? { promotionCode } : {}),
     ...(shippingQuote ? { shippingQuote } : {}),
+    ...(reservationKey ? { reservationKey } : {}),
     ...(payment ? { payment } : {}),
   };
+}
+
+/**
+ * Client-supplied per-attempt reservation/idempotency token. Optional: absent or
+ * malformed values fall back to random reservation (older clients must keep
+ * working), so this returns undefined rather than rejecting the request.
+ */
+function parseReservationKey(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const reservationKey = value.trim();
+
+  return reservationKey.length > 0 && reservationKey.length <= 200
+    ? reservationKey
+    : undefined;
 }
 
 function parsePaymentInput(

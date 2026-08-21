@@ -155,6 +155,40 @@ function buildShippedRefundPolicySnapshot(
 
 const EMAIL_CLAIM_DURATION_MS = 5 * 60 * 1000;
 
+/**
+ * Derive a deterministic public `orderId` from a client-supplied per-attempt
+ * reservation key. Two POSTs of the same checkout attempt (e.g. the customer
+ * re-clicks "Pay securely" after a lost HTTP response) carry the same key, so
+ * they resolve to the same `orderId` — which is also the Square payment
+ * `reference_id`/idempotency key. That lets the reservation insert reuse the
+ * original order (via `onConflictDoNothing`) instead of minting a second one,
+ * and lets Square dedupe the charge rather than double-billing the card.
+ */
+export function deriveDeterministicOrderId(reservationKey: string): string {
+  return `lh-${createHash("sha256")
+    .update(reservationKey)
+    .digest("base64url")
+    .slice(0, 12)}`;
+}
+
+/**
+ * Guard against an astronomically-unlikely reservation-key hash collision
+ * reusing a different customer's order: when a retry reuses an already-reserved
+ * order, its stored customer email + purpose must match the current request.
+ * Throws on mismatch so a reused order is never charged for the wrong request.
+ */
+export function assertReusedReservationMatches(
+  existing: { customerEmail: string; purpose: CheckoutOrderPurpose },
+  expected: { customerEmail: string; purpose: CheckoutOrderPurpose },
+): void {
+  if (
+    existing.customerEmail !== expected.customerEmail ||
+    existing.purpose !== expected.purpose
+  ) {
+    throw new Error("Reservation key does not match the existing order");
+  }
+}
+
 export interface CreateInitializingProductOrderInput {
   customerName: string;
   customerEmail: string;
@@ -204,6 +238,12 @@ export interface CreateInitializingManualProductOrderInput {
   customerName: string;
   customerEmail: string;
   customerPhone?: string;
+  /**
+   * Optional client-supplied per-attempt idempotency token. When present, the
+   * reserved order's public id is derived deterministically from it so a retry
+   * of the same attempt reuses the original order (no duplicate order/charge).
+   */
+  reservationKey?: string;
   cart: ValidatedCart;
   fulfillmentMode: "manual_pickup";
   cancellationPolicy: {
@@ -271,6 +311,12 @@ export interface CreatePendingSquareTrainingCardOrderInput {
   merchandiseAmountCents: number;
   taxAmountCents: number;
   cart: ValidatedCart;
+  /**
+   * Optional client-supplied per-attempt idempotency token. When present, the
+   * reserved order's public id is derived deterministically from it so a retry
+   * of the same attempt reuses the original order (no duplicate order/charge).
+   */
+  reservationKey?: string;
 }
 
 export interface PendingSquareTrainingCardOrderRecord {
@@ -935,56 +981,110 @@ export async function createInitializingManualProductOrder(
     });
     const taxAmountCents = taxQuote.taxAmountCents;
     const totalAmountCents = merchandiseAmountCents + taxAmountCents;
-    const orderId = `lh-${nanoid(12)}`;
-    const [order] = await tx
-      .insert(checkoutOrders)
-      .values({
-        orderId,
-        status: "pending",
-        initializationStatus: "ready",
-        customerName: input.customerName,
+    const orderId = input.reservationKey
+      ? deriveDeterministicOrderId(input.reservationKey)
+      : `lh-${nanoid(12)}`;
+    const insertManualOrder = tx.insert(checkoutOrders).values({
+      orderId,
+      status: "pending",
+      initializationStatus: "ready",
+      customerName: input.customerName,
+      customerEmail: input.customerEmail,
+      purpose: "product",
+      amountCents: totalAmountCents,
+      merchandiseAmountCents,
+      shippingAmountCents: 0,
+      taxAmountCents,
+      promotionCode: input.cart.promotionCode ?? null,
+      promotionDiscountCents: toCents(input.cart.promotionDiscountAmount ?? 0),
+      manualDiscountCents: toCents(input.cart.manualDiscountAmount ?? 0),
+      currency: input.cart.currency,
+      lineItems: toOrderLineItemSnapshots(input.cart),
+      paymentProvider: "square",
+      shippingAddress: undefined,
+      refundOriginIpCiphertext: encryptCheckoutIp(input.refundOriginIp),
+      atRiskValueCents: merchandiseAmountCents,
+      fraudClassification: "low",
+      paymentRiskStatus: "pending",
+      shippingPolicyVersion: fulfillmentPolicyVersion,
+      taxPolicyVersion: taxPolicyApproval.version,
+      dduNoticeVersion:
+        input.usImportDisclosure?.terms === "DDU"
+          ? input.usImportDisclosure.version
+          : undefined,
+      dduNoticePresentedAt:
+        input.usImportDisclosure?.terms === "DDU"
+          ? input.usImportDisclosure.presentedAt
+          : undefined,
+      usImportDisclosureSnapshot: input.usImportDisclosure
+        ? toStoredUsImportDisclosure(input.usImportDisclosure)
+        : undefined,
+      fulfillmentMode: input.fulfillmentMode,
+      manualFulfillmentStatus: "payment_pending",
+      cancellationPolicyVersion: cancellationVersion,
+      cancellationPolicySnapshot,
+      termsVersion: termsSnapshot.version as string,
+      termsAcceptedAt: now,
+      termsSnapshot,
+    });
+    const [order] = await (
+      input.reservationKey
+        ? insertManualOrder.onConflictDoNothing({
+            target: checkoutOrders.orderId,
+          })
+        : insertManualOrder
+    ).returning({ id: checkoutOrders.id });
+    if (!order) {
+      // Retry with the same reservationKey: the order and its primary
+      // obligation already exist — reuse them so no second order, obligation,
+      // enrollment, or charge is created.
+      if (!input.reservationKey) {
+        throw new Error("Manual checkout order could not be created");
+      }
+      const [existing] = await tx
+        .select({
+          id: checkoutOrders.id,
+          customerEmail: checkoutOrders.customerEmail,
+          purpose: checkoutOrders.purpose,
+        })
+        .from(checkoutOrders)
+        .where(eq(checkoutOrders.orderId, orderId))
+        .limit(1);
+      if (!existing) {
+        throw new Error("Manual checkout order could not be created");
+      }
+      assertReusedReservationMatches(existing, {
         customerEmail: input.customerEmail,
         purpose: "product",
-        amountCents: totalAmountCents,
+      });
+      const [existingObligation] = await tx
+        .select({ id: orderPaymentObligations.id })
+        .from(orderPaymentObligations)
+        .where(
+          and(
+            eq(orderPaymentObligations.orderId, existing.id),
+            eq(orderPaymentObligations.purpose, "primary"),
+          ),
+        )
+        .limit(1);
+      if (!existingObligation) {
+        throw new Error("Primary payment obligation was not created");
+      }
+      return {
+        databaseId: existing.id,
+        orderId,
+        primaryObligationId: existingObligation.id,
+        currency: input.cart.currency,
         merchandiseAmountCents,
         shippingAmountCents: 0,
         taxAmountCents,
-        promotionCode: input.cart.promotionCode ?? null,
-        promotionDiscountCents: toCents(
-          input.cart.promotionDiscountAmount ?? 0,
-        ),
-        manualDiscountCents: toCents(input.cart.manualDiscountAmount ?? 0),
-        currency: input.cart.currency,
-        lineItems: toOrderLineItemSnapshots(input.cart),
-        paymentProvider: "square",
-        shippingAddress: undefined,
-        refundOriginIpCiphertext: encryptCheckoutIp(input.refundOriginIp),
-        atRiskValueCents: merchandiseAmountCents,
-        fraudClassification: "low",
-        paymentRiskStatus: "pending",
-        shippingPolicyVersion: fulfillmentPolicyVersion,
-        taxPolicyVersion: taxPolicyApproval.version,
-        dduNoticeVersion:
-          input.usImportDisclosure?.terms === "DDU"
-            ? input.usImportDisclosure.version
-            : undefined,
-        dduNoticePresentedAt:
-          input.usImportDisclosure?.terms === "DDU"
-            ? input.usImportDisclosure.presentedAt
-            : undefined,
-        usImportDisclosureSnapshot: input.usImportDisclosure
-          ? toStoredUsImportDisclosure(input.usImportDisclosure)
-          : undefined,
-        fulfillmentMode: input.fulfillmentMode,
-        manualFulfillmentStatus: "payment_pending",
-        cancellationPolicyVersion: cancellationVersion,
-        cancellationPolicySnapshot,
-        termsVersion: termsSnapshot.version as string,
-        termsAcceptedAt: now,
-        termsSnapshot,
-      })
-      .returning({ id: checkoutOrders.id });
-    if (!order) throw new Error("Manual checkout order could not be created");
+        totalAmountCents,
+        shippingRateTitle:
+          input.fulfillmentMode === "manual_pickup"
+            ? "Pickup arranged after payment"
+            : "Shipping quoted separately",
+      };
+    }
     const [obligation] = await tx
       .insert(orderPaymentObligations)
       .values({
@@ -1209,7 +1309,9 @@ export async function createPendingSquareTrainingCardOrder(
   input: CreatePendingSquareTrainingCardOrderInput,
 ): Promise<PendingSquareTrainingCardOrderRecord> {
   const db = getPrivateDb();
-  const orderId = `lh-${nanoid(12)}`;
+  const orderId = input.reservationKey
+    ? deriveDeterministicOrderId(input.reservationKey)
+    : `lh-${nanoid(12)}`;
   const providerMetadata: SquareCardProviderMetadata = {
     amountCents: input.amountCents,
     correlationId: orderId,
@@ -1219,35 +1321,67 @@ export async function createPendingSquareTrainingCardOrder(
     programSlug: input.programSlug,
   };
 
-  const [order] = await db
-    .insert(checkoutOrders)
-    .values({
-      orderId,
-      status: "pending",
-      checkoutTokenHash: null,
-      secretTokenCiphertext: null,
-      customerName: input.customerName,
-      customerEmail: input.customerEmail,
-      purpose: "training",
-      amountCents: input.amountCents,
-      merchandiseAmountCents: input.merchandiseAmountCents,
-      shippingAmountCents: 0,
-      taxAmountCents: input.taxAmountCents,
-      promotionCode: input.cart.promotionCode ?? null,
-      promotionDiscountCents: toCents(input.cart.promotionDiscountAmount ?? 0),
-      manualDiscountCents: toCents(input.cart.manualDiscountAmount ?? 0),
-      currency: "CAD",
-      lineItems: toOrderLineItemSnapshots(input.cart),
-      paymentProvider: "square",
-      providerStatus: "pending",
-      providerMetadata,
-    })
-    .returning({ id: checkoutOrders.id });
-  if (!order) {
-    throw new Error("Square training order could not be created");
+  const insertTrainingOrder = db.insert(checkoutOrders).values({
+    orderId,
+    status: "pending",
+    checkoutTokenHash: null,
+    secretTokenCiphertext: null,
+    customerName: input.customerName,
+    customerEmail: input.customerEmail,
+    purpose: "training",
+    amountCents: input.amountCents,
+    merchandiseAmountCents: input.merchandiseAmountCents,
+    shippingAmountCents: 0,
+    taxAmountCents: input.taxAmountCents,
+    promotionCode: input.cart.promotionCode ?? null,
+    promotionDiscountCents: toCents(input.cart.promotionDiscountAmount ?? 0),
+    manualDiscountCents: toCents(input.cart.manualDiscountAmount ?? 0),
+    currency: "CAD",
+    lineItems: toOrderLineItemSnapshots(input.cart),
+    paymentProvider: "square",
+    providerStatus: "pending",
+    providerMetadata,
+  });
+
+  // Idempotent reservation: with a client-supplied reservationKey the orderId is
+  // deterministic, so a retry of the same attempt conflicts on the unique
+  // orderId and is reused — one order, one Square idempotency key → Square
+  // dedupes the charge. Without a key, keep the random-orderId insert.
+  const [order] = await (
+    input.reservationKey
+      ? insertTrainingOrder.onConflictDoNothing({
+          target: checkoutOrders.orderId,
+        })
+      : insertTrainingOrder
+  ).returning({ id: checkoutOrders.id });
+  if (order) {
+    return { databaseId: order.id, orderId };
   }
 
-  return { databaseId: order.id, orderId };
+  // No row: the deterministic orderId already existed (a retry with the same
+  // reservationKey). Reuse the original order after verifying it belongs to the
+  // same customer + purpose.
+  if (!input.reservationKey) {
+    throw new Error("Square training order could not be created");
+  }
+  const [existing] = await db
+    .select({
+      id: checkoutOrders.id,
+      customerEmail: checkoutOrders.customerEmail,
+      purpose: checkoutOrders.purpose,
+    })
+    .from(checkoutOrders)
+    .where(eq(checkoutOrders.orderId, orderId))
+    .limit(1);
+  if (!existing) {
+    throw new Error("Square training order could not be created");
+  }
+  assertReusedReservationMatches(existing, {
+    customerEmail: input.customerEmail,
+    purpose: "training",
+  });
+
+  return { databaseId: existing.id, orderId };
 }
 
 export async function markOrderVerificationFailed(

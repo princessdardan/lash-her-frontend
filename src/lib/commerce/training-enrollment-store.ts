@@ -443,12 +443,31 @@ function createDrizzleTrainingEnrollmentRepository(): TrainingEnrollmentReposito
     },
 
     async createTrainingEnrollment(values) {
+      // Idempotent on checkoutOrderId (unique index): when a reservation is
+      // reused after a retry, the same checkout order id is passed again, so the
+      // insert conflicts and no second enrollment is created. Fall back to the
+      // existing row to preserve the return contract.
       const [createdEnrollment] = await getPrivateDb()
         .insert(trainingEnrollments)
         .values(values)
+        .onConflictDoNothing({ target: trainingEnrollments.checkoutOrderId })
         .returning();
 
-      return createdEnrollment;
+      if (createdEnrollment) {
+        return createdEnrollment;
+      }
+
+      const [existingEnrollment] = await getPrivateDb()
+        .select()
+        .from(trainingEnrollments)
+        .where(eq(trainingEnrollments.checkoutOrderId, values.checkoutOrderId))
+        .limit(1);
+
+      if (!existingEnrollment) {
+        throw new Error("Training enrollment could not be created");
+      }
+
+      return existingEnrollment;
     },
 
     async findPaidPendingEnrollmentByPublicOrderId(orderId) {

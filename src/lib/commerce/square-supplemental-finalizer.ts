@@ -15,6 +15,7 @@ import {
   isLateSupplementalCapture,
   reserveLateCaptureRefund,
 } from "@/lib/commerce/late-capture-refund";
+import { sendShippingPolicyAlert } from "@/lib/shipping/policy-alerts";
 
 /**
  * Square supplemental-obligation finalizer.
@@ -66,9 +67,48 @@ export async function finalizeSquareSupplementalObligation(
     if (
       !obligation ||
       obligation.purpose === "primary" ||
-      obligation.paymentProvider !== "square" ||
-      obligation.quarantinedAt !== null
+      obligation.paymentProvider !== "square"
     ) {
+      return { transition: "not_found" as const };
+    }
+    if (obligation.quarantinedAt !== null) {
+      // A verified Square payment landed on an obligation that is quarantined
+      // (e.g. by an admin). But if THIS payment was already recorded on this
+      // obligation — i.e. it was applied first and the obligation was quarantined
+      // during a later review — a webhook replay must NOT re-alert "not applied":
+      // the money is already on the ledger, and a misleading "reconcile (apply or
+      // refund) by hand" alert could induce an operator double-refund. Only a
+      // genuinely stranded capture (no recorded transaction for this payment)
+      // warrants the finance alert.
+      const [priorTransaction] = await tx
+        .select({ id: orderPaymentTransactions.id })
+        .from(orderPaymentTransactions)
+        .where(
+          and(
+            eq(orderPaymentTransactions.obligationId, obligation.id),
+            eq(orderPaymentTransactions.provider, "square"),
+            eq(
+              orderPaymentTransactions.providerTransactionId,
+              input.squarePaymentId,
+            ),
+          ),
+        )
+        .limit(1);
+      if (priorTransaction) {
+        return { transition: "already_applied" as const };
+      }
+      // Not yet recorded: we can neither apply it (quarantined) nor safely
+      // auto-refund mid-investigation, so surface a finance alert instead of
+      // silently stranding the funds. Idempotent on the Square payment id so
+      // webhook retries don't re-notify.
+      await sendShippingPolicyAlert({
+        duties: ["finance_owner"],
+        critical: true,
+        subject: "Square supplemental payment on a quarantined obligation",
+        message: `Square payment ${input.squarePaymentId} (${input.amountCents} cents ${input.currency}) settled supplemental obligation ${obligation.id}, which is quarantined. The capture was not applied — reconcile (apply or refund) by hand.`,
+        idempotencyKey: `supplemental-stranded-quarantine/${input.squarePaymentId}`,
+        executor: tx,
+      });
       return { transition: "not_found" as const };
     }
 
@@ -93,6 +133,18 @@ export async function finalizeSquareSupplementalObligation(
       input.amountCents !== obligation.totalAmountCents ||
       input.currency.toUpperCase() !== obligation.currency.toUpperCase()
     ) {
+      // A verified payment whose amount/currency does not match the reserved
+      // top-up cannot be applied (should not happen with fixed-price links).
+      // Surface it rather than silently dropping the captured funds. Idempotent
+      // on the Square payment id.
+      await sendShippingPolicyAlert({
+        duties: ["finance_owner"],
+        critical: true,
+        subject: "Square supplemental payment amount/currency mismatch",
+        message: `Square payment ${input.squarePaymentId} (${input.amountCents} cents ${input.currency}) does not match supplemental obligation ${obligation.id} (${obligation.totalAmountCents} cents ${obligation.currency}). The capture was not applied — reconcile by hand.`,
+        idempotencyKey: `supplemental-stranded-mismatch/${input.squarePaymentId}`,
+        executor: tx,
+      });
       return { transition: "amount_or_currency_mismatch" as const };
     }
 
@@ -113,7 +165,9 @@ export async function finalizeSquareSupplementalObligation(
     if (existingTransaction) {
       if (
         existingTransaction.obligationId !== obligation.id ||
-        existingTransaction.amountCents !== obligation.totalAmountCents
+        existingTransaction.amountCents !== obligation.totalAmountCents ||
+        existingTransaction.currency.toUpperCase() !==
+          obligation.currency.toUpperCase()
       ) {
         return { transition: "transaction_conflict" as const };
       }

@@ -451,11 +451,11 @@ function PaymentInitializationReconciliationFields() {
       <RationaleField />
       <p className="text-xs text-lh-muted">
         Reconcile-and-retry re-queues the obligation for the worker, which
-        re-mints the Square payment link idempotently (matched by reference_id),
-        adopting the existing link or creating it. Use manual handoff when the
-        obligation must leave the automated flow. The server binds the action,
-        evidence reference, and current state version to a one-use step-up
-        proof.
+        re-mints the Square payment link idempotently — its deterministic
+        idempotency key returns the same link rather than creating a second. Use
+        manual handoff when the obligation must leave the automated flow. The
+        server binds the action, evidence reference, and current state version
+        to a one-use step-up proof.
       </p>
     </>
   );

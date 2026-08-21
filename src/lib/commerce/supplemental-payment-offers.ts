@@ -321,9 +321,29 @@ async function loadOfferByObligation(
   return request ? row : null;
 }
 
+// The Square payment-link URL is merged into `disclosure_snapshot` by the async
+// link-mint worker (order-store.finalizeInitializingSquareObligation) AFTER the
+// offer terms are hashed at issuance. It is an implementation artifact — the
+// redirect target — not a term the customer agreed to, so it MUST be excluded
+// from the offer-terms hash. Otherwise minting the link (required before any
+// payment can happen) mutates the snapshot, flips decisionTermsMatchOffer to
+// false, and makes the supplemental offer permanently uncollectable.
+const SUPPLEMENTAL_LINK_URL_KEY = "squarePaymentLinkUrl";
+
+function offerDisclosureTerms(
+  snapshot: Record<string, unknown> | null,
+): Record<string, unknown> {
+  if (!snapshot) return {};
+  const { [SUPPLEMENTAL_LINK_URL_KEY]: _linkUrl, ...terms } = snapshot;
+  return terms;
+}
+
 function offerConditions(
   row: NonNullable<Awaited<ReturnType<typeof loadOfferByObligation>>>,
 ) {
+  const disclosureTerms = offerDisclosureTerms(
+    row.obligation.disclosureSnapshot,
+  );
   return {
     obligationId: row.obligation.id,
     purpose: row.obligation.purpose,
@@ -332,10 +352,10 @@ function offerConditions(
     expiresAt: row.obligation.expiresAt!.toISOString(),
     policyVersion: row.obligation.policyVersion,
     taxPolicyVersion: row.obligation.taxPolicyVersion,
-    disclosureSnapshot: row.obligation.disclosureSnapshot,
+    disclosureSnapshot: disclosureTerms,
     disclosureHash: hashCustomerDecisionConditions(
       "supplemental-payment-disclosure/v1",
-      row.obligation.disclosureSnapshot ?? {},
+      disclosureTerms,
     ),
   };
 }

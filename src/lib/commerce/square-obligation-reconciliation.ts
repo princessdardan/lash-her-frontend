@@ -20,11 +20,15 @@ import {
  * non-deterministic `outcome_unknown` (or a prior `manual_review`) needs an
  * owner decision. Unlike the retired Helcim flow — which had to look up and
  * adopt a specific provider invoice — the Square payment-link mint is
- * idempotent (deterministic idempotency key, `reference_id = obligationId`), so
- * "adopt an existing link" and "reissue" collapse into a single safe action:
- * re-queue the obligation for the worker, which re-mints and thereby
- * adopts-or-creates the exact same link. The alternative is to take the
- * obligation out of the automated flow entirely (manual handoff).
+ * idempotent via its DETERMINISTIC idempotency key (a pure function of
+ * `obligation.id`): re-minting with the same key returns the same link rather
+ * than creating a second one. (Square does NOT enforce uniqueness on
+ * `reference_id`, which is only a merchant back-reference; the idempotency key
+ * is the sole dedupe mechanism, so it must never be derived from anything
+ * volatile.) So "adopt an existing link" and "reissue" collapse into a single
+ * safe action: re-queue the obligation for the worker, which re-mints the exact
+ * same link. The alternative is to take the obligation out of the automated
+ * flow entirely (manual handoff).
  *
  * All the fund-safety controls of the retired flow are preserved: configured
  * fulfillment-owner identity (checked again inside the transaction), an exact
@@ -180,6 +184,14 @@ function reconciliationWhere(
     // The worker only re-claims supplemental obligations on a paid order, so
     // resetting one whose order is not paid would produce a benign stuck row.
     eq(checkoutOrders.status, "paid"),
+    // Only supplemental obligations are minted through the payment-link worker
+    // and can land in this stuck `initializing`→`failed` state. Fencing the
+    // purpose here means this owner action can never re-queue (or touch the
+    // state version of) the order's PRIMARY card obligation.
+    inArray(orderPaymentObligations.purpose, [
+      "manual_shipping",
+      "address_increase",
+    ]),
     eq(orderPaymentObligations.paymentProvider, "square"),
     eq(orderPaymentObligations.status, "pending"),
     eq(orderPaymentObligations.initializationStatus, "failed"),
