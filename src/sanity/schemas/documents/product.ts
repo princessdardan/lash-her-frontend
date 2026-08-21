@@ -742,20 +742,36 @@ function shippingMetadataFields() {
       validation: (Rule) => Rule.integer().min(1),
     }),
     defineField({
-      name: "packingUnits",
-      title: "Package Capacity Units per Item",
+      name: "lengthCm",
+      title: "Item Length (cm)",
       type: "number",
-      initialValue: 1,
       description:
-        "A relative measure of how much package space one item uses. Checkout multiplies this number by the quantity and selects the smallest package profile with enough capacity. Use 1 for a standard small item, such as one lash tray; use 2 when an item takes roughly twice that packing space. Keep the scale consistent with the capacity units configured on package profiles.",
+        "Longest side of one sellable unit in centimetres, measured as it will be packed. Checkout uses the item’s length, width, and height to pick the smallest box that fits. Round up to the next whole centimetre. Example: enter 12 for a 12 cm lash tray.",
       validation: (Rule) => Rule.integer().min(1),
     }),
     defineField({
-      name: "minimumPackageTier",
-      title: "Smallest Allowed Package Profile",
-      type: "string",
+      name: "widthCm",
+      title: "Item Width (cm)",
+      type: "number",
       description:
-        "Optional safety override that prevents checkout from choosing any lower-ranked package, even when its weight and capacity limits would otherwise fit. Enter the exact slug of a configured package profile, for example rigid-mailer if that profile exists. Leave blank when normal weight-and-capacity selection is sufficient.",
+        "Second side of one sellable unit in centimetres. See “Item Length” for how the three dimensions are used together.",
+      validation: (Rule) => Rule.integer().min(1),
+    }),
+    defineField({
+      name: "heightCm",
+      title: "Item Height / Thickness (cm)",
+      type: "number",
+      description:
+        "Shortest side (thickness) of one sellable unit in centimetres. When several units ship together they are stacked on this axis to check box fit.",
+      validation: (Rule) => Rule.integer().min(1),
+    }),
+    defineField({
+      name: "isRigid",
+      title: "Rigid / Non-Bendable Item?",
+      type: "boolean",
+      initialValue: true,
+      description:
+        "Leave on for hard items that cannot bend (lash trays, tweezers, boxed products) so checkout only chooses a rigid-capable package. Turn off only for soft, flexible items that could safely ship in a bendable mailer.",
     }),
     defineField({
       name: "customsDescription",

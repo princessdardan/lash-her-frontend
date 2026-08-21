@@ -3,7 +3,7 @@ import type { TProductShippingMetadata } from "@/types";
 export type ShippingMetadataError =
   | "missing_fulfillment_mode"
   | "missing_weight"
-  | "missing_packing_units"
+  | "missing_dimensions"
   | "missing_customs_description"
   | "missing_country_of_origin"
   | "us_not_approved"
@@ -17,7 +17,10 @@ export type ShippingMetadataError =
 export type ValidatedShippingMetadata = TProductShippingMetadata & {
   fulfillmentMode: "physical";
   weightGrams: number;
-  packingUnits: number;
+  lengthCm: number;
+  widthCm: number;
+  heightCm: number;
+  isRigid: boolean;
   customsDescription: string;
   countryOfOrigin: string;
   hazardousMaterial?: false;
@@ -62,10 +65,14 @@ export function getProductCheckoutEligibility(
     return { status: "invalid", reason: "missing_weight" };
   }
   if (
-    !Number.isInteger(metadata.packingUnits) ||
-    (metadata.packingUnits ?? 0) <= 0
+    !Number.isInteger(metadata.lengthCm) ||
+    (metadata.lengthCm ?? 0) <= 0 ||
+    !Number.isInteger(metadata.widthCm) ||
+    (metadata.widthCm ?? 0) <= 0 ||
+    !Number.isInteger(metadata.heightCm) ||
+    (metadata.heightCm ?? 0) <= 0
   ) {
-    return { status: "invalid", reason: "missing_packing_units" };
+    return { status: "invalid", reason: "missing_dimensions" };
   }
   if (!metadata.customsDescription?.trim()) {
     return { status: "invalid", reason: "missing_customs_description" };
@@ -123,7 +130,10 @@ export function getProductCheckoutEligibility(
       ...metadata,
       fulfillmentMode: "physical",
       weightGrams: metadata.weightGrams!,
-      packingUnits: metadata.packingUnits!,
+      lengthCm: metadata.lengthCm!,
+      widthCm: metadata.widthCm!,
+      heightCm: metadata.heightCm!,
+      isRigid: metadata.isRigid ?? true,
       customsDescription: metadata.customsDescription.trim(),
       countryOfOrigin: metadata.countryOfOrigin!,
       hazardousMaterial: false,

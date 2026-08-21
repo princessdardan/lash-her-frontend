@@ -100,7 +100,10 @@ export function prepareShippingQuote(
         Pick<
           TProductShippingMetadata,
           | "weightGrams"
-          | "packingUnits"
+          | "lengthCm"
+          | "widthCm"
+          | "heightCm"
+          | "isRigid"
           | "customsDescription"
           | "countryOfOrigin"
         >
@@ -112,10 +115,10 @@ export function prepareShippingQuote(
   const packableLines: PackableLine[] = prepared.map(({ line, shipping }) => ({
     quantity: line.quantity,
     weightGrams: shipping.weightGrams,
-    packingUnits: shipping.packingUnits,
-    ...(shipping.minimumPackageTier
-      ? { minimumPackageTier: shipping.minimumPackageTier }
-      : {}),
+    lengthCm: shipping.lengthCm,
+    widthCm: shipping.widthCm,
+    heightCm: shipping.heightCm,
+    isRigid: shipping.isRigid,
   }));
   const packageSnapshot = selectSmallestPackage(packableLines, input.profiles);
   const merchandiseValueCents = toCents(cart.amount);
@@ -209,7 +212,13 @@ function validateShippingMetadata(
 ): asserts value is Required<
   Pick<
     TProductShippingMetadata,
-    "weightGrams" | "packingUnits" | "customsDescription" | "countryOfOrigin"
+    | "weightGrams"
+    | "lengthCm"
+    | "widthCm"
+    | "heightCm"
+    | "isRigid"
+    | "customsDescription"
+    | "countryOfOrigin"
   >
 > &
   TProductShippingMetadata {

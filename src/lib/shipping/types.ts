@@ -25,7 +25,7 @@ export interface ShippingPackageProfile {
   heightCm: number;
   tareWeightGrams: number;
   maxWeightGrams: number;
-  capacityUnits: number;
+  acceptsRigid: boolean;
   enabled: boolean;
 }
 

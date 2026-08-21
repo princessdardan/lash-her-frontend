@@ -503,8 +503,10 @@ export interface TProductVariant {
 export interface TProductShippingMetadata {
   fulfillmentMode: "physical" | "manual";
   weightGrams?: number;
-  packingUnits?: number;
-  minimumPackageTier?: string;
+  lengthCm?: number;
+  widthCm?: number;
+  heightCm?: number;
+  isRigid?: boolean;
   customsDescription?: string;
   countryOfOrigin?: string;
   usShippingApproved?: boolean;
