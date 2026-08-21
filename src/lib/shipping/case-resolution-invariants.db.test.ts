@@ -262,7 +262,7 @@ const scenario = String.raw`
       publicReference: "case-resolution-remedy-" + fixture,
       quoteTokenHash: "case-resolution-remedy-token-" + fixture,
       quoteFingerprint: "case-resolution-remedy-fingerprint-" + fixture,
-      status: "label_ready",
+      status: "ready_for_staff",
       destination,
       packageSnapshot,
       customsLines: [],
