@@ -46,6 +46,8 @@ export const product = defineType({
       title: "Short Description",
       type: "text",
       group: "overview",
+      description:
+        "A sentence or two used as the catalog card blurb and the fallback SEO/social summary. Falls back to the full Description when empty. For a few-word label, use Card Subtitle instead.",
     }),
     defineField({
       name: "cardSubtitle",
@@ -53,7 +55,7 @@ export const product = defineType({
       type: "string",
       group: "overview",
       description:
-        "Short catalog card label, such as retention or finish details.",
+        "A short uppercase label shown beneath the title on the card and product page, such as retention or finish details. Keep it to a few words, not a sentence — for a blurb, use Short Description.",
     }),
     defineField({
       name: "badgeLabel",
@@ -102,6 +104,9 @@ export const product = defineType({
       group: "pricing",
       initialValue: "CAD",
       readOnly: true,
+      // Every price is CAD and the value is locked; hide the dead editor slot
+      // while still stamping "CAD" on new documents for JSON-LD and orders.
+      hidden: true,
       validation: (Rule) => Rule.required(),
     }),
     defineField({
@@ -212,6 +217,17 @@ export const product = defineType({
               ],
             }),
             defineField({
+              name: "image",
+              title: "Variant Image",
+              type: "image",
+              options: { hotspot: true },
+              description:
+                "Optional. Shown instead of the product image while this combination is selected. Leave blank to keep the product image.",
+              fields: [
+                defineField({ name: "alt", title: "Alt text", type: "string" }),
+              ],
+            }),
+            defineField({
               name: "price",
               title: "Price Override",
               type: "number",
@@ -259,8 +275,9 @@ export const product = defineType({
               select: "select",
               price: "price",
               isAvailable: "isAvailable",
+              media: "image",
             },
-            prepare({ select, price, isAvailable }) {
+            prepare({ select, price, isAvailable, media }) {
               const parts = Array.isArray(select)
                 ? select
                     .map((entry) =>
@@ -277,6 +294,7 @@ export const product = defineType({
               return {
                 title,
                 subtitle: `${amount}${isAvailable === false ? " · Unavailable" : ""}`,
+                media,
               };
             },
           },
@@ -356,13 +374,12 @@ export const product = defineType({
           type: "object",
           fields: [
             defineField({ name: "heading", title: "Heading", type: "string" }),
-            defineField({ name: "content", title: "Content", type: "text" }),
             defineField({
               name: "body",
-              title: "Rich Content",
+              title: "Content",
               type: "array",
               description:
-                "Optional rich replacement for Content. Existing plain text content is preserved.",
+                "Rich text with optional bullet or numbered lists. This is the field to author new content in.",
               of: [
                 defineArrayMember({
                   type: "block",
@@ -372,6 +389,18 @@ export const product = defineType({
                   ],
                 }),
               ],
+            }),
+            defineField({
+              name: "content",
+              title: "Content (legacy plain text)",
+              type: "text",
+              deprecated: {
+                reason:
+                  "Use the rich Content field above. Legacy text still renders only when the rich field is empty.",
+              },
+              // Only surfaces where legacy text already exists, so editors can
+              // view or clear it but never author new plain-text content.
+              hidden: ({ value }) => !value,
             }),
           ],
         }),

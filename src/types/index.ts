@@ -440,6 +440,7 @@ export interface TProductVariantOption {
 export interface TProductVariantOverride {
   _key?: string;
   select: TProductVariantOption[];
+  image?: TSanityImage;
   price?: number | null;
   discountPrice?: number | null;
   sku?: string;
@@ -482,6 +483,7 @@ export interface TProductVariant {
   isAvailable: boolean;
   availabilityLabel?: string;
   options?: TProductVariantOption[];
+  image?: TSanityImage;
   shipping?: TProductShippingMetadata;
 }
 

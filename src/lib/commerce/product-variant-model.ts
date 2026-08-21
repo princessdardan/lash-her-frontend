@@ -8,6 +8,7 @@ import type {
   TProductVariant,
   TProductVariantOption,
   TProductVariantOverride,
+  TSanityImage,
 } from "@/types";
 
 const MAX_DERIVED_VARIANTS = 100;
@@ -31,6 +32,7 @@ interface ResolvedOverride {
   readonly sku?: string;
   readonly isAvailable?: boolean;
   readonly availabilityLabel?: string;
+  readonly image?: TSanityImage;
   readonly shipping?: TProductShippingMetadata;
 }
 
@@ -142,6 +144,7 @@ function resolveOverride(override: TProductVariantOverride): ResolvedOverride {
   const sku = cleanString(override.sku) ?? undefined;
   const availabilityLabel =
     cleanString(override.availabilityLabel) ?? undefined;
+  const image = hasImageAsset(override.image) ? override.image : undefined;
 
   return {
     ...(price !== null ? { price } : {}),
@@ -153,6 +156,7 @@ function resolveOverride(override: TProductVariantOverride): ResolvedOverride {
       ? { isAvailable: override.isAvailable }
       : {}),
     ...(availabilityLabel ? { availabilityLabel } : {}),
+    ...(image ? { image } : {}),
     ...(shipping ? { shipping } : {}),
   };
 }
@@ -206,6 +210,7 @@ function buildVariants(
       ...(override.availabilityLabel
         ? { availabilityLabel: override.availabilityLabel }
         : {}),
+      ...(override.image ? { image: override.image } : {}),
       ...(override.shipping ? { shipping: override.shipping } : {}),
     };
   });
@@ -273,6 +278,10 @@ function hasShippingOverride(
         value !== "",
     ),
   );
+}
+
+function hasImageAsset(image: TSanityImage | undefined): image is TSanityImage {
+  return typeof image?.asset?._ref === "string" && image.asset._ref.length > 0;
 }
 
 function toPositiveNumber(value: unknown): number | null {

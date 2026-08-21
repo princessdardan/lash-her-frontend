@@ -158,6 +158,57 @@ describe("normalizeProductVariantModel", () => {
     );
   });
 
+  it("carries an override image onto the matched combination only", () => {
+    const image = {
+      asset: { _ref: "image-c8", _type: "reference" as const },
+      alt: "C Curl at 8mm",
+    };
+    const normalized = normalizeProductVariantModel(
+      createTwoAxisProduct({
+        variantOverrides: [
+          {
+            select: [
+              { name: "Curl", value: "C Curl" },
+              { name: "Length", value: "8mm" },
+            ],
+            image,
+          },
+        ],
+      }),
+    );
+
+    const overridden = normalized.variants?.find(
+      (variant) => variant.title === "C Curl / 8mm",
+    );
+    assert.deepEqual(overridden?.image, image);
+    assert.ok(
+      normalized.variants
+        ?.filter((variant) => variant.title !== "C Curl / 8mm")
+        .every((variant) => variant.image === undefined),
+      "combinations without an override image stay on the product image",
+    );
+  });
+
+  it("ignores an override image that has no uploaded asset", () => {
+    const normalized = normalizeProductVariantModel(
+      createTwoAxisProduct({
+        variantOverrides: [
+          {
+            select: [
+              { name: "Curl", value: "C Curl" },
+              { name: "Length", value: "8mm" },
+            ],
+            image: { alt: "no asset yet" } as TProductVariant["image"],
+          },
+        ],
+      }),
+    );
+
+    assert.ok(
+      normalized.variants?.every((variant) => variant.image === undefined),
+    );
+  });
+
   it("treats an empty override shipping object as no override", () => {
     const normalized = normalizeProductVariantModel(
       createTwoAxisProduct({

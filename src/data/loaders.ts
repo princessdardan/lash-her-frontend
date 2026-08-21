@@ -79,7 +79,7 @@ const PRODUCT_PROJECTION = groq`{
     "displayOrder": @->displayOrder
   },
   options[]{ _key, name, values },
-  variantOverrides[]{ _key, select[]{ _key, name, value }, price, discountPrice, sku, isAvailable, availabilityLabel, shipping },
+  variantOverrides[]{ _key, select[]{ _key, name, value }, image{ asset, hotspot, crop, alt }, price, discountPrice, sku, isAvailable, availabilityLabel, shipping },
   isAvailable,
   availabilityLabel,
   fulfillmentNote,
