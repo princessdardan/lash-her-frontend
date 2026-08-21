@@ -1,6 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import process from "node:process";
 
 const SERVER_ONLY_TEST_FILES = new Set([
@@ -181,21 +182,39 @@ function runTests(files, nodeOptions) {
     mode === "--db-only" ||
     nodeOptions.includes("./scripts/register-server-only-test.mjs");
 
+  const env = needsServerTestEnvironment
+    ? {
+        ...process.env,
+        NEXT_PUBLIC_SANITY_DATASET:
+          process.env.NEXT_PUBLIC_SANITY_DATASET ?? "test-dataset",
+        NEXT_PUBLIC_SANITY_PROJECT_ID:
+          process.env.NEXT_PUBLIC_SANITY_PROJECT_ID ?? "test-project",
+      }
+    : { ...process.env };
+
+  // The DB tests run under `--conditions=react-server` (so `server-only`
+  // resolves to its no-op stub). That condition also forces React 18 onto its
+  // `react-server` entry, which throws "not yet supported outside of
+  // experimental channels" the moment a module under test transitively imports
+  // React. Register the React-compat resolve hook via NODE_OPTIONS — not a
+  // command-line flag — so it also reaches each *.db.test.ts's inner
+  // `execFileSync` subprocess (which inherits this env), keeping React on its
+  // normal entry while `server-only` stays stubbed by the condition.
+  if (nodeOptions.includes("--conditions=react-server")) {
+    const reactCompatHook = pathToFileURL(
+      path.resolve("scripts/register-react-server-db-compat.mjs"),
+    ).href;
+    env.NODE_OPTIONS = [process.env.NODE_OPTIONS, `--import ${reactCompatHook}`]
+      .filter(Boolean)
+      .join(" ");
+  }
+
   const result = spawnSync(
     process.execPath,
     [...nodeOptions, "--import", "tsx", "--test", ...files],
     {
       cwd: process.cwd(),
-      env:
-        needsServerTestEnvironment
-          ? {
-              ...process.env,
-              NEXT_PUBLIC_SANITY_DATASET:
-                process.env.NEXT_PUBLIC_SANITY_DATASET ?? "test-dataset",
-              NEXT_PUBLIC_SANITY_PROJECT_ID:
-                process.env.NEXT_PUBLIC_SANITY_PROJECT_ID ?? "test-project",
-            }
-          : process.env,
+      env,
       stdio: "inherit",
     },
   );
