@@ -31,10 +31,18 @@ const scenario = String.raw`
   const db = getPrivateDb();
   const prefix = "lh-remediation-refund-";
   const ambiguousAlertKeyPrefix = "shipping-refund-ambiguous/sq-refund-ambiguous-980001/";
+  const unlinkedAlertKeyPrefix = "shipping-refund-unlinked/sq-refund-unlinked-960001/";
+  const bookingAlertKeyPrefix = "shipping-refund-unlinked/sq-refund-booking-970001/";
 
   async function cleanup() {
     await db.delete(customerEmailOutbox).where(
       like(customerEmailOutbox.providerIdempotencyKey, ambiguousAlertKeyPrefix + "%"),
+    );
+    await db.delete(customerEmailOutbox).where(
+      like(customerEmailOutbox.providerIdempotencyKey, unlinkedAlertKeyPrefix + "%"),
+    );
+    await db.delete(customerEmailOutbox).where(
+      like(customerEmailOutbox.providerIdempotencyKey, bookingAlertKeyPrefix + "%"),
     );
     await db.execute(sql.raw(
       "DELETE FROM product_order_refunds WHERE order_id IN " +
@@ -435,6 +443,49 @@ const scenario = String.raw`
       .where(like(customerEmailOutbox.providerIdempotencyKey, ambiguousAlertKeyPrefix + "%"));
     assert.ok(ambiguousAlerts.length >= 1, "expected a finance alert for the ambiguous refund");
     assert.ok(ambiguousAlerts.every((row) => row.kind === "shipping_policy_alert" && row.status === "queued"));
+
+    // A COMPLETED Square refund that settled against a product-order capture but
+    // matches NO reserved refund row (e.g. an operator issued it from the Square
+    // Dashboard) must raise a critical finance_owner alert — the order stays
+    // 'paid' and nothing else watches it. Keyed by the provider refund id so a
+    // retried webhook does not re-notify.
+    await seed(prefix + "unlinked", [
+      { providerTransactionId: "960001", amountCents: 4300 },
+    ]);
+    assert.equal(await reconcileProductOrderRefund({
+      originalTransactionId: "960001",
+      providerRefundId: "sq-refund-unlinked-960001",
+      amountCents: 4300,
+      currency: "CAD",
+    }), false);
+    const unlinkedAlerts = await db.select().from(customerEmailOutbox)
+      .where(like(customerEmailOutbox.providerIdempotencyKey, unlinkedAlertKeyPrefix + "%"));
+    assert.ok(unlinkedAlerts.length >= 1, "expected a finance alert for the unlinked product-order refund");
+    assert.ok(unlinkedAlerts.every((row) => row.kind === "shipping_policy_alert" && row.status === "queued"));
+    // A webhook retry is idempotent on the provider refund id: no second alert.
+    assert.equal(await reconcileProductOrderRefund({
+      originalTransactionId: "960001",
+      providerRefundId: "sq-refund-unlinked-960001",
+      amountCents: 4300,
+      currency: "CAD",
+    }), false);
+    const unlinkedAlertsAfterRetry = await db.select().from(customerEmailOutbox)
+      .where(like(customerEmailOutbox.providerIdempotencyKey, unlinkedAlertKeyPrefix + "%"));
+    assert.equal(unlinkedAlertsAfterRetry.length, unlinkedAlerts.length);
+
+    // A COMPLETED refund whose originalTransactionId matches NO product-order
+    // payment is a genuine service-booking refund (bookings settle through
+    // appointment_holds/checkout_payment_events, not orderPaymentTransactions).
+    // Reconcile must stay silent — returning false and raising NO alert.
+    assert.equal(await reconcileProductOrderRefund({
+      originalTransactionId: "sq-booking-capture-does-not-exist",
+      providerRefundId: "sq-refund-booking-970001",
+      amountCents: 6600,
+      currency: "CAD",
+    }), false);
+    const bookingAlerts = await db.select().from(customerEmailOutbox)
+      .where(like(customerEmailOutbox.providerIdempotencyKey, bookingAlertKeyPrefix + "%"));
+    assert.equal(bookingAlerts.length, 0, "a booking refund must not raise a product-order finance alert");
   } finally {
     await cleanup();
     await closePrivateDbPool();
