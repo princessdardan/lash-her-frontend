@@ -43,6 +43,7 @@ const helperScript = String.raw`
         return due.map((job) => ({
           id: job.id,
           attempts: job.attempts,
+          kind: job.kind,
           lockedBy: job.lockedBy,
           maxAttempts: job.maxAttempts,
           payload: job.payload,
@@ -295,6 +296,32 @@ test("worker claims no more than the configured batch size", () => {
 
     assert.equal(summary.processed, 2);
     assert.equal(syncCalls.length, 2);
+  `);
+});
+
+test("worker routes unsubscribe_sync jobs to the unsubscribe push", () => {
+  runWorkerScenario(`
+    const unsubCalls = [];
+    const { run, syncCalls, jobs } = createWorker({
+      unsubscribeContact: async (input) => { unsubCalls.push(input); },
+    }, [createSampleJob({
+      id: "job-unsub",
+      kind: "unsubscribe_sync",
+      payload: {
+        consentedAt: "2026-05-11T12:00:00.000Z",
+        email: "leaving@example.com",
+        source: "internal",
+      },
+    })]);
+
+    const summary = await run();
+
+    assert.equal(summary.processed, 1);
+    assert.equal(summary.succeeded, 1);
+    assert.equal(syncCalls.length, 0);
+    assert.equal(unsubCalls.length, 1);
+    assert.equal(unsubCalls[0].email, "leaving@example.com");
+    assert.equal(jobs.get("job-unsub").status, "succeeded");
   `);
 });
 

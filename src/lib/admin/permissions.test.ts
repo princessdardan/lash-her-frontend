@@ -72,6 +72,15 @@ test("admin has operational access but not owner-only actions", () => {
   );
   assert.equal(
     canAdmin({
+      action: "marketing:send",
+      bookingProviderResourceIds: [],
+      bookingResourceIds: [],
+      role: "admin",
+    }),
+    true,
+  );
+  assert.equal(
+    canAdmin({
       action: "payments:refund",
       bookingProviderResourceIds: [],
       bookingResourceIds: [],
@@ -126,6 +135,7 @@ test("employee access is restricted to assigned booking resources", () => {
     false,
   );
   assert.equal(canAdmin({ ...base, action: "marketing:view" }), false);
+  assert.equal(canAdmin({ ...base, action: "marketing:send" }), false);
   assert.equal(canAdmin({ ...base, action: "offerings:view" }), true);
   assert.equal(canAdmin({ ...base, action: "offerings:manage" }), true);
   assert.equal(

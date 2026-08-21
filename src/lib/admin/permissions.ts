@@ -15,6 +15,7 @@ export type AdminPermissionAction =
   | "calendar-connections:view"
   | "marketing:export"
   | "marketing:manage"
+  | "marketing:send"
   | "marketing:view"
   | "offerings:manage"
   | "offerings:view"
@@ -49,6 +50,7 @@ const ADMIN_ACTIONS = new Set<AdminPermissionAction>([
   "calendar-connections:manage",
   "calendar-connections:view",
   "marketing:manage",
+  "marketing:send",
   "marketing:view",
   "offerings:manage",
   "offerings:view",

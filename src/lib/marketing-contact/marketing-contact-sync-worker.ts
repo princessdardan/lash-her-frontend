@@ -5,11 +5,13 @@ import { and, asc, eq, inArray, lte, or, sql } from "drizzle-orm";
 import { getPrivateDb } from "@/lib/private-db/client";
 import {
   marketingContactSyncJobs,
+  type MarketingContactSyncJobKind,
   type MarketingContactSyncJobPayload,
   type MarketingContactSyncJobStatus,
 } from "@/lib/private-db/schema";
 import {
   syncResendMarketingContact,
+  unsubscribeResendMarketingContact,
   type ResendContactSyncStep,
   type ResendMarketingContactInput,
 } from "@/lib/resend-platform";
@@ -17,6 +19,8 @@ import {
 export interface MarketingContactSyncJob {
   id: string;
   attempts: number;
+  // Undefined for legacy rows / older callers; treated as "opt_in_sync".
+  kind?: MarketingContactSyncJobKind;
   lockedBy: string;
   maxAttempts: number;
   payload: MarketingContactSyncJobPayload;
@@ -65,6 +69,9 @@ export interface MarketingContactSyncWorkerDependencies {
   logWarn: typeof console.warn;
   repository: MarketingContactSyncWorkerRepository;
   syncContact: (input: ResendMarketingContactInput) => Promise<void>;
+  // Pushes a DB-originated unsubscribe to Resend. Optional so existing callers
+  // and tests keep working; defaults to the real Resend implementation.
+  unsubscribeContact?: (input: { email: string }) => Promise<void>;
 }
 
 export interface MarketingContactSyncRunSummary {
@@ -124,11 +131,18 @@ export function createMarketingContactSyncWorker(
 
       const summary = buildSummary({ now, processed: jobs.length });
 
+      const unsubscribeContact =
+        dependencies.unsubscribeContact ?? unsubscribeResendMarketingContact;
+
       for (const job of jobs) {
         try {
-          await dependencies.syncContact(
-            toResendMarketingContactInput(job.payload),
-          );
+          if (job.kind === "unsubscribe_sync") {
+            await unsubscribeContact({ email: job.payload.email });
+          } else {
+            await dependencies.syncContact(
+              toResendMarketingContactInput(job.payload),
+            );
+          }
           const updated = await dependencies.repository.markJobSucceeded({
             jobId: job.id,
             lockedBy: job.lockedBy,
@@ -277,6 +291,7 @@ export async function runMarketingContactSyncWorker(input?: {
     logWarn: console.warn,
     repository: createDrizzleMarketingContactSyncWorkerRepository(),
     syncContact: syncResendMarketingContact,
+    unsubscribeContact: unsubscribeResendMarketingContact,
   });
 
   return worker.run(input);
@@ -338,6 +353,7 @@ export function createDrizzleMarketingContactSyncWorkerRepository(
           .returning({
             id: marketingContactSyncJobs.id,
             attempts: marketingContactSyncJobs.attempts,
+            kind: marketingContactSyncJobs.kind,
             lockedBy: marketingContactSyncJobs.lockedBy,
             maxAttempts: marketingContactSyncJobs.maxAttempts,
             payload: marketingContactSyncJobs.payload,

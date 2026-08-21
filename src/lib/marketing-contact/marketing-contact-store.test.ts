@@ -254,7 +254,31 @@ test("marketing contact store records Resend unsubscribe events", () => {
       emailNormalized: "client@example.com",
       metadata: { resendSegmentIds: ["segment-newsletter"] },
       occurredAt,
+      origin: "resend",
       resendContactId: "contact-123",
+    });
+  `);
+});
+
+test("marketing contact store records internal unsubscribes with origin internal", () => {
+  runMarketingContactStoreScenario(`
+    const { repository, store } = createFakeStore();
+    const occurredAt = new Date("2026-05-11T12:00:00.000Z");
+
+    const result = await store.recordInternalUnsubscribe({
+      email: " Owner@Example.COM ",
+      occurredAt,
+      reason: "Requested by phone",
+    });
+
+    assert.deepEqual(result, { eventId: "marketing-unsubscribe-1" });
+    assert.deepEqual(repository.unsubscribes[0], {
+      email: "Owner@Example.COM",
+      emailNormalized: "owner@example.com",
+      metadata: undefined,
+      occurredAt,
+      origin: "internal",
+      reason: "Requested by phone",
     });
   `);
 });
