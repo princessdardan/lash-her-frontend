@@ -204,7 +204,6 @@ function toShipmentPayload(
     postage_type: input.postageType ?? "unknown",
     ship_date: input.shipDate ?? "today",
     line_items: input.customsLines.map((line) => {
-      const regulatory = line.usRegulatoryCertification;
       return {
         quantity: line.quantity,
         description: line.description,
@@ -221,16 +220,6 @@ function toShipmentPayload(
         manufacturer_province_code: line.manufacturerProvinceCode,
         manufacturer_postal_code: line.manufacturerPostalCode,
         manufacturer_country_code: line.manufacturerCountryCode,
-        ...(regulatory?.additionalTariffApplicability === "required" &&
-        regulatory.additionalTariffDetails
-          ? {
-              additional_tariff_details: {
-                steel: regulatory.additionalTariffDetails.steel,
-                copper: regulatory.additionalTariffDetails.copper,
-                aluminum: regulatory.additionalTariffDetails.aluminum,
-              },
-            }
-          : {}),
       };
     }),
   };

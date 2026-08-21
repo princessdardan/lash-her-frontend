@@ -90,10 +90,7 @@ export function prepareShippingQuote(
       (candidate) => candidate._key === line.variantId,
     );
     const shipping = variant?.shipping ?? product.shipping;
-    validateShippingMetadata(shipping, input.recipient.countryCode, {
-      now: input.now,
-      usShippingContract: input.usShippingContract,
-    });
+    validateShippingMetadata(shipping, input.recipient.countryCode);
     return { line, shipping } as {
       line: typeof line;
       shipping: Required<
@@ -165,13 +162,6 @@ export function prepareShippingQuote(
       ...(shipping.manufacturerCountryCode
         ? { manufacturerCountryCode: shipping.manufacturerCountryCode }
         : {}),
-      ...(shipping.usRegulatoryCertification
-        ? {
-            usRegulatoryCertification: toRegulatoryCertificationSnapshot(
-              shipping.usRegulatoryCertification,
-            ),
-          }
-        : {}),
     }));
   });
   const fingerprint = createShippingFingerprint({
@@ -205,10 +195,6 @@ export class ShippingEligibilityError extends Error {
 function validateShippingMetadata(
   value: TProductShippingMetadata | undefined,
   countryCode: "CA" | "US",
-  context: {
-    now?: Date;
-    usShippingContract?: FulfillmentProviderCertificationContractSnapshot;
-  },
 ): asserts value is Required<
   Pick<
     TProductShippingMetadata,
@@ -222,11 +208,7 @@ function validateShippingMetadata(
   >
 > &
   TProductShippingMetadata {
-  const eligibility = getProductCheckoutEligibility(
-    value,
-    countryCode,
-    context,
-  );
+  const eligibility = getProductCheckoutEligibility(value, countryCode);
   if (eligibility.status !== "automated") {
     throw new ShippingEligibilityError(
       eligibility.status === "manual"
@@ -242,37 +224,4 @@ function lineKey(productId: string, variantId?: string): string {
 
 function toCents(value: number): number {
   return Math.round(value * 100);
-}
-
-function toRegulatoryCertificationSnapshot(
-  certification: NonNullable<
-    TProductShippingMetadata["usRegulatoryCertification"]
-  >,
-): NonNullable<
-  ProductShipmentCustomsLineSnapshot["usRegulatoryCertification"]
-> {
-  const details = certification.additionalTariffDetails;
-  return {
-    version: certification.version,
-    usShippingContractVersion: certification.usShippingContractVersion,
-    tariffMetadataSchemaVersion: certification.tariffMetadataSchemaVersion,
-    fdaRequirementsVersion: certification.fdaRequirementsVersion,
-    evidenceReference: certification.evidenceReference,
-    reviewedAt: certification.reviewedAt,
-    validUntil: certification.validUntil,
-    additionalTariffApplicability: certification.additionalTariffApplicability,
-    ...(details &&
-    Number.isInteger(details.steel) &&
-    Number.isInteger(details.copper) &&
-    Number.isInteger(details.aluminum)
-      ? {
-          additionalTariffDetails: {
-            steel: details.steel!,
-            copper: details.copper!,
-            aluminum: details.aluminum!,
-          },
-        }
-      : {}),
-    fdaApplicability: certification.fdaApplicability,
-  };
 }

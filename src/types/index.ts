@@ -517,25 +517,7 @@ export interface TProductShippingMetadata {
   manufacturerProvinceCode?: string;
   manufacturerPostalCode?: string;
   manufacturerCountryCode?: string;
-  usRegulatoryCertification?: TProductUsRegulatoryCertification;
   hazardousMaterial?: boolean;
-}
-
-export interface TProductUsRegulatoryCertification {
-  version: string;
-  usShippingContractVersion: string;
-  tariffMetadataSchemaVersion: string;
-  fdaRequirementsVersion: string;
-  evidenceReference: string;
-  reviewedAt: string;
-  validUntil: string;
-  additionalTariffApplicability: "not_applicable" | "required";
-  additionalTariffDetails?: {
-    steel?: number;
-    copper?: number;
-    aluminum?: number;
-  };
-  fdaApplicability: "not_applicable" | "provider_assessed";
 }
 
 export interface TProduct {

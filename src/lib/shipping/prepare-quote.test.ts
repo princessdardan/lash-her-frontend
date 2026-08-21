@@ -44,17 +44,6 @@ const shipping = {
   manufacturerProvinceCode: "SE",
   manufacturerPostalCode: "04524",
   manufacturerCountryCode: "KR",
-  usRegulatoryCertification: {
-    version: "sku-review-v1",
-    usShippingContractVersion: contract.version,
-    tariffMetadataSchemaVersion: contract.tariffMetadataSchema.version,
-    fdaRequirementsVersion: contract.fdaRequirements.version,
-    evidenceReference: "sku-evidence",
-    reviewedAt: "2026-08-02T00:00:00.000Z",
-    validUntil: "2026-12-01T00:00:00.000Z",
-    additionalTariffApplicability: "not_applicable" as const,
-    fdaApplicability: "provider_assessed" as const,
-  },
 };
 const base = {
   items: [{ productId: "product-1", quantity: 1 }],
@@ -107,21 +96,20 @@ const base = {
   now,
 };
 
-test("U.S. quote snapshots the exact SKU certification bound to the current contract", () => {
+test("U.S. quote snapshots the customs metadata for an approved U.S. SKU", () => {
   const prepared = prepareShippingQuote(base);
+  assert.equal(prepared.customsLines[0]?.hsTariffCode, shipping.hsTariffCode);
   assert.equal(
-    prepared.customsLines[0]?.usRegulatoryCertification
-      ?.usShippingContractVersion,
-    contract.version,
+    prepared.customsLines[0]?.countryOfOrigin,
+    shipping.countryOfOrigin,
   );
   assert.equal(
-    prepared.customsLines[0]?.usRegulatoryCertification
-      ?.tariffMetadataSchemaVersion,
-    contract.tariffMetadataSchema.version,
+    prepared.customsLines[0]?.manufacturerName,
+    shipping.manufacturerName,
   );
 });
 
-test("U.S. quote rejects a SKU certification for another contract", () => {
+test("U.S. quote rejects a SKU missing required customs metadata", () => {
   assert.throws(
     () =>
       prepareShippingQuote({
@@ -129,18 +117,12 @@ test("U.S. quote rejects a SKU certification for another contract", () => {
         products: [
           {
             ...base.products[0]!,
-            shipping: {
-              ...shipping,
-              usRegulatoryCertification: {
-                ...shipping.usRegulatoryCertification,
-                usShippingContractVersion: "superseded-contract",
-              },
-            },
+            shipping: { ...shipping, hsTariffCode: undefined },
           },
         ],
       }),
     (error) =>
       error instanceof ShippingEligibilityError &&
-      /contract_mismatch/.test(error.message),
+      /missing_us_hts/.test(error.message),
   );
 });

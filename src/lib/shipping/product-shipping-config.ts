@@ -177,10 +177,7 @@ export const PRODUCT_SHIPPED_REFUND_POLICY: {
  * (`us-ddu-disclosure-2026-08`); bump `version` on any future wording change so
  * customer acceptance records stay unambiguous. ⚠️ CONFIRM the schema `version`
  * strings with the business/legal owner before production. Editing any field
- * invalidates in-flight U.S. quotes by design (they re-derive). SKU-level
- * `usRegulatoryCertification.*Version` values on U.S. products must match the
- * `version` / `tariffMetadataSchema.version` / `fdaRequirements.version` here
- * (see docs/us-shipping-regulatory-data-contract.md).
+ * invalidates in-flight U.S. quotes by design (they re-derive).
  *
  * The `effectiveFrom` / `effectiveUntil` window is NOT enforced by this
  * storefront — DDU contract validity is managed externally. The permissive
