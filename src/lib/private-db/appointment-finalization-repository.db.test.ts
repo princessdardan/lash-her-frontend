@@ -1049,6 +1049,9 @@ test(
         async cancelPaymentByIdempotencyKey() {
           throw new Error("Completed payment intent must not be cancelled");
         },
+        async refundPayment() {
+          throw new Error("refundPayment is not supported by this fake");
+        },
         async completePayment() {
           return {
             payment: {
@@ -1307,6 +1310,9 @@ test(
         async cancelPaymentByIdempotencyKey() {
           providerCalls.push("payments.cancel-by-idempotency-key");
           throw new Error("Authorized recovery must not cancel the payment");
+        },
+        async refundPayment() {
+          throw new Error("refundPayment is not supported by this fake");
         },
         async completePayment() {
           providerCalls.push("payments.complete");
@@ -1788,6 +1794,9 @@ for (const expectedBookingStatus of ["booked", "manual_followup"] as const) {
           async cancelPaymentByIdempotencyKey() {
             providerCalls.push("payments.cancel-by-idempotency-key");
             throw new Error("Recovery must not cancel a Square payment");
+          },
+          async refundPayment() {
+            throw new Error("refundPayment is not supported by this fake");
           },
           async completePayment() {
             providerCalls.push("payments.complete");

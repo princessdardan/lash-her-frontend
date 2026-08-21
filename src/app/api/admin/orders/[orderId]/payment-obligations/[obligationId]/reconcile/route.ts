@@ -5,20 +5,18 @@ import {
   requireRecentAdminAuthentication,
 } from "@/lib/admin/auth";
 import { createAdminStepUpTarget } from "@/lib/admin/step-up-proof";
-import { paymentObligationInitializationReconciliationScope } from "@/lib/commerce/product-payment-obligation-initialization-plan";
 import {
-  preparePaymentObligationInitializationReconciliation,
-  reconcilePaymentObligationInitialization,
-  type PaymentObligationInitializationReconciliationAction,
-} from "@/lib/commerce/product-payment-obligation-reconciliation";
+  reconcileSquarePaymentObligationInitialization,
+  squarePaymentObligationReconciliationScope,
+  type SquarePaymentObligationReconciliationAction,
+} from "@/lib/commerce/square-obligation-reconciliation";
 import { assertConfiguredFulfillmentOwner } from "@/lib/shipping/configured-owner";
 import { assertShippingPolicyMutationAllowed } from "@/lib/shipping/policy";
 
 export const runtime = "nodejs";
 
-const ACTIONS = new Set<PaymentObligationInitializationReconciliationAction>([
-  "adopt_invoice",
-  "confirm_no_payable_state_and_reissue",
+const ACTIONS = new Set<SquarePaymentObligationReconciliationAction>([
+  "reconcile_and_retry",
   "record_manual_handoff",
 ]);
 
@@ -61,10 +59,8 @@ export async function POST(
   > | null;
   const action =
     typeof body?.action === "string" &&
-    ACTIONS.has(
-      body.action as PaymentObligationInitializationReconciliationAction,
-    )
-      ? (body.action as PaymentObligationInitializationReconciliationAction)
+    ACTIONS.has(body.action as SquarePaymentObligationReconciliationAction)
+      ? (body.action as SquarePaymentObligationReconciliationAction)
       : null;
   if (!action) {
     return NextResponse.json(
@@ -79,47 +75,32 @@ export async function POST(
       : "";
   const rationale =
     typeof body?.rationale === "string" ? body.rationale.trim() : "";
-  const providerInvoiceId =
-    body?.providerInvoiceId === undefined
-      ? undefined
-      : Number(body.providerInvoiceId);
-  const providerInvoiceNumber =
-    typeof body?.providerInvoiceNumber === "string"
-      ? body.providerInvoiceNumber.trim()
-      : undefined;
   if (
     !Number.isInteger(expectedStateVersion) ||
     expectedStateVersion < 1 ||
     evidenceReference.length < 6 ||
-    rationale.length < 10
+    evidenceReference.length > 500 ||
+    rationale.length < 10 ||
+    rationale.length > 1_000
   ) {
+    // Bound both fields to the same limits the service enforces, BEFORE the
+    // one-use step-up proof is minted/consumed below — otherwise an over-length
+    // field would burn a step-up proof only to fail the service's guard.
     return NextResponse.json(
-      { error: "Version, provider evidence, and rationale are required" },
+      { error: "Version, evidence, and rationale are required" },
       { status: 400 },
     );
   }
   try {
-    const prepared = await preparePaymentObligationInitializationReconciliation(
-      {
-        action,
-        expectedStateVersion,
-        obligationId,
-        orderReference: orderId,
-        providerInvoiceId,
-        providerInvoiceNumber,
-      },
-    );
     stepUp = {
       action: `payment-obligation-initialization:${action}`,
       target: createAdminStepUpTarget(
-        paymentObligationInitializationReconciliationScope({
+        squarePaymentObligationReconciliationScope({
           action,
           evidenceReference,
           expectedStateVersion,
           obligationId,
           orderId,
-          providerEvidenceHash: prepared.providerEvidence.evidenceHash,
-          providerEvidenceKind: prepared.providerEvidence.kind,
           rationale,
         }),
       ),
@@ -127,16 +108,13 @@ export async function POST(
     };
     const stepUpAuthenticatedAt =
       await requireRecentAdminAuthentication(stepUp);
-    const result = await reconcilePaymentObligationInitialization({
+    const result = await reconcileSquarePaymentObligationInitialization({
       action,
       actorAdminUserId: actor.user.id,
       evidenceReference,
       expectedStateVersion,
       obligationId,
       orderReference: orderId,
-      providerInvoiceId,
-      providerInvoiceNumber,
-      providerEvidence: prepared.providerEvidence,
       rationale,
       stepUpAuthenticatedAt,
     });

@@ -15,7 +15,6 @@ import { createSquareClient, type SquareClient } from "./square-client";
 export interface SquareServiceBookingRuntimeEnv {
   accessToken: string;
   environment: "sandbox" | "production";
-  helcimLegacyCutoffAt: string | null;
   locationId: string;
   serviceBookingReturnUrl: string;
   serviceBookingWebhookUrl: string;
@@ -29,7 +28,9 @@ interface SquareClientResolverInput {
 }
 
 const mockSquareStore = createPaymentMockStore();
-const fallbackMockRequest = new Request("http://localhost:3000/api/booking/square/mock-runtime");
+const fallbackMockRequest = new Request(
+  "http://localhost:3000/api/booking/square/mock-runtime",
+);
 
 export function getSquareServiceBookingRuntimeEnv(): SquareServiceBookingRuntimeEnv | null {
   if (process.env.SERVICE_BOOKING_SQUARE_ENABLED !== "true") {
@@ -44,19 +45,26 @@ export function getSquareServiceBookingRuntimeEnv(): SquareServiceBookingRuntime
   }
 
   return {
-    accessToken: process.env.SQUARE_ACCESS_TOKEN?.trim() || "mock-square-access-token",
+    accessToken:
+      process.env.SQUARE_ACCESS_TOKEN?.trim() || "mock-square-access-token",
     environment: parseSquareEnvironment(process.env.SQUARE_ENVIRONMENT),
-    helcimLegacyCutoffAt: process.env.SERVICE_BOOKING_HELCIM_LEGACY_CUTOFF_AT ?? null,
-    locationId: process.env.SQUARE_LOCATION_ID?.trim() || "mock-square-location",
-    serviceBookingReturnUrl: process.env.SQUARE_SERVICE_BOOKING_RETURN_URL?.trim()
-      || "http://localhost:3000/api/booking/square/return",
-    serviceBookingWebhookUrl: process.env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL?.trim()
-      || "http://localhost:3000/api/webhooks/square",
-    webhookSignatureKey: process.env.SQUARE_WEBHOOK_SIGNATURE_KEY?.trim() || "mock-square-webhook-signature-key",
+    locationId:
+      process.env.SQUARE_LOCATION_ID?.trim() || "mock-square-location",
+    serviceBookingReturnUrl:
+      process.env.SQUARE_SERVICE_BOOKING_RETURN_URL?.trim() ||
+      "http://localhost:3000/api/booking/square/return",
+    serviceBookingWebhookUrl:
+      process.env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL?.trim() ||
+      "http://localhost:3000/api/webhooks/square",
+    webhookSignatureKey:
+      process.env.SQUARE_WEBHOOK_SIGNATURE_KEY?.trim() ||
+      "mock-square-webhook-signature-key",
   };
 }
 
-export function createSquareServiceBookingClient(input: SquareClientResolverInput): SquareClient {
+export function createSquareServiceBookingClient(
+  input: SquareClientResolverInput,
+): SquareClient {
   const runtimeEnvironment = getPaymentMockRuntimeEnvironment();
   const request = input.request ?? fallbackMockRequest;
 
@@ -90,6 +98,8 @@ function getPaymentMockRuntimeEnvironment(): PaymentMockRuntimeEnvironment {
   };
 }
 
-function parseSquareEnvironment(value: string | undefined): "sandbox" | "production" {
+function parseSquareEnvironment(
+  value: string | undefined,
+): "sandbox" | "production" {
   return value === "production" ? "production" : "sandbox";
 }

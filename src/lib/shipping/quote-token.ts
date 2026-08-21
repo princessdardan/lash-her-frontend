@@ -1,15 +1,10 @@
 import "server-only";
 
 import { createHash, createHmac, randomBytes } from "node:crypto";
-import { parseHelcimProductPaymentsContract } from "@/lib/commerce/helcim-certified-contract";
-import type {
-  FulfillmentProviderCertificationContractSnapshot,
-  HelcimProductPaymentsCertificationContractSnapshot,
-} from "@/lib/private-db/schema";
+import type { FulfillmentProviderCertificationContractSnapshot } from "@/lib/private-db/schema";
 import { getChitChatsConfig, type ChitChatsRegion } from "./config";
 
 export interface ShippingQuoteContext {
-  helcimProductPaymentsContract: HelcimProductPaymentsCertificationContractSnapshot;
   policyVersion: string;
   region: ChitChatsRegion;
   servicePolicies: Array<{
@@ -94,7 +89,6 @@ export function bindShippingFingerprintToContext(
 ): string {
   return createShippingFingerprint({
     fingerprint,
-    helcimProductPaymentsContract: context.helcimProductPaymentsContract,
     policyVersion: context.policyVersion,
     region: context.region,
     servicePolicies: context.servicePolicies,
@@ -119,9 +113,6 @@ export function parseShippingQuoteContextSnapshot(
   const context = value as Record<string, unknown>;
   const snapshot = context.shippingPolicySnapshot;
   if (
-    !parseHelcimProductPaymentsContract(
-      context.helcimProductPaymentsContract,
-    ) ||
     !isNonEmptyString(context.policyVersion) ||
     !isNonEmptyString(context.taxPolicyVersion) ||
     !isTaxPolicyApprovalSnapshot(context.taxPolicyApproval) ||

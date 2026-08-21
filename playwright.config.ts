@@ -8,7 +8,6 @@ import {
   ADMIN_CALENDAR_E2E_REDIS_ORIGIN,
   getAdminCalendarE2EDatabaseUrl,
 } from "./tests/support/admin-calendar-e2e-config";
-import { COMMERCE_E2E_HELCIM_CONTRACT_JSON } from "./tests/support/commerce-e2e-config";
 
 const googleCalendarFixturePreload = path.resolve(
   "tests/support/google-calendar-fetch-fixture.cjs",
@@ -163,12 +162,6 @@ export default defineConfig({
             CRON_SECRET: "e2e-cron-secret-0123456789-ABCDEFGHIJKLMNOP",
             ADMIN_EMAIL: "commerce-e2e-owner@example.invalid",
             FROM_EMAIL: "Lash Her E2E <e2e@example.invalid>",
-            HELCIM_GENERAL_API_TOKEN:
-              "e2e-helcim-general-token-0123456789-ABCDEFGHIJ",
-            HELCIM_PRODUCT_PAYMENTS_CONTRACT_JSON:
-              COMMERCE_E2E_HELCIM_CONTRACT_JSON,
-            HELCIM_TRANSACTION_API_TOKEN:
-              "e2e-helcim-transaction-token-0123456789-ABCDEFG",
             MANUAL_PRODUCT_CHECKOUT_ENABLED: "true",
             NEXT_PUBLIC_SANITY_API_VERSION: "2026-03-24",
             NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",

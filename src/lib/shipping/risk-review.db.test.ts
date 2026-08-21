@@ -48,7 +48,7 @@ const scenario = String.raw`
       shippingAmountCents: 200,
       currency: "CAD",
       lineItems: [],
-      paymentProvider: "helcim",
+      paymentProvider: "square",
       paymentRiskStatus: "review_required",
       fulfillmentMode: "manual_pickup",
       manualFulfillmentStatus: "paid_pending_dispatch",

@@ -17,6 +17,11 @@ import type {
   SquareInvoiceWebhookEventInput,
 } from "@/lib/commerce/order-store";
 import type { SquarePayment } from "@/lib/payments/square/payments-client";
+import type {
+  RecoverSquareCommercePaymentInput,
+  SquareCommerceOrderKind,
+  SquareCommerceRecoveryResult,
+} from "@/lib/commerce/square-commerce-webhook-recovery";
 
 export const runtime = "nodejs";
 
@@ -72,6 +77,15 @@ interface SquareWebhookDependencies {
   finalizeNoShowCharge: NoShowChargeFinalizer;
   finalizeSquarePayment: typeof finalizeSquarePayment;
   finalizeTrainingSquareInvoicePayment: TrainingSquareInvoiceFinalizer;
+  findCheckoutOrderByOrderId?: (
+    orderId: string,
+  ) => Promise<CheckoutOrderRow | null>;
+  findSquareSupplementalObligationByReference?: (
+    reference: string,
+  ) => Promise<string | null>;
+  recoverSquareCommercePayment?: (
+    input: RecoverSquareCommercePaymentInput,
+  ) => Promise<SquareCommerceRecoveryResult>;
   findOrderBySquareInvoiceId: (
     invoiceId: string,
   ) => Promise<CheckoutOrderRow | null>;
@@ -93,6 +107,17 @@ interface SquareWebhookDependencies {
     squareRefundId: string;
     status: string;
   }) => Promise<{ duplicate: boolean }>;
+  /**
+   * Settle the matching product-order refund when Square reports a refund
+   * COMPLETED. Idempotent; returns false when no product refund matches (e.g. a
+   * booking refund). Throws only on infrastructure failure.
+   */
+  reconcileProductRefund?: (input: {
+    originalTransactionId: string;
+    providerRefundId: string;
+    amountCents: number;
+    currency: string;
+  }) => Promise<boolean>;
   recordSquareInvoiceWebhookEventProcessed: (
     input: SquareInvoiceWebhookEventInput,
   ) => Promise<void>;
@@ -101,6 +126,7 @@ interface SquareWebhookDependencies {
 interface SquareWebhookEnv {
   notificationUrl: string;
   serviceBookingEnabled?: boolean;
+  commerceEnabled?: boolean;
   webhookSignatureKey: string;
 }
 
@@ -160,6 +186,43 @@ export const defaultDependencies: SquareWebhookDependencies = {
   },
   finalizeSquarePayment,
   finalizeTrainingSquareInvoicePayment,
+  async findCheckoutOrderByOrderId(orderId) {
+    const { findCheckoutOrderByOrderId } =
+      await import("@/lib/commerce/order-store");
+    return findCheckoutOrderByOrderId(orderId);
+  },
+  async findSquareSupplementalObligationByReference(reference) {
+    const { findSquareSupplementalObligationByReference } =
+      await import("@/lib/commerce/order-store");
+    return findSquareSupplementalObligationByReference(reference);
+  },
+  async recoverSquareCommercePayment(input) {
+    const [
+      { recoverSquareCommercePayment },
+      { finalizeSquareProductPayment },
+      { sendProductOrderConfirmationEmailForOrder },
+      { finalizeSquareTrainingCardPayment },
+      { notifyPaidTrainingOrder },
+      { finalizeSquareSupplementalObligation },
+    ] = await Promise.all([
+      import("@/lib/commerce/square-commerce-webhook-recovery"),
+      import("@/lib/commerce/square-product-finalizer"),
+      import("@/lib/commerce/product-order-email"),
+      import("@/lib/commerce/square-training-card-finalizer"),
+      import("@/lib/commerce/training-paid-notification"),
+      import("@/lib/commerce/square-supplemental-finalizer"),
+    ]);
+
+    return recoverSquareCommercePayment(input, {
+      finalizeProduct: finalizeSquareProductPayment,
+      sendProductConfirmationEmail: sendProductOrderConfirmationEmailForOrder,
+      finalizeTraining: finalizeSquareTrainingCardPayment,
+      sendTrainingNotifications: (orderReference) =>
+        notifyPaidTrainingOrder(orderReference),
+      finalizeSupplemental: finalizeSquareSupplementalObligation,
+      logError: (message, meta) => console.error(message, meta),
+    });
+  },
   async findOrderBySquareInvoiceId(invoiceId) {
     const { findOrderBySquareInvoiceId } =
       await import("@/lib/commerce/order-store");
@@ -208,10 +271,18 @@ export const defaultDependencies: SquareWebhookDependencies = {
       await import("@/lib/private-db/square-refund-event-repository");
     return recordSquareRefundEvent(input);
   },
+  async reconcileProductRefund(input) {
+    const { reconcileProductOrderRefund } =
+      await import("@/lib/shipping/customer-refunds");
+    return reconcileProductOrderRefund(input);
+  },
   async getEnv() {
     const [
       { getSquareServiceBookingRuntimeEnv },
-      { getTrainingAfterpaySquareInvoiceWebhookEnv },
+      {
+        getTrainingAfterpaySquareInvoiceWebhookEnv,
+        getSquareCommerceWebhookEnv,
+      },
     ] = await Promise.all([
       import("@/lib/booking/square-runtime"),
       import("@/lib/env/private-checkout"),
@@ -220,6 +291,7 @@ export const defaultDependencies: SquareWebhookDependencies = {
     return resolveSquareWebhookEnv({
       serviceBookingEnv: getSquareServiceBookingRuntimeEnv(),
       trainingInvoiceWebhookEnv: getTrainingAfterpaySquareInvoiceWebhookEnv(),
+      commerceWebhookEnv: getSquareCommerceWebhookEnv(),
     });
   },
   async recordSquareInvoiceWebhookEventProcessed(input) {
@@ -304,6 +376,38 @@ export function createSquareWebhookPostHandler(
           refundId: event.refund.refundId,
         });
         return new Response(null, { status: 503 });
+      }
+
+      // Settle the matching product refund once Square reports it COMPLETED.
+      // This confirms a refund we issued as PENDING and is a safety net for a
+      // synchronous completion the issuing request missed. A no-match returns
+      // false (e.g. a booking refund); only infrastructure failures 503 so
+      // Square retries — the persistence above is idempotent.
+      if (
+        event.refund.status.toUpperCase() === "COMPLETED" &&
+        dependencies.reconcileProductRefund !== undefined
+      ) {
+        try {
+          await dependencies.reconcileProductRefund({
+            originalTransactionId: event.refund.paymentId,
+            providerRefundId: event.refund.refundId,
+            amountCents: event.refund.amountCents,
+            currency: event.refund.currency,
+          });
+        } catch (error) {
+          console.error(
+            "[square-webhook] Product refund reconciliation failed",
+            {
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Unknown reconciliation error",
+              eventId: event.eventId,
+              refundId: event.refund.refundId,
+            },
+          );
+          return new Response(null, { status: 503 });
+        }
       }
 
       return new Response(null, { status: 200 });
@@ -426,6 +530,16 @@ export function createSquareWebhookPostHandler(
         }
 
         return new Response(null, { status: 200 });
+      }
+    }
+
+    if (env.commerceEnabled === true) {
+      const commerceResponse = await tryRecoverSquareCommercePayment(
+        dependencies,
+        event,
+      );
+      if (commerceResponse !== null) {
+        return commerceResponse;
       }
     }
 
@@ -586,14 +700,134 @@ async function tryFinalizeNoShowCharge(
   return new Response(null, { status: 200 });
 }
 
+async function tryRecoverSquareCommercePayment(
+  dependencies: SquareWebhookDependencies,
+  event: VerifiedSquareWebhookEvent,
+): Promise<Response | null> {
+  if (
+    !event.eventType.startsWith("payment.") ||
+    dependencies.findCheckoutOrderByOrderId === undefined ||
+    dependencies.recoverSquareCommercePayment === undefined
+  ) {
+    return null;
+  }
+
+  const payment = getSquarePayment(event);
+  if (payment === null || payment.reference_id === undefined) {
+    return null;
+  }
+
+  let order: CheckoutOrderRow | null;
+  try {
+    order = await dependencies.findCheckoutOrderByOrderId(payment.reference_id);
+  } catch (error) {
+    console.error("[square-webhook] commerce order lookup failed", {
+      error: error instanceof Error ? error.message : "Unknown lookup error",
+      eventId: event.eventId,
+      reference: payment.reference_id,
+    });
+    return new Response(null, { status: 503 });
+  }
+
+  let kind: SquareCommerceOrderKind | null =
+    order === null ? null : classifySquareCommerceCardOrder(order);
+  let orderReference: string | null =
+    order !== null && kind !== null ? order.orderId : null;
+
+  // A payment whose reference is not a commerce order may be a supplemental
+  // obligation top-up (the Square payment link's reference_id is the obligation
+  // id). Booking / Afterpay-invoice payments match neither and fall through.
+  if (
+    kind === null &&
+    dependencies.findSquareSupplementalObligationByReference !== undefined
+  ) {
+    let obligationId: string | null;
+    try {
+      obligationId =
+        await dependencies.findSquareSupplementalObligationByReference(
+          payment.reference_id,
+        );
+    } catch (error) {
+      console.error("[square-webhook] commerce obligation lookup failed", {
+        error: error instanceof Error ? error.message : "Unknown lookup error",
+        eventId: event.eventId,
+        reference: payment.reference_id,
+      });
+      return new Response(null, { status: 503 });
+    }
+    if (obligationId !== null) {
+      kind = "supplemental_obligation";
+      orderReference = obligationId;
+    }
+  }
+
+  if (kind === null || orderReference === null) {
+    return null;
+  }
+
+  let result: SquareCommerceRecoveryResult;
+  try {
+    result = await dependencies.recoverSquareCommercePayment({
+      orderReference,
+      kind,
+      squarePaymentId: payment.id,
+      status: payment.status,
+      amountCents: payment.amount_money.amount,
+      currency: payment.amount_money.currency,
+    });
+  } catch (error) {
+    console.error("[square-webhook] commerce recovery failed", {
+      error: error instanceof Error ? error.message : "Unknown recovery error",
+      eventId: event.eventId,
+      orderReference,
+      kind,
+    });
+    return new Response(null, { status: 503 });
+  }
+
+  // Retryable side-effect failures ask Square to redeliver; everything else
+  // (recovered / duplicate / ignored / terminal conflict) is acknowledged.
+  return new Response(null, {
+    status: result.status === "retryable" ? 503 : 200,
+  });
+}
+
+function classifySquareCommerceCardOrder(
+  order: CheckoutOrderRow,
+): SquareCommerceOrderKind | null {
+  if (order.paymentProvider !== "square") {
+    return null;
+  }
+
+  if (order.purpose === "product") {
+    return "product";
+  }
+
+  if (order.purpose === "training") {
+    const providerMetadata = getRecord(order.providerMetadata);
+    if (providerMetadata?.flow === "training_square_card") {
+      return "training_card";
+    }
+  }
+
+  return null;
+}
+
 export function resolveSquareWebhookEnv(input: {
   serviceBookingEnv: SquareWebhookRuntimeEnv | null;
   trainingInvoiceWebhookEnv: TrainingSquareInvoiceWebhookRuntimeEnv | null;
+  commerceWebhookEnv?: {
+    notificationUrl: string;
+    webhookSignatureKey: string;
+  } | null;
 }): SquareWebhookEnv | null {
+  const commerceEnabled = input.commerceWebhookEnv != null;
+
   if (input.serviceBookingEnv !== null) {
     return {
       notificationUrl: input.serviceBookingEnv.serviceBookingWebhookUrl,
       serviceBookingEnabled: true,
+      commerceEnabled,
       webhookSignatureKey: input.serviceBookingEnv.webhookSignatureKey,
     };
   }
@@ -602,7 +836,19 @@ export function resolveSquareWebhookEnv(input: {
     return {
       notificationUrl: input.trainingInvoiceWebhookEnv.notificationUrl,
       serviceBookingEnabled: false,
+      commerceEnabled,
       webhookSignatureKey: input.trainingInvoiceWebhookEnv.webhookSignatureKey,
+    };
+  }
+
+  // Commerce-only deployment: no Square bookings and no Afterpay invoices, but
+  // product/training card payments still need webhook reconciliation.
+  if (input.commerceWebhookEnv != null) {
+    return {
+      notificationUrl: input.commerceWebhookEnv.notificationUrl,
+      serviceBookingEnabled: false,
+      commerceEnabled: true,
+      webhookSignatureKey: input.commerceWebhookEnv.webhookSignatureKey,
     };
   }
 

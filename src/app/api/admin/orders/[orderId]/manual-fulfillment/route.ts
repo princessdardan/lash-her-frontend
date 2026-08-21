@@ -28,7 +28,6 @@ import {
   isSupplementalProductPaymentsEnabled,
 } from "@/lib/shipping/config";
 import {
-  assertHelcimProductPaymentsCertificationInTransaction,
   assertProductTaxPolicyApprovalInTransaction,
   type ProductTaxPolicyApprovalSnapshot,
 } from "@/lib/shipping/readiness";
@@ -373,13 +372,6 @@ export async function POST(
         trackingNumber: cleanText(body?.trackingNumber, 160),
       });
       const occurredAt = nextUpdatedAt(current.updatedAt);
-      const helcimContract =
-        action === "manual_shipping_agreement"
-          ? await assertHelcimProductPaymentsCertificationInTransaction(
-              tx,
-              occurredAt,
-            )
-          : null;
       const taxPolicyApproval =
         action === "manual_shipping_agreement"
           ? await loadAndAssertPrimaryTaxPolicyApproval(
@@ -440,10 +432,10 @@ export async function POST(
                 taxAmountCents: 0,
                 totalAmountCents: shippingAmountCents,
                 currency: current.currency,
+                paymentProvider: "square",
                 sourceWorkflow: `manual_shipping/${event.id}`,
                 sourceReferenceId: event.id,
                 disclosureSnapshot: {
-                  helcimContract,
                   taxPolicyApproval,
                   agreementEvidence: evidence,
                   agreedAmountCents: shippingAmountCents,

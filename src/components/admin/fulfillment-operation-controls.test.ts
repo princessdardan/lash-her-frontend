@@ -108,22 +108,20 @@ test("address apply binds the current version to its step-up proof", () => {
   });
 });
 
-test("ambiguous Helcim initialization exposes the exact typed reconciliation endpoint", () => {
+test("unresolved Square initialization exposes the typed reconciliation endpoint", () => {
   const item = operation({
-    kind: "helcim-initialization-outcome_unknown",
+    kind: "payment-initialization-outcome_unknown",
     queue: "provider-jobs",
   });
   const kind = getFulfillmentOperationActionKind(item);
   assert.equal(kind, "payment-initialization-reconciliation");
   assert.ok(kind);
   const form = new FormData();
-  form.set("action", "adopt_invoice");
-  form.set("providerInvoiceId", "45123");
-  form.set("providerInvoiceNumber", "INV-45123");
-  form.set("evidenceReference", "helcim://invoice/45123");
+  form.set("action", "reconcile_and_retry");
+  form.set("evidenceReference", "square://payment-link/obligation-check");
   form.set(
     "rationale",
-    "Authoritative Helcim evidence identifies the exact payable invoice.",
+    "Square shows no completed payment; safe to re-queue for an idempotent re-mint.",
   );
   const request = buildFulfillmentOperationRequest(kind, item, form);
   assert.equal(
@@ -131,34 +129,29 @@ test("ambiguous Helcim initialization exposes the exact typed reconciliation end
     `/api/admin/orders/${item.orderReference}/payment-obligations/${item.id}/reconcile`,
   );
   assert.deepEqual(request.body, {
-    action: "adopt_invoice",
-    evidenceReference: "helcim://invoice/45123",
+    action: "reconcile_and_retry",
+    evidenceReference: "square://payment-link/obligation-check",
     expectedStateVersion: 7,
-    providerInvoiceId: 45123,
-    providerInvoiceNumber: "INV-45123",
     rationale:
-      "Authoritative Helcim evidence identifies the exact payable invoice.",
+      "Square shows no completed payment; safe to re-queue for an idempotent re-mint.",
   });
 });
 
-test("manual-review initialization supports absence reissue and manual handoff while deterministic failure is display-only", () => {
+test("manual-review initialization supports retry and manual handoff while deterministic failure is display-only", () => {
   const manual = operation({
-    kind: "helcim-initialization-manual_review",
+    kind: "payment-initialization-manual_review",
     queue: "provider-jobs",
   });
   const kind = getFulfillmentOperationActionKind(manual);
   assert.equal(kind, "payment-initialization-reconciliation");
   assert.ok(kind);
-  for (const action of [
-    "confirm_no_payable_state_and_reissue",
-    "record_manual_handoff",
-  ]) {
+  for (const action of ["reconcile_and_retry", "record_manual_handoff"]) {
     const form = new FormData();
     form.set("action", action);
-    form.set("evidenceReference", "helcim://search/no-payable-state");
+    form.set("evidenceReference", "square://reconciliation/reviewed");
     form.set(
       "rationale",
-      "Authoritative provider review confirms the selected reconciliation action.",
+      "Owner review confirms the selected reconciliation action.",
     );
     const request = buildFulfillmentOperationRequest(kind, manual, form);
     assert.equal(request.body.action, action);
@@ -168,7 +161,7 @@ test("manual-review initialization supports absence reissue and manual handoff w
   assert.equal(
     getFulfillmentOperationActionKind(
       operation({
-        kind: "helcim-initialization-failed",
+        kind: "payment-initialization-failed",
         queue: "provider-jobs",
       }),
     ),

@@ -10,13 +10,6 @@ export function getCheckoutDatabaseUrl(): string {
   return assertValue(process.env.DATABASE_URL, "Missing env var: DATABASE_URL");
 }
 
-export function getHelcimWebhookVerifierToken(): string {
-  return assertValue(
-    process.env.HELCIM_WEBHOOK_VERIFIER_TOKEN,
-    "Missing env var: HELCIM_WEBHOOK_VERIFIER_TOKEN",
-  );
-}
-
 export function getEmailRetrySecret(): string {
   return assertValue(
     process.env.EMAIL_RETRY_SECRET,
@@ -94,6 +87,92 @@ export function isTrainingAfterpaySquareInvoiceEnabled(): boolean {
 
 export function isSquareCardOnFileServiceBookingEnabled(): boolean {
   return process.env.SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED === "true";
+}
+
+/**
+ * Square is the single payment gateway for product and primary-training
+ * checkout (the embedded Web Payments SDK card flow). Gated so the flow can be
+ * dark-launched and disabled independently of the service-booking Square path.
+ */
+export function isSquareCommerceCheckoutEnabled(): boolean {
+  return process.env.SQUARE_COMMERCE_ENABLED === "true";
+}
+
+/**
+ * Public (browser-safe) Web Payments SDK config for product and training
+ * checkout. Never returns the access token or webhook key. Mirrors
+ * {@link getSquareCardOnFileServiceBookingConfig} but is commerce-scoped.
+ */
+export function getSquareCommerceConfig(): SquareCommerceConfig | null {
+  if (!isSquareCommerceCheckoutEnabled()) return null;
+
+  const environment = assertSquareEnvironment();
+
+  // The charge POST needs DATABASE_URL to persist the durable order. Hide the
+  // public config so the browser card form is not shown when the DB is down.
+  try {
+    getCheckoutDatabaseUrl();
+  } catch {
+    return null;
+  }
+
+  return {
+    environment,
+    applicationId: assertValue(
+      process.env.SQUARE_APPLICATION_ID,
+      "Missing env var: SQUARE_APPLICATION_ID",
+    ),
+    locationId: assertValue(
+      process.env.SQUARE_LOCATION_ID,
+      "Missing env var: SQUARE_LOCATION_ID",
+    ),
+    locale: "en-CA",
+  };
+}
+
+/**
+ * Webhook verification env for Square commerce (product/training) payments.
+ * Reuses the single Square webhook endpoint URL + signature key that all Square
+ * flows share (Square posts every event to one notification URL).
+ */
+export function getSquareCommerceWebhookEnv(): SquareCommerceWebhookEnv | null {
+  if (!isSquareCommerceCheckoutEnabled()) return null;
+
+  return {
+    notificationUrl: assertUrlValue(
+      process.env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL,
+      "SQUARE_SERVICE_BOOKING_WEBHOOK_URL",
+    ),
+    webhookSignatureKey: assertValue(
+      process.env.SQUARE_WEBHOOK_SIGNATURE_KEY,
+      "Missing env var: SQUARE_WEBHOOK_SIGNATURE_KEY",
+    ),
+  };
+}
+
+/**
+ * Server-only Square credentials for product and primary-training checkout.
+ */
+export function getSquareCommerceEnv(): SquareCommerceEnv | null {
+  if (!isSquareCommerceCheckoutEnabled()) return null;
+
+  const environment = assertSquareEnvironment();
+
+  return {
+    environment,
+    accessToken: assertValue(
+      process.env.SQUARE_ACCESS_TOKEN,
+      "Missing env var: SQUARE_ACCESS_TOKEN",
+    ),
+    locationId: assertValue(
+      process.env.SQUARE_LOCATION_ID,
+      "Missing env var: SQUARE_LOCATION_ID",
+    ),
+    webhookSignatureKey: assertValue(
+      process.env.SQUARE_WEBHOOK_SIGNATURE_KEY,
+      "Missing env var: SQUARE_WEBHOOK_SIGNATURE_KEY",
+    ),
+  };
 }
 
 export function isSquareCardOnFileServiceBookingLocalInvoiceFallbackEnabled(): boolean {
@@ -201,8 +280,6 @@ export function getSquareServiceBookingEnv(): SquareServiceBookingEnv | null {
       process.env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL,
       "SQUARE_SERVICE_BOOKING_WEBHOOK_URL",
     ),
-    helcimLegacyCutoffAt:
-      process.env.SERVICE_BOOKING_HELCIM_LEGACY_CUTOFF_AT ?? null,
   };
 }
 
@@ -288,6 +365,25 @@ export type SquareCardOnFileServiceBookingConfig = {
   locale: string;
 };
 
+export type SquareCommerceConfig = {
+  environment: "sandbox" | "production";
+  applicationId: string;
+  locationId: string;
+  locale: string;
+};
+
+export type SquareCommerceEnv = {
+  environment: "sandbox" | "production";
+  accessToken: string;
+  locationId: string;
+  webhookSignatureKey: string;
+};
+
+export type SquareCommerceWebhookEnv = {
+  notificationUrl: string;
+  webhookSignatureKey: string;
+};
+
 type SquareServiceBookingEnv = {
   environment: "sandbox" | "production";
   accessToken: string;
@@ -295,7 +391,6 @@ type SquareServiceBookingEnv = {
   webhookSignatureKey: string;
   serviceBookingReturnUrl: string;
   serviceBookingWebhookUrl: string;
-  helcimLegacyCutoffAt: string | null;
 };
 
 type TrainingAfterpaySquareInvoiceEnv = {

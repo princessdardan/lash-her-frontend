@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -5,7 +6,7 @@ import test from "node:test";
 const helperScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { createTrainingCheckoutPostHandler, resolveTrainingCheckoutHelcimGatewayForRequest } from "./src/app/api/training-checkout/handler.ts";
+  import { createTrainingCheckoutPostHandler } from "./src/app/api/training-checkout/handler.ts";
 
   const program = {
     _id: "training-program-classic-lash",
@@ -31,67 +32,55 @@ const helperScript = String.raw`
       customerName: "  Nataliea Lash  ",
       customerEmail: "CLIENT@EXAMPLE.COM ",
       clientPrice: 1499,
+      payment: { sourceId: "cnon:card-nonce" },
       ...overrides,
     };
   }
 
   function runScenario({
-    createHelcimInvoice,
-    createPendingOrder,
-    createTrainingEnrollment,
     getTrainingProgramBySlug,
-    initializeHelcimPay,
+    reserveSquareTrainingOrder,
+    chargeSquareTrainingOrder,
+    createTrainingEnrollment,
+    squareCommerceEnabled = true,
   } = {}) {
     const fetchedSlugs = [];
     const enrollments = [];
-    const invoices = [];
-    const orders = [];
-    const paySessions = [];
+    const reserved = [];
+    const charges = [];
     const handler = createTrainingCheckoutPostHandler({
       getTrainingProgramBySlug: async (slug) => {
         fetchedSlugs.push(slug);
-        if (getTrainingProgramBySlug) {
-          return getTrainingProgramBySlug(slug);
-        }
+        if (getTrainingProgramBySlug) return getTrainingProgramBySlug(slug);
         return program;
       },
-      createHelcimInvoice: async (input) => {
-        invoices.push(input);
-        if (createHelcimInvoice) {
-          return createHelcimInvoice(input);
-        }
-        return { invoiceId: 5252, invoiceNumber: "INV-TRAINING-5252" };
-      },
-      initializeHelcimPay: async (input) => {
-        paySessions.push(input);
-        if (initializeHelcimPay) {
-          return initializeHelcimPay(input);
-        }
-        return { checkoutToken: "training-checkout-token", secretToken: "training-secret-token" };
-      },
-      createPendingOrder: async (input) => {
-        orders.push(input);
-        if (createPendingOrder) {
-          return createPendingOrder(input);
-        }
-        return { _id: "pending-training-order-5252" };
-      },
+      getPromotionCode: async () => null,
       createTrainingEnrollment: async (input) => {
         enrollments.push(input);
-        if (createTrainingEnrollment) {
-          return createTrainingEnrollment(input);
-        }
+        if (createTrainingEnrollment) return createTrainingEnrollment(input);
         return { _id: "training-enrollment-5252" };
       },
+      squareCommerceEnabled,
+      reserveSquareTrainingOrder: async (input) => {
+        reserved.push(input);
+        if (reserveSquareTrainingOrder) return reserveSquareTrainingOrder(input);
+        return { orderId: "lh-train-1", databaseId: "db-train-1" };
+      },
+      chargeSquareTrainingOrder: async (input) => {
+        charges.push(input);
+        if (chargeSquareTrainingOrder) return chargeSquareTrainingOrder(input);
+        return { ok: true, squarePaymentId: "sq-train-1", transition: "applied" };
+      },
+      markTrainingOrderVerificationFailed: async () => {},
     });
 
-    return { enrollments, fetchedSlugs, handler, invoices, orders, paySessions };
+    return { enrollments, fetchedSlugs, handler, reserved, charges };
   }
 `;
 
 test("training checkout route rejects invalid requests before downstream calls", () => {
   runRouteScenario(`
-    const { enrollments, fetchedSlugs, handler, invoices, orders, paySessions } = runScenario();
+    const { enrollments, fetchedSlugs, handler, reserved, charges } = runScenario();
 
     const response = await handler(createRequest({
       programSlug: " ",
@@ -103,16 +92,15 @@ test("training checkout route rejects invalid requests before downstream calls",
     assert.equal(response.status, 400);
     assert.deepEqual(body, { error: "Invalid training checkout request" });
     assert.equal(fetchedSlugs.length, 0);
-    assert.equal(invoices.length, 0);
-    assert.equal(paySessions.length, 0);
-    assert.equal(orders.length, 0);
+    assert.equal(reserved.length, 0);
+    assert.equal(charges.length, 0);
     assert.equal(enrollments.length, 0);
   `);
 });
 
 test("training checkout route rejects missing programs before payment setup", () => {
   runRouteScenario(`
-    const { enrollments, fetchedSlugs, handler, invoices, orders, paySessions } = runScenario({
+    const { enrollments, fetchedSlugs, handler, reserved, charges } = runScenario({
       getTrainingProgramBySlug: async () => null,
     });
 
@@ -122,172 +110,80 @@ test("training checkout route rejects missing programs before payment setup", ()
     assert.equal(response.status, 400);
     assert.deepEqual(body, { error: "Invalid training checkout request" });
     assert.deepEqual(fetchedSlugs, ["classic-lash-training"]);
-    assert.equal(invoices.length, 0);
-    assert.equal(paySessions.length, 0);
-    assert.equal(orders.length, 0);
+    assert.equal(reserved.length, 0);
+    assert.equal(charges.length, 0);
     assert.equal(enrollments.length, 0);
   `);
 });
 
-test("training checkout route creates checkout and enrollment for a valid request", () => {
+test("training checkout route reserves, enrolls, and charges via Square", () => {
   runRouteScenario(`
-    const { enrollments, fetchedSlugs, handler, invoices, orders, paySessions } = runScenario();
+    const { enrollments, handler, reserved, charges } = runScenario();
 
     const response = await handler(createRequest(validBody()));
     const body = await response.json();
 
     assert.equal(response.status, 200);
-    assert.deepEqual(body, { checkoutToken: "training-checkout-token" });
-    assert.deepEqual(fetchedSlugs, ["classic-lash-training"]);
-    assert.deepEqual(invoices, [{
-      currency: "CAD",
-      type: "INVOICE",
-      status: "DUE",
-      notes: "Lash Her training checkout: Classic Lash Training",
-      lineItems: [{
-        sku: "training-program-classic-lash",
-        description: "Classic Lash Training",
-        quantity: 1,
-        price: 1499,
-        taxAmount: 194.87,
-        taxName: "Ontario HST",
-        taxRate: 0.13,
-      }],
-    }]);
-    assert.deepEqual(paySessions, [{
-      paymentType: "purchase",
-      amount: 1693.87,
-      currency: "CAD",
-      invoiceNumber: "INV-TRAINING-5252",
-    }]);
-    assert.equal(orders.length, 1);
-    assert.equal(orders[0].customerName, "Nataliea Lash");
-    assert.equal(orders[0].customerEmail, "client@example.com");
-    assert.equal(orders[0].cart.amount, 1693.87);
-    assert.equal(orders[0].purpose, "training");
-    assert.deepEqual(enrollments, [{
-      checkoutEmail: "client@example.com",
-      checkoutOrderId: "pending-training-order-5252",
-      programSnapshot: {
-        id: "training-program-classic-lash",
-        slug: "classic-lash-training",
-        title: "Classic Lash Training",
-      },
-      productSnapshot: {
-        id: "training-program-classic-lash",
-        title: "Classic Lash Training",
-        sku: "training-program-classic-lash",
-        priceCents: 149900,
-        currency: "CAD",
-      },
-    }]);
+    assert.deepEqual(body, { orderId: "lh-train-1", status: "paid" });
+    assert.equal(reserved.length, 1);
+    assert.equal(reserved[0].customerName, "Nataliea Lash");
+    assert.equal(reserved[0].customerEmail, "client@example.com");
+    assert.equal(reserved[0].amountCents, 169387);
+    assert.equal(reserved[0].programSlug, "classic-lash-training");
+    assert.equal(enrollments.length, 1);
+    assert.equal(enrollments[0].checkoutOrderId, "db-train-1");
+    assert.equal(charges.length, 1);
+    assert.equal(charges[0].orderReference, "lh-train-1");
+    assert.equal(charges[0].amountCents, 169387);
+    assert.equal(charges[0].sourceId, "cnon:card-nonce");
   `);
 });
 
-test("training checkout route creates Helcim checkout without Square secrets", () => {
+test("training checkout route returns 402 when the Square charge is declined", () => {
   runRouteScenario(`
-    assert.equal(process.env.SERVICE_BOOKING_SQUARE_ENABLED, "true");
-    assert.equal(process.env.SQUARE_ACCESS_TOKEN, undefined);
-
-    const { enrollments, handler, invoices, orders, paySessions } = runScenario();
+    const { handler, charges } = runScenario({
+      chargeSquareTrainingOrder: async () => ({ ok: false, reason: "payment_declined" }),
+    });
 
     const response = await handler(createRequest(validBody()));
+    const body = await response.json();
 
-    assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { checkoutToken: "training-checkout-token" });
-    assert.equal(invoices.length, 1);
-    assert.equal(paySessions.length, 1);
-    assert.equal(orders.length, 1);
-    assert.equal(enrollments.length, 1);
-    assert.equal(orders[0].helcimInvoiceId, 5252);
-    assert.equal(orders[0].helcimInvoiceNumber, "INV-TRAINING-5252");
+    assert.equal(response.status, 402);
+    assert.deepEqual(body, { error: "Payment could not be completed" });
+    assert.equal(charges.length, 1);
   `);
 });
 
-test("training checkout route selects mock Helcim gateway when mock mode is allowed", () => {
+test("training checkout route rejects a request that carries no card nonce", () => {
   runRouteScenario(`
-    process.env.PAYMENT_GATEWAY_MODE = "mock";
-    process.env.PAYMENT_MOCK_DEFAULT_SCENARIO = "success";
-    delete process.env.VERCEL_ENV;
+    const { handler, reserved, charges } = runScenario();
 
-    const gateway = await resolveTrainingCheckoutHelcimGatewayForRequest(createRequest(validBody()));
-    const invoice = await gateway.createInvoice({
-      currency: "CAD",
-      type: "INVOICE",
-      status: "DUE",
-      notes: "Lash Her training checkout: Classic Lash Training",
-      lineItems: [{
-        sku: "training-program-classic-lash",
-        description: "Classic Lash Training",
-        quantity: 1,
-        price: 1499,
-        taxAmount: 194.87,
-        taxName: "Ontario HST",
-        taxRate: 0.13,
-      }],
-    });
-    const paySession = await gateway.initializePay({
-      paymentType: "purchase",
-      amount: 1693.87,
-      currency: "CAD",
-      invoiceNumber: invoice.invoiceNumber,
-    });
+    const response = await handler(createRequest(validBody({ payment: undefined })));
+    const body = await response.json();
 
-    assert.equal(invoice.invoiceNumber, "MOCK-INV-1");
-    assert.equal(paySession.checkoutToken, "mock_helcim_checkout_1");
+    assert.equal(response.status, 400);
+    assert.deepEqual(body, { error: "Invalid training checkout request" });
+    assert.equal(reserved.length, 0);
+    assert.equal(charges.length, 0);
   `);
 });
 
-test("training checkout route rejects request mock controls unless mock mode is enabled", () => {
+test("training checkout route is unavailable when Square commerce is disabled", () => {
   runRouteScenario(`
-    await assert.rejects(
-      resolveTrainingCheckoutHelcimGatewayForRequest(new Request("http://localhost:3000/api/training-checkout", {
-        method: "POST",
-        headers: { "x-lash-payment-mock-scenario": "success" },
-      })),
-      /Payment mock controls require PAYMENT_GATEWAY_MODE=mock/,
-    );
+    const { handler, reserved } = runScenario({ squareCommerceEnabled: false });
 
-    process.env.PAYMENT_GATEWAY_MODE = "live";
+    const response = await handler(createRequest(validBody()));
+    const body = await response.json();
 
-    await assert.rejects(
-      resolveTrainingCheckoutHelcimGatewayForRequest(new Request("http://localhost:3000/api/training-checkout?mockPaymentScenario=success", {
-        method: "POST",
-      })),
-      /Payment mock controls require PAYMENT_GATEWAY_MODE=mock/,
-    );
-  `);
-});
-
-test("training checkout route rejects request mock controls in production", () => {
-  runRouteScenario(`
-    process.env.VERCEL_ENV = "production";
-
-    await assert.rejects(
-      resolveTrainingCheckoutHelcimGatewayForRequest(new Request("http://localhost:3000/api/training-checkout", {
-        method: "POST",
-        headers: { "x-lash-payment-mock-scenario": "success" },
-      })),
-      /Payment mock mode is not allowed in production/,
-    );
-  `);
-});
-
-test("training checkout route rejects mock Helcim gateway mode in production", () => {
-  runRouteScenario(`
-    process.env.PAYMENT_GATEWAY_MODE = "mock";
-    process.env.VERCEL_ENV = "production";
-
-    await assert.rejects(
-      resolveTrainingCheckoutHelcimGatewayForRequest(createRequest(validBody())),
-      /Payment mock mode is not allowed in production/,
-    );
+    assert.equal(response.status, 503);
+    assert.deepEqual(body, { error: "Training checkout is temporarily unavailable" });
+    assert.equal(reserved.length, 0);
   `);
 });
 
 test("training checkout route returns a generic failure when enrollment write fails", () => {
   runRouteScenario(`
-    const { enrollments, handler, invoices, orders, paySessions } = runScenario({
+    const { handler, reserved, enrollments } = runScenario({
       createTrainingEnrollment: async () => {
         throw new Error("Private DB unavailable");
       },
@@ -298,24 +194,30 @@ test("training checkout route returns a generic failure when enrollment write fa
 
     assert.equal(response.status, 400);
     assert.deepEqual(body, { error: "Unable to start training checkout" });
-    assert.equal(invoices.length, 1);
-    assert.equal(paySessions.length, 1);
-    assert.equal(orders.length, 1);
+    assert.equal(reserved.length, 1);
     assert.equal(enrollments.length, 1);
   `);
 });
 
-test("training checkout route remains Helcim-only and does not import Square modules", () => {
-  const routeSource = readFileSync("src/app/api/training-checkout/handler.ts", "utf8");
+test("training checkout route charges the primary training path through Square", () => {
+  const routeSource = readFileSync(
+    "src/app/api/training-checkout/handler.ts",
+    "utf8",
+  );
 
-  assertNoSquareImports(routeSource);
+  assert.ok(
+    routeSource.includes("createLiveSquareTrainingCharger"),
+    "training route should wire the Square training charger",
+  );
+  assert.ok(
+    routeSource.includes("isSquareCommerceCheckoutEnabled"),
+    "training route should gate the Square charge on the commerce flag",
+  );
+  assert.ok(
+    !routeSource.includes("helcim") && !routeSource.includes("Helcim"),
+    "training route should no longer reference Helcim",
+  );
 });
-
-function assertNoSquareImports(routeSource: string): void {
-  if (/square|Square|SQUARE/.test(routeSource)) {
-    throw new Error("Helcim-only checkout route must not import or reference Square");
-  }
-}
 
 function runRouteScenario(assertions: string): void {
   const scenario = `${helperScript}\nvoid (async () => {\n${assertions}\n})()`;
@@ -323,23 +225,10 @@ function runRouteScenario(assertions: string): void {
 
   env.NEXT_PUBLIC_SANITY_DATASET = "test";
   env.NEXT_PUBLIC_SANITY_PROJECT_ID = "test-project";
-  env.SERVICE_BOOKING_SQUARE_ENABLED = "true";
-  delete env.PAYMENT_GATEWAY_MODE;
-  delete env.PAYMENT_MOCK_DEFAULT_SCENARIO;
-  delete env.VERCEL_ENV;
-  delete env.SQUARE_ACCESS_TOKEN;
-  delete env.SQUARE_LOCATION_ID;
-  delete env.SQUARE_WEBHOOK_SIGNATURE_KEY;
-  delete env.SQUARE_SERVICE_BOOKING_RETURN_URL;
-  delete env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL;
 
-  execFileSync(
-    "./node_modules/.bin/tsx",
-    ["--eval", scenario],
-    {
-      cwd: process.cwd(),
-      env,
-      stdio: "pipe",
-    },
-  );
+  execFileSync("./node_modules/.bin/tsx", ["--eval", scenario], {
+    cwd: process.cwd(),
+    env,
+    stdio: "pipe",
+  });
 }

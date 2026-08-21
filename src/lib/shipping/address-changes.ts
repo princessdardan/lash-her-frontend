@@ -42,7 +42,6 @@ import {
   parseShippingQuoteContextSnapshot,
 } from "./quote-token";
 import {
-  assertHelcimProductPaymentsCertificationInTransaction,
   assertProductTaxPolicyApprovalInTransaction,
   assertShippingQuoteContextCurrent,
   lockShippingCheckoutReadinessConfiguration,
@@ -2971,6 +2970,11 @@ export async function approveAddressChange(input: {
         now.getTime() - input.stepUpAuthenticatedAt.getTime() > 5 * 60_000
       )
         throw new Error("Step-up authentication has expired");
+      // Square commerce captures never carry AVS/CVV codes (the former Helcim
+      // evidence gate was dropped in risk-review.ts for the same reason). Keep
+      // the authoritative-capture requirement — a cleared provider transaction
+      // with its id/type/status — but no longer require card-verification codes
+      // Square does not provide, so the high-risk approval path stays usable.
       if (
         !transactions.length ||
         transactions.some(
@@ -2978,8 +2982,6 @@ export async function approveAddressChange(input: {
             !transaction.providerTransactionId ||
             !transaction.providerType ||
             !transaction.providerStatus ||
-            !transaction.avsCode ||
-            !transaction.cvvCode ||
             transaction.riskStatus !== "cleared",
         )
       )
@@ -3551,11 +3553,6 @@ export async function applyApprovedAddressChange(input: {
             primaryQuoteContext.taxPolicyApproval,
             obligationNow,
           );
-        const helcimContractIdentity =
-          await assertHelcimProductPaymentsCertificationInTransaction(
-            tx,
-            obligationNow,
-          );
         const offerExpiresAt = new Date(
           obligationNow.getTime() + 24 * 60 * 60_000,
         );
@@ -3570,10 +3567,10 @@ export async function applyApprovedAddressChange(input: {
             taxAmountCents: 0,
             totalAmountCents: difference,
             currency: row.order.currency,
+            paymentProvider: "square",
             sourceWorkflow: `address_change/${row.request.id}`,
             sourceReferenceId: row.request.id,
             disclosureSnapshot: {
-              helcimContract: helcimContractIdentity,
               taxPolicyApproval,
               responsibility: "customer",
               proposedAddressCountry:
@@ -4258,18 +4255,29 @@ async function lockNetCustomerShippingLedger(
     )
     .for("update");
   const obligationIds = obligations.map((obligation) => obligation.id);
-  const transactions = obligationIds.length
-    ? await tx
-        .select()
-        .from(orderPaymentTransactions)
-        .where(
-          and(
-            inArray(orderPaymentTransactions.obligationId, obligationIds),
-            eq(orderPaymentTransactions.provider, "helcim"),
-          ),
-        )
-        .for("update")
-    : [];
+  // The authoritative captures are recorded under the order's own single
+  // payment gateway (square today, helcim for historical orders). Read the
+  // provider from the order, not an obligation: address_increase obligations
+  // are always minted on Square regardless of the order's original gateway,
+  // so obligations[0] would misrepresent a historical Helcim order.
+  const [order] = await tx
+    .select({ paymentProvider: checkoutOrders.paymentProvider })
+    .from(checkoutOrders)
+    .where(eq(checkoutOrders.id, orderId));
+  const orderPaymentProvider = order?.paymentProvider;
+  const transactions =
+    obligationIds.length && orderPaymentProvider
+      ? await tx
+          .select()
+          .from(orderPaymentTransactions)
+          .where(
+            and(
+              inArray(orderPaymentTransactions.obligationId, obligationIds),
+              eq(orderPaymentTransactions.provider, orderPaymentProvider),
+            ),
+          )
+          .for("update")
+      : [];
   const obligationById = new Map(
     obligations.map((obligation) => [obligation.id, obligation]),
   );

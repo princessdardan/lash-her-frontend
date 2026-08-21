@@ -1,12 +1,9 @@
 "use strict";
 
 const FIXTURE_FLAG = "COMMERCE_E2E_PROVIDER_FIXTURE";
-const HELCIM_HOST = "api.helcim.com";
 const CHITCHATS_HOST = "staging.chitchats.com";
 const RESEND_HOST = "api.resend.com";
 const originalFetch = globalThis.fetch;
-let invoiceSequence = 0;
-let refundSequence = 0;
 let shipmentSequence = 0;
 const shipments = new Map();
 
@@ -23,79 +20,12 @@ globalThis.fetch = async function commerceProviderFixtureFetch(input, init) {
   if (url.origin === "https://e2e-redis.invalid" && request.method === "POST") {
     return handleRedis(request, url);
   }
-  if (url.host === HELCIM_HOST) return handleHelcim(request, url);
   if (url.host === CHITCHATS_HOST) return handleChitChats(request, url);
   if (url.host === RESEND_HOST && request.method === "POST") {
     return json({ id: `e2e-email-${Date.now()}` });
   }
   return originalFetch(request);
 };
-
-async function handleHelcim(request, url) {
-  if (request.method === "POST" && url.pathname === "/v2/invoices/") {
-    invoiceSequence += 1;
-    return json({
-      invoiceId: 800000 + invoiceSequence,
-      invoiceNumber: `E2E-INV-${invoiceSequence}`,
-    });
-  }
-  if (
-    request.method === "POST" &&
-    url.pathname === "/v2/helcim-pay/initialize"
-  ) {
-    const body = await request.json();
-    const sequence = invoiceSequenceFrom(body.invoiceNumber);
-    const amountCents = Math.round(Number(body.amount) * 100);
-    if (!sequence || !Number.isSafeInteger(amountCents) || amountCents <= 0) {
-      return json({ error: "Invalid E2E Helcim initialization" }, 422);
-    }
-    return json({
-      checkoutToken: `e2e_checkout_${sequence}_${amountCents}`,
-      secretToken: e2eSecret(sequence, amountCents),
-    });
-  }
-  const transactionMatch =
-    request.method === "GET"
-      ? /^\/v2\/card-transactions\/e2e_transaction_(\d+)_(\d+)$/.exec(
-          url.pathname,
-        )
-      : null;
-  if (transactionMatch) {
-    const sequence = Number(transactionMatch[1]);
-    const amountCents = Number(transactionMatch[2]);
-    return json({
-      amount: amountCents / 100,
-      approvalCode: `E2E-APPROVAL-${sequence}`,
-      avsResponse: "Y",
-      card: { brand: "Visa", last4: "4242" },
-      currency: "CAD",
-      cvvResponse: "M",
-      invoiceId: 800000 + sequence,
-      invoiceNumber: `E2E-INV-${sequence}`,
-      status: "APPROVED",
-      transactionId: `e2e_transaction_${sequence}_${amountCents}`,
-      transactionType: "purchase",
-    });
-  }
-  if (request.method === "POST" && url.pathname === "/v2/payment/refund") {
-    const body = await request.json();
-    refundSequence += 1;
-    return json({
-      amount: body.amount,
-      currency: "CAD",
-      originalTransactionId: String(body.originalTransactionId),
-      status: "APPROVED",
-      transactionId: `e2e_refund_${refundSequence}_${Date.now()}`,
-      transactionType: "refund",
-    });
-  }
-  return json(
-    {
-      error: `Unrecognized deterministic Helcim fixture request: ${request.method} ${url.pathname}`,
-    },
-    501,
-  );
-}
 
 async function handleChitChats(request, url) {
   if (
@@ -328,20 +258,9 @@ function buildRate(postageType, description, paymentAmount) {
   };
 }
 
-function invoiceSequenceFrom(invoiceNumber) {
-  const match = /^E2E-INV-(\d+)$/.exec(String(invoiceNumber));
-  return match ? Number(match[1]) : null;
-}
-
-function e2eSecret(sequence, amountCents) {
-  return `e2e_secret_${sequence}_${amountCents}_0123456789abcdef`;
-}
-
 function json(value, status = 200) {
   return new Response(JSON.stringify(value), {
     headers: { "content-type": "application/json" },
     status,
   });
 }
-
-module.exports = { e2eSecret };

@@ -895,8 +895,8 @@ export async function listAdminFulfillmentOperations(
         union all
 
         select
-          'provider-jobs', obligation.id::text, 'helcim-initialization-' || coalesce(obligation.initialization_outcome, 'queued'),
-          ('Helcim payment initialization for ' || orders.order_id),
+          'provider-jobs', obligation.id::text, 'payment-initialization-' || coalesce(obligation.initialization_outcome, 'queued'),
+          ('Payment initialization for ' || orders.order_id),
           ('Status ' || obligation.initialization_status::text || '; outcome ' || coalesce(obligation.initialization_outcome, 'queued')),
           orders.order_id,
           coalesce(obligation.initialization_lease_expires_at, obligation.updated_at),
@@ -904,8 +904,6 @@ export async function listAdminFulfillmentOperations(
           (obligation.id::text || ':' || obligation.initialization_state_version::text || ':' || extract(epoch from obligation.updated_at)::bigint::text),
           array_remove(array[
             'Merchant reference: ' || obligation.id::text,
-            case when obligation.provider_invoice_id is not null then 'Provider invoice ID: ' || obligation.provider_invoice_id::text end,
-            case when obligation.provider_invoice_number is not null then 'Provider invoice number: ' || obligation.provider_invoice_number end,
             case when obligation.initialization_payload_hash is not null then 'Payload hash: ' || obligation.initialization_payload_hash end,
             case when obligation.initialization_last_error is not null then 'Last error: ' || obligation.initialization_last_error end,
             'Attempts: ' || obligation.initialization_attempt_count::text,
@@ -916,6 +914,7 @@ export async function listAdminFulfillmentOperations(
         join checkout_orders orders on orders.id = obligation.order_id
         where obligation.initialization_status = 'failed'
           and obligation.initialization_outcome in ('failed', 'outcome_unknown', 'manual_review')
+          and obligation.payment_provider = 'square'
           and obligation.quarantined_at is null
 
         union all
@@ -1055,14 +1054,14 @@ function getFulfillmentLegalNextActions(
   row: RawFulfillmentOperationRow,
 ): string[] {
   if (
-    row.kind === "helcim-initialization-outcome_unknown" ||
-    row.kind === "helcim-initialization-manual_review"
+    row.kind === "payment-initialization-outcome_unknown" ||
+    row.kind === "payment-initialization-manual_review"
   ) {
     return [
-      "Use the exact payment-obligation initialization reconciliation control. Adoption requires a live matching Helcim invoice lookup. Reissue is limited to an exact deterministic invoice-number search with zero results; an ambiguous HelcimPay session requires manual provider handoff.",
+      "Use the payment-obligation initialization reconciliation control. Reconcile-and-retry re-queues the obligation for an idempotent Square payment-link re-mint (the deterministic idempotency key returns the same link rather than creating a second); record manual handoff when the obligation must leave the automated flow.",
     ];
   }
-  if (row.kind === "helcim-initialization-failed") {
+  if (row.kind === "payment-initialization-failed") {
     return [
       "Correct the deterministic validation or readiness failure. This state is not eligible for ambiguous provider-mutation reissue.",
     ];

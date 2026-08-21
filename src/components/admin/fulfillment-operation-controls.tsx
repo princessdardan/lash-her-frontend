@@ -161,8 +161,8 @@ function RiskFields() {
       </label>
       <RationaleField />
       <p className="text-xs text-lh-muted">
-        Clearing requires fresh step-up authentication and server-retrieved
-        Helcim evidence. The browser cannot attest provider evidence.
+        Clearing requires fresh step-up authentication and an owner rationale.
+        The decision is fenced to the current incident state version.
       </p>
     </>
   );
@@ -430,32 +430,17 @@ function PaymentInitializationReconciliationFields() {
         Reconciliation action
         <select
           className={fieldClass}
-          defaultValue="adopt_invoice"
+          defaultValue="reconcile_and_retry"
           name="action"
         >
-          <option value="adopt_invoice">Adopt authoritative invoice</option>
-          <option value="confirm_no_payable_state_and_reissue">
-            Confirm authoritative absence and reissue
+          <option value="reconcile_and_retry">
+            Reconcile and retry initialization
           </option>
           <option value="record_manual_handoff">Record manual handoff</option>
         </select>
       </label>
       <label className="block text-sm font-semibold">
-        Provider invoice ID
-        <input
-          className={fieldClass}
-          min={1}
-          name="providerInvoiceId"
-          step={1}
-          type="number"
-        />
-      </label>
-      <label className="block text-sm font-semibold">
-        Provider invoice number (optional cross-check)
-        <input className={fieldClass} name="providerInvoiceNumber" />
-      </label>
-      <label className="block text-sm font-semibold">
-        Provider evidence reference
+        Reconciliation evidence reference
         <input
           className={fieldClass}
           minLength={6}
@@ -465,12 +450,12 @@ function PaymentInitializationReconciliationFields() {
       </label>
       <RationaleField />
       <p className="text-xs text-lh-muted">
-        Adoption performs a live Helcim invoice lookup and verifies the exact
-        amount, CAD currency, status, merchant reference, and line items.
-        Reissue is permitted only when an exact deterministic invoice-number
-        search returns no invoice. An ambiguous HelcimPay session requires
-        manual handoff. The server binds the provider evidence hash and current
-        state version to a one-use step-up proof.
+        Reconcile-and-retry re-queues the obligation for the worker, which
+        re-mints the Square payment link idempotently — its deterministic
+        idempotency key returns the same link rather than creating a second. Use
+        manual handoff when the obligation must leave the automated flow. The
+        server binds the action, evidence reference, and current state version
+        to a one-use step-up proof.
       </p>
     </>
   );
@@ -486,8 +471,8 @@ export function getFulfillmentOperationActionKind(
   if (item.kind === "customer-decision-follow-up") return "decision-review";
   if (item.kind === "refund-manual-review") return "refund-review";
   if (
-    item.kind === "helcim-initialization-outcome_unknown" ||
-    item.kind === "helcim-initialization-manual_review"
+    item.kind === "payment-initialization-outcome_unknown" ||
+    item.kind === "payment-initialization-manual_review"
   )
     return "payment-initialization-reconciliation";
   if (item.queue === "risk" && item.orderReference) return "risk";
@@ -623,21 +608,12 @@ export function buildFulfillmentOperationRequest(
   }
   if (kind === "payment-initialization-reconciliation") {
     const action = String(form.get("action") ?? "");
-    const invoiceIdValue = String(form.get("providerInvoiceId") ?? "").trim();
-    const providerInvoiceId = invoiceIdValue
-      ? Number(invoiceIdValue)
-      : undefined;
-    const providerInvoiceNumber = String(
-      form.get("providerInvoiceNumber") ?? "",
-    ).trim();
     return {
       body: {
         action,
         evidenceReference: form.get("evidenceReference"),
         expectedStateVersion: item.stateVersion,
         rationale: form.get("rationale"),
-        ...(providerInvoiceId !== undefined ? { providerInvoiceId } : {}),
-        ...(providerInvoiceNumber ? { providerInvoiceNumber } : {}),
       },
       url: `/api/admin/orders/${encodeURIComponent(item.orderReference!)}/payment-obligations/${encodeURIComponent(item.id)}/reconcile`,
     };

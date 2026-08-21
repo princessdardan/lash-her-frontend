@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -5,7 +6,7 @@ import test from "node:test";
 const helperScript = String.raw`
   import assert from "node:assert/strict";
 
-  import { createCheckoutPostHandler, resolveCheckoutHelcimGatewayForRequest } from "./src/app/api/checkout/handler.ts";
+  import { createCheckoutPostHandler } from "./src/app/api/checkout/handler.ts";
   import {
     CHECKOUT_CUSTOMER_NAME_MAX_LENGTH,
     CHECKOUT_EMAIL_MAX_LENGTH,
@@ -79,6 +80,7 @@ const helperScript = String.raw`
           fingerprint: "a".repeat(64),
           rateId: "rate-1",
         },
+        payment: { sourceId: "cnon:card-nonce" },
         ...rest,
         disclosures: { ...baseDisclosure, ...(disclosures ?? {}) },
       }),
@@ -127,6 +129,7 @@ const helperScript = String.raw`
         return {
           orderId: "lh-product-order",
           primaryObligationId: "22222222-2222-4222-8222-222222222222",
+          currency: "CAD",
           shippingAmountCents: 1299,
           totalAmountCents: Math.round(input.cart.amount * 100) + 1299,
           shippingRateTitle: "Tracked shipping",
@@ -139,6 +142,13 @@ const helperScript = String.raw`
           await markInitializationFailed(orderId, error);
         }
       },
+      markOrderVerificationFailed: async () => {},
+      squareCommerceEnabled: true,
+      chargeSquareProductOrder: async () => ({
+        ok: true,
+        squarePaymentId: "sq-checkout-1",
+        transition: "applied",
+      }),
       ...(createInitializingManualOrder ? { createInitializingManualOrder } : {}),
       ...(loadManualCheckoutPolicy ? { loadManualCheckoutPolicy } : {}),
       loadTermsRequirement: loadTermsRequirement ?? (() => TERMS_REQUIREMENT),
@@ -222,6 +232,7 @@ test("manual checkout requires exact explicit cancellation-policy acceptance and
         return {
           orderId: "lh-manual-order",
           primaryObligationId: "11111111-1111-4111-8111-111111111111",
+          currency: "CAD",
           shippingAmountCents: 0,
           totalAmountCents: 2400,
           shippingRateTitle: "Studio pickup",
@@ -243,10 +254,10 @@ test("manual checkout requires exact explicit cancellation-policy acceptance and
         cancellationPolicyTextHash: "a".repeat(64),
       },
     }));
-    assert.equal(accepted.status, 202);
+    assert.equal(accepted.status, 200);
     assert.deepEqual(await accepted.json(), {
-      operationId: "11111111-1111-4111-8111-111111111111",
-      status: "queued",
+      orderId: "lh-manual-order",
+      status: "paid",
     });
     assert.equal(reservedInput.fulfillmentMode, "manual_pickup");
     assert.equal(reservedInput.cancellationPolicy.accepted, true);
@@ -331,7 +342,7 @@ test("automated checkout reconstruction omits an absent variant id so quote fing
       items: [{ productId: product._id, quantity: 1 }],
       shippingAddress,
     }));
-    assert.equal(response.status, 202);
+    assert.equal(response.status, 200);
     assert.deepEqual(validatedItems, [
       { productId: product._id, quantity: 1 },
     ]);
@@ -431,10 +442,10 @@ test("checkout route reserves a durable payment operation for a valid cart", () 
     }));
     const body = await response.json();
 
-    assert.equal(response.status, 202);
+    assert.equal(response.status, 200);
     assert.deepEqual(body, {
-      operationId: "22222222-2222-4222-8222-222222222222",
-      status: "queued",
+      orderId: "lh-product-order",
+      status: "paid",
     });
     assert.deepEqual(fetchedProductIds, [["product-lash-cleanser"]]);
     assert.equal(orders.length, 1);
@@ -520,10 +531,10 @@ test("checkout route binds promotion totals to the durable payment reservation",
       promotionCode: "SAVE10",
     }));
 
-    assert.equal(response.status, 202);
+    assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), {
-      operationId: "22222222-2222-4222-8222-222222222222",
-      status: "queued",
+      orderId: "lh-product-order",
+      status: "paid",
     });
     assert.equal(orders[0].cart.amount, 43.2);
     assert.equal(orders[0].cart.promotionCode, "SAVE10");
@@ -544,95 +555,12 @@ test("checkout route reserves product payment without Square secrets", () => {
       items: [{ productId: "product-lash-cleanser", quantity: 1 }],
     }));
 
-    assert.equal(response.status, 202);
+    assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), {
-      operationId: "22222222-2222-4222-8222-222222222222",
-      status: "queued",
+      orderId: "lh-product-order",
+      status: "paid",
     });
     assert.equal(orders.length, 1);
-  `);
-});
-
-test("checkout route selects mock Helcim gateway when mock mode is allowed", () => {
-  runRouteScenario(`
-    process.env.PAYMENT_GATEWAY_MODE = "mock";
-    process.env.PAYMENT_MOCK_DEFAULT_SCENARIO = "success";
-    delete process.env.VERCEL_ENV;
-
-    const gateway = await resolveCheckoutHelcimGatewayForRequest(createRequest({
-      customer: { name: "Nataliea Lash", email: "client@example.com" },
-      shippingAddress,
-      items: [{ productId: "product-lash-cleanser", quantity: 1 }],
-    }));
-
-    const invoice = await gateway.createInvoice({
-      currency: "CAD",
-      type: "INVOICE",
-      status: "DUE",
-      notes: "Lash Her website checkout",
-      lineItems: [{ sku: "product-lash-cleanser", description: "Lash Cleanser", quantity: 1, price: 24 }],
-    });
-    const paySession = await gateway.initializePay({
-      paymentType: "purchase",
-      amount: 24,
-      currency: "CAD",
-      invoiceNumber: invoice.invoiceNumber,
-    });
-
-    assert.equal(invoice.invoiceNumber, "MOCK-INV-1");
-    assert.equal(paySession.checkoutToken, "mock_helcim_checkout_1");
-    assert.equal(paySession.secretToken, "mock_helcim_secret_1");
-  `);
-});
-
-test("checkout route rejects request mock controls unless mock mode is enabled", () => {
-  runRouteScenario(`
-    await assert.rejects(
-      resolveCheckoutHelcimGatewayForRequest(new Request("http://localhost:3000/api/checkout", {
-        method: "POST",
-        headers: { "x-lash-payment-mock-scenario": "success" },
-      })),
-      /Payment mock controls require PAYMENT_GATEWAY_MODE=mock/,
-    );
-
-    process.env.PAYMENT_GATEWAY_MODE = "live";
-
-    await assert.rejects(
-      resolveCheckoutHelcimGatewayForRequest(new Request("http://localhost:3000/api/checkout?mockPaymentScenario=success", {
-        method: "POST",
-      })),
-      /Payment mock controls require PAYMENT_GATEWAY_MODE=mock/,
-    );
-  `);
-});
-
-test("checkout route rejects request mock controls in production", () => {
-  runRouteScenario(`
-    process.env.VERCEL_ENV = "production";
-
-    await assert.rejects(
-      resolveCheckoutHelcimGatewayForRequest(new Request("http://localhost:3000/api/checkout", {
-        method: "POST",
-        headers: { "x-lash-payment-mock-scenario": "success" },
-      })),
-      /Payment mock mode is not allowed in production/,
-    );
-  `);
-});
-
-test("checkout route rejects mock Helcim gateway mode in production", () => {
-  runRouteScenario(`
-    process.env.PAYMENT_GATEWAY_MODE = "mock";
-    process.env.VERCEL_ENV = "production";
-
-    await assert.rejects(
-      resolveCheckoutHelcimGatewayForRequest(createRequest({
-        customer: { name: "Nataliea Lash", email: "client@example.com" },
-        shippingAddress,
-        items: [{ productId: "product-lash-cleanser", quantity: 1 }],
-      })),
-      /Payment mock mode is not allowed in production/,
-    );
   `);
 });
 
@@ -994,19 +922,21 @@ test("checkout route logs generic failure messages without leaking sensitive val
   `);
 });
 
-test("product checkout route remains Helcim-only and does not import Square modules", () => {
+test("product checkout route charges product orders through Square", () => {
   const routeSource = readFileSync("src/app/api/checkout/handler.ts", "utf8");
 
-  assertNoSquareImports(routeSource);
+  // The Helcim -> Square migration intentionally reverses the former
+  // "product checkout must not reference Square" provider boundary: product
+  // checkout now captures payment through the Square Web Payments SDK.
+  assert.ok(
+    routeSource.includes("createLiveSquareProductCharger"),
+    "checkout route should wire the Square commerce charger",
+  );
+  assert.ok(
+    routeSource.includes("isSquareCommerceCheckoutEnabled"),
+    "checkout route should gate the Square charge on the commerce flag",
+  );
 });
-
-function assertNoSquareImports(routeSource: string): void {
-  if (/square|Square|SQUARE/.test(routeSource)) {
-    throw new Error(
-      "Helcim-only checkout route must not import or reference Square",
-    );
-  }
-}
 
 function runRouteScenario(assertions: string): void {
   const scenario = `${helperScript}\nvoid (async () => {\n${assertions}\n})()`;

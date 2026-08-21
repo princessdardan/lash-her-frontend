@@ -23,7 +23,7 @@
 - Dataset rules are enforced by `scripts/validate-sanity-env.mjs`: preview/staging expects `NEXT_PUBLIC_SANITY_DATASET=staging-2026-05-10`; production expects `production`.
 - `sanity.cli.ts` targets `NEXT_PUBLIC_SANITY_DATASET` and refuses production schema operations unless `SANITY_SCHEMA_DEPLOY_TARGET=production` is set.
 - Payment mock mode is server-only: `PAYMENT_GATEWAY_MODE=mock` is for local/dev flows and is rejected in production. Request controls are `x-lash-payment-mock-scenario` and `mockPaymentScenario` only when mock mode is enabled.
-- Service bookings use Square only when `SERVICE_BOOKING_SQUARE_ENABLED=true`; product and training checkout use Helcim. Helcim webhook URL is `/api/webhooks/card-transactions` and must not contain `helcim`.
+- Service bookings use Square when `SERVICE_BOOKING_SQUARE_ENABLED=true`; product and training checkout use the Square Web Payments SDK when `SQUARE_COMMERCE_ENABLED=true`. All Square events (product, training, and service booking) arrive on the single webhook at `/api/webhooks/square`. Historical Helcim orders remain readable in PostgreSQL (the `helcim` enum value and `helcim_*` columns are retained until the final migration), but no code path creates new Helcim payments.
 - Booking OAuth setup uses the protected internal flow with `BOOKING_ADMIN_SETUP_SECRET` from the secure secret manager; do not share the setup URL or paste it in tickets or chat.
 - Before branch creation, push, or PR, verify `git remote -v`; canonical remote is `https://github.com/princessdardan/lash-her-frontend.git`. `npm run git:push-staging` expects the `origin` remote to point there.
 

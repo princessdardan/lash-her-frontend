@@ -802,7 +802,7 @@ function unresolvedOrderPredicate() {
         join ${orderPaymentTransactions} t on t.obligation_id = o.id
         where o.order_id = ${checkoutOrders.id}
           and o.quarantined_at is null
-          and t.provider = 'helcim'
+          and t.provider = ${checkoutOrders.paymentProvider}
       )
     )
   )`;

@@ -2,17 +2,10 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 
-import {
-  getConfiguredHelcimProductPaymentsContract,
-  getHelcimContractIdentitySnapshot,
-  helcimContractIsEffective,
-  parseHelcimProductPaymentsContract,
-} from "@/lib/commerce/helcim-certified-contract";
 import { PRODUCT_TAX_POLICY_VERSION } from "@/lib/commerce/product-tax-policy";
 import { getPrivateDb } from "@/lib/private-db/client";
 import type {
   FulfillmentProviderCertificationContractSnapshot,
-  HelcimProductPaymentsCertificationContractSnapshot,
   ProductTaxPolicyApprovalSnapshot,
 } from "@/lib/private-db/schema";
 export type { ProductTaxPolicyApprovalSnapshot } from "@/lib/private-db/schema";
@@ -91,11 +84,6 @@ export async function evaluateCheckoutReadiness(input: {
   }
   addFinancialRuntimeBlockers(blockers, env);
 
-  const contract = getConfiguredHelcimProductPaymentsContract();
-  if (!contract || !helcimContractIsEffective(contract, now)) {
-    blockers.push("helcim_contract_not_configured_or_expired");
-  }
-
   let config: ReturnType<typeof getChitChatsConfig> | null = null;
   try {
     config = getChitChatsConfig();
@@ -110,11 +98,10 @@ export async function evaluateCheckoutReadiness(input: {
   }
 
   const quoteContext =
-    blockers.length === 0 && config && contract
+    blockers.length === 0 && config
       ? buildConfiguredQuoteContext({
           destinationCountryCode: input.destinationCountryCode,
           region: config.region,
-          helcimProductPaymentsContract: contract,
           usShippingContract:
             input.destinationCountryCode === "US"
               ? PRODUCT_SHIPPING_US_DDU_CONTRACT
@@ -226,18 +213,6 @@ export async function lockShippingCheckoutReadinessConfiguration(
   _tx: PrivateDbTransaction,
 ): Promise<void> {}
 
-export async function assertHelcimProductPaymentsCertificationInTransaction(
-  _tx: PrivateDbTransaction,
-  now = new Date(),
-): Promise<NonNullable<ReturnType<typeof getHelcimContractIdentitySnapshot>>> {
-  const contract = getConfiguredHelcimProductPaymentsContract();
-  const identity = getHelcimContractIdentitySnapshot(now);
-  if (!contract || !identity || !helcimContractIsEffective(contract, now)) {
-    throw new CheckoutNotReadyError(["helcim_not_certified"]);
-  }
-  return identity;
-}
-
 export async function assertProductTaxPolicyApprovalInTransaction(
   _tx: PrivateDbTransaction,
   expected: ProductTaxPolicyApprovalSnapshot,
@@ -308,9 +283,7 @@ export async function assertManualCheckoutReadinessInTransaction(
     expected.taxPolicyApproval,
     now,
   );
-  const helcimContract =
-    await assertHelcimProductPaymentsCertificationInTransaction(tx, now);
-  return { helcimContract, taxPolicyApproval };
+  return { taxPolicyApproval };
 }
 
 export async function evaluateManualCheckoutReadiness(
@@ -320,7 +293,6 @@ export async function evaluateManualCheckoutReadiness(
     now?: Date;
   } = {},
 ): Promise<ManualCheckoutReadinessResult> {
-  const now = input.now ?? new Date();
   const env = input.env ?? process.env;
   const blockers: string[] = [];
   if (env.MANUAL_PRODUCT_CHECKOUT_ENABLED !== "true") {
@@ -333,10 +305,6 @@ export async function evaluateManualCheckoutReadiness(
     blockers.push("site_origin_invalid");
   }
   addFinancialRuntimeBlockers(blockers, env);
-  const contract = parseConfiguredHelcimContract(env);
-  if (!contract || !helcimContractIsEffective(contract, now)) {
-    blockers.push("helcim_contract_not_configured_or_expired");
-  }
   if (input.catalogMetadataReady === false) {
     blockers.push("catalog_metadata_incomplete");
   }
@@ -435,25 +403,26 @@ function addFinancialRuntimeBlockers(
       blockers.push(`secret_invalid:${name}`);
     }
   }
-  for (const name of [
-    "HELCIM_GENERAL_API_TOKEN",
-    "HELCIM_TRANSACTION_API_TOKEN",
-  ] as const) {
-    if (!isProviderToken(env[name])) {
-      blockers.push(`provider_token_invalid:${name}`);
+  // When Square commerce checkout is enabled, its credentials must be present or
+  // checkout would report "ready" and only fail later at authorize time. Gated
+  // on the enable flag so environments with commerce off are unaffected.
+  if (env.SQUARE_COMMERCE_ENABLED === "true") {
+    if (
+      env.SQUARE_ENVIRONMENT !== "sandbox" &&
+      env.SQUARE_ENVIRONMENT !== "production"
+    ) {
+      blockers.push("payment_config_invalid:SQUARE_ENVIRONMENT");
     }
-  }
-}
-
-function parseConfiguredHelcimContract(
-  env: NodeJS.ProcessEnv,
-): HelcimProductPaymentsCertificationContractSnapshot | null {
-  const raw = env.HELCIM_PRODUCT_PAYMENTS_CONTRACT_JSON?.trim();
-  if (!raw) return null;
-  try {
-    return parseHelcimProductPaymentsContract(JSON.parse(raw));
-  } catch {
-    return null;
+    for (const name of [
+      "SQUARE_ACCESS_TOKEN",
+      "SQUARE_LOCATION_ID",
+      "SQUARE_APPLICATION_ID",
+      "SQUARE_WEBHOOK_SIGNATURE_KEY",
+    ] as const) {
+      if (!env[name]?.trim()) {
+        blockers.push(`payment_config_missing:${name}`);
+      }
+    }
   }
 }
 
@@ -481,9 +450,4 @@ function isBase64EncryptionKey(value: string | undefined): boolean {
   } catch {
     return false;
   }
-}
-
-function isProviderToken(value: string | undefined): boolean {
-  const normalized = value?.trim() ?? "";
-  return normalized.length > 0 && !/\s/.test(normalized);
 }

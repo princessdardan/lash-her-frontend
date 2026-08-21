@@ -548,33 +548,6 @@ export interface FulfillmentProviderCertificationContractSnapshot {
   version: string;
 }
 
-export interface HelcimProductPaymentsCertificationContractSnapshot {
-  contract: "helcim_product_payments";
-  version: string;
-  evidenceReference: string;
-  effectiveFrom: string;
-  effectiveUntil: string;
-  purchaseTransactionTypes: string[];
-  refundTransactionTypes: string[];
-  purchaseSuccessfulStatuses: string[];
-  refundSuccessfulStatuses: string[];
-  avs: {
-    fieldNames: string[];
-    matchCodes: string[];
-    mismatchCodes: string[];
-  };
-  cvv: {
-    fieldNames: string[];
-    matchCodes: string[];
-    mismatchCodes: string[];
-  };
-  refundCorrelation: {
-    providerRefundIdFields: string[];
-    originalTransactionIdFields: string[];
-    merchantReferenceFields: string[];
-  };
-}
-
 export interface ProductTaxPolicyApprovalSnapshot {
   version: string;
   coverage: Record<string, boolean>;
@@ -1522,12 +1495,9 @@ export const checkoutOrders = pgTable(
     initializationError: text("initialization_error"),
     checkoutTokenHash: text("checkout_token_hash").unique(),
     secretTokenCiphertext: text("secret_token_ciphertext"),
-    helcimInvoiceId: integer("helcim_invoice_id"),
-    helcimInvoiceNumber: text("helcim_invoice_number"),
-    helcimTransactionId: text("helcim_transaction_id"),
     paymentProvider: paymentProvider("payment_provider")
       .notNull()
-      .default("helcim"),
+      .default("square"),
     providerCheckoutId: text("provider_checkout_id"),
     providerOrderId: text("provider_order_id"),
     providerPaymentId: text("provider_payment_id"),
@@ -1664,11 +1634,6 @@ export const checkoutOrders = pgTable(
       table.paymentProvider,
       table.providerPaymentId,
     ),
-    uniqueIndex("checkout_orders_helcim_purchase_transaction_idx")
-      .on(table.helcimTransactionId)
-      .where(
-        sql`${table.paymentProvider} = 'helcim' AND ${table.helcimTransactionId} IS NOT NULL AND ${table.fulfillmentQuarantinedAt} IS NULL`,
-      ),
     uniqueIndex("checkout_orders_calendar_event_id_idx").on(
       table.calendarEventId,
     ),
@@ -2289,9 +2254,7 @@ export const orderPaymentObligations = pgTable(
     currency: text("currency").notNull().default("CAD"),
     paymentProvider: paymentProvider("payment_provider")
       .notNull()
-      .default("helcim"),
-    providerInvoiceId: integer("provider_invoice_id"),
-    providerInvoiceNumber: text("provider_invoice_number"),
+      .default("square"),
     providerCheckoutId: text("provider_checkout_id"),
     checkoutTokenHash: text("checkout_token_hash"),
     secretTokenCiphertext: text("secret_token_ciphertext"),
@@ -2352,11 +2315,6 @@ export const orderPaymentObligations = pgTable(
       .where(
         sql`${table.purpose} = 'primary' AND ${table.quarantinedAt} IS NULL`,
       ),
-    uniqueIndex("order_payment_obligations_provider_invoice_idx")
-      .on(table.paymentProvider, table.providerInvoiceId)
-      .where(
-        sql`${table.providerInvoiceId} IS NOT NULL AND ${table.quarantinedAt} IS NULL`,
-      ),
     uniqueIndex("order_payment_obligations_provider_checkout_idx")
       .on(table.paymentProvider, table.providerCheckoutId)
       .where(
@@ -2385,7 +2343,7 @@ export const orderPaymentTransactions = pgTable(
     obligationId: uuid("obligation_id")
       .notNull()
       .references(() => orderPaymentObligations.id, { onDelete: "restrict" }),
-    provider: paymentProvider("provider").notNull().default("helcim"),
+    provider: paymentProvider("provider").notNull().default("square"),
     providerTransactionId: text("provider_transaction_id").notNull(),
     amountCents: integer("amount_cents").notNull(),
     currency: text("currency").notNull(),
@@ -3214,10 +3172,10 @@ export const fulfillmentProviderCertifications = pgTable(
     scope: text("scope").notNull(),
     version: text("version").notNull(),
     evidenceReference: text("evidence_reference").notNull(),
-    contractSnapshot: jsonb("contract_snapshot").$type<
-      | FulfillmentProviderCertificationContractSnapshot
-      | HelcimProductPaymentsCertificationContractSnapshot
-    >(),
+    contractSnapshot:
+      jsonb(
+        "contract_snapshot",
+      ).$type<FulfillmentProviderCertificationContractSnapshot>(),
     certifiedByOwnerName: text("certified_by_owner_name").notNull(),
     certifiedByAdminUserId: uuid("certified_by_admin_user_id").references(
       () => adminUsers.id,
@@ -3495,10 +3453,9 @@ export const checkoutPaymentEvents = pgTable(
       { onDelete: "set null" },
     ),
     eventType: text("event_type").notNull(),
-    helcimTransactionId: text("helcim_transaction_id"),
     paymentProvider: paymentProvider("payment_provider")
       .notNull()
-      .default("helcim"),
+      .default("square"),
     providerEventId: text("provider_event_id"),
     providerCheckoutId: text("provider_checkout_id"),
     providerOrderId: text("provider_order_id"),
@@ -3666,12 +3623,9 @@ export const appointmentHolds = pgTable(
     captureLeaseExpiresAt: timestamp("capture_lease_expires_at", {
       withTimezone: true,
     }),
-    helcimInvoiceId: integer("helcim_invoice_id"),
-    helcimInvoiceNumber: text("helcim_invoice_number"),
-    helcimTransactionId: text("helcim_transaction_id"),
     paymentProvider: paymentProvider("payment_provider")
       .notNull()
-      .default("helcim"),
+      .default("square"),
     squarePaymentLinkId: text("square_payment_link_id"),
     squarePaymentLinkUrl: text("square_payment_link_url"),
     squareCheckoutId: text("square_checkout_id"),

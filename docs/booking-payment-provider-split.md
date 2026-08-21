@@ -9,10 +9,10 @@ Use this reference when checking whether a booking, checkout, or scheduling chan
 | Flow                 | Payment provider                                                                                                          | Scheduling or calendar provider                                                           | Private state owner |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------- |
 | Paid service booking | Square card-on-file intake + Square invoice-based no-show enforcement (primary); Square hosted checkout (legacy/fallback) | Lash Her slot UI plus Google Calendar API event creation                                  | Private Postgres    |
-| Product checkout     | Helcim                                                                                                                    | Not applicable                                                                            | Private Postgres    |
-| Training checkout    | Helcim                                                                                                                    | Paid token gate, then Google Appointment Schedule link or embed for intro-call scheduling | Private Postgres    |
+| Product checkout     | Square Web Payments SDK (authorize/capture)                                                                               | Not applicable                                                                            | Private Postgres    |
+| Training checkout    | Square Web Payments SDK (authorize/capture); optional Square Afterpay invoice as a secondary path                         | Paid token gate, then Google Appointment Schedule link or embed for intro-call scheduling | Private Postgres    |
 
-Square is not a global payment provider. The primary service-booking path uses Square card-on-file and invoice APIs; the Square hosted checkout path is a legacy/fallback. Helcim remains the provider for product checkout and training checkout. Google Appointment Schedule is not used for service bookings.
+Square is now the payment provider for every flow: card-on-file and invoice APIs for service booking, and the Web Payments SDK for product and training checkout. All flows share the single Square webhook at `/api/webhooks/square`. Google Appointment Schedule is not used for service bookings. Historical Helcim orders remain readable in private Postgres, but no code path creates new Helcim payments.
 
 ## Current Primary Paid Service Booking Flow (Card-on-File / No-Show Invoice)
 
@@ -46,15 +46,15 @@ If a verified paid service hold is expired or conflicts with another booking, th
 
 ## Product And Training Checkout
 
-Product checkout and training checkout stay on Helcim. They use the existing commerce checkout routes, Helcim payment verification, Helcim webhook handling, private Postgres order/payment state, and redacted operational evidence.
+Product checkout and training checkout use the Square Web Payments SDK, gated by `SQUARE_COMMERCE_ENABLED=true`. The browser tokenizes the card inside Square's iframe (the PAN never reaches the server); the server authorizes and captures the charge through the Square Payments API, recomputing the amount from trusted order state, and records private Postgres order/payment state plus redacted operational evidence. Training checkout additionally supports an optional Square Afterpay invoice as a secondary path when `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true`. Capture failures and out-of-band completions are reconciled through `/api/webhooks/square` and the payment-reconciliation cron.
 
-These flows should not require Square variables. If a product or training checkout path fails because a Square env var is missing, treat that as a provider-boundary regression.
+These flows reuse the same Square credentials as service booking. If a product or training checkout path fails because a Square env var is missing, treat that as a configuration gap, not a provider-boundary regression.
 
 ## Paid Training Intro-Call Scheduling
 
-Paid training intro-call scheduling starts after Helcim payment verification and private enrollment state are complete.
+Paid training intro-call scheduling starts after Square payment capture and private enrollment state are complete.
 
-1. Helcim verifies training checkout payment.
+1. Square captures the training checkout payment (or the training Afterpay invoice is marked paid).
 2. Private Postgres marks the enrollment/order paid and stores schedule token state.
 3. The customer opens the tokenized paid training schedule page.
 4. The app checks token eligibility against private state.
@@ -64,7 +64,7 @@ The app does not mark the enrollment scheduled just because the page rendered. I
 
 ## Privacy Boundary
 
-Sanity stores public/editorial content and provider-neutral configuration only. Do not store private payment state, transaction history, checkout tokens, service holds, customer snapshots, paid training token data, Square identifiers, Helcim identifiers, or scheduling token data in Sanity.
+Sanity stores public/editorial content and provider-neutral configuration only. Do not store private payment state, transaction history, checkout tokens, service holds, customer snapshots, paid training token data, Square identifiers, historical Helcim identifiers, or scheduling token data in Sanity.
 
 Use private Postgres for sensitive provider state and use redacted evidence in docs, tickets, and release notes.
 

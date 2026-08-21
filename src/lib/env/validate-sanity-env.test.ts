@@ -41,9 +41,6 @@ const launchEnv = {
   CHECKOUT_SECRET_ENCRYPTION_KEY: checkoutKey,
   BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY: calendarCredentialKey,
   SERVICE_BOOKING_MODEL_MODE: "dual",
-  HELCIM_GENERAL_API_TOKEN: "helcim-general-api-token-with-safe-length",
-  HELCIM_TRANSACTION_API_TOKEN: "helcim-transaction-api-token-with-safe-length",
-  HELCIM_WEBHOOK_VERIFIER_TOKEN: "helcim-webhook-verifier-token",
   PAYMENT_RECONCILIATION_CRON_SECRET: "payment-reconciliation-cron-secret",
   CRON_SECRET: "vercel-cron-secret",
   BACKUP_RETENTION_DAYS: "30",
@@ -326,8 +323,6 @@ test("validates preview mock payment environment without live payment credential
     PAYMENT_MOCK_DEFAULT_SCENARIO: "success",
   };
 
-  delete env.HELCIM_GENERAL_API_TOKEN;
-  delete env.HELCIM_TRANSACTION_API_TOKEN;
   delete env.SQUARE_ACCESS_TOKEN;
   delete env.SQUARE_LOCATION_ID;
   delete env.SQUARE_WEBHOOK_SIGNATURE_KEY;
@@ -338,30 +333,6 @@ test("validates preview mock payment environment without live payment credential
 
   assert.equal(result.status, 0);
   assert.match(result.stdout, /Vercel preview environment validated/);
-});
-
-test("fails preview live payment environment without Helcim credentials", () => {
-  const env: Record<string, string> = {
-    ...launchEnv,
-    VERCEL_ENV: "preview",
-    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
-    PAYMENT_GATEWAY_MODE: "live",
-  };
-
-  delete env.HELCIM_GENERAL_API_TOKEN;
-  delete env.HELCIM_TRANSACTION_API_TOKEN;
-
-  const result = runValidator(env);
-
-  assert.notEqual(result.status, 0);
-  assert.match(
-    result.combinedOutput,
-    /Missing env var: HELCIM_GENERAL_API_TOKEN/,
-  );
-  assert.match(
-    result.combinedOutput,
-    /Missing env var: HELCIM_TRANSACTION_API_TOKEN/,
-  );
 });
 
 test("fails production environment when payment mock mode is enabled", () => {
@@ -607,23 +578,6 @@ test("fails malformed booking calendar credential encryption key", () => {
   assert.match(
     result.combinedOutput,
     /BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY/,
-  );
-});
-
-test("fails launch environment when Helcim token appears truncated", () => {
-  const result = runValidator({
-    ...launchEnv,
-    VERCEL_ENV: "preview",
-    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
-    HELCIM_TRANSACTION_API_TOKEN: "token-before-comment",
-  });
-
-  assert.notEqual(result.status, 0);
-  assert.match(result.combinedOutput, /HELCIM_TRANSACTION_API_TOKEN/);
-  assert.match(result.combinedOutput, /appears truncated/);
-  assert.match(
-    result.combinedOutput,
-    /wrap Helcim tokens that contain # in quotes/,
   );
 });
 

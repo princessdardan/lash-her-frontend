@@ -6,7 +6,6 @@ const ORDER_ID = "lh-service-e2e-order";
 const HOLD_REFERENCE = "hold-service-e2e";
 const SQUARE_CHECKOUT_URL = `http://localhost:3000/api/booking/square/return?orderId=${ORDER_ID}&paymentId=mock-square-payment-1`;
 const FORBIDDEN_PAYMENT_HOSTS = new Set([
-  "api.helcim.com",
   "connect.squareup.com",
   "connect.squareupsandbox.com",
 ]);
@@ -227,7 +226,6 @@ test.describe("Booking route flows", () => {
   test("uses a mocked service shell to exercise booking availability, hold, and Square checkout contracts", async ({
     page,
   }) => {
-    let validationCalled = false;
     const holdRequests: Array<Record<string, unknown>> = [];
     const checkoutRequests: Array<Record<string, unknown>> = [];
     const apiRequests: string[] = [];
@@ -294,15 +292,6 @@ test.describe("Booking route flows", () => {
       });
     });
 
-    await page.route("**/api/checkout/validate-payment", async (route) => {
-      validationCalled = true;
-      await route.fulfill({
-        status: 500,
-        contentType: "application/json",
-        body: JSON.stringify({ error: "Helcim validation must not be called" }),
-      });
-    });
-
     await completeServiceDetails(page);
     await expect(
       page.getByRole("button", { name: /continue to secure square checkout/i }),
@@ -344,7 +333,6 @@ test.describe("Booking route flows", () => {
       "GET /api/booking/square/return",
     ]);
     expect(forbiddenPaymentHosts).toEqual([]);
-    expect(validationCalled).toBe(false);
   });
 
   test("shows expired hold recovery instead of navigating to payment", async ({

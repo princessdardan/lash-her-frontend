@@ -558,13 +558,10 @@ async function preserveExistingTerminalOutcome(
     hold: typeof appointmentHolds.$inferSelect;
     input: ConfirmOperationalAppointmentInput;
   },
-): Promise<
-  | Extract<
-      ConfirmOperationalAppointmentResult,
-      { bookingModelVersion: 2 }
-    >
-  | null
-> {
+): Promise<Extract<
+  ConfirmOperationalAppointmentResult,
+  { bookingModelVersion: 2 }
+> | null> {
   const metadata = (input.hold.reconciliationMetadata ?? {}) as Record<
     string,
     unknown
@@ -632,8 +629,7 @@ async function preserveExistingTerminalOutcome(
         }
       : {
           finalizationStatus: "manual_review",
-          manualFollowupAt:
-            input.hold.manualFollowupAt ?? input.input.now,
+          manualFollowupAt: input.hold.manualFollowupAt ?? input.input.now,
           reconciliationMetadata,
           status: "manual_followup",
           updatedAt: input.input.now,
@@ -1003,9 +999,6 @@ function createHoldFinalizationPatch(input: {
   const common: Partial<typeof appointmentHolds.$inferInsert> = {
     captureLeaseExpiresAt: null,
     captureLeaseId: null,
-    ...(payment?.paymentProvider === "helcim"
-      ? { helcimTransactionId: payment.providerPaymentId }
-      : {}),
     ...(payment?.paymentProvider === "square"
       ? {
           squareOrderId: payment.providerOrderId,
@@ -1020,8 +1013,7 @@ function createHoldFinalizationPatch(input: {
       ...(input.input.terminal === undefined
         ? {}
         : {
-            chargeAndStoreConfirmation:
-              input.input.terminal.confirmation,
+            chargeAndStoreConfirmation: input.input.terminal.confirmation,
             chargeAndStoreInProgress: undefined,
           }),
     },

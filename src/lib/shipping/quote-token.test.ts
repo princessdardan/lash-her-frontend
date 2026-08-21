@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type {
-  FulfillmentProviderCertificationContractSnapshot,
-  HelcimProductPaymentsCertificationContractSnapshot,
-} from "@/lib/private-db/schema";
+import type { FulfillmentProviderCertificationContractSnapshot } from "@/lib/private-db/schema";
 import {
   bindShippingFingerprintToContext,
   createShippingFingerprint,
@@ -35,38 +32,10 @@ const usShippingContract = {
   version: "provider-contract-2026-08",
 } satisfies FulfillmentProviderCertificationContractSnapshot;
 
-const helcimProductPaymentsContract = {
-  contract: "helcim_product_payments",
-  version: "helcim-product-payments-v1",
-  evidenceReference: "certification/helcim/product-payments/v1",
-  effectiveFrom: "2026-08-14T00:00:00.000Z",
-  effectiveUntil: "2027-08-14T00:00:00.000Z",
-  purchaseTransactionTypes: ["purchase"],
-  refundTransactionTypes: ["refund"],
-  purchaseSuccessfulStatuses: ["approved"],
-  refundSuccessfulStatuses: ["approved"],
-  avs: {
-    fieldNames: ["avsResponse"],
-    matchCodes: ["m"],
-    mismatchCodes: ["n"],
-  },
-  cvv: {
-    fieldNames: ["cvvResponse"],
-    matchCodes: ["m"],
-    mismatchCodes: ["n"],
-  },
-  refundCorrelation: {
-    providerRefundIdFields: ["transactionId"],
-    originalTransactionIdFields: ["originalTransactionId"],
-    merchantReferenceFields: ["merchantReference"],
-  },
-} satisfies HelcimProductPaymentsCertificationContractSnapshot;
-
 function quoteContext(
   overrides: Partial<ShippingQuoteContext> = {},
 ): ShippingQuoteContext {
   return {
-    helcimProductPaymentsContract,
     policyVersion: "policy-v1",
     region: "ontario_manitoba",
     servicePolicies: [],
@@ -184,39 +153,6 @@ test("shipping fingerprint binds the certified U.S. shipping contract", () => {
         version: "provider-contract-2026-09",
       },
     }),
-  );
-});
-
-test("shipping fingerprint binds the certified Helcim product-payment contract", () => {
-  const original = bindShippingFingerprintToContext(
-    "fingerprint",
-    quoteContext(),
-  );
-  const changed = bindShippingFingerprintToContext(
-    "fingerprint",
-    quoteContext({
-      helcimProductPaymentsContract: {
-        ...helcimProductPaymentsContract,
-        version: "helcim-product-payments-v2",
-      },
-    }),
-  );
-  assert.notEqual(original, changed);
-});
-
-test("quote context parsing rejects a missing or malformed Helcim contract", () => {
-  const missing = { ...quoteContext() } as Record<string, unknown>;
-  delete missing.helcimProductPaymentsContract;
-  assert.equal(parseShippingQuoteContextSnapshot(missing), null);
-  assert.equal(
-    parseShippingQuoteContextSnapshot({
-      ...quoteContext(),
-      helcimProductPaymentsContract: {
-        ...helcimProductPaymentsContract,
-        purchaseTransactionTypes: ["purchase", "purchase"],
-      },
-    }),
-    null,
   );
 });
 

@@ -33,11 +33,6 @@ export interface TrainingEnrollmentWithCheckoutOrder {
   enrollment: TrainingEnrollmentRow;
 }
 
-export interface FindTrainingEnrollmentByHelcimInvoiceInput {
-  helcimInvoiceId?: number;
-  helcimInvoiceNumber?: string;
-}
-
 export interface CreateTrainingEnrollmentInput {
   checkoutEmail: string;
   checkoutOrderId: string;
@@ -96,18 +91,27 @@ export interface TrainingEnrollmentRepository {
     tokenExpiresAt: Date,
     now: Date,
   ): Promise<boolean>;
-  createTrainingEnrollment(values: TrainingEnrollmentInsert): Promise<TrainingEnrollmentRow>;
-  findPaidPendingEnrollmentByHelcimInvoice(
-    input: FindTrainingEnrollmentByHelcimInvoiceInput,
+  createTrainingEnrollment(
+    values: TrainingEnrollmentInsert,
+  ): Promise<TrainingEnrollmentRow>;
+  findPaidPendingEnrollmentByPublicOrderId(
+    orderId: string,
   ): Promise<TrainingEnrollmentWithCheckoutOrder | null>;
-  findPaidPendingEnrollmentByPublicOrderId(orderId: string): Promise<TrainingEnrollmentWithCheckoutOrder | null>;
-  claimTrainingPaymentEmails(enrollmentId: string, now: Date, claimUntil: Date): Promise<TrainingEnrollmentWithCheckoutOrder | null>;
+  claimTrainingPaymentEmails(
+    enrollmentId: string,
+    now: Date,
+    claimUntil: Date,
+  ): Promise<TrainingEnrollmentWithCheckoutOrder | null>;
   findPendingEnrollmentBySchedulingTokenHash(
     schedulingTokenHash: string,
     now: Date,
   ): Promise<TrainingEnrollmentWithCheckoutOrder | null>;
   markSchedulingPending(enrollmentId: string, now: Date): Promise<void>;
-  markScheduled(enrollmentId: string, scheduledAt: Date, now: Date): Promise<boolean>;
+  markScheduled(
+    enrollmentId: string,
+    scheduledAt: Date,
+    now: Date,
+  ): Promise<boolean>;
   markScheduledByTokenHash(
     enrollmentId: string,
     schedulingTokenHash: string,
@@ -115,36 +119,53 @@ export interface TrainingEnrollmentRepository {
     now: Date,
   ): Promise<boolean>;
   markStaffAlerted(enrollmentId: string, now: Date): Promise<boolean>;
-  markStudentPaymentEmailSent(enrollmentId: string, now: Date): Promise<boolean>;
-  recordTrainingPaymentEmailFailure(enrollmentId: string, error: string, now: Date): Promise<void>;
+  markStudentPaymentEmailSent(
+    enrollmentId: string,
+    now: Date,
+  ): Promise<boolean>;
+  recordTrainingPaymentEmailFailure(
+    enrollmentId: string,
+    error: string,
+    now: Date,
+  ): Promise<void>;
 }
 
 export interface TrainingEnrollmentStore {
-  createEnrollment(input: CreateTrainingEnrollmentInput): Promise<TrainingEnrollmentRow>;
+  createEnrollment(
+    input: CreateTrainingEnrollmentInput,
+  ): Promise<TrainingEnrollmentRow>;
   findPendingEnrollmentByToken(
     input: FindPendingTrainingEnrollmentByTokenInput,
   ): Promise<PendingTrainingEnrollmentRecord | null>;
-  getPaidPendingConfirmationByPublicOrderId(orderId: string): Promise<PendingTrainingEnrollmentRecord | null>;
-  getPaidPendingNotificationByHelcimInvoiceIfMissing(
-    input: FindTrainingEnrollmentByHelcimInvoiceInput,
+  getPaidPendingConfirmationByPublicOrderId(
+    orderId: string,
   ): Promise<PendingTrainingEnrollmentRecord | null>;
-  claimTrainingPaymentEmails(input: ClaimTrainingPaymentEmailsInput): Promise<PendingTrainingEnrollmentRecord | null>;
-  issueSchedulingTokenForPaidHelcimInvoiceIfMissing(
-    input: FindTrainingEnrollmentByHelcimInvoiceInput,
+  claimTrainingPaymentEmails(
+    input: ClaimTrainingPaymentEmailsInput,
+  ): Promise<PendingTrainingEnrollmentRecord | null>;
+  getOrIssueSchedulingTokenForPaidOrder(
+    orderId: string,
     now?: Date,
   ): Promise<IssuedTrainingSchedulingTokenRecord | null>;
-  getOrIssueSchedulingTokenForPaidHelcimInvoice(
-    input: FindTrainingEnrollmentByHelcimInvoiceInput,
+  issueSchedulingTokenForPaidOrder(
+    orderId: string,
     now?: Date,
   ): Promise<IssuedTrainingSchedulingTokenRecord | null>;
-  getOrIssueSchedulingTokenForPaidOrder(orderId: string, now?: Date): Promise<IssuedTrainingSchedulingTokenRecord | null>;
-  issueSchedulingTokenForPaidOrder(orderId: string, now?: Date): Promise<IssuedTrainingSchedulingTokenRecord | null>;
-  issueSchedulingTokenForPaidOrderIfMissing(orderId: string, now?: Date): Promise<IssuedTrainingSchedulingTokenRecord | null>;
+  issueSchedulingTokenForPaidOrderIfMissing(
+    orderId: string,
+    now?: Date,
+  ): Promise<IssuedTrainingSchedulingTokenRecord | null>;
   markSchedulingPending(enrollmentId: string, now?: Date): Promise<void>;
   markScheduled(input: MarkTrainingEnrollmentScheduledInput): Promise<boolean>;
-  markStaffAlerted(input: MarkTrainingEnrollmentStaffAlertedInput): Promise<boolean>;
-  markStudentPaymentEmailSent(input: MarkTrainingEnrollmentStaffAlertedInput): Promise<boolean>;
-  recordTrainingPaymentEmailFailure(input: TrainingPaymentEmailFailureInput): Promise<void>;
+  markStaffAlerted(
+    input: MarkTrainingEnrollmentStaffAlertedInput,
+  ): Promise<boolean>;
+  markStudentPaymentEmailSent(
+    input: MarkTrainingEnrollmentStaffAlertedInput,
+  ): Promise<boolean>;
+  recordTrainingPaymentEmailFailure(
+    input: TrainingPaymentEmailFailureInput,
+  ): Promise<void>;
 }
 
 export function createTrainingEnrollmentStore(
@@ -176,19 +197,10 @@ export function createTrainingEnrollmentStore(
     },
 
     async getPaidPendingConfirmationByPublicOrderId(orderId) {
-      const found = await repository.findPaidPendingEnrollmentByPublicOrderId(orderId);
+      const found =
+        await repository.findPaidPendingEnrollmentByPublicOrderId(orderId);
 
       if (!found) {
-        return null;
-      }
-
-      return toPendingTrainingEnrollmentRecord(found);
-    },
-
-    async getPaidPendingNotificationByHelcimInvoiceIfMissing(input) {
-      const found = await repository.findPaidPendingEnrollmentByHelcimInvoice(input);
-
-      if (!found || isTrainingPaymentNotificationComplete(found.enrollment)) {
         return null;
       }
 
@@ -197,14 +209,21 @@ export function createTrainingEnrollmentStore(
 
     async claimTrainingPaymentEmails(input) {
       const now = input.now ?? new Date();
-      const claimUntil = new Date(now.getTime() + (input.claimForMs ?? EMAIL_CLAIM_DURATION_MS));
-      const found = await repository.claimTrainingPaymentEmails(input.enrollmentId, now, claimUntil);
+      const claimUntil = new Date(
+        now.getTime() + (input.claimForMs ?? EMAIL_CLAIM_DURATION_MS),
+      );
+      const found = await repository.claimTrainingPaymentEmails(
+        input.enrollmentId,
+        now,
+        claimUntil,
+      );
 
       return found === null ? null : toPendingTrainingEnrollmentRecord(found);
     },
 
     async getOrIssueSchedulingTokenForPaidOrder(orderId, now = new Date()) {
-      const found = await repository.findPaidPendingEnrollmentByPublicOrderId(orderId);
+      const found =
+        await repository.findPaidPendingEnrollmentByPublicOrderId(orderId);
 
       if (!found) {
         return null;
@@ -220,57 +239,35 @@ export function createTrainingEnrollmentStore(
         return null;
       }
 
-      return issueSchedulingToken(found, repository, now, { requireMissingToken: true });
+      return issueSchedulingToken(found, repository, now, {
+        requireMissingToken: true,
+      });
     },
 
     async issueSchedulingTokenForPaidOrder(orderId, now = new Date()) {
-      const found = await repository.findPaidPendingEnrollmentByPublicOrderId(orderId);
+      const found =
+        await repository.findPaidPendingEnrollmentByPublicOrderId(orderId);
 
       if (!found) {
         return null;
       }
 
-      return issueSchedulingToken(found, repository, now, { requireMissingToken: false });
+      return issueSchedulingToken(found, repository, now, {
+        requireMissingToken: false,
+      });
     },
 
     async issueSchedulingTokenForPaidOrderIfMissing(orderId, now = new Date()) {
-      const found = await repository.findPaidPendingEnrollmentByPublicOrderId(orderId);
+      const found =
+        await repository.findPaidPendingEnrollmentByPublicOrderId(orderId);
 
       if (!found || found.enrollment.schedulingTokenHash !== null) {
         return null;
       }
 
-      return issueSchedulingToken(found, repository, now, { requireMissingToken: true });
-    },
-
-    async issueSchedulingTokenForPaidHelcimInvoiceIfMissing(input, now = new Date()) {
-      const found = await repository.findPaidPendingEnrollmentByHelcimInvoice(input);
-
-      if (!found || found.enrollment.schedulingTokenHash !== null) {
-        return null;
-      }
-
-      return issueSchedulingToken(found, repository, now, { requireMissingToken: true });
-    },
-
-    async getOrIssueSchedulingTokenForPaidHelcimInvoice(input, now = new Date()) {
-      const found = await repository.findPaidPendingEnrollmentByHelcimInvoice(input);
-
-      if (!found) {
-        return null;
-      }
-
-      const activeToken = getActiveSchedulingToken(found, now);
-
-      if (activeToken) {
-        return activeToken;
-      }
-
-      if (found.enrollment.schedulingTokenHash !== null) {
-        return null;
-      }
-
-      return issueSchedulingToken(found, repository, now, { requireMissingToken: true });
+      return issueSchedulingToken(found, repository, now, {
+        requireMissingToken: true,
+      });
     },
 
     async markSchedulingPending(enrollmentId, now = new Date()) {
@@ -288,15 +285,25 @@ export function createTrainingEnrollmentStore(
         );
       }
 
-      return repository.markScheduled(input.enrollmentId, input.scheduledAt ?? now, now);
+      return repository.markScheduled(
+        input.enrollmentId,
+        input.scheduledAt ?? now,
+        now,
+      );
     },
 
     async markStaffAlerted(input) {
-      return repository.markStaffAlerted(input.enrollmentId, input.now ?? new Date());
+      return repository.markStaffAlerted(
+        input.enrollmentId,
+        input.now ?? new Date(),
+      );
     },
 
     async markStudentPaymentEmailSent(input) {
-      return repository.markStudentPaymentEmailSent(input.enrollmentId, input.now ?? new Date());
+      return repository.markStudentPaymentEmailSent(
+        input.enrollmentId,
+        input.now ?? new Date(),
+      );
     },
 
     async recordTrainingPaymentEmailFailure(input) {
@@ -328,13 +335,9 @@ export async function findPendingTrainingEnrollmentByToken(
 export async function getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId(
   orderId: string,
 ): Promise<PendingTrainingEnrollmentRecord | null> {
-  return defaultTrainingEnrollmentStore.getPaidPendingConfirmationByPublicOrderId(orderId);
-}
-
-export async function getPaidPendingTrainingEnrollmentNotificationByHelcimInvoiceIfMissing(
-  input: FindTrainingEnrollmentByHelcimInvoiceInput,
-): Promise<PendingTrainingEnrollmentRecord | null> {
-  return defaultTrainingEnrollmentStore.getPaidPendingNotificationByHelcimInvoiceIfMissing(input);
+  return defaultTrainingEnrollmentStore.getPaidPendingConfirmationByPublicOrderId(
+    orderId,
+  );
 }
 
 export async function claimTrainingPaymentEmails(
@@ -347,35 +350,30 @@ export async function getOrIssueTrainingSchedulingTokenForPaidOrder(
   orderId: string,
   now?: Date,
 ): Promise<IssuedTrainingSchedulingTokenRecord | null> {
-  return defaultTrainingEnrollmentStore.getOrIssueSchedulingTokenForPaidOrder(orderId, now);
+  return defaultTrainingEnrollmentStore.getOrIssueSchedulingTokenForPaidOrder(
+    orderId,
+    now,
+  );
 }
 
 export async function issueTrainingSchedulingTokenForPaidOrder(
   orderId: string,
   now?: Date,
 ): Promise<IssuedTrainingSchedulingTokenRecord | null> {
-  return defaultTrainingEnrollmentStore.issueSchedulingTokenForPaidOrder(orderId, now);
+  return defaultTrainingEnrollmentStore.issueSchedulingTokenForPaidOrder(
+    orderId,
+    now,
+  );
 }
 
 export async function issueTrainingSchedulingTokenForPaidOrderIfMissing(
   orderId: string,
   now?: Date,
 ): Promise<IssuedTrainingSchedulingTokenRecord | null> {
-  return defaultTrainingEnrollmentStore.issueSchedulingTokenForPaidOrderIfMissing(orderId, now);
-}
-
-export async function issueTrainingSchedulingTokenForPaidHelcimInvoiceIfMissing(
-  input: FindTrainingEnrollmentByHelcimInvoiceInput,
-  now?: Date,
-): Promise<IssuedTrainingSchedulingTokenRecord | null> {
-  return defaultTrainingEnrollmentStore.issueSchedulingTokenForPaidHelcimInvoiceIfMissing(input, now);
-}
-
-export async function getOrIssueTrainingSchedulingTokenForPaidHelcimInvoice(
-  input: FindTrainingEnrollmentByHelcimInvoiceInput,
-  now?: Date,
-): Promise<IssuedTrainingSchedulingTokenRecord | null> {
-  return defaultTrainingEnrollmentStore.getOrIssueSchedulingTokenForPaidHelcimInvoice(input, now);
+  return defaultTrainingEnrollmentStore.issueSchedulingTokenForPaidOrderIfMissing(
+    orderId,
+    now,
+  );
 }
 
 export async function markTrainingEnrollmentSchedulingPending(
@@ -415,7 +413,12 @@ export function generateTrainingSchedulingToken(): string {
 
 function createDrizzleTrainingEnrollmentRepository(): TrainingEnrollmentRepository {
   return {
-    async assignSchedulingToken(enrollmentId, schedulingTokenHash, tokenExpiresAt, now) {
+    async assignSchedulingToken(
+      enrollmentId,
+      schedulingTokenHash,
+      tokenExpiresAt,
+      now,
+    ) {
       const updated = await getPrivateDb()
         .update(trainingEnrollments)
         .set({
@@ -440,23 +443,44 @@ function createDrizzleTrainingEnrollmentRepository(): TrainingEnrollmentReposito
     },
 
     async createTrainingEnrollment(values) {
+      // Idempotent on checkoutOrderId (unique index): when a reservation is
+      // reused after a retry, the same checkout order id is passed again, so the
+      // insert conflicts and no second enrollment is created. Fall back to the
+      // existing row to preserve the return contract.
       const [createdEnrollment] = await getPrivateDb()
         .insert(trainingEnrollments)
         .values(values)
+        .onConflictDoNothing({ target: trainingEnrollments.checkoutOrderId })
         .returning();
 
-      return createdEnrollment;
-    },
+      if (createdEnrollment) {
+        return createdEnrollment;
+      }
 
-    async findPaidPendingEnrollmentByHelcimInvoice(input) {
-      return findPaidPendingEnrollmentByHelcimInvoice(input);
+      const [existingEnrollment] = await getPrivateDb()
+        .select()
+        .from(trainingEnrollments)
+        .where(eq(trainingEnrollments.checkoutOrderId, values.checkoutOrderId))
+        .limit(1);
+
+      if (!existingEnrollment) {
+        throw new Error("Training enrollment could not be created");
+      }
+
+      return existingEnrollment;
     },
 
     async findPaidPendingEnrollmentByPublicOrderId(orderId) {
       const [found] = await getPrivateDb()
-        .select({ checkoutOrder: checkoutOrders, enrollment: trainingEnrollments })
+        .select({
+          checkoutOrder: checkoutOrders,
+          enrollment: trainingEnrollments,
+        })
         .from(trainingEnrollments)
-        .innerJoin(checkoutOrders, eq(trainingEnrollments.checkoutOrderId, checkoutOrders.id))
+        .innerJoin(
+          checkoutOrders,
+          eq(trainingEnrollments.checkoutOrderId, checkoutOrders.id),
+        )
         .where(
           and(
             eq(checkoutOrders.orderId, orderId),
@@ -500,9 +524,15 @@ function createDrizzleTrainingEnrollmentRepository(): TrainingEnrollmentReposito
       }
 
       const [found] = await getPrivateDb()
-        .select({ checkoutOrder: checkoutOrders, enrollment: trainingEnrollments })
+        .select({
+          checkoutOrder: checkoutOrders,
+          enrollment: trainingEnrollments,
+        })
         .from(trainingEnrollments)
-        .innerJoin(checkoutOrders, eq(trainingEnrollments.checkoutOrderId, checkoutOrders.id))
+        .innerJoin(
+          checkoutOrders,
+          eq(trainingEnrollments.checkoutOrderId, checkoutOrders.id),
+        )
         .where(
           and(
             eq(trainingEnrollments.id, claimed.id),
@@ -516,9 +546,15 @@ function createDrizzleTrainingEnrollmentRepository(): TrainingEnrollmentReposito
 
     async findPendingEnrollmentBySchedulingTokenHash(schedulingTokenHash, now) {
       const [found] = await getPrivateDb()
-        .select({ checkoutOrder: checkoutOrders, enrollment: trainingEnrollments })
+        .select({
+          checkoutOrder: checkoutOrders,
+          enrollment: trainingEnrollments,
+        })
         .from(trainingEnrollments)
-        .innerJoin(checkoutOrders, eq(trainingEnrollments.checkoutOrderId, checkoutOrders.id))
+        .innerJoin(
+          checkoutOrders,
+          eq(trainingEnrollments.checkoutOrderId, checkoutOrders.id),
+        )
         .where(
           and(
             eq(trainingEnrollments.schedulingTokenHash, schedulingTokenHash),
@@ -567,7 +603,12 @@ function createDrizzleTrainingEnrollmentRepository(): TrainingEnrollmentReposito
       return updated.length === 1;
     },
 
-    async markScheduledByTokenHash(enrollmentId, schedulingTokenHash, scheduledAt, now) {
+    async markScheduledByTokenHash(
+      enrollmentId,
+      schedulingTokenHash,
+      scheduledAt,
+      now,
+    ) {
       const updated = await getPrivateDb()
         .update(trainingEnrollments)
         .set({
@@ -638,52 +679,24 @@ function createDrizzleTrainingEnrollmentRepository(): TrainingEnrollmentReposito
   };
 }
 
-async function findPaidPendingEnrollmentByHelcimInvoice(
-  input: FindTrainingEnrollmentByHelcimInvoiceInput,
-): Promise<TrainingEnrollmentWithCheckoutOrder | null> {
-  if (input.helcimInvoiceId === undefined && input.helcimInvoiceNumber === undefined) {
-    return null;
-  }
-
-  const invoiceConditions = [
-    input.helcimInvoiceId === undefined
-      ? undefined
-      : eq(checkoutOrders.helcimInvoiceId, input.helcimInvoiceId),
-    input.helcimInvoiceNumber === undefined
-      ? undefined
-      : eq(checkoutOrders.helcimInvoiceNumber, input.helcimInvoiceNumber),
-  ].filter((condition) => condition !== undefined);
-
-  const [found] = await getPrivateDb()
-    .select({ checkoutOrder: checkoutOrders, enrollment: trainingEnrollments })
-    .from(trainingEnrollments)
-    .innerJoin(checkoutOrders, eq(trainingEnrollments.checkoutOrderId, checkoutOrders.id))
-    .where(
-      and(
-        ...invoiceConditions,
-        eq(checkoutOrders.paymentProvider, "helcim"),
-        eq(checkoutOrders.status, "paid"),
-        eq(trainingEnrollments.schedulingStatus, "pending"),
-        isNull(trainingEnrollments.tokenUsedAt),
-      ),
-    )
-    .limit(1);
-
-  return found ?? null;
-}
-
 async function issueSchedulingToken(
   found: TrainingEnrollmentWithCheckoutOrder,
   repository: Pick<TrainingEnrollmentRepository, "assignSchedulingToken">,
   now: Date,
   options: { requireMissingToken: boolean },
 ): Promise<IssuedTrainingSchedulingTokenRecord | null> {
-  if (options.requireMissingToken && found.enrollment.schedulingTokenHash !== null) {
+  if (
+    options.requireMissingToken &&
+    found.enrollment.schedulingTokenHash !== null
+  ) {
     return null;
   }
 
   const tokenExpiresAt = expiresInDaysFrom(now, SCHEDULING_TOKEN_TTL_DAYS);
-  const schedulingToken = buildTrainingSchedulingToken(found.enrollment.id, tokenExpiresAt);
+  const schedulingToken = buildTrainingSchedulingToken(
+    found.enrollment.id,
+    tokenExpiresAt,
+  );
   const schedulingTokenHash = hashSchedulingToken(schedulingToken);
 
   const assigned = await repository.assignSchedulingToken(
@@ -724,7 +737,10 @@ function getActiveSchedulingToken(
     return null;
   }
 
-  const schedulingToken = buildTrainingSchedulingToken(found.enrollment.id, tokenExpiresAt);
+  const schedulingToken = buildTrainingSchedulingToken(
+    found.enrollment.id,
+    tokenExpiresAt,
+  );
 
   if (hashSchedulingToken(schedulingToken) !== tokenHash) {
     return null;
@@ -736,7 +752,10 @@ function getActiveSchedulingToken(
   };
 }
 
-function buildTrainingSchedulingToken(enrollmentId: string, tokenExpiresAt: Date): string {
+function buildTrainingSchedulingToken(
+  enrollmentId: string,
+  tokenExpiresAt: Date,
+): string {
   const expiresAt = tokenExpiresAt.toISOString();
   const signature = createHmac("sha256", getCheckoutSecretEncryptionKey())
     .update(`training-scheduling-token:${enrollmentId}:${expiresAt}`, "utf8")
@@ -760,8 +779,13 @@ function toPendingTrainingEnrollmentRecord(
   };
 }
 
-function isTrainingPaymentNotificationComplete(enrollment: TrainingEnrollmentRow): boolean {
-  return enrollment.studentPaymentEmailSentAt !== null && enrollment.staffAlertedAt !== null;
+function isTrainingPaymentNotificationComplete(
+  enrollment: TrainingEnrollmentRow,
+): boolean {
+  return (
+    enrollment.studentPaymentEmailSentAt !== null &&
+    enrollment.staffAlertedAt !== null
+  );
 }
 
 function hashSchedulingToken(schedulingToken: string): string {

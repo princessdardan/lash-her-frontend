@@ -341,7 +341,7 @@ function Methodology() {
         />
         <Method
           label="Square refunds issued"
-          value="Distinct completed Square refund events whose provider event time falls in the range. Helcim refunds are not included in this figure."
+          value="Distinct completed Square refund events whose provider event time falls in the range."
         />
       </dl>
       <details className="rounded-xl border border-lh-line p-4">

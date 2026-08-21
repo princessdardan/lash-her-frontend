@@ -136,7 +136,7 @@ export function OrderShippingControls({
   const refundPostage = async () => {
     if (
       !window.confirm(
-        "Request a Chit Chats postage refund? This does not refund the customer's Helcim payment.",
+        "Request a Chit Chats postage refund? This does not refund the customer's payment.",
       )
     )
       return;

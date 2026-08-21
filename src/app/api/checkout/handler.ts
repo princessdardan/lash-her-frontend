@@ -29,14 +29,11 @@ import {
   parseOptionalCheckoutText,
 } from "@/lib/commerce/checkout-validation";
 import { parsePromotionCodeInput } from "@/lib/commerce/discounts";
-import type { HelcimGateway } from "@/lib/commerce/helcim-gateway";
-import { createPaymentMockStore } from "@/lib/payment-mocks/in-memory-store";
 import { ShippingQuoteConflictError } from "@/lib/shipping/errors";
 import { getTrustedClientIp } from "@/lib/security/trusted-client-ip";
 import { readBoundedJsonBody } from "@/lib/security/bounded-json-body";
 import type { TProduct, TPromotionCode } from "@/types";
 
-const checkoutPaymentMockStore = createPaymentMockStore();
 const CHECKOUT_BODY_MAX_BYTES = 64 * 1024;
 
 interface CheckoutCustomerInput {
@@ -78,11 +75,24 @@ interface CheckoutRequestBody {
     fingerprint: string;
     rateId: string;
   };
+  /**
+   * Client-supplied per-attempt idempotency token. When present on a
+   * manual-pickup checkout, the reserved order's id is derived from it so a
+   * retry of the same attempt reuses the order instead of double-charging.
+   */
+  reservationKey?: string;
+  /**
+   * Square Web Payments SDK card nonce. When present (and Square commerce
+   * checkout is enabled), the order is reserved and charged synchronously
+   * through Square rather than returning the legacy async-invoice operation.
+   */
+  payment?: {
+    sourceId: string;
+    verificationToken?: string;
+  };
 }
 
-type CheckoutResponseBody =
-  | { checkoutToken: string }
-  | { operationId: string; status: "queued" };
+type CheckoutResponseBody = { orderId: string; status: "paid" };
 
 interface CheckoutErrorBody {
   error: string;
@@ -116,6 +126,7 @@ interface CheckoutPostHandlerDependencies {
   createInitializingOrder?: (input: {
     customerName: string;
     customerEmail: string;
+    provider?: "square";
     cart: ValidatedCart;
     shippingAddress: CheckoutShippingAddressInput;
     shippingQuoteToken: string;
@@ -133,6 +144,7 @@ interface CheckoutPostHandlerDependencies {
   }) => Promise<{
     orderId: string;
     primaryObligationId: string;
+    currency: "CAD";
     shippingAmountCents: number;
     totalAmountCents: number;
     shippingRateTitle: string;
@@ -141,6 +153,7 @@ interface CheckoutPostHandlerDependencies {
     customerName: string;
     customerEmail: string;
     customerPhone?: string;
+    reservationKey?: string;
     cart: ValidatedCart;
     fulfillmentMode: "manual_pickup";
     cancellationPolicy: {
@@ -155,21 +168,28 @@ interface CheckoutPostHandlerDependencies {
   }) => Promise<{
     orderId: string;
     primaryObligationId: string;
+    currency: "CAD";
     shippingAmountCents: number;
     totalAmountCents: number;
     shippingRateTitle: string;
   }>;
-  finalizeInitializingOrder?: (input: {
-    orderId: string;
-    checkoutToken: string;
-    secretToken: string;
-    helcimInvoiceId: number;
-    helcimInvoiceNumber: string;
-  }) => Promise<void>;
   markInitializationFailed?: (orderId: string, error: string) => Promise<void>;
   loadManualCheckoutPolicy?: typeof loadManualProductCheckoutPolicy;
   loadTermsRequirement?: () => ProductCheckoutTermsRequirement;
   loadShippedRefundPolicyRequirement?: () => ShippedRefundPolicyRequirement;
+  /** When true, a request carrying `payment.sourceId` is charged via Square. */
+  squareCommerceEnabled?: boolean;
+  chargeSquareProductOrder?: (input: {
+    orderReference: string;
+    amountCents: number;
+    currency: "CAD";
+    sourceId: string;
+    verificationToken?: string;
+  }) => Promise<
+    | { ok: true; squarePaymentId: string; transition: string }
+    | { ok: false; reason: string }
+  >;
+  markOrderVerificationFailed?: (orderId: string) => Promise<void>;
 }
 
 interface ProductCheckoutTermsAssent {
@@ -201,11 +221,13 @@ export function createCheckoutPostHandler({
   validateShippingSelection,
   createInitializingOrder,
   createInitializingManualOrder,
-  finalizeInitializingOrder,
   markInitializationFailed,
   loadManualCheckoutPolicy = loadManualProductCheckoutPolicy,
   loadTermsRequirement = getProductCheckoutTermsRequirement,
   loadShippedRefundPolicyRequirement = getShippedRefundPolicyRequirement,
+  squareCommerceEnabled,
+  chargeSquareProductOrder,
+  markOrderVerificationFailed: markOrderVerificationFailedDep,
 }: CheckoutPostHandlerDependencies): (req: NextRequest) => Promise<Response> {
   return async function checkoutPostHandler(
     req: NextRequest,
@@ -257,7 +279,6 @@ export function createCheckoutPostHandler({
       const shippingWorkflowConfigured = dependenciesProvideShippingWorkflow({
         validateShippingSelection,
         createInitializingOrder,
-        finalizeInitializingOrder,
       });
       const isManualCheckout = cart.checkoutMode === "manual";
       if (
@@ -406,6 +427,15 @@ export function createCheckoutPostHandler({
         };
       }
 
+      // Square commerce charges synchronously through the Web Payments SDK when
+      // the request carries a card nonce — both automated shipping and manual
+      // pickup.
+      const useSquareCommerce = Boolean(
+        squareCommerceEnabled &&
+        chargeSquareProductOrder &&
+        checkoutRequest.payment?.sourceId,
+      );
+
       let initializingOrder: Awaited<
         ReturnType<NonNullable<typeof createInitializingOrder>>
       > | null = null;
@@ -423,6 +453,9 @@ export function createCheckoutPostHandler({
           customerEmail: checkoutRequest.customer.email,
           ...(checkoutRequest.customer.phone
             ? { customerPhone: checkoutRequest.customer.phone }
+            : {}),
+          ...(checkoutRequest.reservationKey
+            ? { reservationKey: checkoutRequest.reservationKey }
             : {}),
           cart,
           fulfillmentMode: "manual_pickup",
@@ -442,7 +475,6 @@ export function createCheckoutPostHandler({
         shippingEnabled &&
         validateShippingSelection &&
         createInitializingOrder &&
-        finalizeInitializingOrder &&
         checkoutRequest.shippingQuote
       ) {
         const validatedSelection = normalizeValidatedShippingSelection(
@@ -488,6 +520,7 @@ export function createCheckoutPostHandler({
         initializingOrder = await createInitializingOrder({
           customerName: checkoutRequest.customer.name,
           customerEmail: checkoutRequest.customer.email,
+          ...(useSquareCommerce ? { provider: "square" as const } : {}),
           cart,
           shippingAddress: normalizeShippingAddress(
             checkoutRequest.shippingAddress!,
@@ -519,12 +552,54 @@ export function createCheckoutPostHandler({
         if (!("primaryObligationId" in initializingOrder)) {
           throw new Error("Durable payment operation was not reserved");
         }
+
+        // Square is the only gateway. If the request carried no card nonce (or
+        // Square commerce is disabled), checkout is unavailable — there is no
+        // fallback gateway.
+        if (
+          !useSquareCommerce ||
+          !chargeSquareProductOrder ||
+          !checkoutRequest.payment?.sourceId
+        ) {
+          if (markOrderVerificationFailedDep) {
+            await markOrderVerificationFailedDep(
+              initializingOrder.orderId,
+            ).catch(() => undefined);
+          }
+          return NextResponse.json<CheckoutErrorBody>(
+            { error: "Checkout is temporarily unavailable" },
+            { status: 503 },
+          );
+        }
+
+        const charge = await chargeSquareProductOrder({
+          orderReference: initializingOrder.orderId,
+          amountCents: initializingOrder.totalAmountCents,
+          currency: initializingOrder.currency,
+          sourceId: checkoutRequest.payment.sourceId,
+          ...(checkoutRequest.payment.verificationToken
+            ? { verificationToken: checkoutRequest.payment.verificationToken }
+            : {}),
+        });
+
+        if (!charge.ok) {
+          // The captured payment did not clear; release the reserved order so
+          // the customer sees a clean failure. (Known limitation: the attached
+          // shipping quote is not yet released here — tracked for follow-up.)
+          if (markOrderVerificationFailedDep) {
+            await markOrderVerificationFailedDep(
+              initializingOrder.orderId,
+            ).catch(() => undefined);
+          }
+          return NextResponse.json<CheckoutErrorBody>(
+            { error: "Payment could not be completed" },
+            { status: 402 },
+          );
+        }
+
         return NextResponse.json<CheckoutResponseBody>(
-          {
-            operationId: initializingOrder.primaryObligationId,
-            status: "queued",
-          },
-          { status: 202 },
+          { orderId: initializingOrder.orderId, status: "paid" },
+          { status: 200 },
         );
       }
 
@@ -565,14 +640,33 @@ export function createCheckoutPostHandler({
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
-  const [{ loaders }, orderStore, shippingConfig] = await Promise.all([
+  const [
+    { loaders },
+    orderStore,
+    shippingConfig,
+    privateCheckout,
+    squareCommerce,
+  ] = await Promise.all([
     import("@/data/loaders"),
     import("@/lib/commerce/order-store"),
     import("@/lib/shipping/config"),
+    import("@/lib/env/private-checkout"),
+    import("@/lib/commerce/square-commerce-checkout"),
   ]);
+
+  const squareCommerceEnabled =
+    privateCheckout.isSquareCommerceCheckoutEnabled();
 
   return createCheckoutPostHandler({
     getProductsByIds: loaders.getProductsByIds,
+    squareCommerceEnabled,
+    ...(squareCommerceEnabled
+      ? {
+          chargeSquareProductOrder:
+            squareCommerce.createLiveSquareProductCharger(),
+          markOrderVerificationFailed: orderStore.markOrderVerificationFailed,
+        }
+      : {}),
     getPromotionCode: loaders.getPromotionCode,
     shippingEnabled: shippingConfig.isChitChatsCheckoutEnabled(),
     validateShippingSelection: async ({ request, products, promotionCode }) => {
@@ -652,48 +746,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     createInitializingOrder: orderStore.createInitializingProductOrder,
     createInitializingManualOrder:
       orderStore.createInitializingManualProductOrder,
-    finalizeInitializingOrder: orderStore.finalizeInitializingProductOrder,
     markInitializationFailed: orderStore.markProductOrderInitializationFailed,
   })(req);
-}
-
-export async function resolveCheckoutHelcimGatewayForRequest(
-  req: Request,
-): Promise<HelcimGateway> {
-  const runtimeControls = await import("@/lib/payment-mocks/runtime-controls");
-  const runtimeEnvironment = getPaymentMockRuntimeEnvironment();
-
-  runtimeControls.assertPaymentMockAllowed({
-    env: runtimeEnvironment,
-    request: req,
-  });
-
-  if (
-    runtimeControls.resolvePaymentGatewayMode(runtimeEnvironment) !== "mock"
-  ) {
-    const liveGateway = await import("@/lib/commerce/helcim-gateway");
-    return liveGateway.createLiveHelcimGateway();
-  }
-
-  const mockGateway = await import("@/lib/commerce/helcim-mock-gateway");
-
-  return mockGateway.createMockHelcimGateway({
-    scenario: runtimeControls.resolvePaymentMockScenario({
-      env: runtimeEnvironment,
-      now: new Date(),
-      request: req,
-    }),
-    store: checkoutPaymentMockStore,
-  });
-}
-
-function getPaymentMockRuntimeEnvironment() {
-  return {
-    NODE_ENV: process.env.NODE_ENV,
-    PAYMENT_GATEWAY_MODE: process.env.PAYMENT_GATEWAY_MODE,
-    PAYMENT_MOCK_DEFAULT_SCENARIO: process.env.PAYMENT_MOCK_DEFAULT_SCENARIO,
-    VERCEL_ENV: process.env.VERCEL_ENV,
-  };
 }
 
 function parseCheckoutRequest(body: unknown): CheckoutRequestBody | null {
@@ -724,6 +778,8 @@ function parseCheckoutRequest(body: unknown): CheckoutRequestBody | null {
   const shippingQuote = parseShippingQuote(body.shippingQuote);
   const fulfillmentMode = parseFulfillmentMode(body.fulfillmentMode);
   const disclosures = parseDisclosures(body.disclosures);
+  const payment = parsePaymentInput(body.payment);
+  const reservationKey = parseReservationKey(body.reservationKey);
 
   if (
     name === null ||
@@ -734,7 +790,8 @@ function parseCheckoutRequest(body: unknown): CheckoutRequestBody | null {
     phone === null ||
     shippingQuote === null ||
     fulfillmentMode === null ||
-    disclosures === null
+    disclosures === null ||
+    payment === null
   ) {
     return null;
   }
@@ -747,6 +804,48 @@ function parseCheckoutRequest(body: unknown): CheckoutRequestBody | null {
     disclosures,
     ...(promotionCode ? { promotionCode } : {}),
     ...(shippingQuote ? { shippingQuote } : {}),
+    ...(reservationKey ? { reservationKey } : {}),
+    ...(payment ? { payment } : {}),
+  };
+}
+
+/**
+ * Client-supplied per-attempt reservation/idempotency token. Optional: absent or
+ * malformed values fall back to random reservation (older clients must keep
+ * working), so this returns undefined rather than rejecting the request.
+ */
+function parseReservationKey(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const reservationKey = value.trim();
+
+  return reservationKey.length > 0 && reservationKey.length <= 200
+    ? reservationKey
+    : undefined;
+}
+
+function parsePaymentInput(
+  value: unknown,
+): CheckoutRequestBody["payment"] | null {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) return null;
+  const sourceId =
+    typeof value.sourceId === "string" ? value.sourceId.trim() : "";
+  if (!sourceId || sourceId.length > 512) return null;
+  const verificationToken =
+    value.verificationToken === undefined
+      ? undefined
+      : typeof value.verificationToken === "string" &&
+          value.verificationToken.trim().length > 0 &&
+          value.verificationToken.length <= 2048
+        ? value.verificationToken.trim()
+        : null;
+  if (verificationToken === null) return null;
+  return {
+    sourceId,
+    ...(verificationToken ? { verificationToken } : {}),
   };
 }
 
@@ -875,12 +974,9 @@ function parseShippingQuote(
 function dependenciesProvideShippingWorkflow(input: {
   validateShippingSelection?: unknown;
   createInitializingOrder?: unknown;
-  finalizeInitializingOrder?: unknown;
 }): boolean {
   return Boolean(
-    input.validateShippingSelection &&
-    input.createInitializingOrder &&
-    input.finalizeInitializingOrder,
+    input.validateShippingSelection && input.createInitializingOrder,
   );
 }
 

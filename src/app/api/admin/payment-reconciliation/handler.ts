@@ -5,6 +5,7 @@ import runServiceReconciliationMonitor, {
   type ServiceReconciliationSummary,
 } from "@/lib/booking/payments/service-reconciliation-monitor";
 import { retryOperationalBookingOutcomeEmails } from "@/lib/booking/email";
+import { runSquareCommerceCaptureReconciliation } from "@/lib/commerce/square-commerce-capture-reconciliation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,6 +17,7 @@ interface PaymentReconciliationDependencies {
   logWarn: typeof console.warn;
   retryBookingOutcomeEmails?: typeof retryOperationalBookingOutcomeEmails;
   runMonitor: typeof runServiceReconciliationMonitor;
+  runCommerceCaptureReconciliation?: typeof runSquareCommerceCaptureReconciliation;
 }
 
 const defaultDependencies: PaymentReconciliationDependencies = {
@@ -25,6 +27,7 @@ const defaultDependencies: PaymentReconciliationDependencies = {
   logWarn: console.warn,
   retryBookingOutcomeEmails: retryOperationalBookingOutcomeEmails,
   runMonitor: runServiceReconciliationMonitor,
+  runCommerceCaptureReconciliation: runSquareCommerceCaptureReconciliation,
 };
 
 export const GET = createPaymentReconciliationGetHandler(defaultDependencies);
@@ -66,6 +69,7 @@ export function createPaymentReconciliationGetHandler(
     }
 
     await retryBookingOutcomeEmailsSafely(dependencies, now);
+    await reconcileCommerceCapturesSafely(dependencies, now);
 
     if (monitorFailed || summary === null) {
       return Response.json(
@@ -76,6 +80,32 @@ export function createPaymentReconciliationGetHandler(
 
     return Response.json(summary);
   };
+}
+
+async function reconcileCommerceCapturesSafely(
+  dependencies: PaymentReconciliationDependencies,
+  now: Date,
+): Promise<void> {
+  if (dependencies.runCommerceCaptureReconciliation === undefined) {
+    return;
+  }
+
+  try {
+    const summary = await dependencies.runCommerceCaptureReconciliation({
+      now,
+    });
+    if (summary !== null && summary.uncollected > 0) {
+      dependencies.logWarn(
+        "[payment-reconciliation] Square commerce orders have uncollected funds",
+        summary,
+      );
+    }
+  } catch (error) {
+    dependencies.logError(
+      "[payment-reconciliation] Square commerce capture reconciliation failed",
+      buildReconciliationErrorContext(error),
+    );
+  }
 }
 
 async function retryBookingOutcomeEmailsSafely(

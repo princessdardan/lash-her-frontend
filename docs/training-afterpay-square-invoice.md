@@ -110,7 +110,7 @@ Deposits, installments, split invoice schedules, and partial training payments a
 
 Use these steps when Square shows a paid invoice but the app did not finish training enrollment finalization.
 
-1. Confirm the incident is for a training Square Invoice order, not service booking or Helcim checkout.
+1. Confirm the incident is for a training Square Invoice (Afterpay) order, not a service booking or a Square card (Web Payments SDK) checkout order.
 2. In Square, verify the invoice is paid and collect only redacted evidence: invoice ID, order ID, payment timestamp, amount, currency, and event ID. Do not copy card data, tokens, raw webhook bodies, or customer PII into tickets.
 3. In app logs, find the matching `/api/webhooks/square` delivery for `invoice.payment_made` and record the HTTP status, deployment, timestamp, and redacted invoice ID.
 4. In the private database, confirm the local order exists with `paymentProvider="square"`, the Square invoice ID in provider checkout data, the expected Square order ID, amount, currency `CAD`, and training Square invoice metadata.

@@ -66,16 +66,17 @@ export async function GET(
   }
   const headers = { "cache-control": "no-store, max-age=0" };
   const payable = await isOperationPayable(row, new Date());
+  const paymentUrl = getSquarePaymentLinkUrl(operation.disclosureSnapshot);
   if (
     operation.initializationStatus === "ready" &&
-    operation.providerCheckoutId &&
+    paymentUrl !== null &&
     payable
   ) {
     return NextResponse.json(
       {
         operationId: operation.id,
         status: "ready",
-        checkoutToken: operation.providerCheckoutId,
+        paymentUrl,
       },
       { headers },
     );
@@ -111,6 +112,19 @@ export async function GET(
     },
     { status: 202, headers },
   );
+}
+
+function getSquarePaymentLinkUrl(disclosureSnapshot: unknown): string | null {
+  if (
+    typeof disclosureSnapshot !== "object" ||
+    disclosureSnapshot === null ||
+    Array.isArray(disclosureSnapshot)
+  ) {
+    return null;
+  }
+  const url = (disclosureSnapshot as Record<string, unknown>)
+    .squarePaymentLinkUrl;
+  return typeof url === "string" && url.length > 0 ? url : null;
 }
 
 async function isOperationPayable(

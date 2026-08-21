@@ -36,24 +36,6 @@ const scenario = String.raw`
     timezone: "America/Toronto",
   };
   const baseContext = (policyVersion) => ({
-    helcimProductPaymentsContract: {
-      contract: "helcim_product_payments",
-      version: "helcim-product-payments-v1",
-      evidenceReference: "test/helcim/product-payments/v1",
-      effectiveFrom: "2026-01-01T00:00:00.000Z",
-      effectiveUntil: "2028-01-01T00:00:00.000Z",
-      purchaseTransactionTypes: ["purchase"],
-      refundTransactionTypes: ["refund"],
-      purchaseSuccessfulStatuses: ["approved"],
-      refundSuccessfulStatuses: ["approved"],
-      avs: { fieldNames: ["avsResponse"], matchCodes: ["m"], mismatchCodes: ["n"] },
-      cvv: { fieldNames: ["cvvResponse"], matchCodes: ["m"], mismatchCodes: ["n"] },
-      refundCorrelation: {
-        providerRefundIdFields: ["transactionId"],
-        originalTransactionIdFields: ["originalTransactionId"],
-        merchantReferenceFields: ["merchantReference"],
-      },
-    },
     policyVersion,
     region: "ontario_manitoba",
     servicePolicies: [],

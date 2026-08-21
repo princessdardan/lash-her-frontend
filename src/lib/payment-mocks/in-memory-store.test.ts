@@ -17,7 +17,7 @@ test("payment mock store records and resets idempotency, webhook, and provider s
     idempotencyKey: "idempotency-key-1",
     payloadHash: "payload-hash-1",
     scenario: "success",
-    provider: "helcim",
+    provider: "square",
   });
   store.recordWebhookEvent({
     createdAt: now,
@@ -29,7 +29,7 @@ test("payment mock store records and resets idempotency, webhook, and provider s
   store.recordProviderTransaction({
     createdAt: now,
     orderId: "order-1",
-    provider: "helcim",
+    provider: "square",
     scenario: "success",
     status: "APPROVED",
     transactionId: "transaction-1",
@@ -42,9 +42,15 @@ test("payment mock store records and resets idempotency, webhook, and provider s
     status: "COMPLETED",
   });
 
-  assert.equal(store.getIdempotencyRecord("idempotency-key-1")?.payloadHash, "payload-hash-1");
+  assert.equal(
+    store.getIdempotencyRecord("idempotency-key-1")?.payloadHash,
+    "payload-hash-1",
+  );
   assert.equal(store.hasWebhookEvent("event-1"), true);
-  assert.equal(store.getProviderTransaction("transaction-1")?.orderId, "order-1");
+  assert.equal(
+    store.getProviderTransaction("transaction-1")?.orderId,
+    "order-1",
+  );
   assert.equal(store.getProviderOrder("order-1")?.status, "COMPLETED");
 
   store.reset();

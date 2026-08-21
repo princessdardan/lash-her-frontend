@@ -1,12 +1,12 @@
 export interface ProductPaymentOperationResult {
-  checkoutToken?: string;
+  paymentUrl?: string;
   operationId: string;
   status: string;
   error?: string;
 }
 
 interface ProductPaymentOperationResponse {
-  checkoutToken?: string;
+  paymentUrl?: string;
   operationId?: string;
   status?: string;
   error?: string;
@@ -47,7 +47,7 @@ export async function waitForProductPaymentOperation(input: {
     return {
       operationId,
       status: result.status ?? (response.ok ? "ready" : "failed"),
-      ...(result.checkoutToken ? { checkoutToken: result.checkoutToken } : {}),
+      ...(result.paymentUrl ? { paymentUrl: result.paymentUrl } : {}),
       ...(result.error ? { error: result.error } : {}),
     };
   }

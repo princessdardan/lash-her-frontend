@@ -55,7 +55,7 @@ const scenario = String.raw`
       shippingAmountCents: 500,
       currency: "CAD",
       lineItems: [],
-      paymentProvider: "helcim",
+      paymentProvider: "square",
       paymentRiskStatus: "review_required",
       shippingPolicyVersion: "address-risk-policy-v1",
       fulfillmentMode: "automated_shipping",
@@ -93,17 +93,24 @@ const scenario = String.raw`
       paidAt: new Date(),
     }).returning({ id: orderPaymentObligations.id });
     obligationId = obligation.id;
+    // A settled Square capture: it carries a provider id/type/status and clears
+    // risk, but Square never returns AVS/CVV codes, so those are null. The
+    // high-risk approval gate must accept this authoritative provider evidence
+    // WITHOUT card-verification codes. (Seeding a Helcim capture with avsCode/
+    // cvvCode "M" masked the bug: the old gate demanded codes Square never
+    // provides, so a Square order would have thrown "Authoritative provider
+    // evidence is required".)
     await db.insert(orderPaymentTransactions).values({
       obligationId,
-      provider: "helcim",
+      provider: "square",
       providerTransactionId: "96" + fixture.replace(/-/g, "").slice(0, 10),
       amountCents: 5000,
       currency: "CAD",
       originatingIpCiphertext: encryptCheckoutIp("192.0.2.61"),
-      providerType: "PURCHASE",
-      providerStatus: "APPROVED",
-      avsCode: "M",
-      cvvCode: "M",
+      providerType: "CARD",
+      providerStatus: "COMPLETED",
+      avsCode: null,
+      cvvCode: null,
       riskStatus: "cleared",
       riskReasonCodes: [],
       capturedAt: new Date(),

@@ -30,18 +30,15 @@ const scenario = String.raw`
   let orderId;
   let caseId;
 
-  function gateway(providerRefundId, originalTransactionId, amountCents) {
+  function gateway(providerRefundId) {
     return {
-      createInvoice: async () => { throw new Error("unused"); },
-      initializePay: async () => { throw new Error("unused"); },
-      getCardTransaction: async () => { throw new Error("unused"); },
-      refundPayment: async () => ({
-        transactionId: providerRefundId,
-        originalTransactionId,
-        amount: (amountCents / 100).toFixed(2),
-        currency: "CAD",
-        status: "APPROVED",
-        transactionType: "REFUND",
+      refundPayment: async (input) => ({
+        ok: true,
+        refundId: providerRefundId,
+        paymentId: input.paymentId,
+        amountCents: input.amountCents,
+        currency: input.currency,
+        settled: true,
       }),
     };
   }
@@ -68,8 +65,8 @@ const scenario = String.raw`
       shippingAmountCents: 1500,
       currency: "CAD",
       lineItems: [],
-      paymentProvider: "helcim",
-      helcimTransactionId: "971001",
+      paymentProvider: "square",
+      providerPaymentId: "971001",
       refundOriginIpCiphertext: encryptedIp,
       paymentRiskStatus: "cleared",
       fulfillmentMode: "automated_shipping",
@@ -109,7 +106,7 @@ const scenario = String.raw`
       }).returning({ id: orderPaymentObligations.id });
       await db.insert(orderPaymentTransactions).values({
         obligationId: obligation.id,
-        provider: "helcim",
+        provider: "square",
         providerTransactionId: capture.providerId,
         amountCents: total,
         currency: "CAD",

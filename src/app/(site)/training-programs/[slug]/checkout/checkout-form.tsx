@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { TrainingHelcimPayButton } from "@/components/commerce/training-helcim-pay-button";
+import { SquareTrainingPayButton } from "@/components/commerce/square-training-pay-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -383,11 +383,12 @@ export function CheckoutForm({
           </div>
         </div>
 
-        <TrainingHelcimPayButton
+        <SquareTrainingPayButton
           disabled={!isValid}
           programSlug={programSlug}
           clientPrice={clientPrice}
           promotionCode={redeemedPromotionCode}
+          amountCents={Math.round(discountedTotal * 100)}
           customer={{ name, email }}
           onPaid={() => {}}
         />

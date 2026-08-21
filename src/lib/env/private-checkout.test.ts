@@ -138,12 +138,10 @@ test("square service booking stays disabled without Square secrets", () => {
   assert.equal(result.stderr, "");
 });
 
-test("payment mock mode is server-checkable without live Helcim or Square credentials", () => {
+test("payment mock mode is server-checkable without live Square credentials", () => {
   const env = { ...process.env };
 
   env.PAYMENT_GATEWAY_MODE = "mock";
-  delete env.HELCIM_GENERAL_API_TOKEN;
-  delete env.HELCIM_TRANSACTION_API_TOKEN;
   delete env.SERVICE_BOOKING_SQUARE_ENABLED;
   delete env.SQUARE_ENVIRONMENT;
   delete env.SQUARE_ACCESS_TOKEN;

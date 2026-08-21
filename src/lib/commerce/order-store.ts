@@ -4,7 +4,17 @@ import { ShippingQuoteConflictError } from "@/lib/shipping/errors";
 
 import { createHash, createHmac } from "node:crypto";
 
-import { and, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  notInArray,
+  or,
+  sql,
+} from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 import type {
@@ -21,7 +31,6 @@ import { getCheckoutSecretEncryptionKey } from "@/sanity/env";
 import {
   checkoutOrders,
   checkoutPaymentEvents,
-  fulfillmentDataQuarantine,
   orderPaymentObligations,
   productShipments,
 } from "@/lib/private-db/schema";
@@ -38,10 +47,8 @@ import {
   parseShippingQuoteContextSnapshot,
 } from "@/lib/shipping/quote-token";
 import { encryptCheckoutIp } from "./checkout-pii";
-import { classifyHelcimTransaction } from "./helcim-contract";
 import {
   assertCheckoutReadiness,
-  assertHelcimProductPaymentsCertificationInTransaction,
   assertManualCheckoutReadinessInTransaction,
   assertProductTaxPolicyApprovalInTransaction,
   assertShippingQuoteContextAtCheckoutCommit,
@@ -148,21 +155,49 @@ function buildShippedRefundPolicySnapshot(
 
 const EMAIL_CLAIM_DURATION_MS = 5 * 60 * 1000;
 
-export interface CreatePendingOrderInput {
-  customerName: string;
-  customerEmail: string;
-  checkoutToken: string;
-  secretToken: string;
-  helcimInvoiceId: number;
-  helcimInvoiceNumber: string;
-  purpose?: CheckoutOrderPurpose;
-  cart: ValidatedCart;
-  shippingAddress?: CheckoutOrderShippingAddressSnapshot;
+/**
+ * Derive a deterministic public `orderId` from a client-supplied per-attempt
+ * reservation key. Two POSTs of the same checkout attempt (e.g. the customer
+ * re-clicks "Pay securely" after a lost HTTP response) carry the same key, so
+ * they resolve to the same `orderId` — which is also the Square payment
+ * `reference_id`/idempotency key. That lets the reservation insert reuse the
+ * original order (via `onConflictDoNothing`) instead of minting a second one,
+ * and lets Square dedupe the charge rather than double-billing the card.
+ */
+export function deriveDeterministicOrderId(reservationKey: string): string {
+  return `lh-${createHash("sha256")
+    .update(reservationKey)
+    .digest("base64url")
+    .slice(0, 12)}`;
+}
+
+/**
+ * Guard against an astronomically-unlikely reservation-key hash collision
+ * reusing a different customer's order: when a retry reuses an already-reserved
+ * order, its stored customer email + purpose must match the current request.
+ * Throws on mismatch so a reused order is never charged for the wrong request.
+ */
+export function assertReusedReservationMatches(
+  existing: { customerEmail: string; purpose: CheckoutOrderPurpose },
+  expected: { customerEmail: string; purpose: CheckoutOrderPurpose },
+): void {
+  if (
+    existing.customerEmail !== expected.customerEmail ||
+    existing.purpose !== expected.purpose
+  ) {
+    throw new Error("Reservation key does not match the existing order");
+  }
 }
 
 export interface CreateInitializingProductOrderInput {
   customerName: string;
   customerEmail: string;
+  /**
+   * Payment gateway for this order. Defaults to "square", which reserves the
+   * order ready for the synchronous Web Payments SDK charge (no provider
+   * invoice pre-initialization). Square is the only supported gateway.
+   */
+  provider?: PaymentProvider;
   cart: ValidatedCart;
   shippingAddress: CheckoutOrderShippingAddressSnapshot;
   shippingQuoteToken: string;
@@ -191,6 +226,7 @@ export interface InitializingProductOrderRecord {
   databaseId: string;
   orderId: string;
   primaryObligationId: string;
+  currency: ValidatedCart["currency"];
   merchandiseAmountCents: number;
   shippingAmountCents: number;
   taxAmountCents: number;
@@ -202,6 +238,12 @@ export interface CreateInitializingManualProductOrderInput {
   customerName: string;
   customerEmail: string;
   customerPhone?: string;
+  /**
+   * Optional client-supplied per-attempt idempotency token. When present, the
+   * reserved order's public id is derived deterministically from it so a retry
+   * of the same attempt reuses the original order (no duplicate order/charge).
+   */
+  reservationKey?: string;
   cart: ValidatedCart;
   fulfillmentMode: "manual_pickup";
   cancellationPolicy: {
@@ -247,12 +289,45 @@ export interface SquareInvoiceProviderMetadata extends CheckoutProviderMetadata 
   squareInvoiceVersion: number | null;
 }
 
+/**
+ * Provider metadata for a primary-training order paid through the embedded
+ * Square Web Payments SDK card flow (distinct from the Afterpay/BNPL invoice
+ * flow above).
+ */
+export interface SquareCardProviderMetadata extends CheckoutProviderMetadata {
+  amountCents: number;
+  correlationId: string;
+  currency: "CAD";
+  finalizationStatus: SquareInvoiceFinalizationStatus;
+  flow: "training_square_card";
+  programSlug: string;
+}
+
+export interface CreatePendingSquareTrainingCardOrderInput {
+  customerName: string;
+  customerEmail: string;
+  programSlug: string;
+  amountCents: number;
+  merchandiseAmountCents: number;
+  taxAmountCents: number;
+  cart: ValidatedCart;
+  /**
+   * Optional client-supplied per-attempt idempotency token. When present, the
+   * reserved order's public id is derived deterministically from it so a retry
+   * of the same attempt reuses the original order (no duplicate order/charge).
+   */
+  reservationKey?: string;
+}
+
+export interface PendingSquareTrainingCardOrderRecord {
+  databaseId: string;
+  orderId: string;
+}
+
 export interface PendingOrderRecord {
   _id: string;
   orderId: string;
   secretToken: string;
-  helcimInvoiceId: number | null;
-  helcimInvoiceNumber: string | null;
   amount: number;
   currency: ValidatedCart["currency"];
   customerEmail: string;
@@ -263,45 +338,6 @@ export interface PendingOrderRecord {
   shippingAddress: CheckoutOrderShippingAddressSnapshot | null;
   paymentObligationId?: string;
 }
-
-export interface MatchedCheckoutOrderRecord {
-  _id: string;
-  amount: number;
-  currency: ValidatedCart["currency"];
-  helcimInvoiceId: number | null;
-  helcimInvoiceNumber: string | null;
-  orderId: string;
-  paymentProvider: PaymentProvider;
-  purpose: CheckoutOrderPurpose;
-  paymentObligationId?: string;
-}
-
-export interface HelcimWebhookEventRecordResult {
-  matchedOrder: MatchedCheckoutOrderRecord | null;
-  paid: boolean;
-  recorded: boolean;
-}
-
-export interface HelcimWebhookEventInput {
-  amount?: number | string;
-  currency?: string;
-  eventId: string;
-  eventType: string;
-  helcimInvoiceId?: number;
-  helcimInvoiceNumber?: string;
-  helcimTransactionId?: string;
-  originalTransactionId?: string;
-  payloadRedacted?: Record<string, unknown>;
-  status?: string;
-  transactionType?: string;
-}
-
-export type HelcimPurchaseTransitionResult =
-  | "applied"
-  | "already_applied"
-  | "state_conflict"
-  | "transaction_conflict"
-  | "not_found";
 
 export interface ClaimProductOrderConfirmationEmailInput {
   claimForMs?: number;
@@ -360,8 +396,6 @@ type CheckoutOrderBaseInsert = {
   currency: ValidatedCart["currency"];
   customerEmail: string;
   customerName: string;
-  helcimInvoiceId?: number | null;
-  helcimInvoiceNumber?: string | null;
   lineItems: CheckoutOrderLineItemSnapshot[];
   orderId: string;
   paymentProvider: PaymentProvider;
@@ -375,11 +409,6 @@ type CheckoutOrderBaseInsert = {
   shippingAddress?: CheckoutOrderShippingAddressSnapshot;
   status: "pending";
 };
-type HelcimCheckoutOrderInsert = CheckoutOrderBaseInsert & {
-  helcimInvoiceId: number;
-  helcimInvoiceNumber: string;
-  paymentProvider: "helcim";
-};
 type SquareInvoiceCheckoutOrderInsert = CheckoutOrderBaseInsert & {
   currency: "CAD";
   paymentProvider: "square";
@@ -389,28 +418,12 @@ type SquareInvoiceCheckoutOrderInsert = CheckoutOrderBaseInsert & {
   providerStatus: "draft" | "published" | "paid" | "finalization_failed";
   purpose: "training";
 };
-type CheckoutOrderInsert =
-  | HelcimCheckoutOrderInsert
-  | SquareInvoiceCheckoutOrderInsert;
-type CheckoutPaymentEventInsert = {
-  amountCents: number | null;
-  currency: string | undefined;
-  eventType: string;
-  helcimTransactionId: string | undefined;
-  idempotencyKey: string;
-  orderId: string | null;
-  payloadRedacted: Record<string, unknown> | undefined;
-  processingStatus?: PaymentEventProcessingStatus;
-  status: string | undefined;
-};
+type CheckoutOrderInsert = SquareInvoiceCheckoutOrderInsert;
 
 export interface CheckoutOrderRepository {
   createCheckoutOrder(values: CheckoutOrderInsert): Promise<{ id: string }>;
   createSquareInvoiceWebhookEvent(
     values: SquareInvoiceWebhookEventInput,
-  ): Promise<{ id: string } | null>;
-  createWebhookEvent(
-    values: CheckoutPaymentEventInsert,
   ): Promise<{ id: string } | null>;
   claimProductOrderConfirmationEmail(input: {
     claimUntil: Date;
@@ -420,34 +433,15 @@ export interface CheckoutOrderRepository {
   findSquareInvoiceWebhookEventClaim(
     eventId: string,
   ): Promise<SquareInvoiceWebhookEventClaimResult>;
-  findOrderForWebhook(
-    input: HelcimWebhookEventInput,
-  ): Promise<CheckoutOrderRow | null>;
   findCheckoutOrderByCheckoutTokenHash(
     checkoutTokenHash: string,
   ): Promise<CheckoutOrderRow | null>;
-  findPaymentObligationByCheckoutTokenHash?: (
-    checkoutTokenHash: string,
-  ) => Promise<{
-    order: CheckoutOrderRow;
-    obligation: typeof orderPaymentObligations.$inferSelect;
-  } | null>;
-  findPaymentObligationForWebhook?: (
-    input: HelcimWebhookEventInput,
-  ) => Promise<{
-    order: CheckoutOrderRow;
-    obligationId: string;
-  } | null>;
   findOrderByCorrelationId(
     correlationId: string,
   ): Promise<CheckoutOrderRow | null>;
   findOrderBySquareInvoiceId(
     invoiceId: string,
   ): Promise<CheckoutOrderRow | null>;
-  markOrderPaid(
-    orderId: string,
-    helcimTransactionId: string,
-  ): Promise<HelcimPurchaseTransitionResult>;
   markOrderVerificationFailed(orderId: string): Promise<void>;
   markProductOrderConfirmationEmailSent(
     orderId: string,
@@ -477,9 +471,6 @@ export interface CheckoutOrderRepository {
 }
 
 export interface CheckoutOrderStore {
-  createPendingOrder(
-    input: CreatePendingOrderInput,
-  ): Promise<PendingOrderRecord>;
   createPendingSquareInvoiceOrder(
     input: CreatePendingSquareInvoiceOrderInput,
   ): Promise<PendingOrderRecord>;
@@ -492,13 +483,6 @@ export interface CheckoutOrderStore {
   claimProductOrderConfirmationEmail(
     input: ClaimProductOrderConfirmationEmailInput,
   ): Promise<ProductOrderConfirmationEmailRecord | null>;
-  getPendingOrderByCheckoutToken(
-    checkoutToken: string,
-  ): Promise<PendingOrderRecord | null>;
-  markOrderPaid(
-    orderId: string,
-    helcimTransactionId: string,
-  ): Promise<HelcimPurchaseTransitionResult>;
   markOrderVerificationFailed(orderId: string): Promise<void>;
   markProductOrderConfirmationEmailSent(
     orderId: string,
@@ -519,10 +503,6 @@ export interface CheckoutOrderStore {
     publicUrl: string,
     version: number,
   ): Promise<void>;
-  recordHelcimWebhookEvent(input: HelcimWebhookEventInput): Promise<boolean>;
-  recordHelcimWebhookEventWithOrder(
-    input: HelcimWebhookEventInput,
-  ): Promise<HelcimWebhookEventRecordResult>;
   claimSquareInvoiceWebhookEvent(
     input: SquareInvoiceWebhookEventInput,
   ): Promise<SquareInvoiceWebhookEventClaimResult>;
@@ -535,99 +515,6 @@ export function createCheckoutOrderStore(
   repository: CheckoutOrderRepository,
 ): CheckoutOrderStore {
   return {
-    async createPendingOrder(input) {
-      const orderId = `lh-${nanoid(12)}`;
-      const secretTokenCiphertext = encryptCheckoutSecret(input.secretToken);
-      const checkoutTokenHash = hashCheckoutToken(input.checkoutToken);
-      const amountCents = toCents(input.cart.amount);
-      const promotionDiscountCents =
-        input.cart.promotionDiscountAmount === undefined
-          ? undefined
-          : toCents(input.cart.promotionDiscountAmount);
-      const lineItems = input.cart.lineItems.map((lineItem) => ({
-        productId: lineItem.productId,
-        ...(lineItem.variantId ? { variantId: lineItem.variantId } : {}),
-        sku: lineItem.sku,
-        description: lineItem.description,
-        productTitle: lineItem.productTitle,
-        ...(lineItem.variantTitle
-          ? { variantTitle: lineItem.variantTitle }
-          : {}),
-        ...(lineItem.selectedOptions?.length
-          ? { selectedOptions: lineItem.selectedOptions }
-          : {}),
-        ...(lineItem.checkoutMode
-          ? { fulfillmentMode: lineItem.checkoutMode }
-          : {}),
-        quantity: lineItem.quantity,
-        unitPriceCents: toCents(lineItem.price),
-        ...(lineItem.originalPrice !== undefined
-          ? { originalUnitPriceCents: toCents(lineItem.originalPrice) }
-          : {}),
-        ...(lineItem.manualDiscount !== undefined
-          ? { manualDiscountCents: toCents(lineItem.manualDiscount) }
-          : {}),
-        ...(input.cart.promotionCode
-          ? { promotionCode: input.cart.promotionCode }
-          : {}),
-        ...(promotionDiscountCents !== undefined
-          ? { promotionDiscountCents }
-          : {}),
-        totalCents: toCents(lineItem.total),
-        ...(lineItem.originalTotal !== undefined
-          ? { originalTotalCents: toCents(lineItem.originalTotal) }
-          : {}),
-      }));
-
-      const createdOrder = await repository.createCheckoutOrder({
-        orderId,
-        status: "pending",
-        checkoutTokenHash,
-        secretTokenCiphertext,
-        helcimInvoiceId: input.helcimInvoiceId,
-        helcimInvoiceNumber: input.helcimInvoiceNumber,
-        customerName: input.customerName,
-        customerEmail: input.customerEmail,
-        purpose: input.purpose ?? "product",
-        amountCents,
-        ...(input.purpose === undefined || input.purpose === "product"
-          ? {
-              merchandiseAmountCents: amountCents,
-              promotionCode: input.cart.promotionCode ?? null,
-              promotionDiscountCents: toCents(
-                input.cart.promotionDiscountAmount ?? 0,
-              ),
-              manualDiscountCents: toCents(
-                input.cart.manualDiscountAmount ?? 0,
-              ),
-              taxAmountCents: 0,
-            }
-          : {}),
-        currency: input.cart.currency,
-        lineItems,
-        paymentProvider: "helcim",
-        ...(input.shippingAddress
-          ? { shippingAddress: input.shippingAddress }
-          : {}),
-      });
-
-      return {
-        _id: createdOrder.id,
-        orderId,
-        secretToken: input.secretToken,
-        helcimInvoiceId: input.helcimInvoiceId,
-        helcimInvoiceNumber: input.helcimInvoiceNumber,
-        amount: input.cart.amount,
-        currency: input.cart.currency,
-        customerEmail: input.customerEmail,
-        customerName: input.customerName,
-        lineItems,
-        paymentProvider: "helcim",
-        purpose: input.purpose ?? "product",
-        shippingAddress: input.shippingAddress ?? null,
-      };
-    },
-
     async createPendingSquareInvoiceOrder(input) {
       const existingByInvoice = await repository.findOrderBySquareInvoiceId(
         input.squareInvoiceId,
@@ -657,8 +544,6 @@ export function createCheckoutOrderStore(
         currency: "CAD",
         customerEmail: input.customerEmail,
         customerName: input.customerName,
-        helcimInvoiceId: null,
-        helcimInvoiceNumber: null,
         lineItems,
         orderId,
         paymentProvider: "square",
@@ -675,8 +560,6 @@ export function createCheckoutOrderStore(
         _id: createdOrder.id,
         orderId,
         secretToken: input.secretToken,
-        helcimInvoiceId: null,
-        helcimInvoiceNumber: null,
         amount: centsToCad(input.amountCents),
         currency: "CAD",
         customerEmail: input.customerEmail,
@@ -738,10 +621,6 @@ export function createCheckoutOrderStore(
       return repository.findOrderByCorrelationId(correlationId);
     },
 
-    async markOrderPaid(orderId, helcimTransactionId) {
-      return repository.markOrderPaid(orderId, helcimTransactionId);
-    },
-
     async markOrderVerificationFailed(orderId) {
       await repository.markOrderVerificationFailed(orderId);
     },
@@ -756,68 +635,6 @@ export function createCheckoutOrderStore(
         input.error,
         input.now ?? new Date(),
       );
-    },
-
-    async getPendingOrderByCheckoutToken(checkoutToken) {
-      const checkoutTokenHash = hashCheckoutToken(checkoutToken);
-      const order =
-        await repository.findCheckoutOrderByCheckoutTokenHash(
-          checkoutTokenHash,
-        );
-
-      if (order && isCheckoutTokenValidationEligible(order)) {
-        return toPendingOrderRecord(order);
-      }
-      const supplemental =
-        await repository.findPaymentObligationByCheckoutTokenHash?.(
-          checkoutTokenHash,
-        );
-      if (
-        !supplemental ||
-        supplemental.order.fulfillmentQuarantinedAt !== null ||
-        supplemental.order.purpose !== "product" ||
-        !["paid", "cancelled", "refunded"].includes(
-          supplemental.order.status,
-        ) ||
-        supplemental.obligation.purpose === "primary" ||
-        !["pending", "expired", "superseded", "cancelled", "refunded"].includes(
-          supplemental.obligation.status,
-        ) ||
-        supplemental.obligation.initializationStatus !== "ready" ||
-        supplemental.obligation.quarantinedAt !== null
-      ) {
-        return null;
-      }
-      if (
-        !supplemental.obligation.secretTokenCiphertext ||
-        supplemental.obligation.providerInvoiceId === null ||
-        supplemental.obligation.providerInvoiceNumber === null
-      ) {
-        return null;
-      }
-      return {
-        ...toPendingOrderRecord(supplemental.order),
-        paymentObligationId: supplemental.obligation.id,
-        secretToken: decryptCheckoutSecret(
-          supplemental.obligation.secretTokenCiphertext,
-        ),
-        helcimInvoiceId: supplemental.obligation.providerInvoiceId,
-        helcimInvoiceNumber: supplemental.obligation.providerInvoiceNumber,
-        amount: centsToCad(supplemental.obligation.totalAmountCents),
-        currency: supplemental.obligation.currency.toUpperCase() as "CAD",
-      };
-    },
-
-    async recordHelcimWebhookEvent(input) {
-      const result = await recordHelcimWebhookEventWithOrderInternal(
-        repository,
-        input,
-      );
-      return result.recorded;
-    },
-
-    async recordHelcimWebhookEventWithOrder(input) {
-      return recordHelcimWebhookEventWithOrderInternal(repository, input);
     },
 
     async claimSquareInvoiceWebhookEvent(input) {
@@ -840,12 +657,6 @@ export function createCheckoutOrderStore(
 const defaultOrderStore = createCheckoutOrderStore(
   createDrizzleCheckoutOrderRepository(),
 );
-
-export async function createPendingOrder(
-  input: CreatePendingOrderInput,
-): Promise<PendingOrderRecord> {
-  return defaultOrderStore.createPendingOrder(input);
-}
 
 export async function createInitializingProductOrder(
   input: CreateInitializingProductOrderInput,
@@ -887,8 +698,9 @@ export async function createInitializingProductOrder(
         now,
       },
     );
-    const helcimContract =
-      await assertHelcimProductPaymentsCertificationInTransaction(tx, now);
+    // Square is the only payment gateway; product orders run under the lighter
+    // verified-payment fulfillment gate and record no certified-contract snapshot.
+    const provider: PaymentProvider = input.provider ?? "square";
     const [quote] = await tx
       .select()
       .from(productShipments)
@@ -957,11 +769,9 @@ export async function createInitializingProductOrder(
       .values({
         orderId,
         status: "pending",
-        initializationStatus: "initializing",
+        initializationStatus: provider === "square" ? "ready" : "initializing",
         checkoutTokenHash: null,
         secretTokenCiphertext: null,
-        helcimInvoiceId: null,
-        helcimInvoiceNumber: null,
         customerName: input.customerName,
         customerEmail: input.customerEmail,
         purpose: "product",
@@ -976,7 +786,7 @@ export async function createInitializingProductOrder(
         taxAmountCents,
         currency: input.cart.currency,
         lineItems: toOrderLineItemSnapshots(input.cart),
-        paymentProvider: "helcim",
+        paymentProvider: provider,
         shippingAddress: input.shippingAddress,
         refundOriginIpCiphertext: encryptCheckoutIp(input.refundOriginIp),
         atRiskValueCents: merchandiseAmountCents,
@@ -1043,9 +853,9 @@ export async function createInitializingProductOrder(
         taxAmountCents,
         totalAmountCents,
         currency: input.cart.currency,
+        paymentProvider: provider,
         sourceWorkflow: "automated_product_checkout",
         disclosureSnapshot: {
-          helcimContract,
           shippingQuoteContext: quoteContextSnapshot,
           tax: taxQuote,
           cancellationPolicy: { ...refundPolicySnapshot },
@@ -1064,7 +874,7 @@ export async function createInitializingProductOrder(
         taxPolicyVersion: commitReadiness.taxPolicyVersion!,
         policyVersion: commitReadiness.policyVersion!,
         expiresAt: quote.quoteExpiresAt,
-        initializationStatus: "initializing",
+        initializationStatus: provider === "square" ? "ready" : "initializing",
         idempotencyKey: `primary/${order.id}`,
       })
       .returning({ id: orderPaymentObligations.id });
@@ -1074,6 +884,7 @@ export async function createInitializingProductOrder(
       databaseId: order.id,
       orderId,
       primaryObligationId: obligation.id,
+      currency: input.cart.currency,
       merchandiseAmountCents,
       shippingAmountCents,
       taxAmountCents,
@@ -1150,7 +961,7 @@ export async function createInitializingManualProductOrder(
     throw new Error("Manual checkout total is invalid");
   }
   return db.transaction(async (tx) => {
-    const { helcimContract, taxPolicyApproval } =
+    const { taxPolicyApproval } =
       await assertManualCheckoutReadinessInTransaction(
         tx,
         {
@@ -1170,56 +981,110 @@ export async function createInitializingManualProductOrder(
     });
     const taxAmountCents = taxQuote.taxAmountCents;
     const totalAmountCents = merchandiseAmountCents + taxAmountCents;
-    const orderId = `lh-${nanoid(12)}`;
-    const [order] = await tx
-      .insert(checkoutOrders)
-      .values({
-        orderId,
-        status: "pending",
-        initializationStatus: "initializing",
-        customerName: input.customerName,
+    const orderId = input.reservationKey
+      ? deriveDeterministicOrderId(input.reservationKey)
+      : `lh-${nanoid(12)}`;
+    const insertManualOrder = tx.insert(checkoutOrders).values({
+      orderId,
+      status: "pending",
+      initializationStatus: "ready",
+      customerName: input.customerName,
+      customerEmail: input.customerEmail,
+      purpose: "product",
+      amountCents: totalAmountCents,
+      merchandiseAmountCents,
+      shippingAmountCents: 0,
+      taxAmountCents,
+      promotionCode: input.cart.promotionCode ?? null,
+      promotionDiscountCents: toCents(input.cart.promotionDiscountAmount ?? 0),
+      manualDiscountCents: toCents(input.cart.manualDiscountAmount ?? 0),
+      currency: input.cart.currency,
+      lineItems: toOrderLineItemSnapshots(input.cart),
+      paymentProvider: "square",
+      shippingAddress: undefined,
+      refundOriginIpCiphertext: encryptCheckoutIp(input.refundOriginIp),
+      atRiskValueCents: merchandiseAmountCents,
+      fraudClassification: "low",
+      paymentRiskStatus: "pending",
+      shippingPolicyVersion: fulfillmentPolicyVersion,
+      taxPolicyVersion: taxPolicyApproval.version,
+      dduNoticeVersion:
+        input.usImportDisclosure?.terms === "DDU"
+          ? input.usImportDisclosure.version
+          : undefined,
+      dduNoticePresentedAt:
+        input.usImportDisclosure?.terms === "DDU"
+          ? input.usImportDisclosure.presentedAt
+          : undefined,
+      usImportDisclosureSnapshot: input.usImportDisclosure
+        ? toStoredUsImportDisclosure(input.usImportDisclosure)
+        : undefined,
+      fulfillmentMode: input.fulfillmentMode,
+      manualFulfillmentStatus: "payment_pending",
+      cancellationPolicyVersion: cancellationVersion,
+      cancellationPolicySnapshot,
+      termsVersion: termsSnapshot.version as string,
+      termsAcceptedAt: now,
+      termsSnapshot,
+    });
+    const [order] = await (
+      input.reservationKey
+        ? insertManualOrder.onConflictDoNothing({
+            target: checkoutOrders.orderId,
+          })
+        : insertManualOrder
+    ).returning({ id: checkoutOrders.id });
+    if (!order) {
+      // Retry with the same reservationKey: the order and its primary
+      // obligation already exist — reuse them so no second order, obligation,
+      // enrollment, or charge is created.
+      if (!input.reservationKey) {
+        throw new Error("Manual checkout order could not be created");
+      }
+      const [existing] = await tx
+        .select({
+          id: checkoutOrders.id,
+          customerEmail: checkoutOrders.customerEmail,
+          purpose: checkoutOrders.purpose,
+        })
+        .from(checkoutOrders)
+        .where(eq(checkoutOrders.orderId, orderId))
+        .limit(1);
+      if (!existing) {
+        throw new Error("Manual checkout order could not be created");
+      }
+      assertReusedReservationMatches(existing, {
         customerEmail: input.customerEmail,
         purpose: "product",
-        amountCents: totalAmountCents,
+      });
+      const [existingObligation] = await tx
+        .select({ id: orderPaymentObligations.id })
+        .from(orderPaymentObligations)
+        .where(
+          and(
+            eq(orderPaymentObligations.orderId, existing.id),
+            eq(orderPaymentObligations.purpose, "primary"),
+          ),
+        )
+        .limit(1);
+      if (!existingObligation) {
+        throw new Error("Primary payment obligation was not created");
+      }
+      return {
+        databaseId: existing.id,
+        orderId,
+        primaryObligationId: existingObligation.id,
+        currency: input.cart.currency,
         merchandiseAmountCents,
         shippingAmountCents: 0,
         taxAmountCents,
-        promotionCode: input.cart.promotionCode ?? null,
-        promotionDiscountCents: toCents(
-          input.cart.promotionDiscountAmount ?? 0,
-        ),
-        manualDiscountCents: toCents(input.cart.manualDiscountAmount ?? 0),
-        currency: input.cart.currency,
-        lineItems: toOrderLineItemSnapshots(input.cart),
-        paymentProvider: "helcim",
-        shippingAddress: undefined,
-        refundOriginIpCiphertext: encryptCheckoutIp(input.refundOriginIp),
-        atRiskValueCents: merchandiseAmountCents,
-        fraudClassification: "low",
-        paymentRiskStatus: "pending",
-        shippingPolicyVersion: fulfillmentPolicyVersion,
-        taxPolicyVersion: taxPolicyApproval.version,
-        dduNoticeVersion:
-          input.usImportDisclosure?.terms === "DDU"
-            ? input.usImportDisclosure.version
-            : undefined,
-        dduNoticePresentedAt:
-          input.usImportDisclosure?.terms === "DDU"
-            ? input.usImportDisclosure.presentedAt
-            : undefined,
-        usImportDisclosureSnapshot: input.usImportDisclosure
-          ? toStoredUsImportDisclosure(input.usImportDisclosure)
-          : undefined,
-        fulfillmentMode: input.fulfillmentMode,
-        manualFulfillmentStatus: "payment_pending",
-        cancellationPolicyVersion: cancellationVersion,
-        cancellationPolicySnapshot,
-        termsVersion: termsSnapshot.version as string,
-        termsAcceptedAt: now,
-        termsSnapshot,
-      })
-      .returning({ id: checkoutOrders.id });
-    if (!order) throw new Error("Manual checkout order could not be created");
+        totalAmountCents,
+        shippingRateTitle:
+          input.fulfillmentMode === "manual_pickup"
+            ? "Pickup arranged after payment"
+            : "Shipping quoted separately",
+      };
+    }
     const [obligation] = await tx
       .insert(orderPaymentObligations)
       .values({
@@ -1231,11 +1096,10 @@ export async function createInitializingManualProductOrder(
         taxAmountCents,
         totalAmountCents,
         currency: input.cart.currency,
-        paymentProvider: "helcim",
-        initializationStatus: "initializing",
+        paymentProvider: "square",
+        initializationStatus: "ready",
         sourceWorkflow: input.fulfillmentMode,
         disclosureSnapshot: {
-          helcimContract,
           taxPolicyApproval,
           tax: taxQuote,
           cancellationPolicy: {
@@ -1264,6 +1128,7 @@ export async function createInitializingManualProductOrder(
       databaseId: order.id,
       orderId,
       primaryObligationId: obligation.id,
+      currency: input.cart.currency,
       merchandiseAmountCents,
       shippingAmountCents: 0,
       taxAmountCents,
@@ -1276,168 +1141,45 @@ export async function createInitializingManualProductOrder(
   });
 }
 
-export async function finalizeInitializingProductOrder(input: {
-  orderId: string;
-  checkoutToken: string;
-  secretToken: string;
-  helcimInvoiceId: number;
-  helcimInvoiceNumber: string;
-}): Promise<void> {
-  await getPrivateDb().transaction(async (tx) => {
-    const [updated] = await tx
-      .update(checkoutOrders)
-      .set({
-        checkoutTokenHash: hashCheckoutToken(input.checkoutToken),
-        secretTokenCiphertext: encryptCheckoutSecret(input.secretToken),
-        helcimInvoiceId: input.helcimInvoiceId,
-        helcimInvoiceNumber: input.helcimInvoiceNumber,
-        initializationStatus: "ready",
-        initializationError: null,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(checkoutOrders.orderId, input.orderId),
-          eq(checkoutOrders.initializationStatus, "initializing"),
-        ),
-      )
-      .returning({ id: checkoutOrders.id });
-    if (!updated) {
-      throw new Error("Initializing checkout order could not be finalized");
-    }
-    const [obligation] = await tx
-      .update(orderPaymentObligations)
-      .set({
-        providerInvoiceId: input.helcimInvoiceId,
-        providerInvoiceNumber: input.helcimInvoiceNumber,
-        providerCheckoutId: input.checkoutToken,
-        checkoutTokenHash: hashCheckoutToken(input.checkoutToken),
-        secretTokenCiphertext: encryptCheckoutSecret(input.secretToken),
-        initializationStatus: "ready",
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(orderPaymentObligations.orderId, updated.id),
-          eq(orderPaymentObligations.purpose, "primary"),
-          eq(orderPaymentObligations.initializationStatus, "initializing"),
-          isNull(orderPaymentObligations.quarantinedAt),
-        ),
-      )
-      .returning({ id: orderPaymentObligations.id });
-    if (!obligation) {
-      throw new Error("Primary payment obligation could not be finalized");
-    }
-  });
-}
-
-export async function finalizeInitializingPaymentObligation(input: {
+/**
+ * Mark a supplemental payment obligation ready to pay via a Square hosted
+ * payment link. Stores the link id on `providerCheckoutId` and the pay URL in
+ * the obligation's disclosure snapshot (so the poll route can hand the customer
+ * the redirect). Guarded on the initialization lease + state version.
+ */
+export async function finalizeInitializingSquareObligation(input: {
   obligationId: string;
-  checkoutToken: string;
-  secretToken: string;
-  helcimInvoiceId: number;
-  helcimInvoiceNumber: string;
-  expectedLeaseOwner?: string;
-  expectedStateVersion?: number;
-}): Promise<void> {
-  const conditions = [
-    eq(orderPaymentObligations.id, input.obligationId),
-    inArray(orderPaymentObligations.purpose, [
-      "primary",
-      "manual_shipping",
-      "address_increase",
-    ]),
-    eq(orderPaymentObligations.status, "pending"),
-    eq(orderPaymentObligations.initializationStatus, "initializing"),
-    isNull(orderPaymentObligations.quarantinedAt),
-  ];
-  if (input.expectedLeaseOwner) {
-    conditions.push(
-      eq(
-        orderPaymentObligations.initializationLeaseOwner,
-        input.expectedLeaseOwner,
-      ),
-    );
-  }
-  if (input.expectedStateVersion !== undefined) {
-    conditions.push(
-      eq(
-        orderPaymentObligations.initializationStateVersion,
-        input.expectedStateVersion,
-      ),
-    );
-  }
-  await getPrivateDb().transaction(async (tx) => {
-    const now = new Date();
-    const [updated] = await tx
-      .update(orderPaymentObligations)
-      .set({
-        providerInvoiceId: input.helcimInvoiceId,
-        providerInvoiceNumber: input.helcimInvoiceNumber,
-        providerCheckoutId: input.checkoutToken,
-        checkoutTokenHash: hashCheckoutToken(input.checkoutToken),
-        secretTokenCiphertext: encryptCheckoutSecret(input.secretToken),
-        initializationStatus: "ready",
-        initializationOutcome: "succeeded",
-        initializationLeaseOwner: null,
-        initializationLeaseExpiresAt: null,
-        initializationLastError: null,
-        initializationStateVersion: sql`${orderPaymentObligations.initializationStateVersion} + 1`,
-        updatedAt: now,
-      })
-      .where(and(...conditions))
-      .returning({
-        id: orderPaymentObligations.id,
-        orderId: orderPaymentObligations.orderId,
-        purpose: orderPaymentObligations.purpose,
-      });
-    if (!updated) throw new Error("Payment obligation could not be finalized");
-    if (updated.purpose === "primary") {
-      const [order] = await tx
-        .update(checkoutOrders)
-        .set({
-          checkoutTokenHash: hashCheckoutToken(input.checkoutToken),
-          secretTokenCiphertext: encryptCheckoutSecret(input.secretToken),
-          helcimInvoiceId: input.helcimInvoiceId,
-          helcimInvoiceNumber: input.helcimInvoiceNumber,
-          initializationStatus: "ready",
-          initializationError: null,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(checkoutOrders.id, updated.orderId),
-            eq(checkoutOrders.initializationStatus, "initializing"),
-          ),
-        )
-        .returning({ id: checkoutOrders.id });
-      if (!order)
-        throw new Error("Primary checkout order could not be finalized");
-    }
-  });
-}
-
-export async function recordPaymentObligationInitializationInvoice(input: {
-  obligationId: string;
-  helcimInvoiceId: number;
-  helcimInvoiceNumber: string;
+  paymentLinkId: string;
+  paymentLinkUrl: string;
   expectedLeaseOwner: string;
   expectedStateVersion: number;
-}): Promise<number> {
+}): Promise<void> {
+  const now = new Date();
   const [updated] = await getPrivateDb()
     .update(orderPaymentObligations)
     .set({
-      providerInvoiceId: input.helcimInvoiceId,
-      providerInvoiceNumber: input.helcimInvoiceNumber,
+      providerCheckoutId: input.paymentLinkId,
+      disclosureSnapshot: sql`coalesce(${orderPaymentObligations.disclosureSnapshot}, '{}'::jsonb) || ${JSON.stringify(
+        { squarePaymentLinkUrl: input.paymentLinkUrl },
+      )}::jsonb`,
+      initializationStatus: "ready",
+      initializationOutcome: "succeeded",
+      initializationLeaseOwner: null,
+      initializationLeaseExpiresAt: null,
+      initializationLastError: null,
       initializationStateVersion: sql`${orderPaymentObligations.initializationStateVersion} + 1`,
-      updatedAt: new Date(),
+      updatedAt: now,
     })
     .where(
       and(
         eq(orderPaymentObligations.id, input.obligationId),
+        inArray(orderPaymentObligations.purpose, [
+          "manual_shipping",
+          "address_increase",
+        ]),
         eq(orderPaymentObligations.status, "pending"),
         eq(orderPaymentObligations.initializationStatus, "initializing"),
-        eq(orderPaymentObligations.initializationOutcome, "claimed"),
+        isNull(orderPaymentObligations.quarantinedAt),
         eq(
           orderPaymentObligations.initializationLeaseOwner,
           input.expectedLeaseOwner,
@@ -1446,16 +1188,12 @@ export async function recordPaymentObligationInitializationInvoice(input: {
           orderPaymentObligations.initializationStateVersion,
           input.expectedStateVersion,
         ),
-        isNull(orderPaymentObligations.quarantinedAt),
       ),
     )
-    .returning({
-      stateVersion: orderPaymentObligations.initializationStateVersion,
-    });
+    .returning({ id: orderPaymentObligations.id });
   if (!updated) {
-    throw new Error("Payment obligation invoice evidence lost its lease");
+    throw new Error("Square payment-link obligation could not be finalized");
   }
-  return updated.stateVersion;
 }
 
 export async function markPaymentObligationInitializationFailed(input: {
@@ -1561,11 +1299,89 @@ export async function createPendingSquareInvoiceOrder(
   return defaultOrderStore.createPendingSquareInvoiceOrder(input);
 }
 
-export async function markOrderPaid(
-  orderId: string,
-  helcimTransactionId: string,
-): Promise<HelcimPurchaseTransitionResult> {
-  return defaultOrderStore.markOrderPaid(orderId, helcimTransactionId);
+/**
+ * Reserve a pending primary-training order paid through the embedded Square
+ * card flow. The generated public `orderId` is also the payment reference; the
+ * order is finalized to paid by {@link finalizeSquareTrainingCardPayment} after
+ * the Square authorization is captured.
+ */
+export async function createPendingSquareTrainingCardOrder(
+  input: CreatePendingSquareTrainingCardOrderInput,
+): Promise<PendingSquareTrainingCardOrderRecord> {
+  const db = getPrivateDb();
+  const orderId = input.reservationKey
+    ? deriveDeterministicOrderId(input.reservationKey)
+    : `lh-${nanoid(12)}`;
+  const providerMetadata: SquareCardProviderMetadata = {
+    amountCents: input.amountCents,
+    correlationId: orderId,
+    currency: "CAD",
+    finalizationStatus: "pending",
+    flow: "training_square_card",
+    programSlug: input.programSlug,
+  };
+
+  const insertTrainingOrder = db.insert(checkoutOrders).values({
+    orderId,
+    status: "pending",
+    checkoutTokenHash: null,
+    secretTokenCiphertext: null,
+    customerName: input.customerName,
+    customerEmail: input.customerEmail,
+    purpose: "training",
+    amountCents: input.amountCents,
+    merchandiseAmountCents: input.merchandiseAmountCents,
+    shippingAmountCents: 0,
+    taxAmountCents: input.taxAmountCents,
+    promotionCode: input.cart.promotionCode ?? null,
+    promotionDiscountCents: toCents(input.cart.promotionDiscountAmount ?? 0),
+    manualDiscountCents: toCents(input.cart.manualDiscountAmount ?? 0),
+    currency: "CAD",
+    lineItems: toOrderLineItemSnapshots(input.cart),
+    paymentProvider: "square",
+    providerStatus: "pending",
+    providerMetadata,
+  });
+
+  // Idempotent reservation: with a client-supplied reservationKey the orderId is
+  // deterministic, so a retry of the same attempt conflicts on the unique
+  // orderId and is reused — one order, one Square idempotency key → Square
+  // dedupes the charge. Without a key, keep the random-orderId insert.
+  const [order] = await (
+    input.reservationKey
+      ? insertTrainingOrder.onConflictDoNothing({
+          target: checkoutOrders.orderId,
+        })
+      : insertTrainingOrder
+  ).returning({ id: checkoutOrders.id });
+  if (order) {
+    return { databaseId: order.id, orderId };
+  }
+
+  // No row: the deterministic orderId already existed (a retry with the same
+  // reservationKey). Reuse the original order after verifying it belongs to the
+  // same customer + purpose.
+  if (!input.reservationKey) {
+    throw new Error("Square training order could not be created");
+  }
+  const [existing] = await db
+    .select({
+      id: checkoutOrders.id,
+      customerEmail: checkoutOrders.customerEmail,
+      purpose: checkoutOrders.purpose,
+    })
+    .from(checkoutOrders)
+    .where(eq(checkoutOrders.orderId, orderId))
+    .limit(1);
+  if (!existing) {
+    throw new Error("Square training order could not be created");
+  }
+  assertReusedReservationMatches(existing, {
+    customerEmail: input.customerEmail,
+    purpose: "training",
+  });
+
+  return { databaseId: existing.id, orderId };
 }
 
 export async function markOrderVerificationFailed(
@@ -1638,60 +1454,168 @@ export async function findOrderByCorrelationId(
   return defaultOrderStore.findOrderByCorrelationId(correlationId);
 }
 
-export async function getPendingOrderByCheckoutToken(
-  checkoutToken: string,
-): Promise<PendingOrderRecord | null> {
-  return defaultOrderStore.getPendingOrderByCheckoutToken(checkoutToken);
+/**
+ * Look up a checkout order by its public `orderId` (the value used as the Square
+ * payment `reference_id`). Used by the Square webhook to reconcile commerce
+ * payments back to their local order.
+ */
+export async function findCheckoutOrderByOrderId(
+  orderId: string,
+): Promise<CheckoutOrderRow | null> {
+  const [order] = await getPrivateDb()
+    .select()
+    .from(checkoutOrders)
+    .where(eq(checkoutOrders.orderId, orderId))
+    .limit(1);
+
+  return order ?? null;
 }
 
-export async function recordHelcimWebhookEvent(
-  input: HelcimWebhookEventInput,
-): Promise<boolean> {
-  return defaultOrderStore.recordHelcimWebhookEvent(input);
+/** Square provider status marking a commerce order's funds as captured. */
+export const SQUARE_CAPTURED_PROVIDER_STATUS = "COMPLETED";
+/**
+ * Square provider status marking a paid commerce order whose authorization was
+ * lost (canceled/failed) before capture — funds are uncollected and the order
+ * needs manual intervention. Excluded from the capture sweep so it is not
+ * re-checked forever.
+ */
+export const SQUARE_UNCOLLECTED_PROVIDER_STATUS = "UNCOLLECTED";
+
+/**
+ * Returns the obligation id if `reference` identifies a non-primary Square
+ * payment obligation (a supplemental top-up whose Square payment link's
+ * `reference_id` is the obligation id). Status-agnostic on purpose so a replayed
+ * webhook still routes to the finalizer (which re-checks state); the finalizer
+ * is the authority on whether to apply, refund, or no-op.
+ */
+export async function findSquareSupplementalObligationByReference(
+  reference: string,
+): Promise<string | null> {
+  const [obligation] = await getPrivateDb()
+    .select({ id: orderPaymentObligations.id })
+    .from(orderPaymentObligations)
+    .where(
+      and(
+        eq(orderPaymentObligations.id, reference),
+        eq(orderPaymentObligations.paymentProvider, "square"),
+        inArray(orderPaymentObligations.purpose, [
+          "manual_shipping",
+          "address_increase",
+        ]),
+      ),
+    )
+    .limit(1);
+
+  return obligation?.id ?? null;
 }
 
-export async function recordHelcimWebhookEventWithOrder(
-  input: HelcimWebhookEventInput,
-): Promise<HelcimWebhookEventRecordResult> {
-  return defaultOrderStore.recordHelcimWebhookEventWithOrder(input);
+export interface UncapturedSquareCommerceOrder {
+  orderId: string;
+  purpose: CheckoutOrderPurpose;
+  providerPaymentId: string;
+  providerMetadata: CheckoutProviderMetadata | null;
 }
 
-export async function markHelcimWebhookEventProcessingStatus(input: {
-  eventId: string;
-  status: "processed" | "review_required" | "retryable_failed";
-  message?: string;
-  reasonCode?: string;
-}): Promise<void> {
-  await getPrivateDb().transaction(async (tx) => {
-    const [event] = await tx
-      .update(checkoutPaymentEvents)
-      .set({
-        processingStatus: input.status,
-        message: input.message?.slice(0, 500),
-        processedAt: input.status === "processed" ? new Date() : null,
-      })
-      .where(
-        and(
-          eq(checkoutPaymentEvents.paymentProvider, "helcim"),
-          eq(checkoutPaymentEvents.idempotencyKey, input.eventId),
-        ),
-      )
-      .returning({ id: checkoutPaymentEvents.id });
-    if (input.status === "review_required" && event) {
-      await tx
-        .insert(fulfillmentDataQuarantine)
-        .values({
-          entityType: "checkout_payment_event",
-          entityId: event.id,
-          reasonCode: input.reasonCode ?? "UNMATCHED_APPROVED_HELCIM_REFUND",
-          evidence: {
-            providerEventId: input.eventId,
-            message: input.message?.slice(0, 500) ?? null,
+/**
+ * Square commerce orders that are locally `paid` but whose provider status is
+ * not yet `COMPLETED` — i.e. the synchronous capture did not confirm. The
+ * capture-reconciliation sweep re-checks these against Square and completes or
+ * flags them. `paidBefore` avoids racing an in-flight synchronous charge.
+ */
+export async function findUncapturedSquareCommerceOrders(input: {
+  paidBefore: Date;
+  limit: number;
+}): Promise<UncapturedSquareCommerceOrder[]> {
+  const rows = await getPrivateDb()
+    .select({
+      orderId: checkoutOrders.orderId,
+      purpose: checkoutOrders.purpose,
+      providerPaymentId: checkoutOrders.providerPaymentId,
+      providerMetadata: checkoutOrders.providerMetadata,
+    })
+    .from(checkoutOrders)
+    .where(
+      and(
+        eq(checkoutOrders.paymentProvider, "square"),
+        eq(checkoutOrders.status, "paid"),
+        inArray(checkoutOrders.purpose, ["product", "training"]),
+        isNotNull(checkoutOrders.providerPaymentId),
+        // Exclude both the confirmed-captured terminal state and the
+        // uncollected (lost-authorization) terminal state so neither is
+        // re-swept forever.
+        notInArray(checkoutOrders.providerStatus, [
+          SQUARE_CAPTURED_PROVIDER_STATUS,
+          SQUARE_UNCOLLECTED_PROVIDER_STATUS,
+        ]),
+        lte(checkoutOrders.paidAt, input.paidBefore),
+      ),
+    )
+    // Oldest-first so a limited sweep is deterministic and drains the backlog.
+    .orderBy(checkoutOrders.paidAt)
+    .limit(input.limit);
+
+  return rows.flatMap((row) =>
+    row.providerPaymentId === null
+      ? []
+      : [
+          {
+            orderId: row.orderId,
+            purpose: row.purpose,
+            providerPaymentId: row.providerPaymentId,
+            providerMetadata: row.providerMetadata,
           },
-        })
-        .onConflictDoNothing();
-    }
-  });
+        ],
+  );
+}
+
+/**
+ * Flip a paid Square commerce order's provider status to `COMPLETED`, recording
+ * that the authorized funds were captured. Guarded on the order id + payment id
+ * so it never touches a different order or payment.
+ */
+export async function markSquareCommerceOrderCaptured(
+  orderReference: string,
+  squarePaymentId: string,
+): Promise<void> {
+  await setSquareCommerceOrderProviderStatus(
+    orderReference,
+    squarePaymentId,
+    SQUARE_CAPTURED_PROVIDER_STATUS,
+  );
+}
+
+/**
+ * Mark a paid Square commerce order as uncollected (its authorization was lost
+ * before capture). Terminal: drops the order out of the capture sweep so it is
+ * not re-checked, leaving it for manual follow-up.
+ */
+export async function markSquareCommerceOrderUncollected(
+  orderReference: string,
+  squarePaymentId: string,
+): Promise<void> {
+  await setSquareCommerceOrderProviderStatus(
+    orderReference,
+    squarePaymentId,
+    SQUARE_UNCOLLECTED_PROVIDER_STATUS,
+  );
+}
+
+async function setSquareCommerceOrderProviderStatus(
+  orderReference: string,
+  squarePaymentId: string,
+  providerStatus: string,
+): Promise<void> {
+  await getPrivateDb()
+    .update(checkoutOrders)
+    .set({ providerStatus, updatedAt: new Date() })
+    .where(
+      and(
+        eq(checkoutOrders.orderId, orderReference),
+        eq(checkoutOrders.paymentProvider, "square"),
+        eq(checkoutOrders.providerPaymentId, squarePaymentId),
+        eq(checkoutOrders.status, "paid"),
+      ),
+    );
 }
 
 export async function claimSquareInvoiceWebhookEvent(
@@ -1704,117 +1628,6 @@ export async function recordSquareInvoiceWebhookEventProcessed(
   input: SquareInvoiceWebhookEventInput,
 ): Promise<void> {
   await defaultOrderStore.recordSquareInvoiceWebhookEventProcessed(input);
-}
-
-async function recordHelcimWebhookEventWithOrderInternal(
-  repository: CheckoutOrderRepository,
-  input: HelcimWebhookEventInput,
-): Promise<HelcimWebhookEventRecordResult> {
-  const obligationMatch =
-    await repository.findPaymentObligationForWebhook?.(input);
-  const order =
-    obligationMatch?.order ?? (await repository.findOrderForWebhook(input));
-  const amountCents = input.amount === undefined ? null : toCents(input.amount);
-  const createdEvent = await repository.createWebhookEvent({
-    orderId: order?.id ?? null,
-    eventType: input.eventType,
-    helcimTransactionId: input.helcimTransactionId,
-    status: input.status,
-    amountCents,
-    currency: input.currency?.toUpperCase(),
-    idempotencyKey: input.eventId,
-    payloadRedacted: input.payloadRedacted,
-    processingStatus:
-      classifyHelcimTransaction(input).kind === "unknown"
-        ? "review_required"
-        : "received",
-  });
-
-  const paid = await reconcileWebhookPaidOrder({
-    amountCents,
-    input,
-    order,
-    repository,
-  });
-
-  return {
-    matchedOrder: order
-      ? {
-          ...toMatchedCheckoutOrderRecord(order),
-          ...(obligationMatch
-            ? { paymentObligationId: obligationMatch.obligationId }
-            : {}),
-        }
-      : null,
-    paid,
-    recorded: createdEvent !== null,
-  };
-}
-
-async function reconcileWebhookPaidOrder(input: {
-  amountCents: number | null;
-  input: HelcimWebhookEventInput;
-  order: CheckoutOrderRow | null;
-  repository: CheckoutOrderRepository;
-}): Promise<boolean> {
-  if (input.order === null) {
-    return false;
-  }
-
-  // Product purchases are finalized exclusively by finalizeProductPayment so
-  // payment, obligation, transaction, and risk state change atomically.
-  if (input.order.purpose === "product") return false;
-
-  const classification = classifyHelcimTransaction(input.input);
-  if (
-    classification.kind !== "purchase" ||
-    !classification.successful ||
-    !input.input.helcimTransactionId
-  ) {
-    return false;
-  }
-
-  if (input.order.status === "paid") {
-    return input.order.helcimTransactionId === input.input.helcimTransactionId;
-  }
-  if (["cancelled", "refunded"].includes(input.order.status)) return false;
-
-  const expectedAmountMatches =
-    input.amountCents !== null && input.amountCents === input.order.amountCents;
-  const expectedCurrencyMatches =
-    input.input.currency !== undefined &&
-    input.input.currency.toUpperCase() === input.order.currency;
-
-  if (!expectedAmountMatches || !expectedCurrencyMatches) {
-    return false;
-  }
-
-  const transition = await input.repository.markOrderPaid(
-    input.order.orderId,
-    input.input.helcimTransactionId,
-  );
-  return transition === "applied" || transition === "already_applied";
-}
-
-function toMatchedCheckoutOrderRecord(
-  order: CheckoutOrderRow,
-): MatchedCheckoutOrderRecord {
-  const currency = order.currency.toUpperCase();
-
-  if (currency !== "CAD") {
-    throw new Error("Unsupported checkout order currency");
-  }
-
-  return {
-    _id: order.id,
-    amount: centsToCad(order.amountCents),
-    currency,
-    helcimInvoiceId: order.helcimInvoiceId,
-    helcimInvoiceNumber: order.helcimInvoiceNumber,
-    orderId: order.orderId,
-    purpose: order.purpose,
-    paymentProvider: order.paymentProvider,
-  };
 }
 
 function toProductOrderConfirmationEmailRecord(
@@ -2061,16 +1874,6 @@ function createDrizzleCheckoutOrderRepository(): CheckoutOrderRepository {
       return createdEvent ?? null;
     },
 
-    async createWebhookEvent(values) {
-      const [createdEvent] = await getPrivateDb()
-        .insert(checkoutPaymentEvents)
-        .values(values)
-        .onConflictDoNothing({ target: checkoutPaymentEvents.idempotencyKey })
-        .returning({ id: checkoutPaymentEvents.id });
-
-      return createdEvent ?? null;
-    },
-
     async claimProductOrderConfirmationEmail(input) {
       const [claimedOrder] = await getPrivateDb()
         .update(checkoutOrders)
@@ -2117,54 +1920,6 @@ function createDrizzleCheckoutOrderRepository(): CheckoutOrderRepository {
       };
     },
 
-    async findOrderForWebhook(input) {
-      return findOrderForWebhook(input);
-    },
-
-    async findPaymentObligationForWebhook(input) {
-      if (
-        input.helcimInvoiceId === undefined &&
-        input.helcimInvoiceNumber === undefined
-      ) {
-        return null;
-      }
-      const conditions = [
-        input.helcimInvoiceId === undefined
-          ? undefined
-          : eq(
-              orderPaymentObligations.providerInvoiceId,
-              input.helcimInvoiceId,
-            ),
-        input.helcimInvoiceNumber === undefined
-          ? undefined
-          : eq(
-              orderPaymentObligations.providerInvoiceNumber,
-              input.helcimInvoiceNumber,
-            ),
-      ].filter((condition) => condition !== undefined);
-      const [match] = await getPrivateDb()
-        .select({
-          order: checkoutOrders,
-          obligationId: orderPaymentObligations.id,
-        })
-        .from(orderPaymentObligations)
-        .innerJoin(
-          checkoutOrders,
-          eq(orderPaymentObligations.orderId, checkoutOrders.id),
-        )
-        .where(
-          and(
-            eq(orderPaymentObligations.paymentProvider, "helcim"),
-            eq(orderPaymentObligations.initializationStatus, "ready"),
-            isNull(orderPaymentObligations.quarantinedAt),
-            isNull(checkoutOrders.fulfillmentQuarantinedAt),
-            ...conditions,
-          ),
-        )
-        .limit(1);
-      return match ?? null;
-    },
-
     async findCheckoutOrderByCheckoutTokenHash(checkoutTokenHash) {
       const [order] = await getPrivateDb()
         .select()
@@ -2183,29 +1938,6 @@ function createDrizzleCheckoutOrderRepository(): CheckoutOrderRepository {
         .limit(1);
 
       return order ?? null;
-    },
-
-    async findPaymentObligationByCheckoutTokenHash(checkoutTokenHash) {
-      const [match] = await getPrivateDb()
-        .select({
-          order: checkoutOrders,
-          obligation: orderPaymentObligations,
-        })
-        .from(orderPaymentObligations)
-        .innerJoin(
-          checkoutOrders,
-          eq(orderPaymentObligations.orderId, checkoutOrders.id),
-        )
-        .where(
-          and(
-            eq(orderPaymentObligations.checkoutTokenHash, checkoutTokenHash),
-            eq(orderPaymentObligations.paymentProvider, "helcim"),
-            isNull(orderPaymentObligations.quarantinedAt),
-            isNull(checkoutOrders.fulfillmentQuarantinedAt),
-          ),
-        )
-        .limit(1);
-      return match ?? null;
     },
 
     async findOrderBySquareInvoiceId(invoiceId) {
@@ -2236,46 +1968,6 @@ function createDrizzleCheckoutOrderRepository(): CheckoutOrderRepository {
         .limit(1);
 
       return order ?? null;
-    },
-
-    async markOrderPaid(orderId, helcimTransactionId) {
-      const now = new Date();
-      const [updated] = await getPrivateDb()
-        .update(checkoutOrders)
-        .set({
-          status: "paid",
-          helcimTransactionId,
-          providerPaymentId: helcimTransactionId,
-          paidAt: now,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(checkoutOrders.orderId, orderId),
-            eq(checkoutOrders.paymentProvider, "helcim"),
-            inArray(checkoutOrders.status, ["pending", "verification_failed"]),
-            isNull(checkoutOrders.helcimTransactionId),
-          ),
-        )
-        .returning({ id: checkoutOrders.id });
-      if (updated) return "applied";
-      const [existing] = await getPrivateDb()
-        .select({
-          status: checkoutOrders.status,
-          transactionId: checkoutOrders.helcimTransactionId,
-        })
-        .from(checkoutOrders)
-        .where(eq(checkoutOrders.orderId, orderId))
-        .limit(1);
-      if (!existing) return "not_found";
-      if (
-        existing.status === "paid" &&
-        existing.transactionId === helcimTransactionId
-      )
-        return "already_applied";
-      if (existing.status === "paid" && existing.transactionId)
-        return "transaction_conflict";
-      return "state_conflict";
     },
 
     async markOrderVerificationFailed(orderId) {
@@ -2410,8 +2102,6 @@ function toPendingOrderRecord(
     _id: pendingOrder.id,
     orderId: pendingOrder.orderId,
     secretToken: decryptCheckoutSecret(pendingOrder.secretTokenCiphertext),
-    helcimInvoiceId: pendingOrder.helcimInvoiceId,
-    helcimInvoiceNumber: pendingOrder.helcimInvoiceNumber,
     amount: centsToCad(pendingOrder.amountCents),
     currency,
     customerEmail: pendingOrder.customerEmail,
@@ -2421,40 +2111,6 @@ function toPendingOrderRecord(
     purpose: pendingOrder.purpose,
     shippingAddress: pendingOrder.shippingAddress ?? null,
   };
-}
-
-async function findOrderForWebhook(
-  input: HelcimWebhookEventInput,
-): Promise<CheckoutOrderRow | null> {
-  if (
-    input.helcimInvoiceId === undefined &&
-    input.helcimInvoiceNumber === undefined
-  ) {
-    return null;
-  }
-
-  const invoiceConditions = [
-    input.helcimInvoiceId === undefined
-      ? undefined
-      : eq(checkoutOrders.helcimInvoiceId, input.helcimInvoiceId),
-    input.helcimInvoiceNumber === undefined
-      ? undefined
-      : eq(checkoutOrders.helcimInvoiceNumber, input.helcimInvoiceNumber),
-  ].filter((condition) => condition !== undefined);
-
-  const [order] = await getPrivateDb()
-    .select()
-    .from(checkoutOrders)
-    .where(
-      and(
-        eq(checkoutOrders.paymentProvider, "helcim"),
-        isNull(checkoutOrders.fulfillmentQuarantinedAt),
-        ...invoiceConditions,
-      ),
-    )
-    .limit(1);
-
-  return order ?? null;
 }
 
 function hashCheckoutToken(checkoutToken: string): string {
@@ -2475,37 +2131,6 @@ function hashPayload(payload: CheckoutPaymentEventPayload): string {
   return createHash("sha256")
     .update(JSON.stringify(payload), "utf8")
     .digest("hex");
-}
-
-function isCheckoutTokenValidationEligible(order: CheckoutOrderRow): boolean {
-  if (
-    order.paymentProvider !== "helcim" ||
-    order.fulfillmentQuarantinedAt !== null
-  ) {
-    return false;
-  }
-
-  if (order.status === "pending") {
-    return true;
-  }
-
-  // Helcim webhooks can commit a product purchase before the browser callback.
-  // The checkout token and response hash still authenticate the browser path;
-  // finalizers enforce immutable provider transaction identity on replay.
-  return (
-    (order.status === "paid" &&
-      (order.purpose === "product" || isAppointmentPurpose(order.purpose))) ||
-    (["cancelled", "refunded"].includes(order.status) &&
-      order.purpose === "product")
-  );
-}
-
-function isAppointmentPurpose(purpose: CheckoutOrderPurpose): boolean {
-  return (
-    purpose === "appointment_deposit" ||
-    purpose === "appointment_full" ||
-    purpose === "appointment_custom_partial"
-  );
 }
 
 function isValidUsImportDisclosure(
