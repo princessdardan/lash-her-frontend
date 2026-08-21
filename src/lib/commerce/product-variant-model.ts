@@ -32,6 +32,7 @@ interface ResolvedOverride {
   readonly sku?: string;
   readonly isAvailable?: boolean;
   readonly availabilityLabel?: string;
+  readonly stockQuantity?: number;
   readonly image?: TSanityImage;
   readonly shipping?: TProductShippingMetadata;
 }
@@ -144,6 +145,7 @@ function resolveOverride(override: TProductVariantOverride): ResolvedOverride {
   const sku = cleanString(override.sku) ?? undefined;
   const availabilityLabel =
     cleanString(override.availabilityLabel) ?? undefined;
+  const stockQuantity = toStockQuantity(override.stockQuantity);
   const image = hasImageAsset(override.image) ? override.image : undefined;
 
   return {
@@ -156,6 +158,7 @@ function resolveOverride(override: TProductVariantOverride): ResolvedOverride {
       ? { isAvailable: override.isAvailable }
       : {}),
     ...(availabilityLabel ? { availabilityLabel } : {}),
+    ...(stockQuantity !== null ? { stockQuantity } : {}),
     ...(image ? { image } : {}),
     ...(shipping ? { shipping } : {}),
   };
@@ -209,6 +212,9 @@ function buildVariants(
       ...(override.sku ? { sku: override.sku } : {}),
       ...(override.availabilityLabel
         ? { availabilityLabel: override.availabilityLabel }
+        : {}),
+      ...(override.stockQuantity !== undefined
+        ? { stockQuantity: override.stockQuantity }
         : {}),
       ...(override.image ? { image: override.image } : {}),
       ...(override.shipping ? { shipping: override.shipping } : {}),
@@ -288,6 +294,15 @@ function toPositiveNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
     ? value
     : null;
+}
+
+// A blank/invalid stock value means "untracked" (null); an authored 0 is a
+// real set-point (tracked, sold out) and is preserved.
+function toStockQuantity(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return null;
+  }
+  return Math.floor(value);
 }
 
 function cleanProduct(product: TProduct): TProduct {

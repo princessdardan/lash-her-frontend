@@ -61,6 +61,56 @@ describe("commerce cart validation", () => {
     );
   });
 
+  it("rejects a line whose quantity exceeds tracked available stock", () => {
+    assert.throws(
+      () =>
+        buildValidatedCart(
+          [{ productId: "product-1", quantity: 3 }],
+          [{ ...product, availableQuantity: 2 }],
+        ),
+      /Not enough stock for one or more items/,
+    );
+  });
+
+  it("allows a line up to the tracked available stock", () => {
+    const cart = buildValidatedCart(
+      [{ productId: "product-1", quantity: 2 }],
+      [{ ...product, availableQuantity: 2 }],
+    );
+    assert.equal(cart.lineItems[0]?.quantity, 2);
+  });
+
+  it("does not limit untracked products (no availableQuantity)", () => {
+    const cart = buildValidatedCart(
+      [{ productId: "product-1", quantity: 5 }],
+      [product],
+    );
+    assert.equal(cart.lineItems[0]?.quantity, 5);
+  });
+
+  it("enforces stock against the selected variant's available count", () => {
+    const withVariant: CatalogProduct = {
+      ...product,
+      variants: [
+        {
+          id: "volume",
+          title: "Volume",
+          price: 150,
+          isAvailable: true,
+          availableQuantity: 1,
+        },
+      ],
+    };
+    assert.throws(
+      () =>
+        buildValidatedCart(
+          [{ productId: "product-1", variantId: "volume", quantity: 2 }],
+          [withVariant],
+        ),
+      /Not enough stock for one or more items/,
+    );
+  });
+
   it("uses selected variant pricing and SKU when a product has variants", () => {
     assert.deepEqual(
       buildValidatedCart(

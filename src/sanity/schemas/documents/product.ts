@@ -262,6 +262,14 @@ export const product = defineType({
               type: "string",
             }),
             defineField({
+              name: "stockQuantity",
+              title: "Stock on hand",
+              type: "number",
+              description:
+                "Units on hand for this exact combination. Changing this number resets the live count; leave blank to sell this combination without tracking stock. This is a restock input — the live remaining count is on the admin Inventory screen.",
+              validation: (Rule) => Rule.integer().min(0),
+            }),
+            defineField({
               name: "shipping",
               title: "Shipping, Packing & Customs Override",
               type: "object",
@@ -315,6 +323,15 @@ export const product = defineType({
       type: "string",
       group: "catalog",
       description: "e.g., 'In Stock', 'Out of Stock', or 'Pre-order'.",
+    }),
+    defineField({
+      name: "stockQuantity",
+      title: "Stock on hand",
+      type: "number",
+      group: "catalog",
+      description:
+        "Enter the number of units on hand when you receive or restock this product. Changing this number resets the live count; leave blank to sell without tracking stock. For a product with Options, set stock per combination on its Variant Override instead. This is a restock input — the live remaining count is shown on the admin Inventory screen, not here.",
+      validation: (Rule) => Rule.integer().min(0),
     }),
     defineField({
       name: "fulfillmentNote",

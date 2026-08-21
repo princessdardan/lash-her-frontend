@@ -9,6 +9,7 @@ import {
   orderPaymentTransactions,
 } from "@/lib/private-db/schema";
 import { activateShipmentForPaidOrderInTransaction } from "@/lib/shipping/shipment-store";
+import { commitProductStockForOrderInTransaction } from "./product-stock-store";
 
 /**
  * Square product-payment finalizer.
@@ -207,6 +208,12 @@ export async function finalizeSquareProductPayment(
         updatedAt: now,
       })
       .where(eq(checkoutOrders.id, order.id));
+
+    // First-time paid transition: convert this order's held stock into sold
+    // units (onHand -= qty, reserved -= qty). Exactly-once, bound to the same
+    // idempotency guarantee as the money ledger above — a replayed webhook lands
+    // in the already_applied branch and never reaches here.
+    await commitProductStockForOrderInTransaction(tx, input.orderReference);
 
     if (order.fulfillmentMode === "automated_shipping") {
       const activated = await activateShipmentForPaidOrderInTransaction(

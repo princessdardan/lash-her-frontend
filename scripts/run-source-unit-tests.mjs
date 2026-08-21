@@ -40,6 +40,8 @@ const DB_TEST_FILES = new Set([
   "src/lib/admin/operations-workspaces.db.test.ts",
   "src/lib/commerce/customer-email-outbox.db.test.ts",
   "src/lib/commerce/product-order-creation.db.test.ts",
+  "src/lib/commerce/product-stock-store.db.test.ts",
+  "src/lib/commerce/product-stock-sync.db.test.ts",
   "src/lib/commerce/late-capture-refund.db.test.ts",
   "src/lib/commerce/square-obligation-reconciliation.db.test.ts",
   "src/lib/commerce/square-product-finalizer.db.test.ts",

@@ -14,6 +14,9 @@ export function toCheckoutCatalogProduct(product: TProduct): CatalogProduct {
     discountPrice: product.discountPrice,
     currency: product.currency,
     isAvailable: product.isAvailable,
+    ...(product.availableQuantity != null
+      ? { availableQuantity: product.availableQuantity }
+      : {}),
     checkoutMode: resolveCheckoutMode(product.shipping, product.isAvailable),
     variants: product.variants?.map((variant) => ({
       id: variant._key,
@@ -22,6 +25,9 @@ export function toCheckoutCatalogProduct(product: TProduct): CatalogProduct {
       price: variant.price,
       discountPrice: variant.discountPrice,
       isAvailable: variant.isAvailable,
+      ...(variant.availableQuantity != null
+        ? { availableQuantity: variant.availableQuantity }
+        : {}),
       options: variant.options?.flatMap((option) =>
         option.name && option.value
           ? [{ label: option.name, value: option.value }]

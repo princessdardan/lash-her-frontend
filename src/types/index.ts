@@ -446,6 +446,12 @@ export interface TProductVariantOverride {
   sku?: string;
   isAvailable?: boolean;
   availabilityLabel?: string;
+  /**
+   * Restock set-point for this combination, authored in Sanity. Seeds/updates
+   * the authoritative Postgres count via the inventory sync; blank leaves the
+   * combination untracked (unlimited). Not a live readout — see product-stock.
+   */
+  stockQuantity?: number | null;
   shipping?: TProductShippingMetadata;
 }
 
@@ -482,6 +488,13 @@ export interface TProductVariant {
   discountPrice?: number | null;
   isAvailable: boolean;
   availabilityLabel?: string;
+  /** Restock set-point authored on this combination's override, if any. */
+  stockQuantity?: number | null;
+  /**
+   * Live units available to sell (`onHand - reserved`) from Postgres, merged in
+   * at storefront read time. `undefined`/`null` means untracked (unlimited).
+   */
+  availableQuantity?: number | null;
   options?: TProductVariantOption[];
   image?: TSanityImage;
   shipping?: TProductShippingMetadata;
@@ -544,6 +557,19 @@ export interface TProduct {
   variants?: TProductVariant[];
   isAvailable: boolean;
   availabilityLabel?: string;
+  /**
+   * Restock set-point for a product with no options, authored in Sanity. Seeds
+   * the product-level Postgres count via the inventory sync; blank leaves the
+   * product untracked (unlimited). For products with options, author stock per
+   * combination on the matching variant override instead.
+   */
+  stockQuantity?: number | null;
+  /**
+   * Live units available to sell for a no-option product, merged in at
+   * storefront read time. `undefined`/`null` means untracked (unlimited). For a
+   * product with options, availability lives on each variant instead.
+   */
+  availableQuantity?: number | null;
   fulfillmentNote?: string;
   shipping?: TProductShippingMetadata;
   displayOrder?: number;
