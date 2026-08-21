@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import type { ProductCheckoutAvailability } from "@/lib/shipping/config";
 import type { TProduct, TProductVariant } from "@/types";
 import { ProductVariantSelector } from "./product-variant-selector";
 import { useProductCart } from "./product-cart-provider";
+import { useProductGallery } from "./product-gallery-context";
 
 const MIN_QUANTITY = 1;
 const MAX_QUANTITY = 10;
@@ -71,6 +72,7 @@ export function ProductDetailPurchaseControls({
 }: ProductDetailPurchaseControlsProps): ReactElement {
   const router = useRouter();
   const { addItem, openCart } = useProductCart();
+  const { setActiveVariantImage } = useProductGallery();
   const variants = useMemo(
     () => product.variants?.filter((variant) => variant.title) ?? [],
     [product.variants],
@@ -88,6 +90,14 @@ export function ProductDetailPurchaseControls({
   const selectedVariant = variants.find(
     (variant) => variant._key === selectedVariantId,
   );
+
+  // Mirror the selected variant's image into the shared gallery so the hero
+  // swaps as options change; a null clears the hero back to the product image
+  // whenever no variant (or a variant without its own image) is selected.
+  useEffect(() => {
+    setActiveVariantImage(selectedVariant?.image ?? null);
+  }, [selectedVariant, setActiveVariantImage]);
+
   const checkoutEligibility = getProductCheckoutEligibility(
     selectedVariant?.shipping ?? product.shipping,
   );

@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { loaders } from "@/data/loaders";
-import { SanityImage } from "@/components/ui/sanity-image";
 import { ProductDetailSections } from "@/components/commerce/product-detail-sections";
 import { ProductDetailPurchaseControls } from "@/components/commerce/product-detail-purchase-controls";
+import { ProductDetailGallery } from "@/components/commerce/product-detail-gallery";
+import { ProductGalleryProvider } from "@/components/commerce/product-gallery-context";
 import { getProductCheckoutAvailability } from "@/lib/shipping/config";
 import { resolveEffectivePrice } from "@/lib/commerce/cart";
 import { formatCad } from "@/lib/commerce/money";
@@ -147,11 +148,6 @@ export async function generateStaticParams() {
   return products.map((p) => ({ slug: p.slug }));
 }
 
-function getDisplayImages(product: TProduct) {
-  const gallery = product.gallery ?? [];
-  return product.image ? [product.image, ...gallery] : gallery;
-}
-
 function getAvailabilityLabel(product: TProduct): string {
   return (
     product.availabilityLabel ||
@@ -169,9 +165,6 @@ export default async function ProductDetailPage({
 
   if (!product) notFound();
 
-  const displayImages = getDisplayImages(product);
-  const primaryImage = displayImages[0];
-  const galleryImages = displayImages.slice(1, 5);
   const availabilityLabel = getAvailabilityLabel(product);
   const collections =
     product.collections?.filter((collection) => collection.title).slice(0, 3) ??
@@ -191,143 +184,93 @@ export default async function ProductDetailPage({
             <span aria-hidden="true">←</span> Back to Catalog
           </Link>
 
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1.05fr)_minmax(22rem,0.95fr)] lg:items-start xl:gap-12">
-            <div className="space-y-5">
-              <div className="relative min-h-[520px] overflow-hidden rounded-[28px] border border-lh-line bg-lh-shadow shadow-[0_24px_70px_rgba(28,19,24,0.10)] md:min-h-[660px]">
-                {primaryImage ? (
-                  <SanityImage
-                    image={primaryImage}
-                    alt={primaryImage.alt || product.title}
-                    fill
-                    priority
-                    sizes="(min-width: 1024px) 54vw, 100vw"
-                    className="object-cover"
-                  />
-                ) : (
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_72%_18%,var(--lh-light-soft),transparent_32%),linear-gradient(135deg,var(--lh-shadow),var(--lh-accent)_52%,var(--lh-primary))]" />
-                )}
-                <div
-                  className="absolute inset-0 bg-gradient-to-t from-lh-shadow/65 via-lh-shadow/10 to-transparent"
-                  aria-hidden="true"
-                />
-                <div className="absolute left-5 top-5 flex flex-wrap gap-2 md:left-7 md:top-7">
-                  {product.badgeLabel ? (
-                    <span className="rounded-full bg-lh-light px-4 py-2 font-body text-xs font-bold uppercase tracking-[0.14em] text-lh-shadow">
-                      {product.badgeLabel}
-                    </span>
-                  ) : null}
-                  {!product.isAvailable ? (
-                    <span className="rounded-full bg-lh-accent px-4 py-2 font-body text-xs font-bold uppercase tracking-[0.14em] text-lh-white">
-                      {availabilityLabel}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
+          <ProductGalleryProvider>
+            <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1.05fr)_minmax(22rem,0.95fr)] lg:items-start xl:gap-12">
+              <ProductDetailGallery
+                product={product}
+                availabilityLabel={availabilityLabel}
+              />
 
-              {galleryImages.length > 0 && (
-                <section
-                  className="grid grid-cols-2 gap-4 md:grid-cols-4"
-                  aria-label="Product gallery"
-                >
-                  {galleryImages.map((image, index) => (
-                    <div
-                      key={`${image.asset._ref}-${index}`}
-                      className="relative min-h-36 overflow-hidden rounded-[24px] border border-lh-line bg-lh-white shadow-[0_18px_50px_rgba(28,19,24,0.05)] md:min-h-44"
-                    >
-                      <SanityImage
-                        image={image}
-                        alt={
-                          image.alt ||
-                          `${product.title} gallery image ${index + 2}`
-                        }
-                        fill
-                        sizes="(min-width: 1024px) 14vw, 50vw"
-                        className="object-cover"
-                      />
-                    </div>
-                  ))}
-                </section>
-              )}
-            </div>
+              <aside className="lg:sticky lg:top-28">
+                <section className="soft-panel bg-lh-white/90 p-6 backdrop-blur md:p-8 lg:p-9">
+                  <div className="mb-7 border-b border-lh-line pb-7">
+                    <p className="eyebrow-label mb-3">Product</p>
+                    <h1 className="display-heading text-5xl md:text-7xl lg:text-8xl">
+                      {product.title}
+                    </h1>
 
-            <aside className="lg:sticky lg:top-28">
-              <section className="soft-panel bg-lh-white/90 p-6 backdrop-blur md:p-8 lg:p-9">
-                <div className="mb-7 border-b border-lh-line pb-7">
-                  <p className="eyebrow-label mb-3">Product</p>
-                  <h1 className="display-heading text-5xl md:text-7xl lg:text-8xl">
-                    {product.title}
-                  </h1>
-
-                  {product.cardSubtitle ? (
-                    <p className="mt-4 font-body text-sm font-bold uppercase tracking-[0.16em] text-lh-primary">
-                      {product.cardSubtitle}
-                    </p>
-                  ) : null}
-
-                  <div className="mt-6 flex flex-wrap items-baseline gap-x-3 gap-y-1 font-body text-2xl font-bold text-lh-shadow md:text-3xl">
-                    {priceDisplay.originalLabel ? (
-                      <span className="text-base text-lh-muted line-through md:text-lg">
-                        {priceDisplay.originalLabel}
-                      </span>
+                    {product.cardSubtitle ? (
+                      <p className="mt-4 font-body text-sm font-bold uppercase tracking-[0.16em] text-lh-primary">
+                        {product.cardSubtitle}
+                      </p>
                     ) : null}
-                    <span>{priceDisplay.currentLabel}</span>
+
+                    <div className="mt-6 flex flex-wrap items-baseline gap-x-3 gap-y-1 font-body text-2xl font-bold text-lh-shadow md:text-3xl">
+                      {priceDisplay.originalLabel ? (
+                        <span className="text-base text-lh-muted line-through md:text-lg">
+                          {priceDisplay.originalLabel}
+                        </span>
+                      ) : null}
+                      <span>{priceDisplay.currentLabel}</span>
+                    </div>
                   </div>
-                </div>
 
-                {product.description && (
-                  <p className="body-lead text-lh-shadow/80">
-                    {product.description}
-                  </p>
-                )}
+                  {product.description && (
+                    <p className="body-lead text-lh-shadow/80">
+                      {product.description}
+                    </p>
+                  )}
 
-                {(collections.length > 0 || product.isAvailable) && (
-                  <div className="mt-7 flex flex-wrap gap-2">
-                    {product.isAvailable ? (
-                      <span className="rounded-full border border-lh-line px-3 py-1.5 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-muted">
+                  {(collections.length > 0 || product.isAvailable) && (
+                    <div className="mt-7 flex flex-wrap gap-2">
+                      {product.isAvailable ? (
+                        <span className="rounded-full border border-lh-line px-3 py-1.5 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-muted">
+                          {availabilityLabel}
+                        </span>
+                      ) : null}
+                      {collections.map((collection) => (
+                        <span
+                          key={collection._id}
+                          className="rounded-full border border-lh-line px-3 py-1.5 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-shadow/70"
+                        >
+                          {collection.title}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {product.fulfillmentNote ? (
+                    <div className="mt-8 border-l-2 border-lh-light bg-lh-light-soft/60 px-5 py-4">
+                      <p className="font-body text-sm font-bold leading-7 text-lh-shadow/78">
+                        <span className="mr-2 uppercase tracking-[0.12em] text-lh-primary">
+                          Fulfillment
+                        </span>
+                        {product.fulfillmentNote}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {product.isAvailable ? (
+                    <ProductDetailPurchaseControls
+                      product={product}
+                      checkoutAvailability={getProductCheckoutAvailability()}
+                    />
+                  ) : (
+                    <div className="mt-8 border-t border-lh-line pt-6">
+                      <div className="rounded-full border border-lh-accent px-6 py-4 text-center font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-accent">
                         {availabilityLabel}
-                      </span>
-                    ) : null}
-                    {collections.map((collection) => (
-                      <span
-                        key={collection._id}
-                        className="rounded-full border border-lh-line px-3 py-1.5 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-shadow/70"
-                      >
-                        {collection.title}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {product.fulfillmentNote ? (
-                  <div className="mt-8 border-l-2 border-lh-light bg-lh-light-soft/60 px-5 py-4">
-                    <p className="font-body text-sm font-bold leading-7 text-lh-shadow/78">
-                      <span className="mr-2 uppercase tracking-[0.12em] text-lh-primary">
-                        Fulfillment
-                      </span>
-                      {product.fulfillmentNote}
-                    </p>
-                  </div>
-                ) : null}
-
-                {product.isAvailable ? (
-                  <ProductDetailPurchaseControls
-                    product={product}
-                    checkoutAvailability={getProductCheckoutAvailability()}
-                  />
-                ) : (
-                  <div className="mt-8 border-t border-lh-line pt-6">
-                    <div className="rounded-full border border-lh-accent px-6 py-4 text-center font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-accent">
-                      {availabilityLabel}
+                      </div>
+                      <p className="mt-4 font-body text-xs font-bold leading-6 text-lh-muted">
+                        This piece is not available for online checkout right
+                        now. Return to the catalog to browse available
+                        selections.
+                      </p>
                     </div>
-                    <p className="mt-4 font-body text-xs font-bold leading-6 text-lh-muted">
-                      This piece is not available for online checkout right now.
-                      Return to the catalog to browse available selections.
-                    </p>
-                  </div>
-                )}
-              </section>
-            </aside>
-          </div>
+                  )}
+                </section>
+              </aside>
+            </div>
+          </ProductGalleryProvider>
         </div>
       </section>
 

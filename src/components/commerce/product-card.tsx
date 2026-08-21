@@ -50,6 +50,7 @@ export function ProductCard({
   const selectedVariant = variants.find(
     (variant) => variant._key === selectedVariantId,
   );
+  const displayImage = selectedVariant?.image ?? product.image;
   const price = selectedVariant?.price ?? product.price;
   const discountPrice = selectedVariant?.discountPrice ?? product.discountPrice;
   const pricing = resolveEffectivePrice(price, discountPrice);
@@ -104,10 +105,16 @@ export function ProductCard({
         className="relative block min-h-72 overflow-hidden bg-lh-primary-soft focus-visible:outline-lh-primary"
         aria-label={`View ${product.title}`}
       >
-        {product.image ? (
+        {displayImage ? (
           <SanityImage
-            image={product.image}
-            alt={product.image.alt || product.title}
+            key={displayImage.asset._ref}
+            image={displayImage}
+            alt={
+              displayImage.alt ||
+              (selectedVariant
+                ? `${product.title} - ${selectedVariant.title}`
+                : product.title)
+            }
             fill
             sizes="(min-width: 1280px) 25vw, (min-width: 768px) 50vw, 100vw"
             className="object-cover transition-transform duration-500 group-hover:scale-105"
