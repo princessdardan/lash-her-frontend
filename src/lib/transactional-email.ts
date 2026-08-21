@@ -7,7 +7,14 @@ export interface TransactionalEmailTag {
   value: string;
 }
 
-export const CUSTOMER_REPLY_TO_EMAIL = "lashher@outlook.com";
+const DEFAULT_CUSTOMER_REPLY_TO_EMAIL = "lashher@lashher.com";
+
+// Customer-facing reply-to address for all outbound email. Env-driven so it can
+// be corrected per environment without a code change; falls back to the correct
+// production value when unset. See CUSTOMER_REPLY_TO_EMAIL in .env.local.example.
+export const CUSTOMER_REPLY_TO_EMAIL =
+  process.env.CUSTOMER_REPLY_TO_EMAIL?.trim() ||
+  DEFAULT_CUSTOMER_REPLY_TO_EMAIL;
 
 export interface EmailConfig {
   adminEmail: string;
@@ -30,7 +37,10 @@ export interface SendTransactionalEmailInput {
   to: string | string[];
 }
 
-export type TransactionalEmailTemplateVariables = Record<string, string | number>;
+export type TransactionalEmailTemplateVariables = Record<
+  string,
+  string | number
+>;
 
 export interface TransactionalEmailTemplate {
   id: string;
@@ -76,22 +86,25 @@ export async function sendTransactionalEmail(
     ],
     to: input.to,
   };
-  const payload = input.template === undefined
-    ? {
-        ...basePayload,
-        html: getRequiredEmailHtml(input.html),
-        subject: input.subject,
-      }
-    : {
-        ...basePayload,
-        template: input.template,
-      };
-  const options = input.idempotencyKey === undefined
-    ? undefined
-    : { idempotencyKey: input.idempotencyKey };
-  const result = options === undefined
-    ? await getResendClient().emails.send(payload)
-    : await getResendClient().emails.send(payload, options);
+  const payload =
+    input.template === undefined
+      ? {
+          ...basePayload,
+          html: getRequiredEmailHtml(input.html),
+          subject: input.subject,
+        }
+      : {
+          ...basePayload,
+          template: input.template,
+        };
+  const options =
+    input.idempotencyKey === undefined
+      ? undefined
+      : { idempotencyKey: input.idempotencyKey };
+  const result =
+    options === undefined
+      ? await getResendClient().emails.send(payload)
+      : await getResendClient().emails.send(payload, options);
 
   if (result.error !== null) {
     throw new Error(result.error.message);
@@ -121,7 +134,10 @@ export function escapeHtml(text: string): string {
     "'": "&#039;",
   };
 
-  return text.replace(/[&<>"']/g, (character) => replacements[character] ?? character);
+  return text.replace(
+    /[&<>"']/g,
+    (character) => replacements[character] ?? character,
+  );
 }
 
 export function getEmailProfileImageHtml(): string {
@@ -138,7 +154,10 @@ export function getEmailProfileImageHtml(): string {
   `.trim();
 }
 
-export function getEmailProfileImageTemplateVariables(): Record<typeof EMAIL_PROFILE_IMAGE_HTML_VARIABLE, string> {
+export function getEmailProfileImageTemplateVariables(): Record<
+  typeof EMAIL_PROFILE_IMAGE_HTML_VARIABLE,
+  string
+> {
   return {
     [EMAIL_PROFILE_IMAGE_HTML_VARIABLE]: getEmailProfileImageHtml(),
   };

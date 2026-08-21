@@ -290,6 +290,25 @@ export const marketingContactSyncJobStatus = pgEnum(
   ],
 );
 
+// Discriminates what a marketing_contact_sync_jobs row asks Resend to do.
+// "opt_in_sync" is the historical behaviour (upsert contact + segments/topics +
+// opt-in event); "unsubscribe_sync" pushes a DB-originated unsubscribe to Resend
+// so hosted broadcasts suppress the contact. Defaulting to opt_in_sync keeps all
+// existing rows valid.
+export const marketingContactSyncJobKind = pgEnum(
+  "marketing_contact_sync_job_kind",
+  ["opt_in_sync", "unsubscribe_sync"],
+);
+
+export const marketingCampaignStatus = pgEnum("marketing_campaign_status", [
+  "draft",
+  "scheduled",
+  "sending",
+  "sent",
+  "failed",
+  "canceled",
+]);
+
 export const savedPaymentMethodStatus = pgEnum("saved_payment_method_status", [
   "active",
   "replaced",
@@ -608,6 +627,10 @@ export type MarketingConsentEventType =
   (typeof marketingConsentEventType.enumValues)[number];
 export type MarketingContactSyncJobStatus =
   (typeof marketingContactSyncJobStatus.enumValues)[number];
+export type MarketingContactSyncJobKind =
+  (typeof marketingContactSyncJobKind.enumValues)[number];
+export type MarketingCampaignStatus =
+  (typeof marketingCampaignStatus.enumValues)[number];
 export type SavedPaymentMethodStatus =
   (typeof savedPaymentMethodStatus.enumValues)[number];
 export type NoShowChargeStatus = (typeof noShowChargeStatus.enumValues)[number];
@@ -4302,6 +4325,7 @@ export const marketingContactSyncJobs = pgTable(
     email: text("email").notNull(),
     emailNormalized: text("email_normalized").notNull(),
     source: text("source").notNull(),
+    kind: marketingContactSyncJobKind("kind").notNull().default("opt_in_sync"),
     payload: jsonb("payload").$type<MarketingContactSyncJobPayload>().notNull(),
     status: marketingContactSyncJobStatus("status").notNull().default("queued"),
     attempts: integer("attempts").notNull().default(0),
@@ -4340,6 +4364,59 @@ export const marketingContactSyncJobs = pgTable(
     uniqueIndex("marketing_contact_sync_jobs_consent_event_id_idx").on(
       table.consentEventId,
     ),
+  ],
+);
+
+// Owner-authored marketing email campaigns sent as Resend broadcasts. This table
+// is the in-app history/audit record; Resend holds the send-side truth (delivery,
+// opens, unsubscribes). One row per campaign; resendBroadcastId links to Resend.
+export const marketingCampaigns = pgTable(
+  "marketing_campaigns",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    subject: text("subject").notNull(),
+    previewText: text("preview_text"),
+    // Sanitized rich-text HTML the owner composed. Re-loaded into the editor for
+    // draft edits and wrapped in the brand email shell at send time.
+    bodyHtml: text("body_html").notNull(),
+    // Logical audience selector (e.g. "all_marketing") and the concrete Resend
+    // segment it resolved to at send time.
+    audienceKey: text("audience_key").notNull().default("all_marketing"),
+    resendSegmentId: text("resend_segment_id"),
+    status: marketingCampaignStatus("status").notNull().default("draft"),
+    resendBroadcastId: text("resend_broadcast_id"),
+    recipientCountEstimate: integer("recipient_count_estimate"),
+    scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdByAdminUserId: uuid("created_by_admin_user_id").references(
+      () => adminUsers.id,
+      { onDelete: "set null" },
+    ),
+    lastError: text("last_error"),
+    lastErrorContext:
+      jsonb("last_error_context").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("marketing_campaigns_status_created_at_idx").on(
+      table.status,
+      table.createdAt,
+    ),
+    index("marketing_campaigns_created_at_idx").on(table.createdAt),
+    index("marketing_campaigns_created_by_admin_user_id_idx").on(
+      table.createdByAdminUserId,
+    ),
+    // At most one campaign per Resend broadcast, guarding a double-send / retry
+    // race from ever pointing two rows at the same broadcast. Partial so many
+    // drafts (null broadcast id) coexist.
+    uniqueIndex("marketing_campaigns_resend_broadcast_id_idx")
+      .on(table.resendBroadcastId)
+      .where(sql`${table.resendBroadcastId} IS NOT NULL`),
   ],
 );
 

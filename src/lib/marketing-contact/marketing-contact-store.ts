@@ -110,6 +110,16 @@ export interface RecordResendUnsubscribeInput {
   resendContactId?: string;
 }
 
+// An unsubscribe initiated inside our system (admin action, app link, retention)
+// rather than received from Resend. Suppresses the contact in the DB and pushes
+// the suppression to Resend via the durable sync outbox.
+export interface RecordInternalUnsubscribeInput {
+  email: string;
+  metadata?: Record<string, unknown>;
+  occurredAt?: Date;
+  reason?: string;
+}
+
 export interface MarketingContactUpsertValues extends MarketingContactIdentity {
   consentText?: string;
   emailNormalized: string;
@@ -146,6 +156,13 @@ export interface MarketingContactUnsubscribeValues {
   emailNormalized: string;
   metadata?: Record<string, unknown>;
   occurredAt: Date;
+  // Where the unsubscribe originated. "resend" (default) is the webhook echo of
+  // Resend's own hosted unsubscribe — the DB is updated but we must NOT push back
+  // to Resend. "internal" is an unsubscribe initiated in our system (admin action,
+  // app link, retention) — the DB is updated AND a durable job is enqueued to push
+  // the suppression to Resend so hosted broadcasts skip the contact.
+  origin?: "resend" | "internal";
+  reason?: string;
   resendContactId?: string;
 }
 
@@ -180,6 +197,9 @@ export interface MarketingContactStore {
   recordGeneralInquiry(
     input: RecordGeneralInquiryInput,
   ): Promise<{ submissionId: string; syncJobId?: string }>;
+  recordInternalUnsubscribe(
+    input: RecordInternalUnsubscribeInput,
+  ): Promise<{ eventId: string }>;
   recordResendUnsubscribe(
     input: RecordResendUnsubscribeInput,
   ): Promise<{ eventId: string }>;
@@ -314,6 +334,12 @@ export function createMarketingContactStore(
         buildResendUnsubscribeInput(input),
       );
     },
+
+    async recordInternalUnsubscribe(input) {
+      return repository.recordMarketingUnsubscribe(
+        buildInternalUnsubscribeInput(input),
+      );
+    },
   };
 }
 
@@ -355,6 +381,12 @@ export async function recordResendUnsubscribe(
   input: RecordResendUnsubscribeInput,
 ): Promise<{ eventId: string }> {
   return defaultMarketingContactStore.recordResendUnsubscribe(input);
+}
+
+export async function recordInternalUnsubscribe(
+  input: RecordInternalUnsubscribeInput,
+): Promise<{ eventId: string }> {
+  return defaultMarketingContactStore.recordInternalUnsubscribe(input);
 }
 
 function createDrizzleMarketingContactRepository(): MarketingContactRepository {
@@ -476,6 +508,8 @@ function createDrizzleMarketingContactRepository(): MarketingContactRepository {
     },
 
     async recordMarketingUnsubscribe(input) {
+      const origin = input.origin ?? "resend";
+
       return getPrivateDb().transaction(async (tx) => {
         const [contact] = await tx
           .update(marketingContacts)
@@ -495,10 +529,11 @@ function createDrizzleMarketingContactRepository(): MarketingContactRepository {
             eventType: "unsubscribe",
             metadata: cleanPayload({
               ...(input.metadata ?? {}),
+              reason: input.reason,
               resendContactId: input.resendContactId,
             }),
             occurredAt: input.occurredAt,
-            source: "resend",
+            source: origin,
           })
           .returning({ id: marketingConsentEvents.id });
 
@@ -506,8 +541,9 @@ function createDrizzleMarketingContactRepository(): MarketingContactRepository {
           throw new Error("Marketing unsubscribe event was not created");
         }
 
-        // Prevent any queued or in-flight marketing sync jobs for this contact
-        // from re-opting the contact in after they have unsubscribed.
+        // Prevent any queued or in-flight opt-in sync jobs for this contact from
+        // re-opting the contact in after they have unsubscribed. Scoped to
+        // opt_in_sync so a pending unsubscribe push is never cancelled here.
         await tx
           .update(marketingContactSyncJobs)
           .set({
@@ -525,6 +561,7 @@ function createDrizzleMarketingContactRepository(): MarketingContactRepository {
                 marketingContactSyncJobs.emailNormalized,
                 input.emailNormalized,
               ),
+              eq(marketingContactSyncJobs.kind, "opt_in_sync"),
               inArray(marketingContactSyncJobs.status, [
                 "queued",
                 "processing",
@@ -532,6 +569,37 @@ function createDrizzleMarketingContactRepository(): MarketingContactRepository {
               ]),
             ),
           );
+
+        // For unsubscribes that originated in our system, enqueue a durable job
+        // to push the suppression to Resend so hosted broadcasts skip the
+        // contact. Resend-originated unsubscribes (the webhook echo) skip this to
+        // avoid a Resend -> DB -> Resend loop. Enqueued AFTER the sweep above so
+        // this job is never caught by it.
+        if (origin === "internal") {
+          await tx
+            .insert(marketingContactSyncJobs)
+            .values({
+              idempotencyKey: `mc-unsub:${event.id}`,
+              contactId: contact?.id ?? null,
+              consentEventId: event.id,
+              email: input.email,
+              emailNormalized: input.emailNormalized,
+              source: origin,
+              kind: "unsubscribe_sync",
+              payload: {
+                email: input.email,
+                consentedAt: input.occurredAt.toISOString(),
+                source: origin,
+              },
+              status: "queued",
+              attempts: 0,
+              maxAttempts: 5,
+              nextRunAt: input.occurredAt,
+            })
+            .onConflictDoNothing({
+              target: marketingContactSyncJobs.idempotencyKey,
+            });
+        }
 
         return { eventId: event.id };
       });
@@ -668,7 +736,27 @@ function buildResendUnsubscribeInput(
     emailNormalized: normalizeEmail(email),
     metadata: input.metadata,
     occurredAt: input.occurredAt ?? new Date(),
+    origin: "resend",
     resendContactId: input.resendContactId,
+  };
+}
+
+function buildInternalUnsubscribeInput(
+  input: RecordInternalUnsubscribeInput,
+): MarketingContactUnsubscribeValues {
+  const email = input.email.trim();
+
+  if (email.length === 0) {
+    throw new Error("Email is required for an internal unsubscribe event");
+  }
+
+  return {
+    email,
+    emailNormalized: normalizeEmail(email),
+    metadata: input.metadata,
+    occurredAt: input.occurredAt ?? new Date(),
+    origin: "internal",
+    reason: input.reason,
   };
 }
 

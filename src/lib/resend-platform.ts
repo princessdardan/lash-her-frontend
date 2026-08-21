@@ -355,6 +355,34 @@ export async function syncResendMarketingContact(
   }
 }
 
+/**
+ * Pushes a DB-originated unsubscribe to Resend so hosted broadcasts suppress the
+ * contact. Idempotent: a not-found contact is treated as success (nothing to
+ * suppress). Only enqueue this for unsubscribes that did NOT originate from a
+ * Resend webhook — otherwise a Resend unsubscribe would echo back to Resend.
+ */
+export async function unsubscribeResendMarketingContact(input: {
+  email: string;
+}): Promise<void> {
+  if (getOptionalEnv("RESEND_API_KEY") === undefined) {
+    return;
+  }
+
+  const email = input.email.trim();
+  const result = await getResendClient().contacts.update({
+    email,
+    unsubscribed: true,
+  });
+
+  if (result.error !== null && !isNotFoundError(result.error)) {
+    throw new ResendContactSyncError(
+      "update_contact",
+      `Resend contact unsubscribe failed: ${result.error.message}`,
+      { email },
+    );
+  }
+}
+
 export async function createResendTemplate(
   input: CreateTemplateOptions,
 ): Promise<{ id: string; object: "template" }> {
