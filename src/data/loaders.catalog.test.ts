@@ -46,7 +46,7 @@ describe("catalog loader contract", () => {
     );
     assert.match(
       productProjection,
-      /variantOverrides\[\]\{ _key, select\[\]\{ _key, name, value \}, image\{ asset, hotspot, crop, alt \}, price, discountPrice, sku, isAvailable, availabilityLabel, shipping \}/,
+      /variantOverrides\[\]\{ _key, select\[\]\{ _key, name, value \}, image\{ asset, hotspot, crop, alt \}, price, discountPrice, sku, isAvailable, availabilityLabel, stockQuantity, shipping \}/,
     );
     assert.match(productProjection, /^\s{2}shipping,$/m);
   });
