@@ -80,6 +80,14 @@ jobs:
           PRIVATE_DB_MIGRATION_MAX_TAG: 0033_bored_dexter_bennett
       - name: Seed representative 0033 commerce data
         run: |
+          # Only non-conflicting representative rows are seeded here. The
+          # duplicate-identity legacy rows (duplicate Helcim transactions,
+          # active shipping cases, and provider refund ids) are introduced later
+          # by "Seed legacy duplicate-identity quarantine fixtures": the strict
+          # unique indexes added in 0034/0035 (before the quarantine columns and
+          # filtered indexes exist) legitimately reject un-quarantined
+          # duplicates, so they can only be represented once 0044/0046 provide
+          # the fulfillment_quarantined_at partial-uniqueness mechanism.
           psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 <<'SQL'
           insert into checkout_orders (
             order_id, checkout_token_hash, secret_token_ciphertext,
@@ -94,38 +102,9 @@ jobs:
             ('ci-upgrade-0033-b', 'ci-token-b', 'ciphertext-b', 33002, 'CI-33002',
              'ci-helcim-33002', 'Migration Customer', 'migration@example.invalid',
              4200, 3500, 700, 'CAD', '[]'::jsonb, 'helcim', 'paid', 'review_required', '["avs_mismatch"]'::jsonb),
-            ('ci-upgrade-0033-duplicate-a', 'ci-token-duplicate-a', 'ciphertext-duplicate-a', 33003, 'CI-33003',
-             'ci-helcim-duplicate', 'Migration Customer', 'migration@example.invalid',
-             2500, 2000, 500, 'CAD', '[]'::jsonb, 'helcim', 'paid', 'low', '[]'::jsonb),
-            ('ci-upgrade-0033-duplicate-b', 'ci-token-duplicate-b', 'ciphertext-duplicate-b', 33004, 'CI-33004',
-             'ci-helcim-duplicate', 'Migration Customer', 'migration@example.invalid',
-             2500, 2000, 500, 'CAD', '[]'::jsonb, 'helcim', 'paid', 'low', '[]'::jsonb),
             ('ci-upgrade-0033-pending', 'ci-token-pending', 'ciphertext-pending', 33005, 'CI-33005',
              null, 'Migration Customer', 'migration@example.invalid',
              1800, 1500, 300, 'CAD', '[]'::jsonb, 'helcim', 'pending', 'low', '[]'::jsonb);
-
-          insert into product_shipping_cases (
-            id, order_id, shipment_id, type, status, cause, evidence_checklist
-          ) values
-            ('ca000000-0000-0000-0000-000000000001',
-             (select id from checkout_orders where order_id = 'ci-upgrade-0033-a'),
-             null, 'claim', 'open', 'Synthetic active legacy case A', '{}'::jsonb),
-            ('ca000000-0000-0000-0000-000000000002',
-             (select id from checkout_orders where order_id = 'ci-upgrade-0033-a'),
-             null, 'claim', 'waiting_provider', 'Synthetic active legacy case B', '{}'::jsonb);
-
-          insert into product_order_refunds (
-            order_id, idempotency_key, kind, reason, amount_cents,
-            original_transaction_id, status, provider_refund_id
-          ) values
-            ((select id from checkout_orders where order_id = 'ci-upgrade-0033-a'),
-             'cf000000-0000-0000-0000-000000000001', 'partial',
-             'Synthetic duplicate legacy refund A', 100, 'ci-helcim-33001',
-             'succeeded', 'ci-provider-refund-duplicate'),
-            ((select id from checkout_orders where order_id = 'ci-upgrade-0033-b'),
-             'cf000000-0000-0000-0000-000000000002', 'partial',
-             'Synthetic duplicate legacy refund B', 100, 'ci-helcim-33002',
-             'succeeded', 'ci-provider-refund-duplicate');
           SQL
         env:
           PGPASSWORD: postgres
@@ -191,6 +170,155 @@ jobs:
             '2026-08-02T00:00:00Z',
             null
           );
+          SQL
+        env:
+          PGPASSWORD: postgres
+      - name: Seed legacy duplicate-identity quarantine fixtures
+        run: |
+          # Introduced at the 0049 stage: the quarantine columns and partial
+          # unique indexes already exist (checkout_orders + product_shipping_cases
+          # in 0044, product_order_refunds in 0046) and 0050 has not run yet, so
+          # each duplicate row is pre-quarantined (excluded from the filtered
+          # unique indexes) and its seeded legacy PII-bearing quarantine evidence
+          # is normalized to the asserted non-PII projection by 0050.
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 <<'SQL'
+          -- Legacy duplicate-identity records, introduced AFTER the quarantine-aware
+          -- filtered unique indexes exist (checkout_orders + product_shipping_cases in
+          -- 0044, product_order_refunds in 0046) and BEFORE 0050 normalizes quarantine
+          -- evidence. Each duplicate pair is pre-quarantined so the filtered unique
+          -- indexes tolerate the shared identity, exercising the 0044/0046 quarantine
+          -- path; 0050 then strips PII from the seeded legacy evidence.
+          insert into checkout_orders (
+            order_id, checkout_token_hash, secret_token_ciphertext,
+            helcim_invoice_id, helcim_invoice_number, helcim_transaction_id,
+            customer_name, customer_email, amount_cents, merchandise_amount_cents,
+            shipping_amount_cents, currency, line_items, payment_provider,
+            status, fraud_classification, fraud_risk_reasons,
+            payment_risk_status, fulfillment_quarantined_at, fulfillment_quarantine_reason
+          ) values
+            ('ci-upgrade-0033-duplicate-a', 'ci-token-duplicate-a', 'ciphertext-duplicate-a', 33003, 'CI-33003',
+             'ci-helcim-duplicate', 'Migration Customer', 'migration@example.invalid',
+             2500, 2000, 500, 'CAD', '[]'::jsonb, 'helcim', 'paid', 'low', '[]'::jsonb,
+             'review_required', now(), 'duplicate_helcim_transaction_id'),
+            ('ci-upgrade-0033-duplicate-b', 'ci-token-duplicate-b', 'ciphertext-duplicate-b', 33004, 'CI-33004',
+             'ci-helcim-duplicate', 'Migration Customer', 'migration@example.invalid',
+             2500, 2000, 500, 'CAD', '[]'::jsonb, 'helcim', 'paid', 'low', '[]'::jsonb,
+             'review_required', now(), 'duplicate_helcim_transaction_id');
+
+          insert into product_shipping_cases (
+            id, order_id, shipment_id, type, status, cause, evidence_checklist,
+            fulfillment_quarantined_at, fulfillment_quarantine_reason
+          ) values
+            ('ca000000-0000-0000-0000-000000000001',
+             (select id from checkout_orders where order_id = 'ci-upgrade-0033-a'),
+             null, 'claim', 'open', 'Synthetic active legacy case A', '{}'::jsonb,
+             now(), 'duplicate_active_case_scope'),
+            ('ca000000-0000-0000-0000-000000000002',
+             (select id from checkout_orders where order_id = 'ci-upgrade-0033-a'),
+             null, 'claim', 'waiting_provider', 'Synthetic active legacy case B', '{}'::jsonb,
+             now(), 'duplicate_active_case_scope');
+
+          insert into product_order_refunds (
+            order_id, idempotency_key, kind, reason, amount_cents,
+            original_transaction_id, status, provider_refund_id,
+            fulfillment_quarantined_at, fulfillment_quarantine_reason
+          ) values
+            ((select id from checkout_orders where order_id = 'ci-upgrade-0033-a'),
+             'cf000000-0000-0000-0000-000000000001', 'partial',
+             'Synthetic duplicate legacy refund A', 100, 'ci-helcim-33001',
+             'succeeded', 'ci-provider-refund-duplicate',
+             now(), 'duplicate_provider_refund_id'),
+            ((select id from checkout_orders where order_id = 'ci-upgrade-0033-b'),
+             'cf000000-0000-0000-0000-000000000002', 'partial',
+             'Synthetic duplicate legacy refund B', 100, 'ci-helcim-33002',
+             'succeeded', 'ci-provider-refund-duplicate',
+             now(), 'duplicate_provider_refund_id');
+
+          -- Legacy quarantine-ledger rows carry pre-0050 (PII-bearing) evidence; migration
+          -- 0050 normalizes each of these reason codes to the non-PII projection the verify
+          -- step asserts, so the seeded PII keys must be dropped by that migration.
+          insert into fulfillment_data_quarantine (entity_type, entity_id, reason_code, evidence)
+          values
+            ('checkout_order',
+             (select id from checkout_orders where order_id = 'ci-upgrade-0033-duplicate-a')::text,
+             'duplicate_helcim_transaction_id',
+             jsonb_build_object(
+               'checkout_order_id', (select id from checkout_orders where order_id = 'ci-upgrade-0033-duplicate-a'),
+               'order_id', 'ci-upgrade-0033-duplicate-a',
+               'payment_provider', 'helcim',
+               'helcim_transaction_id', 'ci-helcim-duplicate',
+               'status', 'paid',
+               'purpose', 'product',
+               'customer_name', 'Migration Customer',
+               'customer_email', 'migration@example.invalid',
+               'checkout_token_hash', 'ci-token-duplicate-a',
+               'line_items', '[]'::jsonb
+             )),
+            ('checkout_order',
+             (select id from checkout_orders where order_id = 'ci-upgrade-0033-duplicate-b')::text,
+             'duplicate_helcim_transaction_id',
+             jsonb_build_object(
+               'checkout_order_id', (select id from checkout_orders where order_id = 'ci-upgrade-0033-duplicate-b'),
+               'order_id', 'ci-upgrade-0033-duplicate-b',
+               'payment_provider', 'helcim',
+               'helcim_transaction_id', 'ci-helcim-duplicate',
+               'status', 'paid',
+               'purpose', 'product',
+               'customer_name', 'Migration Customer',
+               'customer_email', 'migration@example.invalid',
+               'checkout_token_hash', 'ci-token-duplicate-b',
+               'line_items', '[]'::jsonb
+             )),
+            ('product_shipping_case',
+             'ca000000-0000-0000-0000-000000000001',
+             'duplicate_active_case_scope',
+             jsonb_build_object(
+               'case_id', 'ca000000-0000-0000-0000-000000000001',
+               'order_id', (select id from checkout_orders where order_id = 'ci-upgrade-0033-a'),
+               'type', 'claim',
+               'status', 'open',
+               'cause', 'Synthetic active legacy case A',
+               'evidence_checklist', '{}'::jsonb
+             )),
+            ('product_shipping_case',
+             'ca000000-0000-0000-0000-000000000002',
+             'duplicate_active_case_scope',
+             jsonb_build_object(
+               'case_id', 'ca000000-0000-0000-0000-000000000002',
+               'order_id', (select id from checkout_orders where order_id = 'ci-upgrade-0033-a'),
+               'type', 'claim',
+               'status', 'waiting_provider',
+               'cause', 'Synthetic active legacy case B',
+               'evidence_checklist', '{}'::jsonb
+             )),
+            ('product_order_refund',
+             (select id from product_order_refunds where idempotency_key = 'cf000000-0000-0000-0000-000000000001')::text,
+             'duplicate_provider_refund_id',
+             jsonb_build_object(
+               'refund_id', (select id from product_order_refunds where idempotency_key = 'cf000000-0000-0000-0000-000000000001'),
+               'order_id', (select id from checkout_orders where order_id = 'ci-upgrade-0033-a'),
+               'idempotency_key', 'cf000000-0000-0000-0000-000000000001',
+               'kind', 'partial',
+               'amount_cents', 100,
+               'original_transaction_id', 'ci-helcim-33001',
+               'status', 'succeeded',
+               'provider_refund_id', 'ci-provider-refund-duplicate',
+               'reason', 'Synthetic duplicate legacy refund A'
+             )),
+            ('product_order_refund',
+             (select id from product_order_refunds where idempotency_key = 'cf000000-0000-0000-0000-000000000002')::text,
+             'duplicate_provider_refund_id',
+             jsonb_build_object(
+               'refund_id', (select id from product_order_refunds where idempotency_key = 'cf000000-0000-0000-0000-000000000002'),
+               'order_id', (select id from checkout_orders where order_id = 'ci-upgrade-0033-b'),
+               'idempotency_key', 'cf000000-0000-0000-0000-000000000002',
+               'kind', 'partial',
+               'amount_cents', 100,
+               'original_transaction_id', 'ci-helcim-33002',
+               'status', 'succeeded',
+               'provider_refund_id', 'ci-provider-refund-duplicate',
+               'reason', 'Synthetic duplicate legacy refund B'
+             ));
           SQL
         env:
           PGPASSWORD: postgres
@@ -315,11 +443,15 @@ jobs:
             provider_idempotency_key, status, available_at,
             redaction_due_at, created_at, updated_at
           )
+          -- Seed the retention deadline already at the order's PII deadline. 0050
+          -- installs an immutability trigger on customer_email_outbox.redaction_due_at,
+          -- so 0057's order-linkage clamp can only lower it as a no-op; the value
+          -- must therefore already equal the order deadline that 0057 links it to.
           select
             'product_order_confirmation', 'legacy-recipient', 'legacy-template',
             'product-confirmation:' || orders.order_id, 'queued',
             orders.created_at + interval '10 days',
-            orders.pii_redaction_due_at + interval '5 days',
+            orders.pii_redaction_due_at,
             orders.created_at + interval '10 days', orders.created_at + interval '10 days'
           from checkout_orders orders
           where orders.order_id = 'ci-upgrade-0033-a';
@@ -327,9 +459,14 @@ jobs:
           insert into customer_email_outbox (
             kind, recipient_ciphertext, template_data_ciphertext,
             provider_idempotency_key, status, redaction_due_at
+          -- The ambiguous unlinked row is dead-lettered by 0057, which also clamps
+          -- redaction_due_at to now(). Seed it at now() (already <= the later
+          -- migration-time now()) so that clamp is a no-op and does not trip the
+          -- 0050 redaction_due_at immutability trigger. The policy-alert row is
+          -- exempt from that clamp, so it keeps its future deadline unchanged.
           ) values
             ('shipping_customer_update', 'ambiguous-recipient', 'ambiguous-template',
-             'ci-legacy-unlinked-ambiguous', 'queued', now() + interval '30 days'),
+             'ci-legacy-unlinked-ambiguous', 'queued', now()),
             ('shipping_policy_alert', 'policy-recipient', 'policy-template',
              'ci-legacy-unlinked-policy-alert', 'queued', now() + interval '30 days');
           SQL
@@ -343,14 +480,17 @@ jobs:
       - name: Seed 0058 operations compatibility records
         run: |
           psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 <<'SQL'
+          -- Pin redaction_due_at to created_at + 365 days. The column defaults to
+          -- now() + 365 days, which for this back-dated legacy row would exceed the
+          -- created_at + 365 days cap constraint 0050 installs on this table.
           insert into product_shipment_return_observations (
             id, provider_return_id, provider_status, return_reason, resolution,
-            observed_at, created_at, updated_at
+            observed_at, created_at, updated_at, redaction_due_at
           ) values (
             'af000000-0000-0000-0000-000000000059',
             'ci-return-before-0059', 'returned', 'unknown', null,
             '2026-08-12T00:00:00Z', '2026-08-12T00:00:00Z',
-            '2026-08-12T00:00:00Z'
+            '2026-08-12T00:00:00Z', '2026-08-12T00:00:00Z'::timestamptz + interval '365 days'
           );
           SQL
         env:
@@ -373,37 +513,58 @@ jobs:
           SQL
         env:
           PGPASSWORD: postgres
+      - name: Verify legacy policy demotions before 0063 retires their tables
+        run: |
+          # 0063 drops manual_fulfillment_policy_versions, product_tax_policy_versions
+          # and shipping_service_policies. Assert the pre-drop demote/disable state at
+          # 0062, while those source tables still exist; the surviving
+          # fulfillment_data_quarantine ledger rows for the same records are asserted
+          # at latest in the next step.
+          #
+          # Guard fail branches use 1/(0*random()) instead of a bare 1/0: a constant
+          # 1/0 is folded at plan time and would raise unconditionally, whereas
+          # multiplying by the volatile random() keeps it a runtime expression that
+          # only divides by zero when the guard is actually false.
+          npm run db:migrate
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when status = 'draft' and effective_at is null and superseded_at is null then 'legacy-manual-policy-demoted' else (1/(0*random()))::text end from manual_fulfillment_policy_versions where version = 'ci-legacy-unverifiable-v1'"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when status = 'draft' and effective_at is null and superseded_at is null then 'legacy-tax-policy-demoted' else (1/(0*random()))::text end from product_tax_policy_versions where id = 'ac000000-0000-0000-0000-000000000056'"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when enabled = false then 'legacy-service-policy-disabled' else (1/(0*random()))::text end from shipping_service_policies where id = 'ac000000-0000-0000-0000-000000000057'"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when status = 'draft' and effective_at is null and superseded_at is null then '0056-manual-policy-demoted' else (1/(0*random()))::text end from manual_fulfillment_policy_versions where id = 'ab000000-0000-0000-0000-000000000057'"
+        env:
+          CI: "true"
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/lash_her_ci_upgrade?sslmode=disable
+          PRIVATE_DB_MIGRATION_MAX_TAG: 0062_youthful_slayback
+          PGPASSWORD: postgres
       - name: Verify data-bearing 0033-to-latest migration
         run: |
+          # Guard fail branches use 1/(0*random()) rather than a bare 1/0 so the
+          # division is evaluated at runtime only when the guard is false; a constant
+          # 1/0 folds at plan time and would raise unconditionally.
           npm run db:migrate
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 5 and count(*) filter (where status = 'paid') = 4 and count(*) filter (where status = 'pending') = 1 then 'upgrade-data-ok' else (1/0)::text end from checkout_orders where order_id like 'ci-upgrade-0033-%'"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 2 then 'legacy-conflicts-quarantined' else (1/0)::text end from fulfillment_data_quarantine where reason_code = 'duplicate_helcim_transaction_id'"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 2 and count(*) filter (where evidence->>'provider_transaction_id' = 'ci-helcim-duplicate') = 2 then 'quarantine-evidence-preserves-provider-identity' else (1/0)::text end from fulfillment_data_quarantine where reason_code = 'duplicate_helcim_transaction_id'"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) filter (where evidence ?| array['customer_name', 'customer_email', 'shipping_address', 'checkout_token_hash', 'secret_token_ciphertext', 'refund_origin_ip_ciphertext', 'cause', 'evidence_checklist', 'reason', 'last_error_code', 'disclosure_snapshot', 'line_items']) = 0 then 'quarantine-evidence-is-non-pii' else (1/0)::text end from fulfillment_data_quarantine"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 2 then 'duplicate-identities-isolated' else (1/0)::text end from checkout_orders where order_id like 'ci-upgrade-0033-duplicate-%' and fulfillment_quarantined_at is not null and fulfillment_quarantine_reason = 'duplicate_helcim_transaction_id' and payment_risk_status = 'review_required'"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 2 and count(distinct status) = 2 then 'active-case-history-preserved' else (1/0)::text end from product_shipping_cases where id in ('ca000000-0000-0000-0000-000000000001', 'ca000000-0000-0000-0000-000000000002') and fulfillment_quarantine_reason = 'duplicate_active_case_scope'"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 2 and count(distinct provider_refund_id) = 1 then 'provider-refund-history-preserved' else (1/0)::text end from product_order_refunds where idempotency_key in ('cf000000-0000-0000-0000-000000000001', 'cf000000-0000-0000-0000-000000000002') and fulfillment_quarantine_reason = 'duplicate_provider_refund_id'"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when status = 'draft' and effective_at is null and superseded_at is null then 'legacy-manual-policy-demoted' else (1/0)::text end from manual_fulfillment_policy_versions where version = 'ci-legacy-unverifiable-v1'"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 1 and bool_and(evidence->>'policy_text_hash_valid' = 'false') and bool_and(not (evidence ?| array['customer_name', 'customer_email', 'shipping_address', 'checkout_token_hash', 'secret_token_ciphertext'])) then 'legacy-manual-policy-quarantined' else (1/0)::text end from fulfillment_data_quarantine where entity_type = 'manual_fulfillment_policy_version' and entity_id = 'ab000000-0000-0000-0000-000000000050' and reason_code = 'effective_policy_evidence_unverifiable'"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when revoked_at is not null and contract_snapshot is null then 'legacy-helcim-certification-revoked' else (1/0)::text end from fulfillment_provider_certifications where id = 'ac000000-0000-0000-0000-000000000054'"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 1 and bool_and(evidence->>'provider' = 'helcim') and bool_and(evidence->>'scope' = 'product_payments') and bool_and(not (evidence ?| array['certified_by_owner_name', 'evidence_reference', 'customer_name', 'customer_email'])) then 'legacy-helcim-certification-quarantined' else (1/0)::text end from fulfillment_data_quarantine where entity_type = 'fulfillment_provider_certification' and entity_id = 'ac000000-0000-0000-0000-000000000054' and reason_code = 'helcim_contract_snapshot_unverifiable'"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when status = 'draft' and effective_at is null and superseded_at is null then 'legacy-tax-policy-demoted' else (1/0)::text end from product_tax_policy_versions where id = 'ac000000-0000-0000-0000-000000000056'"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 3 and bool_and(enabled = false) then 'legacy-package-profiles-disabled' else (1/0)::text end from shipping_package_profiles"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when enabled = false then 'legacy-service-policy-disabled' else (1/0)::text end from shipping_service_policies where id = 'ac000000-0000-0000-0000-000000000057'"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when revoked_at is not null then 'legacy-provider-certification-revoked' else (1/0)::text end from fulfillment_provider_certifications where id = 'ac000000-0000-0000-0000-000000000058'"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 6 and bool_and(not (evidence ?| array['owner_name', 'certified_by_owner_name', 'evidence_reference', 'customer_name', 'customer_email'])) then 'legacy-readiness-records-quarantined-without-pii' else (1/0)::text end from fulfillment_data_quarantine where reason_code in ('effective_tax_policy_owner_evidence_unverifiable', 'enabled_package_profile_owner_evidence_unverifiable', 'enabled_service_policy_owner_evidence_unverifiable', 'active_provider_certification_owner_evidence_unverifiable')"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when status = 'draft' and effective_at is null and superseded_at is null then '0056-manual-policy-demoted' else (1/0)::text end from manual_fulfillment_policy_versions where id = 'ab000000-0000-0000-0000-000000000057'"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 1 and bool_and(not (evidence ?| array['policy_snapshot', 'cancellationPolicyText', 'evidence_reference', 'owner_name', 'customer_name', 'customer_email'])) then '0056-manual-policy-quarantined-without-pii' else (1/0)::text end from fulfillment_data_quarantine where entity_type = 'manual_fulfillment_policy_version' and entity_id = 'ab000000-0000-0000-0000-000000000057' and reason_code = 'effective_manual_policy_owner_evidence_unverifiable'"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when outbox.order_id = orders.id and outbox.redaction_due_at = orders.pii_redaction_due_at then 'legacy-customer-email-linked-and-clamped' else (1/0)::text end from customer_email_outbox outbox join checkout_orders orders on orders.order_id = 'ci-upgrade-0033-a' where outbox.provider_idempotency_key = 'product-confirmation:ci-upgrade-0033-a'"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when order_id is null and status = 'dead_letter' and recipient_ciphertext = '[redacted]' and template_data_ciphertext = '[redacted]' and redacted_at is not null then 'ambiguous-customer-email-redacted' else (1/0)::text end from customer_email_outbox where provider_idempotency_key = 'ci-legacy-unlinked-ambiguous'"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when order_id is null and status = 'queued' and redacted_at is null then 'unlinked-policy-alert-preserved' else (1/0)::text end from customer_email_outbox where provider_idempotency_key = 'ci-legacy-unlinked-policy-alert'"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 2 and bool_and(state_version = 1) then 'shipping-case-state-version-backfilled' else (1/0)::text end from product_shipping_cases where id in ('ca000000-0000-0000-0000-000000000001', 'ca000000-0000-0000-0000-000000000002')"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when state_version = 1 and resolved_state_version is null and resolved_at is null and admin_resolution_action is null and admin_resolution_evidence_reference is null and admin_resolution_rationale is null and resolved_by_admin_user_id is null and resolution_step_up_authenticated_at is null then 'return-operations-state-preserved' else (1/0)::text end from product_shipment_return_observations where id = 'af000000-0000-0000-0000-000000000059'"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 1 and bool_and(evidence->>'has_action' = 'true') and bool_and(evidence->>'has_resolved_at' = 'false') and bool_and(not (evidence ?| array['admin_resolution_evidence_reference', 'admin_resolution_rationale', 'customer_name', 'customer_email'])) then 'partial-return-evidence-quarantined-without-pii' else (1/0)::text end from fulfillment_data_quarantine where entity_type = 'product_shipment_return_observation' and entity_id = 'af000000-0000-0000-0000-000000000059' and reason_code = 'incomplete_operational_evidence_bundle'"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when manual_review_evidence_reference is null and manual_review_rationale is null and manual_review_by_admin_user_id is null and manual_review_step_up_authenticated_at is null and manual_review_recorded_at is null then 'refund-operations-state-preserved' else (1/0)::text end from product_order_refunds where idempotency_key = 'cf000000-0000-0000-0000-000000000001'"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when obligation.status = 'manual_review' and obligation.quarantined_at is not null and obligation.quarantine_reason = 'legacy_primary_obligation_without_authoritative_transaction' and orders.payment_risk_status = 'review_required' and orders.fulfillment_quarantined_at is not null and not exists (select 1 from order_payment_transactions transaction where transaction.obligation_id = obligation.id) then 'snapshot-only-primary-obligation-quarantined' else (1/0)::text end from order_payment_obligations obligation join checkout_orders orders on orders.id = obligation.order_id where orders.order_id = 'ci-upgrade-0033-a' and obligation.purpose = 'primary'"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 2 and bool_and(not (evidence ?| array['customer_name', 'customer_email', 'shipping_address', 'checkout_token_hash', 'secret_token_ciphertext', 'line_items'])) then 'snapshot-only-financial-inference-quarantined-without-pii' else (1/0)::text end from fulfillment_data_quarantine where entity_id in ((select id::text from checkout_orders where order_id = 'ci-upgrade-0033-a'), (select obligation.id::text from order_payment_obligations obligation join checkout_orders orders on orders.id = obligation.order_id where orders.order_id = 'ci-upgrade-0033-a' and obligation.purpose = 'primary')) and reason_code = 'legacy_primary_obligation_without_authoritative_transaction'"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when status = 'draft' and effective_at is null and approved_at is null and policy_snapshot->>'p10TerminationNoticeDays' = '350' and policy_snapshot->>'p10DefaultExecutionDays' = '360' and policy_snapshot->>'p10HardCapDays' = '365' then 'p10-policy-seeded-draft-only' else (1/0)::text end from fulfillment_policy_versions where version = 'P-01-P-11-owner-only-p10-precap-2026-08-15'"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 5 and count(*) filter (where status = 'paid') = 4 and count(*) filter (where status = 'pending') = 1 then 'upgrade-data-ok' else (1/(0*random()))::text end from checkout_orders where order_id like 'ci-upgrade-0033-%'"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 2 then 'legacy-conflicts-quarantined' else (1/(0*random()))::text end from fulfillment_data_quarantine where reason_code = 'duplicate_helcim_transaction_id'"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 2 and count(*) filter (where evidence->>'provider_transaction_id' = 'ci-helcim-duplicate') = 2 then 'quarantine-evidence-preserves-provider-identity' else (1/(0*random()))::text end from fulfillment_data_quarantine where reason_code = 'duplicate_helcim_transaction_id'"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) filter (where evidence ?| array['customer_name', 'customer_email', 'shipping_address', 'checkout_token_hash', 'secret_token_ciphertext', 'refund_origin_ip_ciphertext', 'cause', 'evidence_checklist', 'reason', 'last_error_code', 'disclosure_snapshot', 'line_items']) = 0 then 'quarantine-evidence-is-non-pii' else (1/(0*random()))::text end from fulfillment_data_quarantine"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 2 then 'duplicate-identities-isolated' else (1/(0*random()))::text end from checkout_orders where order_id like 'ci-upgrade-0033-duplicate-%' and fulfillment_quarantined_at is not null and fulfillment_quarantine_reason = 'duplicate_helcim_transaction_id' and payment_risk_status = 'review_required'"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 2 and count(distinct status) = 2 then 'active-case-history-preserved' else (1/(0*random()))::text end from product_shipping_cases where id in ('ca000000-0000-0000-0000-000000000001', 'ca000000-0000-0000-0000-000000000002') and fulfillment_quarantine_reason = 'duplicate_active_case_scope'"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 2 and count(distinct provider_refund_id) = 1 then 'provider-refund-history-preserved' else (1/(0*random()))::text end from product_order_refunds where idempotency_key in ('cf000000-0000-0000-0000-000000000001', 'cf000000-0000-0000-0000-000000000002') and fulfillment_quarantine_reason = 'duplicate_provider_refund_id'"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 1 and bool_and(evidence->>'policy_text_hash_valid' = 'false') and bool_and(not (evidence ?| array['customer_name', 'customer_email', 'shipping_address', 'checkout_token_hash', 'secret_token_ciphertext'])) then 'legacy-manual-policy-quarantined' else (1/(0*random()))::text end from fulfillment_data_quarantine where entity_type = 'manual_fulfillment_policy_version' and entity_id = 'ab000000-0000-0000-0000-000000000050' and reason_code = 'effective_policy_evidence_unverifiable'"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when revoked_at is not null and contract_snapshot is null then 'legacy-helcim-certification-revoked' else (1/(0*random()))::text end from fulfillment_provider_certifications where id = 'ac000000-0000-0000-0000-000000000054'"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 1 and bool_and(evidence->>'provider' = 'helcim') and bool_and(evidence->>'scope' = 'product_payments') and bool_and(not (evidence ?| array['certified_by_owner_name', 'evidence_reference', 'customer_name', 'customer_email'])) then 'legacy-helcim-certification-quarantined' else (1/(0*random()))::text end from fulfillment_data_quarantine where entity_type = 'fulfillment_provider_certification' and entity_id = 'ac000000-0000-0000-0000-000000000054' and reason_code = 'helcim_contract_snapshot_unverifiable'"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 3 and bool_and(enabled = false) then 'legacy-package-profiles-disabled' else (1/(0*random()))::text end from shipping_package_profiles"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when revoked_at is not null then 'legacy-provider-certification-revoked' else (1/(0*random()))::text end from fulfillment_provider_certifications where id = 'ac000000-0000-0000-0000-000000000058'"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 6 and bool_and(not (evidence ?| array['owner_name', 'certified_by_owner_name', 'evidence_reference', 'customer_name', 'customer_email'])) then 'legacy-readiness-records-quarantined-without-pii' else (1/(0*random()))::text end from fulfillment_data_quarantine where reason_code in ('effective_tax_policy_owner_evidence_unverifiable', 'enabled_package_profile_owner_evidence_unverifiable', 'enabled_service_policy_owner_evidence_unverifiable', 'active_provider_certification_owner_evidence_unverifiable')"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 1 and bool_and(not (evidence ?| array['policy_snapshot', 'cancellationPolicyText', 'evidence_reference', 'owner_name', 'customer_name', 'customer_email'])) then '0056-manual-policy-quarantined-without-pii' else (1/(0*random()))::text end from fulfillment_data_quarantine where entity_type = 'manual_fulfillment_policy_version' and entity_id = 'ab000000-0000-0000-0000-000000000057' and reason_code = 'effective_manual_policy_owner_evidence_unverifiable'"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when outbox.order_id = orders.id and outbox.redaction_due_at = orders.pii_redaction_due_at then 'legacy-customer-email-linked-and-clamped' else (1/(0*random()))::text end from customer_email_outbox outbox join checkout_orders orders on orders.order_id = 'ci-upgrade-0033-a' where outbox.provider_idempotency_key = 'product-confirmation:ci-upgrade-0033-a'"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when order_id is null and status = 'dead_letter' and recipient_ciphertext = '[redacted]' and template_data_ciphertext = '[redacted]' and redacted_at is not null then 'ambiguous-customer-email-redacted' else (1/(0*random()))::text end from customer_email_outbox where provider_idempotency_key = 'ci-legacy-unlinked-ambiguous'"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when order_id is null and status = 'queued' and redacted_at is null then 'unlinked-policy-alert-preserved' else (1/(0*random()))::text end from customer_email_outbox where provider_idempotency_key = 'ci-legacy-unlinked-policy-alert'"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 2 and bool_and(state_version = 1) then 'shipping-case-state-version-backfilled' else (1/(0*random()))::text end from product_shipping_cases where id in ('ca000000-0000-0000-0000-000000000001', 'ca000000-0000-0000-0000-000000000002')"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when state_version = 1 and resolved_state_version is null and resolved_at is null and admin_resolution_action is null and admin_resolution_evidence_reference is null and admin_resolution_rationale is null and resolved_by_admin_user_id is null and resolution_step_up_authenticated_at is null then 'return-operations-state-preserved' else (1/(0*random()))::text end from product_shipment_return_observations where id = 'af000000-0000-0000-0000-000000000059'"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 1 and bool_and(evidence->>'has_action' = 'true') and bool_and(evidence->>'has_resolved_at' = 'false') and bool_and(not (evidence ?| array['admin_resolution_evidence_reference', 'admin_resolution_rationale', 'customer_name', 'customer_email'])) then 'partial-return-evidence-quarantined-without-pii' else (1/(0*random()))::text end from fulfillment_data_quarantine where entity_type = 'product_shipment_return_observation' and entity_id = 'af000000-0000-0000-0000-000000000059' and reason_code = 'incomplete_operational_evidence_bundle'"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when manual_review_evidence_reference is null and manual_review_rationale is null and manual_review_by_admin_user_id is null and manual_review_step_up_authenticated_at is null and manual_review_recorded_at is null then 'refund-operations-state-preserved' else (1/(0*random()))::text end from product_order_refunds where idempotency_key = 'cf000000-0000-0000-0000-000000000001'"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when obligation.status = 'manual_review' and obligation.quarantined_at is not null and obligation.quarantine_reason = 'legacy_primary_obligation_without_authoritative_transaction' and orders.payment_risk_status = 'review_required' and orders.fulfillment_quarantined_at is not null and not exists (select 1 from order_payment_transactions transaction where transaction.obligation_id = obligation.id) then 'snapshot-only-primary-obligation-quarantined' else (1/(0*random()))::text end from order_payment_obligations obligation join checkout_orders orders on orders.id = obligation.order_id where orders.order_id = 'ci-upgrade-0033-a' and obligation.purpose = 'primary'"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when count(*) = 2 and bool_and(not (evidence ?| array['customer_name', 'customer_email', 'shipping_address', 'checkout_token_hash', 'secret_token_ciphertext', 'line_items'])) then 'snapshot-only-financial-inference-quarantined-without-pii' else (1/(0*random()))::text end from fulfillment_data_quarantine where entity_id in ((select id::text from checkout_orders where order_id = 'ci-upgrade-0033-a'), (select obligation.id::text from order_payment_obligations obligation join checkout_orders orders on orders.id = obligation.order_id where orders.order_id = 'ci-upgrade-0033-a' and obligation.purpose = 'primary')) and reason_code = 'legacy_primary_obligation_without_authoritative_transaction'"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when status = 'draft' and effective_at is null and superseded_at is null and privacy_legal_attested_at is null and security_attested_at is null and operations_attested_at is null and policy_snapshot->>'p10TerminationNoticeDays' = '350' and policy_snapshot->>'p10DefaultExecutionDays' = '360' and policy_snapshot->>'p10HardCapDays' = '365' then 'p10-policy-seeded-draft-only' else (1/(0*random()))::text end from fulfillment_policy_versions where version = 'P-01-P-11-owner-only-p10-precap-2026-08-15'"
           psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 <<'SQL'
           insert into fulfillment_provider_certifications (
             id, provider, environment, scope, version, evidence_reference,
@@ -450,7 +611,7 @@ jobs:
               and count(*) filter (where revoked_at is not null) = 2
               and count(distinct version) = 2
             then 'provider-recertification-history-preserved'
-            else (1/0)::text
+            else (1/(0*random()))::text
           end
           from fulfillment_provider_certifications
           where provider = 'ci-provider' and environment = 'staging' and scope = 'ci-scope';
@@ -462,7 +623,7 @@ jobs:
                 'customer_name', 'customer_email', 'shipping_address'
               ]))
             then 'ambiguous-provider-certifications-quarantined-without-pii'
-            else (1/0)::text
+            else (1/(0*random()))::text
           end
           from fulfillment_data_quarantine
           where entity_type = 'fulfillment_provider_certification'
@@ -473,7 +634,7 @@ jobs:
             and reason_code = 'duplicate_active_provider_certification_scope';
           SQL
           expected_latest="$(node -p 'JSON.parse(require("node:fs").readFileSync("drizzle/meta/_journal.json","utf8")).entries.at(-1).when')"
-          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when max(created_at) = ${expected_latest}::bigint then 'latest-migration-ok' else (1/0)::text end from drizzle.__drizzle_migrations"
+          psql --host=127.0.0.1 --username=postgres --dbname=lash_her_ci_upgrade --set=ON_ERROR_STOP=1 --tuples-only --command="select case when max(created_at) = ${expected_latest}::bigint then 'latest-migration-ok' else (1/(0*random()))::text end from drizzle.__drizzle_migrations"
         env:
           DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/lash_her_ci_upgrade?sslmode=disable
           PGPASSWORD: postgres
