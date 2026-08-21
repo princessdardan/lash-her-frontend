@@ -1,12 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  COMMERCE_E2E_FDA_REQUIREMENTS_VERSION,
-  COMMERCE_E2E_TARIFF_SCHEMA_VERSION,
-  COMMERCE_E2E_US_CONTRACT_VERSION,
-  getCommerceE2eCatalogFixture,
-} from "./commerce-e2e-catalog-fixture";
+import { getCommerceE2eCatalogFixture } from "./commerce-e2e-catalog-fixture";
 
 const ENV_NAMES = [
   "COMMERCE_E2E_CATALOG_FIXTURE",
@@ -54,19 +49,9 @@ test("commerce catalog fixture exposes automated Canada, certified U.S. DDU, and
     const products = getCommerceE2eCatalogFixture();
     assert.equal(products?.length, 3);
     assert.equal(products?.[0]?.shipping?.fulfillmentMode, "physical");
-    const usCertification = products?.[1]?.shipping?.usRegulatoryCertification;
-    assert.equal(
-      usCertification?.usShippingContractVersion,
-      COMMERCE_E2E_US_CONTRACT_VERSION,
-    );
-    assert.equal(
-      usCertification?.tariffMetadataSchemaVersion,
-      COMMERCE_E2E_TARIFF_SCHEMA_VERSION,
-    );
-    assert.equal(
-      usCertification?.fdaRequirementsVersion,
-      COMMERCE_E2E_FDA_REQUIREMENTS_VERSION,
-    );
+    const usShipping = products?.[1]?.shipping;
+    assert.equal(usShipping?.usShippingApproved, true);
+    assert.equal(usShipping?.hsTariffCode, "6704190000");
     assert.equal(products?.[2]?.shipping?.fulfillmentMode, "manual");
   });
 });

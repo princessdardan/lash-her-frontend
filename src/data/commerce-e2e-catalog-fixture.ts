@@ -1,14 +1,14 @@
 import { PRODUCT_SHIPPING_US_DDU_CONTRACT } from "@/lib/shipping/product-shipping-config";
 import type { TProduct } from "@/types";
 
-// The U.S. SKU-certification versions must match the active
-// PRODUCT_SHIPPING_US_DDU_CONTRACT (version / tariffMetadataSchema.version /
-// fdaRequirements.version); product-checkout-eligibility enforces the match.
-// Derive them from the config so they cannot drift. This module is also loaded
-// on non-E2E paths (see loaders.ts) and the contract may be null (U.S. shipping
-// disabled), so guard the access — the "-unset" sentinels only surface when the
-// fixture is exercised without an active U.S. contract, where no U.S. SKU is
-// eligible anyway.
+// Version identifiers for the active PRODUCT_SHIPPING_US_DDU_CONTRACT
+// (version / tariffMetadataSchema.version / fdaRequirements.version), derived
+// from the config so they cannot drift. The E2E seed script
+// (scripts/seed-commerce-enabled-e2e.ts) uses these to build the DDU contract
+// snapshot it persists. This module is also loaded on non-E2E paths (see
+// loaders.ts) and the contract may be null (U.S. shipping disabled), so guard
+// the access — the "-unset" sentinels only surface when the fixture is
+// exercised without an active U.S. contract.
 export const COMMERCE_E2E_US_CONTRACT_VERSION =
   PRODUCT_SHIPPING_US_DDU_CONTRACT?.version ?? "us-ddu-contract-unset";
 export const COMMERCE_E2E_TARIFF_SCHEMA_VERSION =
@@ -71,17 +71,6 @@ const PRODUCTS: readonly TProduct[] = [
       manufacturerProvinceCode: "ON",
       manufacturerPostalCode: "M6E 2Y4",
       manufacturerCountryCode: "CA",
-      usRegulatoryCertification: {
-        version: "e2e-us-sku-cert-v1",
-        usShippingContractVersion: COMMERCE_E2E_US_CONTRACT_VERSION,
-        tariffMetadataSchemaVersion: COMMERCE_E2E_TARIFF_SCHEMA_VERSION,
-        fdaRequirementsVersion: COMMERCE_E2E_FDA_REQUIREMENTS_VERSION,
-        evidenceReference: "e2e://catalog/us-sku-cert-v1",
-        reviewedAt: "2026-08-01T00:00:00.000Z",
-        validUntil: "2027-08-01T00:00:00.000Z",
-        additionalTariffApplicability: "not_applicable",
-        fdaApplicability: "not_applicable",
-      },
     },
     displayOrder: 2,
   },

@@ -71,111 +71,32 @@ describe("product checkout eligibility", () => {
     );
   });
 
-  it("requires current evidence-backed U.S. tariff and FDA applicability", () => {
+  it("approves U.S. checkout with approval and a valid HTS; manufacturer is optional", () => {
     const usBase = {
       ...complete,
       usShippingApproved: true,
       hsTariffCode: "6704190000",
-      manufacturerName: "Reviewed Manufacturer",
-      manufacturerAddress: "123 Factory Road",
-      manufacturerCity: "Seoul",
-      manufacturerProvinceCode: "SE",
-      manufacturerPostalCode: "04524",
-      manufacturerCountryCode: "KR",
     };
-    assert.deepEqual(getProductCheckoutEligibility(usBase, "US"), {
-      status: "invalid",
-      reason: "missing_us_regulatory_certification",
-    });
+    // Manufacturer details are no longer required to approve U.S. checkout.
+    assert.equal(
+      getProductCheckoutEligibility(usBase, "US").status,
+      "automated",
+    );
+    // Optional manufacturer details are still accepted when supplied.
     assert.equal(
       getProductCheckoutEligibility(
         {
           ...usBase,
-          usRegulatoryCertification: {
-            version: "sku-review-v1",
-            usShippingContractVersion: "us-contract-v1",
-            tariffMetadataSchemaVersion: "tariff-v1",
-            fdaRequirementsVersion: "fda-v1",
-            evidenceReference: "controlled-evidence-1",
-            reviewedAt: "2026-08-01T00:00:00.000Z",
-            validUntil: "2099-08-01T00:00:00.000Z",
-            additionalTariffApplicability: "not_applicable",
-            fdaApplicability: "provider_assessed",
-          },
+          manufacturerName: "Reviewed Manufacturer",
+          manufacturerAddress: "123 Factory Road",
+          manufacturerCity: "Seoul",
+          manufacturerProvinceCode: "SE",
+          manufacturerPostalCode: "04524",
+          manufacturerCountryCode: "KR",
         },
         "US",
       ).status,
       "automated",
-    );
-    assert.deepEqual(
-      getProductCheckoutEligibility(
-        {
-          ...usBase,
-          usRegulatoryCertification: {
-            version: "sku-review-v1",
-            usShippingContractVersion: "us-contract-v1",
-            tariffMetadataSchemaVersion: "tariff-v1",
-            fdaRequirementsVersion: "fda-v1",
-            evidenceReference: "controlled-evidence-1",
-            reviewedAt: "2026-08-01T00:00:00.000Z",
-            validUntil: "2099-08-01T00:00:00.000Z",
-            additionalTariffApplicability: "required",
-            additionalTariffDetails: { steel: 0, copper: 0 },
-            fdaApplicability: "not_applicable",
-          },
-        },
-        "US",
-      ),
-      { status: "invalid", reason: "missing_us_additional_tariff_details" },
-    );
-  });
-
-  it("binds the exact SKU review to the current certified U.S. contract", () => {
-    const metadata = {
-      ...complete,
-      usShippingApproved: true,
-      hsTariffCode: "6704190000",
-      manufacturerName: "Reviewed Manufacturer",
-      manufacturerAddress: "123 Factory Road",
-      manufacturerCity: "Seoul",
-      manufacturerProvinceCode: "SE",
-      manufacturerPostalCode: "04524",
-      manufacturerCountryCode: "KR",
-      usRegulatoryCertification: {
-        version: "sku-review-v1",
-        usShippingContractVersion: "us-contract-v1",
-        tariffMetadataSchemaVersion: "tariff-v1",
-        fdaRequirementsVersion: "fda-v1",
-        evidenceReference: "controlled-evidence-1",
-        reviewedAt: "2026-08-02T00:00:00.000Z",
-        validUntil: "2026-12-01T00:00:00.000Z",
-        additionalTariffApplicability: "not_applicable" as const,
-        fdaApplicability: "provider_assessed" as const,
-      },
-    };
-    const context = {
-      now: new Date("2026-08-15T00:00:00.000Z"),
-      usShippingContract: {
-        version: "us-contract-v1",
-        effectiveFrom: "2026-08-01T00:00:00.000Z",
-        effectiveUntil: "2027-01-01T00:00:00.000Z",
-        tariffMetadataSchema: { version: "tariff-v1" },
-        fdaRequirements: { version: "fda-v1" },
-      },
-    };
-    assert.equal(
-      getProductCheckoutEligibility(metadata, "US", context).status,
-      "automated",
-    );
-    assert.deepEqual(
-      getProductCheckoutEligibility(metadata, "US", {
-        ...context,
-        usShippingContract: {
-          ...context.usShippingContract,
-          version: "us-contract-v2",
-        },
-      }),
-      { status: "invalid", reason: "us_regulatory_contract_mismatch" },
     );
   });
 
