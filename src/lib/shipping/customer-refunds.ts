@@ -873,14 +873,61 @@ export async function reconcileProductOrderRefund(input: {
           )
           .limit(1);
         if (productPayment) {
-          await sendShippingPolicyAlert({
-            duties: ["finance_owner"],
-            critical: true,
-            subject: "Unlinked Square refund on a product order",
-            message: `Completed Square refund ${providerRefundId} (${input.amountCents} cents ${currency}) settled against product-order payment ${originalTransactionId} but matched no reserved refund. It was likely issued out-of-band (e.g. the Square Dashboard); reconcile the order's refund state by hand.`,
-            idempotencyKey: `shipping-refund-unlinked/${providerRefundId}`,
-            executor: tx,
-          });
+          // The ambiguous branch above parks its matching reserved refunds in
+          // manual_review WITHOUT a providerRefundId, so a webhook retry of that
+          // SAME refund misses `existingProviderMatch`, finds zero live
+          // candidates, and lands here. That refund is NOT out-of-band — it was
+          // already surfaced by the `shipping-refund-ambiguous` alert — so a
+          // second, contradictory "unlinked" alert would only confuse. Suppress
+          // it only when a refund the ambiguous branch parked for this exact
+          // (payment, amount, currency) still exists. Keyed on the
+          // AMBIGUOUS_PROVIDER_REFUND marker so a genuinely out-of-band refund
+          // (no reserved row at all) and a distinct second refund on the same
+          // payment (a prior `succeeded` row is not manual_review) both still
+          // alert. Re-read here (after the candidate `for("update")` lock) so it
+          // holds under a concurrent delivery too, not just a sequential retry.
+          const [ambiguousParked] = await tx
+            .select({ id: productOrderRefunds.id })
+            .from(productOrderRefunds)
+            .innerJoin(
+              orderPaymentTransactions,
+              eq(
+                productOrderRefunds.paymentTransactionId,
+                orderPaymentTransactions.id,
+              ),
+            )
+            .where(
+              and(
+                eq(orderPaymentTransactions.provider, "square"),
+                eq(
+                  orderPaymentTransactions.providerTransactionId,
+                  originalTransactionId,
+                ),
+                eq(
+                  productOrderRefunds.originalTransactionId,
+                  originalTransactionId,
+                ),
+                eq(productOrderRefunds.amountCents, input.amountCents),
+                eq(orderPaymentTransactions.currency, currency),
+                eq(productOrderRefunds.status, "manual_review"),
+                eq(
+                  productOrderRefunds.lastErrorCode,
+                  "AMBIGUOUS_PROVIDER_REFUND",
+                ),
+                isNull(productOrderRefunds.fulfillmentQuarantinedAt),
+              ),
+            )
+            .limit(1);
+          if (!ambiguousParked) {
+            await sendShippingPolicyAlert({
+              duties: ["finance_owner"],
+              critical: true,
+              subject: "Unlinked Square refund on a product order",
+              message: `Completed Square refund ${providerRefundId} (${input.amountCents} cents ${currency}) settled against product-order payment ${originalTransactionId} but matched no reserved refund. It was likely issued out-of-band (e.g. the Square Dashboard); reconcile the order's refund state by hand.`,
+              idempotencyKey: `shipping-refund-unlinked/${providerRefundId}`,
+              executor: tx,
+            });
+          }
         }
       }
       return false;

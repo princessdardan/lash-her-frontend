@@ -33,6 +33,10 @@ const scenario = String.raw`
   const ambiguousAlertKeyPrefix = "shipping-refund-ambiguous/sq-refund-ambiguous-980001/";
   const unlinkedAlertKeyPrefix = "shipping-refund-unlinked/sq-refund-unlinked-960001/";
   const bookingAlertKeyPrefix = "shipping-refund-unlinked/sq-refund-booking-970001/";
+  // The out-of-band ("unlinked") alert key that a RETRY of the ambiguous refund
+  // would incorrectly raise (N1). It must never be created — cleaned defensively
+  // so a leftover from a pre-fix run cannot fail the retry-suppression assertion.
+  const ambiguousUnlinkedKeyPrefix = "shipping-refund-unlinked/sq-refund-ambiguous-980001/";
 
   async function cleanup() {
     await db.delete(customerEmailOutbox).where(
@@ -43,6 +47,9 @@ const scenario = String.raw`
     );
     await db.delete(customerEmailOutbox).where(
       like(customerEmailOutbox.providerIdempotencyKey, bookingAlertKeyPrefix + "%"),
+    );
+    await db.delete(customerEmailOutbox).where(
+      like(customerEmailOutbox.providerIdempotencyKey, ambiguousUnlinkedKeyPrefix + "%"),
     );
     await db.execute(sql.raw(
       "DELETE FROM product_order_refunds WHERE order_id IN " +
@@ -443,6 +450,26 @@ const scenario = String.raw`
       .where(like(customerEmailOutbox.providerIdempotencyKey, ambiguousAlertKeyPrefix + "%"));
     assert.ok(ambiguousAlerts.length >= 1, "expected a finance alert for the ambiguous refund");
     assert.ok(ambiguousAlerts.every((row) => row.kind === "shipping_policy_alert" && row.status === "queued"));
+
+    // N1 regression: a webhook RETRY of that SAME ambiguous refund now misses
+    // existingProviderMatch (the parked rows carry no providerRefundId) and finds
+    // zero live candidates (they are manual_review, not queued/processing/
+    // outcome_unknown), so it lands in the zero-candidate branch. It must NOT
+    // raise the contradictory "unlinked / out-of-band" alert — the refund was
+    // already surfaced by the ambiguous alert above. The ambiguous alert itself
+    // must not multiply either.
+    assert.equal(await reconcileProductOrderRefund({
+      originalTransactionId: "980001",
+      providerRefundId: "sq-refund-ambiguous-980001",
+      amountCents: 500,
+      currency: "CAD",
+    }), false);
+    const ambiguousRetryUnlinked = await db.select().from(customerEmailOutbox)
+      .where(like(customerEmailOutbox.providerIdempotencyKey, ambiguousUnlinkedKeyPrefix + "%"));
+    assert.equal(ambiguousRetryUnlinked.length, 0, "an ambiguous-refund retry must not raise the out-of-band alert");
+    const ambiguousAlertsAfterRetry = await db.select().from(customerEmailOutbox)
+      .where(like(customerEmailOutbox.providerIdempotencyKey, ambiguousAlertKeyPrefix + "%"));
+    assert.equal(ambiguousAlertsAfterRetry.length, ambiguousAlerts.length, "the ambiguous alert must not multiply on retry");
 
     // A COMPLETED Square refund that settled against a product-order capture but
     // matches NO reserved refund row (e.g. an operator issued it from the Square
