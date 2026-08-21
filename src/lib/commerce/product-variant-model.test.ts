@@ -127,6 +127,54 @@ describe("normalizeProductVariantModel", () => {
     );
   });
 
+  it("carries a per-combination stock set-point onto the matched combination only", () => {
+    const normalized = normalizeProductVariantModel(
+      createTwoAxisProduct({
+        variantOverrides: [
+          {
+            select: [
+              { name: "Curl", value: "CC Curl" },
+              { name: "Length", value: "8mm" },
+            ],
+            stockQuantity: 4,
+          },
+        ],
+      }),
+    );
+
+    const tracked = normalized.variants?.find(
+      (variant) => variant.title === "CC Curl / 8mm",
+    );
+    assert.equal(tracked?.stockQuantity, 4);
+    assert.equal(
+      normalized.variants?.filter(
+        (variant) => variant.stockQuantity !== undefined,
+      ).length,
+      1,
+    );
+  });
+
+  it("preserves an authored stock set-point of zero", () => {
+    const normalized = normalizeProductVariantModel(
+      createTwoAxisProduct({
+        variantOverrides: [
+          {
+            select: [
+              { name: "Curl", value: "C Curl" },
+              { name: "Length", value: "8mm" },
+            ],
+            stockQuantity: 0,
+          },
+        ],
+      }),
+    );
+
+    const tracked = normalized.variants?.find(
+      (variant) => variant.title === "C Curl / 8mm",
+    );
+    assert.equal(tracked?.stockQuantity, 0);
+  });
+
   it("carries an override SKU and shipping onto the matched combination only", () => {
     const normalized = normalizeProductVariantModel(
       createTwoAxisProduct({

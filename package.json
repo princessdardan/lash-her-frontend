@@ -33,6 +33,7 @@
     "booking:bootstrap-legacy": "tsx --conditions=react-server scripts/bootstrap-booking-operations.ts",
     "booking:import-operational-cutover": "tsx --conditions=react-server scripts/import-booking-operational-cutover.ts",
     "db:create-payment-reconciliation-indexes": "tsx scripts/create-payment-reconciliation-indexes.ts",
+    "stock:backfill": "tsx --conditions=react-server scripts/backfill-product-stock.ts",
     "git:verify-remote": "node scripts/verify-git-remote.mjs origin",
     "git:push-staging": "npm run git:verify-remote && git push origin staging",
     "prepare": "husky"

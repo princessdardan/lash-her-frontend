@@ -30,6 +30,7 @@ import {
 } from "@/lib/commerce/checkout-validation";
 import { parsePromotionCodeInput } from "@/lib/commerce/discounts";
 import { ShippingQuoteConflictError } from "@/lib/shipping/errors";
+import { InsufficientStockError } from "@/lib/commerce/product-stock-store";
 import { getTrustedClientIp } from "@/lib/security/trusted-client-ip";
 import { readBoundedJsonBody } from "@/lib/security/bounded-json-body";
 import type { TProduct, TPromotionCode } from "@/types";
@@ -621,16 +622,19 @@ export function createCheckoutPostHandler({
         ...summarizeCheckoutError(error),
       });
 
+      const stockConflict = error instanceof InsufficientStockError;
+      const quoteConflict = error instanceof ShippingQuoteConflictError;
       return NextResponse.json<CheckoutErrorBody>(
         {
-          error:
-            error instanceof ShippingQuoteConflictError
+          error: stockConflict
+            ? "One or more items are no longer in stock. Please review your cart and try again."
+            : quoteConflict
               ? error.message
               : "Unable to start checkout",
         },
         {
           status:
-            error instanceof ShippingQuoteConflictError
+            stockConflict || quoteConflict
               ? 409
               : getCheckoutFailureStatus(stage),
         },

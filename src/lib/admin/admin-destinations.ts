@@ -93,6 +93,25 @@ const ADMIN_DESTINATION_DEFINITIONS: readonly AdminDestinationDefinition[] = [
     navigation: true,
   },
   {
+    action: "inventory:view",
+    description:
+      "See live stock on hand and reserved units for every tracked product and variant.",
+    group: "Daily work",
+    href: "/admin/inventory",
+    keywords: [
+      "stock",
+      "inventory",
+      "on hand",
+      "reserved",
+      "sold out",
+      "low stock",
+      "restock",
+      "quantity",
+    ],
+    label: "Inventory",
+    navigation: true,
+  },
+  {
     action: "fulfillment:view",
     description:
       "Work deadline-sorted product checkout, payment-risk, and shipping queues.",

@@ -62,6 +62,15 @@ import {
 } from "./product-tax-policy";
 import { getProductCheckoutTermsRequirement } from "./product-checkout-terms";
 import { getShippedRefundPolicyRequirement } from "./product-shipped-refund-policy";
+import {
+  reserveProductStockInTransaction,
+  releaseProductStockForOrderInTransaction,
+} from "./product-stock-store";
+
+// Reservation lease for manual-pickup product orders, which carry no shipping
+// quote to expire. Long enough to outlast the synchronous card charge; the
+// abandoned-stock sweep releases held units once this lease plus its grace pass.
+const MANUAL_RESERVATION_LEASE_MS = 30 * 60 * 1000;
 
 export interface UsImportDisclosureSnapshot {
   terms: "DDU";
@@ -813,6 +822,9 @@ export async function createInitializingProductOrder(
         fulfillmentMode: "automated_shipping",
       })
       .returning({ id: checkoutOrders.id });
+    // Hold inventory before wiring up the shipment/obligation. A shortfall
+    // throws InsufficientStockError, rolling back the whole order creation.
+    await reserveProductStockInTransaction(tx, orderId, input.cart.lineItems);
     const [attached] = await tx
       .update(productShipments)
       .set({
@@ -1085,6 +1097,9 @@ export async function createInitializingManualProductOrder(
             : "Shipping quoted separately",
       };
     }
+    // Fresh insert only — the retry-reuse branch above returns before here, so a
+    // repeated reservationKey never double-reserves inventory.
+    await reserveProductStockInTransaction(tx, orderId, input.cart.lineItems);
     const [obligation] = await tx
       .insert(orderPaymentObligations)
       .values({
@@ -1119,6 +1134,12 @@ export async function createInitializingManualProductOrder(
         },
         taxPolicyVersion: taxPolicyApproval.version,
         policyVersion: fulfillmentPolicyVersion,
+        // Manual-pickup checkout has no shipping quote, so give the primary
+        // obligation an explicit reservation lease. The card is charged
+        // synchronously right after this, so the lease only needs to outlast
+        // that; if the request dies mid-flight, the abandoned-stock sweep uses
+        // this to release the held units once the lease + grace elapses.
+        expiresAt: new Date(now.getTime() + MANUAL_RESERVATION_LEASE_MS),
         idempotencyKey: `primary/${order.id}`,
       })
       .returning({ id: orderPaymentObligations.id });
@@ -1289,6 +1310,10 @@ export async function markProductOrderInitializationFailed(
             eq(productShipments.status, "payment_pending"),
           ),
         );
+      // Return any held inventory to available. Idempotent and skips
+      // already-committed rows; defensive for a future non-square initializing
+      // flow (square product orders are created "ready", so this rarely fires).
+      await releaseProductStockForOrderInTransaction(tx, orderId);
     }
   });
 }
@@ -1971,14 +1996,32 @@ function createDrizzleCheckoutOrderRepository(): CheckoutOrderRepository {
     },
 
     async markOrderVerificationFailed(orderId) {
-      await getPrivateDb()
-        .update(checkoutOrders)
-        .set({
-          status: "verification_failed",
-          failedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(checkoutOrders.orderId, orderId));
+      await getPrivateDb().transaction(async (tx) => {
+        const [order] = await tx
+          .select({
+            id: checkoutOrders.id,
+            purpose: checkoutOrders.purpose,
+          })
+          .from(checkoutOrders)
+          .where(eq(checkoutOrders.orderId, orderId))
+          .for("update")
+          .limit(1);
+        if (!order) return;
+        // Return any held inventory to available before marking the order
+        // failed. Idempotent (skips already-committed rows) and gated to
+        // product orders so training/booking failures never touch product stock.
+        if (order.purpose === "product") {
+          await releaseProductStockForOrderInTransaction(tx, orderId);
+        }
+        await tx
+          .update(checkoutOrders)
+          .set({
+            status: "verification_failed",
+            failedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(checkoutOrders.id, order.id));
+      });
     },
 
     async markProductOrderConfirmationEmailSent(orderId, now) {

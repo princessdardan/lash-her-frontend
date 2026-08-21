@@ -20,6 +20,8 @@ export interface CatalogProduct {
   discountPrice?: number | string | null;
   currency: CommerceCurrency;
   isAvailable: boolean;
+  /** Live units available for a no-option product; undefined = untracked. */
+  availableQuantity?: number | null;
   variants?: CatalogProductVariant[];
   checkoutMode?: ProductCheckoutMode;
 }
@@ -31,6 +33,8 @@ export interface CatalogProductVariant {
   price: number | string;
   discountPrice?: number | string | null;
   isAvailable: boolean;
+  /** Live units available for this combination; undefined = untracked. */
+  availableQuantity?: number | null;
   options?: Array<{ label: string; value: string }>;
   checkoutMode?: ProductCheckoutMode;
 }
@@ -83,6 +87,7 @@ const CART_EMPTY_ERROR = "Cart must contain at least one item";
 const QUANTITY_ERROR = "Quantity must be between 1 and 10";
 const UNAVAILABLE_PRODUCT_ERROR = "Product is no longer available";
 const VARIANT_REQUIRED_ERROR = "Please choose an available product option";
+const OUT_OF_STOCK_ERROR = "Not enough stock for one or more items";
 
 export function buildValidatedCart(
   items: CartInputItem[],
@@ -111,6 +116,20 @@ export function buildValidatedCart(
     }
 
     const variant = resolveVariant(product, item.variantId);
+
+    // Sold-out items are already flagged unavailable above/by resolveVariant;
+    // this guards the remaining case where fewer units remain than requested.
+    // Untracked items carry no availableQuantity and are never limited here.
+    const availableQuantity = variant
+      ? variant.availableQuantity
+      : product.availableQuantity;
+    if (
+      typeof availableQuantity === "number" &&
+      item.quantity > availableQuantity
+    ) {
+      throw new Error(OUT_OF_STOCK_ERROR);
+    }
+
     const originalPrice = parseCad(variant?.price ?? product.price);
     const pricing = resolveEffectivePrice(
       variant?.price ?? product.price,

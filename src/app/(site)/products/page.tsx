@@ -3,6 +3,7 @@ import { ProductCatalogShell } from "@/components/commerce/product-catalog-shell
 import { loaders, type ProductSort } from "@/data/loaders";
 import { JsonLd, buildProductCollectionJsonLd } from "@/lib/structured-data";
 import { getProductCheckoutAvailability } from "@/lib/shipping/config";
+import { applyStockAvailability } from "@/lib/commerce/product-stock-availability";
 
 export const revalidate = 300;
 
@@ -39,10 +40,11 @@ export default async function ProductsPage({
   const params = await searchParams;
   const sort = getSort(params.sort);
 
-  const [pageData, products] = await Promise.all([
+  const [pageData, catalogProducts] = await Promise.all([
     loaders.getProductsPageData(),
     loaders.getProducts(sort),
   ]);
+  const products = await applyStockAvailability(catalogProducts);
   const productCollectionJsonLd = await buildProductCollectionJsonLd(products);
 
   return (

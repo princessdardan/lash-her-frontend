@@ -71,6 +71,25 @@ describe("product schema", () => {
     assert.strictEqual(sku?.type, "string");
   });
 
+  it("exposes a product-level stock set-point in the catalog group", () => {
+    const stockQuantity = getSchemaField("stockQuantity");
+
+    assert.strictEqual(stockQuantity.type, "number");
+    assert.strictEqual((stockQuantity as { group?: string }).group, "catalog");
+  });
+
+  it("exposes a per-combination stock set-point on the variant override", () => {
+    const overrides = getSchemaField("variantOverrides");
+    const overrideObject = overrides.of?.find(
+      (member) => member.type === "object",
+    );
+    const stockQuantity = overrideObject?.fields?.find(
+      (field) => field.name === "stockQuantity",
+    );
+
+    assert.strictEqual(stockQuantity?.type, "number");
+  });
+
   it("gives every shipping and customs field clear editor guidance", () => {
     const shipping = getSchemaField("shipping");
     const expectedFields = [

@@ -8,6 +8,7 @@ import {
   type ValidatedCart,
 } from "@/lib/commerce/cart";
 import { toCheckoutCatalogProduct } from "@/lib/commerce/product-catalog";
+import { applyStockAvailability } from "@/lib/commerce/product-stock-availability";
 
 interface CartPreviewResponse {
   cart: ValidatedCart;
@@ -47,9 +48,10 @@ export async function POST(req: NextRequest): Promise<Response> {
   try {
     const productIds = Array.from(new Set(items.map((item) => item.productId)));
     const products = await loaders.getProductsByIds(productIds);
+    const productsWithStock = await applyStockAvailability(products);
     const cart = buildValidatedCart(
       items,
-      products.map(toCheckoutCatalogProduct),
+      productsWithStock.map(toCheckoutCatalogProduct),
     );
 
     return NextResponse.json<CartPreviewResponse>({ cart });

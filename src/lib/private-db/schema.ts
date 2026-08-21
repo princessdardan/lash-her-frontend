@@ -1658,6 +1658,101 @@ export const checkoutOrders = pgTable(
   ],
 );
 
+export const productStockMovementKind = pgEnum("product_stock_movement_kind", [
+  "reserve",
+  "commit",
+  "release",
+  "restock",
+  "return",
+]);
+
+/**
+ * Authoritative product inventory. Keyed by Sanity identity: `productId` is the
+ * published product `_id` and `variantKey` is the derived variant `_key`
+ * (`derived_v1_…`), or NULL for a product with no options. `onHand` is physical
+ * units; `reserved` is units held by in-flight (pending) product orders, so
+ * available-to-sell is `onHand - reserved`. A product/variant with no row here
+ * is untracked (treated as unlimited) — the catalog is not blocked until staff
+ * opt an item in by authoring a Sanity stock quantity. `sanitySeedQuantity`
+ * records the last Sanity set-point applied so the sync only resets `onHand`
+ * when the authored number actually changes.
+ */
+export const productStock = pgTable(
+  "product_stock",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    productId: text("product_id").notNull(),
+    variantKey: text("variant_key"),
+    onHand: integer("on_hand").notNull().default(0),
+    reserved: integer("reserved").notNull().default(0),
+    sanitySeedQuantity: integer("sanity_seed_quantity"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    // NULL is distinct in a plain unique index, so split the variant and
+    // no-variant rows into two partial unique indexes to keep both unique.
+    uniqueIndex("product_stock_product_variant_idx")
+      .on(table.productId, table.variantKey)
+      .where(sql`${table.variantKey} IS NOT NULL`),
+    uniqueIndex("product_stock_product_no_variant_idx")
+      .on(table.productId)
+      .where(sql`${table.variantKey} IS NULL`),
+    // Covers the bulk `product_id IN (...)` read (cart preview, storefront
+    // badges, admin inventory); the two partial unique indexes above only serve
+    // the single-row (product_id, variant_key) lookups.
+    index("product_stock_product_id_idx").on(table.productId),
+    // `reserved <= onHand` is a true invariant: reserve only increments reserved
+    // under an `onHand - reserved >= qty` guard, commit/release move both/only
+    // reserved down, and the Sanity restock sync clamps `onHand` to never fall
+    // below `reserved`. Enforcing it here turns any future violation into a loud
+    // failure instead of silently stranding a reservation.
+    check(
+      "product_stock_nonnegative_check",
+      sql`${table.onHand} >= 0 AND ${table.reserved} >= 0 AND ${table.reserved} <= ${table.onHand}`,
+    ),
+  ],
+);
+
+/**
+ * Insert-only ledger of stock changes for one tracked stock row. The partial
+ * unique index on `(orderId, productStockId, kind)` (order-scoped rows only)
+ * makes commit and release exactly-once under webhook replay or a repeated
+ * failure signal. Restocks carry a NULL `orderId` and are not deduped. Rows are
+ * never updated, only inserted; they are removed (via `ON DELETE CASCADE`) when
+ * their stock row is untracked, which only happens with zero units reserved, so
+ * no in-flight order loses the reserve record it depends on.
+ */
+export const productStockMovements = pgTable(
+  "product_stock_movements",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    productStockId: uuid("product_stock_id")
+      .notNull()
+      .references(() => productStock.id, { onDelete: "cascade" }),
+    orderId: text("order_id"),
+    kind: productStockMovementKind("kind").notNull(),
+    quantity: integer("quantity").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("product_stock_movements_order_kind_idx")
+      .on(table.orderId, table.productStockId, table.kind)
+      .where(sql`${table.orderId} IS NOT NULL`),
+    index("product_stock_movements_stock_idx").on(table.productStockId),
+    check(
+      "product_stock_movements_quantity_positive_check",
+      sql`${table.quantity} > 0`,
+    ),
+  ],
+);
+
 export const shippingPackageProfiles = pgTable(
   "shipping_package_profiles",
   {

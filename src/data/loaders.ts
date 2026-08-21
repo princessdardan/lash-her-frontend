@@ -79,9 +79,10 @@ const PRODUCT_PROJECTION = groq`{
     "displayOrder": @->displayOrder
   },
   options[]{ _key, name, values },
-  variantOverrides[]{ _key, select[]{ _key, name, value }, image{ asset, hotspot, crop, alt }, price, discountPrice, sku, isAvailable, availabilityLabel, shipping },
+  variantOverrides[]{ _key, select[]{ _key, name, value }, image{ asset, hotspot, crop, alt }, price, discountPrice, sku, isAvailable, availabilityLabel, stockQuantity, shipping },
   isAvailable,
   availabilityLabel,
+  stockQuantity,
   fulfillmentNote,
   shipping,
   displayOrder,
@@ -860,6 +861,29 @@ async function getProductsByIds(ids: string[]): Promise<TProduct[]> {
   return products.map(normalizeProductVariantModel);
 }
 
+// Stock sync must see every product, including ones hidden from the storefront
+// (isAvailable == false), so it can seed/untrack their Postgres inventory.
+async function getProductForStockSync(id: string): Promise<TProduct | null> {
+  const publishedId = id.replace(/^drafts\./, "");
+  const query = groq`*[_type == "product" && _id == $id][0] ${PRODUCT_PROJECTION}`;
+  const product = await sanityFetch<TProduct | null>(
+    query,
+    { id: publishedId },
+    ["product"],
+    { mode: "published", stega: false },
+  );
+  return product ? normalizeProductVariantModel(product) : null;
+}
+
+async function getAllProductsForStockSync(): Promise<TProduct[]> {
+  const query = groq`*[_type == "product"] ${PRODUCT_PROJECTION}`;
+  const products = await sanityFetch<TProduct[]>(query, {}, ["product"], {
+    mode: "published",
+    stega: false,
+  });
+  return products.map(normalizeProductVariantModel);
+}
+
 async function getPromotionCode(code: string): Promise<TPromotionCode | null> {
   const query = groq`*[_type == "promotionCode" && code == $code][0]{
     _id,
@@ -989,6 +1013,8 @@ export const loaders = {
   getProductsGroupedCatalog,
   getProductBySlug,
   getAllProductSlugs,
+  getProductForStockSync,
+  getAllProductsForStockSync,
   getServiceBySlug,
   getAllServiceSlugs,
 };

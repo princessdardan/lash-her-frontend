@@ -70,9 +70,16 @@ export function ProductCard({
     (variants.length === 0 || Boolean(selectedVariant?.isAvailable)) &&
     checkoutEligibility.status !== "invalid" &&
     checkoutModeEnabled;
-  const availabilityLabel =
-    product.availabilityLabel ||
-    (product.isAvailable ? "Ready to ship" : "Unavailable");
+  // Live stock (merged in server-side) is authoritative for sold-out display,
+  // overriding any editorial label. `undefined` means the item is untracked.
+  const selectedAvailable = selectedVariant
+    ? selectedVariant.availableQuantity
+    : product.availableQuantity;
+  const soldOut = selectedAvailable === 0;
+  const availabilityLabel = soldOut
+    ? "Sold out"
+    : product.availabilityLabel ||
+      (product.isAvailable ? "Ready to ship" : "Unavailable");
   // When the item is otherwise purchasable but its checkout mode is disabled,
   // show a distinct label rather than a misleading availability label.
   const ctaUnavailableLabel =

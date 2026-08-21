@@ -7,6 +7,10 @@ import { ProductDetailPurchaseControls } from "@/components/commerce/product-det
 import { ProductDetailGallery } from "@/components/commerce/product-detail-gallery";
 import { ProductGalleryProvider } from "@/components/commerce/product-gallery-context";
 import { getProductCheckoutAvailability } from "@/lib/shipping/config";
+import {
+  applyStockAvailabilityToProduct,
+  stockStatusFor,
+} from "@/lib/commerce/product-stock-availability";
 import { resolveEffectivePrice } from "@/lib/commerce/cart";
 import { formatCad } from "@/lib/commerce/money";
 import { JsonLd, buildProductJsonLd } from "@/lib/structured-data";
@@ -149,10 +153,9 @@ export async function generateStaticParams() {
 }
 
 function getAvailabilityLabel(product: TProduct): string {
-  return (
-    product.availabilityLabel ||
-    (product.isAvailable ? "Available now" : "Currently unavailable")
-  );
+  if (product.availabilityLabel) return product.availabilityLabel;
+  if (product.availableQuantity === 0) return "Sold out";
+  return product.isAvailable ? "Available now" : "Currently unavailable";
 }
 
 export default async function ProductDetailPage({
@@ -161,11 +164,14 @@ export default async function ProductDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const product = await loaders.getProductBySlug(slug);
+  const loadedProduct = await loaders.getProductBySlug(slug);
 
-  if (!product) notFound();
+  if (!loadedProduct) notFound();
 
+  const product = await applyStockAvailabilityToProduct(loadedProduct);
   const availabilityLabel = getAvailabilityLabel(product);
+  const showLowStock =
+    stockStatusFor(product.availableQuantity) === "low_stock";
   const collections =
     product.collections?.filter((collection) => collection.title).slice(0, 3) ??
     [];
@@ -226,6 +232,11 @@ export default async function ProductDetailPage({
                       {product.isAvailable ? (
                         <span className="rounded-full border border-lh-line px-3 py-1.5 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-muted">
                           {availabilityLabel}
+                        </span>
+                      ) : null}
+                      {product.isAvailable && showLowStock ? (
+                        <span className="rounded-full border border-lh-accent px-3 py-1.5 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-accent">
+                          Low stock
                         </span>
                       ) : null}
                       {collections.map((collection) => (

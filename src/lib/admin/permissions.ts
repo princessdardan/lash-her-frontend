@@ -8,6 +8,8 @@ export type AdminPermissionAction =
   | "bookings:view"
   | "fulfillment:manage"
   | "fulfillment:view"
+  | "inventory:manage"
+  | "inventory:view"
   | "calendar-connections:manage"
   | "calendar-connections:self-manage"
   | "calendar-connections:view"
@@ -42,6 +44,8 @@ const ADMIN_ACTIONS = new Set<AdminPermissionAction>([
   "bookings:view",
   "fulfillment:manage",
   "fulfillment:view",
+  "inventory:manage",
+  "inventory:view",
   "calendar-connections:manage",
   "calendar-connections:view",
   "marketing:manage",
@@ -124,6 +128,7 @@ export function getVisibleAdminSections(input: {
     "admin:view",
     "bookings:view",
     "fulfillment:view",
+    "inventory:view",
     "schedules:view",
     "offerings:view",
     "service-promotions:view",
