@@ -29,20 +29,46 @@ interface RevalidateWebhookDependencies {
     waitForContentLakeEventualConsistency?: boolean,
   ) => Promise<{ body: T | null; isValidSignature: boolean | null }>;
   revalidateTag: (tag: string, profile: { expire: 0 }) => void;
+  /**
+   * Optional fold-in: reconcile a product's Postgres stock when it publishes.
+   * Fire-and-forget from the handler's perspective; the real wiring runs it
+   * after the response so it can never fail cache revalidation.
+   */
+  syncProductStock?: (id: string) => void;
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
-  const [{ revalidateTag }, { parseBody }, { getWebhookSecret }] =
-    await Promise.all([
-      import("next/cache"),
-      import("next-sanity/webhook"),
-      import("@/sanity/env"),
-    ]);
+  const [
+    { revalidateTag },
+    { after },
+    { parseBody },
+    { getWebhookSecret },
+    { syncProductStockForPublishedId },
+  ] = await Promise.all([
+    import("next/cache"),
+    import("next/server"),
+    import("next-sanity/webhook"),
+    import("@/sanity/env"),
+    import("@/lib/commerce/product-stock-sync"),
+  ]);
 
   return createRevalidatePostHandler({
     getWebhookSecret,
     parseBody,
     revalidateTag,
+    // The stock sync is a set-point detector, so an unchanged stock number is a
+    // no-op — a plain product edit never resets the live count. Runs after the
+    // response so a DB hiccup cannot break revalidation.
+    syncProductStock: (id) =>
+      after(async () => {
+        try {
+          await syncProductStockForPublishedId(id);
+        } catch (error) {
+          log("error", "[revalidate] product stock sync failed", {
+            error: error instanceof Error ? error.message : "unknown",
+          });
+        }
+      }),
   })(req);
 }
 
@@ -67,6 +93,7 @@ export function createRevalidatePostHandler(
     // parseBody reads raw body text, verifies HMAC-SHA256, then JSON.parses
     // Do NOT call req.json() before this — it would consume the stream
     const { body, isValidSignature } = await dependencies.parseBody<{
+      _id?: string;
       _type: string;
     }>(req, webhookSecret, true);
 
@@ -94,6 +121,12 @@ export function createRevalidatePostHandler(
     // Single-arg revalidateTag(tag) is deprecated in Next.js 16
     dependencies.revalidateTag(tag, { expire: 0 });
     log("info", `[revalidate] tag='${tag}' _type='${body._type}'`);
+
+    // Fold-in: a product publish also reconciles that product's stock. Only a
+    // changed set-point resets the live count, so ordinary edits are no-ops.
+    if (body._type === "product" && body._id) {
+      dependencies.syncProductStock?.(body._id);
+    }
 
     return new Response(null, { status: 200 });
   };
