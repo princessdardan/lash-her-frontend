@@ -102,14 +102,9 @@ test("Resend marketing contact plan maps sources to configured segments and topi
       { id: "topic-marketing", subscription: "opt_in" },
       { id: "topic-newsletter", subscription: "opt_in" },
     ]);
-    assert.deepEqual(plan.createContact.properties, {
-      consent_text: "I agree to receive updates.",
-      consented_at: "2026-05-10T12:00:00.000Z",
-      instagram: "@subscriber",
-      phone: "555-0100",
-      source: "contact_popup",
-      source_path: "/",
-    });
+    // Custom properties are intentionally not sent — Resend rejects properties
+    // that are not pre-defined in the audience, which dead-lettered every sync.
+    assert.equal(plan.createContact.properties, undefined);
     assert.equal(plan.event.event, "lashher.contact.opted_in");
   `);
 });
@@ -202,11 +197,12 @@ test("Resend marketing contact sync reports step-specific failures", () => {
     process.env.RESEND_SEGMENT_MARKETING_ID = "segment-all";
     process.env.RESEND_TOPIC_MARKETING_ID = "topic-marketing";
 
+    // sendEvent is intentionally excluded — the opt-in event is best-effort and
+    // must not fail the sync (covered by its own test below).
     const stepNames = {
       addContactSegment: "add_segment",
       createContact: "create_contact",
       listContactSegments: "list_segments",
-      sendEvent: "send_event",
       updateContact: "update_contact",
       updateContactTopics: "update_topics",
     };
@@ -235,6 +231,34 @@ test("Resend marketing contact sync reports step-specific failures", () => {
         assert.equal(error.step, expectedStep, dependencyName);
       }
     }
+  `);
+});
+
+test("Resend marketing contact sync treats a failing opt-in event as best-effort", () => {
+  runResendPlatformScenario(`
+    process.env.RESEND_API_KEY = "re_test";
+    process.env.RESEND_SEGMENT_MARKETING_ID = "segment-all";
+    process.env.RESEND_TOPIC_MARKETING_ID = "topic-marketing";
+
+    let eventAttempted = false;
+    const dependencies = {
+      addContactSegment: async () => ok({ id: "segment-added" }),
+      createContact: async () => ok({ id: "contact-1" }),
+      listContactSegments: async () => ok({ data: [] }),
+      sendEvent: async () => { eventAttempted = true; throw new Error("event transport down"); },
+      updateContact: async () => notFound(),
+      updateContactTopics: async () => ok({ id: "contact-1" }),
+    };
+
+    // The contact is already created + segmented, so a failing event must NOT
+    // throw or dead-letter the sync.
+    await syncResendMarketingContact({
+      consentedAt: new Date("2026-05-10T12:00:00.000Z"),
+      email: "student@example.com",
+      source: "training_contact",
+    }, dependencies);
+
+    assert.equal(eventAttempted, true);
   `);
 });
 

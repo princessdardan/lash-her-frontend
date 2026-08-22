@@ -35,6 +35,8 @@
     "db:create-payment-reconciliation-indexes": "tsx scripts/create-payment-reconciliation-indexes.ts",
     "stock:backfill": "tsx --conditions=react-server scripts/backfill-product-stock.ts",
     "marketing:backfill-sync": "tsx --conditions=react-server scripts/backfill-marketing-sync-jobs.ts",
+    "marketing:inspect-sync": "tsx --conditions=react-server scripts/inspect-marketing-sync-failures.ts",
+    "marketing:requeue-sync-failures": "tsx --conditions=react-server scripts/requeue-marketing-sync-failures.ts",
     "git:verify-remote": "node scripts/verify-git-remote.mjs origin",
     "git:push-staging": "npm run git:verify-remote && git push origin staging",
     "prepare": "husky"
