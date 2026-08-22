@@ -197,11 +197,15 @@ export function buildResendMarketingContactSyncPlan(
   const { firstName, lastName } = splitName(input.name);
   const segmentIds = getMarketingSegmentIds(input.source);
   const topics = getMarketingTopics(input.source);
-  const properties = getMarketingContactProperties(input);
+  // Custom contact `properties` are intentionally NOT sent. Resend rejects
+  // contacts.create/update with properties that aren't pre-defined in the
+  // audience ("One or more properties do not exist"), which dead-lettered every
+  // sync. Consent metadata (consent_text / consented_at / source / ...) is
+  // retained in Postgres — the source of truth. To mirror it into Resend later,
+  // first define the properties in the Resend audience, then reinstate them here.
   const baseContactFields = {
     ...(firstName ? { firstName } : {}),
     ...(lastName ? { lastName } : {}),
-    ...(Object.keys(properties).length > 0 ? { properties } : {}),
     unsubscribed: false,
   };
 
@@ -340,18 +344,14 @@ export async function syncResendMarketingContact(
     }
   }
 
-  const eventResult = await resolvedDependencies.sendEvent(plan.event);
-
-  if (eventResult.error !== null) {
-    throw new ResendContactSyncError(
-      "send_event",
-      `Resend marketing automation event failed: ${eventResult.error.message}`,
-      {
-        email: input.email.trim(),
-        source: input.source,
-        event: plan.event.event,
-      },
-    );
+  // Best-effort: the opt-in event feeds an optional welcome automation that may
+  // not be configured yet. By this point the contact is created and in the
+  // marketing segment — which is what campaigns need — so a failed (or
+  // unconfigured) event must NOT fail the sync and dead-letter the contact.
+  try {
+    await resolvedDependencies.sendEvent(plan.event);
+  } catch {
+    // swallow — event delivery is non-critical to the sync
   }
 }
 
@@ -663,16 +663,54 @@ function getConfiguredMarketingTopicIds(): string[] {
   );
 }
 
+// Resend permits 10 requests/second. Each contact sync makes several calls and
+// the worker processes many contacts per run, so hold every call under a shared
+// limiter (8/s, a safety margin) to avoid 429s that would otherwise dead-letter
+// contacts.
+const RESEND_SYNC_REQUESTS_PER_SECOND = 8;
+
+function createRateLimiter(
+  perSecond: number,
+): <T>(fn: () => Promise<T>) => Promise<T> {
+  const minGapMs = 1000 / perSecond;
+  let nextAvailable = 0;
+
+  return async function throttle<T>(fn: () => Promise<T>): Promise<T> {
+    const now = Date.now();
+    const waitMs = Math.max(0, nextAvailable - now);
+    nextAvailable = Math.max(now, nextAvailable) + minGapMs;
+
+    if (waitMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+
+    return fn();
+  };
+}
+
+// One limiter per module load (i.e. per serverless instance). The worker calls
+// syncResendMarketingContact once per contact without injecting dependencies, so
+// a per-call limiter would only space each contact's own calls, not the batch.
+// A module-level limiter serializes every Resend call across the whole run and
+// across repeat runs on a warm instance.
+const throttleResendSyncCall = createRateLimiter(
+  RESEND_SYNC_REQUESTS_PER_SECOND,
+);
+
 function getDefaultContactSyncDependencies(): ResendContactSyncDependencies {
   const resend = getResendClient();
+  const throttle = throttleResendSyncCall;
 
   return {
-    addContactSegment: (input) => resend.contacts.segments.add(input),
-    createContact: (input) => resend.contacts.create(input),
-    listContactSegments: (input) => resend.contacts.segments.list(input),
-    sendEvent: (input) => resend.events.send(input),
-    updateContact: (input) => resend.contacts.update(input),
-    updateContactTopics: (input) => resend.contacts.topics.update(input),
+    addContactSegment: (input) =>
+      throttle(() => resend.contacts.segments.add(input)),
+    createContact: (input) => throttle(() => resend.contacts.create(input)),
+    listContactSegments: (input) =>
+      throttle(() => resend.contacts.segments.list(input)),
+    sendEvent: (input) => throttle(() => resend.events.send(input)),
+    updateContact: (input) => throttle(() => resend.contacts.update(input)),
+    updateContactTopics: (input) =>
+      throttle(() => resend.contacts.topics.update(input)),
   };
 }
 
@@ -692,35 +730,6 @@ function getMarketingTopics(
     getOptionalEnv(MARKETING_TOPIC_ENV),
     getOptionalEnv(SOURCE_TOPIC_ENV_BY_SOURCE[source] ?? ""),
   ]).map((id) => ({ id, subscription: "opt_in" }));
-}
-
-function getMarketingContactProperties(
-  input: ResendMarketingContactInput,
-): Record<string, string | number | null> {
-  return cleanContactProperties({
-    consent_text: input.consentText,
-    consented_at: input.consentedAt.toISOString(),
-    instagram: input.instagram,
-    phone: input.phone,
-    source: input.source,
-    source_path: input.sourcePath,
-  });
-}
-
-function cleanContactProperties(
-  input: Record<string, string | number | undefined>,
-): Record<string, string | number | null> {
-  return Object.fromEntries(
-    Object.entries(input)
-      .map(
-        ([key, value]) =>
-          [key, typeof value === "string" ? value.trim() : value] as const,
-      )
-      .filter(
-        (entry): entry is readonly [string, string | number] =>
-          entry[1] !== undefined && entry[1] !== "",
-      ),
-  );
 }
 
 function splitName(name: string | undefined): {
