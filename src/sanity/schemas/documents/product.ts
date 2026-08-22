@@ -1,5 +1,7 @@
 import { defineArrayMember, defineField, defineType } from "sanity";
 import { getProductCheckoutEligibility } from "@/lib/commerce/product-checkout-eligibility";
+import { VariantCombinationInput } from "@/sanity/components/variant-combination-input";
+import { VariantOverridesInput } from "@/sanity/components/variant-overrides-input";
 import type { TProductShippingMetadata } from "@/types";
 
 export const product = defineType({
@@ -70,7 +72,7 @@ export const product = defineType({
       type: "number",
       group: "pricing",
       description:
-        "The default price for every option combination. Use a Variant Override only when a specific combination costs a different amount.",
+        "The default price for every option combination. Customize a combination only when it costs a different amount.",
       validation: (Rule) => Rule.required().min(0),
     }),
     defineField({
@@ -171,11 +173,12 @@ export const product = defineType({
     }),
     defineField({
       name: "variantOverrides",
-      title: "Variant Overrides",
+      title: "Variant Customizations",
       type: "array",
       group: "variants",
       description:
-        "Optional. Add an entry only for a combination that needs its own price, availability, SKU, or shipping. Every combination you do not list inherits the product-level values, so most products leave this empty.",
+        "Optional. Pick a combination above to give it its own price, availability, stock, image, or shipping. Every combination you leave alone inherits the product-level values, so most products need none of these.",
+      components: { input: VariantOverridesInput },
       hidden: ({ document }) =>
         !Array.isArray(document?.options) || document.options.length === 0,
       validation: (Rule) =>
@@ -185,14 +188,40 @@ export const product = defineType({
       of: [
         defineArrayMember({
           type: "object",
-          title: "Override",
+          title: "Customized Combination",
+          // Collapsible groups keep each customization compact: only the
+          // combination shows by default; the optional overrides stay tucked
+          // away until an editor opens the group they need.
+          fieldsets: [
+            {
+              name: "pricing",
+              title: "Pricing",
+              options: { collapsible: true, collapsed: false },
+            },
+            {
+              name: "availability",
+              title: "Availability & stock",
+              options: { collapsible: true, collapsed: true },
+            },
+            {
+              name: "media",
+              title: "Image",
+              options: { collapsible: true, collapsed: true },
+            },
+            {
+              name: "shippingOverride",
+              title: "Shipping, packing & customs",
+              options: { collapsible: true, collapsed: true },
+            },
+          ],
           fields: [
             defineField({
               name: "select",
               title: "Combination",
               type: "array",
               description:
-                "Pin the exact combination this override applies to — one row per option, each naming an option and one of its values.",
+                "The combination this customization applies to. Set automatically when you customize a combination above; adjust it with the dropdowns if needed.",
+              components: { input: VariantCombinationInput },
               validation: (Rule) => Rule.required().min(1),
               of: [
                 defineArrayMember({
@@ -217,20 +246,10 @@ export const product = defineType({
               ],
             }),
             defineField({
-              name: "image",
-              title: "Variant Image",
-              type: "image",
-              options: { hotspot: true },
-              description:
-                "Optional. Shown instead of the product image while this combination is selected. Leave blank to keep the product image.",
-              fields: [
-                defineField({ name: "alt", title: "Alt text", type: "string" }),
-              ],
-            }),
-            defineField({
               name: "price",
               title: "Price Override",
               type: "number",
+              fieldset: "pricing",
               description:
                 "Leave blank to keep the product price for this combination.",
               validation: (Rule) => Rule.min(0),
@@ -239,6 +258,7 @@ export const product = defineType({
               name: "discountPrice",
               title: "Manual Discount Price",
               type: "number",
+              fieldset: "pricing",
               description:
                 "Optional sale price for this combination. Must be lower than its effective price.",
               validation: (Rule) => Rule.min(0),
@@ -247,12 +267,14 @@ export const product = defineType({
               name: "sku",
               title: "Merchant SKU",
               type: "string",
+              fieldset: "pricing",
               description: "Optional merchant-facing SKU for reconciliation.",
             }),
             defineField({
               name: "isAvailable",
               title: "Available for checkout",
               type: "boolean",
+              fieldset: "availability",
               description:
                 "Leave blank to follow the product. Set to false to mark just this combination sold out.",
             }),
@@ -260,19 +282,34 @@ export const product = defineType({
               name: "availabilityLabel",
               title: "Availability Label",
               type: "string",
+              fieldset: "availability",
             }),
             defineField({
               name: "stockQuantity",
               title: "Stock on hand",
               type: "number",
+              fieldset: "availability",
               description:
                 "Units on hand for this exact combination. Changing this number resets the live count; leave blank to sell this combination without tracking stock. This is a restock input — the live remaining count is on the admin Inventory screen.",
               validation: (Rule) => Rule.integer().min(0),
             }),
             defineField({
+              name: "image",
+              title: "Variant Image",
+              type: "image",
+              fieldset: "media",
+              options: { hotspot: true },
+              description:
+                "Optional. Shown instead of the product image while this combination is selected. Leave blank to keep the product image.",
+              fields: [
+                defineField({ name: "alt", title: "Alt text", type: "string" }),
+              ],
+            }),
+            defineField({
               name: "shipping",
               title: "Shipping, Packing & Customs Override",
               type: "object",
+              fieldset: "shippingOverride",
               description:
                 "Optional complete metadata set for this combination. Leave empty to use the product-level values. If you enter any override values, complete every required field because this object replaces the product-level set rather than merging with it.",
               fields: shippingMetadataFields(),
@@ -330,7 +367,7 @@ export const product = defineType({
       type: "number",
       group: "catalog",
       description:
-        "Enter the number of units on hand when you receive or restock this product. Changing this number resets the live count; leave blank to sell without tracking stock. For a product with Options, set stock per combination on its Variant Override instead. This is a restock input — the live remaining count is shown on the admin Inventory screen, not here.",
+        "Enter the number of units on hand when you receive or restock this product. Changing this number resets the live count; leave blank to sell without tracking stock. For a product with Options, customize the combination and set its stock instead. This is a restock input — the live remaining count is shown on the admin Inventory screen, not here.",
       validation: (Rule) => Rule.integer().min(0),
     }),
     defineField({
@@ -347,7 +384,7 @@ export const product = defineType({
       type: "object",
       group: "shipping",
       description:
-        "Controls automated Chit Chats eligibility, package selection, and the customs information sent for cross-border orders. Complete these product-level defaults for every physical product; a variant override can replace the entire set for a single combination.",
+        "Controls automated Chit Chats eligibility, package selection, and the customs information sent for cross-border orders. Complete these product-level defaults for every physical product; customizing a combination can replace the entire set for that combination.",
       fields: shippingMetadataFields(),
     }),
     defineField({
