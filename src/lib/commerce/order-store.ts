@@ -2001,12 +2001,18 @@ function createDrizzleCheckoutOrderRepository(): CheckoutOrderRepository {
           .select({
             id: checkoutOrders.id,
             purpose: checkoutOrders.purpose,
+            status: checkoutOrders.status,
           })
           .from(checkoutOrders)
           .where(eq(checkoutOrders.orderId, orderId))
           .for("update")
           .limit(1);
         if (!order) return;
+        // Only unwind a still-pending reservation. Guard against overwriting a
+        // terminal state — e.g. an order the finalizer already flipped to `paid`
+        // in a client/webhook race — so a late verification-failure can never
+        // discard a paid order whose money ledger is authoritative.
+        if (order.status !== "pending") return;
         // Return any held inventory to available before marking the order
         // failed. Idempotent (skips already-committed rows) and gated to
         // product orders so training/booking failures never touch product stock.
@@ -2020,7 +2026,12 @@ function createDrizzleCheckoutOrderRepository(): CheckoutOrderRepository {
             failedAt: new Date(),
             updatedAt: new Date(),
           })
-          .where(eq(checkoutOrders.id, order.id));
+          .where(
+            and(
+              eq(checkoutOrders.id, order.id),
+              eq(checkoutOrders.status, "pending"),
+            ),
+          );
       });
     },
 

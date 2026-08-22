@@ -9,7 +9,9 @@ export type BookingAbuseScope =
   | "shipping-quotes"
   | "shipping-decisions"
   | "address-changes"
-  | "supplemental-payment-offer";
+  | "supplemental-payment-offer"
+  | "product-checkout"
+  | "cart-preview";
 
 interface HeaderReader {
   get(name: string): string | null;

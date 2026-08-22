@@ -9,6 +9,9 @@ import {
 } from "@/lib/commerce/cart";
 import { toCheckoutCatalogProduct } from "@/lib/commerce/product-catalog";
 import { applyStockAvailability } from "@/lib/commerce/product-stock-availability";
+import { readBoundedJsonBody } from "@/lib/security/bounded-json-body";
+import { buildBookingAbuseKey } from "@/lib/security/trusted-client-ip";
+import { checkCartPreviewRateLimit } from "@/lib/security/checkout-abuse-control";
 
 interface CartPreviewResponse {
   cart: ValidatedCart;
@@ -19,15 +22,25 @@ interface CartPreviewErrorResponse {
 }
 
 const MAX_CART_PREVIEW_ID_LENGTH = 128;
+const CART_PREVIEW_BODY_MAX_BYTES = 16 * 1024;
 
 export async function POST(req: NextRequest): Promise<Response> {
-  let body: unknown;
+  const rateLimited = await enforceCartPreviewRateLimit(req);
+  if (rateLimited) return rateLimited;
 
-  try {
-    body = await req.json();
-  } catch {
-    return invalidCartPreviewRequest();
+  const parsedBody = await readBoundedJsonBody(
+    req,
+    CART_PREVIEW_BODY_MAX_BYTES,
+  );
+  if (!parsedBody.ok) {
+    return parsedBody.reason === "too_large"
+      ? NextResponse.json<CartPreviewErrorResponse>(
+          { error: "Cart preview request is too large" },
+          { status: 413 },
+        )
+      : invalidCartPreviewRequest();
   }
+  const body = parsedBody.value;
 
   if (
     !isRecord(body) ||
@@ -61,6 +74,35 @@ export async function POST(req: NextRequest): Promise<Response> {
       { status: 400 },
     );
   }
+}
+
+async function enforceCartPreviewRateLimit(
+  req: NextRequest,
+): Promise<Response | null> {
+  const key = buildBookingAbuseKey({
+    headers: req.headers,
+    scope: "cart-preview",
+    subject: "all",
+  });
+  // Fail open: cart preview runs on ordinary cart edits, so a missing client IP
+  // or a rate-limiter outage must not block shopping. The limiter only throttles
+  // floods when the backend is reachable.
+  if (!key) return null;
+  try {
+    const decision = await checkCartPreviewRateLimit({ key, now: new Date() });
+    if (!decision.allowed) {
+      return NextResponse.json<CartPreviewErrorResponse>(
+        { error: "Too many cart updates. Please wait a moment and try again." },
+        {
+          status: 429,
+          headers: { "Retry-After": String(decision.retryAfterSeconds) },
+        },
+      );
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 function toCartInputItem(item: unknown): CartInputItem {
