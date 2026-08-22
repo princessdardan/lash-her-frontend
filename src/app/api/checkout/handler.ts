@@ -635,11 +635,14 @@ export function createCheckoutPostHandler({
       );
     } catch (error) {
       if (initializingOrderId) {
-        // Release any inventory/quote held by the reserved order.
-        // markInitializationFailed only unwinds legacy "initializing" orders;
-        // Square orders are reserved as "ready", so markOrderVerificationFailed is
-        // what actually returns their held stock. Call both so either reservation
-        // shape is unwound rather than leaking until the abandoned-stock sweep.
+        // Release any inventory/quote held by the reserved order. Two separate
+        // columns matter: markInitializationFailed only unwinds orders whose
+        // `initializationStatus` is "initializing", but Square orders are reserved
+        // with `initializationStatus: "ready"`, so it is a no-op for them.
+        // markOrderVerificationFailed keys off the lifecycle `status` ("pending"
+        // on reservation) and is what actually returns their held stock. Call both
+        // so either reservation shape is unwound rather than leaking until the
+        // abandoned-stock sweep.
         if (markOrderVerificationFailedDep) {
           await markOrderVerificationFailedDep(initializingOrderId).catch(
             () => undefined,
