@@ -16,6 +16,7 @@ const SERVER_ONLY_TEST_FILES = new Set([
   "src/lib/booking/operations/public-offerings.test.ts",
   "src/lib/booking/operations/sanity-service-link.test.ts",
   "src/lib/booking/square-team-client.test.ts",
+  "src/lib/commerce/order-store-supplemental-reference.test.ts",
   "src/lib/commerce/product-stock-abandoned-sweep.test.ts",
   "src/lib/commerce/supplemental-payment-offer-link-handler.test.ts",
   "src/lib/marketing-campaign/campaign-email-html.test.ts",
