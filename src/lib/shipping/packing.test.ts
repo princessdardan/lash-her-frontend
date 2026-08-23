@@ -162,3 +162,65 @@ test("throws when no box can contain the order", () => {
     /No configured package/,
   );
 });
+
+test("tiles many thin items across the floor instead of one tall tower", () => {
+  // 8 lash trays (10x5x1) stack to 8 cm — taller than either box — but tile
+  // flat across the 30x22 floor with room to spare. The old stacking-only model
+  // wrongly rejected this; floor tiling accepts it into the smaller box.
+  const packed = selectSmallestPackage(
+    [
+      {
+        quantity: 8,
+        weightGrams: 35,
+        lengthCm: 10,
+        widthCm: 5,
+        heightCm: 1,
+        isRigid: true,
+      },
+    ],
+    profiles,
+  );
+  assert.equal(packed.profileSlug, "mailer-box-30x22x5");
+  assert.equal(packed.totalWeightGrams, 35 * 8 + 90);
+});
+
+test("tiles multiple thicker items that would over-stack a shallow box", () => {
+  // 3 spoolies (12x8x3) stack to 9 cm (fails both boxes) but tile 2x2 across the
+  // 30x22 floor in a single layer.
+  const packed = selectSmallestPackage(
+    [
+      {
+        quantity: 3,
+        weightGrams: 45,
+        lengthCm: 12,
+        widthCm: 8,
+        heightCm: 3,
+        isRigid: true,
+      },
+    ],
+    profiles,
+  );
+  assert.equal(packed.profileSlug, "mailer-box-30x22x5");
+});
+
+test("still throws when a single item is intrinsically too thick for any box", () => {
+  // Gel-pads shape (18x13x6): its own 6 cm thickness exceeds every box's depth,
+  // so no tiling or rotation can help — this must stay a hard rejection.
+  assert.throws(
+    () =>
+      selectSmallestPackage(
+        [
+          {
+            quantity: 1,
+            weightGrams: 250,
+            lengthCm: 18,
+            widthCm: 13,
+            heightCm: 6,
+            isRigid: true,
+          },
+        ],
+        profiles,
+      ),
+    /No configured package/,
+  );
+});
