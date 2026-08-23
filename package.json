@@ -30,6 +30,7 @@
     "test:e2e:seed-commerce": "tsx --conditions=react-server scripts/seed-commerce-enabled-e2e.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate-private-db.ts",
+    "db:check": "tsx scripts/check-private-db-migrations.ts",
     "booking:bootstrap-legacy": "tsx --conditions=react-server scripts/bootstrap-booking-operations.ts",
     "booking:import-operational-cutover": "tsx --conditions=react-server scripts/import-booking-operational-cutover.ts",
     "db:create-payment-reconciliation-indexes": "tsx scripts/create-payment-reconciliation-indexes.ts",
