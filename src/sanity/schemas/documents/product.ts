@@ -393,6 +393,8 @@ export const product = defineType({
       type: "number",
       group: "catalog",
       initialValue: 0,
+      description:
+        "Sets where this product appears in the default “Featured” order on the /products page. Lower numbers come first (0 before 10); products sharing a number fall back to alphabetical by title. Sort the Products list by “Display Order” to see and manage the storefront sequence.",
       validation: (Rule) => Rule.integer(),
     }),
     defineField({
@@ -481,11 +483,35 @@ export const product = defineType({
       ],
     }),
   ],
+  orderings: [
+    {
+      title: "Display Order",
+      name: "displayOrderAsc",
+      by: [
+        { field: "displayOrder", direction: "asc" },
+        { field: "title", direction: "asc" },
+      ],
+    },
+    {
+      title: "Title (A–Z)",
+      name: "titleAsc",
+      by: [{ field: "title", direction: "asc" }],
+    },
+  ],
   preview: {
     select: {
       title: "title",
-      subtitle: "availabilityLabel",
+      availabilityLabel: "availabilityLabel",
+      displayOrder: "displayOrder",
       media: "image",
+    },
+    prepare({ title, availabilityLabel, displayOrder, media }) {
+      const rank = typeof displayOrder === "number" ? `#${displayOrder}` : "#—";
+      return {
+        title,
+        subtitle: availabilityLabel ? `${rank} · ${availabilityLabel}` : rank,
+        media,
+      };
     },
   },
 });

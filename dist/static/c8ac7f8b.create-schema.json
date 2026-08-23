@@ -1,0 +1,4038 @@
+[
+  {
+    "fields": [
+      {
+        "name": "secret",
+        "type": "string"
+      }
+    ],
+    "readOnly": true,
+    "name": "sanity.vercelProtectionBypass",
+    "type": "document",
+    "title": "Vercel Protection Bypass"
+  },
+  {
+    "fields": [
+      {
+        "name": "title",
+        "type": "string"
+      },
+      {
+        "name": "description",
+        "type": "text"
+      },
+      {
+        "of": [
+          {
+            "type": "heroSection"
+          },
+          {
+            "type": "featureSection"
+          },
+          {
+            "type": "homeTrainingProgramsSection",
+            "title": "Training Programs Feature"
+          }
+        ],
+        "name": "blocks",
+        "type": "array"
+      }
+    ],
+    "name": "homePage",
+    "type": "document"
+  },
+  {
+    "fields": [
+      {
+        "name": "title",
+        "type": "string"
+      },
+      {
+        "name": "subTitle",
+        "type": "string"
+      },
+      {
+        "name": "description",
+        "type": "text"
+      },
+      {
+        "of": [
+          {
+            "type": "contactInfo"
+          },
+          {
+            "type": "schedule"
+          },
+          {
+            "type": "contactFormLabels"
+          },
+          {
+            "type": "generalInquiryLabels"
+          }
+        ],
+        "name": "blocks",
+        "type": "array"
+      }
+    ],
+    "name": "contactPage",
+    "type": "document"
+  },
+  {
+    "fields": [
+      {
+        "name": "title",
+        "type": "string"
+      },
+      {
+        "name": "description",
+        "type": "text"
+      },
+      {
+        "of": [
+          {
+            "type": "photoGallery"
+          },
+          {
+            "type": "heroSection"
+          }
+        ],
+        "name": "blocks",
+        "type": "array"
+      }
+    ],
+    "name": "galleryPage",
+    "type": "document",
+    "title": "Gallery"
+  },
+  {
+    "fields": [
+      {
+        "name": "title",
+        "type": "string"
+      },
+      {
+        "name": "description",
+        "type": "string"
+      },
+      {
+        "of": [
+          {
+            "type": "ctaFeaturesSection",
+            "title": "CTA Features Section"
+          },
+          {
+            "type": "imageWithText",
+            "title": "Image with Text"
+          }
+        ],
+        "name": "blocks",
+        "type": "array"
+      }
+    ],
+    "name": "trainingPage",
+    "type": "document",
+    "title": "Training"
+  },
+  {
+    "fields": [
+      {
+        "name": "title",
+        "type": "string"
+      },
+      {
+        "name": "description",
+        "type": "text"
+      },
+      {
+        "of": [
+          {
+            "to": [
+              {
+                "type": "trainingProgram"
+              }
+            ],
+            "type": "reference",
+            "title": "Reference to training program"
+          }
+        ],
+        "name": "trainingPrograms",
+        "type": "array"
+      }
+    ],
+    "name": "trainingProgramsPage",
+    "type": "document",
+    "title": "Training Programs Overview"
+  },
+  {
+    "fields": [
+      {
+        "name": "title",
+        "type": "string"
+      },
+      {
+        "name": "eyebrow",
+        "type": "string"
+      },
+      {
+        "name": "description",
+        "type": "text"
+      },
+      {
+        "options": {
+          "hotspot": true
+        },
+        "fields": [
+          {
+            "name": "alt",
+            "type": "string",
+            "title": "Alt text"
+          }
+        ],
+        "name": "heroImage",
+        "type": "image"
+      },
+      {
+        "of": [
+          {
+            "to": [
+              {
+                "type": "productCollection"
+              }
+            ],
+            "type": "reference",
+            "title": "Reference to product collection"
+          }
+        ],
+        "name": "featuredCollections",
+        "type": "array"
+      },
+      {
+        "name": "emptyStateTitle",
+        "type": "string"
+      },
+      {
+        "name": "emptyStateDescription",
+        "type": "text"
+      }
+    ],
+    "name": "productsPage",
+    "type": "document"
+  },
+  {
+    "fields": [
+      {
+        "name": "title",
+        "type": "string"
+      },
+      {
+        "name": "description",
+        "type": "text"
+      },
+      {
+        "options": {
+          "hotspot": false
+        },
+        "description": "Default social sharing image (recommended: 1200 x 630px)",
+        "name": "ogImage",
+        "type": "image",
+        "title": "Open Graph Image"
+      },
+      {
+        "name": "header",
+        "type": "header"
+      },
+      {
+        "name": "footer",
+        "type": "footer"
+      },
+      {
+        "fields": [
+          {
+            "initialValue": false,
+            "name": "enabled",
+            "type": "boolean"
+          },
+          {
+            "options": {
+              "list": [
+                {
+                  "title": "Full Contact (Name, Email, Instagram)",
+                  "value": "fullContact"
+                },
+                {
+                  "title": "Email Only",
+                  "value": "emailOnly"
+                }
+              ]
+            },
+            "initialValue": "fullContact",
+            "name": "variant",
+            "type": "string"
+          },
+          {
+            "name": "heading",
+            "type": "string"
+          },
+          {
+            "name": "description",
+            "type": "text"
+          },
+          {
+            "name": "privacyText",
+            "type": "string",
+            "title": "Privacy Agreement Text"
+          },
+          {
+            "name": "privacyLinkLabel",
+            "type": "string"
+          },
+          {
+            "name": "privacyLinkHref",
+            "type": "string",
+            "title": "Privacy Link URL"
+          },
+          {
+            "name": "submitLabel",
+            "type": "string",
+            "title": "Submit Button Label"
+          },
+          {
+            "name": "successMessage",
+            "type": "string"
+          },
+          {
+            "initialValue": 30,
+            "description": "How many days before the popup shows again after being dismissed or submitted.",
+            "name": "cookieExpiryDays",
+            "type": "number",
+            "title": "Cookie Expiry (Days)"
+          }
+        ],
+        "name": "contactPopup",
+        "type": "object"
+      }
+    ],
+    "name": "globalSettings",
+    "type": "document"
+  },
+  {
+    "fields": [
+      {
+        "of": [
+          {
+            "type": "menuDirectLink"
+          },
+          {
+            "type": "menuDropdown"
+          }
+        ],
+        "name": "items",
+        "type": "array",
+        "title": "Menu Items"
+      }
+    ],
+    "name": "mainMenu",
+    "type": "document",
+    "title": "Navigation Menu"
+  },
+  {
+    "validation": [
+      {
+        "rules": [
+          {
+            "flag": "custom"
+          }
+        ],
+        "level": "error"
+      }
+    ],
+    "fields": [
+      {
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "presence",
+                "constraint": "required"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "name": "title",
+        "type": "string"
+      },
+      {
+        "options": {
+          "source": "title"
+        },
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "custom"
+              },
+              {
+                "flag": "presence",
+                "constraint": "required"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "name": "slug",
+        "type": "slug"
+      },
+      {
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "presence",
+                "constraint": "required"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "name": "description",
+        "type": "text"
+      },
+      {
+        "description": "A sentence or two used as the catalog card blurb and the fallback SEO/social summary. Falls back to the full Description when empty. For a few-word label, use Card Subtitle instead.",
+        "name": "shortDescription",
+        "type": "text"
+      },
+      {
+        "description": "A short uppercase label shown beneath the title on the card and product page, such as retention or finish details. Keep it to a few words, not a sentence — for a blurb, use Short Description.",
+        "name": "cardSubtitle",
+        "type": "string"
+      },
+      {
+        "description": "Optional merchandising label, such as Best Seller or New.",
+        "name": "badgeLabel",
+        "type": "string"
+      },
+      {
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "presence",
+                "constraint": "required"
+              },
+              {
+                "flag": "min",
+                "constraint": 0
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "description": "The default price for every option combination. Customize a combination only when it costs a different amount.",
+        "name": "price",
+        "type": "number"
+      },
+      {
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "min",
+                "constraint": 0
+              },
+              {
+                "flag": "custom"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "description": "Optional sale price configured directly in Sanity. Must be lower than the regular price.",
+        "name": "discountPrice",
+        "type": "number",
+        "title": "Manual Discount Price"
+      },
+      {
+        "description": "Optional merchant-facing SKU for reconciliation. Generated fallback codes are internal and not shown to customers.",
+        "name": "sku",
+        "type": "string",
+        "title": "Merchant SKU"
+      },
+      {
+        "initialValue": "CAD",
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "presence",
+                "constraint": "required"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "readOnly": true,
+        "hidden": true,
+        "name": "currency",
+        "type": "string"
+      },
+      {
+        "of": [
+          {
+            "to": [
+              {
+                "type": "productCollection"
+              }
+            ],
+            "type": "reference",
+            "title": "Reference to product collection"
+          }
+        ],
+        "name": "collections",
+        "type": "array"
+      },
+      {
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "max",
+                "constraint": 2
+              },
+              {
+                "flag": "custom"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "description": "Leave empty for a product with no choices. Add one option (for example Size) for simple variants, or two options (for example Curl and Length) for a two-level product. Purchasable combinations are generated automatically from the values.",
+        "of": [
+          {
+            "fields": [
+              {
+                "validation": [
+                  {
+                    "rules": [
+                      {
+                        "flag": "presence",
+                        "constraint": "required"
+                      }
+                    ],
+                    "level": "error"
+                  }
+                ],
+                "description": "The axis label, such as Curl or Length.",
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "validation": [
+                  {
+                    "rules": [
+                      {
+                        "flag": "presence",
+                        "constraint": "required"
+                      },
+                      {
+                        "flag": "min",
+                        "constraint": 1
+                      }
+                    ],
+                    "level": "error"
+                  }
+                ],
+                "description": "The choices customers pick from, such as C and CC.",
+                "of": [
+                  {
+                    "validation": [
+                      {
+                        "rules": [
+                          {
+                            "flag": "presence",
+                            "constraint": "required"
+                          }
+                        ],
+                        "level": "error"
+                      }
+                    ],
+                    "type": "string"
+                  }
+                ],
+                "name": "values",
+                "type": "array"
+              }
+            ],
+            "type": "object",
+            "title": "Option"
+          }
+        ],
+        "name": "options",
+        "type": "array"
+      },
+      {
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "custom"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "description": "Optional. Pick a combination above to give it its own price, availability, stock, image, or shipping. Every combination you leave alone inherits the product-level values, so most products need none of these.",
+        "of": [
+          {
+            "fields": [
+              {
+                "validation": [
+                  {
+                    "rules": [
+                      {
+                        "flag": "presence",
+                        "constraint": "required"
+                      },
+                      {
+                        "flag": "min",
+                        "constraint": 1
+                      }
+                    ],
+                    "level": "error"
+                  }
+                ],
+                "description": "The combination this customization applies to. Set automatically when you customize a combination above; adjust it with the dropdowns if needed.",
+                "of": [
+                  {
+                    "fields": [
+                      {
+                        "validation": [
+                          {
+                            "rules": [
+                              {
+                                "flag": "presence",
+                                "constraint": "required"
+                              }
+                            ],
+                            "level": "error"
+                          }
+                        ],
+                        "name": "name",
+                        "type": "string",
+                        "title": "Option"
+                      },
+                      {
+                        "validation": [
+                          {
+                            "rules": [
+                              {
+                                "flag": "presence",
+                                "constraint": "required"
+                              }
+                            ],
+                            "level": "error"
+                          }
+                        ],
+                        "name": "value",
+                        "type": "string"
+                      }
+                    ],
+                    "type": "object",
+                    "title": "Selection"
+                  }
+                ],
+                "name": "select",
+                "type": "array",
+                "title": "Combination"
+              },
+              {
+                "validation": [
+                  {
+                    "rules": [
+                      {
+                        "flag": "min",
+                        "constraint": 0
+                      }
+                    ],
+                    "level": "error"
+                  }
+                ],
+                "description": "Leave blank to keep the product price for this combination.",
+                "name": "price",
+                "type": "number",
+                "title": "Price Override",
+                "fieldset": "pricing"
+              },
+              {
+                "validation": [
+                  {
+                    "rules": [
+                      {
+                        "flag": "min",
+                        "constraint": 0
+                      }
+                    ],
+                    "level": "error"
+                  }
+                ],
+                "description": "Optional sale price for this combination. Must be lower than its effective price.",
+                "name": "discountPrice",
+                "type": "number",
+                "title": "Manual Discount Price",
+                "fieldset": "pricing"
+              },
+              {
+                "description": "Optional merchant-facing SKU for reconciliation.",
+                "name": "sku",
+                "type": "string",
+                "title": "Merchant SKU",
+                "fieldset": "pricing"
+              },
+              {
+                "description": "Leave blank to follow the product. Set to false to mark just this combination sold out.",
+                "name": "isAvailable",
+                "type": "boolean",
+                "title": "Available for checkout",
+                "fieldset": "availability"
+              },
+              {
+                "name": "availabilityLabel",
+                "type": "string",
+                "fieldset": "availability"
+              },
+              {
+                "validation": [
+                  {
+                    "rules": [
+                      {
+                        "flag": "min",
+                        "constraint": 0
+                      }
+                    ],
+                    "level": "error"
+                  }
+                ],
+                "description": "Units on hand for this exact combination. Changing this number resets the live count; leave blank to sell this combination without tracking stock. This is a restock input — the live remaining count is on the admin Inventory screen.",
+                "name": "stockQuantity",
+                "type": "number",
+                "title": "Stock on hand",
+                "fieldset": "availability"
+              },
+              {
+                "options": {
+                  "hotspot": true
+                },
+                "description": "Optional. Shown instead of the product image while this combination is selected. Leave blank to keep the product image.",
+                "fields": [
+                  {
+                    "name": "alt",
+                    "type": "string",
+                    "title": "Alt text"
+                  }
+                ],
+                "name": "image",
+                "type": "image",
+                "title": "Variant Image",
+                "fieldset": "media"
+              },
+              {
+                "description": "Optional complete metadata set for this combination. Leave empty to use the product-level values. If you enter any override values, complete every required field because this object replaces the product-level set rather than merging with it.",
+                "fields": [
+                  {
+                    "initialValue": "physical",
+                    "options": {
+                      "list": [
+                        {
+                          "title": "Ship with Chit Chats",
+                          "value": "physical"
+                        },
+                        {
+                          "title": "Manual fulfillment only",
+                          "value": "manual"
+                        }
+                      ],
+                      "layout": "radio"
+                    },
+                    "validation": [
+                      {
+                        "rules": [
+                          {
+                            "flag": "valid",
+                            "constraint": ["physical", "manual"]
+                          },
+                          {
+                            "flag": "presence",
+                            "constraint": "required"
+                          }
+                        ],
+                        "level": "error"
+                      }
+                    ],
+                    "description": "Choose “Ship with Chit Chats” only when this item can use automated checkout and all required packing and customs details below are complete. Choose “Manual fulfillment only” for pickup, digital items, regulated goods, or anything staff must quote and arrange outside the automated shipping flow.",
+                    "name": "fulfillmentMode",
+                    "type": "string",
+                    "title": "Fulfillment Method"
+                  },
+                  {
+                    "validation": [
+                      {
+                        "rules": [
+                          {
+                            "flag": "min",
+                            "constraint": 1
+                          }
+                        ],
+                        "level": "error"
+                      }
+                    ],
+                    "description": "Enter the weight of one sellable unit before adding the mailer or box. Checkout multiplies this value by the cart quantity, then adds the selected package profile’s empty-package weight. Example: enter 35 when one lash tray weighs 35 g.",
+                    "name": "weightGrams",
+                    "type": "number",
+                    "title": "Per-Item Product Weight (g)"
+                  },
+                  {
+                    "validation": [
+                      {
+                        "rules": [
+                          {
+                            "flag": "min",
+                            "constraint": 1
+                          }
+                        ],
+                        "level": "error"
+                      }
+                    ],
+                    "description": "Longest side of one sellable unit in centimetres, measured as it will be packed. Checkout uses the item’s length, width, and height to pick the smallest box that fits. Round up to the next whole centimetre. Example: enter 12 for a 12 cm lash tray.",
+                    "name": "lengthCm",
+                    "type": "number",
+                    "title": "Item Length (cm)"
+                  },
+                  {
+                    "validation": [
+                      {
+                        "rules": [
+                          {
+                            "flag": "min",
+                            "constraint": 1
+                          }
+                        ],
+                        "level": "error"
+                      }
+                    ],
+                    "description": "Second side of one sellable unit in centimetres. See “Item Length” for how the three dimensions are used together.",
+                    "name": "widthCm",
+                    "type": "number",
+                    "title": "Item Width (cm)"
+                  },
+                  {
+                    "validation": [
+                      {
+                        "rules": [
+                          {
+                            "flag": "min",
+                            "constraint": 1
+                          }
+                        ],
+                        "level": "error"
+                      }
+                    ],
+                    "description": "Shortest side (thickness) of one sellable unit in centimetres. When several units ship together they are stacked on this axis to check box fit.",
+                    "name": "heightCm",
+                    "type": "number",
+                    "title": "Item Height / Thickness (cm)"
+                  },
+                  {
+                    "initialValue": true,
+                    "description": "Leave on for hard items that cannot bend (lash trays, tweezers, boxed products) so checkout only chooses a rigid-capable package. Turn off only for soft, flexible items that could safely ship in a bendable mailer.",
+                    "name": "isRigid",
+                    "type": "boolean",
+                    "title": "Rigid / Non-Bendable Item?"
+                  },
+                  {
+                    "description": "Describe what one unit physically is for the customs declaration. Be specific, factual, and generic rather than using only a brand or product collection name. Example: “Synthetic eyelash extensions” is clearer than “Lash Her product” or “beauty item.”",
+                    "name": "customsDescription",
+                    "type": "string",
+                    "title": "Plain-Language Customs Item Description"
+                  },
+                  {
+                    "initialValue": "CA",
+                    "validation": [
+                      {
+                        "rules": [
+                          {
+                            "flag": "regex",
+                            "constraint": {
+                              "pattern": "/^[A-Z]{2}$/",
+                              "name": "ISO country code",
+                              "invert": false
+                            }
+                          }
+                        ],
+                        "level": "error"
+                      }
+                    ],
+                    "description": "Enter the uppercase two-letter country code for where the product was manufactured—not where it is stored or shipped from. Defaults to CA (Canada); change it for items made elsewhere, e.g. KR for South Korea.",
+                    "name": "countryOfOrigin",
+                    "type": "string",
+                    "title": "Country Where the Item Was Made"
+                  },
+                  {
+                    "initialValue": false,
+                    "description": "Enable once the U.S. tariff classification (HTS code) has been set for this item. Manufacturer fields below are optional and are forwarded to the customs declaration when provided. When disabled, checkout will not quote U.S. delivery for carts containing it. U.S. quoting must also be enabled globally, so this setting never enables the destination by itself.",
+                    "name": "usShippingApproved",
+                    "type": "boolean",
+                    "title": "Allow This Item in U.S. Checkout"
+                  },
+                  {
+                    "validation": [
+                      {
+                        "rules": [
+                          {
+                            "flag": "regex",
+                            "constraint": {
+                              "pattern": "/^\\d{10}$/",
+                              "name": "10-digit HTS code",
+                              "invert": false
+                            }
+                          }
+                        ],
+                        "level": "error"
+                      }
+                    ],
+                    "description": "Enter the item’s verified 10-digit U.S. Harmonized Tariff Schedule classification with no dots or spaces. For example, a code written as 1234.56.7890 would be entered as 1234567890; this number demonstrates formatting only and is not a classification to copy. Confirm the actual code with the manufacturer or a qualified trade source.",
+                    "name": "hsTariffCode",
+                    "type": "string",
+                    "title": "U.S. HTS Tariff Code (10 Digits)"
+                  },
+                  {
+                    "description": "Enter the legal name of the company that made the item, not the retailer or distributor unless it is also the manufacturer. Example: “ABC Lashes Co., Ltd.”",
+                    "name": "manufacturerName",
+                    "type": "string",
+                    "title": "Manufacturer’s Legal Name"
+                  },
+                  {
+                    "description": "Enter the manufacturing facility’s street address only; city, province or state, postal code, and country have separate fields below. Example: “123 Export Road, Building 4.”",
+                    "name": "manufacturerAddress",
+                    "type": "text",
+                    "title": "Manufacturer’s Street Address"
+                  },
+                  {
+                    "description": "Enter the city or municipality in the manufacturer’s address. Example: “Seoul” or “Toronto.”",
+                    "name": "manufacturerCity",
+                    "type": "string",
+                    "title": "Manufacturer’s City"
+                  },
+                  {
+                    "description": "Enter the recognized province, state, or regional abbreviation for the manufacturer’s address. Examples: ON for Ontario or CA for California. Use the format supplied by the manufacturer for countries with different regional-code systems.",
+                    "name": "manufacturerProvinceCode",
+                    "type": "string",
+                    "title": "Manufacturer’s Province or State Code"
+                  },
+                  {
+                    "description": "Enter the postal or ZIP code exactly as used in the manufacturer’s address. Examples: M5V 2T6 for Canada or 90001 for the United States.",
+                    "name": "manufacturerPostalCode",
+                    "type": "string",
+                    "title": "Manufacturer’s Postal or ZIP Code"
+                  },
+                  {
+                    "initialValue": "CA",
+                    "validation": [
+                      {
+                        "rules": [
+                          {
+                            "flag": "regex",
+                            "constraint": {
+                              "pattern": "/^[A-Z]{2}$/",
+                              "name": "ISO country code",
+                              "invert": false
+                            }
+                          }
+                        ],
+                        "level": "error"
+                      }
+                    ],
+                    "description": "Enter the uppercase two-letter country code for the manufacturer’s address. This is usually the same as Country Where the Item Was Made, but it must describe the manufacturer contact address. Defaults to CA (Canada); change it if the manufacturer is elsewhere, e.g. KR for South Korea.",
+                    "name": "manufacturerCountryCode",
+                    "type": "string",
+                    "title": "Manufacturer’s Country (2-Letter Code)"
+                  },
+                  {
+                    "initialValue": false,
+                    "description": "Enable for items that may be regulated in transport, such as flammable adhesives or liquids, aerosols, lithium batteries, or pressurized containers. Any item marked Yes is blocked from automated Chit Chats quoting and requires manual fulfillment. Leave No only after confirming the product is not regulated for transport.",
+                    "name": "hazardousMaterial",
+                    "type": "boolean",
+                    "title": "Contains Regulated or Hazardous Material"
+                  }
+                ],
+                "name": "shipping",
+                "type": "object",
+                "title": "Shipping, Packing & Customs Override",
+                "fieldset": "shippingOverride"
+              }
+            ],
+            "fieldsets": [
+              {
+                "name": "pricing",
+                "options": {
+                  "collapsible": true,
+                  "collapsed": false
+                }
+              },
+              {
+                "name": "availability",
+                "title": "Availability & stock",
+                "options": {
+                  "collapsible": true,
+                  "collapsed": true
+                }
+              },
+              {
+                "name": "media",
+                "title": "Image",
+                "options": {
+                  "collapsible": true,
+                  "collapsed": true
+                }
+              },
+              {
+                "name": "shippingOverride",
+                "title": "Shipping, packing & customs",
+                "options": {
+                  "collapsible": true,
+                  "collapsed": true
+                }
+              }
+            ],
+            "type": "object",
+            "title": "Customized Combination"
+          }
+        ],
+        "hidden": "conditional",
+        "name": "variantOverrides",
+        "type": "array",
+        "title": "Variant Customizations"
+      },
+      {
+        "initialValue": true,
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "presence",
+                "constraint": "required"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "name": "isAvailable",
+        "type": "boolean",
+        "title": "Available for checkout"
+      },
+      {
+        "description": "e.g., 'In Stock', 'Out of Stock', or 'Pre-order'.",
+        "name": "availabilityLabel",
+        "type": "string"
+      },
+      {
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "min",
+                "constraint": 0
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "description": "Enter the number of units on hand when you receive or restock this product. Changing this number resets the live count; leave blank to sell without tracking stock. For a product with Options, customize the combination and set its stock instead. This is a restock input — the live remaining count is shown on the admin Inventory screen, not here.",
+        "name": "stockQuantity",
+        "type": "number",
+        "title": "Stock on hand"
+      },
+      {
+        "description": "e.g., pickup, delivery, digital delivery, or care instructions.",
+        "name": "fulfillmentNote",
+        "type": "text"
+      },
+      {
+        "description": "Controls automated Chit Chats eligibility, package selection, and the customs information sent for cross-border orders. Complete these product-level defaults for every physical product; customizing a combination can replace the entire set for that combination.",
+        "fields": [
+          {
+            "initialValue": "physical",
+            "options": {
+              "list": [
+                {
+                  "title": "Ship with Chit Chats",
+                  "value": "physical"
+                },
+                {
+                  "title": "Manual fulfillment only",
+                  "value": "manual"
+                }
+              ],
+              "layout": "radio"
+            },
+            "validation": [
+              {
+                "rules": [
+                  {
+                    "flag": "valid",
+                    "constraint": ["physical", "manual"]
+                  },
+                  {
+                    "flag": "presence",
+                    "constraint": "required"
+                  }
+                ],
+                "level": "error"
+              }
+            ],
+            "description": "Choose “Ship with Chit Chats” only when this item can use automated checkout and all required packing and customs details below are complete. Choose “Manual fulfillment only” for pickup, digital items, regulated goods, or anything staff must quote and arrange outside the automated shipping flow.",
+            "name": "fulfillmentMode",
+            "type": "string",
+            "title": "Fulfillment Method"
+          },
+          {
+            "validation": [
+              {
+                "rules": [
+                  {
+                    "flag": "min",
+                    "constraint": 1
+                  }
+                ],
+                "level": "error"
+              }
+            ],
+            "description": "Enter the weight of one sellable unit before adding the mailer or box. Checkout multiplies this value by the cart quantity, then adds the selected package profile’s empty-package weight. Example: enter 35 when one lash tray weighs 35 g.",
+            "name": "weightGrams",
+            "type": "number",
+            "title": "Per-Item Product Weight (g)"
+          },
+          {
+            "validation": [
+              {
+                "rules": [
+                  {
+                    "flag": "min",
+                    "constraint": 1
+                  }
+                ],
+                "level": "error"
+              }
+            ],
+            "description": "Longest side of one sellable unit in centimetres, measured as it will be packed. Checkout uses the item’s length, width, and height to pick the smallest box that fits. Round up to the next whole centimetre. Example: enter 12 for a 12 cm lash tray.",
+            "name": "lengthCm",
+            "type": "number",
+            "title": "Item Length (cm)"
+          },
+          {
+            "validation": [
+              {
+                "rules": [
+                  {
+                    "flag": "min",
+                    "constraint": 1
+                  }
+                ],
+                "level": "error"
+              }
+            ],
+            "description": "Second side of one sellable unit in centimetres. See “Item Length” for how the three dimensions are used together.",
+            "name": "widthCm",
+            "type": "number",
+            "title": "Item Width (cm)"
+          },
+          {
+            "validation": [
+              {
+                "rules": [
+                  {
+                    "flag": "min",
+                    "constraint": 1
+                  }
+                ],
+                "level": "error"
+              }
+            ],
+            "description": "Shortest side (thickness) of one sellable unit in centimetres. When several units ship together they are stacked on this axis to check box fit.",
+            "name": "heightCm",
+            "type": "number",
+            "title": "Item Height / Thickness (cm)"
+          },
+          {
+            "initialValue": true,
+            "description": "Leave on for hard items that cannot bend (lash trays, tweezers, boxed products) so checkout only chooses a rigid-capable package. Turn off only for soft, flexible items that could safely ship in a bendable mailer.",
+            "name": "isRigid",
+            "type": "boolean",
+            "title": "Rigid / Non-Bendable Item?"
+          },
+          {
+            "description": "Describe what one unit physically is for the customs declaration. Be specific, factual, and generic rather than using only a brand or product collection name. Example: “Synthetic eyelash extensions” is clearer than “Lash Her product” or “beauty item.”",
+            "name": "customsDescription",
+            "type": "string",
+            "title": "Plain-Language Customs Item Description"
+          },
+          {
+            "initialValue": "CA",
+            "validation": [
+              {
+                "rules": [
+                  {
+                    "flag": "regex",
+                    "constraint": {
+                      "pattern": "/^[A-Z]{2}$/",
+                      "name": "ISO country code",
+                      "invert": false
+                    }
+                  }
+                ],
+                "level": "error"
+              }
+            ],
+            "description": "Enter the uppercase two-letter country code for where the product was manufactured—not where it is stored or shipped from. Defaults to CA (Canada); change it for items made elsewhere, e.g. KR for South Korea.",
+            "name": "countryOfOrigin",
+            "type": "string",
+            "title": "Country Where the Item Was Made"
+          },
+          {
+            "initialValue": false,
+            "description": "Enable once the U.S. tariff classification (HTS code) has been set for this item. Manufacturer fields below are optional and are forwarded to the customs declaration when provided. When disabled, checkout will not quote U.S. delivery for carts containing it. U.S. quoting must also be enabled globally, so this setting never enables the destination by itself.",
+            "name": "usShippingApproved",
+            "type": "boolean",
+            "title": "Allow This Item in U.S. Checkout"
+          },
+          {
+            "validation": [
+              {
+                "rules": [
+                  {
+                    "flag": "regex",
+                    "constraint": {
+                      "pattern": "/^\\d{10}$/",
+                      "name": "10-digit HTS code",
+                      "invert": false
+                    }
+                  }
+                ],
+                "level": "error"
+              }
+            ],
+            "description": "Enter the item’s verified 10-digit U.S. Harmonized Tariff Schedule classification with no dots or spaces. For example, a code written as 1234.56.7890 would be entered as 1234567890; this number demonstrates formatting only and is not a classification to copy. Confirm the actual code with the manufacturer or a qualified trade source.",
+            "name": "hsTariffCode",
+            "type": "string",
+            "title": "U.S. HTS Tariff Code (10 Digits)"
+          },
+          {
+            "description": "Enter the legal name of the company that made the item, not the retailer or distributor unless it is also the manufacturer. Example: “ABC Lashes Co., Ltd.”",
+            "name": "manufacturerName",
+            "type": "string",
+            "title": "Manufacturer’s Legal Name"
+          },
+          {
+            "description": "Enter the manufacturing facility’s street address only; city, province or state, postal code, and country have separate fields below. Example: “123 Export Road, Building 4.”",
+            "name": "manufacturerAddress",
+            "type": "text",
+            "title": "Manufacturer’s Street Address"
+          },
+          {
+            "description": "Enter the city or municipality in the manufacturer’s address. Example: “Seoul” or “Toronto.”",
+            "name": "manufacturerCity",
+            "type": "string",
+            "title": "Manufacturer’s City"
+          },
+          {
+            "description": "Enter the recognized province, state, or regional abbreviation for the manufacturer’s address. Examples: ON for Ontario or CA for California. Use the format supplied by the manufacturer for countries with different regional-code systems.",
+            "name": "manufacturerProvinceCode",
+            "type": "string",
+            "title": "Manufacturer’s Province or State Code"
+          },
+          {
+            "description": "Enter the postal or ZIP code exactly as used in the manufacturer’s address. Examples: M5V 2T6 for Canada or 90001 for the United States.",
+            "name": "manufacturerPostalCode",
+            "type": "string",
+            "title": "Manufacturer’s Postal or ZIP Code"
+          },
+          {
+            "initialValue": "CA",
+            "validation": [
+              {
+                "rules": [
+                  {
+                    "flag": "regex",
+                    "constraint": {
+                      "pattern": "/^[A-Z]{2}$/",
+                      "name": "ISO country code",
+                      "invert": false
+                    }
+                  }
+                ],
+                "level": "error"
+              }
+            ],
+            "description": "Enter the uppercase two-letter country code for the manufacturer’s address. This is usually the same as Country Where the Item Was Made, but it must describe the manufacturer contact address. Defaults to CA (Canada); change it if the manufacturer is elsewhere, e.g. KR for South Korea.",
+            "name": "manufacturerCountryCode",
+            "type": "string",
+            "title": "Manufacturer’s Country (2-Letter Code)"
+          },
+          {
+            "initialValue": false,
+            "description": "Enable for items that may be regulated in transport, such as flammable adhesives or liquids, aerosols, lithium batteries, or pressurized containers. Any item marked Yes is blocked from automated Chit Chats quoting and requires manual fulfillment. Leave No only after confirming the product is not regulated for transport.",
+            "name": "hazardousMaterial",
+            "type": "boolean",
+            "title": "Contains Regulated or Hazardous Material"
+          }
+        ],
+        "name": "shipping",
+        "type": "object",
+        "title": "Shipping, Packing & Customs"
+      },
+      {
+        "initialValue": 0,
+        "description": "Sets where this product appears in the default “Featured” order on the /products page. Lower numbers come first (0 before 10); products sharing a number fall back to alphabetical by title. Sort the Products list by “Display Order” to see and manage the storefront sequence.",
+        "name": "displayOrder",
+        "type": "number"
+      },
+      {
+        "options": {
+          "hotspot": true
+        },
+        "fields": [
+          {
+            "name": "alt",
+            "type": "string",
+            "title": "Alt text"
+          }
+        ],
+        "name": "image",
+        "type": "image"
+      },
+      {
+        "of": [
+          {
+            "options": {
+              "hotspot": true
+            },
+            "fields": [
+              {
+                "name": "alt",
+                "type": "string",
+                "title": "Alt text"
+              }
+            ],
+            "type": "image"
+          }
+        ],
+        "name": "gallery",
+        "type": "array",
+        "title": "Gallery Images"
+      },
+      {
+        "of": [
+          {
+            "fields": [
+              {
+                "name": "heading",
+                "type": "string"
+              },
+              {
+                "description": "Rich text with optional bullet or numbered lists. This is the field to author new content in.",
+                "of": [
+                  {
+                    "marks": {
+                      "annotations": [
+                        {
+                          "i18nTitleKey": "inputs.portable-text.annotation.link",
+                          "options": {
+                            "modal": {
+                              "type": "popover"
+                            }
+                          },
+                          "fields": [
+                            {
+                              "validation": [
+                                {
+                                  "rules": [
+                                    {
+                                      "flag": "uri",
+                                      "constraint": {
+                                        "options": {
+                                          "scheme": [
+                                            "/^http$/",
+                                            "/^https$/",
+                                            "/^tel$/",
+                                            "/^mailto$/"
+                                          ],
+                                          "allowRelative": true,
+                                          "relativeOnly": false,
+                                          "allowCredentials": false
+                                        }
+                                      }
+                                    }
+                                  ],
+                                  "level": "error"
+                                }
+                              ],
+                              "description": "A valid web, email, phone, or relative link.",
+                              "name": "href",
+                              "type": "url",
+                              "title": "Link"
+                            }
+                          ],
+                          "name": "link",
+                          "type": "object"
+                        }
+                      ],
+                      "decorators": [
+                        {
+                          "value": "strong",
+                          "title": "Strong"
+                        },
+                        {
+                          "value": "em",
+                          "title": "Italic"
+                        },
+                        {
+                          "value": "code",
+                          "title": "Code"
+                        },
+                        {
+                          "value": "underline",
+                          "title": "Underline"
+                        },
+                        {
+                          "value": "strike-through",
+                          "title": "Strike"
+                        }
+                      ]
+                    },
+                    "lists": [
+                      {
+                        "value": "bullet",
+                        "title": "Bullet"
+                      },
+                      {
+                        "value": "number",
+                        "title": "Numbered"
+                      }
+                    ],
+                    "styles": [
+                      {
+                        "value": "normal",
+                        "title": "Normal"
+                      },
+                      {
+                        "value": "h1",
+                        "title": "Heading 1"
+                      },
+                      {
+                        "value": "h2",
+                        "title": "Heading 2"
+                      },
+                      {
+                        "value": "h3",
+                        "title": "Heading 3"
+                      },
+                      {
+                        "value": "h4",
+                        "title": "Heading 4"
+                      },
+                      {
+                        "value": "h5",
+                        "title": "Heading 5"
+                      },
+                      {
+                        "value": "h6",
+                        "title": "Heading 6"
+                      },
+                      {
+                        "value": "blockquote",
+                        "title": "Quote"
+                      }
+                    ],
+                    "of": [],
+                    "type": "block"
+                  }
+                ],
+                "name": "body",
+                "type": "array",
+                "title": "Content"
+              },
+              {
+                "deprecated": {
+                  "reason": "Use the rich Content field above. Legacy text still renders only when the rich field is empty."
+                },
+                "hidden": "conditional",
+                "name": "content",
+                "type": "text",
+                "title": "Content (legacy plain text)"
+              }
+            ],
+            "type": "object"
+          }
+        ],
+        "name": "detailSections",
+        "type": "array"
+      },
+      {
+        "fields": [
+          {
+            "name": "title",
+            "type": "string",
+            "title": "SEO Title"
+          },
+          {
+            "name": "description",
+            "type": "text",
+            "title": "SEO Description"
+          },
+          {
+            "options": {
+              "hotspot": true
+            },
+            "name": "image",
+            "type": "image",
+            "title": "SEO Image"
+          }
+        ],
+        "name": "seo",
+        "type": "object",
+        "title": "SEO"
+      }
+    ],
+    "name": "product",
+    "type": "document"
+  },
+  {
+    "fields": [
+      {
+        "name": "title",
+        "type": "string"
+      },
+      {
+        "options": {
+          "source": "title"
+        },
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "custom"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "name": "slug",
+        "type": "slug"
+      },
+      {
+        "name": "description",
+        "type": "text"
+      },
+      {
+        "name": "displayOrder",
+        "type": "number"
+      }
+    ],
+    "name": "productCollection",
+    "type": "document"
+  },
+  {
+    "fields": [
+      {
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "presence",
+                "constraint": "required"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "name": "title",
+        "type": "string",
+        "title": "Internal Title"
+      },
+      {
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "presence",
+                "constraint": "required"
+              },
+              {
+                "flag": "custom"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "description": "Customer-facing checkout code. Use uppercase letters, numbers, dashes, or underscores.",
+        "name": "code",
+        "type": "string"
+      },
+      {
+        "initialValue": true,
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "presence",
+                "constraint": "required"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "name": "isEnabled",
+        "type": "boolean",
+        "title": "Enabled"
+      },
+      {
+        "initialValue": "percentage",
+        "options": {
+          "layout": "radio",
+          "list": [
+            {
+              "title": "Percentage",
+              "value": "percentage"
+            },
+            {
+              "title": "Fixed CAD amount",
+              "value": "fixed"
+            }
+          ]
+        },
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "valid",
+                "constraint": ["percentage", "fixed"]
+              },
+              {
+                "flag": "presence",
+                "constraint": "required"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "name": "discountType",
+        "type": "string"
+      },
+      {
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "presence",
+                "constraint": "required"
+              },
+              {
+                "flag": "min",
+                "constraint": 0.01
+              },
+              {
+                "flag": "custom"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "description": "Percentage value for percentage discounts, or CAD amount for fixed discounts.",
+        "name": "amount",
+        "type": "number",
+        "title": "Discount Amount"
+      },
+      {
+        "initialValue": "all",
+        "options": {
+          "layout": "radio",
+          "list": [
+            {
+              "title": "All products and training programs",
+              "value": "all"
+            },
+            {
+              "title": "All products",
+              "value": "products"
+            },
+            {
+              "title": "All training programs",
+              "value": "trainingPrograms"
+            },
+            {
+              "title": "Specific items",
+              "value": "specificItems"
+            }
+          ]
+        },
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "valid",
+                "constraint": [
+                  "all",
+                  "products",
+                  "trainingPrograms",
+                  "specificItems"
+                ]
+              },
+              {
+                "flag": "presence",
+                "constraint": "required"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "name": "appliesTo",
+        "type": "string"
+      },
+      {
+        "of": [
+          {
+            "to": [
+              {
+                "type": "product"
+              }
+            ],
+            "type": "reference",
+            "title": "Reference to product"
+          }
+        ],
+        "hidden": "conditional",
+        "name": "products",
+        "type": "array",
+        "title": "Eligible Products"
+      },
+      {
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "custom"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "of": [
+          {
+            "to": [
+              {
+                "type": "trainingProgram"
+              }
+            ],
+            "type": "reference",
+            "title": "Reference to training program"
+          }
+        ],
+        "hidden": "conditional",
+        "name": "trainingPrograms",
+        "type": "array",
+        "title": "Eligible Training Programs"
+      }
+    ],
+    "name": "promotionCode",
+    "type": "document"
+  },
+  {
+    "fields": [
+      {
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "presence",
+                "constraint": "required"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "name": "title",
+        "type": "string"
+      },
+      {
+        "options": {
+          "source": "title"
+        },
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "custom"
+              },
+              {
+                "flag": "presence",
+                "constraint": "required"
+              },
+              {
+                "flag": "custom"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "name": "slug",
+        "type": "slug"
+      },
+      {
+        "rows": 3,
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "presence",
+                "constraint": "required"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "name": "description",
+        "type": "text"
+      },
+      {
+        "name": "shortDescription",
+        "type": "text"
+      },
+      {
+        "options": {
+          "hotspot": true
+        },
+        "fields": [
+          {
+            "name": "alt",
+            "type": "string",
+            "title": "Alt text"
+          }
+        ],
+        "name": "image",
+        "type": "image"
+      },
+      {
+        "of": [
+          {
+            "options": {
+              "hotspot": true
+            },
+            "fields": [
+              {
+                "name": "alt",
+                "type": "string",
+                "title": "Alt text"
+              }
+            ],
+            "type": "image"
+          }
+        ],
+        "name": "gallery",
+        "type": "array",
+        "title": "Gallery Images"
+      },
+      {
+        "of": [
+          {
+            "fields": [
+              {
+                "name": "heading",
+                "type": "string"
+              },
+              {
+                "name": "content",
+                "type": "text"
+              }
+            ],
+            "type": "object"
+          }
+        ],
+        "name": "detailSections",
+        "type": "array"
+      },
+      {
+        "fields": [
+          {
+            "name": "title",
+            "type": "string",
+            "title": "SEO Title"
+          },
+          {
+            "name": "description",
+            "type": "text",
+            "title": "SEO Description"
+          },
+          {
+            "options": {
+              "hotspot": true
+            },
+            "name": "image",
+            "type": "image",
+            "title": "SEO Image"
+          }
+        ],
+        "name": "seo",
+        "type": "object",
+        "title": "SEO"
+      }
+    ],
+    "name": "service",
+    "type": "document"
+  },
+  {
+    "fields": [
+      {
+        "options": {
+          "source": "title"
+        },
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "custom"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "name": "slug",
+        "type": "slug"
+      },
+      {
+        "name": "title",
+        "type": "string"
+      },
+      {
+        "name": "description",
+        "type": "text"
+      },
+      {
+        "name": "heroSubtitle",
+        "type": "string"
+      },
+      {
+        "options": {
+          "hotspot": true
+        },
+        "fields": [
+          {
+            "name": "alt",
+            "type": "string",
+            "title": "Alt text"
+          }
+        ],
+        "name": "heroImage",
+        "type": "image"
+      },
+      {
+        "of": [
+          {
+            "type": "string"
+          }
+        ],
+        "name": "heroBadges",
+        "type": "array"
+      },
+      {
+        "initialValue": 0,
+        "name": "displayOrder",
+        "type": "number"
+      },
+      {
+        "options": {
+          "hotspot": true
+        },
+        "fields": [
+          {
+            "name": "alt",
+            "type": "string",
+            "title": "Alt text"
+          }
+        ],
+        "name": "image",
+        "type": "image",
+        "title": "Catalog Image"
+      },
+      {
+        "name": "detailEyebrow",
+        "type": "string"
+      },
+      {
+        "name": "detailHeading",
+        "type": "string",
+        "title": "Detail Section Heading"
+      },
+      {
+        "name": "detailDescription",
+        "type": "text",
+        "title": "Detail Section Description"
+      },
+      {
+        "of": [
+          {
+            "fields": [
+              {
+                "name": "eyelash",
+                "type": "string",
+                "title": "Eyelash Label"
+              },
+              {
+                "name": "title",
+                "type": "string"
+              },
+              {
+                "of": [
+                  {
+                    "marks": {
+                      "annotations": [],
+                      "decorators": [
+                        {
+                          "value": "strong",
+                          "title": "Strong"
+                        },
+                        {
+                          "value": "em",
+                          "title": "Emphasis"
+                        }
+                      ]
+                    },
+                    "lists": [
+                      {
+                        "value": "bullet",
+                        "title": "Bullet"
+                      },
+                      {
+                        "value": "number",
+                        "title": "Numbered"
+                      }
+                    ],
+                    "styles": [
+                      {
+                        "value": "normal",
+                        "title": "Normal"
+                      }
+                    ],
+                    "of": [],
+                    "type": "block"
+                  }
+                ],
+                "name": "description",
+                "type": "array"
+              }
+            ],
+            "type": "object"
+          }
+        ],
+        "name": "detailItems",
+        "type": "array"
+      },
+      {
+        "of": [
+          {
+            "type": "string"
+          }
+        ],
+        "name": "factList",
+        "type": "array"
+      },
+      {
+        "fields": [
+          {
+            "name": "label",
+            "type": "string"
+          },
+          {
+            "validation": [
+              {
+                "rules": [
+                  {
+                    "flag": "custom"
+                  }
+                ],
+                "level": "error"
+              }
+            ],
+            "name": "href",
+            "type": "string",
+            "title": "URL"
+          }
+        ],
+        "name": "primaryCta",
+        "type": "object",
+        "title": "Primary CTA"
+      },
+      {
+        "fields": [
+          {
+            "name": "label",
+            "type": "string"
+          },
+          {
+            "validation": [
+              {
+                "rules": [
+                  {
+                    "flag": "custom"
+                  }
+                ],
+                "level": "error"
+              }
+            ],
+            "name": "href",
+            "type": "string",
+            "title": "URL"
+          }
+        ],
+        "name": "secondaryCta",
+        "type": "object",
+        "title": "Secondary CTA"
+      },
+      {
+        "name": "enrollmentTitle",
+        "type": "string"
+      },
+      {
+        "name": "enrollmentDescription",
+        "type": "text"
+      },
+      {
+        "options": {
+          "hotspot": true
+        },
+        "fields": [
+          {
+            "name": "alt",
+            "type": "string",
+            "title": "Alt text"
+          }
+        ],
+        "name": "enrollmentBackgroundImage",
+        "type": "image"
+      },
+      {
+        "description": "Structured contact section rendered at #contact on the training detail page.",
+        "name": "trainingContact",
+        "type": "trainingContactSection",
+        "title": "Training Contact Section"
+      },
+      {
+        "initialValue": false,
+        "name": "checkoutEnabled",
+        "type": "boolean",
+        "title": "Enable Online Checkout"
+      },
+      {
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "custom"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "hidden": "conditional",
+        "name": "price",
+        "type": "number"
+      },
+      {
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "min",
+                "constraint": 0
+              },
+              {
+                "flag": "custom"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "description": "Optional sale price configured directly in Sanity. Must be lower than the regular training price.",
+        "hidden": "conditional",
+        "name": "discountPrice",
+        "type": "number",
+        "title": "Manual Discount Price"
+      },
+      {
+        "initialValue": true,
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "custom"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "hidden": "conditional",
+        "name": "isAvailable",
+        "type": "boolean",
+        "title": "Available for checkout"
+      },
+      {
+        "description": "e.g., 'Now enrolling', 'Waitlist', or 'Limited seats'.",
+        "hidden": "conditional",
+        "name": "availabilityLabel",
+        "type": "string"
+      },
+      {
+        "description": "Enrollment or next-step details shown around checkout.",
+        "hidden": "conditional",
+        "name": "fulfillmentNote",
+        "type": "text"
+      },
+      {
+        "initialValue": "Enroll Now",
+        "hidden": "conditional",
+        "name": "checkoutCtaLabel",
+        "type": "string",
+        "title": "Checkout CTA Label"
+      },
+      {
+        "fields": [
+          {
+            "initialValue": "Book a Call",
+            "name": "label",
+            "type": "string"
+          },
+          {
+            "initialValue": "#contact",
+            "validation": [
+              {
+                "rules": [
+                  {
+                    "flag": "custom"
+                  }
+                ],
+                "level": "error"
+              }
+            ],
+            "name": "href",
+            "type": "string",
+            "title": "URL"
+          }
+        ],
+        "hidden": "conditional",
+        "name": "checkoutDisabledBookingCta",
+        "type": "object",
+        "title": "Disabled Checkout Booking CTA"
+      },
+      {
+        "hidden": "conditional",
+        "name": "postPurchaseInstructions",
+        "type": "text",
+        "title": "Post-Purchase Instructions"
+      },
+      {
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "uri",
+                "constraint": {
+                  "options": {
+                    "scheme": ["/^http$/", "/^https$/"],
+                    "allowRelative": false,
+                    "relativeOnly": false,
+                    "allowCredentials": false
+                  }
+                }
+              },
+              {
+                "flag": "custom"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "description": "Public Google Calendar Appointment Schedule URL shown only after a paid training scheduling token is verified.",
+        "hidden": "conditional",
+        "name": "introCallAppointmentScheduleUrl",
+        "type": "url",
+        "title": "Intro Call Appointment Schedule URL"
+      },
+      {
+        "initialValue": "link",
+        "options": {
+          "layout": "radio",
+          "list": [
+            {
+              "title": "Open as link",
+              "value": "link"
+            },
+            {
+              "title": "Embed on page",
+              "value": "embed"
+            }
+          ]
+        },
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "valid",
+                "constraint": ["link", "embed"]
+              },
+              {
+                "flag": "custom"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "description": "Choose whether verified students see an embedded scheduler or a button to open the Google Appointment Schedule.",
+        "hidden": "conditional",
+        "name": "introCallAppointmentScheduleEmbedMode",
+        "type": "string",
+        "title": "Intro Call Appointment Schedule Display"
+      },
+      {
+        "description": "Optional public guidance shown above the Google Appointment Schedule after paid token verification.",
+        "hidden": "conditional",
+        "name": "introCallSchedulingInstructions",
+        "type": "text"
+      },
+      {
+        "deprecated": {
+          "reason": "Training detail contact forms now use the Training Contact Section field."
+        },
+        "of": [
+          {
+            "type": "contactFormLabels"
+          }
+        ],
+        "readOnly": true,
+        "hidden": "conditional",
+        "name": "blocks",
+        "type": "array"
+      },
+      {
+        "fields": [
+          {
+            "name": "title",
+            "type": "string",
+            "title": "SEO Title"
+          },
+          {
+            "name": "description",
+            "type": "text",
+            "title": "SEO Description"
+          },
+          {
+            "options": {
+              "hotspot": true
+            },
+            "name": "image",
+            "type": "image",
+            "title": "SEO Image"
+          }
+        ],
+        "name": "seo",
+        "type": "object",
+        "title": "SEO"
+      }
+    ],
+    "name": "trainingProgram",
+    "type": "document"
+  },
+  {
+    "fields": [
+      {
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "presence",
+                "constraint": "required"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "name": "title",
+        "type": "string"
+      },
+      {
+        "options": {
+          "source": "title"
+        },
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "custom"
+              },
+              {
+                "flag": "presence",
+                "constraint": "required"
+              },
+              {
+                "flag": "custom"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "name": "slug",
+        "type": "slug"
+      },
+      {
+        "options": {
+          "list": [
+            {
+              "title": "Privacy Policy",
+              "value": "privacy"
+            },
+            {
+              "title": "Cookie Policy",
+              "value": "cookie"
+            },
+            {
+              "title": "Booking Policy",
+              "value": "booking"
+            },
+            {
+              "title": "Return Policy",
+              "value": "return"
+            },
+            {
+              "title": "Refund Policy",
+              "value": "refund"
+            },
+            {
+              "title": "FAQ",
+              "value": "faq"
+            },
+            {
+              "title": "Terms",
+              "value": "terms"
+            },
+            {
+              "title": "General",
+              "value": "general"
+            }
+          ],
+          "layout": "radio"
+        },
+        "initialValue": "general",
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "valid",
+                "constraint": [
+                  "privacy",
+                  "cookie",
+                  "booking",
+                  "return",
+                  "refund",
+                  "faq",
+                  "terms",
+                  "general"
+                ]
+              },
+              {
+                "flag": "presence",
+                "constraint": "required"
+              },
+              {
+                "flag": "custom"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "name": "pageType",
+        "type": "string"
+      },
+      {
+        "rows": 3,
+        "description": "Short intro and metadata fallback.",
+        "name": "summary",
+        "type": "text"
+      },
+      {
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "presence",
+                "constraint": "required"
+              },
+              {
+                "flag": "min",
+                "constraint": 1
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "of": [
+          {
+            "marks": {
+              "annotations": [
+                {
+                  "fields": [
+                    {
+                      "validation": [
+                        {
+                          "rules": [
+                            {
+                              "flag": "presence",
+                              "constraint": "required"
+                            },
+                            {
+                              "flag": "custom"
+                            }
+                          ],
+                          "level": "error"
+                        }
+                      ],
+                      "name": "href",
+                      "type": "string",
+                      "title": "URL"
+                    },
+                    {
+                      "initialValue": false,
+                      "name": "blank",
+                      "type": "boolean",
+                      "title": "Open in new tab"
+                    }
+                  ],
+                  "name": "link",
+                  "type": "object"
+                }
+              ],
+              "decorators": [
+                {
+                  "value": "strong",
+                  "title": "Strong"
+                },
+                {
+                  "value": "em",
+                  "title": "Emphasis"
+                }
+              ]
+            },
+            "lists": [
+              {
+                "value": "bullet",
+                "title": "Bullet"
+              },
+              {
+                "value": "number",
+                "title": "Numbered"
+              }
+            ],
+            "styles": [
+              {
+                "value": "normal",
+                "title": "Normal"
+              },
+              {
+                "value": "h2",
+                "title": "H2"
+              },
+              {
+                "value": "h3",
+                "title": "H3"
+              }
+            ],
+            "of": [],
+            "type": "block"
+          }
+        ],
+        "name": "body",
+        "type": "array"
+      },
+      {
+        "fields": [
+          {
+            "name": "title",
+            "type": "string",
+            "title": "SEO Title"
+          },
+          {
+            "rows": 3,
+            "name": "description",
+            "type": "text",
+            "title": "SEO Description"
+          },
+          {
+            "initialValue": false,
+            "name": "noIndex",
+            "type": "boolean",
+            "title": "Hide from search engines"
+          }
+        ],
+        "name": "seo",
+        "type": "object",
+        "title": "SEO"
+      }
+    ],
+    "name": "policyPage",
+    "type": "document"
+  },
+  {
+    "fields": [
+      {
+        "options": {
+          "list": [
+            {
+              "title": "Default / Contextual",
+              "value": "default"
+            },
+            {
+              "title": "Full Screen",
+              "value": "fullScreen"
+            },
+            {
+              "title": "80% Viewport",
+              "value": "eighty"
+            },
+            {
+              "title": "Compact / Internal",
+              "value": "compact"
+            }
+          ],
+          "layout": "radio"
+        },
+        "initialValue": "default",
+        "description": "Overrides the default sizing behavior.",
+        "name": "heroSize",
+        "type": "string"
+      },
+      {
+        "options": {
+          "hotspot": true
+        },
+        "fields": [
+          {
+            "name": "alt",
+            "type": "string",
+            "title": "Alternative Text"
+          }
+        ],
+        "name": "image",
+        "type": "image"
+      },
+      {
+        "name": "heading",
+        "type": "string"
+      },
+      {
+        "name": "subHeading",
+        "type": "text"
+      },
+      {
+        "of": [
+          {
+            "type": "link"
+          }
+        ],
+        "name": "link",
+        "type": "array",
+        "title": "Links"
+      },
+      {
+        "name": "description",
+        "type": "text"
+      },
+      {
+        "initialValue": false,
+        "name": "onHomepage",
+        "type": "boolean"
+      },
+      {
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "max",
+                "constraint": 6
+              }
+            ],
+            "level": "warning",
+            "message": "Keep carousels focused with six slides or fewer."
+          }
+        ],
+        "description": "Optional. If provided, the hero will become a carousel.",
+        "of": [
+          {
+            "fields": [
+              {
+                "options": {
+                  "hotspot": true
+                },
+                "validation": [
+                  {
+                    "rules": [
+                      {
+                        "flag": "presence",
+                        "constraint": "required"
+                      }
+                    ],
+                    "level": "error"
+                  }
+                ],
+                "fields": [
+                  {
+                    "name": "alt",
+                    "type": "string",
+                    "title": "Alternative Text"
+                  }
+                ],
+                "name": "image",
+                "type": "image"
+              },
+              {
+                "name": "heading",
+                "type": "string"
+              },
+              {
+                "name": "subHeading",
+                "type": "text"
+              },
+              {
+                "name": "description",
+                "type": "text"
+              },
+              {
+                "of": [
+                  {
+                    "type": "link"
+                  }
+                ],
+                "name": "link",
+                "type": "array",
+                "title": "Links"
+              }
+            ],
+            "type": "object",
+            "name": "slide"
+          }
+        ],
+        "name": "slides",
+        "type": "array",
+        "title": "Carousel Slides"
+      },
+      {
+        "initialValue": false,
+        "hidden": "conditional",
+        "name": "autoRotate",
+        "type": "boolean",
+        "title": "Auto Rotate Carousel"
+      },
+      {
+        "initialValue": 5000,
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "min",
+                "constraint": 3000
+              },
+              {
+                "flag": "max",
+                "constraint": 15000
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "hidden": "conditional",
+        "name": "rotationIntervalMs",
+        "type": "number",
+        "title": "Rotation Interval (ms)"
+      }
+    ],
+    "name": "heroSection",
+    "type": "object"
+  },
+  {
+    "fields": [
+      {
+        "name": "heading",
+        "type": "string"
+      },
+      {
+        "name": "subHeading",
+        "type": "string"
+      },
+      {
+        "name": "description",
+        "type": "text"
+      },
+      {
+        "of": [
+          {
+            "type": "ctaFeature",
+            "title": "CTA Feature"
+          }
+        ],
+        "name": "features",
+        "type": "array"
+      }
+    ],
+    "name": "ctaFeaturesSection",
+    "type": "object",
+    "title": "CTA Features Section"
+  },
+  {
+    "fields": [
+      {
+        "name": "heading",
+        "type": "string"
+      },
+      {
+        "name": "description",
+        "type": "text"
+      },
+      {
+        "options": {
+          "hotspot": true
+        },
+        "fields": [
+          {
+            "name": "alt",
+            "type": "string",
+            "title": "Alternative Text"
+          }
+        ],
+        "name": "image",
+        "type": "image"
+      },
+      {
+        "of": [
+          {
+            "type": "link"
+          }
+        ],
+        "name": "link",
+        "type": "array",
+        "title": "Links"
+      }
+    ],
+    "name": "ctaSectionImage",
+    "type": "object",
+    "title": "CTA Section (Image)"
+  },
+  {
+    "fields": [
+      {
+        "name": "title",
+        "type": "string"
+      },
+      {
+        "name": "description",
+        "type": "text"
+      },
+      {
+        "options": {
+          "accept": "video/*"
+        },
+        "name": "video",
+        "type": "file"
+      },
+      {
+        "of": [
+          {
+            "type": "link"
+          }
+        ],
+        "name": "link",
+        "type": "array",
+        "title": "Links"
+      }
+    ],
+    "name": "ctaSectionVideo",
+    "type": "object",
+    "title": "CTA Section (Video)"
+  },
+  {
+    "fields": [
+      {
+        "name": "heading",
+        "type": "string"
+      },
+      {
+        "name": "subHeading",
+        "type": "string"
+      },
+      {
+        "name": "description",
+        "type": "string"
+      },
+      {
+        "of": [
+          {
+            "marks": {
+              "annotations": [
+                {
+                  "fields": [
+                    {
+                      "name": "href",
+                      "type": "string",
+                      "title": "URL"
+                    },
+                    {
+                      "name": "blank",
+                      "type": "boolean",
+                      "title": "Open in new tab"
+                    }
+                  ],
+                  "name": "link",
+                  "type": "object"
+                }
+              ],
+              "decorators": [
+                {
+                  "value": "strong",
+                  "title": "Strong"
+                },
+                {
+                  "value": "em",
+                  "title": "Emphasis"
+                }
+              ]
+            },
+            "lists": [
+              {
+                "value": "bullet",
+                "title": "Bullet"
+              },
+              {
+                "value": "number",
+                "title": "Numbered"
+              }
+            ],
+            "styles": [
+              {
+                "value": "normal",
+                "title": "Normal"
+              },
+              {
+                "value": "h2",
+                "title": "H2"
+              },
+              {
+                "value": "h3",
+                "title": "H3"
+              }
+            ],
+            "of": [],
+            "type": "block"
+          }
+        ],
+        "name": "perks",
+        "type": "array"
+      },
+      {
+        "options": {
+          "hotspot": true
+        },
+        "fields": [
+          {
+            "name": "alt",
+            "type": "string",
+            "title": "Alternative Text"
+          }
+        ],
+        "name": "image",
+        "type": "image"
+      },
+      {
+        "options": {
+          "list": [
+            {
+              "title": "Image Left",
+              "value": "HORIZONTAL_IMAGE_LEFT"
+            },
+            {
+              "title": "Image Right",
+              "value": "HORIZONTAL_IMAGE_RIGHT"
+            },
+            {
+              "title": "Vertical",
+              "value": "VERTICAL"
+            }
+          ]
+        },
+        "name": "orientation",
+        "type": "string"
+      }
+    ],
+    "name": "imageWithText",
+    "type": "object",
+    "title": "Image with Text"
+  },
+  {
+    "fields": [
+      {
+        "name": "heading",
+        "type": "string"
+      },
+      {
+        "name": "subHeading",
+        "type": "string"
+      },
+      {
+        "of": [
+          {
+            "marks": {
+              "annotations": [
+                {
+                  "fields": [
+                    {
+                      "name": "href",
+                      "type": "string",
+                      "title": "URL"
+                    },
+                    {
+                      "name": "blank",
+                      "type": "boolean",
+                      "title": "Open in new tab"
+                    }
+                  ],
+                  "name": "link",
+                  "type": "object"
+                }
+              ],
+              "decorators": [
+                {
+                  "value": "strong",
+                  "title": "Strong"
+                },
+                {
+                  "value": "em",
+                  "title": "Emphasis"
+                }
+              ]
+            },
+            "lists": [
+              {
+                "value": "bullet",
+                "title": "Bullet"
+              },
+              {
+                "value": "number",
+                "title": "Numbered"
+              }
+            ],
+            "styles": [
+              {
+                "value": "normal",
+                "title": "Normal"
+              },
+              {
+                "value": "h2",
+                "title": "H2"
+              },
+              {
+                "value": "h3",
+                "title": "H3"
+              }
+            ],
+            "of": [],
+            "type": "block"
+          }
+        ],
+        "name": "info",
+        "type": "array"
+      }
+    ],
+    "name": "infoSection",
+    "type": "object"
+  },
+  {
+    "fields": [
+      {
+        "name": "heading",
+        "type": "string"
+      },
+      {
+        "name": "subHeading",
+        "type": "string"
+      },
+      {
+        "name": "description",
+        "type": "text"
+      },
+      {
+        "of": [
+          {
+            "options": {
+              "hotspot": true
+            },
+            "fields": [
+              {
+                "name": "alt",
+                "type": "string",
+                "title": "Alternative Text"
+              }
+            ],
+            "type": "image"
+          }
+        ],
+        "name": "images",
+        "type": "array"
+      }
+    ],
+    "name": "photoGallery",
+    "type": "object"
+  },
+  {
+    "fields": [
+      {
+        "name": "heading",
+        "type": "string"
+      },
+      {
+        "name": "subHeading",
+        "type": "string"
+      },
+      {
+        "of": [
+          {
+            "type": "hours"
+          }
+        ],
+        "name": "hours",
+        "type": "array"
+      }
+    ],
+    "name": "schedule",
+    "type": "object"
+  },
+  {
+    "fields": [
+      {
+        "name": "heading",
+        "type": "string"
+      },
+      {
+        "name": "subHeading",
+        "type": "string"
+      },
+      {
+        "of": [
+          {
+            "type": "contact"
+          }
+        ],
+        "name": "contact",
+        "type": "array"
+      }
+    ],
+    "name": "contactInfo",
+    "type": "object"
+  },
+  {
+    "fields": [
+      {
+        "name": "heading",
+        "type": "string"
+      },
+      {
+        "name": "subHeading",
+        "type": "string"
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "title": "Name Label"
+      },
+      {
+        "name": "email",
+        "type": "string",
+        "title": "Email Label"
+      },
+      {
+        "name": "phone",
+        "type": "string",
+        "title": "Phone Label"
+      },
+      {
+        "name": "instagram",
+        "type": "string",
+        "title": "Instagram Label"
+      },
+      {
+        "name": "location",
+        "type": "string",
+        "title": "Location Label"
+      },
+      {
+        "name": "interest",
+        "type": "string",
+        "title": "Interest Label"
+      },
+      {
+        "name": "experience",
+        "type": "string",
+        "title": "Experience Label"
+      },
+      {
+        "name": "clients",
+        "type": "string",
+        "title": "Clients Label"
+      },
+      {
+        "name": "info",
+        "type": "string",
+        "title": "Info Label"
+      }
+    ],
+    "name": "contactFormLabels",
+    "type": "object"
+  },
+  {
+    "fields": [
+      {
+        "name": "heading",
+        "type": "string"
+      },
+      {
+        "name": "subHeading",
+        "type": "string"
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "title": "Name Label"
+      },
+      {
+        "name": "email",
+        "type": "string",
+        "title": "Email Label"
+      },
+      {
+        "name": "phone",
+        "type": "string",
+        "title": "Phone Label"
+      },
+      {
+        "name": "instagram",
+        "type": "string",
+        "title": "Instagram Label"
+      },
+      {
+        "name": "message",
+        "type": "string",
+        "title": "Message Label"
+      }
+    ],
+    "name": "generalInquiryLabels",
+    "type": "object"
+  },
+  {
+    "fields": [
+      {
+        "description": "Optional heading displayed above the featured items.",
+        "name": "heading",
+        "type": "string"
+      },
+      {
+        "rows": 2,
+        "description": "Optional supporting copy displayed below the heading.",
+        "name": "subHeading",
+        "type": "text"
+      },
+      {
+        "options": {
+          "list": [
+            {
+              "title": "Image Left, Content Right",
+              "value": "imageLeft"
+            },
+            {
+              "title": "Image Right, Content Left",
+              "value": "imageRight"
+            },
+            {
+              "title": "Image Top, Content Below",
+              "value": "imageTop"
+            }
+          ]
+        },
+        "initialValue": "imageLeft",
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "valid",
+                "constraint": ["imageLeft", "imageRight", "imageTop"]
+              },
+              {
+                "flag": "presence",
+                "constraint": "required"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "name": "layout",
+        "type": "string"
+      },
+      {
+        "initialValue": false,
+        "description": "When enabled, multiple feature items will auto-rotate on a timer.",
+        "name": "enableCarousel",
+        "type": "boolean"
+      },
+      {
+        "initialValue": 5000,
+        "description": "Time between slides in milliseconds. Default: 5000 (5 seconds).",
+        "hidden": "conditional",
+        "name": "carouselIntervalMs",
+        "type": "number",
+        "title": "Carousel Interval (ms)"
+      },
+      {
+        "of": [
+          {
+            "fields": [
+              {
+                "description": "Optional: link to an existing product. When set, the product image, heading, description, and CTA destination come from the product unless manually overridden.",
+                "to": [
+                  {
+                    "type": "product"
+                  }
+                ],
+                "name": "product",
+                "type": "reference",
+                "title": "Linked Product"
+              },
+              {
+                "options": {
+                  "hotspot": true
+                },
+                "description": "Used when no product is linked, or as a fallback if the product has no image.",
+                "fields": [
+                  {
+                    "name": "alt",
+                    "type": "string",
+                    "title": "Alternative Text"
+                  }
+                ],
+                "name": "image",
+                "type": "image"
+              },
+              {
+                "validation": [
+                  {
+                    "rules": [
+                      {
+                        "flag": "custom"
+                      }
+                    ],
+                    "level": "error"
+                  }
+                ],
+                "description": "Used when no product is linked, or as a fallback if the product has no title.",
+                "name": "heading",
+                "type": "string"
+              },
+              {
+                "name": "subHeading",
+                "type": "string"
+              },
+              {
+                "validation": [
+                  {
+                    "rules": [
+                      {
+                        "flag": "custom"
+                      }
+                    ],
+                    "level": "error"
+                  }
+                ],
+                "description": "Used when no product is linked, or as a fallback if the product has no short description.",
+                "name": "description",
+                "type": "text"
+              },
+              {
+                "fields": [
+                  {
+                    "name": "href",
+                    "type": "string",
+                    "title": "URL"
+                  },
+                  {
+                    "name": "label",
+                    "type": "string"
+                  },
+                  {
+                    "initialValue": false,
+                    "name": "isExternal",
+                    "type": "boolean",
+                    "title": "Open in new tab"
+                  }
+                ],
+                "name": "link",
+                "type": "object",
+                "title": "CTA Link"
+              }
+            ],
+            "type": "object",
+            "name": "featureItem"
+          }
+        ],
+        "name": "items",
+        "type": "array",
+        "title": "Feature Items"
+      }
+    ],
+    "name": "featureSection",
+    "type": "object"
+  },
+  {
+    "fields": [
+      {
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "presence",
+                "constraint": "required"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "description": "Select the training programs overview content to feature on the homepage.",
+        "to": [
+          {
+            "type": "trainingProgramsPage"
+          }
+        ],
+        "name": "trainingProgramsPage",
+        "type": "reference",
+        "title": "Training Programs Overview"
+      }
+    ],
+    "name": "homeTrainingProgramsSection",
+    "type": "object",
+    "title": "Training Programs Feature"
+  },
+  {
+    "fields": [
+      {
+        "initialValue": true,
+        "name": "enabled",
+        "type": "boolean",
+        "title": "Show contact section"
+      },
+      {
+        "initialValue": "Begin Your Training Conversation",
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "max",
+                "constraint": 120
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "name": "heading",
+        "type": "string"
+      },
+      {
+        "rows": 3,
+        "initialValue": "Share your details and we will follow up with next steps for this training program.",
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "max",
+                "constraint": 240
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "name": "subHeading",
+        "type": "text",
+        "title": "Subheading"
+      },
+      {
+        "initialValue": "Name",
+        "name": "name",
+        "type": "string",
+        "title": "Name field label"
+      },
+      {
+        "initialValue": "Email",
+        "name": "email",
+        "type": "string",
+        "title": "Email field label"
+      },
+      {
+        "initialValue": "Phone Number",
+        "name": "phone",
+        "type": "string",
+        "title": "Phone field label"
+      },
+      {
+        "initialValue": "Location (optional)",
+        "name": "location",
+        "type": "string",
+        "title": "Location field label"
+      },
+      {
+        "initialValue": "Instagram (optional)",
+        "name": "instagram",
+        "type": "string",
+        "title": "Instagram field label"
+      },
+      {
+        "initialValue": "Submit Training Inquiry",
+        "name": "submitLabel",
+        "type": "string",
+        "title": "Submit button label"
+      },
+      {
+        "initialValue": "Thank you. Your training inquiry has been received.",
+        "name": "successMessage",
+        "type": "string",
+        "title": "Success message"
+      },
+      {
+        "description": "Text displayed before the privacy policy checkbox. Supports links (e.g. to /privacy-policy).",
+        "of": [
+          {
+            "marks": {
+              "annotations": [
+                {
+                  "fields": [
+                    {
+                      "validation": [
+                        {
+                          "rules": [
+                            {
+                              "flag": "presence",
+                              "constraint": "required"
+                            },
+                            {
+                              "flag": "uri",
+                              "constraint": {
+                                "options": {
+                                  "scheme": [
+                                    "/^https$/",
+                                    "/^http$/",
+                                    "/^mailto$/",
+                                    "/^tel$/"
+                                  ],
+                                  "allowRelative": true,
+                                  "relativeOnly": false,
+                                  "allowCredentials": false
+                                }
+                              }
+                            }
+                          ],
+                          "level": "error"
+                        }
+                      ],
+                      "name": "href",
+                      "type": "url",
+                      "title": "URL"
+                    },
+                    {
+                      "initialValue": true,
+                      "name": "blank",
+                      "type": "boolean",
+                      "title": "Open in new tab"
+                    }
+                  ],
+                  "name": "link",
+                  "type": "object"
+                }
+              ],
+              "decorators": [
+                {
+                  "value": "strong",
+                  "title": "Strong"
+                },
+                {
+                  "value": "em",
+                  "title": "Emphasis"
+                }
+              ]
+            },
+            "styles": [
+              {
+                "value": "normal",
+                "title": "Normal"
+              }
+            ],
+            "of": [],
+            "type": "block"
+          }
+        ],
+        "name": "privacyPolicyText",
+        "type": "array"
+      }
+    ],
+    "name": "trainingContactSection",
+    "type": "object"
+  },
+  {
+    "fields": [
+      {
+        "name": "logoText",
+        "type": "link"
+      },
+      {
+        "of": [
+          {
+            "type": "link"
+          }
+        ],
+        "name": "ctaButton",
+        "type": "array",
+        "title": "CTA Button"
+      }
+    ],
+    "name": "header",
+    "type": "object"
+  },
+  {
+    "fields": [
+      {
+        "name": "logoText",
+        "type": "link"
+      },
+      {
+        "name": "text",
+        "type": "string"
+      },
+      {
+        "of": [
+          {
+            "type": "link"
+          }
+        ],
+        "name": "socialLink",
+        "type": "array",
+        "title": "Social Links"
+      },
+      {
+        "of": [
+          {
+            "fields": [
+              {
+                "description": "Optional group heading shown above this footer menu.",
+                "name": "heading",
+                "type": "string"
+              },
+              {
+                "validation": [
+                  {
+                    "rules": [
+                      {
+                        "flag": "presence",
+                        "constraint": "required"
+                      },
+                      {
+                        "flag": "min",
+                        "constraint": 1
+                      }
+                    ],
+                    "level": "error"
+                  }
+                ],
+                "of": [
+                  {
+                    "fields": [
+                      {
+                        "validation": [
+                          {
+                            "rules": [
+                              {
+                                "flag": "presence",
+                                "constraint": "required"
+                              }
+                            ],
+                            "level": "error"
+                          }
+                        ],
+                        "name": "title",
+                        "type": "string",
+                        "title": "Menu Title"
+                      },
+                      {
+                        "initialValue": "direct",
+                        "options": {
+                          "list": [
+                            {
+                              "title": "Direct Link",
+                              "value": "direct"
+                            },
+                            {
+                              "title": "External Link",
+                              "value": "external"
+                            }
+                          ],
+                          "layout": "radio"
+                        },
+                        "validation": [
+                          {
+                            "rules": [
+                              {
+                                "flag": "valid",
+                                "constraint": ["direct", "external"]
+                              },
+                              {
+                                "flag": "presence",
+                                "constraint": "required"
+                              }
+                            ],
+                            "level": "error"
+                          }
+                        ],
+                        "name": "linkType",
+                        "type": "string"
+                      },
+                      {
+                        "validation": [
+                          {
+                            "rules": [
+                              {
+                                "flag": "presence",
+                                "constraint": "required"
+                              },
+                              {
+                                "flag": "custom"
+                              }
+                            ],
+                            "level": "error"
+                          }
+                        ],
+                        "name": "url",
+                        "type": "string",
+                        "title": "URL"
+                      }
+                    ],
+                    "type": "object",
+                    "name": "footerNavigationItem"
+                  }
+                ],
+                "name": "items",
+                "type": "array",
+                "title": "Menu Items"
+              }
+            ],
+            "type": "object",
+            "name": "footerNavigationMenu"
+          }
+        ],
+        "name": "navigationMenus",
+        "type": "array"
+      }
+    ],
+    "name": "footer",
+    "type": "object"
+  },
+  {
+    "fields": [
+      {
+        "validation": [
+          {
+            "rules": [
+              {
+                "flag": "custom"
+              }
+            ],
+            "level": "error"
+          }
+        ],
+        "name": "href",
+        "type": "string",
+        "title": "URL"
+      },
+      {
+        "name": "label",
+        "type": "string"
+      },
+      {
+        "initialValue": false,
+        "name": "isExternal",
+        "type": "boolean",
+        "title": "Open in new tab"
+      }
+    ],
+    "name": "link",
+    "type": "object"
+  },
+  {
+    "fields": [
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "url",
+        "type": "string",
+        "title": "URL"
+      }
+    ],
+    "name": "menuLink",
+    "type": "object"
+  },
+  {
+    "fields": [
+      {
+        "options": {
+          "list": [
+            {
+              "title": "Standard",
+              "value": "standard"
+            },
+            {
+              "title": "Image-led",
+              "value": "imageFeature"
+            }
+          ],
+          "layout": "radio"
+        },
+        "initialValue": "standard",
+        "name": "format",
+        "type": "string",
+        "title": "Card Format"
+      },
+      {
+        "options": {
+          "hotspot": true
+        },
+        "fields": [
+          {
+            "name": "alt",
+            "type": "string",
+            "title": "Alternative Text"
+          }
+        ],
+        "hidden": "conditional",
+        "name": "image",
+        "type": "image"
+      },
+      {
+        "name": "heading",
+        "type": "string"
+      },
+      {
+        "name": "subHeading",
+        "type": "string"
+      },
+      {
+        "name": "location",
+        "type": "string"
+      },
+      {
+        "name": "tier",
+        "type": "string"
+      },
+      {
+        "of": [
+          {
+            "marks": {
+              "annotations": [
+                {
+                  "fields": [
+                    {
+                      "name": "href",
+                      "type": "string",
+                      "title": "URL"
+                    },
+                    {
+                      "name": "blank",
+                      "type": "boolean",
+                      "title": "Open in new tab"
+                    }
+                  ],
+                  "name": "link",
+                  "type": "object"
+                }
+              ],
+              "decorators": [
+                {
+                  "value": "strong",
+                  "title": "Strong"
+                },
+                {
+                  "value": "em",
+                  "title": "Emphasis"
+                }
+              ]
+            },
+            "lists": [
+              {
+                "value": "bullet",
+                "title": "Bullet"
+              },
+              {
+                "value": "number",
+                "title": "Numbered"
+              }
+            ],
+            "styles": [
+              {
+                "value": "normal",
+                "title": "Normal"
+              },
+              {
+                "value": "h2",
+                "title": "H2"
+              },
+              {
+                "value": "h3",
+                "title": "H3"
+              }
+            ],
+            "of": [],
+            "type": "block"
+          }
+        ],
+        "name": "features",
+        "type": "array"
+      },
+      {
+        "name": "link",
+        "type": "link"
+      },
+      {
+        "options": {
+          "list": [
+            {
+              "title": "Video Icon",
+              "value": "VIDEO_ICON"
+            },
+            {
+              "title": "User Icon",
+              "value": "USER_ICON"
+            },
+            {
+              "title": "Users Icon",
+              "value": "USERS_ICON"
+            },
+            {
+              "title": "Award Icon",
+              "value": "AWARD_ICON"
+            }
+          ]
+        },
+        "name": "icon",
+        "type": "string"
+      },
+      {
+        "name": "mostPopular",
+        "type": "boolean"
+      }
+    ],
+    "name": "ctaFeature",
+    "type": "object",
+    "title": "CTA Feature"
+  },
+  {
+    "fields": [
+      {
+        "name": "phone",
+        "type": "string"
+      },
+      {
+        "name": "email",
+        "type": "string"
+      },
+      {
+        "name": "location",
+        "type": "string"
+      }
+    ],
+    "name": "contact",
+    "type": "object"
+  },
+  {
+    "fields": [
+      {
+        "name": "days",
+        "type": "string"
+      },
+      {
+        "name": "times",
+        "type": "string"
+      }
+    ],
+    "name": "hours",
+    "type": "object"
+  },
+  {
+    "fields": [
+      {
+        "name": "title",
+        "type": "string"
+      },
+      {
+        "name": "url",
+        "type": "string",
+        "title": "URL"
+      }
+    ],
+    "name": "menuDirectLink",
+    "type": "object"
+  },
+  {
+    "fields": [
+      {
+        "name": "title",
+        "type": "string"
+      },
+      {
+        "of": [
+          {
+            "type": "menuDropdownSection"
+          }
+        ],
+        "name": "sections",
+        "type": "array"
+      }
+    ],
+    "name": "menuDropdown",
+    "type": "object"
+  },
+  {
+    "fields": [
+      {
+        "name": "heading",
+        "type": "string"
+      },
+      {
+        "of": [
+          {
+            "type": "menuLink"
+          }
+        ],
+        "name": "links",
+        "type": "array"
+      }
+    ],
+    "name": "menuDropdownSection",
+    "type": "object"
+  }
+]

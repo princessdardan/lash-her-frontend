@@ -81,7 +81,17 @@ export const structure: StructureResolver = (S) =>
           S.list()
             .title("Content")
             .items([
-              S.documentTypeListItem("product").title("Products"),
+              S.listItem()
+                .title("Products")
+                .schemaType("product")
+                .child(
+                  S.documentTypeList("product")
+                    .title("Products")
+                    .defaultOrdering([
+                      { field: "displayOrder", direction: "asc" },
+                      { field: "title", direction: "asc" },
+                    ]),
+                ),
               S.documentTypeListItem("productCollection").title(
                 "Product Collections",
               ),
