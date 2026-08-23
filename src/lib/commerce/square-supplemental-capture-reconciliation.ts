@@ -191,35 +191,48 @@ export async function runSquareSupplementalObligationCaptureReconciliation(input
   const windowEnd = new Date(input.now.getTime() - graceMs).toISOString();
 
   const completedByReference = new Map<string, CompletedSquarePaymentRef>();
-  let paymentsLoaded = false;
+  let loadState: "unloaded" | "loaded" | "failed" = "unloaded";
+  let loadError: unknown;
 
   async function ensurePaymentsLoaded(): Promise<void> {
-    if (paymentsLoaded) return;
-    paymentsLoaded = true;
-    let cursor: string | undefined;
-    for (let page = 0; page < MAX_PAYMENT_PAGES; page += 1) {
-      const response = await client.listPayments({
-        beginTime: windowBegin,
-        endTime: windowEnd,
-        sortOrder: "DESC",
-        limit: DEFAULT_PAYMENT_PAGE_LIMIT,
-        ...(cursor ? { cursor } : {}),
-      });
-      for (const payment of response.payments) {
-        if (payment.status.toUpperCase() !== "COMPLETED") continue;
-        if (!payment.reference_id) continue;
-        // Keep the first (most recent, since DESC) completed payment per ref.
-        if (!completedByReference.has(payment.reference_id)) {
-          completedByReference.set(payment.reference_id, {
-            paymentId: payment.id,
-            amountCents: payment.amount_money.amount,
-            currency: payment.amount_money.currency,
-            ...(payment.source_type ? { sourceType: payment.source_type } : {}),
-          });
+    if (loadState === "loaded") return;
+    // A failed load is cached and re-thrown for every candidate so each is
+    // counted `failed` (retried next sweep) rather than silently `unpaid` — and
+    // the page fetch is not re-attempted per candidate.
+    if (loadState === "failed") throw loadError;
+    try {
+      let cursor: string | undefined;
+      for (let page = 0; page < MAX_PAYMENT_PAGES; page += 1) {
+        const response = await client.listPayments({
+          beginTime: windowBegin,
+          endTime: windowEnd,
+          sortOrder: "DESC",
+          limit: DEFAULT_PAYMENT_PAGE_LIMIT,
+          ...(cursor ? { cursor } : {}),
+        });
+        for (const payment of response.payments) {
+          if (payment.status.toUpperCase() !== "COMPLETED") continue;
+          if (!payment.reference_id) continue;
+          // Keep the first (most recent, since DESC) completed payment per ref.
+          if (!completedByReference.has(payment.reference_id)) {
+            completedByReference.set(payment.reference_id, {
+              paymentId: payment.id,
+              amountCents: payment.amount_money.amount,
+              currency: payment.amount_money.currency,
+              ...(payment.source_type
+                ? { sourceType: payment.source_type }
+                : {}),
+            });
+          }
         }
+        if (!response.cursor) break;
+        cursor = response.cursor;
       }
-      if (!response.cursor) break;
-      cursor = response.cursor;
+      loadState = "loaded";
+    } catch (error) {
+      loadState = "failed";
+      loadError = error;
+      throw error;
     }
   }
 
