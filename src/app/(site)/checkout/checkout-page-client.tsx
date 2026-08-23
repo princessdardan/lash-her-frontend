@@ -3,8 +3,10 @@
 import { useEffect, useState, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { Check, ChevronDown, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { formatCad } from "@/lib/commerce/money";
 import {
   buildValidatedCart,
@@ -87,6 +89,10 @@ interface ShippingQuote {
   usImportDisclosureText?: string;
 }
 
+const FIELD_LABEL_CLASS =
+  "mb-1.5 block font-body text-sm font-medium text-lh-primary";
+const HELPER_TEXT_CLASS = "font-body text-sm leading-6 text-lh-muted";
+
 function CheckoutContent({
   products,
   shippingEnabled,
@@ -146,6 +152,12 @@ function CheckoutContent({
     useState(false);
   const [acceptedRefundPolicy, setAcceptedRefundPolicy] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  // Two-step flow: collect contact + delivery address first, then reveal the
+  // payment step (rate selection, policy assents, and the card form) once the
+  // shipping quote is in hand so the charged amount is final and accurate.
+  const [step, setStep] = useState<"details" | "payment">("details");
+  // Mobile-only order-summary disclosure. Always expanded on lg+ via CSS.
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
 
   // Build checkout items: either buy-now single item or full cart
   const checkoutItems = useMemo<CartInputItem[]>(() => {
@@ -208,6 +220,7 @@ function CheckoutContent({
   const requiresLiveShippingQuote = fulfillmentMode === "automated_shipping";
   const normalizedCustomerName = normalizeCheckoutText(customerName);
   const normalizedCustomerEmail = customerEmail.trim().toLowerCase();
+  const normalizedCustomerPhone = normalizeCheckoutText(customerPhone);
   const normalizedShippingLine2 = normalizeCheckoutText(shippingLine2);
   const shippingAddress = useMemo(
     () => ({
@@ -258,14 +271,14 @@ function CheckoutContent({
         customer: {
           name: normalizedCustomerName,
           email: normalizedCustomerEmail,
-          phone: normalizeCheckoutText(customerPhone),
+          phone: normalizedCustomerPhone,
         },
         shippingAddress,
       }),
     [
       activeRedeemedPromotionCode,
       checkoutItems,
-      customerPhone,
+      normalizedCustomerPhone,
       normalizedCustomerEmail,
       normalizedCustomerName,
       shippingAddress,
@@ -312,6 +325,17 @@ function CheckoutContent({
           100,
       ) / 100
     : 0;
+
+  // Whether the customer has provided everything the details step needs before
+  // the payment step can open. Pickup needs no address; shipping needs a full
+  // address plus a phone number for the carrier.
+  const detailsComplete = isManualCheckout
+    ? hasValidCustomerDetails
+    : hasValidCustomerDetails &&
+      hasValidShippingAddress &&
+      Boolean(normalizedCustomerPhone);
+  // Automated-shipping carts can't proceed at all when online shipping is off.
+  const shippingUnavailableForCart = requiresLiveShippingQuote && !shippingEnabled;
 
   const handleApplyPromotionCode = async () => {
     if (!cart.cart || !promotionCodeInput.trim()) return;
@@ -368,15 +392,18 @@ function CheckoutContent({
     setPromotionCodeError(null);
   };
 
-  const handleLoadShippingRates = async () => {
+  // Fetch (or refresh) live shipping rates for the entered address. Returns
+  // true only when a usable quote was stored, so the caller can advance the
+  // step machine on success.
+  const loadShippingRates = async (): Promise<boolean> => {
     if (
       !requiresLiveShippingQuote ||
       !displayedCart ||
       !hasValidCustomerDetails ||
       !hasValidShippingAddress ||
-      !normalizeCheckoutText(customerPhone)
+      !normalizedCustomerPhone
     )
-      return;
+      return false;
     setIsLoadingShippingRates(true);
     setShippingQuoteError(null);
     setShippingQuoteRequestKey(null);
@@ -391,7 +418,7 @@ function CheckoutContent({
           customer: {
             name: normalizedCustomerName,
             email: normalizedCustomerEmail,
-            phone: normalizeCheckoutText(customerPhone),
+            phone: normalizedCustomerPhone,
           },
           shippingAddress,
         }),
@@ -421,20 +448,41 @@ function CheckoutContent({
         setShippingQuoteError(
           data.error ?? "Shipping rates are unavailable. Please try again.",
         );
-        return;
+        return false;
       }
       const nextQuote = data as ShippingQuote;
       setShippingQuote(nextQuote);
       setShippingQuoteRequestKey(quoteRequestKey);
       setSelectedShippingRateId(nextQuote.rates[0]?.id ?? null);
+      return true;
     } catch {
       setShippingQuoteError(
         "Shipping rates are unavailable. Please try again.",
       );
+      return false;
     } finally {
       setIsLoadingShippingRates(false);
     }
   };
+
+  // Advance from the details step to the payment step. For shipped orders this
+  // fetches rates first (reusing a still-valid quote to avoid a needless call)
+  // and only opens payment once a quote is in hand.
+  const handleContinueToPayment = async () => {
+    if (!detailsComplete || shippingUnavailableForCart) return;
+    if (!requiresLiveShippingQuote) {
+      setStep("payment");
+      return;
+    }
+    if (activeShippingQuote && selectedShippingRateId) {
+      setStep("payment");
+      return;
+    }
+    const ok = await loadShippingRates();
+    if (ok) setStep("payment");
+  };
+
+  const handleEditDetails = () => setStep("details");
 
   useEffect(() => {
     if (
@@ -528,7 +576,7 @@ function CheckoutContent({
   const payButtonCustomer = {
     name: normalizedCustomerName,
     email: normalizedCustomerEmail,
-    phone: normalizeCheckoutText(customerPhone),
+    phone: normalizedCustomerPhone,
   };
   const payButtonShippingAddress = requiresShippingAddress
     ? shippingAddress
@@ -595,7 +643,7 @@ function CheckoutContent({
               <h1 className="font-heading text-3xl font-normal text-lh-shadow mb-4">
                 Your cart is empty
               </h1>
-              <p className="font-body text-sm font-bold text-lh-muted mb-8">
+              <p className={cn(HELPER_TEXT_CLASS, "mb-8")}>
                 Add products to your cart before checking out.
               </p>
               <Button asChild variant="primary" className="rounded-full px-8">
@@ -608,10 +656,196 @@ function CheckoutContent({
     );
   }
 
+  const orderSummary = displayedCart ? (
+    <aside className="lg:order-2">
+      <div className="soft-panel bg-lh-white p-6 lg:sticky lg:top-24">
+        <button
+          type="button"
+          onClick={() => setSummaryExpanded((value) => !value)}
+          aria-expanded={summaryExpanded}
+          className="flex w-full items-center justify-between gap-3 text-left lg:cursor-default lg:pointer-events-none"
+        >
+          <span className="flex items-center gap-2">
+            <span className="eyebrow-label">Order summary</span>
+            <ChevronDown
+              className={cn(
+                "size-4 text-lh-muted transition-transform lg:hidden",
+                summaryExpanded && "rotate-180",
+              )}
+              aria-hidden="true"
+            />
+          </span>
+          <span className="font-heading text-xl font-normal text-lh-shadow lg:hidden">
+            {formatCad(checkoutTotal)}
+          </span>
+        </button>
+
+        <div
+          className={cn(
+            "mt-5 flex-col gap-5",
+            summaryExpanded ? "flex" : "hidden",
+            "lg:flex",
+          )}
+        >
+          <div className="flex items-center justify-between">
+            <span className={HELPER_TEXT_CLASS}>
+              {totalItems} item{totalItems !== 1 ? "s" : ""}
+            </span>
+            {!isBuyNow ? (
+              <Link
+                href="/products"
+                className="font-body text-sm font-medium text-lh-primary transition-colors hover:text-lh-accent"
+              >
+                Continue shopping
+              </Link>
+            ) : null}
+          </div>
+
+          <ul className="divide-y divide-lh-line">
+            {displayedCart.lineItems.map((lineItem) => (
+              <li
+                key={`${lineItem.productId}:${lineItem.variantId || "default"}`}
+                className="flex items-start justify-between gap-4 py-3"
+              >
+                <div>
+                  <p className="font-body text-sm font-medium text-lh-shadow">
+                    {lineItem.description}
+                  </p>
+                  <p className={cn(HELPER_TEXT_CLASS, "text-xs")}>
+                    Qty {lineItem.quantity} × {formatCad(lineItem.price)}
+                    {lineItem.originalPrice ? (
+                      <span className="ml-2 text-lh-muted line-through">
+                        {formatCad(lineItem.originalPrice)}
+                      </span>
+                    ) : null}
+                  </p>
+                </div>
+                <div className="text-right">
+                  {lineItem.originalTotal ? (
+                    <p className={cn(HELPER_TEXT_CLASS, "text-xs line-through")}>
+                      {formatCad(lineItem.originalTotal)}
+                    </p>
+                  ) : null}
+                  <p className="font-body text-sm font-medium text-lh-shadow">
+                    {formatCad(lineItem.total)}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          <div className="rounded-[18px] border border-lh-line bg-lh-neutral-2/60 p-4">
+            <label
+              htmlFor="checkout-promotion-code"
+              className={FIELD_LABEL_CLASS}
+            >
+              Promotion code
+            </label>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Input
+                id="checkout-promotion-code"
+                value={promotionCodeInput}
+                onChange={(event) =>
+                  setPromotionCodeInput(event.target.value.toUpperCase())
+                }
+                placeholder="Enter code"
+                disabled={isApplyingPromotionCode}
+                autoComplete="off"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={
+                  activeRedeemedPromotionCode
+                    ? handleRemovePromotionCode
+                    : handleApplyPromotionCode
+                }
+                disabled={
+                  isApplyingPromotionCode ||
+                  (!activeRedeemedPromotionCode && !promotionCodeInput.trim())
+                }
+                className="rounded-full border-lh-primary/30 px-5 font-body text-sm uppercase tracking-[0.12em] hover:bg-lh-primary-soft hover:text-lh-primary"
+              >
+                {isApplyingPromotionCode
+                  ? "Applying"
+                  : activeRedeemedPromotionCode
+                    ? "Remove"
+                    : "Apply"}
+              </Button>
+            </div>
+            {activeRedeemedPromotionCode ? (
+              <p className="mt-2 font-body text-xs font-medium uppercase tracking-[0.12em] text-lh-primary">
+                Code {activeRedeemedPromotionCode} applied.
+              </p>
+            ) : null}
+            {promotionCodeError ? (
+              <p
+                className="mt-2 font-body text-xs font-medium text-lh-accent"
+                role="alert"
+              >
+                {promotionCodeError}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="flex flex-col gap-2 border-t border-lh-line pt-4">
+            <div className="flex justify-between font-body text-sm text-lh-muted">
+              <span>Subtotal</span>
+              <span>{formatCad(cartAmount)}</span>
+            </div>
+            {displayedCart.manualDiscountAmount ? (
+              <div className="flex justify-between font-body text-sm text-lh-muted">
+                <span>Manual discounts</span>
+                <span>-{formatCad(displayedCart.manualDiscountAmount)}</span>
+              </div>
+            ) : null}
+            {activeRedeemedPromotionCode &&
+            displayedCart.promotionDiscountAmount ? (
+              <div className="flex justify-between font-body text-sm font-medium text-lh-primary">
+                <span>Code {activeRedeemedPromotionCode}</span>
+                <span>-{formatCad(displayedCart.promotionDiscountAmount)}</span>
+              </div>
+            ) : null}
+            <div className="flex justify-between font-body text-sm text-lh-muted">
+              <span>Shipping</span>
+              <span>
+                {isManualCheckout
+                  ? "Free studio pickup"
+                  : selectedShippingRate
+                    ? formatCad(shippingAmount)
+                    : "Calculated at next step"}
+              </span>
+            </div>
+            {taxAmountCents > 0 && taxContext ? (
+              <div className="flex justify-between font-body text-sm text-lh-muted">
+                <span>Tax ({taxContext.name})</span>
+                <span>{formatCad(taxAmount)}</span>
+              </div>
+            ) : null}
+            <div className="mt-1 flex items-center justify-between gap-4 border-t border-lh-line pt-3">
+              <span className="font-body text-sm font-medium uppercase tracking-[0.12em] text-lh-muted">
+                Total
+              </span>
+              <span className="flex flex-wrap items-baseline justify-end gap-2 font-heading text-2xl font-normal text-lh-shadow">
+                {activeRedeemedPromotionCode &&
+                displayedCart.promotionDiscountAmount ? (
+                  <span className="font-body text-sm text-lh-muted line-through">
+                    {formatCad(cartAmountBeforePromotion)}
+                  </span>
+                ) : null}
+                <span>{formatCad(checkoutTotal)}</span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  ) : null;
+
   return (
     <section className="min-h-screen bg-lh-neutral-2">
       <section className="section-shell-soft pt-12 md:pt-16 lg:pt-20">
-        <div className="content-container max-w-2xl">
+        <div className="content-container max-w-5xl">
           <header className="mb-8">
             <p className="eyebrow-label mb-3">
               {isBuyNow ? "Buy Now" : "Checkout"}
@@ -621,531 +855,637 @@ function CheckoutContent({
             </h1>
           </header>
 
-          <section className="soft-panel bg-lh-white p-6 md:p-8">
-            {cart.error ? (
-              <div className="rounded-[18px] border border-lh-accent/30 bg-lh-accent-soft p-4 mb-6">
-                <p className="font-body text-sm font-bold text-lh-accent">
-                  {cart.error}
-                </p>
-              </div>
-            ) : null}
+          {cart.error ? (
+            <div className="mb-6 rounded-[18px] border border-lh-accent/30 bg-lh-accent-soft p-4">
+              <p className="font-body text-sm font-medium text-lh-accent">
+                {cart.error}
+              </p>
+            </div>
+          ) : null}
 
-            {displayedCart ? (
-              <div className="flex flex-col gap-6">
-                <div className="flex items-center justify-between">
-                  <span className="font-body text-sm font-bold text-lh-muted">
-                    {totalItems} item{totalItems !== 1 ? "s" : ""}
-                  </span>
-                  {!isBuyNow ? (
-                    <Link
-                      href="/products"
-                      className="font-body text-sm font-bold text-lh-primary hover:text-lh-accent transition-colors"
-                    >
-                      Continue Shopping
-                    </Link>
-                  ) : null}
-                </div>
+          {displayedCart ? (
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:gap-10">
+              {orderSummary}
 
-                <ul className="divide-y divide-lh-line">
-                  {displayedCart.lineItems.map((lineItem) => (
-                    <li
-                      key={`${lineItem.productId}:${lineItem.variantId || "default"}`}
-                      className="py-4 flex justify-between items-start"
-                    >
+              <div className="flex flex-col gap-6 lg:order-1">
+                {/* Step 1 — Contact & delivery details */}
+                {step === "details" ? (
+                  <section className="soft-panel bg-lh-white p-6 md:p-8">
+                    <StepHeading
+                      index={1}
+                      title="Contact details"
+                      state="active"
+                    />
+
+                    <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
                       <div>
-                        <p className="font-body font-bold text-lh-shadow">
-                          {lineItem.description}
-                        </p>
-                        <p className="font-body text-sm font-bold text-lh-muted">
-                          Qty: {lineItem.quantity} × {formatCad(lineItem.price)}
-                          {lineItem.originalPrice ? (
-                            <span className="ml-2 text-lh-muted line-through">
-                              {formatCad(lineItem.originalPrice)}
+                        <label htmlFor="checkout-name" className={FIELD_LABEL_CLASS}>
+                          Name
+                        </label>
+                        <Input
+                          id="checkout-name"
+                          type="text"
+                          value={customerName}
+                          onChange={(e) => setCustomerName(e.target.value)}
+                          maxLength={CHECKOUT_CUSTOMER_NAME_MAX_LENGTH}
+                          autoComplete="name"
+                          placeholder="Your full name"
+                        />
+                      </div>
+                      <div>
+                        <label
+                          htmlFor="checkout-phone"
+                          className={FIELD_LABEL_CLASS}
+                        >
+                          Phone{" "}
+                          {!requiresShippingAddress ? (
+                            <span className="font-normal text-lh-muted">
+                              (optional)
                             </span>
                           ) : null}
-                        </p>
+                        </label>
+                        <Input
+                          id="checkout-phone"
+                          type="tel"
+                          value={customerPhone}
+                          onChange={(e) => setCustomerPhone(e.target.value)}
+                          maxLength={30}
+                          autoComplete="tel"
+                          placeholder="Phone number for delivery"
+                        />
                       </div>
-                      <div className="text-right">
-                        {lineItem.originalTotal ? (
-                          <p className="font-body text-xs font-bold text-lh-muted line-through">
-                            {formatCad(lineItem.originalTotal)}
-                          </p>
-                        ) : null}
-                        <p className="font-body font-bold text-lh-shadow">
-                          {formatCad(lineItem.total)}
-                        </p>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-
-                <div className="rounded-[24px] border border-lh-line bg-lh-neutral-2/60 p-4">
-                  <label
-                    htmlFor="checkout-promotion-code"
-                    className="block text-sm font-bold text-lh-primary mb-2"
-                  >
-                    Promotion code
-                  </label>
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <Input
-                      id="checkout-promotion-code"
-                      value={promotionCodeInput}
-                      onChange={(event) =>
-                        setPromotionCodeInput(event.target.value.toUpperCase())
-                      }
-                      placeholder="Enter code"
-                      disabled={isApplyingPromotionCode}
-                      autoComplete="off"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={
-                        activeRedeemedPromotionCode
-                          ? handleRemovePromotionCode
-                          : handleApplyPromotionCode
-                      }
-                      disabled={
-                        isApplyingPromotionCode ||
-                        (!activeRedeemedPromotionCode &&
-                          !promotionCodeInput.trim())
-                      }
-                      className="rounded-full border-lh-primary/30 px-5 font-body text-sm uppercase tracking-[0.12em] hover:bg-lh-primary-soft hover:text-lh-primary"
-                    >
-                      {isApplyingPromotionCode
-                        ? "Applying"
-                        : activeRedeemedPromotionCode
-                          ? "Remove"
-                          : "Apply"}
-                    </Button>
-                  </div>
-                  {activeRedeemedPromotionCode ? (
-                    <p className="mt-2 font-body text-xs font-bold uppercase tracking-[0.12em] text-lh-primary">
-                      Code {activeRedeemedPromotionCode} applied.
-                    </p>
-                  ) : null}
-                  {promotionCodeError ? (
-                    <p
-                      className="mt-2 font-body text-xs font-bold text-lh-accent"
-                      role="alert"
-                    >
-                      {promotionCodeError}
-                    </p>
-                  ) : null}
-                </div>
-
-                <div className="border-t border-lh-line pt-4">
-                  {displayedCart.manualDiscountAmount ? (
-                    <div className="mb-2 flex justify-between font-body text-sm font-bold text-lh-muted">
-                      <span>Manual discounts</span>
-                      <span>
-                        -{formatCad(displayedCart.manualDiscountAmount)}
-                      </span>
-                    </div>
-                  ) : null}
-                  {activeRedeemedPromotionCode &&
-                  displayedCart.promotionDiscountAmount ? (
-                    <div className="mb-2 flex justify-between font-body text-sm font-bold text-lh-primary">
-                      <span>Code {activeRedeemedPromotionCode}</span>
-                      <span>
-                        -{formatCad(displayedCart.promotionDiscountAmount)}
-                      </span>
-                    </div>
-                  ) : null}
-                  {taxAmountCents > 0 && taxContext ? (
-                    <div className="mb-2 flex justify-between font-body text-sm font-bold text-lh-muted">
-                      <span>Tax ({taxContext.name})</span>
-                      <span>{formatCad(taxAmount)}</span>
-                    </div>
-                  ) : null}
-                  <div className="flex justify-between items-center gap-4">
-                    <span className="font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-muted">
-                      Total
-                    </span>
-                    <span className="flex flex-wrap items-baseline justify-end gap-2 font-body text-2xl font-bold text-lh-shadow">
-                      {activeRedeemedPromotionCode &&
-                      displayedCart.promotionDiscountAmount ? (
-                        <span className="text-sm text-lh-muted line-through">
-                          {formatCad(cartAmountBeforePromotion)}
-                        </span>
-                      ) : null}
-                      <span>{formatCad(checkoutTotal)}</span>
-                    </span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div>
-                    <label
-                      htmlFor="checkout-name"
-                      className="block text-sm font-bold text-lh-primary mb-1"
-                    >
-                      Name
-                    </label>
-                    <Input
-                      id="checkout-name"
-                      type="text"
-                      value={customerName}
-                      onChange={(e) => setCustomerName(e.target.value)}
-                      maxLength={CHECKOUT_CUSTOMER_NAME_MAX_LENGTH}
-                      autoComplete="name"
-                      placeholder="Your full name"
-                    />
-                  </div>
-                  <div>
-                    <label
-                      htmlFor="checkout-phone"
-                      className="block text-sm font-bold text-lh-primary mb-1"
-                    >
-                      Phone
-                    </label>
-                    <Input
-                      id="checkout-phone"
-                      type="tel"
-                      value={customerPhone}
-                      onChange={(e) => setCustomerPhone(e.target.value)}
-                      maxLength={30}
-                      autoComplete="tel"
-                      placeholder="Phone number for delivery"
-                    />
-                  </div>
-                  <div>
-                    <label
-                      htmlFor="checkout-email"
-                      className="block text-sm font-bold text-lh-primary mb-1"
-                    >
-                      Email
-                    </label>
-                    <Input
-                      id="checkout-email"
-                      type="email"
-                      value={customerEmail}
-                      onChange={(e) => setCustomerEmail(e.target.value)}
-                      maxLength={CHECKOUT_EMAIL_MAX_LENGTH}
-                      autoComplete="email"
-                      placeholder="you@example.com"
-                    />
-                  </div>
-                </div>
-
-                <div className="rounded-[24px] border border-lh-line bg-lh-neutral-2/60 p-5 md:p-6">
-                  <div className="mb-5">
-                    <p className="eyebrow-label mb-2">
-                      {isManualCheckout ? "Fulfillment" : "Shipping"}
-                    </p>
-                    <h2 className="font-heading text-2xl font-normal text-lh-shadow">
-                      {fulfillmentMode === "manual_pickup"
-                        ? "Arrange pickup"
-                        : "Where should we send it?"}
-                    </h2>
-                    <p className="mt-2 font-body text-sm font-bold leading-6 text-lh-muted">
-                      {fulfillmentMode === "manual_pickup"
-                        ? "Pickup details are confirmed after payment. No delivery address or shipping charge is collected now."
-                        : "Physical products require a delivery address before secure payment opens."}
-                    </p>
-                  </div>
-
-                  {isManualCheckout ? (
-                    <div className="mb-5 rounded-[18px] border border-lh-line bg-white p-4 text-sm text-lh-shadow">
-                      Free studio pickup is the initial fulfillment method.
-                      Optional shipping can be agreed and paid separately after
-                      the order is confirmed; pickup remains available until
-                      that supplemental payment succeeds.
-                    </div>
-                  ) : null}
-
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div className="sm:col-span-2">
-                      <label
-                        htmlFor="checkout-shipping-line1"
-                        className="block text-sm font-bold text-lh-primary mb-1"
-                      >
-                        Address
-                      </label>
-                      <Input
-                        id="checkout-shipping-line1"
-                        type="text"
-                        value={shippingLine1}
-                        onChange={(e) => setShippingLine1(e.target.value)}
-                        maxLength={CHECKOUT_SHIPPING_LINE_MAX_LENGTH}
-                        autoComplete="shipping address-line1"
-                        placeholder="Street address"
-                        disabled={!requiresShippingAddress}
-                      />
-                    </div>
-                    <div className="sm:col-span-2">
-                      <label
-                        htmlFor="checkout-shipping-line2"
-                        className="block text-sm font-bold text-lh-primary mb-1"
-                      >
-                        Apartment, suite, etc.{" "}
-                        <span className="text-lh-muted">(optional)</span>
-                      </label>
-                      <Input
-                        id="checkout-shipping-line2"
-                        type="text"
-                        value={shippingLine2}
-                        onChange={(e) => setShippingLine2(e.target.value)}
-                        maxLength={CHECKOUT_SHIPPING_LINE_MAX_LENGTH}
-                        autoComplete="shipping address-line2"
-                        placeholder="Unit or buzzer"
-                        disabled={!requiresShippingAddress}
-                      />
-                    </div>
-                    <div>
-                      <label
-                        htmlFor="checkout-shipping-city"
-                        className="block text-sm font-bold text-lh-primary mb-1"
-                      >
-                        City
-                      </label>
-                      <Input
-                        id="checkout-shipping-city"
-                        type="text"
-                        value={shippingCity}
-                        onChange={(e) => setShippingCity(e.target.value)}
-                        maxLength={CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH}
-                        autoComplete="shipping address-level2"
-                        placeholder="Toronto"
-                        disabled={!requiresShippingAddress}
-                      />
-                    </div>
-                    <div>
-                      <label
-                        htmlFor="checkout-shipping-province"
-                        className="block text-sm font-bold text-lh-primary mb-1"
-                      >
-                        Province / State
-                      </label>
-                      <Input
-                        id="checkout-shipping-province"
-                        type="text"
-                        value={shippingProvince}
-                        onChange={(e) => setShippingProvince(e.target.value)}
-                        maxLength={CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH}
-                        autoComplete="shipping address-level1"
-                        placeholder="ON"
-                        disabled={!requiresShippingAddress}
-                      />
-                    </div>
-                    <div>
-                      <label
-                        htmlFor="checkout-shipping-postal-code"
-                        className="block text-sm font-bold text-lh-primary mb-1"
-                      >
-                        Postal code
-                      </label>
-                      <Input
-                        id="checkout-shipping-postal-code"
-                        type="text"
-                        value={shippingPostalCode}
-                        onChange={(e) => setShippingPostalCode(e.target.value)}
-                        maxLength={CHECKOUT_SHIPPING_POSTAL_CODE_MAX_LENGTH}
-                        autoComplete="shipping postal-code"
-                        placeholder="M6E 2Y4"
-                        disabled={!requiresShippingAddress}
-                      />
-                    </div>
-                    <div>
-                      <label
-                        htmlFor="checkout-shipping-country"
-                        className="block text-sm font-bold text-lh-primary mb-1"
-                      >
-                        Country
-                      </label>
-                      <select
-                        id="checkout-shipping-country"
-                        value={shippingCountry}
-                        onChange={(e) => setShippingCountry(e.target.value)}
-                        autoComplete="shipping country-name"
-                        className="h-11 w-full rounded-md border border-lh-line bg-white px-3 text-sm text-lh-shadow"
-                        disabled={!requiresShippingAddress}
-                      >
-                        <option value="CA">Canada</option>
-                        <option value="US">United States</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {requiresUsImportDisclosure &&
-                  activeShippingQuote?.usImportDisclosureVersion &&
-                  activeShippingQuote.usImportDisclosureText &&
-                  activeShippingQuote.usImportTerms ? (
-                    <div
-                      className="mt-5 rounded-[18px] border border-lh-accent/30 bg-lh-accent-soft p-4 text-sm font-bold leading-6 text-lh-shadow"
-                      data-disclosure-version={
-                        activeShippingQuote.usImportDisclosureVersion
-                      }
-                      data-import-terms={activeShippingQuote.usImportTerms}
-                    >
-                      {activeShippingQuote.usImportDisclosureText}
-                    </div>
-                  ) : null}
-
-                  {requiresLiveShippingQuote && shippingEnabled ? (
-                    <div className="sm:col-span-2 border-t border-lh-line pt-5">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={handleLoadShippingRates}
-                        disabled={
-                          isLoadingShippingRates ||
-                          !displayedCart ||
-                          !hasValidCustomerDetails ||
-                          !hasValidShippingAddress ||
-                          !normalizeCheckoutText(customerPhone)
-                        }
-                      >
-                        {isLoadingShippingRates
-                          ? "Loading rates..."
-                          : activeShippingQuote
-                            ? "Refresh shipping rates"
-                            : "Get shipping rates"}
-                      </Button>
-                      {shippingQuoteError ? (
-                        <p
-                          className="mt-3 text-sm font-bold text-lh-accent"
-                          role="alert"
+                      <div className="sm:col-span-2">
+                        <label
+                          htmlFor="checkout-email"
+                          className={FIELD_LABEL_CLASS}
                         >
-                          {shippingQuoteError}
-                        </p>
-                      ) : null}
-                      {activeShippingQuote ? (
-                        <fieldset className="mt-4 space-y-3">
-                          <legend className="text-sm font-bold text-lh-primary">
-                            Choose an insured tracked service
-                          </legend>
-                          {activeShippingQuote.rates.map((rate) => (
+                          Email
+                        </label>
+                        <Input
+                          id="checkout-email"
+                          type="email"
+                          value={customerEmail}
+                          onChange={(e) => setCustomerEmail(e.target.value)}
+                          maxLength={CHECKOUT_EMAIL_MAX_LENGTH}
+                          autoComplete="email"
+                          placeholder="you@example.com"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-8">
+                      <StepHeading
+                        index={2}
+                        title={
+                          fulfillmentMode === "manual_pickup"
+                            ? "Fulfillment"
+                            : "Shipping address"
+                        }
+                        state="active"
+                      />
+                      <p className={cn(HELPER_TEXT_CLASS, "mt-2")}>
+                        {fulfillmentMode === "manual_pickup"
+                          ? "Free studio pickup is arranged after payment — no delivery address or shipping charge is collected now."
+                          : "We'll calculate live, insured and tracked shipping rates for this address on the next step."}
+                      </p>
+
+                      {isManualCheckout ? (
+                        <div className="mt-4 rounded-[18px] border border-lh-line bg-lh-neutral-2/60 p-4 font-body text-sm leading-6 text-lh-shadow">
+                          Optional shipping can be agreed and paid separately
+                          after the order is confirmed; pickup remains available
+                          until that supplemental payment succeeds.
+                        </div>
+                      ) : (
+                        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <div className="sm:col-span-2">
                             <label
-                              key={rate.id}
-                              className="flex cursor-pointer items-start justify-between gap-4 rounded-[18px] border border-lh-line bg-white p-4"
+                              htmlFor="checkout-shipping-line1"
+                              className={FIELD_LABEL_CLASS}
                             >
-                              <span className="flex gap-3">
-                                <input
-                                  type="radio"
-                                  name="shipping-rate"
-                                  value={rate.id}
-                                  checked={selectedShippingRateId === rate.id}
-                                  onChange={() =>
-                                    setSelectedShippingRateId(rate.id)
-                                  }
-                                />
-                                <span>
-                                  <span className="block text-sm font-bold text-lh-shadow">
-                                    {rate.title}
-                                  </span>
-                                  {rate.deliveryEstimate ? (
-                                    <span className="block text-xs text-lh-muted">
-                                      {rate.deliveryEstimate}
-                                    </span>
-                                  ) : null}
-                                  <span className="block text-xs text-lh-muted">
-                                    Insurance and tracking included
-                                  </span>
-                                  {rate.signatureRequired ? (
-                                    <span className="block text-xs font-bold text-lh-shadow">
-                                      Signature is required at delivery
-                                    </span>
-                                  ) : null}
-                                </span>
-                              </span>
-                              <span className="whitespace-nowrap text-sm font-bold text-lh-shadow">
-                                {formatCad(rate.amountCents / 100)}
+                              Address
+                            </label>
+                            <Input
+                              id="checkout-shipping-line1"
+                              type="text"
+                              value={shippingLine1}
+                              onChange={(e) => setShippingLine1(e.target.value)}
+                              maxLength={CHECKOUT_SHIPPING_LINE_MAX_LENGTH}
+                              autoComplete="shipping address-line1"
+                              placeholder="Street address"
+                            />
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label
+                              htmlFor="checkout-shipping-line2"
+                              className={FIELD_LABEL_CLASS}
+                            >
+                              Apartment, suite, etc.{" "}
+                              <span className="font-normal text-lh-muted">
+                                (optional)
                               </span>
                             </label>
-                          ))}
-                        </fieldset>
-                      ) : null}
+                            <Input
+                              id="checkout-shipping-line2"
+                              type="text"
+                              value={shippingLine2}
+                              onChange={(e) => setShippingLine2(e.target.value)}
+                              maxLength={CHECKOUT_SHIPPING_LINE_MAX_LENGTH}
+                              autoComplete="shipping address-line2"
+                              placeholder="Unit or buzzer"
+                            />
+                          </div>
+                          <div>
+                            <label
+                              htmlFor="checkout-shipping-city"
+                              className={FIELD_LABEL_CLASS}
+                            >
+                              City
+                            </label>
+                            <Input
+                              id="checkout-shipping-city"
+                              type="text"
+                              value={shippingCity}
+                              onChange={(e) => setShippingCity(e.target.value)}
+                              maxLength={CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH}
+                              autoComplete="shipping address-level2"
+                              placeholder="Toronto"
+                            />
+                          </div>
+                          <div>
+                            <label
+                              htmlFor="checkout-shipping-province"
+                              className={FIELD_LABEL_CLASS}
+                            >
+                              Province / State
+                            </label>
+                            <Input
+                              id="checkout-shipping-province"
+                              type="text"
+                              value={shippingProvince}
+                              onChange={(e) =>
+                                setShippingProvince(e.target.value)
+                              }
+                              maxLength={CHECKOUT_SHIPPING_LOCALITY_MAX_LENGTH}
+                              autoComplete="shipping address-level1"
+                              placeholder="ON"
+                            />
+                          </div>
+                          <div>
+                            <label
+                              htmlFor="checkout-shipping-postal-code"
+                              className={FIELD_LABEL_CLASS}
+                            >
+                              Postal code
+                            </label>
+                            <Input
+                              id="checkout-shipping-postal-code"
+                              type="text"
+                              value={shippingPostalCode}
+                              onChange={(e) =>
+                                setShippingPostalCode(e.target.value)
+                              }
+                              maxLength={CHECKOUT_SHIPPING_POSTAL_CODE_MAX_LENGTH}
+                              autoComplete="shipping postal-code"
+                              placeholder="M6E 2Y4"
+                            />
+                          </div>
+                          <div>
+                            <label
+                              htmlFor="checkout-shipping-country"
+                              className={FIELD_LABEL_CLASS}
+                            >
+                              Country
+                            </label>
+                            <select
+                              id="checkout-shipping-country"
+                              value={shippingCountry}
+                              onChange={(e) =>
+                                setShippingCountry(e.target.value)
+                              }
+                              autoComplete="shipping country-name"
+                              className="h-11 w-full rounded-[18px] border border-lh-line bg-lh-white px-3 font-body text-sm text-lh-shadow shadow-sm"
+                            >
+                              <option value="CA">Canada</option>
+                              <option value="US">United States</option>
+                            </select>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  ) : null}
-                </div>
 
-                {isManualCheckout ? (
-                  manualCheckoutPolicy.enabled &&
-                  manualCheckoutPolicy.cancellationPolicyText &&
-                  manualCheckoutPolicy.cancellationPolicyVersion ? (
-                    <label className="flex items-start gap-3 rounded-[18px] border border-lh-line bg-lh-white p-4 text-sm font-bold leading-6 text-lh-shadow">
-                      <input
-                        type="checkbox"
-                        className="mt-1"
-                        checked={acceptedCancellationPolicy}
-                        onChange={(event) =>
-                          setAcceptedCancellationPolicy(event.target.checked)
-                        }
-                      />
-                      <span>{manualCheckoutPolicy.cancellationPolicyText}</span>
-                    </label>
-                  ) : (
-                    <p
-                      className="rounded-[18px] border border-lh-accent/30 bg-lh-accent-soft p-4 text-sm font-bold leading-6 text-lh-accent"
-                      role="alert"
-                    >
-                      Manual checkout is unavailable until the current pickup
-                      and cancellation policy is approved.
-                    </p>
-                  )
+                    {shippingUnavailableForCart ? (
+                      <p
+                        className="mt-6 rounded-[18px] border border-lh-accent/30 bg-lh-accent-soft p-4 font-body text-sm leading-6 text-lh-accent"
+                        role="alert"
+                      >
+                        Online shipping checkout is temporarily unavailable.
+                        Please try again later or{" "}
+                        <a href="/contact" className="underline">
+                          contact us
+                        </a>{" "}
+                        to place your order.
+                      </p>
+                    ) : (
+                      <div className="mt-6">
+                        <Button
+                          type="button"
+                          variant="primary"
+                          onClick={handleContinueToPayment}
+                          disabled={
+                            !detailsComplete || isLoadingShippingRates
+                          }
+                          aria-busy={isLoadingShippingRates}
+                          className="h-12 w-full rounded-full px-6 font-body text-sm uppercase tracking-[0.12em]"
+                        >
+                          {isLoadingShippingRates
+                            ? "Getting shipping rates…"
+                            : "Continue to payment"}
+                        </Button>
+                        {!detailsComplete ? (
+                          <p className={cn(HELPER_TEXT_CLASS, "mt-3 text-center")}>
+                            {requiresShippingAddress
+                              ? "Enter your contact and shipping details to continue."
+                              : "Enter your contact details to continue."}
+                          </p>
+                        ) : null}
+                        {shippingQuoteError ? (
+                          <p
+                            className="mt-3 text-center font-body text-sm font-medium text-lh-accent"
+                            role="alert"
+                          >
+                            {shippingQuoteError}
+                          </p>
+                        ) : null}
+                      </div>
+                    )}
+                  </section>
                 ) : (
-                  <label className="flex items-start gap-3 rounded-[18px] border border-lh-line bg-lh-white p-4 text-sm font-bold leading-6 text-lh-shadow">
-                    <input
-                      type="checkbox"
-                      className="mt-1"
-                      checked={acceptedRefundPolicy}
-                      onChange={(event) =>
-                        setAcceptedRefundPolicy(event.target.checked)
-                      }
-                    />
-                    <span>{shippedRefundPolicy.text}</span>
-                  </label>
+                  <CompletedDetailsCard
+                    name={normalizedCustomerName}
+                    email={normalizedCustomerEmail}
+                    phone={normalizedCustomerPhone}
+                    isManualCheckout={isManualCheckout}
+                    shippingAddress={shippingAddress}
+                    onEdit={handleEditDetails}
+                  />
                 )}
 
-                <label className="flex items-start gap-3 rounded-[18px] border border-lh-line bg-lh-white p-4 text-sm font-bold leading-6 text-lh-shadow">
-                  <input
-                    type="checkbox"
-                    className="mt-1"
-                    checked={acceptedTerms}
-                    onChange={(event) => setAcceptedTerms(event.target.checked)}
-                  />
-                  <span>
-                    {termsRequirement.text}{" "}
-                    <a
-                      href="/policies/terms-and-conditions"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline"
+                {/* Step 3 — Delivery method, disclosures & payment */}
+                {step === "payment" ? (
+                  <section className="soft-panel bg-lh-white p-6 md:p-8">
+                    {requiresLiveShippingQuote ? (
+                      <div className="mb-8">
+                        <div className="flex items-center justify-between gap-3">
+                          <StepHeading
+                            index={3}
+                            title="Delivery method"
+                            state="active"
+                          />
+                          <button
+                            type="button"
+                            onClick={loadShippingRates}
+                            disabled={isLoadingShippingRates}
+                            className="font-body text-sm font-medium text-lh-primary transition-colors hover:text-lh-accent disabled:opacity-50"
+                          >
+                            {isLoadingShippingRates
+                              ? "Recalculating…"
+                              : "Recalculate"}
+                          </button>
+                        </div>
+
+                        {shippingQuoteError ? (
+                          <p
+                            className="mt-3 font-body text-sm font-medium text-lh-accent"
+                            role="alert"
+                          >
+                            {shippingQuoteError}
+                          </p>
+                        ) : null}
+
+                        {activeShippingQuote ? (
+                          <fieldset className="mt-4 space-y-3">
+                            <legend className="sr-only">
+                              Choose an insured tracked service
+                            </legend>
+                            {activeShippingQuote.rates.map((rate) => {
+                              const selected = selectedShippingRateId === rate.id;
+                              return (
+                                <label
+                                  key={rate.id}
+                                  className={cn(
+                                    "flex cursor-pointer items-start justify-between gap-4 rounded-[18px] border bg-lh-white p-4 transition-colors",
+                                    selected
+                                      ? "border-lh-primary ring-1 ring-lh-primary/40"
+                                      : "border-lh-line hover:border-lh-primary/40",
+                                  )}
+                                >
+                                  <span className="flex gap-3">
+                                    <input
+                                      type="radio"
+                                      name="shipping-rate"
+                                      value={rate.id}
+                                      checked={selected}
+                                      onChange={() =>
+                                        setSelectedShippingRateId(rate.id)
+                                      }
+                                      className="mt-1"
+                                    />
+                                    <span>
+                                      <span className="block font-body text-sm font-medium text-lh-shadow">
+                                        {rate.title}
+                                      </span>
+                                      {rate.deliveryEstimate ? (
+                                        <span className="block font-body text-xs text-lh-muted">
+                                          {rate.deliveryEstimate}
+                                        </span>
+                                      ) : null}
+                                      <span className="block font-body text-xs text-lh-muted">
+                                        Insurance and tracking included
+                                      </span>
+                                      {rate.signatureRequired ? (
+                                        <span className="block font-body text-xs font-medium text-lh-shadow">
+                                          Signature is required at delivery
+                                        </span>
+                                      ) : null}
+                                    </span>
+                                  </span>
+                                  <span className="whitespace-nowrap font-body text-sm font-medium text-lh-shadow">
+                                    {formatCad(rate.amountCents / 100)}
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </fieldset>
+                        ) : null}
+
+                        {requiresUsImportDisclosure &&
+                        activeShippingQuote?.usImportDisclosureVersion &&
+                        activeShippingQuote.usImportDisclosureText &&
+                        activeShippingQuote.usImportTerms ? (
+                          <div
+                            className="mt-4 rounded-[18px] border border-lh-accent/30 bg-lh-accent-soft p-4 font-body text-sm leading-6 text-lh-shadow"
+                            data-disclosure-version={
+                              activeShippingQuote.usImportDisclosureVersion
+                            }
+                            data-import-terms={activeShippingQuote.usImportTerms}
+                          >
+                            {activeShippingQuote.usImportDisclosureText}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="mb-8 rounded-[18px] border border-lh-line bg-lh-neutral-2/60 p-4 font-body text-sm leading-6 text-lh-shadow">
+                        Free studio pickup is the initial fulfillment method.
+                        Pickup details are confirmed after payment.
+                      </div>
+                    )}
+
+                    <StepHeading index={4} title="Payment" state="active" />
+                    <p className={cn(HELPER_TEXT_CLASS, "mt-2 mb-5")}>
+                      All transactions are secure and encrypted.
+                    </p>
+
+                    <div className="flex flex-col gap-4">
+                      {isManualCheckout ? (
+                        manualCheckoutPolicy.enabled &&
+                        manualCheckoutPolicy.cancellationPolicyText &&
+                        manualCheckoutPolicy.cancellationPolicyVersion ? (
+                          <PolicyAssent
+                            checked={acceptedCancellationPolicy}
+                            onChange={setAcceptedCancellationPolicy}
+                            summary="I accept the pickup cancellation policy."
+                            fullText={
+                              manualCheckoutPolicy.cancellationPolicyText
+                            }
+                            expandLabel="Read the pickup & cancellation policy"
+                          />
+                        ) : (
+                          <p
+                            className="rounded-[18px] border border-lh-accent/30 bg-lh-accent-soft p-4 font-body text-sm leading-6 text-lh-accent"
+                            role="alert"
+                          >
+                            Manual checkout is unavailable until the current
+                            pickup and cancellation policy is approved.
+                          </p>
+                        )
+                      ) : (
+                        <PolicyAssent
+                          checked={acceptedRefundPolicy}
+                          onChange={setAcceptedRefundPolicy}
+                          summary="I accept the shipping, cancellation & refund policy."
+                          fullText={shippedRefundPolicy.text}
+                          expandLabel="Read the full shipping & refund policy"
+                          policyHref="/policies/shipping-and-returns"
+                        />
+                      )}
+
+                      <PolicyAssent
+                        checked={acceptedTerms}
+                        onChange={setAcceptedTerms}
+                        summary={termsRequirement.text}
+                        policyHref="/policies/terms-and-conditions"
+                        policyLinkLabel="Read the Terms and Conditions"
+                      />
+                    </div>
+
+                    <div className="mt-6">
+                      <SquareProductPayButton
+                        disabled={payButtonDisabled}
+                        amountCents={checkoutTotalCents}
+                        items={checkoutItems}
+                        customer={payButtonCustomer}
+                        shippingAddress={payButtonShippingAddress}
+                        fulfillmentMode={fulfillmentMode}
+                        disclosures={payButtonDisclosures}
+                        shippingQuote={payButtonShippingQuote}
+                        promotionCode={activeRedeemedPromotionCode}
+                        onPaid={payButtonOnPaid}
+                      />
+                    </div>
+
+                    <p
+                      className={cn(
+                        HELPER_TEXT_CLASS,
+                        "mt-4 flex items-center justify-center gap-2 text-xs",
+                      )}
                     >
-                      Read the Terms and Conditions
-                    </a>
-                    .
-                  </span>
-                </label>
+                      <Lock className="size-3.5" aria-hidden="true" />
+                      Secure checkout — your card details are encrypted.
+                    </p>
 
-                <div className="mt-2">
-                  <SquareProductPayButton
-                    disabled={payButtonDisabled}
-                    amountCents={checkoutTotalCents}
-                    items={checkoutItems}
-                    customer={payButtonCustomer}
-                    shippingAddress={payButtonShippingAddress}
-                    fulfillmentMode={fulfillmentMode}
-                    disclosures={payButtonDisclosures}
-                    shippingQuote={payButtonShippingQuote}
-                    promotionCode={activeRedeemedPromotionCode}
-                    onPaid={payButtonOnPaid}
-                  />
-                </div>
-
-                {isBuyNow ? (
-                  <p className="font-body text-xs font-bold text-lh-muted">
-                    This is a single-item checkout. Your existing cart has not
-                    been modified.
-                  </p>
+                    {isBuyNow ? (
+                      <p className={cn(HELPER_TEXT_CLASS, "mt-3 text-xs")}>
+                        This is a single-item checkout. Your existing cart has
+                        not been modified.
+                      </p>
+                    ) : null}
+                  </section>
                 ) : null}
               </div>
-            ) : null}
-          </section>
+            </div>
+          ) : null}
         </div>
       </section>
     </section>
+  );
+}
+
+function StepHeading({
+  index,
+  title,
+  state,
+}: {
+  index: number;
+  title: string;
+  state: "active" | "complete";
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <span
+        className={cn(
+          "flex size-7 shrink-0 items-center justify-center rounded-full font-body text-xs font-medium",
+          state === "complete"
+            ? "bg-lh-primary text-lh-white"
+            : "bg-lh-primary-soft text-lh-primary",
+        )}
+        aria-hidden="true"
+      >
+        {state === "complete" ? <Check className="size-4" /> : index}
+      </span>
+      <h2 className="font-heading text-xl font-normal text-lh-shadow md:text-2xl">
+        {title}
+      </h2>
+    </div>
+  );
+}
+
+function CompletedDetailsCard({
+  name,
+  email,
+  phone,
+  isManualCheckout,
+  shippingAddress,
+  onEdit,
+}: {
+  name: string;
+  email: string;
+  phone: string;
+  isManualCheckout: boolean;
+  shippingAddress: {
+    line1: string;
+    line2?: string;
+    city: string;
+    province: string;
+    postalCode: string;
+    country: string;
+  };
+  onEdit: () => void;
+}) {
+  return (
+    <section className="soft-panel bg-lh-white p-6 md:p-8">
+      <div className="flex items-start justify-between gap-4">
+        <StepHeading index={1} title="Contact & delivery" state="complete" />
+        <button
+          type="button"
+          onClick={onEdit}
+          className="font-body text-sm font-medium text-lh-primary transition-colors hover:text-lh-accent"
+        >
+          Edit
+        </button>
+      </div>
+      <dl className="mt-4 space-y-2 font-body text-sm leading-6 text-lh-muted">
+        <div className="flex flex-wrap gap-x-2">
+          <dt className="text-lh-shadow">{name}</dt>
+          <dd>· {email}</dd>
+          {phone ? <dd>· {phone}</dd> : null}
+        </div>
+        <div>
+          <dt className="sr-only">Fulfillment</dt>
+          <dd>
+            {isManualCheckout
+              ? "Free studio pickup"
+              : [
+                  shippingAddress.line1,
+                  shippingAddress.line2,
+                  shippingAddress.city,
+                  shippingAddress.province,
+                  shippingAddress.postalCode,
+                  shippingAddress.country,
+                ]
+                  .filter(Boolean)
+                  .join(", ")}
+          </dd>
+        </div>
+      </dl>
+    </section>
+  );
+}
+
+function PolicyAssent({
+  checked,
+  onChange,
+  summary,
+  fullText,
+  expandLabel,
+  policyHref,
+  policyLinkLabel,
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  summary: string;
+  fullText?: string;
+  expandLabel?: string;
+  policyHref?: string;
+  policyLinkLabel?: string;
+}) {
+  return (
+    <div className="rounded-[18px] border border-lh-line bg-lh-white p-4">
+      <label className="flex items-start gap-3 font-body text-sm leading-6 text-lh-shadow">
+        <input
+          type="checkbox"
+          className="mt-1"
+          checked={checked}
+          onChange={(event) => onChange(event.target.checked)}
+        />
+        <span>
+          {summary}
+          {policyHref && !fullText ? (
+            <>
+              {" "}
+              <a
+                href={policyHref}
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium text-lh-primary underline"
+              >
+                {policyLinkLabel ?? "Read the full policy"}
+              </a>
+              .
+            </>
+          ) : null}
+        </span>
+      </label>
+      {fullText ? (
+        <details className="mt-3 pl-7">
+          <summary className="cursor-pointer font-body text-xs font-medium uppercase tracking-[0.12em] text-lh-primary">
+            {expandLabel ?? "Read the full policy"}
+          </summary>
+          <p className="mt-2 font-body text-xs leading-6 text-lh-muted">
+            {fullText}
+          </p>
+          {policyHref ? (
+            <a
+              href={policyHref}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-2 inline-block font-body text-xs font-medium text-lh-primary underline"
+            >
+              Open the full policy page
+            </a>
+          ) : null}
+        </details>
+      ) : null}
+    </div>
   );
 }
 
