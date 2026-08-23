@@ -85,18 +85,11 @@ test("creates a Chit Chats shipment using the documented client-scoped contract"
   assert.equal("chitchats_region" in body, false);
   assert.equal("intake_location_attestation_id" in body, false);
   assert.equal(body.value, "24.00");
-  assert.deepEqual(body.line_items, [
-    {
-      quantity: 1,
-      description: "Lash cleanser",
-      value_amount: "24.00",
-      currency_code: "cad",
-      sku_code: "SKU-1",
-      origin_country: "CA",
-      weight_unit: "g",
-      weight: 60,
-    },
-  ]);
+  assert.equal(body.description, "Lash cleanser");
+  // Domestic Canada shipments must not carry customs line_items: Chit Chats
+  // rejects them (e.g. the 35-char manufacturer field cap) and derives a
+  // default line item from `description`.
+  assert.equal("line_items" in body, false);
 });
 
 test("US rate discovery remains DDU and omits provider DDP fields", async () => {
@@ -154,6 +147,8 @@ test("US rate discovery remains DDU and omits provider DDP fields", async () => 
   assert.equal("region" in payload, false);
   assert.equal("chitchats_region" in payload, false);
   assert.equal("intake_location_attestation_id" in payload, false);
+  // Cross-border (US) shipments must carry customs line_items.
+  assert.equal("line_items" in payload, true);
   const [lineItem] = payload.line_items as Array<Record<string, unknown>>;
   assert.equal("additional_tariff_details" in lineItem, false);
   assert.equal("fda_applicability" in lineItem, false);

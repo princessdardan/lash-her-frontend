@@ -173,6 +173,12 @@ export function parseRetryAfterSeconds(
 function toShipmentPayload(
   input: ChitChatsCreateShipmentInput,
 ): Record<string, unknown> {
+  // Chit Chats only accepts per-item customs declarations (HS code, country of
+  // origin, manufacturer details — the latter capped at 35 chars) on
+  // cross-border shipments. Domestic Canada shipments must omit line_items
+  // entirely: sending them is rejected outright (HTTP 400), and Chit Chats
+  // derives a default line item from `description`.
+  const requiresCustomsDeclaration = input.recipient.countryCode !== "CA";
   return {
     name: input.recipient.name,
     address_1: input.recipient.line1,
@@ -203,25 +209,29 @@ function toShipmentPayload(
     signature_requested: input.signatureRequested,
     postage_type: input.postageType ?? "unknown",
     ship_date: input.shipDate ?? "today",
-    line_items: input.customsLines.map((line) => {
-      return {
-        quantity: line.quantity,
-        description: line.description,
-        value_amount: cents(line.unitValueCents),
-        currency_code: "cad",
-        hs_tariff_code: line.hsTariffCode,
-        sku_code: line.sku,
-        origin_country: line.countryOfOrigin,
-        weight_unit: "g",
-        weight: line.unitWeightGrams,
-        manufacturer_contact: line.manufacturerName,
-        manufacturer_street: line.manufacturerAddress,
-        manufacturer_city: line.manufacturerCity,
-        manufacturer_province_code: line.manufacturerProvinceCode,
-        manufacturer_postal_code: line.manufacturerPostalCode,
-        manufacturer_country_code: line.manufacturerCountryCode,
-      };
-    }),
+    ...(requiresCustomsDeclaration
+      ? {
+          line_items: input.customsLines.map((line) => {
+            return {
+              quantity: line.quantity,
+              description: line.description,
+              value_amount: cents(line.unitValueCents),
+              currency_code: "cad",
+              hs_tariff_code: line.hsTariffCode,
+              sku_code: line.sku,
+              origin_country: line.countryOfOrigin,
+              weight_unit: "g",
+              weight: line.unitWeightGrams,
+              manufacturer_contact: line.manufacturerName,
+              manufacturer_street: line.manufacturerAddress,
+              manufacturer_city: line.manufacturerCity,
+              manufacturer_province_code: line.manufacturerProvinceCode,
+              manufacturer_postal_code: line.manufacturerPostalCode,
+              manufacturer_country_code: line.manufacturerCountryCode,
+            };
+          }),
+        }
+      : {}),
   };
 }
 
