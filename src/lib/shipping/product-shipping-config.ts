@@ -26,7 +26,7 @@ import type { ShippingServicePolicy } from "./policy";
 import type { FulfillmentProviderCertificationContractSnapshot } from "@/lib/private-db/schema";
 
 /** Bump when any operational value below changes (audit/debug aid only). */
-export const PRODUCT_SHIPPING_POLICY_VERSION = "product-shipping-config-v1";
+export const PRODUCT_SHIPPING_POLICY_VERSION = "product-shipping-config-v2";
 
 export interface ProductShippingSettings {
   timezone: string;
@@ -89,9 +89,14 @@ export interface ConfiguredServicePolicy {
  * offers NO rate for a postage type/destination without a matching entry here,
  * and blocks any rate whose at-risk value exceeds `insuranceLimitCents`.
  *
- * ⚠️ Confirm `insuranceLimitCents` and `signatureCapable` against Chit Chats'
- * published coverage/eligibility for each service before enabling checkout.
- * Values below are conservative starters (CAD 100 included-coverage baseline).
+ * `insuranceLimitCents` is set to Chit Chats' published "Fully Tracked" maximum
+ * insurable value — $800 USD for both Canada- and U.S.-bound shipments (confirmed
+ * 2026-08) — expressed as CAD $800. Because Chit Chats denominates coverage in USD
+ * while the cart's at-risk value is CAD, capping at CAD $800 stays within the
+ * $800 USD ceiling regardless of exchange rate (CAD is never stronger than USD),
+ * so an offered service is always fully insurable. Re-verify against Chit Chats'
+ * current terms and bump `PRODUCT_SHIPPING_POLICY_VERSION` on any change.
+ * `signatureCapable` still reflects per-service capability.
  */
 export const PRODUCT_SHIPPING_SERVICE_POLICIES: ConfiguredServicePolicy[] = [
   // Canada domestic
@@ -118,7 +123,12 @@ function svc(
     destinationCountryCode,
     trackingRequired: true,
     signatureCapable: false,
-    insuranceLimitCents: 10_000, // CAD 100 baseline — VERIFY per service
+    // Chit Chats "Fully Tracked" max insurable value is $800 USD (CA & U.S.).
+    // Held at CAD $800 so the cart's CAD at-risk value stays within the USD
+    // ceiling at any exchange rate. Carts above this get no rate (fail-safe:
+    // never offer an under-insured service) — raise only with a deliberate FX
+    // buffer if you sell items over CAD $800.
+    insuranceLimitCents: 80_000,
     claimWaitingDays: 0,
     claimDeadlineDays: 90, // Chit Chats outer claim submission window
     ...overrides,
