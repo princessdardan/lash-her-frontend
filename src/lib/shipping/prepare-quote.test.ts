@@ -126,3 +126,76 @@ test("U.S. quote rejects a SKU missing required customs metadata", () => {
       /missing_us_hts/.test(error.message),
   );
 });
+
+test("U.S. quote rejects an over-length customs manufacturer name (carrier cap)", () => {
+  assert.throws(
+    () =>
+      prepareShippingQuote({
+        ...base,
+        products: [
+          {
+            ...base.products[0]!,
+            shipping: {
+              ...shipping,
+              // 36 chars — the exact production value that dead-lettered.
+              manufacturerName: "Quingdao Elegant Beauty Craft Co LTD",
+            },
+          },
+        ],
+      }),
+    (error) =>
+      error instanceof ShippingEligibilityError &&
+      /manufacturer name exceeds the 35-character/i.test(error.message),
+  );
+});
+
+test("U.S. quote rejects an over-length customs manufacturer city (carrier cap)", () => {
+  assert.throws(
+    () =>
+      prepareShippingQuote({
+        ...base,
+        products: [
+          {
+            ...base.products[0]!,
+            shipping: { ...shipping, manufacturerCity: "X".repeat(18) },
+          },
+        ],
+      }),
+    (error) =>
+      error instanceof ShippingEligibilityError &&
+      /manufacturer city exceeds the 17-character/i.test(error.message),
+  );
+});
+
+test("domestic Canada quote does not apply cross-border customs field caps", () => {
+  // Domestic CA never transmits customs line items, so an over-length
+  // manufacturer name must NOT block the quote — and the full-fidelity customs
+  // snapshot is still retained for audit.
+  const prepared = prepareShippingQuote({
+    items: base.items,
+    products: [
+      {
+        ...base.products[0]!,
+        shipping: {
+          ...shipping,
+          manufacturerName: "Quingdao Elegant Beauty Craft Co LTD",
+        },
+      },
+    ],
+    recipient: {
+      ...base.recipient,
+      city: "Toronto",
+      province: "ON",
+      postalCode: "M5V 1A1",
+      country: "Canada",
+      countryCode: "CA",
+    },
+    profiles: base.profiles,
+    usShippingEnabled: true,
+    now,
+  });
+  assert.equal(
+    prepared.customsLines[0]?.manufacturerName,
+    "Quingdao Elegant Beauty Craft Co LTD",
+  );
+});

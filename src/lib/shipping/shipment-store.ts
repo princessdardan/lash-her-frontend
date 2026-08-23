@@ -2389,6 +2389,7 @@ export async function completeShipmentJob(
   input: {
     outcomeCode: string;
     manualReview?: boolean;
+    lastError?: string;
     leaseOwner?: string;
     expectedStateVersion?: number;
   },
@@ -2408,6 +2409,13 @@ export async function completeShipmentJob(
     .set({
       status: input.manualReview ? "dead_letter" : "succeeded",
       outcomeCode: input.outcomeCode,
+      // Persist the failure reason on the dead-letter path so provider
+      // rejections (e.g. a Chit Chats 400 body) are visible in the DB without
+      // replaying the request. Omitted on the success path so a prior error is
+      // not overwritten with an empty string.
+      ...(input.lastError !== undefined
+        ? { lastError: input.lastError.slice(0, 1_000) }
+        : {}),
       completedAt: new Date(),
       leaseOwner: null,
       leaseExpiresAt: null,

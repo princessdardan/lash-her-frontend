@@ -493,3 +493,160 @@ test(
     );
   },
 );
+
+const rejectionScenario = String.raw`
+  import assert from "node:assert/strict";
+  import { eq } from "drizzle-orm";
+  import { closePrivateDbPool, getPrivateDb } from "./src/lib/private-db/client.ts";
+  import {
+    productShipmentJobs,
+    productShipments,
+  } from "./src/lib/private-db/schema.ts";
+  import { claimShipmentOperationJobs } from "./src/lib/shipping/shipment-store.ts";
+  import { processClaimedShipmentOperation } from "./src/lib/shipping/operation-worker.ts";
+  import { ChitChatsApiError } from "./src/lib/shipping/chitchats-client.ts";
+
+  process.env.DATABASE_URL = process.env.TEST_DATABASE_URL.includes("?")
+    ? process.env.TEST_DATABASE_URL + "&sslmode=disable"
+    : process.env.TEST_DATABASE_URL + "?sslmode=disable";
+  process.env.CHITCHATS_ACCESS_TOKEN = "operation-worker-test-token";
+  process.env.CHITCHATS_CHECKOUT_ENABLED = "true";
+  process.env.CHITCHATS_CLIENT_ID = "operation-worker-test-client";
+  process.env.CHITCHATS_ENVIRONMENT = "staging";
+  process.env.CHITCHATS_QUOTE_SIGNING_SECRET = "operation-worker-test-signing-secret-32-bytes";
+  process.env.CHITCHATS_REGION = "ontario_manitoba";
+  process.env.CHITCHATS_SHIPPING_ENABLED = "true";
+
+  const db = getPrivateDb();
+  const now = new Date();
+  const publicReference = "lh-create-rejected-" + crypto.randomUUID();
+  const [shipment] = await db.insert(productShipments).values({
+    publicReference,
+    quoteTokenHash: publicReference + "-token",
+    quoteFingerprint: publicReference + "-fingerprint",
+    status: "quote_pending",
+    destination: {
+      name: "Test Customer",
+      email: "customer@example.invalid",
+      phone: "+14165550100",
+      line1: "100 Test Street",
+      city: "Toronto",
+      province: "ON",
+      postalCode: "M5V 1A1",
+      country: "Canada",
+      countryCode: "CA",
+    },
+    packageSnapshot: {
+      profileId: "profile",
+      profileSlug: "profile",
+      packageType: "parcel",
+      lengthCm: 10,
+      widthCm: 10,
+      heightCm: 10,
+      tareWeightGrams: 10,
+      totalWeightGrams: 100,
+    },
+    customsLines: [],
+    rates: [],
+    quoteExpiresAt: new Date(now.getTime() + 60 * 60_000),
+  }).returning();
+
+  const [job] = await db.insert(productShipmentJobs).values({
+    shipmentId: shipment.id,
+    type: "create",
+    status: "queued",
+    idempotencyKey: publicReference + "-create",
+    availableAt: new Date(now.getTime() - 1_000),
+    payload: {
+      expectedShipmentStateVersion: shipment.stateVersion,
+      merchandiseValueCents: 1_000,
+      signatureRequested: false,
+    },
+  }).returning();
+
+  const [claimedJob] = await claimShipmentOperationJobs({
+    workerId: "worker-create-rejected",
+    types: ["create"],
+    now,
+  });
+  assert.ok(claimedJob);
+
+  try {
+    const result = await processClaimedShipmentOperation(claimedJob, {
+      client: {
+        async createShipment() {
+          throw new ChitChatsApiError(
+            "Chit Chats request failed with 400",
+            400,
+            null,
+            {
+              error: {
+                message:
+                  "(Line Item 1) Manufacturer contact is too long (maximum is 35 characters). See https://chitchats.com/help?token=secret",
+              },
+            },
+          );
+        },
+        async getShipment() { throw new Error("unexpected getShipment"); },
+        async findShipments() { return []; },
+        async refreshShipment() { throw new Error("unexpected refreshShipment"); },
+        async buyShipment() { throw new Error("unexpected buyShipment"); },
+        async deleteShipment() {},
+        async refundShipment() { throw new Error("unexpected refundShipment"); },
+        async listReturns() { return []; },
+      },
+      workerId: "worker-create-rejected",
+      now: () => now,
+      assertQuoteContextCurrent: async () => {},
+    });
+    assert.equal(result, "deadLettered");
+
+    const persisted = await db.query.productShipmentJobs.findFirst({
+      where: eq(productShipmentJobs.id, job.id),
+    });
+    assert.equal(persisted.status, "dead_letter");
+    assert.equal(persisted.outcomeCode, "create_rejected");
+    // The provider rejection body is persisted for diagnosability...
+    assert.match(persisted.lastError ?? "", /Manufacturer contact is too long/);
+    assert.match(persisted.lastError ?? "", /Chit Chats request failed with 400/);
+    // ...with signed URLs redacted before storage.
+    assert.equal((persisted.lastError ?? "").includes("https://"), false);
+    assert.match(persisted.lastError ?? "", /\[url\]/);
+
+    const persistedShipment = await db.query.productShipments.findFirst({
+      where: eq(productShipments.id, shipment.id),
+    });
+    assert.equal(persistedShipment.status, "manual_review");
+  } finally {
+    await db.delete(productShipmentJobs).where(
+      eq(productShipmentJobs.shipmentId, shipment.id),
+    );
+    await db.delete(productShipments).where(
+      eq(productShipments.id, shipment.id),
+    );
+    await closePrivateDbPool();
+  }
+`;
+
+test(
+  "provider create rejections dead-letter with the redacted provider body in last_error",
+  { skip: dbTestSkipReason },
+  () => {
+    execFileSync(
+      process.execPath,
+      [
+        "--conditions=react-server",
+        "--import",
+        "tsx",
+        "--input-type=module",
+        "--eval",
+        rejectionScenario,
+      ],
+      {
+        cwd: process.cwd(),
+        env: process.env,
+        stdio: "inherit",
+      },
+    );
+  },
+);

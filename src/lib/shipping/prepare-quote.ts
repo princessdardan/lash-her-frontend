@@ -164,6 +164,15 @@ export function prepareShippingQuote(
         : {}),
     }));
   });
+  // Cross-border shipments transmit these customs line items to Chit Chats,
+  // which enforces per-field length caps and rejects the entire shipment with an
+  // opaque HTTP 400 if any is exceeded. Fail fast here with a clear 422 instead
+  // of letting the async worker dead-letter the quote. Domestic Canada omits
+  // customs line items entirely (see toShipmentPayload in chitchats-client), so
+  // this is enforced only where the fields are actually sent.
+  if (input.recipient.countryCode !== "CA") {
+    assertCustomsLinesWithinProviderLimits(customsLines);
+  }
   const fingerprint = createShippingFingerprint({
     items: input.items,
     promotionCode: cart.promotionCode ?? null,
@@ -183,6 +192,40 @@ export function prepareShippingQuote(
       ? { usImportDisclosure: input.usImportDisclosure }
       : {}),
   };
+}
+
+/**
+ * Chit Chats caps several customs line-item fields and rejects shipment
+ * creation with an opaque HTTP 400 when any is exceeded. These caps were
+ * confirmed against the live Chit Chats API (manufacturer contact/street at 35,
+ * city at 17); other line-item fields (description, sku_code, HS code) have
+ * generous or format-constrained limits that realistic data does not reach.
+ * Keys match ProductShipmentCustomsLineSnapshot; the mapped Chit Chats field and
+ * a human label are used for the merchant-facing rejection message.
+ */
+const CHITCHATS_CUSTOMS_FIELD_LIMITS: ReadonlyArray<{
+  field: "manufacturerName" | "manufacturerAddress" | "manufacturerCity";
+  label: string;
+  maxLength: number;
+}> = [
+  { field: "manufacturerName", label: "name", maxLength: 35 },
+  { field: "manufacturerAddress", label: "street address", maxLength: 35 },
+  { field: "manufacturerCity", label: "city", maxLength: 17 },
+];
+
+function assertCustomsLinesWithinProviderLimits(
+  customsLines: ProductShipmentCustomsLineSnapshot[],
+): void {
+  for (const line of customsLines) {
+    for (const { field, label, maxLength } of CHITCHATS_CUSTOMS_FIELD_LIMITS) {
+      const value = line[field];
+      if (typeof value === "string" && value.length > maxLength) {
+        throw new ShippingEligibilityError(
+          `Customs manufacturer ${label} exceeds the ${maxLength}-character carrier limit`,
+        );
+      }
+    }
+  }
 }
 
 export class ShippingEligibilityError extends Error {

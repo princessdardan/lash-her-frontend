@@ -155,6 +155,7 @@ export async function processClaimedShipmentOperation(
       const completed = await completeShipmentJob(job.id, {
         outcomeCode: classification.code,
         manualReview: true,
+        lastError: classification.message,
         leaseOwner: job.leaseOwner ?? dependencies.workerId,
         expectedStateVersion: job.stateVersion,
       });
@@ -1171,9 +1172,60 @@ function mutationFailure(error: unknown, code: string): Error {
   )
     return new DeterministicOperationError(
       code.replace("_outcome_unknown", "_rejected"),
-      error.message,
+      describeProviderRejection(error),
     );
   return new UnknownMutationOutcomeError(code, error);
+}
+
+/**
+ * Attach the provider's rejection body to the error message so it lands in the
+ * dead-lettered job's `last_error` (via completeShipmentJob) and the failure is
+ * diagnosable from the DB without replaying the request. Signed URLs and email
+ * addresses are redacted, and the body is truncated before persistence.
+ */
+function describeProviderRejection(error: ProviderError): string {
+  const detail = summarizeProviderErrorBody(error.responseBody);
+  return detail ? `${error.message}: ${detail}` : error.message;
+}
+
+function summarizeProviderErrorBody(body: unknown): string | null {
+  const message = extractProviderErrorMessage(body);
+  if (message === null) return null;
+  const masked = message
+    // Strip signed URLs (bearer capabilities); stop at JSON/quote delimiters so
+    // trailing context is not swallowed.
+    .replace(/https?:\/\/[^\s"',}]+/gi, "[url]")
+    .replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, "[email]")
+    // Mask long digit runs so an echoed phone/postal/account number cannot be
+    // persisted (field-limit maxima like "35" are two digits and survive).
+    .replace(/\d{5,}/g, "[redacted]")
+    .trim();
+  return masked ? masked.slice(0, 500) : null;
+}
+
+/**
+ * Extract only the provider's human-readable error string. Chit Chats errors
+ * are shaped `{ error: { message } }` (or `{ error }` / `{ message }`); prefer
+ * that allowlisted field so the full request echo is never persisted. Unknown
+ * shapes fall back to a bounded stringify, still scrubbed by the caller.
+ */
+function extractProviderErrorMessage(body: unknown): string | null {
+  if (body === null || body === undefined) return null;
+  if (typeof body === "string") return body;
+  if (typeof body === "object") {
+    const record = body as Record<string, unknown>;
+    if (typeof record.error === "string") return record.error;
+    if (record.error && typeof record.error === "object") {
+      const nested = (record.error as Record<string, unknown>).message;
+      if (typeof nested === "string") return nested;
+    }
+    if (typeof record.message === "string") return record.message;
+  }
+  try {
+    return JSON.stringify(body);
+  } catch {
+    return null;
+  }
 }
 
 function classifyOperationError(error: unknown): {
