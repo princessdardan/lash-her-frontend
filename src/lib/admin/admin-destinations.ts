@@ -278,6 +278,27 @@ const ADMIN_DESTINATION_DEFINITIONS: readonly AdminDestinationDefinition[] = [
     roles: ["owner"],
   },
   {
+    action: "fulfillment:manage",
+    description:
+      "Create, approve, and disable the physical shipping boxes checkout can use.",
+    group: "Settings",
+    href: "/admin/shipping-packages",
+    keywords: [
+      "shipping",
+      "package",
+      "packaging",
+      "box",
+      "boxes",
+      "parcel",
+      "dimensions",
+      "profile",
+      "approve",
+    ],
+    label: "Shipping packages",
+    navigation: true,
+    roles: ["owner"],
+  },
+  {
     action: "setup:view",
     description:
       "Set booking windows, timing defaults, and client intake text.",

@@ -7,6 +7,7 @@ import process from "node:process";
 const SERVER_ONLY_TEST_FILES = new Set([
   "src/app/api/cron/customer-email-outbox/route.test.ts",
   "src/app/api/admin/shipping/operation-reviews/handler.test.ts",
+  "src/app/api/admin/shipping/package-profiles/handler.test.ts",
   "src/app/(site)/orders/payment-offer/interstitial/route.test.ts",
   "src/lib/admin/implicit-staff-provider.test.ts",
   "src/lib/admin/square-team-selection.test.ts",
@@ -27,6 +28,7 @@ const SERVER_ONLY_TEST_FILES = new Set([
   "src/lib/shipping/configured-quote-context.test.ts",
   "src/lib/shipping/manual-checkout-readiness.test.ts",
   "src/lib/shipping/operation-worker.test.ts",
+  "src/lib/shipping/package-profiles.test.ts",
   "src/lib/shipping/p10-termination.test.ts",
   "src/lib/shipping/policy-mode.test.ts",
   "src/lib/shipping/policy-worker.test.ts",
@@ -77,6 +79,7 @@ const DB_TEST_FILES = new Set([
   "src/lib/shipping/frozen-activation.db.test.ts",
   "src/lib/shipping/operation-worker.db.test.ts",
   "src/lib/shipping/operations-actions.db.test.ts",
+  "src/lib/shipping/package-profiles.db.test.ts",
   "src/lib/shipping/policy-jobs.db.test.ts",
   "src/lib/shipping/policy-p10.db.test.ts",
   "src/lib/shipping/provider-event-ordering.db.test.ts",
