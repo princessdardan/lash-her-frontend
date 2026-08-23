@@ -191,6 +191,12 @@ interface CheckoutPostHandlerDependencies {
     | { ok: false; reason: string }
   >;
   markOrderVerificationFailed?: (orderId: string) => Promise<void>;
+  /**
+   * Optional abuse guard evaluated before any checkout work. Returns a 429/503
+   * Response to short-circuit the request, or null to proceed. Injected so unit
+   * tests run without a rate-limit backend.
+   */
+  enforceRateLimit?: (req: NextRequest) => Promise<Response | null>;
 }
 
 interface ProductCheckoutTermsAssent {
@@ -229,12 +235,18 @@ export function createCheckoutPostHandler({
   squareCommerceEnabled,
   chargeSquareProductOrder,
   markOrderVerificationFailed: markOrderVerificationFailedDep,
+  enforceRateLimit,
 }: CheckoutPostHandlerDependencies): (req: NextRequest) => Promise<Response> {
   return async function checkoutPostHandler(
     req: NextRequest,
   ): Promise<Response> {
     let stage: CheckoutInitializationStage = "prepare_checkout";
     let initializingOrderId: string | null = null;
+
+    if (enforceRateLimit) {
+      const limited = await enforceRateLimit(req);
+      if (limited) return limited;
+    }
 
     const parsedBody = await readBoundedJsonBody(req, CHECKOUT_BODY_MAX_BYTES);
     if (!parsedBody.ok) {
@@ -437,6 +449,19 @@ export function createCheckoutPostHandler({
         checkoutRequest.payment?.sourceId,
       );
 
+      // Square is the only gateway: without an enabled charger and a card nonce
+      // there is no way to complete payment. Fail *before* reserving any order so
+      // a disabled/misconfigured gateway or a missing nonce can never strand held
+      // stock or a consumed shipping quote on a reservation that can never be
+      // charged (the reserved order would otherwise leak until the abandoned-stock
+      // sweep expires it).
+      if (!useSquareCommerce) {
+        return NextResponse.json<CheckoutErrorBody>(
+          { error: "Checkout is temporarily unavailable" },
+          { status: 503 },
+        );
+      }
+
       let initializingOrder: Awaited<
         ReturnType<NonNullable<typeof createInitializingOrder>>
       > | null = null;
@@ -609,13 +634,28 @@ export function createCheckoutPostHandler({
         { status: 503 },
       );
     } catch (error) {
-      if (initializingOrderId && markInitializationFailed) {
-        await markInitializationFailed(
-          initializingOrderId,
-          error instanceof Error
-            ? error.message
-            : "Unknown initialization error",
-        ).catch(() => undefined);
+      if (initializingOrderId) {
+        // Release any inventory/quote held by the reserved order. Two separate
+        // columns matter: markInitializationFailed only unwinds orders whose
+        // `initializationStatus` is "initializing", but Square orders are reserved
+        // with `initializationStatus: "ready"`, so it is a no-op for them.
+        // markOrderVerificationFailed keys off the lifecycle `status` ("pending"
+        // on reservation) and is what actually returns their held stock. Call both
+        // so either reservation shape is unwound rather than leaking until the
+        // abandoned-stock sweep.
+        if (markOrderVerificationFailedDep) {
+          await markOrderVerificationFailedDep(initializingOrderId).catch(
+            () => undefined,
+          );
+        }
+        if (markInitializationFailed) {
+          await markInitializationFailed(
+            initializingOrderId,
+            error instanceof Error
+              ? error.message
+              : "Unknown initialization error",
+          ).catch(() => undefined);
+        }
       }
       log("error", "[checkout] Unable to initialize checkout", {
         stage,
@@ -663,6 +703,48 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   return createCheckoutPostHandler({
     getProductsByIds: loaders.getProductsByIds,
+    enforceRateLimit: async (request) => {
+      const [{ buildBookingAbuseKey }, { checkProductCheckoutRateLimit }] =
+        await Promise.all([
+          import("@/lib/security/trusted-client-ip"),
+          import("@/lib/security/checkout-abuse-control"),
+        ]);
+      const key = buildBookingAbuseKey({
+        headers: request.headers,
+        scope: "product-checkout",
+        subject: "all",
+      });
+      if (!key) {
+        return NextResponse.json<CheckoutErrorBody>(
+          { error: "Checkout is temporarily unavailable" },
+          { status: 503 },
+        );
+      }
+      try {
+        const decision = await checkProductCheckoutRateLimit({
+          key,
+          now: new Date(),
+        });
+        if (!decision.allowed) {
+          return NextResponse.json<CheckoutErrorBody>(
+            {
+              error:
+                "Too many checkout attempts. Please wait a moment and try again.",
+            },
+            {
+              status: 429,
+              headers: { "Retry-After": String(decision.retryAfterSeconds) },
+            },
+          );
+        }
+      } catch {
+        return NextResponse.json<CheckoutErrorBody>(
+          { error: "Checkout is temporarily unavailable" },
+          { status: 503 },
+        );
+      }
+      return null;
+    },
     squareCommerceEnabled,
     ...(squareCommerceEnabled
       ? {

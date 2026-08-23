@@ -53,6 +53,20 @@ const squareLaunchEnvVars = [
   "SQUARE_SERVICE_BOOKING_WEBHOOK_URL",
 ];
 
+// Product and primary-training checkout use SQUARE_COMMERCE_ENABLED, a different
+// flag from service booking. It needs the shared Square credentials plus the
+// public-safe SQUARE_APPLICATION_ID for the Web Payments SDK config route, and it
+// reuses the single Square webhook endpoint (SQUARE_SERVICE_BOOKING_WEBHOOK_URL).
+// It does NOT require SQUARE_SERVICE_BOOKING_RETURN_URL.
+const squareCommerceLaunchEnvVars = [
+  "SQUARE_ENVIRONMENT",
+  "SQUARE_ACCESS_TOKEN",
+  "SQUARE_LOCATION_ID",
+  "SQUARE_WEBHOOK_SIGNATURE_KEY",
+  "SQUARE_APPLICATION_ID",
+  "SQUARE_SERVICE_BOOKING_WEBHOOK_URL",
+];
+
 const chitchatsLaunchEnvVars = [
   "CHITCHATS_ENVIRONMENT",
   "CHITCHATS_CLIENT_ID",
@@ -93,6 +107,8 @@ const serviceBookingSquareEnabled = process.env.SERVICE_BOOKING_SQUARE_ENABLED;
 const serviceBookingModelMode =
   process.env.SERVICE_BOOKING_MODEL_MODE ?? "dual";
 const isSquareServiceBookingEnabled = serviceBookingSquareEnabled === "true";
+const squareCommerceEnabled = process.env.SQUARE_COMMERCE_ENABLED;
+const isSquareCommerceEnabled = squareCommerceEnabled === "true";
 const chitchatsShippingEnabled = process.env.CHITCHATS_SHIPPING_ENABLED;
 const chitchatsCheckoutEnabled = process.env.CHITCHATS_CHECKOUT_ENABLED;
 const chitchatsUsShippingEnabled = process.env.CHITCHATS_US_SHIPPING_ENABLED;
@@ -108,13 +124,16 @@ const requiredEnvVars = isLaunchEnvironment
       ...(isSquareServiceBookingEnabled && !isPaymentMockMode
         ? squareLaunchEnvVars
         : []),
+      ...(isSquareCommerceEnabled && !isPaymentMockMode
+        ? squareCommerceLaunchEnvVars
+        : []),
       ...(isChitchatsShippingEnabled ? chitchatsLaunchEnvVars : []),
     ]
   : publicSanityEnvVars;
 
 const errors = [];
 
-for (const name of requiredEnvVars) {
+for (const name of new Set(requiredEnvVars)) {
   if (!hasValue(process.env[name])) {
     errors.push(`Missing env var: ${name}`);
   }
@@ -162,6 +181,7 @@ if (
 }
 
 for (const [name, value] of [
+  ["SQUARE_COMMERCE_ENABLED", squareCommerceEnabled],
   ["CHITCHATS_SHIPPING_ENABLED", chitchatsShippingEnabled],
   ["CHITCHATS_CHECKOUT_ENABLED", chitchatsCheckoutEnabled],
   ["CHITCHATS_US_SHIPPING_ENABLED", chitchatsUsShippingEnabled],
@@ -252,9 +272,23 @@ if (isLaunchEnvironment) {
     );
   }
 
-  if (isSquareServiceBookingEnabled) {
+  if (isSquareServiceBookingEnabled || isSquareCommerceEnabled) {
     validateSquareEnvironment(process.env.SQUARE_ENVIRONMENT);
 
+    // A production deployment must not silently point the live card flow at
+    // Square sandbox. Preview/staging may still use sandbox.
+    if (
+      !isPaymentMockMode &&
+      vercelEnv === "production" &&
+      process.env.SQUARE_ENVIRONMENT !== "production"
+    ) {
+      errors.push(
+        "Invalid env var: production deployment requires SQUARE_ENVIRONMENT=production",
+      );
+    }
+  }
+
+  if (isSquareServiceBookingEnabled) {
     for (const name of [
       "SQUARE_SERVICE_BOOKING_RETURN_URL",
       "SQUARE_SERVICE_BOOKING_WEBHOOK_URL",
@@ -263,6 +297,13 @@ if (isLaunchEnvironment) {
         validateHttpsUrl(name, process.env[name]);
       }
     }
+  }
+
+  if (isSquareCommerceEnabled && hasValue(process.env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL)) {
+    validateHttpsUrl(
+      "SQUARE_SERVICE_BOOKING_WEBHOOK_URL",
+      process.env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL,
+    );
   }
 
   if (isChitchatsShippingEnabled) {
