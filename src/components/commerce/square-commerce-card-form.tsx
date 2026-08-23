@@ -252,16 +252,18 @@ export const SquareCommerceCardForm = forwardRef<
     ref,
     () => ({
       async tokenize() {
+        // Throw (rather than onError + return) so the caller's try/catch resets
+        // its busy state. Returning normally here would leave the Pay button
+        // stuck on "Processing…" with no way forward, since the success path
+        // deliberately keeps the busy state while it navigates away.
         if (disabled || buyer === null) {
-          onError("Please complete the form before paying.");
-          return;
+          throw new Error("Please complete the form before paying.");
         }
 
         if (cardRef.current === null) {
-          onError(
+          throw new Error(
             "Secure card form is not ready. Please wait a moment and try again.",
           );
-          return;
         }
 
         const [givenName, familyName] = splitFullName(buyer.fullName);
@@ -303,7 +305,7 @@ export const SquareCommerceCardForm = forwardRef<
         });
       },
     }),
-    [buyer, disabled, onError, onTokenized],
+    [buyer, disabled, onTokenized],
   );
 
   const isConfigUnavailable = config === null && !isConfigLoading;

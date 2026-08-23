@@ -55,6 +55,7 @@ import {
   evaluateManualCheckoutReadiness,
 } from "@/lib/shipping/readiness";
 import { enqueueCustomerEmail } from "./customer-email-outbox";
+import { sendShippingPolicyAlert } from "@/lib/shipping/policy-alerts";
 import {
   assertProductTaxPolicyVersionImplemented,
   calculateProductTax,
@@ -1593,6 +1594,65 @@ export async function findUncapturedSquareCommerceOrders(input: {
   );
 }
 
+export interface UnfinalizedSupplementalObligation {
+  id: string;
+  purpose: "manual_shipping" | "address_increase";
+  createdAt: Date;
+}
+
+/**
+ * Square supplemental obligations (manual-shipping / address-increase top-ups)
+ * that have a minted payment link but are still `pending` — i.e. the customer
+ * may have paid on Square yet the `payment.updated` webhook never finalized them
+ * locally. The supplemental capture-reconciliation backstop lists Square payments
+ * by the obligation `reference_id` and re-drives the (idempotent) finalizer.
+ * `mintedBefore` avoids racing an in-flight webhook; `horizonAfter` bounds the
+ * swept backlog (a genuinely-unpaid obligation simply ages out of the window,
+ * and moves off `pending` when an expiry sweep marks it `expired`).
+ */
+export async function findUnfinalizedSupplementalObligations(input: {
+  mintedBefore: Date;
+  horizonAfter: Date;
+  limit: number;
+}): Promise<UnfinalizedSupplementalObligation[]> {
+  const rows = await getPrivateDb()
+    .select({
+      id: orderPaymentObligations.id,
+      purpose: orderPaymentObligations.purpose,
+      createdAt: orderPaymentObligations.createdAt,
+    })
+    .from(orderPaymentObligations)
+    .innerJoin(
+      checkoutOrders,
+      eq(orderPaymentObligations.orderId, checkoutOrders.id),
+    )
+    .where(
+      and(
+        eq(orderPaymentObligations.paymentProvider, "square"),
+        inArray(orderPaymentObligations.purpose, [
+          "manual_shipping",
+          "address_increase",
+        ]),
+        eq(orderPaymentObligations.status, "pending"),
+        eq(orderPaymentObligations.initializationStatus, "ready"),
+        isNull(orderPaymentObligations.quarantinedAt),
+        isNull(checkoutOrders.fulfillmentQuarantinedAt),
+        eq(checkoutOrders.status, "paid"),
+        lte(orderPaymentObligations.updatedAt, input.mintedBefore),
+        sql`${orderPaymentObligations.createdAt} >= ${input.horizonAfter}`,
+      ),
+    )
+    // Oldest-first so a limited sweep is deterministic and drains the backlog.
+    .orderBy(orderPaymentObligations.createdAt)
+    .limit(input.limit);
+
+  return rows.flatMap((row) =>
+    row.purpose === "manual_shipping" || row.purpose === "address_increase"
+      ? [{ id: row.id, purpose: row.purpose, createdAt: row.createdAt }]
+      : [],
+  );
+}
+
 /**
  * Flip a paid Square commerce order's provider status to `COMPLETED`, recording
  * that the authorized funds were captured. Guarded on the order id + payment id
@@ -1612,17 +1672,99 @@ export async function markSquareCommerceOrderCaptured(
 /**
  * Mark a paid Square commerce order as uncollected (its authorization was lost
  * before capture). Terminal: drops the order out of the capture sweep so it is
- * not re-checked, leaving it for manual follow-up.
+ * not re-checked. Because the shipment was activated to `ready_for_staff` at
+ * authorization time, this also quarantines fulfillment and holds the active
+ * shipment out of the dispatch queue, then raises a critical alert — so staff
+ * cannot dispatch goods for which no funds were collected. Atomic: the
+ * quarantine, hold, and alert commit together; if the alert cannot be enqueued
+ * the whole thing rolls back and the sweep retries (fail-safe — never mark
+ * uncollected without a durable hold + alert). Idempotent: the providerStatus
+ * flip removes the order from the sweep and the alert is outbox-deduped, so a
+ * re-run is a no-op.
  */
 export async function markSquareCommerceOrderUncollected(
   orderReference: string,
   squarePaymentId: string,
 ): Promise<void> {
-  await setSquareCommerceOrderProviderStatus(
-    orderReference,
-    squarePaymentId,
-    SQUARE_UNCOLLECTED_PROVIDER_STATUS,
-  );
+  await getPrivateDb().transaction(async (tx) => {
+    const now = new Date();
+    const [order] = await tx
+      .select({
+        id: checkoutOrders.id,
+        purpose: checkoutOrders.purpose,
+        activeFulfillmentShipmentId: checkoutOrders.activeFulfillmentShipmentId,
+        fulfillmentQuarantinedAt: checkoutOrders.fulfillmentQuarantinedAt,
+      })
+      .from(checkoutOrders)
+      .where(
+        and(
+          eq(checkoutOrders.orderId, orderReference),
+          eq(checkoutOrders.paymentProvider, "square"),
+          eq(checkoutOrders.providerPaymentId, squarePaymentId),
+          eq(checkoutOrders.status, "paid"),
+        ),
+      )
+      .for("update")
+      .limit(1);
+    // No matching paid order (already reconciled or changed) — nothing to do.
+    if (!order) return;
+
+    // Gate the shipment hold + alert on the first quarantine so a re-run of the
+    // sweep neither re-holds an in-transit shipment nor re-alerts.
+    const firstQuarantine = order.fulfillmentQuarantinedAt === null;
+
+    await tx
+      .update(checkoutOrders)
+      .set({
+        providerStatus: SQUARE_UNCOLLECTED_PROVIDER_STATUS,
+        fulfillmentQuarantinedAt: sql`coalesce(${checkoutOrders.fulfillmentQuarantinedAt}, ${now})`,
+        fulfillmentQuarantineReason: sql`coalesce(${checkoutOrders.fulfillmentQuarantineReason}, ${"square_authorization_lost_uncollected"})`,
+        updatedAt: now,
+      })
+      .where(eq(checkoutOrders.id, order.id));
+
+    if (!firstQuarantine) return;
+
+    // Hold the active shipment out of the staff dispatch queue (product orders
+    // only, and only while still pre-dispatch). The order-level quarantine above
+    // is the authoritative dispatch block — enqueuePurchaseOperationForOrder and
+    // shipment activation both refuse when it is set — so a shipment already past
+    // pre-dispatch is left as-is and the critical alert drives manual recovery.
+    // The stateVersion bump also 409s any concurrent staff "buy label".
+    if (order.purpose === "product" && order.activeFulfillmentShipmentId) {
+      await tx
+        .update(productShipments)
+        .set({
+          status: "manual_review",
+          manualReviewStartedAt: sql`coalesce(${productShipments.manualReviewStartedAt}, ${now})`,
+          stateVersion: sql`${productShipments.stateVersion} + 1`,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(productShipments.id, order.activeFulfillmentShipmentId),
+            inArray(productShipments.status, [
+              "ready_for_staff",
+              "payment_pending",
+            ]),
+          ),
+        );
+    }
+
+    await sendShippingPolicyAlert({
+      duties: ["finance_owner", "operations_lead"],
+      critical: true,
+      subject: "Square capture lost — paid order has uncollected funds",
+      message:
+        `Order ${orderReference} is marked paid but Square capture is no longer ` +
+        `possible (payment ${squarePaymentId}). Fulfillment is quarantined and the ` +
+        `active shipment is held for manual review. Reconcile by hand — collect, ` +
+        `or cancel and refund; do not dispatch.`,
+      idempotencyKey: `square-capture-uncollected/${squarePaymentId}`,
+      executor: tx,
+      now,
+    });
+  });
 }
 
 async function setSquareCommerceOrderProviderStatus(
@@ -2018,6 +2160,29 @@ function createDrizzleCheckoutOrderRepository(): CheckoutOrderRepository {
         // product orders so training/booking failures never touch product stock.
         if (order.purpose === "product") {
           await releaseProductStockForOrderInTransaction(tx, orderId);
+          // Re-open the attached shipping quote so a corrected card can retry
+          // with the same quote (while it is still unexpired). The single-use
+          // quote was flipped to `payment_pending` and bound to this order on
+          // reservation; returning it to `quoted` / unbound lets checkout's quote
+          // SELECT find it again instead of 409-ing "quote expired or changed".
+          // Runs under the same FOR UPDATE lock + `pending` guard, so it can
+          // never re-open a quote on an order that raced to `paid`.
+          await tx
+            .update(productShipments)
+            .set({
+              status: "quoted",
+              orderId: null,
+              selectedRateId: null,
+              selectedPostageType: null,
+              quotedShippingCents: null,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(productShipments.orderId, order.id),
+                eq(productShipments.status, "payment_pending"),
+              ),
+            );
         }
         await tx
           .update(checkoutOrders)

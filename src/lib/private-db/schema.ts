@@ -1654,6 +1654,28 @@ export const checkoutOrders = pgTable(
       .where(
         sql`${table.status} = 'paid' AND ${table.paymentProvider} = 'square' AND ${table.purpose} IN ('appointment_deposit', 'appointment_full', 'appointment_custom_partial') AND ${table.calendarFinalizationStatus} NOT IN ('not_required', 'booked', 'manual_rebooked')`,
       ),
+    // Serves findUncapturedSquareCommerceOrders (capture-reconciliation sweep):
+    // paid Square product/training orders not yet in a terminal provider status,
+    // ordered oldest-first by paidAt.
+    index("checkout_orders_uncaptured_square_commerce_idx")
+      .using("btree", table.paidAt)
+      .where(
+        sql`${table.status} = 'paid' AND ${table.paymentProvider} = 'square' AND ${table.purpose} IN ('product', 'training') AND ${table.providerPaymentId} IS NOT NULL AND ${table.providerStatus} NOT IN ('COMPLETED', 'UNCOLLECTED')`,
+      ),
+    // Serves listPaidProductOrdersMissingConfirmationOutbox: paid product orders
+    // whose confirmation email has not been recorded as sent.
+    index("checkout_orders_paid_product_missing_confirmation_idx")
+      .using("btree", table.updatedAt)
+      .where(
+        sql`${table.status} = 'paid' AND ${table.purpose} = 'product' AND ${table.productConfirmationEmailSentAt} IS NULL`,
+      ),
+    // Serves the checkout_orders side of the abandoned-stock sweep join:
+    // pending, unpaid product orders (keyed by id for the join to obligations).
+    index("checkout_orders_pending_product_unpaid_idx")
+      .using("btree", table.id)
+      .where(
+        sql`${table.status} = 'pending' AND ${table.purpose} = 'product' AND ${table.providerPaymentId} IS NULL`,
+      ),
     check(
       "checkout_orders_commercial_components_nonnegative_check",
       sql`${table.shippingAmountCents} >= 0 AND ${table.taxAmountCents} >= 0 AND ${table.promotionDiscountCents} >= 0 AND ${table.manualDiscountCents} >= 0`,
@@ -2426,6 +2448,13 @@ export const orderPaymentObligations = pgTable(
       .on(table.checkoutTokenHash)
       .where(
         sql`${table.checkoutTokenHash} IS NOT NULL AND ${table.quarantinedAt} IS NULL`,
+      ),
+    // Serves the driving side of the abandoned-stock sweep: pending primary
+    // obligations past their expiry cutoff (expiresAt leads for the range scan).
+    index("order_payment_obligations_pending_primary_expiry_idx")
+      .using("btree", table.expiresAt)
+      .where(
+        sql`${table.purpose} = 'primary' AND ${table.status} = 'pending' AND ${table.expiresAt} IS NOT NULL`,
       ),
     check(
       "order_payment_obligations_components_check",
