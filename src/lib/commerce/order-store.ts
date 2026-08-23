@@ -1507,16 +1507,36 @@ export const SQUARE_CAPTURED_PROVIDER_STATUS = "COMPLETED";
  */
 export const SQUARE_UNCOLLECTED_PROVIDER_STATUS = "UNCOLLECTED";
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** True when `value` is a canonical hyphenated UUID (any version). */
+function isUuid(value: string): boolean {
+  return UUID_PATTERN.test(value);
+}
+
 /**
  * Returns the obligation id if `reference` identifies a non-primary Square
  * payment obligation (a supplemental top-up whose Square payment link's
  * `reference_id` is the obligation id). Status-agnostic on purpose so a replayed
  * webhook still routes to the finalizer (which re-checks state); the finalizer
  * is the authority on whether to apply, refund, or no-op.
+ *
+ * Guards on UUID shape first: the `id` column is a `uuid`, and Square payment
+ * `reference_id`s from other flows are not UUIDs (service-booking charges use
+ * the `hold_…` public reference, product/training checkout use `lh-sq-…`).
+ * Passing a non-UUID literal into the `uuid` equality makes Postgres throw
+ * `invalid input syntax for type uuid`, which previously surfaced as a webhook
+ * "Failed query" and a 503 retry storm. A non-UUID reference can never match an
+ * obligation id, so short-circuit to `null` before touching the database.
  */
 export async function findSquareSupplementalObligationByReference(
   reference: string,
 ): Promise<string | null> {
+  if (!isUuid(reference)) {
+    return null;
+  }
+
   const [obligation] = await getPrivateDb()
     .select({ id: orderPaymentObligations.id })
     .from(orderPaymentObligations)
