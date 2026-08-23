@@ -45,8 +45,8 @@ interface SquareProductPayButtonProps {
 
 const GENERIC_ERROR =
   "Unable to complete checkout. Please review your cart and try again.";
-const PAYMENT_DECLINED_ERROR =
-  "Payment could not be completed. Please try again or use another card.";
+const QUOTE_CONFLICT_ERROR =
+  "Your cart or shipping rates changed. Please refresh your shipping rates and try again.";
 
 export function SquareProductPayButton({
   disabled = false,
@@ -100,9 +100,27 @@ export function SquareProductPayButton({
       });
 
       if (!res.ok) {
-        throw new Error(
-          res.status === 402 ? PAYMENT_DECLINED_ERROR : GENERIC_ERROR,
-        );
+        if (res.status === 402) {
+          // Definitive decline. The server released the reserved order (and, for
+          // automated shipping, re-opened the quote). Drop the reservation key so
+          // a retry reserves a fresh order + Square idempotency key rather than
+          // replaying the declined card's result under the same key.
+          reservationKeyRef.current = undefined;
+          throw new Error(
+            fulfillmentMode === "automated_shipping"
+              ? "Payment could not be completed. Please try again or use another card. If it keeps failing, refresh your shipping rates and retry."
+              : "Payment could not be completed. Please try again or use another card.",
+          );
+        }
+        if (res.status === 409) {
+          // Stale/exhausted shipping quote or cart conflict — the buyer must
+          // refresh rates before retrying. Reset the key so the retry is clean.
+          reservationKeyRef.current = undefined;
+          throw new Error(QUOTE_CONFLICT_ERROR);
+        }
+        // Ambiguous failure (5xx/network): keep the reservation key so a retry
+        // dedupes a possibly-successful-but-lost charge.
+        throw new Error(GENERIC_ERROR);
       }
 
       const data = (await res.json()) as {

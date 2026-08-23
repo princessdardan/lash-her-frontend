@@ -134,14 +134,24 @@ async function applyTargets(
     const row = existingByKey.get(target.variantKey ?? "");
 
     if (!row) {
-      await tx.insert(productStock).values({
-        productId,
-        variantKey: target.variantKey,
-        onHand: target.quantity,
-        reserved: 0,
-        sanitySeedQuantity: target.quantity,
-      });
-      result.tracked += 1;
+      // onConflictDoNothing: two concurrent inventory-sync webhooks for a
+      // brand-new product both see no row and both attempt this seed insert;
+      // the loser would otherwise hit a partial-unique violation → 500 → retry.
+      // Only count a row we actually inserted.
+      const inserted = await tx
+        .insert(productStock)
+        .values({
+          productId,
+          variantKey: target.variantKey,
+          onHand: target.quantity,
+          reserved: 0,
+          sanitySeedQuantity: target.quantity,
+        })
+        .onConflictDoNothing()
+        .returning({ id: productStock.id });
+      if (inserted.length > 0) {
+        result.tracked += 1;
+      }
       continue;
     }
 

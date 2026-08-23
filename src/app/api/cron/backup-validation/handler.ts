@@ -1,3 +1,5 @@
+import { timingSafeEqual } from "node:crypto";
+
 import { log } from "@/lib/logging/logger";
 import {
   readBackupValidationConfig,
@@ -94,7 +96,19 @@ export function createBackupValidationGetHandler(
 }
 
 function isAuthorizedCronRequest(req: Request, cronSecret: string): boolean {
-  return req.headers.get("authorization") === `Bearer ${cronSecret}`;
+  return safeEqual(
+    req.headers.get("authorization") ?? "",
+    `Bearer ${cronSecret}`,
+  );
+}
+
+function safeEqual(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left, "utf8");
+  const rightBuffer = Buffer.from(right, "utf8");
+  return (
+    leftBuffer.length === rightBuffer.length &&
+    timingSafeEqual(leftBuffer, rightBuffer)
+  );
 }
 
 function getConfiguredCronSecret(): string | null {

@@ -505,6 +505,13 @@
       "when": 1787346471464,
       "tag": "0071_pink_grim_reaper",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1787505810290,
+      "tag": "0072_round_warbound",
+      "breakpoints": true
     }
   ]
 }
