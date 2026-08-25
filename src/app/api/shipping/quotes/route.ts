@@ -14,7 +14,6 @@ import {
 } from "@/lib/shipping/prepare-quote";
 import {
   bindShippingFingerprintToContext,
-  parseShippingQuoteContextSnapshot,
   type CertifiedUsImportDisclosure,
 } from "@/lib/shipping/quote-token";
 import {
@@ -33,7 +32,6 @@ import { checkShippingQuoteRateLimit } from "@/lib/security/shipping-abuse-contr
 import { readBoundedJsonBody } from "@/lib/security/bounded-json-body";
 import {
   assertCheckoutReadiness,
-  assertShippingQuoteContextCurrent,
   assertUsShippingContractCurrent,
   CheckoutNotReadyError,
 } from "@/lib/shipping/readiness";
@@ -67,16 +65,10 @@ export async function GET(req: NextRequest): Promise<Response> {
       { status: 409, headers: { "Cache-Control": "no-store" } },
     );
   try {
-    const expectedContext = parseShippingQuoteContextSnapshot(
-      row.shipment.deadlinePolicySnapshot,
-    );
-    if (!expectedContext) {
-      throw new Error("Shipping quote context snapshot is missing");
-    }
-    await assertShippingQuoteContextCurrent({
-      destinationCountryCode: row.shipment.destination.countryCode,
-      expectedContext,
-    });
+    // Policy/tax version drift no longer invalidates an already-issued quote
+    // (owner directive): an internal config-version bump must not force the
+    // customer to re-quote. The U.S. DDU contract integrity check is a legal
+    // import-disclosure requirement, not a version-drift gate, so it stays.
     if (row.shipment.destination.countryCode === "US") {
       await assertUsShippingContractCurrent({
         snapshot: row.shipment.usShippingContractSnapshot,

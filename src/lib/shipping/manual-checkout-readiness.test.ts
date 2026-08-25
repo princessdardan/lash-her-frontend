@@ -47,7 +47,7 @@ test("a fully-valid runtime with the committed manual policy is ready", () => {
   });
 });
 
-test("disabled flag, dormant policy mode, and incomplete catalog each add a blocker", () => {
+test("disabled flag and incomplete catalog each add a blocker", () => {
   process.env.SHIPPING_POLICY_ENFORCEMENT_MODE = "observe";
   const env = validEnv();
   env.MANUAL_PRODUCT_CHECKOUT_ENABLED = "false";
@@ -59,7 +59,6 @@ test("disabled flag, dormant policy mode, and incomplete catalog each add a bloc
     assert.equal(result.ready, false);
     for (const blocker of [
       "manual_checkout_flag_disabled",
-      "policy_not_enforced",
       "catalog_metadata_incomplete",
     ]) {
       assert.ok(
@@ -68,6 +67,26 @@ test("disabled flag, dormant policy mode, and incomplete catalog each add a bloc
       );
     }
   });
+});
+
+test("a dormant shipping-policy worker mode never blocks checkout readiness", async () => {
+  // Post-sale policy enforcement is decoupled from the sale: the background
+  // worker being in "observe" (or "off") must not add a blocker. A fully-valid
+  // runtime stays ready regardless of the worker's enforcement mode.
+  for (const mode of ["off", "observe"] as const) {
+    process.env.SHIPPING_POLICY_ENFORCEMENT_MODE = mode;
+    const result = await evaluateManualCheckoutReadiness({
+      catalogMetadataReady: true,
+      env: validEnv(),
+      now: NOW,
+    });
+    assert.equal(
+      result.blockers.includes("policy_not_enforced"),
+      false,
+      `mode ${mode} must not add policy_not_enforced`,
+    );
+    assert.equal(result.ready, true);
+  }
 });
 
 test("weak secrets and a bad origin are each surfaced", () => {

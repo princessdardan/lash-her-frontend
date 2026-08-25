@@ -11,7 +11,6 @@ import type {
 export type { ProductTaxPolicyApprovalSnapshot } from "@/lib/private-db/schema";
 
 import { getChitChatsConfig, isChitChatsCheckoutEnabled } from "./config";
-import { getShippingPolicyEnforcementMode } from "./policy";
 import {
   buildConfiguredQuoteContext,
   configuredTaxPolicyApproval,
@@ -64,12 +63,13 @@ export async function evaluateCheckoutReadiness(input: {
   if (input.admission !== false && !isChitChatsCheckoutEnabled()) {
     blockers.push("checkout_flag_disabled");
   }
-  // Enforce mode remains the go-live coupling between checkout and the
-  // fulfillment worker/cron (which still gate on it), so checkout cannot be
-  // ready while the worker is dormant. (Full mode collapse is a follow-up.)
-  if (getShippingPolicyEnforcementMode() !== "enforce") {
-    blockers.push("policy_not_enforced");
-  }
+  // Checkout readiness is intentionally NOT coupled to the shipping-policy
+  // worker's enforcement mode. Post-sale policy adherence (deadlines, refunds,
+  // loss/claim handling) runs independently in the background worker/cron and
+  // must never be able to halt a customer sale — e.g. a failed durable policy
+  // job going to manual review, or the worker being paused, previously stopped
+  // all checkout via a `policy_not_enforced` blocker. The worker/cron still gate
+  // their own enforcement on the mode; they no longer hold checkout hostage.
   if (!canonicalHttpsOrigin(env.NEXT_PUBLIC_SITE_URL)) {
     blockers.push("site_origin_invalid");
   }
@@ -189,15 +189,13 @@ export async function assertShippingQuoteContextAtCheckoutCommit(
     destinationCountryCode: input.destinationCountryCode,
     now: input.now,
   });
-  if (
-    !readiness.ready ||
-    !readiness.quoteContext ||
-    !quoteContextVersionsCurrent(input.expectedContext) ||
-    readiness.quoteContext.policyVersion !==
-      input.expectedContext.policyVersion ||
-    readiness.quoteContext.taxPolicyVersion !==
-      input.expectedContext.taxPolicyVersion
-  ) {
+  // Policy/tax version drift between quote and commit no longer blocks the sale
+  // (owner directive): a mid-flight config-version bump must not reject an
+  // in-flight checkout. Runtime config/payment/secret readiness is still
+  // enforced so we never commit an order the payment configuration can't
+  // support. The order is stamped with the CURRENT config versions from
+  // `readiness` so post-sale fulfillment keys off a coherent context.
+  if (!readiness.ready || !readiness.quoteContext) {
     throw new CheckoutNotReadyError(
       readiness.blockers.length
         ? readiness.blockers
@@ -260,9 +258,8 @@ export async function assertManualCheckoutReadinessInTransaction(
   if (process.env.MANUAL_PRODUCT_CHECKOUT_ENABLED !== "true") {
     blockers.push("manual_checkout_flag_disabled");
   }
-  if (getShippingPolicyEnforcementMode() !== "enforce") {
-    blockers.push("policy_not_enforced");
-  }
+  // Not coupled to the shipping-policy worker's enforcement mode — see
+  // evaluateCheckoutReadiness. Post-sale adherence must not halt a sale.
   if (!canonicalHttpsOrigin(process.env.NEXT_PUBLIC_SITE_URL)) {
     blockers.push("site_origin_invalid");
   }
@@ -298,9 +295,8 @@ export async function evaluateManualCheckoutReadiness(
   if (env.MANUAL_PRODUCT_CHECKOUT_ENABLED !== "true") {
     blockers.push("manual_checkout_flag_disabled");
   }
-  if (getShippingPolicyEnforcementMode() !== "enforce") {
-    blockers.push("policy_not_enforced");
-  }
+  // Not coupled to the shipping-policy worker's enforcement mode — see
+  // evaluateCheckoutReadiness. Post-sale adherence must not halt a sale.
   if (!canonicalHttpsOrigin(env.NEXT_PUBLIC_SITE_URL)) {
     blockers.push("site_origin_invalid");
   }
