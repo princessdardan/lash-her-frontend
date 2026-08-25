@@ -46,7 +46,6 @@ import {
 import type { ProductShipmentStatus } from "./store-types";
 import type { ShippingPackageProfile } from "./types";
 import { computeShippingDeadlines } from "./policy-calendar";
-import { PRODUCT_SHIPPING_POLICY_VERSION } from "./product-shipping-config";
 import { allowedShipmentSourceStatuses } from "./status";
 import { p10TerminationBlocksOrderInTransaction } from "./p10-termination";
 import { sendShippingPolicyAlert } from "./policy-alerts";
@@ -484,7 +483,6 @@ export async function activateShipmentForPaidOrderInTransaction(
       paymentRiskStatus: checkoutOrders.paymentRiskStatus,
       activeFulfillmentShipmentId: checkoutOrders.activeFulfillmentShipmentId,
       fulfillmentClearedAt: checkoutOrders.fulfillmentClearedAt,
-      shippingPolicyVersion: checkoutOrders.shippingPolicyVersion,
     })
     .from(checkoutOrders)
     .where(
@@ -525,15 +523,14 @@ export async function activateShipmentForPaidOrderInTransaction(
     shipment.deadlinePolicySnapshot,
   );
   // Config-driven policy: the frozen snapshot is authoritative for this
-  // shipment's deadlines. Verify only that the snapshot's versions still match
-  // the current source-controlled config (change-detection), then compute
-  // deadlines from the frozen closures.
-  if (
-    !quoteContext ||
-    order.shippingPolicyVersion !== quoteContext.policyVersion ||
-    quoteContext.policyVersion !== PRODUCT_SHIPPING_POLICY_VERSION
-  )
-    return false;
+  // shipment's deadlines, and it is honored regardless of any later
+  // source-controlled policy-version bump. Owner directive: an internal policy
+  // version change must never halt or strand a paid sale — since checkout no
+  // longer rejects quote→commit policy-version drift, activation must not
+  // fail-closed on it either, or the order would be charged and then stranded.
+  // Activation computes deadlines from the snapshot the customer was actually
+  // quoted under; we require only that the snapshot is present and parseable.
+  if (!quoteContext) return false;
   const frozen = quoteContext.shippingPolicySnapshot;
 
   const clearedAt = order.fulfillmentClearedAt ?? order.paidAt ?? now;

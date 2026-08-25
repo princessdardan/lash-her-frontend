@@ -733,18 +733,14 @@ export async function createInitializingProductOrder(
     const quoteContextSnapshot = parseShippingQuoteContextSnapshot(
       quote.deadlinePolicySnapshot,
     );
-    // Config-driven change-detection: the stored snapshot's policy/tax versions
-    // must still match the current context. Deep-equality is intentionally not
-    // used — the snapshot's closureDates are `now`-derived and would spuriously
-    // differ across the quote→commit gap. The authoritative config-version check
-    // runs in assertShippingQuoteContextAtCheckoutCommit below.
-    if (
-      !quoteContextSnapshot ||
-      quoteContextSnapshot.policyVersion !== quoteContext.policyVersion ||
-      quoteContextSnapshot.taxPolicyVersion !== quoteContext.taxPolicyVersion
-    ) {
+    // Policy/tax version drift between quote and commit no longer blocks the
+    // sale (owner directive): a mid-flight config-version bump must not reject
+    // an in-flight checkout. The stored snapshot is still required for the
+    // tax-approval integrity check below, so guard only its presence — not a
+    // version match against the current context.
+    if (!quoteContextSnapshot) {
       throw new ShippingQuoteConflictError(
-        "Shipping quote policy or calendar context changed",
+        "Shipping quote context snapshot is missing",
       );
     }
     await assertProductTaxPolicyApprovalInTransaction(

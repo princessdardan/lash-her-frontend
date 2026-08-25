@@ -79,7 +79,7 @@ const scenario = String.raw`
   };
 
   const created = [];
-  async function seedOrderAndShipment(suffix, policyVersion) {
+  async function seedOrderAndShipment(suffix, policyVersion, snapshotPolicyVersion = policyVersion) {
     const [order] = await db.insert(checkoutOrders).values({
       orderId: prefix + suffix + "-order",
       purpose: "product",
@@ -108,7 +108,7 @@ const scenario = String.raw`
       rates: [],
       quoteExpiresAt: new Date("2026-08-17T15:00:00.000Z"),
       calendarVersionId: null,
-      deadlinePolicySnapshot: baseContext(policyVersion),
+      deadlinePolicySnapshot: baseContext(snapshotPolicyVersion),
     }).returning();
     await db.update(checkoutOrders)
       .set({ activeFulfillmentShipmentId: shipment.id })
@@ -117,31 +117,19 @@ const scenario = String.raw`
     return { order, shipment };
   }
 
-  try {
-    // Fail-closed when the frozen snapshot's policy version no longer matches
-    // the current source-controlled config (change-detection).
-    const stale = await seedOrderAndShipment("-stale", "stale-policy-version");
+  const expected = computeShippingDeadlines({
+    clearedAt,
+    settings: frozenPolicy,
+    closedDates: new Set(originalClosures.map((entry) => entry.date)),
+  });
+  async function assertActivatesWithFrozenDeadlines(seeded, label) {
     assert.equal(
-      await activateShipmentForPaidOrder(stale.order.orderId),
-      false,
-      "a shipment frozen under a superseded policy version must fail closed",
+      await activateShipmentForPaidOrder(seeded.order.orderId),
+      true,
+      label,
     );
-    const heldStale = await db.query.productShipments.findFirst({
-      where: eq(productShipments.id, stale.shipment.id),
-    });
-    assert.equal(heldStale.status, "payment_pending");
-
-    // Current config version: activation succeeds and deadlines come from the
-    // frozen snapshot.
-    const current = await seedOrderAndShipment("-current", PRODUCT_SHIPPING_POLICY_VERSION);
-    assert.equal(await activateShipmentForPaidOrder(current.order.orderId), true);
     const activated = await db.query.productShipments.findFirst({
-      where: eq(productShipments.id, current.shipment.id),
-    });
-    const expected = computeShippingDeadlines({
-      clearedAt,
-      settings: frozenPolicy,
-      closedDates: new Set(originalClosures.map((entry) => entry.date)),
+      where: eq(productShipments.id, seeded.shipment.id),
     });
     assert.equal(activated.status, "ready_for_staff");
     assert.equal(
@@ -152,6 +140,37 @@ const scenario = String.raw`
       activated.autoRefundDeadlineAt.toISOString(),
       expected.autoRefundDeadlineAt.toISOString(),
     );
+  }
+
+  try {
+    // Owner directive: an internal shipping-policy version bump must never halt
+    // or strand a paid sale. A shipment frozen under a SUPERSEDED policy version
+    // now activates from its frozen snapshot instead of failing closed — the
+    // snapshot the customer was quoted under stays authoritative for deadlines.
+    const stale = await seedOrderAndShipment("-stale", "stale-policy-version");
+    await assertActivatesWithFrozenDeadlines(
+      stale,
+      "a shipment frozen under a superseded policy version must still activate",
+    );
+
+    // The real quote→commit drift shape (regression guard): the order was
+    // stamped with the CURRENT config version while its shipment snapshot
+    // retains the prior version. Before decoupling this was charged then
+    // permanently stranded at activation; it must now activate cleanly.
+    const drifted = await seedOrderAndShipment(
+      "-drift",
+      PRODUCT_SHIPPING_POLICY_VERSION,
+      "prior-policy-version",
+    );
+    await assertActivatesWithFrozenDeadlines(
+      drifted,
+      "order stamped at current version with a prior-version snapshot must activate",
+    );
+
+    // Current config version (no drift): activation succeeds and deadlines still
+    // come from the frozen snapshot.
+    const current = await seedOrderAndShipment("-current", PRODUCT_SHIPPING_POLICY_VERSION);
+    await assertActivatesWithFrozenDeadlines(current, "current-version activation");
   } finally {
     for (const { orderId, shipmentId } of created) {
       await db.update(checkoutOrders)
@@ -165,7 +184,7 @@ const scenario = String.raw`
 `;
 
 test(
-  "shipment activation uses the frozen policy snapshot and fails closed on a superseded policy version",
+  "shipment activation uses the frozen policy snapshot and activates through a superseded policy version",
   { skip: dbTestSkipReason },
   () => {
     execFileSync(
