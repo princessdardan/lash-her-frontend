@@ -106,6 +106,10 @@ export async function createQuoteOperation(input: {
           inArray(productShipments.status, ["quote_pending", "quoted"]),
           isNull(productShipments.orderId),
           gt(productShipments.quoteExpiresAt, now),
+          // Never reuse a flat-rate row here: those carry no `create` operation,
+          // so matching one would throw below. Guards a flag rollback where
+          // flat-rate `quoted` rows can still be inside their TTL window.
+          eq(productShipments.flatRate, false),
         ),
       )
       .orderBy(asc(productShipments.createdAt))
@@ -188,6 +192,98 @@ export async function createQuoteOperation(input: {
     if (!operation)
       throw new Error("Shipping quote operation could not be created");
     return { shipment, operation, quoteToken, reused: false };
+  });
+}
+
+/**
+ * Create a fully-quoted product shipment directly from the flat-rate cache — no
+ * provider round-trip, no async worker. The row lands in `status: "quoted"` with
+ * the single flat rate already attached and `flatRate: true`; the carrier draft
+ * is created later, at fulfillment (see the purchase worker). Mirrors
+ * {@link createQuoteOperation}'s advisory-lock + reuse dedup so identical
+ * in-flight quotes share a row.
+ */
+export async function createFlatRateQuote(input: {
+  publicReference: string;
+  quoteFingerprint: string;
+  destination: ProductShipmentDestinationSnapshot;
+  packageSnapshot: ProductShipmentPackageSnapshot;
+  customsLines: ProductShipmentCustomsLineSnapshot[];
+  rates: ProductShipmentRateSnapshot[];
+  expiresAt: Date;
+  quoteContextSnapshot: ShippingQuoteContext;
+  signatureRequested: boolean;
+  usShippingContractSnapshot: FulfillmentProviderCertificationContractSnapshot | null;
+  now?: Date;
+}): Promise<{
+  shipment: ProductShipmentRow;
+  quoteToken: string;
+  reused: boolean;
+}> {
+  const now = input.now ?? new Date();
+  return getPrivateDb().transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${`shipping-quote:${input.quoteFingerprint}`}))`,
+    );
+    const reusableCandidates = await tx
+      .select()
+      .from(productShipments)
+      .where(
+        and(
+          eq(productShipments.quoteFingerprint, input.quoteFingerprint),
+          eq(productShipments.status, "quoted"),
+          eq(productShipments.flatRate, true),
+          isNull(productShipments.orderId),
+          gt(productShipments.quoteExpiresAt, now),
+        ),
+      )
+      .orderBy(asc(productShipments.createdAt))
+      .for("update")
+      .limit(5);
+    const reusable = reusableCandidates.find((candidate) => {
+      const candidateToken = issueShippingQuoteToken(
+        `${input.quoteFingerprint}:${candidate.quoteExpiresAt.toISOString()}`,
+      );
+      return (
+        hashShippingQuoteToken(candidateToken) === candidate.quoteTokenHash
+      );
+    });
+    if (reusable) {
+      const quoteToken = issueShippingQuoteToken(
+        `${input.quoteFingerprint}:${reusable.quoteExpiresAt.toISOString()}`,
+      );
+      return { shipment: reusable, quoteToken, reused: true };
+    }
+    const quoteToken = issueShippingQuoteToken(
+      `${input.quoteFingerprint}:${input.expiresAt.toISOString()}`,
+    );
+    const quoteTokenHash = hashShippingQuoteToken(quoteToken);
+    const [shipment] = await tx
+      .insert(productShipments)
+      .values({
+        publicReference: input.publicReference,
+        quoteTokenHash,
+        quoteFingerprint: input.quoteFingerprint,
+        destination: input.destination,
+        packageSnapshot: input.packageSnapshot,
+        customsLines: input.customsLines,
+        rates: input.rates,
+        flatRate: true,
+        quoteExpiresAt: input.expiresAt,
+        calendarVersionId: null,
+        deadlinePolicySnapshot: input.quoteContextSnapshot as unknown as Record<
+          string,
+          unknown
+        >,
+        signatureRequested: input.signatureRequested,
+        usShippingContractSnapshot: input.usShippingContractSnapshot,
+        status: "quoted",
+      })
+      .returning();
+    if (!shipment) {
+      throw new Error("Flat-rate shipping quote could not be created");
+    }
+    return { shipment, quoteToken, reused: false };
   });
 }
 

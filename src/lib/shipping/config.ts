@@ -67,6 +67,15 @@ export function isManualProductCheckoutEnabled(): boolean {
   return process.env.MANUAL_PRODUCT_CHECKOUT_ENABLED === "true";
 }
 
+/**
+ * When enabled, customer-facing shipping cost is served synchronously from the
+ * precomputed flat-rate cache instead of a live per-order Chit Chats quote.
+ * Gated so the flat-rate flow can be rolled out and rolled back independently.
+ */
+export function isFlatRateShippingEnabled(): boolean {
+  return process.env.FLAT_RATE_SHIPPING_ENABLED === "true";
+}
+
 export interface ProductCheckoutAvailability {
   automated: boolean;
   manual: boolean;

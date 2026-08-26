@@ -512,6 +512,13 @@
       "when": 1787505810290,
       "tag": "0072_round_warbound",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1787717618408,
+      "tag": "0073_panoramic_abomination",
+      "breakpoints": true
     }
   ]
 }

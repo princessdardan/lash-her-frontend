@@ -294,6 +294,12 @@ export function createCheckoutPostHandler({
         createInitializingOrder,
       });
       const isManualCheckout = cart.checkoutMode === "manual";
+      // Studio pickup is a customer choice, available for any cart. A manual
+      // (studio-fulfilled) cart can *only* pick up, so once past the guards below
+      // its fulfillment is always pickup; an automated (shippable) cart may pick
+      // up as a free alternative to shipping. Downstream fulfillment branching
+      // therefore keys off `wantsPickup`, not the cart's product composition.
+      const wantsPickup = checkoutRequest.fulfillmentMode === "manual_pickup";
       if (
         isManualCheckout &&
         checkoutRequest.fulfillmentMode === "automated_shipping"
@@ -314,15 +320,19 @@ export function createCheckoutPostHandler({
       }
       if (
         !isManualCheckout &&
-        checkoutRequest.fulfillmentMode !== "automated_shipping"
+        checkoutRequest.fulfillmentMode !== "automated_shipping" &&
+        checkoutRequest.fulfillmentMode !== "manual_pickup"
       ) {
         return invalidFulfillmentMode();
       }
 
-      const manualPolicy = isManualCheckout
+      // Pickup (manual carts and automated carts that chose pickup) requires the
+      // current studio cancellation-policy assent; the manual policy also gates
+      // whether pickup is available at all.
+      const manualPolicy = wantsPickup
         ? await loadManualCheckoutPolicy()
         : null;
-      if (isManualCheckout) {
+      if (wantsPickup) {
         if (
           !manualPolicy?.enabled ||
           !manualPolicy.cancellationPolicyVersion ||
@@ -335,21 +345,21 @@ export function createCheckoutPostHandler({
           !createInitializingManualOrder
         ) {
           return NextResponse.json<CheckoutErrorBody>(
-            { error: "Manual product checkout is temporarily unavailable" },
+            { error: "Studio pickup checkout is temporarily unavailable" },
             { status: 503 },
           );
         }
         if (checkoutRequest.shippingQuote) return invalidFulfillmentMode();
       }
 
-      if (!isManualCheckout && shippingWorkflowConfigured && !shippingEnabled) {
+      if (!wantsPickup && shippingWorkflowConfigured && !shippingEnabled) {
         return NextResponse.json<CheckoutErrorBody>(
           { error: "Product checkout is temporarily unavailable" },
           { status: 503 },
         );
       }
       if (
-        !isManualCheckout &&
+        !wantsPickup &&
         shippingWorkflowConfigured &&
         (!checkoutRequest.shippingQuote || !checkoutRequest.shippingAddress)
       ) {
@@ -358,7 +368,7 @@ export function createCheckoutPostHandler({
           { status: 409 },
         );
       }
-      if (!isManualCheckout && checkoutRequest.shippingAddress) {
+      if (!wantsPickup && checkoutRequest.shippingAddress) {
         const isUs =
           getShippingCountryCode(checkoutRequest.shippingAddress) === "US";
         const disclosure = checkoutRequest.disclosures;
@@ -414,7 +424,7 @@ export function createCheckoutPostHandler({
       // fields — the policy shown depends on the fulfillment mode — so every
       // product checkout path records a provable, current refund-policy assent.
       let shippedRefundPolicyAssent: ProductRefundPolicyAssent | null = null;
-      if (!isManualCheckout) {
+      if (!wantsPickup) {
         const refundPolicyRequirement = loadShippedRefundPolicyRequirement();
         if (
           checkoutRequest.disclosures.cancellationPolicyAccepted !== true ||
@@ -465,7 +475,7 @@ export function createCheckoutPostHandler({
       let initializingOrder: Awaited<
         ReturnType<NonNullable<typeof createInitializingOrder>>
       > | null = null;
-      if (isManualCheckout && createInitializingManualOrder) {
+      if (wantsPickup && createInitializingManualOrder) {
         stage = "reserve_order";
         const refundOriginIp = getTrustedClientIp(req.headers);
         if (!refundOriginIp && process.env.VERCEL_ENV === "production") {

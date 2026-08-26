@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { selectSmallestPackage } from "./packing";
+import {
+  PACKAGING_CLEARANCE_CM,
+  SYNTHETIC_PACKAGE_PROFILE_SLUG,
+  SYNTHETIC_PACKAGE_TARE_WEIGHT_GRAMS,
+  selectSmallestPackage,
+} from "./packing";
 import type { ShippingPackageProfile } from "./types";
 
 const profiles: ShippingPackageProfile[] = [
@@ -143,24 +148,76 @@ test("skips a flexible-only package when the contents are rigid", () => {
   assert.equal(packed.profileSlug, "mailer-box-30x22x5");
 });
 
-test("throws when no box can contain the order", () => {
-  assert.throws(
-    () =>
-      selectSmallestPackage(
-        [
-          {
-            quantity: 1,
-            weightGrams: 100,
-            lengthCm: 50,
-            widthCm: 40,
-            heightCm: 10,
-            isRigid: true,
-          },
-        ],
-        profiles,
-      ),
-    /No configured package/,
+test("synthesizes a parcel from the contents when no box can contain the order", () => {
+  // A 50×40×10 item exceeds every configured box. Packaging must not block the
+  // sale: a parcel is computed from the item's own bounds (+clearance) so the
+  // carrier can price it — a box that size can simply be bought.
+  const packed = selectSmallestPackage(
+    [
+      {
+        quantity: 1,
+        weightGrams: 100,
+        lengthCm: 50,
+        widthCm: 40,
+        heightCm: 10,
+        isRigid: true,
+      },
+    ],
+    profiles,
   );
+  assert.equal(packed.profileSlug, SYNTHETIC_PACKAGE_PROFILE_SLUG);
+  assert.equal(packed.packageType, "parcel");
+  assert.equal(packed.lengthCm, 50 + PACKAGING_CLEARANCE_CM);
+  assert.equal(packed.widthCm, 40 + PACKAGING_CLEARANCE_CM);
+  assert.equal(packed.heightCm, 10 + PACKAGING_CLEARANCE_CM);
+  // A synthesized parcel is larger than any real box, so its tare is floored at
+  // the heaviest configured box's tare (120 g here) rather than the 60 g base.
+  assert.equal(packed.tareWeightGrams, 120);
+  assert.equal(packed.totalWeightGrams, 100 + 120);
+});
+
+test("synthesizes a taller parcel for a bulk quantity that overflows every box", () => {
+  // 10 gel-pad-like units (12×8×3) can neither stack nor tile into the shallow
+  // configured boxes — previously a hard 422. Now they yield a parcel whose
+  // height is the summed stack (3 × 10) so the whole order still ships.
+  const packed = selectSmallestPackage(
+    [
+      {
+        quantity: 10,
+        weightGrams: 45,
+        lengthCm: 12,
+        widthCm: 8,
+        heightCm: 3,
+        isRigid: true,
+      },
+    ],
+    profiles,
+  );
+  assert.equal(packed.profileSlug, SYNTHETIC_PACKAGE_PROFILE_SLUG);
+  assert.equal(packed.lengthCm, 12 + PACKAGING_CLEARANCE_CM);
+  assert.equal(packed.widthCm, 8 + PACKAGING_CLEARANCE_CM);
+  assert.equal(packed.heightCm, 3 * 10 + PACKAGING_CLEARANCE_CM);
+  assert.equal(packed.totalWeightGrams, 45 * 10 + 120);
+});
+
+test("synthesizes a parcel even when no profiles are configured at all", () => {
+  const packed = selectSmallestPackage(
+    [
+      {
+        quantity: 1,
+        weightGrams: 100,
+        lengthCm: 12,
+        widthCm: 8,
+        heightCm: 2,
+        isRigid: true,
+      },
+    ],
+    [],
+  );
+  assert.equal(packed.profileSlug, SYNTHETIC_PACKAGE_PROFILE_SLUG);
+  assert.equal(packed.heightCm, 2 + PACKAGING_CLEARANCE_CM);
+  // No configured boxes to floor against, so the base synthetic tare applies.
+  assert.equal(packed.tareWeightGrams, SYNTHETIC_PACKAGE_TARE_WEIGHT_GRAMS);
 });
 
 test("tiles many thin items across the floor instead of one tall tower", () => {
@@ -203,24 +260,25 @@ test("tiles multiple thicker items that would over-stack a shallow box", () => {
   assert.equal(packed.profileSlug, "mailer-box-30x22x5");
 });
 
-test("still throws when a single item is intrinsically too thick for any box", () => {
-  // Gel-pads shape (18x13x6): its own 6 cm thickness exceeds every box's depth,
-  // so no tiling or rotation can help — this must stay a hard rejection.
-  assert.throws(
-    () =>
-      selectSmallestPackage(
-        [
-          {
-            quantity: 1,
-            weightGrams: 250,
-            lengthCm: 18,
-            widthCm: 13,
-            heightCm: 6,
-            isRigid: true,
-          },
-        ],
-        profiles,
-      ),
-    /No configured package/,
+test("synthesizes a parcel for a single item too thick for any configured box", () => {
+  // Gel-pads shape (18×13×6): its own 6 cm thickness exceeds every box's depth,
+  // so no tiling or rotation fits it. Rather than a hard rejection, a parcel of
+  // the item's own size is quoted — the owner ships it in a box that deep.
+  const packed = selectSmallestPackage(
+    [
+      {
+        quantity: 1,
+        weightGrams: 250,
+        lengthCm: 18,
+        widthCm: 13,
+        heightCm: 6,
+        isRigid: true,
+      },
+    ],
+    profiles,
   );
+  assert.equal(packed.profileSlug, SYNTHETIC_PACKAGE_PROFILE_SLUG);
+  assert.equal(packed.lengthCm, 18 + PACKAGING_CLEARANCE_CM);
+  assert.equal(packed.widthCm, 13 + PACKAGING_CLEARANCE_CM);
+  assert.equal(packed.heightCm, 6 + PACKAGING_CLEARANCE_CM);
 });

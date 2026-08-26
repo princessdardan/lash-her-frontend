@@ -9,6 +9,24 @@ import type { ShippingPackageProfile } from "./types";
  */
 export const PACKAGING_CLEARANCE_CM = 1;
 
+/**
+ * Identifiers stamped on a parcel synthesized from the order's own contents when
+ * no configured profile fits. Nothing downstream resolves a profile by id — the
+ * snapshot is consumed only as dimensions + weight + package_type sent to the
+ * carrier — so a sentinel is safe and lets ops/audits tell a computed parcel
+ * apart from a real configured box.
+ */
+export const SYNTHETIC_PACKAGE_PROFILE_ID = "synthetic-contents-parcel";
+export const SYNTHETIC_PACKAGE_PROFILE_SLUG = "synthetic-contents-parcel";
+/** Carrier package_type used for a synthesized parcel (a plain box). */
+export const SYNTHETIC_PACKAGE_TYPE = "parcel";
+/**
+ * Estimated packaging tare (box + void fill) for a synthesized parcel. Kept
+ * modest but non-zero so the carrier weight — and therefore the quoted rate — is
+ * never understated. Tunable.
+ */
+export const SYNTHETIC_PACKAGE_TARE_WEIGHT_GRAMS = 60;
+
 export interface PackableLine {
   quantity: number;
   weightGrams: number;
@@ -47,8 +65,23 @@ export function selectSmallestPackage(
         canContain(lines, profile),
     );
 
-  if (!selected)
-    throw new Error("No configured package can safely contain this order");
+  if (!selected) {
+    // Packaging must never block a sale. When no configured box fits (or none is
+    // configured yet), fall back to a parcel sized to the order's own contents —
+    // a box of that size can simply be bought and shipped. Dimensions/weight only
+    // price the shipment here, so a conservative (never-understated) bound keeps
+    // the carrier rate correct rather than refusing the order. A synthesized
+    // parcel is larger than any real box, so its tare is floored at the heaviest
+    // configured box's tare (never below) so declared weight is never understated.
+    const heaviestConfiguredTare = profiles
+      .filter((profile) => profile.enabled)
+      .reduce((max, profile) => Math.max(max, profile.tareWeightGrams), 0);
+    return synthesizePackageFromContents(
+      lines,
+      contentsWeight,
+      Math.max(SYNTHETIC_PACKAGE_TARE_WEIGHT_GRAMS, heaviestConfiguredTare),
+    );
+  }
 
   return {
     profileId: selected.id,
@@ -201,4 +234,37 @@ function positiveInteger(value: number, label: string): number {
     throw new Error(`Invalid shipping ${label}`);
   }
   return value;
+}
+
+/**
+ * Build a parcel sized to the order's own contents, used when no configured box
+ * can hold the order (or none is configured). The bound is the vertical-stack
+ * envelope — the shared item footprint by the summed item heights — which is
+ * always a physically valid container and never understates size, so the carrier
+ * prices a box at least as large as the one actually shipped. This is the "buy a
+ * box this size" fallback that keeps packaging from ever blocking a sale.
+ */
+function synthesizePackageFromContents(
+  lines: readonly PackableLine[],
+  contentsWeight: number,
+  tareWeightGrams: number,
+): ProductShipmentPackageSnapshot {
+  let footprintLength = 0;
+  let footprintWidth = 0;
+  let stackedHeight = 0;
+  for (const line of lines) {
+    footprintLength = Math.max(footprintLength, line.lengthCm);
+    footprintWidth = Math.max(footprintWidth, line.widthCm);
+    stackedHeight += line.heightCm * line.quantity;
+  }
+  return {
+    profileId: SYNTHETIC_PACKAGE_PROFILE_ID,
+    profileSlug: SYNTHETIC_PACKAGE_PROFILE_SLUG,
+    packageType: SYNTHETIC_PACKAGE_TYPE,
+    lengthCm: footprintLength + PACKAGING_CLEARANCE_CM,
+    widthCm: footprintWidth + PACKAGING_CLEARANCE_CM,
+    heightCm: stackedHeight + PACKAGING_CLEARANCE_CM,
+    tareWeightGrams,
+    totalWeightGrams: contentsWeight + tareWeightGrams,
+  };
 }

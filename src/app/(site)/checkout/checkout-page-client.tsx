@@ -32,6 +32,10 @@ import type {
   UsImportTerms,
 } from "@/lib/commerce/product-checkout-disclosures";
 import type { ManualProductCheckoutPolicy } from "@/lib/commerce/product-manual-checkout-config";
+import {
+  STUDIO_PICKUP_LOCATION,
+  formatStudioPickupAddress,
+} from "@/lib/commerce/studio-pickup";
 
 interface CheckoutTaxContext {
   rate: number;
@@ -152,6 +156,10 @@ function CheckoutContent({
     useState(false);
   const [acceptedRefundPolicy, setAcceptedRefundPolicy] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  // Automated (shippable) carts can choose free studio pickup instead of
+  // shipping. Manual carts are always pickup, so this only applies when the cart
+  // is automated and online shipping is available.
+  const [pickupChosen, setPickupChosen] = useState(false);
   // Two-step flow: collect contact + delivery address first, then reveal the
   // payment step (rate selection, policy assents, and the card form) once the
   // shipping quote is in hand so the charged amount is final and accurate.
@@ -213,7 +221,13 @@ function CheckoutContent({
     : undefined;
   const displayedCart = hasPromotionPreview ? promotionPreviewCart : cart.cart;
   const isManualCheckout = displayedCart?.checkoutMode === "manual";
-  const fulfillmentMode = isManualCheckout
+  // An automated cart may offer a Ship/Pickup choice when online shipping is
+  // available; a manual cart is always pickup. `isPickup` means "this order is
+  // fulfilled by free studio pickup" and drives every downstream fulfillment
+  // decision, regardless of the cart's product composition.
+  const canChoosePickup = !isManualCheckout && shippingEnabled;
+  const isPickup = isManualCheckout || (canChoosePickup && pickupChosen);
+  const fulfillmentMode = isPickup
     ? manualFulfillmentMode
     : "automated_shipping";
   const requiresShippingAddress = fulfillmentMode !== "manual_pickup";
@@ -303,7 +317,7 @@ function CheckoutContent({
   // fixed studio (Ontario) rate for pickup. The server owns the rate; we apply
   // it to the same cents base the server uses so the displayed total matches
   // the amount charged at order creation.
-  const taxContext: CheckoutTaxContext | null = isManualCheckout
+  const taxContext: CheckoutTaxContext | null = isPickup
     ? {
         rate: pickupTax.rate,
         name: pickupTax.name,
@@ -329,13 +343,14 @@ function CheckoutContent({
   // Whether the customer has provided everything the details step needs before
   // the payment step can open. Pickup needs no address; shipping needs a full
   // address plus a phone number for the carrier.
-  const detailsComplete = isManualCheckout
+  const detailsComplete = isPickup
     ? hasValidCustomerDetails
     : hasValidCustomerDetails &&
       hasValidShippingAddress &&
       Boolean(normalizedCustomerPhone);
   // Automated-shipping carts can't proceed at all when online shipping is off.
-  const shippingUnavailableForCart = requiresLiveShippingQuote && !shippingEnabled;
+  const shippingUnavailableForCart =
+    requiresLiveShippingQuote && !shippingEnabled;
 
   const handleApplyPromotionCode = async () => {
     if (!cart.cart || !promotionCodeInput.trim()) return;
@@ -570,9 +585,9 @@ function CheckoutContent({
     (requiresLiveShippingQuote &&
       (!shippingEnabled || !activeShippingQuote || !selectedShippingRateId)) ||
     !hasValidShippingDisclosure ||
-    (isManualCheckout &&
+    (isPickup &&
       (!manualCheckoutPolicy.enabled || !acceptedCancellationPolicy)) ||
-    (!isManualCheckout && !acceptedRefundPolicy);
+    (!isPickup && !acceptedRefundPolicy);
   const payButtonCustomer = {
     name: normalizedCustomerName,
     email: normalizedCustomerEmail,
@@ -589,7 +604,7 @@ function CheckoutContent({
           termsTextHash: termsRequirement.textHash,
         }
       : {}),
-    ...(isManualCheckout &&
+    ...(isPickup &&
     manualCheckoutPolicy.cancellationPolicyVersion &&
     manualCheckoutPolicy.cancellationPolicyTextHash &&
     acceptedCancellationPolicy
@@ -601,7 +616,7 @@ function CheckoutContent({
             manualCheckoutPolicy.cancellationPolicyTextHash,
         }
       : {}),
-    ...(!isManualCheckout && acceptedRefundPolicy
+    ...(!isPickup && acceptedRefundPolicy
       ? {
           cancellationPolicyAccepted: true,
           cancellationPolicyVersion: shippedRefundPolicy.version,
@@ -722,7 +737,9 @@ function CheckoutContent({
                 </div>
                 <div className="text-right">
                   {lineItem.originalTotal ? (
-                    <p className={cn(HELPER_TEXT_CLASS, "text-xs line-through")}>
+                    <p
+                      className={cn(HELPER_TEXT_CLASS, "text-xs line-through")}
+                    >
                       {formatCad(lineItem.originalTotal)}
                     </p>
                   ) : null}
@@ -807,9 +824,9 @@ function CheckoutContent({
               </div>
             ) : null}
             <div className="flex justify-between font-body text-sm text-lh-muted">
-              <span>Shipping</span>
+              <span>{isPickup ? "Pickup" : "Shipping"}</span>
               <span>
-                {isManualCheckout
+                {isPickup
                   ? "Free studio pickup"
                   : selectedShippingRate
                     ? formatCad(shippingAmount)
@@ -879,7 +896,10 @@ function CheckoutContent({
 
                     <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
                       <div>
-                        <label htmlFor="checkout-name" className={FIELD_LABEL_CLASS}>
+                        <label
+                          htmlFor="checkout-name"
+                          className={FIELD_LABEL_CLASS}
+                        >
                           Name
                         </label>
                         <Input
@@ -949,12 +969,23 @@ function CheckoutContent({
                           : "We'll calculate live, insured and tracked shipping rates for this address on the next step."}
                       </p>
 
-                      {isManualCheckout ? (
-                        <div className="mt-4 rounded-[18px] border border-lh-line bg-lh-neutral-2/60 p-4 font-body text-sm leading-6 text-lh-shadow">
-                          Optional shipping can be agreed and paid separately
-                          after the order is confirmed; pickup remains available
-                          until that supplemental payment succeeds.
-                        </div>
+                      {canChoosePickup ? (
+                        <FulfillmentChoice
+                          pickupChosen={pickupChosen}
+                          onChange={setPickupChosen}
+                        />
+                      ) : null}
+
+                      {isPickup ? (
+                        isManualCheckout ? (
+                          <div className="mt-4 rounded-[18px] border border-lh-line bg-lh-neutral-2/60 p-4 font-body text-sm leading-6 text-lh-shadow">
+                            Optional shipping can be agreed and paid separately
+                            after the order is confirmed; pickup remains
+                            available until that supplemental payment succeeds.
+                          </div>
+                        ) : (
+                          <StudioPickupNotice />
+                        )
                       ) : (
                         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                           <div className="sm:col-span-2">
@@ -1044,7 +1075,9 @@ function CheckoutContent({
                               onChange={(e) =>
                                 setShippingPostalCode(e.target.value)
                               }
-                              maxLength={CHECKOUT_SHIPPING_POSTAL_CODE_MAX_LENGTH}
+                              maxLength={
+                                CHECKOUT_SHIPPING_POSTAL_CODE_MAX_LENGTH
+                              }
                               autoComplete="shipping postal-code"
                               placeholder="M6E 2Y4"
                             />
@@ -1091,9 +1124,7 @@ function CheckoutContent({
                           type="button"
                           variant="primary"
                           onClick={handleContinueToPayment}
-                          disabled={
-                            !detailsComplete || isLoadingShippingRates
-                          }
+                          disabled={!detailsComplete || isLoadingShippingRates}
                           aria-busy={isLoadingShippingRates}
                           className="h-12 w-full rounded-full px-6 font-body text-sm uppercase tracking-[0.12em]"
                         >
@@ -1102,7 +1133,12 @@ function CheckoutContent({
                             : "Continue to payment"}
                         </Button>
                         {!detailsComplete ? (
-                          <p className={cn(HELPER_TEXT_CLASS, "mt-3 text-center")}>
+                          <p
+                            className={cn(
+                              HELPER_TEXT_CLASS,
+                              "mt-3 text-center",
+                            )}
+                          >
                             {requiresShippingAddress
                               ? "Enter your contact and shipping details to continue."
                               : "Enter your contact details to continue."}
@@ -1124,7 +1160,7 @@ function CheckoutContent({
                     name={normalizedCustomerName}
                     email={normalizedCustomerEmail}
                     phone={normalizedCustomerPhone}
-                    isManualCheckout={isManualCheckout}
+                    isPickup={isPickup}
                     shippingAddress={shippingAddress}
                     onEdit={handleEditDetails}
                   />
@@ -1162,13 +1198,49 @@ function CheckoutContent({
                           </p>
                         ) : null}
 
-                        {activeShippingQuote ? (
+                        {activeShippingQuote &&
+                        activeShippingQuote.rates.length === 1 ? (
+                          // A single option (flat-rate, or a lone live rate) is
+                          // shown as a static flat price — no service choice to
+                          // make. It stays auto-selected for the commit path.
+                          <div className="mt-4 flex items-start justify-between gap-4 rounded-[18px] border border-lh-primary/40 bg-lh-white p-4">
+                            <span>
+                              <span className="block font-body text-sm font-medium text-lh-shadow">
+                                {activeShippingQuote.rates[0]!.title}
+                              </span>
+                              {activeShippingQuote.rates[0]!
+                                .deliveryEstimate ? (
+                                <span className="block font-body text-xs text-lh-muted">
+                                  {
+                                    activeShippingQuote.rates[0]!
+                                      .deliveryEstimate
+                                  }
+                                </span>
+                              ) : null}
+                              <span className="block font-body text-xs text-lh-muted">
+                                Insurance and tracking included
+                              </span>
+                              {activeShippingQuote.rates[0]!
+                                .signatureRequired ? (
+                                <span className="block font-body text-xs font-medium text-lh-shadow">
+                                  Signature is required at delivery
+                                </span>
+                              ) : null}
+                            </span>
+                            <span className="whitespace-nowrap font-body text-sm font-medium text-lh-shadow">
+                              {formatCad(
+                                activeShippingQuote.rates[0]!.amountCents / 100,
+                              )}
+                            </span>
+                          </div>
+                        ) : activeShippingQuote ? (
                           <fieldset className="mt-4 space-y-3">
                             <legend className="sr-only">
                               Choose an insured tracked service
                             </legend>
                             {activeShippingQuote.rates.map((rate) => {
-                              const selected = selectedShippingRateId === rate.id;
+                              const selected =
+                                selectedShippingRateId === rate.id;
                               return (
                                 <label
                                   key={rate.id}
@@ -1227,7 +1299,9 @@ function CheckoutContent({
                             data-disclosure-version={
                               activeShippingQuote.usImportDisclosureVersion
                             }
-                            data-import-terms={activeShippingQuote.usImportTerms}
+                            data-import-terms={
+                              activeShippingQuote.usImportTerms
+                            }
                           >
                             {activeShippingQuote.usImportDisclosureText}
                           </div>
@@ -1246,7 +1320,7 @@ function CheckoutContent({
                     </p>
 
                     <div className="flex flex-col gap-4">
-                      {isManualCheckout ? (
+                      {isPickup ? (
                         manualCheckoutPolicy.enabled &&
                         manualCheckoutPolicy.cancellationPolicyText &&
                         manualCheckoutPolicy.cancellationPolicyVersion ? (
@@ -1264,7 +1338,7 @@ function CheckoutContent({
                             className="rounded-[18px] border border-lh-accent/30 bg-lh-accent-soft p-4 font-body text-sm leading-6 text-lh-accent"
                             role="alert"
                           >
-                            Manual checkout is unavailable until the current
+                            Studio pickup is unavailable until the current
                             pickup and cancellation policy is approved.
                           </p>
                         )
@@ -1359,18 +1433,87 @@ function StepHeading({
   );
 }
 
+function FulfillmentChoice({
+  pickupChosen,
+  onChange,
+}: {
+  pickupChosen: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  const options = [
+    {
+      pickup: false,
+      label: "Ship it",
+      hint: "Insured, tracked delivery",
+    },
+    {
+      pickup: true,
+      label: "Pick up at the studio",
+      hint: "Free — collect in Toronto",
+    },
+  ] as const;
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Delivery method"
+      className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2"
+    >
+      {options.map((option) => {
+        const selected = option.pickup === pickupChosen;
+        return (
+          <button
+            key={option.label}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            onClick={() => onChange(option.pickup)}
+            className={cn(
+              "flex flex-col rounded-[18px] border p-4 text-left transition-colors",
+              selected
+                ? "border-lh-primary bg-lh-primary-soft/50"
+                : "border-lh-line bg-lh-white hover:border-lh-primary/40",
+            )}
+          >
+            <span className="font-body text-sm font-medium text-lh-primary">
+              {option.label}
+            </span>
+            <span className="mt-0.5 font-body text-xs text-lh-muted">
+              {option.hint}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function StudioPickupNotice() {
+  return (
+    <div className="mt-4 rounded-[18px] border border-lh-line bg-lh-neutral-2/60 p-4 font-body text-sm leading-6 text-lh-shadow">
+      <p className="font-medium text-lh-primary">
+        {STUDIO_PICKUP_LOCATION.name}
+      </p>
+      <p className="mt-0.5 text-lh-muted">{formatStudioPickupAddress()}</p>
+      <p className="mt-2">
+        Free studio pickup — no delivery address or shipping charge is collected
+        now. We&apos;ll email you when your order is ready to collect.
+      </p>
+    </div>
+  );
+}
+
 function CompletedDetailsCard({
   name,
   email,
   phone,
-  isManualCheckout,
+  isPickup,
   shippingAddress,
   onEdit,
 }: {
   name: string;
   email: string;
   phone: string;
-  isManualCheckout: boolean;
+  isPickup: boolean;
   shippingAddress: {
     line1: string;
     line2?: string;
@@ -1402,7 +1545,7 @@ function CompletedDetailsCard({
         <div>
           <dt className="sr-only">Fulfillment</dt>
           <dd>
-            {isManualCheckout
+            {isPickup
               ? "Free studio pickup"
               : [
                   shippingAddress.line1,

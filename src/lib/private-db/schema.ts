@@ -1836,6 +1836,47 @@ export const shippingPackageProfiles = pgTable(
   ],
 );
 
+/**
+ * Precomputed flat shipping rates, keyed by regional destination zone × parcel
+ * size bucket. Refreshed on a schedule by pricing a representative parcel per
+ * bucket to a representative destination per zone; checkout reads the cheapest
+ * eligible cents here, rounds up to the next dollar, and shows one flat price.
+ * The stored `postageType` is a real, purchasable carrier service so the label
+ * can be bought at fulfillment.
+ */
+export const shippingRateCache = pgTable(
+  "shipping_rate_cache",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    zoneId: text("zone_id").notNull(),
+    sizeBucketId: text("size_bucket_id").notNull(),
+    countryCode: text("country_code").notNull(),
+    postageType: text("postage_type").notNull(),
+    title: text("title").notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    currency: text("currency").notNull().default("CAD"),
+    deliveryMaxBusinessDays: integer("delivery_max_business_days"),
+    insured: boolean("insured").notNull().default(true),
+    tracked: boolean("tracked").notNull().default(true),
+    computedAt: timestamp("computed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("shipping_rate_cache_zone_bucket_idx").on(
+      table.zoneId,
+      table.sizeBucketId,
+    ),
+    check("shipping_rate_cache_amount_check", sql`${table.amountCents} > 0`),
+  ],
+);
+
 export const shippingCalendarVersions = pgTable(
   "shipping_calendar_versions",
   {
@@ -1912,6 +1953,10 @@ export const productShipments = pgTable(
       .$type<ProductShipmentCustomsLineSnapshot[]>()
       .notNull(),
     rates: jsonb("rates").$type<ProductShipmentRateSnapshot[]>().notNull(),
+    // True when the customer-facing rate came from the flat-rate cache (a
+    // synthetic rate), not a live carrier quote. Flat-rate orders are final: the
+    // settled-vs-quoted variance refund is skipped for them.
+    flatRate: boolean("flat_rate").notNull().default(false),
     selectedRateId: text("selected_rate_id"),
     selectedPostageType: text("selected_postage_type"),
     quotedShippingCents: integer("quoted_shipping_cents"),

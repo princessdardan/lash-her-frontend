@@ -282,6 +282,61 @@ test("manual checkout requires exact explicit cancellation-policy acceptance and
   `);
 });
 
+test("automated cart can check out as free studio pickup", () => {
+  runRouteScenario(`
+    // The default product is an automated (shippable) product; the customer
+    // chooses studio pickup. It must route to the manual/pickup reservation
+    // (no shipping quote or address), not be rejected as an invalid mode.
+    let reservedInput;
+    let shippingReserves = 0;
+    const scenario = runScenario({
+      createInitializingOrder: async () => {
+        shippingReserves += 1;
+        throw new Error("automated pickup must not reserve a shipping order");
+      },
+      createInitializingManualOrder: async (input) => {
+        reservedInput = input;
+        return {
+          orderId: "lh-pickup-order",
+          primaryObligationId: "33333333-3333-4333-8333-333333333333",
+          currency: "CAD",
+          shippingAmountCents: 0,
+          totalAmountCents: 2712,
+          shippingRateTitle: "Studio pickup",
+        };
+      },
+      loadManualCheckoutPolicy: async () => ({
+        enabled: true,
+        cancellationPolicyText: "Approved cancellation policy",
+        cancellationPolicyVersion: "manual-policy-v1",
+        cancellationPolicyTextHash: "a".repeat(64),
+        blockers: [],
+      }),
+    });
+    const response = await scenario.handler(createRequest({
+      customer: { name: "Nataliea Lash", email: "client@example.com" },
+      items: [{ productId: product._id, quantity: 1 }],
+      fulfillmentMode: "manual_pickup",
+      shippingQuote: undefined,
+      disclosures: {
+        cancellationPolicyAccepted: true,
+        cancellationPolicyVersion: "manual-policy-v1",
+        cancellationPolicyTextHash: "a".repeat(64),
+      },
+    }));
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      orderId: "lh-pickup-order",
+      status: "paid",
+    });
+    assert.equal(shippingReserves, 0);
+    assert.equal(scenario.orders.length, 0);
+    assert.equal(reservedInput.fulfillmentMode, "manual_pickup");
+    assert.equal(reservedInput.cancellationPolicy.accepted, true);
+    assert.equal(reservedInput.termsAssent.accepted, true);
+  `);
+});
+
 test("checkout rejects orders without a current Terms-of-sale acceptance", () => {
   runRouteScenario(`
     let reserves = 0;

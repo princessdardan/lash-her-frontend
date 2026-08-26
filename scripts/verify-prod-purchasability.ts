@@ -6,10 +6,11 @@
  * per-product metadata completeness against the live catalog and checks the
  * three environment-level gates that product completeness alone cannot prove:
  *
- *   1. Shipping package profiles  — at least one ENABLED profile exists, and
- *      every automated product can actually be packed into one (this is what
- *      the "Get shipping rates" step does; a shallow box set silently makes
- *      some items un-shippable even after provisioning).
+ *   1. Shipping package profiles  — reports real-box coverage. Packing no longer
+ *      blocks a sale: when no configured box fits, a made-to-size parcel is
+ *      synthesized from the order's own dimensions and priced by the carrier.
+ *      This section flags items/quantities that fall back to a bespoke parcel so
+ *      the owner can stock a box if they prefer, but none of it is a blocker.
  *   2. Product stock backfill     — product_stock rows exist / available > 0
  *      (Sanity stockQuantity is only a set-point; the live count is Postgres).
  *   3. Square gateway flag         — /api/checkout/square/config returns 200
@@ -40,6 +41,7 @@ import { Pool } from "pg";
 import { getProductCheckoutEligibility } from "@/lib/commerce/product-checkout-eligibility";
 import { createPrivateDbPoolConfig } from "@/lib/private-db/pool-config";
 import {
+  SYNTHETIC_PACKAGE_PROFILE_ID,
   selectSmallestPackage,
   type PackableLine,
 } from "@/lib/shipping/packing";
@@ -122,8 +124,13 @@ function lineFrom(
   };
 }
 
-/** Largest quantity of a single line that still packs into some enabled box. */
-function maxQtyThatFits(
+/**
+ * Largest quantity of a single line that still packs into a real CONFIGURED box.
+ * Beyond this, packing no longer fails — a made-to-size parcel is synthesized so
+ * the sale still ships — so this is informational (which items need a bespoke box
+ * for bulk orders), not a blocker.
+ */
+function maxQtyInRealBox(
   meta: TProductShippingMetadata,
   profiles: ShippingPackageProfile[],
 ): number {
@@ -131,12 +138,9 @@ function maxQtyThatFits(
   for (let qty = 1; qty <= MAX_CART_LINE_QTY; qty++) {
     const line = lineFrom(meta, qty);
     if (!line) break;
-    try {
-      selectSmallestPackage([line], profiles);
-      fits = qty;
-    } catch {
-      break;
-    }
+    const packed = selectSmallestPackage([line], profiles);
+    if (packed.profileId === SYNTHETIC_PACKAGE_PROFILE_ID) break;
+    fits = qty;
   }
   return fits;
 }
@@ -233,33 +237,36 @@ async function checkShipping(
     enabled: r.enabled,
   }));
 
-  console.log("  Packing feasibility (automated products, qty 1):");
+  console.log(
+    "  Real-box coverage (automated products) — packing never blocks:",
+  );
   for (const p of products) {
     const meta = p.shipping;
     const elig = getProductCheckoutEligibility(meta);
     if (elig.status !== "automated") continue; // manual/hazmat don't pack
     const line = lineFrom(meta, 1);
     if (!line) continue;
-    try {
-      selectSmallestPackage([line], profiles);
-      const cap = maxQtyThatFits(meta!, profiles);
-      if (cap < MAX_CART_LINE_QTY) {
-        warnings.push(
-          `${p.title}: only up to ${cap} unit(s) fit any enabled box.`,
-        );
-        console.log(
-          warn(
-            `${p.title} — packs, but max ${cap}/line fits (box height ceiling)`,
-          ),
-        );
-      } else {
-        console.log(ok(`${p.title} — packs (up to ${cap}/line)`));
-      }
-    } catch {
-      failures.push(
-        `${p.title}: CANNOT be packed by any enabled box (automated checkout will 422).`,
+    const packed = selectSmallestPackage([line], profiles);
+    if (packed.profileId === SYNTHETIC_PACKAGE_PROFILE_ID) {
+      // No configured box fits even a single unit; a made-to-size parcel is
+      // quoted so the sale still ships. Not a failure — just a stocking hint.
+      warnings.push(
+        `${p.title}: no configured box fits even 1 unit — a made-to-size parcel will be quoted (consider stocking a box that fits).`,
       );
-      console.log(bad(`${p.title} — UN-PACKABLE by any enabled box`));
+      console.log(
+        warn(`${p.title} — no stocked box fits; made-to-size parcel used`),
+      );
+      continue;
+    }
+    const cap = maxQtyInRealBox(meta!, profiles);
+    if (cap < MAX_CART_LINE_QTY) {
+      console.log(
+        ok(
+          `${p.title} — stocked box up to ${cap}/line; beyond that a made-to-size parcel ships`,
+        ),
+      );
+    } else {
+      console.log(ok(`${p.title} — stocked box fits (up to ${cap}/line)`));
     }
   }
 }
