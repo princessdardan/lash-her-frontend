@@ -48,11 +48,12 @@ import type {
  * threshold so cached prices reflect the common, non-signature order. */
 const REPRESENTATIVE_MERCHANDISE_VALUE_CENTS = 6000;
 
-/** Representative HS tariff code for a rate-probe customs declaration. Only used
- * to shape the ephemeral U.S. draft so the carrier returns cross-border rates;
- * the real per-product HS code is declared on the actual shipment at
- * fulfillment. */
-const REPRESENTATIVE_HS_TARIFF_CODE = "3304990000";
+/** Representative HS tariff code for a rate-probe customs declaration — a valid
+ * 10-digit HTS (3304.20.00.00, eye make-up preparations) that Chit Chats
+ * accepts. Only used to shape the ephemeral cross-border draft so the carrier
+ * returns rates; the real per-product HS code is declared on the actual shipment
+ * at fulfillment, and rate cost does not depend on the HS code. */
+const REPRESENTATIVE_HS_TARIFF_CODE = "3304200000";
 
 export interface FlatRateRefreshCellResult {
   zoneId: ShippingZoneId;
@@ -91,10 +92,7 @@ export async function refreshFlatRateCache(deps?: {
           countryCode: destination.countryCode,
           recipient: buildRepresentativeRecipient(zoneId),
           packageSnapshot: buildRepresentativePackage(sizeBucketId),
-          customsLines: buildRepresentativeCustomsLines(
-            sizeBucketId,
-            destination.countryCode,
-          ),
+          customsLines: buildRepresentativeCustomsLines(sizeBucketId),
           client,
           trackedPostageTypes: config.trackedPostageTypes,
           servicePolicies: policy.servicePolicies,
@@ -249,9 +247,11 @@ function buildRepresentativePackage(
 
 function buildRepresentativeCustomsLines(
   sizeBucketId: SizeBucketId,
-  countryCode: ShippingCountryCode,
 ): ProductShipmentCustomsLineSnapshot[] {
-  if (countryCode === "CA") return [];
+  // Always supply a line, including domestic Canada: Chit Chats derives the
+  // shipment `description` from these lines and rejects a blank one ("Line Item
+  // 1 Description can't be blank"), even though it omits `line_items` for a
+  // domestic-CA shipment. The HS code is only sent on cross-border drafts.
   const parcel = REPRESENTATIVE_PARCELS[sizeBucketId];
   return [
     {
