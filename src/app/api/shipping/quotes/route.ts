@@ -7,6 +7,7 @@ import { parsePromotionCodeInput } from "@/lib/commerce/discounts";
 import {
   getChitChatsConfig,
   isChitChatsCheckoutEnabled,
+  isFlatRateShippingEnabled,
 } from "@/lib/shipping/config";
 import {
   prepareShippingQuote,
@@ -17,11 +18,18 @@ import {
   type CertifiedUsImportDisclosure,
 } from "@/lib/shipping/quote-token";
 import {
+  createFlatRateQuote,
   createQuoteOperation,
   getQuoteOperationByToken,
   listEnabledPackageProfiles,
   type ProductShipmentRow,
 } from "@/lib/shipping/shipment-store";
+import { buildFlatRateRate } from "@/lib/shipping/flat-rate-quote";
+import { readFlatRateCacheEntry } from "@/lib/shipping/flat-rate-cache-store";
+import {
+  resolveShippingZone,
+  resolveSizeBucket,
+} from "@/lib/shipping/flat-rate-zones";
 import type { ShippingRecipient } from "@/lib/shipping/types";
 import {
   calculateProductTax,
@@ -279,6 +287,54 @@ async function createQuote(
     prepared.fingerprint,
     quoteContext,
   );
+
+  if (isFlatRateShippingEnabled()) {
+    // Flat-rate path: price the parcel synchronously from the cache (no carrier
+    // round-trip), create a fully-quoted shipment, and return the single flat
+    // rate. The real carrier draft is created later, at fulfillment.
+    const zoneId = resolveShippingZone(
+      body.recipient.countryCode,
+      body.recipient.province,
+    );
+    const sizeBucketId = resolveSizeBucket(prepared.packageSnapshot);
+    const cacheEntry = await readFlatRateCacheEntry(zoneId, sizeBucketId);
+    const flatRate = buildFlatRateRate({
+      zoneId,
+      sizeBucketId,
+      merchandiseValueCents: prepared.merchandiseValueCents,
+      cacheEntry,
+    });
+    const flatPublicReference = `lhq-${nanoid(14)}`;
+    const flatExpiresAt = new Date(preparedAt.getTime() + 15 * 60_000);
+    const { shipment, quoteToken } = await createFlatRateQuote({
+      publicReference: flatPublicReference,
+      quoteFingerprint,
+      destination: body.recipient,
+      packageSnapshot: prepared.packageSnapshot,
+      customsLines: prepared.customsLines,
+      rates: [flatRate],
+      expiresAt: flatExpiresAt,
+      quoteContextSnapshot: quoteContext,
+      signatureRequested: flatRate.signatureRequired,
+      usShippingContractSnapshot: quoteContext.usShippingContract,
+      now: preparedAt,
+    });
+    const flatQuoteTax = buildQuoteTaxContext(body.recipient);
+    return NextResponse.json(
+      {
+        shipmentId: shipment.id,
+        status: "succeeded",
+        quoteToken,
+        fingerprint: quoteFingerprint,
+        expiresAt: shipment.quoteExpiresAt.toISOString(),
+        rates: [publicRate(flatRate)],
+        ...(flatQuoteTax ? { tax: flatQuoteTax } : {}),
+        ...(prepared.usImportDisclosure ?? {}),
+      },
+      { status: 200, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+
   const publicReference = `lhq-${nanoid(14)}`;
   const expiresAt = new Date(preparedAt.getTime() + 15 * 60_000);
   const { shipment, operation, quoteToken } = await createQuoteOperation({

@@ -919,7 +919,12 @@ export async function createInitializingManualProductOrder(
     );
   }
   const readiness = await evaluateManualCheckoutReadiness({
-    catalogMetadataReady: input.cart.checkoutMode === "manual",
+    // Studio pickup is available for any validated, purchasable cart — both
+    // manual (studio-fulfilled) products and automated (shippable) products that
+    // the customer chose to pick up. An automated cart carries complete shipping
+    // metadata, so it is at least as catalog-ready as a manual one; only an
+    // unvalidated cart (undefined mode) is treated as not ready.
+    catalogMetadataReady: input.cart.checkoutMode !== undefined,
     now,
   });
   if (

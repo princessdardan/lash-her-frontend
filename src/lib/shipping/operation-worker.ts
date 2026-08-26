@@ -46,6 +46,7 @@ import {
   stripSignedLabelUrls,
 } from "./status";
 import type { ChitChatsShipment } from "./types";
+import type { ProductShipmentRateSnapshot } from "@/lib/private-db/schema";
 import { p10TerminationBlocksShipmentPurchase } from "./p10-termination";
 
 export interface ShippingOperationWorkerResult {
@@ -477,6 +478,18 @@ async function processPurchase(
       "Postage purchase is blocked because pre-cap order termination has begun",
     );
   if (!job.outcomeUnknown) assertExpectedShipmentVersion(job, shipment);
+  // Flat-rate shipments defer provider-draft creation to fulfillment: the quote
+  // was served synchronously from the cache with no carrier round-trip, so no
+  // draft exists yet. Create and attach it now — before the readiness guard —
+  // reusing the same create/reconcile safety model as `processCreate`, so the
+  // rest of the purchase flow (refresh, rate selection, buy) runs unchanged.
+  // Because the draft only exists once `providerShipmentId` is set, this block
+  // runs only when no postage purchase has ever been attempted.
+  let draftJustEnsured = false;
+  if (shipment.flatRate && !shipment.providerShipmentId) {
+    shipment = await ensureFlatRateProviderDraft(job, shipment, dependencies);
+    draftJustEnsured = true;
+  }
   if (!shipment.providerShipmentId || !shipment.selectedPostageType)
     throw new DeterministicOperationError(
       "purchase_not_ready",
@@ -487,7 +500,9 @@ async function processPurchase(
   let provider: ChitChatsShipment;
   let purchaseRequired = false;
   const refreshIntent = shipmentRefreshIntent(job, shipment);
-  if (job.outcomeUnknown) {
+  // A draft ensured on this run has never been purchased, so treat it as a fresh
+  // purchase (refresh → select → buy) rather than reconciling a prior attempt.
+  if (job.outcomeUnknown && !draftJustEnsured) {
     provider = await dependencies.client.getShipment(providerShipmentId);
     assertProviderMatchesRefreshIntent(provider, refreshIntent);
     const action = classifyProviderPurchaseAction(provider, true);
@@ -585,9 +600,13 @@ async function processPurchase(
       if (!released) throw new FencedOperationError();
       return `purchase_no_eligible_rates_${providerDraftCleanupOutcomeCode(cleanup)}`;
     }
-    const eligibleSelected = eligibleRates.find(
-      (rate) => rate.postageType === selectedPostageType,
-    );
+    // Flat-rate orders quoted a fixed price the customer already paid; the
+    // studio buys the cheapest eligible service at fulfillment (the stored
+    // postage type was only the representative service priced at cache time).
+    // Live quotes still buy the exact service the customer selected.
+    const eligibleSelected = shipment.flatRate
+      ? cheapestEligibleRate(eligibleRates)
+      : eligibleRates.find((rate) => rate.postageType === selectedPostageType);
     if (!eligibleSelected) {
       const cleanup = await fenceProviderDraftAndEnqueueCleanup({
         id: shipment.id,
@@ -638,7 +657,7 @@ async function processPurchase(
       );
     try {
       provider = await dependencies.client.buyShipment(providerShipmentId, {
-        postageType: selectedPostageType,
+        postageType: eligibleSelected.postageType,
       });
     } catch (error) {
       throw mutationFailure(error, "purchase_outcome_unknown");
@@ -727,6 +746,75 @@ async function processPurchase(
     throw new FencedOperationError();
   }
   return job.outcomeUnknown ? "purchase_reconciled" : "purchased";
+}
+
+/**
+ * Create the Chit Chats draft for a flat-rate shipment at fulfillment time and
+ * attach it to the local shipment. Mirrors `processCreate`'s safety model: on a
+ * fresh attempt it creates the draft; on an outcome-unknown retry it reconciles
+ * by public reference so a partial prior attempt never yields a duplicate draft.
+ * `persistKnownProviderDraft` is idempotent and fenced on `providerShipmentId`
+ * being null, so a re-run after a successful persist is a no-op.
+ */
+async function ensureFlatRateProviderDraft(
+  job: ShipmentOperationRow,
+  shipment: Awaited<ReturnType<typeof requireShipment>>,
+  dependencies: ShippingOperationWorkerDependencies,
+): Promise<Awaited<ReturnType<typeof requireShipment>>> {
+  let provider: ChitChatsShipment;
+  if (job.outcomeUnknown) {
+    provider = await reconcileCreate(
+      dependencies.client,
+      shipment.publicReference,
+    );
+  } else {
+    try {
+      provider = await dependencies.client.createShipment({
+        recipient: shipment.destination as never,
+        packageSnapshot: shipment.packageSnapshot,
+        customsLines: shipment.customsLines,
+        merchandiseValueCents: requiredInteger(job.payload, "atRiskValueCents"),
+        orderReference: shipment.publicReference,
+        signatureRequested: shipment.signatureRequested,
+      });
+    } catch (error) {
+      throw mutationFailure(error, "flat_rate_create_outcome_unknown");
+    }
+  }
+  // Any failure persisting or reloading after the draft exists at the provider
+  // must surface as outcome-unknown so the retry RECONCILES by public reference
+  // (via the `job.outcomeUnknown` branch above) instead of creating a second,
+  // orphaned draft. A raw DB throw here would otherwise be classified as a plain
+  // retryable error (outcomeUnknown=false) and re-enter the create branch. This
+  // mirrors `processCreate`'s persist handling.
+  try {
+    const persisted = await persistKnownProviderDraft({
+      id: shipment.id,
+      providerShipmentId: provider.id,
+      providerStatus: provider.status,
+      rawShipment: stripSignedLabelUrls(provider),
+      now: dependencies.now(),
+    });
+    if (!persisted)
+      throw new Error("Provider draft conflicted with local shipment state");
+    return await requireShipment(shipment.id);
+  } catch (error) {
+    throw new UnknownMutationOutcomeError(
+      "flat_rate_create_persistence_unknown",
+      error,
+    );
+  }
+}
+
+/** The lowest-cost rate in a non-empty eligible set (flat-rate fulfillment). */
+function cheapestEligibleRate(
+  rates: readonly ProductShipmentRateSnapshot[],
+): ProductShipmentRateSnapshot | undefined {
+  return rates.reduce<ProductShipmentRateSnapshot | undefined>(
+    (best, rate) =>
+      !best || rate.paymentAmountCents < best.paymentAmountCents ? rate : best,
+    undefined,
+  );
 }
 
 async function reconcilePurchaseAfterP10Race(
@@ -1044,10 +1132,14 @@ async function persistProviderState(
     }
     normalized = current.status;
   } else if (
+    !shipment.flatRate &&
     settledPurchaseCents !== null &&
     shipment.quotedShippingCents !== null &&
     settledPurchaseCents !== shipment.quotedShippingCents
   ) {
+    // For flat-rate shipments the settled cost is expected to differ from the
+    // quoted flat price by design, so the variance alert is intentionally
+    // suppressed to avoid alerting the finance owner on every order.
     const variance = settledPurchaseCents - shipment.quotedShippingCents;
     await sendShippingPolicyAlert({
       duties: ["finance_owner"],
@@ -1091,10 +1183,15 @@ async function persistProviderState(
   }
   const context = await getCustomerPaidShipmentShippingContext(shipment.id);
   if (
+    !shipment.flatRate &&
     context &&
     settledPurchaseCents !== null &&
     context.paidShippingCents - settledPurchaseCents >= 100
   ) {
+    // Flat-rate orders quote a fixed, rounded-up price the studio commits to.
+    // The flat price is final both ways (owner directive): the studio absorbs
+    // the difference when the settled label costs less, so no variance refund
+    // is issued. Live per-order quotes keep the automatic refund below.
     await queueProductOrderRefund({
       orderReference: context.orderReference,
       paymentTransactionId: context.paymentTransactionId,
