@@ -224,6 +224,27 @@ test("Square webhook rejects invalid signatures before parsing or finalization",
   assert.equal(finalizerCalls.length, 0);
 });
 
+test("Square webhook rejects an oversized body before any signature or finalizer work", async () => {
+  const finalizerCalls: unknown[] = [];
+  const handler = createHandler(finalizerCalls);
+  // A well-formed payment event padded past the 64 KB cap. It carries a VALID
+  // signature, so a handler that hashed first would accept it and call the
+  // finalizer — a 413 with no finalizer call proves the size cap precedes any
+  // HMAC work.
+  const oversizedBody = JSON.stringify({
+    event_id: "evt_oversized",
+    type: "payment.updated",
+    data: { object: { payment: { id: "pay_big", order_id: "order_big" } } },
+    padding: "x".repeat(70_000),
+  });
+  assert.ok(oversizedBody.length > 64_000);
+
+  const response = await handler(createSignedRequest(oversizedBody));
+
+  assert.equal(response.status, 413);
+  assert.equal(finalizerCalls.length, 0);
+});
+
 test("Square webhook accepts valid signature and calls shared finalizer", async () => {
   const finalizerCalls: unknown[] = [];
   const handler = createHandler(finalizerCalls);
