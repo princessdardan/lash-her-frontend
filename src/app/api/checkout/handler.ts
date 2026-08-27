@@ -368,6 +368,20 @@ export function createCheckoutPostHandler({
           { status: 409 },
         );
       }
+      // Chit Chats requires a recipient phone on the shipment, but the checkout
+      // request parses phone as optional. Validate it here — fail fast with a
+      // clean 400 — so a shipped order missing a phone can't slip through to the
+      // reserve/prepare path and surface as an opaque 500.
+      if (
+        !wantsPickup &&
+        shippingWorkflowConfigured &&
+        !checkoutRequest.customer.phone
+      ) {
+        return NextResponse.json<CheckoutErrorBody>(
+          { error: "A phone number is required for shipping" },
+          { status: 400 },
+        );
+      }
       if (!wantsPickup && checkoutRequest.shippingAddress) {
         const isUs =
           getShippingCountryCode(checkoutRequest.shippingAddress) === "US";
@@ -620,8 +634,10 @@ export function createCheckoutPostHandler({
 
         if (!charge.ok) {
           // The captured payment did not clear; release the reserved order so
-          // the customer sees a clean failure. (Known limitation: the attached
-          // shipping quote is not yet released here — tracked for follow-up.)
+          // the customer sees a clean failure. markOrderVerificationFailed also
+          // re-opens the attached shipping quote — reverting it to `quoted` and
+          // unbinding it — so a corrected card can retry against the same quote
+          // while it is still unexpired (see order-store.markOrderVerificationFailed).
           if (markOrderVerificationFailedDep) {
             await markOrderVerificationFailedDep(
               initializingOrder.orderId,
@@ -779,8 +795,13 @@ export async function POST(req: NextRequest): Promise<Response> {
         import("@/lib/shipping/readiness"),
         import("@/lib/shipping/quote-token"),
       ]);
+      // Backstop for the fail-fast phone check above: a typed error keeps a
+      // missing phone from surfacing as an opaque 500 if this path is ever
+      // reached without one.
       if (!request.customer.phone)
-        throw new Error("Customer phone is required for shipping");
+        throw new ShippingQuoteConflictError(
+          "Customer phone is required for shipping",
+        );
       if (!request.shippingAddress) {
         throw new ShippingQuoteConflictError("Shipping address is required");
       }
