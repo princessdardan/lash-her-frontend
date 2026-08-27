@@ -382,6 +382,32 @@ test("checkout rejects orders without a current Terms-of-sale acceptance", () =>
   `);
 });
 
+test("shipping checkout without a phone number fails fast with a clean 400", () => {
+  runRouteScenario(`
+    let reserves = 0;
+    let shippingValidations = 0;
+    const { handler } = runScenario({
+      validateShippingSelection: async () => {
+        shippingValidations += 1;
+        return { fingerprint: "a".repeat(64) };
+      },
+      createInitializingOrder: async () => {
+        reserves += 1;
+        throw new Error("should not reserve a shipping order without a phone");
+      },
+    });
+    const response = await handler(createRequest({
+      customer: { name: "Nataliea Lash", email: "client@example.com" },
+      items: [{ productId: product._id, quantity: 1 }],
+      shippingAddress,
+    }));
+    // Clean 400 (not an opaque 500), and it fails before any reserve/prepare work.
+    assert.equal(response.status, 400);
+    assert.equal(reserves, 0);
+    assert.equal(shippingValidations, 0);
+  `);
+});
+
 test("automated checkout reconstruction omits an absent variant id so quote fingerprints remain stable", () => {
   runRouteScenario(`
     let validatedItems;
@@ -494,7 +520,7 @@ test("checkout route reserves a durable payment operation for a valid cart", () 
     const { fetchedProductIds, handler, orders } = runScenario();
 
     const response = await handler(createRequest({
-      customer: { name: "  Nataliea Lash  ", email: "client@example.com" },
+      customer: { name: "  Nataliea Lash  ", email: "client@example.com", phone: "4165550100" },
       shippingAddress: { ...shippingAddress, line1: " 646 Oakwood Avenue ", line2: " Suite 2 " },
       items: [{ productId: "product-lash-cleanser", quantity: 2 }],
     }));
@@ -515,6 +541,7 @@ test("checkout route reserves a durable payment operation for a valid cart", () 
       country: "Canada",
       countryCode: "CA",
       line2: "Suite 2",
+      phone: "4165550100",
     });
     assert.equal(orders[0].shippingQuoteToken, "shipping-quote-token");
     assert.equal(orders[0].shippingRateId, "rate-1");
@@ -583,7 +610,7 @@ test("checkout route binds promotion totals to the durable payment reservation",
     });
 
     const response = await handler(createRequest({
-      customer: { name: "Nataliea Lash", email: "client@example.com" },
+      customer: { name: "Nataliea Lash", email: "client@example.com", phone: "4165550100" },
       shippingAddress,
       items: [{ productId: "product-lash-cleanser", quantity: 2 }],
       promotionCode: "SAVE10",
@@ -608,7 +635,7 @@ test("checkout route reserves product payment without Square secrets", () => {
     const { handler, orders } = runScenario();
 
     const response = await handler(createRequest({
-      customer: { name: "Nataliea Lash", email: "client@example.com" },
+      customer: { name: "Nataliea Lash", email: "client@example.com", phone: "4165550100" },
       shippingAddress,
       items: [{ productId: "product-lash-cleanser", quantity: 1 }],
     }));
@@ -629,7 +656,7 @@ test("checkout route rejects unavailable Sanity products before Helcim setup", (
     });
 
     const response = await handler(createRequest({
-      customer: { name: "Nataliea Lash", email: "client@example.com" },
+      customer: { name: "Nataliea Lash", email: "client@example.com", phone: "4165550100" },
       shippingAddress,
       items: [{ productId: "product-lash-cleanser", quantity: 1 }],
     }));
@@ -659,7 +686,7 @@ test("checkout route rejects unavailable selected variants before Helcim setup",
     });
 
     const response = await handler(createRequest({
-      customer: { name: "Nataliea Lash", email: "client@example.com" },
+      customer: { name: "Nataliea Lash", email: "client@example.com", phone: "4165550100" },
       shippingAddress,
       items: [{ productId: "product-lash-cleanser", variantId: "volume", quantity: 1 }],
     }));
@@ -680,7 +707,7 @@ test("checkout route rejects missing canonical products before Helcim setup", ()
     });
 
     const response = await handler(createRequest({
-      customer: { name: "Nataliea Lash", email: "client@example.com" },
+      customer: { name: "Nataliea Lash", email: "client@example.com", phone: "4165550100" },
       shippingAddress,
       items: [{ productId: "product-lash-cleanser", quantity: 1 }],
     }));
@@ -706,7 +733,7 @@ test("checkout route returns a server failure when checkout input loading fails"
       });
 
       const response = await handler(createRequest({
-        customer: { name: "Nataliea Lash", email: "client@example.com" },
+        customer: { name: "Nataliea Lash", email: "client@example.com", phone: "4165550100" },
         shippingAddress,
         items: [{ productId: "product-lash-cleanser", quantity: 1 }],
       }));
@@ -740,7 +767,7 @@ test("checkout route returns a generic failure when durable order reservation fa
     });
 
     const response = await handler(createRequest({
-      customer: { name: "Nataliea Lash", email: "client@example.com" },
+      customer: { name: "Nataliea Lash", email: "client@example.com", phone: "4165550100" },
       shippingAddress,
       items: [{ productId: "product-lash-cleanser", quantity: 1 }],
     }));
@@ -771,7 +798,7 @@ test("checkout route rejects reservations without a durable payment operation", 
       });
 
       const response = await handler(createRequest({
-        customer: { name: "Nataliea Lash", email: "client@example.com" },
+        customer: { name: "Nataliea Lash", email: "client@example.com", phone: "4165550100" },
         shippingAddress,
         items: [{ productId: "product-lash-cleanser", quantity: 1 }],
       }));
@@ -804,7 +831,7 @@ test("checkout route reports database failures from durable order reservation", 
     });
 
     const response = await handler(createRequest({
-      customer: { name: "Nataliea Lash", email: "client@example.com" },
+      customer: { name: "Nataliea Lash", email: "client@example.com", phone: "4165550100" },
       shippingAddress,
       items: [{ productId: "product-lash-cleanser", quantity: 1 }],
     }));
@@ -846,7 +873,7 @@ test("checkout route logs database causes without leaking query params", () => {
       });
 
       const response = await handler(createRequest({
-        customer: { name: "Dardan Demiri", email: "dardemiri@gmail.com" },
+        customer: { name: "Dardan Demiri", email: "dardemiri@gmail.com", phone: "4165550100" },
         shippingAddress,
         items: [{ productId: "product-lash-cleanser", quantity: 1 }],
       }));
@@ -907,7 +934,7 @@ test("checkout route logs undefined checkout order columns without raw database 
       });
 
       const response = await handler(createRequest({
-        customer: { name: "Dardan Demiri", email: "dardemiri@gmail.com" },
+        customer: { name: "Dardan Demiri", email: "dardemiri@gmail.com", phone: "4165550100" },
         shippingAddress,
         items: [{ productId: "product-lash-cleanser", quantity: 1 }],
       }));
@@ -955,7 +982,7 @@ test("checkout route logs generic failure messages without leaking sensitive val
       });
 
       const response = await handler(createRequest({
-        customer: { name: "Dardan Demiri", email: "dardemiri@gmail.com" },
+        customer: { name: "Dardan Demiri", email: "dardemiri@gmail.com", phone: "4165550100" },
         shippingAddress,
         items: [{ productId: "product-lash-cleanser", quantity: 1 }],
       }));
