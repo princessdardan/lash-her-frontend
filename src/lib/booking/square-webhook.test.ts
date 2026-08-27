@@ -3,6 +3,7 @@ import { createHmac } from "node:crypto";
 import test from "node:test";
 
 import {
+  diagnoseSquareWebhookSignatureFailure,
   parseVerifiedSquareWebhook,
   verifySquareWebhookSignature,
 } from "./square-webhook";
@@ -35,6 +36,68 @@ test("Square webhook signature validates the exact notification URL and raw body
       signatureKey,
     }),
     false,
+  );
+});
+
+test("signature-failure diagnosis flags a configured notificationUrl that does not match the request URL", () => {
+  const requestUrl = "https://lashher.com/api/webhooks/square";
+  const configuredNotificationUrl =
+    "https://staging.lashher.com/api/webhooks/square"; // stale/wrong env
+  const rawBody = JSON.stringify({
+    event_id: "evt_1",
+    type: "payment.updated",
+  });
+  const signatureKey = "correct-signing-key";
+  // Square signs against the URL it actually posts to (requestUrl) — the key is
+  // correct, only the configured URL is wrong.
+  const signature = createHmac("sha256", signatureKey)
+    .update(`${requestUrl}${rawBody}`, "utf8")
+    .digest("base64");
+
+  // Sanity: verification against the wrong configured URL fails.
+  assert.equal(
+    verifySquareWebhookSignature({
+      notificationUrl: configuredNotificationUrl,
+      rawBody,
+      signature,
+      signatureKey,
+    }),
+    false,
+  );
+
+  assert.equal(
+    diagnoseSquareWebhookSignatureFailure({
+      configuredNotificationUrl,
+      candidateRequestUrls: [requestUrl],
+      rawBody,
+      signature,
+      signatureKey,
+    }),
+    "configured_url_mismatch",
+  );
+});
+
+test("signature-failure diagnosis reports a key/payload mismatch when no candidate URL verifies", () => {
+  const requestUrl = "https://lashher.com/api/webhooks/square";
+  const rawBody = JSON.stringify({
+    event_id: "evt_2",
+    type: "payment.updated",
+  });
+  // Signature was produced with a DIFFERENT key than the one we verify with —
+  // no URL can rescue it, so it must not be misreported as a URL misconfig.
+  const signature = createHmac("sha256", "an-attacker-or-old-key")
+    .update(`${requestUrl}${rawBody}`, "utf8")
+    .digest("base64");
+
+  assert.equal(
+    diagnoseSquareWebhookSignatureFailure({
+      configuredNotificationUrl: requestUrl,
+      candidateRequestUrls: [requestUrl, "https://lashher.com/other"],
+      rawBody,
+      signature,
+      signatureKey: "correct-signing-key",
+    }),
+    "key_or_payload_mismatch",
   );
 });
 
