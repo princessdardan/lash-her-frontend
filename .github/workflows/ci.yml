@@ -717,7 +717,10 @@ jobs:
           COMMERCE_E2E_CATALOG_FIXTURE: "1"
           COMMERCE_E2E_PROVIDER_FIXTURE: "1"
           MANUAL_PRODUCT_CHECKOUT_ENABLED: "true"
+          SERVICE_BOOKING_PAYMENT_E2E_DB_WRITES: "true"
+          SERVICE_BOOKING_SQUARE_ENABLED: "true"
           SHIPPING_POLICY_ENFORCEMENT_MODE: "enforce"
+          SQUARE_COMMERCE_ENABLED: "true"
           SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED: "true"
           NEXT_PUBLIC_SANITY_PROJECT_ID: 3auncj84
           NEXT_PUBLIC_SANITY_DATASET: staging-2026-05-10
@@ -727,7 +730,8 @@ jobs:
       # retained: they also back the still-valid admin-calendar / admin-operations
       # E2E suites (Redis mock + fulfillment readiness data). The Helcim->Square
       # migration pruned the retired Helcim scenarios from the required-coverage
-      # list (scripts/verify-playwright-coverage.mjs); add the Square commerce E2E
-      # scenarios there when that harness lands.
+      # list (scripts/verify-playwright-coverage.mjs); the Square commerce (product
+      # storefront + checkout) and Square service-booking payment scenarios are now
+      # enabled and required there.
       - name: Verify required browser coverage executed
         run: npm run test:browser:verify

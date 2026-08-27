@@ -108,10 +108,18 @@ export default defineConfig({
     env: {
       BOOKING_ADMIN_E2E_GOOGLE_FIXTURE: "1",
       NODE_ENV: "development",
+      // The Google Calendar fixture must be required LAST so it is the outermost
+      // globalThis.fetch wrapper. Both fixtures answer the shared mock Upstash
+      // origin (https://e2e-redis.invalid); only the Google fixture returns the
+      // Redis "OK" reply the calendar OAuth-state store requires, and it is
+      // selective — it delegates every command it does not own (commerce
+      // Redis/Chit Chats/Resend traffic) to the inner commerce fixture. Loading
+      // commerce outermost instead makes it swallow the OAuth-state SET and the
+      // calendar connect flow 503s (see admin-calendar-self-service OAuth).
       NODE_OPTIONS: [
         process.env.NODE_OPTIONS,
-        `--require=${googleCalendarFixturePreload}`,
         `--require=${commerceProviderFixturePreload}`,
+        `--require=${googleCalendarFixturePreload}`,
       ]
         .filter(Boolean)
         .join(" "),
@@ -169,9 +177,29 @@ export default defineConfig({
             NEXT_PUBLIC_SITE_URL: "https://e2e.lashher.invalid",
             PAYMENT_GATEWAY_MODE: "live",
             RESEND_API_KEY: "re_e2e_deterministic_fixture",
+            SERVICE_BOOKING_SQUARE_ENABLED: "true",
             SHIPPING_DECISION_TOKEN_SECRET:
               "e2e-shipping-decision-secret-0123456789-ABCDEFGH",
             SHIPPING_POLICY_ENFORCEMENT_MODE: "enforce",
+            // Deterministic sandbox-shaped Square fixtures. Product/training
+            // (SQUARE_COMMERCE_ENABLED) and service-booking
+            // (SERVICE_BOOKING_SQUARE_ENABLED) checkout are both enabled so the
+            // storefront and booking availability gates open. Values are inert
+            // fixtures (never real credentials) and the *.invalid return/webhook
+            // URLs never resolve; the commerce provider preload
+            // (tests/support/commerce-provider-fetch-fixture.cjs) refuses any
+            // outbound Square API call so no test reaches Square's endpoints.
+            SQUARE_ACCESS_TOKEN: "EAAAe2e-sandbox-square-access-token-fixture",
+            SQUARE_APPLICATION_ID: "sandbox-sq0idb-e2e-fixture-application-id",
+            SQUARE_COMMERCE_ENABLED: "true",
+            SQUARE_ENVIRONMENT: "sandbox",
+            SQUARE_LOCATION_ID: "E2ELOCATIONFIXTURE1",
+            SQUARE_SERVICE_BOOKING_RETURN_URL:
+              "https://e2e.lashher.invalid/api/booking/square/return",
+            SQUARE_SERVICE_BOOKING_WEBHOOK_URL:
+              "https://e2e.lashher.invalid/api/webhooks/square",
+            SQUARE_WEBHOOK_SIGNATURE_KEY:
+              "e2e-square-webhook-signature-key-fixture",
             SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED: "true",
           }
         : {}),

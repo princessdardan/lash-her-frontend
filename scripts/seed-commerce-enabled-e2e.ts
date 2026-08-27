@@ -12,6 +12,12 @@ import {
 import { closePrivateDbPool, getPrivateDb } from "@/lib/private-db/client";
 import {
   adminUsers,
+  bookingCalendarConnections,
+  bookingProviders,
+  bookingResourceCalendarAssignments,
+  bookingResources,
+  bookingServiceOfferings,
+  bookingServices,
   fulfillmentPolicyVersions,
   fulfillmentProviderCertifications,
   shippingCalendarVersions,
@@ -33,6 +39,18 @@ const CERTIFICATION_EFFECTIVE_UNTIL = "2027-08-01T00:00:00.000Z";
 const OWNER_EMAIL = "commerce-e2e-owner@example.invalid";
 const POLICY_VERSION = "commerce-e2e-owner-policy-v1";
 const US_POSTAGE_TYPE = "chit_chats_us_edge";
+
+// Fixed identifiers for the deterministic "lash-fill" service-booking offering
+// the booking E2E specs rely on. Stable UUIDs keep the seed idempotent-by-intent
+// on the fresh isolated database each browser run provisions.
+const BOOKING_E2E_IDS = {
+  resource: "b0000000-0000-4000-8000-000000000001",
+  provider: "b0000000-0000-4000-8000-000000000002",
+  service: "b0000000-0000-4000-8000-000000000003",
+  offering: "b0000000-0000-4000-8000-000000000004",
+  calendarConnection: "b0000000-0000-4000-8000-000000000005",
+  calendarAssignment: "b0000000-0000-4000-8000-000000000006",
+} as const;
 
 async function main(): Promise<void> {
   assertIsolatedFixtureDatabase();
@@ -214,6 +232,77 @@ async function main(): Promise<void> {
         version: COMMERCE_E2E_US_CONTRACT_VERSION,
       },
     ]);
+
+    // Deterministic public service-booking offering for the "lash-fill" service
+    // slug the booking E2E specs exercise (booking flows + service-booking
+    // payment page). Without a bookable operational offering the booking page
+    // 404s. These rows satisfy the public-offering projection: active
+    // service/provider/resource, a provider public slug, an active offering with
+    // a positive deposit below full price, and an active calendar assignment that
+    // accepts bookings (a non-"primary" calendar id, active connection).
+    await tx.insert(bookingResources).values({
+      id: BOOKING_E2E_IDS.resource,
+      resourceKey: "lash-fill-e2e-resource",
+      name: "Lash Fill E2E Provider",
+      kind: "provider",
+      timezone: "America/Toronto",
+      status: "active",
+      createdByAdminUserId: owner.id,
+    });
+    await tx.insert(bookingProviders).values({
+      id: BOOKING_E2E_IDS.provider,
+      providerKey: "lash-fill-e2e-provider",
+      displayName: "Lash Fill E2E Provider",
+      primaryResourceId: BOOKING_E2E_IDS.resource,
+      publicSlug: "lash-fill-artist",
+      status: "active",
+      createdByAdminUserId: owner.id,
+    });
+    await tx.insert(bookingServices).values({
+      id: BOOKING_E2E_IDS.service,
+      serviceKey: "lash-fill-e2e-service",
+      displayTitle: "Lash Fill",
+      publicSlug: "lash-fill",
+      status: "active",
+      createdByAdminUserId: owner.id,
+    });
+    await tx.insert(bookingServiceOfferings).values({
+      id: BOOKING_E2E_IDS.offering,
+      offeringKey: "lash-fill-e2e-offering",
+      serviceId: BOOKING_E2E_IDS.service,
+      providerId: BOOKING_E2E_IDS.provider,
+      primaryResourceId: BOOKING_E2E_IDS.resource,
+      status: "active",
+      bookingType: "in-person-appointment",
+      currency: "CAD",
+      durationMinutes: 90,
+      slotIntervalMinutes: 15,
+      bufferBeforeMinutes: 0,
+      bufferAfterMinutes: 0,
+      fullPriceCents: 13_000,
+      depositAmountCents: 5_000,
+      publicTitle: "Lash Fill",
+      version: 1,
+      createdByAdminUserId: owner.id,
+    });
+    await tx.insert(bookingCalendarConnections).values({
+      id: BOOKING_E2E_IDS.calendarConnection,
+      provider: "google",
+      accountEmail: "lash-fill-e2e@example.invalid",
+      credentialSecretRef: "e2e://booking-calendar/lash-fill-v1",
+      status: "active",
+    });
+    await tx.insert(bookingResourceCalendarAssignments).values({
+      id: BOOKING_E2E_IDS.calendarAssignment,
+      resourceId: BOOKING_E2E_IDS.resource,
+      calendarConnectionId: BOOKING_E2E_IDS.calendarConnection,
+      providerCalendarId: "e2e-lash-fill-calendar",
+      calendarLabel: "Lash Fill E2E Calendar",
+      contributesBusy: true,
+      acceptsBookings: true,
+      status: "active",
+      createdByAdminUserId: owner.id,
+    });
   });
 
   await db.execute(sql`select 1`);

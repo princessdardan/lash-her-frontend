@@ -6,10 +6,11 @@ const REQUIRED_PROJECTS = ["chromium", "firefox", "webkit"];
 // NOTE: The Helcim->Square payment migration retired the obsolete Helcim
 // `checkout.spec.ts` (3 scenarios) and `commerce-enabled-workflows.spec.ts`
 // (10 scenarios) suites, which drove the deleted `/api/checkout/validate-payment`
-// flow. Their entries were removed from this required list. The remaining
-// scenarios (admin self-service, admin operations, and the Square service-booking
-// payment page) still run and stay gated. When the Square commerce E2E harness
-// lands, add its critical scenarios here.
+// flow. Their entries were removed from this required list. The Square commerce
+// E2E harness has since landed (SQUARE_COMMERCE_ENABLED / SERVICE_BOOKING_SQUARE_ENABLED
+// are supplied to the E2E dev server), so the critical Square storefront and
+// checkout scenarios are required below alongside the admin self-service, admin
+// operations, and Square service-booking payment scenarios.
 const REQUIRED_SCENARIOS = [
   [
     "admin-calendar-self-service.spec.ts",
@@ -30,6 +31,15 @@ const REQUIRED_SCENARIOS = [
   [
     "service-booking-payment-page.spec.ts",
     "service booking redirects to dedicated payment page and mounts Square container",
+  ],
+  // Square commerce (product) storefront + checkout coverage.
+  [
+    "product-catalog.spec.ts",
+    "should display products with manual availability and fulfillment notes",
+  ],
+  [
+    "product-detail.spec.ts",
+    "should send only the Buy Now selection in the checkout request",
   ],
 ];
 

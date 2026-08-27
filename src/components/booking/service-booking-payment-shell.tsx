@@ -10,6 +10,45 @@ import type { ServiceBookingPaymentSessionDisplay } from "@/lib/booking/payment-
 import { ServiceBookingPaymentForm } from "./service-booking-payment-form";
 import type { ServiceBookingPaymentConfirmation } from "./service-booking-payment-form";
 
+// Node and WebKit ICU disagree on two details that would otherwise make the
+// server-rendered date/time strings mismatch on hydration in Safari:
+//   1. the separator before AM/PM \u2014 Node uses the narrow no-break space U+202F
+//      while some WebKit builds use a regular space, and
+//   2. the connector between the date and the time in a combined date+time
+//      pattern \u2014 Node joins the long form with " at " and the short form with
+//      ", " while some WebKit builds join both with " at ".
+// Formatting the date and the time separately and joining them with an explicit
+// literal connector removes the connector ambiguity, and collapsing the no-break
+// spaces removes the separator ambiguity, so the server and the client produce
+// identical strings across browsers. The literal connectors are chosen to match
+// Node's current output, so the user-facing text is unchanged.
+function normalizeSpaces(formatted: string): string {
+  return formatted.replace(/[\u202f\u00a0]/g, " ");
+}
+
+function formatDateTime(
+  value: string,
+  timeZone: string,
+  weekday: "long" | "short",
+  month: "long" | "short",
+  connector: string,
+): string {
+  const date = new Date(value);
+  const datePart = new Intl.DateTimeFormat("en-US", {
+    weekday,
+    month,
+    day: "numeric",
+    timeZone,
+  }).format(date);
+  const timePart = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone,
+  }).format(date);
+
+  return normalizeSpaces(`${datePart}${connector}${timePart}`);
+}
+
 export function ServiceBookingPaymentShell({
   marketingOptInLabel,
   session: initialSession,
@@ -52,23 +91,21 @@ export function ServiceBookingPaymentShell({
     };
   }, []);
 
-  const formattedTime = new Intl.DateTimeFormat("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone: session.timezone,
-  }).format(new Date(session.selectedStart));
+  const formattedTime = formatDateTime(
+    session.selectedStart,
+    session.timezone,
+    "long",
+    "long",
+    " at ",
+  );
 
-  const formattedExpiration = new Intl.DateTimeFormat("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone: session.timezone,
-  }).format(new Date(session.expiresAt));
+  const formattedExpiration = formatDateTime(
+    session.expiresAt,
+    session.timezone,
+    "short",
+    "short",
+    ", ",
+  );
 
   return (
     <section className="flex flex-col gap-8 lg:flex-row">

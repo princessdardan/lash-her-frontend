@@ -66,10 +66,13 @@ test("booking flow hands off to the dedicated payment page before provider confi
   const apiRequests = collectApiRequests(page);
   const forbiddenPaymentHosts = collectForbiddenPaymentHosts(page);
   const holdRequests: Array<Record<string, unknown>> = [];
+  let availabilityOfferingId: string | null = null;
 
   await page.route("**/api/booking/availability**", async (route) => {
     const url = new URL(route.request().url());
-    expect(url.searchParams.get("service")).toBe(SERVICE_SLUG);
+    // The offering-backed booking flow requests availability by offering id.
+    availabilityOfferingId = url.searchParams.get("offeringId");
+    expect(availabilityOfferingId).toBeTruthy();
 
     await route.fulfill({
       status: 200,
@@ -144,10 +147,11 @@ test("booking flow hands off to the dedicated payment page before provider confi
 
   expect(holdRequests).toEqual([
     expect.objectContaining({
-      serviceSlug: SERVICE_SLUG,
+      offeringId: availabilityOfferingId,
       start: SLOT_START,
     }),
   ]);
+  expect(holdRequests[0]?.serviceSlug).toBeUndefined();
   expect(holdRequests[0]?.name).toBeUndefined();
   expect(holdRequests[0]?.email).toBeUndefined();
   expect(holdRequests[0]?.phone).toBeUndefined();
@@ -185,7 +189,11 @@ test("public Square config endpoint exposes only allowed keys", async ({
     });
   });
 
-  await page.goto("/booking");
+  // Land on a stable page before probing the endpoint. "/booking" is a server
+  // redirect to the service catalog; evaluating the fetch mid-redirect aborts it
+  // on WebKit ("Load failed"), so navigate to the settled target directly.
+  await page.goto("/services");
+  await page.waitForLoadState("networkidle");
 
   const body = await page.evaluate(async () => {
     const response = await fetch("/api/booking/square/config", {

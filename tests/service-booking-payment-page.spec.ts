@@ -196,6 +196,11 @@ test("service booking redirects to dedicated payment page and mounts Square cont
     expect(body.policy.accepted).toBe(true);
     expect(body.sourceId).toBe("cnon:test");
     expect(body.verificationToken).toBe("verf:test");
+    // The stubbed tokenize records window.__squareVerificationDetails
+    // synchronously, just before this request. Defer the success response a beat
+    // so the test reads those details before the confirmation navigation tears
+    // down the page context (otherwise a fast confirm races the window read).
+    await new Promise((resolve) => setTimeout(resolve, 300));
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -306,7 +311,7 @@ test("service booking redirects to dedicated payment page and mounts Square cont
     await page.getByLabel(/Full Name/i).fill("Playwright Test");
     await page.getByLabel(/Email Address/i).fill("client@example.test");
     await page.getByLabel(/Phone Number/i).fill("5550100000");
-    await page.getByLabel(/Marketing/i).check();
+    await page.getByLabel(/receive occasional updates/i).check();
     await page
       .getByLabel(/I have read and agree to the no-show policy above/i)
       .check();
@@ -318,9 +323,7 @@ test("service booking redirects to dedicated payment page and mounts Square cont
     await expect(page.getByText(/ZIP/i)).toHaveCount(0);
 
     const verificationDetailsPromise = page
-      .waitForFunction(
-        () => window.__squareVerificationDetails ?? false,
-      )
+      .waitForFunction(() => window.__squareVerificationDetails ?? false)
       .then((handle) => handle.jsonValue());
 
     await Promise.all([

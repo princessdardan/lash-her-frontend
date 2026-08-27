@@ -1,5 +1,10 @@
 const CAD_FORMATTER = new Intl.NumberFormat("en-CA", {
   currency: "CAD",
+  // Force the narrow "$" symbol. WebKit's ICU renders en-CA CAD as "CA$" while
+  // Node's renders "$"; without pinning the display, server-rendered amounts
+  // mismatch on hydration in Safari/WebKit. narrowSymbol yields "$" on both, so
+  // the Node output is unchanged and hydration stays stable across browsers.
+  currencyDisplay: "narrowSymbol",
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
   style: "currency",
@@ -12,12 +17,18 @@ export function parseCad(value: number | string): number {
 }
 
 export function addCad(values: ReadonlyArray<number | string>): number {
-  const cents = values.reduce<number>((total, value) => total + parseCadToCents(value), 0);
+  const cents = values.reduce<number>(
+    (total, value) => total + parseCadToCents(value),
+    0,
+  );
 
   return centsToCad(cents);
 }
 
-export function multiplyCad(value: number | string, multiplier: number): number {
+export function multiplyCad(
+  value: number | string,
+  multiplier: number,
+): number {
   if (!Number.isInteger(multiplier) || multiplier < 0) {
     throw new Error(CAD_AMOUNT_ERROR);
   }
@@ -32,7 +43,10 @@ export function formatCad(value: number | string): string {
 function parseCadToCents(value: number | string): number {
   const normalized = normalizeCadValue(value);
   const [dollarsPart, centsPart = ""] = normalized.split(".");
-  const cents = Number.parseInt(`${dollarsPart}${centsPart.padEnd(2, "0")}`, 10);
+  const cents = Number.parseInt(
+    `${dollarsPart}${centsPart.padEnd(2, "0")}`,
+    10,
+  );
 
   if (!Number.isSafeInteger(cents)) {
     throw new Error(CAD_AMOUNT_ERROR);
