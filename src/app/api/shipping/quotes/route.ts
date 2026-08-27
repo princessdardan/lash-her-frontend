@@ -47,6 +47,20 @@ import {
 export const runtime = "nodejs";
 const SHIPPING_QUOTE_BODY_MAX_BYTES = 32_000;
 
+// A quote's TTL doubles as the reservation/payment lease: the primary payment
+// obligation's `expiresAt` is stamped from `quote.quoteExpiresAt` at order
+// creation, and it governs how long the buyer has to complete payment (the
+// pay-operation payability check, the obligation worker, and the commit-time
+// `quoteExpiresAt > now` freshness check all read it).
+//
+// Live carrier rates can move, so the live path keeps a short 15-minute window.
+// Flat rates are deterministic and cache-backed — the price does not change
+// while the buyer pays — so the flat path uses a more generous 30-minute window
+// (matching the manual-pickup reservation lease) so a slower payer is not
+// blocked at pay/commit by a rate-freshness clock that no longer applies.
+const LIVE_QUOTE_TTL_MS = 15 * 60_000;
+const FLAT_RATE_QUOTE_TTL_MS = 30 * 60_000;
+
 export async function GET(req: NextRequest): Promise<Response> {
   if (!isChitChatsCheckoutEnabled())
     return NextResponse.json(
@@ -305,7 +319,9 @@ async function createQuote(
       cacheEntry,
     });
     const flatPublicReference = `lhq-${nanoid(14)}`;
-    const flatExpiresAt = new Date(preparedAt.getTime() + 15 * 60_000);
+    const flatExpiresAt = new Date(
+      preparedAt.getTime() + FLAT_RATE_QUOTE_TTL_MS,
+    );
     const { shipment, quoteToken } = await createFlatRateQuote({
       publicReference: flatPublicReference,
       quoteFingerprint,
@@ -336,7 +352,7 @@ async function createQuote(
   }
 
   const publicReference = `lhq-${nanoid(14)}`;
-  const expiresAt = new Date(preparedAt.getTime() + 15 * 60_000);
+  const expiresAt = new Date(preparedAt.getTime() + LIVE_QUOTE_TTL_MS);
   const { shipment, operation, quoteToken } = await createQuoteOperation({
     publicReference,
     quoteFingerprint,

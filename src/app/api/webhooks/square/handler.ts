@@ -8,6 +8,7 @@ import {
   type NoShowChargeFinalizerResult,
 } from "@/lib/booking/payments/service-no-show-charge-finalizer";
 import {
+  diagnoseSquareWebhookSignatureFailure,
   getSquareWebhookHeaders,
   parseVerifiedSquareWebhook,
   verifySquareWebhookSignature,
@@ -303,6 +304,46 @@ export const defaultDependencies: SquareWebhookDependencies = {
 
 export const POST = createSquareWebhookPostHandler(defaultDependencies);
 
+/**
+ * Reconstruct the URLs a Square webhook could have been posted to, normalized to
+ * `origin + pathname` (Square's notification URL carries no query). Used only to
+ * classify a signature failure (see diagnoseSquareWebhookSignatureFailure); the
+ * Host / X-Forwarded-* headers are attacker-controllable and never gate
+ * acceptance.
+ */
+function buildSquareWebhookRequestUrlCandidates(req: Request): string[] {
+  const candidates = new Set<string>();
+  const addCandidate = (value: string) => {
+    try {
+      const url = new URL(value);
+      candidates.add(`${url.origin}${url.pathname}`);
+    } catch {
+      // Ignore a malformed host/proto header combination.
+    }
+  };
+
+  let pathname = "/api/webhooks/square";
+  try {
+    const parsed = new URL(req.url);
+    pathname = parsed.pathname;
+    addCandidate(`${parsed.origin}${parsed.pathname}`);
+  } catch {
+    // req.url should always parse; fall back to the known route pathname.
+  }
+
+  const proto =
+    req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() || "https";
+  const forwardedHost = req.headers
+    .get("x-forwarded-host")
+    ?.split(",")[0]
+    ?.trim();
+  const host = req.headers.get("host")?.trim();
+  if (forwardedHost) addCandidate(`${proto}://${forwardedHost}${pathname}`);
+  if (host) addCandidate(`${proto}://${host}${pathname}`);
+
+  return [...candidates];
+}
+
 export function createSquareWebhookPostHandler(
   dependencies: SquareWebhookDependencies,
 ): (req: Request) => Promise<Response> {
@@ -330,7 +371,32 @@ export function createSquareWebhookPostHandler(
     });
 
     if (!isValidSignature) {
-      console.warn("[square-webhook] Invalid signature");
+      // A signature failure is normally a forged/corrupt request. But because
+      // Square signs `notificationUrl + body`, a configured URL that doesn't
+      // match the subscription's URL fails EVERY event identically — a silent
+      // 401 storm that loses the whole capture/confirm backstop. Classify the
+      // failure so that specific misconfiguration is loud and actionable rather
+      // than indistinguishable from a bad signature. (Diagnostic only — the
+      // request-derived URLs are attacker-controllable, so we still reject.)
+      const requestUrlCandidates = buildSquareWebhookRequestUrlCandidates(req);
+      const diagnosis = diagnoseSquareWebhookSignatureFailure({
+        configuredNotificationUrl: env.notificationUrl,
+        candidateRequestUrls: requestUrlCandidates,
+        rawBody,
+        signature: headers.signature,
+        signatureKey: env.webhookSignatureKey,
+      });
+      if (diagnosis === "configured_url_mismatch") {
+        console.error(
+          "[square-webhook] Signature rejected because the configured notificationUrl does not match the request URL — the signing key is correct, so every Square event is being dropped. Update the Square webhook URL env to match the subscription.",
+          {
+            configuredNotificationUrl: env.notificationUrl,
+            requestUrlCandidates,
+          },
+        );
+      } else {
+        console.warn("[square-webhook] Invalid signature");
+      }
       return new Response(null, { status: 401 });
     }
 

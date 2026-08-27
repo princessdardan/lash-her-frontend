@@ -51,6 +51,51 @@ export function verifySquareWebhookSignature(input: {
   return timingSafeStringEqual(expectedSignature, input.signature.trim());
 }
 
+export type SquareSignatureFailureDiagnosis =
+  | "configured_url_mismatch"
+  | "key_or_payload_mismatch";
+
+/**
+ * Classify a failed Square webhook signature so a systemic misconfiguration is
+ * not silently indistinguishable from a forged or corrupt request.
+ *
+ * Square signs `notificationUrl + body` with the subscription's signing key, so
+ * if the configured `notificationUrl` does not byte-for-byte match the URL
+ * Square actually POSTs to, EVERY event fails verification — the same 401 an
+ * attacker or a truncated body would produce. When the identical signature
+ * verifies against a URL the request could have arrived on, the signing key and
+ * body are correct and only the configured URL is wrong: an actionable
+ * `configured_url_mismatch` worth a loud operator alert.
+ *
+ * The candidate request URLs are reconstructed from attacker-controllable
+ * headers (Host / X-Forwarded-*), so this result is for OPERATOR DIAGNOSTICS
+ * ONLY and must never gate acceptance — the caller still rejects a failed
+ * signature. Returning `configured_url_mismatch` proves nothing about the
+ * request's authenticity; it only points at the env that needs fixing.
+ */
+export function diagnoseSquareWebhookSignatureFailure(input: {
+  configuredNotificationUrl: string;
+  candidateRequestUrls: readonly string[];
+  rawBody: string;
+  signature: string;
+  signatureKey: string;
+}): SquareSignatureFailureDiagnosis {
+  for (const candidate of input.candidateRequestUrls) {
+    if (candidate === input.configuredNotificationUrl) continue;
+    if (
+      verifySquareWebhookSignature({
+        notificationUrl: candidate,
+        rawBody: input.rawBody,
+        signature: input.signature,
+        signatureKey: input.signatureKey,
+      })
+    ) {
+      return "configured_url_mismatch";
+    }
+  }
+  return "key_or_payload_mismatch";
+}
+
 export function parseVerifiedSquareWebhook(
   rawBody: string,
 ): VerifiedSquareWebhookEvent {
