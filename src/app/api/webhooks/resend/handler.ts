@@ -1,9 +1,21 @@
 import type { WebhookEventPayload } from "resend";
 
 import { recordResendUnsubscribe } from "@/lib/marketing-contact/marketing-contact-store";
+import { readBoundedTextBody } from "@/lib/security/bounded-text-body";
 import { getResendClient } from "@/lib/transactional-email";
 
 export const runtime = "nodejs";
+
+/**
+ * Hard cap on the raw webhook body we will buffer and verify. Svix signs
+ * `${id}.${timestamp}.${body}`, so verification must run over the exact raw
+ * bytes and cannot parse first. Real Resend webhook events are a few KB; 64 KB
+ * is far above any legitimate event while keeping an unauthenticated caller from
+ * making us buffer and HMAC an unbounded body. An oversized body is rejected
+ * before any signature work — see the bounded read in
+ * createResendWebhookPostHandler.
+ */
+const RESEND_WEBHOOK_BODY_MAX_BYTES = 64_000;
 
 interface ResendWebhookHeaders {
   id: string;
@@ -50,7 +62,21 @@ export function createResendWebhookPostHandler(
       return new Response(null, { status: 401 });
     }
 
-    const payload = await req.text();
+    // Read the raw body with a hard byte cap BEFORE any signature verification.
+    // Svix verifies the HMAC over the exact raw bytes, so we cannot parse first;
+    // a bounded raw-text read rejects an oversized body (413) without hashing it.
+    const boundedBody = await readBoundedTextBody(
+      req,
+      RESEND_WEBHOOK_BODY_MAX_BYTES,
+    );
+    if (!boundedBody.ok) {
+      dependencies.logWarn(
+        "[resend-webhook] Rejected webhook body over the size limit before signature verification",
+        { maxBytes: RESEND_WEBHOOK_BODY_MAX_BYTES },
+      );
+      return new Response(null, { status: 413 });
+    }
+    const payload = boundedBody.value;
     let event: WebhookEventPayload;
 
     try {
@@ -71,10 +97,16 @@ export function createResendWebhookPostHandler(
           resendContactId: event.data.id,
         });
       } catch (error) {
-        dependencies.logError("[resend-webhook] Unsubscribe persistence failed", {
-          error: error instanceof Error ? error.message : "Unknown unsubscribe persistence error",
-          resendContactId: event.data.id,
-        });
+        dependencies.logError(
+          "[resend-webhook] Unsubscribe persistence failed",
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : "Unknown unsubscribe persistence error",
+            resendContactId: event.data.id,
+          },
+        );
         return new Response(null, { status: 503 });
       }
     }
@@ -83,7 +115,9 @@ export function createResendWebhookPostHandler(
   };
 }
 
-function getResendWebhookHeaders(headers: Headers): ResendWebhookHeaders | null {
+function getResendWebhookHeaders(
+  headers: Headers,
+): ResendWebhookHeaders | null {
   const id = headers.get("svix-id");
   const timestamp = headers.get("svix-timestamp");
   const signature = headers.get("svix-signature");

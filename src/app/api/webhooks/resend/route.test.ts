@@ -120,6 +120,31 @@ test("Resend webhook route rejects invalid signatures before unsubscribe persist
   `);
 });
 
+test("Resend webhook route rejects an oversized body before signature verification", () => {
+  runResendWebhookScenario(`
+    const { handler, verifiedEvents, unsubscribeCalls, warnings } = createHandler({
+      verifyEvent: () => createContactUpdatedEvent(),
+    });
+
+    // A body padded past the 64 KB cap, sent with valid Svix headers so it
+    // reaches the body read. A 413 with no verifyEvent call proves the size cap
+    // precedes any signature/HMAC work.
+    const oversizedBody =
+      '{"type":"contact.updated","padding":"' + "x".repeat(70000) + '"}';
+    assert.ok(oversizedBody.length > 64000);
+
+    const response = await handler(createSignedRequest(oversizedBody));
+
+    assert.equal(response.status, 413);
+    assert.equal(verifiedEvents.length, 0);
+    assert.equal(unsubscribeCalls.length, 0);
+    assert.equal(
+      warnings[0][0],
+      "[resend-webhook] Rejected webhook body over the size limit before signature verification",
+    );
+  `);
+});
+
 test("Resend webhook route records contact.updated unsubscribe events", () => {
   runResendWebhookScenario(`
     const { handler, unsubscribeCalls, verifiedEvents } = createHandler({
