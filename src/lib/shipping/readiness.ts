@@ -216,10 +216,15 @@ export async function assertProductTaxPolicyApprovalInTransaction(
   expected: ProductTaxPolicyApprovalSnapshot,
   _now = new Date(),
 ): Promise<ProductTaxPolicyApprovalSnapshot> {
-  if (
-    expected.version !== PRODUCT_TAX_POLICY_VERSION ||
-    !taxCoverageComplete(expected.coverage)
-  ) {
+  // Tax-policy VERSION drift between quote and commit no longer blocks the sale
+  // (owner directive, mirroring the PR #32 shipping-policy decoupling): a
+  // mid-flight PRODUCT_TAX_POLICY_VERSION bump must not reject an in-flight
+  // checkout, manual fulfillment, or address change. Tax is recomputed at the
+  // CURRENT rate when the order commits (calculateProductTax), so the charge is
+  // always correct regardless of the snapshot's version. The substantive
+  // integrity gate — that a COMPLETE, approved tax policy was in force when the
+  // snapshot was issued — is preserved via the coverage check.
+  if (!taxCoverageComplete(expected.coverage)) {
     throw new CheckoutNotReadyError(["product_tax_policy_not_approved"]);
   }
   return configuredTaxPolicyApproval();

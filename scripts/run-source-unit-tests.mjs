@@ -34,6 +34,7 @@ const SERVER_ONLY_TEST_FILES = new Set([
   "src/lib/shipping/policy-mode.test.ts",
   "src/lib/shipping/policy-worker.test.ts",
   "src/lib/shipping/prepare-quote.test.ts",
+  "src/lib/shipping/product-tax-policy-drift.test.ts",
   "src/lib/shipping/quote-token.test.ts",
   "src/lib/shipping/shipment-store.test.ts",
   "src/lib/structured-data.test.ts",

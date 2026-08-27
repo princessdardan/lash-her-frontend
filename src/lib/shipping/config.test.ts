@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   CHITCHATS_REGIONS,
   getChitChatsOperationalIdentity,
+  getProductCheckoutAvailability,
   parseChitChatsRegion,
 } from "./config";
 
@@ -40,6 +41,59 @@ test("operational identity keeps region out of provider credentials", () => {
     restore("CHITCHATS_ENVIRONMENT", previous.environment);
     restore("CHITCHATS_REGION", previous.region);
     restore("VERCEL_ENV", previous.vercelEnvironment);
+  }
+});
+
+test("product checkout availability requires Square commerce for both modes", () => {
+  const keys = [
+    "SQUARE_COMMERCE_ENABLED",
+    "CHITCHATS_SHIPPING_ENABLED",
+    "CHITCHATS_CHECKOUT_ENABLED",
+    "MANUAL_PRODUCT_CHECKOUT_ENABLED",
+  ] as const;
+  const previous = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  const set = (values: Partial<Record<(typeof keys)[number], string>>) => {
+    for (const k of keys) restore(k, values[k]);
+  };
+  try {
+    // Every flag on -> both modes available.
+    set({
+      SQUARE_COMMERCE_ENABLED: "true",
+      CHITCHATS_SHIPPING_ENABLED: "true",
+      CHITCHATS_CHECKOUT_ENABLED: "true",
+      MANUAL_PRODUCT_CHECKOUT_ENABLED: "true",
+    });
+    assert.deepEqual(getProductCheckoutAvailability(), {
+      automated: true,
+      manual: true,
+    });
+
+    // Square off disables BOTH modes even though the fulfillment flags are on:
+    // both charge through Square, so the buy button must not look active.
+    set({
+      SQUARE_COMMERCE_ENABLED: "false",
+      CHITCHATS_SHIPPING_ENABLED: "true",
+      CHITCHATS_CHECKOUT_ENABLED: "true",
+      MANUAL_PRODUCT_CHECKOUT_ENABLED: "true",
+    });
+    assert.deepEqual(getProductCheckoutAvailability(), {
+      automated: false,
+      manual: false,
+    });
+
+    // Square on but Chit Chats off -> only manual pickup is available.
+    set({
+      SQUARE_COMMERCE_ENABLED: "true",
+      CHITCHATS_SHIPPING_ENABLED: "false",
+      CHITCHATS_CHECKOUT_ENABLED: "false",
+      MANUAL_PRODUCT_CHECKOUT_ENABLED: "true",
+    });
+    assert.deepEqual(getProductCheckoutAvailability(), {
+      automated: false,
+      manual: true,
+    });
+  } finally {
+    for (const k of keys) restore(k, previous[k]);
   }
 });
 

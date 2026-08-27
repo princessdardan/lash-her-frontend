@@ -1,5 +1,7 @@
 import "server-only";
 
+import { isSquareCommerceCheckoutEnabled } from "@/lib/env/private-checkout";
+
 export const CHITCHATS_REGIONS = [
   "british_columbia",
   "alberta_saskatchewan",
@@ -85,11 +87,18 @@ export interface ProductCheckoutAvailability {
  * Whether each product checkout mode is currently enabled. Storefront buy
  * controls consult this so they don't present active CTAs that dead-end at a
  * 503 when checkout is disabled.
+ *
+ * Both modes ultimately charge the customer through Square Web Payments, so both
+ * require `SQUARE_COMMERCE_ENABLED` in addition to their fulfillment flag —
+ * otherwise the buy button would look active but dead-end at the pay step. This
+ * is the single server-side availability signal shared by the product card, the
+ * product detail controls, and (via fail-closed pay button) checkout.
  */
 export function getProductCheckoutAvailability(): ProductCheckoutAvailability {
+  const squareEnabled = isSquareCommerceCheckoutEnabled();
   return {
-    automated: isChitChatsCheckoutEnabled(),
-    manual: isManualProductCheckoutEnabled(),
+    automated: squareEnabled && isChitChatsCheckoutEnabled(),
+    manual: squareEnabled && isManualProductCheckoutEnabled(),
   };
 }
 
