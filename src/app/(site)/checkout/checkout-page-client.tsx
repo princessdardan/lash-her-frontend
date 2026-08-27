@@ -1171,23 +1171,11 @@ function CheckoutContent({
                   <section className="soft-panel bg-lh-white p-6 md:p-8">
                     {requiresLiveShippingQuote ? (
                       <div className="mb-8">
-                        <div className="flex items-center justify-between gap-3">
-                          <StepHeading
-                            index={3}
-                            title="Delivery method"
-                            state="active"
-                          />
-                          <button
-                            type="button"
-                            onClick={loadShippingRates}
-                            disabled={isLoadingShippingRates}
-                            className="font-body text-sm font-medium text-lh-primary transition-colors hover:text-lh-accent disabled:opacity-50"
-                          >
-                            {isLoadingShippingRates
-                              ? "Recalculating…"
-                              : "Recalculate"}
-                          </button>
-                        </div>
+                        <StepHeading
+                          index={3}
+                          title="Delivery method"
+                          state="active"
+                        />
 
                         {shippingQuoteError ? (
                           <p
