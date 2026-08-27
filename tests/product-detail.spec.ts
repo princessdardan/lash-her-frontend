@@ -291,22 +291,93 @@ test.describe("Product Detail Page", () => {
   test("should send only the Buy Now selection in the checkout request", async ({
     page,
   }) => {
-    const hrefs = await getProductDetailHrefs(page);
-    if (hrefs.length === 0) {
-      test.skip(true, "No product detail pages were available to open");
-      return;
-    }
-
     let checkoutPayload: unknown;
+
+    // Serve a deterministic stub of the Square Web Payments SDK so the card form
+    // mounts and tokenizes without contacting Square (mirrors
+    // tests/service-booking-payment-page.spec.ts). The commerce config endpoint
+    // and the CDN script are both intercepted.
+    await page.route("**/api/checkout/square/config", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          applicationId: "sandbox-sq0idb-e2e",
+          environment: "sandbox",
+          locationId: "LOC_E2E",
+          locale: "en-CA",
+          scriptUrl: "https://sandbox.web.squarecdn.com/v1/square.js",
+        }),
+      });
+    });
+    await page.route(
+      "**/sandbox.web.squarecdn.com/v1/square.js",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/javascript",
+          body: `
+            window.Square = {
+              payments: function () {
+                return {
+                  setLocale: async function () {},
+                  card: async function () {
+                    return {
+                      attach: async function (selector) {
+                        if (document.querySelector(selector) === null) {
+                          throw new Error("Missing " + selector);
+                        }
+                      },
+                      destroy: async function () {},
+                      tokenize: async function () {
+                        return {
+                          status: "OK",
+                          token: "cnon:card-nonce-ok",
+                          verificationToken: "verf:ok",
+                        };
+                      },
+                    };
+                  },
+                };
+              },
+            };
+          `,
+        });
+      },
+    );
+
     await page.route("**/api/checkout", async (route) => {
       checkoutPayload = route.request().postDataJSON();
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ checkoutToken: "mock-checkout-token" }),
+        body: JSON.stringify({ orderId: "e2e-buy-now-order", status: "paid" }),
       });
     });
 
+    // Dismiss the marketing popup and record cookie consent so neither overlay
+    // intercepts clicks during the flow.
+    await page.context().addCookies([
+      {
+        domain: "localhost",
+        name: "lh_contact_popup_dismissed",
+        path: "/",
+        value: "true",
+      },
+    ]);
+    await page.addInitScript(() => {
+      window.localStorage.setItem(
+        "lh_cookie_consent",
+        JSON.stringify({
+          analytics: false,
+          decidedAt: "2030-01-01T00:00:00.000Z",
+          required: true,
+          version: 1,
+        }),
+      );
+    });
+
+    // Seed a distinct saved cart that Buy Now must neither send nor overwrite.
     await page.addInitScript((key) => {
       const now = Date.now();
       window.localStorage.setItem(
@@ -320,43 +391,45 @@ test.describe("Product Detail Page", () => {
       );
     }, PRODUCT_CART_STORAGE_KEY);
 
-    await page.goto(hrefs[0]);
+    // Buy Now the studio-pickup fixture product. Pickup skips the live shipping
+    // quote, so the two-step checkout reaches POST /api/checkout deterministically
+    // while still exercising the real buy-now payload isolation.
+    await page.goto("/products/commerce-e2e-manual");
     await page.waitForLoadState("networkidle");
 
     const main = page.locator("main");
-    const buyNow = main.getByRole("button", { name: /buy now/i }).first();
-    if ((await buyNow.count()) === 0) {
-      test.skip(
-        true,
-        "No buy now button was available on the product detail page",
-      );
-      return;
-    }
-    if (await buyNow.isDisabled()) await selectRequiredProductOptions(page);
-
+    const buyNow = main
+      .getByRole("button", { name: /buy now|arrange pickup/i })
+      .first();
     await expect(buyNow).toBeEnabled();
     await buyNow.click();
 
     await expect(page).toHaveURL(/\/checkout\?buyNow=1/);
     await page.getByLabel(/^Name$/i).fill("Checkout Tester");
     await page.getByLabel(/^Email$/i).fill("checkout-tester@example.com");
-    await page.getByLabel(/^Address$/i).fill("646 Oakwood Avenue");
-    await page.getByLabel(/^City$/i).fill("Toronto");
-    await page.getByLabel(/Province/i).fill("Ontario");
-    await page.getByLabel(/Postal code/i).fill("M6E 2Y4");
-    await page.getByLabel(/^Country$/i).selectOption("CA");
 
+    await page.getByRole("button", { name: "Continue to payment" }).click();
+
+    await page
+      .getByRole("checkbox", { name: /pickup cancellation policy/i })
+      .check();
     await page.getByRole("checkbox", { name: /Terms and Conditions/i }).check();
 
-    const checkout = page.getByRole("button", { name: /checkout/i });
-    await expect(checkout).toBeEnabled();
-    await checkout.click();
+    const pay = page.getByRole("button", { name: /^Pay securely$/i });
+    await expect(pay).toBeEnabled();
+
+    const checkoutRequest = page.waitForRequest("**/api/checkout");
+    await pay.click();
+    await checkoutRequest;
 
     expect(checkoutPayload).toBeDefined();
     const payload = checkoutPayload as {
+      fulfillmentMode?: string;
       items?: Array<{ productId: string; quantity: number }>;
     };
+    expect(payload.fulfillmentMode).toBe("manual_pickup");
     expect(payload.items).toHaveLength(1);
+    expect(payload.items?.[0]?.productId).toBe("commerce-e2e-manual");
     expect(payload.items?.[0]?.productId).not.toBe("cart-only-product");
 
     const storedCart = await readStoredCartItems(page);
@@ -416,13 +489,24 @@ test.describe("Product Detail Page", () => {
     await buyNow.click();
     await expect(page).toHaveURL(/\/checkout\?buyNow=1/);
 
-    await page.goto("/products");
+    // Return to a product detail page to reopen the saved cart. The catalog
+    // route intentionally hides the header cart control, and at this viewport
+    // the cart trigger lives behind the mobile navigation, so reveal it the same
+    // way the persistence test above does.
+    await page.goto(hrefs[0]);
     await page.waitForLoadState("networkidle");
 
-    await page
+    let cartButton = page
       .getByRole("button", { name: /open cart with/i })
-      .first()
-      .click();
+      .first();
+    if ((await cartButton.count()) === 0) {
+      await page.getByRole("button", { name: /toggle menu/i }).click();
+      cartButton = page
+        .getByRole("button", { name: /open cart with/i })
+        .first();
+    }
+    await expect(cartButton).toBeVisible();
+    await cartButton.click();
     const cartAside = page.getByRole("dialog", { name: /your cart/i });
     await expect(cartAside).toBeVisible();
     await expect(cartAside).toContainText(/your cart/i);

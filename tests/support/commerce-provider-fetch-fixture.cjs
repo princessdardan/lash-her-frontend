@@ -3,6 +3,14 @@
 const FIXTURE_FLAG = "COMMERCE_E2E_PROVIDER_FIXTURE";
 const CHITCHATS_HOST = "staging.chitchats.com";
 const RESEND_HOST = "api.resend.com";
+// Square's real API hosts must never be reached from an E2E run. Product and
+// service-booking charges are mocked at the browser (page.route), so any server
+// -side call to these hosts is an unintended escape; refuse it loudly instead of
+// letting deterministic fixtures leak into Square's sandbox/production.
+const SQUARE_API_HOSTS = new Set([
+  "connect.squareup.com",
+  "connect.squareupsandbox.com",
+]);
 const originalFetch = globalThis.fetch;
 let shipmentSequence = 0;
 const shipments = new Map();
@@ -17,6 +25,15 @@ globalThis.fetch = async function commerceProviderFixtureFetch(input, init) {
   }
   const request = new Request(input, init);
   const url = new URL(request.url);
+  if (SQUARE_API_HOSTS.has(url.host)) {
+    return json(
+      {
+        error:
+          "E2E commerce fixture refused an outbound Square API call; mock the charge/confirm response at the browser instead.",
+      },
+      502,
+    );
+  }
   if (url.origin === "https://e2e-redis.invalid" && request.method === "POST") {
     return handleRedis(request, url);
   }

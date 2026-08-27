@@ -300,6 +300,10 @@ test.describe("employee calendar self-service", () => {
     const page = await newAuthenticatedPage(browser, fixture.ownerStorageState);
     await page.goto("/admin/calendar-connections");
 
+    // Per-account assignment controls live inside the collapsed "Advanced
+    // account management" disclosure; expand it before inspecting them.
+    await page.locator("details#calendar-account-management > summary").click();
+
     const accountCard = page.locator("article").filter({
       hasText: fixture.employeeConnectionEmail,
     });
@@ -315,9 +319,9 @@ test.describe("employee calendar self-service", () => {
     ).toHaveCount(0);
     await expect(
       accountCard.getByText(
-        new RegExp(
-          `Move the booking destination for ${fixture.resourceName} before disabling this account`,
-        ),
+        // Names the resource that currently receives bookings (the employee's
+        // promoted destination), so match the message rather than a fixed name.
+        /Move the booking destination for .+ before disabling this account/,
       ),
     ).toBeVisible();
     await expect(

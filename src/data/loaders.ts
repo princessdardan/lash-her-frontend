@@ -445,6 +445,12 @@ async function getMetaData(): Promise<TMetaData | null> {
 }
 
 async function getProductsPageData(): Promise<TProductsPage | null> {
+  // The commerce E2E catalog fixture drives a deterministic storefront that must
+  // not depend on live Sanity editorial content. Mirror the other catalog
+  // loaders (getProducts / getProductBySlug / getAllProductSlugs) by bypassing
+  // Sanity: returning null renders the shell's built-in "Catalog" fallback
+  // heading, keeping the catalog specs stable against editorial title drift.
+  if (getCommerceE2eCatalogFixture()) return null;
   const query = groq`*[_type == "productsPage"][0]{
     title,
     eyebrow,
