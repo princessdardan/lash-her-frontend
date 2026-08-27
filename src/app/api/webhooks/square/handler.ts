@@ -23,8 +23,19 @@ import type {
   SquareCommerceOrderKind,
   SquareCommerceRecoveryResult,
 } from "@/lib/commerce/square-commerce-webhook-recovery";
+import { readBoundedTextBody } from "@/lib/security/bounded-text-body";
 
 export const runtime = "nodejs";
+
+/**
+ * Hard cap on the raw webhook body we will buffer and HMAC. Real Square webhook
+ * payloads are a few KB; 64 KB is far above any legitimate event while bounding
+ * the signature-verification cost (the signature-failure diagnostic re-hashes
+ * the body against a handful of reconstructed candidate URLs, so the hashing
+ * work scales with body size). An oversized body is rejected before any HMAC
+ * work — see the bounded read in createSquareWebhookPostHandler.
+ */
+const SQUARE_WEBHOOK_BODY_MAX_BYTES = 64_000;
 
 const SQUARE_INVOICE_PAID_EVENT_TYPES = ["invoice.payment_made"] as const;
 const SERVICE_BOOKING_RECONCILIATION_EVENT_TYPES = [
@@ -362,7 +373,21 @@ export function createSquareWebhookPostHandler(
       return new Response(null, { status: 401 });
     }
 
-    const rawBody = await req.text();
+    // Read the raw body with a hard byte cap BEFORE any signature/HMAC work.
+    // The HMAC must cover the exact raw bytes, so we cannot parse first; a
+    // bounded raw-text read rejects an oversized body (413) without hashing it.
+    const boundedBody = await readBoundedTextBody(
+      req,
+      SQUARE_WEBHOOK_BODY_MAX_BYTES,
+    );
+    if (!boundedBody.ok) {
+      console.warn(
+        "[square-webhook] Rejected webhook body over the size limit before signature verification",
+        { maxBytes: SQUARE_WEBHOOK_BODY_MAX_BYTES },
+      );
+      return new Response(null, { status: 413 });
+    }
+    const rawBody = boundedBody.value;
     const isValidSignature = verifySquareWebhookSignature({
       notificationUrl: env.notificationUrl,
       rawBody,
