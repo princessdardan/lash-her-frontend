@@ -4,11 +4,6 @@ import { createHash } from "node:crypto";
 
 import { eq, sql } from "drizzle-orm";
 
-import {
-  COMMERCE_E2E_FDA_REQUIREMENTS_VERSION,
-  COMMERCE_E2E_TARIFF_SCHEMA_VERSION,
-  COMMERCE_E2E_US_CONTRACT_VERSION,
-} from "@/data/commerce-e2e-catalog-fixture";
 import { closePrivateDbPool, getPrivateDb } from "@/lib/private-db/client";
 import {
   adminUsers,
@@ -18,27 +13,15 @@ import {
   bookingResources,
   bookingServiceOfferings,
   bookingServices,
-  fulfillmentPolicyVersions,
-  fulfillmentProviderCertifications,
   shippingCalendarVersions,
   shippingPackageProfiles,
-  shippingPolicySettings,
 } from "@/lib/private-db/schema";
 import {
   expectedOntarioClosureDates,
   type ShippingCalendarClosure,
 } from "@/lib/shipping/calendar-validation";
 
-// Provider-certification effective window for the E2E fixtures. These bound the
-// Chit Chats Canada + U.S. DDU certification rows the enabled checkout suite
-// relies on; the fixture is invalid (and the seed refuses to run) once `now`
-// passes `usContractValidUntil`.
-const CERTIFICATION_EFFECTIVE_FROM = "2026-08-01T00:00:00.000Z";
-const CERTIFICATION_EFFECTIVE_UNTIL = "2027-08-01T00:00:00.000Z";
-
 const OWNER_EMAIL = "commerce-e2e-owner@example.invalid";
-const POLICY_VERSION = "commerce-e2e-owner-policy-v1";
-const US_POSTAGE_TYPE = "chit_chats_us_edge";
 
 // Fixed identifiers for the deterministic "lash-fill" service-booking offering
 // the booking E2E specs rely on. Stable UUIDs keep the seed idempotent-by-intent
@@ -56,11 +39,6 @@ async function main(): Promise<void> {
   assertIsolatedFixtureDatabase();
   const now = new Date();
   const attestedAt = new Date(now.getTime() - 60_000);
-  const certifiedAt = new Date(CERTIFICATION_EFFECTIVE_FROM);
-  const usContractValidUntil = new Date(CERTIFICATION_EFFECTIVE_UNTIL);
-  if (now >= usContractValidUntil) {
-    throw new Error("Commerce E2E U.S. certification fixture has expired");
-  }
   const coverageStartsOn = now.toISOString().slice(0, 10);
   const coverageEndsOn = new Date(
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 22, now.getUTCDate()),
@@ -94,30 +72,6 @@ async function main(): Promise<void> {
       })
       .returning({ id: adminUsers.id });
 
-    await tx.insert(fulfillmentPolicyVersions).values({
-      attestationEvidenceReference: "e2e://policy/owner-only-v1",
-      attestedByAdminUserId: owner.id,
-      effectiveAt: attestedAt,
-      operationsAttestedAt: attestedAt,
-      ownerName: "Nataliea Lavoie",
-      policySnapshot: {
-        ownerOnlyReview: true,
-        fixture: true,
-        p10TerminationNoticeDays: 350,
-        p10DefaultExecutionDays: 360,
-        p10HardCapDays: 365,
-        p10ExecutionRationale:
-          "five-day provider execution and reconciliation buffer before unconditional PII redaction",
-      },
-      privacyLegalAttestedAt: attestedAt,
-      securityAttestedAt: attestedAt,
-      status: "effective",
-      version: POLICY_VERSION,
-    });
-    await tx
-      .update(shippingPolicySettings)
-      .set({ policyVersion: POLICY_VERSION, updatedAt: now })
-      .where(eq(shippingPolicySettings.singletonKey, "default"));
     await tx.insert(shippingPackageProfiles).values([
       {
         acceptsRigid: true,
@@ -172,66 +126,6 @@ async function main(): Promise<void> {
       timezone: "America/Toronto",
       version: "commerce-e2e-calendar-v1",
     });
-
-    await tx.insert(fulfillmentProviderCertifications).values([
-      {
-        certifiedAt,
-        certificationAction: "certify_fulfillment_provider",
-        certificationEvidenceHash: evidenceHash(
-          "e2e-chitchats-canada-certification-v1",
-        ),
-        certificationEvidenceVersion: "e2e-provider-certification-v1",
-        certificationStepUpAuthenticatedAt: certifiedAt,
-        certifiedByAdminUserId: owner.id,
-        certifiedByOwnerName: "Nataliea Lavoie",
-        environment: "staging",
-        evidenceReference: "e2e://chitchats/canada-v1",
-        provider: "chitchats",
-        scope: "canada",
-        validUntil: usContractValidUntil,
-        version: "commerce-e2e-chitchats-canada-v1",
-      },
-      {
-        certifiedAt,
-        certificationAction: "certify_fulfillment_provider",
-        certificationEvidenceHash: evidenceHash(
-          "e2e-chitchats-us-certification-v1",
-        ),
-        certificationEvidenceVersion: "e2e-provider-certification-v1",
-        certificationStepUpAuthenticatedAt: certifiedAt,
-        certifiedByAdminUserId: owner.id,
-        certifiedByOwnerName: "Nataliea Lavoie",
-        contractSnapshot: {
-          allowedServiceCodes: [US_POSTAGE_TYPE],
-          disclosure: {
-            text: "U.S. orders ship DDU. Duties, taxes, and brokerage may be collected from the recipient on delivery.",
-            version: "commerce-e2e-ddu-notice-v1",
-          },
-          effectiveFrom: certifiedAt.toISOString(),
-          effectiveUntil: usContractValidUntil.toISOString(),
-          evidenceReference: "e2e://chitchats/us-contract-v1",
-          fdaRequirements: {
-            mode: "required_when_applicable",
-            version: COMMERCE_E2E_FDA_REQUIREMENTS_VERSION,
-          },
-          importTerms: "DDU",
-          insuredRequired: true,
-          tariffMetadataSchema: {
-            additionalTariffDetails: "required_when_applicable",
-            fields: ["steel", "copper", "aluminum"],
-            version: COMMERCE_E2E_TARIFF_SCHEMA_VERSION,
-          },
-          trackedRequired: true,
-          version: COMMERCE_E2E_US_CONTRACT_VERSION,
-        },
-        environment: "staging",
-        evidenceReference: "e2e://chitchats/us-contract-v1",
-        provider: "chitchats",
-        scope: "us_shipping_contract",
-        validUntil: usContractValidUntil,
-        version: COMMERCE_E2E_US_CONTRACT_VERSION,
-      },
-    ]);
 
     // Deterministic public service-booking offering for the "lash-fill" service
     // slug the booking E2E specs exercise (booking flows + service-booking
