@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requirePermission } from "@/lib/admin/auth";
 import { recordAdminAuditBestEffort } from "@/lib/admin/audit-log";
 import { queueProductOrderRefundAllocations } from "@/lib/shipping/customer-refunds";
-import { assertShippingPolicyMutationAllowed } from "@/lib/shipping/policy";
+import { isSquareCommerceCheckoutEnabled } from "@/lib/env/private-checkout";
 import { assertConfiguredFulfillmentOwner } from "@/lib/shipping/configured-owner";
 
 export const runtime = "nodejs";
@@ -13,14 +13,11 @@ export async function POST(
 ): Promise<Response> {
   const actor = await requirePermission("payments:refund");
   await assertConfiguredFulfillmentOwner(actor.user.id);
-  try {
-    assertShippingPolicyMutationAllowed();
-  } catch {
+  if (!isSquareCommerceCheckoutEnabled())
     return NextResponse.json(
-      { error: "Shipping policy mutations require enforce mode" },
-      { status: 409 },
+      { error: "Square commerce refunds are not enabled" },
+      { status: 503 },
     );
-  }
   if (req.headers.get("origin") !== req.nextUrl.origin)
     return NextResponse.json(
       { error: "Invalid request origin" },
@@ -66,6 +63,8 @@ export async function POST(
     });
     const result = queued[0];
     if (!result) throw new Error("No refundable payment transaction was found");
+    // Durable reservation only: the queued Square refund(s) are executed by the
+    // shipping worker cron (runs every minute), not inline in this request.
     await recordAdminAuditBestEffort({
       action: "payments.product_refund",
       actor,

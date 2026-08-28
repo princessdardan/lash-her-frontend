@@ -18,7 +18,6 @@ import {
   PackageProfileValidationError,
   type PackageProfileFields,
 } from "@/lib/shipping/package-profiles";
-import { assertShippingPolicyConfigurationMutationAllowed } from "@/lib/shipping/policy";
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -35,7 +34,7 @@ type AuditActor = Parameters<typeof recordAdminAuditBestEffort>[0]["actor"];
 interface HandlerDependencies {
   audit: typeof recordAdminAuditBestEffort;
   requireConfiguredOwner: typeof assertConfiguredFulfillmentOwner;
-  requireConfigMutation: typeof assertShippingPolicyConfigurationMutationAllowed;
+  requireConfigMutation: () => void;
   requireManage: () => Promise<Actor>;
   requireStepUp: typeof requireRecentAdminAuthentication;
   createDraft: typeof createPackageProfileDraft;
@@ -47,7 +46,9 @@ interface HandlerDependencies {
 const dependencies: HandlerDependencies = {
   audit: recordAdminAuditBestEffort,
   requireConfiguredOwner: assertConfiguredFulfillmentOwner,
-  requireConfigMutation: assertShippingPolicyConfigurationMutationAllowed,
+  // Package-profile config is guarded by owner authentication + step-up; the
+  // former shipping-policy enforcement-mode gate was removed with that subsystem.
+  requireConfigMutation: () => undefined,
   requireManage: () => requirePermission("fulfillment:manage"),
   requireStepUp: requireRecentAdminAuthentication,
   createDraft: createPackageProfileDraft,

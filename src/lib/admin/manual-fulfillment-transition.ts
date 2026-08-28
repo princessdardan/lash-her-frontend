@@ -1,6 +1,5 @@
 export type ManualFulfillmentAction =
   | "approve_cancellation"
-  | "manual_shipping_agreement"
   | "manual_shipping_dispatch"
   | "pickup_complete";
 
@@ -42,23 +41,6 @@ export function getManualFulfillmentTransition(input: {
       eventStatus: "dispatched",
       method: "pickup_handoff",
       orderStatus: "dispatched",
-      trackingNumber: null,
-    };
-  }
-  if (input.action === "manual_shipping_agreement") {
-    if (
-      input.currentMode !== "manual_pickup" &&
-      input.currentMode !== "manual_shipping"
-    ) {
-      throw new Error(
-        "Shipping agreement is only valid for manual shipping orders",
-      );
-    }
-    return {
-      carrier: null,
-      eventStatus: "paid_pending_dispatch",
-      method: "manual_shipping",
-      orderStatus: "paid_pending_dispatch",
       trackingNumber: null,
     };
   }

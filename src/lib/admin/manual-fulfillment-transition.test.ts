@@ -54,26 +54,6 @@ test("manual dispatch requires carrier and tracking evidence", () => {
   );
 });
 
-test("a pickup order can record a separate manual shipping agreement", () => {
-  assert.deepEqual(
-    getManualFulfillmentTransition({
-      action: "manual_shipping_agreement",
-      carrier: "",
-      currentManualStatus: "paid_pending_dispatch",
-      currentMode: "manual_pickup",
-      currentPaymentStatus: "paid",
-      trackingNumber: "",
-    }),
-    {
-      carrier: null,
-      eventStatus: "paid_pending_dispatch",
-      method: "manual_shipping",
-      orderStatus: "paid_pending_dispatch",
-      trackingNumber: null,
-    },
-  );
-});
-
 test("cancellation locks paid fulfillment while refund allocations are pending", () => {
   assert.equal(
     getManualFulfillmentTransition({

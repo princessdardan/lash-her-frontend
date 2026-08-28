@@ -146,7 +146,6 @@ function OrderCard({
       </dl>
 
       <OrderDetails order={order} />
-      <OrderOperations order={order} timezone={timezone} />
       {order.shipment ? (
         <OrderShippingControls
           orderId={order.reference}
@@ -261,7 +260,6 @@ function OrderTable({
                     {order.confirmation.description}
                   </p>
                 ) : null}
-                <OrderOperations order={order} timezone={timezone} />
                 {order.shipment ? (
                   <OrderShippingControls
                     orderId={order.reference}
@@ -279,50 +277,6 @@ function OrderTable({
         </tbody>
       </table>
     </div>
-  );
-}
-
-function OrderOperations({
-  order,
-  timezone,
-}: {
-  order: AdminProductOrderRow;
-  timezone: string;
-}) {
-  const operations = order.operations;
-  const items = [
-    `Risk: ${operations.fraudClassification}${operations.fraudRiskReasons.length ? ` (${operations.fraudRiskReasons.join(", ")})` : ""}`,
-    `Open cases: ${operations.openCaseCount}`,
-    `Refund: ${operations.latestRefundStatus ?? "none"}`,
-    `Customer decision: ${operations.customerDecisionStatus ?? "none"}`,
-    `Address change: ${operations.addressChangeStatus ?? "none"}${operations.addressChangeReconciliationState ? ` / ${operations.addressChangeReconciliationState}` : ""}`,
-    `Shipment history: ${operations.shipmentHistoryCount}`,
-  ];
-  if (order.shipment) {
-    items.push(
-      `Active shipment: ${order.shipment.purpose} #${order.shipment.sequence}`,
-      `Signature: ${order.shipment.signatureRequired ? "required" : "not required"}`,
-    );
-    if (order.shipment.handoffDeadlineAt)
-      items.push(
-        `Handoff deadline: ${formatDateTime(order.shipment.handoffDeadlineAt, timezone)}`,
-      );
-    if (order.shipment.autoRefundDeadlineAt)
-      items.push(
-        `Auto-refund deadline: ${formatDateTime(order.shipment.autoRefundDeadlineAt, timezone)}`,
-      );
-  }
-  return (
-    <details className="mt-3 border-t border-lh-line pt-1">
-      <summary className="min-h-11 cursor-pointer py-3 text-xs font-semibold uppercase tracking-[0.12em] text-lh-primary">
-        Policy queue
-      </summary>
-      <ul className="space-y-1 text-xs text-lh-muted">
-        {items.map((item) => (
-          <li key={item}>{item}</li>
-        ))}
-      </ul>
-    </details>
   );
 }
 

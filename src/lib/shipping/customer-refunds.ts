@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
-import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { getPrivateDb } from "@/lib/private-db/client";
 import {
   checkoutOrders,
@@ -568,6 +568,76 @@ export async function processProductOrderRefund(
     }
     return updated;
   });
+}
+
+/**
+ * Executes queued Square product refunds. Manual admin refunds queue a row and
+ * this drain — run by the shipping worker cron — performs the actual Square
+ * refund. Callers gate on Square commerce being enabled. Replaces the former
+ * policy-worker refund drain.
+ */
+export async function drainQueuedProductOrderRefunds(input?: {
+  refundIds?: string[];
+  limit?: number;
+}): Promise<{
+  processed: number;
+  succeeded: number;
+  needsReview: number;
+  refunds: ProductOrderRefundRow[];
+}> {
+  const db = getPrivateDb();
+  const ids =
+    input?.refundIds ??
+    (
+      await db
+        .select({ id: productOrderRefunds.id })
+        .from(productOrderRefunds)
+        .where(eq(productOrderRefunds.status, "queued"))
+        .orderBy(asc(productOrderRefunds.createdAt))
+        .limit(input?.limit ?? 25)
+    ).map((row) => row.id);
+  let processed = 0;
+  let succeeded = 0;
+  let needsReview = 0;
+  const refunds: ProductOrderRefundRow[] = [];
+  for (const id of ids) {
+    try {
+      const refund = await processProductOrderRefund(id);
+      refunds.push(refund);
+      processed += 1;
+      if (refund.status === "succeeded") succeeded += 1;
+      if (refund.status === "manual_review") {
+        needsReview += 1;
+        await sendShippingPolicyAlert({
+          duties: ["finance_owner"],
+          critical: true,
+          subject: "Square refund requires manual review",
+          message: `Refund ${id} has invalid or incomplete immutable payment evidence and was removed from the automatic queue.`,
+          idempotencyKey: `shipping-refund-manual-review/${id}`,
+        }).catch(() => undefined);
+      }
+      if (refund.status === "outcome_unknown") {
+        needsReview += 1;
+        await sendShippingPolicyAlert({
+          duties: ["finance_owner"],
+          critical: true,
+          subject: "Square refund outcome is unknown",
+          message: `Refund ${id} requires transaction reconciliation; do not resubmit it.`,
+          idempotencyKey: `shipping-refund-unknown/${id}`,
+        }).catch(() => undefined);
+      }
+    } catch {
+      needsReview += 1;
+      await sendShippingPolicyAlert({
+        duties: ["finance_owner"],
+        critical: true,
+        subject: "Square refund worker failed",
+        message: `Refund ${id} could not be processed. Later queued refunds were still attempted.`,
+        idempotencyKey: `shipping-refund-worker-failed/${id}`,
+      }).catch(() => undefined);
+    }
+  }
+  return { processed, succeeded, needsReview, refunds };
 }
 
 async function markRefundForManualReview(

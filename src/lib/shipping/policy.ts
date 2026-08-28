@@ -28,7 +28,6 @@ export interface ShippingServicePolicy {
 }
 
 export interface ShippingPolicyContext {
-  mode: ShippingPolicyEnforcementMode;
   settings: ProductShippingSettings;
   closedDates: Set<string>;
   servicePolicies: Map<string, ShippingServicePolicy>;
@@ -39,36 +38,6 @@ export interface ShippingPolicyContext {
   deadlinePolicySnapshot: Record<string, unknown>;
 }
 
-export function getShippingPolicyEnforcementMode(): ShippingPolicyEnforcementMode {
-  const value = process.env.SHIPPING_POLICY_ENFORCEMENT_MODE ?? "off";
-  if (value === "off" || value === "observe" || value === "enforce")
-    return value;
-  throw new Error(
-    "SHIPPING_POLICY_ENFORCEMENT_MODE must be off, observe, or enforce",
-  );
-}
-
-export function assertShippingPolicyMutationAllowed(): void {
-  const mode = getShippingPolicyEnforcementMode();
-  if (mode !== "enforce") {
-    throw new ShippingPolicyMutationBlockedError(mode);
-  }
-}
-
-export function assertShippingPolicyConfigurationMutationAllowed(): void {
-  const mode = getShippingPolicyEnforcementMode();
-  if (mode === "observe") {
-    throw new ShippingPolicyMutationBlockedError(mode);
-  }
-}
-
-export class ShippingPolicyMutationBlockedError extends Error {
-  constructor(readonly mode: ShippingPolicyEnforcementMode) {
-    super(`Shipping policy mutations are disabled in ${mode} mode`);
-    this.name = "ShippingPolicyMutationBlockedError";
-  }
-}
-
 // Kept async for call-site compatibility (all callers `await` it).
 export async function loadShippingPolicyContext(
   now = new Date(),
@@ -77,7 +46,6 @@ export async function loadShippingPolicyContext(
   const closureDates = getProductShippingClosureDates(now);
   const coverageEnd = closureDates.at(-1)?.date ?? "";
   return {
-    mode: getShippingPolicyEnforcementMode(),
     settings,
     closedDates: new Set(closureDates.map((entry) => entry.date)),
     servicePolicies: getProductShippingServicePolicyMap(now),
