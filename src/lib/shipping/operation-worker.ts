@@ -30,7 +30,6 @@ import {
   markShipmentPurchaseProviderCallIntent,
   persistKnownProviderDraft,
   persistRefreshedProviderQuote,
-  reconcileP10RacedShipmentPurchase,
   recordUnsettledProviderAccountingEvidence,
   recordShipmentEvent,
   recheckShipmentPurchaseFunding,
@@ -609,10 +608,6 @@ async function processPurchase(
       throw mutationFailure(error, "purchase_outcome_unknown");
     }
   }
-  if (
-    await reconcilePurchaseAfterP10Race(job, shipment, provider, dependencies)
-  )
-    throw new FencedOperationError();
   if (provider.status === "postage_requested")
     throw new UnknownMutationOutcomeError("purchase_reconciliation_pending");
   if (provider.status === "postage_purchase_failed")
@@ -668,10 +663,6 @@ async function processPurchase(
   try {
     await persistProviderState(shipment, provider, dependencies.now());
   } catch (error) {
-    if (
-      await reconcilePurchaseAfterP10Race(job, shipment, provider, dependencies)
-    )
-      throw new FencedOperationError();
     throw new UnknownMutationOutcomeError(
       "purchase_persistence_unknown",
       error,
@@ -684,13 +675,7 @@ async function processPurchase(
     outcome: "settled",
     now: dependencies.now(),
   });
-  if (!settled) {
-    if (
-      await reconcilePurchaseAfterP10Race(job, shipment, provider, dependencies)
-    )
-      throw new FencedOperationError();
-    throw new FencedOperationError();
-  }
+  if (!settled) throw new FencedOperationError();
   return job.outcomeUnknown ? "purchase_reconciled" : "purchased";
 }
 
@@ -761,58 +746,6 @@ function cheapestEligibleRate(
       !best || rate.paymentAmountCents < best.paymentAmountCents ? rate : best,
     undefined,
   );
-}
-
-async function reconcilePurchaseAfterP10Race(
-  job: ShipmentOperationRow,
-  shipment: Awaited<ReturnType<typeof requireShipment>>,
-  provider: ChitChatsShipment,
-  dependencies: ShippingOperationWorkerDependencies,
-): Promise<boolean> {
-  const settlement = parseProviderSettlement({
-    purchaseAmount: provider.purchase_amount,
-    postageFee: provider.postage_fee,
-    insuranceFee: provider.insurance_fee,
-    deliveryFee: provider.delivery_fee,
-    tariffFee: provider.tariff_fee,
-    fdaPriorNotificationFee: provider.fda_prior_notification_fee,
-    federalTax: provider.federal_tax,
-    provincialTax: provider.provincial_tax,
-  });
-  const confirmation = classifyProviderPurchaseConfirmation(provider);
-  const actualPurchaseTotalCents =
-    confirmation.settledPurchaseCents ?? shipment.actualPurchaseTotalCents;
-  const outcome =
-    provider.status === "postage_purchase_failed"
-      ? "failed"
-      : confirmation.statusConfirmed && actualPurchaseTotalCents !== null
-        ? "settled"
-        : "unknown";
-  const result = await reconcileP10RacedShipmentPurchase({
-    operationId: job.id,
-    shipmentId: shipment.id,
-    providerStatus: provider.status,
-    rawShipment: stripSignedLabelUrls(provider),
-    outcome,
-    purchaseConfirmed: confirmation.statusConfirmed,
-    actualPurchaseTotalCents,
-    actualPostageCents: settlement.postageCents,
-    actualInsuranceCents: settlement.insuranceCents,
-    actualDeliveryFeeCents: settlement.deliveryFeeCents,
-    actualTariffFeeCents: settlement.tariffFeeCents,
-    actualFdaPriorNotificationFeeCents: settlement.fdaPriorNotificationFeeCents,
-    actualFederalTaxCents: settlement.federalTaxCents,
-    actualProvincialTaxCents: settlement.provincialTaxCents,
-    trackingNumber: provider.carrier_tracking_code,
-    trackingUrl: provider.tracking_url,
-    providerPurchasedAt: providerInstant(
-      provider.postage_purchase_date,
-      dependencies.now(),
-    ),
-    now: dependencies.now(),
-  });
-  if (result === "not_blocked") return false;
-  return true;
 }
 
 export function classifyProviderPurchaseConfirmation(

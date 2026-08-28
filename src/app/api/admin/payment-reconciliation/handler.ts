@@ -6,7 +6,6 @@ import runServiceReconciliationMonitor, {
 } from "@/lib/booking/payments/service-reconciliation-monitor";
 import { retryOperationalBookingOutcomeEmails } from "@/lib/booking/email";
 import { runSquareCommerceCaptureReconciliation } from "@/lib/commerce/square-commerce-capture-reconciliation";
-import { runSquareSupplementalObligationCaptureReconciliation } from "@/lib/commerce/square-supplemental-capture-reconciliation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +18,6 @@ interface PaymentReconciliationDependencies {
   retryBookingOutcomeEmails?: typeof retryOperationalBookingOutcomeEmails;
   runMonitor: typeof runServiceReconciliationMonitor;
   runCommerceCaptureReconciliation?: typeof runSquareCommerceCaptureReconciliation;
-  runSupplementalObligationCaptureReconciliation?: typeof runSquareSupplementalObligationCaptureReconciliation;
 }
 
 const defaultDependencies: PaymentReconciliationDependencies = {
@@ -30,8 +28,6 @@ const defaultDependencies: PaymentReconciliationDependencies = {
   retryBookingOutcomeEmails: retryOperationalBookingOutcomeEmails,
   runMonitor: runServiceReconciliationMonitor,
   runCommerceCaptureReconciliation: runSquareCommerceCaptureReconciliation,
-  runSupplementalObligationCaptureReconciliation:
-    runSquareSupplementalObligationCaptureReconciliation,
 };
 
 export const GET = createPaymentReconciliationGetHandler(defaultDependencies);
@@ -74,7 +70,6 @@ export function createPaymentReconciliationGetHandler(
 
     await retryBookingOutcomeEmailsSafely(dependencies, now);
     await reconcileCommerceCapturesSafely(dependencies, now);
-    await reconcileSupplementalObligationCapturesSafely(dependencies, now);
 
     if (monitorFailed || summary === null) {
       return Response.json(
@@ -108,38 +103,6 @@ async function reconcileCommerceCapturesSafely(
   } catch (error) {
     dependencies.logError(
       "[payment-reconciliation] Square commerce capture reconciliation failed",
-      buildReconciliationErrorContext(error),
-    );
-  }
-}
-
-async function reconcileSupplementalObligationCapturesSafely(
-  dependencies: PaymentReconciliationDependencies,
-  now: Date,
-): Promise<void> {
-  if (
-    dependencies.runSupplementalObligationCaptureReconciliation === undefined
-  ) {
-    return;
-  }
-
-  try {
-    const summary =
-      await dependencies.runSupplementalObligationCaptureReconciliation({
-        now,
-      });
-    if (
-      summary !== null &&
-      (summary.conflict > 0 || summary.lateRefunded > 0)
-    ) {
-      dependencies.logWarn(
-        "[payment-reconciliation] Square supplemental obligations needed manual-review outcomes",
-        summary,
-      );
-    }
-  } catch (error) {
-    dependencies.logError(
-      "[payment-reconciliation] Square supplemental obligation reconciliation failed",
       buildReconciliationErrorContext(error),
     );
   }

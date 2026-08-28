@@ -1508,54 +1508,6 @@ export const SQUARE_CAPTURED_PROVIDER_STATUS = "COMPLETED";
  */
 export const SQUARE_UNCOLLECTED_PROVIDER_STATUS = "UNCOLLECTED";
 
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** True when `value` is a canonical hyphenated UUID (any version). */
-function isUuid(value: string): boolean {
-  return UUID_PATTERN.test(value);
-}
-
-/**
- * Returns the obligation id if `reference` identifies a non-primary Square
- * payment obligation (a supplemental top-up whose Square payment link's
- * `reference_id` is the obligation id). Status-agnostic on purpose so a replayed
- * webhook still routes to the finalizer (which re-checks state); the finalizer
- * is the authority on whether to apply, refund, or no-op.
- *
- * Guards on UUID shape first: the `id` column is a `uuid`, and Square payment
- * `reference_id`s from other flows are not UUIDs (service-booking charges use
- * the `hold_…` public reference, product/training checkout use `lh-sq-…`).
- * Passing a non-UUID literal into the `uuid` equality makes Postgres throw
- * `invalid input syntax for type uuid`, which previously surfaced as a webhook
- * "Failed query" and a 503 retry storm. A non-UUID reference can never match an
- * obligation id, so short-circuit to `null` before touching the database.
- */
-export async function findSquareSupplementalObligationByReference(
-  reference: string,
-): Promise<string | null> {
-  if (!isUuid(reference)) {
-    return null;
-  }
-
-  const [obligation] = await getPrivateDb()
-    .select({ id: orderPaymentObligations.id })
-    .from(orderPaymentObligations)
-    .where(
-      and(
-        eq(orderPaymentObligations.id, reference),
-        eq(orderPaymentObligations.paymentProvider, "square"),
-        inArray(orderPaymentObligations.purpose, [
-          "manual_shipping",
-          "address_increase",
-        ]),
-      ),
-    )
-    .limit(1);
-
-  return obligation?.id ?? null;
-}
-
 export interface UncapturedSquareCommerceOrder {
   orderId: string;
   purpose: CheckoutOrderPurpose;
@@ -1612,65 +1564,6 @@ export async function findUncapturedSquareCommerceOrders(input: {
             providerMetadata: row.providerMetadata,
           },
         ],
-  );
-}
-
-export interface UnfinalizedSupplementalObligation {
-  id: string;
-  purpose: "manual_shipping" | "address_increase";
-  createdAt: Date;
-}
-
-/**
- * Square supplemental obligations (manual-shipping / address-increase top-ups)
- * that have a minted payment link but are still `pending` — i.e. the customer
- * may have paid on Square yet the `payment.updated` webhook never finalized them
- * locally. The supplemental capture-reconciliation backstop lists Square payments
- * by the obligation `reference_id` and re-drives the (idempotent) finalizer.
- * `mintedBefore` avoids racing an in-flight webhook; `horizonAfter` bounds the
- * swept backlog (a genuinely-unpaid obligation simply ages out of the window,
- * and moves off `pending` when an expiry sweep marks it `expired`).
- */
-export async function findUnfinalizedSupplementalObligations(input: {
-  mintedBefore: Date;
-  horizonAfter: Date;
-  limit: number;
-}): Promise<UnfinalizedSupplementalObligation[]> {
-  const rows = await getPrivateDb()
-    .select({
-      id: orderPaymentObligations.id,
-      purpose: orderPaymentObligations.purpose,
-      createdAt: orderPaymentObligations.createdAt,
-    })
-    .from(orderPaymentObligations)
-    .innerJoin(
-      checkoutOrders,
-      eq(orderPaymentObligations.orderId, checkoutOrders.id),
-    )
-    .where(
-      and(
-        eq(orderPaymentObligations.paymentProvider, "square"),
-        inArray(orderPaymentObligations.purpose, [
-          "manual_shipping",
-          "address_increase",
-        ]),
-        eq(orderPaymentObligations.status, "pending"),
-        eq(orderPaymentObligations.initializationStatus, "ready"),
-        isNull(orderPaymentObligations.quarantinedAt),
-        isNull(checkoutOrders.fulfillmentQuarantinedAt),
-        eq(checkoutOrders.status, "paid"),
-        lte(orderPaymentObligations.updatedAt, input.mintedBefore),
-        sql`${orderPaymentObligations.createdAt} >= ${input.horizonAfter}`,
-      ),
-    )
-    // Oldest-first so a limited sweep is deterministic and drains the backlog.
-    .orderBy(orderPaymentObligations.createdAt)
-    .limit(input.limit);
-
-  return rows.flatMap((row) =>
-    row.purpose === "manual_shipping" || row.purpose === "address_increase"
-      ? [{ id: row.id, purpose: row.purpose, createdAt: row.createdAt }]
-      : [],
   );
 }
 

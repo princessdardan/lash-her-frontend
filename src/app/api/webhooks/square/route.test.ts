@@ -1420,9 +1420,8 @@ test("Square webhook falls through to booking handling for a non-commerce paymen
   assert.equal(bookingFinalizerCalls.length, 1);
 });
 
-test("Square webhook routes a supplemental obligation payment to recovery", async () => {
+test("Square webhook ignores a payment whose reference is not a commerce order", async () => {
   const recoveries: unknown[] = [];
-  const obligationLookups: string[] = [];
   const handler = createHandler([], {
     getEnv: () => ({
       notificationUrl: webhookUrl,
@@ -1431,10 +1430,6 @@ test("Square webhook routes a supplemental obligation payment to recovery", asyn
       serviceBookingEnabled: true,
     }),
     findCheckoutOrderByOrderId: async () => null,
-    findSquareSupplementalObligationByReference: async (reference) => {
-      obligationLookups.push(reference);
-      return reference;
-    },
     recoverSquareCommercePayment: async (input) => {
       recoveries.push(input);
       return { status: "recovered" };
@@ -1461,15 +1456,5 @@ test("Square webhook routes a supplemental obligation payment to recovery", asyn
   );
 
   assert.equal(response.status, 200);
-  assert.deepEqual(obligationLookups, ["3f2504e0-4f89-41d3-9a0c-0305e82c3301"]);
-  assert.deepEqual(recoveries, [
-    {
-      orderReference: "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
-      kind: "supplemental_obligation",
-      squarePaymentId: "sq-pay-supp",
-      status: "COMPLETED",
-      amountCents: 1500,
-      currency: "CAD",
-    },
-  ]);
+  assert.deepEqual(recoveries, []);
 });

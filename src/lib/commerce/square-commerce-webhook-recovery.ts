@@ -6,17 +6,10 @@ import type {
   FinalizeSquareTrainingCardPaymentInput,
   FinalizeSquareTrainingCardPaymentResult,
 } from "@/lib/commerce/square-training-card-finalizer";
-import type {
-  FinalizeSquareSupplementalObligationInput,
-  FinalizeSquareSupplementalObligationResult,
-} from "@/lib/commerce/square-supplemental-finalizer";
 
 const SQUARE_COMPLETED_STATUS = "COMPLETED";
 
-export type SquareCommerceOrderKind =
-  | "product"
-  | "training_card"
-  | "supplemental_obligation";
+export type SquareCommerceOrderKind = "product" | "training_card";
 
 export interface RecoverSquareCommercePaymentInput {
   orderReference: string;
@@ -56,9 +49,6 @@ export interface RecoverSquareCommercePaymentDependencies {
     input: FinalizeSquareTrainingCardPaymentInput,
   ) => Promise<FinalizeSquareTrainingCardPaymentResult>;
   sendTrainingNotifications: (orderReference: string) => Promise<void>;
-  finalizeSupplemental: (
-    input: FinalizeSquareSupplementalObligationInput,
-  ) => Promise<FinalizeSquareSupplementalObligationResult>;
   logError: (message: string, meta: Record<string, unknown>) => void;
 }
 
@@ -79,30 +69,6 @@ export async function recoverSquareCommercePayment(
   }
 
   const providerType = input.sourceType ?? "CARD";
-
-  // Supplemental top-ups (shipping / address increase) finalize an obligation,
-  // not an order, and have no email/notification side effect.
-  if (input.kind === "supplemental_obligation") {
-    const { transition } = await dependencies.finalizeSupplemental({
-      obligationId: input.orderReference,
-      squarePaymentId: input.squarePaymentId,
-      amountCents: input.amountCents,
-      currency: input.currency,
-      providerType,
-      providerStatus: SQUARE_COMPLETED_STATUS,
-    });
-    if (transition === "applied") return { status: "recovered" };
-    if (transition === "already_applied") return { status: "duplicate" };
-    // Payment for a closed offer: recorded + refund reserved. Acknowledged.
-    if (transition === "late_capture_refunded") return { status: "recovered" };
-    dependencies.logError("[square-webhook] commerce recovery conflict", {
-      orderReference: input.orderReference,
-      kind: input.kind,
-      transition,
-      squarePaymentId: input.squarePaymentId,
-    });
-    return { status: "conflict", reason: transition };
-  }
 
   const finalizeInput = {
     orderReference: input.orderReference,
