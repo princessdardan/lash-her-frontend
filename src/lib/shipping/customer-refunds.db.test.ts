@@ -19,6 +19,7 @@ const scenario = String.raw`
     productOrderRefunds,
   } from "./src/lib/private-db/schema.ts";
   import {
+    drainQueuedProductOrderRefunds,
     processProductOrderRefund,
     queueProductOrderRefundAllocations,
     reconcileProductOrderRefund,
@@ -513,6 +514,96 @@ const scenario = String.raw`
     const bookingAlerts = await db.select().from(customerEmailOutbox)
       .where(like(customerEmailOutbox.providerIdempotencyKey, bookingAlertKeyPrefix + "%"));
     assert.equal(bookingAlerts.length, 0, "a booking refund must not raise a product-order finance alert");
+
+    // Drain reaper: a refund stranded in \`processing\` by a crashed worker (its
+    // lease expired) is re-selected by the widened drain query, routed through
+    // the expired-lease recovery branch to \`outcome_unknown\`, and surfaced by the
+    // unknown-outcome alert — WITHOUT ever calling Square. The old drain selected
+    // only \`queued\` rows, so this row would have been stranded forever.
+    await seed(prefix + "drain-reaper", [
+      { providerTransactionId: "941001", amountCents: 2600 },
+    ]);
+    const [reaperRefund] = await queueProductOrderRefundAllocations({
+      orderReference: prefix + "drain-reaper",
+      reason: "Stranded processing refund",
+    });
+    await db.update(productOrderRefunds).set({
+      status: "processing",
+      leaseOwner: "crashed-worker",
+      leaseExpiresAt: new Date(Date.now() - 60_000),
+    }).where(eq(productOrderRefunds.id, reaperRefund.id));
+    const reaperCalls = [];
+    const reaperRefunder = {
+      refundPayment: async (input) => {
+        reaperCalls.push(input.paymentId);
+        return {
+          ok: true,
+          refundId: "sq-refund-reaper-" + input.paymentId,
+          paymentId: input.paymentId,
+          amountCents: input.amountCents,
+          currency: input.currency,
+          settled: true,
+        };
+      },
+    };
+    // A high limit so the reaped row (the newest by created_at, hence last under
+    // the drain's asc(createdAt) ordering) is always included regardless of how
+    // many stray queued rows earlier scenarios leave behind.
+    const reaperResult = await drainQueuedProductOrderRefunds({ refunder: reaperRefunder, limit: 1000 });
+    assert.ok(!reaperCalls.includes("941001"), "the reaper must not call Square for the stranded refund");
+    const [reaperAfter] = await db.select().from(productOrderRefunds)
+      .where(eq(productOrderRefunds.id, reaperRefund.id));
+    assert.equal(reaperAfter.status, "outcome_unknown");
+    assert.ok(
+      reaperResult.refunds.some((row) => row.id === reaperRefund.id),
+      "the drain must report the reaped refund",
+    );
+    const reaperUnknownAlerts = await db.select().from(customerEmailOutbox)
+      .where(like(customerEmailOutbox.providerIdempotencyKey, "shipping-refund-unknown/" + reaperRefund.id + "/%"));
+    assert.ok(reaperUnknownAlerts.length >= 1, "the reaped refund must raise an outcome-unknown alert");
+    const reaperWorkerFailed = await db.select().from(customerEmailOutbox)
+      .where(like(customerEmailOutbox.providerIdempotencyKey, "shipping-refund-worker-failed/" + reaperRefund.id + "/%"));
+    assert.equal(reaperWorkerFailed.length, 0, "the reaper must not raise a worker-failed alert");
+    await db.delete(customerEmailOutbox)
+      .where(like(customerEmailOutbox.providerIdempotencyKey, "shipping-refund-unknown/" + reaperRefund.id + "/%"));
+
+    // Drain alert demotion: two overlapping cron invocations race to drain the
+    // same queued refund. One wins the atomic claim and issues the Square refund;
+    // the other's claim finds the row no longer \`queued\` and throws the benign
+    // RefundClaimUnavailableError, which the drain now skips WITHOUT paging finance
+    // with a critical "Square refund worker failed" alert.
+    await seed(prefix + "drain-race", [
+      { providerTransactionId: "951001", amountCents: 3100 },
+    ]);
+    const [raceDrainRefund] = await queueProductOrderRefundAllocations({
+      orderReference: prefix + "drain-race",
+      reason: "Concurrent drain race",
+    });
+    const raceCounter = { calls: 0 };
+    const raceRefunder = {
+      refundPayment: async (input) => {
+        raceCounter.calls += 1;
+        return {
+          ok: true,
+          refundId: "sq-refund-951001",
+          paymentId: input.paymentId,
+          amountCents: input.amountCents,
+          currency: input.currency,
+          settled: true,
+        };
+      },
+    };
+    await Promise.all([
+      drainQueuedProductOrderRefunds({ refundIds: [raceDrainRefund.id], refunder: raceRefunder }),
+      drainQueuedProductOrderRefunds({ refundIds: [raceDrainRefund.id], refunder: raceRefunder }),
+    ]);
+    assert.equal(raceCounter.calls, 1, "exactly one drain invocation issues the Square refund");
+    const [raceDrainAfter] = await db.select().from(productOrderRefunds)
+      .where(eq(productOrderRefunds.id, raceDrainRefund.id));
+    assert.equal(raceDrainAfter.status, "succeeded");
+    const raceWorkerFailed = await db.select().from(customerEmailOutbox)
+      .where(like(customerEmailOutbox.providerIdempotencyKey, "shipping-refund-worker-failed/" + raceDrainRefund.id + "/%"));
+    assert.equal(raceWorkerFailed.length, 0, "a lost claim race must not raise a worker-failed alert");
   } finally {
     await cleanup();
     await closePrivateDbPool();
