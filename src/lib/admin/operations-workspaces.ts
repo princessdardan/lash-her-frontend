@@ -22,10 +22,7 @@ import {
   bookingPaymentAttempts,
   bookingProviders,
   checkoutOrders,
-  productOrderAddressChangeRequests,
-  productOrderCustomerDecisions,
   productOrderRefunds,
-  productShippingCases,
   productShipments,
   marketingContactSubmissions,
   squarePaymentRefundEvents,
@@ -152,13 +149,9 @@ export interface AdminProductOrderRow {
   shippingLines: string[] | null;
   status: AdminWorkspaceStatusPresentation;
   operations: {
-    addressChangeReconciliationState: string | null;
-    addressChangeStatus: string | null;
-    customerDecisionStatus: string | null;
     fraudClassification: string;
     fraudRiskReasons: string[];
     latestRefundStatus: string | null;
-    openCaseCount: number;
     shipmentHistoryCount: number;
   };
   shipment: {
@@ -484,19 +477,9 @@ export async function listAdminProductOrders(
       status: checkoutOrders.status,
       fraudClassification: checkoutOrders.fraudClassification,
       fraudRiskReasons: checkoutOrders.fraudRiskReasons,
-      openCaseCount: sql<number>`(select count(*)::int from ${productShippingCases} where ${productShippingCases.orderId} = ${checkoutOrders.id} and ${productShippingCases.status} not in ('resolved', 'cancelled'))`,
       latestRefundStatus: sql<
         string | null
       >`(select ${productOrderRefunds.status}::text from ${productOrderRefunds} where ${productOrderRefunds.orderId} = ${checkoutOrders.id} order by ${productOrderRefunds.createdAt} desc limit 1)`,
-      customerDecisionStatus: sql<
-        string | null
-      >`(select ${productOrderCustomerDecisions.status}::text from ${productOrderCustomerDecisions} where ${productOrderCustomerDecisions.orderId} = ${checkoutOrders.id} order by ${productOrderCustomerDecisions.createdAt} desc limit 1)`,
-      addressChangeStatus: sql<
-        string | null
-      >`(select ${productOrderAddressChangeRequests.status}::text from ${productOrderAddressChangeRequests} where ${productOrderAddressChangeRequests.orderId} = ${checkoutOrders.id} order by ${productOrderAddressChangeRequests.createdAt} desc limit 1)`,
-      addressChangeReconciliationState: sql<
-        string | null
-      >`(select ${productOrderAddressChangeRequests.reconciliationState} from ${productOrderAddressChangeRequests} where ${productOrderAddressChangeRequests.orderId} = ${checkoutOrders.id} order by ${productOrderAddressChangeRequests.createdAt} desc limit 1)`,
       shipmentHistoryCount: sql<number>`(select count(*)::int from ${productShipments} shipment_history where shipment_history.order_id = ${checkoutOrders.id})`,
       shipmentStatus: productShipments.status,
       shipmentId: productShipments.id,
@@ -554,14 +537,9 @@ export async function listAdminProductOrders(
           : presentShippingAddress(row.shippingAddress),
         status: getCheckoutOrderStatusPresentation(row.status),
         operations: {
-          addressChangeReconciliationState:
-            row.addressChangeReconciliationState,
-          addressChangeStatus: row.addressChangeStatus,
-          customerDecisionStatus: row.customerDecisionStatus,
           fraudClassification: row.fraudClassification,
           fraudRiskReasons: row.fraudRiskReasons,
           latestRefundStatus: row.latestRefundStatus,
-          openCaseCount: row.openCaseCount,
           shipmentHistoryCount: row.shipmentHistoryCount,
         },
         shipment:

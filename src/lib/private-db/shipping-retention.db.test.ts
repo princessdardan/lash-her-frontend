@@ -229,10 +229,8 @@ const evidenceIntegrityScenario = String.raw`
   import {
     adminUsers,
     checkoutOrders,
-    productOrderCustomerDecisions,
     productOrderRefunds,
     productShipmentJobs,
-    productShipmentReturnObservations,
     productShipments,
   } from "./src/lib/private-db/schema.ts";
   import { assertShippingPiiHardCaps } from "./src/lib/private-db/shipping-retention.ts";
@@ -242,10 +240,8 @@ const evidenceIntegrityScenario = String.raw`
   const ids = {
     order: "60600000-0000-4000-8000-000000000060",
     shipment: "61600000-0000-4000-8000-000000000060",
-    decision: "62600000-0000-4000-8000-000000000060",
     refund: "63600000-0000-4000-8000-000000000060",
     job: "64600000-0000-4000-8000-000000000060",
-    returnObservation: "65600000-0000-4000-8000-000000000060",
     admin: "66600000-0000-4000-8000-000000000060",
   };
   const dueAt = new Date("2025-07-01T00:00:00.000Z");
@@ -254,9 +250,7 @@ const evidenceIntegrityScenario = String.raw`
   const now = new Date("2026-08-15T13:00:00.000Z");
 
   async function cleanup() {
-    await db.delete(productShipmentReturnObservations).where(eq(productShipmentReturnObservations.id, ids.returnObservation));
     await db.delete(productShipmentJobs).where(eq(productShipmentJobs.id, ids.job));
-    await db.delete(productOrderCustomerDecisions).where(eq(productOrderCustomerDecisions.id, ids.decision));
     await db.delete(productOrderRefunds).where(eq(productOrderRefunds.id, ids.refund));
     await db.delete(productShipments).where(eq(productShipments.id, ids.shipment));
     await db.delete(checkoutOrders).where(eq(checkoutOrders.id, ids.order));
@@ -327,19 +321,6 @@ const evidenceIntegrityScenario = String.raw`
       piiRedactionDueAt: dueAt,
       redactedAt,
     });
-    await db.insert(productOrderCustomerDecisions).values({
-      id: ids.decision,
-      orderId: ids.order,
-      shipmentId: ids.shipment,
-      kind: "wait_extension",
-      scopeKey: "retention-evidence-0060",
-      proposedConditionsHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      allowedOutcomes: ["wait"],
-      tokenHash: "redacted:" + ids.decision,
-      expiresAt: new Date("2026-08-16T00:00:00.000Z"),
-      piiRedactionDueAt: dueAt,
-      redactedAt,
-    });
     await db.insert(productOrderRefunds).values({
       id: ids.refund,
       orderId: ids.order,
@@ -361,25 +342,6 @@ const evidenceIntegrityScenario = String.raw`
       piiRedactionDueAt: dueAt,
       redactedAt,
     });
-    await db.insert(productShipmentReturnObservations).values({
-      id: ids.returnObservation,
-      providerReturnId: "redacted:" + ids.returnObservation,
-      shipmentId: ids.shipment,
-      matchStatus: "manual_review",
-      observedAt: dueAt,
-      stateVersion: 2,
-      redactionDueAt: dueAt,
-      redactedAt,
-    });
-
-    await rejectsCheck(
-      db.update(productOrderCustomerDecisions).set({
-        legalFollowUpEvidenceReference: "case://0060",
-        legalFollowUpRationale: "Documented rationale",
-        legalFollowUpByAdminUserId: ids.admin,
-      }).where(eq(productOrderCustomerDecisions.id, ids.decision)),
-      "product_order_customer_decisions_legal_follow_up_evidence_check",
-    );
     await rejectsCheck(
       db.update(productOrderRefunds).set({
         manualReviewEvidenceReference: "case://0060",
@@ -397,15 +359,6 @@ const evidenceIntegrityScenario = String.raw`
       "product_shipment_jobs_reconciliation_evidence_check",
     );
     await rejectsCheck(
-      db.update(productShipmentReturnObservations).set({
-        adminResolutionAction: "record_inspection",
-        adminResolutionEvidenceReference: "case://0060",
-        adminResolutionRationale: "Documented rationale",
-        resolvedByAdminUserId: ids.admin,
-      }).where(eq(productShipmentReturnObservations.id, ids.returnObservation)),
-      "product_shipment_returns_admin_resolution_check",
-    );
-    await rejectsCheck(
       db.update(productShipments).set({
         manualReviewAcknowledgedAt: actionAt,
         manualReviewEvidenceReference: "case://0060",
@@ -416,23 +369,6 @@ const evidenceIntegrityScenario = String.raw`
     );
 
     const absoluteCases = [
-      {
-        name: "customer-decision legal evidence",
-        apply: () => db.update(productOrderCustomerDecisions).set({
-          legalFollowUpEvidenceReference: "case://0060",
-          legalFollowUpRationale: "Documented rationale",
-          legalFollowUpByAdminUserId: ids.admin,
-          legalFollowUpStepUpAuthenticatedAt: actionAt,
-          legalFollowUpRecordedAt: actionAt,
-        }).where(eq(productOrderCustomerDecisions.id, ids.decision)),
-        clear: () => db.update(productOrderCustomerDecisions).set({
-          legalFollowUpEvidenceReference: null,
-          legalFollowUpRationale: null,
-          legalFollowUpByAdminUserId: null,
-          legalFollowUpStepUpAuthenticatedAt: null,
-          legalFollowUpRecordedAt: null,
-        }).where(eq(productOrderCustomerDecisions.id, ids.decision)),
-      },
       {
         name: "refund manual-review evidence",
         apply: () => db.update(productOrderRefunds).set({
@@ -466,27 +402,6 @@ const evidenceIntegrityScenario = String.raw`
           reconciliationStepUpAuthenticatedAt: null,
           reconciliationRequestedAt: null,
         }).where(eq(productShipmentJobs.id, ids.job)),
-      },
-      {
-        name: "return-resolution evidence",
-        apply: () => db.update(productShipmentReturnObservations).set({
-          adminResolutionAction: "record_inspection",
-          adminResolutionEvidenceReference: "case://0060",
-          adminResolutionRationale: "Documented rationale",
-          resolvedByAdminUserId: ids.admin,
-          resolutionStepUpAuthenticatedAt: actionAt,
-          resolvedAt: actionAt,
-          resolvedStateVersion: 2,
-        }).where(eq(productShipmentReturnObservations.id, ids.returnObservation)),
-        clear: () => db.update(productShipmentReturnObservations).set({
-          adminResolutionAction: null,
-          adminResolutionEvidenceReference: null,
-          adminResolutionRationale: null,
-          resolvedByAdminUserId: null,
-          resolutionStepUpAuthenticatedAt: null,
-          resolvedAt: null,
-          resolvedStateVersion: null,
-        }).where(eq(productShipmentReturnObservations.id, ids.returnObservation)),
       },
       {
         name: "shipment manual-review evidence",

@@ -9,7 +9,6 @@ import {
   orderPaymentTransactions,
   productOrderAdjustments,
   productOrderRefunds,
-  productShippingCases,
 } from "@/lib/private-db/schema";
 import { getSquareCommerceEnv } from "@/lib/env/private-checkout";
 import { createSquarePaymentsClient } from "@/lib/payments/square/payments-client";
@@ -31,7 +30,6 @@ export interface QueueProductOrderRefundInput {
   amountCents?: number;
   component?: "merchandise" | "tax" | "outbound_shipping";
   reason: string;
-  caseId?: string;
   sourceShipmentId?: string;
   sourceAddressRequestId?: string;
   requestedByAdminUserId?: string;
@@ -120,35 +118,6 @@ export async function queueProductOrderRefundAllocationsInTransaction(
   if (!order || order.paymentProvider !== "square") {
     throw new Error("Order is not eligible for an automated Square refund");
   }
-  if (input.caseId) {
-    const [shippingCase] = await tx
-      .select({
-        id: productShippingCases.id,
-        remedyChoice: productShippingCases.remedyChoice,
-        remedyShipmentId: productShippingCases.remedyShipmentId,
-      })
-      .from(productShippingCases)
-      .where(
-        and(
-          eq(productShippingCases.id, input.caseId),
-          eq(productShippingCases.orderId, order.id),
-          isNull(productShippingCases.fulfillmentQuarantinedAt),
-        ),
-      )
-      .for("update")
-      .limit(1);
-    if (!shippingCase)
-      throw new Error("Shipping case refund target is unavailable");
-    if (
-      shippingCase.remedyShipmentId ||
-      shippingCase.remedyChoice === "replacement" ||
-      shippingCase.remedyChoice === "reshipment"
-    )
-      throw new Error(
-        "Shipping case replacement remedy prevents refund allocation",
-      );
-  }
-
   const payments = await tx
     .select({
       transaction: orderPaymentTransactions,
@@ -329,7 +298,6 @@ export async function queueProductOrderRefundAllocationsInTransaction(
         direction: "refund",
         component: allocation.component,
         reason,
-        sourceCaseId: input.caseId,
         sourceShipmentId: input.sourceShipmentId,
         sourceAddressRequestId: input.sourceAddressRequestId,
         amountCents: allocation.amountCents,
@@ -342,7 +310,6 @@ export async function queueProductOrderRefundAllocationsInTransaction(
       .insert(productOrderRefunds)
       .values({
         orderId: order.id,
-        caseId: input.caseId,
         idempotencyKey: semanticRefundUuid(adjustmentKey),
         kind:
           allocation.amountCents === allocation.transaction.amountCents

@@ -92,9 +92,6 @@ interface SquareWebhookDependencies {
   findCheckoutOrderByOrderId?: (
     orderId: string,
   ) => Promise<CheckoutOrderRow | null>;
-  findSquareSupplementalObligationByReference?: (
-    reference: string,
-  ) => Promise<string | null>;
   recoverSquareCommercePayment?: (
     input: RecoverSquareCommercePaymentInput,
   ) => Promise<SquareCommerceRecoveryResult>;
@@ -203,11 +200,6 @@ export const defaultDependencies: SquareWebhookDependencies = {
       await import("@/lib/commerce/order-store");
     return findCheckoutOrderByOrderId(orderId);
   },
-  async findSquareSupplementalObligationByReference(reference) {
-    const { findSquareSupplementalObligationByReference } =
-      await import("@/lib/commerce/order-store");
-    return findSquareSupplementalObligationByReference(reference);
-  },
   async recoverSquareCommercePayment(input) {
     const [
       { recoverSquareCommercePayment },
@@ -215,14 +207,12 @@ export const defaultDependencies: SquareWebhookDependencies = {
       { sendProductOrderConfirmationEmailForOrder },
       { finalizeSquareTrainingCardPayment },
       { notifyPaidTrainingOrder },
-      { finalizeSquareSupplementalObligation },
     ] = await Promise.all([
       import("@/lib/commerce/square-commerce-webhook-recovery"),
       import("@/lib/commerce/square-product-finalizer"),
       import("@/lib/commerce/product-order-email"),
       import("@/lib/commerce/square-training-card-finalizer"),
       import("@/lib/commerce/training-paid-notification"),
-      import("@/lib/commerce/square-supplemental-finalizer"),
     ]);
 
     return recoverSquareCommercePayment(input, {
@@ -231,7 +221,6 @@ export const defaultDependencies: SquareWebhookDependencies = {
       finalizeTraining: finalizeSquareTrainingCardPayment,
       sendTrainingNotifications: (orderReference) =>
         notifyPaidTrainingOrder(orderReference),
-      finalizeSupplemental: finalizeSquareSupplementalObligation,
       logError: (message, meta) => console.error(message, meta),
     });
   },
@@ -820,37 +809,12 @@ async function tryRecoverSquareCommercePayment(
     return new Response(null, { status: 503 });
   }
 
-  let kind: SquareCommerceOrderKind | null =
+  // Booking / Afterpay-invoice payments are not card commerce orders and fall
+  // through (kind === null).
+  const kind: SquareCommerceOrderKind | null =
     order === null ? null : classifySquareCommerceCardOrder(order);
-  let orderReference: string | null =
+  const orderReference: string | null =
     order !== null && kind !== null ? order.orderId : null;
-
-  // A payment whose reference is not a commerce order may be a supplemental
-  // obligation top-up (the Square payment link's reference_id is the obligation
-  // id). Booking / Afterpay-invoice payments match neither and fall through.
-  if (
-    kind === null &&
-    dependencies.findSquareSupplementalObligationByReference !== undefined
-  ) {
-    let obligationId: string | null;
-    try {
-      obligationId =
-        await dependencies.findSquareSupplementalObligationByReference(
-          payment.reference_id,
-        );
-    } catch (error) {
-      console.error("[square-webhook] commerce obligation lookup failed", {
-        error: error instanceof Error ? error.message : "Unknown lookup error",
-        eventId: event.eventId,
-        reference: payment.reference_id,
-      });
-      return new Response(null, { status: 503 });
-    }
-    if (obligationId !== null) {
-      kind = "supplemental_obligation";
-      orderReference = obligationId;
-    }
-  }
 
   if (kind === null || orderReference === null) {
     return null;
