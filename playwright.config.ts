@@ -200,7 +200,6 @@ export default defineConfig({
               "https://e2e.lashher.invalid/api/webhooks/square",
             SQUARE_WEBHOOK_SIGNATURE_KEY:
               "e2e-square-webhook-signature-key-fixture",
-            SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED: "true",
           }
         : {}),
     },

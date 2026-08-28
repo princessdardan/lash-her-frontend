@@ -102,10 +102,6 @@ export function getProductCheckoutAvailability(): ProductCheckoutAvailability {
   };
 }
 
-export function isSupplementalProductPaymentsEnabled(): boolean {
-  return process.env.SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED === "true";
-}
-
 export function getChitChatsConfig(): ConfiguredChitChatsConfig {
   const identity = getChitChatsOperationalIdentity();
   const host =

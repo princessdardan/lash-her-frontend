@@ -113,8 +113,6 @@ const chitchatsCheckoutEnabled = process.env.CHITCHATS_CHECKOUT_ENABLED;
 const chitchatsUsShippingEnabled = process.env.CHITCHATS_US_SHIPPING_ENABLED;
 const manualProductCheckoutEnabled =
   process.env.MANUAL_PRODUCT_CHECKOUT_ENABLED;
-const supplementalProductPaymentsEnabled =
-  process.env.SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED;
 const isChitchatsShippingEnabled = chitchatsShippingEnabled === "true";
 const requiredEnvVars = isLaunchEnvironment
   ? [
@@ -185,7 +183,6 @@ for (const [name, value] of [
   ["CHITCHATS_CHECKOUT_ENABLED", chitchatsCheckoutEnabled],
   ["CHITCHATS_US_SHIPPING_ENABLED", chitchatsUsShippingEnabled],
   ["MANUAL_PRODUCT_CHECKOUT_ENABLED", manualProductCheckoutEnabled],
-  ["SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED", supplementalProductPaymentsEnabled],
 ]) {
   if (value !== undefined && value !== "true" && value !== "false") {
     errors.push(`Malformed env var: ${name} must be true or false`);

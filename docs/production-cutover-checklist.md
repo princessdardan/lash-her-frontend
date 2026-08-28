@@ -170,7 +170,6 @@ Feature admission (keep off until certified — see `docs/chitchats-shipping-pol
 - [ ] `CHITCHATS_CHECKOUT_ENABLED=true`
 - [ ] `CHITCHATS_US_SHIPPING_ENABLED` matches the US-shipping launch decision.
 - [ ] `MANUAL_PRODUCT_CHECKOUT_ENABLED` matches the manual-pickup launch decision.
-- [ ] `SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED` matches the supplemental-payments launch decision.
 - [ ] Source shipping config is populated and business/legal-confirmed in `src/lib/shipping/product-shipping-config.ts`: `PRODUCT_SHIPPING_US_DDU_CONTRACT` (required for `CHITCHATS_US_SHIPPING_ENABLED`) and `PRODUCT_MANUAL_CANCELLATION_POLICY` (required for `MANUAL_PRODUCT_CHECKOUT_ENABLED`) are non-null with confirmed disclosure/policy text, effective window, and schema versions; `PRODUCT_SHIPPING_SERVICE_POLICIES` insurance limits and signature capability are verified against Chit Chats' published per-service coverage. Setting a flag without its populated config leaves the feature blocked by design. There is no runtime attestation, duty assignment, or funding reservation to create. Bump `PRODUCT_SHIPPING_POLICY_VERSION` on any change.
 
 Chit Chats account and provider:

@@ -255,23 +255,18 @@ test("fails when Chit Chats checkout is enabled without the shipping worker", ()
   );
 });
 
-test("rejects malformed independent product checkout admission flags", () => {
+test("rejects a malformed independent product checkout admission flag", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     MANUAL_PRODUCT_CHECKOUT_ENABLED: "yes",
-    SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED: "1",
   });
 
   assert.notEqual(result.status, 0);
   assert.match(
     result.combinedOutput,
     /MANUAL_PRODUCT_CHECKOUT_ENABLED must be true or false/,
-  );
-  assert.match(
-    result.combinedOutput,
-    /SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED must be true or false/,
   );
 });
 
