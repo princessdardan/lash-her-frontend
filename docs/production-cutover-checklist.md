@@ -171,7 +171,6 @@ Feature admission (keep off until certified — see `docs/chitchats-shipping-pol
 - [ ] `CHITCHATS_US_SHIPPING_ENABLED` matches the US-shipping launch decision.
 - [ ] `MANUAL_PRODUCT_CHECKOUT_ENABLED` matches the manual-pickup launch decision.
 - [ ] `SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED` matches the supplemental-payments launch decision.
-- [ ] `SHIPPING_POLICY_ENFORCEMENT_MODE=enforce` (off/observe/enforce). `CHITCHATS_CHECKOUT_ENABLED=true` requires `enforce`; readiness treats a non-enforce mode as a blocker.
 - [ ] Source shipping config is populated and business/legal-confirmed in `src/lib/shipping/product-shipping-config.ts`: `PRODUCT_SHIPPING_US_DDU_CONTRACT` (required for `CHITCHATS_US_SHIPPING_ENABLED`) and `PRODUCT_MANUAL_CANCELLATION_POLICY` (required for `MANUAL_PRODUCT_CHECKOUT_ENABLED`) are non-null with confirmed disclosure/policy text, effective window, and schema versions; `PRODUCT_SHIPPING_SERVICE_POLICIES` insurance limits and signature capability are verified against Chit Chats' published per-service coverage. Setting a flag without its populated config leaves the feature blocked by design. There is no runtime attestation, duty assignment, or funding reservation to create. Bump `PRODUCT_SHIPPING_POLICY_VERSION` on any change.
 
 Chit Chats account and provider:
@@ -411,7 +410,7 @@ Use approved test data only and redact all customer/payment details in evidence.
 ## Phase 10: Monitoring, Rollback, Failure Handling, and Evidence Capture
 
 - [ ] Monitor Vercel runtime logs for `/api/revalidate`, `/api/webhooks/card-transactions`, `/api/webhooks/square`, booking routes, checkout routes, form actions, email retries, and private-data retention cron.
-- [ ] Monitor the new scheduled jobs (Vercel Cron, authorized by `CRON_SECRET`/`CHITCHATS_WORKER_CRON_SECRET`): `/api/cron/chitchats-shipping` (every minute; dormant unless shipping enabled + enforce), `/api/cron/shipping-policy` (every 15 min), and `/api/cron/customer-email-outbox` (every 5 min). A `503` from any of these signals dead-letters/retries/unknown-outcomes needing review.
+- [ ] Monitor the new scheduled jobs (Vercel Cron, authorized by `CRON_SECRET`/`CHITCHATS_WORKER_CRON_SECRET`): `/api/cron/chitchats-shipping` (every minute; dormant unless Chit Chats shipping / Square commerce is enabled) and `/api/cron/customer-email-outbox` (every 5 min). A `503` from any of these signals dead-letters/retries/unknown-outcomes needing review.
 - [ ] Monitor provider dashboards for Helcim, Square, Resend, Google OAuth/API, Upstash, Sanity webhook deliveries, and database health.
 - [ ] If Sanity import is wrong but production app is otherwise stable, stop content edits and decide whether to re-import from `./production-pre-cutover-backup.tar.gz` or roll forward with a corrected staging export.
 - [ ] If DB migration fails, stop and follow `docs/private-database-migration-runbook.md`; do not manually edit production schema.

@@ -229,7 +229,6 @@ Chit Chats provides live insured tracked product-shipping rates, staff label pur
 - `CHECKOUT_PII_ENCRYPTION_KEY` (base64-encoded 32-byte key)
 - `SHIPPING_DECISION_TOKEN_SECRET` (at least 32 bytes)
 - `ADDRESS_CHANGE_TOKEN_SECRET` (at least 32 bytes)
-- `SHIPPING_POLICY_ENFORCEMENT_MODE=off|observe|enforce`
 - `BACKUP_RETENTION_DAYS` (30 or less)
 - Optional `CHITCHATS_TRACKED_POSTAGE_TYPES`
 

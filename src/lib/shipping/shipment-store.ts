@@ -4,7 +4,6 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   and,
   asc,
-  desc,
   eq,
   gt,
   inArray,
@@ -24,7 +23,6 @@ import {
   productShipmentEvents,
   productShipmentJobs,
   productShipments,
-  shippingCalendarVersions,
   shippingPackageProfiles,
   type ProductShipmentDestinationSnapshot,
   type ProductShipmentCustomsLineSnapshot,
