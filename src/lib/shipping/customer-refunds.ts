@@ -1,7 +1,17 @@
 import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import { getPrivateDb } from "@/lib/private-db/client";
 import {
   checkoutOrders,
@@ -44,6 +54,20 @@ const RESERVED_REFUND_STATUSES = [
   "outcome_unknown",
   "manual_review",
 ] as const;
+
+/**
+ * Thrown by {@link processProductOrderRefund} when the atomic claim matches no
+ * row — the refund is no longer claimable as `queued`: another cron invocation
+ * won the race, it was already advanced, or it was quarantined between the
+ * pre-read and the claim. All are benign (no money moved), so the drain skips it
+ * without paging finance with a critical worker-failure alert.
+ */
+class RefundClaimUnavailableError extends Error {
+  constructor(message = "Refund is not available for processing") {
+    super(message);
+    this.name = "RefundClaimUnavailableError";
+  }
+}
 
 function createLiveSquareProductRefunder(): SquareProductRefunder {
   const env = getSquareCommerceEnv();
@@ -455,7 +479,7 @@ export async function processProductOrderRefund(
     if (!adjustment) throw new Error("Refund adjustment is not processable");
     return claimed;
   });
-  if (!claimedRefund) throw new Error("Refund is not available for processing");
+  if (!claimedRefund) throw new RefundClaimUnavailableError();
 
   // The refunder never throws — it classifies API/network failures. The
   // deterministic Square idempotency key (`claimedRefund.idempotencyKey`)
@@ -546,6 +570,13 @@ export async function processProductOrderRefund(
 export async function drainQueuedProductOrderRefunds(input?: {
   refundIds?: string[];
   limit?: number;
+  /**
+   * Test-only Square refunder injection. In production this is omitted, so each
+   * refund falls back to {@link createLiveSquareProductRefunder} (passing
+   * `undefined` still triggers the default parameter of
+   * {@link processProductOrderRefund}).
+   */
+  refunder?: SquareProductRefunder;
 }): Promise<{
   processed: number;
   succeeded: number;
@@ -553,13 +584,29 @@ export async function drainQueuedProductOrderRefunds(input?: {
   refunds: ProductOrderRefundRow[];
 }> {
   const db = getPrivateDb();
+  const now = new Date();
   const ids =
     input?.refundIds ??
     (
       await db
         .select({ id: productOrderRefunds.id })
         .from(productOrderRefunds)
-        .where(eq(productOrderRefunds.status, "queued"))
+        // Reap refunds stranded in `processing` by a worker that crashed after
+        // claiming the row but before/around the Square call: their lease has
+        // expired and nothing else re-selects them. Feeding them back through
+        // processProductOrderRefund routes them into its expired-lease recovery
+        // branch, which marks them `outcome_unknown` and surfaces them for
+        // manual reconciliation instead of leaving them stuck forever.
+        .where(
+          or(
+            eq(productOrderRefunds.status, "queued"),
+            and(
+              eq(productOrderRefunds.status, "processing"),
+              isNotNull(productOrderRefunds.leaseExpiresAt),
+              lte(productOrderRefunds.leaseExpiresAt, now),
+            ),
+          ),
+        )
         .orderBy(asc(productOrderRefunds.createdAt))
         .limit(input?.limit ?? 25)
     ).map((row) => row.id);
@@ -569,7 +616,7 @@ export async function drainQueuedProductOrderRefunds(input?: {
   const refunds: ProductOrderRefundRow[] = [];
   for (const id of ids) {
     try {
-      const refund = await processProductOrderRefund(id);
+      const refund = await processProductOrderRefund(id, input?.refunder);
       refunds.push(refund);
       processed += 1;
       if (refund.status === "succeeded") succeeded += 1;
@@ -593,7 +640,11 @@ export async function drainQueuedProductOrderRefunds(input?: {
           idempotencyKey: `shipping-refund-unknown/${id}`,
         }).catch(() => undefined);
       }
-    } catch {
+    } catch (error) {
+      // A lost claim race — an overlapping cron invocation already advanced this
+      // refund past `queued` — is benign, not a worker failure: skip it without
+      // paging finance. Every other throw is a genuine failure worth alerting.
+      if (error instanceof RefundClaimUnavailableError) continue;
       needsReview += 1;
       await sendShippingPolicyAlert({
         duties: ["finance_owner"],
