@@ -112,24 +112,6 @@ const ADMIN_DESTINATION_DEFINITIONS: readonly AdminDestinationDefinition[] = [
     navigation: true,
   },
   {
-    action: "fulfillment:view",
-    description:
-      "Work deadline-sorted product checkout, payment-risk, and shipping queues.",
-    group: "Daily work",
-    href: "/admin/operations",
-    keywords: [
-      "risk",
-      "shipping jobs",
-      "address changes",
-      "claims",
-      "refunds",
-      "funding",
-      "readiness",
-    ],
-    label: "Operations",
-    navigation: true,
-  },
-  {
     action: "payments:view",
     description:
       "Review training purchases, enrollments, and scheduling follow-up.",

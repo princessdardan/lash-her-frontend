@@ -11,7 +11,7 @@ import {
   type SquarePaymentObligationReconciliationAction,
 } from "@/lib/commerce/square-obligation-reconciliation";
 import { assertConfiguredFulfillmentOwner } from "@/lib/shipping/configured-owner";
-import { assertShippingPolicyMutationAllowed } from "@/lib/shipping/policy";
+import { isSupplementalProductPaymentsEnabled } from "@/lib/shipping/config";
 
 export const runtime = "nodejs";
 
@@ -44,14 +44,11 @@ export async function POST(
       { status: 403 },
     );
   }
-  try {
-    assertShippingPolicyMutationAllowed();
-  } catch {
+  if (!isSupplementalProductPaymentsEnabled())
     return NextResponse.json(
-      { error: "Shipping policy mutations require enforce mode" },
+      { error: "Supplemental product payments are disabled" },
       { status: 409 },
     );
-  }
   const { orderId, obligationId } = await context.params;
   const body = (await req.json().catch(() => null)) as Record<
     string,

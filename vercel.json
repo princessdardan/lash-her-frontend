@@ -17,10 +17,6 @@
       "schedule": "* * * * *"
     },
     {
-      "path": "/api/cron/shipping-policy",
-      "schedule": "*/15 * * * *"
-    },
-    {
       "path": "/api/cron/customer-email-outbox",
       "schedule": "*/5 * * * *"
     },

@@ -32,13 +32,6 @@ export function OrderShippingControls({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [operationStatus, setOperationStatus] = useState<string | null>(null);
-  const [alternateRates, setAlternateRates] = useState<
-    Array<{ id: string; title: string; amountCents: number }>
-  >([]);
-  const [alternatePostageType, setAlternatePostageType] = useState("");
-  const [alternateReason, setAlternateReason] = useState("");
-  const [alternateConditionsUnchanged, setAlternateConditionsUnchanged] =
-    useState(false);
 
   const waitForOperation = async (operationId: string) => {
     for (let attempt = 0; attempt < 60; attempt += 1) {
@@ -92,13 +85,6 @@ export function OrderShippingControls({
             expectedStateVersion: stateVersion,
             measuredWeightGrams: Number(weight),
             shipDate,
-            ...(alternatePostageType
-              ? {
-                  alternatePostageType,
-                  alternateReason,
-                  alternateConditionsUnchanged,
-                }
-              : {}),
           }),
         },
       );
@@ -106,14 +92,9 @@ export function OrderShippingControls({
         error?: string;
         operationId?: string;
         status?: string;
-        rates?: Array<{ id: string; title: string; amountCents: number }>;
       };
       if (!response.ok) {
         setError(result.error ?? "Postage could not be purchased");
-        if (result.rates?.length) {
-          setAlternateRates(result.rates);
-          setAlternatePostageType(result.rates[0]?.id ?? "");
-        }
         return;
       }
       setOperationStatus(
@@ -180,21 +161,6 @@ export function OrderShippingControls({
     }
   };
 
-  const postAction = async (path: string, failure: string) => {
-    setBusy(true);
-    setError(null);
-    try {
-      const response = await fetch(path, { method: "POST" });
-      const result = (await response.json()) as { error?: string };
-      if (!response.ok) setError(result.error ?? failure);
-      else router.refresh();
-    } catch {
-      setError(failure);
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <div className="mt-3 border-t border-lh-line pt-3">
       <p className="text-xs font-semibold uppercase tracking-[0.12em] text-lh-muted">
@@ -225,84 +191,6 @@ export function OrderShippingControls({
           >
             {busy ? "Buying..." : "Buy label"}
           </Button>
-        </div>
-      ) : null}
-      <div className="mt-2 flex flex-wrap gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          disabled={
-            busy || ["accepted", "in_transit", "delivered"].includes(status)
-          }
-          onClick={() =>
-            postAction(
-              `/api/admin/orders/${encodeURIComponent(orderId)}/address-change`,
-              "Address-change link could not be sent",
-            )
-          }
-        >
-          Send address-change link
-        </Button>
-        {status === "manual_review" ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={busy}
-            onClick={() => router.push("/admin/operations")}
-          >
-            Review in operations workspace
-          </Button>
-        ) : null}
-      </div>
-      {status === "ready_for_staff" && alternateRates.length > 0 ? (
-        <div className="mt-3 grid gap-2">
-          <label
-            className="text-xs font-semibold text-lh-muted"
-            htmlFor={`alternate-rate-${orderId}`}
-          >
-            Insured tracked alternative
-          </label>
-          <select
-            id={`alternate-rate-${orderId}`}
-            className="h-11 rounded-md border border-lh-line bg-white px-3 text-sm"
-            value={alternatePostageType}
-            onChange={(event) => setAlternatePostageType(event.target.value)}
-          >
-            {alternateRates.map((rate) => (
-              <option key={rate.id} value={rate.id}>
-                {rate.title} —{" "}
-                {(rate.amountCents / 100).toLocaleString("en-CA", {
-                  style: "currency",
-                  currency: "CAD",
-                })}
-              </option>
-            ))}
-          </select>
-          <Input
-            aria-label="Reason for changing shipping service"
-            value={alternateReason}
-            onChange={(event) => setAlternateReason(event.target.value)}
-            placeholder="Required reason for service change"
-            maxLength={500}
-          />
-          <label className="flex items-start gap-2 text-xs text-lh-muted">
-            <input
-              type="checkbox"
-              checked={alternateConditionsUnchanged}
-              onChange={(event) =>
-                setAlternateConditionsUnchanged(event.target.checked)
-              }
-            />
-            Confirm this service adds no pickup, duty, brokerage, or signature
-            condition. Equal-or-faster delivery and insurance are checked by the
-            server.
-          </label>
-          <p className="text-xs text-lh-muted">
-            Lash Her absorbs increases. Reductions of at least CAD 1 are queued
-            to the customer-refund ledger.
-          </p>
         </div>
       ) : null}
       {error ? (

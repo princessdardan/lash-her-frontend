@@ -1,10 +1,9 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { isChitChatsShippingEnabled } from "@/lib/shipping/config";
+import { isSquareCommerceCheckoutEnabled } from "@/lib/env/private-checkout";
 import { runShippingOperationWorker } from "@/lib/shipping/operation-worker";
-import { drainProductPaymentRiskAlerts } from "@/lib/shipping/risk-alert-drain";
-import { getShippingPolicyEnforcementMode } from "@/lib/shipping/policy";
-import { runPaymentObligationInitializationWorker } from "@/lib/commerce/product-payment-obligation-worker";
+import { drainQueuedProductOrderRefunds } from "@/lib/shipping/customer-refunds";
 import {
   abandonExpiredQuotes,
   enqueueShipmentOperation,
@@ -34,36 +33,20 @@ export async function GET(req: Request): Promise<Response> {
 
 async function runShippingWorkerCron(): Promise<Response> {
   const now = new Date();
-  const riskAlerts = await drainProductPaymentRiskAlerts(now);
-  const mode = getShippingPolicyEnforcementMode();
-  const paymentInitializations =
-    mode === "enforce"
-      ? await runPaymentObligationInitializationWorker({ now })
-      : { claimed: 0, succeeded: 0, failed: 0, outcomeUnknown: 0 };
+  // Manual Square refunds queue a row (via the admin refund route) and are
+  // executed here. Independent of Chit Chats shipping being enabled.
+  const refunds = isSquareCommerceCheckoutEnabled()
+    ? await drainQueuedProductOrderRefunds()
+    : { processed: 0, succeeded: 0, needsReview: 0, refunds: [] };
+  const refundSummary = {
+    processed: refunds.processed,
+    succeeded: refunds.succeeded,
+    needsReview: refunds.needsReview,
+  };
   if (!isChitChatsShippingEnabled()) {
     return NextResponse.json(
-      { enabled: false, queued: 0, riskAlerts, paymentInitializations },
-      {
-        status:
-          riskAlerts.deadLettered > 0 ||
-          paymentInitializations.failed > 0 ||
-          paymentInitializations.outcomeUnknown > 0
-            ? 503
-            : 200,
-      },
-    );
-  }
-  if (mode !== "enforce") {
-    return NextResponse.json(
-      {
-        enabled: true,
-        mode,
-        mutated: false,
-        queued: 0,
-        riskAlerts,
-        paymentInitializations,
-      },
-      { status: riskAlerts.deadLettered > 0 ? 503 : 200 },
+      { enabled: false, queued: 0, refunds: refundSummary },
+      { status: refunds.needsReview > 0 ? 503 : 200 },
     );
   }
   const abandoned = await abandonExpiredQuotes(now);
@@ -86,23 +69,13 @@ async function runShippingWorkerCron(): Promise<Response> {
   const operations = await runShippingOperationWorker();
   const redacted = await redactExpiredShipmentPii(now);
   return NextResponse.json(
-    {
-      queued,
-      abandoned,
-      operations,
-      riskAlerts,
-      paymentInitializations,
-      redacted,
-    },
+    { queued, abandoned, operations, redacted, refunds: refundSummary },
     {
       status:
         operations.deadLettered > 0 ||
         operations.retried > 0 ||
         operations.fenced > 0 ||
-        riskAlerts.deadLettered > 0 ||
-        riskAlerts.retried > 0 ||
-        paymentInitializations.failed > 0 ||
-        paymentInitializations.outcomeUnknown > 0
+        refunds.needsReview > 0
           ? 503
           : 200,
     },

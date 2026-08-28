@@ -8,7 +8,7 @@ import {
   isShippingLinkExchangeBlocked,
   recordShippingLinkFailure,
 } from "@/lib/security/shipping-abuse-control";
-import { assertShippingPolicyMutationAllowed } from "@/lib/shipping/policy";
+import { isSupplementalProductPaymentsEnabled } from "@/lib/shipping/config";
 
 import {
   exchangeSupplementalPaymentOffer,
@@ -20,7 +20,7 @@ export const SUPPLEMENTAL_PAYMENT_OFFER_BEARER_COOKIE =
   "lh_supplemental_payment_offer_bearer";
 
 interface SupplementalPaymentOfferLinkDependencies {
-  assertMutationAllowed: typeof assertShippingPolicyMutationAllowed;
+  assertMutationAllowed: () => void;
   checkBlocked: typeof isShippingLinkExchangeBlocked;
   checkRateLimit: typeof checkSignedShippingLinkRateLimit;
   exchange: typeof exchangeSupplementalPaymentOffer;
@@ -29,7 +29,10 @@ interface SupplementalPaymentOfferLinkDependencies {
 }
 
 const defaultDependencies: SupplementalPaymentOfferLinkDependencies = {
-  assertMutationAllowed: assertShippingPolicyMutationAllowed,
+  assertMutationAllowed: () => {
+    if (!isSupplementalProductPaymentsEnabled())
+      throw new Error("Supplemental product payments are disabled");
+  },
   checkBlocked: isShippingLinkExchangeBlocked,
   checkRateLimit: checkSignedShippingLinkRateLimit,
   exchange: exchangeSupplementalPaymentOffer,

@@ -77,7 +77,6 @@ const chitchatsLaunchEnvVars = [
   "CHECKOUT_PII_ENCRYPTION_KEY",
   "SHIPPING_DECISION_TOKEN_SECRET",
   "ADDRESS_CHANGE_TOKEN_SECRET",
-  "SHIPPING_POLICY_ENFORCEMENT_MODE",
 ];
 
 // Keep synchronized with CHITCHATS_REGIONS in src/lib/shipping/config.ts.
@@ -196,15 +195,6 @@ for (const [name, value] of [
 if (chitchatsCheckoutEnabled === "true" && !isChitchatsShippingEnabled) {
   errors.push(
     "Invalid env vars: CHITCHATS_CHECKOUT_ENABLED requires CHITCHATS_SHIPPING_ENABLED=true",
-  );
-}
-
-if (
-  chitchatsCheckoutEnabled === "true" &&
-  process.env.SHIPPING_POLICY_ENFORCEMENT_MODE !== "enforce"
-) {
-  errors.push(
-    "Invalid env vars: CHITCHATS_CHECKOUT_ENABLED requires SHIPPING_POLICY_ENFORCEMENT_MODE=enforce",
   );
 }
 
@@ -337,15 +327,6 @@ if (isLaunchEnvironment) {
     ) {
       errors.push(
         "Malformed env var: CHITCHATS_QUOTE_SIGNING_SECRET must be at least 32 random bytes",
-      );
-    }
-    if (
-      !["off", "observe", "enforce"].includes(
-        process.env.SHIPPING_POLICY_ENFORCEMENT_MODE,
-      )
-    ) {
-      errors.push(
-        "Malformed env var: SHIPPING_POLICY_ENFORCEMENT_MODE must be off, observe, or enforce",
       );
     }
     for (const name of [

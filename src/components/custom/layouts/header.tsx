@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { ShoppingBag } from "lucide-react";
 import type { THeader } from "@/types";
 import type { IMainMenuItems } from "@/app/main-menu";
@@ -10,8 +9,14 @@ import { Logo } from "@/components/ui/logo";
 import { MainMenu } from "@/app/main-menu";
 import { MobileNavigation } from "@/components/ui/mobile-navigation";
 import { Button } from "@/components/ui/button";
-import { HeaderWrapper, useHeaderContext } from "@/components/custom/layouts/header-wrapper";
-import { NavigationMenu, NavigationMenuList } from "@/components/ui/navigation-menu";
+import {
+  HeaderWrapper,
+  useHeaderContext,
+} from "@/components/custom/layouts/header-wrapper";
+import {
+  NavigationMenu,
+  NavigationMenuList,
+} from "@/components/ui/navigation-menu";
 import { cn } from "@/lib/utils";
 import { useProductCart } from "@/components/commerce/product-cart-provider";
 
@@ -20,30 +25,46 @@ interface IHeaderProps {
   menuItems?: IMainMenuItems[];
 }
 
-function HeaderButton({ href, label, isPrimary }: { href: string; label: string; isPrimary?: boolean }) {
+function HeaderButton({
+  href,
+  label,
+  isPrimary,
+}: {
+  href: string;
+  label: string;
+  isPrimary?: boolean;
+}) {
   const { isActive } = useHeaderContext();
-  
+
   if (isPrimary) {
     return (
-      <Button asChild variant="primary" className={cn(
+      <Button
+        asChild
+        variant="primary"
+        className={cn(
           "font-sans font-bold text-sm px-6 py-2 transition-all duration-300",
-          isActive ? "border border-lh-primary shadow-[0_4px_14px_-2px_rgba(102,57,118,0.3)] hover:bg-lh-primary/90 hover:shadow-[0_6px_20px_-2px_rgba(102,57,118,0.4)]" : "border border-transparent"
-        )}>
-        <Link href={href}>
-          {label}
-        </Link>
+          isActive
+            ? "border border-lh-primary shadow-[0_4px_14px_-2px_rgba(102,57,118,0.3)] hover:bg-lh-primary/90 hover:shadow-[0_6px_20px_-2px_rgba(102,57,118,0.4)]"
+            : "border border-transparent",
+        )}
+      >
+        <Link href={href}>{label}</Link>
       </Button>
     );
   }
 
   return (
-    <Button asChild variant="ghost" className={cn(
+    <Button
+      asChild
+      variant="ghost"
+      className={cn(
         "font-sans font-bold text-sm px-4 py-2 transition-all duration-300",
-        isActive ? "bg-lh-neutral/50 border border-lh-line text-lh-shadow hover:bg-lh-neutral hover:border-lh-light hover:text-lh-primary shadow-sm" : "border border-transparent text-lh-white hover:text-lh-light hover:bg-white/10"
-      )}>
-      <Link href={href}>
-        {label}
-      </Link>
+        isActive
+          ? "bg-lh-neutral/50 border border-lh-line text-lh-shadow hover:bg-lh-neutral hover:border-lh-light hover:text-lh-primary shadow-sm"
+          : "border border-transparent text-lh-white hover:text-lh-light hover:bg-white/10",
+      )}
+    >
+      <Link href={href}>{label}</Link>
     </Button>
   );
 }
@@ -63,7 +84,9 @@ function CartButton() {
           ? "bg-lh-neutral/50 border border-lh-line text-lh-shadow hover:bg-lh-neutral hover:border-lh-light hover:text-lh-primary shadow-sm"
           : "border border-transparent text-lh-white hover:text-lh-light hover:bg-white/10",
       )}
-      aria-label={itemCount > 0 ? `Open cart with ${itemCount} items` : "Open cart"}
+      aria-label={
+        itemCount > 0 ? `Open cart with ${itemCount} items` : "Open cart"
+      }
     >
       <ShoppingBag className="h-4 w-4" aria-hidden="true" />
       <span>Cart</span>
@@ -78,24 +101,25 @@ function CartButton() {
 
 function HeaderContent({ data, menuItems }: IHeaderProps) {
   const { isActive } = useHeaderContext();
-  const pathname = usePathname();
-  
+
   if (!data) return null;
 
   const { logoText, ctaButton } = data;
   const primaryCta = ctaButton[0]; // Use first CTA button for mobile
-  const showCartButton = pathname !== "/products";
-  
+
   return (
     <>
       <div className="w-full relative flex items-center justify-center">
         {/* Mobile hamburger - top left */}
         <div className="absolute left-4 min-[1301px]:hidden">
-          <MobileNavigation ctaButton={primaryCta} menuItems={menuItems} showCartButton={showCartButton} />
+          <MobileNavigation ctaButton={primaryCta} menuItems={menuItems} />
         </div>
 
         {/* Desktop navigation - left */}
-        <nav className="hidden min-[1301px]:flex absolute left-4 items-center gap-4" aria-label="Main navigation">
+        <nav
+          className="hidden min-[1301px]:flex absolute left-4 items-center gap-4"
+          aria-label="Main navigation"
+        >
           <NavigationMenu>
             <NavigationMenuList>
               {menuItems && menuItems.length > 0 && (
@@ -104,15 +128,20 @@ function HeaderContent({ data, menuItems }: IHeaderProps) {
             </NavigationMenuList>
           </NavigationMenu>
         </nav>
-        
+
         {/* Desktop CTA buttons - right, hidden on mobile */}
         <div className="hidden min-[1301px]:flex absolute right-4 gap-2">
           {ctaButton.map((button, index) => (
-            <HeaderButton key={index} href={button.href} label={button.label} isPrimary={index === 0} />
+            <HeaderButton
+              key={index}
+              href={button.href}
+              label={button.label}
+              isPrimary={index === 0}
+            />
           ))}
-          {showCartButton ? <CartButton /> : null}
+          <CartButton />
         </div>
-        
+
         {/* Logo - centered */}
         <Logo data={logoText} />
       </div>

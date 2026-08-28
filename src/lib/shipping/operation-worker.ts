@@ -12,7 +12,6 @@ import {
   assertUsShippingContractCurrent,
 } from "./readiness";
 import { loadShippingPolicyContext } from "./policy";
-import { assertShippingPolicyMutationAllowed } from "./policy";
 import { sendShippingPolicyAlert } from "./policy-alerts";
 import { queueProductOrderRefund } from "./customer-refunds";
 import { parseShippingQuoteContextSnapshot } from "./quote-token";
@@ -47,7 +46,6 @@ import {
 } from "./status";
 import type { ChitChatsShipment } from "./types";
 import type { ProductShipmentRateSnapshot } from "@/lib/private-db/schema";
-import { p10TerminationBlocksShipmentPurchase } from "./p10-termination";
 
 export interface ShippingOperationWorkerResult {
   claimed: number;
@@ -57,36 +55,16 @@ export interface ShippingOperationWorkerResult {
   fenced: number;
 }
 
-export interface ShipmentOperationExtensionInput {
-  jobId: string;
-  shipmentId: string;
-  payload: Record<string, unknown>;
-  client: ChitChatsClient;
-  observedAt: Date;
-  outcomeUnknown: boolean;
-}
-
-export type ShipmentOperationExtensionHandler = (
-  input: ShipmentOperationExtensionInput,
-) => Promise<{ outcomeCode: string }>;
-
 export interface ShippingOperationWorkerDependencies {
   client: ChitChatsClient;
   now: () => Date;
   workerId: string;
   assertQuoteContextCurrent?: typeof assertShippingQuoteContextCurrent;
-  extensionHandlers?: Partial<
-    Record<
-      "replacement_prepare" | "address_replace",
-      ShipmentOperationExtensionHandler
-    >
-  >;
 }
 
 export async function runShippingOperationWorker(
   dependencies: ShippingOperationWorkerDependencies = defaultDependencies(),
 ): Promise<ShippingOperationWorkerResult> {
-  assertShippingPolicyMutationAllowed();
   const jobs = await claimShipmentOperationJobs({
     workerId: dependencies.workerId,
     now: dependencies.now(),
@@ -184,8 +162,6 @@ const MUTATING_OPERATION_TYPES = new Set<ShipmentOperationRow["type"]>([
   "refund",
   "delete",
   "cleanup",
-  "replacement_prepare",
-  "address_replace",
 ]);
 
 async function dispatch(
@@ -207,24 +183,13 @@ async function dispatch(
     case "cleanup":
       return processDelete(job, dependencies);
     case "replacement_prepare":
-    case "address_replace": {
-      const handler = dependencies.extensionHandlers?.[job.type];
-      if (!handler)
-        throw new DeterministicOperationError(
-          `${job.type}_handler_missing`,
-          `No ${job.type} operation handler is configured`,
-        );
-      return (
-        await handler({
-          jobId: job.id,
-          shipmentId: job.shipmentId,
-          payload: job.payload ?? {},
-          client: dependencies.client,
-          observedAt: dependencies.now(),
-          outcomeUnknown: job.outcomeUnknown,
-        })
-      ).outcomeCode;
-    }
+    case "address_replace":
+      // The post-sale replacement / address-change subsystem was removed; these
+      // job types are no longer enqueued. Reject defensively if one is found.
+      throw new DeterministicOperationError(
+        `${job.type}_unsupported`,
+        `The ${job.type} operation type is no longer supported`,
+      );
     case "notification":
       return "notification_delegated";
   }
@@ -468,15 +433,6 @@ async function processPurchase(
   dependencies: ShippingOperationWorkerDependencies,
 ): Promise<string> {
   let shipment = await requireShipment(job.shipmentId);
-  const terminationAlreadyStarted = await p10TerminationBlocksShipmentPurchase(
-    shipment.id,
-    dependencies.now(),
-  );
-  if (terminationAlreadyStarted && !job.outcomeUnknown)
-    throw new DeterministicOperationError(
-      "p10_termination_started",
-      "Postage purchase is blocked because pre-cap order termination has begun",
-    );
   if (!job.outcomeUnknown) assertExpectedShipmentVersion(job, shipment);
   // Flat-rate shipments defer provider-draft creation to fulfillment: the quote
   // was served synchronously from the cache with no carrier round-trip, so no
@@ -539,16 +495,6 @@ async function processPurchase(
     purchaseRequired = action === "buy";
   }
   if (purchaseRequired) {
-    if (
-      await p10TerminationBlocksShipmentPurchase(
-        shipment.id,
-        dependencies.now(),
-      )
-    )
-      throw new DeterministicOperationError(
-        "p10_termination_started",
-        "Postage purchase is blocked because pre-cap order termination has begun",
-      );
     await requireCurrentShippingQuoteContext(
       shipment,
       dependencies.now(),
@@ -1593,35 +1539,5 @@ function defaultDependencies(): ShippingOperationWorkerDependencies {
     client: createChitChatsClient(getChitChatsConfig()),
     now: () => new Date(),
     workerId: `chitchats/${randomUUID()}`,
-    extensionHandlers: {
-      address_replace: async (input) => {
-        const addressChanges = await import("./address-changes");
-        const handler = (
-          addressChanges as unknown as {
-            processAddressReplaceOperation?: ShipmentOperationExtensionHandler;
-          }
-        ).processAddressReplaceOperation;
-        if (!handler)
-          throw new DeterministicOperationError(
-            "address_replace_handler_missing",
-            "Address replacement handler is not configured",
-          );
-        return handler(input);
-      },
-      replacement_prepare: async (input) => {
-        const shippingCases = await import("./cases");
-        const handler = (
-          shippingCases as unknown as {
-            processReplacementPrepareOperation?: ShipmentOperationExtensionHandler;
-          }
-        ).processReplacementPrepareOperation;
-        if (!handler)
-          throw new DeterministicOperationError(
-            "replacement_prepare_handler_missing",
-            "Replacement preparation handler is not configured",
-          );
-        return handler(input);
-      },
-    },
   };
 }

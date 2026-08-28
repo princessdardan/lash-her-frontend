@@ -2,10 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requirePermission } from "@/lib/admin/auth";
 import { recordAdminAuditBestEffort } from "@/lib/admin/audit-log";
 import { enqueuePurchaseOperationForOrder } from "@/lib/shipping/shipment-store";
-import {
-  assertShippingPolicyMutationAllowed,
-  ShippingPolicyMutationBlockedError,
-} from "@/lib/shipping/policy";
+import { isChitChatsShippingEnabled } from "@/lib/shipping/config";
 import { assertConfiguredFulfillmentOwner } from "@/lib/shipping/configured-owner";
 
 export const runtime = "nodejs";
@@ -16,16 +13,11 @@ export async function POST(
 ): Promise<Response> {
   const actor = await requirePermission("fulfillment:manage");
   await assertConfiguredFulfillmentOwner(actor.user.id);
-  try {
-    assertShippingPolicyMutationAllowed();
-  } catch (error) {
-    if (error instanceof ShippingPolicyMutationBlockedError)
-      return NextResponse.json(
-        { error: "Shipping operations are read-only" },
-        { status: 503 },
-      );
-    throw error;
-  }
+  if (!isChitChatsShippingEnabled())
+    return NextResponse.json(
+      { error: "Chit Chats shipping is not enabled" },
+      { status: 503 },
+    );
   if (req.headers.get("origin") !== req.nextUrl.origin)
     return NextResponse.json(
       { error: "Invalid request origin" },

@@ -47,7 +47,6 @@ import type { ProductShipmentStatus } from "./store-types";
 import type { ShippingPackageProfile } from "./types";
 import { computeShippingDeadlines } from "./policy-calendar";
 import { allowedShipmentSourceStatuses } from "./status";
-import { p10TerminationBlocksOrderInTransaction } from "./p10-termination";
 import { sendShippingPolicyAlert } from "./policy-alerts";
 
 export type ProductShipmentRow = typeof productShipments.$inferSelect;
@@ -1333,8 +1332,6 @@ export async function enqueuePurchaseOperationForOrder(input: {
       }))
     )
       return null;
-    if (await p10TerminationBlocksOrderInTransaction(tx, order.id, now))
-      return null;
     const [addressHold] = await tx
       .select({ id: productOrderAddressChangeRequests.id })
       .from(productOrderAddressChangeRequests)
@@ -1494,8 +1491,6 @@ export async function enqueuePreparedAddressPurchaseInTransaction(
     !prepared.quotedShippingCents ||
     prepared.quotedShippingCents <= 0
   )
-    return null;
-  if (await p10TerminationBlocksOrderInTransaction(tx, order.id, input.now))
     return null;
 
   // Funding gate removed — Chit Chats account balance + auto-reload guards spend.
@@ -1820,8 +1815,6 @@ export async function markShipmentPurchaseProviderCallIntent(input: {
       .for("update")
       .limit(1);
     if (!job?.orderId) return false;
-    if (await p10TerminationBlocksOrderInTransaction(tx, job.orderId, now))
-      return false;
     const [updated] = await tx
       .update(productShipmentJobs)
       .set({
