@@ -10,14 +10,12 @@ const REQUIRED_BRANCH_COVERAGE = new Map([
   // product-payment-finalizer.ts was the Helcim product finalizer, deleted in
   // the Helcim->Square cutover (commit aa59555); its Square replacements
   // (square-product-finalizer.ts et al.) carry their own DB coverage.
-  ["src/lib/commerce/product-payment-operation.ts", 70],
+  // product-payment-operation.ts, customer-decisions.ts, policy-jobs.ts and
+  // risk-review.ts were removed with the shipping-policy subsystem teardown.
   ["src/lib/private-db/shipping-retention.ts", 65],
-  ["src/lib/shipping/customer-decisions.ts", 55],
   ["src/lib/shipping/customer-refunds.ts", 67],
   ["src/lib/shipping/operation-worker.ts", 52],
-  ["src/lib/shipping/policy-jobs.ts", 70],
   ["src/lib/shipping/quote-token.ts", 80],
-  ["src/lib/shipping/risk-review.ts", 45],
   ["src/lib/shipping/shipment-store.ts", 57],
   ["src/lib/shipping/status.ts", 78],
 ]);
