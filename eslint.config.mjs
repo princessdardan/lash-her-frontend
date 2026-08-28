@@ -10,6 +10,8 @@ const eslintConfig = defineConfig([
     // Default ignores of eslint-config-next:
     ".next/**",
     ".worktrees/**",
+    // Sibling Claude Code worktrees carry their own .next build output; never lint them.
+    ".claude/worktrees/**",
     "out/**",
     "build/**",
     "test-results/**",
