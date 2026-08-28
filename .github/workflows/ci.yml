@@ -643,12 +643,12 @@ jobs:
           NEXT_PUBLIC_SANITY_DATASET: staging-2026-05-10
           NEXT_PUBLIC_SANITY_API_VERSION: 2026-03-24
           SANITY_API_READ_TOKEN: ${{ secrets.SANITY_API_READ_TOKEN }}
-      # The commerce-enabled seed + provider fixture above are intentionally
-      # retained: they also back the still-valid admin-calendar / admin-operations
-      # E2E suites (Redis mock + fulfillment readiness data). The Helcim->Square
-      # migration pruned the retired Helcim scenarios from the required-coverage
-      # list (scripts/verify-playwright-coverage.mjs); the Square commerce (product
-      # storefront + checkout) and Square service-booking payment scenarios are now
-      # enabled and required there.
+      # The commerce-enabled seed above is intentionally retained: it backs the
+      # still-valid admin-calendar, Square commerce (product storefront + checkout)
+      # and Square service-booking E2E suites (owner + package profiles + shipping
+      # calendar + booking offering). The Helcim->Square migration pruned the retired
+      # Helcim scenarios from the required-coverage list, and the shipping-policy
+      # teardown removed the admin-operations scenarios
+      # (scripts/verify-playwright-coverage.mjs).
       - name: Verify required browser coverage executed
         run: npm run test:browser:verify
