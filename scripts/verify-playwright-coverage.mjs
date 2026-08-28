@@ -9,8 +9,9 @@ const REQUIRED_PROJECTS = ["chromium", "firefox", "webkit"];
 // flow. Their entries were removed from this required list. The Square commerce
 // E2E harness has since landed (SQUARE_COMMERCE_ENABLED / SERVICE_BOOKING_SQUARE_ENABLED
 // are supplied to the E2E dev server), so the critical Square storefront and
-// checkout scenarios are required below alongside the admin self-service, admin
-// operations, and Square service-booking payment scenarios.
+// checkout scenarios are required below alongside the admin self-service and
+// Square service-booking payment scenarios. (The admin-operations.spec.ts
+// scenarios were removed with the shipping-policy operations workspace teardown.)
 const REQUIRED_SCENARIOS = [
   [
     "admin-calendar-self-service.spec.ts",
@@ -19,14 +20,6 @@ const REQUIRED_SCENARIOS = [
   [
     "admin-calendar-self-service.spec.ts",
     "owner cannot disable a calendar assignment that receives bookings",
-  ],
-  [
-    "admin-operations.spec.ts",
-    "renders every actionable queue with versioned evidence state",
-  ],
-  [
-    "admin-operations.spec.ts",
-    "shows the exact step-up action and target without executing it",
   ],
   [
     "service-booking-payment-page.spec.ts",
