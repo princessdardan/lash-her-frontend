@@ -2,20 +2,20 @@
 
 Last updated: 2026-07-15
 
-Use this runbook when operating, smoke testing, or troubleshooting Lash Her booking flows in staging or production. It assumes the provider split is live: service booking customers select slots in the Lash Her app, enter contact and payment data only on an opaque payment-session page, and use Square direct charge-and-store before the authoritative PostgreSQL appointment is projected to Google Calendar. Product checkout and training checkout remain on Helcim by default. Historical Square hosted-checkout records remain reconcilable, but disabling direct card-on-file payment now fails new payment sessions closed instead of creating a new hosted checkout. Training checkout may optionally use a Square Afterpay Invoice when `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true`; see `docs/training-afterpay-square-invoice.md` for the launch gate and operational rules.
+Use this runbook when operating, smoke testing, or troubleshooting Lash Her booking flows in staging or production. It assumes the provider split is live: service booking customers select slots in the Lash Her app, enter contact and payment data only on an opaque payment-session page, and use Square direct charge-and-store before the authoritative PostgreSQL appointment is projected to Google Calendar. Product checkout and training checkout run on Square through the Square Web Payments SDK, gated by `SQUARE_COMMERCE_ENABLED`. Historical Square hosted-checkout records remain reconcilable, but disabling direct card-on-file payment now fails new payment sessions closed instead of creating a new hosted checkout. Training checkout may optionally use a Square Afterpay Invoice when `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true`; see `docs/training-afterpay-square-invoice.md` for the launch gate and operational rules.
 
 ## System Boundaries
 
-| System                      | Operator responsibility                                                                                                                                                                                                   | Must not become                                                                                                                                        |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Sanity                      | Public booking copy, booking settings, bookable services, native payment fields, cache revalidation                                                                                                                       | Storage for PII, payment state, holds, booking history, or transaction records                                                                         |
-| Private Postgres            | Holds, checkout orders, payment events, appointment state, training enrollments, reconciliation data                                                                                                                      | Public CMS or browser-readable data source                                                                                                             |
-| Upstash Redis               | Short-lived contention locks, public booking rate windows, and expiring active-hold quotas                                                                                                                                | Canonical payment, booking, identity, or Calendar credential storage                                                                                   |
-| Google Calendar API         | Staff source of truth for final service booking events and busy intervals                                                                                                                                                 | Payment gate or Appointment Schedule engine                                                                                                            |
-| Google Appointment Schedule | Paid training intro-call scheduling after private token eligibility passes                                                                                                                                                | Service booking engine or paid-status verifier                                                                                                         |
-| Square                      | Direct service payment/card storage, historical hosted-checkout reconciliation, payment webhooks, and optional training Afterpay invoices                                                                                 | Product checkout, default training checkout, or sole proof of booking success                                                                          |
-| Helcim                      | Product checkout and default training checkout initialization, payment approval, webhook event source                                                                                                                     | New service booking payment provider, sole authority for final booking state, or training checkout when the optional Square invoice feature is enabled |
-| Resend                      | Customer/admin transactional emails                                                                                                                                                                                       | Source of truth for booking success                                                                                                                    |
+| System                      | Operator responsibility                                                                                                                                                                            | Must not become                                                                |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Sanity                      | Public booking copy, booking settings, bookable services, native payment fields, cache revalidation                                                                                                | Storage for PII, payment state, holds, booking history, or transaction records |
+| Private Postgres            | Holds, checkout orders, payment events, appointment state, training enrollments, reconciliation data                                                                                               | Public CMS or browser-readable data source                                     |
+| Upstash Redis               | Short-lived contention locks, public booking rate windows, and expiring active-hold quotas                                                                                                         | Canonical payment, booking, identity, or Calendar credential storage           |
+| Google Calendar API         | Staff source of truth for final service booking events and busy intervals                                                                                                                          | Payment gate or Appointment Schedule engine                                    |
+| Google Appointment Schedule | Paid training intro-call scheduling after private token eligibility passes                                                                                                                         | Service booking engine or paid-status verifier                                 |
+| Square                      | Product and training checkout (Square Web Payments SDK), direct service payment/card storage, historical hosted-checkout reconciliation, payment webhooks, and optional training Afterpay invoices | Sole proof of booking success, or a store of raw card tokens or full PANs      |
+| Helcim                      | Legacy/historical product and training payment records only; retained `helcim` payment-provider enum value and `helcim_*` columns keep past orders readable                                        | Provider for any new product, training, or service booking payment             |
+| Resend                      | Customer/admin transactional emails                                                                                                                                                                | Source of truth for booking success                                            |
 
 If a record contains customer contact data, payment identifiers, hold state, or reconciliation metadata, treat it as private Postgres data. Do not move it into Sanity.
 
@@ -49,10 +49,10 @@ Duplicate submissions, browser restarts, return visits, and webhook events must 
 
 ### Paid Training Intro Call
 
-Default path (Helcim):
+Default path (Square Web Payments):
 
 1. Training checkout completes through the commerce checkout flow.
-2. Helcim verifies the payment for the training order.
+2. Square Web Payments verifies the card payment for the training order.
 3. The private training enrollment/order is marked paid and a private schedule token is issued.
 4. The customer receives the tokenized paid training schedule path.
 5. The app resolves private token eligibility before rendering anything that exposes the Google Appointment Schedule URL.
@@ -74,11 +74,11 @@ Google Appointment Schedule is only for paid training intro-call scheduling afte
 
 The shared V1/V2 availability and hold endpoints use atomic Upstash Redis sorted-set scripts. Availability and hold-attempt windows are global per one-way client-IP digest, so rotating arbitrary service or offering identifiers cannot create fresh buckets or unbounded Redis keys. The active-hold quota additionally includes a one-way offering ID or service-slug digest. Raw IP addresses are never written into rate-limit keys or application logs.
 
-| Endpoint/control | Limit | Response when exceeded |
-| --- | ---: | --- |
-| `GET` or `POST /api/booking/availability` | 30 requests per rolling 60 seconds for each client IP across all service/offering identifiers | `429` with `Retry-After` |
-| `POST /api/booking/holds` attempt window | 5 requests per rolling 10 minutes for each client IP across all service/offering identifiers | `429` with `Retry-After` |
-| Active hold quota | 2 concurrent 10-minute hold leases for each client IP and offering/service | `429` with `Retry-After` based on the earliest lease expiry |
+| Endpoint/control                          |                                                                                         Limit | Response when exceeded                                      |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------: | ----------------------------------------------------------- |
+| `GET` or `POST /api/booking/availability` | 30 requests per rolling 60 seconds for each client IP across all service/offering identifiers | `429` with `Retry-After`                                    |
+| `POST /api/booking/holds` attempt window  |  5 requests per rolling 10 minutes for each client IP across all service/offering identifiers | `429` with `Retry-After`                                    |
+| Active hold quota                         |                    2 concurrent 10-minute hold leases for each client IP and offering/service | `429` with `Retry-After` based on the earliest lease expiry |
 
 Vercel launch environments accept client identity only from `x-vercel-forwarded-for`. If that trusted header is missing or malformed, the endpoints return `503`; they do not fall back to a shared unknown-client bucket or client-supplied forwarding headers. Local and test environments retain the existing `x-forwarded-for`, then `x-real-ip`, fallback for development only.
 
@@ -108,11 +108,12 @@ Run these checks for staging release validation, production launch windows, and 
 - [ ] `KV_REST_API_URL` and `KV_REST_API_TOKEN` point to the intended Upstash Redis instance.
 - [ ] `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` match the environment OAuth client.
 - [ ] `BOOKING_ADMIN_SETUP_SECRET` is configured for the protected Google Calendar OAuth setup flow and stored server-only.
-- [ ] `HELCIM_GENERAL_API_TOKEN`, `HELCIM_TRANSACTION_API_TOKEN`, and `HELCIM_WEBHOOK_VERIFIER_TOKEN` are configured.
+- [ ] `SQUARE_COMMERCE_ENABLED=true` only where product and training checkout should use Square Web Payments.
+- [ ] If `SQUARE_COMMERCE_ENABLED=true`, the code-required Square environment values are configured as server-side variables: `SQUARE_ENVIRONMENT`, `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, `SQUARE_WEBHOOK_SIGNATURE_KEY`, and `SQUARE_SERVICE_BOOKING_WEBHOOK_URL` (the single shared Square webhook URL), plus the public-safe `SQUARE_APPLICATION_ID` for the `/api/checkout/square/config` Web Payments SDK route.
 - [ ] `CHECKOUT_SECRET_ENCRYPTION_KEY` is configured as a base64-encoded 32-byte server-only secret.
 - [ ] `SERVICE_BOOKING_SQUARE_ENABLED=true` only where service booking checkout should use Square.
 - [ ] `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true` only where direct charge-and-store should accept new payment sessions; unset or `false` is an emergency fail-closed stop and does not create new hosted checkouts.
-- [ ] `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true` only when the optional training Afterpay Square Invoice flow should be active; leave unset or `false` to keep default Helcim training checkout. Confirm Square merchant eligibility before enabling in production.
+- [ ] `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true` only when the optional training Afterpay Square Invoice flow should be active; leave unset or `false` to keep the default Square Web Payments training checkout. Confirm Square merchant eligibility before enabling in production.
 - [ ] If `SERVICE_BOOKING_SQUARE_ENABLED=true`, the code-required Square environment values are configured as server-side variables: `SQUARE_ENVIRONMENT`, `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, `SQUARE_WEBHOOK_SIGNATURE_KEY`, `SQUARE_SERVICE_BOOKING_RETURN_URL`, and `SQUARE_SERVICE_BOOKING_WEBHOOK_URL`.
 - [ ] If `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true`, the public-safe `SQUARE_APPLICATION_ID` is also configured for the Square Web Payments SDK config route. `SQUARE_APPLICATION_ID` is not a secret and must not be treated as one.
 - [ ] If `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true`, the code-required Square environment values are configured as server-side variables: `SQUARE_ENVIRONMENT`, `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, `SQUARE_WEBHOOK_SIGNATURE_KEY`, and `SQUARE_SERVICE_BOOKING_WEBHOOK_URL`. Training Square Invoice alone does not require `SQUARE_SERVICE_BOOKING_RETURN_URL` or `SQUARE_APPLICATION_ID`.
@@ -174,10 +175,10 @@ Run these in the order defined in `docs/square-service-booking-setup.md` under *
 
 ### Paid Training Smoke
 
-Default Helcim path:
+Default Square Web Payments path:
 
 - [ ] Complete a paid training checkout in staging.
-- [ ] Confirm Helcim payment marks the private enrollment/order paid.
+- [ ] Confirm the Square Web Payments card payment marks the private enrollment/order paid.
 - [ ] Confirm the customer receives the tokenized paid training schedule link.
 - [ ] Confirm invalid, unpaid, expired, or wrong-program tokens do not reveal the Google Appointment Schedule URL.
 - [ ] Confirm a valid token renders the Google Appointment Schedule link or embed.
@@ -218,8 +219,7 @@ At launch and after payment/calendar incidents, inspect private operational stat
 - Booked service holds missing `savedPaymentMethodId`, `policyAcceptanceId`, or `noShowChargeRecordId`.
 - No-show charge records in `charge_failed` that have not been alerted or manually reviewed.
 - No-show charge records missing `admin_operator_id`, `admin_reason`, `admin_action_at`, or `admin_eligibility_checked_at`.
-- Square webhook events that do not match a known private service order, no-show charge record, or training Square Invoice order.
-- Helcim webhook events that do not match a known product or default training order.
+- Square webhook events that do not match a known product order, training order, private service order, no-show charge record, or training Square Invoice order.
 - Duplicate webhook/idempotency keys.
 - Authorized local attempts for which Square reports `COMPLETED`, especially when no appointment exists.
 - Provider payment evidence whose amount, currency, customer, reference, or team member differs from the immutable local intent.
@@ -288,8 +288,8 @@ Check:
 
 - Hold state and expiry timestamp in private Postgres.
 - Checkout order status and provider references.
-- Square order/payment references for service bookings, or Helcim invoice/payment references for product and default training checkout, or Square invoice/payment references for training when `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true`.
-- Square webhook delivery logs for service bookings and (when enabled) training Square Invoice orders, or Helcim webhook delivery logs for product and default training checkout.
+- Square order/payment references for service bookings and for product and training checkout, or Square invoice/payment references for training when `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true`.
+- Square webhook delivery logs for service bookings, product and training checkout, and (when enabled) training Square Invoice orders.
 - Whether a Calendar event already exists for the hold metadata.
 
 Operator action:
@@ -330,21 +330,21 @@ Operator action:
 2. Use Square dashboard delivery status and Vercel logs to identify failed events.
 3. Do not replay events manually unless idempotency evidence is understood.
 
-### Helcim Commerce Webhook Or Payment Verification Fails
+### Square Commerce (Product/Training) Payment Or Webhook Verification Fails
 
 Check:
 
-- Webhook URL is `https://<domain>/api/webhooks/card-transactions` and uses HTTPS.
-- The URL does not include forbidden provider wording from the Helcim dashboard rules.
-- `HELCIM_WEBHOOK_VERIFIER_TOKEN` matches the Helcim dashboard verifier.
-- General and transaction API tokens are in the correct environment.
+- `SQUARE_COMMERCE_ENABLED=true` in the target environment and product/training checkout is expected to be live.
+- All Square events (product, training, and service booking) arrive on the single webhook `https://<domain>/api/webhooks/square`, which must match `SQUARE_SERVICE_BOOKING_WEBHOOK_URL` and use HTTPS.
+- `SQUARE_WEBHOOK_SIGNATURE_KEY` is scoped to the same Square app and webhook subscription.
+- `SQUARE_ENVIRONMENT`, `SQUARE_ACCESS_TOKEN`, and `SQUARE_LOCATION_ID` match the intended Square sandbox or production account.
 - Private payment-event idempotency rows are being recorded.
 
 Operator action:
 
-1. Use Helcim dashboard delivery status and Vercel logs to identify the failed event.
+1. Use Square dashboard delivery status and Vercel logs to identify the failed event.
 2. Do not replay the same event manually unless idempotency evidence is understood.
-3. If browser validation succeeded but webhook failed, confirm the product or training order already reached the expected private paid state before retrying anything.
+3. If browser card confirmation succeeded but the webhook failed, confirm the product or training order already reached the expected private paid state before retrying anything.
 
 ### Email Does Not Send
 
@@ -390,7 +390,7 @@ Stop the launch or release window if any of these occur:
 - Live booking or form flows create new Sanity submission documents.
 - Paid service payment succeeds but the finalizer repeatedly fails to book or mark rebooking/manual follow-up.
 - Square service webhook signatures cannot be verified.
-- Helcim commerce webhook signatures cannot be verified.
+- Square commerce (product/training) webhook signatures cannot be verified.
 - Google Calendar writes fail for confirmed paid bookings.
 - Public booking accepts a retired tokenized handoff.
 

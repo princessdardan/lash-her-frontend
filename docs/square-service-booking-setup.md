@@ -4,18 +4,19 @@ Date: 2026-05-25
 
 This runbook explains how to obtain the Square values used by paid service booking, configure Square webhooks, and set up local development, staging, and production.
 
-Square is used only for paid service booking and for the optional training Afterpay Square Invoice flow when `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true`. The primary confirmation flow stores a card on file using the Square Web Payments SDK and Square Cards API. When card-on-file is disabled or unavailable, the app falls back to the legacy Square hosted checkout (Payment Link) flow. Product checkout and default training checkout remain Helcim-backed and must not require Square variables. The optional training Square Invoice exception requires its own launch gate and environment setup; see `docs/training-afterpay-square-invoice.md`.
+This runbook covers the Square configuration for paid service booking and for the optional training Afterpay Square Invoice flow when `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true`. The active customer confirmation flow charges and stores a card on file (CHARGE_AND_STORE) using the Square Web Payments SDK and Square Cards API through `/api/booking/payment/confirm`; the `/api/booking/card-on-file` STORE path is a secondary store-only variant. When card-on-file is disabled or unavailable, the app falls back to the legacy Square hosted checkout (Payment Link) flow. Product checkout and default training checkout are also Square-backed (Square Web Payments SDK, gated by `SQUARE_COMMERCE_ENABLED`) and use their own Square commerce configuration, separate from the service-booking variables here. The optional training Square Invoice exception requires its own launch gate and environment setup; see `docs/training-afterpay-square-invoice.md`.
 
 ## App endpoints
 
-| Purpose                                              | Route                                  |
-| ---------------------------------------------------- | -------------------------------------- |
-| Public Square Web Payments SDK config (card-on-file) | `/api/booking/square/config`           |
-| Card-on-file service booking confirmation            | `/api/booking/card-on-file`            |
-| Customer return after hosted checkout                | `/api/booking/square/return`           |
-| Admin no-show charge against saved card              | `/api/admin/appointments/[id]/no-show` |
-| Payment reconciliation monitor/cron                  | `/api/admin/payment-reconciliation`    |
-| Square payment webhook                               | `/api/webhooks/square`                 |
+| Purpose                                                | Route                                  |
+| ------------------------------------------------------ | -------------------------------------- |
+| Public Square Web Payments SDK config (card-on-file)   | `/api/booking/square/config`           |
+| Active service booking confirmation (charge and store) | `/api/booking/payment/confirm`         |
+| Secondary card-on-file store-only path                 | `/api/booking/card-on-file`            |
+| Customer return after hosted checkout                  | `/api/booking/square/return`           |
+| Admin no-show charge against saved card                | `/api/admin/appointments/[id]/no-show` |
+| Payment reconciliation monitor/cron                    | `/api/admin/payment-reconciliation`    |
+| Square payment webhook                                 | `/api/webhooks/square`                 |
 
 The webhook handler verifies `x-square-hmacsha256-signature` using `SQUARE_WEBHOOK_SIGNATURE_KEY`, the exact `SQUARE_SERVICE_BOOKING_WEBHOOK_URL`, and the raw request body. If the configured webhook URL differs from the Square subscription URL, signature verification fails.
 
@@ -47,7 +48,7 @@ CRON_SECRET=<vercel-cron-secret>
 BOOKING_ADMIN_PAYMENT_ACTION_SECRET=<secret>
 ```
 
-- `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED` enables the Square Web Payments SDK card-save flow and the `POST /api/booking/card-on-file` confirmation path. Any value other than exactly `true` keeps the legacy hosted checkout fallback active.
+- `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED` enables the Square Web Payments SDK card-save flow: the active `POST /api/booking/payment/confirm` charge-and-store confirmation and the secondary `POST /api/booking/card-on-file` store-only path. Any value other than exactly `true` keeps the legacy hosted checkout fallback active.
 - `SQUARE_APPLICATION_ID` is required for the browser-facing Square Web Payments SDK config route (`/api/booking/square/config`) and must match the application used for `SQUARE_ACCESS_TOKEN`. It is stored as a server environment variable (never `NEXT_PUBLIC_`) but is public-safe and not a secret; the app serves it to the browser so the SDK can initialize.
 - `PAYMENT_RECONCILIATION_CRON_SECRET` enables and manually protects `GET /api/admin/payment-reconciliation`. It is required for the route to be enabled and for manual/staff checks.
 - `CRON_SECRET` is required for Vercel scheduled cron authorization. The reconciliation route accepts `CRON_SECRET` only when `PAYMENT_RECONCILIATION_CRON_SECRET` is also configured.
@@ -57,8 +58,6 @@ Related variables:
 
 ```env
 PAYMENT_GATEWAY_MODE=live
-# Optional migration cutoff for the Helcim-to-Square service-booking transition.
-# SERVICE_BOOKING_HELCIM_LEGACY_CUTOFF_AT=2026-06-30T00:00:00Z
 ```
 
 Use `PAYMENT_GATEWAY_MODE=mock` only for local/dev mock payment flows. Mock mode is rejected in production.
@@ -406,7 +405,7 @@ There is a separate, optional training-only checkout path that creates a Square 
 
 - Do not enable this flow in production until Square merchant eligibility for live CAD invoices is verified.
 - It uses the same Square credentials and `/api/webhooks/square` route as service booking, but training invoice events must be routed to the training Square Invoice finalizer before any service-booking or no-show reconciliation.
-- Product checkout and default training checkout remain Helcim-backed.
+- Product checkout and default training checkout are also Square-backed (Square Web Payments SDK, gated by `SQUARE_COMMERCE_ENABLED`), separate from this optional training Afterpay invoice path.
 
 See `docs/training-afterpay-square-invoice.md` for the feature flag, dashboard prerequisites, webhook events, recovery steps, evidence checklist, and launch gate.
 
@@ -416,5 +415,5 @@ See `docs/training-afterpay-square-invoice.md` for the feature flag, dashboard p
 - Square service booking writes private payment and hold state to PostgreSQL, never Sanity.
 - Use separate Square webhook subscriptions for local tunnel, staging, and production URLs.
 - Keep staging and production Square credentials separate.
-- Product checkout and default training checkout remain Helcim-backed.
+- Product checkout and default training checkout are Square-backed (Square Web Payments SDK, gated by `SQUARE_COMMERCE_ENABLED`) and use their own Square commerce configuration, separate from these service-booking variables.
 - Do not paste access tokens, signature keys, raw webhook bodies, full customer payloads, or payment identifiers into docs, tickets, or chat.

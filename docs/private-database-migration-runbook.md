@@ -137,7 +137,7 @@ For migrations that touch private operational data, verify the changed SQL creat
     - Booking with marketing opt-in checked.
     - Booking with marketing opt-in unchecked.
     - Paid service booking checkout for deposit, full payment, and custom partial payment where configured.
-    - Paid service booking finalization from Square return reconciliation and webhook retry paths; product/training checkout remains on Helcim validation and webhook paths.
+    - Paid service booking finalization from Square return reconciliation and webhook retry paths; product and training checkout finalize from the Square webhook (`/api/webhooks/square`) and capture-reconciliation paths.
 8. Confirm new submissions do not create new Sanity submission documents.
 
 ## Production Procedure

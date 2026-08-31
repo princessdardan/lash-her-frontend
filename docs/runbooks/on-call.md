@@ -27,13 +27,13 @@ This runbook applies to:
 #### `high-5xx-rate` → PagerDuty
 
 - **What it means**: More than 1% of HTTP responses are 5xx status codes for a sustained period.
-- **Likely causes**: Deployment regression, database connectivity loss, downstream provider outage (Square/Helcim/Resend), unhandled exception in hot path.
+- **Likely causes**: Deployment regression, database connectivity loss, downstream provider outage (Square/Resend), unhandled exception in hot path.
 - **Impact**: Customers cannot complete bookings, checkout, or form submissions.
 - **Response SLA**: Acknowledge within 5 minutes; initial assessment within 15 minutes.
 
 #### `high-webhook-failure-rate` → Slack #alerts
 
-- **What it means**: More than 5% of incoming webhooks (Helcim card transactions, Square service bookings) fail signature verification, parsing, or processing.
+- **What it means**: More than 5% of incoming webhooks (Square payments and service bookings) fail signature verification, parsing, or processing.
 - **Likely causes**: Provider configuration drift, signature key rotation, malformed payload, idempotency conflict, downstream consumer failure.
 - **Impact**: Payment events may be delayed or lost; provider retries increase.
 - **Response SLA**: Acknowledge within 15 minutes; investigate within 30 minutes.
@@ -101,11 +101,10 @@ This runbook applies to:
    - Filter Vercel runtime logs for `statusCode:5xx` in the last 10 minutes.
    - Look for stack traces, database connection errors, or provider timeouts.
 3. Check database connectivity:
-   - Run health check: `GET /api/health` should return 200.
-   - If health check fails, verify `DATABASE_URL` and database provider status.
+   - Hit a database-backed route: `GET /api/booking/availability` should return 200.
+   - If it fails, verify `DATABASE_URL` and database provider status.
 4. Check provider status pages:
    - Square: https://status.squareup.com
-   - Helcim: check provider status page
    - Resend: https://resend-status.com
    - Upstash: check provider status page
 5. If deployment rollback is available and safe, roll back to the previous deployment.
@@ -116,7 +115,7 @@ This runbook applies to:
 1. Identify which webhook route is failing:
    - Filter logs by `source:webhook` and look for route patterns (`/api/webhooks/*`).
 2. Check signature verification:
-   - Verify `SQUARE_WEBHOOK_SIGNATURE_KEY` and `HELCIM_WEBHOOK_VERIFIER_TOKEN` are current.
+   - Verify `SQUARE_WEBHOOK_SIGNATURE_KEY` is current.
    - Confirm `SQUARE_SERVICE_BOOKING_WEBHOOK_URL` matches the exact URL Square is configured to call.
 3. Check for idempotency conflicts:
    - Look for duplicate webhook deliveries with the same idempotency key.
@@ -128,7 +127,7 @@ This runbook applies to:
 ### Responding to `outbox-queue-depth`
 
 1. Check current queue depth:
-   - Query: `SELECT COUNT(*) FROM outbox WHERE status = 'pending';`
+   - Query: `SELECT COUNT(*) FROM customer_email_outbox WHERE status = 'queued';`
 2. Check worker logs:
    - Look for the background worker process (outbox consumer) in Vercel function logs or cron logs.
    - Look for errors: database connection, provider timeout, unhandled exception.
@@ -150,7 +149,7 @@ This runbook applies to:
    - Look for missing indexes on hot tables (`orders`, `holds`, `events`, `outbox`).
    - Check for N+1 queries in booking availability or checkout routes.
 3. Check external API latency:
-   - Square API, Google Calendar API, Helcim API.
+   - Square API, Google Calendar API.
    - If external API is slow, consider caching or circuit breaker activation.
 4. Check Redis/Upstash latency:
    - Verify `KV_REST_API_URL` is reachable and not rate-limited.
@@ -190,7 +189,7 @@ This runbook applies to:
 
 4. **Create Trigger for outbox queue depth**:
    - Trigger name: `outbox-queue-depth`
-   - Query: This requires a custom metric or log-based query. Send outbox queue depth as a metric from the health check or a cron.
+   - Query: This requires a custom metric or log-based query. Send outbox queue depth as a metric from a cron.
    - Threshold: `> 100`
    - Duration: `5 minutes`
    - Notification: PagerDuty integration
@@ -217,7 +216,7 @@ This runbook applies to:
    - Notify: Slack #alerts
 
 3. **Create Metric Monitor for outbox queue depth**:
-   - Metric: Custom metric `app.outbox.queue_depth` emitted by health check or cron.
+   - Metric: Custom metric `app.outbox.queue_depth` emitted by a cron.
    - Threshold: `> 100`
    - Evaluation window: `5 minutes`
    - Notify: PagerDuty integration
@@ -252,7 +251,7 @@ This runbook applies to:
 
 ### Test: `high-5xx-rate`
 
-1. Deploy a staging branch that throws an unhandled exception in a hot API route (e.g., `/api/health`).
+1. Deploy a staging branch that throws an unhandled exception in a hot API route (e.g., `/api/booking/availability`).
 2. Use `curl` or a load tester to hit that route at ~10 requests/second for 3 minutes.
 3. Verify:
    - PagerDuty alert fires within 2 minutes of threshold breach.
@@ -261,7 +260,7 @@ This runbook applies to:
 
 ### Test: `high-webhook-failure-rate`
 
-1. In staging, temporarily corrupt the `SQUARE_WEBHOOK_SIGNATURE_KEY` or `HELCIM_WEBHOOK_VERIFIER_TOKEN`.
+1. In staging, temporarily corrupt the `SQUARE_WEBHOOK_SIGNATURE_KEY`.
 2. Send 20+ webhook requests with valid payloads from the provider test console (or using a signed test payload).
 3. Verify:
    - Slack #alerts receives a notification within 5 minutes.
@@ -303,13 +302,13 @@ After each synthetic test, confirm:
 1. Open Vercel dashboard → project → deployments.
 2. Find the last known good deployment (before the incident start time).
 3. Click "Promote to Production" (or set as production deployment).
-4. Verify `/api/health` returns 200 and the 5xx rate drops.
+4. Verify the site returns 200 (e.g., load `/`) and the 5xx rate drops.
 5. Monitor for 5 minutes before declaring the rollback successful.
 
 ### Database Rollback (Emergency Only)
 
 1. **Do not roll back the database unless data corruption is confirmed.**
-2. If required, restore from the latest validated backup (see `docs/runbooks/dr-drill.md`).
+2. If required, restore from the latest validated backup.
 3. Coordinate with the engineering lead before any database restore.
 
 ## Post-Incident Process
@@ -333,12 +332,9 @@ After each synthetic test, confirm:
 | Engineering lead  | PagerDuty + Slack DM | `@engineering-lead`                 |
 | Founder/CTO       | PagerDuty + phone    | Escalation after 1 hour             |
 | Square support    | Web                  | https://developer.squareup.com/help |
-| Helcim support    | Web                  | Provider support portal             |
 | Resend support    | Web                  | https://resend.com/support          |
 
 ## Related Documents
 
-- `docs/runbooks/dr-drill.md` — Disaster recovery and backup validation
 - `docs/booking-system-runbook.md` — Booking system operations
 - `docs/square-service-booking-setup.md` — Square webhook configuration
-- `docs/superpowers/plans/2026-06-05-platform-devops-remediation.md` — DevOps remediation plan

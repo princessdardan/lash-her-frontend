@@ -66,24 +66,24 @@ The app integrates with:
 
 ## Where things live
 
-| Area                      | Path                                                                     | Why it exists                                                                        |
-| ------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| Public routes             | `src/app/(site)`                                                         | Next App Router pages for the public website.                                        |
-| API routes                | `src/app/api`                                                            | Server endpoints for booking, checkout, promotion codes, revalidation, and webhooks. |
-| Global app shell          | `src/app/layout.tsx`, `src/app/(site)/layout.tsx`, `src/app/globals.css` | Metadata, root layout, site shell, Tailwind v4 theme tokens, and global styling.     |
-| Sanity Studio route       | `src/app/studio`                                                         | Mounts the embedded Studio at `/studio`.                                             |
-| Sanity config and schemas | `src/sanity`                                                             | Studio config, schema source, structure builder, and Sanity clients.                 |
-| Sanity loaders            | `src/data/loaders.ts`                                                    | Centralized CMS reads, GROQ projections, and cache tagging.                          |
-| Shared content types      | `src/types/index.ts`                                                     | TypeScript shapes for CMS-backed rendering and block unions.                         |
-| Components                | `src/components`                                                         | Booking, commerce, custom CMS block rendering, and shared UI components.             |
-| Booking domain logic      | `src/lib/booking`                                                        | Availability, holds, payment-provider logic, and calendar integration helpers.       |
-| Commerce domain logic     | `src/lib/commerce`                                                       | Checkout/payment behavior for product and related commerce flows.                    |
-| Private database          | `src/lib/private-db`, `drizzle/`                                         | Drizzle schema/client plus generated migrations.                                     |
-| Email                     | `src/lib/email.ts`                                                       | Transactional email integration.                                                     |
-| Environment helpers       | `src/lib/env`, `src/sanity/env.ts`                                       | Runtime configuration parsing and Sanity environment constants.                      |
-| Tests                     | `src/**/*.test.ts`, `tests/`                                             | Node unit/route tests near source and Playwright E2E tests.                          |
-| Operational docs          | `docs/`                                                                  | Detailed runbooks, architecture notes, flowcharts, and launch checklists.            |
-| Scripts                   | `scripts/`                                                               | Environment validation, migrations, and git remote guardrails.                       |
+| Area                      | Path                                                                     | Why it exists                                                                                                             |
+| ------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| Public routes             | `src/app/(site)`                                                         | Next App Router pages for the public website.                                                                             |
+| API routes                | `src/app/api`                                                            | Server endpoints for booking, checkout, training checkout, admin, cron jobs, promotion codes, revalidation, and webhooks. |
+| Global app shell          | `src/app/layout.tsx`, `src/app/(site)/layout.tsx`, `src/app/globals.css` | Metadata, root layout, site shell, Tailwind v4 theme tokens, and global styling.                                          |
+| Sanity Studio route       | `src/app/studio`                                                         | Mounts the embedded Studio at `/studio`.                                                                                  |
+| Sanity config and schemas | `src/sanity`                                                             | Studio config, schema source, structure builder, and Sanity clients.                                                      |
+| Sanity loaders            | `src/data/loaders.ts`                                                    | Centralized CMS reads, GROQ projections, and cache tagging.                                                               |
+| Shared content types      | `src/types/index.ts`                                                     | TypeScript shapes for CMS-backed rendering and block unions.                                                              |
+| Components                | `src/components`                                                         | Booking, commerce, custom CMS block rendering, and shared UI components.                                                  |
+| Booking domain logic      | `src/lib/booking`                                                        | Availability, holds, payment-provider logic, and calendar integration helpers.                                            |
+| Commerce domain logic     | `src/lib/commerce`                                                       | Checkout/payment behavior for product and related commerce flows.                                                         |
+| Private database          | `src/lib/private-db`, `drizzle/`                                         | Drizzle schema/client plus generated migrations.                                                                          |
+| Email                     | `src/lib/email.ts`                                                       | Transactional email integration.                                                                                          |
+| Environment helpers       | `src/lib/env`, `src/sanity/env.ts`                                       | Runtime configuration parsing and Sanity environment constants.                                                           |
+| Tests                     | `src/**/*.test.ts`, `tests/`                                             | Node unit/route tests near source and Playwright E2E tests.                                                               |
+| Operational docs          | `docs/`                                                                  | Detailed runbooks, architecture notes, flowcharts, and launch checklists.                                                 |
+| Scripts                   | `scripts/`                                                               | Environment validation, migrations, and git remote guardrails.                                                            |
 
 ## Local development
 
