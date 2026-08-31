@@ -1,6 +1,5 @@
 # Sanity Staging and Production Workflow
 
-
 ## Canonical Git and Vercel Branch Target
 
 The Vercel staging subdomain must target the `staging` branch in the frontend repository:
@@ -73,9 +72,13 @@ Before proceeding, confirm you have:
   - `BOOKING_ADMIN_SETUP_SECRET`
   - `KV_REST_API_URL`
   - `KV_REST_API_TOKEN`
-  - `HELCIM_GENERAL_API_TOKEN`
-  - `HELCIM_TRANSACTION_API_TOKEN`
-  - `HELCIM_WEBHOOK_VERIFIER_TOKEN`
+  - `SQUARE_ENVIRONMENT`
+  - `SQUARE_ACCESS_TOKEN`
+  - `SQUARE_APPLICATION_ID`
+  - `SQUARE_LOCATION_ID`
+  - `SQUARE_WEBHOOK_SIGNATURE_KEY`
+  - `SQUARE_COMMERCE_ENABLED`
+  - `SERVICE_BOOKING_SQUARE_ENABLED`
   - `CHECKOUT_SECRET_ENCRYPTION_KEY`
   - `DATABASE_URL`
 
@@ -85,13 +88,14 @@ Do not put private tokens in `NEXT_PUBLIC_*` variables. `NEXT_PUBLIC_*` values a
 
 Sanity tokens must be managed with strict isolation and rotation policies. If plan constraints prevent granular custom roles, use the following guardrails:
 
-| Token | Purpose | Environment | Min. Role | Owner | Rotation |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `SANITY_API_READ_TOKEN` | Draft preview and Presentation Tool read access | Production/Staging | Viewer | Dardan | Quarterly |
-| `SANITY_WRITE_TOKEN` | Server-side mutations and migrations | Production/Staging | Editor | Dardan | Quarterly |
-| `SANITY_WEBHOOK_SECRET` | Webhook HMAC verification | Production/Staging | N/A | Dardan | Quarterly |
+| Token                   | Purpose                                         | Environment        | Min. Role | Owner  | Rotation  |
+| :---------------------- | :---------------------------------------------- | :----------------- | :-------- | :----- | :-------- |
+| `SANITY_API_READ_TOKEN` | Draft preview and Presentation Tool read access | Production/Staging | Viewer    | Dardan | Quarterly |
+| `SANITY_WRITE_TOKEN`    | Server-side mutations and migrations            | Production/Staging | Editor    | Dardan | Quarterly |
+| `SANITY_WEBHOOK_SECRET` | Webhook HMAC verification                       | Production/Staging | N/A       | Dardan | Quarterly |
 
 **Rotation Policy:**
+
 - Rotate all tokens quarterly.
 - Rotate immediately after any suspected exposure.
 - Rotate after personnel or access changes.
@@ -242,8 +246,9 @@ GOOGLE_REDIRECT_URI=<staging-google-redirect-uri>
 BOOKING_ADMIN_SETUP_SECRET=<staging-admin-secret>
 KV_REST_API_URL=<staging-kv-rest-api-url>
 KV_REST_API_TOKEN=<staging-kv-rest-api-token>
-HELCIM_GENERAL_API_TOKEN=<staging-helcim-general-token>
-HELCIM_TRANSACTION_API_TOKEN=<staging-helcim-transaction-token>
+SQUARE_ACCESS_TOKEN=<staging-square-access-token>
+SQUARE_LOCATION_ID=<staging-square-location-id>
+SQUARE_WEBHOOK_SIGNATURE_KEY=<staging-square-webhook-signature-key>
 CHECKOUT_SECRET_ENCRYPTION_KEY=<base64-encoded-32-byte-key>
 DATABASE_URL=<staging-neon-pooled-postgres-url>
 ```
@@ -408,7 +413,7 @@ Prefer explicit environment variables in release commands so the target dataset 
 
 - Treat production-to-staging copy as a refresh operation.
 - Treat staging-to-production as code promotion plus targeted content migration.
-- Never expose Sanity write tokens, legacy/conditional form tokens, deploy tokens, Helcim tokens, Google secrets, Upstash tokens, database credentials, or encryption keys in browser-visible variables.
+- Never expose Sanity write tokens, legacy/conditional form tokens, deploy tokens, Square access/webhook tokens, Google secrets, Upstash tokens, database credentials, or encryption keys in browser-visible variables.
 - Do not run the legacy `npm run migrate` script casually; it is a Strapi-to-Sanity migration path, not a staging refresh tool.
 - Before any production content import, export production as a backup tarball.
 - Avoid deleting schema fields that contain production data. Deprecate, migrate, verify, then remove later.
@@ -493,11 +498,13 @@ Run this query in the Sanity Vision tool or via CLI with the published perspecti
 Verify the Studio environment and structure before declaring production readiness.
 
 ### Environment and Schema
+
 - [ ] **Target Dataset:** Confirm `NEXT_PUBLIC_SANITY_DATASET` matches the intended environment (`production` or `staging-2026-05-10`).
 - [ ] **Deployed Schema:** Run `npx sanity schema list` and verify it matches the current source-controlled schema.
 - [ ] **Embedded Studio:** Confirm `/studio` loads correctly on the target domain.
 
 ### Structure and Security
+
 - [ ] **Singleton Integrity:** Verify `homePage`, `globalSettings`, `mainMenu`, and `bookingSettings` appear as singletons in the Studio sidebar.
 - [ ] **PII Isolation:** Confirm that checkout orders, payment events, Helcim references, and customer PII are NOT visible in the Studio. These must remain in the private database.
 - [ ] **Token Scoping:** Verify that the Studio does not expose any private tokens in the browser console or network tab.
@@ -510,16 +517,16 @@ The application uses signed Sanity webhooks to trigger immediate Next.js cache r
 
 Configure separate webhooks for staging and production in the Sanity project management panel.
 
-| Setting | Staging Value | Production Value |
-| :--- | :--- | :--- |
-| URL | `https://staging.lashher.com/api/revalidate` | `https://www.lashher.com/api/revalidate` |
-| Project | `3auncj84` | `3auncj84` |
-| Dataset | `staging-2026-05-10` | `production` |
-| Trigger | Published document create, update, and delete events | Published document create, update, and delete events |
-| Filter | `_type in ["homePage", "contactPage", "galleryPage", "trainingPage", "trainingProgramsPage", "trainingProgram", "product", "service", "globalSettings", "mainMenu", "bookingSettings"]` | Same as staging |
-| Projection | `{ _type }` | `{ _type }` |
-| Method | `POST` | `POST` |
-| Secret | Staging `SANITY_WEBHOOK_SECRET` | Production `SANITY_WEBHOOK_SECRET` |
+| Setting    | Staging Value                                                                                                                                                                           | Production Value                                     |
+| :--------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------- |
+| URL        | `https://staging.lashher.com/api/revalidate`                                                                                                                                            | `https://www.lashher.com/api/revalidate`             |
+| Project    | `3auncj84`                                                                                                                                                                              | `3auncj84`                                           |
+| Dataset    | `staging-2026-05-10`                                                                                                                                                                    | `production`                                         |
+| Trigger    | Published document create, update, and delete events                                                                                                                                    | Published document create, update, and delete events |
+| Filter     | `_type in ["homePage", "contactPage", "galleryPage", "trainingPage", "trainingProgramsPage", "trainingProgram", "product", "service", "globalSettings", "mainMenu", "bookingSettings"]` | Same as staging                                      |
+| Projection | `{ _type }`                                                                                                                                                                             | `{ _type }`                                          |
+| Method     | `POST`                                                                                                                                                                                  | `POST`                                               |
+| Secret     | Staging `SANITY_WEBHOOK_SECRET`                                                                                                                                                         | Production `SANITY_WEBHOOK_SECRET`                   |
 
 Keep staging and production secrets separate. The Sanity webhook secret must exactly match the corresponding Vercel environment value for the target deployment.
 
@@ -529,18 +536,18 @@ Drafts and release versions should not be used for launch smoke evidence. Smoke 
 
 The revalidation route maps Sanity `_type` values to Next.js cache tags. Loader tags in `src/data/loaders.ts` and the route map in `src/app/api/revalidate/route.ts` must be updated together when a public cached document type is added.
 
-| Sanity `_type` | Cache tag | Public impact |
-| :--- | :--- | :--- |
-| `homePage` | `homePage` | `/` |
-| `contactPage` | `contactPage` | `/contact` |
-| `galleryPage` | `galleryPage` | `/gallery` |
-| `trainingProgramsPage` | `trainingProgramsPage`, `trainingProgram` | `/training-programs` and training program cards (`/training` redirects here) |
-| `trainingProgram` | `trainingProgram` | `/training-programs/[slug]` and native training checkout reads |
-| `product` | `product` | `/products`, `/products/[slug]`, and canonical product checkout reads |
-| `service` | `service` | `/services`, `/services/[slug]`, `/booking`, and paid appointment checkout configuration |
-| `globalSettings` | `global` | Header, footer, metadata |
-| `mainMenu` | `menu` | Navigation |
-| `bookingSettings` | `bookingSettings` | `/booking` availability configuration |
+| Sanity `_type`         | Cache tag                                 | Public impact                                                                            |
+| :--------------------- | :---------------------------------------- | :--------------------------------------------------------------------------------------- |
+| `homePage`             | `homePage`                                | `/`                                                                                      |
+| `contactPage`          | `contactPage`                             | `/contact`                                                                               |
+| `galleryPage`          | `galleryPage`                             | `/gallery`                                                                               |
+| `trainingProgramsPage` | `trainingProgramsPage`, `trainingProgram` | `/training-programs` and training program cards (`/training` redirects here)             |
+| `trainingProgram`      | `trainingProgram`                         | `/training-programs/[slug]` and native training checkout reads                           |
+| `product`              | `product`                                 | `/products`, `/products/[slug]`, and canonical product checkout reads                    |
+| `service`              | `service`                                 | `/services`, `/services/[slug]`, `/booking`, and paid appointment checkout configuration |
+| `globalSettings`       | `global`                                  | Header, footer, metadata                                                                 |
+| `mainMenu`             | `menu`                                    | Navigation                                                                               |
+| `bookingSettings`      | `bookingSettings`                         | `/booking` availability configuration                                                    |
 
 Unknown document types intentionally return 200 without revalidating a tag. Legacy submission or internal tracking types such as `contactForm`, `generalInquiry`, `contactPopupSubmission`, and `bookingMarketingOptIn` do not drive cached public page rendering, so they are documented no-ops rather than hard failures. Current live form/contact/marketing writes should go to the private database, not Sanity.
 
@@ -574,12 +581,15 @@ Before declaring a release ready for production, you must complete the launch re
 Refer to [Launch Readiness Checklist](./launch-readiness-checklist.md) for the full smoke matrix and evidence requirements.
 
 ### CMS Smoke Summary
+
 - **Verify Publish Flow:** Update a document in the Studio, publish it, and confirm the change appears on the public site.
 - **Check Webhooks:** Ensure the Sanity webhook delivers a signed payload to `/api/revalidate`.
 - **Validate Cache Tags:** Confirm the correct cache tags are being invalidated for each document type.
 
 ### Stop Conditions
+
 Production promotion must stop if:
+
 - A production publish does not appear on the public page after webhook delivery.
 - The webhook targets the wrong dataset or cache tag.
 - Environment validation fails for any production-critical secret.

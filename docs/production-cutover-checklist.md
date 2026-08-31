@@ -11,7 +11,7 @@ This runbook assumes option A is approved: the frozen `staging-2026-05-10` Sanit
 - Staging smoke evidence is approved and `staging-2026-05-10` contains only production-safe public/editorial content.
 - Production private data stays in PostgreSQL. Sanity stores public/editorial content only.
 - Direct booking creation remains disabled; appointment confirmation happens only after secure payment reconciliation.
-- Product and training checkout use Helcim. Paid service booking uses Square only when `SERVICE_BOOKING_SQUARE_ENABLED=true`.
+- Product and training checkout use Square (Square Web Payments SDK, gated by `SQUARE_COMMERCE_ENABLED`). Paid service booking uses Square only when `SERVICE_BOOKING_SQUARE_ENABLED=true`.
 
 ## Hard Rules
 
@@ -59,7 +59,7 @@ Stop immediately if any condition is true:
 - `VERCEL_ENV=production node scripts/validate-sanity-env.mjs` fails.
 - Sanity backup/export/import targets the wrong project or dataset.
 - Production Studio targets anything other than `production`.
-- Sanity revalidation, Helcim, Square, Resend, Google Calendar, Upstash, or private DB smoke tests fail.
+- Sanity revalidation, Square, Resend, Google Calendar, Upstash, or private DB smoke tests fail.
 - Any live flow writes new private submission, checkout, payment, booking hold, or enrollment data to Sanity.
 
 ## Phase 0: Launch Window, Repo, and Content Freeze
@@ -152,19 +152,18 @@ Verify production-scoped values in Vercel/provider dashboards. Record presence, 
 - [ ] `PAYMENT_MOCK_DEFAULT_SCENARIO` is dev-only and not relied on in production.
 - [ ] `SERVICE_BOOKING_SQUARE_ENABLED` matches launch decision.
 
-### Helcim
+### Product and Training Checkout (Square commerce)
 
-- [ ] `HELCIM_GENERAL_API_TOKEN`
-- [ ] `HELCIM_TRANSACTION_API_TOKEN`
+- [ ] `SQUARE_COMMERCE_ENABLED=true` — the product and primary-training checkout gate (Square Web Payments SDK). Both flows stay inert until this is exactly `true`.
 - [ ] `CHECKOUT_SECRET_ENCRYPTION_KEY`
-- [ ] `HELCIM_WEBHOOK_VERIFIER_TOKEN`
-- [ ] `HELCIM_PRODUCT_PAYMENTS_CONTRACT_JSON` set to the exact owner-certified product-payment contract snapshot. Product checkout is **non-functional** until this is present and matches the active `product` certification (see Phase 3). Without it every transaction classifies as `unknown` and never finalizes (fail-closed).
+
+Product and training checkout run on Square and share the Square credentials inventoried under **Square** below; that section currently lists only the service-booking Square variables (`SQUARE_ACCESS_TOKEN`, `SQUARE_APPLICATION_ID`, `SQUARE_LOCATION_ID`, `SQUARE_ENVIRONMENT`, `SQUARE_WEBHOOK_SIGNATURE_KEY`), which the product/training Web Payments SDK flow reuses.
 
 ### Chit Chats Shipping and Product Checkout
 
-All product-shipping/checkout controls default off and fail closed. Product checkout stays inert until these are set and the source-controlled shipping config (`src/lib/shipping/product-shipping-config.ts`) and tax config (`src/lib/commerce/product-tax-policy.ts`) are populated and business-confirmed. Shipping/checkout readiness is now **source-controlled config, not owner-attested DB records** — there are no runtime attestation, duty-assignment, or funding-reservation gates to clear; the former attestation/duty/funding tables were dropped by migrations `0062`–`0066` (see Phase 3). See `.env.local.example` for the annotated source of truth.
+All product-shipping/checkout controls default off and fail closed. Product checkout stays inert until these are set and the source-controlled shipping config (`src/lib/shipping/product-shipping-config.ts`) and tax config (`src/lib/commerce/product-tax-policy.ts`) are populated and business-confirmed. Shipping/checkout readiness is now **source-controlled config, not owner-attested DB records** — there are no runtime attestation, duty-assignment, or funding-reservation gates to clear; the former attestation/duty/funding tables were dropped by the shipping-teardown migrations (`0062`–`0066`, with later teardown drops continuing through `0075`; see Phase 3). See `.env.local.example` for the annotated source of truth.
 
-Feature admission (keep off until certified — see `docs/chitchats-shipping-policy-decisions.md`):
+Feature admission (keep off until the source-controlled shipping/tax config is populated and business-confirmed):
 
 - [ ] `CHITCHATS_SHIPPING_ENABLED=true`
 - [ ] `CHITCHATS_CHECKOUT_ENABLED=true`
@@ -190,7 +189,7 @@ Secrets and signed-link keys (generate distinct 32+ byte secrets per purpose; ne
 
 Product tax (destination-based GST/HST; no US tax):
 
-- [ ] The destination-based GST/HST rate table in `src/lib/commerce/product-tax-policy.ts` is business/accountant-confirmed and its `PRODUCT_TAX_POLICY_VERSION` (`product-tax-ca-gst-hst-destination-v1`) matches the rates in force. Tax is now **source-controlled config, not an owner-attested `product_tax_policy_versions` DB row** — that table was dropped by the shipping-teardown migrations (`0062`–`0066`). Change detection between quote and checkout-commit is version-based; checkout still fails closed on an unimplemented version or unknown province. If provincial rates change, bump `PRODUCT_TAX_POLICY_VERSION` in the same commit.
+- [ ] The destination-based GST/HST rate table in `src/lib/commerce/product-tax-policy.ts` is business/accountant-confirmed and its `PRODUCT_TAX_POLICY_VERSION` (`product-tax-ca-gst-hst-destination-v1`) matches the rates in force. Tax is now **source-controlled config, not an owner-attested `product_tax_policy_versions` DB row** — that table was dropped by the shipping-teardown migrations (`0062`–`0066`; the teardown continues through `0075`). Change detection between quote and checkout-commit is version-based; checkout still fails closed on an unimplemented version or unknown province. If provincial rates change, bump `PRODUCT_TAX_POLICY_VERSION` in the same commit.
 
 ### Square
 
@@ -204,7 +203,6 @@ Product tax (destination-based GST/HST; no US tax):
 - [ ] `PAYMENT_RECONCILIATION_CRON_SECRET` for the payment reconciliation route, distinct from the generic `CRON_SECRET` used by Vercel scheduled cron. The route accepts either bearer when both are configured, but the route-specific secret must be present to enable the route or for manual/staff checks.
 - [ ] `SQUARE_SERVICE_BOOKING_RETURN_URL=https://<production-domain>/api/booking/square/return`
 - [ ] `SQUARE_SERVICE_BOOKING_WEBHOOK_URL=https://<production-domain>/api/webhooks/square`
-- [ ] Optional `SERVICE_BOOKING_HELCIM_LEGACY_CUTOFF_AT` only if intentionally used.
 - [ ] Optional `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED` only if intentionally used.
 
 ## Phase 3: Production Private Database Readiness and Migrations
@@ -214,7 +212,7 @@ Use `docs/private-database-migration-runbook.md` as the detailed source of truth
 - [ ] Verify production DB identity in the provider dashboard: project, branch, database name, and host label.
 - [ ] Verify production backup/PITR availability before any migration.
 - [ ] Review committed migration files in `drizzle/` and confirm expected files are present.
-- [ ] Understand that the shipping-teardown migrations `0062`–`0066` are **irreversible** `DROP TABLE`/`DROP COLUMN` operations on tables/columns holding production rows (attestation, duty-assignment, funding-review, service-policy, tax-policy, manual-policy, and intake-location records; the `product_shipment_jobs` funding columns; and `product_shipments.intake_location_attestation_id`). The retained source config in `src/lib/shipping/product-shipping-config.ts` / `src/lib/commerce/product-tax-policy.ts` supersedes their runtime use. Capture a verified pre-drop snapshot/row-count and confirm no audit/compliance retention obligation before applying in production (see `docs/launch-readiness-checklist.md` → Private Database Migration Readiness).
+- [ ] Understand that the shipping-teardown migrations `0062`–`0066` are **irreversible** `DROP TABLE`/`DROP COLUMN` operations on tables/columns holding production rows (attestation, duty-assignment, funding-review, service-policy, tax-policy, manual-policy, and intake-location records; the `product_shipment_jobs` funding columns; and `product_shipments.intake_location_attestation_id`), and the teardown continues through `0075` with further irreversible `DROP TABLE` operations retiring the post-sale fulfillment-policy/risk subsystem. The retained source config in `src/lib/shipping/product-shipping-config.ts` / `src/lib/commerce/product-tax-policy.ts` supersedes their runtime use. Capture a verified pre-drop snapshot/row-count and confirm no audit/compliance retention obligation before applying in production (see `docs/launch-readiness-checklist.md` → Private Database Migration Readiness).
 - [ ] Confirm staging already ran the same migration set successfully.
 - [ ] Confirm production `DATABASE_URL` host matches `<verified-production-host>` without exposing the full URL.
 - [ ] Apply needed migrations only with the production guard variables.
@@ -235,10 +233,9 @@ npm run db:migrate
 
 ## Phase 4: Production Provider Dashboard Setup
 
-- [ ] Helcim production API access is active for product and training checkout.
-- [ ] Helcim webhook delivery URL is `https://<production-domain>/api/webhooks/card-transactions` and does **not** contain `helcim`.
-- [ ] Square production app/location is configured only for paid service booking when enabled.
-- [ ] Square webhook URL is `https://<production-domain>/api/webhooks/square`.
+- [ ] Square production API access is active for product and training checkout (`SQUARE_COMMERCE_ENABLED`).
+- [ ] Square production app/location is configured for product/training commerce and, when enabled, paid service booking.
+- [ ] Square webhook URL is `https://<production-domain>/api/webhooks/square` (all Square events — product, training, and service booking — arrive on this single webhook).
 - [ ] Square return URL is `https://<production-domain>/api/booking/square/return`.
 - [ ] Google OAuth consent/client has the production redirect URI.
 - [ ] Upstash production Redis/KV instance is reachable and separate from staging/dev where required.
@@ -372,7 +369,7 @@ npx sanity schema deploy --workspace default
 
 - [ ] Sanity webhook targets `https://<production-domain>/api/revalidate`, dataset `production`, method `POST`, projection `{ _type }`, and production `SANITY_WEBHOOK_SECRET`.
 - [ ] Publish a safe production Studio edit, verify signed webhook delivery, Vercel revalidation logs, cache tag, and public page update.
-- [ ] Helcim webhook smoke: verify `/api/webhooks/card-transactions` accepts a production/test-approved card transaction event with redacted evidence.
+- [ ] Product/training checkout webhook smoke: verify `/api/webhooks/square` accepts a production/test-approved Square payment event for product/training commerce with redacted evidence.
 - [ ] Square webhook smoke when service booking Square is enabled: verify `/api/webhooks/square` signature validation, idempotency, private hold/payment reconciliation, and finalizer behavior.
 - [ ] Resend webhook smoke: verify contact unsubscribe/update event reaches the private consent ledger.
 - [ ] Upstash smoke: verify OAuth token read/write, booking locks, idempotency keys, and TTL behavior with redacted key evidence.
@@ -402,15 +399,15 @@ Use approved test data only and redact all customer/payment details in evidence.
 - [ ] Training contact writes to private DB and sends Resend email; no Sanity submission document is created.
 - [ ] Contact popup/marketing signup writes consent/submission evidence to private DB and Resend segment.
 - [ ] Booking marketing opt-in and no-opt-in choices are recorded correctly in private DB.
-- [ ] Product checkout uses Helcim and persists private order/payment state.
-- [ ] Training checkout uses Helcim and exposes scheduling only through eligible paid token flow.
+- [ ] Product checkout uses Square and persists private order/payment state.
+- [ ] Training checkout uses Square and exposes scheduling only through eligible paid token flow.
 - [ ] Paid service booking uses Square only when enabled, creates a private hold, verifies payment server-side, then creates/fetches one Google Calendar event.
 
 ## Phase 10: Monitoring, Rollback, Failure Handling, and Evidence Capture
 
-- [ ] Monitor Vercel runtime logs for `/api/revalidate`, `/api/webhooks/card-transactions`, `/api/webhooks/square`, booking routes, checkout routes, form actions, email retries, and private-data retention cron.
+- [ ] Monitor Vercel runtime logs for `/api/revalidate`, `/api/webhooks/square`, booking routes, checkout routes, form actions, email retries, and private-data retention cron.
 - [ ] Monitor the new scheduled jobs (Vercel Cron, authorized by `CRON_SECRET`/`CHITCHATS_WORKER_CRON_SECRET`): `/api/cron/chitchats-shipping` (every minute; dormant unless Chit Chats shipping / Square commerce is enabled) and `/api/cron/customer-email-outbox` (every 5 min). A `503` from any of these signals dead-letters/retries/unknown-outcomes needing review.
-- [ ] Monitor provider dashboards for Helcim, Square, Resend, Google OAuth/API, Upstash, Sanity webhook deliveries, and database health.
+- [ ] Monitor provider dashboards for Square, Resend, Google OAuth/API, Upstash, Sanity webhook deliveries, and database health.
 - [ ] If Sanity import is wrong but production app is otherwise stable, stop content edits and decide whether to re-import from `./production-pre-cutover-backup.tar.gz` or roll forward with a corrected staging export.
 - [ ] If DB migration fails, stop and follow `docs/private-database-migration-runbook.md`; do not manually edit production schema.
 - [ ] If payment, booking, or form flows fail, pause those launch actions, preserve sanitized logs, and disable/rollback only through the approved deploy/provider path.
@@ -421,7 +418,6 @@ Use approved test data only and redact all customer/payment details in evidence.
 - `.env.local.example`
 - `docs/launch-readiness-checklist.md`
 - `docs/sanity-staging-production-workflow.md`
-- `docs/production-readiness-migration-plan.md`
 - `docs/private-database-migration-runbook.md`
 - `docs/google-calendar-oauth-env-setup.md`
 - `docs/booking-system-setup-guide.md`

@@ -8,15 +8,15 @@ This document is the durable reference for the current Lash Her booking architec
 
 All booking-related flows use app-owned private eligibility and private operational state, but payment and scheduling providers are split by product surface.
 
-Service bookings keep the custom Lash Her slot-selection UI. The app creates private Postgres holds, collects explicit no-show/cancellation policy acceptance, tokenizes and stores a Square card on file behind a feature flag, creates a draft no-show charge instrument, and finalizes verified bookings through the Google Calendar API. When the card-on-file feature is disabled or unavailable, the app falls back to the legacy Square hosted checkout (Payment Link) flow and treats Square browser return as a reconciliation hint only. Product checkout and training checkout remain Helcim-backed by default and must not require Square environment variables unless the optional training Afterpay Square Invoice flow is enabled. When `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true`, training checkout can create and publish a Square invoice instead of using Helcim; see `docs/training-afterpay-square-invoice.md` for the launch gate, webhook routing, and recovery rules. Paid training intro-call scheduling uses a private app token gate first, then shows a public Google Appointment Schedule link or embed. The app does not mark training as scheduled only because that page renders.
+Service bookings keep the custom Lash Her slot-selection UI. The app creates private Postgres holds, collects explicit no-show/cancellation policy acceptance, tokenizes and stores a Square card on file behind a feature flag, creates a draft no-show charge instrument, and finalizes verified bookings through the Google Calendar API. When the card-on-file feature is disabled or unavailable, the app falls back to the legacy Square hosted checkout (Payment Link) flow and treats Square browser return as a reconciliation hint only. Product checkout and training checkout run on Square through the Square Web Payments SDK, gated by `SQUARE_COMMERCE_ENABLED`, and require Square environment variables. When `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true`, training checkout can additionally create and publish a Square invoice (Afterpay/Clearpay) instead of the default Square Web Payments card charge; see `docs/training-afterpay-square-invoice.md` for the launch gate, webhook routing, and recovery rules. Paid training intro-call scheduling uses a private app token gate first, then shows a public Google Appointment Schedule link or embed. The app does not mark training as scheduled only because that page renders.
 
 ## Decision Record
 
 | Decision                                                                   | Status      | Reason                                                                                                                                                                                                            |
 | -------------------------------------------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Keep custom slot picker for service bookings                               | Locked      | Lash appointments require availability before payment, 10-minute holds, and Square payment before final Calendar booking.                                                                                         |
-| Use Square for service booking payments                                    | Locked      | Service booking stores a Square card on file (or falls back to hosted checkout) from a private hold. Square is not the product or default training checkout provider.                                             |
-| Keep Helcim as the default provider for product and training checkout      | Locked      | Product orders and paid training enrollment checkout use the existing Helcim commerce flow unless the optional training Afterpay Square Invoice feature is explicitly enabled.                                    |
+| Use Square for service booking payments                                    | Locked      | Service booking stores a Square card on file (or falls back to hosted checkout) from a private hold.                                                                                                              |
+| Use Square for product and training checkout                               | Locked      | Product orders and paid training enrollment checkout use the Square Web Payments SDK, gated by `SQUARE_COMMERCE_ENABLED`. The optional training Afterpay Square Invoice feature can additionally be enabled.      |
 | Allow optional training Afterpay Square Invoice checkout                   | Locked      | When `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true`, training checkout may create a Square invoice for Afterpay/Clearpay. This is an exception, not the default; see `docs/training-afterpay-square-invoice.md`. |
 | Use Google Appointment Schedule only after paid training token eligibility | Locked      | Appointment Schedules support public link/embed. The app must gate the URL through private paid token eligibility and must not use Appointment Schedule for service bookings.                                     |
 | Keep Google Calendar as final calendar                                     | Locked      | Nataliea's operational calendar remains the staff source of truth.                                                                                                                                                |
@@ -41,7 +41,7 @@ Google Calendar does not expose documented Appointment Schedule APIs for service
 
 - creating temporary booking-page holds,
 - booking an Appointment Schedule slot programmatically,
-- collecting Square or Helcim payments inside the Google booking page,
+- collecting Square payments inside the Google booking page,
 - returning Google's precomputed booking-page slots,
 - arbitrary customer-info prefill in the embed.
 
@@ -49,16 +49,16 @@ Implication: paid Lash Her service booking must be a custom app flow that uses G
 
 ## System Boundaries
 
-| System                      | Responsibility                                                                                                                                                                           | Must Not Do                                                                                                           |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Sanity                      | Public/editorial bookable service config, native payment fields, copy                                                                                                                    | Store PII, holds, payment status, booking history, transaction data                                                   |
-| Private Postgres            | Holds, orders, payment events, booking lifecycle, training eligibility, audit/reconciliation                                                                                             | Act as public CMS                                                                                                     |
-| Redis / Upstash             | Google OAuth token storage and short-lived race locks                                                                                                                                    | Be canonical booking/payment state                                                                                    |
-| Google Calendar API         | Service booking busy-time source and final staff event store                                                                                                                             | Gate payment or hold Appointment Schedule slots                                                                       |
-| Google Appointment Schedule | Paid training intro-call scheduling after private token eligibility                                                                                                                      | Verify paid status, gate the schedule URL, or book service appointments                                               |
-| Square                      | Service booking card-on-file storage, hosted checkout fallback, payment event source, and (when `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true`) training Afterpay Square Invoice source | Act as a global checkout provider for products or as the default training checkout provider                           |
-| Helcim                      | Default product checkout and training checkout payment event source                                                                                                                      | Process new service booking payments or process training checkout when the optional Square invoice feature is enabled |
-| Resend                      | Transactional customer/admin emails                                                                                                                                                      | Be the source of truth for booking state                                                                              |
+| System                      | Responsibility                                                                                                                                                                                                                                    | Must Not Do                                                                                     |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Sanity                      | Public/editorial bookable service config, native payment fields, copy                                                                                                                                                                             | Store PII, holds, payment status, booking history, transaction data                             |
+| Private Postgres            | Holds, orders, payment events, booking lifecycle, training eligibility, audit/reconciliation                                                                                                                                                      | Act as public CMS                                                                               |
+| Redis / Upstash             | Google OAuth token storage and short-lived race locks                                                                                                                                                                                             | Be canonical booking/payment state                                                              |
+| Google Calendar API         | Service booking busy-time source and final staff event store                                                                                                                                                                                      | Gate payment or hold Appointment Schedule slots                                                 |
+| Google Appointment Schedule | Paid training intro-call scheduling after private token eligibility                                                                                                                                                                               | Verify paid status, gate the schedule URL, or book service appointments                         |
+| Square                      | Product and training checkout (Square Web Payments SDK), service booking card-on-file storage, hosted checkout fallback, payment event source, and (when `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true`) training Afterpay Square Invoice source | Store raw card tokens or full PANs in Postgres, or act as the customer-facing scheduling engine |
+| Helcim                      | Legacy/historical product and training payment records only; retained `helcim` payment-provider enum value and `helcim_*` columns keep past orders readable                                                                                       | Process any new product, training, or service booking payment                                   |
+| Resend                      | Transactional customer/admin emails                                                                                                                                                                                                               | Be the source of truth for booking state                                                        |
 
 ## Canonical Flow: Paid Service Booking
 
@@ -90,11 +90,11 @@ Duplicate card-save submissions, return visits, and webhook events must resolve 
 
 ## Canonical Flow: Paid Training Intro Call
 
-Default path (Helcim):
+Default path (Square Web Payments):
 
 ```text
 Training checkout completed
-  -> Helcim payment verified
+  -> Square Web Payments card charge verified
   -> training enrollment/order marked paid in private DB
   -> private app schedule token issued
   -> customer opens paid training schedule page
@@ -187,9 +187,10 @@ Keep these route and module boundaries aligned with the implementation:
 - `POST /api/booking/card-on-file`: confirm a service booking by saving a Square card on file, recording policy acceptance, and finalizing the Calendar event.
 - `POST /api/booking/checkout`: initialize legacy Square hosted checkout for service booking holds when card-on-file is disabled.
 - `GET /api/booking/square/return`: reconcile Square return hints server-side before redirecting to booking confirmation.
-- `POST /api/webhooks/square`: verify Square webhook signatures, dedupe events, and route service-booking payment/no-show reconciliation and training invoice `invoice.payment_made` events to the appropriate finalizer.
-- `POST /api/checkout/validate-payment`: verify Helcim browser payment payloads for product and training checkout.
-- `POST /api/webhooks/card-transactions`: verify Helcim webhooks for product and training checkout.
+- `POST /api/checkout`: Square Web Payments product checkout (gated by `SQUARE_COMMERCE_ENABLED`).
+- `POST /api/training-checkout`: Square Web Payments training checkout (gated by `SQUARE_COMMERCE_ENABLED`).
+- `GET /api/checkout/square/config`: public-safe Square Web Payments SDK config for product and training checkout when `SQUARE_COMMERCE_ENABLED=true`.
+- `POST /api/webhooks/square`: the single Square webhook for every Square event. Verify signatures, dedupe events, and route product/training commerce payments, service-booking payment/no-show reconciliation, and training invoice `invoice.payment_made` events to the appropriate finalizer.
 - `POST /api/training-checkout/square-invoice`: create and publish a Square invoice for a training order when `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true`.
 - `POST /api/admin/appointments/[id]/no-show`: protected staff command to enforce a no-show charge against a saved card.
 - `GET /api/admin/payment-reconciliation`: protected cron/operator route to report stuck or inconsistent booking payment states.
@@ -227,7 +228,7 @@ Minimum operator reporting must identify:
 - active holds past expiry,
 - paid service orders without Calendar events,
 - expired holds that later received payment,
-- unmatched Square service webhook events and unmatched Helcim commerce webhook events,
+- unmatched Square webhook events across product, training, and service booking flows,
 - booking failures requiring manual follow-up,
 - paid training tokens that cannot access the Appointment Schedule page,
 - Calendar events with no matching DB booking if temporary Calendar holds are ever introduced,

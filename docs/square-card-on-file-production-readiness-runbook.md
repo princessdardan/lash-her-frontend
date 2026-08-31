@@ -133,9 +133,9 @@ For every row, record only:
 
 Do not record raw card tokens, `sourceId`, verification tokens, access tokens, webhook secrets, signatures, full Square object IDs, full webhook payloads, customer names, emails, phone numbers, or cardholder PII.
 
-### 1. Web Payments SDK STORE tokenization
+### 1. Web Payments SDK CHARGE_AND_STORE tokenization
 
-Goal: prove the browser uses Square sandbox Web Payments SDK tokenization before booking confirmation.
+Goal: prove the browser uses Square sandbox Web Payments SDK tokenization before booking confirmation. The active customer flow tokenizes with `intent: "CHARGE_AND_STORE"` and confirms through `/api/booking/payment/confirm`; the `/api/booking/card-on-file` STORE path (`intent: "STORE"`) is the secondary card-save flow and is certified the same way where enabled.
 
 Steps:
 
@@ -143,14 +143,14 @@ Steps:
 2. Select a service and create a booking hold.
 3. Confirm the no-show/cancellation policy checkbox is required before card submission.
 4. Confirm the Square sandbox card iframe loads from the sandbox Web Payments script.
-5. Submit a Square sandbox card through the card-on-file form.
-6. Confirm the booking POST to `/api/booking/card-on-file` receives a source token and optional verification token.
+5. Submit a Square sandbox card through the charge-and-store booking form.
+6. Confirm the booking POST to `/api/booking/payment/confirm` receives a `CHARGE_AND_STORE` source token and optional verification token.
 
 Expected result:
 
 - Square iframe loads in staging.
 - The browser receives a sandbox tokenization result.
-- `/api/booking/card-on-file` accepts the booking confirmation request.
+- `/api/booking/payment/confirm` accepts the charge-and-store booking confirmation request.
 - No raw token is recorded in evidence.
 
 ### 2. Cards API save
@@ -440,7 +440,7 @@ If production env validation fails, disable the card-on-file flag until the env 
 For the first live production booking after card-on-file enablement:
 
 1. Monitor `/api/booking/square/config` availability.
-2. Monitor `/api/booking/card-on-file` booking confirmation.
+2. Monitor `/api/booking/payment/confirm` charge-and-store booking confirmation (and `/api/booking/card-on-file` if the secondary STORE path is in use).
 3. Confirm saved card metadata contains only provider card ID, brand, last4, and expiry.
 4. Confirm policy acceptance and no-show charge records persist.
 5. Confirm Google Calendar event creation happens only after secure card save and local persistence.
