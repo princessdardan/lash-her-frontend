@@ -163,7 +163,7 @@ Product and training checkout run on Square and share the Square credentials inv
 
 All product-shipping/checkout controls default off and fail closed. Product checkout stays inert until these are set and the source-controlled shipping config (`src/lib/shipping/product-shipping-config.ts`) and tax config (`src/lib/commerce/product-tax-policy.ts`) are populated and business-confirmed. Shipping/checkout readiness is now **source-controlled config, not owner-attested DB records** — there are no runtime attestation, duty-assignment, or funding-reservation gates to clear; the former attestation/duty/funding tables were dropped by the shipping-teardown migrations (`0062`–`0066`, with later teardown drops continuing through `0075`; see Phase 3). See `.env.local.example` for the annotated source of truth.
 
-Feature admission (keep off until certified — see `docs/chitchats-shipping-policy-decisions.md`):
+Feature admission (keep off until the source-controlled shipping/tax config is populated and business-confirmed):
 
 - [ ] `CHITCHATS_SHIPPING_ENABLED=true`
 - [ ] `CHITCHATS_CHECKOUT_ENABLED=true`
@@ -418,7 +418,6 @@ Use approved test data only and redact all customer/payment details in evidence.
 - `.env.local.example`
 - `docs/launch-readiness-checklist.md`
 - `docs/sanity-staging-production-workflow.md`
-- `docs/production-readiness-migration-plan.md`
 - `docs/private-database-migration-runbook.md`
 - `docs/google-calendar-oauth-env-setup.md`
 - `docs/booking-system-setup-guide.md`
