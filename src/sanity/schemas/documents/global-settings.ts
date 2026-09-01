@@ -118,11 +118,11 @@ export const globalSettings = defineType({
           type: "boolean",
           initialValue: false,
           description:
-            "Email the selected sitewide promotion to each new popup signup.",
+            "Controls whether contact pop-up subscribers can receive a discount code in their welcome email. Turn it off to send the standard welcome email without an offer. A subscriber can receive the same selected promotion only once.",
         }),
         defineField({
           name: "signupPromotion",
-          title: "Signup Promotion",
+          title: "Discount Code to Send",
           type: "reference",
           to: [{ type: "promotionCode" }],
           weak: false,
@@ -130,6 +130,8 @@ export const globalSettings = defineType({
           options: {
             filter: 'isEnabled == true && appliesTo == "all"',
           },
+          description:
+            "Select the Promotion Code that customers will see in the welcome email and enter at checkout. Only enabled codes that work on all products and training programs appear here. These codes do not apply to service appointments.",
           validation: (Rule) =>
             Rule.custom((value, context) => {
               if (!isSignupOfferEnabled(context.parent)) return true;
@@ -141,11 +143,11 @@ export const globalSettings = defineType({
         }),
         defineField({
           name: "signupOfferLabel",
-          title: "Signup Offer Label",
+          title: "Offer Heading in Email",
           type: "string",
           hidden: ({ parent }) => parent?.signupOfferEnabled !== true,
           description:
-            "Customer-facing offer heading used in the welcome email.",
+            "This heading appears directly above the discount code. Use it to tell the customer what they are receiving, and make sure the amount matches the selected Promotion Code. For example: “Enjoy 15% off products and training.”",
           validation: (Rule) =>
             Rule.custom((value, context) =>
               validateRequiredOfferText(
@@ -158,12 +160,12 @@ export const globalSettings = defineType({
         }),
         defineField({
           name: "signupOfferTerms",
-          title: "Signup Offer Terms",
+          title: "Offer Details in Email",
           type: "text",
           rows: 3,
           hidden: ({ parent }) => parent?.signupOfferEnabled !== true,
           description:
-            "Customer-facing eligibility, exclusions, or redemption terms.",
+            "This smaller text appears below the email button. Use it for instructions or conditions customers need to know before using the code. This text does not change or enforce the Promotion Code settings, so it must accurately match the selected promotion.",
           validation: (Rule) =>
             Rule.custom((value, context) =>
               validateRequiredOfferText(
@@ -176,9 +178,11 @@ export const globalSettings = defineType({
         }),
         defineField({
           name: "signupOfferCtaLabel",
-          title: "Signup Offer CTA Label",
+          title: "Email Button Text",
           type: "string",
           hidden: ({ parent }) => parent?.signupOfferEnabled !== true,
+          description:
+            "This is the wording customers see on the button below their discount code. It should describe where the button leads. For example: “Shop products” or “View training programs.”",
           validation: (Rule) =>
             Rule.custom((value, context) =>
               validateRequiredOfferText(
@@ -191,10 +195,11 @@ export const globalSettings = defineType({
         }),
         defineField({
           name: "signupOfferCtaUrl",
-          title: "Signup Offer CTA URL",
+          title: "Email Button Destination",
           type: "url",
           hidden: ({ parent }) => parent?.signupOfferEnabled !== true,
-          description: "Use an absolute HTTPS destination.",
+          description:
+            "This is the page that opens when a customer clicks the email button. Link to the best place to start using the code—usually the Products page, Training Programs page, or a dedicated offer page. Do not link to service booking because this promotion does not apply to services. Paste the full page address beginning with https://.",
           validation: (Rule) =>
             Rule.custom((value, context) => {
               if (!isSignupOfferEnabled(context.parent)) return true;
