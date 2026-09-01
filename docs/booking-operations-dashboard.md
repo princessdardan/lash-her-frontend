@@ -97,31 +97,46 @@ Create separate Google OAuth clients for identity and booking-calendar access so
 
 The browser receives a public offering ID and display data only. It never supplies provider-resource routing, a connection ID, or a calendar ID.
 
-## Safe deployment order
+The public `/services` catalog and `/services/[slug]/booking` flow read operational offering and intake data from PostgreSQL. `/booking` is a permanent legacy redirect shim: the bare path redirects to `/services`, valid legacy offering links redirect to the canonical service booking route, and invalid legacy parameters fail closed. Sanity `service` documents may supply linked detail-page editorial content, imagery, and SEO, but they do not own operational booking availability or pricing.
+
+The legacy Sanity `bookingSettings` schema file remains in the repository for V1 runtime/recovery compatibility and one-time imports. It is not registered in the active Studio schema, structure, or Presentation configuration, and operators must not recreate or edit it as current runtime configuration.
+
+## Calendar credential ownership
+
+Owners and administrators start operational OAuth connections at `/admin/calendar-connections`; employees use `/admin/my-calendar`. The callback persists connection credentials encrypted with `BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY` in PostgreSQL and assigns calendars through resource-scoped operational records.
+
+Redis/KV still stores short-lived OAuth state and coordination locks. The protected `BOOKING_ADMIN_SETUP_SECRET` flow and its Redis-backed global refresh token remain only for V1 compatibility and legacy recovery; they are not the setup path for new operational connections.
+
+## Current deployment order
 
 1. Back up the target database and verify PITR/restore readiness.
-2. Apply migrations before deploying code:
+2. Inspect migration lineage, apply reviewed migrations with explicit target guards, then confirm the target is current before deploying code:
 
    ```bash
+   npm run db:check -- --env-file <protected-env-file>
+   DOTENV_CONFIG_PATH=<protected-env-file> \
+   PRIVATE_DB_MIGRATION_TARGET=TARGET_NAME \
+   PRIVATE_DB_MIGRATION_HOST=EXACT_DATABASE_HOST \
    npm run db:migrate
+   npm run db:check -- --env-file <protected-env-file>
    ```
 
-   The migration runner commits each journal entry independently. PostgreSQL requires this when a later migration uses an enum value introduced by an earlier migration.
+   Replace `<protected-env-file>`, `TARGET_NAME`, and `EXACT_DATABASE_HOST` with the reviewed target values. A pre-apply exit code of 1 is expected when the only finding is the reviewed pending migration set. Production also requires `PRIVATE_DB_MIGRATION_CONFIRM=production` on the migration command. The migration runner commits each journal entry independently. PostgreSQL requires this when a later migration uses an enum value introduced by an earlier migration. Follow `docs/private-database-migration-runbook.md`; do not rely on whichever `DATABASE_URL` happens to be present in a default `.env` file.
 
-3. Deploy with `SERVICE_BOOKING_MODEL_MODE=dual` for the compatibility period.
+3. Deploy current environments with `SERVICE_BOOKING_MODEL_MODE=operational`. Do not switch an already-operational environment back to `dual` for routine deployment.
 4. Sign in at `/admin` with the configured bootstrap owner Google account.
-5. Stage the current Nataliea configuration with the legacy import below, or create it through the dashboard.
+5. Create and verify the current provider, resources, services, offerings, schedules, and settings through the dashboard.
 6. Connect and assign a writable canonical Google Calendar.
 7. Confirm setup readiness, then activate the resource/provider, services, and offerings.
 8. Run the sandbox smoke matrix before enabling live traffic.
-9. After legacy holds have expired or finalized and every public service is migrated, complete the operational data cutover gate below.
-10. Only after the cutover command reports success, set `SERVICE_BOOKING_MODEL_MODE=operational`. This disables creation of new V1 holds while existing V1 payments/finalizers remain recoverable.
 
-`legacy` is an emergency rollback mode for new booking creation. `dual` permits per-service migration. `operational` is the final cutover mode.
+`legacy` and `dual` remain compatibility modes for an explicitly approved migration or emergency recovery plan. Both permit V1 API booking creation and are not safe defaults for a current operational deployment. Existing holds and payment records continue through their stored model version without reopening V1 creation.
 
-## Dry-run-first Nataliea import
+## Historical migration/recovery: legacy Nataliea import
 
-The import reads published bookable services and booking settings from Sanity. It stages new operational rows as draft, preserves the activation state of existing rows, does not duplicate schedules, and is idempotent.
+Do not run this procedure during routine deployment or switch a current environment back to `dual`. It exists only for a deployment that has not completed the legacy-to-operational migration or for an approved recovery of verified legacy source data.
+
+The compatibility import reads legacy published bookable services and the legacy booking-settings document from Sanity. Those source schemas are not operational authority, and `bookingSettings` is intentionally absent from the active Studio. The import stages new PostgreSQL rows as draft, preserves the activation state of existing rows, does not duplicate schedules, and is idempotent.
 
 Dry run:
 
@@ -146,13 +161,16 @@ The write command requires `DATABASE_URL`, `PRIVATE_DB_MIGRATION_TARGET`, and an
 
 The import deliberately does not copy the legacy `primary` calendar alias or global OAuth token. The owner must connect the Google account in `/admin/calendar-connections` and choose a canonical calendar returned by Google CalendarList. This prevents ambiguous routing once more than one employee exists.
 
-## Operational data cutover gate
+## Historical migration/recovery: operational data cutover gate
 
-Keep `SERVICE_BOOKING_MODEL_MODE=dual` until this gate passes. Apply the
-PostgreSQL migrations and finish staging every provider/service/offering first.
-The cutover import reads the published legacy Sanity booking settings and raw
-service-promotion eligibility fields, but runtime operational booking remains
-PostgreSQL-only.
+For a deployment that has never completed the legacy-to-operational cutover,
+keep `SERVICE_BOOKING_MODEL_MODE=dual` only for the duration of this migration
+procedure. Never switch an already-operational deployment back to `dual`. Apply
+the PostgreSQL migrations and finish staging every provider/service/offering first.
+The one-time compatibility cutover import reads the published legacy Sanity
+booking settings and raw service-promotion eligibility fields, but those source
+documents are not editable operational configuration and runtime operational
+booking remains PostgreSQL-only.
 
 Run the validation-only dry run:
 
@@ -199,15 +217,29 @@ and prints `CUTOVER VALIDATION PASSED`.
 
 The dashboard provides these operational areas:
 
-- `/admin/setup`: configuration/readiness summary and global defaults.
+- `/admin`: role-scoped operational overview.
+- `/admin/setup`: booking-health and readiness summary.
+- `/admin/booking-settings`: public booking defaults, policy, lead-time, and intake configuration.
 - `/admin/staff`: owner/admin/employee accounts, their automatically provisioned provider profiles, booking status, and Square attribution.
 - `/admin/offerings`: operational services, public catalog copy, provider-specific prices, durations, buffers, add-ons, and optional detail-page editorial links.
+- `/admin/service-promotions`: PostgreSQL-owned promotion codes and exact offering eligibility.
 - `/admin/schedules`: weekly shifts, split shifts, closures, and availability exceptions.
 - `/admin/calendar-connections`: connect/reconnect Google accounts and assign busy/write calendars.
-- `/admin/appointments`: resource-scoped appointment operations and status history.
+- `/admin/my-calendar`: employee-owned Google Calendar connection and routing.
+- `/admin/appointments` and `/admin/appointments/[id]`: resource-scoped appointment operations and status history.
+- `/admin/booking-issues`: booking and reconciliation conditions that require manual follow-up.
+- `/admin/inquiries`: private contact and service-inquiry operations.
+- `/admin/orders`: product-order operations.
+- `/admin/inventory`: product inventory operations.
+- `/admin/shipping-packages`: package-profile configuration.
+- `/admin/training`: training enrollment operations.
+- `/admin/payments`: payment and refund views.
 - `/admin/marketing`: private marketing contacts and sync health.
+- `/admin/integrations`: integration status and operational configuration visibility.
 - `/admin/analytics`: business summary metrics.
 - `/admin/audit`: owner-only administrative audit events.
+
+`/admin/step-up` is the internal privileged-action verification route rather than a standalone operational workspace. Every route above remains permission-gated; its presence in this inventory does not imply access for every role.
 
 New public offerings should not be activated until readiness confirms:
 
@@ -263,6 +295,7 @@ Authorization is enforced in server queries and mutations. Hiding a navigation i
 
 - An operational configuration read error fails closed; it does not silently switch customers to the legacy calendar.
 - An active but unhealthy V2 offering is treated as unavailable, not as an unmigrated V1 service.
+- The public payment config/form uses direct Square `CHARGE_AND_STORE` for the configured deposit, full amount, or custom partial amount. If that direct configuration is unavailable, the form fails closed; it does not create a hosted Payment Link.
 - Resource occupancy is protected by a PostgreSQL exclusion constraint using half-open time ranges.
 - Calendar connection loss leaves the appointment/payment record recoverable and visible for manual follow-up.
 - Direct payment acquires a durable capture lease before provider work. Hold and reservation expiry exclude valid leases and durable authorized/captured attempts.
@@ -275,4 +308,14 @@ Authorization is enforced in server queries and mutations. Hiding a navigation i
 
 The existing private-data retention job also covers operational appointments. After 395 days, only terminal `completed`, `cancelled`, and `no_show` appointments are redacted; confirmed, rebooking-pending, and manual-follow-up records are preserved. Redaction removes customer identity, phone, intake details, cancellation free text, and email retry errors while retaining non-PII offering/provider snapshots, payment state, schedule timestamps, and event history needed for financial and operational records.
 
-Never paste OAuth setup URLs, refresh/access tokens, `DATABASE_URL`, payment source tokens, or customer PII into tickets, screenshots, or chat.
+See `docs/scheduled-jobs-runbook.md` for retention and reconciliation endpoint authentication, cadence ownership, and failure behavior.
+
+Never paste legacy OAuth setup URLs, refresh/access tokens, `DATABASE_URL`, payment source tokens, or customer PII into tickets, screenshots, or chat.
+
+## Related runbooks
+
+- `docs/booking-system-setup-guide.md`: environment and rollout setup.
+- `docs/booking-system-runbook.md`: live booking operations and recovery.
+- `docs/square-service-booking-setup.md`: Square charge-and-store and historical reconciliation setup.
+- `docs/scheduled-jobs-runbook.md`: scheduled endpoint contracts and ownership.
+- `docs/production-cutover-checklist.md`: staging-to-production cutover procedure.

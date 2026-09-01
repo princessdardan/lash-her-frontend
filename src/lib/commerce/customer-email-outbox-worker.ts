@@ -4,15 +4,30 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 
 import {
+  CONTACT_POPUP_CUSTOMER_EMAIL_MAX_LENGTH,
+  CONTACT_POPUP_CUSTOMER_NAME_MAX_LENGTH,
+  CONTACT_POPUP_OFFER_CTA_LABEL_MAX_LENGTH,
+  CONTACT_POPUP_OFFER_CTA_URL_MAX_LENGTH,
+  CONTACT_POPUP_OFFER_IDENTITY_MAX_LENGTH,
+  CONTACT_POPUP_OFFER_LABEL_MAX_LENGTH,
+  CONTACT_POPUP_OFFER_TERMS_MAX_LENGTH,
+} from "@/lib/contact-popup/signup-offer-contract";
+import { parsePromotionCodeInput } from "@/lib/commerce/discounts";
+import {
   enqueuePaidProductOrderConfirmationEmail,
   listPaidProductOrdersMissingConfirmationOutbox,
   recordProductOrderConfirmationEmailFailure,
 } from "./order-store";
 import {
+  claimCustomerEmailById,
   claimCustomerEmails,
   completeCustomerEmail,
   failCustomerEmail,
+  isContactPopupOfferRecipientSubscribed,
+  suppressCustomerEmail,
+  type ContactPopupOfferEmailPayload,
 } from "./customer-email-outbox";
+import { deliverContactPopupOfferEmail } from "@/lib/email";
 import {
   sendProductOrderConfirmationEmail,
   type SendProductOrderConfirmationEmailInput,
@@ -31,6 +46,7 @@ export interface CustomerEmailOutboxWorkerResult {
   enqueued: number;
   failed: number;
   sent: number;
+  suppressed: number;
 }
 
 export async function processCustomerEmailOutbox(
@@ -58,16 +74,65 @@ export async function processCustomerEmailOutbox(
     ...(input.limit ? { limit: input.limit } : {}),
     ...(input.now ? { now: input.now } : {}),
   });
+  return processClaimedCustomerEmails({
+    claimed,
+    enqueued,
+    leaseOwner,
+    ...(input.now ? { now: input.now } : {}),
+  });
+}
+
+export async function processCustomerEmailOutboxJob(input: {
+  jobId: string;
+  leaseOwner?: string;
+  now?: Date;
+}): Promise<CustomerEmailOutboxWorkerResult> {
+  const leaseOwner =
+    input.leaseOwner?.trim() || `customer-email/${randomUUID()}`;
+  const claimed = await claimCustomerEmailById({
+    id: input.jobId,
+    leaseOwner,
+    ...(input.now ? { now: input.now } : {}),
+  });
+  return processClaimedCustomerEmails({
+    claimed: claimed ? [claimed] : [],
+    enqueued: 0,
+    leaseOwner,
+    ...(input.now ? { now: input.now } : {}),
+  });
+}
+
+async function processClaimedCustomerEmails(input: {
+  claimed: import("./customer-email-outbox").ClaimedCustomerEmail[];
+  enqueued: number;
+  leaseOwner: string;
+  now?: Date;
+}): Promise<CustomerEmailOutboxWorkerResult> {
   let sent = 0;
   let failed = 0;
+  let suppressed = 0;
 
-  for (const email of claimed) {
+  for (const email of input.claimed) {
     try {
       if (email.decodeError) throw new Error(email.decodeError);
       const result = await deliverClaimedCustomerEmail(email);
+      if (result.suppressed) {
+        const recorded = await suppressCustomerEmail({
+          id: email.id,
+          leaseOwner: input.leaseOwner,
+          ...(input.now ? { now: input.now } : {}),
+        });
+        if (!recorded) {
+          throw new Error(
+            "Customer email outbox lease was lost while suppressing delivery",
+          );
+        }
+        suppressed += 1;
+        continue;
+      }
       const completed = await completeCustomerEmail({
         id: email.id,
-        leaseOwner,
+        leaseOwner: input.leaseOwner,
         providerMessageId: result.id,
         ...(input.now ? { now: input.now } : {}),
         ...(result.completion
@@ -119,14 +184,20 @@ export async function processCustomerEmailOutbox(
       }
       await failCustomerEmail({
         id: email.id,
-        leaseOwner,
+        leaseOwner: input.leaseOwner,
         error: error instanceof Error ? error.message : "Unknown email error",
         ...(input.now ? { now: input.now } : {}),
       });
     }
   }
 
-  return { claimed: claimed.length, enqueued, failed, sent };
+  return {
+    claimed: input.claimed.length,
+    enqueued: input.enqueued,
+    failed,
+    sent,
+    suppressed,
+  };
 }
 
 async function deliverClaimedCustomerEmail(email: {
@@ -134,17 +205,39 @@ async function deliverClaimedCustomerEmail(email: {
   payload: unknown;
   providerIdempotencyKey: string;
   recipient: string;
-}): Promise<{
-  id: string;
-  completion?:
-    | { type: "product_confirmation"; orderId: string }
-    | {
-        type: "shipment_notification";
-        shipmentId: string;
-        kind: "accepted" | "exception" | "delivered";
-      };
-}> {
+}): Promise<
+  | { suppressed: true }
+  | {
+      suppressed?: false;
+      id: string;
+      completion?:
+        | { type: "product_confirmation"; orderId: string }
+        | {
+            type: "shipment_notification";
+            shipmentId: string;
+            kind: "accepted" | "exception" | "delivered";
+          };
+    }
+> {
   switch (email.kind) {
+    case "contact_popup_offer": {
+      const payload = parseContactPopupOfferEmailPayload(email.payload);
+      if (normalizeEmail(payload.recipientEmail) !== email.recipient) {
+        throw new Error(
+          "Customer email outbox recipient does not match payload",
+        );
+      }
+      if (
+        !(await isContactPopupOfferRecipientSubscribed(payload.recipientEmail))
+      ) {
+        return { suppressed: true };
+      }
+      return deliverContactPopupOfferEmail({
+        ...payload,
+        to: email.recipient,
+        idempotencyKey: email.providerIdempotencyKey,
+      });
+    }
     case "product_order_confirmation": {
       const payload = parseProductOrderEmailPayload(email.payload);
       if (payload.customerEmail.trim().toLowerCase() !== email.recipient) {
@@ -199,6 +292,76 @@ async function deliverClaimedCustomerEmail(email: {
       };
     }
   }
+}
+
+export function parseContactPopupOfferEmailPayload(
+  value: unknown,
+): ContactPopupOfferEmailPayload {
+  const promotionCode = isRecord(value)
+    ? parsePromotionCodeInput(value.promotionCode)
+    : null;
+  if (
+    !isRecord(value) ||
+    !isUuid(value.submissionId) ||
+    !isEmail(value.recipientEmail) ||
+    (value.customerName !== undefined &&
+      !isBoundedNonEmptyString(
+        value.customerName,
+        CONTACT_POPUP_CUSTOMER_NAME_MAX_LENGTH,
+      )) ||
+    (value.variant !== "fullContact" && value.variant !== "emailOnly") ||
+    !isBoundedNonEmptyString(
+      value.promotionId,
+      CONTACT_POPUP_OFFER_IDENTITY_MAX_LENGTH,
+    ) ||
+    !isBoundedNonEmptyString(
+      value.promotionRevision,
+      CONTACT_POPUP_OFFER_IDENTITY_MAX_LENGTH,
+    ) ||
+    promotionCode == null ||
+    promotionCode !== value.promotionCode ||
+    (value.discountType !== "percentage" && value.discountType !== "fixed") ||
+    typeof value.discountAmount !== "number" ||
+    !Number.isFinite(value.discountAmount) ||
+    value.discountAmount <= 0 ||
+    (value.discountType === "percentage" && value.discountAmount > 100) ||
+    value.appliesTo !== "all" ||
+    !isBoundedNonEmptyString(
+      value.offerLabel,
+      CONTACT_POPUP_OFFER_LABEL_MAX_LENGTH,
+    ) ||
+    !isBoundedNonEmptyString(
+      value.offerTerms,
+      CONTACT_POPUP_OFFER_TERMS_MAX_LENGTH,
+    ) ||
+    !isBoundedNonEmptyString(
+      value.ctaLabel,
+      CONTACT_POPUP_OFFER_CTA_LABEL_MAX_LENGTH,
+    ) ||
+    !isHttpsUrl(value.ctaUrl) ||
+    !isIsoTimestamp(value.resolvedAt)
+  ) {
+    throw new Error("Malformed contact popup offer outbox payload");
+  }
+  return {
+    submissionId: value.submissionId,
+    recipientEmail: normalizeEmail(value.recipientEmail),
+    ...(value.customerName === undefined
+      ? {}
+      : { customerName: value.customerName.trim() }),
+    variant: value.variant,
+    promotionId: value.promotionId,
+    promotionRevision: value.promotionRevision,
+    promotionCode,
+    discountType: value.discountType,
+    discountAmount: value.discountAmount,
+    appliesTo: value.appliesTo,
+    offerLabel: value.offerLabel,
+    offerTerms: value.offerTerms,
+    ctaLabel: value.ctaLabel,
+    ctaUrl: value.ctaUrl,
+    resolvedAt: value.resolvedAt,
+  };
 }
 
 function parseShipmentNotificationPayload(value: unknown): {
@@ -296,6 +459,64 @@ function parseShippingPolicyAlertPayload(value: unknown): {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function isBoundedNonEmptyString(
+  value: unknown,
+  maxLength: number,
+): value is string {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0 &&
+    value.length <= maxLength
+  );
+}
+
+function isEmail(value: unknown): value is string {
+  if (
+    typeof value !== "string" ||
+    value.length > CONTACT_POPUP_CUSTOMER_EMAIL_MAX_LENGTH
+  ) {
+    return false;
+  }
+  const normalized = normalizeEmail(value);
+  const separator = normalized.lastIndexOf("@");
+  return separator > 0 && separator < normalized.length - 1;
+}
+
+function isUuid(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    )
+  );
+}
+
+function isHttpsUrl(value: unknown): value is string {
+  if (
+    typeof value !== "string" ||
+    value.length > CONTACT_POPUP_OFFER_CTA_URL_MAX_LENGTH
+  ) {
+    return false;
+  }
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function isIsoTimestamp(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const timestamp = new Date(value);
+  return (
+    Number.isFinite(timestamp.getTime()) && timestamp.toISOString() === value
+  );
+}
+
+function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
 }
 
 function isNullableString(value: unknown): value is string | null {

@@ -1,5 +1,7 @@
 # Square Card-on-File Sandbox Certification
 
+> Historical document. This report records an incomplete June 2026 local certification of the retired STORE-only and hosted-checkout-fallback flow. Its final decision was NO-GO. It is preserved only as point-in-time evidence and must not be treated as current certification.
+
 ## Metadata
 
 - Operator: Dardan / operator-approved agent

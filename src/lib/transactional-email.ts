@@ -28,6 +28,7 @@ export const EMAIL_PROFILE_IMAGE_HTML_VARIABLE = "EMAIL_PROFILE_IMAGE_HTML";
 
 export interface SendTransactionalEmailInput {
   from?: string;
+  headers?: Record<string, string>;
   html?: string;
   idempotencyKey?: string;
   replyTo?: string | string[];
@@ -79,6 +80,7 @@ export async function sendTransactionalEmail(
 
   const basePayload = {
     from: input.from ?? config.fromEmail,
+    ...(input.headers === undefined ? {} : { headers: input.headers }),
     ...(input.replyTo === undefined ? {} : { replyTo: input.replyTo }),
     tags: [
       ...(input.tags ?? []),

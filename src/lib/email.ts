@@ -9,7 +9,13 @@ import {
   sendTransactionalEmail,
   telHref,
 } from "@/lib/transactional-email";
-import { getConfiguredTransactionalTemplate, type ResendEmailTemplateKey } from "@/lib/resend-platform";
+import {
+  getConfiguredTransactionalTemplate,
+  type ResendEmailTemplateKey,
+} from "@/lib/resend-platform";
+import type { ContactPopupOfferEmailPayload } from "@/lib/commerce/customer-email-outbox";
+import { RESEND_TEMPLATE_STRING_VALUE_MAX_LENGTH } from "@/lib/contact-popup/signup-offer-contract";
+import { buildMarketingUnsubscribeUrl } from "@/lib/marketing-contact/unsubscribe-token";
 
 // Type definitions
 export interface GeneralInquiryData {
@@ -47,13 +53,16 @@ export interface ContactPopupData {
   company?: string;
 }
 
+export const CONTACT_POPUP_OFFER_EMAIL_SUBJECT =
+  "Welcome to Lash Her by Nataliea!";
+
 export type FormType = "general-inquiry" | "training-contact" | "contact-popup";
 export type FormEmailAudience = "admin" | "customer";
 
 // Subject line helpers
 function getAdminSubject(
   formType: FormType,
-  formData: GeneralInquiryData | TrainingContactData | ContactPopupData
+  formData: GeneralInquiryData | TrainingContactData | ContactPopupData,
 ): string {
   if (formType === "general-inquiry") {
     return `🔔 New General Inquiry from ${(formData as GeneralInquiryData).name}`;
@@ -66,7 +75,10 @@ function getAdminSubject(
   return `🎓 New ${trainingData.programTitle} Inquiry from ${trainingData.name}`;
 }
 
-function getUserSubject(formType: FormType, formData: GeneralInquiryData | TrainingContactData | ContactPopupData): string {
+function getUserSubject(
+  formType: FormType,
+  formData: GeneralInquiryData | TrainingContactData | ContactPopupData,
+): string {
   if (formType === "general-inquiry") {
     return "Thank You for Your Inquiry - Lash Her by Nataliea";
   }
@@ -117,14 +129,30 @@ function getFormTemplateVariables(
     CUSTOMER_PHONE_TEL_HREF: getTemplatePhoneTelHref(phone),
     FORM_TYPE: formType,
     LOCATION: getTemplateLocation(formType, formData),
-    MARKETING_CONSENT: "marketingConsent" in formData ? formData.marketingConsent === true : formType === "contact-popup",
-    MESSAGE: getTemplateText("message" in formData ? formData.message : undefined, ""),
-    PRIVACY_POLICY_CONSENT: "privacyPolicyConsent" in formData ? formData.privacyPolicyConsent === true : undefined,
-    PROGRAM_SLUG: getTemplateText("programSlug" in formData ? formData.programSlug : undefined, ""),
-    PROGRAM_TITLE: getTemplateText("programTitle" in formData ? formData.programTitle : undefined, ""),
+    MARKETING_CONSENT:
+      "marketingConsent" in formData
+        ? formData.marketingConsent === true
+        : formType === "contact-popup",
+    MESSAGE: getTemplateText(
+      "message" in formData ? formData.message : undefined,
+      "",
+    ),
+    PRIVACY_POLICY_CONSENT:
+      "privacyPolicyConsent" in formData
+        ? formData.privacyPolicyConsent === true
+        : undefined,
+    PROGRAM_SLUG: getTemplateText(
+      "programSlug" in formData ? formData.programSlug : undefined,
+      "",
+    ),
+    PROGRAM_TITLE: getTemplateText(
+      "programTitle" in formData ? formData.programTitle : undefined,
+      "",
+    ),
     SOURCE_PATH: getTemplateSourcePath(formType, formData),
+    ...(formType === "contact-popup" ? { SIGNUP_OFFER_HTML: "" } : {}),
     SUBMITTED_AT: formatSubmittedAt(submittedAt),
-    VARIANT: "variant" in formData ? formData.variant ?? "" : "",
+    VARIANT: "variant" in formData ? (formData.variant ?? "") : "",
   };
 }
 
@@ -134,7 +162,10 @@ function getFirstName(name: string | undefined): string | undefined {
   return normalized ? normalized.split(/\s+/)[0] : undefined;
 }
 
-function getTemplateCustomerName(formType: FormType, name: string | undefined): string {
+function getTemplateCustomerName(
+  formType: FormType,
+  name: string | undefined,
+): string {
   const normalized = name?.trim();
 
   if (normalized) {
@@ -148,7 +179,10 @@ function getTemplateFirstName(name: string | undefined): string {
   return getTemplateText(getFirstName(name), "there");
 }
 
-function getTemplateInstagram(formType: FormType, instagram: string | undefined): string {
+function getTemplateInstagram(
+  formType: FormType,
+  instagram: string | undefined,
+): string {
   const normalized = instagram?.trim().replace(/^@+/, "");
 
   if (normalized) {
@@ -166,19 +200,27 @@ function getTemplateLocation(
     return "";
   }
 
-  return getTemplateText((formData as TrainingContactData).location, "Not provided");
+  return getTemplateText(
+    (formData as TrainingContactData).location,
+    "Not provided",
+  );
 }
 
 function getTemplateSourcePath(
   formType: FormType,
   formData: GeneralInquiryData | TrainingContactData | ContactPopupData,
 ): string {
-  if (formData.sourcePath !== undefined && formData.sourcePath.trim().length > 0) {
+  if (
+    formData.sourcePath !== undefined &&
+    formData.sourcePath.trim().length > 0
+  ) {
     return escapeHtml(formData.sourcePath.trim());
   }
 
   if (formType === "training-contact") {
-    return escapeHtml(`/training-programs/${(formData as TrainingContactData).programSlug}`);
+    return escapeHtml(
+      `/training-programs/${(formData as TrainingContactData).programSlug}`,
+    );
   }
 
   return "";
@@ -208,7 +250,9 @@ export function getFormEmailSubject(
   formType: FormType,
   formData: GeneralInquiryData | TrainingContactData | ContactPopupData,
 ): string {
-  return audience === "admin" ? getAdminSubject(formType, formData) : getUserSubject(formType, formData);
+  return audience === "admin"
+    ? getAdminSubject(formType, formData)
+    : getUserSubject(formType, formData);
 }
 
 export function getFormEmailTemplateVariables(
@@ -217,6 +261,30 @@ export function getFormEmailTemplateVariables(
   submittedAt?: Date,
 ): Record<string, unknown> {
   return getFormTemplateVariables(formType, formData, submittedAt);
+}
+
+export function getContactPopupOfferEmailTemplateVariables(
+  input: ContactPopupOfferEmailPayload,
+  unsubscribeUrl?: string,
+): Record<string, unknown> {
+  const ctaUrl = escapeHtml(getRequiredHttpsUrl(input.ctaUrl));
+
+  return {
+    ...getFormTemplateVariables("contact-popup", {
+      email: input.recipientEmail,
+      name: input.customerName,
+      variant: input.variant,
+    }),
+    DISCOUNT_CODE: getTemplateText(input.promotionCode, ""),
+    DISCOUNT_CTA_LABEL: getTemplateText(input.ctaLabel, ""),
+    DISCOUNT_CTA_URL: ctaUrl,
+    DISCOUNT_LABEL: getTemplateText(input.offerLabel, ""),
+    DISCOUNT_TERMS: getTemplateText(input.offerTerms, ""),
+    SIGNUP_OFFER_HTML: buildContactPopupOfferEmailContentHtml(
+      input,
+      unsubscribeUrl,
+    ),
+  };
 }
 
 export function buildFormEmailFallbackHtml(
@@ -245,6 +313,93 @@ export function buildFormEmailFallbackHtml(
   }
 
   return getTrainingContactUserHtml(formData as TrainingContactData);
+}
+
+export function buildContactPopupOfferEmailFallbackHtml(
+  input: ContactPopupOfferEmailPayload,
+  unsubscribeUrl?: string,
+): string {
+  return getContactPopupUserHtml(
+    {
+      email: input.recipientEmail,
+      name: input.customerName,
+      variant: input.variant,
+    },
+    buildContactPopupOfferEmailContentHtml(input, unsubscribeUrl),
+  );
+}
+
+export function buildContactPopupCustomerTemplateHtml(
+  data: ContactPopupData,
+): string {
+  return getContactPopupUserHtml(data, "{{{SIGNUP_OFFER_HTML}}}");
+}
+
+export function buildContactPopupOfferHtml(
+  input: ContactPopupOfferEmailPayload,
+): string {
+  const ctaUrl = escapeHtml(getRequiredHttpsUrl(input.ctaUrl));
+
+  return `
+<div style="margin: 30px 0; padding: 28px 24px; background-color: #F5F1F5; border: 1px solid #E8E2E9; border-radius: 8px; text-align: center;">
+  <p style="margin: 0 0 12px 0; color: #3D0B16; font-size: 16px; font-weight: 600; line-height: 1.5;">
+    ${escapeHtml(input.offerLabel)}
+  </p>
+  <p style="margin: 0 0 10px 0; color: #746A72; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">
+    Your discount code
+  </p>
+  <p style="margin: 0; color: #3D0B16; font-size: 26px; font-weight: 700; letter-spacing: 2px;">
+    ${escapeHtml(input.promotionCode)}
+  </p>
+  <div style="margin: 24px 0;">
+    <a href="${ctaUrl}" style="display: inline-block; background-color: #663976; color: #FFFFFF; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: 600; font-size: 14px;">
+      ${escapeHtml(input.ctaLabel)}
+    </a>
+  </div>
+  <p style="margin: 0; color: #746A72; font-size: 12px; line-height: 1.6;">
+    ${escapeHtml(input.offerTerms)}
+  </p>
+</div>
+  `.trim();
+}
+
+export function buildContactPopupUnsubscribeHtml(
+  unsubscribeUrl: string,
+): string {
+  return `
+<p style="margin: 24px 0 0 0; color: #746A72; font-size: 12px; line-height: 1.6; text-align: center;">
+  You received this offer because you subscribed to Lash Her updates.
+  <a href="${escapeHtml(unsubscribeUrl)}" style="color: #663976; text-decoration: underline;">Unsubscribe</a>
+</p>
+  `.trim();
+}
+
+function buildContactPopupOfferEmailContentHtml(
+  input: ContactPopupOfferEmailPayload,
+  unsubscribeUrl?: string,
+): string {
+  const offerHtml = buildContactPopupOfferHtml(input);
+
+  return unsubscribeUrl === undefined
+    ? offerHtml
+    : `${offerHtml}\n${buildContactPopupUnsubscribeHtml(unsubscribeUrl)}`;
+}
+
+function getRequiredHttpsUrl(value: string): string {
+  const normalized = value.trim();
+  let url: URL;
+
+  try {
+    url = new URL(normalized);
+  } catch {
+    throw new Error("Contact popup offer CTA URL must be a valid HTTPS URL");
+  }
+
+  if (url.protocol !== "https:") {
+    throw new Error("Contact popup offer CTA URL must use HTTPS");
+  }
+
+  return url.toString();
 }
 
 // Admin notification template for general inquiry
@@ -751,33 +906,45 @@ function getContactPopupAdminHtml(data: ContactPopupData): string {
                 Lead Details
               </h2>
               <table role="presentation" style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
-                ${data.name ? `
+                ${
+                  data.name
+                    ? `
                 <tr>
                   <td style="padding: 12px 0; border-bottom: 1px solid #E8E2E9;">
                     <strong style="color: #746A72; font-size: 14px; display: inline-block; width: 120px;">Name:</strong>
                     <span style="color: #1C1318; font-size: 14px;">${escapeHtml(data.name)}</span>
                   </td>
-                </tr>` : ''}
+                </tr>`
+                    : ""
+                }
                 <tr>
                   <td style="padding: 12px 0; border-bottom: 1px solid #E8E2E9;">
                     <strong style="color: #746A72; font-size: 14px; display: inline-block; width: 120px;">Email:</strong>
                     <a href="${escapeHtml(mailtoHref(data.email))}" style="color: #663976; font-size: 14px; text-decoration: none;">${escapeHtml(data.email)}</a>
                   </td>
                 </tr>
-                ${data.instagram ? `
+                ${
+                  data.instagram
+                    ? `
                 <tr>
                   <td style="padding: 12px 0; border-bottom: 1px solid #E8E2E9;">
                     <strong style="color: #746A72; font-size: 14px; display: inline-block; width: 120px;">Instagram:</strong>
                     <span style="color: #1C1318; font-size: 14px;">@${escapeHtml(data.instagram)}</span>
                   </td>
-                </tr>` : ''}
-                ${data.sourcePath ? `
+                </tr>`
+                    : ""
+                }
+                ${
+                  data.sourcePath
+                    ? `
                 <tr>
                   <td style="padding: 12px 0; border-bottom: 1px solid #E8E2E9;">
                     <strong style="color: #746A72; font-size: 14px; display: inline-block; width: 120px;">Source Page:</strong>
                     <span style="color: #1C1318; font-size: 14px;">${escapeHtml(data.sourcePath)}</span>
                   </td>
-                </tr>` : ''}
+                </tr>`
+                    : ""
+                }
               </table>
             </td>
           </tr>
@@ -798,7 +965,10 @@ function getContactPopupAdminHtml(data: ContactPopupData): string {
 }
 
 // User confirmation template for contact popup
-function getContactPopupUserHtml(data: ContactPopupData): string {
+function getContactPopupUserHtml(
+  data: ContactPopupData,
+  signupOfferHtml = "",
+): string {
   return `
 <!DOCTYPE html>
 <html lang="en">
@@ -826,11 +996,12 @@ function getContactPopupUserHtml(data: ContactPopupData): string {
           <tr>
             <td style="padding: 40px 30px;">
               <p style="margin: 0 0 20px 0; color: #1C1318; font-size: 16px; line-height: 1.6;">
-                Hi ${data.name ? escapeHtml(data.name.split(" ")[0]) : 'there'},
+                Hi ${data.name ? escapeHtml(data.name.split(" ")[0]) : "there"},
               </p>
               <p style="margin: 0 0 20px 0; color: #1C1318; font-size: 15px; line-height: 1.7;">
                 Thank you for subscribing to <strong style="color: #663976;">Lash Her by Nataliea</strong>. We're excited to share our latest updates, tips, and beautiful lash transformations with you!
               </p>
+              ${signupOfferHtml}
               <div style="text-align: center; margin: 30px 0; padding: 20px; background-color: #F5F1F5; border-radius: 6px;">
                 <p style="margin: 0 0 15px 0; color: #746A72; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
                   Connect With Us
@@ -864,7 +1035,7 @@ function getContactPopupUserHtml(data: ContactPopupData): string {
 
 export async function sendAdminNotification(
   formType: FormType,
-  formData: GeneralInquiryData | TrainingContactData | ContactPopupData
+  formData: GeneralInquiryData | TrainingContactData | ContactPopupData,
 ): Promise<void> {
   const config = getEmailConfig();
   const subject = getAdminSubject(formType, formData);
@@ -880,9 +1051,7 @@ export async function sendAdminNotification(
   await sendTransactionalEmail({
     html,
     subject,
-    tags: [
-      { name: "flow", value: `${formType}_admin` },
-    ],
+    tags: [{ name: "flow", value: `${formType}_admin` }],
     template: getConfiguredTransactionalTemplate(
       getAdminTemplateKey(formType),
       getFormTemplateVariables(formType, formData),
@@ -893,7 +1062,7 @@ export async function sendAdminNotification(
 
 export async function sendUserConfirmation(
   formType: FormType,
-  formData: GeneralInquiryData | TrainingContactData | ContactPopupData
+  formData: GeneralInquiryData | TrainingContactData | ContactPopupData,
 ): Promise<void> {
   const subject = getUserSubject(formType, formData);
   let html = "";
@@ -909,9 +1078,7 @@ export async function sendUserConfirmation(
     html,
     replyTo: CUSTOMER_REPLY_TO_EMAIL,
     subject,
-    tags: [
-      { name: "flow", value: `${formType}_customer` },
-    ],
+    tags: [{ name: "flow", value: `${formType}_customer` }],
     template: getConfiguredTransactionalTemplate(
       getCustomerTemplateKey(formType),
       getFormTemplateVariables(formType, formData),
@@ -920,9 +1087,47 @@ export async function sendUserConfirmation(
   });
 }
 
+export async function deliverContactPopupOfferEmail(
+  input: ContactPopupOfferEmailPayload & {
+    idempotencyKey: string;
+    to: string;
+  },
+): Promise<{ id: string }> {
+  const unsubscribeUrl = buildMarketingUnsubscribeUrl({
+    email: input.recipientEmail,
+  });
+  const templateVariables = getContactPopupOfferEmailTemplateVariables(
+    input,
+    unsubscribeUrl,
+  );
+  const signupOfferHtml = templateVariables.SIGNUP_OFFER_HTML;
+  const template =
+    typeof signupOfferHtml === "string" &&
+    signupOfferHtml.length <= RESEND_TEMPLATE_STRING_VALUE_MAX_LENGTH
+      ? getConfiguredTransactionalTemplate("contact_popup_customer", {
+          CUSTOMER_FIRST_NAME: templateVariables.CUSTOMER_FIRST_NAME,
+          SIGNUP_OFFER_HTML: signupOfferHtml,
+        })
+      : undefined;
+
+  return sendTransactionalEmail({
+    headers: {
+      "List-Unsubscribe": `<${unsubscribeUrl}>`,
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    },
+    html: buildContactPopupOfferEmailFallbackHtml(input, unsubscribeUrl),
+    idempotencyKey: input.idempotencyKey,
+    replyTo: CUSTOMER_REPLY_TO_EMAIL,
+    subject: CONTACT_POPUP_OFFER_EMAIL_SUBJECT,
+    tags: [{ name: "flow", value: "contact_popup_offer_customer" }],
+    template,
+    to: input.to,
+  });
+}
+
 export async function sendFormEmails(
   formType: FormType,
-  formData: GeneralInquiryData | TrainingContactData | ContactPopupData
+  formData: GeneralInquiryData | TrainingContactData | ContactPopupData,
 ): Promise<void> {
   const results = await Promise.allSettled([
     sendAdminNotification(formType, formData),
@@ -933,7 +1138,10 @@ export async function sendFormEmails(
   results.forEach((result, index) => {
     if (result.status === "rejected") {
       const recipientType = index === 0 ? "admin" : "customer";
-      const message = result.reason instanceof Error ? result.reason.message : "Unknown email error";
+      const message =
+        result.reason instanceof Error
+          ? result.reason.message
+          : "Unknown email error";
 
       failures.push(`${recipientType}: ${message}`);
       console.error("[email] Form email failed", {
@@ -945,6 +1153,8 @@ export async function sendFormEmails(
   });
 
   if (failures.length > 0) {
-    throw new Error(`Form email delivery failed for ${formType}: ${failures.join("; ")}`);
+    throw new Error(
+      `Form email delivery failed for ${formType}: ${failures.join("; ")}`,
+    );
   }
 }

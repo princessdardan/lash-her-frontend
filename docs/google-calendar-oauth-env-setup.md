@@ -1,234 +1,178 @@
 # Google Calendar OAuth Environment Setup
 
-This document explains how to create the Google service configuration required by service booking Calendar event creation and how to populate these environment variables:
+Last verified: 2026-08-31
 
-```env
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GOOGLE_REDIRECT_URI=
-```
+This guide configures the current per-resource Calendar integration. Owners and administrators manage Google accounts at `/admin/calendar-connections`; employees manage accounts for their assigned provider resources at `/admin/my-calendar`. Both flows return through `/api/booking/oauth/callback` and store encrypted refresh credentials with the Calendar connection in private PostgreSQL.
 
-These values are server-side secrets used by the booking OAuth setup flow. Do not prefix them with `NEXT_PUBLIC_` and do not expose the client secret in browser code. These variables are for the Google Calendar API integration. They are not Google Appointment Schedule payment or eligibility controls.
+This is separate from admin sign-in:
 
-## What These Variables Do
+| Responsibility               | OAuth environment variables                                       | Requested access                                                          |
+| ---------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Auth.js admin identity       | `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`                            | OpenID Connect identity only                                              |
+| Booking Calendar connections | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` | Verified email, Calendar list discovery, event read/write, offline access |
 
-- `GOOGLE_CLIENT_ID`: Identifies the Google OAuth web application that asks Nataliea to approve Calendar access.
-- `GOOGLE_CLIENT_SECRET`: Authenticates this Next.js server when it exchanges Google's OAuth callback code for tokens.
-- `GOOGLE_REDIRECT_URI`: The exact URL Google sends the browser back to after approval. In this app it must point to `/api/booking/oauth/callback`.
+Use different Google OAuth clients for identity and Calendar access. Also use separate Calendar clients for local, preview/staging, and production so redirect URIs and credential rotation stay environment-scoped.
 
-The implementation uses the `googleapis` package with the Google Calendar API scope:
+## Runtime ownership
 
-```text
-https://www.googleapis.com/auth/calendar.events
-```
+- PostgreSQL stores each Google account connection, its owner, status, scopes, last verification/error state, and the encrypted refresh token.
+- `BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY` encrypts/decrypts refresh tokens in the application. It must be distinct from checkout encryption keys.
+- Upstash Redis stores the single-use OAuth state for ten minutes. It does not store current Calendar credentials.
+- Calendar assignments select a canonical Google Calendar ID for a specific booking resource. The alias `primary` is rejected as durable configuration.
+- Exactly one active assignment per resource may accept bookings. That destination also contributes busy time. Additional calendars may contribute busy time without receiving appointments.
 
-That scope lets the app read and create events on the connected calendar. Paid service booking finalization uses it after Square payment is verified server-side. The long-lived Google refresh token is not stored in these variables; it is generated during the protected admin setup flow and saved server-side in Upstash Redis.
+## 1. Create the Google Cloud project and enable Calendar
 
-Paid training intro-call scheduling is separate. The app checks private paid token eligibility first, then renders the public Google Appointment Schedule URL or embed configured on the training program. The app does not mark training scheduled just because that page renders, and Google Appointment Schedule is not used for service bookings.
+For the target environment:
 
-## Service You Need To Configure
+1. Create or select a Google Cloud project owned by the business.
+2. Enable the **Google Calendar API**.
+3. Configure the OAuth consent screen with the business support/contact information.
+4. Choose the appropriate internal or external audience for the accounts that will connect.
+5. During testing, add every admin/employee Google account that must authorize Calendar access as a test user.
+6. If Google requires verification before production use, complete that process for the scopes requested by the application.
 
-Configure one Google Cloud project with:
+The operational consent URL requests:
 
-- Google Calendar API enabled.
-- An OAuth consent screen.
-- An OAuth 2.0 Client ID of type `Web application`.
-- Authorized redirect URIs for every deployed environment that will connect a calendar.
+- `openid`
+- `email`
+- `https://www.googleapis.com/auth/calendar.events`
+- `https://www.googleapis.com/auth/calendar.calendarlist.readonly`
 
-Use separate OAuth clients for staging and production if possible. That keeps staging callback URLs and consent testing separate from production.
+The app requests offline access and explicit consent so Google can return a refresh token. Do not reduce the scopes without also changing Calendar discovery, availability reads, and event creation code.
 
-## Step 1: Create Or Choose A Google Cloud Project
+## 2. Create a Web OAuth client
 
-1. Open the Google Cloud Console: `https://console.cloud.google.com/`.
-2. Create a new project, or choose an existing Lash Her project.
-3. Keep a note of which project owns the OAuth client so future credential rotation is easy.
-
-Recommended naming:
-
-- Project: `Lash Her Booking`
-- Staging OAuth client: `Lash Her Booking Staging`
-- Production OAuth client: `Lash Her Booking Production`
-
-## Step 2: Enable Google Calendar API
-
-1. In Google Cloud Console, go to **APIs & Services** > **Library**.
-2. Search for **Google Calendar API**.
-3. Open it and click **Enable**.
-
-The booking code calls Calendar Events endpoints, so the Calendar API must be enabled before OAuth setup and service booking finalization can work.
-
-## Step 3: Configure The OAuth Consent Screen
-
-1. Go to **APIs & Services** > **OAuth consent screen**.
-2. Choose the appropriate user type:
-   - **External** is usually required for a normal Gmail or Google Workspace account outside your Cloud organization.
-   - **Internal** only works for accounts inside the same Google Workspace organization.
-3. Fill in the app information:
-   - App name: `Lash Her Booking`
-   - User support email: Nataliea's business/admin email
-   - Developer contact email: the technical owner email
-4. Add the Calendar Events scope if Google asks you to declare scopes:
-
-```text
-https://www.googleapis.com/auth/calendar.events
-```
-
-5. If the consent screen is in **Testing**, add the Google account that owns or manages the booking calendar as a test user.
-
-For a private admin-only setup flow, the app can usually remain in testing while you connect the calendar with an allowlisted test user. If Google blocks access because the app is unpublished or the user is not allowlisted, add the account as a test user or publish the consent screen.
-
-## Step 4: Create The OAuth Client
-
-1. Go to **APIs & Services** > **Credentials**.
-2. Click **Create credentials** > **OAuth client ID**.
-3. Choose **Application type**: `Web application`.
-4. Name the client for the environment, for example `Lash Her Booking Production`.
-5. Add authorized redirect URIs.
-
-For local development:
+Create an OAuth 2.0 client of type **Web application**. Add the exact callback for each environment to **Authorized redirect URIs**:
 
 ```text
 http://localhost:3000/api/booking/oauth/callback
-```
-
-For staging:
-
-```text
-https://<staging-domain>/api/booking/oauth/callback
-```
-
-For production:
-
-```text
+https://<preview-or-staging-domain>/api/booking/oauth/callback
 https://<production-domain>/api/booking/oauth/callback
 ```
 
-The redirect URI must exactly match `GOOGLE_REDIRECT_URI`, including protocol, host, path, and trailing slash behavior. This app expects the path:
+Prefer one client per environment instead of putting every origin on one client. The scheme, host, optional port, path, and trailing slash must exactly match `GOOGLE_REDIRECT_URI`.
 
-```text
-/api/booking/oauth/callback
+Copy the client ID and client secret into that environment's secret manager. Do not put the Calendar client secret in a `NEXT_PUBLIC_` variable.
+
+## 3. Configure application variables
+
+Generate a dedicated 32-byte encryption key:
+
+```bash
+openssl rand -base64 32
 ```
 
-## Step 5: Copy The Env Values
-
-After creating the OAuth client, Google shows a client ID and client secret.
-
-Set them in the matching environment:
+Set the following server-only values:
 
 ```env
-GOOGLE_CLIENT_ID=<oauth-client-id-from-google>
-GOOGLE_CLIENT_SECRET=<oauth-client-secret-from-google>
+GOOGLE_CLIENT_ID=<calendar-oauth-client-id>
+GOOGLE_CLIENT_SECRET=<calendar-oauth-client-secret>
 GOOGLE_REDIRECT_URI=https://<domain>/api/booking/oauth/callback
+BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY=<base64-encoded-32-byte-key>
+BOOKING_ADMIN_SETUP_SECRET=<high-entropy-legacy-compatibility-secret>
+KV_REST_API_URL=<upstash-rest-url>
+KV_REST_API_TOKEN=<upstash-rest-token>
+DATABASE_URL=<private-postgres-url>
 ```
 
-Local example:
+For local development, use the localhost callback. In Vercel, scope preview/staging values to Preview and production values to Production, then redeploy after changing them.
 
-```env
-GOOGLE_CLIENT_ID=<local-or-staging-client-id>
-GOOGLE_CLIENT_SECRET=<local-or-staging-client-secret>
-GOOGLE_REDIRECT_URI=http://localhost:3000/api/booking/oauth/callback
-```
+`BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY` is part of the stored credential contract. Replacing it without re-encrypting or reconnecting every active Calendar account makes existing credentials unreadable. Treat a key change as a credential migration, not an ordinary environment edit.
 
-Production example:
+`BOOKING_ADMIN_SETUP_SECRET` protects only the legacy global OAuth-start route. Current per-resource credentials do not use it as their authority, but the shared booking environment accessor still requires the value when it creates the Google OAuth client. Keep it server-only and unused by operators except for an explicitly approved legacy recovery.
 
-```env
-GOOGLE_CLIENT_ID=<production-client-id>
-GOOGLE_CLIENT_SECRET=<production-client-secret>
-GOOGLE_REDIRECT_URI=https://www.<production-domain>/api/booking/oauth/callback
-```
+## 4. Connect an owner-managed Calendar account
 
-Also confirm the booking setup has these related server-side variables, because the OAuth routes and token storage require them:
+Prerequisites: the private database is migrated, Auth.js admin sign-in works, and the provider resources already exist.
 
-```env
-BOOKING_ADMIN_SETUP_SECRET=<long-random-admin-setup-secret>
-KV_REST_API_URL=<upstash-redis-rest-url>
-KV_REST_API_TOKEN=<upstash-redis-rest-token>
-```
+1. Sign in to the protected admin dashboard.
+2. Open `/admin/calendar-connections`.
+3. Select **Connect Google account**.
+4. Complete Google consent using the account that owns or has access to the intended calendars.
+5. Confirm the dashboard reports an active connection and a recent verification time.
+6. For each provider resource, choose a discovered Calendar and save its assignment.
+7. Mark the intended Calendar as the booking destination. It will also block its own busy times.
+8. Add any other busy-only Calendars needed to prevent overlapping appointments.
+9. Check `/admin/setup`; the provider should no longer report a missing booking Calendar.
 
-## Step 6: Add Env Vars In Vercel
+The OAuth-start route is permission protected at `/api/admin/calendar-connections/[id]/oauth/start`. Operators should begin in the dashboard rather than constructing that URL.
 
-For each Vercel environment:
+## 5. Connect an employee-managed Calendar account
 
-1. Open the Vercel project.
-2. Go to **Settings** > **Environment Variables**.
-3. Add `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI`.
-4. Select the correct target environment, such as **Preview** for staging and **Production** for production.
-5. Redeploy after saving changes so the running app receives the new values.
+An employee can self-manage only resources assigned to that employee:
 
-Keep staging and production values separate when using separate OAuth clients.
+1. Sign in and open `/admin/my-calendar`.
+2. Select the assigned provider resource if more than one is available.
+3. Select **Connect Google account** and complete consent.
+4. Choose the canonical Calendar and whether it should receive bookings.
+5. Confirm regular hours and time off through the linked availability controls.
 
-The app also namespaces stored refresh tokens by `VERCEL_TARGET_ENV` (falling
-back to `VERCEL_ENV`). Production, preview, and custom staging targets can
-therefore share a Redis instance without overwriting each other's Google
-Calendar connection. The historical unscoped token is read only by production
-for migration compatibility.
+The employee OAuth-start route verifies both connection ownership and resource access at `/api/admin/my-calendar/connections/[id]/oauth/start`. A Google account already managed by another employee or by the owner cannot silently be taken over; an owner must use the explicit ownership-transfer workflow.
 
-## Step 7: Connect The Calendar
+## 6. Verify the connection
 
-After deploying the env vars, run the protected internal OAuth setup flow in the target environment using `BOOKING_ADMIN_SETUP_SECRET` from the secure secret manager (do not share the setup URL or include it in documentation).
+Use non-customer test data in staging:
 
-Expected flow:
+1. Confirm the dashboard can list the account's Calendars.
+2. Confirm the stored assignment uses a canonical ID, not `primary`.
+3. Add a busy event to an assigned Calendar and verify the overlapping slot disappears from `/services/[slug]/booking`.
+4. Complete one Square sandbox service booking and confirm exactly one event appears on the assigned booking destination.
+5. Retry the finalization/reconciliation path and confirm it finds the existing event rather than creating a duplicate.
+6. Confirm a resource with no active destination fails booking readiness instead of accepting appointments without a Calendar target.
 
-1. The route validates `BOOKING_ADMIN_SETUP_SECRET`.
-2. The app redirects to Google's OAuth consent screen.
-3. Nataliea signs into the Google account that owns or can edit the booking calendar.
-4. Nataliea approves Calendar access.
-5. Google redirects back to `GOOGLE_REDIRECT_URI`.
-6. The app stores the returned refresh token in Upstash Redis.
-7. The browser shows: `Google Calendar booking OAuth is connected`.
+Do not paste refresh tokens, OAuth codes, OAuth state, Calendar IDs tied to a private account, customer event bodies, or setup URLs into logs, tickets, documentation, or chat.
 
-If Google does not return a refresh token, visit the setup URL again and approve consent. The app already requests `access_type=offline` and `prompt=consent` to force refresh-token issuance.
+## Legacy global connection compatibility
 
-## Step 8: Verify Booking Access
+`/api/booking/oauth/start?secret=...` and `BOOKING_ADMIN_SETUP_SECRET` belong to the legacy global Calendar setup. That path stores one environment-scoped refresh token through the historical Redis compatibility store and is used only while reconciling or migrating legacy booking records.
 
-After OAuth connection:
-
-1. Open Sanity Studio and configure the `bookingSettings` singleton.
-2. Set the Google Calendar ID to the connected calendar ID.
-   - For the primary calendar, this is often the Google email address.
-   - For a secondary calendar, copy the calendar ID from Google Calendar settings.
-3. Add availability marker events in Google Calendar using the configured marker title, defaulting to `Available for booking`.
-4. Open `/booking` on the same deployed environment.
-5. Confirm availability loads.
-6. Create or finalize a test service booking after verified payment and confirm a Google Calendar event is inserted.
+Do not use the legacy route for a new provider or resource. Current operational availability and appointment projection resolve the credential through the resource's PostgreSQL Calendar connection and assignment. The shared callback distinguishes current admin/employee state from the legacy cookie-state flow so historical records can continue to finish safely.
 
 ## Troubleshooting
 
 ### `redirect_uri_mismatch`
 
-The `GOOGLE_REDIRECT_URI` value does not exactly match an authorized redirect URI on the OAuth client. Fix the Google Cloud OAuth client or the env var so they are identical.
+- Compare `GOOGLE_REDIRECT_URI` with the authorized redirect URI character for character.
+- Confirm the deployment received the expected environment-scoped variables and was redeployed.
+- Confirm the browser is using the same origin represented by the callback URI.
 
-### `Missing env var: GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, or `GOOGLE_REDIRECT_URI`
+### OAuth authorization expired or was already used
 
-The env var is absent from the running server environment. Add it to Vercel or `.env.local`, then restart or redeploy.
+Current OAuth state is single-use and expires after ten minutes. Start again from the dashboard. If every attempt fails immediately, verify the Upstash REST variables and service availability.
 
-### Google says the app is not available to this user
+### Google did not return offline access
 
-The OAuth consent screen is probably in testing and the signing-in Google account is not listed as a test user. Add the calendar owner account as a test user or publish the consent screen.
+Start a reconnect from the dashboard and approve the requested access. Google may need the prior grant revoked before it issues a new refresh token. Do not insert an access token or copied credential directly into PostgreSQL.
 
-### The setup route returns `404`
+### The account is owned elsewhere or does not match
 
-The `secret` query parameter does not match `BOOKING_ADMIN_SETUP_SECRET`. Use the exact deployed secret value.
+The app prevents duplicate ownership and requires reconnects to use the account already bound to a connection. Review the account email/provider identity in `/admin/calendar-connections`; use the audited ownership-transfer control when responsibility genuinely changes.
 
-### The callback says Google did not return a refresh token
+### Calendars cannot be discovered
 
-Retry the setup flow and approve consent. If the account previously approved the app, remove the app from the Google account's third-party access list, then run setup again.
+- Verify the Calendar API is enabled.
+- Verify the grant includes Calendar list read access.
+- Confirm the connected account has at least free/busy access to the target Calendar.
+- Reconnect if the dashboard reports `reconnect_required` or a stored error.
 
-### Availability still fails after OAuth connects
+### Availability works but event creation fails
 
-Check the related service configuration:
+- Confirm the booking destination's connection is active.
+- Confirm the connected account can write events to the selected Calendar, not only read free/busy data.
+- Confirm the assignment still references the same canonical Calendar and contributes busy time.
+- Inspect `/admin/booking-issues`, `/admin/appointments`, and the payment reconciliation result before retrying. A captured payment with incomplete Calendar projection is manual/reconciliation work, not permission to charge again.
 
-- `KV_REST_API_URL` and `KV_REST_API_TOKEN` must point to the same Upstash Redis instance used during OAuth setup.
-- The `bookingSettings` calendar ID must match the connected calendar.
-- The connected Google account must have permission to read and write events on that calendar.
-- The Calendar API must be enabled in the Google Cloud project that owns the OAuth client.
+### Encryption-key errors
 
-## Rotation Checklist
+`BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY` must decode to exactly 32 bytes. If the key was lost or changed, existing ciphertext cannot be recovered by the application; restore the protected key from the environment's secret backup or reconnect affected accounts under an approved migration plan.
 
-When rotating Google credentials:
+## Rotation checklist
 
-1. Create a new OAuth client secret, or create a new OAuth client.
-2. Update `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` as needed.
-3. Redeploy the app.
-4. Re-run the protected internal OAuth setup flow using `BOOKING_ADMIN_SETUP_SECRET` from the secure secret manager (do not share the setup URL or include it in documentation).
-5. Confirm the callback succeeds and booking availability still loads.
+1. Create replacement credentials in the correct Google Cloud project/environment.
+2. Update only the target deployment's server-side variables.
+3. Redeploy and test Calendar discovery before disabling the old client secret.
+4. If the OAuth client ID changes, reconnect each active account so its refresh grant belongs to the new client.
+5. If the encryption key changes, re-encrypt or reconnect all stored credentials as one controlled migration.
+6. Re-run busy-time and event-creation smoke tests.
+7. Confirm `/admin/setup` and `/admin/calendar-connections` show healthy resources before restoring public availability.

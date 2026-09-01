@@ -13,6 +13,7 @@
     "start": "next start",
     "lint": "eslint",
     "resend:seed-templates": "tsx --conditions=react-server scripts/seed-resend-templates.ts",
+    "resend:update-contact-popup-template": "node --conditions=react-server --import tsx scripts/update-contact-popup-resend-template.ts",
     "sanity:backfill-home-training": "node scripts/backfill-home-training-programs-block.mjs",
     "check:square-card-on-file-env": "node scripts/check-square-card-on-file-env.mjs",
     "test": "playwright test",

@@ -49,6 +49,25 @@ const CONTROL_STRING_KEYS = new Set([
 
 export type ProductSort = "default" | "titleAsc" | "priceAsc" | "priceDesc";
 
+export interface ContactPopupSignupOfferConfigSource {
+  signupOfferEnabled?: unknown;
+  signupPromotionReferenceId?: unknown;
+  signupOfferLabel?: unknown;
+  signupOfferTerms?: unknown;
+  signupOfferCtaLabel?: unknown;
+  signupOfferCtaUrl?: unknown;
+  promotion?: {
+    _id?: unknown;
+    _rev?: unknown;
+    code?: unknown;
+    isEnabled?: unknown;
+    discountType?: unknown;
+    amount?: unknown;
+    appliesTo?: unknown;
+    matchingPromotionIds: string[];
+  } | null;
+}
+
 const PRODUCT_COLLECTION_PROJECTION = groq`{
   _id,
   _key,
@@ -389,7 +408,7 @@ async function getTrainingsPageData(): Promise<TTrainingPage | null> {
 }
 
 async function getGlobalData(): Promise<TGlobalSettings | null> {
-  const query = groq`*[_type == "globalSettings"][0]{
+  const query = groq`*[_id == "globalSettings" && _type == "globalSettings"][0]{
     title,
     description,
     header{
@@ -420,6 +439,44 @@ async function getGlobalData(): Promise<TGlobalSettings | null> {
     }
   }`;
   return sanityFetch<TGlobalSettings | null>(query, {}, ["global"]);
+}
+
+/**
+ * Loads the published signup offer outside the public global-settings DTO.
+ * This path deliberately bypasses both Sanity's CDN and Next's data cache. The
+ * configuration, promotion, and code matches share one query snapshot so a
+ * form submission never validates values observed across separate publishes.
+ */
+async function getContactPopupSignupOfferConfig(): Promise<ContactPopupSignupOfferConfigSource | null> {
+  const publishedClient = client.withConfig({
+    useCdn: false,
+    perspective: "published",
+  });
+  const query = groq`*[_id == "globalSettings" && _type == "globalSettings"][0]{
+    "signupOfferEnabled": contactPopup.signupOfferEnabled,
+    "signupPromotionReferenceId": contactPopup.signupPromotion._ref,
+    "signupOfferLabel": contactPopup.signupOfferLabel,
+    "signupOfferTerms": contactPopup.signupOfferTerms,
+    "signupOfferCtaLabel": contactPopup.signupOfferCtaLabel,
+    "signupOfferCtaUrl": contactPopup.signupOfferCtaUrl,
+    "promotion": contactPopup.signupPromotion->{
+      _id,
+      _rev,
+      code,
+      isEnabled,
+      discountType,
+      amount,
+      appliesTo,
+      "matchingPromotionIds": *[
+        _type == "promotionCode" && code == ^.code
+      ]._id
+    }
+  }`;
+  return publishedClient.fetch<ContactPopupSignupOfferConfigSource | null>(
+    query,
+    {},
+    { cache: "no-store" as const },
+  );
 }
 
 async function getMainMenuData(): Promise<TMainMenu | null> {
@@ -999,6 +1056,7 @@ export const loaders = {
   getGalleryPageData,
   getTrainingsPageData,
   getGlobalData,
+  getContactPopupSignupOfferConfig,
   getMainMenuData,
   getMetaData,
   getProductsPageData,

@@ -1,6 +1,6 @@
 # Resend Email, Contacts, Templates, And Broadcast Setup
 
-This runbook covers manual Resend and Vercel setup for Lash Her email operations. The application sends customer/admin operational email through Resend after private database writes for forms, product checkout, paid training, and paid service booking. It also syncs opted-in marketing contacts to Resend Contacts so admins can manage segments, topics, automations, broadcasts, and unsubscribes in the Resend Dashboard.
+This runbook covers manual Resend and Vercel setup for Lash Her email operations. The application sends customer/admin operational email through Resend after private database writes for forms, product checkout, paid training, and paid service booking. Product/shipping customer email and marketing-contact synchronization use durable PostgreSQL jobs processed by scheduled routes; opted-in contacts then become available for Resend segments, topics, automations, broadcasts, and unsubscribe handling.
 
 Do not store customer PII, payment history, payment tokens, or live form submissions in Resend evidence, Sanity, tickets, docs, PRs, or chat. Redact recipient addresses when recording Resend message IDs or delivery status.
 
@@ -22,7 +22,7 @@ Payment-related email delivery is intentionally idempotent:
 - Booking confirmation uses `booking-confirmation:<holdId>`.
 - Provider booking confirmation uses `provider-booking-confirmation:<holdId>:<recipient-hash>`.
 
-The private database stores email sent/claim/error state so browser validation and webhook retries can recover missed sends without duplicating successfully recorded emails.
+The private database stores sent/claim/error state for booking and training email. Product confirmations and shipping customer messages use the `customer_email_outbox` queue, whose unique provider idempotency key, lease, attempt count, retry time, provider message ID, and terminal state prevent duplicate work and support scheduled recovery.
 
 ## Resend Environment Variables
 
@@ -36,6 +36,8 @@ FROM_EMAIL=<verified-transactional-sender-address>
 ADMIN_EMAIL=<admin-recipient-address>
 EMAIL_PROFILE_IMAGE_URL=<optional-public-https-profile-image-url>
 EMAIL_RETRY_SECRET=<long-random-manual-retry-secret>
+CRON_SECRET=<long-random-vercel-cron-secret>
+RESEND_MARKETING_SYNC_CRON_SECRET=<distinct-long-random-marketing-sync-secret>
 
 # Optional Resend Dashboard templates. When omitted, source-rendered HTML fallback remains active.
 RESEND_TEMPLATE_BOOKING_CONFIRMATION_ID=<optional-template-id>
@@ -76,7 +78,7 @@ Vercel setup:
 4. After changes, redeploy the target environment or restart local `npm run dev`.
 5. For local development, run `vercel env pull .env.local --yes` after dashboard changes, then re-add any local-only overrides that were not stored in Vercel.
 
-`RESEND_WEBHOOK_SECRET` and `RESEND_SEGMENT_MARKETING_ID` are required for preview/production environment validation. Source-specific segments, topics, and template IDs are optional so admins can roll them out without losing the source-rendered fallback emails.
+`RESEND_WEBHOOK_SECRET`, `RESEND_SEGMENT_MARKETING_ID`, `CRON_SECRET`, and `RESEND_MARKETING_SYNC_CRON_SECRET` are required for the production email operations described here. The route-specific marketing secret must exist to enable `/api/admin/marketing-contact-sync`; after it is enabled, the handler accepts either that secret or the generic `CRON_SECRET` that Vercel Cron sends. `/api/cron/customer-email-outbox` requires `CRON_SECRET` directly. Source-specific segments, topics, and template IDs are optional so admins can roll them out without losing the source-rendered fallback emails.
 
 ## Domain Authentication
 
@@ -188,7 +190,7 @@ Do not remove legal/operational details from payment, booking, or training templ
 
 ## Contacts, Segments, Topics, Automations, And Broadcasts
 
-When a website form includes affirmative marketing consent, the app writes the private consent/submission record first and then syncs the contact to Resend. The Resend sync:
+When a website form includes affirmative marketing consent, the app transactionally writes the private consent/submission/contact records and a `marketing_contact_sync_jobs` row. `GET /api/admin/marketing-contact-sync` processes due jobs every five minutes. A failed Resend request is retried with backoff and eventually becomes `dead_letter`; it does not undo the consent record. An unsubscribe recorded locally queues the corresponding Resend unsubscribe job. A successful opt-in job:
 
 - Creates or updates the contact with `unsubscribed: false`.
 - Adds the contact to `RESEND_SEGMENT_MARKETING_ID` and the optional source segment.
@@ -210,7 +212,15 @@ Admins can create Resend Automations triggered by the configured opt-in event an
 
 ## Delivery Recovery And Idempotency
 
-The app records customer email state through `drizzle/0009_dashing_rocket_raccoon.sql` and provider booking email state through `drizzle/0031_bored_loa.sql`:
+The committed migration lineage currently runs through `0075_clammy_william_stryker`. Before relying on email recovery in an environment, verify the exact target lineage without writing to it:
+
+```bash
+npm run db:check -- --env-file <protected-env-file>
+```
+
+Do not infer readiness from the latest migration timestamp alone. Follow `docs/private-database-migration-runbook.md` for guarded migration execution.
+
+Product orders retain confirmation summary/claim/error fields alongside the outbox, while booking and training payment email retain per-record delivery state:
 
 - `checkout_orders.product_confirmation_email_sent_at`
 - `checkout_orders.product_confirmation_email_claimed_until`
@@ -225,16 +235,25 @@ The app records customer email state through `drizzle/0009_dashing_rocket_raccoo
 - `appointment_holds.provider_booking_email_claimed_until`
 - `appointment_holds.provider_booking_email_last_error`
 
-The provider email contains the booked service, confirmed start/end and timezone, customer contact details, payment type (deposit, full, or custom partial), service-plus-add-on subtotal, booked total after HST, captured booking amount, Square tip, computed total paid at booking, remaining balance before and after HST, payment provider, booking reference, and selected add-on details. It does not include card data, payment tokens, or full provider payment identifiers.
+Product confirmations and shipping messages are durable rows in `customer_email_outbox`. The row holds encrypted recipient/template payloads, a unique provider idempotency key, retry/lease state, provider message ID, and redaction deadline. `GET /api/cron/customer-email-outbox` runs every five minutes, backfills paid product orders that are missing an outbox row, claims due work, and returns `503` if a claimed delivery failed. Supported work includes product confirmations, shipping customer links/updates, shipping-policy alerts, and shipment status notifications.
 
-Apply this migration through `docs/private-database-migration-runbook.md` before relying on payment email recovery in staging or production.
+Marketing contact changes are durable rows in `marketing_contact_sync_jobs`. The scheduled worker claims due opt-in or unsubscribe jobs, syncs Resend, retries transient failures with backoff, and records success, skip, or dead-letter state. Use the admin overview or the source-controlled scripts for redacted operational inspection:
+
+```bash
+DOTENV_CONFIG_PATH=<protected-env-file> npm run marketing:inspect-sync
+DOTENV_CONFIG_PATH=<protected-env-file> npm run marketing:requeue-sync-failures
+```
+
+The requeue command is a dry run unless `-- --execute` is supplied. Review its count, confirm the underlying fault is fixed, and obtain approval before executing. `marketing:backfill-sync` exists for an intentional historical backfill; it is not a routine scheduled operation.
+
+The provider booking email contains the booked service, confirmed start/end and timezone, customer contact details, payment type, service/add-on totals, captured amount, Square tip, remaining balance, provider, booking reference, and selected add-ons. It does not include card data, payment tokens, or full provider payment identifiers.
 
 Expected behavior:
 
-- Payment/webhook retries may try to claim an unsent email.
-- A claimed email has a short lease so another retry does not send at the same time.
-- Success records the `*_sent_at` timestamp and clears the claim/error field.
-- Failure clears the claim, stores the last error, and logs for operator follow-up.
+- Payment/webhook retries may enqueue or claim an unsent email.
+- A claimed record has a bounded lease so another worker does not send it concurrently.
+- Success records sent/provider state and clears the active claim/error state.
+- Failure records retry/error state without rolling back the persisted business event.
 - A failed email does not roll back an already persisted booking, product order, training enrollment, or payment event.
 
 ### Manual retry endpoint
@@ -297,21 +316,25 @@ After environment variables and migration are in place:
 5. Complete a staging paid training checkout and confirm both customer and admin email state are marked sent.
 6. Complete a staging paid service booking and confirm booking confirmation email state is marked sent.
 7. Submit an opted-in marketing form and confirm the contact appears in the configured Resend segment/topic.
-8. Trigger a Resend `contact.updated` unsubscribe event from the dashboard/webhook tester and confirm the private consent ledger records an unsubscribe.
-9. Retry the relevant browser validation or webhook path and confirm duplicate sends are not recorded.
-10. Record Resend message IDs/statuses, verified-domain evidence, contact segment evidence, and DB sent-state evidence with addresses and customer details redacted.
+8. Confirm the corresponding `marketing_contact_sync_jobs` row reaches `succeeded`; exercise `/api/admin/marketing-contact-sync` with authorized staging tooling if the scheduled run has not occurred yet.
+9. Confirm a queued product/shipping email reaches `sent` in `customer_email_outbox`; a healthy worker response reports `failed: 0`.
+10. Trigger a Resend `contact.updated` unsubscribe event from the dashboard/webhook tester and confirm the private consent ledger records an unsubscribe.
+11. Retry the relevant browser validation or webhook path and confirm duplicate sends are not recorded.
+12. Record Resend message IDs/statuses, verified-domain evidence, contact segment evidence, and DB sent/job-state evidence with addresses and customer details redacted.
 
 ## Troubleshooting
 
 If email does not send:
 
-1. Confirm `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `RESEND_SEGMENT_MARKETING_ID`, `FROM_EMAIL`, and `ADMIN_EMAIL` are present in the target Vercel environment.
+1. Confirm `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `RESEND_SEGMENT_MARKETING_ID`, `FROM_EMAIL`, `ADMIN_EMAIL`, `CRON_SECRET`, and `RESEND_MARKETING_SYNC_CRON_SECRET` are present in the target Vercel environment.
 2. Confirm the deployment was restarted/redeployed after env changes.
 3. Confirm `FROM_EMAIL` is on a verified Resend domain.
-4. Check Vercel logs for the relevant `[booking-email]`, `[product-email]`, `[checkout]`, or webhook error.
-5. Check the private DB `*_last_error` field for the affected order, enrollment, or hold.
+4. Check Vercel logs for the relevant `[booking-email]`, `[checkout]`, `[marketing-contact-sync]`, customer-email outbox, or webhook error.
+5. Check the private DB per-record `*_last_error`, `customer_email_outbox`, or `marketing_contact_sync_jobs` state for the affected flow.
 6. If `EMAIL_RETRY_SECRET` is configured, retry the affected `product`, `training`, or `booking` flow through `/api/admin/email-retries`.
 7. Check Resend logs for the redacted message ID/status.
-8. If contacts are not segmented, confirm the segment/topic IDs exist in Resend and match the environment variables.
+8. If contacts are not segmented, run `npm run marketing:inspect-sync`, confirm the sync job is not retryable/dead-lettered, and confirm segment/topic IDs match the environment variables.
 9. If unsubscribes are not syncing locally, confirm the Resend webhook is subscribed to `contact.updated`, `RESEND_WEBHOOK_SECRET` matches the dashboard signing secret, and Vercel logs do not show `[resend-webhook]` errors.
 10. Do not revert the private payment/booking state solely because email failed; send a manual operational follow-up if needed.
+
+Scheduled-route cadence, authentication, disabled behavior, and response interpretation are documented in `docs/scheduled-jobs-runbook.md`.

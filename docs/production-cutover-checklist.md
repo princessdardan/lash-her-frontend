@@ -9,9 +9,9 @@ This runbook assumes option A is approved: the frozen `staging-2026-05-10` Sanit
 - Commands run from the repository root: `/Users/dardan/workspace/lash-her-frontend`.
 - Production content edits are frozen until cutover is complete or rolled back.
 - Staging smoke evidence is approved and `staging-2026-05-10` contains only production-safe public/editorial content.
-- Production private data stays in PostgreSQL. Sanity stores public/editorial content only.
-- Direct booking creation remains disabled; appointment confirmation happens only after secure payment reconciliation.
-- Product and training checkout use Square (Square Web Payments SDK, gated by `SQUARE_COMMERCE_ENABLED`). Paid service booking uses Square only when `SERVICE_BOOKING_SQUARE_ENABLED=true`.
+- PostgreSQL owns private operational data plus the public operational booking catalog/configuration. Sanity owns editorial content, media, SEO, and optional service-detail links.
+- Direct booking creation remains disabled. New public service bookings use an operational hold, direct Square `CHARGE_AND_STORE` capture, server-side evidence reconciliation, then Google Calendar appointment finalization.
+- Product and training checkout use Square Web Payments SDK when `SQUARE_COMMERCE_ENABLED=true`. Paid service booking is admitted only when both `SERVICE_BOOKING_SQUARE_ENABLED=true` and `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true`; otherwise new payment sessions fail closed. Historical hosted-checkout returns/webhooks remain compatibility paths for existing records.
 
 ## Hard Rules
 
@@ -20,7 +20,7 @@ This runbook assumes option A is approved: the frozen `staging-2026-05-10` Sanit
 - Do not use `PAYMENT_GATEWAY_MODE=mock` in production.
 - Do not run production Sanity schema operations unless `SANITY_SCHEMA_DEPLOY_TARGET=production` is set.
 - Do not run production private DB migrations unless the production DB identity, backup/PITR, and migration approval are verified.
-- Do not paste the Google OAuth setup URL or any URL containing `BOOKING_ADMIN_SETUP_SECRET` in tickets, chat, or evidence. Use the internal OAuth setup runbook and the secret from the secure secret manager.
+- Do not paste any Google OAuth URL, state, code, or URL containing the legacy `BOOKING_ADMIN_SETUP_SECRET` in tickets, chat, or evidence. Operational Calendar connections must be created from an authenticated `/admin` or employee self-service session.
 
 ## Roles and Evidence Template
 
@@ -59,7 +59,7 @@ Stop immediately if any condition is true:
 - `VERCEL_ENV=production node scripts/validate-sanity-env.mjs` fails.
 - Sanity backup/export/import targets the wrong project or dataset.
 - Production Studio targets anything other than `production`.
-- Sanity revalidation, Square, Resend, Google Calendar, Upstash, or private DB smoke tests fail.
+- Sanity revalidation, Auth.js admin access, Square, Resend, Google Calendar, Upstash, private DB, or scheduled-job smoke tests fail.
 - Any live flow writes new private submission, checkout, payment, booking hold, or enrollment data to Sanity.
 
 ## Phase 0: Launch Window, Repo, and Content Freeze
@@ -112,6 +112,14 @@ Verify production-scoped values in Vercel/provider dashboards. Record presence, 
 - [ ] `SANITY_WRITE_TOKEN`
 - [ ] `SANITY_WEBHOOK_SECRET`
 
+### Application URL and Admin Authentication
+
+- [ ] `NEXT_PUBLIC_SITE_URL=https://<canonical-production-domain>`
+- [ ] `AUTH_SECRET`
+- [ ] `AUTH_GOOGLE_ID`
+- [ ] `AUTH_GOOGLE_SECRET`
+- [ ] `ADMIN_OWNER_EMAILS` contains only the approved bootstrap/break-glass owners. Ongoing user status, role, and resource access are authoritative in PostgreSQL.
+
 ### Resend
 
 - [ ] `RESEND_API_KEY`
@@ -125,14 +133,16 @@ Verify production-scoped values in Vercel/provider dashboards. Record presence, 
 - [ ] Optional automation event name intentionally configured only if overriding the default: `RESEND_EVENT_MARKETING_CONTACT_OPTED_IN`.
 - [ ] `EMAIL_PROFILE_IMAGE_URL` if used.
 - [ ] `EMAIL_RETRY_SECRET`
-- [ ] `CRON_SECRET`
+- [ ] `RESEND_MARKETING_SYNC_CRON_SECRET` is present to enable the durable `marketing_contact_sync_jobs` worker. The route accepts Vercel's `CRON_SECRET` only after this route-specific secret exists.
 
 ### Google Calendar Booking
 
 - [ ] `GOOGLE_CLIENT_ID`
 - [ ] `GOOGLE_CLIENT_SECRET`
 - [ ] `GOOGLE_REDIRECT_URI` points to the production callback URL.
-- [ ] `BOOKING_ADMIN_SETUP_SECRET`
+- [ ] `BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY` is a distinct base64-encoded 32-byte key used to encrypt PostgreSQL Calendar credentials.
+- [ ] `BOOKING_ADMIN_SETUP_SECRET` remains protected for the legacy global OAuth compatibility route; it is not the primary operational admin connection flow.
+- [ ] `SERVICE_BOOKING_MODEL_MODE=operational` for new production booking creation after the operational cutover is approved. Existing holds continue through their stored model version.
 
 ### Upstash Redis / KV
 
@@ -142,15 +152,26 @@ Verify production-scoped values in Vercel/provider dashboards. Record presence, 
 ### Private Database
 
 - [ ] `DATABASE_URL` targets the verified production private DB.
+- [ ] The runtime URL is the verified production endpoint. A transaction pooler is preferred for serverless runtime use; direct endpoints are also supported by the bounded database client.
 - [ ] `PRIVATE_DB_MIGRATION_TARGET=production` for migration command only.
 - [ ] `PRIVATE_DB_MIGRATION_HOST=<verified-production-host>` for migration command only.
 - [ ] `PRIVATE_DB_MIGRATION_CONFIRM=production` for migration command only.
+- [ ] `BACKUP_RETENTION_DAYS` matches the approved retention window.
+
+### Scheduled Jobs
+
+- [ ] `CRON_SECRET` is a high-entropy Production secret used by Vercel for all eight scheduled requests.
+- [ ] `PAYMENT_RECONCILIATION_CRON_SECRET` is distinct and present; `CRON_SECRET` alone does not enable that route.
+- [ ] `RESEND_MARKETING_SYNC_CRON_SECRET` is distinct and present; `CRON_SECRET` alone does not enable that route.
+- [ ] `CHITCHATS_WORKER_CRON_SECRET` is distinct when the shipping routes need a separate manual/operator bearer. Vercel still uses `CRON_SECRET`.
+- [ ] Backup restore validation has an approved external runner. The in-app `/api/cron/backup-validation` route is a configuration scaffold only and never performs a restore. Keep `BACKUP_VALIDATION_ENABLED=false` until the external workflow exists; if enabled, also configure `BACKUP_GCS_BUCKET_URI`, `BACKUP_RESTORE_DATABASE_URL`, and `BACKUP_RESTORE_EXPECTED_DB_NAME` for an isolated non-production/non-staging target.
+- [ ] Review all route-specific cadence, no-op behavior, and response counters in `docs/scheduled-jobs-runbook.md`.
 
 ### Payment Runtime
 
 - [ ] `PAYMENT_GATEWAY_MODE=live`
 - [ ] `PAYMENT_MOCK_DEFAULT_SCENARIO` is dev-only and not relied on in production.
-- [ ] `SERVICE_BOOKING_SQUARE_ENABLED` matches launch decision.
+- [ ] `SERVICE_BOOKING_SQUARE_ENABLED=true` only when the direct Square service path is approved.
 
 ### Product and Training Checkout (Square commerce)
 
@@ -169,6 +190,7 @@ Feature admission (keep off until the source-controlled shipping/tax config is p
 - [ ] `CHITCHATS_CHECKOUT_ENABLED=true`
 - [ ] `CHITCHATS_US_SHIPPING_ENABLED` matches the US-shipping launch decision.
 - [ ] `MANUAL_PRODUCT_CHECKOUT_ENABLED` matches the manual-pickup launch decision.
+- [ ] `FLAT_RATE_SHIPPING_ENABLED` matches the launch decision. The weekly rate-cache cron is a no-op unless both flat-rate and Chit Chats shipping flags are `true`.
 - [ ] Source shipping config is populated and business/legal-confirmed in `src/lib/shipping/product-shipping-config.ts`: `PRODUCT_SHIPPING_US_DDU_CONTRACT` (required for `CHITCHATS_US_SHIPPING_ENABLED`) and `PRODUCT_MANUAL_CANCELLATION_POLICY` (required for `MANUAL_PRODUCT_CHECKOUT_ENABLED`) are non-null with confirmed disclosure/policy text, effective window, and schema versions; `PRODUCT_SHIPPING_SERVICE_POLICIES` insurance limits and signature capability are verified against Chit Chats' published per-service coverage. Setting a flag without its populated config leaves the feature blocked by design. There is no runtime attestation, duty assignment, or funding reservation to create. Bump `PRODUCT_SHIPPING_POLICY_VERSION` on any change.
 
 Chit Chats account and provider:
@@ -197,11 +219,12 @@ Product tax (destination-based GST/HST; no US tax):
 - [ ] `SQUARE_ACCESS_TOKEN`
 - [ ] `SQUARE_LOCATION_ID`
 - [ ] `SQUARE_WEBHOOK_SIGNATURE_KEY`
-- [ ] `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true` only when the Square card-on-file service booking flow is intended.
+- [ ] `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true` only when the current direct `CHARGE_AND_STORE` service-booking flow is intended. If it is false, new service payment sessions fail closed.
+- [ ] `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_LOCAL_INVOICE_FALLBACK_ENABLED=false`; production ignores this local/sandbox compatibility switch regardless.
 - [ ] `SQUARE_APPLICATION_ID` (public-safe application ID for the Square Web Payments SDK config route) when card-on-file is enabled.
 - [ ] `BOOKING_ADMIN_PAYMENT_ACTION_SECRET` for protected admin payment actions such as no-show charges.
 - [ ] `PAYMENT_RECONCILIATION_CRON_SECRET` for the payment reconciliation route, distinct from the generic `CRON_SECRET` used by Vercel scheduled cron. The route accepts either bearer when both are configured, but the route-specific secret must be present to enable the route or for manual/staff checks.
-- [ ] `SQUARE_SERVICE_BOOKING_RETURN_URL=https://<production-domain>/api/booking/square/return`
+- [ ] `SQUARE_SERVICE_BOOKING_RETURN_URL=https://<production-domain>/api/booking/square/return` remains correct for historical hosted-checkout compatibility; it is not the browser return mechanism for a new direct capture.
 - [ ] `SQUARE_SERVICE_BOOKING_WEBHOOK_URL=https://<production-domain>/api/webhooks/square`
 - [ ] Optional `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED` only if intentionally used.
 
@@ -212,10 +235,13 @@ Use `docs/private-database-migration-runbook.md` as the detailed source of truth
 - [ ] Verify production DB identity in the provider dashboard: project, branch, database name, and host label.
 - [ ] Verify production backup/PITR availability before any migration.
 - [ ] Review committed migration files in `drizzle/` and confirm expected files are present.
-- [ ] Understand that the shipping-teardown migrations `0062`–`0066` are **irreversible** `DROP TABLE`/`DROP COLUMN` operations on tables/columns holding production rows (attestation, duty-assignment, funding-review, service-policy, tax-policy, manual-policy, and intake-location records; the `product_shipment_jobs` funding columns; and `product_shipments.intake_location_attestation_id`), and the teardown continues through `0075` with further irreversible `DROP TABLE` operations retiring the post-sale fulfillment-policy/risk subsystem. The retained source config in `src/lib/shipping/product-shipping-config.ts` / `src/lib/commerce/product-tax-policy.ts` supersedes their runtime use. Capture a verified pre-drop snapshot/row-count and confirm no audit/compliance retention obligation before applying in production (see `docs/launch-readiness-checklist.md` → Private Database Migration Readiness).
+- [ ] Confirm the committed journal currently ends at `0075_clammy_william_stryker`. Do not infer the target state from the filename or `max(created_at)`; run the exact-lineage checker before and after migration.
+- [ ] Understand that destructive drops occur in `0062`–`0066`, `0068`, `0070`, and `0074`–`0075`, including constraints, the retired shipping-policy/risk subsystem, obsolete provider-specific invoice columns, and other retired fulfillment fields/tables. Capture the approved pre-drop snapshot/row counts and confirm retention obligations before applying them. Source-controlled shipping/tax configuration supersedes the retired runtime policy tables.
 - [ ] Confirm staging already ran the same migration set successfully.
 - [ ] Confirm production `DATABASE_URL` host matches `<verified-production-host>` without exposing the full URL.
+- [ ] Run `npm run db:check -- --env-file <protected-production-env-file>` and review every pending migration or lineage finding before writing.
 - [ ] Apply needed migrations only with the production guard variables.
+- [ ] Rerun `npm run db:check -- --env-file <protected-production-env-file>` and confirm no required migration is pending and no unknown/gapped/hash-mismatched row exists.
 - [ ] Record sanitized command result, timestamp, migration files, operator, verifier, and backup/PITR status.
 - [ ] Stop if migrations are missing, unapplied, fail, or DB identity cannot be verified.
 
@@ -225,11 +251,14 @@ ls drizzle
 ```
 
 ```bash
+DOTENV_CONFIG_PATH=<protected-production-env-file> \
 PRIVATE_DB_MIGRATION_TARGET=production \
 PRIVATE_DB_MIGRATION_HOST=<verified-production-host> \
 PRIVATE_DB_MIGRATION_CONFIRM=production \
 npm run db:migrate
 ```
+
+`scripts/migrate-private-db.ts` uses `dotenv/config`, which defaults to `.env`; it does not automatically load Next.js `.env.local`. Use the explicit protected file above or an already-exported environment. Never run DB-backed tests against production: provision and migrate an isolated `TEST_DATABASE_URL`, then run `npm run test:unit:db` there.
 
 ## Phase 4: Production Provider Dashboard Setup
 
@@ -238,8 +267,9 @@ npm run db:migrate
 - [ ] Square webhook URL is `https://<production-domain>/api/webhooks/square` (all Square events — product, training, and service booking — arrive on this single webhook).
 - [ ] Square return URL is `https://<production-domain>/api/booking/square/return`.
 - [ ] Google OAuth consent/client has the production redirect URI.
-- [ ] Upstash production Redis/KV instance is reachable and separate from staging/dev where required.
-- [ ] Resend domain, sender, webhook secret, marketing segment, optional topics/templates, and suppression/unsubscribe handling are production-ready.
+- [ ] Auth.js Google identity client admits the approved admin accounts and is separate from the Google Calendar OAuth client configuration.
+- [ ] Upstash production Redis/KV instance is reachable and separate from staging/dev; it supports OAuth state, booking/Calendar locks, quotas, and abuse controls, not the durable operational Calendar credential record.
+- [ ] Resend domain, sender, webhook secret, marketing segment, optional topics/templates, durable `customer_email_outbox` delivery, `marketing_contact_sync_jobs`, and suppression/unsubscribe handling are production-ready.
 
 ## Phase 5: Sanity Backup and Full Staging Replacement of Production
 
@@ -357,39 +387,41 @@ SANITY_SCHEMA_DEPLOY_TARGET=production \
 npx sanity schema deploy --workspace default
 ```
 
-## Phase 7: Google Calendar OAuth Connection and `bookingSettings`
+## Phase 7: Operational Admin, Booking Catalog, and Calendar Connections
 
-- [ ] Run the one-time production OAuth connection only from a secure operator session.
-- [ ] Do not paste the setup URL or secret in evidence.
-- [ ] Verify OAuth token storage/refresh works through Upstash.
-- [ ] Verify production `bookingSettings` exists in Sanity and contains approved service booking settings.
-- [ ] Verify `/booking` loads available slots from Google Calendar.
+- [ ] Sign in through `/admin/sign-in` with an approved Google identity and confirm owner/admin authorization resolves from the production PostgreSQL records. Use `ADMIN_OWNER_EMAILS` only for approved bootstrap/break-glass access.
+- [ ] In `/admin/offerings`, `/admin/booking-settings`, `/admin/schedules`, and `/admin/staff`, verify active operational providers/resources, public offerings, pricing/payment policy, intake questions, availability, and assignments. These records are PostgreSQL-owned; the inactive Sanity `bookingSettings` singleton is not a production prerequisite.
+- [ ] From `/admin/calendar-connections` or the authorized employee `/admin/my-calendar` flow, connect the correct Google account and assign a writable Calendar to each bookable resource.
+- [ ] Confirm refresh credentials are encrypted in `booking_calendar_connections` with `BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY`, connection/assignment status is active, and calendar discovery/refresh succeeds. Redis is used for short-lived OAuth state and locks, not as the authoritative operational credential store.
+- [ ] Keep the legacy secret-gated global OAuth setup route private. Use it only when explicitly validating historical/global compatibility, not to configure new operational resources.
+- [ ] Verify the public services catalog and `/services/<slug>/booking` read operational offerings from PostgreSQL and produce slots only for correctly assigned resources/calendars.
 
 ## Phase 8: Webhook Configuration and Smoke Tests
 
-- [ ] Sanity webhook targets `https://<production-domain>/api/revalidate`, dataset `production`, method `POST`, projection `{ _type }`, and production `SANITY_WEBHOOK_SECRET`.
+- [ ] Sanity webhook targets `https://<production-domain>/api/revalidate`, dataset `production`, method `POST`, projection `{ _id, _type }`, and production `SANITY_WEBHOOK_SECRET`. The `_id` is required for product-stock reconciliation.
 - [ ] Publish a safe production Studio edit, verify signed webhook delivery, Vercel revalidation logs, cache tag, and public page update.
 - [ ] Product/training checkout webhook smoke: verify `/api/webhooks/square` accepts a production/test-approved Square payment event for product/training commerce with redacted evidence.
 - [ ] Square webhook smoke when service booking Square is enabled: verify `/api/webhooks/square` signature validation, idempotency, private hold/payment reconciliation, and finalizer behavior.
 - [ ] Resend webhook smoke: verify contact unsubscribe/update event reaches the private consent ledger.
-- [ ] Upstash smoke: verify OAuth token read/write, booking locks, idempotency keys, and TTL behavior with redacted key evidence.
+- [ ] Upstash smoke: verify short-lived OAuth state, booking/Calendar locks, quotas/rate limits, idempotency controls, and TTL behavior with redacted key evidence. Verify operational Calendar refresh credentials separately in encrypted PostgreSQL storage.
 
 ## Phase 9: Public Page and Private-Flow Smoke Matrix
 
 ### Public Pages
 
-| Page                        | Check                                        | Result |
-| --------------------------- | -------------------------------------------- | ------ |
-| `/`                         | Home content, nav, global settings           |        |
-| `/contact`                  | Contact page content and form renders        |        |
-| `/gallery`                  | Gallery content and images                   |        |
-| `/products`                 | Product cards, availability, pricing         |        |
-| `/products/[slug]`          | Product detail, variants, checkout CTA       |        |
-| `/services`                 | Service listing                              |        |
-| `/services/[slug]`          | Service detail                               |        |
-| `/booking`                  | Booking settings and slots                   |        |
-| `/training-programs`        | Training listing; `/training` redirects here |        |
-| `/training-programs/[slug]` | Training detail and checkout/schedule gates  |        |
+| Page                        | Check                                               | Result |
+| --------------------------- | --------------------------------------------------- | ------ |
+| `/`                         | Home content, nav, global settings                  |        |
+| `/contact`                  | Contact page content and form renders               |        |
+| `/gallery`                  | Gallery content and images                          |        |
+| `/products`                 | Product cards, availability, pricing                |        |
+| `/products/[slug]`          | Product detail, variants, checkout CTA              |        |
+| `/services`                 | Service listing                                     |        |
+| `/services/[slug]`          | Service detail                                      |        |
+| `/booking`                  | Redirect/shim resolves only operational offerings   |        |
+| `/services/[slug]/booking`  | Operational settings, assigned resources, and slots |        |
+| `/training-programs`        | Training listing; `/training` redirects here        |        |
+| `/training-programs/[slug]` | Training detail and checkout/schedule gates         |        |
 
 ### Private Flows
 
@@ -397,16 +429,19 @@ Use approved test data only and redact all customer/payment details in evidence.
 
 - [ ] General inquiry writes to private DB and sends Resend email; no Sanity submission document is created.
 - [ ] Training contact writes to private DB and sends Resend email; no Sanity submission document is created.
-- [ ] Contact popup/marketing signup writes consent/submission evidence to private DB and Resend segment.
+- [ ] Contact popup/marketing signup writes consent/submission plus a durable `marketing_contact_sync_jobs` row; the worker succeeds before the contact is expected in the Resend segment.
 - [ ] Booking marketing opt-in and no-opt-in choices are recorded correctly in private DB.
 - [ ] Product checkout uses Square and persists private order/payment state.
 - [ ] Training checkout uses Square and exposes scheduling only through eligible paid token flow.
-- [ ] Paid service booking uses Square only when enabled, creates a private hold, verifies payment server-side, then creates/fetches one Google Calendar event.
+- [ ] Paid service booking creates an operational hold, tokenizes in Square Web Payments SDK, posts direct `CHARGE_AND_STORE` confirmation to `/api/booking/payment/confirm`, verifies/captures provider evidence server-side, and creates/fetches exactly one Google Calendar event. Disabling the direct-capture gate must fail closed for new sessions.
+- [ ] A paid product order creates/sends its confirmation through `customer_email_outbox` without a duplicate send; training and booking sent/claim/error state also reaches its expected terminal value.
 
 ## Phase 10: Monitoring, Rollback, Failure Handling, and Evidence Capture
 
-- [ ] Monitor Vercel runtime logs for `/api/revalidate`, `/api/webhooks/square`, booking routes, checkout routes, form actions, email retries, and private-data retention cron.
-- [ ] Monitor the new scheduled jobs (Vercel Cron, authorized by `CRON_SECRET`/`CHITCHATS_WORKER_CRON_SECRET`): `/api/cron/chitchats-shipping` (every minute; dormant unless Chit Chats shipping / Square commerce is enabled) and `/api/cron/customer-email-outbox` (every 5 min). A `503` from any of these signals dead-letters/retries/unknown-outcomes needing review.
+- [ ] Monitor Vercel runtime logs for `/api/revalidate`, `/api/webhooks/square`, booking routes, checkout routes, form actions, email retries, and every scheduled route.
+- [ ] Verify Vercel registered all eight `vercel.json` jobs: private-data retention, backup-validation scaffold, payment reconciliation, Chit Chats shipping/refunds, customer-email outbox, product-stock reservation sweep, marketing-contact sync, and shipping-rate cache refresh. Use `docs/scheduled-jobs-runbook.md` for their exact paths/cadence/authentication.
+- [ ] Inspect each scheduled response body, not only its HTTP status. Payment reconciliation can return `ok: false`, stock cleanup can report `failed > 0`, and marketing sync can report claim/retry/dead-letter failures or an all-zero missing-API-key no-op while returning `200`.
+- [ ] Record backup restore validation as incomplete until an external runner actually restores and checks an isolated database; the scheduled scaffold cannot supply that evidence.
 - [ ] Monitor provider dashboards for Square, Resend, Google OAuth/API, Upstash, Sanity webhook deliveries, and database health.
 - [ ] If Sanity import is wrong but production app is otherwise stable, stop content edits and decide whether to re-import from `./production-pre-cutover-backup.tar.gz` or roll forward with a corrected staging export.
 - [ ] If DB migration fails, stop and follow `docs/private-database-migration-runbook.md`; do not manually edit production schema.
@@ -419,9 +454,10 @@ Use approved test data only and redact all customer/payment details in evidence.
 - `docs/launch-readiness-checklist.md`
 - `docs/sanity-staging-production-workflow.md`
 - `docs/private-database-migration-runbook.md`
+- `docs/scheduled-jobs-runbook.md`
+- `docs/booking-operations-dashboard.md`
 - `docs/google-calendar-oauth-env-setup.md`
 - `docs/booking-system-setup-guide.md`
 - `docs/square-service-booking-setup.md`
 - `docs/resend-transactional-email-setup.md`
 - `docs/resend-webhook-dashboard-setup-tutorial.md`
-- `docs/booking-payment-provider-split.md`

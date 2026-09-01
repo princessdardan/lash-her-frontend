@@ -9,11 +9,13 @@ const scenario = String.raw`
   import assert from "node:assert/strict";
   import { eq, inArray } from "drizzle-orm";
   import { closePrivateDbPool, getPrivateDb } from "./src/lib/private-db/client.ts";
-  import { checkoutOrders, customerEmailOutbox } from "./src/lib/private-db/schema.ts";
+  import { checkoutOrders, customerEmailOutbox, marketingContactSubmissions } from "./src/lib/private-db/schema.ts";
   import {
+    claimCustomerEmailById,
     claimCustomerEmails,
     completeCustomerEmail,
     enqueueCustomerEmail,
+    enqueueCustomerEmailWithResult,
     failCustomerEmail,
     requeueDeadLetterCustomerEmail,
   } from "./src/lib/commerce/customer-email-outbox.ts";
@@ -28,6 +30,15 @@ const scenario = String.raw`
   const prefix = "email-outbox-db-test-" + crypto.randomUUID();
   const createdOrderIds = [];
   const createdOutboxKeys = [];
+  const createdSubmissionIds = [];
+  const errorChainMatches = (error, pattern) => {
+    let current = error;
+    while (current instanceof Error) {
+      if (pattern.test(current.message)) return true;
+      current = current.cause;
+    }
+    return false;
+  };
   try {
     const orderPrivacyDeadline = new Date("2026-09-01T12:00:00.000Z");
     const [order] = await db.insert(checkoutOrders).values({
@@ -86,6 +97,181 @@ const scenario = String.raw`
       recipient: "owner@example.invalid",
       now: new Date("2026-08-15T12:00:00.000Z"),
     }), true, "non-customer policy alerts remain intentionally unlinked");
+
+    const offerNow = new Date("2026-08-15T12:00:00.000Z");
+    const [submission] = await db.insert(marketingContactSubmissions).values({
+      submissionType: "contact_popup",
+      email: "offer@example.invalid",
+      emailNormalized: "offer@example.invalid",
+      source: "contact_popup",
+      sourcePath: "/",
+      consentChoice: "opted_in",
+      consentText: "Email me news and offers.",
+      payload: { variant: "emailOnly" },
+      submittedAt: offerNow,
+    }).returning();
+    createdSubmissionIds.push(submission.id);
+    const offerPayload = {
+      submissionId: submission.id,
+      recipientEmail: "offer@example.invalid",
+      variant: "emailOnly",
+      promotionId: "promotion-1",
+      promotionRevision: "revision-1",
+      promotionCode: "WELCOME20",
+      discountType: "percentage",
+      discountAmount: 20,
+      appliesTo: "all",
+      offerLabel: "Welcome offer",
+      offerTerms: "Valid on eligible purchases.",
+      ctaLabel: "Shop now",
+      ctaUrl: "https://lashher.com/products",
+      resolvedAt: offerNow.toISOString(),
+    };
+    const offerKey = prefix + ":contact-popup-offer";
+    createdOutboxKeys.push(offerKey);
+    const offerEnqueue = await enqueueCustomerEmailWithResult({
+      kind: "contact_popup_offer",
+      submissionDatabaseId: submission.id,
+      payload: offerPayload,
+      providerIdempotencyKey: offerKey,
+      recipient: "Offer@Example.invalid",
+      now: offerNow,
+    });
+    assert.equal(offerEnqueue.inserted, true);
+    assert.ok(offerEnqueue.id);
+    const [storedOffer] = await db.select().from(customerEmailOutbox).where(
+      eq(customerEmailOutbox.id, offerEnqueue.id),
+    );
+    assert.equal(storedOffer.orderId, null);
+    assert.equal(storedOffer.submissionId, submission.id);
+    assert.equal(storedOffer.recipientEmailNormalized, "offer@example.invalid");
+    assert.equal(
+      storedOffer.redactionDueAt.toISOString(),
+      "2027-08-15T12:00:00.000Z",
+      "the offer outbox retains PII for no more than 365 days",
+    );
+    assert.deepEqual(await enqueueCustomerEmailWithResult({
+      kind: "contact_popup_offer",
+      submissionDatabaseId: submission.id,
+      payload: offerPayload,
+      providerIdempotencyKey: offerKey,
+      recipient: "offer@example.invalid",
+      now: offerNow,
+    }), { id: null, inserted: false });
+    await assert.rejects(
+      enqueueCustomerEmailWithResult({
+        kind: "contact_popup_offer",
+        submissionDatabaseId: submission.id,
+        payload: { ...offerPayload, recipientEmail: "other@example.invalid" },
+        providerIdempotencyKey: prefix + ":wrong-recipient",
+        recipient: "other@example.invalid",
+        now: offerNow,
+      }),
+      /recipient does not match its linked submission/,
+    );
+    const [nonOptedInSubmission] = await db.insert(marketingContactSubmissions).values({
+      submissionType: "contact_popup",
+      email: "declined@example.invalid",
+      emailNormalized: "declined@example.invalid",
+      source: "contact_popup",
+      consentChoice: "not_opted_in",
+      payload: { variant: "emailOnly" },
+      submittedAt: offerNow,
+    }).returning();
+    createdSubmissionIds.push(nonOptedInSubmission.id);
+    await assert.rejects(
+      enqueueCustomerEmailWithResult({
+        kind: "contact_popup_offer",
+        submissionDatabaseId: nonOptedInSubmission.id,
+        payload: {
+          ...offerPayload,
+          submissionId: nonOptedInSubmission.id,
+          recipientEmail: "declined@example.invalid",
+        },
+        providerIdempotencyKey: prefix + ":not-opted-in",
+        recipient: "declined@example.invalid",
+        now: offerNow,
+      }),
+      /requires a linked opted-in contact popup submission/,
+    );
+    const [wrongTypeSubmission] = await db.insert(marketingContactSubmissions).values({
+      submissionType: "general_inquiry",
+      email: "inquiry@example.invalid",
+      emailNormalized: "inquiry@example.invalid",
+      source: "general_inquiry",
+      consentChoice: "opted_in",
+      payload: { subject: "Question" },
+      submittedAt: offerNow,
+    }).returning();
+    createdSubmissionIds.push(wrongTypeSubmission.id);
+    await assert.rejects(
+      enqueueCustomerEmailWithResult({
+        kind: "contact_popup_offer",
+        submissionDatabaseId: wrongTypeSubmission.id,
+        payload: {
+          ...offerPayload,
+          submissionId: wrongTypeSubmission.id,
+          recipientEmail: "inquiry@example.invalid",
+        },
+        providerIdempotencyKey: prefix + ":wrong-submission-type",
+        recipient: "inquiry@example.invalid",
+        now: offerNow,
+      }),
+      /requires a linked opted-in contact popup submission/,
+    );
+    await assert.rejects(
+      db.insert(customerEmailOutbox).values({
+        kind: "contact_popup_offer",
+        submissionId: submission.id,
+        recipientCiphertext: "opaque",
+        recipientEmailNormalized: "other@example.invalid",
+        templateDataCiphertext: "opaque",
+        providerIdempotencyKey: prefix + ":trigger-wrong-recipient",
+        status: "queued",
+        availableAt: offerNow,
+        redactionDueAt: new Date("2027-08-15T12:00:00.000Z"),
+      }),
+      (error) => errorChainMatches(error, /recipient does not match submission/),
+    );
+    const targetedOffer = await claimCustomerEmailById({
+      id: offerEnqueue.id,
+      leaseOwner: "offer-worker",
+      now: offerNow,
+    });
+    assert.equal(targetedOffer?.id, offerEnqueue.id);
+    const [unrelatedPolicyAlert] = await db.select().from(customerEmailOutbox).where(
+      eq(customerEmailOutbox.providerIdempotencyKey, policyAlertKey),
+    );
+    assert.equal(unrelatedPolicyAlert.status, "queued", "targeted claim does not claim unrelated jobs");
+    assert.equal(await completeCustomerEmail({
+      id: offerEnqueue.id,
+      leaseOwner: "offer-worker",
+      providerMessageId: "offer-message-1",
+      now: offerNow,
+    }), true);
+      await assert.rejects(
+        db.delete(marketingContactSubmissions).where(
+          eq(marketingContactSubmissions.id, submission.id),
+        ),
+        (error) => errorChainMatches(error, /requires a submission link/),
+        "an active offer prevents its linked submission from being deleted",
+      );
+    await db.update(customerEmailOutbox).set({
+      recipientCiphertext: "[redacted]",
+      templateDataCiphertext: "[redacted]",
+      redactedAt: new Date("2027-08-15T12:00:00.000Z"),
+    }).where(eq(customerEmailOutbox.id, offerEnqueue.id));
+    const [redactedOffer] = await db.select().from(customerEmailOutbox).where(
+      eq(customerEmailOutbox.id, offerEnqueue.id),
+    );
+    assert.equal(redactedOffer.recipientEmailNormalized, null);
+    await db.delete(marketingContactSubmissions).where(
+      eq(marketingContactSubmissions.id, submission.id),
+    );
+    const [unlinkedRedactedOffer] = await db.select().from(customerEmailOutbox).where(
+      eq(customerEmailOutbox.id, offerEnqueue.id),
+    );
+    assert.equal(unlinkedRedactedOffer.submissionId, null);
 
     const pastDeadlineKey = prefix + ":past-deadline";
     createdOutboxKeys.push(pastDeadlineKey);
@@ -202,6 +388,11 @@ const scenario = String.raw`
     if (createdOrderIds.length) {
       await db.delete(customerEmailOutbox).where(inArray(customerEmailOutbox.orderId, createdOrderIds));
       await db.delete(checkoutOrders).where(inArray(checkoutOrders.id, createdOrderIds));
+    }
+    if (createdSubmissionIds.length) {
+      await db.delete(marketingContactSubmissions).where(
+        inArray(marketingContactSubmissions.id, createdSubmissionIds),
+      );
     }
     await closePrivateDbPool();
   }

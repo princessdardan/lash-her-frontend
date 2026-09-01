@@ -3,7 +3,12 @@ import "server-only";
 import { and, asc, eq, gt, inArray, isNull, lt, lte, or } from "drizzle-orm";
 
 import { getPrivateDb } from "@/lib/private-db/client";
-import { checkoutOrders, customerEmailOutbox } from "@/lib/private-db/schema";
+import {
+  checkoutOrders,
+  customerEmailOutbox,
+  marketingContacts,
+  marketingContactSubmissions,
+} from "@/lib/private-db/schema";
 
 import {
   decryptCustomerEmailOutboxValue,
@@ -11,6 +16,7 @@ import {
 } from "./customer-email-outbox-cipher";
 
 export type CustomerEmailOutboxKind =
+  | "contact_popup_offer"
   | "product_order_confirmation"
   | "shipping_customer_link"
   | "shipping_customer_update"
@@ -19,8 +25,26 @@ export type CustomerEmailOutboxKind =
 
 export type CustomerOrderEmailOutboxKind = Exclude<
   CustomerEmailOutboxKind,
-  "shipping_policy_alert"
+  "contact_popup_offer" | "shipping_policy_alert"
 >;
+
+export interface ContactPopupOfferEmailPayload {
+  submissionId: string;
+  recipientEmail: string;
+  customerName?: string;
+  variant: "fullContact" | "emailOnly";
+  promotionId: string;
+  promotionRevision: string;
+  promotionCode: string;
+  discountType: "percentage" | "fixed";
+  discountAmount: number;
+  appliesTo: "all";
+  offerLabel: string;
+  offerTerms: string;
+  ctaLabel: string;
+  ctaUrl: string;
+  resolvedAt: string;
+}
 
 export const CUSTOMER_EMAIL_MAX_DELIVERY_ATTEMPTS = 8;
 
@@ -37,12 +61,24 @@ export type EnqueueCustomerEmailInput<TPayload extends object> =
       | {
           kind: "shipping_policy_alert";
           orderDatabaseId?: never;
+          submissionDatabaseId?: never;
+        }
+      | {
+          kind: "contact_popup_offer";
+          orderDatabaseId?: never;
+          submissionDatabaseId: string;
         }
       | {
           kind: CustomerOrderEmailOutboxKind;
           orderDatabaseId: string;
+          submissionDatabaseId?: never;
         }
     );
+
+export interface EnqueueCustomerEmailResult {
+  id: string | null;
+  inserted: boolean;
+}
 
 export type CustomerEmailOutboxTransaction = Parameters<
   Parameters<ReturnType<typeof getPrivateDb>["transaction"]>[0]
@@ -57,10 +93,31 @@ export async function enqueueCustomerEmail<TPayload extends object>(
   input: EnqueueCustomerEmailInput<TPayload>,
   executor: CustomerEmailOutboxExecutor = getPrivateDb(),
 ): Promise<boolean> {
-  const recipient = input.recipient.trim().toLowerCase();
+  const result = await enqueueCustomerEmailWithResult(input, executor);
+  return result.inserted;
+}
+
+export async function enqueueCustomerEmailWithResult<TPayload extends object>(
+  input: EnqueueCustomerEmailInput<TPayload>,
+  executor: CustomerEmailOutboxExecutor = getPrivateDb(),
+): Promise<EnqueueCustomerEmailResult> {
+  const recipient = normalizeEmail(input.recipient);
   const idempotencyKey = input.providerIdempotencyKey.trim();
   if (!recipient || !idempotencyKey) {
     throw new Error("Email outbox recipient and idempotency key are required");
+  }
+  if (input.kind === "contact_popup_offer") {
+    const payload: unknown = input.payload;
+    if (
+      !isRecord(payload) ||
+      payload.submissionId !== input.submissionDatabaseId ||
+      typeof payload.recipientEmail !== "string" ||
+      normalizeEmail(payload.recipientEmail) !== recipient
+    ) {
+      throw new Error(
+        "Contact popup offer email payload does not match its submission or recipient",
+      );
+    }
   }
   const now = input.now ?? new Date();
   const redactionDueAt = await resolveCustomerEmailRedactionDeadline(
@@ -71,9 +128,14 @@ export async function enqueueCustomerEmail<TPayload extends object>(
   const [inserted] = await executor
     .insert(customerEmailOutbox)
     .values({
-      ...(input.kind === "shipping_policy_alert"
-        ? {}
-        : { orderId: input.orderDatabaseId }),
+      ...(input.kind === "contact_popup_offer"
+        ? {
+            recipientEmailNormalized: recipient,
+            submissionId: input.submissionDatabaseId,
+          }
+        : input.kind === "shipping_policy_alert"
+          ? {}
+          : { orderId: input.orderDatabaseId }),
       kind: input.kind,
       recipientCiphertext: encryptCustomerEmailOutboxValue(
         recipient,
@@ -90,11 +152,11 @@ export async function enqueueCustomerEmail<TPayload extends object>(
       createdAt: now,
       updatedAt: now,
     })
-    .onConflictDoNothing({
-      target: customerEmailOutbox.providerIdempotencyKey,
-    })
+    .onConflictDoNothing()
     .returning({ id: customerEmailOutbox.id });
-  return inserted !== undefined;
+  return inserted
+    ? { id: inserted.id, inserted: true }
+    : { id: null, inserted: false };
 }
 
 async function resolveCustomerEmailRedactionDeadline<TPayload extends object>(
@@ -104,6 +166,41 @@ async function resolveCustomerEmailRedactionDeadline<TPayload extends object>(
 ): Promise<Date> {
   const rowDeadline = new Date(now.getTime() + 365 * 24 * 60 * 60_000);
   if (input.kind === "shipping_policy_alert") return rowDeadline;
+  if (input.kind === "contact_popup_offer") {
+    const [submission] = await executor
+      .select({
+        consentChoice: marketingContactSubmissions.consentChoice,
+        emailNormalized: marketingContactSubmissions.emailNormalized,
+        submittedAt: marketingContactSubmissions.submittedAt,
+        submissionType: marketingContactSubmissions.submissionType,
+      })
+      .from(marketingContactSubmissions)
+      .where(eq(marketingContactSubmissions.id, input.submissionDatabaseId))
+      .limit(1);
+    if (
+      !submission ||
+      submission.submissionType !== "contact_popup" ||
+      submission.consentChoice !== "opted_in"
+    ) {
+      throw new Error(
+        "Contact popup offer email requires a linked opted-in contact popup submission",
+      );
+    }
+    if (submission.emailNormalized !== normalizeEmail(input.recipient)) {
+      throw new Error(
+        "Contact popup offer email recipient does not match its linked submission",
+      );
+    }
+    const submissionDeadline = new Date(
+      submission.submittedAt.getTime() + 395 * 24 * 60 * 60_000,
+    );
+    if (submissionDeadline <= now) {
+      throw new Error(
+        "Contact popup offer email submission is past its privacy deadline",
+      );
+    }
+    return submissionDeadline < rowDeadline ? submissionDeadline : rowDeadline;
+  }
   const [order] = await executor
     .select({ piiRedactionDueAt: checkoutOrders.piiRedactionDueAt })
     .from(checkoutOrders)
@@ -188,34 +285,51 @@ export async function claimCustomerEmails(input: {
     return claimed;
   });
 
-  return rows.map((row) => {
-    try {
-      return {
-        id: row.id,
-        kind: parseKind(row.kind),
-        payload: decryptCustomerEmailOutboxValue(
-          row.templateDataCiphertext,
-          "payload",
+  return rows.map(decodeClaimedCustomerEmail);
+}
+
+export async function claimCustomerEmailById(input: {
+  id: string;
+  leaseOwner: string;
+  leaseForMs?: number;
+  now?: Date;
+}): Promise<ClaimedCustomerEmail | null> {
+  const now = input.now ?? new Date();
+  const leaseOwner = input.leaseOwner.trim();
+  if (!input.id.trim()) throw new Error("Email outbox id is required");
+  if (!leaseOwner) throw new Error("Email outbox lease owner is required");
+  const leaseExpiresAt = new Date(
+    now.getTime() + (input.leaseForMs ?? 5 * 60_000),
+  );
+  const row = await getPrivateDb().transaction(async (tx) => {
+    const [claimed] = await tx
+      .select()
+      .from(customerEmailOutbox)
+      .where(
+        and(
+          eq(customerEmailOutbox.id, input.id),
+          lte(customerEmailOutbox.availableAt, now),
+          gt(customerEmailOutbox.redactionDueAt, now),
+          isNull(customerEmailOutbox.redactedAt),
+          or(
+            inArray(customerEmailOutbox.status, ["queued", "failed"]),
+            and(
+              eq(customerEmailOutbox.status, "sending"),
+              lt(customerEmailOutbox.leaseExpiresAt, now),
+            ),
+          ),
         ),
-        providerIdempotencyKey: row.providerIdempotencyKey,
-        recipient: parseRecipient(
-          decryptCustomerEmailOutboxValue(row.recipientCiphertext, "recipient"),
-        ),
-      };
-    } catch (error) {
-      return {
-        id: row.id,
-        kind: "product_order_confirmation" as const,
-        payload: null,
-        providerIdempotencyKey: row.providerIdempotencyKey,
-        recipient: "",
-        decodeError:
-          error instanceof Error
-            ? error.message
-            : "Customer email outbox decryption failed",
-      };
-    }
+      )
+      .limit(1)
+      .for("update", { skipLocked: true });
+    if (!claimed) return null;
+    await tx
+      .update(customerEmailOutbox)
+      .set({ status: "sending", leaseOwner, leaseExpiresAt, updatedAt: now })
+      .where(eq(customerEmailOutbox.id, claimed.id));
+    return claimed;
   });
+  return row ? decodeClaimedCustomerEmail(row) : null;
 }
 
 export async function completeCustomerEmail(input: {
@@ -250,6 +364,50 @@ export async function completeCustomerEmail(input: {
     if (input.onCompleted) await input.onCompleted(tx);
     return true;
   });
+}
+
+export async function isContactPopupOfferRecipientSubscribed(
+  recipient: string,
+): Promise<boolean> {
+  const [contact] = await getPrivateDb()
+    .select({ unsubscribedAt: marketingContacts.unsubscribedAt })
+    .from(marketingContacts)
+    .where(eq(marketingContacts.emailNormalized, normalizeEmail(recipient)))
+    .limit(1);
+
+  return contact !== undefined && contact.unsubscribedAt === null;
+}
+
+export async function suppressCustomerEmail(input: {
+  id: string;
+  leaseOwner: string;
+  now?: Date;
+}): Promise<boolean> {
+  const now = input.now ?? new Date();
+  const [updated] = await getPrivateDb()
+    .update(customerEmailOutbox)
+    .set({
+      status: "dead_letter",
+      recipientCiphertext: "[redacted]",
+      recipientEmailNormalized: null,
+      templateDataCiphertext: "[redacted]",
+      providerMessageId: null,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      lastError: null,
+      redactedAt: now,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(customerEmailOutbox.id, input.id),
+        eq(customerEmailOutbox.status, "sending"),
+        eq(customerEmailOutbox.leaseOwner, input.leaseOwner),
+      ),
+    )
+    .returning({ id: customerEmailOutbox.id });
+
+  return updated !== undefined;
 }
 
 export async function failCustomerEmail(input: {
@@ -330,6 +488,7 @@ export async function requeueDeadLetterCustomerEmail(input: {
 
 function parseKind(value: string): CustomerEmailOutboxKind {
   if (
+    value !== "contact_popup_offer" &&
     value !== "product_order_confirmation" &&
     value !== "shipping_customer_link" &&
     value !== "shipping_customer_update" &&
@@ -341,11 +500,54 @@ function parseKind(value: string): CustomerEmailOutboxKind {
   return value;
 }
 
+function decodeClaimedCustomerEmail(row: {
+  id: string;
+  kind: string;
+  providerIdempotencyKey: string;
+  recipientCiphertext: string;
+  templateDataCiphertext: string;
+}): ClaimedCustomerEmail {
+  try {
+    return {
+      id: row.id,
+      kind: parseKind(row.kind),
+      payload: decryptCustomerEmailOutboxValue(
+        row.templateDataCiphertext,
+        "payload",
+      ),
+      providerIdempotencyKey: row.providerIdempotencyKey,
+      recipient: parseRecipient(
+        decryptCustomerEmailOutboxValue(row.recipientCiphertext, "recipient"),
+      ),
+    };
+  } catch (error) {
+    return {
+      id: row.id,
+      kind: "product_order_confirmation",
+      payload: null,
+      providerIdempotencyKey: row.providerIdempotencyKey,
+      recipient: "",
+      decodeError:
+        error instanceof Error
+          ? error.message
+          : "Customer email outbox decryption failed",
+    };
+  }
+}
+
 function parseRecipient(value: unknown): string {
   if (typeof value !== "string" || !value.trim()) {
     throw new Error("Malformed customer email outbox recipient");
   }
   return value;
+}
+
+function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function sanitizeError(value: string): string {

@@ -1,437 +1,183 @@
 # Booking System Setup Guide
 
-Date: 2026-05-23
+Last verified: 2026-08-31
 
-This guide sets up the Lash Her provider split for booking and checkout in a staging or production environment. It covers Sanity booking content, private storage, Upstash Redis, Google Calendar OAuth, Square card-on-file/no-show invoice for services (primary) with Square hosted checkout as legacy/fallback, Square product/training checkout, Resend, and smoke tests.
+This is the setup index for the current PostgreSQL-backed booking system. Public service catalog data, booking settings, offerings, schedules, resources, Calendar assignments, holds, appointments, and payment state are operational records in private PostgreSQL. Sanity is optional editorial content for public service detail pages and remains the content source for training programs; it is not the service-booking control plane.
 
-Run commands from the repository root: `/Users/dardan/workspace/lash-her-frontend`.
+The public entry points are:
 
-Do not run private database migrations until the target database, approval, backup/PITR, and staging evidence requirements in `docs/private-database-migration-runbook.md` are satisfied.
+- `/services` for the operational service catalog.
+- `/services/[slug]/booking` for selecting an offering and time.
+- `/services/[slug]/booking/payment?session=...` for the opaque payment handoff.
+- `/booking`, which is a permanent compatibility redirect to the canonical service routes. It is not a catalog page.
 
-## Setup Order
+## Setup sequence
 
-1. Confirm repository and environment target.
-2. Configure server-only environment variables.
-3. Provision private Postgres.
-4. Provision Upstash Redis.
-5. Configure Google OAuth and connect the calendar.
-6. Configure Sanity booking settings and offerings.
-7. Configure Square service booking credentials and webhook where service checkout is enabled.
-8. Configure Square product/training checkout (`SQUARE_COMMERCE_ENABLED`).
-9. Configure Resend.
-10. Run staging smoke tests.
-11. Prepare production handoff evidence.
+Use this order for a new local, preview, staging, or production environment:
 
-## 1. Confirm The Target
+1. Configure environment-scoped secrets and provider credentials.
+2. Verify and migrate the private PostgreSQL database.
+3. Configure Auth.js and create the authorized admin identities.
+4. Create team/provider resources and Square team attribution.
+5. Save business booking settings, provider offerings, prices, schedules, and exceptions in the admin dashboard.
+6. Connect and assign Google Calendars for each provider primary resource.
+7. Configure Square direct charge-and-store and the shared webhook.
+8. Configure optional Sanity editorial service links and training scheduling.
+9. Resolve every blocker on `/admin/setup`, then run the staging smoke tests before enabling production flags.
 
-Before adding secrets or running setup flows, record:
+Do not activate a service merely because its public copy is complete. The operational readiness checks also require an active provider resource, an active offering, a weekly schedule, an active booking Calendar destination, and valid Square team attribution where required.
 
-| Field                       | Staging                    | Production                    |
-| --------------------------- | -------------------------- | ----------------------------- |
-| App URL                     | `https://<staging-domain>` | `https://<production-domain>` |
-| Sanity dataset              | `staging-2026-05-10`       | `production`                  |
-| Private DB provider/project |                            |                               |
-| Upstash Redis database      |                            |                               |
-| Google OAuth client         |                            |                               |
-| Square mode/account         |                            |                               |
-| Resend sender domain        |                            |                               |
+## 1. Environment configuration
 
-Use separate staging and production credentials wherever the provider supports it.
+Start with `.env.local.example`; it is the maintained inventory and includes comments about secret scope. Use different credentials and encryption keys for local, preview, and production.
 
-## 2. Commands And Local Prereqs
+The booking stack depends on these groups:
 
-Install dependencies and run checks from the repo root:
+| Area                                 | Variables or configuration                                                                                                                                                                                     |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Private state                        | `DATABASE_URL`, `SERVICE_BOOKING_MODEL_MODE=operational`                                                                                                                                                       |
+| Admin identity                       | `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, bootstrap `ADMIN_OWNER_EMAILS`                                                                                                                          |
+| Calendar OAuth                       | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY`; compatibility `BOOKING_ADMIN_SETUP_SECRET` is still asserted by the shared booking env loader |
+| Short-lived coordination             | `KV_REST_API_URL`, `KV_REST_API_TOKEN`                                                                                                                                                                         |
+| Service payment                      | `SERVICE_BOOKING_SQUARE_ENABLED`, `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED`, and the Square variables documented in `docs/square-service-booking-setup.md`                                                 |
+| Commerce payment                     | `SQUARE_COMMERCE_ENABLED` and `CHECKOUT_SECRET_ENCRYPTION_KEY` for product and primary training checkout                                                                                                       |
+| Reconciliation/admin payment actions | `PAYMENT_RECONCILIATION_CRON_SECRET`, `CRON_SECRET`, `BOOKING_ADMIN_PAYMENT_ACTION_SECRET`                                                                                                                     |
+| Transactional email                  | `RESEND_API_KEY`, `FROM_EMAIL`, `ADMIN_EMAIL`, and the required Resend webhook/segment values                                                                                                                  |
+| Public/editorial content             | the target-specific Sanity project, dataset, read/write, and webhook variables                                                                                                                                 |
+
+`AUTH_GOOGLE_*` authenticates staff to the admin app and requests identity scopes only. `GOOGLE_*` authorizes Calendar access. Use separate OAuth clients for those responsibilities and separate clients per deployed environment.
+
+`BOOKING_ADMIN_SETUP_SECRET` protects the legacy global Calendar connection route; it is not the authority for current per-resource credentials. The shared `getBookingEnv()` accessor still asserts it when constructing the Google OAuth client, so keep a high-entropy server-only value configured until that compatibility dependency is removed. Do not distribute or use its query-string setup URL for a new environment.
+
+Upstash stores short-lived OAuth state, booking contention locks, rate-limit windows, and active-hold quotas. It is not the authority for appointments, payment state, admin identity, or current Calendar credentials.
+
+## 2. Private database
+
+Run migration commands from the repository root. Verify the intended database without printing or pasting its URL:
 
 ```bash
-npm install
-npm run dev
+npm run db:check -- --env-file <protected-env-file>
+```
+
+Do not run a bare `npm run db:migrate`. Follow the exact guarded invocation in `docs/private-database-migration-runbook.md`: `PRIVATE_DB_MIGRATION_TARGET` and `PRIVATE_DB_MIGRATION_HOST` must match the verified target, `DOTENV_CONFIG_PATH` must explicitly select a non-default protected env file, and production also requires `PRIVATE_DB_MIGRATION_CONFIRM=production`. Rerun the read-only `db:check` command after the guarded migration.
+
+The migration runbook also covers staging, production, backups, and roll-forward recovery. The complete migration journal is authoritative; do not select migrations from an old booking milestone list.
+
+## 3. Admin identity and operational records
+
+Configure the Auth.js Google identity client, sign in through `/admin/sign-in`, and use `ADMIN_OWNER_EMAILS` only to bootstrap or recover owner access. Ongoing roles, account status, and resource access are PostgreSQL records.
+
+Configure the system through these protected pages:
+
+| Page                          | Current responsibility                                                                             |
+| ----------------------------- | -------------------------------------------------------------------------------------------------- |
+| `/admin/staff`                | Team accounts, provider resources, active status, and Square sales matching                        |
+| `/admin/booking-settings`     | Business timezone, booking window/notice, timing defaults, intake questions, and marketing wording |
+| `/admin/offerings`            | Public services, provider-specific prices/durations/buffers, status, and add-ons                   |
+| `/admin/schedules`            | Weekly hours, time off, extra hours, and links to Calendar sync                                    |
+| `/admin/calendar-connections` | Owner/admin-managed Google accounts and per-resource Calendar assignments                          |
+| `/admin/my-calendar`          | Employee-managed Google accounts for assigned provider resources                                   |
+| `/admin/integrations`         | Google navigation plus Square team-attribution readiness and enforcement                           |
+| `/admin/setup`                | Computed booking readiness and links to unresolved configuration                                   |
+
+The public `/services` and `/services/[slug]/booking` routes read operational offerings and UI settings from PostgreSQL. Do not configure current service availability through the retired Sanity `bookingSettings` singleton or legacy booking fields on Sanity service documents.
+
+An operational service may optionally link to a Sanity service document for richer editorial content and SEO. That link does not move prices, schedules, booking settings, or private state into Sanity.
+
+## 4. Calendar connections
+
+Set up Calendar only after the corresponding provider resource exists:
+
+1. Configure the Calendar OAuth client and the dedicated credential-encryption key.
+2. From `/admin/calendar-connections`, select **Connect Google account** for an owner-managed connection. An employee uses `/admin/my-calendar` for a resource assigned to that employee.
+3. Complete Google consent. The shared callback is `/api/booking/oauth/callback`.
+4. Let the dashboard discover calendars from the authorized account.
+5. Assign a canonical Google Calendar ID to the provider's primary resource. Do not enter the alias `primary`.
+6. Choose exactly one active booking destination for that primary resource. A destination both receives appointments and contributes busy time. Primary or secondary resources may also have busy-only assignments; a secondary room/equipment resource does not require a destination.
+7. Return to `/admin/setup` and resolve any Calendar readiness blocker before activating offerings.
+
+Refresh tokens are encrypted with `BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY` and stored with the connection in private PostgreSQL. See `docs/google-calendar-oauth-env-setup.md` and `docs/booking-training-calendar-configuration-guide.md` for the full provider setup and service/training boundaries.
+
+## 5. Square and payment reconciliation
+
+The current service flow is direct Square charge-and-store:
+
+1. The booking flow collects bounded intake answers; `/api/booking/holds` reserves every required resource, persists the permitted intake data, and returns an opaque payment-session URL. It rejects contact and payment fields at this step.
+2. The payment page collects the customer, payment selection, marketing choice, policy evidence, and Square card data. It does not accept client-selected routing fields.
+3. Square tokenization uses `CHARGE_AND_STORE`.
+4. `POST /api/booking/payment/confirm` captures the selected amount, saves the card for permitted no-show enforcement, persists provider evidence, creates the authoritative appointment, and projects it to the assigned Google Calendar.
+
+Both `SERVICE_BOOKING_SQUARE_ENABLED=true` and `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true` are required for a usable new public payment session. If direct payment configuration is missing or disabled, the customer flow fails closed. It does not create a new Square Payment Link.
+
+The hosted return, webhook, and finalizer remain to reconcile historical checkout records. `POST /api/booking/checkout` is a noncanonical compatibility route: the current UI does not call it, but it remains technically capable of creating a Payment Link from a valid active hold. Operators must not invoke it for a new booking. A browser return is never proof of payment. All Square flows use the single signed webhook at `/api/webhooks/square`.
+
+Follow `docs/square-service-booking-setup.md` for credentials, subscriptions, sandbox verification, emergency stops, and reconciliation.
+
+## 6. Sanity and training scheduling
+
+Sanity remains appropriate for public/editorial content. For paid training intro calls, configure the training program's checkout fields, Google Appointment Schedule URL, display mode, and optional instructions in Studio. The schedule URL is revealed only after the app verifies a paid private enrollment token.
+
+Training Appointment Schedule links do not participate in service availability, resource holds, service payments, or service Calendar event creation. See `docs/booking-training-calendar-configuration-guide.md`. The optional training Afterpay invoice path is documented in `docs/training-afterpay-square-invoice.md`.
+
+Never store customer contact details, consent evidence, payment identifiers, holds, appointments, enrollment tokens, or transaction history in Sanity.
+
+## 7. Verification
+
+Run source checks before a deployment:
+
+```bash
 npm run lint
-npm run build
-npm test
 npm run test:unit
-node scripts/validate-sanity-env.mjs
+npm run check:square-card-on-file-env
+npm run build
 ```
 
-For local development, copy `.env.local.example` to `.env.local` and replace placeholders. If the development server uses a non-default port, make the local app origin and OAuth redirect URI use the same port.
-
-Generate database migrations only after intentional schema changes:
+Use `TEST_DATABASE_URL` from a protected environment when running DB-backed tests:
 
 ```bash
-npm run db:generate
+npm run test:unit:db
 ```
 
-The migration apply command is gated. Run `npm run db:migrate` only after following `docs/private-database-migration-runbook.md`, verifying `DATABASE_URL`, and receiving explicit approval for the target environment.
+Focused browser coverage for the current payment handoff is:
 
-## 3. Environment Variables
-
-Add these to the matching Vercel environment and local server-only configuration where needed.
-
-### Sanity
-
-```env
-NEXT_PUBLIC_SANITY_PROJECT_ID=3auncj84
-NEXT_PUBLIC_SANITY_DATASET=<staging-2026-05-10-or-production>
-NEXT_PUBLIC_SANITY_API_VERSION=2026-03-24
-SANITY_WRITE_TOKEN=<server-only-write-token>
-SANITY_WEBHOOK_SECRET=<signed-webhook-secret>
+```bash
+npx playwright test tests/booking-card-on-file-config.spec.ts --project=chromium
+npx playwright test tests/service-booking-payment-page.spec.ts --project=chromium
 ```
 
-Only `NEXT_PUBLIC_*` values are browser-visible. Keep write and webhook tokens server-only. Current form/contact writes use the private database, not a Sanity form token.
-
-### Email
-
-```env
-RESEND_API_KEY=<resend-api-key>
-RESEND_WEBHOOK_SECRET=<resend-webhook-signing-secret>
-RESEND_SEGMENT_MARKETING_ID=<all-marketing-segment-id>
-FROM_EMAIL=<verified-sender-address>
-ADMIN_EMAIL=<admin-recipient-address>
-```
-
-### Google Calendar Booking
-
-```env
-GOOGLE_CLIENT_ID=<oauth-client-id>
-GOOGLE_CLIENT_SECRET=<oauth-client-secret>
-GOOGLE_REDIRECT_URI=https://<domain>/api/booking/oauth/callback
-BOOKING_ADMIN_SETUP_SECRET=<long-random-setup-secret>
-```
-
-Use the target environment domain in `GOOGLE_REDIRECT_URI`. The value must exactly match the Google OAuth authorized redirect URI.
-
-### Upstash Redis
-
-```env
-KV_REST_API_URL=<upstash-redis-rest-url>
-KV_REST_API_TOKEN=<upstash-redis-rest-token>
-```
-
-The same Redis instance used during OAuth setup must be available to booking runtime routes.
-
-### Private Postgres And Checkout Secret
-
-```env
-DATABASE_URL=<server-only-pooled-postgres-url>
-CHECKOUT_SECRET_ENCRYPTION_KEY=<base64-encoded-32-byte-key>
-```
-
-Never prefix private values with `NEXT_PUBLIC_`. Do not paste real connection strings, tokens, customer data, or payment identifiers into docs, tickets, or chat.
-
-### Square (Service Booking, Product, And Training Checkout)
-
-```env
-SERVICE_BOOKING_SQUARE_ENABLED=false
-SQUARE_COMMERCE_ENABLED=false
-SQUARE_ENVIRONMENT=sandbox
-SQUARE_APPLICATION_ID=<square-application-id>
-SQUARE_ACCESS_TOKEN=<square-access-token>
-SQUARE_LOCATION_ID=<square-location-id>
-SQUARE_WEBHOOK_SIGNATURE_KEY=<square-webhook-signature-key>
-SQUARE_SERVICE_BOOKING_RETURN_URL=https://<domain>/api/booking/square/return
-SQUARE_SERVICE_BOOKING_WEBHOOK_URL=https://<domain>/api/webhooks/square
-```
-
-`SERVICE_BOOKING_SQUARE_ENABLED` gates service booking checkout; `SQUARE_COMMERCE_ENABLED` gates product and training checkout through the Square Web Payments SDK. Product and training checkout require these Square variables. Every Square flow (product, training, and service booking) reuses the single credential set above and posts to the one webhook at `SQUARE_SERVICE_BOOKING_WEBHOOK_URL`. `SQUARE_APPLICATION_ID` is public-safe and is served to the browser through `/api/checkout/square/config`; the access token and webhook signature key are server-only. Do not create `NEXT_PUBLIC_SQUARE_*` variables. In Vercel, scope sandbox Square values to Development and Preview, and scope production Square values to Production.
-
-## 4. Private Postgres Setup
-
-The private database stores checkout orders, payment events, appointment holds, training enrollments, paid training schedule token state, marketing contacts, contact submissions, consent events, and operational reconciliation state.
-
-1. Create separate staging and production databases, branches, or projects.
-2. Prefer a pooled server-side connection string for runtime `DATABASE_URL`.
-3. Enable automated backups and PITR for production if the provider supports it.
-4. Add staging `DATABASE_URL` only to staging/local staging contexts.
-5. Add production `DATABASE_URL` only to production contexts.
-6. Confirm the provider, project, branch, and host label without exposing the secret.
-7. Apply generated migrations only through `docs/private-database-migration-runbook.md`.
-
-Migration hard rules:
-
-- Verify `DATABASE_URL` before any migration command.
-- Run staging first and smoke test before production.
-- Do not use schema push in production.
-- Do not manually edit production schema to fix a failed migration.
-- Do not run migration scripts just to inspect behavior.
-
-## 5. Upstash Redis Setup
-
-Redis is used for:
-
-- Google Calendar OAuth refresh-token storage.
-- Calendar write locks.
-- Booking idempotency keys.
-- Short-lived scoped locks.
-
-Setup steps:
-
-1. Create a Redis database for staging and one for production, or otherwise isolate environments.
-2. Copy the REST URL and REST token into `KV_REST_API_URL` and `KV_REST_API_TOKEN`.
-3. Redeploy or restart the target app after adding variables.
-4. Connect Google Calendar OAuth after Redis variables are present; the refresh token is stored there.
-5. During smoke, confirm booking routes can read/write lock keys and that TTL behavior works.
-
-Redis is not canonical booking or payment storage. If Redis data is lost, reconnect OAuth and verify private DB state before accepting paid bookings.
-
-## 6. Google Cloud OAuth And Calendar
-
-Configure one Google Cloud project or one environment-specific project with:
-
-- Google Calendar API enabled.
-- OAuth consent screen.
-- OAuth 2.0 Client ID of type `Web application`.
-- Authorized redirect URI for each environment.
-
-Required Calendar scope:
-
-```text
-https://www.googleapis.com/auth/calendar.events
-```
-
-Redirect URI format:
-
-```text
-https://<domain>/api/booking/oauth/callback
-```
-
-Setup steps:
-
-1. In Google Cloud Console, enable Google Calendar API.
-2. Configure the OAuth consent screen and add the calendar owner as a test user if the app remains in testing.
-3. Create a Web Application OAuth client for the environment.
-4. Add the exact redirect URI for that environment.
-5. Add `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` to Vercel.
-6. Confirm `BOOKING_ADMIN_SETUP_SECRET` and Upstash Redis vars are present.
-7. Run the protected internal OAuth setup flow in the target environment using `BOOKING_ADMIN_SETUP_SECRET` from the secure secret manager (do not share the setup URL or include it in documentation).
-
-Expected result:
-
-1. The route validates the setup secret.
-2. Google asks the calendar owner to approve Calendar Events access.
-3. Google redirects back to the app callback route.
-4. The app stores the refresh token in Upstash Redis.
-5. The browser shows that Google Calendar booking OAuth is connected.
-
-Treat the setup URL as sensitive. Rotate `BOOKING_ADMIN_SETUP_SECRET` if the URL may have been logged or shared.
-
-## 7. Sanity Booking Configuration
-
-Sanity stores public booking configuration only. It must not store customer PII, holds, payment state, booking history, transaction records, or training eligibility state.
-
-### Booking Settings Singleton
-
-In Studio, configure the `bookingSettings` singleton:
-
-| Field                     | Setup guidance                                                               |
-| ------------------------- | ---------------------------------------------------------------------------- |
-| Google Calendar ID        | Use `primary` or the exact connected calendar ID.                            |
-| Availability Marker Title | Must match the title used for availability marker events in Google Calendar. |
-| Booking Horizon Days      | Choose how far out customers can book.                                       |
-| Minimum Lead Time Hours   | Choose the minimum notice before a slot can be booked.                       |
-| Booking Timezone          | Use `America/Toronto` unless the business operating timezone changes.        |
-| Marketing Opt-in Label    | Confirm approved customer-facing consent copy.                               |
-
-Add availability marker events to the connected Google Calendar using the configured marker title. Busy events and active private holds will block overlapping slots.
-
-### Bookable Services
-
-Create active `service` records for customer-selectable bookable services.
-
-Required fields:
-
-- Title, description, slug, active status.
-- Booking type: `in-person-appointment`.
-- Duration, slot interval, buffer before, buffer after.
-- Optional minimum lead-time override.
-- Deposit amount and full price in native CAD fields.
-- Display order.
-
-Native payment field rules:
-
-- Every paid bookable service requires both a positive deposit amount and a positive full price.
-- The deposit amount must be less than the full price.
-- Do not configure a service-level payment mode. The purchaser chooses deposit, full payment, or a custom amount at booking time.
-- Custom purchaser-entered amounts are valid only when they are greater than the deposit amount and less than the full price.
-- Legacy deposit/full product references are migration-only and must not be used for active booking checkout setup.
-
-After publishing `bookingSettings` or `service`, verify the Sanity webhook refreshes `/booking` in the target environment.
-
-## 8. Square Service Booking Setup
-
-Square is used only for paid service booking checkout. The current production-readiness focus is Square card-on-file intake plus Square invoice-based no-show enforcement. Square hosted checkout remains as a legacy/fallback path. Do not configure Square as a global checkout provider.
-
-1. Confirm the Square application, location, and environment for the target deployment.
-2. Add `SERVICE_BOOKING_SQUARE_ENABLED=true` only in environments where service booking checkout should use Square.
-3. Add `SQUARE_ENVIRONMENT` as `sandbox` for local/preview or `production` for live production.
-4. Add `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, and `SQUARE_WEBHOOK_SIGNATURE_KEY` as server-only variables.
-5. Configure the service booking return URL for the legacy/fallback hosted checkout path:
-
-```text
-https://<domain>/api/booking/square/return
-```
-
-6. Configure the Square webhook URL:
-
-```text
-https://<domain>/api/webhooks/square
-```
-
-7. Set `SQUARE_SERVICE_BOOKING_RETURN_URL` and `SQUARE_SERVICE_BOOKING_WEBHOOK_URL` to the exact deployed URLs.
-8. Redeploy after changing Square variables.
-
-Operational expectations:
-
-- Primary path: the customer keeps the custom Lash Her booking UI until the private hold exists, then tokenizes a card through Square Web Payments SDK and saves a Square card-on-file. A Square order and DRAFT invoice are created for the maximum authorized no-show amount; no-show enforcement publishes the invoice and charges the saved card only after staff confirmation or an approved automated rule.
-- Legacy/fallback path: when card-on-file intake is unavailable, the customer redirects to Square hosted checkout after the private hold exists.
-- Square browser return or invoice state alone is not proof of payment. Return routes and webhooks must reconcile server-side before finalization.
-- Verified Square payment or invoice finalization moves private order and hold state into paid Calendar-pending status.
-- The shared finalizer creates or finds exactly one Google Calendar API event.
-- Expired or conflicting paid service holds enter rebooking-first manual review. Verify a replacement slot before creating a Calendar event, and refund only after rebooking fails or staff chooses refund.
-
-## 9. Square Product And Training Checkout Setup
-
-Square is used for product checkout and training checkout through the Square Web Payments SDK, gated by `SQUARE_COMMERCE_ENABLED`. This reuses the Square credential set and single webhook configured in §8; there is no separate commerce webhook. Historical Helcim orders remain readable in Postgres (the `helcim` payment-provider enum value and `helcim_*` columns are retained), but no code path creates new Helcim payments.
-
-1. Confirm the Square application, location, and environment for the target deployment (the same Square account used for service booking).
-2. Add `SQUARE_COMMERCE_ENABLED=true` only in environments where product and training checkout should use Square.
-3. Confirm the shared Square server-only credentials from §8 are present: `SQUARE_ENVIRONMENT`, `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, and `SQUARE_WEBHOOK_SIGNATURE_KEY`.
-4. Confirm the public-safe `SQUARE_APPLICATION_ID` is present; it is served to the browser through the Web Payments SDK config route:
-
-```text
-https://<domain>/api/checkout/square/config
-```
-
-5. Confirm `SQUARE_SERVICE_BOOKING_WEBHOOK_URL` points to the single Square webhook that receives all Square events (product, training, and service booking):
-
-```text
-https://<domain>/api/webhooks/square
-```
-
-6. Redeploy after changing Square variables.
-
-Operational expectations:
-
-- The browser tokenizes the card with the Square Web Payments SDK; the server charges through the Square Payments API.
-- The access token and webhook signature key stay server-side; only `SQUARE_APPLICATION_ID` and the other public config values reach the browser.
-- Square webhook event IDs or idempotency keys are stored before state changes.
-- Browser card confirmation and webhook delivery may both verify the same product or training payment; finalization must remain idempotent.
-- Product checkout and training checkout require the Square commerce variables above.
-
-## 10. Resend Setup
-
-Use `docs/resend-transactional-email-setup.md` for the full manual Resend runbook.
-
-1. Verify the transactional sender domain in Resend, including the DNS records Resend requires for domain authentication and the domain owner's DMARC policy.
-2. Add server-only `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `RESEND_SEGMENT_MARKETING_ID`, `FROM_EMAIL`, and `ADMIN_EMAIL` to the target Vercel environment. Do not use `NEXT_PUBLIC_` for email secrets.
-3. Scope staging/preview values to Preview/Development and production values to Production.
-4. Apply `drizzle/0009_dashing_rocket_raccoon.sql` through `docs/private-database-migration-runbook.md` before relying on payment email recovery.
-5. Redeploy after changing email variables.
-6. Trigger staging emails for booking confirmation, paid training notification, product confirmation, contact, training contact, and contact popup flows.
-7. Record Resend message IDs/statuses, verified-domain evidence, and private DB sent-state evidence with addresses redacted.
-
-Email failures should be logged for follow-up. They should not roll back a booking, payment, or private DB write that already succeeded.
-
-## 11. Staging Smoke
-
-Complete staging smoke before production handoff.
-
-### Environment
-
-- [ ] `VERCEL_ENV=preview node scripts/validate-sanity-env.mjs` passes for staging variables.
-- [ ] Sanity dataset is `staging-2026-05-10`.
-- [ ] Private DB identity is verified in the provider dashboard.
-- [ ] Upstash Redis target is verified.
-- [ ] Google OAuth setup succeeds and stores the refresh token.
-- [ ] Square service booking variables are present only if service Square checkout is enabled.
-- [ ] Square webhook and return URLs target staging for service bookings.
-- [ ] The single Square webhook delivery URL (`/api/webhooks/square`) targets staging for product/training checkout.
-- [ ] Resend sender domain is verified.
-
-### Public Booking Entry
-
-- [ ] `/booking` loads in staging.
-- [ ] Active offerings appear from Sanity.
-- [ ] Availability loads from Google Calendar.
-- [ ] Direct `/api/booking/create` requests reject with the secure-payment-required error.
-- [ ] Marketing opt-in and no-opt-in booking paths write private audit evidence only.
-
-### Paid Service Booking
-
-Production-readiness focus (card-on-file / no-show invoice):
-
-- [ ] A hold is created for the selected paid service slot.
-- [ ] Square Web Payments SDK tokenizes a card and saves a Square card-on-file.
-- [ ] A Square order and DRAFT invoice are created for the maximum authorized no-show amount.
-- [ ] No-show invoice publish and card charge are gated by staff confirmation or an approved automated rule.
-- [ ] Square webhook or API reconciliation verifies invoice/payment state before finalization.
-- [ ] Square sandbox/test payment marks the private order paid.
-- [ ] The hold is booked or moved to `paid_unbookable_rebooking_pending`.
-- [ ] The Calendar event exists exactly once.
-- [ ] Webhook retry or duplicate processing does not create duplicate bookings.
-
-Legacy/fallback smoke (Square hosted checkout):
-
-- [ ] A hold is created for the selected paid service slot.
-- [ ] Square hosted checkout initializes for the hold.
-- [ ] Square return alone does not finalize until server-side reconciliation verifies payment.
-- [ ] Square sandbox/test payment marks the private order paid.
-- [ ] The hold is booked or moved to `paid_unbookable_rebooking_pending`.
-- [ ] The Calendar event exists exactly once.
-- [ ] Webhook retry or browser return duplication does not create duplicate bookings.
-
-### Paid Training
-
-- [ ] Training checkout creates a paid private enrollment/order.
-- [ ] Square Web Payments verifies the training payment.
-- [ ] Customer email copy points to the tokenized paid training schedule path.
-- [ ] Invalid, unpaid, expired, or wrong-program tokens do not reveal the Google Appointment Schedule URL.
-- [ ] Valid token eligibility renders the Google Appointment Schedule link or embed.
-- [ ] Rendering the schedule page does not mark the private enrollment scheduled.
-
-### Sanity And Privacy
-
-- [ ] Publishing `bookingSettings` refreshes `/booking`.
-- [ ] Publishing `service` refreshes `/booking`.
-- [ ] No new checkout, booking, form, marketing, consent, payment, or training private records are written to Sanity.
-- [ ] Evidence is redacted and excludes secrets, PII, payment tokens, raw webhook bodies, and full connection strings.
-
-## 12. Production Handoff
-
-Production setup can proceed only after staging smoke passes.
-
-Record:
-
-| Evidence                                                                           | Status |
-| ---------------------------------------------------------------------------------- | ------ |
-| Staging smoke completed                                                            |        |
-| Production Sanity dataset verified                                                 |        |
-| Production private DB identity verified                                            |        |
-| Production backup/PITR verified                                                    |        |
-| Production migration approval recorded if needed                                   |        |
-| Production Upstash Redis verified                                                  |        |
-| Production Google OAuth connected                                                  |        |
-| Production Square service booking return and webhook configured if enabled         |        |
-| Production Square product/training checkout configured (`SQUARE_COMMERCE_ENABLED`) |        |
-| Production Resend sender verified                                                  |        |
-| Business/privacy owner confirmed                                                   |        |
-| Post-contract operator/vendor recorded                                             |        |
-
-Production stop conditions:
-
-- Target database identity cannot be verified.
-- Backup/PITR is missing before an approved migration window.
-- Required payment, calendar, Redis, or email secrets are absent.
-- Sanity is storing new private operational records.
-- Paid service booking finalization cannot create Calendar events.
-- Square service webhook signatures cannot be verified when service Square checkout is enabled.
-- Square commerce (product/training) webhook signatures cannot be verified.
-- No operator is named for private-record follow-up.
-
-## Related Documents
+In Square sandbox, verify one real provider flow in staging:
+
+- `/booking` redirects to the intended canonical service route.
+- The hold response contains an opaque payment URL and no customer/payment fields were sent to the hold endpoint.
+- The payment page tokenizes with `CHARGE_AND_STORE` and calls `/api/booking/payment/confirm`.
+- The response reports a captured payment and either a booked appointment or an explicit manual-follow-up state.
+- PostgreSQL contains one payment/appointment outcome and Google Calendar contains one event.
+- Duplicate submission, webhook delivery, and reconciliation do not create a second charge, appointment, or event.
+- With direct payment disabled, new sessions fail closed while an existing historical hosted record can still be reconciled.
+
+Use `docs/booking-system-runbook.md` for operator checks, incident handling, no-show actions, and stop conditions. Use `docs/launch-readiness-checklist.md` for the broader release smoke matrix.
+
+## Production handoff
+
+Do not enable production booking until all of the following are true:
+
+- Database migration checks pass against the production target.
+- `/admin/setup` has no unresolved readiness issues for the resources being activated.
+- Production Auth.js and Calendar OAuth redirect URIs match the deployed origin.
+- Each active provider has a healthy encrypted Calendar connection, canonical destination Calendar, schedule, active offering, and valid Square team mapping where required.
+- Production Square credentials, location, application ID, webhook URL, and signature key are from the same application/environment.
+- The shared webhook verifies signatures and the 30-minute payment-reconciliation cron is authorized.
+- Square sandbox staging tests prove capture, saved-card/policy evidence, idempotent finalization, Calendar projection, and a controlled failure path.
+- Transactional emails and private consent records are verified without writing PII to Sanity or release artifacts.
+
+Related current documents:
 
 - `docs/booking-system-runbook.md`
-- `docs/booking-system-architecture-reference.md`
-- `docs/booking-payment-provider-split.md`
+- `docs/booking-operations-dashboard.md`
 - `docs/google-calendar-oauth-env-setup.md`
+- `docs/booking-training-calendar-configuration-guide.md`
+- `docs/square-service-booking-setup.md`
 - `docs/private-database-migration-runbook.md`
+- `docs/training-afterpay-square-invoice.md`
 - `docs/resend-transactional-email-setup.md`
 - `docs/launch-readiness-checklist.md`

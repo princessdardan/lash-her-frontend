@@ -14,6 +14,8 @@ RESEND_WEBHOOK_SECRET=<webhook-signing-secret>
 RESEND_SEGMENT_MARKETING_ID=<all-marketing-segment-id>
 FROM_EMAIL=<verified-sender-address>
 ADMIN_EMAIL=<admin-recipient-address>
+CRON_SECRET=<long-random-vercel-cron-secret>
+RESEND_MARKETING_SYNC_CRON_SECRET=<distinct-long-random-marketing-sync-secret>
 ```
 
 Optional, but recommended when admins want dashboard-managed campaigns:
@@ -91,7 +93,7 @@ Segments are used for dashboard targeting and broadcast audiences.
    - `Legacy Sanity backfill` -> `RESEND_SEGMENT_SANITY_BACKFILL_ID`
    - `Training inquiries` -> `RESEND_SEGMENT_TRAINING_CONTACT_ID`
 
-The app creates/updates Resend contacts only after it has written private consent evidence. Non-opt-ins remain in the private database and are not synced to Resend as marketing contacts.
+The app creates/updates Resend contacts only after it has transactionally written private consent evidence and a `marketing_contact_sync_jobs` row. The scheduled sync worker processes those jobs every five minutes. Non-opt-ins remain in the private database and are not synced to Resend as marketing contacts.
 
 ## Step 5: Create Topics For Unsubscribe Preferences
 
@@ -194,9 +196,10 @@ For each environment:
 
 1. Open the Vercel project settings.
 2. Add the required Resend variables as server-only environment variables.
-3. Scope staging values to Preview/Development and production values to Production.
-4. Add optional template/segment/topic/event variables only after the matching Resend resource exists.
-5. Redeploy the target environment after changing env vars.
+3. Add `CRON_SECRET` and a distinct `RESEND_MARKETING_SYNC_CRON_SECRET`. The route-specific secret is mandatory to enable `/api/admin/marketing-contact-sync`; when it exists, the route also accepts the generic `CRON_SECRET` sent by Vercel Cron.
+4. Scope staging values to Preview/Development and production values to Production.
+5. Add optional template/segment/topic/event variables only after the matching Resend resource exists.
+6. Redeploy the target environment after changing env vars.
 
 Never add Resend keys or webhook secrets as `NEXT_PUBLIC_*` variables.
 
@@ -226,13 +229,16 @@ VERCEL_ENV=preview node scripts/validate-sanity-env.mjs
 
 2. Submit an opted-in general inquiry and confirm:
    - Private DB consent evidence exists.
-   - The contact appears in Resend.
+   - A `marketing_contact_sync_jobs` row exists and reaches `succeeded` after the scheduled worker runs.
+   - The contact then appears in Resend.
    - The contact is in `RESEND_SEGMENT_MARKETING_ID`.
 3. Submit a contact popup and confirm optional source segment/topic assignment if configured.
 4. Trigger a test unsubscribe in Resend and confirm the private consent ledger records an unsubscribe.
 5. Send a staging transactional email for a configured dashboard template and confirm Resend accepted the message.
 6. Remove one optional template ID and confirm the fallback HTML path still sends.
-7. Record only redacted message IDs, resource IDs, and pass/fail evidence.
+7. Run `DOTENV_CONFIG_PATH=<protected-env-file> npm run marketing:inspect-sync` against the intended protected environment and confirm no unexpected retryable or dead-letter jobs remain. `npm run marketing:requeue-sync-failures` is a dry run by default; review its count and fix the cause before any approved `-- --execute` run.
+8. Confirm `GET /api/cron/customer-email-outbox` is scheduled and authorized by `CRON_SECRET`, and that queued product/shipping email reaches `sent` in `customer_email_outbox`.
+9. Record only redacted message IDs, resource IDs, job counts, and pass/fail evidence.
 
 ## Troubleshooting
 
@@ -248,7 +254,9 @@ If contacts do not sync:
 1. Confirm the user explicitly opted into marketing.
 2. Confirm `RESEND_SEGMENT_MARKETING_ID` exists in Resend.
 3. Confirm `RESEND_API_KEY` has permission to manage contacts/segments/topics/events.
-4. Check Vercel logs for `[marketing-contact] Resend contact sync failed`.
+4. Confirm both `RESEND_MARKETING_SYNC_CRON_SECRET` and `CRON_SECRET` are configured. `CRON_SECRET` alone does not enable the route and produces `404`.
+5. Inspect `marketing_contact_sync_jobs` through `npm run marketing:inspect-sync`; a `200` cron response can still report `failedToClaim`, `retryableFailed`, or `deadLettered` work.
+6. Check Vercel logs for `[marketing-contact-sync]` warnings or errors.
 
 If unsubscribes do not sync back:
 
@@ -257,3 +265,5 @@ If unsubscribes do not sync back:
 3. Confirm `RESEND_WEBHOOK_SECRET` matches the webhook signing secret.
 4. Confirm Resend is sending `svix-id`, `svix-timestamp`, and `svix-signature` headers.
 5. Check Vercel logs for `[resend-webhook]` warnings or errors.
+
+See `docs/scheduled-jobs-runbook.md` for the authoritative cron cadence, bearer requirements, disabled behavior, and response checks.

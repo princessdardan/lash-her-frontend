@@ -5,19 +5,19 @@ const helperScript = String.raw`
   import assert from "node:assert/strict";
 
   import {
+    buildContactPopupOfferProviderIdempotencyKey,
     CONTACT_POPUP_CONSENT_TEXT,
     createMarketingContactStore,
     GENERAL_INQUIRY_CONSENT_TEXT,
-    type MarketingContactPersistenceInput,
-    type MarketingContactRepository,
   } from "./src/lib/marketing-contact/marketing-contact-store.ts";
+  import { buildContactPopupOfferDedupeKeys } from "./src/lib/marketing-contact/contact-popup-offer-dedupe.ts";
 
-  class FakeMarketingContactRepository implements MarketingContactRepository {
-    readonly records = [];
-    readonly unsubscribes = [];
-    readonly syncJobs = [];
+  class FakeMarketingContactRepository {
+    records = [];
+    unsubscribes = [];
+    syncJobs = [];
 
-    async recordMarketingContact(input: MarketingContactPersistenceInput): Promise<{ submissionId: string; syncJobId?: string }> {
+    async recordMarketingContact(input) {
       const submissionId = "marketing-submission-" + (this.records.length + 1);
       this.records.push(input);
 
@@ -49,10 +49,7 @@ const helperScript = String.raw`
     }
   }
 
-  function createFakeStore(dependencies = {}): {
-    repository: FakeMarketingContactRepository;
-    store: ReturnType<typeof createMarketingContactStore>;
-  } {
+  function createFakeStore(dependencies = {}) {
     const repository = new FakeMarketingContactRepository();
     return {
       repository,
@@ -141,6 +138,153 @@ test("marketing contact store treats popup submissions as affirmative marketing 
     assert.ok(record.contact);
     assert.equal(record.contact.emailNormalized, "subscriber@example.com");
     assert.equal(record.event.eventType, "opt_in");
+  `);
+});
+
+test("marketing contact store passes an immutable popup offer snapshot to persistence", () => {
+  runMarketingContactStoreScenario(`
+    const { repository, store } = createFakeStore();
+    const signupOffer = {
+      promotionId: "promotion-1",
+      promotionRevision: "revision-1",
+      promotionCode: "WELCOME20",
+      discountType: "percentage",
+      discountAmount: 20,
+      appliesTo: "all",
+      offerLabel: "Welcome offer",
+      offerTerms: "Valid on products and training programs.",
+      ctaLabel: "Shop now",
+      ctaUrl: "https://lashher.com/products",
+      resolvedAt: "2026-08-31T12:00:00.000Z",
+    };
+
+    await store.recordContactPopup({
+      email: "subscriber@example.com",
+      signupOffer,
+      variant: "emailOnly",
+    });
+
+    assert.deepEqual(repository.records[0].contactPopupOffer, {
+      snapshot: signupOffer,
+      variant: "emailOnly",
+    });
+  `);
+});
+
+test("popup offer suppression keys are normalized, deterministic keyed digests", () => {
+  runMarketingContactStoreScenario(`
+    delete process.env.CONTACT_POPUP_OFFER_DEDUPE_CURRENT_KEY;
+    delete process.env.CONTACT_POPUP_OFFER_DEDUPE_PREVIOUS_KEYS;
+    delete process.env.CONTACT_POPUP_OFFER_DEDUPE_LEGACY_CHECKOUT_KEYS;
+    process.env.CHECKOUT_SECRET_ENCRYPTION_KEY = Buffer.alloc(32, 17).toString("base64");
+    process.env.NEXT_PUBLIC_SANITY_DATASET = "staging-2026-05-10";
+    process.env.VERCEL_ENV = "preview";
+
+    const first = buildContactPopupOfferProviderIdempotencyKey({
+      emailNormalized: " Subscriber@Example.COM ",
+      promotionId: " promotion-1 ",
+    });
+    const normalized = buildContactPopupOfferProviderIdempotencyKey({
+      emailNormalized: "subscriber@example.com",
+      promotionId: "promotion-1",
+    });
+    const otherPromotion = buildContactPopupOfferProviderIdempotencyKey({
+      emailNormalized: "subscriber@example.com",
+      promotionId: "promotion-2",
+    });
+    process.env.VERCEL_ENV = "production";
+    process.env.NEXT_PUBLIC_SANITY_DATASET = "production";
+    const production = buildContactPopupOfferProviderIdempotencyKey({
+      emailNormalized: "subscriber@example.com",
+      promotionId: "promotion-1",
+    });
+
+    assert.equal(first, normalized);
+    assert.equal(
+      first,
+      "contact-popup-offer:0eff866832c7384725ef1aa09d532967cb593dd1ac8d50d9c3eb5e8086cd6597",
+    );
+    assert.notEqual(first, otherPromotion);
+    assert.notEqual(first, production);
+    assert.match(first, /^contact-popup-offer:[0-9a-f]{64}$/);
+    assert.equal(first.includes("subscriber@example.com"), false);
+  `);
+});
+
+test("popup offer dedupe recognizes retained dedicated and legacy keys across rotations", () => {
+  runMarketingContactStoreScenario(`
+    const legacyCheckoutKey = Buffer.alloc(32, 11).toString("base64");
+    const rotatedCheckoutKey = Buffer.alloc(32, 12).toString("base64");
+    const dedicatedV1Key = Buffer.alloc(32, 21).toString("base64");
+    const dedicatedV2Key = Buffer.alloc(32, 22).toString("base64");
+    const identity = {
+      emailNormalized: " Subscriber@Example.COM ",
+      promotionId: " promotion-1 ",
+    };
+    process.env.NEXT_PUBLIC_SANITY_DATASET = "production";
+    process.env.VERCEL_ENV = "production";
+    delete process.env.CONTACT_POPUP_OFFER_DEDUPE_CURRENT_KEY;
+    delete process.env.CONTACT_POPUP_OFFER_DEDUPE_PREVIOUS_KEYS;
+    delete process.env.CONTACT_POPUP_OFFER_DEDUPE_LEGACY_CHECKOUT_KEYS;
+
+    process.env.CHECKOUT_SECRET_ENCRYPTION_KEY = legacyCheckoutKey;
+    const legacyGrant = buildContactPopupOfferDedupeKeys(identity);
+
+    process.env.CHECKOUT_SECRET_ENCRYPTION_KEY = rotatedCheckoutKey;
+    process.env.CONTACT_POPUP_OFFER_DEDUPE_LEGACY_CHECKOUT_KEYS = legacyCheckoutKey;
+    const checkoutRotation = buildContactPopupOfferDedupeKeys(identity);
+    assert.notEqual(
+      checkoutRotation.primaryProviderIdempotencyKey,
+      legacyGrant.primaryProviderIdempotencyKey,
+    );
+    assert.ok(
+      checkoutRotation.candidateProviderIdempotencyKeys.includes(
+        legacyGrant.primaryProviderIdempotencyKey,
+      ),
+    );
+
+    process.env.CONTACT_POPUP_OFFER_DEDUPE_PREVIOUS_KEYS = "v1:" + dedicatedV1Key;
+    const stagedDedicatedKey = buildContactPopupOfferDedupeKeys(identity);
+    process.env.CONTACT_POPUP_OFFER_DEDUPE_CURRENT_KEY = "v1:" + dedicatedV1Key;
+    delete process.env.CONTACT_POPUP_OFFER_DEDUPE_PREVIOUS_KEYS;
+    const dedicatedV1Grant = buildContactPopupOfferDedupeKeys(identity);
+    assert.ok(
+      stagedDedicatedKey.candidateProviderIdempotencyKeys.includes(
+        dedicatedV1Grant.primaryProviderIdempotencyKey,
+      ),
+    );
+    process.env.CONTACT_POPUP_OFFER_DEDUPE_CURRENT_KEY = "v2:" + dedicatedV2Key;
+    process.env.CONTACT_POPUP_OFFER_DEDUPE_PREVIOUS_KEYS = "v1:" + dedicatedV1Key;
+    const dedicatedRotation = buildContactPopupOfferDedupeKeys(identity);
+    assert.ok(
+      dedicatedRotation.candidateProviderIdempotencyKeys.includes(
+        dedicatedV1Grant.primaryProviderIdempotencyKey,
+      ),
+    );
+
+    const stablePrimary = dedicatedRotation.primaryProviderIdempotencyKey;
+    process.env.CHECKOUT_SECRET_ENCRYPTION_KEY = Buffer.alloc(32, 13).toString("base64");
+    assert.equal(
+      buildContactPopupOfferDedupeKeys(identity).primaryProviderIdempotencyKey,
+      stablePrimary,
+    );
+    assert.equal(stablePrimary.includes("subscriber@example.com"), false);
+  `);
+});
+
+test("popup offer dedupe keyring rejects duplicate versions", () => {
+  runMarketingContactStoreScenario(`
+    const key = Buffer.alloc(32, 31).toString("base64");
+    process.env.CONTACT_POPUP_OFFER_DEDUPE_CURRENT_KEY = "v2:" + key;
+    process.env.CONTACT_POPUP_OFFER_DEDUPE_PREVIOUS_KEYS = "v2:" + key;
+
+    assert.throws(
+      () => buildContactPopupOfferDedupeKeys({
+        emailNormalized: "subscriber@example.com",
+        promotionId: "promotion-1",
+      }),
+      /duplicate key version: v2/,
+    );
   `);
 });
 
@@ -341,8 +485,15 @@ function runMarketingContactStoreScenario(assertions: string): void {
   env.NEXT_PUBLIC_SANITY_PROJECT_ID = "test-project";
 
   execFileSync(
-    "./node_modules/.bin/tsx",
-    ["--conditions=react-server", "--eval", scenario],
+    process.execPath,
+    [
+      "--conditions=react-server",
+      "--import",
+      "tsx",
+      "--input-type=module",
+      "--eval",
+      scenario,
+    ],
     {
       cwd: process.cwd(),
       env,

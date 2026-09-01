@@ -9,7 +9,7 @@ const helperScript = String.raw`
   } from "./src/lib/marketing-contact/marketing-contact-sync-worker.ts";
   import { ResendContactSyncError } from "./src/lib/resend-platform.ts";
 
-  function createFakeRepository(initialJobs = []) {
+  function createFakeRepository(initialJobs = [], overrides = {}) {
     const jobs = new Map();
     for (const job of initialJobs) {
       jobs.set(job.id, { ...job });
@@ -49,6 +49,10 @@ const helperScript = String.raw`
           payload: job.payload,
           status: job.status,
         }));
+      },
+
+      async isContactSubscribed() {
+        return true;
       },
 
       async markJobSucceeded({ jobId, lockedBy }) {
@@ -91,13 +95,17 @@ const helperScript = String.raw`
         }
         return 0;
       },
+      ...overrides,
     };
 
     return { repository, jobs, operations };
   }
 
-  function createWorker(overrides = {}, initialJobs = []) {
-    const { repository, jobs, operations } = createFakeRepository(initialJobs);
+  function createWorker(overrides = {}, initialJobs = [], repositoryOverrides = {}) {
+    const { repository, jobs, operations } = createFakeRepository(
+      initialJobs,
+      repositoryOverrides,
+    );
     const syncCalls = [];
     const warnings = [];
     const errors = [];
@@ -325,6 +333,115 @@ test("worker routes unsubscribe_sync jobs to the unsubscribe push", () => {
   `);
 });
 
+test("worker compensates when an unsubscribe commits during an in-flight opt-in", () => {
+  runWorkerScenario(`
+    const callOrder = [];
+    let subscribed = true;
+    const unsubscribeCalls = [];
+    const { run, jobs, warnings } = createWorker({
+      syncContact: async () => {
+        callOrder.push("provider_opt_in");
+        subscribed = false;
+        const job = jobs.get("job-1");
+        job.status = "skipped_unconfigured";
+        job.lockedBy = null;
+      },
+      unsubscribeContact: async (input) => {
+        callOrder.push("provider_unsubscribe");
+        unsubscribeCalls.push(input);
+      },
+    }, [createSampleJob()], {
+      isContactSubscribed: async ({ emailNormalized }) => {
+        callOrder.push("subscription_recheck:" + emailNormalized);
+        return subscribed;
+      },
+    });
+
+    const summary = await run();
+
+    assert.deepEqual(callOrder, [
+      "provider_opt_in",
+      "subscription_recheck:subscriber@example.com",
+      "provider_unsubscribe",
+    ]);
+    assert.deepEqual(unsubscribeCalls, [{ email: "subscriber@example.com" }]);
+    assert.equal(summary.succeeded, 0);
+    assert.equal(jobs.get("job-1").status, "skipped_unconfigured");
+    assert.ok(warnings.some((warning) =>
+      warning.message.includes("Stale lock or status mismatch")
+    ));
+  `);
+});
+
+test("worker does not compensate while PostgreSQL still records active consent", () => {
+  runWorkerScenario(`
+    const unsubscribeCalls = [];
+    const { run } = createWorker({
+      unsubscribeContact: async (input) => { unsubscribeCalls.push(input); },
+    }, [createSampleJob({
+      payload: {
+        consentedAt: "2026-05-10T12:00:00.000Z",
+        email: " Subscriber@Example.com ",
+        source: "general_inquiry",
+      },
+    })], {
+      isContactSubscribed: async ({ emailNormalized }) => {
+        assert.equal(emailNormalized, "subscriber@example.com");
+        return true;
+      },
+    });
+
+    const summary = await run();
+
+    assert.equal(summary.succeeded, 1);
+    assert.equal(unsubscribeCalls.length, 0);
+  `);
+});
+
+test("worker compensates and retries when the post-opt-in state recheck fails", () => {
+  runWorkerScenario(`
+    const callOrder = [];
+    const { run, jobs } = createWorker({
+      syncContact: async () => { callOrder.push("provider_opt_in"); },
+      unsubscribeContact: async () => { callOrder.push("provider_unsubscribe"); },
+    }, [createSampleJob()], {
+      isContactSubscribed: async () => {
+        callOrder.push("subscription_recheck");
+        throw new Error("Database unavailable");
+      },
+    });
+
+    const summary = await run();
+
+    assert.deepEqual(callOrder, [
+      "provider_opt_in",
+      "subscription_recheck",
+      "provider_unsubscribe",
+    ]);
+    assert.equal(summary.succeeded, 0);
+    assert.equal(summary.retryableFailed, 1);
+    assert.equal(jobs.get("job-1").status, "retryable_failed");
+  `);
+});
+
+test("worker retries when compensating unsubscribe fails", () => {
+  runWorkerScenario(`
+    const { run, jobs } = createWorker({
+      unsubscribeContact: async () => {
+        throw new Error("Resend unsubscribe failed");
+      },
+    }, [createSampleJob()], {
+      isContactSubscribed: async () => false,
+    });
+
+    const summary = await run();
+
+    assert.equal(summary.succeeded, 0);
+    assert.equal(summary.retryableFailed, 1);
+    assert.equal(jobs.get("job-1").status, "retryable_failed");
+  `);
+});
+
 function runWorkerScenario(assertions: string): void {
   const scenario = `${helperScript}\nvoid (async () => {\n${assertions}\n})()`;
   const env = { ...process.env };
@@ -334,8 +451,8 @@ function runWorkerScenario(assertions: string): void {
   delete env.RESEND_API_KEY;
 
   execFileSync(
-    "./node_modules/.bin/tsx",
-    ["--conditions=react-server", "--eval", scenario],
+    process.execPath,
+    ["--import", "tsx", "--conditions=react-server", "--eval", scenario],
     {
       cwd: process.cwd(),
       env,

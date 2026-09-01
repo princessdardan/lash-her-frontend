@@ -10,6 +10,7 @@ const helperScript = String.raw`
   import {
     buildResendTemplateDefinitions,
     seedResendTemplates,
+    updateAndPublishContactPopupCustomerTemplate,
   } from "./src/lib/resend-template-seeding.ts";
   import { getFormEmailTemplateVariables } from "./src/lib/email.ts";
   import { toResendTemplateVariables } from "./src/lib/resend-platform.ts";
@@ -107,6 +108,15 @@ test("Resend seed payloads include template metadata, placeholders, and variable
     assert.equal(contactPopupAdmin.payload.html.includes("{{{SOURCE_PATH}}}"), true);
     assert.equal(contactPopupAdmin.payload.html.includes("/contact-popup"), false);
 
+    const contactPopupCustomer = findDefinition(definitions, "contact_popup_customer");
+    assert.equal(contactPopupCustomer.payload.html.includes("{{{SIGNUP_OFFER_HTML}}}"), true);
+    assert.deepEqual(findVariable(contactPopupCustomer, "SIGNUP_OFFER_HTML"), {
+      fallbackValue: "",
+      key: "SIGNUP_OFFER_HTML",
+      type: "string",
+    });
+    assert.equal(contactPopupCustomer.payload.html.includes("WELCOME20"), false);
+
     const product = findDefinition(definitions, "product_confirmation");
     assert.equal(product.envVar, "RESEND_TEMPLATE_PRODUCT_CONFIRMATION_ID");
     assert.equal(product.payload.subject, "{{{EMAIL_SUBJECT}}}");
@@ -193,6 +203,7 @@ test("runtime form template variables avoid seeded sample fallbacks", () => {
     assert.equal(contactPopupVariables.CUSTOMER_INSTAGRAM, "");
     assert.equal(contactPopupVariables.CUSTOMER_NAME, "a visitor");
     assert.equal(contactPopupVariables.SOURCE_PATH, "");
+    assert.equal(contactPopupVariables.SIGNUP_OFFER_HTML, "");
     assert.equal(contactPopupVariables.SUBMITTED_AT, "Monday, June 15, 2026 at 10:30 AM");
     assert.equal(Object.values(contactPopupVariables).includes("Riley Popup"), false);
     assert.equal(Object.values(contactPopupVariables).includes("subscriberpopup"), false);
@@ -346,6 +357,233 @@ test("Resend template apply mode creates then publishes and prints env mappings"
     assert.equal(logs.some((message) => message === "RESEND_TEMPLATE_BOOKING_CONFIRMATION_ID=" + results[0].id), true);
     assert.equal(logs.some((message) => message === "RESEND_TEMPLATE_TRAINING_PAYMENT_CUSTOMER_ID=" + results[10].id), true);
   `);
+});
+
+test("contact popup customer template update completes before publish", () => {
+  runResendTemplateSeedScenario(`
+    const calls = [];
+    let published = false;
+    let updatedInput;
+
+    await updateAndPublishContactPopupCustomerTemplate({
+      dependencies: {
+        getTemplate: async (id) => {
+          calls.push({ id, type: "get" });
+
+          if (published) {
+            return {
+              id,
+              name: updatedInput.name,
+              status: "published",
+              html: updatedInput.html,
+              text: updatedInput.text,
+              subject: updatedInput.subject,
+              has_unpublished_versions: false,
+              variables: updatedInput.variables.map(({ fallbackValue, key, type }) => ({
+                fallback_value: fallbackValue,
+                key,
+                type,
+              })),
+            };
+          }
+
+          return {
+            id,
+            name: "Lash Her contact popup customer reply",
+            status: "published",
+            html: "<p>Existing popup template</p>",
+            text: "Existing generic-only text",
+            subject: "Welcome to Lash Her",
+            has_unpublished_versions: false,
+            variables: [],
+          };
+        },
+        publishTemplate: async (id) => {
+          calls.push({ id, type: "publish" });
+          published = true;
+          return { id };
+        },
+        updateTemplate: async (id, input) => {
+          calls.push({ id, input, type: "update" });
+          updatedInput = input;
+          return { id };
+        },
+      },
+      templateId: "  template-contact-popup-customer  ",
+    });
+
+    assert.deepEqual(calls.map(({ type }) => type), ["get", "update", "publish", "get"]);
+    assert.equal(calls[1].id, "template-contact-popup-customer");
+    assert.equal(calls[2].id, "template-contact-popup-customer");
+    assert.equal(calls[1].input.html.includes("{{{SIGNUP_OFFER_HTML}}}"), true);
+    assert.equal(calls[1].input.text, null);
+    assert.equal(
+      calls[1].input.variables.some(({ key, fallbackValue }) =>
+        key === "SIGNUP_OFFER_HTML" && fallbackValue === ""),
+      true,
+    );
+  `);
+});
+
+test("contact popup customer template update requires a configured template id", () => {
+  runResendTemplateSeedScenario(`
+    delete process.env.RESEND_TEMPLATE_CONTACT_POPUP_CUSTOMER_ID;
+    const calls = [];
+
+    await assert.rejects(
+      updateAndPublishContactPopupCustomerTemplate({
+        dependencies: {
+          getTemplate: async () => {
+            calls.push("get");
+            throw new Error("unexpected");
+          },
+          publishTemplate: async () => {
+            calls.push("publish");
+            return { id: "unexpected" };
+          },
+          updateTemplate: async () => {
+            calls.push("update");
+            return { id: "unexpected" };
+          },
+        },
+      }),
+      /RESEND_TEMPLATE_CONTACT_POPUP_CUSTOMER_ID is required/,
+    );
+    assert.deepEqual(calls, []);
+  `);
+});
+
+test("contact popup customer template update refuses a mismatched configured template", () => {
+  runResendTemplateSeedScenario(`
+    const calls = [];
+
+    await assert.rejects(
+      updateAndPublishContactPopupCustomerTemplate({
+        dependencies: {
+          getTemplate: async (id) => ({
+            id,
+            name: "Lash Her product order confirmation",
+            status: "published",
+            html: "<p>Product order</p>",
+            text: null,
+            subject: "Product order",
+            has_unpublished_versions: false,
+            variables: [],
+          }),
+          publishTemplate: async () => {
+            calls.push("publish");
+            return { id: "unexpected" };
+          },
+          updateTemplate: async () => {
+            calls.push("update");
+            return { id: "unexpected" };
+          },
+        },
+        templateId: "template-wrong-purpose",
+      }),
+      /is not the Lash Her contact popup customer template/,
+    );
+    assert.deepEqual(calls, []);
+  `);
+});
+
+test("contact popup customer template update refuses unsafe preflight state", () => {
+  for (const state of [
+    { hasUnpublishedVersions: false, status: "draft" },
+    { hasUnpublishedVersions: true, status: "published" },
+  ]) {
+    runResendTemplateSeedScenario(`
+      const calls = [];
+
+      await assert.rejects(
+        updateAndPublishContactPopupCustomerTemplate({
+          dependencies: {
+            getTemplate: async (id) => ({
+              id,
+              name: "Lash Her contact popup customer reply",
+              status: ${JSON.stringify(state.status)},
+              html: "<p>Existing popup template</p>",
+              text: "Existing generic-only text",
+              subject: "Welcome to Lash Her",
+              has_unpublished_versions: ${state.hasUnpublishedVersions},
+              variables: [],
+            }),
+            publishTemplate: async () => {
+              calls.push("publish");
+              return { id: "unexpected" };
+            },
+            updateTemplate: async () => {
+              calls.push("update");
+              return { id: "unexpected" };
+            },
+          },
+          templateId: "template-contact-popup-customer",
+        }),
+        /is not safe to update/,
+      );
+      assert.deepEqual(calls, []);
+    `);
+  }
+});
+
+test("contact popup customer template update verifies published HTML, text, and variables", () => {
+  for (const mismatch of ["html", "text", "variables"]) {
+    runResendTemplateSeedScenario(`
+      let getCount = 0;
+      let updatedInput;
+
+      await assert.rejects(
+        updateAndPublishContactPopupCustomerTemplate({
+          dependencies: {
+            getTemplate: async (id) => {
+              getCount += 1;
+
+              if (getCount === 1) {
+                return {
+                  id,
+                  name: "Lash Her contact popup customer reply",
+                  status: "published",
+                  html: "<p>Existing popup template</p>",
+                  text: "Existing generic-only text",
+                  subject: "Welcome to Lash Her",
+                  has_unpublished_versions: false,
+                  variables: [],
+                };
+              }
+
+              const variables = updatedInput.variables.map(({ fallbackValue, key, type }) => ({
+                fallback_value: fallbackValue,
+                key,
+                type,
+              }));
+              if (${JSON.stringify(mismatch)} === "variables") {
+                const offerVariable = variables.find(({ key }) => key === "SIGNUP_OFFER_HTML");
+                offerVariable.fallback_value = "stale offer";
+              }
+
+              return {
+                id,
+                name: updatedInput.name,
+                status: "published",
+                html: ${JSON.stringify(mismatch)} === "html" ? "<p>stale HTML</p>" : updatedInput.html,
+                text: ${JSON.stringify(mismatch)} === "text" ? "stale generic text" : updatedInput.text,
+                subject: updatedInput.subject,
+                has_unpublished_versions: false,
+                variables,
+              };
+            },
+            publishTemplate: async (id) => ({ id }),
+            updateTemplate: async (id, input) => {
+              updatedInput = input;
+              return { id };
+            },
+          },
+          templateId: "template-contact-popup-customer",
+        }),
+        /failed verification/,
+      );
+    `);
+  }
 });
 
 function runResendTemplateSeedScenario(assertions: string): void {

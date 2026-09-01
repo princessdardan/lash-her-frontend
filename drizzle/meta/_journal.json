@@ -533,6 +533,13 @@
       "when": 1787892609388,
       "tag": "0075_clammy_william_stryker",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1788225229633,
+      "tag": "0076_organic_kitty_pryde",
+      "breakpoints": true
     }
   ]
 }

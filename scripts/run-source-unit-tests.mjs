@@ -5,6 +5,8 @@ import { pathToFileURL } from "node:url";
 import process from "node:process";
 
 const SERVER_ONLY_TEST_FILES = new Set([
+  "src/app/actions/form.test.ts",
+  "src/app/api/marketing/unsubscribe/handler.test.ts",
   "src/app/api/cron/customer-email-outbox/route.test.ts",
   "src/app/api/admin/shipping/package-profiles/handler.test.ts",
   "src/lib/admin/implicit-staff-provider.test.ts",
@@ -15,7 +17,10 @@ const SERVER_ONLY_TEST_FILES = new Set([
   "src/lib/booking/operations/sanity-service-link.test.ts",
   "src/lib/booking/square-team-client.test.ts",
   "src/lib/commerce/product-stock-abandoned-sweep.test.ts",
+  "src/lib/commerce/customer-email-outbox-worker.test.ts",
+  "src/lib/contact-popup/signup-offer.test.ts",
   "src/lib/marketing-campaign/campaign-email-html.test.ts",
+  "src/lib/marketing-contact/unsubscribe-token.test.ts",
   "src/lib/shipping/chitchats-client.test.ts",
   "src/lib/shipping/config.test.ts",
   "src/lib/shipping/configured-owner.test.ts",
@@ -42,6 +47,7 @@ const DB_TEST_FILES = new Set([
   "src/lib/commerce/square-product-finalizer.db.test.ts",
   "src/lib/commerce/square-training-card-finalizer.db.test.ts",
   "src/lib/admin/employee-attribution-analytics.db.test.ts",
+  "src/lib/marketing-contact/marketing-contact-store.db.test.ts",
   "src/lib/admin/implicit-staff-provider.db.test.ts",
   "src/lib/admin/offering-resource-admin.db.test.ts",
   "src/lib/admin/service-offering-ownership-invariant.db.test.ts",

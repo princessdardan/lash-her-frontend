@@ -19,6 +19,7 @@ test("customer email cron authenticates and returns non-2xx when claimed work fa
         enqueued: 0,
         failed: 1,
         sent: 0,
+        suppressed: 0,
       };
     });
     const missing = process.env.CRON_SECRET;

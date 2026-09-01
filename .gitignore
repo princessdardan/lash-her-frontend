@@ -70,8 +70,6 @@ staging-export.tar.gz
 .worktrees/
 
 # docs for local development 
-docs/checkout-flowcharts.html
-docs/service-offering-booking-flowchart-guide.html
 .superpowers/brainstorm/
 production-pre-cutover-backup.tar.gz
 staging-approved-cutover.tar.gz
@@ -85,5 +83,4 @@ docs/chitchats-shipping-policy-decisions.md
 docs/launch-readiness-checklist.md
 docs/private-database-migration-runbook.md
 docs/product-checkout-chitchats-shipping-readiness-review-2026-08-17.md
-docs/shipping-teardown-launch-followups.md
 docs/us-shipping-regulatory-data-contract.md

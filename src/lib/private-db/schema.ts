@@ -2588,8 +2588,13 @@ export const customerEmailOutbox = pgTable(
     orderId: uuid("order_id").references(() => checkoutOrders.id, {
       onDelete: "restrict",
     }),
+    submissionId: uuid("submission_id").references(
+      (): AnyPgColumn => marketingContactSubmissions.id,
+      { onDelete: "set null" },
+    ),
     kind: text("kind").notNull(),
     recipientCiphertext: text("recipient_ciphertext").notNull(),
+    recipientEmailNormalized: text("recipient_email_normalized"),
     templateDataCiphertext: text("template_data_ciphertext").notNull(),
     providerIdempotencyKey: text("provider_idempotency_key").notNull().unique(),
     status: text("status").notNull().default("queued"),
@@ -2619,6 +2624,9 @@ export const customerEmailOutbox = pgTable(
       table.availableAt,
       table.leaseExpiresAt,
     ),
+    uniqueIndex("customer_email_outbox_submission_id_idx").on(
+      table.submissionId,
+    ),
     check(
       "customer_email_outbox_status_check",
       sql`${table.status} IN ('queued', 'sending', 'failed', 'dead_letter', 'sent')`,
@@ -2629,7 +2637,28 @@ export const customerEmailOutbox = pgTable(
     ),
     check(
       "customer_email_outbox_active_customer_order_link_check",
-      sql`${table.kind} = 'shipping_policy_alert' OR ${table.orderId} IS NOT NULL OR ${table.redactedAt} IS NOT NULL`,
+      sql`(
+        ${table.kind} = 'shipping_policy_alert'
+        AND ${table.orderId} IS NULL
+        AND ${table.submissionId} IS NULL
+        AND ${table.recipientEmailNormalized} IS NULL
+      ) OR (
+        ${table.kind} = 'contact_popup_offer'
+        AND ${table.orderId} IS NULL
+        AND ((
+          ${table.submissionId} IS NOT NULL
+          AND ${table.redactedAt} IS NULL
+          AND ${table.recipientEmailNormalized} IS NOT NULL
+        ) OR (
+          ${table.redactedAt} IS NOT NULL
+          AND ${table.recipientEmailNormalized} IS NULL
+        ))
+      ) OR (
+        ${table.kind} NOT IN ('shipping_policy_alert', 'contact_popup_offer')
+        AND ${table.submissionId} IS NULL
+        AND ${table.recipientEmailNormalized} IS NULL
+        AND (${table.orderId} IS NOT NULL OR ${table.redactedAt} IS NOT NULL)
+      )`,
     ),
   ],
 );

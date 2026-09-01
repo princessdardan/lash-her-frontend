@@ -179,6 +179,7 @@ const scenario = String.raw`
       eq(customerEmailOutbox.id, outbox.id),
     );
     assert.equal(redactedEmail.recipientCiphertext, "[redacted]");
+    assert.equal(redactedEmail.recipientEmailNormalized, null);
     assert.equal(redactedEmail.templateDataCiphertext, "[redacted]");
     assert.equal(redactedEmail.lastError, null);
     assert.ok(redactedEmail.redactedAt instanceof Date);

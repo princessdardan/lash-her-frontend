@@ -1,10 +1,12 @@
 # Square Card-on-File Production Readiness Runbook
 
+> Historical document. This June 2026 readiness plan describes the retired STORE-only and hosted-checkout-fallback rollout. It is preserved as point-in-time evidence and must not be used as current operational guidance. See `docs/booking-system-runbook.md` and `docs/square-service-booking-setup.md`.
+
 ## Purpose
 
 Use this runbook to move Square card-on-file service booking from **NO-GO** to approved production enablement. The staging branch is currently live on the Vercel preview deployment at <https://preview.lashher.com>. Production must remain disabled until staging proves the full Square sandbox lifecycle with a migrated private PostgreSQL database, real Square sandbox webhooks, and safe reconciliation evidence.
 
-This runbook is an operator guide. Record certification evidence in `docs/superpowers/reports/square-card-on-file-sandbox-certification.md`; do not paste secrets, private connection strings, raw provider payloads, or customer PII into this file, the report, tickets, chat, or shell history.
+This runbook was an operator guide. Its associated historical evidence is in `docs/archive/square-card-on-file-sandbox-certification-2026-06.md`; do not paste secrets, private connection strings, raw provider payloads, or customer PII into this file, the report, tickets, chat, or shell history.
 
 ## Current status
 
@@ -98,7 +100,7 @@ If Vercel assigns a different preview URL for the active staging branch, use tha
 
 ## Automated checks to run and record
 
-Run these checks in the staging-relevant context before live Square sandbox certification. Record safe results in `docs/superpowers/reports/square-card-on-file-sandbox-certification.md` with UTC timestamp and database alias only.
+Run these checks in the staging-relevant context before live Square sandbox certification. Record safe results in `docs/archive/square-card-on-file-sandbox-certification-2026-06.md` with UTC timestamp and database alias only.
 
 ```bash
 npm run lint
@@ -121,7 +123,7 @@ Do not record DB connection strings, full command wrappers containing secrets, p
 
 ## Live Square sandbox certification scenarios
 
-Complete every scenario below against the staging deployment and Square sandbox. Record evidence in `docs/superpowers/reports/square-card-on-file-sandbox-certification.md`.
+Complete every scenario below against the staging deployment and Square sandbox. Record evidence in `docs/archive/square-card-on-file-sandbox-certification-2026-06.md`.
 
 For every row, record only:
 
@@ -343,14 +345,14 @@ Expected result:
 - There are no unresolved stale `charge_pending` states.
 - There is no provider mismatch.
 
-Record a redacted JSON summary or a secure evidence location in `docs/superpowers/reports/square-card-on-file-sandbox-certification.md`. Do not paste secrets, full webhook payloads, or PII.
+Record a redacted JSON summary or a secure evidence location in `docs/archive/square-card-on-file-sandbox-certification-2026-06.md`. Do not paste secrets, full webhook payloads, or PII.
 
 ## Certification report approval rules
 
 The certification report is the source of truth for the card-on-file production gate:
 
 ```txt
-docs/superpowers/reports/square-card-on-file-sandbox-certification.md
+docs/archive/square-card-on-file-sandbox-certification-2026-06.md
 ```
 
 The report can switch to production approval only when all of these are true:

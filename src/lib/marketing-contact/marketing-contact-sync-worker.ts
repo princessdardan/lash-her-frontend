@@ -4,6 +4,7 @@ import { and, asc, eq, inArray, lte, or, sql } from "drizzle-orm";
 
 import { getPrivateDb } from "@/lib/private-db/client";
 import {
+  marketingContacts,
   marketingContactSyncJobs,
   type MarketingContactSyncJobKind,
   type MarketingContactSyncJobPayload,
@@ -34,6 +35,7 @@ export interface MarketingContactSyncWorkerRepository {
     now: Date;
     workerId: string;
   }): Promise<MarketingContactSyncJob[]>;
+  isContactSubscribed(input: { emailNormalized: string }): Promise<boolean>;
   markJobDeadLetter(input: {
     error: string;
     errorContext: Record<string, unknown>;
@@ -142,6 +144,10 @@ export function createMarketingContactSyncWorker(
             await dependencies.syncContact(
               toResendMarketingContactInput(job.payload),
             );
+            await compensateForConcurrentUnsubscribe(dependencies, {
+              email: job.payload.email,
+              unsubscribeContact,
+            });
           }
           const updated = await dependencies.repository.markJobSucceeded({
             jobId: job.id,
@@ -364,6 +370,16 @@ export function createDrizzleMarketingContactSyncWorkerRepository(
       });
     },
 
+    async isContactSubscribed({ emailNormalized }) {
+      const [contact] = await db
+        .select({ unsubscribedAt: marketingContacts.unsubscribedAt })
+        .from(marketingContacts)
+        .where(eq(marketingContacts.emailNormalized, emailNormalized))
+        .limit(1);
+
+      return contact !== undefined && contact.unsubscribedAt === null;
+    },
+
     async markJobSucceeded({ jobId, lockedBy, now }) {
       const result = await db
         .update(marketingContactSyncJobs)
@@ -469,6 +485,40 @@ export function createDrizzleMarketingContactSyncWorkerRepository(
   };
 }
 
+async function compensateForConcurrentUnsubscribe(
+  dependencies: MarketingContactSyncWorkerDependencies,
+  input: {
+    email: string;
+    unsubscribeContact: (input: { email: string }) => Promise<void>;
+  },
+): Promise<void> {
+  const emailNormalized = normalizeEmail(input.email);
+  let isSubscribed: boolean;
+
+  try {
+    isSubscribed = await dependencies.repository.isContactSubscribed({
+      emailNormalized,
+    });
+  } catch (subscriptionCheckError) {
+    // Consent state is authoritative in PostgreSQL. If it cannot be read after
+    // an opt-in provider call, suppress conservatively and retry the job later.
+    try {
+      await input.unsubscribeContact({ email: input.email });
+    } catch (compensationError) {
+      throw new AggregateError(
+        [subscriptionCheckError, compensationError],
+        "Marketing contact subscription recheck and compensation failed",
+      );
+    }
+
+    throw subscriptionCheckError;
+  }
+
+  if (!isSubscribed) {
+    await input.unsubscribeContact({ email: input.email });
+  }
+}
+
 function toResendMarketingContactInput(
   payload: MarketingContactSyncJobPayload,
 ): ResendMarketingContactInput {
@@ -569,6 +619,10 @@ function calculateNextRunAt(attempts: number, now: Date): Date {
 
 function getWorkerId(): string {
   return `worker-${process.pid}-${Date.now()}`;
+}
+
+function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
 }
 
 function buildSummary(input: {

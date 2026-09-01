@@ -1,424 +1,355 @@
 # Booking System Runbook
 
-Last updated: 2026-07-15
+Last verified: 2026-08-31
 
-Use this runbook when operating, smoke testing, or troubleshooting Lash Her booking flows in staging or production. It assumes the provider split is live: service booking customers select slots in the Lash Her app, enter contact and payment data only on an opaque payment-session page, and use Square direct charge-and-store before the authoritative PostgreSQL appointment is projected to Google Calendar. Product checkout and training checkout run on Square through the Square Web Payments SDK, gated by `SQUARE_COMMERCE_ENABLED`. Historical Square hosted-checkout records remain reconcilable, but disabling direct card-on-file payment now fails new payment sessions closed instead of creating a new hosted checkout. Training checkout may optionally use a Square Afterpay Invoice when `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true`; see `docs/training-afterpay-square-invoice.md` for the launch gate and operational rules.
+Use this runbook to operate and troubleshoot the current PostgreSQL-backed booking, payment, and Calendar flows. The canonical customer journey is operational service selection, a private resource hold, an opaque payment handoff, Square direct `CHARGE_AND_STORE`, captured-payment persistence, authoritative appointment creation, and Google Calendar projection through the provider primary resource.
 
-## System Boundaries
+The current public UI does not create Square hosted checkouts. Historical Payment Link return/webhook records remain reconcilable. The compatibility checkout endpoint is still deployed and technically capable of creating a Payment Link; operators and current UI code must not invoke it for a new booking.
 
-| System                      | Operator responsibility                                                                                                                                                                            | Must not become                                                                |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Sanity                      | Public booking copy, booking settings, bookable services, native payment fields, cache revalidation                                                                                                | Storage for PII, payment state, holds, booking history, or transaction records |
-| Private Postgres            | Holds, checkout orders, payment events, appointment state, training enrollments, reconciliation data                                                                                               | Public CMS or browser-readable data source                                     |
-| Upstash Redis               | Short-lived contention locks, public booking rate windows, and expiring active-hold quotas                                                                                                         | Canonical payment, booking, identity, or Calendar credential storage           |
-| Google Calendar API         | Staff source of truth for final service booking events and busy intervals                                                                                                                          | Payment gate or Appointment Schedule engine                                    |
-| Google Appointment Schedule | Paid training intro-call scheduling after private token eligibility passes                                                                                                                         | Service booking engine or paid-status verifier                                 |
-| Square                      | Product and training checkout (Square Web Payments SDK), direct service payment/card storage, historical hosted-checkout reconciliation, payment webhooks, and optional training Afterpay invoices | Sole proof of booking success, or a store of raw card tokens or full PANs      |
-| Helcim                      | Legacy/historical product and training payment records only; retained `helcim` payment-provider enum value and `helcim_*` columns keep past orders readable                                        | Provider for any new product, training, or service booking payment             |
-| Resend                      | Customer/admin transactional emails                                                                                                                                                                | Source of truth for booking success                                            |
+## System boundaries
 
-If a record contains customer contact data, payment identifiers, hold state, or reconciliation metadata, treat it as private Postgres data. Do not move it into Sanity.
+| System                      | Current responsibility                                                                                                                                                                                                                                     | Must not become                                                                                                           |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Private PostgreSQL          | Admin users/roles, business booking settings, services/offerings, resources, schedules/exceptions, Calendar connections/assignments, holds/reservations, customer/policy/payment evidence, appointments, training enrollments/tokens, reconciliation state | Public browser-readable database or editorial CMS                                                                         |
+| Sanity                      | Optional service editorial detail/media/SEO and public training-program configuration, including the paid intro-call Appointment Schedule URL                                                                                                              | Service prices/availability authority or storage for PII, consent, holds, payments, appointments, tokens, or transactions |
+| Upstash Redis               | Short-lived OAuth state, contention locks, rate-limit windows, and active-hold quotas                                                                                                                                                                      | Canonical appointment, payment, identity, or current Calendar credential storage                                          |
+| Google Calendar API         | Busy intervals from assigned resources and one booking destination for each provider primary resource; event projection after payment capture                                                                                                              | Payment verifier or service catalog                                                                                       |
+| Google Appointment Schedule | Time selection for a paid training intro call after the app verifies a private enrollment token                                                                                                                                                            | Service-booking engine or proof that training payment succeeded                                                           |
+| Square                      | Direct service authorization/capture/card storage, no-show invoices, product/training card payments, optional training Afterpay invoice, refunds, webhooks, and historical hosted reconciliation                                                           | Sole proof of booking success or storage destination for app-only policy/appointment state                                |
+| Resend                      | Customer/admin transactional delivery and marketing-contact synchronization                                                                                                                                                                                | Authority for a booking, payment, enrollment, or consent decision                                                         |
 
-## Live Flows
+The `payment_provider` enum retains `helcim` for migrated historical records. There are no current `helcim_*` columns and no code path creates a new Helcim payment. Historical data is read through the provider-neutral PostgreSQL schema.
 
-### Public Booking Entry
+## Provider map
 
-1. Customer opens `/booking`.
-2. The page loads Sanity `bookingSettings` and active `service` records.
-3. The browser requests availability from `/api/booking/availability`.
-4. The server builds slots from configured availability marker events, Google Calendar busy intervals, private active holds, lead time, horizon, duration, intervals, and buffers.
-5. Appointment confirmation does not happen from `/api/booking/create`; that route is intentionally disabled and returns the secure-payment-required error.
-6. Paid service booking continues through resource-backed private hold creation, opaque payment handoff, explicit policy acceptance, Square charge-and-store, durable appointment creation, and Calendar projection. Disabling direct payment fails the payment step closed.
-7. Paid training intro-call scheduling uses the tokenized training schedule page and Google Appointment Schedule after private token eligibility passes.
+| Flow                       | Payment path                                                                                                                       | Scheduling path                                                | Private authority                                                                    |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Paid service booking       | Square Web Payments `CHARGE_AND_STORE`, Payments authorize/capture, saved card, and a draft no-show invoice when a balance remains | Lash Her slot UI plus assigned Google Calendar API connections | PostgreSQL holds, reservations, payment intent/evidence, appointment, Calendar state |
+| Product checkout           | Square Web Payments one-time card charge when `SQUARE_COMMERCE_ENABLED=true`                                                       | None                                                           | PostgreSQL order, payment obligations/transactions, inventory and fulfillment state  |
+| Primary training checkout  | Square Web Payments one-time card charge when `SQUARE_COMMERCE_ENABLED=true`                                                       | Paid token gate, then Google Appointment Schedule              | PostgreSQL order, paid enrollment, hashed scheduling token                           |
+| Optional training Afterpay | Square Invoice when `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true`                                                                | Same paid token gate and Appointment Schedule                  | PostgreSQL order/enrollment and webhook-verified invoice state                       |
 
-### Paid Service Booking With Capture Lease, Policy Acceptance, And Card On File
+All Square flows use one signed endpoint, `/api/webhooks/square`. Event routing must preserve the boundaries above: commerce and training events must not fall through as service bookings, no-show events must correlate to their stored record, and historical hosted records must remain lookup/reconciliation work rather than a new checkout path.
 
-1. Customer selects a paid bookable service and slot.
-2. `/api/booking/holds` revalidates the slot, reserves every required resource, creates a private hold, and returns only an opaque payment-session URL. Contact, policy, and payment fields are rejected at this step.
-3. When `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true` and `/api/booking/square/config` is available:
-   - The payment page collects customer details, payment amount selection, marketing choice, and explicit no-show policy acceptance.
-   - The browser loads the Square Web Payments SDK, tokenizes with `verificationDetails.intent = "CHARGE_AND_STORE"`, and submits the token, verification token, and a fresh client idempotency key to `POST /api/booking/payment/confirm`.
-   - Before calling Square, the server atomically acquires a capture lease over the hold/reservations and persists a hashed provider-request intent. Reservation expiry excludes a valid lease and durable authorized/captured attempts.
-   - A same-body retry reuses the persisted provider idempotency key. A changed source first invokes Square cancel-by-idempotency-key, records the old intent terminally, and uses a new key. An ambiguous create-payment response remains reconciliation work and is never treated as permission for a changed retry under the old key.
-   - The server revalidates the lease and reservation set immediately before capture. Provider `COMPLETED` evidence is persisted before appointment projection; a retry resumes projection without another Square charge.
-   - The finalizer creates one authoritative appointment, transfers the resource reservations, creates or finds the Google Calendar event idempotently, and links saved-card, policy, no-show, payment, provider, resource, and employee-attribution snapshots.
-4. When direct card-on-file payment or its public config is disabled, the payment page fails closed. Existing hosted-checkout return/webhook records remain supported for historical reconciliation, but the UI does not create new Payment Links. Treat the flag as an emergency stop, not a continuity fallback.
-5. Customer and admin transactional emails are sent non-blockingly after the private state transition.
+## Current service-booking flow
 
-Duplicate submissions, browser restarts, return visits, and webhook events must resolve to one provider request intent, one captured payment, one saved card, one policy acceptance, one no-show charge record, one appointment, and one Google Calendar event. If the provider completed but local projection is incomplete, reconciliation verifies amount, currency, customer, reference, and team attribution before resuming. If the original slot cannot be projected, keep the appointment in manual/rebooking follow-up; refund only after rebooking fails or staff chooses refund.
+### Entry and availability
 
-### Paid Training Intro Call
+1. `/services` loads active public operational offerings from PostgreSQL.
+2. `/services/[slug]/booking` loads operational booking UI settings and offerings from PostgreSQL.
+3. `/booking` permanently redirects to `/services`; accepted legacy slug query aliases redirect to the canonical service booking route only when the operational slug is currently bookable.
+4. `/api/booking/availability` resolves the operational offering on the server and intersects booking window/settings, every required resource's schedule and exceptions, active PostgreSQL reservations/holds, and busy events from each active resource Calendar assignment.
+5. Missing operational configuration fails closed. The browser cannot select an employee, Calendar connection, or resource ID directly.
 
-Default path (Square Web Payments):
+### Hold and opaque payment handoff
 
-1. Training checkout completes through the commerce checkout flow.
-2. Square Web Payments verifies the card payment for the training order.
-3. The private training enrollment/order is marked paid and a private schedule token is issued.
-4. The customer receives the tokenized paid training schedule path.
-5. The app resolves private token eligibility before rendering anything that exposes the Google Appointment Schedule URL.
-6. After eligibility passes, the page shows the public Google Appointment Schedule link or embed configured on the training program.
-7. The app does not mark the enrollment scheduled only because the schedule page rendered. Invalid, unpaid, expired, or wrong-program tokens must not reveal the schedule URL.
+1. `POST /api/booking/holds` accepts the operational offering, selected time/add-on, source path, and bounded intake answers.
+2. The server revalidates availability and atomically reserves the provider plus every required room/equipment resource for ten minutes.
+3. The endpoint returns an opaque payment reference and `/services/[slug]/booking/payment?session=...` URL.
+4. Name, email, phone, marketing choice, policy evidence, payment option, and payment data are rejected at the hold step. Those fields belong only on the payment page.
+5. Direct `/api/booking/create` is intentionally disabled; there is no unpaid direct appointment-creation path.
 
-Optional Square Afterpay Invoice path (when `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true`):
+Treat the payment-session reference as sensitive. It is an unguessable lookup capability, not an identifier to put in logs, tickets, analytics, or documentation.
 
-1. Training checkout completes through the commerce checkout flow.
-2. The app creates and publishes a Square invoice for the training order.
-3. Square webhook `invoice.payment_made` is verified through `/api/webhooks/square` and the training enrollment/order is marked paid in the private DB.
-4. Steps 4-7 above follow.
+### Direct Square confirmation
 
-The Square webhook route is shared with service booking; training invoice events must be routed to the training Square Invoice finalizer before falling back to service-booking or no-show reconciliation. See `docs/training-afterpay-square-invoice.md` for the feature flag, launch gate, webhook events, and recovery steps.
+1. The payment page resolves the opaque reference server-side and displays the trusted offering/payment snapshot.
+2. The customer provides contact details, deposit/full/custom partial selection, marketing choice, and explicit no-show policy acceptance.
+3. Square Web Payments tokenizes in Square's iframe with `verificationDetails.intent = "CHARGE_AND_STORE"`.
+4. The form sends the source token, verification token, a fresh client idempotency key, expected amount, customer data, and policy evidence to `POST /api/booking/payment/confirm`.
+5. The server recomputes the allowed amount, persists customer/payment selection, creates or reuses the Square customer, and claims a durable provider request intent plus a five-minute capture lease.
+6. Square creates an `APPROVED` authorization. The app saves the card, persists policy/no-show evidence, and creates a DRAFT no-show invoice when a deposit/partial payment leaves an eligible balance.
+7. The server persists authorization evidence, revalidates the capture lease and reservation set immediately before capture, then completes the Square payment.
+8. Provider `COMPLETED` evidence is stored before appointment projection.
+9. The finalizer transfers the reservations to one authoritative appointment and creates or finds one event on the assigned booking destination Calendar.
+10. The API returns `paymentStatus: "captured"` and `bookingStatus: "booked"` or `"manual_followup"`. Transactional email is a non-blocking side effect after the durable transition.
 
-Google Appointment Schedule is only for paid training intro-call scheduling after the app token gate. Do not use it for service bookings.
+For an identical retry, the server reuses persisted provider idempotency state. If the request body/source changes while a prior attempt is ambiguous, it first cancels by the old idempotency key and terminates that intent before using a new provider key. Never bypass this by manually issuing another charge.
 
-## Public Booking Abuse Controls
+If direct card collection/config is disabled, the public payment page fails closed. It does not call `/api/booking/checkout`. Keep valid service Square credentials and webhook/reconciliation enabled so existing direct attempts and historical hosted records can finish safely.
 
-The shared V1/V2 availability and hold endpoints use atomic Upstash Redis sorted-set scripts. Availability and hold-attempt windows are global per one-way client-IP digest, so rotating arbitrary service or offering identifiers cannot create fresh buckets or unbounded Redis keys. The active-hold quota additionally includes a one-way offering ID or service-slug digest. Raw IP addresses are never written into rate-limit keys or application logs.
+### Historical hosted reconciliation
 
-| Endpoint/control                          |                                                                                         Limit | Response when exceeded                                      |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------: | ----------------------------------------------------------- |
-| `GET` or `POST /api/booking/availability` | 30 requests per rolling 60 seconds for each client IP across all service/offering identifiers | `429` with `Retry-After`                                    |
-| `POST /api/booking/holds` attempt window  |  5 requests per rolling 10 minutes for each client IP across all service/offering identifiers | `429` with `Retry-After`                                    |
-| Active hold quota                         |                    2 concurrent 10-minute hold leases for each client IP and offering/service | `429` with `Retry-After` based on the earliest lease expiry |
+`/api/booking/square/return` and the hosted branch of the Square webhook/finalizer exist for records created by the former Payment Link flow. `POST /api/booking/checkout` is a noncanonical compatibility endpoint: the current UI does not call it, but the route remains capable of creating a new Payment Link from a valid active hold. Do not call it for a new booking. If the product intends to make historical reconciliation the only hosted capability, gate or remove that creation route in code.
 
-Vercel launch environments accept client identity only from `x-vercel-forwarded-for`. If that trusted header is missing or malformed, the endpoints return `503`; they do not fall back to a shared unknown-client bucket or client-supplied forwarding headers. Local and test environments retain the existing `x-forwarded-for`, then `x-real-ip`, fallback for development only.
+- Do not route a new customer into these endpoints.
+- A browser return and its query values are lookup hints, not paid evidence.
+- Finalization must query/verify Square and match local order/hold, amount, currency, customer/reference, and provider identity.
+- Duplicate returns and webhooks must resolve to the same local record and Calendar event.
+- A verified paid record whose original slot can no longer be projected remains `paid_unbookable_rebooking_pending`: rebook first, refund only after rebooking fails or an authorized operator chooses refund.
 
-Limiter storage is fail-safe: hold creation returns `503` before booking work when Upstash cannot be read or written, and availability returns `503` before Sanity/Postgres/Google Calendar fan-out. A failed or conflicting hold creation releases its active-hold lease; a successful hold retains the lease until the normal ten-minute expiry. A release failure is conservatively safe because the lease expires automatically.
+## Paid training scheduling
 
-Request bounds are applied before booking processing:
+1. Square card capture or an enabled Square training invoice marks the private order/enrollment paid.
+2. The app issues an opaque schedule token and stores its hash; the current lifetime is 14 days.
+3. The customer opens `/training-programs/[slug]/schedule?token=...`.
+4. The server verifies the private paid enrollment, exact program slug, token validity/expiry/usage, and published Sanity Appointment Schedule URL.
+5. Only after verification does the page render Google's link or embed through the Lash Her route.
 
-- Availability POST JSON: 8 KiB maximum.
-- Hold POST JSON: 24 KiB maximum.
-- Hold intake answers: at most 20 entries.
-- Intake question identifier: at most 128 characters.
-- Individual intake answer: at most 2,000 characters.
-- Combined UTF-8 size of question identifiers and answers: 8 KiB maximum.
+Opening the page does not itself mark the enrollment scheduled. Invalid, unpaid, expired, used, or wrong-program tokens must not render the Google URL through this app route. The URL is nevertheless projected from the public Sanity content layer, so the token gate is an application-flow gate rather than a confidentiality boundary. Strict paid-only secrecy would require moving the URL to a private store. Google Appointment Schedule is not used to compute service availability or create service holds.
 
-Oversized requests return `413`; structurally invalid answer lists return `400`. Do not raise these limits to address ordinary customer errors. Investigate the client payload first.
+See `docs/booking-training-calendar-configuration-guide.md` and `docs/training-afterpay-square-invoice.md`.
 
-## Routine Operator Checks
+## Operational dashboards
 
-Run these checks for staging release validation, production launch windows, and after changes to booking settings, payment, or calendar configuration.
+| Page                          | Use during operation                                                      |
+| ----------------------------- | ------------------------------------------------------------------------- |
+| `/admin/setup`                | Computed provider/service readiness; first check for missing setup        |
+| `/admin/appointments`         | Appointment status, attendance, Calendar result, authorized staff actions |
+| `/admin/booking-issues`       | Incomplete booking/payment/Calendar outcomes needing investigation        |
+| `/admin/payments`             | Payment/refund operational view                                           |
+| `/admin/calendar-connections` | Owner/admin connection health, destinations, busy assignments, errors     |
+| `/admin/my-calendar`          | Employee connection and assignment controls for owned resources           |
+| `/admin/schedules`            | Regular hours, time off, extra hours, Calendar-sync navigation            |
+| `/admin/integrations`         | Square team-attribution readiness/enforcement and Calendar navigation     |
+| `/admin/audit`                | Audited admin configuration changes                                       |
 
-### Environment Checks
+Configuration ownership and role/resource permissions are documented in `docs/booking-operations-dashboard.md`.
 
-- [ ] `NEXT_PUBLIC_SANITY_PROJECT_ID` is `3auncj84`.
-- [ ] `NEXT_PUBLIC_SANITY_DATASET` matches the target environment.
-- [ ] `SANITY_WEBHOOK_SECRET` matches the Sanity webhook panel.
-- [ ] `DATABASE_URL` points to the intended private database and is server-only.
-- [ ] `KV_REST_API_URL` and `KV_REST_API_TOKEN` point to the intended Upstash Redis instance.
-- [ ] `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` match the environment OAuth client.
-- [ ] `BOOKING_ADMIN_SETUP_SECRET` is configured for the protected Google Calendar OAuth setup flow and stored server-only.
-- [ ] `SQUARE_COMMERCE_ENABLED=true` only where product and training checkout should use Square Web Payments.
-- [ ] If `SQUARE_COMMERCE_ENABLED=true`, the code-required Square environment values are configured as server-side variables: `SQUARE_ENVIRONMENT`, `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, `SQUARE_WEBHOOK_SIGNATURE_KEY`, and `SQUARE_SERVICE_BOOKING_WEBHOOK_URL` (the single shared Square webhook URL), plus the public-safe `SQUARE_APPLICATION_ID` for the `/api/checkout/square/config` Web Payments SDK route.
-- [ ] `CHECKOUT_SECRET_ENCRYPTION_KEY` is configured as a base64-encoded 32-byte server-only secret.
-- [ ] `SERVICE_BOOKING_SQUARE_ENABLED=true` only where service booking checkout should use Square.
-- [ ] `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true` only where direct charge-and-store should accept new payment sessions; unset or `false` is an emergency fail-closed stop and does not create new hosted checkouts.
-- [ ] `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true` only when the optional training Afterpay Square Invoice flow should be active; leave unset or `false` to keep the default Square Web Payments training checkout. Confirm Square merchant eligibility before enabling in production.
-- [ ] If `SERVICE_BOOKING_SQUARE_ENABLED=true`, the code-required Square environment values are configured as server-side variables: `SQUARE_ENVIRONMENT`, `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, `SQUARE_WEBHOOK_SIGNATURE_KEY`, `SQUARE_SERVICE_BOOKING_RETURN_URL`, and `SQUARE_SERVICE_BOOKING_WEBHOOK_URL`.
-- [ ] If `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true`, the public-safe `SQUARE_APPLICATION_ID` is also configured for the Square Web Payments SDK config route. `SQUARE_APPLICATION_ID` is not a secret and must not be treated as one.
-- [ ] If `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true`, the code-required Square environment values are configured as server-side variables: `SQUARE_ENVIRONMENT`, `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, `SQUARE_WEBHOOK_SIGNATURE_KEY`, and `SQUARE_SERVICE_BOOKING_WEBHOOK_URL`. Training Square Invoice alone does not require `SQUARE_SERVICE_BOOKING_RETURN_URL` or `SQUARE_APPLICATION_ID`.
-- [ ] `PAYMENT_RECONCILIATION_CRON_SECRET` is required to enable and manually protect `GET /api/admin/payment-reconciliation`; `CRON_SECRET` is accepted for Vercel scheduled cron authorization only when `PAYMENT_RECONCILIATION_CRON_SECRET` is also configured. Both are stored server-only.
-- [ ] Confirm the payment-reconciliation cron remains scheduled every 30 minutes. Its payment monitor and booking-outcome email retry are isolated so either task can run and report failure without suppressing the other.
-- [ ] `BOOKING_ADMIN_PAYMENT_ACTION_SECRET` is configured for `POST /api/admin/appointments/[id]/no-show` and stored server-only.
-- [ ] `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `RESEND_SEGMENT_MARKETING_ID`, `FROM_EMAIL`, and `ADMIN_EMAIL` are configured.
+## Routine checks
 
-### Public Booking Entry Smoke
+Run these checks for staging promotion, a production launch window, and after changes to offerings, schedules, Calendar connections, Square credentials, or payment code.
 
-- [ ] Open `/booking` on the target environment and confirm the page renders.
-- [ ] Confirm active bookable services appear in the intended order.
-- [ ] Confirm appointment availability loads from the connected calendar.
-- [ ] Confirm direct `/api/booking/create` requests reject with the secure-payment-required error.
-- [ ] Confirm the booking marketing opt-in and no-opt-in paths create private audit evidence and do not create Sanity submission documents.
-- [ ] Confirm repeated availability requests eventually return `429` with an integer `Retry-After` header and do not call Google Calendar after the limit is reached.
-- [ ] Confirm the sixth hold attempt for one test client/service within ten minutes returns `429`, and a third concurrent active hold returns `429` until the earliest hold expires.
-- [ ] Confirm oversized availability and hold JSON return `413` before booking dependencies are called.
-- [ ] Confirm production requests missing `x-vercel-forwarded-for` fail closed with `503`; never record or paste the raw test IP in evidence.
+### Environment and infrastructure
 
-### Paid Service Booking Smoke
+- [ ] `DATABASE_URL` resolves to the intended migrated private database; `npm run db:check -- --env-file <protected-env-file>` passes.
+- [ ] `SERVICE_BOOKING_MODEL_MODE=operational` in the current deployment.
+- [ ] Auth.js identity and Calendar OAuth use separate clients and environment-specific redirect URIs.
+- [ ] `BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY` is the protected key that encrypted current connection credentials.
+- [ ] `KV_REST_API_URL` and `KV_REST_API_TOKEN` reach the intended Upstash instance.
+- [ ] `SERVICE_BOOKING_SQUARE_ENABLED=true` and `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true` only where new direct payment should be available.
+- [ ] Square environment, access token, application ID, location, webhook key, and URLs belong to the same target application/environment.
+- [ ] `PAYMENT_GATEWAY_MODE` is not `mock` in production.
+- [ ] `PAYMENT_RECONCILIATION_CRON_SECRET` is configured; `CRON_SECRET` authorizes the scheduled invocation; `/api/admin/payment-reconciliation` remains scheduled every 30 minutes in `vercel.json`.
+- [ ] `BOOKING_ADMIN_PAYMENT_ACTION_SECRET` is distinct and protected for no-show actions.
+- [ ] Resend transactional and webhook/segment settings are configured for the target environment.
+- [ ] `npm run check:square-card-on-file-env` passes with the target variables loaded.
 
-- [ ] Create a paid service booking hold in staging with test data.
-- [ ] When card-on-file is enabled, confirm the policy checkbox blocks submission until accepted.
-- [ ] Confirm the slot flow returns an opaque payment-session URL and does not accept contact or payment fields.
-- [ ] Complete Square sandbox `CHARGE_AND_STORE` tokenization; confirm the private hold transitions to `booked`.
-- [ ] When card-on-file is enabled, confirm the booked hold has a saved Square card reference, a policy acceptance record, a no-show charge record, and one Google Calendar event.
-- [ ] When card-on-file is enabled, simulate a card-save failure and confirm the hold is not marked booked and no Calendar event is created.
-- [ ] Simulate connection loss after Square accepts `CreatePayment`; confirm the request intent and capture lease remain durable and the same-body retry uses the same idempotency key.
-- [ ] Submit a changed source after an ambiguous attempt; confirm cancel-by-idempotency-key is recorded before a new provider key is used.
-- [ ] Deliver `payment.updated` before the original response; confirm the observer correlates it to the immutable request intent without creating an appointment twice.
-- [ ] For historical hosted-checkout records only, confirm a Square browser return without server-side paid reconciliation does not finalize booking.
-- [ ] Confirm the private hold transitions to booked or `paid_unbookable_rebooking_pending`.
-- [ ] Confirm one Google Calendar event exists for the selected slot.
-- [ ] Confirm Square webhook and reconciliation retries are idempotent and verify amount, currency, customer, reference, and team member before projection.
+### Admin readiness
 
-### No-Show Charge Procedure
+- [ ] `/admin/setup` reports no blocker for each provider being offered.
+- [ ] Each active provider/resource, service, offering, add-on, price/timing snapshot, and required secondary resource is correct.
+- [ ] Weekly schedules and current exceptions are correct in the business timezone.
+- [ ] Each active provider primary resource has one healthy canonical booking destination; any intended busy-only assignments on primary or secondary resources are healthy.
+- [ ] Each provider has the correct active Square team-member mapping.
+- [ ] No connection shows `reconnect_required`, failed Calendar discovery, or unresolved ownership/assignment conflict.
 
-Service bookings that completed the card-on-file confirmation flow can be marked no-show through `POST /api/admin/appointments/[id]/no-show` with a valid `BOOKING_ADMIN_PAYMENT_ACTION_SECRET` bearer token. The route attempts to charge the saved card only after staff authorization and appointment eligibility are proven.
+### Customer smoke
 
-Before submitting a no-show charge, staff must confirm the appointment end time has passed, enter their operator identifier, and record a concise reason. The system stores `admin_operator_id`, `admin_reason`, `admin_action_at`, and `admin_eligibility_checked_at` before calling Square. If any of these fields are missing, do not retry the charge; correct the admin request first. Requests are rejected with `NO_SHOW_APPOINTMENT_NOT_ENDED` until the appointment's `selectedEnd` is in the past.
+- [ ] `/booking` redirects to `/services`; a valid legacy slug alias redirects to its canonical `/services/[slug]/booking` route.
+- [ ] `/services` reflects the operational PostgreSQL catalog, not retired Sanity booking fields.
+- [ ] Availability excludes schedule closures, active reservations, and Google busy time for all required resources.
+- [ ] A hold returns an opaque payment URL and sends no contact/payment/policy fields before the payment step.
+- [ ] Square Sandbox tokenization uses `CHARGE_AND_STORE` and confirmation calls `/api/booking/payment/confirm`.
+- [ ] The payment result is captured and creates one PostgreSQL appointment plus one Google event, or an explicit manual-follow-up record.
+- [ ] Duplicate submit/webhook/reconciliation calls do not create a second charge, card, no-show record, appointment, or Calendar event.
+- [ ] With the card-on-file flag disabled, the new payment UI fails closed and does not create a Payment Link.
+- [ ] A paid training token exposes only the matching training Appointment Schedule; invalid variants expose no URL.
 
-Operational guidance:
+## Public abuse controls
 
-- The audit write uses compare-and-set semantics, so replays or concurrent requests will not overwrite an existing admin action. If a response is ambiguous, inspect the no-show charge record for the four audit fields before retrying.
-- If Square is disabled in the environment, the route still records the admin audit and returns `manual_followup` so the action is attributed to the operator.
-- Treat `charge_failed` and `manual_followup` results as requiring manual review. Do not silently retry with a different idempotency key when money may have moved or provider references exist; preserve the existing idempotency key and webhook/event evidence and escalate.
-- A `charge_pending` result means Square did not return a terminal status; await webhook reconciliation or review the Square dashboard before submitting another charge.
+Booking rate keys contain one-way digests rather than raw client IPs or offering identifiers.
 
-### Card-On-File No-Show Smoke
+| Control                                |                                                         Current limit | Failure response         |
+| -------------------------------------- | --------------------------------------------------------------------: | ------------------------ |
+| `GET`/`POST /api/booking/availability` |         30 attempts per rolling 60 seconds per client across services | `429` plus `Retry-After` |
+| `POST /api/booking/holds` attempts     |          5 attempts per rolling 10 minutes per client across services | `429` plus `Retry-After` |
+| Active holds                           |        2 concurrent ten-minute leases per client and offering/service | `429` plus `Retry-After` |
+| Promotion-code attempts                | 10 attempts per rolling 60 seconds per client across payment sessions | `429` plus `Retry-After` |
 
-Run these in the order defined in `docs/square-service-booking-setup.md` under **Card-on-file staging certification order**. Before the sequence, run the preflight script `npm run check:square-card-on-file-env` and record evidence in `docs/superpowers/reports/square-card-on-file-sandbox-certification.md`.
+Vercel Preview/Production trusts only the first valid address in `x-vercel-forwarded-for`. Missing trusted client identity fails availability/holds closed with `503`; it does not accept attacker-supplied forwarding fallbacks. Local development may use `x-forwarded-for` or `x-real-ip`.
 
-- [ ] Create a paid service booking hold and complete the card-on-file confirmation flow in sandbox.
-- [ ] Confirm the route rejects requests until the appointment end time has passed and requires a valid operator identifier and reason.
-- [ ] Call `POST /api/admin/appointments/[id]/no-show` with a valid `BOOKING_ADMIN_PAYMENT_ACTION_SECRET` bearer token and a request body of `{ amountCents: <appointment-max-charge-cents>, confirmPolicyCharge: true, idempotencyKey: "<unique-key>", operatorId: "<operator-alias>", reason: "<concise-reason>" }`. Confirm the amount equals the appointment max charge and the no-show charge succeeds against the saved sandbox card.
-- [ ] Confirm the no-show charge record stores `admin_operator_id`, `admin_reason`, `admin_action_at`, and `admin_eligibility_checked_at` before Square is called.
-- [ ] Simulate a declined no-show charge and confirm the local no-show charge record enters `charge_failed` state and emits an operational alert.
+Upstash failures fail availability/hold/promotion controls closed with `503`. Do not disable or widen a limiter to work around an outage.
 
-### Paid Training Smoke
+Request bounds are enforced before booking work:
 
-Default Square Web Payments path:
+- Availability POST JSON: 8 KiB.
+- Hold POST JSON: 24 KiB.
+- At most 20 intake answers.
+- Question identifier: 128 characters.
+- Individual answer: 2,000 characters.
+- Combined question/answer UTF-8 data: 8 KiB.
 
-- [ ] Complete a paid training checkout in staging.
-- [ ] Confirm the Square Web Payments card payment marks the private enrollment/order paid.
-- [ ] Confirm the customer receives the tokenized paid training schedule link.
-- [ ] Confirm invalid, unpaid, expired, or wrong-program tokens do not reveal the Google Appointment Schedule URL.
-- [ ] Confirm a valid token renders the Google Appointment Schedule link or embed.
-- [ ] Confirm rendering the page does not mark the private enrollment scheduled.
+Oversized requests return `413`; invalid structure returns `400`.
 
-Optional Square Afterpay Invoice path (when `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true`):
+## Reconciliation watchlist
 
-- [ ] Complete a training checkout that creates and publishes a Square invoice in staging.
-- [ ] Confirm `invoice.payment_made` reaches `/api/webhooks/square` and is routed to the training Square Invoice finalizer before service-booking or no-show fallback handling.
-- [ ] Confirm the private enrollment/order is marked paid, exactly one training enrollment is created, and the customer receives the tokenized paid training schedule link.
-- [ ] Confirm retried webhook delivery is idempotent and does not duplicate enrollment, scheduling token, payment event, or notification side effects.
-- [ ] Confirm non-finalizing invoice events do not finalize enrollment.
+Review the scheduled `/api/admin/payment-reconciliation` result and `/admin/booking-issues`. `ok: false` or any error-severity finding requires triage.
 
-See `docs/training-afterpay-square-invoice.md` for the launch gate, required Square dashboard configuration, and recovery steps.
+High-priority categories include:
 
-### Sanity Revalidation Smoke
+- `authorized_payment_pending_capture` and provider state/evidence mismatches.
+- `captured_payment_without_operational_appointment` or `provider_completed_payment_without_operational_appointment`.
+- `operational_appointment_without_captured_payment`.
+- `operational_appointment_calendar_pending_too_long`.
+- `payment_amount_currency_customer_mismatch`.
+- Booked appointments missing saved-payment-method, policy-acceptance, or no-show records.
+- No-show charges pending too long, failed without alerting, or invoice payment events not reconciled.
+- Historical `paid_booking_not_booked` or Square payment pending too long.
 
-- [ ] Publish a small `bookingSettings` edit in the target Studio.
-- [ ] Confirm `/api/revalidate` receives a signed webhook with projection `{ _type }`.
-- [ ] Confirm the `bookingSettings` cache tag is expired and `/booking` updates.
-- [ ] Publish or update one `service` record and confirm `/booking` reflects the change.
+The reconciliation run also retries eligible booking-outcome emails. Persistent email retry failures do not reverse a durable appointment/payment; investigate delivery separately.
 
-## Direct-payment emergency stop and booking-model rollback
+### Triage order for an ambiguous Square result
 
-Set `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=false` and redeploy to stop new direct payment confirmations. New payment sessions fail closed; they do not fall back to a hosted checkout. Existing holds expire normally, while captured/authorized attempts, confirmed bookings, saved cards, and no-show records remain in private Postgres for reconciliation and staff follow-up.
+1. Stop the customer/operator from submitting a changed source or new idempotency key.
+2. Read local payment attempt, request-intent, capture-lease, hold/reservation, appointment, and webhook-observation state.
+3. Query Square by the stored payment/idempotency/reference evidence.
+4. Verify amount, currency, customer, card, reference, and team attribution before accepting provider completion.
+5. If Square is `COMPLETED`, persist completion and resume appointment/Calendar projection without a second charge.
+6. If Square is terminally failed/cancelled, persist that terminal state and release/fail the hold safely.
+7. If provider state remains unknowable, retain manual follow-up. Do not convert uncertainty into a new charge.
 
-To stop creation of new V2 operational holds while keeping existing V1/V2 records recoverable, set `SERVICE_BOOKING_MODEL_MODE=legacy` and redeploy. This does not reverse schema migrations and does not erase operational records. Do not delete Square cards, provider intents, payment attempts, appointments, or Calendar correlations during rollback.
+## No-show procedure
 
-## Reconciliation Watchlist
+Use this only for a direct booking with eligible stored policy/card/no-show evidence.
 
-At launch and after payment/calendar incidents, inspect private operational state for:
+1. Confirm the appointment end time is in the past and staff have recorded attendance as a no-show under the business policy.
+2. Read the stored allowed charge amount; do not calculate or guess it from public service copy.
+3. Choose one unique idempotency key for the action and retain it for every retry.
+4. Submit the authorized action with the exact contract:
 
-- Active service `held` holds past expiry.
-- `payment_pending` holds older than the configured payment-success grace window.
-- Paid service orders without Google Calendar event IDs.
-- Expired holds that later received payment success.
-- Orders or holds marked `booking_failed`, `manual_followup`, or `paid_unbookable_rebooking_pending`.
-- Booked service holds missing `savedPaymentMethodId`, `policyAcceptanceId`, or `noShowChargeRecordId`.
-- No-show charge records in `charge_failed` that have not been alerted or manually reviewed.
-- No-show charge records missing `admin_operator_id`, `admin_reason`, `admin_action_at`, or `admin_eligibility_checked_at`.
-- Square webhook events that do not match a known product order, training order, private service order, no-show charge record, or training Square Invoice order.
-- Duplicate webhook/idempotency keys.
-- Authorized local attempts for which Square reports `COMPLETED`, especially when no appointment exists.
-- Provider payment evidence whose amount, currency, customer, reference, or team member differs from the immutable local intent.
-- Pending legacy Square Payment Link orders that have not reconciled within the grace window.
-- Paid training enrollments without schedule-token progress.
-- Paid training schedule tokens that cannot pass eligibility.
-- Calendar events created without a matching private booking record.
+   ```json
+   {
+     "amountCents": 12345,
+     "confirmPolicyCharge": true,
+     "idempotencyKey": "<unique-stable-key>",
+     "operatorId": "<operator-alias>",
+     "reason": "<concise-auditable-reason>"
+   }
+   ```
 
-Evidence must be redacted. Do not paste customer emails, phone numbers, raw webhook bodies, full connection strings, payment tokens, or complete transaction identifiers into tickets or release notes.
+5. The bearer credential is `BOOKING_ADMIN_PAYMENT_ACTION_SECRET`. Never paste it into evidence or chat.
+6. If the response reports a pending or manual-follow-up state, keep the same idempotency key and wait for webhook/reconciliation. Do not submit a different key.
+7. Confirm Square/local amount, invoice/payment identity, event processing, and the final no-show state.
+
+The route rejects appointments that have not ended, unconfirmed policy actions, unsafe/non-positive amounts, and amounts that differ from `allowedAmountCents`.
 
 ## Troubleshooting
 
-### `/booking` Does Not Load
+### `/booking` does not render a catalog
 
-Check:
+This is expected: it is a permanent compatibility redirect. A request without a query, and the exact legacy `?type=in-person-appointment` query, redirect to `/services`. A single accepted legacy service/offering slug redirects to the canonical service booking page only if the slug is operationally bookable. Unknown, empty-valued, conflicting, repeated, or extra query parameters return not found by design.
 
-- Sanity public env vars and dataset target.
-- `bookingSettings` singleton exists and is published.
-- At least one active bookable `service` exists for the expected booking type.
-- Sanity webhook/revalidation logs if the content was just published.
-- Vercel logs for loader or env validation errors.
+Check `/services`, `/admin/setup`, and the operational service/offering status instead of Sanity `bookingSettings`.
 
-Operator action:
+### Service is absent or no slots appear
 
-1. Verify the target Studio and dataset first.
-2. Republish `bookingSettings` if the page is stale.
-3. If stale content remains after a successful signed webhook, compare cache tag handling in `/api/revalidate` and `src/data/loaders.ts` before changing content again.
+Check in this order:
 
-### Slots Are Missing Or Incorrect
+1. `/admin/setup` readiness blockers.
+2. Provider/resource, service, offering, public title/summary/slug, add-on, and Square team status.
+3. Primary and required secondary resource weekly schedules/effective dates.
+4. Time-off/extra-hour exceptions and business timezone.
+5. Active reservations/holds for the occupied interval, including buffers/add-on duration.
+6. Calendar connection status, canonical assignments, access roles, and busy events.
+7. Booking notice/horizon/interval settings.
 
-Check:
+A missing required resource or schedule, or a missing provider primary-resource destination/credential, is a fail-closed configuration problem; do not bypass it with a browser-supplied identifier. Secondary room/equipment resources need schedules and may have busy-only Calendar assignments, but they do not require a booking destination.
 
-- Google OAuth is connected for the target environment.
-- `bookingSettings.calendarId` matches the connected calendar.
-- The connected Google account can read and write events on that calendar.
-- Availability marker events use the configured marker title.
-- Booking horizon, minimum lead time, duration, interval, and buffers are intentional.
-- Existing private holds or Calendar events are blocking the slot.
-- Upstash Redis is reachable for abuse controls and short-lived contention locks.
+### Calendar OAuth/discovery fails
 
-Operator action:
+- Confirm `GOOGLE_REDIRECT_URI` exactly matches the environment OAuth client.
+- Confirm Calendar OAuth and Auth.js use the intended separate client variables.
+- Confirm Upstash is available for the ten-minute single-use state.
+- Restart consent from `/admin/calendar-connections` or `/admin/my-calendar`; do not use the legacy secret URL.
+- Reconnect if Google did not return offline access or the connection is `reconnect_required`.
+- Resolve duplicate account ownership through the audited transfer controls.
+- Restore the correct `BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY` if stored credentials cannot decrypt.
 
-1. Confirm Google Calendar contains the expected availability marker events.
-2. Confirm private active holds are not stale.
-3. If OAuth is broken, rerun the protected OAuth setup flow for the target environment.
+### Calendar reads work but appointment creation fails
 
-### Google OAuth Or Calendar Insert Fails
+A busy-only assignment may have free/busy access, but the booking destination needs Google `writer` or `owner` access. Confirm the active destination, connection, canonical Calendar ID, and access role. If payment is already captured, leave the appointment in manual follow-up and repair/reconcile projection; do not charge again.
 
-Check:
+### Square card form is missing
 
-- `GOOGLE_REDIRECT_URI` exactly matches the OAuth client redirect URI.
-- `KV_REST_API_URL` and `KV_REST_API_TOKEN` point to the same Redis instance used during setup.
-- The Google Calendar API is enabled in the Google Cloud project.
-- The calendar owner account approved the Calendar Events scope.
-- The encrypted OAuth credential still exists in the private Calendar connection and its credential owner is correct.
+`GET /api/booking/square/config` returns unavailable when the card-on-file flag, service flag, Square environment values, application/location ID, or required `DATABASE_URL` setting is missing. It does not test database reachability; connectivity failures surface later when the payment session or confirmation reads/writes PostgreSQL. Confirm environment scoping and run `npm run check:square-card-on-file-env`. The intended public behavior is fail-closed; there is no automatic hosted fallback.
 
-Operator action:
+### `/api/booking/payment/confirm` fails
 
-1. Do not change the calendar ID blindly.
-2. Reconnect OAuth using the documented internal OAuth setup process with the admin setup secret from the secure secret manager.
-3. Rotate `BOOKING_ADMIN_SETUP_SECRET` if the admin setup secret may have been exposed.
+- `400`: invalid request/policy/payment data.
+- `402`: provider-declined payment.
+- `409`: expired/unavailable hold or changed reservation.
+- `502`: Square API/card/invoice failure with no successful outcome reported.
+- `503`: infrastructure or ambiguous provider state requiring retry/reconciliation.
+- `404`: service Square confirmation is disabled.
 
-### Hold Is Expired, Payment Pending, Or Manual Follow-Up
+Before retrying a `502`/`503`, inspect local intent and Square state. Preserve the original request/idempotency semantics.
 
-Check:
+### Square webhook returns `401`
 
-- Hold state and expiry timestamp in private Postgres.
-- Checkout order status and provider references.
-- Square order/payment references for service bookings and for product and training checkout, or Square invoice/payment references for training when `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true`.
-- Square webhook delivery logs for service bookings, product and training checkout, and (when enabled) training Square Invoice orders.
-- Whether a Calendar event already exists for the hold metadata.
+Confirm the exact subscription URL and `SQUARE_SERVICE_BOOKING_WEBHOOK_URL`, then the signature key from that same subscription/environment. Square signs `notification URL + raw body`; proxies/domains cannot be treated as equivalent. Do not accept an invalid signature to restore delivery.
 
-Operator action:
+### Captured payment has no appointment/event
 
-1. If payment did not succeed, release or let the hold expire and ask the customer to retry.
-2. If service payment succeeded but the slot is no longer available, keep the record in `paid_unbookable_rebooking_pending`, offer a new slot first, verify replacement availability before Calendar event creation, and refund only after rebooking fails or staff chooses refund.
-3. If Calendar insertion may have succeeded but the response was lost, search for the existing event before creating anything manually.
+Treat this as paid reconciliation, not an unpaid retry. Check the captured attempt, appointment finalization state, reservations, provider/resource snapshots, Calendar connection, and reconciliation findings. Resume idempotent finalization or move to rebooking-first manual handling. Refund only after provider confirmation and an authorized business decision.
 
-### Availability Or Holds Return 429 Or 503
+### Transactional email is missing
 
-Check:
+Check the durable appointment/order/enrollment outcome first. Then inspect the retry state, Resend credentials/domain, template configuration, and the reconciliation/customer-email workers. Do not recreate a booking or payment to resend email.
 
-- `Retry-After` on a `429` response before asking the customer to retry.
-- Upstash availability, latency, and command errors for `503` responses.
-- `KV_REST_API_URL` and `KV_REST_API_TOKEN` point to the intended environment.
-- Vercel is supplying a valid `x-vercel-forwarded-for` header in preview/production.
-- The browser is not polling availability repeatedly because of a client retry loop.
+### Training schedule is unavailable
 
-Operator action:
+Check the paid enrollment, token hash/status, 14-day expiry, exact program slug, published Sanity Appointment Schedule URL, and URL validation. Rendering does not mark scheduled. Do not bypass the token gate by sending the raw Google URL.
 
-1. For `429`, wait for `Retry-After`; do not bypass or delete Redis keys for one customer.
-2. For `503`, verify Upstash and trusted-header delivery before reopening booking traffic. Hold creation intentionally fails closed.
-3. Use only hashed limiter-key evidence. Never log, copy into tickets, or expose the raw client IP.
-4. Do not disable the limiter to compensate for Google Calendar latency or an application polling bug.
+## Stop conditions and emergency controls
 
-### Square Service Payment Verification Fails
+Stop new service card collection by setting:
 
-Check:
+```env
+SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=false
+```
 
-- Webhook URL exactly matches `SQUARE_SERVICE_BOOKING_WEBHOOK_URL`.
-- `SQUARE_WEBHOOK_SIGNATURE_KEY` is scoped to the same Square app and webhook subscription.
-- `SQUARE_ENVIRONMENT`, `SQUARE_ACCESS_TOKEN`, and `SQUARE_LOCATION_ID` match the intended Square sandbox or production account.
-- Square provider event IDs are recorded in private idempotency rows.
+Keep `SERVICE_BOOKING_SQUARE_ENABLED=true`, Square credentials, webhook verification, and reconciliation secrets active so in-flight direct payments, refunds/no-show actions, and historical hosted records remain recoverable.
 
-Operator action:
+Disable affected providers/offerings in the admin dashboard when Calendar/resource readiness is unsafe. Do not delete connections, assignments, payment rows, or appointments to hide an incident.
 
-1. Treat browser return as an incomplete handoff until server-side reconciliation proves payment.
-2. Use Square dashboard delivery status and Vercel logs to identify failed events.
-3. Do not replay events manually unless idempotency evidence is understood.
+Stop promotion or public booking if any of these are true:
 
-### Square Commerce (Product/Training) Payment Or Webhook Verification Fails
+- Private DB migration lineage does not pass `npm run db:check`.
+- Square credentials/location/team mappings are mixed across environments.
+- Webhook test events repeatedly fail signature verification or retryable failures cannot persist.
+- A duplicate charge, appointment, reservation transfer, saved card, or Calendar event is observed.
+- Captured/completed provider payments lack a durable local attempt/appointment and are not contained in manual follow-up.
+- An appointment exists without captured-payment evidence.
+- Calendar credentials cannot decrypt or active destinations cannot be discovered/written.
+- Reconciliation reports unresolved provider evidence, amount/currency/customer/card/team mismatch, or stale capture/no-show state.
+- PII, raw tokens, credentials, payment-session references, or private event bodies appear in Sanity, logs, tickets, or release evidence.
 
-Check:
+## Incident evidence
 
-- `SQUARE_COMMERCE_ENABLED=true` in the target environment and product/training checkout is expected to be live.
-- All Square events (product, training, and service booking) arrive on the single webhook `https://<domain>/api/webhooks/square`, which must match `SQUARE_SERVICE_BOOKING_WEBHOOK_URL` and use HTTPS.
-- `SQUARE_WEBHOOK_SIGNATURE_KEY` is scoped to the same Square app and webhook subscription.
-- `SQUARE_ENVIRONMENT`, `SQUARE_ACCESS_TOKEN`, and `SQUARE_LOCATION_ID` match the intended Square sandbox or production account.
-- Private payment-event idempotency rows are being recorded.
+Record only:
 
-Operator action:
+- Environment and deployment identifier.
+- UTC timestamps.
+- Redacted internal hold/order/appointment reference.
+- Route and HTTP status.
+- State-machine status and reconciliation category.
+- Whether Square/Calendar/Resend lookup succeeded, without raw payloads.
+- Operator alias and approved recovery action.
 
-1. Use Square dashboard delivery status and Vercel logs to identify the failed event.
-2. Do not replay the same event manually unless idempotency evidence is understood.
-3. If browser card confirmation succeeded but the webhook failed, confirm the product or training order already reached the expected private paid state before retrying anything.
+Never record database URLs, OAuth setup URLs/state/codes, encryption keys, Square access/source/verification tokens, webhook secrets/bodies, customer PII, or full provider identifiers.
 
-### Email Does Not Send
+## Private database changes and recovery
 
-Check:
+Migrations are forward-only and tracked by the complete `drizzle/meta/_journal.json` lineage. Do not use an old booking migration filename list to decide whether an environment is current.
 
-- `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `RESEND_SEGMENT_MARKETING_ID`, `FROM_EMAIL`, and `ADMIN_EMAIL` are configured.
-- The sender domain is verified in Resend.
-- Vercel logs show the email error after the private state transition.
-- The 30-minute `/api/admin/payment-reconciliation` cron is running and its booking-outcome retry summary is not reporting persistent failures.
+Follow `docs/private-database-migration-runbook.md` for preflight, backups, apply/check commands, production approval, and roll-forward recovery. Never edit/delete payment, hold, reservation, appointment, Calendar credential, or migration-history rows as ad hoc incident repair.
 
-Operator action:
+Safe recovery principles:
 
-1. Do not roll back a confirmed booking only because email failed.
-2. Record the Resend message/error ID with addresses redacted.
-3. Check the relevant private DB email state/error field for the product order, training enrollment, or booking hold.
-4. For V2 bookings, also inspect `bookingConfirmationEmailOutcome`. A `manual_followup` outcome on an appointment that is now booked remains eligible for one booked correction; missing legacy outcome metadata is not treated as a correction request.
-5. Let the scheduled retry reclaim expired claims oldest-first. Do not change either the booked key (`booking-confirmation:<holdId>`) or manual key (`booking-confirmation:<holdId>:manual_followup`) when retrying.
-6. Send a manual customer follow-up if the booking, product order, or paid training instruction email still fails after the scheduled retry.
-7. Use `docs/resend-transactional-email-setup.md` for Resend sender/domain and environment troubleshooting.
+- Persist external provider completion before local projection.
+- Retry idempotently from durable state.
+- Rebook before refund when a paid slot cannot be projected.
+- Preserve historical/handoff compatibility long enough to finish existing records, but do not send new customers into retired flows.
+- Keep transactional email and Calendar side effects subordinate to the PostgreSQL outcome.
+- Prefer an explicit manual-follow-up state over assuming success or failure.
 
-### Customer Cannot Access Paid Training Schedule
+Related current setup references:
 
-Check:
-
-- The token belongs to a paid training enrollment for the requested program.
-- The token has not expired or already been revoked.
-- The requested training program has a published Google Appointment Schedule URL or embed mode.
-- The page is resolving eligibility before rendering the schedule URL.
-
-Operator action:
-
-1. Verify the paid training enrollment in private Postgres.
-2. Send the customer a valid paid training schedule link again if policy allows.
-3. If the token state is wrong, escalate for a private record correction decision; do not bypass eligibility in Sanity and do not paste the Appointment Schedule URL into public docs or tickets.
-
-## Stop Conditions
-
-Stop the launch or release window if any of these occur:
-
-- Production `DATABASE_URL` cannot be verified as the intended target.
-- Production backup/PITR is unavailable before an approved migration window.
-- Customer PII, payment state, or booking history appears in Sanity.
-- Live booking or form flows create new Sanity submission documents.
-- Paid service payment succeeds but the finalizer repeatedly fails to book or mark rebooking/manual follow-up.
-- Square service webhook signatures cannot be verified.
-- Square commerce (product/training) webhook signatures cannot be verified.
-- Google Calendar writes fail for confirmed paid bookings.
-- Public booking accepts a retired tokenized handoff.
-
-## Escalation
-
-| Situation                                              | First action                                                                                                                                    | Escalate to                                   |
-| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| Booking page stale after publish                       | Verify Sanity webhook delivery, projection, and cache tag                                                                                       | Technical operator                            |
-| Service payment succeeded but booking did not finalize | Preserve private records, inspect finalizer logs, check Calendar event existence                                                                | Technical operator and business owner         |
-| Customer paid for a service and slot is unavailable    | Keep rebooking pending, offer alternate slot, verify availability before Calendar event, refund only if rebooking fails or staff chooses refund | Business owner                                |
-| PII or payment data appears in Sanity                  | Stop affected flows and preserve evidence                                                                                                       | Business/privacy owner and technical operator |
-| Production migration concern                           | Stop; follow `docs/private-database-migration-runbook.md`                                                                                       | Migration approver                            |
-
-Nataliea remains the accountable business/privacy owner. Dardan is the contract technical operator/steward while actively engaged. A post-contract operator or vendor must be named before launch for ongoing private-record operations.
-
-## Private Database Migrations
-
-### Forward-only migration and recovery note
-
-The migration journal contains both `0010_familiar_jazinda` and `0010_dry_magneto`, the recovered operational chain `0018` through `0021`, and capture-lease migration `0022_cold_mikhail_rasputin`. Do not rewrite, renumber, or destructively roll back applied migrations. Continue with forward migrations only.
-
-Before deploy, verify backup/PITR, inspect the target `drizzle.__drizzle_migrations` journal, run `npm run db:generate` expecting no drift, and apply with the explicit target/host guards. For an application rollback, deploy the previous code and use `SERVICE_BOOKING_MODEL_MODE=legacy`; leave the additive schema in place. To roll forward again, deploy the recovered code, rerun `npm run db:migrate` idempotently, restore `dual`, and repeat readiness/payment/calendar smoke checks before `operational` cutover.
-
-## Safe Recovery Principles
-
-- Private Postgres is canonical for sensitive booking/payment state.
-- Search for an existing Calendar event before creating any manual replacement.
-- Preserve idempotency keys and webhook event evidence.
-- Prefer manual follow-up over silent retries when money has moved but booking state is uncertain.
-- Do not delete or edit private production records casually. If schema changes are needed, use generated migrations and the migration runbook.
-- Keep all incident evidence redacted.
+- `docs/booking-system-setup-guide.md`
+- `docs/booking-operations-dashboard.md`
+- `docs/google-calendar-oauth-env-setup.md`
+- `docs/booking-training-calendar-configuration-guide.md`
+- `docs/square-service-booking-setup.md`
+- `docs/private-database-migration-runbook.md`
+- `docs/launch-readiness-checklist.md`

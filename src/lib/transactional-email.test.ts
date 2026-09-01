@@ -50,6 +50,10 @@ test("transactional email sends configured Resend templates without source-rende
     process.env.RESEND_API_KEY = "re_test";
 
     const result = await sendTransactionalEmail({
+      headers: {
+        "List-Unsubscribe": "<https://lashher.test/api/marketing/unsubscribe?token=opaque>",
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+      },
       html: "<p>Fallback HTML</p>",
       subject: "Fallback subject",
       template: {
@@ -69,7 +73,46 @@ test("transactional email sends configured Resend templates without source-rende
       variables: { CUSTOMER_NAME: "Client Name" },
     });
     assert.equal(requests[0].body.from, "Lash Her <hello@lashher.test>");
+    assert.deepEqual(requests[0].body.headers, {
+      "List-Unsubscribe": "<https://lashher.test/api/marketing/unsubscribe?token=opaque>",
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    });
     assert.deepEqual(requests[0].body.to, "client@example.com");
+  `);
+});
+
+test("transactional email forwards custom message headers for raw HTML", () => {
+  runTransactionalEmailScenario(`
+    const requests = [];
+    globalThis.fetch = async (_url, init) => {
+      requests.push(JSON.parse(init.body));
+
+      return new Response(JSON.stringify({ id: "email_html_123" }), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      });
+    };
+
+    process.env.ADMIN_EMAIL = "admin@lashher.test";
+    process.env.FROM_EMAIL = "Lash Her <hello@lashher.test>";
+    process.env.RESEND_API_KEY = "re_test";
+
+    await sendTransactionalEmail({
+      headers: {
+        "List-Unsubscribe": "<https://lashher.test/api/marketing/unsubscribe?token=opaque>",
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+      },
+      html: "<p>Raw HTML</p>",
+      subject: "Raw subject",
+      to: "client@example.com",
+    });
+
+    assert.equal(requests.length, 1);
+    assert.deepEqual(requests[0].headers, {
+      "List-Unsubscribe": "<https://lashher.test/api/marketing/unsubscribe?token=opaque>",
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    });
+    assert.equal(requests[0].html, "<p>Raw HTML</p>");
   `);
 });
 
@@ -82,8 +125,15 @@ function runTransactionalEmailScenario(assertions: string): void {
   delete env.EMAIL_PROFILE_IMAGE_URL;
 
   execFileSync(
-    "./node_modules/.bin/tsx",
-    ["--conditions=react-server", "--eval", scenario],
+    process.execPath,
+    [
+      "--conditions=react-server",
+      "--import",
+      "tsx",
+      "--input-type=module",
+      "--eval",
+      scenario,
+    ],
     {
       cwd: process.cwd(),
       env,

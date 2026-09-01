@@ -66,6 +66,7 @@ export async function redactShippingPolicyPii(
       .update(customerEmailOutbox)
       .set({
         recipientCiphertext: "[redacted]",
+        recipientEmailNormalized: null,
         templateDataCiphertext: "[redacted]",
         lastError: null,
         redactedAt: now,
@@ -228,6 +229,7 @@ export async function redactShippingPolicyPii(
       .update(customerEmailOutbox)
       .set({
         recipientCiphertext: "[redacted]",
+        recipientEmailNormalized: null,
         templateDataCiphertext: "[redacted]",
         lastError: null,
         redactedAt: now,
@@ -467,7 +469,9 @@ export async function assertShippingPiiHardCaps(
           or rationale <> '[redacted]' or evidence <> '{}'::jsonb)
       union all select id from ${customerEmailOutbox}
       where redaction_due_at <= ${absoluteDeadlineCutoff}
-        and (redacted_at is null or recipient_ciphertext <> '[redacted]' or template_data_ciphertext <> '[redacted]' or last_error is not null)
+        and (redacted_at is null or recipient_ciphertext <> '[redacted]'
+          or recipient_email_normalized is not null
+          or template_data_ciphertext <> '[redacted]' or last_error is not null)
     ) violations
   `);
   if (Number(absoluteViolations.rows[0]?.count ?? 0) > 0) {

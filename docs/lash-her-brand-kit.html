@@ -163,7 +163,7 @@
     <section class="section">
       <p class="eyebrow">01 / Brand Position</p>
       <h2>Quiet luxury, high precision, personal transformation.</h2>
-      <p class="lead">Lash Her should feel intimate, refined, and expert-led. The current website now implements a white-first editorial system with exact dark image overlays, a fixed glass navigation state, Bebas Neue display typography, bold Inter support copy, structured service cards, and calmer conversion moments. This brand kit is synchronized to that live direction across web, booking flows, training material, social graphics, and print collateral.</p>
+      <p class="lead">Lash Her should feel intimate, refined, and expert-led. The current website now implements a white-first editorial system with exact dark image overlays, fixed navigation that transitions from transparent to white on the homepage, Bebas Neue display typography, bold Inter support copy, structured service cards, and calmer conversion moments. This brand kit is synchronized to that live direction across web, booking flows, training material, social graphics, and print collateral.</p>
       <div class="grid three" style="margin-top:26px;">
         <article class="card"><h4>Brand essence</h4><p>Luxury lash artistry with a personal, mentorship-driven tone. The brand should feel calm, confident, feminine, and exacting.</p></article>
         <article class="card"><h4>Primary audience</h4><p>Clients seeking premium lash work in Toronto and students seeking serious, hands-on lash education.</p></article>
@@ -282,7 +282,7 @@
       <div class="grid three" style="margin-top:20px;">
         <article class="card"><h4>Section shells</h4><p>Use white as the default section surface, Dusty Silk for soft pauses, and Midnight Espresso for high-contrast footer or contact panels.</p></article>
         <article class="card"><h4>Editorial cards</h4><p>Use 24px radii, thin lines, white fills, soft shadows, and optional Antique Champagne borders for highlighted training cards.</p></article>
-        <article class="card"><h4>Gallery motion</h4><p>The live gallery uses a Motion Plus coverflow with large rounded image cards, subtle perspective, drag affordance, and understated dot pagination.</p></article>
+        <article class="card"><h4>Gallery motion</h4><p>The live gallery uses a Motion-driven coverflow with large rounded image cards, subtle perspective, clickable cards, previous/next controls, and understated dot pagination. It does not currently implement drag gestures.</p></article>
       </div>
       <div class="grid three" style="margin-top:20px;">
         <article class="card"><h4>Button variants</h4><p>Use <code>primary</code>, <code>dark</code>, <code>luxury</code>, <code>accent</code>, <code>outline</code>, and <code>ghost</code> as the canonical CTA variants. Homepage hero primary CTAs use <code>luxury</code>; internal heroes and nav use <code>primary</code>; non-featured course cards can use <code>outline</code>.</p></article>
@@ -297,7 +297,7 @@
       <div class="grid two" style="margin-top:28px;">
         <article class="card"><h4>Spacing</h4><ul><li>Use 24px as the base spacing unit for cards and section interiors.</li><li>Use section shells with 44px mobile, 64px tablet, and 96px desktop vertical rhythm.</li><li>Keep content constrained to 1180px with 24–32px side gutters.</li></ul></article>
         <article class="card"><h4>Shape and depth</h4><ul><li>Use the Tailwind radius base of 18px for default UI surfaces.</li><li>Use 18px radii for fields, dropdown menus, and navigation viewports.</li><li>Use 24px radii for editorial cards and gallery images.</li><li>Use 28px radii for soft and dark panels; prefer thin borders over heavy shadows.</li></ul></article>
-        <article class="card"><h4>Navigation</h4><ul><li>Header is fixed at the top with a centered logo, desktop nav pinned left, and CMS-driven CTAs pinned right.</li><li>The first CMS-driven CTA is the only primary filled nav button; do not hardcode “Book Now” as a rule.</li><li>At rest, the header is transparent over hero imagery. After 50px scroll, it becomes <code>bg-lh-primary/30</code> with backdrop blur, brand line, and soft shadow.</li><li>Mobile uses a left hamburger that opens a right-side sheet with expandable menu sections.</li></ul></article>
+        <article class="card"><h4>Navigation</h4><ul><li>Header is fixed at the top with a centered logo, desktop nav pinned left, and CMS-driven CTAs pinned right.</li><li>The first CMS-driven CTA is the only primary filled nav button; do not hardcode “Book Now” as a rule.</li><li>On the homepage, the header is transparent over the hero until the page passes 50px scroll, then becomes <code>bg-lh-white</code> with a light brand border and soft shadow. Non-home routes use the white active state immediately.</li><li>Mobile uses a left hamburger that opens a right-side sheet with expandable menu sections.</li></ul></article>
         <article class="card"><h4>Forms</h4><ul><li>Use white fields inside Dusty Silk soft panels.</li><li>Use Royal Mulberry focus rings and Black Cherry error states.</li><li>Use bold Inter labels and concise helper text; success states stay quiet and neutral.</li></ul></article>
       </div>
     </section>
@@ -307,7 +307,7 @@
       <h2>Motion should reveal, not perform.</h2>
       <div class="grid three" style="margin-top:28px;">
         <article class="card"><h4>Block reveal</h4><p>Most CMS layout blocks use a scroll reveal wrapper with reduced-motion support. Hero sections skip this entrance treatment so the first impression loads immediately.</p></article>
-        <article class="card"><h4>Header transition</h4><p>The fixed header uses a 300ms transition between transparent and Mulberry glass states. Avoid hiding the header on scroll; the current pattern keeps navigation available.</p></article>
+        <article class="card"><h4>Header transition</h4><p>The fixed header uses a 300ms transition between the transparent homepage state and the white active state with a light border and shadow. Avoid hiding the header on scroll; the current pattern keeps navigation available.</p></article>
         <article class="card"><h4>Utility motion</h4><p>Use <code>.mask-gradient</code> for horizontal fade masks and <code>.animate-fade-in-overlay</code> for slow overlay entrances. Keep motion subtle and accessibility-aware.</p></article>
       </div>
     </section>
@@ -460,7 +460,7 @@
       <div class="grid two" style="margin-top:28px;">
         <article class="card"><h4>Homepage</h4><p>Use a full-bleed photographic hero with <code>from-lh-shadow/80 via-lh-accent/70 to-lh-primary/60</code>, oversized Bebas Neue heading, bold Inter support copy, and Antique Champagne <code>luxury</code> CTA.</p></article>
         <article class="card"><h4>Training section</h4><p>Use editorial-card course tiles with Royal Mulberry hierarchy, Antique Champagne “Most Popular” treatment, icon badges, accent rules, and one clear application CTA per card.</p></article>
-        <article class="card"><h4>Gallery</h4><p>Use the implemented coverflow direction: large vertical crops, 24px image radii, soft shadow, drag affordance, subtle perspective, and quiet dot pagination.</p></article>
+        <article class="card"><h4>Gallery</h4><p>Use the implemented coverflow direction: large vertical crops, 24px image radii, soft shadow, subtle perspective, clickable cards, previous/next controls, and quiet dot pagination.</p></article>
         <article class="card"><h4>Contact and booking</h4><p>Use section-shell layouts, Dusty Silk soft panels, white 18px form fields, Royal Mulberry focus states, Black Cherry errors, and a dark contact card for location, hours, email, and booking links.</p></article>
       </div>
     </section>

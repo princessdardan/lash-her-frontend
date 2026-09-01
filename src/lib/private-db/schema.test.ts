@@ -44,6 +44,7 @@ import {
   checkoutOrders,
   checkoutPaymentEvents,
   checkoutOrderPurpose,
+  customerEmailOutbox,
   marketingConsentEvents,
   marketingContactSyncJobs,
   noShowChargeStatus,
@@ -78,6 +79,7 @@ function getIndexNames(
     | typeof bookingNoShowChargeRecords
     | typeof checkoutOrders
     | typeof checkoutPaymentEvents
+    | typeof customerEmailOutbox
     | typeof marketingContactSyncJobs,
 ): string[] {
   const names: string[] = [];
@@ -433,6 +435,39 @@ test("marketing consent events preserve evidence when submissions are deleted", 
 
   assert.equal(marketingConsentEvents.submissionId.notNull, false);
   assert.equal(submissionForeignKey?.onDelete, "set null");
+});
+
+test("contact popup offer outbox links are unique and deletion-safe", () => {
+  const config = getTableConfig(customerEmailOutbox);
+  const submissionForeignKey = config.foreignKeys.find(
+    (foreignKey) =>
+      foreignKey.getName() ===
+      "customer_email_outbox_submission_id_marketing_contact_submissions_id_fk",
+  );
+
+  assert.equal(customerEmailOutbox.submissionId.notNull, false);
+  assert.equal(submissionForeignKey?.onDelete, "set null");
+  assert.ok(
+    getIndexNames(customerEmailOutbox).includes(
+      "customer_email_outbox_submission_id_idx",
+    ),
+  );
+
+  const migrationSql = readFileSync(
+    new URL("../../../drizzle/0076_organic_kitty_pryde.sql", import.meta.url),
+    "utf8",
+  );
+  assert.match(migrationSql, /submission_type <> 'contact_popup'/);
+  assert.match(migrationSql, /submission_consent_choice <> 'opted_in'/);
+  assert.match(
+    migrationSql,
+    /contact popup offer email recipient does not match submission/,
+  );
+  assert.match(migrationSql, /NEW\."recipient_email_normalized" := NULL/);
+  assert.match(
+    migrationSql,
+    /contact popup offer email retention exceeds submission retention/,
+  );
 });
 
 test("payment reconciliation indexes support paid Square appointment order scans", () => {
@@ -1069,6 +1104,20 @@ test("day-395 verification covers every redacted 0059 operational evidence field
   for (const column of requiredColumns) {
     assert.match(absoluteVerifier, new RegExp(`\\b${column}\\b`));
   }
+});
+
+test("customer email retention clears and audits normalized recipient PII", () => {
+  const retentionSource = readFileSync(
+    new URL("./shipping-retention.ts", import.meta.url),
+    "utf8",
+  );
+  const absoluteVerifier = retentionSource.slice(
+    retentionSource.indexOf("const absoluteViolations"),
+    retentionSource.indexOf("if (Number(absoluteViolations"),
+  );
+
+  assert.match(retentionSource, /recipientEmailNormalized: null/);
+  assert.match(absoluteVerifier, /recipient_email_normalized is not null/);
 });
 
 test("0061 removes legacy Helcim reconciliation text outside retention-managed records", () => {

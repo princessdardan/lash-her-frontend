@@ -1,200 +1,168 @@
-# Marketing Contact Privacy Compliance Follow-up
+# Marketing Contact Privacy Status And Gap Register
 
-This document captures the compliance workstream that should follow the marketing-contact storage migration. It is technical planning support, not legal advice. Final consent wording, retention periods, jurisdiction coverage, and operating procedures should be reviewed by business ownership and qualified privacy/legal counsel.
+This document records the implemented marketing/contact privacy controls and the remaining business, legal, and operational decisions. It is a technical source of evidence, not legal advice. Consent wording, retention periods, jurisdiction coverage, and operating procedures still require approval from the accountable business/privacy owner and qualified privacy/legal counsel.
 
-## Scope Boundary
+## Current System Boundary
 
-Marketing/contact submissions now belong in the private Neon/Postgres database, while Sanity remains public/editorial content plus historical submission backfill source only. The private database must preserve the consent evidence needed for compliance review and operations.
+- New contact popup, general inquiry, training/contact, and booking marketing-choice records are written to private PostgreSQL through `src/lib/marketing-contact/marketing-contact-store.ts`.
+- Sanity stores public/editorial content. Historical `contactPopupSubmission`, `generalInquiry`, `contactForm`, and `bookingMarketingOptIn` documents may remain as migration sources, but no new live submission or consent record belongs there.
+- Contact-popup wording remains editorial configuration in Sanity under `globalSettings.contactPopup`.
+- Operational booking UI wording, including `marketingOptInLabel`, is stored in PostgreSQL `booking_business_settings`, loaded by `src/lib/private-db/booking-business-settings-repository.ts`, and managed at `/admin/booking-settings`. The unregistered Sanity `bookingSettings` document and its loader are legacy V1 compatibility only.
+- Customer PII, consent evidence, suppression state, campaign state, provider identifiers, transaction history, and payment data must not be written to Sanity.
 
-Full CASL, PIPEDA, GDPR, and related privacy compliance is broader than the storage migration. It requires unsubscribe handling, consent wording approval, retention schedules, data subject request workflows, access controls, operational logging, incident response, and periodic review.
+## Implemented Controls
 
-## Approved Operating Model
+### Consent And Submission Evidence
 
-Nataliea is the accountable business/privacy owner for the Lash Her records. Dardan is the contract technical operator/steward while actively engaged on the project, responsible for implementation and technical evidence under Nataliea-approved requirements, not for permanent compliance ownership.
+The private data model separates current audience state from per-submission and append-only consent evidence:
 
-Recommended role split:
+- `marketing_contacts` contains contacts with affirmative marketing consent and their current subscription state.
+- `marketing_contact_submissions` records each supported form or booking marketing choice, including source, path, consent choice, consent-text snapshot, minimized form-specific payload, and optional migration provenance.
+- `marketing_consent_events` records `opt_in`, `no_opt_in`, `unsubscribe`, and `backfill_consent` events.
+- A negative booking marketing choice creates submission and consent evidence but does not create or update a consolidated marketing contact.
+- Backfilled Sanity records retain source document ID, type, timestamps, migration time, and inferred or explicit consent status where available.
 
-- Nataliea approves consent wording, retention/redaction decisions, unsubscribe/suppression policy, DSAR responses, and any decision to export, delete, redact, hide, or retain records.
-- Dardan implements storage, exports, redaction tooling, suppression logic, evidence capture, and secure configuration under Nataliea's written direction during the contract.
-- Qualified privacy/legal counsel should be consulted for consent wording, lawful-basis decisions, retention periods, deletion exceptions, and jurisdiction coverage.
-- Nataliea or a named vendor must own ongoing DSAR, unsubscribe, access review, retention job, and incident-response operations after Dardan's contract ends.
+The durable evidence fields are implemented in `src/lib/private-db/schema.ts` and populated through `src/lib/marketing-contact/marketing-contact-store.ts`. They include normalized and submitted email, submitted contact fields where applicable, source form/path, consent choice and timestamp, displayed consent text, source-system provenance, and structured payload fields.
 
-Contractor safeguards:
+### Unsubscribe, Suppression, And Resend Synchronization
 
-- Keep Dardan's access least-privilege and limited to active work.
-- Record what private systems and PII Dardan may access.
-- Revoke or rotate contractor access when the contract ends or scope changes.
-- Do not export production PII to personal devices unless Nataliea explicitly approves a secure handling procedure.
-- Treat any PII exposure or suspected misconfiguration found during technical work as an incident-notification trigger to Nataliea.
+Unsubscribe persistence and provider suppression are implemented:
 
-## Legacy Storage Facts
+- A verified Resend `contact.updated` webhook with `unsubscribed=true` records the unsubscribe in PostgreSQL through `/api/webhooks/resend`.
+- The transaction stamps `marketing_contacts.unsubscribed_at`, appends an `unsubscribe` consent event, and prevents queued or in-flight opt-in sync jobs from re-subscribing the address.
+- Internally initiated unsubscribes use `recordInternalUnsubscribe`, which applies the same database suppression and enqueues a durable `unsubscribe_sync` job for Resend.
+- Resend-originated events do not enqueue a second provider update, preventing a Resend-to-database-to-Resend loop.
+- Marketing audience queries select only rows that were created from affirmative consent and have no `unsubscribed_at` value.
 
-- Public/editorial content is stored in Sanity.
-- Historical contact popup submissions may exist in Sanity as `contactPopupSubmission` and are a backfill source only.
-- Historical general inquiries may exist in Sanity as `generalInquiry` and are a backfill source only.
-- Historical training/contact submissions may exist in Sanity as `contactForm` and are a backfill source only.
-- Historical booking marketing opt-ins may exist in Sanity as `bookingMarketingOptIn` and are a backfill source only.
-- New contact popup, general inquiry, training/contact, and booking marketing choice records should write to the private Neon/Postgres database.
-- Private DB tables include checkout orders, payment events, training enrollments, marketing contacts, marketing/contact submissions, and consent events.
-- Checkout/order storage policy in `README.md` states that transaction history, customer PII, and payment tokens must not be stored in Sanity.
-- Contact popup settings are loaded from Sanity `globalSettings.contactPopup` and include `privacyText`, `privacyLinkLabel`, and `privacyLinkHref`.
-- Booking settings are loaded from Sanity `bookingSettings` and include `marketingOptInLabel`.
+The persistence and durable outbox behavior live in `src/lib/marketing-contact/marketing-contact-store.ts`; provider delivery is handled by `src/lib/marketing-contact/marketing-contact-sync-worker.ts`.
 
-## Private DB Storage Facts
+The code contains the internal unsubscribe primitive, but this audit did not find a public self-service unsubscribe endpoint or an admin unsubscribe button. Resend-hosted unsubscribe is the implemented customer path. Add a first-party control only if the approved operating model requires one.
 
-The marketing-contact storage migration establishes these private DB record categories:
+### Admin Audience And Campaign Operations
 
-- A submission/audit table for every general inquiry, training/contact form, contact popup/email-list signup, and booking marketing choice.
-- A consolidated marketing-contact table that includes only contacts with affirmative marketing consent.
-- A consent event ledger for opt-ins, opt-outs, no-consent choices, and imported historical records where consent status is known or inferred.
-- Backfilled Sanity submission records with provenance fields such as Sanity `_id`, `_type`, `_createdAt`, migration timestamp, and inferred consent status.
+The private admin surface is implemented at `/admin/marketing`:
 
-Negative booking opt-in choices should be audited, but must not create or update consolidated marketing-contact rows.
+- `marketing:view` protects audience, contact, unsubscribe, and delivery-sync views.
+- `marketing:send` separately protects the campaign composer and send actions.
+- Operators can review current audience counts, unsubscribed contacts, source/date filters, consent evidence, and delivery-sync issues.
+- Authorized campaign operators can save a draft, send a test to themselves, send to the current opted-in audience, and review campaign history.
+- Campaign actions sanitize message HTML and persist campaign state in PostgreSQL.
+- Recipient estimation and provider send logic exclude contacts whose `unsubscribed_at` is set.
 
-## Compliance Measures To Implement
-
-### Consent Evidence
-
-Store enough evidence to prove consent and explain how it was obtained:
-
-- normalized email and submitted email
-- contact name, phone, Instagram, and location only where submitted
-- source form and source path
-- consent boolean and consent timestamp
-- displayed consent text or CTA text snapshot
-- privacy link label and href snapshot
-- consent text/version identifier when available
-- source system and source record ID for backfilled records
-- minimized, structured form-specific fields rather than raw submission payload snapshots unless privacy/legal approval explicitly requires otherwise
-
-CASL places the burden of proving consent on the sender, so consent records should be durable and queryable.
-
-Reference: CRTC, “Keeping records of consent”  
-https://www.canada.ca/en/radio-television-telecommunications/news/2016/07/enforcement-advisory-notice-for-businesses-and-individuals-on-how-to-keep-records-of-consent.html
-
-### Unsubscribe And Withdrawal
-
-Implement a suppression workflow before sending marketing campaigns from this database:
-
-- Add an unsubscribe endpoint or admin workflow.
-- Record unsubscribe/withdrawal events in the consent ledger.
-- Mark the consolidated contact as unsubscribed or suppressed.
-- Stop marketing sends immediately after suppression.
-- Record CASL 10-business-day handling as a planning checkpoint for business/privacy/legal confirmation.
-
-References:  
-CRTC CASL guidance: https://crtc.gc.ca/eng/com500/guide.htm  
-OPC consent guidance: https://www.priv.gc.ca/en/privacy-topics/privacy-laws-in-canada/the-personal-information-protection-and-electronic-documents-act-pipeda/p_principle/principles/p_consent/
-
-### Data Minimization
-
-Keep the consolidated marketing-contact table lean. It should be a marketing audience table, not a complete operational history.
-
-Recommended split:
-
-- Consolidated contact table: current marketing status and latest useful contact fields.
-- Submission table: per-form audit record.
-- Consent events table: append-only consent, no-consent, unsubscribe, and backfill events.
-
-Do not store raw payment tokens, card data, full payment payloads, or customer order PII in Sanity.
-
-References:  
-European Commission GDPR principles: https://commission.europa.eu/law/law-topic/data-protection/reform/rules-business-and-organisations/principles-gdpr/overview-principles/what-data-can-we-process-and-under-which-conditions_en  
-OPC PIPEDA principles: https://www.priv.gc.ca/en/privacy-topics/privacy-laws-in-canada/the-personal-information-protection-and-electronic-documents-act-pipeda/p_principle
+Relevant implementation paths are `src/app/admin/(protected)/marketing/page.tsx`, `src/app/admin/(protected)/marketing/campaigns/actions.ts`, and `src/lib/marketing-campaign/**`.
 
 ### Retention And Redaction
 
-Retention windows are now implemented in `src/lib/private-db/retention.ts` and surfaced as static metadata by `/api/admin/private-data-retention`. The current marketing/contact windows are:
+Retention and redaction operations are implemented in `src/lib/private-db/retention.ts`. An authorized `GET /api/admin/private-data-retention` invocation executes the destructive cleanup and then returns the affected-record summary plus the configured window metadata; it is not an inspection-only endpoint:
 
-- Marketing contacts: redact inactive profile fields after 730 days from `last_consented_at`; delete unsubscribed contacts after 2555 days from `unsubscribed_at`.
-- Consent events: delete after 2555 days from `occurred_at`; submission references are nullable with `ON DELETE SET NULL` so consent evidence survives earlier submission deletion.
-- Non-consenting submissions: delete after 180 days from `submitted_at`.
-- Consenting submissions: redact identity and payload fields after 395 days from `submitted_at`.
-- Backfilled Sanity submissions: migrate, verify, then decide whether Sanity copies are exported, redacted, hidden, or deleted.
+- Marketing contact profile fields are redacted after 730 inactive days from `last_consented_at`.
+- Unsubscribed marketing contacts are deleted after 2,555 days from `unsubscribed_at`.
+- Non-consenting submissions are deleted after 180 days from `submitted_at`.
+- Consenting submissions have identity and payload fields redacted after 395 days from `submitted_at`.
+- Consent events are deleted after 2,555 days from `occurred_at`; nullable submission references use `ON DELETE SET NULL` so consent evidence can outlive an earlier submission deletion.
+- Marketing sync-job payloads are redacted after 395 days, and terminal sync jobs are deleted after 2,555 days.
 
-These periods are technical defaults and must still be approved or revised by the accountable business/privacy owner and qualified privacy/legal counsel. If approved periods change, update `PRIVATE_DATA_RETENTION_WINDOWS`, tests, and operational runbooks before relying on the scheduled job.
+These are implemented technical defaults, not evidence that the periods have received legal approval or that the scheduled job has run successfully in production. Approval, production execution history, backup retention, and provider-side retention remain operational verification items.
 
-References:  
-OPC limiting use, disclosure, and retention: https://www.priv.gc.ca/en/privacy-topics/privacy-laws-in-canada/the-personal-information-protection-and-electronic-documents-act-pipeda/p_principle/principles/p_use/  
-OPC retention best practices: https://www.priv.gc.ca/en/privacy-topics/business-privacy/breaches-and-safeguards/safeguarding-personal-information/gd_rd_201406/
+## Remaining Gap Register
 
-### Access, Export, Correction, And Deletion Requests
+### 1. Accountable Ownership And Contractor Transition
 
-Create an operational DSAR workflow before using the database as a long-term marketing system:
+The working assumption is that Nataliea is the accountable business/privacy owner and Dardan is a contract technical operator while engaged. This division is not established by code and must be confirmed in an owner-approved operating record.
 
-- Search records by normalized email.
-- Export contact, submission, consent, and suppression records in a readable format.
-- Correct inaccurate contact details.
-- Delete or redact records where legally allowed.
-- Preserve minimal suppression evidence where deletion would otherwise allow accidental re-subscription.
-- Track request intake, completion date, and operator notes.
+Required decisions:
 
-Reference timelines to confirm with counsel:
+- Name the permanent owner for DSARs, unsubscribe escalations, retention-job review, access review, incident response, and legal/counsel coordination.
+- Define the handoff when the technical contract ends or changes scope.
+- Record which private systems and PII a contractor may access, keep access least-privilege, and revoke or rotate access at offboarding.
+- Prohibit production-PII exports to personal devices unless an approved secure handling procedure explicitly permits them.
 
-- PIPEDA access responses are generally expected within 30 days.
-- GDPR access responses are generally expected within 1 month.
+### 2. Consent Wording And Jurisdiction Review
 
-References:  
-OPC access guidance: https://www.priv.gc.ca/en/privacy-topics/accessing-personal-information/api_bus/  
-European Commission rights overview: https://commission.europa.eu/law/law-topic/data-protection/reform/rights-citizens/my-rights/what-are-my-rights_en
+Business ownership and qualified counsel must approve or revise the consent and privacy wording for:
 
-### Lawful Basis And Purpose Tracking
+- general inquiry;
+- training/contact;
+- contact popup/email list;
+- service-booking marketing choice; and
+- every campaign footer and unsubscribe presentation.
 
-Record lawful basis and purpose separately for each use:
+The review must determine the applicable CASL, PIPEDA, provincial, GDPR, or other jurisdictional requirements. A service inquiry must not be treated as marketing consent unless the form presents explicit consent language and the visitor affirmatively opts in.
 
-- marketing emails
-- transactional emails
-- inquiry response
-- training enrollment follow-up
-- booking operational communication
-- suppression list retention
-- compliance audit evidence
+### 3. DSAR Intake, Export, Correction, And Deletion
 
-Do not treat a service inquiry as marketing consent unless the form has explicit consent language and the visitor opts in.
+No complete DSAR workflow is established by the current marketing admin surface. Define and test an operator procedure that can:
 
-Reference: EDPB lawful processing guidance  
-https://www.edpb.europa.eu/sme-data-protection-guide/process-personal-data-lawfully_en
+- verify the requester and search by normalized email;
+- export contact, submission, consent, suppression, sync, and campaign-delivery evidence in a readable format;
+- correct inaccurate contact details;
+- delete or redact records where legally allowed;
+- preserve the minimum suppression evidence needed to avoid accidental re-subscription; and
+- record request intake, verification, decision, completion date, operator, and notes.
 
-### Security Safeguards
+Counsel must confirm response timelines, identity-verification rules, deletion exceptions, and the minimum evidence retained after a request.
 
-The private database should be treated as sensitive PII infrastructure:
+### 4. Retention Approval And Production Verification
 
-- Keep database credentials server-only.
-- Use separate staging and production database branches/connection strings.
-- Enforce TLS connections.
-- Restrict production database access to the smallest necessary group.
-- Avoid logging submitted form payloads or raw PII in app logs.
-- Ensure backups and point-in-time recovery settings are understood.
-- Document incident response steps for suspected exposure.
+The accountable owner and counsel must approve or revise every implemented window. If a window changes, update `PRIVATE_DATA_RETENTION_WINDOWS`, tests, and the operator runbook together.
 
-References:  
-OPC safeguarding personal information: https://www.priv.gc.ca/en/privacy-topics/business-privacy/safeguards-and-breaches/safeguarding-personal-information  
-OPC accountability principle: https://www.priv.gc.ca/en/privacy-topics/privacy-laws-in-canada/the-personal-information-protection-and-electronic-documents-act-pipeda/p_principle/principles/p_accountability/
+Production operations must also verify:
 
-### Audit Trail And Accountability
+- the retention job is scheduled and has successful execution history;
+- failures are visible to a named operator;
+- backup and point-in-time-recovery retention is compatible with the approved policy; and
+- Resend and any other processor-side records follow the approved provider-retention procedure.
 
-Log privacy-relevant operational events:
+### 5. Historical Sanity Submission Disposition
 
-- consent granted
-- no-consent booking choice submitted
-- unsubscribe or withdrawal
-- manual correction
-- DSAR export
-- deletion/redaction
-- retention job execution
-- backfill import execution
-- admin access to private contact records if an admin UI is later built
+After backfill counts and provenance are verified, the accountable owner must decide whether historical Sanity submissions are exported, redacted, hidden, retained temporarily, or deleted. Before mutation:
 
-Reference: OPC privacy management program guidance  
-https://www.priv.gc.ca/en/privacy-topics/privacy-laws-in-canada/the-personal-information-protection-and-electronic-documents-act-pipeda/pipeda-compliance-help/pipeda-compliance-and-training-tools/gl_acc_201204/
+- identify production PII and legal/audit retention obligations;
+- preserve an approved backup when required;
+- verify each imported record in PostgreSQL; and
+- remove or hide legacy submission document types from editorial workflows so editors do not treat them as active intake stores.
 
-## Implementation Follow-up Checklist
+### 6. Lawful Basis And Purpose Register
 
-- Approve consent language for general inquiry, training/contact, popup/email-list, and booking forms.
-- Add unsubscribe/suppression implementation before any bulk marketing send workflow.
-- Approve or revise the implemented retention periods for consented contacts, unsubscribed contacts, non-consenting submissions, consenting submissions, consent events, and Sanity backfill records.
-- Define DSAR export/delete/correction owner and procedure.
-- Decide whether to store IP hash and user agent for consent evidence; avoid collecting them unless counsel/business confirms necessity.
-- Confirm whether existing Sanity submission records contain production PII and export before deletion/redaction.
-- Remove or hide Sanity submission document types after backfill verification.
-- Add operator runbook notes for database access, backups, incident response, and privacy request handling.
+Record and approve purpose and lawful-basis decisions separately for:
+
+- marketing campaigns;
+- transactional email;
+- inquiry response;
+- training enrollment follow-up;
+- booking operational communication;
+- suppression-list retention; and
+- compliance/audit evidence.
+
+Do not infer that consent for one purpose authorizes another.
+
+### 7. Additional Evidence Collection
+
+Decide whether IP-derived evidence, IP hashes, or user-agent snapshots are necessary and proportionate for consent proof. Do not add them by default. If approved, document minimization, access, retention, and collision/rotation behavior rather than storing raw network identifiers indefinitely.
+
+### 8. Operating Runbook And Incident Response
+
+Create or update the operator runbook for:
+
+- database and admin access review;
+- Resend webhook and sync-job failures;
+- campaign-send approval and evidence;
+- unsubscribe escalation and timing review;
+- retention execution and failure handling;
+- backup/restore expectations;
+- suspected PII exposure; and
+- privacy-request handling.
+
+Any production PII exposure or suspected access misconfiguration must trigger the approved incident-notification process.
+
+## Evidence References
+
+- CRTC, [Keeping records of consent](https://www.canada.ca/en/radio-television-telecommunications/news/2016/07/enforcement-advisory-notice-for-businesses-and-individuals-on-how-to-keep-records-of-consent.html)
+- CRTC, [CASL guidance](https://crtc.gc.ca/eng/com500/guide.htm)
+- Office of the Privacy Commissioner of Canada, [Consent guidance](https://www.priv.gc.ca/en/privacy-topics/privacy-laws-in-canada/the-personal-information-protection-and-electronic-documents-act-pipeda/p_principle/principles/p_consent/)
+- Office of the Privacy Commissioner of Canada, [Limiting use, disclosure, and retention](https://www.priv.gc.ca/en/privacy-topics/privacy-laws-in-canada/the-personal-information-protection-and-electronic-documents-act-pipeda/p_principle/principles/p_use/)
+- Office of the Privacy Commissioner of Canada, [Access guidance](https://www.priv.gc.ca/en/privacy-topics/accessing-personal-information/api_bus/)
+- Office of the Privacy Commissioner of Canada, [Privacy management program guidance](https://www.priv.gc.ca/en/privacy-topics/privacy-laws-in-canada/the-personal-information-protection-and-electronic-documents-act-pipeda/pipeda-compliance-help/pipeda-compliance-and-training-tools/gl_acc_201204/)
+- European Commission, [Data-protection principles](https://commission.europa.eu/law/law-topic/data-protection/reform/rules-business-and-organisations/principles-gdpr/overview-principles/what-data-can-we-process-and-under-which-conditions_en)
+- European Commission, [Individual rights overview](https://commission.europa.eu/law/law-topic/data-protection/reform/rights-citizens/my-rights/what-are-my-rights_en)
+- EDPB, [Lawful processing guidance](https://www.edpb.europa.eu/sme-data-protection-guide/process-personal-data-lawfully_en)

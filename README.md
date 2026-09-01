@@ -1,11 +1,11 @@
 # Lash Her by Nataliea
 
-Lash Her is a production Next.js app for a beauty and lash artistry business. It combines the public marketing site, product and training checkout, paid service booking, webhook handling, a private operational database, and an embedded Sanity Studio in one repository.
+Lash Her is a production Next.js app for a beauty and lash artistry business. It combines the public marketing site, product and training checkout, paid service booking, webhook handling, an operational PostgreSQL database, and an embedded Sanity Studio in one repository.
 
 The important architectural split is deliberate:
 
-- **Sanity stores public/editorial content**: pages, navigation, products, services, booking settings, training program content, and reusable content blocks.
-- **PostgreSQL stores private operational data**: orders, service holds, payment events, training enrollments, marketing contacts, contact submissions, consent events, and anything containing customer PII or payment history.
+- **Sanity stores public/editorial content**: pages, navigation, products, training program content, reusable content blocks, and service-detail copy, media, and SEO. The active Studio does not register the legacy `bookingSettings` schema.
+- **PostgreSQL stores operational and private data**: the public service-booking catalog and configuration, orders, service holds, payment events, appointments, training enrollments, marketing contacts, contact submissions, consent events, and anything containing customer PII or payment history.
 
 This README explains what the codebase does, where the major pieces live, how to run and change it, and why the boundaries exist.
 
@@ -32,10 +32,10 @@ Main capabilities:
 - **Public website**: homepage, contact, gallery, products, services, booking entry points, and training program pages.
 - **Embedded Sanity Studio**: available at `/studio` and configured from source in `src/sanity/sanity.config.ts`.
 - **Sanity-backed page rendering**: public routes load CMS content through shared loader functions and typed projections.
-- **Service booking flow**: availability lookup, hold creation, checkout handoff, payment reconciliation, and Google Calendar finalization.
+- **Service booking flow**: PostgreSQL-backed availability and holds, direct Square charge-and-store confirmation, payment reconciliation, and Google Calendar finalization.
 - **Product checkout**: Square-backed checkout for catalog purchases.
 - **Training checkout**: Square-backed enrollment purchase flow.
-- **Private database storage**: Drizzle/PostgreSQL persistence for sensitive and operational records.
+- **Operational database storage**: Drizzle/PostgreSQL persistence for the public booking control plane and sensitive records.
 - **Webhook handling**: Sanity revalidation and Square webhook handling for product checkout, training checkout, and service booking.
 - **Transactional email**: Resend-backed customer, provider, and admin notifications.
 
@@ -45,13 +45,13 @@ At runtime, the app has three main data planes.
 
 ### 1. Public content plane
 
-Sanity contains content editors should manage: page content, menus, product/service/training copy, global settings, reusable blocks, and booking configuration.
+Sanity contains content editors should manage: page content, menus, product and training copy, global settings, reusable blocks, and service-detail editorial copy, media, and SEO. Operational service titles, summaries, intake content, prices, schedules, and booking settings live in PostgreSQL. The legacy Sanity `bookingSettings` document remains runtime-readable for V1 compatibility and recovery, as well as one-time imports, but is excluded from the active Studio schema and structure.
 
 The public site reads Sanity through `src/data/loaders.ts`. Those loaders centralize GROQ queries, projections, and Next cache tags so routes do not create ad hoc CMS clients or divergent query behavior.
 
-### 2. Private operational plane
+### 2. Operational database plane
 
-Customer submissions, checkout records, payment events, consent events, enrollments, and booking holds are written to PostgreSQL through `src/lib/private-db` and domain modules under `src/lib`. This keeps sensitive data out of the CMS and gives operational flows transactional storage.
+Operational public booking configuration and catalog data, customer submissions, checkout records, payment events, consent events, enrollments, appointments, and booking holds are written to PostgreSQL through `src/lib/private-db` and domain modules under `src/lib`. This keeps booking authority and sensitive data out of the CMS and gives operational flows transactional storage.
 
 ### 3. External service plane
 
@@ -60,7 +60,7 @@ The app integrates with:
 - **Sanity** for content and Studio.
 - **Square** for product and training checkout (Web Payments SDK) when `SQUARE_COMMERCE_ENABLED=true`, and for paid service booking when `SERVICE_BOOKING_SQUARE_ENABLED=true`.
 - **Google Calendar** for final appointment creation after booking payment reconciliation.
-- **Upstash Redis/KV** for booking OAuth token persistence.
+- **Upstash Redis/KV** for short-lived booking OAuth state and locks, plus legacy global-calendar token compatibility.
 - **Resend** for transactional email.
 - **Vercel** for hosting, analytics, speed insights, and environment-scoped deployments.
 
@@ -74,15 +74,16 @@ The app integrates with:
 | Sanity Studio route       | `src/app/studio`                                                         | Mounts the embedded Studio at `/studio`.                                                                                  |
 | Sanity config and schemas | `src/sanity`                                                             | Studio config, schema source, structure builder, and Sanity clients.                                                      |
 | Sanity loaders            | `src/data/loaders.ts`                                                    | Centralized CMS reads, GROQ projections, and cache tagging.                                                               |
+| Admin dashboard           | `src/app/admin`, `src/lib/admin`                                         | Authenticated operational configuration, booking, commerce, marketing, and audit surfaces.                                |
 | Shared content types      | `src/types/index.ts`                                                     | TypeScript shapes for CMS-backed rendering and block unions.                                                              |
 | Components                | `src/components`                                                         | Booking, commerce, custom CMS block rendering, and shared UI components.                                                  |
 | Booking domain logic      | `src/lib/booking`                                                        | Availability, holds, payment-provider logic, and calendar integration helpers.                                            |
 | Commerce domain logic     | `src/lib/commerce`                                                       | Checkout/payment behavior for product and related commerce flows.                                                         |
-| Private database          | `src/lib/private-db`, `drizzle/`                                         | Drizzle schema/client plus generated migrations.                                                                          |
+| Operational database      | `src/lib/private-db`, `drizzle/`                                         | Drizzle schema/client plus generated migrations.                                                                          |
 | Email                     | `src/lib/email.ts`                                                       | Transactional email integration.                                                                                          |
 | Environment helpers       | `src/lib/env`, `src/sanity/env.ts`                                       | Runtime configuration parsing and Sanity environment constants.                                                           |
 | Tests                     | `src/**/*.test.ts`, `tests/`                                             | Node unit/route tests near source and Playwright E2E tests.                                                               |
-| Operational docs          | `docs/`                                                                  | Detailed runbooks, architecture notes, flowcharts, and launch checklists.                                                 |
+| Operational docs          | `docs/`                                                                  | Current setup guides, operational runbooks, and launch/cutover checklists.                                                |
 | Scripts                   | `scripts/`                                                               | Environment validation, migrations, and git remote guardrails.                                                            |
 
 ## Local development
@@ -92,7 +93,7 @@ The app integrates with:
 - Node.js 24 LTS (run `nvm use` to select the repository version).
 - npm.
 - Access to the required service credentials for the flows you need to test.
-- PostgreSQL connection string for private checkout/booking storage.
+- PostgreSQL connection string for operational booking and private customer/payment storage.
 
 ### Quick start
 
@@ -124,7 +125,8 @@ Then open:
 | `npm run test:debug`        | Runs Playwright in debug mode.                                                      |
 | `npm run test:report`       | Opens the last Playwright HTML report.                                              |
 | `npm run db:generate`       | Generates Drizzle migrations from schema changes.                                   |
-| `npm run db:migrate`        | Applies private database migrations using `DATABASE_URL`.                           |
+| `npm run db:check`          | Performs a read-only migration lineage, hash, sequence, and pending-state check.    |
+| `npm run db:migrate`        | Applies migrations with explicit target and exact-host guards.                      |
 | `npm run git:verify-remote` | Verifies the `origin` git remote points at the canonical repository.                |
 | `npm run git:push-staging`  | Verifies the remote, then pushes the `staging` branch to `origin`.                  |
 
@@ -157,29 +159,36 @@ Transactional email uses Resend. Configure:
 - `RESEND_SEGMENT_MARKETING_ID`
 - `FROM_EMAIL`
 - `ADMIN_EMAIL`
+- `RESEND_MARKETING_SYNC_CRON_SECRET` to enable the marketing-contact sync endpoint
 
-Optional `RESEND_TEMPLATE_*_ID`, `RESEND_SEGMENT_*_ID`, and `RESEND_TOPIC_*_ID` variables connect website email and consent flows to Resend Dashboard templates, contact segments, topic preferences, automations, and broadcasts. See `docs/resend-transactional-email-setup.md` for the full mapping and webhook setup.
+Optional `RESEND_TEMPLATE_*_ID`, `RESEND_SEGMENT_*_ID`, and `RESEND_TOPIC_*_ID` variables connect website email and consent flows to Resend Dashboard templates, contact segments, topic preferences, automations, and broadcasts. See `docs/resend-transactional-email-setup.md` for the full mapping and webhook setup, and `docs/scheduled-jobs-runbook.md` for scheduled endpoint authentication and ownership.
 
 ### Google Calendar and booking OAuth
 
-Google Calendar integration requires OAuth credentials and Upstash Redis/KV token storage:
+Google Calendar integration requires OAuth credentials and a separate encryption key:
 
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
 - `GOOGLE_REDIRECT_URI`
-- `BOOKING_ADMIN_SETUP_SECRET`
+- `BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY`
 - `KV_REST_API_URL`
 - `KV_REST_API_TOKEN`
 
-Run the protected internal OAuth setup flow in the target environment using `BOOKING_ADMIN_SETUP_SECRET` from the secure secret manager. Do not share the setup URL or include it in documentation, tickets, or chat.
+Owners and administrators connect business calendars at `/admin/calendar-connections`; employees manage their assigned connection at `/admin/my-calendar`. These operational credentials are encrypted with `BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY` and stored in PostgreSQL. Redis stores short-lived OAuth state and coordination locks.
 
-Refresh tokens are namespaced by `VERCEL_TARGET_ENV` (falling back to
-`VERCEL_ENV`), so preview/staging OAuth setup cannot replace the production
-connection when environments share one Redis instance.
+`BOOKING_ADMIN_SETUP_SECRET` and the Redis-backed global refresh token remain only for the legacy compatibility flow. Do not share that setup URL or include it in documentation, tickets, or chat. Legacy refresh tokens are namespaced by `VERCEL_TARGET_ENV` (falling back to `VERCEL_ENV`), so preview/staging setup cannot replace the production token when environments share one Redis instance.
 
-### Private database
+### Operational PostgreSQL database
 
-Set `DATABASE_URL` to the Neon/PostgreSQL database used for private operational records. Migrations live in `drizzle/` and are applied with `npm run db:migrate`.
+Set `DATABASE_URL` to the Neon/PostgreSQL database used for operational booking configuration and private records. Migrations live in `drizzle/`. Run `npm run db:check` before and after applying them. `npm run db:migrate` fails closed unless `PRIVATE_DB_MIGRATION_TARGET` and an exact `PRIVATE_DB_MIGRATION_HOST` match the intended target; production also requires `PRIVATE_DB_MIGRATION_CONFIRM=production`.
+
+### Scheduled jobs, backups, and telemetry
+
+Vercel scheduled endpoints use `CRON_SECRET`. Payment reconciliation and marketing sync also require their route-enabling `PAYMENT_RECONCILIATION_CRON_SECRET` and `RESEND_MARKETING_SYNC_CRON_SECRET`; only after the relevant secret exists will that route accept the shared bearer. The shipping routes additionally accept `CHITCHATS_WORKER_CRON_SECRET`. See `docs/scheduled-jobs-runbook.md` for the endpoint inventory, cadence ownership, and failure behavior.
+
+`BACKUP_VALIDATION_ENABLED` plus the `BACKUP_GCS_BUCKET_URI`, `BACKUP_RESTORE_DATABASE_URL`, and `BACKUP_RESTORE_EXPECTED_DB_NAME` settings enable only a fail-closed configuration check. The current endpoint does not restore or validate a backup and reports that an external restore runner is required. Do not treat a successful scaffold response as restore evidence.
+
+Node telemetry is optional and remains disabled unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set. `OTEL_SERVICE_NAME` defaults to `lash-her-frontend` when omitted.
 
 ### Payments
 
@@ -204,14 +213,18 @@ Product checkout and training checkout use Square (Web Payments SDK), enabled wi
 Paid service bookings use Square only when enabled:
 
 - `SERVICE_BOOKING_SQUARE_ENABLED=true`
+- `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true`
 - `SQUARE_ENVIRONMENT=sandbox` or `production`
 - `SQUARE_ACCESS_TOKEN`
 - `SQUARE_LOCATION_ID`
+- `SQUARE_APPLICATION_ID`
 - `SQUARE_WEBHOOK_SIGNATURE_KEY`
 - `SQUARE_SERVICE_BOOKING_RETURN_URL`
 - `SQUARE_SERVICE_BOOKING_WEBHOOK_URL`
 
-All Square events (product, training, and service booking) are delivered to the single webhook endpoint `/api/webhooks/square`.
+The active public service flow captures the required deposit, full amount, or configured custom partial amount and stores a reusable Square card reference through the `CHARGE_AND_STORE` confirmation flow. The public payment config and form are unavailable when direct charge-and-store is disabled or incomplete; the UI does not fall back to a hosted Payment Link. The return route and webhook retain reconciliation support for historical hosted service-payment sessions. All Square events (product, training, and service booking) are delivered to the single webhook endpoint `/api/webhooks/square`.
+
+Historical Helcim records remain readable through the retained `helcim` provider enum value and generic provider fields. The provider-specific `helcim_*` columns have been dropped, and no active flow creates new Helcim payments.
 
 ### Product shipping
 
@@ -219,6 +232,7 @@ Chit Chats provides live insured tracked product-shipping rates, staff label pur
 
 - `CHITCHATS_SHIPPING_ENABLED`
 - `CHITCHATS_CHECKOUT_ENABLED`
+- `FLAT_RATE_SHIPPING_ENABLED` when the flat-rate estimator and weekly cache refresh are intentionally enabled
 - `CHITCHATS_US_SHIPPING_ENABLED`
 - `CHITCHATS_ENVIRONMENT=staging` or `production`
 - `CHITCHATS_CLIENT_ID`
@@ -232,13 +246,15 @@ Chit Chats provides live insured tracked product-shipping rates, staff label pur
 - `BACKUP_RETENTION_DAYS` (30 or less)
 - Optional `CHITCHATS_TRACKED_POSTAGE_TYPES`
 
-`CHITCHATS_REGION` identifies the region selected in the matching Chit Chats account; it is not a provider branch ID and is not added to API shipment requests. The configured environment, client ID, and region must match exactly. Readiness also requires a current owner-attested physical intake-location record identifying the branch, drop spot, or mail-in hub where parcels first enter the Chit Chats network. That record is valid for at most 90 days and must include the verified name, address, and evidence reference. Do not seed, infer, or backfill an intake location from an address, account, region, or obsolete `CHITCHATS_BRANCH_ID` value.
+`CHITCHATS_REGION` identifies the region selected in the matching Chit Chats account; it is not a provider branch ID and is not added to API shipment requests. The configured environment, client ID, and region must match exactly. Shipping readiness is source-controlled in `src/lib/shipping/product-shipping-config.ts` and `src/lib/commerce/product-tax-policy.ts`; there is no runtime owner-attestation record or `CHITCHATS_BRANCH_ID` gate.
 
 `CHITCHATS_CHECKOUT_ENABLED` must remain false until `npm run db:migrate` has applied every entry in `drizzle/meta/_journal.json` (not only the original `0032`/`0033` shipping migrations), quarantined upgrade conflicts have been reconciled, package profiles are reviewed, each purchasable Sanity product/variant has complete shipping metadata, and the source-controlled shipping/tax config (`src/lib/shipping/product-shipping-config.ts`, `src/lib/commerce/product-tax-policy.ts`) is populated and business-confirmed. `CHITCHATS_SHIPPING_ENABLED` keeps worker/admin processing active for existing shipments. U.S. shipping and manual product checkout have independent fail-closed flags; disabling one must not be treated as permission to disable processing for already-paid orders.
 
 ## Sanity CMS workflow
 
 The Studio is embedded at `/studio`, but schemas are source-driven from this repository.
+
+The active schema intentionally excludes the legacy `bookingSettings` document. Do not recreate or edit it as current runtime configuration; operational booking settings, offerings, schedules, and intake content are managed in PostgreSQL through `/admin`.
 
 ### Changing schemas
 
@@ -269,22 +285,24 @@ Use `docs/sanity-staging-production-workflow.md` for staging-to-production conte
 
 Sanity publishes should hit `/api/revalidate` with `SANITY_WEBHOOK_SECRET`.
 
-The route maps changed document types to cache tags and uses `revalidateTag(tag, { expire: 0 })` for immediate Next.js 16 cache expiry. Keep cache tags in `src/data/loaders.ts` aligned with `TYPE_TAG_MAP` in `src/app/api/revalidate/route.ts`.
+The route maps changed document types to cache tags and uses `revalidateTag(tag, { expire: 0 })` for immediate Next.js 16 cache expiry. Keep cache tags in `src/data/loaders.ts` aligned with `TYPE_TAG_MAP` in `src/app/api/revalidate/handler.ts`.
 
 ## Booking, checkout, and private data
 
 ### Service booking
 
-Service booking is intentionally payment-reconciled. Direct booking creation is disabled; confirmed appointments are created only after secure server-side payment reconciliation.
+Service booking is intentionally payment-reconciled. Direct booking creation is disabled; confirmed appointments are created only after the direct Square `CHARGE_AND_STORE` operation is securely reconciled. If direct-payment configuration is unavailable, the public payment form fails closed and does not offer hosted checkout.
 
 Important areas:
 
-- Public booking UI: `src/app/(site)/booking`, `src/components/booking`
+- Public service catalog and booking UI: `src/app/(site)/services`, `src/components/booking`
+- Legacy entry shim: `/booking` permanently redirects valid legacy links to `/services/[slug]/booking`; bare `/booking` redirects to `/services`
 - Booking API routes: `src/app/api/booking`
 - Booking domain logic: `src/lib/booking`
-- Google OAuth: `src/app/api/booking/oauth`
-- Square service booking flow: `src/app/api/booking/square`, `src/app/api/webhooks/square`
-- Booking settings content: Sanity `bookingSettings`
+- Google OAuth: `src/app/api/booking/oauth`, with operational credentials encrypted in PostgreSQL
+- Direct Square confirmation: `src/app/api/booking/payment/confirm`; historical return reconciliation: `src/app/api/booking/square`
+- Square webhook reconciliation: `src/app/api/webhooks/square`
+- Operational booking configuration: PostgreSQL tables managed through `/admin/booking-settings`, `/admin/offerings`, `/admin/schedules`, and `/admin/calendar-connections`
 
 ### Product checkout
 
@@ -320,6 +338,8 @@ npm test
 npm run build
 ```
 
+`npm run test:unit` intentionally excludes DB-backed source tests. Use an isolated `TEST_DATABASE_URL` with `npm run test:unit:db`, or `npm run test:unit:all` for both source scopes plus script tests.
+
 Use focused commands while developing:
 
 ```bash
@@ -337,7 +357,9 @@ VERCEL_ENV=production node scripts/validate-sanity-env.mjs
 
 ### Smoke matrix
 
-Before promoting content or deploying production-critical changes, verify the target environment renders the Sanity-backed pages and flows that correspond to changed content:
+Before promoting content or deploying production-critical changes, verify the target environment renders the surfaces owned by each data plane.
+
+Sanity-backed editorial content:
 
 - `homePage` -> `/`
 - `contactPage` -> `/contact`
@@ -347,8 +369,14 @@ Before promoting content or deploying production-critical changes, verify the ta
 - `trainingProgramsPage` -> `/training-programs`
 - `trainingProgram` -> `/training-programs/[slug]`
 - `product` -> `/products/[slug]`
-- `service` -> `/services`, `/services/[slug]`, `/booking?offering=<slug>`
-- `bookingSettings` -> `/booking`
+- `service` -> `/services/[slug]` for linked editorial copy, media, and SEO
+
+PostgreSQL-backed operational booking:
+
+- active public offerings -> `/services`
+- offering catalog/intake/settings/schedule -> `/services/[slug]/booking`
+- legacy entry compatibility -> `/booking` redirects to `/services`, and valid legacy offering links redirect to the canonical service booking route
+- admin configuration -> `/admin/booking-settings`, `/admin/offerings`, `/admin/schedules`, and `/admin/calendar-connections`
 
 See `docs/launch-readiness-checklist.md` for full smoke evidence requirements.
 
@@ -359,12 +387,13 @@ This app is designed for Vercel deployment with environment-scoped variables.
 Before production promotion:
 
 1. Confirm the deployment is using Sanity project `3auncj84` and dataset `production`.
-2. Run lint, unit tests, relevant Playwright tests, and `npm run build`.
-3. Confirm signed Sanity webhook delivery updates the public page after publishing.
-4. Confirm webhook cache tags match the changed document types.
-5. Confirm production-critical secrets are present in the production environment only.
-6. Confirm staging-only payment mocks are not enabled in production.
-7. Confirm Square production credentials are scoped only to production when service booking uses Square.
+2. Run `npm run db:check`; apply reviewed pending migrations with the required exact-host and production-confirmation guards before deploying code that depends on them.
+3. Run lint, unit tests, relevant Playwright tests, and `npm run build`.
+4. Confirm signed Sanity webhook delivery updates the public page after publishing.
+5. Confirm webhook cache tags match the changed document types.
+6. Confirm production-critical secrets are present in the production environment only.
+7. Confirm staging-only payment mocks are not enabled in production.
+8. Confirm Square production credentials are scoped only to production when service booking uses Square.
 
 Do not promote if:
 
@@ -380,7 +409,7 @@ Do not promote if:
 - Add Sanity reads through `src/data/loaders.ts`; do not create a parallel public CMS data layer.
 - Keep Sanity client purposes separate: read client and write client live under `src/sanity/lib`; private form/contact writes belong in PostgreSQL, not Sanity.
 - Keep private form, booking, consent, checkout, payment, marketing, and training enrollment data in PostgreSQL, not Sanity.
-- Keep `src/data/loaders.ts` cache tags aligned with `src/app/api/revalidate/route.ts`.
+- Keep `src/data/loaders.ts` cache tags aligned with `TYPE_TAG_MAP` in `src/app/api/revalidate/handler.ts`.
 - Use `parseBody()` from `next-sanity/webhook` before consuming the revalidation request body.
 - For CMS block additions, update schema, types, GROQ projection, React renderer, and `COMPONENT_REGISTRY` together.
 - Tailwind v4 is CSS-first in `src/app/globals.css`; there is no `tailwind.config.*`.
@@ -391,17 +420,18 @@ Do not promote if:
 
 ## Further documentation
 
-- `docs/booking-system-architecture-reference.md` - current booking architecture and provider boundaries.
-- `docs/booking-system-runbook.md` - booking operations runbook.
-- `docs/booking-operations-dashboard.md` - multi-provider dashboard, Auth.js, migration, and cutover guide.
-- `docs/booking-system-setup-guide.md` - environment setup for booking, payment, calendar, and email services.
-- `docs/booking-training-calendar-configuration-guide.md` - code-derived steps for configuring service booking and training Google Appointment Schedule pages.
-- `docs/square-service-booking-setup.md` - Square service-booking environment variables and webhook setup for local, staging, and production.
-- `docs/booking-payment-provider-split.md` - Square payment provider boundaries.
-- `docs/google-calendar-oauth-env-setup.md` - Google Calendar OAuth setup.
-- `docs/private-database-migration-runbook.md` - private DB migration process.
-- `docs/resend-transactional-email-setup.md` - Resend transactional email domain, environment, and delivery recovery setup.
-- `docs/marketing-contact-privacy-compliance-follow-up.md` - privacy/compliance operating guidance for marketing and contact data.
-- `docs/sanity-staging-production-workflow.md` - Sanity dataset/content promotion workflow.
+- `docs/booking-system-setup-guide.md` - current booking, database, authentication, Calendar, Square, email, and rollout setup.
+- `docs/booking-operations-dashboard.md` - canonical operational ownership, dashboard, migration, and cutover guide.
+- `docs/booking-system-runbook.md` - live booking operations and recovery runbook.
+- `docs/square-service-booking-setup.md` - Square direct charge-and-store and historical reconciliation setup.
+- `docs/google-calendar-oauth-env-setup.md` - operational and legacy-compatible Google Calendar OAuth setup.
+- `docs/scheduled-jobs-runbook.md` - scheduled endpoint inventory, authentication, ownership, and failure behavior.
+- `docs/private-database-migration-runbook.md` - guarded private database migration process.
+- `docs/resend-transactional-email-setup.md` - Resend domain, environment, template, webhook, and delivery recovery setup.
+- `docs/sanity-staging-production-workflow.md` - Sanity dataset and editorial-content promotion workflow.
 - `docs/launch-readiness-checklist.md` - launch smoke and readiness checklist.
+- `docs/production-cutover-checklist.md` - reviewed staging-to-production cutover procedure.
+- `docs/checkout-flowcharts.html` - current product, training, and operational service-booking flow diagrams.
+- `docs/training-afterpay-square-invoice.md` - optional training Afterpay invoice flow.
+- `docs/vulnerability-remediation-plan.md` - dependency audit and remediation policy.
 - `docs/lash-her-brand-kit.html` - visual and brand reference.

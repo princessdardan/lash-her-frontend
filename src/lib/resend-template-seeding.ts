@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { CreateTemplateOptions } from "resend";
+import type { CreateTemplateOptions, UpdateTemplateOptions } from "resend";
 
 import {
   BOOKING_CONFIRMATION_EMAIL_SUBJECT,
@@ -29,6 +29,7 @@ import {
 } from "@/lib/commerce/training-payment-email";
 import {
   buildFormEmailFallbackHtml,
+  buildContactPopupCustomerTemplateHtml,
   getFormEmailSubject,
   getFormEmailTemplateVariables,
   type ContactPopupData,
@@ -39,7 +40,9 @@ import {
 } from "@/lib/email";
 import {
   createResendTemplate,
+  getResendTemplate,
   publishResendTemplate,
+  updateResendTemplate,
   type ResendEmailTemplateKey,
 } from "@/lib/resend-platform";
 import {
@@ -82,6 +85,33 @@ export interface SeedResendTemplatesOptions {
   apply?: boolean;
   dependencies?: ResendTemplateSeedDependencies;
   log?: (message: string) => void;
+}
+
+export interface ContactPopupCustomerTemplateUpdateDependencies {
+  getTemplate(id: string): Promise<{
+    has_unpublished_versions: boolean;
+    html: string;
+    id: string;
+    name: string;
+    status: "draft" | "published";
+    subject: string | null;
+    text: string | null;
+    variables: Array<{
+      fallback_value: number | string | null;
+      key: string;
+      type: "number" | "string";
+    }> | null;
+  }>;
+  publishTemplate(id: string): Promise<{ id: string }>;
+  updateTemplate(
+    id: string,
+    input: UpdateTemplateOptions,
+  ): Promise<{ id: string }>;
+}
+
+export interface UpdateContactPopupCustomerTemplateOptions {
+  dependencies?: ContactPopupCustomerTemplateUpdateDependencies;
+  templateId?: string;
 }
 
 const TEMPLATE_ENV_BY_KEY: Record<ResendEmailTemplateKey, string> = {
@@ -349,6 +379,76 @@ export async function seedResendTemplates({
   return results;
 }
 
+export async function updateAndPublishContactPopupCustomerTemplate({
+  dependencies,
+  templateId = process.env.RESEND_TEMPLATE_CONTACT_POPUP_CUSTOMER_ID,
+}: UpdateContactPopupCustomerTemplateOptions = {}): Promise<void> {
+  const normalizedTemplateId = templateId?.trim();
+
+  if (!normalizedTemplateId) {
+    throw new Error("RESEND_TEMPLATE_CONTACT_POPUP_CUSTOMER_ID is required");
+  }
+
+  const definition = buildResendTemplateDefinitions().find(
+    ({ key }) => key === "contact_popup_customer",
+  );
+
+  if (definition === undefined) {
+    throw new Error("Contact popup customer template definition is missing");
+  }
+
+  const resolvedDependencies = dependencies ?? {
+    getTemplate: getResendTemplate,
+    publishTemplate: publishResendTemplate,
+    updateTemplate: updateResendTemplate,
+  };
+
+  const existingTemplate =
+    await resolvedDependencies.getTemplate(normalizedTemplateId);
+  if (
+    existingTemplate.id !== normalizedTemplateId ||
+    existingTemplate.name !== definition.payload.name
+  ) {
+    throw new Error(
+      "Configured Resend template is not the Lash Her contact popup customer template",
+    );
+  }
+  if (
+    existingTemplate.status !== "published" ||
+    existingTemplate.has_unpublished_versions !== false
+  ) {
+    throw new Error(
+      "Configured Resend contact popup customer template is not safe to update",
+    );
+  }
+
+  await resolvedDependencies.updateTemplate(
+    normalizedTemplateId,
+    toUpdateTemplateOptions(definition.payload),
+  );
+  await resolvedDependencies.publishTemplate(normalizedTemplateId);
+
+  const publishedTemplate =
+    await resolvedDependencies.getTemplate(normalizedTemplateId);
+  if (
+    publishedTemplate.id !== normalizedTemplateId ||
+    publishedTemplate.name !== definition.payload.name ||
+    publishedTemplate.status !== "published" ||
+    publishedTemplate.has_unpublished_versions !== false ||
+    publishedTemplate.html !== definition.payload.html ||
+    publishedTemplate.text !== null ||
+    publishedTemplate.subject !== definition.payload.subject ||
+    !publishedTemplateVariablesMatch(
+      publishedTemplate.variables,
+      definition.payload.variables,
+    )
+  ) {
+    throw new Error(
+      "Published Resend contact popup customer template failed verification",
+    );
+  }
+}
+
 async function runResendTemplateSeedRequest<T>(
   request: () => Promise<T>,
 ): Promise<T> {
@@ -454,7 +554,9 @@ function buildFormDefinition(
 ): ResendSeedTemplateDefinition {
   return buildDefinition({
     html: buildTemplateHtmlWithProfileImageVariable(() =>
-      buildFormEmailFallbackHtml(audience, formType, sample),
+      key === "contact_popup_customer"
+        ? buildContactPopupCustomerTemplateHtml(sample as ContactPopupData)
+        : buildFormEmailFallbackHtml(audience, formType, sample),
     ),
     key,
     subject: getFormEmailSubject(audience, formType, sample),
@@ -694,6 +796,42 @@ function toCreateTemplateOptions(
     subject: input.subject,
     variables: input.variables.map(toCreateTemplateVariable),
   };
+}
+
+function toUpdateTemplateOptions(
+  input: ResendSeedTemplatePayload,
+): UpdateTemplateOptions {
+  return {
+    html: input.html,
+    name: input.name,
+    subject: input.subject,
+    // Clear any stale custom text part. Resend then derives plain text from the
+    // rendered HTML, including offer code and unsubscribe URL when present.
+    text: null,
+    variables: input.variables.map(toCreateTemplateVariable),
+  };
+}
+
+function publishedTemplateVariablesMatch(
+  actual: Array<{
+    fallback_value: number | string | null;
+    key: string;
+    type: "number" | "string";
+  }> | null,
+  expected: ResendSeedTemplateVariable[],
+): boolean {
+  if (actual === null || actual.length !== expected.length) {
+    return false;
+  }
+
+  return expected.every((expectedVariable) =>
+    actual.some(
+      (actualVariable) =>
+        actualVariable.key === expectedVariable.key &&
+        actualVariable.type === expectedVariable.type &&
+        actualVariable.fallback_value === expectedVariable.fallbackValue,
+    ),
+  );
 }
 
 function toCreateTemplateVariable(

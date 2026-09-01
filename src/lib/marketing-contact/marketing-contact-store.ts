@@ -1,9 +1,14 @@
 import "server-only";
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
+import {
+  enqueueCustomerEmailWithResult,
+  type ContactPopupOfferEmailPayload,
+} from "@/lib/commerce/customer-email-outbox";
 import { getPrivateDb } from "@/lib/private-db/client";
 import {
+  customerEmailOutbox,
   marketingConsentEvents,
   marketingContacts,
   marketingContactSubmissions,
@@ -13,6 +18,7 @@ import {
   type MarketingContactSyncJobPayload,
 } from "@/lib/private-db/schema";
 import { type ResendMarketingContactInput } from "@/lib/resend-platform";
+import { buildContactPopupOfferDedupeKeys } from "@/lib/marketing-contact/contact-popup-offer-dedupe";
 
 export const GENERAL_INQUIRY_CONSENT_TEXT =
   "I agree to receive lash care tips, service updates, and offers from Lash Her by Nataliea.";
@@ -77,11 +83,17 @@ export interface RecordTrainingContactInput extends MarketingContactIdentity {
 
 export interface RecordContactPopupInput extends MarketingContactIdentity {
   consentText?: string;
+  signupOffer?: ContactPopupSignupOfferSnapshot;
   sourceDocument?: SourceDocumentReference;
   sourcePath?: string;
   submittedAt?: Date;
   variant: "fullContact" | "emailOnly";
 }
+
+export type ContactPopupSignupOfferSnapshot = Omit<
+  ContactPopupOfferEmailPayload,
+  "customerName" | "recipientEmail" | "submissionId" | "variant"
+>;
 
 export interface RecordBookingMarketingChoiceInput extends MarketingContactIdentity {
   answers: BookingAnswerSnapshot[];
@@ -168,14 +180,25 @@ export interface MarketingContactUnsubscribeValues {
 
 export interface MarketingContactPersistenceInput {
   contact: MarketingContactUpsertValues | null;
+  contactPopupOffer?: {
+    snapshot: ContactPopupSignupOfferSnapshot;
+    variant: "fullContact" | "emailOnly";
+  };
   event: MarketingConsentEventValues;
   submission: MarketingContactSubmissionValues;
+}
+
+export interface MarketingContactRecordResult {
+  offerEmailEnqueued?: boolean;
+  offerEmailJobId?: string;
+  submissionId: string;
+  syncJobId?: string;
 }
 
 export interface MarketingContactRepository {
   recordMarketingContact(
     input: MarketingContactPersistenceInput,
-  ): Promise<{ submissionId: string; syncJobId?: string }>;
+  ): Promise<MarketingContactRecordResult>;
   recordMarketingUnsubscribe(
     input: MarketingContactUnsubscribeValues,
   ): Promise<{ eventId: string }>;
@@ -193,7 +216,7 @@ export interface MarketingContactStore {
   ): Promise<{ submissionId: string; syncJobId?: string }>;
   recordContactPopup(
     input: RecordContactPopupInput,
-  ): Promise<{ submissionId: string; syncJobId?: string }>;
+  ): Promise<MarketingContactRecordResult>;
   recordGeneralInquiry(
     input: RecordGeneralInquiryInput,
   ): Promise<{ submissionId: string; syncJobId?: string }>;
@@ -271,23 +294,33 @@ export function createMarketingContactStore(
     },
 
     async recordContactPopup(input) {
-      return recordContact(
-        buildPersistenceInput({
-          consentText: input.consentText ?? CONTACT_POPUP_CONSENT_TEXT,
-          identity: input,
-          marketingConsent: true,
-          payload: {
-            instagram: cleanOptionalText(input.instagram),
-            sourcePath: cleanOptionalText(input.sourcePath),
-            variant: input.variant,
-          },
-          source: "contact_popup",
-          sourceDocument: input.sourceDocument,
-          sourcePath: input.sourcePath,
-          submittedAt: input.submittedAt,
-          submissionType: "contact_popup",
-        }),
-      );
+      const persistenceInput = buildPersistenceInput({
+        consentText: input.consentText ?? CONTACT_POPUP_CONSENT_TEXT,
+        identity: input,
+        marketingConsent: true,
+        payload: {
+          instagram: cleanOptionalText(input.instagram),
+          sourcePath: cleanOptionalText(input.sourcePath),
+          variant: input.variant,
+        },
+        source: "contact_popup",
+        sourceDocument: input.sourceDocument,
+        sourcePath: input.sourcePath,
+        submittedAt: input.submittedAt,
+        submissionType: "contact_popup",
+      });
+
+      return recordContact({
+        ...persistenceInput,
+        ...(input.signupOffer
+          ? {
+              contactPopupOffer: {
+                snapshot: input.signupOffer,
+                variant: input.variant,
+              },
+            }
+          : {}),
+      });
     },
 
     async recordBookingMarketingChoice(input) {
@@ -361,7 +394,7 @@ export async function recordTrainingContactSubmission(
 
 export async function recordContactPopupSubmission(
   input: RecordContactPopupInput,
-): Promise<{ submissionId: string; syncJobId?: string }> {
+): Promise<MarketingContactRecordResult> {
   return defaultMarketingContactStore.recordContactPopup(input);
 }
 
@@ -393,6 +426,13 @@ function createDrizzleMarketingContactRepository(): MarketingContactRepository {
   return {
     async recordMarketingContact(input) {
       return getPrivateDb().transaction(async (tx) => {
+        // Serialize consent transitions for one address. Unsubscribe uses the
+        // same transaction-scoped lock, so a replay cannot race a re-consent
+        // and incorrectly reuse or create an unsubscribe generation.
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${input.submission.emailNormalized}, 0))`,
+        );
+
         let contactId: string | null = null;
 
         if (input.contact !== null) {
@@ -467,6 +507,52 @@ function createDrizzleMarketingContactRepository(): MarketingContactRepository {
           })
           .returning({ id: marketingConsentEvents.id });
 
+        let offerEmailResult:
+          | Awaited<ReturnType<typeof enqueueCustomerEmailWithResult>>
+          | undefined;
+        if (input.contactPopupOffer !== undefined) {
+          const { snapshot, variant } = input.contactPopupOffer;
+          const offerPayload: ContactPopupOfferEmailPayload = {
+            ...snapshot,
+            customerName: input.submission.name,
+            recipientEmail: input.submission.email,
+            submissionId: submission.id,
+            variant,
+          };
+          const dedupeKeys = buildContactPopupOfferDedupeKeys({
+            emailNormalized: input.submission.emailNormalized,
+            promotionId: snapshot.promotionId,
+          });
+          const [existingOffer] = await tx
+            .select({ id: customerEmailOutbox.id })
+            .from(customerEmailOutbox)
+            .where(
+              and(
+                eq(customerEmailOutbox.kind, "contact_popup_offer"),
+                inArray(
+                  customerEmailOutbox.providerIdempotencyKey,
+                  dedupeKeys.candidateProviderIdempotencyKeys,
+                ),
+              ),
+            )
+            .limit(1);
+
+          offerEmailResult = existingOffer
+            ? { id: existingOffer.id, inserted: false }
+            : await enqueueCustomerEmailWithResult(
+                {
+                  kind: "contact_popup_offer",
+                  payload: offerPayload,
+                  providerIdempotencyKey:
+                    dedupeKeys.primaryProviderIdempotencyKey,
+                  recipient: input.submission.email,
+                  submissionDatabaseId: submission.id,
+                  now: input.submission.submittedAt,
+                },
+                tx,
+              );
+        }
+
         if (input.contact !== null) {
           const idempotencyKey = `mc-sync:${submission.id}`;
           const payload = buildMarketingContactSyncJobPayload(
@@ -500,10 +586,31 @@ function createDrizzleMarketingContactRepository(): MarketingContactRepository {
             })
             .returning({ id: marketingContactSyncJobs.id });
 
-          return { submissionId: submission.id, syncJobId: job?.id };
+          return {
+            submissionId: submission.id,
+            syncJobId: job?.id,
+            ...(offerEmailResult === undefined
+              ? {}
+              : {
+                  offerEmailEnqueued: offerEmailResult.inserted,
+                  ...(offerEmailResult.id
+                    ? { offerEmailJobId: offerEmailResult.id }
+                    : {}),
+                }),
+          };
         }
 
-        return { submissionId: submission.id };
+        return {
+          submissionId: submission.id,
+          ...(offerEmailResult === undefined
+            ? {}
+            : {
+                offerEmailEnqueued: offerEmailResult.inserted,
+                ...(offerEmailResult.id
+                  ? { offerEmailJobId: offerEmailResult.id }
+                  : {}),
+              }),
+        };
       });
     },
 
@@ -511,31 +618,80 @@ function createDrizzleMarketingContactRepository(): MarketingContactRepository {
       const origin = input.origin ?? "resend";
 
       return getPrivateDb().transaction(async (tx) => {
+        // The advisory lock covers both an existing contact row and the
+        // no-contact case. recordMarketingContact takes the same lock before
+        // writing an opt-in, making the current consent generation stable for
+        // the remainder of this transaction.
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${input.emailNormalized}, 0))`,
+        );
+
+        const [currentContact] = await tx
+          .select({
+            id: marketingContacts.id,
+            unsubscribedAt: marketingContacts.unsubscribedAt,
+          })
+          .from(marketingContacts)
+          .where(eq(marketingContacts.emailNormalized, input.emailNormalized))
+          .limit(1)
+          .for("update");
+
+        // A non-null unsubscribed_at belongs to the current consent
+        // generation because every explicit opt-in clears it. For an address
+        // without a current contact, an existing unsubscribe event is likewise
+        // the only known generation. Reuse that event on replay so its unique
+        // consent-event job remains the single Resend suppression job.
+        const shouldFindExistingEvent =
+          currentContact === undefined ||
+          currentContact.unsubscribedAt !== null;
+        const [existingEvent] = shouldFindExistingEvent
+          ? await tx
+              .select({ id: marketingConsentEvents.id })
+              .from(marketingConsentEvents)
+              .where(
+                and(
+                  eq(
+                    marketingConsentEvents.emailNormalized,
+                    input.emailNormalized,
+                  ),
+                  eq(marketingConsentEvents.eventType, "unsubscribe"),
+                ),
+              )
+              .orderBy(
+                desc(marketingConsentEvents.occurredAt),
+                desc(marketingConsentEvents.createdAt),
+              )
+              .limit(1)
+          : [];
+
         const [contact] = await tx
           .update(marketingContacts)
           .set({
-            unsubscribedAt: input.occurredAt,
-            updatedAt: input.occurredAt,
+            unsubscribedAt: currentContact?.unsubscribedAt ?? input.occurredAt,
+            updatedAt: sql`GREATEST(${marketingContacts.updatedAt}, ${input.occurredAt})`,
           })
           .where(eq(marketingContacts.emailNormalized, input.emailNormalized))
           .returning({ id: marketingContacts.id });
 
-        const [event] = await tx
-          .insert(marketingConsentEvents)
-          .values({
-            contactId: contact?.id ?? null,
-            email: input.email,
-            emailNormalized: input.emailNormalized,
-            eventType: "unsubscribe",
-            metadata: cleanPayload({
-              ...(input.metadata ?? {}),
-              reason: input.reason,
-              resendContactId: input.resendContactId,
-            }),
-            occurredAt: input.occurredAt,
-            source: origin,
-          })
-          .returning({ id: marketingConsentEvents.id });
+        const [createdEvent] = existingEvent
+          ? []
+          : await tx
+              .insert(marketingConsentEvents)
+              .values({
+                contactId: contact?.id ?? null,
+                email: input.email,
+                emailNormalized: input.emailNormalized,
+                eventType: "unsubscribe",
+                metadata: cleanPayload({
+                  ...(input.metadata ?? {}),
+                  reason: input.reason,
+                  resendContactId: input.resendContactId,
+                }),
+                occurredAt: input.occurredAt,
+                source: origin,
+              })
+              .returning({ id: marketingConsentEvents.id });
+        const event = existingEvent ?? createdEvent;
 
         if (!event) {
           throw new Error("Marketing unsubscribe event was not created");
@@ -570,12 +726,46 @@ function createDrizzleMarketingContactRepository(): MarketingContactRepository {
             ),
           );
 
+        // A welcome offer is marketing content. Revoke any unsent durable copy
+        // as part of the same unsubscribe transaction so it cannot be retried
+        // after consent has been withdrawn.
+        await tx
+          .update(customerEmailOutbox)
+          .set({
+            status: "dead_letter",
+            recipientCiphertext: "[redacted]",
+            recipientEmailNormalized: null,
+            templateDataCiphertext: "[redacted]",
+            providerMessageId: null,
+            leaseOwner: null,
+            leaseExpiresAt: null,
+            lastError: null,
+            redactedAt: input.occurredAt,
+            updatedAt: input.occurredAt,
+          })
+          .where(
+            and(
+              eq(customerEmailOutbox.kind, "contact_popup_offer"),
+              eq(
+                customerEmailOutbox.recipientEmailNormalized,
+                input.emailNormalized,
+              ),
+              isNull(customerEmailOutbox.redactedAt),
+              inArray(customerEmailOutbox.status, [
+                "queued",
+                "sending",
+                "failed",
+                "dead_letter",
+              ]),
+            ),
+          );
+
         // For unsubscribes that originated in our system, enqueue a durable job
         // to push the suppression to Resend so hosted broadcasts skip the
         // contact. Resend-originated unsubscribes (the webhook echo) skip this to
         // avoid a Resend -> DB -> Resend loop. Enqueued AFTER the sweep above so
         // this job is never caught by it.
-        if (origin === "internal") {
+        if (origin === "internal" && !existingEvent) {
           await tx
             .insert(marketingContactSyncJobs)
             .values({
@@ -775,6 +965,13 @@ function normalizeIdentity(
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
+}
+
+export function buildContactPopupOfferProviderIdempotencyKey(input: {
+  emailNormalized: string;
+  promotionId: string;
+}): string {
+  return buildContactPopupOfferDedupeKeys(input).primaryProviderIdempotencyKey;
 }
 
 function cleanOptionalText(value: string | undefined): string | undefined {

@@ -1,387 +1,201 @@
 # Booking and Training Calendar Configuration Guide
 
-This guide is based on the current code implementation, schemas, and tests in this repository. It intentionally does not rely on external platform documentation.
+Last verified: 2026-08-31
 
-The app has two separate scheduling paths:
+Service booking and paid training intro-call scheduling are separate systems:
 
-1. **Service booking** uses the app's own slot picker, Sanity booking settings, private PostgreSQL holds, Square card-on-file intake, Square Invoices no-show enforcement, and Google Calendar event creation after card-on-file reconciliation. A legacy hosted Square checkout fallback exists for environments where card-on-file is not enabled.
-2. **Training intro-call scheduling** uses paid training enrollment records and one-time scheduling tokens. After a token is verified, the app shows a Google Calendar Appointment Schedule URL configured on the Sanity `trainingProgram` document.
+| Flow                     | Public configuration                                                          | Private authority                                                                                               | Calendar behavior                                                                                                    |
+| ------------------------ | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Service booking          | Operational services/settings from PostgreSQL; optional Sanity editorial link | PostgreSQL resources, offerings, schedules, holds, payments, appointments, Calendar connections and assignments | App calculates slots, reads assigned busy Calendars, and creates the confirmed event through the Google Calendar API |
+| Paid training intro call | Sanity training-program checkout fields and a Google Appointment Schedule URL | PostgreSQL paid enrollment and hashed schedule token                                                            | After token verification, app exposes Google's Appointment Schedule link/embed; Google handles time selection        |
 
-Do not mix the two paths. The training schedule route does not use `BookingFlow`, `/api/booking/availability`, or app-owned holds.
-
-## Source files to trust
-
-Use these files as the source of truth when changing or verifying this flow:
-
-- Service booking settings schema: `src/sanity/schemas/documents/booking-settings.ts`
-- Service schema: `src/sanity/schemas/documents/service.ts`
-- Booking settings and training projections: `src/data/loaders.ts`
-- Booking public pages: `src/app/(site)/booking/page.tsx`, `src/app/(site)/services/[slug]/booking/page.tsx`
-- Booking client flow: `src/components/booking/booking-flow.tsx`, `src/components/booking/square-card-on-file-form.tsx`
-- Booking API routes: `src/app/api/booking/availability/route.ts`, `src/app/api/booking/holds/route.ts`, `src/app/api/booking/card-on-file/route.ts`, `src/app/api/booking/square/config/route.ts`, and the legacy/fallback `src/app/api/booking/checkout/route.ts`
-- Google Calendar OAuth and events: the protected internal OAuth setup flow/source module, `src/app/api/booking/oauth/callback/route.ts`, `src/lib/booking/google-calendar.ts`
-- Service booking Square card-on-file and no-show invoice modules: `src/lib/booking/payments/service-card-on-file.ts`, `src/lib/booking/payments/service-card-on-file-calendar-finalizer.ts`, `src/lib/booking/payments/service-no-show-invoice.ts`, `src/lib/booking/payments/service-no-show-charge-finalizer.ts`, `src/lib/booking/payments/service-no-show-policy.ts`, `src/lib/private-db/card-on-file-repository.ts`
-- Service booking legacy/fallback hosted Square checkout: `src/lib/booking/square-service-checkout.ts`, `src/app/api/booking/square/return/route.ts`
-- Square webhook handler: `src/app/api/webhooks/square/route.ts`
-- Service booking environment checks: `src/lib/env/private-checkout.ts`
-- Training program schema: `src/sanity/schemas/documents/training-program.ts`
-- Training programs overview schema: `src/sanity/schemas/documents/training-programs-page.ts`
-- Training schedule route: `src/app/(site)/training-programs/[slug]/schedule/page.tsx`
-- Training token eligibility: `src/lib/booking/paid-training-context.ts`, `src/lib/commerce/training-enrollment-store.ts`
-- Training scheduling URL builder and commerce rules: `src/lib/training-checkout.ts`
-- Training payment notification email: `src/lib/commerce/training-payment-email.ts`
-- Training route contract tests: `src/app/(site)/training-programs/[slug]/schedule/page.test.ts`
+Do not use a Google Appointment Schedule as the service-booking engine. Do not use service booking holds or `/api/booking/payment/confirm` for training intro-call scheduling.
 
 ## Configure service booking
 
-The current implementation intentionally blocks direct appointment creation. `src/app/api/booking/create/route.ts` always returns `Appointments require secure payment before Calendar confirmation.` for valid JSON requests. Configure and test the hold → card-on-file confirmation → calendar finalization path instead. The legacy `hold → /api/booking/checkout → Square checkout URL → return` flow remains available as a fallback when card-on-file is not enabled.
+### 1. Prepare the environment
 
-### 1. Run from the repository root
-
-All package scripts are defined in the root `package.json`. Use the repository root for setup, validation, and local testing:
+From the repository root:
 
 ```bash
 npm install
-npm run db:migrate
-npm run dev
+npm run db:check -- --env-file <protected-env-file>
 ```
 
-Use these checks after environment or schema changes:
+Do not run a bare `npm run db:migrate`. Apply changes only with the exact target/host/env-file guards in `docs/private-database-migration-runbook.md`; production additionally requires `PRIVATE_DB_MIGRATION_CONFIRM=production`. Rerun `db:check` after the guarded migration.
 
-```bash
-node scripts/validate-sanity-env.mjs
-npm run build
-npx sanity schema deploy
+Configure the server-only database, Auth.js identity, Calendar OAuth, Calendar credential encryption, Upstash, Square, reconciliation, and email variables from `.env.local.example`. For a fully cut-over deployment, set:
+
+```env
+SERVICE_BOOKING_MODEL_MODE=operational
 ```
 
-Implementation notes from the repo:
+Use `docs/google-calendar-oauth-env-setup.md` for the Google client and encryption-key procedure. Use `docs/square-service-booking-setup.md` for payment credentials and webhooks.
 
-- `npm run build` runs `node scripts/validate-sanity-env.mjs` first through the `prebuild` script.
-- `npm run db:migrate` applies private PostgreSQL migrations through `scripts/migrate-private-db.ts`.
-- `npx sanity schema deploy` is needed only after changing source schemas in `src/sanity/schemas/**`.
+### 2. Create providers and resources
 
-### 2. Configure required environment variables
+Open `/admin/staff`:
 
-Service booking needs private database access, Google Calendar OAuth, Square service-booking card-on-file or checkout, and email/payment support.
+1. Create or activate each team member that should accept online bookings. Each team account has a bookable provider resource.
+2. Confirm the client-facing provider name and public slug.
+3. On **Square sales matching**, map the provider to the correct Square team member when attribution is required.
 
-Set these server-side variables where the booking flow should run:
+Provider/resource identity is selected by the server. Public hold requests must not be allowed to choose arbitrary resource or employee IDs.
 
-```text
-DATABASE_URL=
+### 3. Save business booking settings
 
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GOOGLE_REDIRECT_URI=
-BOOKING_ADMIN_SETUP_SECRET=
-KV_REST_API_URL=
-KV_REST_API_TOKEN=
+Open `/admin/booking-settings` and review:
 
-SERVICE_BOOKING_SQUARE_ENABLED=true
-SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true
-SQUARE_ENVIRONMENT=sandbox | production
-SQUARE_APPLICATION_ID=
-SQUARE_ACCESS_TOKEN=
-SQUARE_LOCATION_ID=
-SQUARE_WEBHOOK_SIGNATURE_KEY=
-SQUARE_SERVICE_BOOKING_RETURN_URL=https://<domain>/api/booking/square/return
-SQUARE_SERVICE_BOOKING_WEBHOOK_URL=https://<domain>/api/webhooks/square
+- Business timezone.
+- Minimum booking notice and future booking window.
+- Appointment interval and default timing/buffers.
+- Client intake questions.
+- Marketing opt-in wording.
 
-PAYMENT_GATEWAY_MODE=live
-CHECKOUT_SECRET_ENCRYPTION_KEY=
-RESEND_API_KEY=
-RESEND_WEBHOOK_SECRET=
-RESEND_SEGMENT_MARKETING_ID=
-FROM_EMAIL=
-ADMIN_EMAIL=
-```
+These settings are private PostgreSQL operational configuration. The legacy Sanity `bookingSettings` document is not the runtime source for current service booking.
 
-Implementation notes from the code:
+### 4. Create services and provider offerings
 
-- `src/sanity/env.ts` requires the Google OAuth and KV variables through `getBookingEnv()`.
-- `src/lib/env/private-checkout.ts` returns `null` from `getSquareServiceBookingEnv()` unless `SERVICE_BOOKING_SQUARE_ENABLED=true`.
-- When Square service booking is enabled, `SQUARE_ENVIRONMENT` must be exactly `sandbox` or `production`.
-- Card-on-file booking requires `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true` and `SQUARE_APPLICATION_ID`. The UI falls back to the hosted checkout path when card-on-file is unavailable.
-- `SQUARE_SERVICE_BOOKING_RETURN_URL` is used by the legacy/fallback hosted checkout path.
-- `SQUARE_SERVICE_BOOKING_WEBHOOK_URL` must parse as a valid URL; it receives Square webhook events for both the card-on-file no-show invoice finalizer and the legacy hosted checkout reconciler.
-- `PAYMENT_GATEWAY_MODE=mock` is for local/dev mock payment flows only. Keep production on `live`.
-- Product checkout and standard training checkout are Square-backed (Web Payments SDK) when `SQUARE_COMMERCE_ENABLED=true`, reusing the server-only Square values above. The application ID and location are served to the browser through `/api/checkout/square/config`, so do not add `NEXT_PUBLIC_SQUARE_*` variables.
+Open `/admin/offerings`:
 
-### 3. Connect Google Calendar OAuth
+1. Create the service with a route-safe public slug and complete client-facing title/summary.
+2. Create a provider-specific offering with the price, duration, pre/post buffers, and active status.
+3. Confirm the offering uses the provider's automatically managed primary resource.
+4. Configure any add-ons with complete public name, key, description, positive price, and duration delta.
+5. Activate the provider, service, offering, resource, and add-ons only after their readiness inputs are complete.
 
-The service booking flow reads and writes Google Calendar events with OAuth.
+An optional Sanity service link may supply richer editorial detail or SEO. It does not own price, duration, resources, availability, or payment state.
 
-1. Ensure the Google and KV variables above are present.
-2. Run the protected internal OAuth setup flow in the target environment using `BOOKING_ADMIN_SETUP_SECRET` from the secure secret manager (do not share the setup URL or include it in documentation).
+### 5. Configure resource schedules
 
-3. Complete Google consent with the calendar account that should own booking events.
-4. The callback route stores the Google refresh token through `saveGoogleRefreshToken()`.
-5. A successful callback returns:
+Open `/admin/schedules`:
+
+1. Add active weekly hours for the provider resource.
+2. Record time off and extra-hours exceptions in the business timezone.
+3. Verify effective dates and prevent overlapping or contradictory schedules.
+
+Operational availability intersects all required resource schedules, active reservations, and assigned Google Calendar busy intervals. A missing required schedule causes the offering to fail closed.
+
+### 6. Connect and assign Calendars
+
+Owners/administrators use `/admin/calendar-connections`. Employees use `/admin/my-calendar` for their assigned resources.
+
+1. Select **Connect Google account** and complete the permission-protected OAuth flow.
+2. Confirm the account becomes active and Calendar discovery succeeds.
+3. Assign a discovered canonical Calendar ID to the resource. The alias `primary` is not valid stored configuration.
+4. Choose one Calendar as the booking destination. Google access must be `writer` or `owner`; the destination also contributes busy time.
+5. Add busy-only Calendars where useful. They require at least free/busy access and do not receive new appointments.
+6. Move the booking destination before disabling its assignment, disconnecting the account, or transferring ownership.
+
+Refresh credentials are encrypted and stored with each connection in private PostgreSQL. Upstash holds only the expiring OAuth state. The legacy global secret/Redis credential route is compatibility-only and must not be used for a new operational provider.
+
+### 7. Check readiness and public routes
+
+Open `/admin/setup` and clear every issue for the provider. Activation is blocked or unhealthy when any of these are missing:
+
+- Active provider and primary resource.
+- Provider display name and public slug.
+- Active service and public slug.
+- Complete public offering title/summary.
+- Active provider offering.
+- Active weekly schedule for the provider resource.
+- Active booking Calendar destination.
+- Complete active add-ons.
+
+If migrated operational data already assigns a required room/equipment resource, readiness also requires that persisted resource to be active and scheduled. The current dashboard does not create or attach secondary resources; do not repair that state with an ad hoc SQL edit. Use an audited migration or add the required admin capability. Square team mappings are managed on `/admin/staff?tab=square`; the requirement/readiness control is on `/admin/integrations`.
+
+Verify the canonical routes:
+
+- `/services` lists active operational offerings.
+- `/services/[slug]/booking` displays provider offerings and availability.
+- `/booking` permanently redirects to `/services`.
+- `/booking?service=<slug>` and the accepted legacy slug aliases redirect to `/services/<slug>/booking` only for a currently bookable operational slug.
+
+### 8. Verify hold and payment behavior
+
+Use Square sandbox in staging:
+
+1. Select a provider offering and time.
+2. Confirm `POST /api/booking/holds` revalidates availability, reserves all required resources, and returns an opaque `/services/[slug]/booking/payment?session=...` URL.
+3. Confirm the hold request contains offering/time/intake choices only. Contact, marketing, policy, and payment data belong on the payment step and are rejected by the hold endpoint. Resource, employee, Calendar, and connection routing fields must never be supplied by the browser; the server selects them.
+4. On the payment page, confirm Square tokenization uses `CHARGE_AND_STORE` and the form posts to `/api/booking/payment/confirm`.
+5. Confirm the server captures the selected amount, stores provider/policy/saved-card evidence, creates one PostgreSQL appointment, and creates one event on the resource's booking destination.
+6. Retry safely and deliver duplicate webhooks; confirm no duplicate charge, appointment, reservation transfer, or Calendar event appears.
+
+Direct `/api/booking/create` is intentionally disabled. New bookings must not bypass payment reconciliation.
+
+## Configure a paid training intro-call schedule
+
+### 1. Create the Google Appointment Schedule
+
+In the Google Calendar account used for training calls:
+
+1. Create an Appointment Schedule for the intro call.
+2. Configure availability, duration, buffers, booking limits, meeting details, and notifications in Google.
+3. Copy the public schedule URL. It must use this form:
 
    ```text
-   Google Calendar booking OAuth is connected
+   https://calendar.google.com/calendar/appointments/schedules/<schedule-id>
    ```
 
-Security rule from the repo: treat the setup URL as sensitive because it contains `BOOKING_ADMIN_SETUP_SECRET`.
+The app validates the scheme, host, and path before exposing the URL. This public schedule is not a service-booking Calendar assignment and does not require the app's per-resource Calendar connection unless the same Google account is also used independently for service booking.
 
-### 4. Create or update the Sanity `bookingSettings` document
+### 2. Configure the training program in Sanity Studio
 
-The public `/booking` page and `/services/[slug]/booking` page both require `loaders.getBookingSettings()` to return a document. If it is missing, those routes call `notFound()`.
+Open the training program's checkout group in `/studio` and configure:
 
-In Studio, create/update **Booking Settings** with these fields:
+- Availability and checkout fields required by the program's paid checkout.
+- `introCallAppointmentScheduleUrl` with the copied Google URL.
+- `introCallAppointmentScheduleEmbedMode` as `link` or `embed`.
+- Optional `introCallSchedulingInstructions`.
 
-| Field                   | Code field             | Required behavior                                                                                      |
-| ----------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------ |
-| Google Calendar ID      | `calendarId`           | Required. Use `primary` or a specific calendar ID. Availability and event creation use this value.     |
-| Booking Horizon Days    | `bookingHorizonDays`   | Integer 1-180. Availability searches from now to this horizon.                                         |
-| Minimum Lead Time Hours | `minimumLeadTimeHours` | Integer 0-720. Slots before this lead time are not bookable.                                           |
-| Booking Timezone        | `timezone`             | Required. Used on holds and booking summaries. Default is `America/Toronto`.                           |
-| Buffer Minutes          | `bufferMinutes`        | Integer 0-120. Applied before and after service bookings.                                              |
-| Slot Interval Minutes   | `slotIntervalMinutes`  | Integer 5-120. Controls slot spacing.                                                                  |
-| Hours of Operation      | `hoursOfOperation`     | Exactly seven day records. Each day has `day`, `isOpen`, `opensAt`, `closesAt`. Times must be `HH:mm`. |
-| Client Intake Questions | `intakeQuestions`      | Optional array. Question IDs must match `^[a-z0-9-]+$`; input type is `text`, `textarea`, or `select`. |
-| Marketing Opt-in Label  | `marketingOptInLabel`  | Required label rendered in `BookingFlow`.                                                              |
+Publish the program after validation succeeds. The `link` mode opens Google in a new tab. The `embed` mode renders an iframe on larger screens and a popup button on mobile.
 
-The app reads only these projected settings in `src/data/loaders.ts`:
+### 3. Understand the token gate
 
-```groq
-calendarId,
-bookingHorizonDays,
-minimumLeadTimeHours,
-timezone,
-bufferMinutes,
-slotIntervalMinutes,
-hoursOfOperation[]{ _key, day, isOpen, opensAt, closesAt },
-"intakeQuestions": coalesce(intakeQuestions[]{ _key, id, label, inputType, required, options }, []),
-marketingOptInLabel
-```
-
-### 5. Configure bookable Sanity `service` documents
-
-Only services with valid payment fields are shown as bookable. `loaders.getBookableServices()` filters services through `isPaymentConfiguredService()`.
-
-For each bookable service, configure:
-
-| Field                 | Code field        | Required behavior                                                                                                     |
-| --------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Title                 | `title`           | Required. Used as booking label.                                                                                      |
-| Slug                  | `slug.current`    | Required. Used in `/services/<slug>/booking`.                                                                         |
-| Description           | `description`     | Required. Used in service config and UI.                                                                              |
-| Available for booking | `isAvailable`     | Required in schema, but current bookable filtering depends on pricing. Keep this aligned with editorial availability. |
-| Duration Minutes      | `durationMinutes` | Required integer 15-240. Used to calculate slot end time.                                                             |
-| Full Price            | `fullPrice`       | Required positive number for bookable services. Must be greater than deposit.                                         |
-| Deposit Amount        | `depositAmount`   | Required positive number for bookable services. Must be less than full price.                                         |
-| Currency              | `currency`        | Read-only `CAD`.                                                                                                      |
-
-A service is bookable only when:
-
-```ts
-depositAmount > 0 && fullPrice > 0 && depositAmount < fullPrice;
-```
-
-### 6. Verify service booking URLs
-
-The canonical service booking URL is:
+The schedule route is:
 
 ```text
-/services/<service-slug>/booking
+/training-programs/[slug]/schedule?token=<opaque-token>
 ```
 
-The legacy `/booking` route still exists and can redirect old query shapes through `resolveBookingShim()`, but current service listing/detail CTAs should use `/services/<slug>/booking`.
+After Square captures the training checkout, or an enabled Square training invoice reaches paid state, PostgreSQL marks the enrollment paid and issues an opaque scheduling token. Only its hash is stored. The current token lifetime is 14 days.
 
-At runtime:
+Before rendering the Google URL, the route verifies that:
 
-1. `/services/<slug>/booking` loads booking settings, the selected bookable service, and all bookable services.
-2. It renders `BookingFlow` with `initialServiceSlug`, `servicePayment`, and `services`.
-3. The UI fetches `/api/booking/availability` for slots.
-4. The UI posts to `/api/booking/holds` with customer details, selected slot, selected service, intake answers, and payment selection.
-5. In the primary card-on-file flow, the UI renders the Square Web Payments SDK card form and posts to `/api/booking/card-on-file` with the hold reference, card source id, cardholder name, accepted no-show policy, and idempotency key.
-6. `/api/booking/card-on-file` saves the card on file, records policy acceptance, creates the no-show charge instrument (Square Invoice draft or ready record), and finalizes the Google Calendar event. It returns `bookingStatus`, masked `card` details, and `noShowChargeStatus`.
-7. If card-on-file is unavailable, the UI falls back to the legacy hosted checkout: it posts to `/api/booking/checkout`, which creates or reuses a Square payment link and returns `checkoutUrl`.
+- The token is present and structurally acceptable.
+- A paid private enrollment matches the token.
+- The enrollment belongs to the requested program slug.
+- The token has not expired or already been consumed by the scheduling workflow.
+- The Sanity program contains a valid Appointment Schedule URL.
 
-### 7. Confirm booking API behavior
+Invalid, unpaid, expired, used, or wrong-program tokens show the same safe unavailable page and do not render the Google URL through this app route. The route is dynamic, uncached, and marked `noindex`/`nofollow`.
 
-Use these implementation checks when diagnosing configuration:
+Rendering the schedule page does not itself mark an enrollment scheduled, and Google Appointment Schedule completion is not synchronized back to the app automatically. `/admin/training` reports the local enrollment state that exists; it is not currently an appointment-completion control.
 
-- `/api/booking/availability` returns `{ error: "A valid service is required" }` when no service slug is supplied.
-- `/api/booking/availability` returns `{ error: "Booking is not configured" }` when settings, service, calendar ID, or horizon are invalid.
-- `/api/booking/holds` validates name, email, phone, service slug, selected start time, required intake answers, and final slot availability.
-- `/api/booking/card-on-file` requires a held, unexpired appointment hold, a valid Square card source, and accepted no-show policy terms. It returns `404` with `{ error: "Card-on-file booking is not enabled" }` when `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED` is not `true`.
-- The legacy/fallback `/api/booking/checkout` requires a held, unexpired appointment hold and a configured payment selection.
-- The legacy Square checkout throws `Square service booking checkout is not enabled` when `SERVICE_BOOKING_SQUARE_ENABLED` is not `true`.
+The Appointment Schedule URL is stored in and projected from the public Sanity content layer. The token gate controls exposure through the Lash Her scheduling route; it does not make the URL confidential against direct Sanity API access. If strict paid-only secrecy is required, move the URL to private PostgreSQL or another private store before relying on it as a secret.
 
-## Add Google Calendar booking pages to training programs
+### 4. Verify training scheduling
 
-Training intro-call scheduling is configured on each `trainingProgram` document. It is not a general public booking page.
+In staging:
 
-### 1. Understand the training scheduling flow
+1. Confirm an unpaid enrollment cannot obtain or use the scheduling page.
+2. Complete a Square sandbox training payment and verify the notification contains the tokenized schedule URL.
+3. Open the URL and confirm the correct program title, instructions, and Google schedule appear.
+4. Confirm `link` mode opens a separate tab and `embed` mode uses the responsive iframe/popup behavior.
+5. Test a modified token, wrong slug, expired token, missing URL, and extra query parameter; none may expose the Google URL.
+6. Confirm opening the page alone does not change the enrollment to scheduled.
 
-The code creates a secure schedule link only after training payment is finalized.
+Primary training checkout uses Square Web Payments when `SQUARE_COMMERCE_ENABLED=true`. The optional training Afterpay Square Invoice path is documented in `docs/training-afterpay-square-invoice.md`. Both keep enrollment and token state in private PostgreSQL and share `/api/webhooks/square` with other Square flows.
 
-1. Training checkout validates the Sanity training program using `validateTrainingCheckoutRequest()`.
-2. Paid training finalization calls `getOrIssueTrainingSchedulingTokenForPaidOrder()`.
-3. The token is valid for 14 days (`TRAINING_SCHEDULING_LINK_TTL_DAYS` and `SCHEDULING_TOKEN_TTL_DAYS`).
-4. The payment email sends a link labeled **Schedule Training Call**.
-5. The confirmation page also calls `getOrIssueTrainingSchedulingTokenForPaidOrder()` and renders a **Schedule Training Call** link after the order is verified.
-6. Those links are built by `buildTrainingScheduleUrl()` as:
+## Common configuration errors
 
-   ```text
-   /training-programs/<program-slug>/schedule?token=<scheduling-token>
-   ```
-
-7. The schedule page verifies the token server-side before rendering any Google Appointment Schedule URL.
-
-### 2. Configure the training program for online checkout
-
-In Studio, open the `trainingProgram` document and configure the **Checkout** group.
-
-The Google Appointment Schedule fields are hidden unless `checkoutEnabled` is true.
-
-Required checkout fields for purchasable training programs:
-
-| Field                      | Code field                 | Required behavior                                                                                         |
-| -------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Enable Online Checkout     | `checkoutEnabled`          | Must be `true` for checkout and schedule fields.                                                          |
-| Price                      | `price`                    | Required positive number when checkout is enabled.                                                        |
-| Manual Discount Price      | `discountPrice`            | Optional; must be lower than `price` when present.                                                        |
-| Available for checkout     | `isAvailable`              | Must be boolean when checkout is enabled. The app only treats the program as purchasable when it is true. |
-| Checkout CTA Label         | `checkoutCtaLabel`         | Optional. Defaults to `Enroll Now` in code.                                                               |
-| Post-Purchase Instructions | `postPurchaseInstructions` | Optional. Projected for training pages.                                                                   |
-
-The code sets training currency to `CAD` in GROQ projections rather than in the Sanity schema.
-
-### 3. Add the Google Calendar Appointment Schedule URL
-
-On the same `trainingProgram` document, set:
-
-| Field                                   | Code field                              | Behavior                                                                                  |
-| --------------------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Intro Call Appointment Schedule URL     | `introCallAppointmentScheduleUrl`       | Public Google Calendar Appointment Schedule URL shown only after paid token verification. |
-| Intro Call Appointment Schedule Display | `introCallAppointmentScheduleEmbedMode` | `link` or `embed`. Defaults to `link` through the loader.                                 |
-| Intro Call Scheduling Instructions      | `introCallSchedulingInstructions`       | Optional text shown above the schedule UI.                                                |
-
-The URL must pass both schema validation and route validation:
-
-```text
-https://calendar.google.com/calendar/appointments/schedules/...
-```
-
-The route rejects anything that is not:
-
-- `https:` protocol
-- `calendar.google.com` hostname
-- a path starting with `/calendar/appointments/schedules/`
-
-If the field is missing or invalid, a paid student sees the safe **Scheduling Unavailable** shell instead of the appointment URL.
-
-### 4. Choose link or embed mode
-
-Use `introCallAppointmentScheduleEmbedMode` to decide how verified students see the appointment schedule:
-
-- `link`: renders a button labeled **Open Google Appointment Schedule** with `target="_blank"` and `rel="noopener noreferrer"`.
-- `embed`: renders a larger desktop-only `<iframe>` using the schedule URL and a title of `Google Appointment Schedule for <program title>`. On mobile widths, the route avoids the cramped inline Google Calendar frame and renders Google's **Button with popup** scheduling button instead.
-
-The route normalizes any non-`embed` value to `link`:
-
-```ts
-const embedMode =
-  program.introCallAppointmentScheduleEmbedMode === "embed" ? "embed" : "link";
-```
-
-### 5. Add the program to the training programs page
-
-The overview page is driven by the singleton `trainingProgramsPage` document.
-
-In Studio:
-
-1. Open **Training Programs Overview**.
-2. Add the configured `trainingProgram` document to the `trainingPrograms` reference array.
-3. Publish the overview and program documents.
-
-`loaders.getTrainingProgramsPageData()` dereferences that array and includes the schedule-related fields in the projection:
-
-```groq
-introCallAppointmentScheduleUrl,
-"introCallAppointmentScheduleEmbedMode": coalesce(introCallAppointmentScheduleEmbedMode, "link"),
-introCallSchedulingInstructions
-```
-
-The overview route `/training-programs` renders the referenced programs. The actual booking/scheduling page is still the protected route:
-
-```text
-/training-programs/<program-slug>/schedule?token=<scheduling-token>
-```
-
-Do not add the raw Google Appointment Schedule URL directly to public overview CTAs. The implemented pattern keeps the Google schedule behind paid token verification.
-
-Current overview-card behavior in `src/components/custom/training-programs-section.tsx` is:
-
-- CTA label: `program.primaryCta?.label ?? program.checkoutCtaLabel ?? "View Details"`
-- CTA href: `/training-programs/${program.slug}`
-- `checkoutEnabled` adds an **Enrollment Open** badge and switches the button variant to primary.
-
-Current detail-page behavior in `src/app/(site)/training-programs/[slug]/page.tsx` is:
-
-- `getTrainingCta()` returns `/training-programs/<slug>/checkout` only when the program is purchasable.
-- If checkout is disabled, it uses `checkoutDisabledBookingCta` when safe, otherwise falls back to `Book a Call` and `#contact`.
-- The detail page does not link directly to `introCallAppointmentScheduleUrl`.
-
-### 6. Verify token and route behavior
-
-The schedule route intentionally disables static caching and indexing:
-
-```ts
-export const revalidate = 0;
-export const dynamic = "force-dynamic";
-noStore();
-robots: { index: false, follow: false }
-```
-
-It accepts only one query parameter: `token`. Any additional or different search parameter calls `notFound()`.
-
-Eligibility requires all of the following:
-
-- The token is non-empty.
-- `findPendingTrainingEnrollmentByToken()` finds a pending enrollment for the token hash.
-- The enrollment `programSnapshot.slug` matches the route slug.
-- The checkout order status is `paid`.
-- `tokenExpiresAt` exists and is still in the future.
-- The training program has a valid `introCallAppointmentScheduleUrl`.
-
-If any check fails, the page shows **Scheduling Unavailable** with a `/contact` CTA and does not expose order IDs, checkout emails, or the appointment schedule URL.
-
-## Manual QA checklist
-
-Use this checklist after configuration changes.
-
-### Service booking
-
-1. Open `/services/<service-slug>/booking` for a service with valid `fullPrice`, `depositAmount`, and `durationMinutes`.
-2. Confirm the page renders the service title and booking flow.
-3. Confirm availability loads from `/api/booking/availability?service=<slug>`.
-4. Select a slot and fill required customer/intake fields.
-5. Submit the hold step and confirm `/api/booking/holds` returns a hold reference.
-6. In the primary card-on-file flow, enter test card details and confirm `/api/booking/card-on-file` returns `bookingStatus: "booked"` (or `"manual_followup"` on calendar failure), masked card details, and `noShowChargeStatus`.
-7. Verify the appointment is finalized into the configured Google Calendar and a Square no-show charge instrument exists for the hold.
-8. If card-on-file is disabled, confirm the UI falls back to the legacy hosted checkout and `/api/booking/checkout` returns a Square checkout URL, then verify the appointment after return/webhook reconciliation.
-
-### Training intro-call schedule
-
-1. Configure a `trainingProgram` with `checkoutEnabled=true`, valid checkout price fields, and a valid `introCallAppointmentScheduleUrl`.
-2. Add the program to `trainingProgramsPage.trainingPrograms` if it should appear on `/training-programs`.
-3. Complete or simulate the training payment flow so the app issues a scheduling token.
-4. Open `/training-programs/<program-slug>/schedule?token=<token>`.
-5. Confirm the page renders **Schedule Training Call** and either the link button or iframe based on `introCallAppointmentScheduleEmbedMode`. For `embed`, verify the iframe appears on desktop and the Google **Button with popup** appears on mobile.
-6. Open the same route without a token and confirm it shows **Scheduling Unavailable**.
-7. Open the route with an extra query parameter and confirm it 404s.
-
-## Common configuration mistakes
-
-- Creating a `trainingProgram` schedule URL while `checkoutEnabled` is false. The schedule fields are hidden and the paid-token route expects the training purchase flow.
-- Using a Google URL that is not under `calendar.google.com/calendar/appointments/schedules/`.
-- Adding the Google Appointment Schedule URL to public CTAs instead of using the protected schedule route.
-- Expecting training intro-call scheduling to use `BookingFlow`; the schedule route explicitly does not import it.
-- Missing the singleton `bookingSettings` document, which makes public booking pages unavailable.
-- Enabling Square service booking without all required server-only Square variables.
-- Setting service `depositAmount` greater than or equal to `fullPrice`; those services are not bookable.
-- Treating `/api/booking/checkout` as the primary service booking path; it is the legacy/fallback hosted checkout when card-on-file is unavailable.
-- Treating Sanity as storage for private booking, payment, enrollment, or customer submission data. The repo stores those records in PostgreSQL.
+| Symptom                                              | Check                                                                                                                                                                                                        |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Service absent from `/services`                      | Service/provider/offering status, public fields, schedule, resources, Calendar destination, and `/admin/setup` blockers                                                                                      |
+| No available times                                   | Business/resource schedules, exceptions, required-resource reservations, Google busy events, Calendar connection health, and booking window settings                                                         |
+| Calendar can block time but cannot receive bookings  | Google access role; a destination requires `writer` or `owner`                                                                                                                                               |
+| Event lands on the wrong Calendar                    | Resource's active `acceptsBookings` assignment and canonical Calendar ID                                                                                                                                     |
+| Payment page has no card form                        | Both service Square flags, required `DATABASE_URL` setting, application/location IDs, and Square environment alignment; actual database connectivity failures surface during session/confirmation operations |
+| Training schedule always unavailable                 | Paid enrollment/token state, exact program slug, 14-day expiry, published Sanity URL, and URL host/path validation                                                                                           |
+| App route renders a training schedule before payment | The route must resolve private paid-token eligibility before rendering the Google schedule; note that the URL itself remains public Sanity content                                                           |

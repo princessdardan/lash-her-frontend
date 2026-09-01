@@ -1,419 +1,227 @@
 # Square Service Booking Setup
 
-Date: 2026-05-25
+Last verified: 2026-08-31
 
-This runbook explains how to obtain the Square values used by paid service booking, configure Square webhooks, and set up local development, staging, and production.
+The current public service-booking payment path is Square direct charge-and-store. The customer stays in the Lash Her app, Square Web Payments tokenizes the card with `intent: "CHARGE_AND_STORE"`, and the server authorizes then captures payment through `POST /api/booking/payment/confirm`. A successful response reports `paymentStatus: "captured"`.
 
-This runbook covers the Square configuration for paid service booking and for the optional training Afterpay Square Invoice flow when `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true`. The active customer confirmation flow charges and stores a card on file (CHARGE_AND_STORE) using the Square Web Payments SDK and Square Cards API through `/api/booking/payment/confirm`; the `/api/booking/card-on-file` STORE path is a secondary store-only variant. When card-on-file is disabled or unavailable, the app falls back to the legacy Square hosted checkout (Payment Link) flow. Product checkout and default training checkout are also Square-backed (Square Web Payments SDK, gated by `SQUARE_COMMERCE_ENABLED`) and use their own Square commerce configuration, separate from the service-booking variables here. The optional training Square Invoice exception requires its own launch gate and environment setup; see `docs/training-afterpay-square-invoice.md`.
+The current public UI does not create Square Payment Links or redirect to Square hosted checkout. The hosted return/webhook finalizer remains for historical records. `POST /api/booking/checkout` is a noncanonical compatibility endpoint that the current UI does not call, but it remains technically capable of creating a Payment Link from a valid active hold. Operators must not invoke it for a new booking; code removal or a gate is required to make the historical-only boundary enforceable.
 
-## App endpoints
+## Current endpoints
 
-| Purpose                                                | Route                                  |
-| ------------------------------------------------------ | -------------------------------------- |
-| Public Square Web Payments SDK config (card-on-file)   | `/api/booking/square/config`           |
-| Active service booking confirmation (charge and store) | `/api/booking/payment/confirm`         |
-| Secondary card-on-file store-only path                 | `/api/booking/card-on-file`            |
-| Customer return after hosted checkout                  | `/api/booking/square/return`           |
-| Admin no-show charge against saved card                | `/api/admin/appointments/[id]/no-show` |
-| Payment reconciliation monitor/cron                    | `/api/admin/payment-reconciliation`    |
-| Square payment webhook                                 | `/api/webhooks/square`                 |
+| Responsibility                                        | Endpoint                                    |
+| ----------------------------------------------------- | ------------------------------------------- |
+| Opaque hold/payment handoff                           | `POST /api/booking/holds`                   |
+| Browser-safe Square SDK config                        | `GET /api/booking/square/config`            |
+| Direct payment confirmation                           | `POST /api/booking/payment/confirm`         |
+| Noncanonical hosted-checkout compatibility capability | `POST /api/booking/checkout`                |
+| Shared signed Square webhook                          | `POST /api/webhooks/square`                 |
+| Payment/booking reconciliation                        | `GET /api/admin/payment-reconciliation`     |
+| Authorized no-show action                             | `POST /api/admin/appointments/[id]/no-show` |
+| Historical hosted return                              | `GET /api/booking/square/return`            |
 
-The webhook handler verifies `x-square-hmacsha256-signature` using `SQUARE_WEBHOOK_SIGNATURE_KEY`, the exact `SQUARE_SERVICE_BOOKING_WEBHOOK_URL`, and the raw request body. If the configured webhook URL differs from the Square subscription URL, signature verification fails.
+## Provider boundary
 
-## Required environment variables
+| Flow                       | Square behavior                                                                                                                            | Local authority                                                                                                                                  |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Service booking            | Web Payments `CHARGE_AND_STORE`; Payments authorization/capture; Customers and Cards; optional draft no-show invoice for an unpaid balance | PostgreSQL hold, resource reservations, captured-payment evidence, saved-card/policy/no-show records, appointment, and Calendar projection state |
+| Product checkout           | Web Payments one-time charge when `SQUARE_COMMERCE_ENABLED=true`                                                                           | PostgreSQL order, stock/payment obligations, transaction and fulfillment state                                                                   |
+| Primary training checkout  | Web Payments one-time charge when `SQUARE_COMMERCE_ENABLED=true`                                                                           | PostgreSQL order, paid enrollment, and scheduling-token state                                                                                    |
+| Optional training Afterpay | Square Invoice when `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true`                                                                        | PostgreSQL order/enrollment; webhook-verified paid state                                                                                         |
 
-Add these as server-only variables. Never prefix Square values with `NEXT_PUBLIC_`.
+All flows share the credentials for one target Square application/location and the single webhook at `/api/webhooks/square`. The handler routes each verified event to the matching service, commerce, training-invoice, no-show, refund, or historical reconciliation path.
 
-### Base Square service booking variables
+Square is provider evidence, not the sole booking authority. A captured service payment is persisted before appointment/Calendar projection. If projection cannot complete, the record stays in an explicit reconciliation or manual-follow-up state; it must not be charged again merely because the Calendar event is missing.
+
+## Required Square capabilities
+
+The access token used by the app must support the APIs exercised by the enabled flows:
+
+| API       | Current use                                                                                  |
+| --------- | -------------------------------------------------------------------------------------------- |
+| Payments  | Authorize, capture, cancel, retrieve/list, and refund payments                               |
+| Customers | Create or reuse the Square customer for service booking                                      |
+| Cards     | Save the verified card for permitted no-show enforcement                                     |
+| Orders    | Create the order backing a remaining-balance/no-show invoice and reconcile historical orders |
+| Invoices  | Create/read/publish the draft no-show invoice; optional training Afterpay invoice            |
+| Team      | Discover/verify Square team members for provider sales attribution                           |
+
+If the application uses Square OAuth rather than a personal access token, grant the Square permissions required by those API operations, including read access for Team API discovery. Keep permissions no broader than the enabled features, but do not remove a capability while active records still require reconciliation or no-show processing.
+
+The code currently sends Square API version `2026-05-20`.
+
+## Environment variables
+
+Use the maintained block in `.env.local.example`. A staging direct-payment setup has this shape:
 
 ```env
+DATABASE_URL=<private-postgres-url>
+SERVICE_BOOKING_MODEL_MODE=operational
+
 SERVICE_BOOKING_SQUARE_ENABLED=true
-SQUARE_ENVIRONMENT=sandbox
-SQUARE_ACCESS_TOKEN=<square-access-token>
-SQUARE_LOCATION_ID=<square-location-id>
-SQUARE_WEBHOOK_SIGNATURE_KEY=<square-webhook-signature-key>
-SQUARE_SERVICE_BOOKING_RETURN_URL=https://<domain>/api/booking/square/return
-SQUARE_SERVICE_BOOKING_WEBHOOK_URL=https://<domain>/api/webhooks/square
-```
-
-### Card-on-file feature variables
-
-Set these only when `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true`:
-
-```env
 SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true
-SQUARE_APPLICATION_ID=<square-application-id>
-PAYMENT_RECONCILIATION_CRON_SECRET=<reconciliation-cron-secret>
-CRON_SECRET=<vercel-cron-secret>
-BOOKING_ADMIN_PAYMENT_ACTION_SECRET=<secret>
-```
-
-- `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED` enables the Square Web Payments SDK card-save flow: the active `POST /api/booking/payment/confirm` charge-and-store confirmation and the secondary `POST /api/booking/card-on-file` store-only path. Any value other than exactly `true` keeps the legacy hosted checkout fallback active.
-- `SQUARE_APPLICATION_ID` is required for the browser-facing Square Web Payments SDK config route (`/api/booking/square/config`) and must match the application used for `SQUARE_ACCESS_TOKEN`. It is stored as a server environment variable (never `NEXT_PUBLIC_`) but is public-safe and not a secret; the app serves it to the browser so the SDK can initialize.
-- `PAYMENT_RECONCILIATION_CRON_SECRET` enables and manually protects `GET /api/admin/payment-reconciliation`. It is required for the route to be enabled and for manual/staff checks.
-- `CRON_SECRET` is required for Vercel scheduled cron authorization. The reconciliation route accepts `CRON_SECRET` only when `PAYMENT_RECONCILIATION_CRON_SECRET` is also configured.
-- `BOOKING_ADMIN_PAYMENT_ACTION_SECRET` protects `POST /api/admin/appointments/[id]/no-show` staff no-show charge commands.
-
-Related variables:
-
-```env
 PAYMENT_GATEWAY_MODE=live
+
+SQUARE_ENVIRONMENT=sandbox
+SQUARE_ACCESS_TOKEN=<sandbox-access-token>
+SQUARE_APPLICATION_ID=<sandbox-application-id>
+SQUARE_LOCATION_ID=<sandbox-location-id>
+SQUARE_WEBHOOK_SIGNATURE_KEY=<sandbox-webhook-signature-key>
+SQUARE_SERVICE_BOOKING_WEBHOOK_URL=https://<staging-domain>/api/webhooks/square
+SQUARE_SERVICE_BOOKING_RETURN_URL=https://<staging-domain>/api/booking/square/return
+
+PAYMENT_RECONCILIATION_CRON_SECRET=<route-specific-secret>
+CRON_SECRET=<vercel-cron-secret>
+BOOKING_ADMIN_PAYMENT_ACTION_SECRET=<staff-payment-action-secret>
 ```
 
-Use `PAYMENT_GATEWAY_MODE=mock` only for local/dev mock payment flows. Mock mode is rejected in production.
+Important boundaries:
 
-## Required Square APIs and OAuth scopes
+- `SQUARE_ACCESS_TOKEN` and `SQUARE_WEBHOOK_SIGNATURE_KEY` are secrets. Never expose them with `NEXT_PUBLIC_`.
+- `SQUARE_APPLICATION_ID` and `SQUARE_LOCATION_ID` are returned by the server's browser-safe config route; the application ID is not an access token.
+- Both service flags must be exactly `true` for the current public payment form. Missing required config, including `DATABASE_URL`, makes the browser-safe config unavailable. That config check does not validate database reachability; session/confirmation database failures surface later and still fail the customer flow closed.
+- `SQUARE_SERVICE_BOOKING_RETURN_URL` is still required by the shared service Square environment loader because historical hosted records can return through that endpoint. It is not the destination of a current direct payment.
+- `SQUARE_SERVICE_BOOKING_WEBHOOK_URL` must exactly equal the Square subscription notification URL. Square signs the notification URL plus the raw body; even a domain/path mismatch causes every signature check to fail.
+- `PAYMENT_RECONCILIATION_CRON_SECRET` must be configured to enable the reconciliation route. The scheduled call may also use `CRON_SECRET` only when the route-specific secret exists.
+- `BOOKING_ADMIN_PAYMENT_ACTION_SECRET` protects the no-show action and must be distinct from cron and setup secrets.
+- `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_LOCAL_INVOICE_FALLBACK_ENABLED` is a local/sandbox compatibility switch for the older card-on-file endpoint. Leave it `false` for the direct payment path; production ignores it.
 
-The card-on-file flow plus legacy hosted checkout reconciliation use these Square APIs:
-
-| Square API  | Purpose                                                                                                                                  |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `Customers` | Create or reuse a Square customer linked to the booking email/phone.                                                                     |
-| `Cards`     | Save a tokenized card on file and retrieve display metadata (brand, last 4, expiry).                                                     |
-| `Orders`    | Create a draft order for the authorized no-show maximum charge amount.                                                                   |
-| `Invoices`  | Create and publish draft invoices with `automatic_payment_source: "CARD_ON_FILE"` for manual no-show enforcement.                        |
-| `Payments`  | Reconcile Payment Link payments on the legacy path. Not used for direct card-on-file charges; no-show enforcement uses Invoices instead. |
-
-If you are using OAuth to authorize the application (rather than a personal access token), request at least these scopes:
-
-- `CUSTOMERS_READ`
-- `CUSTOMERS_WRITE`
-- `CARDS_READ`
-- `CARDS_WRITE`
-- `ORDERS_READ`
-- `ORDERS_WRITE`
-- `INVOICES_READ`
-- `INVOICES_WRITE`
-- `PAYMENTS_READ`
-- `PAYMENTS_WRITE`
-
-The hosted-checkout-only legacy path needs only `ORDERS_READ`, `PAYMENTS_READ`, `PAYMENTS_WRITE`, and the webhook subscription for payment events. Card-on-file expands that to Customers, Cards, and Invoices.
+Use `SQUARE_ENVIRONMENT=sandbox` with Sandbox credentials for local/preview/staging and `SQUARE_ENVIRONMENT=production` with Production credentials only in production. Never mix an application ID, access token, location, or webhook signature key from different applications or environments.
 
 ## Obtain Square values
 
-Use the Square Developer Console for the target application. Square separates sandbox and production values, so collect each environment from the matching console mode.
+In the Square Developer Console for the target application/environment:
 
-1. Sign in to the Square Developer Console.
-2. Open the Square application used for Lash Her service booking.
-3. Choose the environment:
-   - **Sandbox** for local sandbox testing and staging/preview.
-   - **Production** for live production only.
-4. Open **Credentials**.
-5. Copy the access token into `SQUARE_ACCESS_TOKEN`.
-6. Copy the **Application ID** into `SQUARE_APPLICATION_ID`. This is required for the card-on-file flow and must match the access token's application. It is public-safe and exposed through `/api/booking/square/config`; it is not required for the legacy hosted checkout fallback.
-7. Open **Locations** for the same environment.
-8. Copy the target location ID into `SQUARE_LOCATION_ID`.
+1. Copy the access token and application ID from **Credentials**.
+2. Copy the intended location ID from the same environment.
+3. Confirm the location is the one used for service sales and team attribution.
+4. In `/admin/staff?tab=square`, refresh Square team members and map each active provider to the correct location member.
+5. In `/admin/integrations`, enable required attribution only after every active offering provider shows a verified active mapping.
+6. Keep sandbox and production values in separate deployment scopes.
 
-Do not mix sandbox tokens with production locations or production tokens with sandbox locations.
+An operational hold fails closed when required Square team attribution is absent or no longer valid. Do not bypass that check by accepting a team-member ID from the browser.
 
-## Create the Square webhook subscription
+## Create the shared webhook subscription
 
-Create one subscription per reachable environment URL. Local mock mode does not need a Square webhook subscription.
+Create one subscription per reachable deployment environment:
 
-1. In the Square Developer Console, open the same application and environment used for the access token.
-2. Go to **Webhooks** or **Webhooks > Subscriptions**.
-3. Add a subscription for the environment.
-4. Set the notification URL to the exact app webhook URL:
-
-   ```text
-   https://<domain>/api/webhooks/square
-   ```
-
-5. Select the Square API version used by the app. Current app client requests use Square version `2026-05-20`.
-6. Subscribe to the events the app needs:
-   - For card-on-file no-show invoices and legacy hosted checkout reconciliation:
-     - `payment.created`
-     - `payment.updated`
-   - For no-show invoice lifecycle (card-on-file flow):
-     - `invoice.created`
-     - `invoice.published`
-     - `invoice.updated`
-     - `invoice.payment_made`
-     - `invoice.canceled`
-     - `invoice.scheduled_charge_failed`
-   - For order-side reconciliation:
-     - `order.updated`
-7. Save the subscription.
-8. Open the subscription details and reveal/copy the signature key.
-9. Store that key in `SQUARE_WEBHOOK_SIGNATURE_KEY` for the same app environment.
-10. Store the exact notification URL in `SQUARE_SERVICE_BOOKING_WEBHOOK_URL`.
-
-If the webhook URL changes, update both the Square subscription and `SQUARE_SERVICE_BOOKING_WEBHOOK_URL`, then redeploy or restart the app.
-
-## Local development
-
-Start from `.env.local.example`:
-
-```bash
-cp .env.local.example .env.local
+```text
+https://<domain>/api/webhooks/square
 ```
 
-### Option A: local mock legacy Square flow
+Subscribe to the event types consumed by the current handler and enabled workflows:
 
-Use this for normal local development when you do not need Square-hosted checkout, live webhook delivery, or card-on-file sandbox testing.
+- `payment.created`
+- `payment.updated`
+- `order.updated`
+- `invoice.payment_made`
+- `refund.created`
+- `refund.updated`
+
+`payment.created` and `payment.updated` are the direct-payment observation/reconciliation backstop and no-show payment events. `order.updated` supports order-side and historical hosted reconciliation. `invoice.payment_made` finalizes no-show/training invoice outcomes. Refund events persist and reconcile refund results.
+
+After saving the subscription:
+
+1. Copy its signature key into `SQUARE_WEBHOOK_SIGNATURE_KEY` for the same environment.
+2. Copy the notification URL byte-for-byte into `SQUARE_SERVICE_BOOKING_WEBHOOK_URL`.
+3. Redeploy/restart the app.
+4. Send a Square test event already included in the subscription.
+
+Expected route behavior:
+
+- Missing/invalid signature: `401`.
+- Malformed signed payload: `400`.
+- Body over the 64 KB limit: `413` before signature work.
+- Retryable persistence/provider failure: `503`, so Square can retry.
+- Verified processed, duplicate, or safely ignored event: `200`.
+
+Do not use a browser return, query value, or webhook delivery alone as proof of payment. The finalizers look up and verify provider/local amount, currency, customer/reference, order/payment identity, and team attribution as appropriate.
+
+## Direct charge-and-store lifecycle
+
+1. `/api/booking/holds` revalidates the operational offering and resource availability, creates a ten-minute private hold/reservation set, and returns only an opaque payment-session URL.
+2. The payment page collects the customer, deposit/full/custom partial selection, policy acceptance, marketing choice, and Square card entry.
+3. Square Web Payments tokenizes with `CHARGE_AND_STORE`, customer initiated, CAD, and the selected amount.
+4. `/api/booking/payment/confirm` resolves the opaque session, recomputes allowed amounts from trusted offering/payment snapshots, and creates/reuses the Square customer.
+5. Before payment creation, the server claims a durable request intent and capture lease. Retries reuse provider idempotency state; a changed request cannot reuse an ambiguous old provider intent.
+6. Square authorizes the payment without treating the initial response as final capture. The app saves the verified card and persists policy/no-show evidence.
+7. For a partial/deposit payment, the app creates a Square DRAFT invoice for the permitted remaining no-show balance. A full payment has no remaining-balance invoice requirement.
+8. The server persists the Square authorization, revalidates the capture lease/reservations, and completes the Square payment.
+9. `COMPLETED` provider evidence is persisted before creating the authoritative appointment and Google Calendar event.
+10. The response returns `paymentStatus: "captured"` with `bookingStatus: "booked"` or `"manual_followup"`.
+
+Never log or store the PAN, CVV, raw Square source token, verification token, raw payment-session reference, or full webhook body. The browser card fields remain in Square's iframe.
+
+## Local and staging verification
+
+`PAYMENT_GATEWAY_MODE=mock` is useful for focused compatibility/unit tests, but it does not emulate the current browser-to-`/api/booking/payment/confirm` lifecycle end to end. The active public config and direct clients still require coherent Square configuration. Use Square Sandbox for the real flow.
+
+For a complete webhook test, use a deployed preview/staging origin or an HTTPS tunnel whose URL is configured in both Square and the environment. When a tunnel hostname rotates, update both `SQUARE_SERVICE_BOOKING_WEBHOOK_URL` and the Square subscription before retesting.
+
+Run the source-controlled preflight with the target variables loaded:
+
+```bash
+npm run check:square-card-on-file-env
+```
+
+The preflight checks both flags, required credentials/secrets/database values, Square environment alignment, production mock rejection, and HTTPS webhook/return URLs. It reports variable names, not values.
+
+Run focused automated coverage:
+
+```bash
+npx tsx --test src/lib/booking/payments/service-charge-and-store.test.ts
+npx tsx --test src/app/api/booking/payment/confirm/route.test.ts
+npx tsx --test src/app/api/webhooks/square/route.test.ts
+npx playwright test tests/booking-card-on-file-config.spec.ts --project=chromium
+npx playwright test tests/service-booking-payment-page.spec.ts --project=chromium
+```
+
+With a protected `TEST_DATABASE_URL`, include the DB-backed appointment-finalization coverage:
+
+```bash
+npx tsx --test src/lib/private-db/appointment-finalization-repository.db.test.ts
+```
+
+Then complete this Square Sandbox smoke matrix in staging:
+
+- Successful deposit/partial and full payment; response is captured and exactly one appointment/event exists.
+- Declined authorization; no booked appointment or Calendar event.
+- Card-save or draft-invoice failure; authorization is cancelled/contained and booking is not reported successful.
+- Connection loss after Square accepts payment creation; same request resumes with the durable provider intent and does not double-charge.
+- Duplicate submit, webhook, and reconciliation calls; no duplicate payment, saved card, no-show record, appointment, or Calendar event.
+- Provider `COMPLETED` with local projection failure; record moves to manual/rebooking follow-up and no automatic second charge occurs.
+- Public Square config disabled; new payment UI fails closed and does not call historical hosted checkout.
+- A pre-existing historical hosted record can still be reconciled by return/webhook/server lookup while direct payment remains disabled.
+
+Use redacted internal references and UTC timestamps as evidence. Do not copy credentials, customer PII, full Square IDs, raw tokens, or webhook bodies into release notes.
+
+## No-show workflow
+
+The direct booking flow stores explicit policy acceptance, a saved Square card reference, and a no-show record. If a balance remains, it also prepares a DRAFT Square invoice.
+
+Only an authorized staff operation may call `POST /api/admin/appointments/[id]/no-show`. The appointment must have ended, the operator and reason are audited, `confirmPolicyCharge` must be true, and the requested amount must equal the stored allowed amount. The route is protected by `BOOKING_ADMIN_PAYMENT_ACTION_SECRET` and uses an idempotency key.
+
+Do not retry with a different idempotency key while a charge is pending or ambiguous. Check `/admin/appointments`, `/admin/booking-issues`, Square, webhook observations, and `/api/admin/payment-reconciliation` first.
+
+## Production enablement and emergency stop
+
+Before enabling production:
+
+1. Apply/check the complete private DB migration lineage.
+2. Prove the direct lifecycle with Square Sandbox in staging.
+3. Create the Production webhook subscription and verify its signature.
+4. Confirm provider/team mappings use Production location members.
+5. Load only Production Square credentials into the Production deployment scope.
+6. Run `npm run check:square-card-on-file-env`, deploy, and run a controlled low-risk smoke approved by the business owner.
+7. Confirm the reconciliation cron remains scheduled every 30 minutes in `vercel.json` and returns a healthy result.
+
+To stop new service card collection without discarding recovery capability, set:
 
 ```env
-SERVICE_BOOKING_SQUARE_ENABLED=true
 SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=false
-PAYMENT_GATEWAY_MODE=mock
-PAYMENT_MOCK_DEFAULT_SCENARIO=success
-SQUARE_ENVIRONMENT=sandbox
-SQUARE_SERVICE_BOOKING_RETURN_URL=http://localhost:3000/api/booking/square/return
-SQUARE_SERVICE_BOOKING_WEBHOOK_URL=http://localhost:3000/api/webhooks/square
 ```
 
-In mock mode, the runtime supplies mock Square credentials when `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, or `SQUARE_WEBHOOK_SIGNATURE_KEY` are omitted. You can still set placeholder values for clarity.
+Leave `SERVICE_BOOKING_SQUARE_ENABLED=true`, valid provider credentials, and the webhook/reconciliation secrets in place so captured/ambiguous direct attempts, historical hosted records, refunds, and no-show state can still reconcile. The public config returns unavailable and new payment sessions fail closed; no hosted fallback is created.
 
-Run the app:
+Disable `SERVICE_BOOKING_SQUARE_ENABLED` only for a broader incident response that explicitly accepts loss of service-payment confirmation/reconciliation until it is restored. Product/training Square commerce is independently gated by `SQUARE_COMMERCE_ENABLED` but shares the webhook and credentials, so evaluate those flows before changing shared Square values.
 
-```bash
-npm run dev
-```
-
-Then exercise a paid service booking. The booking checkout should use the mock Square client and return through the local Square return route.
-
-### Option B: local Square sandbox card-on-file flow
-
-Use this when you need to test the Square Web Payments SDK tokenization, Cards API, no-show invoice behavior, and admin no-show charge flow from your local app.
-
-1. Create a public HTTPS tunnel to the local dev server, such as ngrok.
-2. Use the tunnel origin for the card-on-file and webhook URLs:
-
-   ```env
-   SERVICE_BOOKING_SQUARE_ENABLED=true
-   SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true
-   PAYMENT_GATEWAY_MODE=live
-   SQUARE_ENVIRONMENT=sandbox
-   SQUARE_ACCESS_TOKEN=<sandbox-access-token>
-   SQUARE_APPLICATION_ID=<sandbox-application-id>
-   SQUARE_LOCATION_ID=<sandbox-location-id>
-   SQUARE_SERVICE_BOOKING_RETURN_URL=https://<tunnel-domain>/api/booking/square/return
-   SQUARE_SERVICE_BOOKING_WEBHOOK_URL=https://<tunnel-domain>/api/webhooks/square
-    SQUARE_WEBHOOK_SIGNATURE_KEY=<sandbox-subscription-signature-key>
-    CRON_SECRET=local-dev-vercel-cron-secret
-    PAYMENT_RECONCILIATION_CRON_SECRET=local-dev-cron-secret
-    BOOKING_ADMIN_PAYMENT_ACTION_SECRET=local-dev-admin-secret
-   ```
-
-3. Create or update the Square sandbox webhook subscription to use the tunnel webhook URL.
-4. Restart `npm run dev` after changing `.env.local`.
-5. Run a sandbox service booking:
-   - Confirm the policy checkbox blocks submission until accepted.
-   - Complete card tokenization and save.
-   - Confirm the hold transitions to `booked` with a saved card, policy acceptance, no-show record, and Google Calendar event.
-   - Test the admin no-show charge route against the saved sandbox card.
-
-When the tunnel URL rotates, update the Square sandbox webhook subscription and `SQUARE_SERVICE_BOOKING_WEBHOOK_URL` together.
-
-### Option C: local Square sandbox hosted checkout (legacy fallback)
-
-Use this only when you need to hit the legacy Square hosted checkout from your local app.
-
-1. Create a public HTTPS tunnel to the local dev server, such as ngrok.
-2. Use the tunnel origin for both URLs:
-
-   ```env
-   SERVICE_BOOKING_SQUARE_ENABLED=true
-   SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=false
-   PAYMENT_GATEWAY_MODE=live
-   SQUARE_ENVIRONMENT=sandbox
-   SQUARE_ACCESS_TOKEN=<sandbox-access-token>
-   SQUARE_LOCATION_ID=<sandbox-location-id>
-   SQUARE_SERVICE_BOOKING_RETURN_URL=https://<tunnel-domain>/api/booking/square/return
-   SQUARE_SERVICE_BOOKING_WEBHOOK_URL=https://<tunnel-domain>/api/webhooks/square
-   SQUARE_WEBHOOK_SIGNATURE_KEY=<sandbox-subscription-signature-key>
-   ```
-
-3. Create or update the Square sandbox webhook subscription to use the tunnel webhook URL.
-4. Restart `npm run dev` after changing `.env.local`.
-5. Run a sandbox hosted checkout and confirm Square can deliver the webhook to the tunnel URL.
-
-When the tunnel URL rotates, update the Square sandbox webhook subscription and `SQUARE_SERVICE_BOOKING_WEBHOOK_URL` together.
-
-## Staging setup
-
-Use Square sandbox values in Vercel Preview/staging.
-
-1. Confirm the staging app URL.
-2. In Square Developer Console, switch to **Sandbox**.
-3. Collect the sandbox access token and sandbox location ID.
-4. Create a sandbox webhook subscription with:
-
-   ```text
-   https://<staging-domain>/api/webhooks/square
-   ```
-
-5. Copy the sandbox subscription signature key.
-6. Add these variables to the staging/preview environment only:
-
-   ```env
-   SERVICE_BOOKING_SQUARE_ENABLED=true
-   SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true
-   PAYMENT_GATEWAY_MODE=live
-   SQUARE_ENVIRONMENT=sandbox
-   SQUARE_ACCESS_TOKEN=<sandbox-access-token>
-   SQUARE_APPLICATION_ID=<sandbox-application-id>
-   SQUARE_LOCATION_ID=<sandbox-location-id>
-   SQUARE_WEBHOOK_SIGNATURE_KEY=<sandbox-signature-key>
-   SQUARE_SERVICE_BOOKING_RETURN_URL=https://<staging-domain>/api/booking/square/return
-   SQUARE_SERVICE_BOOKING_WEBHOOK_URL=https://<staging-domain>/api/webhooks/square
-   CRON_SECRET=<staging-cron-secret>
-   PAYMENT_RECONCILIATION_CRON_SECRET=<staging-reconciliation-cron-secret>
-   BOOKING_ADMIN_PAYMENT_ACTION_SECRET=<staging-admin-secret>
-   ```
-
-7. Redeploy staging after adding or changing variables.
-8. Run a staging service-booking smoke test:
-   - Create a paid service hold.
-   - When card-on-file is enabled, confirm policy acceptance is required, tokenize and save a sandbox card, and confirm the hold moves to `booked` with a saved card reference, policy acceptance, no-show record, and one Google Calendar event.
-   - When card-on-file is disabled, continue to Square sandbox hosted checkout (legacy fallback), complete a sandbox payment, and confirm the Square return route redirects to booking confirmation.
-   - Confirm Square return without server-side reconciliation does not finalize booking.
-   - Confirm the webhook finalizer records payment or no-show state idempotently.
-   - Confirm exactly one Google Calendar event is created, or the booking moves to rebooking-first manual review if the slot is no longer bookable.
-   - Test the admin no-show charge route in sandbox when card-on-file is enabled.
-
-Staging Sanity must use `NEXT_PUBLIC_SANITY_DATASET=staging-2026-05-10` when `VERCEL_ENV=preview`.
-
-## Card-on-file staging certification order
-
-Run this sequence in staging before requesting production card-on-file enablement. The goal is to prove the full Square sandbox lifecycle with real provider behavior and capture evidence in `docs/superpowers/reports/square-card-on-file-sandbox-certification.md`.
-
-### Before the sequence
-
-1. Confirm `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED` is **not** set to `true` in production.
-2. Run the environment preflight script against staging variables:
-
-   ```bash
-   npm run check:square-card-on-file-env
-   ```
-
-   The script lists missing variable names only and never prints their values.
-
-3. Apply the latest private DB migrations to the staging database and verify the hold-side no-show/policy foreign keys are present.
-4. Run DB-backed tests against a migrated staging clone. Load `TEST_DATABASE_URL` from a protected env file or secret session before running the command; do not print or paste the connection string into shell history, tickets, or docs.
-
-   ```bash
-   npx tsx --test src/lib/private-db/card-on-file-repository.db.test.ts src/lib/booking/payments/service-reconciliation-monitor.test.ts
-   ```
-
-5. Deploy or rebuild staging with the latest code and confirm `npm run build` passes locally.
-6. Run browser smoke tests:
-
-   ```bash
-   npx playwright test tests/booking.spec.ts --project=chromium
-   npx playwright test tests/booking-card-on-file-config.spec.ts --project=chromium
-   ```
-
-### Staging smoke sequence
-
-1. Confirm production flag remains off.
-2. Apply latest private DB migrations to staging.
-3. Run DB-backed tests against staging clone.
-4. Enable `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true` only in staging with Square sandbox credentials.
-5. Complete one successful booking through Square Web Payments SDK `STORE` tokenization.
-6. Verify Square customer, card, order, and DRAFT invoice in Square sandbox.
-7. Trigger the admin no-show route after the appointment end time. The request body must match the implemented contract exactly and the amount must equal the appointment max charge:
-
-   ```json
-   {
-     "amountCents": <appointment-max-charge-cents>,
-     "confirmPolicyCharge": true,
-     "idempotencyKey": "<unique-key-for-this-attempt>",
-     "operatorId": "<operator-alias>",
-     "reason": "<concise-no-show-reason>"
-   }
-   ```
-
-   The route rejects mismatched amounts with `NO_SHOW_AMOUNT_MUST_EQUAL_MAX_CHARGE` and returns `allowedAmountCents`. Do not guess the amount; read it from the booked hold's no-show charge record.
-
-8. Verify webhook finalizes the no-show charge and records a sanitized event.
-9. Run payment reconciliation route with the staging cron secret and save the JSON result.
-10. Force and observe a safe `manual_followup` state without an unsafe duplicate charge. Use a second sandbox appointment with a saved card and call the admin no-show route while the Square service booking environment is disabled or null (e.g., in a controlled local staging DB clone or dedicated preview deployment with `SERVICE_BOOKING_SQUARE_ENABLED` unset or explicitly `false`). This controlled disabled/null state is what produces `manual_followup`. A malformed or incomplete enabled Square service booking environment (for example, missing or invalid `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, or webhook values while `SERVICE_BOOKING_SQUARE_ENABLED=true`) may instead return `charge_failed` and is not the same signal. Confirm:
-    - The response status is `202` and `chargeStatus` is `manual_followup`.
-    - The no-show charge record contains `admin_operator_id`, `admin_reason`, `admin_action_at`, and `admin_eligibility_checked_at`.
-    - No new Square no-show invoice publish/payment is created by this admin action; any pre-existing saved-card/order/draft-invoice evidence remains redacted.
-    - Replaying the same request with the same `idempotencyKey` returns the same `manual_followup` state without creating a second audit entry or charge attempt.
-    - Do not retry with a different `idempotencyKey` before confirming the record state; preserve the original idempotency key and webhook/event evidence for escalation.
-
-    Record only redacted evidence: appointment/hold reference, operator alias, UTC timestamps, and the fact that `manual_followup` was observed. Do not record raw `sourceId`, verification tokens, full Square object IDs, or PII.
-
-11. Disable the staging flag if any scenario produces `manual_followup`, unreconciled `charge_pending`, or provider mismatch.
-
-### Certification report and go/no-go
-
-- Record every step, timestamp, and redacted evidence row in `docs/superpowers/reports/square-card-on-file-sandbox-certification.md`.
-- Safe evidence handling: no admin setup URLs, no raw Square tokens/source IDs, no `DATABASE_URL` paste, and no customer PII in the report or chat.
-- Production `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true` remains disabled until the certification report is complete, operator-approved, and the reconciliation route returns `ok: true` with no unresolved `manual_followup`, `charge_pending`, or provider mismatch states.
-
-## Production setup
-
-Production setup should happen only after staging smoke passes.
-
-1. Confirm the production app URL.
-2. In Square Developer Console, switch to **Production**.
-3. Collect the production access token and production location ID.
-4. Create a production webhook subscription with:
-
-   ```text
-   https://<production-domain>/api/webhooks/square
-   ```
-
-5. Copy the production subscription signature key.
-6. Add these variables to the Vercel Production environment only:
-
-   ```env
-   SERVICE_BOOKING_SQUARE_ENABLED=true
-   SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true
-   PAYMENT_GATEWAY_MODE=live
-   SQUARE_ENVIRONMENT=production
-   SQUARE_ACCESS_TOKEN=<production-access-token>
-   SQUARE_APPLICATION_ID=<production-application-id>
-   SQUARE_LOCATION_ID=<production-location-id>
-   SQUARE_WEBHOOK_SIGNATURE_KEY=<production-signature-key>
-   SQUARE_SERVICE_BOOKING_RETURN_URL=https://<production-domain>/api/booking/square/return
-   SQUARE_SERVICE_BOOKING_WEBHOOK_URL=https://<production-domain>/api/webhooks/square
-    CRON_SECRET=<production-vercel-cron-secret>
-    PAYMENT_RECONCILIATION_CRON_SECRET=<production-reconciliation-cron-secret>
-    BOOKING_ADMIN_PAYMENT_ACTION_SECRET=<production-admin-secret>
-   ```
-
-   Use distinct values for `CRON_SECRET` and `PAYMENT_RECONCILIATION_CRON_SECRET` if the route requires separation between Vercel scheduled cron authorization and manual/staff access.
-
-7. Confirm production Sanity uses `NEXT_PUBLIC_SANITY_DATASET=production` when `VERCEL_ENV=production`.
-8. Confirm `PAYMENT_GATEWAY_MODE` is not `mock`.
-9. Redeploy production.
-10. Run a low-risk production smoke or Square webhook test event if the business owner approves.
-
-Stop production promotion if webhook signatures fail, Square credentials are scoped to the wrong environment, the production webhook URL is not HTTPS, or payment reconciliation cannot finalize Calendar state.
-
-## Testing webhook delivery
-
-Square supports test webhook delivery for a saved subscription. Use an event type already included in the subscription, such as `payment.updated`.
-
-Expected app behavior:
-
-- Missing or invalid `x-square-hmacsha256-signature` returns `401`.
-- Malformed JSON returns `400`.
-- A retryable infrastructure or Square lookup failure returns `503` so Square can retry.
-- A verified, processed webhook returns `200`, including events that require manual review after alerting.
-
-The app treats Square browser return as a lookup hint, not proof of payment. Payment, order, and invoice status must reconcile server-side before a booking or no-show charge is finalized.
-
-## Optional training Afterpay Square Invoice
-
-There is a separate, optional training-only checkout path that creates a Square invoice so customers can pay for training with Afterpay/Clearpay. It is controlled by the server-only feature flag `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED` and is disabled by default.
-
-- Do not enable this flow in production until Square merchant eligibility for live CAD invoices is verified.
-- It uses the same Square credentials and `/api/webhooks/square` route as service booking, but training invoice events must be routed to the training Square Invoice finalizer before any service-booking or no-show reconciliation.
-- Product checkout and default training checkout are also Square-backed (Square Web Payments SDK, gated by `SQUARE_COMMERCE_ENABLED`), separate from this optional training Afterpay invoice path.
-
-See `docs/training-afterpay-square-invoice.md` for the feature flag, dashboard prerequisites, webhook events, recovery steps, evidence checklist, and launch gate.
-
-## Operational boundaries
-
-- Square values are server-side configuration. `SQUARE_APPLICATION_ID` is public-safe and served to the browser via `/api/booking/square/config`; all other Square values (access tokens, signature keys, cron/admin secrets) are secrets.
-- Square service booking writes private payment and hold state to PostgreSQL, never Sanity.
-- Use separate Square webhook subscriptions for local tunnel, staging, and production URLs.
-- Keep staging and production Square credentials separate.
-- Product checkout and default training checkout are Square-backed (Square Web Payments SDK, gated by `SQUARE_COMMERCE_ENABLED`) and use their own Square commerce configuration, separate from these service-booking variables.
-- Do not paste access tokens, signature keys, raw webhook bodies, full customer payloads, or payment identifiers into docs, tickets, or chat.
+For optional training Afterpay Invoice setup, see `docs/training-afterpay-square-invoice.md`.

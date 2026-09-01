@@ -1,0 +1,1413 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lash Her Checkout and Booking Flowcharts</title>
+    <style>
+      :root {
+        --mulberry: #6f1d46;
+        --espresso: #231715;
+        --champagne: #efe3d1;
+        --champagne-2: #f8f1e8;
+        --black-cherry: #3b0f23;
+        --dusty-silk: #d8b8b3;
+        --paper: #fffaf4;
+        --ink-muted: #725d58;
+        --line: rgba(59, 15, 35, 0.18);
+        --shadow: 0 24px 70px rgba(35, 23, 21, 0.12);
+        --radius-lg: 28px;
+        --radius-md: 18px;
+        color-scheme: light;
+        font-family: "Inter", "Avenir Next", system-ui, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        color: var(--espresso);
+        background:
+          radial-gradient(
+            circle at top left,
+            rgba(111, 29, 70, 0.18),
+            transparent 34rem
+          ),
+          linear-gradient(
+            135deg,
+            var(--paper),
+            var(--champagne-2) 46%,
+            #fff 100%
+          );
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .page {
+        width: min(1180px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 48px 0 72px;
+      }
+
+      .hero {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 36px;
+        background:
+          linear-gradient(
+            135deg,
+            rgba(59, 15, 35, 0.94),
+            rgba(111, 29, 70, 0.86)
+          ),
+          radial-gradient(
+            circle at 76% 20%,
+            rgba(216, 184, 179, 0.35),
+            transparent 20rem
+          );
+        box-shadow: var(--shadow);
+        color: #fffaf4;
+        padding: clamp(32px, 7vw, 72px);
+      }
+
+      .hero::after {
+        content: "";
+        position: absolute;
+        inset: auto -8% -34% 52%;
+        height: 24rem;
+        border-radius: 999px;
+        background: rgba(239, 227, 209, 0.16);
+        transform: rotate(-12deg);
+      }
+
+      .eyebrow {
+        margin: 0 0 14px;
+        color: var(--dusty-silk);
+        font-size: 0.74rem;
+        font-weight: 800;
+        letter-spacing: 0.26em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3 {
+        font-family: Georgia, "Cormorant Garamond", serif;
+        font-weight: 400;
+        line-height: 0.95;
+      }
+
+      h1 {
+        position: relative;
+        z-index: 1;
+        max-width: 920px;
+        margin: 0;
+        font-size: clamp(3rem, 9vw, 7rem);
+        letter-spacing: -0.05em;
+      }
+
+      .hero p:not(.eyebrow) {
+        position: relative;
+        z-index: 1;
+        max-width: 760px;
+        margin: 24px 0 0;
+        color: rgba(255, 250, 244, 0.82);
+        font-size: clamp(1rem, 1.8vw, 1.22rem);
+        line-height: 1.75;
+      }
+
+      .nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin: 24px 0 40px;
+      }
+
+      .nav a {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.72);
+        padding: 10px 16px;
+        color: var(--black-cherry);
+        font-size: 0.78rem;
+        font-weight: 850;
+        letter-spacing: 0.12em;
+        text-decoration: none;
+        text-transform: uppercase;
+      }
+
+      .legend {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+        margin: 32px 0 44px;
+      }
+
+      .legend-card,
+      .section,
+      .summary-card,
+      .note-card {
+        border: 1px solid var(--line);
+        background: rgba(255, 250, 244, 0.82);
+        box-shadow: 0 14px 34px rgba(35, 23, 21, 0.06);
+        backdrop-filter: blur(12px);
+      }
+
+      .legend-card {
+        border-radius: var(--radius-md);
+        padding: 18px;
+      }
+
+      .legend-card strong {
+        display: block;
+        color: var(--mulberry);
+        font-size: 0.75rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      .legend-card span {
+        display: block;
+        margin-top: 8px;
+        color: var(--ink-muted);
+        font-size: 0.92rem;
+        line-height: 1.5;
+      }
+
+      .section {
+        margin-top: 32px;
+        border-radius: var(--radius-lg);
+        padding: clamp(22px, 4vw, 40px);
+      }
+
+      .section-header {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+        gap: 22px;
+        align-items: end;
+        margin-bottom: 24px;
+      }
+
+      .section h2 {
+        margin: 0;
+        color: var(--black-cherry);
+        font-size: clamp(2.2rem, 5vw, 4.6rem);
+        letter-spacing: -0.04em;
+      }
+
+      .section-intro {
+        max-width: 760px;
+        margin: 14px 0 0;
+        color: var(--ink-muted);
+        font-size: 1rem;
+        line-height: 1.75;
+      }
+
+      .provider-pill {
+        border: 1px solid rgba(111, 29, 70, 0.28);
+        border-radius: 999px;
+        background: rgba(111, 29, 70, 0.08);
+        padding: 11px 16px;
+        color: var(--mulberry);
+        font-size: 0.72rem;
+        font-weight: 900;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        text-wrap: balance;
+      }
+
+      .flow {
+        display: grid;
+        gap: 16px;
+        margin: 28px 0;
+      }
+
+      .step {
+        position: relative;
+        display: grid;
+        grid-template-columns: 82px minmax(0, 1.15fr) minmax(220px, 0.85fr);
+        gap: 18px;
+        align-items: stretch;
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: linear-gradient(
+          135deg,
+          rgba(255, 255, 255, 0.86),
+          rgba(248, 241, 232, 0.94)
+        );
+        padding: 16px;
+      }
+
+      .step:not(:last-child)::after {
+        content: "↓";
+        position: absolute;
+        left: 40px;
+        bottom: -23px;
+        z-index: 2;
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        background: var(--paper);
+        color: var(--mulberry);
+        font-weight: 900;
+      }
+
+      .num {
+        display: grid;
+        place-items: center;
+        border-radius: 18px;
+        background: var(--black-cherry);
+        color: var(--champagne);
+        font-family: Georgia, serif;
+        font-size: 2rem;
+      }
+
+      .step-main h3 {
+        margin: 0 0 8px;
+        color: var(--espresso);
+        font-size: 1.45rem;
+        letter-spacing: -0.02em;
+      }
+
+      .step-main p,
+      .step-meta p,
+      .note-card p {
+        margin: 0;
+        color: var(--ink-muted);
+        font-size: 0.95rem;
+        line-height: 1.65;
+      }
+
+      .tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+        margin-top: 12px;
+      }
+
+      .tag {
+        border-radius: 999px;
+        background: rgba(111, 29, 70, 0.09);
+        color: var(--mulberry);
+        padding: 6px 10px;
+        font-size: 0.68rem;
+        font-weight: 850;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .step-meta {
+        border-left: 1px solid var(--line);
+        padding-left: 18px;
+      }
+
+      .step-meta strong {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--black-cherry);
+        font-size: 0.72rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      code {
+        border: 1px solid rgba(35, 23, 21, 0.1);
+        border-radius: 8px;
+        background: rgba(239, 227, 209, 0.66);
+        padding: 0.12rem 0.35rem;
+        color: var(--black-cherry);
+        font-family: "SFMono-Regular", Consolas, monospace;
+        font-size: 0.84em;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+
+      .branch {
+        margin: 20px 0 28px;
+        border: 1px dashed rgba(111, 29, 70, 0.38);
+        border-radius: 22px;
+        background: rgba(111, 29, 70, 0.05);
+        padding: 18px;
+      }
+
+      .branch-title {
+        margin: 0 0 10px;
+        color: var(--mulberry);
+        font-size: 0.78rem;
+        font-weight: 900;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .branch-grid,
+      .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .branch-card,
+      .summary-card,
+      .note-card {
+        border-radius: 18px;
+        padding: 18px;
+      }
+
+      .branch-card {
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.65);
+      }
+
+      .branch-card strong,
+      .summary-card strong {
+        display: block;
+        color: var(--espresso);
+        font-size: 0.9rem;
+      }
+
+      .branch-card span,
+      .summary-card span {
+        display: block;
+        margin-top: 8px;
+        color: var(--ink-muted);
+        font-size: 0.9rem;
+        line-height: 1.55;
+      }
+
+      .summary-grid {
+        margin-top: 22px;
+      }
+
+      .note-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 28px;
+      }
+
+      .note-card h3 {
+        margin: 0 0 10px;
+        color: var(--black-cherry);
+        font-size: 1.55rem;
+      }
+
+      .footer {
+        margin: 36px 0 0;
+        color: var(--ink-muted);
+        font-size: 0.92rem;
+        line-height: 1.65;
+        text-align: center;
+      }
+
+      @media (max-width: 900px) {
+        .legend,
+        .summary-grid,
+        .branch-grid,
+        .note-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .section-header,
+        .step {
+          grid-template-columns: 1fr;
+        }
+
+        .provider-pill {
+          justify-self: start;
+          max-width: 100%;
+          white-space: normal;
+        }
+
+        .step:not(:last-child)::after {
+          left: calc(50% - 17px);
+        }
+
+        .num {
+          width: 72px;
+          height: 58px;
+        }
+
+        .step-meta {
+          border-left: 0;
+          border-top: 1px solid var(--line);
+          padding: 14px 0 0;
+        }
+      }
+
+      @media print {
+        body {
+          background: #fff;
+        }
+
+        .page {
+          width: 100%;
+          padding: 0;
+        }
+
+        .hero,
+        .section,
+        .legend-card,
+        .summary-card,
+        .note-card {
+          box-shadow: none;
+          break-inside: avoid;
+        }
+
+        .nav {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <p class="eyebrow">Operational flowcharts</p>
+        <h1>Lash Her checkout and booking flows</h1>
+        <p>
+          Three code-aware diagrams for training program checkout, service
+          booking, and product checkout. Each step names the UI surface, server
+          route, storage boundary, data source, and provider involved.
+        </p>
+      </header>
+
+      <nav class="nav" aria-label="Flowchart sections">
+        <a href="#training">Training checkout</a>
+        <a href="#service-booking">Service booking</a>
+        <a href="#products">Product checkout</a>
+        <a href="#boundaries">Shared boundaries</a>
+      </nav>
+
+      <section class="legend" aria-label="Diagram legend">
+        <div class="legend-card">
+          <strong>CMS</strong
+          ><span
+            >Sanity stores public/editorial content, product records, and
+            training-program content. Service detail-page imagery and SEO may
+            link to operational offerings, but booking settings and offering
+            configuration do not live in Sanity.</span
+          >
+        </div>
+        <div class="legend-card">
+          <strong>Private DB</strong
+          ><span
+            >PostgreSQL through Drizzle stores booking UI settings, operational
+            offerings, resources, schedules, Calendar connections, reservations,
+            appointments, PII, orders, payment attempts/events, and training
+            enrollment state.</span
+          >
+        </div>
+        <div class="legend-card">
+          <strong>Payment</strong
+          ><span
+            >Square powers product checkout, training checkout, and paid service
+            booking. Product and training use the Square Web Payments SDK;
+            historical Helcim orders remain readable but no new Helcim payments
+            are created.</span
+          >
+        </div>
+        <div class="legend-card">
+          <strong>Calendar</strong
+          ><span
+            >Google Calendar / Appointment Schedule handles availability,
+            service event creation, and paid training intro-call
+            scheduling.</span
+          >
+        </div>
+      </section>
+
+      <section class="section" id="training">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Flow 01</p>
+            <h2>Training program checkout</h2>
+            <p class="section-intro">
+              A student buys a training program through Square (Web Payments
+              SDK), the app stores the paid enrollment in private Postgres, then
+              issues a tokenized scheduling link for the intro call.
+            </p>
+          </div>
+          <span class="provider-pill"
+            >Square + private Postgres + Google Appointment Schedule</span
+          >
+        </div>
+
+        <div
+          class="flow"
+          role="list"
+          aria-label="Training program checkout steps"
+        >
+          <article class="step" role="listitem">
+            <div class="num">1</div>
+            <div class="step-main">
+              <h3>Training catalog loads purchasable programs</h3>
+              <p>
+                Training pages read Sanity training program content. If a
+                program has native checkout fields and is available, its
+                purchase card/CTA routes to the checkout page.
+              </p>
+              <div class="tags">
+                <span class="tag">CMS read</span
+                ><span class="tag">Server page</span>
+              </div>
+            </div>
+            <div class="step-meta">
+              <strong>Code and data</strong>
+              <p>
+                <code>loaders.getTrainingProgramBySlug</code>,
+                <code>getTrainingCta</code>, and
+                <code>isTrainingPurchasable</code> use Sanity
+                <code>trainingProgram</code> fields such as price, currency,
+                availability, checkout CTA, and intro-call scheduling config.
+              </p>
+            </div>
+          </article>
+
+          <article class="step" role="listitem">
+            <div class="num">2</div>
+            <div class="step-main">
+              <h3>Checkout form collects student details</h3>
+              <p>
+                The checkout page recalculates subtotal, Ontario HST, and total
+                from server-loaded program data; the client form only collects
+                name, email, and acknowledgement.
+              </p>
+              <div class="tags">
+                <span class="tag">User input</span
+                ><span class="tag">No index</span>
+              </div>
+            </div>
+            <div class="step-meta">
+              <strong>Code and data</strong>
+              <p>
+                <code
+                  >src/app/(site)/training-programs/[slug]/checkout/page.tsx</code
+                >
+                renders <code>CheckoutForm</code>, which mounts
+                <code>SquareTrainingPayButton</code> and the shared Square card
+                form when <code>SQUARE_COMMERCE_ENABLED=true</code>.
+              </p>
+            </div>
+          </article>
+
+          <article class="step" role="listitem">
+            <div class="num">3</div>
+            <div class="step-main">
+              <h3>
+                Client tokenizes the card with the Square Web Payments SDK
+              </h3>
+              <p>
+                The checkout button fetches the public Square config, renders
+                Square's hosted card fields, and tokenizes the entered card into
+                a single-use payment token. The card PAN stays inside Square's
+                iframe and never reaches the server.
+              </p>
+              <div class="tags">
+                <span class="tag">Client SDK</span
+                ><span class="tag">PII boundary</span>
+              </div>
+            </div>
+            <div class="step-meta">
+              <strong>Code and data</strong>
+              <p>
+                <code>/api/checkout/square/config</code> returns the public
+                <code>SQUARE_APPLICATION_ID</code> and location; the shared
+                Square card form calls
+                <code>tokenize({ intent: "CHARGE" })</code> and posts the
+                resulting token to <code>/api/training-checkout</code>.
+              </p>
+            </div>
+          </article>
+
+          <article class="step" role="listitem">
+            <div class="num">4</div>
+            <div class="step-main">
+              <h3>
+                Server validates and reserves the private order and enrollment
+              </h3>
+              <p>
+                The training checkout API reloads the Sanity program, rejects
+                stale or unsupported cart-like input, and reserves a pending
+                Square training order plus a training enrollment snapshot in
+                private Postgres before charging. Secrets are hashed/encrypted
+                before persistence.
+              </p>
+              <div class="tags">
+                <span class="tag">API route</span
+                ><span class="tag">Private DB</span>
+              </div>
+            </div>
+            <div class="step-meta">
+              <strong>Code and data</strong>
+              <p>
+                <code>/api/training-checkout</code> uses
+                <code>validateTrainingCheckoutRequest</code> and reserves the
+                order via <code>createPendingSquareTrainingCardOrder</code>.
+                <code>checkout_orders</code> stores the pending Square order
+                with purpose <code>training</code>;
+                <code>training_enrollments</code> stores native program checkout
+                snapshots, checkout email, scheduling status, and later token
+                hashes.
+              </p>
+            </div>
+          </article>
+
+          <article class="step" role="listitem">
+            <div class="num">5</div>
+            <div class="step-main">
+              <h3>Server authorizes and captures the Square payment</h3>
+              <p>
+                Using the tokenized card, the server charges the reserved amount
+                through Square with an authorize-then-capture sequence, a
+                deterministic idempotency key, and void-on-failure compensation,
+                recomputing the amount and currency from trusted order state.
+              </p>
+              <div class="tags">
+                <span class="tag">Provider call</span
+                ><span class="tag">Idempotent</span>
+              </div>
+            </div>
+            <div class="step-meta">
+              <strong>Code and data</strong>
+              <p>
+                The Square training checkout orchestrator (key namespace
+                <code>square-training/&lt;orderId&gt;</code>) runs the shared
+                authorize→capture→void core and hands off to the Square training
+                card finalizer once the capture is approved.
+              </p>
+            </div>
+          </article>
+
+          <article class="step" role="listitem">
+            <div class="num">6</div>
+            <div class="step-main">
+              <h3>Capture marks order paid and issues scheduling token</h3>
+              <p>
+                After the capture is confirmed, Postgres records the paid status
+                and transaction. The training enrollment receives or reuses a
+                14-day scheduling token, then notification emails are sent.
+              </p>
+              <div class="tags">
+                <span class="tag">Payment state</span
+                ><span class="tag">Email</span>
+              </div>
+            </div>
+            <div class="step-meta">
+              <strong>Code and data</strong>
+              <p>
+                The Square training card finalizer records the paid status and
+                captured transaction, reuses or issues the 14-day scheduling
+                token, builds the schedule URL, and sends the Resend-backed
+                notification emails and staff alert.
+              </p>
+            </div>
+          </article>
+
+          <article class="step" role="listitem">
+            <div class="num">7</div>
+            <div class="step-main">
+              <h3>Student schedules the intro call</h3>
+              <p>
+                The training checkout response redirects straight to a tokenized
+                schedule page. That page validates the token against private
+                enrollment state before revealing the configured Google
+                Appointment Schedule URL or iframe.
+              </p>
+              <div class="tags">
+                <span class="tag">Token gate</span
+                ><span class="tag">Calendar scheduling</span>
+              </div>
+            </div>
+            <div class="step-meta">
+              <strong>Code and data</strong>
+              <p>
+                <code>buildTrainingScheduleUrl</code>,
+                <code>TrainingSchedulePage</code>,
+                <code>resolveTrainingIntroCallEligibility</code>, and
+                <code>findPendingTrainingenrollmentByToken</code> protect the
+                Google Appointment Schedule URL configured in Sanity.
+                <code>TrainingConfirmationPage</code> is an alternate/fallback
+                order-based entry.
+              </p>
+            </div>
+          </article>
+        </div>
+
+        <div class="branch">
+          <p class="branch-title">Async and recovery path</p>
+          <div class="branch-grid">
+            <div class="branch-card">
+              <strong>Square webhook recovery</strong
+              ><span
+                ><code>/api/webhooks/square</code> verifies the Square
+                signature; its commerce recovery branch reconciles a COMPLETED
+                <code>payment.*</code> whose reference matches a pending
+                training order, and the capture-reconciliation cron recovers
+                paid-but-uncaptured orders — both idempotently finalizing
+                missing enrollment/notification/token work.</span
+              >
+            </div>
+            <div class="branch-card">
+              <strong>Confirmation fallback</strong
+              ><span
+                ><code>getVerifiedTrainingConfirmation</code> supports the
+                alternate confirmation page, while the main checkout response
+                returns the schedule URL directly. Legacy
+                <code>/booking?type=training-call&amp;order=...</code> links are
+                shimmed toward tokenized scheduling.</span
+              >
+            </div>
+            <div class="branch-card">
+              <strong>Privacy boundary</strong
+              ><span
+                >No checkout token, customer PII, Square payment/order, or
+                scheduling-token data is written to Sanity.</span
+              >
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="service-booking">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Flow 02</p>
+            <h2>Service booking flow</h2>
+            <p class="section-intro">
+              A client selects an operational PostgreSQL offering and time,
+              receives an opaque payment-session page, then pays through Square
+              CHARGE_AND_STORE before the authoritative PostgreSQL appointment
+              is projected to Google Calendar.
+            </p>
+          </div>
+          <span class="provider-pill"
+            >Operational Postgres + Square + Google Calendar API</span
+          >
+        </div>
+
+        <div class="flow" role="list" aria-label="Service booking flow steps">
+          <article class="step" role="listitem">
+            <div class="num">1</div>
+            <div class="step-main">
+              <h3>Booking page loads operational settings and offerings</h3>
+              <p>
+                The canonical service booking route reads active public
+                offerings, provider choices, prices, durations, add-ons, intake
+                questions, timezone, and marketing wording from PostgreSQL.
+                Sanity may supply linked service detail-page editorial, imagery,
+                and SEO, but it is not the operational booking authority.
+              </p>
+              <div class="tags">
+                <span class="tag">Postgres read</span
+                ><span class="tag">Service UI</span>
+              </div>
+            </div>
+            <div class="step-meta">
+              <strong>Code and data</strong>
+              <p>
+                <code>src/app/(site)/services/[slug]/booking/page.tsx</code>
+                calls <code>loadPublicOperationalOfferings</code> and
+                <code>loadOperationalBookingUiSettings</code>. Legacy
+                <code>/booking</code> links redirect to canonical service
+                booking routes.
+              </p>
+            </div>
+          </article>
+
+          <article class="step" role="listitem">
+            <div class="num">2</div>
+            <div class="step-main">
+              <h3>
+                Availability resolves schedules, resources, Calendar busy time,
+                and reservations
+              </h3>
+              <p>
+                The browser requests slots for an offering. The server resolves
+                the offering's provider/resources and schedules from PostgreSQL,
+                reads busy events from assigned Google Calendars, overlays
+                active resource reservations, and returns only valid slots.
+              </p>
+              <div class="tags">
+                <span class="tag">Availability</span
+                ><span class="tag">Calendar read</span
+                ><span class="tag">Resource locks</span>
+              </div>
+            </div>
+            <div class="step-meta">
+              <strong>Code and data</strong>
+              <p>
+                <code>/api/booking/availability?offeringId=...</code> uses
+                <code>loadOperationalAvailabilityContext</code>,
+                <code>buildOperationalBookingSlots</code>, and
+                <code>listConnectionCalendarEvents</code>. Calendar and resource
+                IDs are resolved server-side; the browser does not choose
+                routing identifiers.
+              </p>
+            </div>
+          </article>
+
+          <article class="step" role="listitem">
+            <div class="num">3</div>
+            <div class="step-main">
+              <h3>
+                Intake answers create a private reservation and opaque payment
+                session
+              </h3>
+              <p>
+                The booking flow submits the offering ID, selected time,
+                optional add-on, and intake answers. It does not collect or send
+                customer contact or card data at this step. The server
+                revalidates configuration and availability, creates the expiring
+                hold/resource reservations, and returns an opaque
+                payment-session reference plus an internal payment-page URL.
+              </p>
+              <div class="tags">
+                <span class="tag">Hold</span
+                ><span class="tag">Opaque handoff</span
+                ><span class="tag">Conflict check</span>
+              </div>
+            </div>
+            <div class="step-meta">
+              <strong>Stored in</strong>
+              <p>
+                <code>/api/booking/holds</code> creates V2
+                <code>appointment_holds</code> and
+                <code>booking_resource_reservations</code> with a
+                pending-customer placeholder, offering snapshot, selected
+                window, intake answers, and expiry.
+                <code>BookingFlow</code> navigates to
+                <code>/services/[slug]/booking/payment?session=...</code>.
+              </p>
+            </div>
+          </article>
+
+          <article class="step" role="listitem">
+            <div class="num">4</div>
+            <div class="step-main">
+              <h3>
+                Server resolves the payment session; page collects customer and
+                policy choices
+              </h3>
+              <p>
+                The no-index payment page resolves the opaque reference against
+                the service slug and active hold. It displays trusted pricing
+                and expiry, then collects customer details, marketing choice,
+                deposit/full/custom-partial selection, and explicit
+                no-show/late-cancellation policy acceptance.
+              </p>
+              <div class="tags">
+                <span class="tag">Private session</span
+                ><span class="tag">Customer input</span
+                ><span class="tag">Policy evidence</span>
+              </div>
+            </div>
+            <div class="step-meta">
+              <strong>Code and data</strong>
+              <p>
+                <code>resolveServiceBookingPaymentSession</code>,
+                <code>ServiceBookingPaymentPage</code>,
+                <code>ServiceBookingPaymentShell</code>, and
+                <code>ServiceBookingPaymentForm</code> keep the public URL
+                scoped to the opaque session reference and a server-resolved
+                snapshot.
+              </p>
+            </div>
+          </article>
+
+          <article class="step" role="listitem">
+            <div class="num">5</div>
+            <div class="step-main">
+              <h3>Square tokenizes, charges, and stores the card</h3>
+              <p>
+                Square's browser fields tokenize with
+                <code>intent: "CHARGE_AND_STORE"</code>; the PAN never reaches
+                the app server. The payment confirmation route revalidates the
+                hold, recomputes the selected amount and Ontario HST from
+                trusted state, persists customer/marketing/policy evidence, then
+                authorizes, captures, and stores the Square card for the
+                accepted no-show policy.
+              </p>
+              <div class="tags">
+                <span class="tag">Square SDK</span
+                ><span class="tag">Direct capture</span
+                ><span class="tag">Card on file</span>
+              </div>
+            </div>
+            <div class="step-meta">
+              <strong>Code and data</strong>
+              <p>
+                <code>SquareChargeAndStoreForm</code> posts the token and
+                verification token to <code>/api/booking/payment/confirm</code>.
+                <code>service-charge-and-store.ts</code> validates amount,
+                currency, idempotency, policy, and provider attribution before
+                completion.
+              </p>
+            </div>
+          </article>
+
+          <article class="step" role="listitem">
+            <div class="num">6</div>
+            <div class="step-main">
+              <h3>
+                Captured evidence and the authoritative appointment are
+                persisted
+              </h3>
+              <p>
+                PostgreSQL records the authorized/captured payment attempt and
+                confirms the operational appointment with Calendar status
+                pending before external Calendar projection. A retry reuses
+                provider evidence and resumes local projection instead of
+                creating another charge.
+              </p>
+              <div class="tags">
+                <span class="tag">Payment attempt</span
+                ><span class="tag">Appointment</span
+                ><span class="tag">Idempotent</span>
+              </div>
+            </div>
+            <div class="step-meta">
+              <strong>Stored in</strong>
+              <p>
+                <code>service-booking-payment-repository.ts</code> records
+                <code>booking_payment_attempts</code> and calls
+                <code>confirmOperationalAppointment</code>. Holds, appointments,
+                saved-card references, policy acceptance, and no-show records
+                remain private PostgreSQL data.
+              </p>
+            </div>
+          </article>
+
+          <article class="step" role="listitem">
+            <div class="num">7</div>
+            <div class="step-main">
+              <h3>Google Calendar receives an idempotent projection</h3>
+              <p>
+                The finalizer finds or creates one event on the assigned
+                provider calendar. Calendar connections and canonical
+                assignments live in PostgreSQL; OAuth refresh tokens are
+                encrypted at rest with
+                <code>BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY</code>.
+                PostgreSQL remains authoritative if Calendar is unavailable.
+              </p>
+              <div class="tags">
+                <span class="tag">Calendar projection</span
+                ><span class="tag">Encrypted credential</span
+                ><span class="tag">Manual recovery</span>
+              </div>
+            </div>
+            <div class="step-meta">
+              <strong>Code and data</strong>
+              <p>
+                <code>calendar-connection-repository.ts</code>,
+                <code>calendar-credential-secret.ts</code>, and
+                <code>google-calendar.ts</code> resolve the server-owned
+                connection and canonical calendar assignment. Success stores the
+                provider event ID; failure enters durable manual-follow-up
+                state.
+              </p>
+            </div>
+          </article>
+        </div>
+
+        <div class="branch">
+          <p class="branch-title">Booking outcomes</p>
+          <div class="branch-grid">
+            <div class="branch-card">
+              <strong>Booked</strong
+              ><span
+                >Square capture is durable, the PostgreSQL appointment is
+                authoritative, the Calendar projection is synced, and the client
+                receives booked confirmation.</span
+              >
+            </div>
+            <div class="branch-card">
+              <strong>Manual follow-up</strong
+              ><span
+                >If payment captured but appointment or Calendar projection
+                cannot complete, durable provider evidence and idempotency state
+                allow reconciliation without a second charge; staff sees the
+                recovery state.</span
+              >
+            </div>
+            <div class="branch-card">
+              <strong>Fail closed</strong
+              ><span
+                >If direct service payment or its public config is disabled or
+                unavailable, new payment sessions do not create hosted Payment
+                Links. Holds expire normally. Legacy return/webhook handlers
+                remain only for historical hosted-checkout reconciliation.</span
+              >
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="products">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Flow 03</p>
+            <h2>Product checkout flow</h2>
+            <p class="section-intro">
+              A customer builds a cart from Sanity product records, pays with
+              the Square Web Payments SDK, and the app captures and records
+              payment before clearing the cart and showing a confirmation page.
+            </p>
+          </div>
+          <span class="provider-pill">Square + private Postgres</span>
+        </div>
+
+        <div class="flow" role="list" aria-label="Product checkout flow steps">
+          <article class="step" role="listitem">
+            <div class="num">1</div>
+            <div class="step-main">
+              <h3>Products page loads catalog records</h3>
+              <p>
+                The products route loads page copy and purchasable products from
+                Sanity. Product detail pages load a single product. Both
+                surfaces can feed the cart/checkout path.
+              </p>
+              <div class="tags">
+                <span class="tag">CMS read</span
+                ><span class="tag">Catalog</span>
+              </div>
+            </div>
+            <div class="step-meta">
+              <strong>Code and data</strong>
+              <p>
+                <code>src/app/(site)/products/page.tsx</code> uses
+                <code>loaders.getProducts</code> and keeps sorting as the only
+                catalog query control.
+                <code>src/app/(site)/products/[slug]/page.tsx</code> renders
+                detail-page purchase controls.
+              </p>
+            </div>
+          </article>
+
+          <article class="step" role="listitem">
+            <div class="num">2</div>
+            <div class="step-main">
+              <h3>Cart state is assembled client-side</h3>
+              <p>
+                The cart panel and detail-page purchase controls track product
+                IDs, variant IDs, and quantities, then display a local preview
+                total using the same cart helper shape used by the server.
+              </p>
+              <div class="tags">
+                <span class="tag">Client cart</span
+                ><span class="tag">Preview total</span>
+              </div>
+            </div>
+            <div class="step-meta">
+              <strong>Code and data</strong>
+              <p>
+                <code>CartPanel</code>,
+                <code>ProductDetailPurchaseControls</code>,
+                <code>ProductCartProvider</code>, and
+                <code>buildValidatedCart</code> produce a user-facing preview;
+                the server still rebuilds totals from canonical product data.
+              </p>
+            </div>
+          </article>
+
+          <article class="step" role="listitem">
+            <div class="num">3</div>
+            <div class="step-main">
+              <h3>Checkout API rebuilds and validates the cart</h3>
+              <p>
+                The browser posts customer details and cart items. The server
+                reloads product records by ID, validates availability, variants,
+                quantities, prices, and CAD currency.
+              </p>
+              <div class="tags">
+                <span class="tag">API route</span
+                ><span class="tag">Server truth</span>
+              </div>
+            </div>
+            <div class="step-meta">
+              <strong>Code and data</strong>
+              <p>
+                <code>/api/checkout</code> calls
+                <code>loaders.getProductsByIds</code>, converts Sanity records
+                into catalog products, and runs <code>buildValidatedCart</code>.
+              </p>
+            </div>
+          </article>
+
+          <article class="step" role="listitem">
+            <div class="num">4</div>
+            <div class="step-main">
+              <h3>
+                Client tokenizes the card with the Square Web Payments SDK
+              </h3>
+              <p>
+                The checkout controls fetch the public Square config, render
+                Square's hosted card fields, and tokenize the entered card into
+                a single-use payment token that is posted with the cart. The
+                card PAN stays inside Square's iframe and never reaches the
+                server.
+              </p>
+              <div class="tags">
+                <span class="tag">Client SDK</span
+                ><span class="tag">PII boundary</span>
+              </div>
+            </div>
+            <div class="step-meta">
+              <strong>Provider boundary</strong>
+              <p>
+                <code>/api/checkout/square/config</code> returns the public
+                <code>SQUARE_APPLICATION_ID</code> and location; the shared
+                Square card form calls
+                <code>tokenize({ intent: "CHARGE" })</code>. Mock mode is
+                server-only and rejected in production controls.
+              </p>
+            </div>
+          </article>
+
+          <article class="step" role="listitem">
+            <div class="num">5</div>
+            <div class="step-main">
+              <h3>Pending order is reserved before charge</h3>
+              <p>
+                The app reserves a pending product order in private Postgres,
+                including a hashed checkout token, customer snapshot, and line
+                item snapshots, before charging Square.
+              </p>
+              <div class="tags">
+                <span class="tag">Private DB</span
+                ><span class="tag">Pending order</span>
+              </div>
+            </div>
+            <div class="step-meta">
+              <strong>Stored in</strong>
+              <p>
+                <code>order-store.ts</code> writes
+                <code>checkout_orders</code> with purpose
+                <code>product</code> and payment provider <code>square</code>.
+                No order PII goes to Sanity.
+              </p>
+            </div>
+          </article>
+
+          <article class="step" role="listitem">
+            <div class="num">6</div>
+            <div class="step-main">
+              <h3>Server authorizes and captures the Square payment</h3>
+              <p>
+                Using the tokenized card, <code>/api/checkout</code> charges the
+                reserved amount through Square with an authorize-then-capture
+                sequence, a deterministic idempotency key, and void-on-failure
+                compensation, then records the paid status and captured
+                transaction.
+              </p>
+              <div class="tags">
+                <span class="tag">Provider call</span
+                ><span class="tag">Idempotent</span>
+              </div>
+            </div>
+            <div class="step-meta">
+              <strong>Code and data</strong>
+              <p>
+                <code>SquareProductPayButton</code> posts the token to
+                <code>/api/checkout</code>, which runs
+                <code>createSquareCommercePayment</code> through the shared
+                authorize→capture→void core and finalizes via the Square product
+                finalizer.
+              </p>
+            </div>
+          </article>
+
+          <article class="step" role="listitem">
+            <div class="num">7</div>
+            <div class="step-main">
+              <h3>Customer sees confirmation and email is sent</h3>
+              <p>
+                After the capture is recorded, the cart clears, the browser
+                navigates to the product confirmation page, and the app attempts
+                a non-source-of-truth confirmation email.
+              </p>
+              <div class="tags">
+                <span class="tag">Confirmation</span
+                ><span class="tag">Email</span>
+              </div>
+            </div>
+            <div class="step-meta">
+              <strong>Code and data</strong>
+              <p>
+                <code>sendProductOrderConfirmationEmail</code> runs through
+                Resend after paid state is recorded;
+                <code>/products/confirmation?order=...</code> shows the public
+                order reference.
+              </p>
+            </div>
+          </article>
+        </div>
+
+        <div class="branch">
+          <p class="branch-title">Async payment evidence</p>
+          <div class="branch-grid">
+            <div class="branch-card">
+              <strong>Webhook path</strong
+              ><span
+                ><code>/api/webhooks/square</code> verifies the Square
+                signature; its commerce recovery branch reconciles a COMPLETED
+                <code>payment.*</code> for a pending product order, and the
+                capture-reconciliation cron recovers paid-but-uncaptured orders
+                — both idempotently.</span
+              >
+            </div>
+            <div class="branch-card">
+              <strong>Cart safety</strong
+              ><span
+                >Client totals are not trusted.
+                <code>/api/checkout</code> rebuilds totals from current Sanity
+                product records before any Square charge or private DB mutation.
+                Catalog/detail UI may use product views, but checkout rehydrates
+                canonical products by ID.</span
+              >
+            </div>
+            <div class="branch-card">
+              <strong>Provider boundary</strong
+              ><span
+                >Product checkout uses the same Square credentials as service
+                booking, gated by <code>SQUARE_COMMERCE_ENABLED</code>; the card
+                PAN never reaches the server.</span
+              >
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="boundaries">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Shared map</p>
+            <h2>Code, data, and provider boundaries</h2>
+            <p class="section-intro">
+              These boundaries are common across the three diagrams and are the
+              fastest way to audit regressions.
+            </p>
+          </div>
+        </div>
+
+        <div class="summary-grid">
+          <div class="summary-card">
+            <strong>Sanity editorial and catalog retrieval</strong
+            ><span
+              ><code>src/data/loaders.ts</code> centralizes Sanity reads for
+              product catalog, training programs, global/page content, and
+              optional service detail-page editorial. It is not the operational
+              service-booking configuration store.</span
+            >
+          </div>
+          <div class="summary-card">
+            <strong>Operational booking PostgreSQL</strong
+            ><span
+              ><code>src/lib/private-db/schema.ts</code> and booking
+              repositories own booking business/UI settings, providers,
+              offerings, resources, schedules, exceptions, Calendar
+              connections/assignments, holds, resource reservations,
+              appointments, and payment attempts.</span
+            >
+          </div>
+          <div class="summary-card">
+            <strong>Private commerce PostgreSQL</strong
+            ><span
+              ><code>checkout_orders</code>,
+              <code>checkout_payment_events</code>,
+              <code>training_enrollments</code>, marketing/contact records, and
+              other customer/payment evidence remain private. Neither commerce
+              nor booking PII belongs in Sanity.</span
+            >
+          </div>
+          <div class="summary-card">
+            <strong>Square commerce</strong
+            ><span
+              ><code>src/lib/commerce</code> owns Square authorize/capture,
+              refunds, obligation reconciliation, order persistence, webhook
+              recovery, and product/training emails.</span
+            >
+          </div>
+          <div class="summary-card">
+            <strong>Square service payment</strong
+            ><span
+              ><code>src/lib/booking/payments/service-charge-and-store.ts</code
+              >,
+              <code
+                >src/lib/private-db/service-booking-payment-repository.ts</code
+              >, and <code>/api/booking/payment/confirm</code> own new service
+              capture/card storage. <code>/api/webhooks/square</code> is shared
+              with product and training.</span
+            >
+          </div>
+          <div class="summary-card">
+            <strong>Google Calendar projection</strong
+            ><span
+              ><code>src/lib/booking/google-calendar.ts</code> reads assigned
+              calendars for busy time and projects confirmed service
+              appointments. Encrypted credentials and canonical resource
+              assignments live in PostgreSQL. Paid training separately uses a
+              Sanity-configured Google Appointment Schedule URL.</span
+            >
+          </div>
+          <div class="summary-card">
+            <strong>Short-lived coordination</strong
+            ><span
+              >Rate limiting, active-hold quotas, and scoped coordination locks
+              may use Upstash, but they do not own Calendar credentials, booking
+              configuration, appointments, or payment truth.</span
+            >
+          </div>
+          <div class="summary-card">
+            <strong>Resend email handoff</strong
+            ><span
+              >Product confirmations, booking confirmations, and training
+              payment notifications are sent after private state changes; email
+              is not the source of truth.</span
+            >
+          </div>
+        </div>
+
+        <div class="note-grid">
+          <div class="note-card">
+            <h3>Provider rule</h3>
+            <p>
+              Square powers product checkout, training checkout, and paid
+              service booking. Product and training use the Square Web Payments
+              SDK (gated by <code>SQUARE_COMMERCE_ENABLED</code>); all three
+              share the single Square webhook at
+              <code>/api/webhooks/square</code>. Historical Helcim orders remain
+              readable, but no code path creates new Helcim payments.
+            </p>
+          </div>
+          <div class="note-card">
+            <h3>Privacy rule</h3>
+            <p>
+              Sanity must not store new checkout transaction history, customer
+              PII, payment events, provider identifiers, service holds, or paid
+              training scheduling tokens. Those records belong in private
+              Postgres with redacted evidence.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <p class="footer">
+        Generated from the current code paths in <code>src/app</code>,
+        <code>src/components</code>, <code>src/data/loaders.ts</code>,
+        <code>src/lib/booking</code>, <code>src/lib/commerce</code>, and
+        <code>src/lib/private-db/schema.ts</code>.
+      </p>
+    </main>
+  </body>
+</html>

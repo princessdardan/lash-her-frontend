@@ -24,21 +24,44 @@ Follow this exact order. Never hand-edit an already-committed `drizzle/NNNN_*.sq
 
 4. **Reconciliation indexes** — if the change touches payment/reconciliation tables and adds a queried column or FK, add the index to `scripts/create-payment-reconciliation-indexes.ts` rather than only in the migration, and note whether it should run concurrently in production.
 
-5. **Apply locally:**
+5. **Check the target before applying:**
 
    ```bash
+   npm run db:check
+   ```
+
+   This is a read-only lineage/hash/gap check against the current `DATABASE_URL`. Review any pending migrations and confirm the resolved host is the intended target. Pending migrations are expected immediately after generating a new migration.
+
+6. **Apply with the deployment guards:**
+
+   ```bash
+   PRIVATE_DB_MIGRATION_TARGET=local \
+   PRIVATE_DB_MIGRATION_HOST=EXACT_DATABASE_HOST \
    npm run db:migrate
    ```
 
-   Runs against the current `DATABASE_URL`. Confirm it applies cleanly from the current state.
+   Replace `EXACT_DATABASE_HOST` with the hostname printed by the preflight and confirm the database is local before using the sample target. Valid targets are `local`, `staging`, and `production`; production additionally requires `PRIVATE_DB_MIGRATION_CONFIRM=production`. Never paste a live database URL into documentation, chat, or a committed script.
 
-6. **Verify the CI gate locally** (optional but recommended before pushing) — CI runs a zero-to-latest migration plus a hash-divergence check. Run the unit + DB suite:
+7. **Re-check after applying:**
+
    ```bash
-   npm run test:unit:all
+   npm run db:check
    ```
+
+   Confirm the command exits successfully with no pending migrations, hash divergence, or sequence gaps.
+
+8. **Verify the CI gate locally** (optional but recommended before pushing) — `npm run test:unit` runs DB-disabled source tests plus script tests. Set an isolated `TEST_DATABASE_URL`, then run the DB scope as well:
+
+   ```bash
+   npm run test:unit
+   npm run test:unit:db
+   ```
+
+   `npm run test:unit:all` is the combined shortcut when `TEST_DATABASE_URL` is already configured.
 
 ## Guardrails
 
 - Only `src/lib/private-db/schema.ts` is edited by hand; SQL is always generated.
 - Private form/contact, payment, booking, and enrollment data lives in PostgreSQL — never migrate this kind of data into Sanity.
+- Never bypass `PRIVATE_DB_MIGRATION_TARGET`, `PRIVATE_DB_MIGRATION_HOST`, or the production confirmation guard.
 - Commit the generated `drizzle/NNNN_*.sql` **and** the `drizzle/meta/` snapshot together with the schema change.
