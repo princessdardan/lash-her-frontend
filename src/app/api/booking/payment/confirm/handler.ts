@@ -154,6 +154,7 @@ async function createDefaultChargeAndStoreConfirm(
   const squarePayments = createSquarePaymentsClient({
     accessToken: env.accessToken,
     environment: env.environment,
+    locationId: env.locationId,
   });
   const squareCustomers = createSquareCustomersClient({
     accessToken: env.accessToken,
@@ -242,6 +243,27 @@ function parseChargeAndStoreBookingRequest(
     return null;
   }
 
+  if (
+    body.paymentMethod !== undefined &&
+    body.paymentMethod !== "card" &&
+    body.paymentMethod !== "afterpay"
+  )
+    return null;
+  const cardSourceId = parseOptionalString(body.cardSourceId);
+  const cardVerificationToken = parseOptionalString(body.cardVerificationToken);
+  if (
+    body.paymentMethod === "afterpay" &&
+    (!cardSourceId ||
+      cardSourceId.length > 512 ||
+      cardSourceId === sourceId ||
+      payment.option !== "full")
+  )
+    return null;
+  if (
+    body.cardVerificationToken !== undefined &&
+    (!cardVerificationToken || cardVerificationToken.length > 2048)
+  )
+    return null;
   const verificationToken = parseOptionalString(body.verificationToken);
   const ipAddress = getClientIpHashInput(req);
   const userAgent = getUserAgentHashInput(req);
@@ -254,6 +276,9 @@ function parseChargeAndStoreBookingRequest(
     payment,
     policy,
     verificationToken,
+    ...(body.paymentMethod ? { paymentMethod: body.paymentMethod } : {}),
+    ...(cardSourceId ? { cardSourceId } : {}),
+    ...(cardVerificationToken ? { cardVerificationToken } : {}),
     ipAddress,
     userAgent,
   };

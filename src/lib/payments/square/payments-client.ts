@@ -14,6 +14,7 @@ export interface SquareMoney {
 export interface SquareCreatePaymentRequest {
   idempotency_key: string;
   source_id: string;
+  location_id?: string;
   /**
    * Required for card-on-file booking charges. Optional for one-time commerce
    * sales (product / primary-training checkout), where no customer is stored.
@@ -105,6 +106,7 @@ export interface SquareListPaymentsResponse {
 
 export interface SquarePaymentsClientEnv {
   accessToken: string;
+  locationId?: string;
   environment: "sandbox" | "production";
 }
 
@@ -141,7 +143,15 @@ export function createSquarePaymentsClient(
       return postSquare<
         SquareCreatePaymentRequest,
         SquareCreatePaymentResponse
-      >(env, "/v2/payments", request, isSquareCreatePaymentResponse);
+      >(
+        env,
+        "/v2/payments",
+        {
+          ...request,
+          ...(env.locationId ? { location_id: env.locationId } : {}),
+        },
+        isSquareCreatePaymentResponse,
+      );
     },
     async getPayment(paymentId) {
       return getSquare<SquareGetPaymentResponse>(

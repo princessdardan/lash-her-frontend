@@ -1,3 +1,4 @@
+import type { SquareCheckoutPayment } from "@/lib/payments/square/afterpay-policy";
 import type {
   SquareCreatePaymentRequest,
   SquareCreatePaymentResponse,
@@ -28,6 +29,8 @@ export interface ChargeSquareTrainingOrderInput {
   currency: "CAD";
   sourceId: string;
   verificationToken?: string;
+  method?: SquareCheckoutPayment["method"];
+  expectedAmountCents?: number;
   /** Absolute origin used to build the scheduling URL in notifications. */
   origin?: string;
 }
@@ -85,6 +88,8 @@ export async function chargeSquareTrainingOrder(
       amountCents: input.amountCents,
       currency: input.currency,
       sourceId: input.sourceId,
+      method: input.method,
+      expectedAmountCents: input.expectedAmountCents,
       ...(input.verificationToken
         ? { verificationToken: input.verificationToken }
         : {}),
@@ -136,7 +141,8 @@ export function createLiveSquareTrainingCharger(): (
             id: `mock-square-payment-${request.idempotency_key}`,
             status: SQUARE_AUTHORIZED_STATUS,
             reference_id: request.reference_id,
-            source_type: "CARD",
+            source_type:
+              input.method === "afterpay" ? "BUY_NOW_PAY_LATER" : "CARD",
             amount_money: request.amount_money,
           },
         }),

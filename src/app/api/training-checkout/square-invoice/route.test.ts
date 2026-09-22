@@ -296,13 +296,19 @@ function runRouteScenario(assertions: string): void {
   delete env.TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED;
   delete env.VERCEL_ENV;
 
-  execFileSync(
-    "./node_modules/.bin/tsx",
-    ["--eval", scenario],
-    {
-      cwd: process.cwd(),
-      env,
-      stdio: "pipe",
-    },
-  );
+  execFileSync("./node_modules/.bin/tsx", ["--eval", scenario], {
+    cwd: process.cwd(),
+    env,
+    stdio: "pipe",
+  });
 }
+
+test("legacy Afterpay invoice cannot bypass the Canadian tax-inclusive limit", () => {
+  runRouteScenario(`
+    const { handler, customers, pendingOrders } = runScenario({ getTrainingProgramBySlug: async () => ({ ...program, price: 1800 }) });
+    const response = await handler(createRequest(validBody({ clientPrice: 1800 })));
+    assert.equal(response.status, 422);
+    assert.equal(customers.length, 0);
+    assert.equal(pendingOrders.length, 0);
+  `);
+});

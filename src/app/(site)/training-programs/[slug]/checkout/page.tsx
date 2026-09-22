@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { loaders } from "@/data/loaders";
-import { isTrainingAfterpaySquareInvoiceEnabled } from "@/lib/env/private-checkout";
 import {
   getTrainingCheckoutProduct,
   isTrainingPurchasable,
@@ -73,7 +72,6 @@ export default async function TrainingCheckoutPage({
               tax={tax}
               total={total}
               currency={product.currency || "CAD"}
-              afterpaySquareInvoiceEnabled={isTrainingAfterpaySquareInvoiceEnabled()}
             />
           </article>
         </div>

@@ -199,7 +199,7 @@ Node telemetry is optional and remains disabled unless `OTEL_EXPORTER_OTLP_ENDPO
 - Mock mode is server-only and rejected in production.
 - Dev-only mock controls are `x-lash-payment-mock-scenario` and `mockPaymentScenario`.
 
-Product checkout and training checkout use Square (Web Payments SDK), enabled with `SQUARE_COMMERCE_ENABLED=true`:
+Product checkout and training checkout use Square card payments and eligible Afterpay BNPL (Web Payments SDK), enabled with `SQUARE_COMMERCE_ENABLED=true`:
 
 - `SQUARE_ENVIRONMENT` (`sandbox` or `production`)
 - `SQUARE_ACCESS_TOKEN`
@@ -208,7 +208,7 @@ Product checkout and training checkout use Square (Web Payments SDK), enabled wi
 - `SQUARE_WEBHOOK_SIGNATURE_KEY`
 - `CHECKOUT_SECRET_ENCRYPTION_KEY`
 
-`SQUARE_APPLICATION_ID` and `SQUARE_LOCATION_ID` are served to the browser through `/api/checkout/square/config` so the Web Payments SDK can tokenize the card in Square's own iframe; the card PAN never reaches the server. The server uses `SQUARE_ACCESS_TOKEN` for the authorize/capture and refund calls, recomputing the charged amount from trusted order state. Product checkout, training checkout, the optional training Afterpay invoice, and service booking all share the single Square webhook endpoint (`/api/webhooks/square`), verified with `SQUARE_WEBHOOK_SIGNATURE_KEY`.
+`SQUARE_APPLICATION_ID` and `SQUARE_LOCATION_ID` are served to the browser through `/api/checkout/square/config` so the Web Payments SDK can tokenize the card in Square's own iframe; the card PAN never reaches the server. The server uses `SQUARE_ACCESS_TOKEN` for the authorize/capture and refund calls, recomputing the charged amount from trusted order state. Product checkout, training checkout, legacy training Afterpay invoices, and service booking all share the single Square webhook endpoint (`/api/webhooks/square`), verified with `SQUARE_WEBHOOK_SIGNATURE_KEY`.
 
 Paid service bookings use Square only when enabled:
 
@@ -223,6 +223,8 @@ Paid service bookings use Square only when enabled:
 - `SQUARE_SERVICE_BOOKING_WEBHOOK_URL`
 
 The active public service flow captures the required deposit, full amount, or configured custom partial amount and stores a reusable Square card reference through the `CHARGE_AND_STORE` confirmation flow. The public payment config and form are unavailable when direct charge-and-store is disabled or incomplete; the UI does not fall back to a hosted Payment Link. The return route and webhook retain reconciliation support for historical hosted service-payment sessions. All Square events (product, training, and service booking) are delivered to the single webhook endpoint `/api/webhooks/square`.
+
+Afterpay is offered automatically through the Square SDK for eligible Canadian totals of C$1–C$2,000, including tax and shipping. Square checks the merchant/location and transaction at initialization; buyers still need Afterpay approval. Services support Afterpay for the full booking total and collect a separate `STORE` card token for the existing no-show policy. Card deposit and custom-payment options remain available. No new payment provider or database migration is introduced. The old `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED` flag controls only the retained invoice endpoint, not the embedded BNPL option. See [Square Afterpay setup and verification](docs/square-afterpay.md), including the future online-course integration contract.
 
 Historical Helcim records remain readable through the retained `helcim` provider enum value and generic provider fields. The provider-specific `helcim_*` columns have been dropped, and no active flow creates new Helcim payments.
 

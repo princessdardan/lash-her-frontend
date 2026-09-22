@@ -1,3 +1,8 @@
+import {
+  matchesSquarePaymentMethod,
+  validateSquareAfterpayPayment,
+  type SquarePaymentMethod,
+} from "./afterpay-policy";
 import type {
   SquareCreatePaymentRequest,
   SquareCreatePaymentResponse,
@@ -24,6 +29,8 @@ export interface SquarePaymentChargeInput {
   /** Single-use card nonce from the Web Payments SDK `tokenize`. */
   sourceId: string;
   verificationToken?: string;
+  method?: SquarePaymentMethod;
+  expectedAmountCents?: number;
   /** Deterministic Square idempotency key derived from the reserved order. */
   idempotencyKey: string;
 }
@@ -73,6 +80,12 @@ export async function authorizeCaptureSquarePayment<T extends string>(
   input: SquarePaymentChargeInput,
   dependencies: SquarePaymentChargeDependencies<T>,
 ): Promise<SquarePaymentChargeResult<T>> {
+  const eligibilityError = validateSquareAfterpayPayment(
+    input,
+    input.amountCents,
+    input.currency,
+  );
+  if (eligibilityError) return { ok: false, reason: "afterpay_ineligible" };
   let payment: SquareCreatePaymentResponse["payment"];
   try {
     const response = await dependencies.authorizePayment({
@@ -114,6 +127,11 @@ export async function authorizeCaptureSquarePayment<T extends string>(
     });
     await voidSafe(dependencies, payment.id);
     return { ok: false, reason: "amount_mismatch" };
+  }
+
+  if (!matchesSquarePaymentMethod(input.method, payment.source_type)) {
+    await voidSafe(dependencies, payment.id);
+    return { ok: false, reason: "payment_method_mismatch" };
   }
 
   // Record the money locally BEFORE capturing, so a finalize failure leaves an

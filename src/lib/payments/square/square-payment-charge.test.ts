@@ -186,3 +186,48 @@ test("a capture failure after a committed ledger does NOT void the paid order", 
     assert.deepEqual(calls.filter((c) => c[0] === "onSuccess"), [["onSuccess", "lh-charge-1"]]);
   `);
 });
+
+test("Afterpay uses the same authorization, ledger and capture sequence", () => {
+  runChargeScenario(`
+    const { deps, calls } = harness({ authorized: { ...approvedPayment, source_type: "BUY_NOW_PAY_LATER" } });
+    let providerType;
+    const finalize = deps.finalize;
+    deps.finalize = async (input) => { providerType = input.providerType; return finalize(input); };
+    const result = await authorizeCaptureSquarePayment({ ...baseInput, method: "afterpay", expectedAmountCents: 4200 }, deps);
+    assert.equal(result.ok, true);
+    assert.equal(providerType, "BUY_NOW_PAY_LATER");
+    assert.deepEqual(calls.map((c) => c[0]), ["authorize", "finalize", "capture", "onCaptured", "onSuccess"]);
+  `);
+});
+
+test("Afterpay rejects ineligible and changed totals before requesting authorization", () => {
+  runChargeScenario(`
+    for (const patch of [{ amountCents: 200001 }, { expectedAmountCents: 4199 }, { currency: "USD" }]) {
+      const { deps, calls } = harness({ authorized: approvedPayment });
+      const result = await authorizeCaptureSquarePayment({ ...baseInput, method: "afterpay", expectedAmountCents: 4200, ...patch }, deps);
+      assert.deepEqual(result, { ok: false, reason: "afterpay_ineligible" });
+      assert.deepEqual(calls, []);
+    }
+  `);
+});
+
+test("a forged payment method is voided before any ledger update or capture", () => {
+  runChargeScenario(`
+    for (const [method, source_type] of [["card", "BUY_NOW_PAY_LATER"], ["afterpay", "CARD"]]) {
+      const { deps, calls } = harness({ authorized: { ...approvedPayment, source_type } });
+      const result = await authorizeCaptureSquarePayment({ ...baseInput, method, expectedAmountCents: 4200 }, deps);
+      assert.deepEqual(result, { ok: false, reason: "payment_method_mismatch" });
+      assert.deepEqual(calls.map((c) => c[0]), ["authorize", "void"]);
+    }
+  `);
+});
+
+test("Afterpay ledger failure cancels the authorization without confirming the order", () => {
+  runChargeScenario(`
+    const { deps, calls } = harness({ authorized: { ...approvedPayment, source_type: "BUY_NOW_PAY_LATER" }, finalizeThrows: true });
+    const result = await authorizeCaptureSquarePayment({ ...baseInput, method: "afterpay", expectedAmountCents: 4200 }, deps);
+    assert.equal(result.ok, false);
+    assert.ok(calls.some((c) => c[0] === "void"));
+    assert.equal(calls.some((c) => c[0] === "capture" || c[0] === "onSuccess"), false);
+  `);
+});

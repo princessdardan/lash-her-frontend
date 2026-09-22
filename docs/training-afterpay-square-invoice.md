@@ -1,10 +1,12 @@
-# Training Afterpay Square Invoice Runbook
+# Legacy Training Afterpay Square Invoice Runbook
 
 Date: 2026-05-25
 
 This runbook explains how to operate the training-only Afterpay buy now, pay later flow through Square Invoices. The feature is for paid training enrollments only. Product checkout and service booking keep their existing payment paths.
 
 The feature is intentionally disabled by default and must stay disabled in production until Square merchant eligibility is verified for live CAD invoices.
+
+> Public training checkout now uses embedded Square Afterpay alongside card payments. This runbook covers the retained invoice endpoint and outstanding invoices. See [the active BNPL integration](square-afterpay.md). Canadian invoice totals are also limited to C$1–C$2,000 including tax.
 
 ## Overview
 

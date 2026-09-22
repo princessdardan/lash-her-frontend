@@ -106,6 +106,8 @@ const helperScript = String.raw`
     const invoices = [];
     const orders = [];
     const paySessions = [];
+    const charges = [];
+    const releasedOrders = [];
     const handler = createCheckoutPostHandler({
       getProductsByIds: async (ids) => {
         fetchedProductIds.push(ids);
@@ -145,13 +147,12 @@ const helperScript = String.raw`
           await markInitializationFailed(orderId, error);
         }
       },
-      markOrderVerificationFailed: async () => {},
+      markOrderVerificationFailed: async (id) => { releasedOrders.push(id); },
       squareCommerceEnabled: true,
-      chargeSquareProductOrder: async () => ({
-        ok: true,
-        squarePaymentId: "sq-checkout-1",
-        transition: "applied",
-      }),
+      chargeSquareProductOrder: async (input) => {
+        charges.push(input);
+        return { ok: true, squarePaymentId: "sq-checkout-1", transition: "applied" };
+      },
       ...(createInitializingManualOrder ? { createInitializingManualOrder } : {}),
       ...(loadManualCheckoutPolicy ? { loadManualCheckoutPolicy } : {}),
       loadTermsRequirement: loadTermsRequirement ?? (() => TERMS_REQUIREMENT),
@@ -167,6 +168,8 @@ const helperScript = String.raw`
       invoices,
       orders,
       paySessions,
+      charges,
+      releasedOrders,
     };
   }
 `;
@@ -1057,3 +1060,36 @@ function runRouteScenario(assertions: string): void {
     },
   );
 }
+
+test("product Afterpay uses the reserved total including shipping and preserves the selected method", () => {
+  runRouteScenario(`
+    const { handler, charges } = runScenario();
+    const response = await handler(createRequest({
+      customer: { name: "Client", email: "client@example.com", phone: "4165550100" },
+      shippingAddress,
+      items: [{ productId: product._id, quantity: 2 }],
+      payment: { sourceId: "afterpay-token", method: "afterpay", expectedAmountCents: 6099 },
+    }));
+    assert.equal(response.status, 200);
+    assert.equal(charges[0].method, "afterpay");
+    assert.equal(charges[0].amountCents, 6099);
+    assert.equal(charges[0].expectedAmountCents, 6099);
+  `);
+});
+
+test("product Afterpay rejects stale or excessive reserved totals and releases the order", () => {
+  runRouteScenario(`
+    for (const totalAmountCents of [6100, 200001]) {
+      const { handler, charges, releasedOrders } = runScenario({ createInitializingOrder: async () => ({ orderId: "lh-product-order", primaryObligationId: "22222222-2222-4222-8222-222222222222", currency: "CAD", shippingAmountCents: 1299, totalAmountCents, shippingRateTitle: "Tracked" }) });
+      const response = await handler(createRequest({
+        customer: { name: "Client", email: "client@example.com", phone: "4165550100" },
+        shippingAddress,
+        items: [{ productId: product._id, quantity: 2 }],
+        payment: { sourceId: "afterpay-token", method: "afterpay", expectedAmountCents: 6099 },
+      }));
+      assert.equal(response.status, 422);
+      assert.equal(charges.length, 0);
+      assert.deepEqual(releasedOrders, ["lh-product-order"]);
+    }
+  `);
+});

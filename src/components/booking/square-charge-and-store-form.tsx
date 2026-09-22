@@ -35,6 +35,7 @@ interface SquareChargeAndStoreFormProps {
 
 export interface SquareChargeAndStoreFormHandle {
   tokenize(): Promise<void>;
+  tokenizeForStorage(): Promise<SquareChargeAndStoreTokenResult>;
 }
 
 interface SquareConfigResponse {
@@ -58,10 +59,7 @@ interface SquareCard {
   ): Promise<SquareTokenizeResult>;
 }
 
-interface SquareVerificationDetails {
-  amount: string;
-  currencyCode: string;
-  intent: "CHARGE_AND_STORE";
+type SquareVerificationDetails = {
   customerInitiated: boolean;
   sellerKeyedIn: boolean;
   billingContact: {
@@ -72,7 +70,10 @@ interface SquareVerificationDetails {
     countryCode: string;
     postalCode?: string;
   };
-}
+} & (
+  | { intent: "CHARGE_AND_STORE"; amount: string; currencyCode: string }
+  | { intent: "STORE" }
+);
 
 interface SquareTokenizeResult {
   status: "OK" | "ERROR";
@@ -221,6 +222,33 @@ export const SquareChargeAndStoreForm = forwardRef<
   useImperativeHandle(
     ref,
     () => ({
+      async tokenizeForStorage() {
+        if (!buyer || !cardRef.current)
+          throw new Error(
+            "Complete your details and enter a card for the no-show policy before paying with Afterpay.",
+          );
+        const [givenName, familyName] = splitFullName(buyer.fullName);
+        const result = await cardRef.current.tokenize({
+          intent: "STORE",
+          customerInitiated: true,
+          sellerKeyedIn: false,
+          billingContact: {
+            givenName,
+            familyName,
+            email: buyer.email,
+            phone: buyer.phone,
+            countryCode: "CA",
+          },
+        });
+        if (result.status !== "OK" || !result.token)
+          throw new Error(
+            "Your policy card could not be verified. Check the card details and try again.",
+          );
+        return {
+          sourceId: result.token,
+          verificationToken: result.verificationToken,
+        };
+      },
       async tokenize() {
         if (disabled) {
           onError("Please complete the form before paying.");

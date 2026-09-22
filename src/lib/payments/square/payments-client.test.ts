@@ -654,3 +654,16 @@ function runPaymentsClientScenario(assertions: string): void {
     },
   );
 }
+
+test("one-time payments use the configured location checked by the Web Payments SDK", () => {
+  runPaymentsClientScenario(`
+    let body;
+    globalThis.fetch = async (_url, init) => {
+      body = JSON.parse(init.body);
+      return Response.json({ payment: { id: "bnpl-1", status: "APPROVED", source_type: "BUY_NOW_PAY_LATER", amount_money: body.amount_money } });
+    };
+    const client = createSquarePaymentsClient({ environment: "sandbox", accessToken: "test-token", locationId: "LOC-ELIGIBLE" });
+    await client.createCardOnFilePayment({ ...createPaymentRequest(), source_id: "afterpay-token", location_id: "untrusted-location", autocomplete: false });
+    assert.equal(body.location_id, "LOC-ELIGIBLE");
+  `);
+});

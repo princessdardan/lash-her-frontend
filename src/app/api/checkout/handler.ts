@@ -1,3 +1,8 @@
+import {
+  parseSquareCheckoutPayment,
+  validateSquareAfterpayPayment,
+  type SquareCheckoutPayment,
+} from "@/lib/payments/square/afterpay-policy";
 import { randomUUID } from "node:crypto";
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -87,10 +92,7 @@ interface CheckoutRequestBody {
    * checkout is enabled), the order is reserved and charged synchronously
    * through Square rather than returning the legacy async-invoice operation.
    */
-  payment?: {
-    sourceId: string;
-    verificationToken?: string;
-  };
+  payment?: SquareCheckoutPayment;
 }
 
 type CheckoutResponseBody = { orderId: string; status: "paid" };
@@ -186,6 +188,8 @@ interface CheckoutPostHandlerDependencies {
     currency: "CAD";
     sourceId: string;
     verificationToken?: string;
+    method?: SquareCheckoutPayment["method"];
+    expectedAmountCents?: number;
   }) => Promise<
     | { ok: true; squarePaymentId: string; transition: string }
     | { ok: false; reason: string }
@@ -622,14 +626,23 @@ export function createCheckoutPostHandler({
           );
         }
 
+        const paymentError = validateSquareAfterpayPayment(
+          checkoutRequest.payment,
+          initializingOrder.totalAmountCents,
+          initializingOrder.currency,
+        );
+        if (paymentError) {
+          await markOrderVerificationFailedDep?.(
+            initializingOrder.orderId,
+          ).catch(() => undefined);
+          return NextResponse.json({ error: paymentError }, { status: 422 });
+        }
+
         const charge = await chargeSquareProductOrder({
           orderReference: initializingOrder.orderId,
           amountCents: initializingOrder.totalAmountCents,
           currency: initializingOrder.currency,
-          sourceId: checkoutRequest.payment.sourceId,
-          ...(checkoutRequest.payment.verificationToken
-            ? { verificationToken: checkoutRequest.payment.verificationToken }
-            : {}),
+          ...checkoutRequest.payment,
         });
 
         if (!charge.ok) {
@@ -946,24 +959,7 @@ function parseReservationKey(value: unknown): string | undefined {
 function parsePaymentInput(
   value: unknown,
 ): CheckoutRequestBody["payment"] | null {
-  if (value === undefined) return undefined;
-  if (!isRecord(value)) return null;
-  const sourceId =
-    typeof value.sourceId === "string" ? value.sourceId.trim() : "";
-  if (!sourceId || sourceId.length > 512) return null;
-  const verificationToken =
-    value.verificationToken === undefined
-      ? undefined
-      : typeof value.verificationToken === "string" &&
-          value.verificationToken.trim().length > 0 &&
-          value.verificationToken.length <= 2048
-        ? value.verificationToken.trim()
-        : null;
-  if (verificationToken === null) return null;
-  return {
-    sourceId,
-    ...(verificationToken ? { verificationToken } : {}),
-  };
+  return value === undefined ? undefined : parseSquareCheckoutPayment(value);
 }
 
 function parseFulfillmentMode(

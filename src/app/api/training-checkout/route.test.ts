@@ -232,3 +232,28 @@ function runRouteScenario(assertions: string): void {
     stdio: "pipe",
   });
 }
+
+test("training Afterpay forwards the trusted total and selected method through Square", () => {
+  runRouteScenario(`
+    const { handler, charges, reserved } = runScenario();
+    const response = await handler(createRequest(validBody({ payment: { sourceId: "afterpay-token", method: "afterpay", expectedAmountCents: 169387 } })));
+    assert.equal(response.status, 200);
+    assert.equal(reserved.length, 1);
+    assert.equal(charges[0].method, "afterpay");
+    assert.equal(charges[0].expectedAmountCents, 169387);
+    assert.equal(charges[0].amountCents, 169387);
+  `);
+});
+
+test("training Afterpay rejects tax-inclusive totals above the limit and stale totals before reservation", () => {
+  runRouteScenario(`
+    for (const price of [1499, 1800]) {
+      const { handler, charges, reserved, enrollments } = runScenario({ getTrainingProgramBySlug: async () => ({ ...program, price }) });
+      const response = await handler(createRequest(validBody({ clientPrice: price, payment: { sourceId: "afterpay-token", method: "afterpay", expectedAmountCents: price * 100 } })));
+      assert.equal(response.status, 400);
+      assert.equal(reserved.length, 0);
+      assert.equal(enrollments.length, 0);
+      assert.equal(charges.length, 0);
+    }
+  `);
+});

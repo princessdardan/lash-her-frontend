@@ -1,9 +1,16 @@
+import {
+  isSquareAfterpayAmountEligible,
+  SQUARE_AFTERPAY_LIMIT_MESSAGE,
+} from "@/lib/payments/square/afterpay-policy";
 import { randomUUID } from "node:crypto";
 
 import { NextResponse, type NextRequest } from "next/server";
 
 import { parsePromotionCodeInput } from "@/lib/commerce/discounts";
-import { createPaymentMockStore, type PaymentMockStore } from "@/lib/payment-mocks/in-memory-store";
+import {
+  createPaymentMockStore,
+  type PaymentMockStore,
+} from "@/lib/payment-mocks/in-memory-store";
 import {
   createMockSquareInvoice,
   createSquareInvoicePublishedWebhookPayload,
@@ -23,7 +30,10 @@ import type {
   SquarePublishedInvoice,
 } from "@/lib/commerce/square-invoice-client";
 
-type SquareInvoiceScenario = Extract<PaymentMockScenario, `square_invoice_${string}`>;
+type SquareInvoiceScenario = Extract<
+  PaymentMockScenario,
+  `square_invoice_${string}`
+>;
 
 interface TrainingSquareInvoiceResponseBody {
   orderId: string;
@@ -37,13 +47,20 @@ interface TrainingSquareInvoiceErrorBody {
 interface TrainingSquareInvoicePostHandlerDependencies {
   createCheckoutToken?: () => string;
   createCorrelationId?: () => string;
-  createPendingSquareInvoiceOrder: (input: TrainingSquareInvoicePendingOrderInput) => Promise<TrainingSquareInvoicePendingOrder>;
+  createPendingSquareInvoiceOrder: (
+    input: TrainingSquareInvoicePendingOrderInput,
+  ) => Promise<TrainingSquareInvoicePendingOrder>;
   createSecretToken?: () => string;
   getPromotionCode: (code: string) => Promise<TPromotionCode | null>;
   getTrainingProgramBySlug: (slug: string) => Promise<TTrainingProgram | null>;
   isEnabled?: () => boolean;
   locationId: string;
-  recordSquareInvoicePublication: (orderId: string, invoiceId: string, publicUrl: string, version: number) => Promise<void>;
+  recordSquareInvoicePublication: (
+    orderId: string,
+    invoiceId: string,
+    publicUrl: string,
+    version: number,
+  ) => Promise<void>;
   squareInvoiceClient: SquareInvoiceClient;
 }
 
@@ -74,13 +91,17 @@ interface TrainingSquareInvoiceRuntimeEnv {
 }
 
 interface TrainingSquareInvoiceEnvModule {
-  getPaymentMockRuntimeEnvironment: () => Parameters<typeof resolvePaymentGatewayMode>[0];
+  getPaymentMockRuntimeEnvironment: () => Parameters<
+    typeof resolvePaymentGatewayMode
+  >[0];
   getTrainingAfterpaySquareInvoiceEnv: () => TrainingSquareInvoiceRuntimeEnv | null;
   isTrainingAfterpaySquareInvoiceEnabled: () => boolean;
 }
 
 const trainingSquareInvoicePaymentMockStore = createPaymentMockStore();
-const fallbackMockRequest = new Request("http://localhost:3000/api/training-checkout/square-invoice/mock-runtime");
+const fallbackMockRequest = new Request(
+  "http://localhost:3000/api/training-checkout/square-invoice/mock-runtime",
+);
 
 export function createTrainingSquareInvoicePostHandler({
   createCheckoutToken = () => `sq-invoice-checkout-${randomUUID()}`,
@@ -93,8 +114,12 @@ export function createTrainingSquareInvoicePostHandler({
   locationId,
   recordSquareInvoicePublication,
   squareInvoiceClient,
-}: TrainingSquareInvoicePostHandlerDependencies): (req: NextRequest | Request) => Promise<Response> {
-  return async function trainingSquareInvoicePostHandler(req: NextRequest | Request): Promise<Response> {
+}: TrainingSquareInvoicePostHandlerDependencies): (
+  req: NextRequest | Request,
+) => Promise<Response> {
+  return async function trainingSquareInvoicePostHandler(
+    req: NextRequest | Request,
+  ): Promise<Response> {
     if (!isEnabled()) {
       return unavailableTrainingSquareInvoiceResponse();
     }
@@ -114,7 +139,9 @@ export function createTrainingSquareInvoicePostHandler({
     }
 
     try {
-      const requestedPromotionCode = parsePromotionCodeInput(isRecord(body) ? body.promotionCode ?? body.discountCode : undefined);
+      const requestedPromotionCode = parsePromotionCodeInput(
+        isRecord(body) ? (body.promotionCode ?? body.discountCode) : undefined,
+      );
       if (requestedPromotionCode === null) {
         return NextResponse.json<TrainingSquareInvoiceErrorBody>(
           { error: "Invalid promotion code" },
@@ -124,9 +151,15 @@ export function createTrainingSquareInvoicePostHandler({
 
       const [program, promotionCode] = await Promise.all([
         getTrainingProgramBySlug(programSlug),
-        requestedPromotionCode ? getPromotionCode(requestedPromotionCode) : Promise.resolve(null),
+        requestedPromotionCode
+          ? getPromotionCode(requestedPromotionCode)
+          : Promise.resolve(null),
       ]);
-      const validation = validateTrainingCheckoutRequest(program, body, promotionCode);
+      const validation = validateTrainingCheckoutRequest(
+        program,
+        body,
+        promotionCode,
+      );
 
       if (!validation.ok) {
         return invalidTrainingSquareInvoiceRequest();
@@ -134,6 +167,12 @@ export function createTrainingSquareInvoicePostHandler({
 
       const { quote } = validation;
       const amountCents = toCents(quote.total);
+      if (!isSquareAfterpayAmountEligible(amountCents, quote.currency)) {
+        return NextResponse.json(
+          { error: SQUARE_AFTERPAY_LIMIT_MESSAGE },
+          { status: 422 },
+        );
+      }
       const correlationId = createCorrelationId();
       const customerName = splitCustomerName(quote.customerName);
       const customerId = await squareInvoiceClient.createCustomer(
@@ -144,7 +183,12 @@ export function createTrainingSquareInvoicePostHandler({
       );
       const squareOrderId = await squareInvoiceClient.createOrder(
         locationId,
-        [toSquareInvoiceLineItem({ amountCents, programTitle: quote.programTitle })],
+        [
+          toSquareInvoiceLineItem({
+            amountCents,
+            programTitle: quote.programTitle,
+          }),
+        ],
         correlationId,
       );
       const draftInvoice = await squareInvoiceClient.createInvoice(
@@ -186,14 +230,20 @@ export function createTrainingSquareInvoicePostHandler({
     } catch (error) {
       if (isSquareInvoiceBnplUnavailableError(error)) {
         return NextResponse.json<TrainingSquareInvoiceErrorBody>(
-          { error: "Buy now, pay later is unavailable for this training checkout" },
+          {
+            error:
+              "Buy now, pay later is unavailable for this training checkout",
+          },
           { status: 422 },
         );
       }
 
       if (isSquareInvoicePublishError(error)) {
         console.error("[training-square-invoice] Unable to publish invoice", {
-          error: error instanceof Error ? error.message : "Unknown Square invoice publish error",
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unknown Square invoice publish error",
         });
 
         return NextResponse.json<TrainingSquareInvoiceErrorBody>(
@@ -203,7 +253,10 @@ export function createTrainingSquareInvoicePostHandler({
       }
 
       console.error("[training-square-invoice] Unable to initialize checkout", {
-        error: error instanceof Error ? error.message : "Unknown training Square invoice error",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unknown training Square invoice error",
       });
 
       return NextResponse.json<TrainingSquareInvoiceErrorBody>(
@@ -221,10 +274,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     return unavailableTrainingSquareInvoiceResponse();
   }
 
-  const [
-    { loaders },
-    orderStore,
-  ] = await Promise.all([
+  const [{ loaders }, orderStore] = await Promise.all([
     import("@/data/loaders"),
     import("@/lib/commerce/order-store"),
   ]);
@@ -237,19 +287,26 @@ export async function POST(req: NextRequest): Promise<Response> {
   return createTrainingSquareInvoicePostHandler({
     createPendingSquareInvoiceOrder: orderStore.createPendingSquareInvoiceOrder,
     getPromotionCode: loaders.getPromotionCode,
-    getTrainingProgramBySlug: (slug) => loaders.getTrainingProgramBySlug(slug, { mode: "published", stega: false }),
+    getTrainingProgramBySlug: (slug) =>
+      loaders.getTrainingProgramBySlug(slug, {
+        mode: "published",
+        stega: false,
+      }),
     isEnabled: envModule.isTrainingAfterpaySquareInvoiceEnabled,
     locationId: runtimeEnv.locationId,
     recordSquareInvoicePublication: orderStore.recordSquareInvoicePublication,
-    squareInvoiceClient: await createTrainingAfterpaySquareInvoiceClientForRequest({
-      envModule,
-      env: runtimeEnv,
-      request: req,
-    }),
+    squareInvoiceClient:
+      await createTrainingAfterpaySquareInvoiceClientForRequest({
+        envModule,
+        env: runtimeEnv,
+        request: req,
+      }),
   })(req);
 }
 
-function getTrainingAfterpaySquareInvoiceRuntimeEnv(envModule: TrainingSquareInvoiceEnvModule): TrainingSquareInvoiceRuntimeEnv | null {
+function getTrainingAfterpaySquareInvoiceRuntimeEnv(
+  envModule: TrainingSquareInvoiceEnvModule,
+): TrainingSquareInvoiceRuntimeEnv | null {
   if (!envModule.isTrainingAfterpaySquareInvoiceEnabled()) {
     return null;
   }
@@ -261,9 +318,14 @@ function getTrainingAfterpaySquareInvoiceRuntimeEnv(envModule: TrainingSquareInv
   }
 
   return {
-    accessToken: process.env.SQUARE_ACCESS_TOKEN?.trim() || "mock-square-access-token",
-    environment: process.env.SQUARE_ENVIRONMENT === "production" ? "production" : "sandbox",
-    locationId: process.env.SQUARE_LOCATION_ID?.trim() || "mock-square-location",
+    accessToken:
+      process.env.SQUARE_ACCESS_TOKEN?.trim() || "mock-square-access-token",
+    environment:
+      process.env.SQUARE_ENVIRONMENT === "production"
+        ? "production"
+        : "sandbox",
+    locationId:
+      process.env.SQUARE_LOCATION_ID?.trim() || "mock-square-location",
   };
 }
 
@@ -278,7 +340,8 @@ async function createTrainingAfterpaySquareInvoiceClientForRequest(input: {
   assertPaymentMockAllowed({ env: runtimeEnvironment, request });
 
   if (resolvePaymentGatewayMode(runtimeEnvironment) !== "mock") {
-    const { createSquareInvoiceClient } = await import("@/lib/commerce/square-invoice-client");
+    const { createSquareInvoiceClient } =
+      await import("@/lib/commerce/square-invoice-client");
 
     return createSquareInvoiceClient({
       accessToken: input.env.accessToken,
@@ -289,11 +352,13 @@ async function createTrainingAfterpaySquareInvoiceClientForRequest(input: {
 
   return createMockTrainingAfterpaySquareInvoiceClient({
     request,
-    scenario: toSquareInvoiceScenario(resolvePaymentMockScenario({
-      env: runtimeEnvironment,
-      now: new Date(),
-      request,
-    })),
+    scenario: toSquareInvoiceScenario(
+      resolvePaymentMockScenario({
+        env: runtimeEnvironment,
+        now: new Date(),
+        request,
+      }),
+    ),
     store: trainingSquareInvoicePaymentMockStore,
   });
 }
@@ -314,7 +379,10 @@ function createMockTrainingAfterpaySquareInvoiceClient(input: {
 
     async createInvoice(orderId, customerId, paymentRequest) {
       if (input.scenario === "square_invoice_afterpay_unavailable") {
-        throw createNamedSquareInvoiceError("SquareInvoiceBNPLUnavailableError", "Square invoice buy now, pay later is unavailable");
+        throw createNamedSquareInvoiceError(
+          "SquareInvoiceBNPLUnavailableError",
+          "Square invoice buy now, pay later is unavailable",
+        );
       }
 
       const amountCents = 0;
@@ -336,7 +404,10 @@ function createMockTrainingAfterpaySquareInvoiceClient(input: {
 
     async publishInvoice(invoiceId, version) {
       if (input.scenario === "square_invoice_publish_failed") {
-        throw createNamedSquareInvoiceError("SquareInvoicePublishError", "Square invoice publish failed with status 400");
+        throw createNamedSquareInvoiceError(
+          "SquareInvoicePublishError",
+          "Square invoice publish failed with status 400",
+        );
       }
 
       const payload = createSquareInvoicePublishedWebhookPayload({
@@ -387,13 +458,16 @@ function createNamedSquareInvoiceError(name: string, message: string): Error {
 }
 
 function isSquareInvoiceBnplUnavailableError(error: unknown): boolean {
-  return error instanceof Error && error.name === "SquareInvoiceBNPLUnavailableError";
+  return (
+    error instanceof Error && error.name === "SquareInvoiceBNPLUnavailableError"
+  );
 }
 
 function isSquareInvoicePublishError(error: unknown): boolean {
-  return error instanceof Error && (
-    error.name === "SquareInvoicePublishError" ||
-    error.name === "SquareInvoiceVersionConflictError"
+  return (
+    error instanceof Error &&
+    (error.name === "SquareInvoicePublishError" ||
+      error.name === "SquareInvoiceVersionConflictError")
   );
 }
 
@@ -412,7 +486,10 @@ function toSquareInvoiceScenario(scenario: string): SquareInvoiceScenario {
   }
 }
 
-function toSquareInvoiceLineItem(input: { amountCents: number; programTitle: string }): SquareInvoiceLineItem {
+function toSquareInvoiceLineItem(input: {
+  amountCents: number;
+  programTitle: string;
+}): SquareInvoiceLineItem {
   return {
     name: input.programTitle,
     quantity: "1",
@@ -424,7 +501,10 @@ function toSquareInvoiceLineItem(input: { amountCents: number; programTitle: str
   };
 }
 
-function splitCustomerName(customerName: string): { familyName: string; givenName: string } {
+function splitCustomerName(customerName: string): {
+  familyName: string;
+  givenName: string;
+} {
   const [givenName = customerName, ...familyParts] = customerName.split(" ");
 
   return {
@@ -448,7 +528,12 @@ function toCents(value: number): number {
 }
 
 function toStableId(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "unknown";
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "unknown"
+  );
 }
 
 function getReferenceIdFromMockOrderId(orderId: string): string | undefined {

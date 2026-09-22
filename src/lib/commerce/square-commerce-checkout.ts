@@ -1,3 +1,4 @@
+import type { SquareCheckoutPayment } from "@/lib/payments/square/afterpay-policy";
 import type {
   SquareCreatePaymentRequest,
   SquareCreatePaymentResponse,
@@ -34,6 +35,8 @@ export interface ChargeSquareProductOrderInput {
   sourceId: string;
   /** SCA verification token from `tokenize`, when present. */
   verificationToken?: string;
+  method?: SquareCheckoutPayment["method"];
+  expectedAmountCents?: number;
 }
 
 export type ChargeSquareProductOrderResult =
@@ -92,6 +95,8 @@ export async function chargeSquareProductOrder(
       amountCents: input.amountCents,
       currency: input.currency,
       sourceId: input.sourceId,
+      method: input.method,
+      expectedAmountCents: input.expectedAmountCents,
       ...(input.verificationToken
         ? { verificationToken: input.verificationToken }
         : {}),
@@ -142,7 +147,8 @@ export function createLiveSquareProductCharger(): (
             id: `mock-square-payment-${request.idempotency_key}`,
             status: SQUARE_AUTHORIZED_STATUS,
             reference_id: request.reference_id,
-            source_type: "CARD",
+            source_type:
+              input.method === "afterpay" ? "BUY_NOW_PAY_LATER" : "CARD",
             amount_money: request.amount_money,
           },
         }),

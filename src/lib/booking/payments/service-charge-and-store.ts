@@ -1,3 +1,9 @@
+import {
+  isSquareAfterpayAmountEligible,
+  matchesSquarePaymentMethod,
+  SQUARE_AFTERPAY_LIMIT_MESSAGE,
+  type SquarePaymentMethod,
+} from "@/lib/payments/square/afterpay-policy";
 import type { BookingHoldRecord } from "@/lib/booking/holds";
 import { resolveBookingModelVersion } from "@/lib/booking/booking-model-version";
 import { readBookingMarketingOptInLabelSnapshot } from "@/lib/booking/operational-ui-settings";
@@ -64,6 +70,10 @@ export interface ChargeAndStoreBookingRequestBody {
   };
   sourceId: string;
   verificationToken?: string;
+  paymentMethod?: SquarePaymentMethod;
+  /** Separate STORE token: an Afterpay payment cannot be turned into a saved card. */
+  cardSourceId?: string;
+  cardVerificationToken?: string;
   ipAddress?: string;
   userAgent?: string;
 }
@@ -623,6 +633,23 @@ export async function confirmChargeAndStoreBooking(
   // charged to Square so Ontario HST is actually collected, not just displayed.
   const taxQuote = calculateServiceBookingHstQuote(resolvedPayment.amountCents);
 
+  if (
+    input.paymentMethod === "afterpay" &&
+    !isSquareAfterpayAmountEligible(taxQuote.expectedAmountCents)
+  ) {
+    await markHoldPaymentFailedSafe(
+      dependencies,
+      hold.id,
+      "Afterpay total is ineligible",
+      now,
+    );
+    return {
+      ok: false,
+      error: "invalid_request",
+      message: SQUARE_AFTERPAY_LIMIT_MESSAGE,
+    };
+  }
+
   try {
     await dependencies.repository.persistCustomerAndSelection({
       holdId: hold.id,
@@ -800,7 +827,8 @@ export async function confirmChargeAndStoreBooking(
       currency: "CAD",
     },
     autocomplete: false,
-    verification_token: input.verificationToken,
+    verification_token:
+      input.paymentMethod === "afterpay" ? undefined : input.verificationToken,
     reference_id: hold.publicReference,
     note: `${resolvedPayment.description} (includes ${taxQuote.taxName})`,
     team_member_id: operationalBooking
@@ -999,6 +1027,25 @@ export async function confirmChargeAndStoreBooking(
     });
   }
 
+  if (
+    !matchesSquarePaymentMethod(
+      input.paymentMethod,
+      paymentResponse.payment.source_type,
+    ) ||
+    paymentResponse.payment.amount_money.amount !==
+      taxQuote.expectedAmountCents ||
+    paymentResponse.payment.amount_money.currency !== "CAD"
+  ) {
+    return cancelAuthorizationAndReturnFailure({
+      dependencies,
+      hold,
+      idempotencyKey: providerPaymentIdempotencyKey,
+      message: "Payment details could not be verified",
+      now,
+      squarePaymentId: paymentResponse.payment.id,
+    });
+  }
+
   let cardResponse: { card: SquareCard };
 
   try {
@@ -1009,10 +1056,18 @@ export async function confirmChargeAndStoreBooking(
     cardResponse = await dependencies.squareCards.createCard({
       idempotency_key: makeSquareIdempotencyKey(
         "card",
-        paymentResponse.payment.id,
+        input.paymentMethod === "afterpay"
+          ? `${paymentResponse.payment.id}:${hashProviderToken(input.cardSourceId!)}`
+          : paymentResponse.payment.id,
       ),
-      source_id: paymentResponse.payment.id,
-      verification_token: input.verificationToken,
+      source_id:
+        input.paymentMethod === "afterpay"
+          ? input.cardSourceId!
+          : paymentResponse.payment.id,
+      verification_token:
+        input.paymentMethod === "afterpay"
+          ? input.cardVerificationToken
+          : input.verificationToken,
       card: {
         customer_id: squareCustomer.squareCustomerId,
         cardholder_name: input.customer.name,
@@ -2470,6 +2525,31 @@ function validateChargeAndStoreBookingRequest(body: unknown): string | null {
     body.policy.policyTextHash.trim().length === 0
   ) {
     return "Policy text hash is required";
+  }
+
+  if (
+    body.paymentMethod !== undefined &&
+    body.paymentMethod !== "card" &&
+    body.paymentMethod !== "afterpay"
+  )
+    return "Invalid payment method";
+  if (body.paymentMethod === "afterpay") {
+    if (body.payment.option !== "full")
+      return "Afterpay requires full payment of the booking total";
+    if (
+      typeof body.cardSourceId !== "string" ||
+      !body.cardSourceId.trim() ||
+      body.cardSourceId.length > 512 ||
+      body.cardSourceId === body.sourceId
+    )
+      return "A separate policy card is required for Afterpay";
+    if (
+      body.cardVerificationToken !== undefined &&
+      (typeof body.cardVerificationToken !== "string" ||
+        !body.cardVerificationToken.trim() ||
+        body.cardVerificationToken.length > 2048)
+    )
+      return "Invalid card verification token";
   }
 
   if (typeof body.sourceId !== "string" || body.sourceId.trim().length === 0) {

@@ -155,3 +155,28 @@ test("reports retryable when the side effect fails so Square redelivers", async 
     reason: "side_effect_failed",
   });
 });
+
+test("Afterpay completed events recover product and training orders with their BNPL source type", async () => {
+  for (const kind of ["product", "training_card"] as const) {
+    const harness = createHarness({});
+    const seen: string[] = [];
+    harness.deps.finalizeProduct = async (input) => {
+      seen.push(input.providerType);
+      return { transition: "applied" };
+    };
+    harness.deps.finalizeTraining = async (input) => {
+      seen.push(input.providerType);
+      return { transition: "applied" };
+    };
+    const result = await recoverSquareCommercePayment(
+      { ...productPayment, kind, sourceType: "BUY_NOW_PAY_LATER" },
+      harness.deps,
+    );
+    assert.equal(result.status, "recovered");
+    assert.deepEqual(seen, ["BUY_NOW_PAY_LATER"]);
+    assert.equal(
+      harness.productEmails.length + harness.trainingNotifies.length,
+      1,
+    );
+  }
+});

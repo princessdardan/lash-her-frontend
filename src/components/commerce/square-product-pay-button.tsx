@@ -3,13 +3,14 @@
 import { useCallback, useRef, useState, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
 
+import { SquareAfterpayButton } from "@/components/payments/square-afterpay-button";
+import type { SquareCheckoutPayment } from "@/lib/payments/square/afterpay-policy";
 import { Button } from "@/components/ui/button";
 import type { CartInputItem } from "@/lib/commerce/cart";
 import type { ProductCheckoutDisclosureInput } from "@/lib/commerce/product-checkout-disclosures";
 import {
   SquareCommerceCardForm,
   type SquareCommerceCardFormHandle,
-  type SquareCommerceTokenResult,
 } from "@/components/commerce/square-commerce-card-form";
 
 export interface ProductShippingAddress {
@@ -68,6 +69,7 @@ export function SquareProductPayButton({
   // genuine later purchase reserves a fresh order. Only the manual-pickup server
   // path consumes it; the automated-shipping path is idempotent via its quote.
   const reservationKeyRef = useRef<string | undefined>(undefined);
+  const submissionInFlightRef = useRef(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isCardReady, setIsCardReady] = useState(false);
   const [isUnavailable, setIsUnavailable] = useState(false);
@@ -76,7 +78,7 @@ export function SquareProductPayButton({
   const handleConfigUnavailable = useCallback(() => setIsUnavailable(true), []);
 
   const handleTokenized = useCallback(
-    async ({ sourceId, verificationToken }: SquareCommerceTokenResult) => {
+    async (payment: SquareCheckoutPayment) => {
       if (!reservationKeyRef.current) {
         reservationKeyRef.current = crypto.randomUUID();
       }
@@ -92,14 +94,18 @@ export function SquareProductPayButton({
           ...(shippingAddress ? { shippingAddress } : {}),
           ...(shippingQuote ? { shippingQuote } : {}),
           ...(promotionCode ? { promotionCode } : {}),
-          payment: {
-            sourceId,
-            ...(verificationToken ? { verificationToken } : {}),
-          },
+          payment,
         }),
       });
 
       if (!res.ok) {
+        if (res.status === 400 || res.status === 422) {
+          reservationKeyRef.current = undefined;
+          const data = await res.json().catch(() => ({}));
+          throw new Error(
+            typeof data.error === "string" ? data.error : GENERIC_ERROR,
+          );
+        }
         if (res.status === 402) {
           // Definitive decline. The server released the reserved order (and, for
           // automated shipping, re-opened the quote). Drop the reservation key so
@@ -108,8 +114,8 @@ export function SquareProductPayButton({
           reservationKeyRef.current = undefined;
           throw new Error(
             fulfillmentMode === "automated_shipping"
-              ? "Payment could not be completed. Please try again or use another card. If it keeps failing, refresh your shipping rates and retry."
-              : "Payment could not be completed. Please try again or use another card.",
+              ? "Payment could not be completed. Please try again or use another payment method. If it keeps failing, refresh your shipping rates and retry."
+              : "Payment could not be completed. Please try again or use another payment method.",
           );
         }
         if (res.status === 409) {
@@ -156,17 +162,30 @@ export function SquareProductPayButton({
     ],
   );
 
-  const handlePay = async () => {
+  const startPayment = () => {
+    if (disabled || submissionInFlightRef.current) return false;
+    submissionInFlightRef.current = true;
     setError(null);
     setIsLoading(true);
+    return true;
+  };
+
+  const endPayment = () => {
+    submissionInFlightRef.current = false;
+    setIsLoading(false);
+  };
+
+  const handlePay = async () => {
+    if (!startPayment()) return;
     try {
-      await formRef.current?.tokenize();
+      if (!formRef.current) throw new Error("Secure card form is not ready.");
+      await formRef.current.tokenize();
       // On success the tokenized handler navigates away; keep the busy state.
     } catch (submitError: unknown) {
       setError(
         submitError instanceof Error ? submitError.message : GENERIC_ERROR,
       );
-      setIsLoading(false);
+      endPayment();
     }
   };
 
@@ -220,6 +239,14 @@ export function SquareProductPayButton({
       >
         {isLoading ? "Processing..." : "Pay securely"}
       </Button>
+      <SquareAfterpayButton
+        amountCents={amountCents}
+        disabled={disabled || isLoading}
+        onStart={startPayment}
+        onEnd={endPayment}
+        onError={setError}
+        onTokenized={handleTokenized}
+      />
     </div>
   );
 }

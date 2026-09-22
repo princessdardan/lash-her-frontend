@@ -2,6 +2,8 @@
 
 import { useMemo, useRef, useState } from "react";
 
+import { SquareAfterpayButton } from "@/components/payments/square-afterpay-button";
+import type { SquareCheckoutPayment } from "@/lib/payments/square/afterpay-policy";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatCad } from "@/lib/commerce/money";
@@ -266,10 +268,12 @@ export function ServiceBookingPaymentForm({
     }
   };
 
-  const handleTokenized = async (token: {
-    sourceId: string;
-    verificationToken?: string;
-  }) => {
+  const handleTokenized = async (
+    token: SquareCheckoutPayment & {
+      cardSourceId?: string;
+      cardVerificationToken?: string;
+    },
+  ) => {
     const idempotencyKey = generateIdempotencyKey();
     const policyTextHash = await hashServiceNoShowPolicyText(
       SERVICE_NO_SHOW_POLICY_TEXT,
@@ -297,6 +301,13 @@ export function ServiceBookingPaymentForm({
       },
       sourceId: token.sourceId,
       verificationToken: token.verificationToken,
+      ...(token.method === "afterpay"
+        ? {
+            paymentMethod: "afterpay",
+            cardSourceId: token.cardSourceId,
+            cardVerificationToken: token.cardVerificationToken,
+          }
+        : {}),
       idempotencyKey,
     };
 
@@ -650,6 +661,11 @@ export function ServiceBookingPaymentForm({
       </div>
 
       <div className="space-y-3">
+        <p className="text-sm leading-snug text-lh-muted">
+          Paying with Afterpay still requires a separate card for the no-show
+          policy. That card is saved securely by Square and is not charged for
+          today’s Afterpay payment.
+        </p>
         <SquareChargeAndStoreForm
           ref={squareFormRef}
           buyer={buyerDetails}
@@ -712,6 +728,40 @@ export function ServiceBookingPaymentForm({
       >
         {isSubmitting ? "Processing..." : "Pay and confirm booking"}
       </button>
+      {paymentOption === "full" ? (
+        <SquareAfterpayButton
+          amountCents={selectedTotalCents}
+          configUrl="/api/booking/square/config"
+          disabled={isSquareFormDisabled}
+          onStart={() => {
+            if (isSquareFormDisabled || submissionInFlightRef.current)
+              return false;
+            submissionInFlightRef.current = true;
+            setIsSubmitting(true);
+            setErrorMessage("");
+            return true;
+          }}
+          onEnd={() => {
+            submissionInFlightRef.current = false;
+            setIsSubmitting(false);
+          }}
+          onError={setErrorMessage}
+          onTokenized={async (payment) => {
+            if (!squareFormRef.current)
+              throw new Error("Secure card form is not ready.");
+            const card = await squareFormRef.current.tokenizeForStorage();
+            await handleTokenized({
+              ...payment,
+              cardSourceId: card.sourceId,
+              cardVerificationToken: card.verificationToken,
+            });
+          }}
+        />
+      ) : (
+        <p className="text-sm text-lh-muted">
+          Choose full payment to pay in installments with Afterpay.
+        </p>
+      )}
     </div>
   );
 }

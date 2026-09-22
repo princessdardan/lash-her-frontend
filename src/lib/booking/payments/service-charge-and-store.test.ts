@@ -3638,3 +3638,166 @@ test("persists card display fields from CreateCard response when payment omits c
   assert.equal(saved?.expMonth, 12);
   assert.equal(saved?.expYear, 2030);
 });
+
+function createAfterpayRequest(): ChargeAndStoreBookingRequestBody {
+  return createRequest({
+    payment: { option: "full", expectedAmountCents: 15500 },
+    paymentMethod: "afterpay",
+    sourceId: "afterpay-token",
+    verificationToken: undefined,
+    cardSourceId: "cnon:policy-card",
+    cardVerificationToken: "verify-policy-card",
+  });
+}
+
+function enableAfterpayFake(fakes: ReturnType<typeof createFakes>) {
+  const authorize = fakes.squarePayments.createCardOnFilePayment;
+  fakes.squarePayments.createCardOnFilePayment = async (request) => {
+    const response = await authorize(request);
+    return {
+      payment: {
+        ...response.payment,
+        source_type: "BUY_NOW_PAY_LATER",
+        card_details: undefined,
+      },
+    };
+  };
+  const capture = fakes.squarePayments.completePayment;
+  fakes.squarePayments.completePayment = async (paymentId, versionToken) => {
+    const response = await capture(paymentId, versionToken);
+    return {
+      payment: {
+        ...response.payment,
+        amount_money: { amount: 17515, currency: "CAD" },
+        source_type: "BUY_NOW_PAY_LATER",
+        card_details: undefined,
+      },
+    };
+  };
+}
+
+test("Afterpay books the full service including HST while saving a separate policy card", async () => {
+  const fakes = createFakes();
+  enableAfterpayFake(fakes);
+  const result = await confirmChargeAndStoreBooking(createAfterpayRequest(), {
+    ...fakes,
+    now,
+    locationId: "LOC123",
+  });
+  assert.equal(result.ok, true);
+  assert.equal(fakes.state.squarePaymentCreates[0].source_id, "afterpay-token");
+  assert.equal(fakes.state.squarePaymentCreates[0].amount_money.amount, 17515);
+  assert.equal(
+    fakes.state.squarePaymentCreates[0].verification_token,
+    undefined,
+  );
+  assert.equal(fakes.state.squareCardCreates[0].source_id, "cnon:policy-card");
+  assert.equal(
+    fakes.state.squareCardCreates[0].verification_token,
+    "verify-policy-card",
+  );
+  assert.equal(fakes.state.savedPaymentMethods.length, 1);
+  assert.equal(fakes.state.noShowRecords.length, 1);
+  assert.equal(fakes.state.markHoldBookedCalls.length, 1);
+});
+
+test("Afterpay cannot book without a separate policy card or by splitting into a deposit", async () => {
+  for (const patch of [
+    { cardSourceId: undefined },
+    { cardSourceId: "afterpay-token" },
+    { payment: { option: "deposit" as const, expectedAmountCents: 5000 } },
+  ]) {
+    const fakes = createFakes();
+    const result = await confirmChargeAndStoreBooking(
+      { ...createAfterpayRequest(), ...patch },
+      { ...fakes, now, locationId: "LOC123" },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(fakes.state.squarePaymentCreates.length, 0);
+    assert.equal(fakes.state.markHoldBookedCalls.length, 0);
+  }
+});
+
+test("Afterpay rejects services whose full total exceeds the limit after HST", async () => {
+  const hold = createHold();
+  hold.offeringSnapshot.pricing = {
+    depositAmount: 50,
+    fullPrice: 1800,
+    currency: "CAD",
+  };
+  const fakes = createFakes([hold]);
+  const result = await confirmChargeAndStoreBooking(
+    {
+      ...createAfterpayRequest(),
+      payment: { option: "full", expectedAmountCents: 182500 },
+    },
+    { ...fakes, now, locationId: "LOC123" },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(fakes.state.squarePaymentCreates.length, 0);
+  assert.equal(fakes.state.markHoldBookedCalls.length, 0);
+});
+
+test("Afterpay authorization is cancelled if the separate policy card cannot be saved", async () => {
+  const fakes = createFakes();
+  enableAfterpayFake(fakes);
+  fakes.state.throwCreateCard = true;
+  const result = await confirmChargeAndStoreBooking(createAfterpayRequest(), {
+    ...fakes,
+    now,
+    locationId: "LOC123",
+  });
+  assert.equal(result.ok, false);
+  assert.equal(fakes.state.squarePaymentCancels.length, 1);
+  assert.equal(fakes.state.squarePaymentCompletes.length, 0);
+  assert.equal(fakes.state.markHoldBookedCalls.length, 0);
+});
+
+test("a booking cannot label an Afterpay source as card to bypass the BNPL contract", async () => {
+  const fakes = createFakes();
+  enableAfterpayFake(fakes);
+  const result = await confirmChargeAndStoreBooking(createRequest(), {
+    ...fakes,
+    now,
+    locationId: "LOC123",
+  });
+  assert.equal(result.ok, false);
+  assert.equal(fakes.state.squarePaymentCancels.length, 1);
+  assert.equal(fakes.state.squareCardCreates.length, 0);
+  assert.equal(fakes.state.markHoldBookedCalls.length, 0);
+});
+
+test("Afterpay preserves V2 authorization recovery and Square staff attribution", async () => {
+  const fakes = createFakes([
+    createHold({ bookingModelVersion: 2, squareTeamMemberId: "team-afterpay" }),
+  ]);
+  enableAfterpayFake(fakes);
+  const recorded: string[] = [];
+  fakes.repository.recordAuthorizedOperationalPayment = async (payment) => {
+    assert.equal(payment.amountCents, 17515);
+    recorded.push("authorized");
+    return { bookingModelVersion: 2 };
+  };
+  fakes.repository.recordCapturedOperationalPayment = async (payment) => {
+    assert.equal(payment.amountCents, 17515);
+    recorded.push("captured");
+  };
+  const result = await confirmChargeAndStoreBooking(createAfterpayRequest(), {
+    ...fakes,
+    now,
+    locationId: "LOC123",
+  });
+  assert.equal(
+    result.ok,
+    true,
+    JSON.stringify({ result, events: fakes.state.sagaOrderEvents }),
+  );
+  assert.equal(
+    fakes.state.squarePaymentCreates[0].team_member_id,
+    "team-afterpay",
+  );
+  assert.equal(fakes.state.squarePaymentCompletes.length, 1);
+  assert.equal(fakes.state.squareCardCreates[0].source_id, "cnon:policy-card");
+  assert.equal(fakes.state.markHoldBookedCalls.length, 1);
+  assert.deepEqual(recorded, ["authorized", "captured"]);
+});

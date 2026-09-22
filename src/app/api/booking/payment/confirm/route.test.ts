@@ -352,3 +352,61 @@ test("maps infrastructure_error to 503 and alerts", async () => {
   assert.equal(alertCalls.length, 1);
   assert.equal(alertCalls[0]?.category, "stuck_payment_state");
 });
+
+test("Afterpay booking parsing keeps payment and policy-card tokens separate", async () => {
+  let captured: ChargeAndStoreBookingRequestBody | undefined;
+  const { handler } = createHandler({
+    confirm: async (input) => {
+      captured = input;
+      return {
+        ok: true,
+        bookingStatus: "booked",
+        card: { last4: "1111" },
+        holdReference: "hold-1",
+        paymentStatus: "captured",
+      };
+    },
+  });
+  const response = await handler(
+    createValidRequest({
+      paymentMethod: "afterpay",
+      sourceId: "afterpay-token",
+      verificationToken: undefined,
+      cardSourceId: "cnon:policy-card",
+      cardVerificationToken: "verify-policy",
+    }),
+  );
+  assert.equal(response.status, 200);
+  assert.equal(captured?.paymentMethod, "afterpay");
+  assert.equal(captured?.sourceId, "afterpay-token");
+  assert.equal(captured?.cardSourceId, "cnon:policy-card");
+  assert.equal(captured?.verificationToken, undefined);
+  assert.equal(captured?.cardVerificationToken, "verify-policy");
+});
+
+test("Afterpay booking parsing rejects missing policy cards, partial payments and unknown providers", async () => {
+  let confirmations = 0;
+  const { handler } = createHandler({
+    confirm: async () => {
+      confirmations++;
+      throw new Error("Must not confirm");
+    },
+  });
+  for (const patch of [
+    { cardSourceId: undefined },
+    { paymentMethod: "klarna" },
+    { cardSourceId: "afterpay-token" },
+    { payment: { option: "deposit", expectedAmountCents: 5000 } },
+  ]) {
+    const response = await handler(
+      createValidRequest({
+        paymentMethod: "afterpay",
+        sourceId: "afterpay-token",
+        cardSourceId: "cnon:policy-card",
+        ...patch,
+      }),
+    );
+    assert.equal(response.status, 400);
+  }
+  assert.equal(confirmations, 0);
+});

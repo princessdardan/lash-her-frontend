@@ -1,3 +1,8 @@
+import {
+  parseSquareCheckoutPayment,
+  validateSquareAfterpayPayment,
+  type SquareCheckoutPayment,
+} from "@/lib/payments/square/afterpay-policy";
 import { NextResponse, type NextRequest } from "next/server";
 
 import type { ValidatedCart } from "@/lib/commerce/cart";
@@ -15,10 +20,7 @@ interface TrainingCheckoutErrorBody {
   error: string;
 }
 
-interface TrainingCheckoutPaymentInput {
-  sourceId: string;
-  verificationToken?: string;
-}
+type TrainingCheckoutPaymentInput = SquareCheckoutPayment;
 
 interface TrainingCheckoutPostHandlerDependencies {
   getTrainingProgramBySlug: (slug: string) => Promise<TTrainingProgram | null>;
@@ -44,6 +46,8 @@ interface TrainingCheckoutPostHandlerDependencies {
     currency: "CAD";
     sourceId: string;
     verificationToken?: string;
+    method?: SquareCheckoutPayment["method"];
+    expectedAmountCents?: number;
     origin?: string;
   }) => Promise<
     | { ok: true; squarePaymentId: string; transition: string }
@@ -129,9 +133,16 @@ export function createTrainingCheckoutPostHandler({
 
       const { quote } = validation;
 
-      // Square embedded-card path: reserve the order + enrollment, then charge
-      // synchronously. Manual Afterpay/BNPL stays on its own invoice endpoint.
+      // Both card and Afterpay use the same trusted quote and enrollment ledger.
       const payment = parseTrainingPayment(body);
+      if (!payment) return invalidTrainingCheckoutRequest();
+      const paymentError = validateSquareAfterpayPayment(
+        payment,
+        toCents(quote.total),
+        quote.currency,
+      );
+      if (paymentError)
+        return NextResponse.json({ error: paymentError }, { status: 400 });
       // Client-supplied per-attempt idempotency token. When present, the reserve
       // makes the order deterministic so a retry of the same attempt (lost HTTP
       // response → re-click) reuses the same order and Square dedupes the charge.
@@ -174,10 +185,7 @@ export function createTrainingCheckoutPostHandler({
           orderReference: reserved.orderId,
           amountCents: toCents(quote.total),
           currency: "CAD",
-          sourceId: payment.sourceId,
-          ...(payment.verificationToken
-            ? { verificationToken: payment.verificationToken }
-            : {}),
+          ...payment,
           // Server-derived origin (not the client Origin header) for the URL
           // embedded in the scheduling email, matching the product checkout path.
           origin: resolveTrainingRequestOrigin(req),
@@ -272,30 +280,7 @@ function resolveTrainingRequestOrigin(req: NextRequest): string {
 function parseTrainingPayment(
   body: unknown,
 ): TrainingCheckoutPaymentInput | null {
-  if (!isRecord(body) || !isRecord(body.payment)) {
-    return null;
-  }
-
-  const sourceId =
-    typeof body.payment.sourceId === "string"
-      ? body.payment.sourceId.trim()
-      : "";
-  if (!sourceId || sourceId.length > 512) {
-    return null;
-  }
-
-  const rawToken = body.payment.verificationToken;
-  const verificationToken =
-    typeof rawToken === "string" &&
-    rawToken.trim().length > 0 &&
-    rawToken.length <= 2048
-      ? rawToken.trim()
-      : undefined;
-
-  return {
-    sourceId,
-    ...(verificationToken ? { verificationToken } : {}),
-  };
+  return isRecord(body) ? parseSquareCheckoutPayment(body.payment) : null;
 }
 
 /**
