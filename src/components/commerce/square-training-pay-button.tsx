@@ -43,8 +43,8 @@ export function SquareTrainingPayButton({
   const formRef = useRef<SquareCommerceCardFormHandle>(null);
   // Stable per-attempt idempotency token: kept across retries of the same
   // attempt (so a re-click after a lost response reuses the same order and
-  // Square dedupes the charge), reset only after a fully successful payment so a
-  // genuine later purchase reserves a fresh order.
+  // the server recovers a recorded payment). A failed attempt may rotate only
+  // after the server confirms there are no funds left to capture.
   const reservationKeyRef = useRef<string | undefined>(undefined);
   const submissionInFlightRef = useRef(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -74,17 +74,16 @@ export function SquareTrainingPayButton({
       });
 
       if (!res.ok) {
-        if (res.status === 400 || res.status === 422) {
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 402 && data.retryWithNewReservation === true) {
           reservationKeyRef.current = undefined;
-          const data = await res.json().catch(() => ({}));
-          throw new Error(
-            typeof data.error === "string" ? data.error : GENERIC_ERROR,
-          );
         }
-        if (res.status === 402 || res.status === 409)
-          reservationKeyRef.current = undefined;
         throw new Error(
-          res.status === 402 ? PAYMENT_DECLINED_ERROR : GENERIC_ERROR,
+          typeof data.error === "string"
+            ? data.error
+            : res.status === 402
+              ? PAYMENT_DECLINED_ERROR
+              : GENERIC_ERROR,
         );
       }
 

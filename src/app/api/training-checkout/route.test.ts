@@ -48,6 +48,7 @@ const helperScript = String.raw`
     const enrollments = [];
     const reserved = [];
     const charges = [];
+    const failedOrders = [];
     const handler = createTrainingCheckoutPostHandler({
       getTrainingProgramBySlug: async (slug) => {
         fetchedSlugs.push(slug);
@@ -71,10 +72,10 @@ const helperScript = String.raw`
         if (chargeSquareTrainingOrder) return chargeSquareTrainingOrder(input);
         return { ok: true, squarePaymentId: "sq-train-1", transition: "applied" };
       },
-      markTrainingOrderVerificationFailed: async () => {},
+      markTrainingOrderVerificationFailed: async (orderId) => { failedOrders.push(orderId); },
     });
 
-    return { enrollments, fetchedSlugs, handler, reserved, charges };
+    return { enrollments, fetchedSlugs, handler, reserved, charges, failedOrders };
   }
 `;
 
@@ -141,15 +142,16 @@ test("training checkout route reserves, enrolls, and charges via Square", () => 
 
 test("training checkout route returns 402 when the Square charge is declined", () => {
   runRouteScenario(`
-    const { handler, charges } = runScenario({
-      chargeSquareTrainingOrder: async () => ({ ok: false, reason: "payment_declined" }),
+    const { handler, charges, failedOrders } = runScenario({
+      chargeSquareTrainingOrder: async () => ({ ok: false, reason: "payment_declined", retryWithNewReservation: true }),
     });
 
     const response = await handler(createRequest(validBody()));
     const body = await response.json();
 
     assert.equal(response.status, 402);
-    assert.deepEqual(body, { error: "Payment could not be completed" });
+    assert.equal(body.retryWithNewReservation, true);
+    assert.deepEqual(failedOrders, ["lh-train-1"]);
     assert.equal(charges.length, 1);
   `);
 });
@@ -192,10 +194,24 @@ test("training checkout route returns a generic failure when enrollment write fa
     const response = await handler(createRequest(validBody()));
     const body = await response.json();
 
-    assert.equal(response.status, 400);
+    assert.equal(response.status, 503);
     assert.deepEqual(body, { error: "Unable to start training checkout" });
     assert.equal(reserved.length, 1);
     assert.equal(enrollments.length, 1);
+  `);
+});
+
+test("training checkout preserves reservations when the payment outcome is uncertain", () => {
+  runRouteScenario(`
+    for (const retryWithNewReservation of [undefined, false]) {
+      const { handler, failedOrders } = runScenario({
+        chargeSquareTrainingOrder: async () => ({ ok: false, reason: "payment_failed", retryWithNewReservation }),
+      });
+      const response = await handler(createRequest(validBody()));
+      assert.equal(response.status, 503);
+      assert.equal((await response.json()).retryWithNewReservation, false);
+      assert.deepEqual(failedOrders, []);
+    }
   `);
 });
 

@@ -699,7 +699,7 @@ describe("booking service flow contract", () => {
     assert.match(chargeAndStoreSource, /intent: "CHARGE_AND_STORE"/);
     assert.match(chargeAndStoreSource, /countryCode: "CA"/);
     assert.match(chargeAndStoreSource, /billingContact/);
-    assert.doesNotMatch(chargeAndStoreSource, /intent: "STORE"/);
+    assert.match(chargeAndStoreSource, /tokenizeForStorage/);
   });
 
   it("renders the canonical no-show policy text and max charge amount before consent", () => {
@@ -835,7 +835,17 @@ describe("booking service flow contract", () => {
     assert.match(chargeAndStoreSource, /customerInitiated:\s*true/);
     assert.match(chargeAndStoreSource, /sellerKeyedIn:\s*false/);
     assert.match(chargeAndStoreSource, /currencyCode:\s*"CAD"/);
-    assert.doesNotMatch(chargeAndStoreSource, /intent:\s*"STORE"/);
+    const storageTokenization = chargeAndStoreSource.slice(
+      chargeAndStoreSource.indexOf("async tokenizeForStorage()"),
+      chargeAndStoreSource.indexOf("async tokenize()"),
+    );
+    const chargeTokenization = chargeAndStoreSource.slice(
+      chargeAndStoreSource.indexOf("async tokenize()"),
+    );
+    assert.match(storageTokenization, /intent:\s*"STORE"/);
+    assert.doesNotMatch(storageTokenization, /intent:\s*"CHARGE_AND_STORE"/);
+    assert.match(chargeTokenization, /intent:\s*"CHARGE_AND_STORE"/);
+    assert.doesNotMatch(chargeTokenization, /intent:\s*"STORE"/);
   });
 
   it("charge-and-store form passes verificationDetails directly to Square tokenize", async () => {

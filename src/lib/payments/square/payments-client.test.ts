@@ -667,3 +667,30 @@ test("one-time payments use the configured location checked by the Web Payments 
     assert.equal(body.location_id, "LOC-ELIGIBLE");
   `);
 });
+
+test("payment listing uses the configured location on every page", () => {
+  runPaymentsClientScenario(`
+    const urls = [];
+    globalThis.fetch = async (url) => {
+      urls.push(new URL(url));
+      return Response.json({ payments: [], cursor: "next-page" });
+    };
+    const client = createSquarePaymentsClient({ environment: "sandbox", accessToken: "test-token", locationId: "LOC+SECONDARY" });
+    const page = await client.listPayments({ beginTime: "2026-09-22T00:00:00Z", sortOrder: "ASC", limit: 100 });
+    await client.listPayments({ cursor: page.cursor });
+    assert.ok(urls.every(url => url.searchParams.get("location_id") === "LOC+SECONDARY"));
+    assert.equal(urls[0].searchParams.get("begin_time"), "2026-09-22T00:00:00Z");
+    assert.equal(urls[1].searchParams.get("cursor"), "next-page");
+  `);
+});
+
+test("payment listing retains the default location when none is configured", () => {
+  runPaymentsClientScenario(`
+    globalThis.fetch = async (url) => {
+      assert.equal(new URL(url).searchParams.has("location_id"), false);
+      return Response.json({ payments: [] });
+    };
+    const client = createSquarePaymentsClient({ environment: "sandbox", accessToken: "test-token" });
+    assert.deepEqual(await client.listPayments({}), { payments: [] });
+  `);
+});

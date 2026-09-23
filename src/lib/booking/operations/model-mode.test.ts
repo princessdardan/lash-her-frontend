@@ -37,6 +37,6 @@ test("booking model rollout is documented as a server-only environment value", (
     "utf8",
   );
 
-  assert.match(exampleEnv, /^SERVICE_BOOKING_MODEL_MODE=dual$/m);
+  assert.match(exampleEnv, /^SERVICE_BOOKING_MODEL_MODE=operational$/m);
   assert.doesNotMatch(exampleEnv, /NEXT_PUBLIC_SERVICE_BOOKING_MODEL_MODE/);
 });

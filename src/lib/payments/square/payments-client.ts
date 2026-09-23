@@ -162,6 +162,7 @@ export function createSquarePaymentsClient(
     },
     async listPayments(params) {
       const query = new URLSearchParams();
+      if (env.locationId) query.set("location_id", env.locationId);
       if (params.beginTime) query.set("begin_time", params.beginTime);
       if (params.endTime) query.set("end_time", params.endTime);
       if (params.sortOrder) query.set("sort_order", params.sortOrder);

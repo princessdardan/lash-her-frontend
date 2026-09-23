@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { createSquarePaymentsClient } from "@/lib/payments/square/payments-client";
 
 import type {
   SquareListPaymentsParams,
@@ -40,6 +41,29 @@ function reader(pages: SquareListPaymentsResponse[]) {
 const input = { orderReference: "order-ref-1", createdAt: new Date(0) };
 
 describe("verifySquareCommercePayment", () => {
+  it("finds held and captured payments at the configured non-default location", async (t) => {
+    let status = "APPROVED";
+    t.mock.method(globalThis, "fetch", async (url: string | URL | Request) => {
+      const location = new URL(String(url)).searchParams.get("location_id");
+      return Response.json({
+        payments:
+          location === "SECONDARY" ? [payment("order-ref-1", status)] : [],
+      });
+    });
+    const client = createSquarePaymentsClient({
+      environment: "sandbox",
+      accessToken: "test-token",
+      locationId: "SECONDARY",
+    });
+
+    assert.equal(
+      await verifySquareCommercePayment(client, input),
+      "authorized",
+    );
+    status = "COMPLETED";
+    assert.equal(await verifySquareCommercePayment(client, input), "captured");
+  });
+
   it("reports captured for a COMPLETED payment matching the reference", async () => {
     const client = reader([
       { payments: [payment("order-ref-1", "COMPLETED")] },

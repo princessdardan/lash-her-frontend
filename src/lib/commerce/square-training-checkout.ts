@@ -41,9 +41,13 @@ export type ChargeSquareTrainingOrderResult =
       squarePaymentId: string;
       transition: SquareTrainingCardTransition;
     }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; retryWithNewReservation: boolean };
 
 export interface ChargeSquareTrainingOrderDependencies {
+  /** Recover a locally committed payment before re-authorizing a retry. */
+  findRecordedPayment?: (
+    orderReference: string,
+  ) => Promise<{ squarePaymentId: string } | null>;
   authorizePayment: (
     request: SquareCreatePaymentRequest,
   ) => Promise<SquareCreatePaymentResponse>;
@@ -70,32 +74,78 @@ export async function chargeSquareTrainingOrder(
   input: ChargeSquareTrainingOrderInput,
   dependencies: ChargeSquareTrainingOrderDependencies,
 ): Promise<ChargeSquareTrainingOrderResult> {
+  const recoverRecordedPayment = async (): Promise<Extract<
+    ChargeSquareTrainingOrderResult,
+    { ok: true }
+  > | null> => {
+    const recorded = await dependencies.findRecordedPayment?.(
+      input.orderReference,
+    );
+    if (!recorded) return null;
+    try {
+      await dependencies.sendNotifications(input.orderReference);
+    } catch (error) {
+      dependencies.logError("[square-training] retry notification failed", {
+        orderReference: input.orderReference,
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+    return { ok: true, ...recorded, transition: "already_applied" };
+  };
+
+  const recorded = await recoverRecordedPayment();
+  if (recorded) return recorded;
+
+  // HTTP failures and idempotency conflicts do not prove that a previous
+  // request failed. Rotate the reservation only after a terminal provider
+  // response or a successful cancellation (including cancellation by key).
+  let retryWithNewReservation = false;
   const coreDependencies: SquarePaymentChargeDependencies<SquareTrainingCardTransition> =
     {
-      authorizePayment: dependencies.authorizePayment,
+      authorizePayment: async (request) => {
+        const response = await dependencies.authorizePayment(request);
+        if (["FAILED", "CANCELED"].includes(response.payment.status)) {
+          retryWithNewReservation = true;
+        }
+        return response;
+      },
       capturePayment: dependencies.capturePayment,
-      voidPayment: dependencies.voidPayment,
-      voidPaymentByIdempotencyKey: dependencies.voidPaymentByIdempotencyKey,
+      voidPayment: async (paymentId) => {
+        await dependencies.voidPayment(paymentId);
+        retryWithNewReservation = true;
+      },
+      voidPaymentByIdempotencyKey: async (idempotencyKey) => {
+        await dependencies.voidPaymentByIdempotencyKey(idempotencyKey);
+        retryWithNewReservation = true;
+      },
       finalize: dependencies.finalize,
       onCaptured: dependencies.onCaptured,
       onSuccess: dependencies.sendNotifications,
       logError: dependencies.logError,
     };
 
-  return authorizeCaptureSquarePayment<SquareTrainingCardTransition>(
-    {
-      orderReference: input.orderReference,
-      amountCents: input.amountCents,
-      currency: input.currency,
-      sourceId: input.sourceId,
-      method: input.method,
-      expectedAmountCents: input.expectedAmountCents,
-      ...(input.verificationToken
-        ? { verificationToken: input.verificationToken }
-        : {}),
-      idempotencyKey: squareTrainingIdempotencyKey(input.orderReference),
-    },
-    coreDependencies,
+  const result =
+    await authorizeCaptureSquarePayment<SquareTrainingCardTransition>(
+      {
+        orderReference: input.orderReference,
+        amountCents: input.amountCents,
+        currency: input.currency,
+        sourceId: input.sourceId,
+        method: input.method,
+        expectedAmountCents: input.expectedAmountCents,
+        ...(input.verificationToken
+          ? { verificationToken: input.verificationToken }
+          : {}),
+        idempotencyKey: squareTrainingIdempotencyKey(input.orderReference),
+      },
+      coreDependencies,
+    );
+  if (result.ok) return result;
+
+  // Another request or webhook may have committed the payment while this
+  // request was awaiting Square. Its paid order takes precedence over retry.
+  return (
+    (await recoverRecordedPayment()) ?? { ...result, retryWithNewReservation }
   );
 }
 
@@ -113,7 +163,7 @@ export function createLiveSquareTrainingCharger(): (
       { createSquareCommercePayment, createSquarePaymentsClient },
       { finalizeSquareTrainingCardPayment },
       { notifyPaidTrainingOrder },
-      { markSquareCommerceOrderCaptured },
+      { findCheckoutOrderByOrderId, markSquareCommerceOrderCaptured },
       { log },
     ] = await Promise.all([
       import("@/lib/env/private-checkout"),
@@ -126,16 +176,35 @@ export function createLiveSquareTrainingCharger(): (
 
     const env = getSquareCommerceEnv();
     if (!env) {
-      return { ok: false, reason: "square_commerce_disabled" };
+      return {
+        ok: false,
+        reason: "square_commerce_disabled",
+        retryWithNewReservation: false,
+      };
     }
 
     const logError = (message: string, meta: Record<string, unknown>) =>
       log("error", message, meta);
     const sendNotifications = (orderReference: string) =>
       notifyPaidTrainingOrder(orderReference, input.origin);
+    const findRecordedPayment = async (orderReference: string) => {
+      const order = await findCheckoutOrderByOrderId(orderReference);
+      if (!order || order.status !== "paid") return null;
+      if (
+        order.purpose !== "training" ||
+        order.paymentProvider !== "square" ||
+        order.amountCents !== input.amountCents ||
+        order.currency !== input.currency ||
+        !order.providerPaymentId
+      ) {
+        throw new Error("Recorded training payment does not match checkout");
+      }
+      return { squarePaymentId: order.providerPaymentId };
+    };
 
     if (isPaymentMockMode()) {
       return chargeSquareTrainingOrder(input, {
+        findRecordedPayment,
         authorizePayment: async (request) => ({
           payment: {
             id: `mock-square-payment-${request.idempotency_key}`,
@@ -159,12 +228,16 @@ export function createLiveSquareTrainingCharger(): (
     const client = createSquarePaymentsClient(env);
 
     return chargeSquareTrainingOrder(input, {
+      findRecordedPayment,
       authorizePayment: (request) => createSquareCommercePayment(env, request),
       capturePayment: async (paymentId, versionToken) => {
         await client.completePayment(paymentId, versionToken);
       },
       voidPayment: async (paymentId) => {
-        await client.cancelPayment(paymentId);
+        const response = await client.cancelPayment(paymentId);
+        if (response.payment.status !== "CANCELED") {
+          throw new Error("Square payment cancellation is unconfirmed");
+        }
       },
       voidPaymentByIdempotencyKey: (idempotencyKey) =>
         client.cancelPaymentByIdempotencyKey(idempotencyKey),

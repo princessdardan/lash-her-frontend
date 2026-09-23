@@ -1,6 +1,9 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import { test, expect, type Page } from "@playwright/test";
+import { NextRequest } from "next/server";
+import { createTrainingCheckoutPostHandler } from "@/app/api/training-checkout/handler";
+import { chargeSquareTrainingOrder } from "@/lib/commerce/square-training-checkout";
 
 // Reuse tsx's installed transformer to run production React components in a
 // browser without introducing a test-only public Next.js route.
@@ -66,7 +69,7 @@ window.Square = { payments() { return {
         await new Promise(resolve => setTimeout(resolve, window.fixture.delay ?? 30));
         if (window.fixture.cancel) return { status: 'Cancel' };
         if (window.fixture.decline) return { status: 'ERROR', errors: [{ message: 'Afterpay declined' }] };
-        return { status: 'OK', token: 'afterpay-token' };
+        return { status: 'OK', token: window.fixture.uniqueTokens ? 'afterpay-token-' + window.fixture.tokenizations : 'afterpay-token' };
       }
     };
   }
@@ -194,6 +197,155 @@ test("training requires customer details and terms for Afterpay", async ({
     expectedAmountCents: 17515,
   });
 });
+
+test("training recovers a lost paid response with one order and one capture", async ({
+  page,
+}) => {
+  await openCheckout(page, "kind=training");
+  await page.evaluate(() => {
+    (
+      window as unknown as { fixture: { uniqueTokens: boolean } }
+    ).fixture.uniqueTokens = true;
+  });
+  const orders = new Map<string, { squarePaymentId: string } | null>();
+  const authorized = new Map<string, string>();
+  const requests: Array<{
+    reservationKey: string;
+    payment: { sourceId: string };
+  }> = [];
+  let captures = 0;
+  const handler = createTrainingCheckoutPostHandler({
+    getTrainingProgramBySlug: async () => ({
+      _id: "program-1",
+      slug: "classic-lashes",
+      title: "Classic lashes",
+      description: "",
+      blocks: [],
+      checkoutEnabled: true,
+      price: 155,
+      currency: "CAD",
+      isAvailable: true,
+    }),
+    getPromotionCode: async () => null,
+    createTrainingEnrollment: async () => ({ _id: "enrollment" }),
+    squareCommerceEnabled: true,
+    reserveSquareTrainingOrder: async ({ reservationKey }) => {
+      expect(reservationKey).toBeTruthy();
+      const orderId = reservationKey!;
+      if (!orders.has(orderId)) orders.set(orderId, null);
+      return { orderId, databaseId: orderId };
+    },
+    chargeSquareTrainingOrder: (input) =>
+      chargeSquareTrainingOrder(input, {
+        findRecordedPayment: async (orderId) => orders.get(orderId) ?? null,
+        authorizePayment: async (request) => {
+          const previousSource = authorized.get(request.idempotency_key);
+          if (previousSource && previousSource !== request.source_id) {
+            throw new Error("IDEMPOTENCY_KEY_REUSED");
+          }
+          authorized.set(request.idempotency_key, request.source_id);
+          return {
+            payment: {
+              id: `payment-${request.idempotency_key}`,
+              status: "APPROVED",
+              source_type: "BUY_NOW_PAY_LATER",
+              amount_money: request.amount_money,
+            },
+          };
+        },
+        finalize: async ({ orderReference, squarePaymentId }) => {
+          orders.set(orderReference, { squarePaymentId });
+          return { transition: "applied" };
+        },
+        capturePayment: async () => {
+          captures++;
+        },
+        voidPayment: async () => {
+          throw new Error("Cannot void a captured payment");
+        },
+        voidPaymentByIdempotencyKey: async () => {
+          throw new Error("Cannot void a captured payment");
+        },
+        sendNotifications: async () => {},
+        logError: () => {},
+      }),
+  });
+  await page.route("**/api/training-checkout", async (route) => {
+    requests.push(route.request().postDataJSON());
+    const response = await handler(
+      new NextRequest(route.request().url(), {
+        method: "POST",
+        body: route.request().postData(),
+      }),
+    );
+    expect(response.status).toBe(200);
+    if (requests.length === 1) return route.abort("connectionreset");
+    return route.fulfill({
+      status: response.status,
+      json: await response.json(),
+    });
+  });
+  await page.getByLabel("Full Name", { exact: true }).fill("Test Buyer");
+  await page
+    .getByLabel("Email Address", { exact: true })
+    .fill("buyer@example.test");
+  await page.getByLabel("I acknowledge the terms").check();
+  const button = page.getByRole("button", {
+    name: "Pay with Afterpay",
+    exact: true,
+  });
+  await button.click();
+  await expect(page.getByRole("alert")).toBeVisible();
+  await button.click();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-destination",
+    /training-programs\/classic-lashes\/confirmation/,
+  );
+  expect(requests).toHaveLength(2);
+  expect(requests[0].reservationKey).toBe(requests[1].reservationKey);
+  expect(requests[0].payment.sourceId).not.toBe(requests[1].payment.sourceId);
+  expect(orders.size).toBe(1);
+  expect(authorized.size).toBe(1);
+  expect(captures).toBe(1);
+});
+
+for (const retryWithNewReservation of [false, true]) {
+  test(`training ${retryWithNewReservation ? "rotates" : "preserves"} its reservation after ${retryWithNewReservation ? "confirmed cancellation" : "an uncertain payment"}`, async ({
+    page,
+  }) => {
+    await openCheckout(page, "kind=training");
+    const keys: string[] = [];
+    await page.route("**/api/training-checkout", (route) => {
+      keys.push(route.request().postDataJSON().reservationKey);
+      return route.fulfill(
+        keys.length === 1
+          ? {
+              status: retryWithNewReservation ? 402 : 503,
+              json: { error: "Payment failed", retryWithNewReservation },
+            }
+          : { json: { orderId: "order-1", status: "paid" } },
+      );
+    });
+    await page.getByLabel("Full Name", { exact: true }).fill("Test Buyer");
+    await page
+      .getByLabel("Email Address", { exact: true })
+      .fill("buyer@example.test");
+    await page.getByLabel("I acknowledge the terms").check();
+    const button = page.getByRole("button", {
+      name: "Pay with Afterpay",
+      exact: true,
+    });
+    await button.click();
+    await expect(page.getByRole("alert")).toBeVisible();
+    await button.click();
+    await expect(page.locator("body")).toHaveAttribute(
+      "data-destination",
+      /confirmation/,
+    );
+    expect(keys).toHaveLength(2);
+    expect(keys[0] === keys[1]).toBe(!retryWithNewReservation);
+  });
+}
 
 test("service Afterpay saves a separate card using STORE and confirms only after submission", async ({
   page,

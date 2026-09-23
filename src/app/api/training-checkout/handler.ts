@@ -18,6 +18,7 @@ type TrainingCheckoutResponseBody = { orderId: string; status: "paid" };
 
 interface TrainingCheckoutErrorBody {
   error: string;
+  retryWithNewReservation?: boolean;
 }
 
 type TrainingCheckoutPaymentInput = SquareCheckoutPayment;
@@ -51,7 +52,7 @@ interface TrainingCheckoutPostHandlerDependencies {
     origin?: string;
   }) => Promise<
     | { ok: true; squarePaymentId: string; transition: string }
-    | { ok: false; reason: string }
+    | { ok: false; reason: string; retryWithNewReservation?: boolean }
   >;
   markTrainingOrderVerificationFailed?: (orderId: string) => Promise<void>;
 }
@@ -192,14 +193,21 @@ export function createTrainingCheckoutPostHandler({
         });
 
         if (!charge.ok) {
-          if (markTrainingOrderVerificationFailed) {
+          const retryWithNewReservation =
+            charge.retryWithNewReservation === true;
+          if (retryWithNewReservation && markTrainingOrderVerificationFailed) {
             await markTrainingOrderVerificationFailed(reserved.orderId).catch(
               () => undefined,
             );
           }
           return NextResponse.json<TrainingCheckoutErrorBody>(
-            { error: "Payment could not be completed" },
-            { status: 402 },
+            {
+              error: retryWithNewReservation
+                ? "Payment could not be completed. Please try again or use another payment method."
+                : "Payment status could not be confirmed. Please retry to check your existing payment.",
+              retryWithNewReservation,
+            },
+            { status: retryWithNewReservation ? 402 : 503 },
           );
         }
 
@@ -227,7 +235,7 @@ export function createTrainingCheckoutPostHandler({
 
       return NextResponse.json<TrainingCheckoutErrorBody>(
         { error: "Unable to start training checkout" },
-        { status: 400 },
+        { status: 503 },
       );
     }
   };
