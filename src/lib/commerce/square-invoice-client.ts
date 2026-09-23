@@ -1,8 +1,6 @@
 import "server-only";
 
-import {
-  getTrainingAfterpaySquareInvoiceEnv,
-} from "@/lib/env/private-checkout";
+import { getTrainingAfterpaySquareInvoiceEnv } from "@/lib/env/private-checkout";
 
 const SQUARE_VERSION = "2026-05-20";
 const SQUARE_BASE_URLS = {
@@ -58,7 +56,12 @@ export interface SquareInvoiceOrderDetails {
 }
 
 export interface SquareInvoiceClient {
-  createCustomer(email: string, givenName: string, familyName: string, idempotencyKey: string): Promise<string>;
+  createCustomer(
+    email: string,
+    givenName: string,
+    familyName: string,
+    idempotencyKey: string,
+  ): Promise<string>;
   createOrder(
     locationId: string,
     lineItems: SquareInvoiceLineItem[],
@@ -120,6 +123,7 @@ interface SquareCreateInvoiceRequest {
     };
     delivery_method: "SHARE_MANUALLY";
     accepted_payment_methods: {
+      card: true;
       buy_now_pay_later: true;
     };
     payment_requests: [
@@ -175,12 +179,17 @@ export class SquareInvoiceVersionConflictError extends Error {
   }
 }
 
-export function createSquareInvoiceClient(env: SquareInvoiceClientEnv): SquareInvoiceClient {
+export function createSquareInvoiceClient(
+  env: SquareInvoiceClientEnv,
+): SquareInvoiceClient {
   return {
     async createCustomer(email, givenName, familyName, idempotencyKey) {
       assertInvoiceClientEnabled(env);
 
-      const response = await postSquare<SquareCreateCustomerRequest, SquareCreateCustomerResponse>(
+      const response = await postSquare<
+        SquareCreateCustomerRequest,
+        SquareCreateCustomerResponse
+      >(
         env,
         "/v2/customers",
         {
@@ -199,7 +208,10 @@ export function createSquareInvoiceClient(env: SquareInvoiceClientEnv): SquareIn
       assertInvoiceClientEnabled(env);
       assertCadLineItems(lineItems);
 
-      const response = await postSquare<SquareCreateOrderRequest, SquareCreateOrderResponse>(
+      const response = await postSquare<
+        SquareCreateOrderRequest,
+        SquareCreateOrderResponse
+      >(
         env,
         "/v2/orders",
         {
@@ -220,7 +232,10 @@ export function createSquareInvoiceClient(env: SquareInvoiceClientEnv): SquareIn
     async createInvoice(orderId, customerId, paymentRequest) {
       assertInvoiceClientEnabled(env);
 
-      const response = await postSquare<SquareCreateInvoiceRequest, SquareDraftInvoiceResponse>(
+      const response = await postSquare<
+        SquareCreateInvoiceRequest,
+        SquareDraftInvoiceResponse
+      >(
         env,
         "/v2/invoices",
         {
@@ -232,12 +247,14 @@ export function createSquareInvoiceClient(env: SquareInvoiceClientEnv): SquareIn
             },
             delivery_method: "SHARE_MANUALLY",
             accepted_payment_methods: {
+              card: true,
               buy_now_pay_later: true,
             },
             payment_requests: [
               {
                 request_type: "BALANCE",
-                due_date: paymentRequest.dueDate ?? getSquareInvoiceDueDate(env),
+                due_date:
+                  paymentRequest.dueDate ?? getSquareInvoiceDueDate(env),
               },
             ],
           },
@@ -252,7 +269,10 @@ export function createSquareInvoiceClient(env: SquareInvoiceClientEnv): SquareIn
     async publishInvoice(invoiceId, version, idempotencyKey) {
       assertInvoiceClientEnabled(env);
 
-      const response = await postSquare<SquarePublishInvoiceRequest, SquarePublishedInvoiceResponse>(
+      const response = await postSquare<
+        SquarePublishInvoiceRequest,
+        SquarePublishedInvoiceResponse
+      >(
         env,
         `/v2/invoices/${encodeURIComponent(invoiceId)}/publish`,
         {
@@ -388,7 +408,11 @@ async function readSquareJson(response: Response): Promise<unknown> {
   }
 }
 
-function createSquareError(status: number, body: unknown, operation: SquareOperation): Error {
+function createSquareError(
+  status: number,
+  body: unknown,
+  operation: SquareOperation,
+): Error {
   if (operation === "createInvoice" && isBnplUnavailable(body)) {
     return new SquareInvoiceBNPLUnavailableError();
   }
@@ -407,10 +431,12 @@ function createSquareError(status: number, body: unknown, operation: SquareOpera
 function isBnplUnavailable(body: unknown): boolean {
   const errorText = getSquareErrorText(body);
 
-  return errorText.includes("buy_now_pay_later") ||
+  return (
+    errorText.includes("buy_now_pay_later") ||
     errorText.includes("buy now, pay later") ||
     errorText.includes("bnpl") ||
-    errorText.includes("afterpay");
+    errorText.includes("afterpay")
+  );
 }
 
 function isVersionConflict(status: number, body: unknown): boolean {
@@ -420,9 +446,11 @@ function isVersionConflict(status: number, body: unknown): boolean {
 
   const errorText = getSquareErrorText(body);
 
-  return errorText.includes("version_mismatch") ||
+  return (
+    errorText.includes("version_mismatch") ||
     errorText.includes("version conflict") ||
-    errorText.includes("version mismatch");
+    errorText.includes("version mismatch")
+  );
 }
 
 function getSquareErrorText(body: unknown): string {
@@ -462,46 +490,70 @@ function getSquareInvoiceDueDate(env: SquareInvoiceClientEnv): string {
   return (env.now?.() ?? new Date()).toISOString().slice(0, 10);
 }
 
-function isSquareCreateCustomerResponse(value: unknown): value is SquareCreateCustomerResponse {
-  return isRecord(value) &&
+function isSquareCreateCustomerResponse(
+  value: unknown,
+): value is SquareCreateCustomerResponse {
+  return (
+    isRecord(value) &&
     isRecord(value.customer) &&
-    typeof value.customer.id === "string";
+    typeof value.customer.id === "string"
+  );
 }
 
-function isSquareCreateOrderResponse(value: unknown): value is SquareCreateOrderResponse {
-  return isRecord(value) &&
+function isSquareCreateOrderResponse(
+  value: unknown,
+): value is SquareCreateOrderResponse {
+  return (
+    isRecord(value) &&
     isRecord(value.order) &&
-    typeof value.order.id === "string";
+    typeof value.order.id === "string"
+  );
 }
 
-function isSquareGetOrderResponse(value: unknown): value is SquareGetOrderResponse {
-  return isRecord(value) &&
+function isSquareGetOrderResponse(
+  value: unknown,
+): value is SquareGetOrderResponse {
+  return (
+    isRecord(value) &&
     isRecord(value.order) &&
-    typeof value.order.id === "string";
+    typeof value.order.id === "string"
+  );
 }
 
-function isSquareDraftInvoiceResponse(value: unknown): value is SquareDraftInvoiceResponse {
+function isSquareDraftInvoiceResponse(
+  value: unknown,
+): value is SquareDraftInvoiceResponse {
   return isRecord(value) && isDraftInvoice(value.invoice);
 }
 
-function isSquarePublishedInvoiceResponse(value: unknown): value is SquarePublishedInvoiceResponse {
-  return isRecord(value) &&
+function isSquarePublishedInvoiceResponse(
+  value: unknown,
+): value is SquarePublishedInvoiceResponse {
+  return (
+    isRecord(value) &&
     isRecord(value.invoice) &&
     typeof value.invoice.id === "string" &&
     typeof value.invoice.version === "number" &&
-    typeof value.invoice.public_url === "string";
+    typeof value.invoice.public_url === "string"
+  );
 }
 
-function isSquareInvoiceResponse(value: unknown): value is SquareInvoiceResponse {
-  return isRecord(value) &&
+function isSquareInvoiceResponse(
+  value: unknown,
+): value is SquareInvoiceResponse {
+  return (
+    isRecord(value) &&
     isRecord(value.invoice) &&
-    typeof value.invoice.id === "string";
+    typeof value.invoice.id === "string"
+  );
 }
 
 function isDraftInvoice(value: unknown): value is SquareDraftInvoice {
-  return isRecord(value) &&
+  return (
+    isRecord(value) &&
     typeof value.id === "string" &&
-    typeof value.version === "number";
+    typeof value.version === "number"
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

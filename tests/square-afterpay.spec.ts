@@ -85,7 +85,9 @@ async function openCheckout(page: Page, query = "kind=product") {
       return route.fulfill({ contentType: "text/javascript", body: bundle });
     if (url.pathname === "/square.js")
       return route.fulfill({ contentType: "text/javascript", body: sdk });
-    if (url.pathname.endsWith("/square/config"))
+    if (url.pathname.endsWith("/square/config")) {
+      if (query.includes("cardUnavailable=1"))
+        return route.fulfill({ status: 404, json: {} });
       return route.fulfill({
         json: {
           applicationId: "test-app",
@@ -95,6 +97,13 @@ async function openCheckout(page: Page, query = "kind=product") {
           scriptUrl: "/square.js",
         },
       });
+    }
+    if (url.pathname === "/invoice-test") {
+      return route.fulfill({
+        contentType: "text/html",
+        body: "<h1>Square invoice payment</h1>",
+      });
+    }
     if (url.pathname.startsWith("/api/")) {
       const body = route.request().postDataJSON();
       await page.evaluate((request) => {
@@ -103,14 +112,16 @@ async function openCheckout(page: Page, query = "kind=product") {
         ).fixture.requests.push(request);
       }, body);
       return route.fulfill({
-        json: url.pathname.includes("/booking/")
-          ? {
-              bookingStatus: "booked",
-              paymentStatus: "captured",
-              holdReference: "hold-1",
-              card: { last4: "1111" },
-            }
-          : { orderId: "order-1", status: "paid" },
+        json: url.pathname.endsWith("/square-invoice")
+          ? { orderId: "order-1", publicUrl: "http://localhost/invoice-test" }
+          : url.pathname.includes("/booking/")
+            ? {
+                bookingStatus: "booked",
+                paymentStatus: "captured",
+                holdReference: "hold-1",
+                card: { last4: "1111" },
+              }
+            : { orderId: "order-1", status: "paid" },
       });
     }
     return route.fulfill({
@@ -119,7 +130,13 @@ async function openCheckout(page: Page, query = "kind=product") {
     });
   });
   await page.goto(`http://localhost/__afterpay-fixture?${query}`);
-  await expect(page.getByText("Secure Square card fields")).toBeVisible();
+  if (query.includes("cardUnavailable=1")) {
+    await expect(
+      page.getByText(/Card checkout is temporarily unavailable/),
+    ).toBeVisible();
+  } else {
+    await expect(page.getByText("Secure Square card fields")).toBeVisible();
+  }
   return errors;
 }
 
@@ -196,6 +213,182 @@ test("training requires customer details and terms for Afterpay", async ({
     method: "afterpay",
     expectedAmountCents: 17515,
   });
+});
+
+async function fillTrainingDetails(page: Page) {
+  await page.getByLabel("Full Name", { exact: true }).fill("Test Buyer");
+  await page
+    .getByLabel("Email Address", { exact: true })
+    .fill("buyer@example.test");
+  await page.getByLabel("I acknowledge the terms").check();
+}
+
+test("training split charges only the chosen Afterpay portion and the remaining card balance", async ({
+  page,
+}) => {
+  const errors = await openCheckout(page, "kind=training&amount=395500");
+  await expect(
+    page.getByRole("button", { name: "Pay with Afterpay", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByText(/C\$4,000/)).toHaveCount(0);
+  await page.getByLabel("Use Afterpay + card").check();
+  await expect(page.getByLabel("Afterpay amount (CAD)")).toHaveValue("2000.00");
+  await expect(page.getByText("C$1,955.00", { exact: true })).toBeVisible();
+  await fillTrainingDetails(page);
+  const button = page.getByRole("button", {
+    name: "Pay with Afterpay",
+    exact: true,
+  });
+  await button.evaluate((element) => {
+    (element as HTMLButtonElement).click();
+    (element as HTMLButtonElement).click();
+  });
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-destination",
+    /confirmation/,
+  );
+  const state = await fixture(page);
+  expect(state.requests).toHaveLength(1);
+  expect(state.requests[0]).toMatchObject({
+    payment: {
+      method: "afterpay_card",
+      expectedAmountCents: 395500,
+      afterpayAmountCents: 200000,
+      afterpay: {
+        method: "afterpay",
+        sourceId: "afterpay-token",
+        expectedAmountCents: 200000,
+      },
+      card: { sourceId: "cnon:policy-card" },
+    },
+  });
+  expect(state.intents).toEqual([
+    expect.objectContaining({ amount: "1955.00", intent: "CHARGE" }),
+  ]);
+  expect(state.methodAmounts).toContain("2000.00");
+  expect(errors).toEqual([]);
+});
+
+test("training split respects lower portions and rejects invalid amounts before tokenization", async ({
+  page,
+}) => {
+  await openCheckout(page, "kind=training&amount=282500");
+  await fillTrainingDetails(page);
+  await page.getByLabel("Use Afterpay + card").check();
+  const input = page.getByLabel("Afterpay amount (CAD)");
+  await input.fill("2000.01");
+  await expect(
+    page.getByRole("button", { name: "Pay with Afterpay", exact: true }),
+  ).toHaveCount(0);
+  await input.fill("1500");
+  await expect(page.getByText("C$1,325.00", { exact: true })).toBeVisible();
+  await page
+    .getByRole("button", { name: "Pay with Afterpay", exact: true })
+    .click();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-destination",
+    /confirmation/,
+  );
+  expect((await fixture(page)).requests[0]).toMatchObject({
+    payment: { afterpayAmountCents: 150000 },
+  });
+});
+
+test("cancelled Afterpay or failed card tokenization submits no split charge", async ({
+  page,
+}) => {
+  await openCheckout(page, "kind=training&amount=282500");
+  await fillTrainingDetails(page);
+  await page.getByLabel("Use Afterpay + card").check();
+  await page.evaluate(() => {
+    (window as unknown as { fixture: { cancel: boolean } }).fixture.cancel =
+      true;
+  });
+  const button = page.getByRole("button", {
+    name: "Pay with Afterpay",
+    exact: true,
+  });
+  await button.click();
+  await expect(button).toBeEnabled();
+  expect((await fixture(page)).requests).toHaveLength(0);
+  await page.evaluate(() => {
+    Object.assign((window as unknown as { fixture: object }).fixture, {
+      cancel: false,
+      cardDecline: true,
+    });
+  });
+  await button.click();
+  await expect(page.getByRole("alert")).toContainText(
+    "card could not be verified",
+  );
+  expect((await fixture(page)).requests).toHaveLength(0);
+});
+
+test("split request with a lost response survives reload and checks the same attempt without tokenizing again", async ({
+  page,
+}) => {
+  await openCheckout(page, "kind=training&amount=282500");
+  await fillTrainingDetails(page);
+  await page.getByLabel("Use Afterpay + card").check();
+  let key = "";
+  await page.route("**/api/training-checkout", (route) => {
+    key = route.request().postDataJSON().reservationKey;
+    return route.abort("connectionreset");
+  });
+  await page
+    .getByRole("button", { name: "Pay with Afterpay", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Check payment status" }),
+  ).toBeEnabled();
+  await page.reload();
+  const status = page.getByRole("button", { name: "Check payment status" });
+  await expect(status).toBeEnabled();
+  await page.route("**/api/training-checkout/split-status", (route) => {
+    expect(route.request().postDataJSON()).toEqual({
+      reservationKey: key,
+      customerEmail: "buyer@example.test",
+    });
+    return route.fulfill({ json: { status: "paid", orderId: "split-paid" } });
+  });
+  await status.click();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-destination",
+    /order=split-paid/,
+  );
+});
+
+test("cancelled split attempts allow a new method only after the server confirms cancellation", async ({
+  page,
+}) => {
+  await openCheckout(page, "kind=training&amount=282500");
+  await fillTrainingDetails(page);
+  await page.getByLabel("Use Afterpay + card").check();
+  await page.route("**/api/training-checkout", (route) =>
+    route.fulfill({
+      status: 503,
+      json: { error: "Still confirming", retryWithNewReservation: false },
+    }),
+  );
+  await page
+    .getByRole("button", { name: "Pay with Afterpay", exact: true })
+    .click();
+  await expect(page.getByLabel("Use Afterpay + card")).toHaveCount(0);
+  await page.route("**/api/training-checkout/split-status", (route) =>
+    route.fulfill({
+      status: 402,
+      json: {
+        error: "Neither payment completed",
+        retryWithNewReservation: true,
+      },
+    }),
+  );
+  await page.getByRole("button", { name: "Check payment status" }).click();
+  await expect(page.getByLabel("Use Afterpay + card")).toBeVisible();
+  await page.getByLabel("Use Afterpay + card").uncheck();
+  await expect(
+    page.getByRole("button", { name: "Pay securely", exact: true }),
+  ).toBeEnabled();
 });
 
 test("training recovers a lost paid response with one order and one capture", async ({

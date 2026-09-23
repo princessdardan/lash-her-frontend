@@ -101,6 +101,7 @@ test("Square invoice client creates customer, OPEN order, draft invoice, publish
     assert.equal(invoiceRequest.invoice.primary_recipient.customer_id, "customer_123");
     assert.equal(invoiceRequest.invoice.delivery_method, "SHARE_MANUALLY");
     assert.deepEqual(invoiceRequest.invoice.accepted_payment_methods, {
+      card: true,
       buy_now_pay_later: true,
     });
     assert.equal(invoiceRequest.invoice.payment_requests.length, 1);
@@ -139,6 +140,7 @@ test("Square invoice client defaults omitted due dates to the current UTC date",
 
     const invoiceRequest = JSON.parse(requests[0].init.body);
     assert.deepEqual(invoiceRequest.invoice.accepted_payment_methods, {
+      card: true,
       buy_now_pay_later: true,
     });
     assert.equal(invoiceRequest.invoice.payment_requests.length, 1);

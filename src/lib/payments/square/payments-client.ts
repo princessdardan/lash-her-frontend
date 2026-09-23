@@ -14,6 +14,7 @@ export interface SquareMoney {
 export interface SquareCreatePaymentRequest {
   idempotency_key: string;
   source_id: string;
+  order_id?: string;
   location_id?: string;
   /**
    * Required for card-on-file booking charges. Optional for one-time commerce
@@ -577,4 +578,73 @@ function isSquarePayment(value: unknown): value is SquarePayment {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export interface SquareSplitOrder {
+  tenders?: Array<{ payment_id?: string }>;
+  id: string;
+  reference_id?: string;
+  state: string;
+  total_money: SquareMoney;
+}
+
+export function createSquareSplitOrdersClient(env: SquarePaymentsClientEnv) {
+  const validate = (value: unknown): value is { order: SquareSplitOrder } =>
+    isRecord(value) &&
+    isRecord(value.order) &&
+    typeof value.order.id === "string" &&
+    typeof value.order.state === "string" &&
+    isRecord(value.order.total_money) &&
+    Number.isSafeInteger(value.order.total_money.amount) &&
+    value.order.total_money.currency === "CAD";
+  return {
+    async create(reference: string, totalCents: number, key: string) {
+      const result = await postSquare(
+        env,
+        "/v2/orders",
+        {
+          idempotency_key: key,
+          order: {
+            location_id: env.locationId,
+            reference_id: reference,
+            line_items: [
+              {
+                name: "Training enrollment (including HST)",
+                quantity: "1",
+                base_price_money: { amount: totalCents, currency: "CAD" },
+              },
+            ],
+          },
+        },
+        validate,
+      );
+      if (
+        result.order.reference_id !== reference ||
+        result.order.total_money.amount !== totalCents
+      )
+        throw new Error("Square order does not match training total");
+      return result.order.id;
+    },
+    async pay(orderId: string, paymentIds: string[], key: string) {
+      const result = await postSquare(
+        env,
+        `/v2/orders/${encodeURIComponent(orderId)}/pay`,
+        {
+          idempotency_key: key,
+          payment_ids: paymentIds,
+        },
+        validate,
+      );
+      if (
+        result.order.id !== orderId ||
+        result.order.state !== "COMPLETED" ||
+        !Array.isArray(result.order.tenders) ||
+        result.order.tenders.length !== paymentIds.length ||
+        !paymentIds.every((id) =>
+          result.order.tenders!.some((tender) => tender.payment_id === id),
+        )
+      )
+        throw new Error("Square split order payment is not confirmed");
+    },
+  };
 }

@@ -219,6 +219,14 @@ export const defaultDependencies: SquareWebhookDependencies = {
       finalizeProduct: finalizeSquareProductPayment,
       sendProductConfirmationEmail: sendProductOrderConfirmationEmailForOrder,
       finalizeTraining: finalizeSquareTrainingCardPayment,
+      recoverTrainingSplit: async (orderReference) => {
+        const { chargeLiveTrainingSplit } =
+          await import("@/lib/commerce/square-training-split-live");
+        const result = await chargeLiveTrainingSplit({ orderReference });
+        return result.ok
+          ? { status: "recovered" }
+          : { status: "retryable", reason: result.reason };
+      },
       sendTrainingNotifications: (orderReference) =>
         notifyPaidTrainingOrder(orderReference),
       logError: (message, meta) => console.error(message, meta),
@@ -860,6 +868,8 @@ function classifySquareCommerceCardOrder(
 
   if (order.purpose === "training") {
     const providerMetadata = getRecord(order.providerMetadata);
+    if (providerMetadata?.flow === "training_square_split")
+      return "training_split";
     if (providerMetadata?.flow === "training_square_card") {
       return "training_card";
     }

@@ -37,13 +37,21 @@ export interface TrainingSquareInvoiceFinalizerResult {
 }
 
 export interface TrainingSquareInvoiceFinalizerDependencies {
-  createTrainingEnrollment(input: CreateTrainingEnrollmentInput): Promise<TrainingEnrollmentRow>;
-  findOrderBySquareInvoiceId(invoiceId: string): Promise<CheckoutOrderRow | null>;
+  createTrainingEnrollment(
+    input: CreateTrainingEnrollmentInput,
+  ): Promise<TrainingEnrollmentRow>;
+  findOrderBySquareInvoiceId(
+    invoiceId: string,
+  ): Promise<CheckoutOrderRow | null>;
   getInvoice(invoiceId: string): Promise<SquareInvoiceDetails>;
   getOrder(orderId: string): Promise<SquareInvoiceOrderDetails>;
   getOrIssueTrainingSchedulingTokenForPaidOrder: typeof getOrIssueTrainingSchedulingTokenForPaidOrder;
   getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId: typeof getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId;
-  markSquareInvoiceFinalizationFailed(orderId: string, error: string, retryable: boolean): Promise<void>;
+  markSquareInvoiceFinalizationFailed(
+    orderId: string,
+    error: string,
+    retryable: boolean,
+  ): Promise<void>;
   markSquareInvoicePaid(orderId: string, paymentId: string): Promise<void>;
   claimTrainingPaymentEmails: typeof claimTrainingPaymentEmails;
   markTrainingEnrollmentStaffAlerted: typeof markTrainingEnrollmentStaffAlerted;
@@ -59,9 +67,13 @@ type VerificationResult =
 
 export function createTrainingSquareInvoiceFinalizer(
   dependencies: TrainingSquareInvoiceFinalizerDependencies,
-): (input: TrainingSquareInvoiceFinalizerInput) => Promise<TrainingSquareInvoiceFinalizerResult> {
+): (
+  input: TrainingSquareInvoiceFinalizerInput,
+) => Promise<TrainingSquareInvoiceFinalizerResult> {
   return async function finalizeTrainingSquareInvoiceWithDependencies(input) {
-    const order = await dependencies.findOrderBySquareInvoiceId(input.invoiceId);
+    const order = await dependencies.findOrderBySquareInvoiceId(
+      input.invoiceId,
+    );
 
     if (order === null) {
       return {
@@ -73,11 +85,23 @@ export function createTrainingSquareInvoiceFinalizer(
 
     const invoice = await dependencies.getInvoice(input.invoiceId);
     const squareOrderId = getString(invoice.order_id) ?? order.providerOrderId;
-    const squareOrder = squareOrderId === null ? null : await dependencies.getOrder(squareOrderId);
-    const verification = verifySquareInvoice({ input, invoice, order, squareOrder });
+    const squareOrder =
+      squareOrderId === null
+        ? null
+        : await dependencies.getOrder(squareOrderId);
+    const verification = verifySquareInvoice({
+      input,
+      invoice,
+      order,
+      squareOrder,
+    });
 
     if (!verification.ok) {
-      await dependencies.markSquareInvoiceFinalizationFailed(order.orderId, verification.reason, false);
+      await dependencies.markSquareInvoiceFinalizationFailed(
+        order.orderId,
+        verification.reason,
+        false,
+      );
 
       return {
         duplicate: false,
@@ -87,45 +111,72 @@ export function createTrainingSquareInvoiceFinalizer(
     }
 
     if (isAlreadyFinalized(order, verification.paymentId)) {
-      const notificationResult = await recoverTrainingPaymentNotificationForPaidOrder({
-        dependencies,
-        orderId: order.orderId,
-        origin: input.origin,
-      });
+      const notificationResult =
+        await recoverTrainingPaymentNotificationForPaidOrder({
+          dependencies,
+          orderId: order.orderId,
+          origin: input.origin,
+        });
 
       return notificationResult === undefined
         ? { duplicate: true, finalized: false }
-        : { duplicate: true, finalized: false, notificationFailed: true, reason: notificationResult };
+        : {
+            duplicate: true,
+            finalized: false,
+            notificationFailed: true,
+            reason: notificationResult,
+          };
     }
 
     try {
-      await dependencies.markSquareInvoicePaid(order.orderId, verification.paymentId);
+      await dependencies.markSquareInvoicePaid(
+        order.orderId,
+        verification.paymentId,
+      );
       await ensureTrainingEnrollment(order, dependencies);
-      const schedulingToken = await dependencies.getOrIssueTrainingSchedulingTokenForPaidOrder(order.orderId);
+      const schedulingToken =
+        await dependencies.getOrIssueTrainingSchedulingTokenForPaidOrder(
+          order.orderId,
+        );
 
       if (schedulingToken === null) {
         throw new Error("Training scheduling token could not be issued");
       }
 
-      const enrollment = await dependencies.getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId(order.orderId);
+      const enrollment =
+        await dependencies.getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId(
+          order.orderId,
+        );
 
       if (enrollment === null) {
-        throw new Error("Training enrollment could not be loaded after payment");
+        throw new Error(
+          "Training enrollment could not be loaded after payment",
+        );
       }
 
-      const notificationResult = await sendTrainingPaymentNotificationEmailsAfterFinalization({
-        dependencies,
-        enrollment,
-        origin: input.origin,
-        schedulingToken: schedulingToken.schedulingToken,
-      });
+      const notificationResult =
+        await sendTrainingPaymentNotificationEmailsAfterFinalization({
+          dependencies,
+          enrollment,
+          origin: input.origin,
+          schedulingToken: schedulingToken.schedulingToken,
+        });
 
       return notificationResult === undefined
         ? { duplicate: false, finalized: true }
-        : { duplicate: false, finalized: true, notificationFailed: true, reason: notificationResult };
+        : {
+            duplicate: false,
+            finalized: true,
+            notificationFailed: true,
+            reason: notificationResult,
+          };
     } catch (error) {
       const message = getErrorMessage(error);
-      await dependencies.markSquareInvoiceFinalizationFailed(order.orderId, message, true);
+      await dependencies.markSquareInvoiceFinalizationFailed(
+        order.orderId,
+        message,
+        true,
+      );
 
       return {
         duplicate: false,
@@ -142,17 +193,26 @@ async function recoverTrainingPaymentNotificationForPaidOrder(input: {
   origin?: string;
 }): Promise<string | undefined> {
   try {
-    const enrollment = await input.dependencies.getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId(input.orderId);
+    const enrollment =
+      await input.dependencies.getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId(
+        input.orderId,
+      );
 
     if (enrollment === null) {
       return undefined;
     }
 
-    if (enrollment.studentPaymentEmailSentAt !== null && enrollment.staffAlertedAt !== null) {
+    if (
+      enrollment.studentPaymentEmailSentAt !== null &&
+      enrollment.staffAlertedAt !== null
+    ) {
       return undefined;
     }
 
-    const schedulingToken = await input.dependencies.getOrIssueTrainingSchedulingTokenForPaidOrder(input.orderId);
+    const schedulingToken =
+      await input.dependencies.getOrIssueTrainingSchedulingTokenForPaidOrder(
+        input.orderId,
+      );
 
     if (schedulingToken === null) {
       throw new Error("Training scheduling token could not be issued");
@@ -182,17 +242,25 @@ async function sendTrainingPaymentNotificationEmailsAfterFinalization(input: {
         paymentProvider: "square",
         schedulingUrl: buildAbsoluteSchedulingUrl({
           origin: resolveSchedulingOrigin(input.origin),
-          programSlug: requireProgramSlug(input.enrollment.programSnapshot.slug),
+          programSlug: requireProgramSlug(
+            input.enrollment.programSnapshot.slug,
+          ),
           schedulingToken: input.schedulingToken,
         }),
       },
       {
-        claimTrainingPaymentEmails: input.dependencies.claimTrainingPaymentEmails,
-        markTrainingEnrollmentStaffAlerted: input.dependencies.markTrainingEnrollmentStaffAlerted,
-        markTrainingEnrollmentStudentPaymentEmailSent: input.dependencies.markTrainingEnrollmentStudentPaymentEmailSent,
-        recordTrainingPaymentEmailFailure: input.dependencies.recordTrainingPaymentEmailFailure,
-        sendTrainingAdminPaymentEmail: input.dependencies.sendTrainingAdminPaymentEmail,
-        sendTrainingCustomerPaymentEmail: input.dependencies.sendTrainingCustomerPaymentEmail,
+        claimTrainingPaymentEmails:
+          input.dependencies.claimTrainingPaymentEmails,
+        markTrainingEnrollmentStaffAlerted:
+          input.dependencies.markTrainingEnrollmentStaffAlerted,
+        markTrainingEnrollmentStudentPaymentEmailSent:
+          input.dependencies.markTrainingEnrollmentStudentPaymentEmailSent,
+        recordTrainingPaymentEmailFailure:
+          input.dependencies.recordTrainingPaymentEmailFailure,
+        sendTrainingAdminPaymentEmail:
+          input.dependencies.sendTrainingAdminPaymentEmail,
+        sendTrainingCustomerPaymentEmail:
+          input.dependencies.sendTrainingCustomerPaymentEmail,
       },
     );
   } catch (error) {
@@ -205,28 +273,35 @@ async function sendTrainingPaymentNotificationEmailsAfterFinalization(input: {
 export async function finalizeTrainingSquareInvoice(
   input: TrainingSquareInvoiceFinalizerInput,
 ): Promise<TrainingSquareInvoiceFinalizerResult> {
-  const [orderStore, enrollmentStore, email, squareInvoiceClient] = await Promise.all([
-    import("@/lib/commerce/order-store"),
-    import("@/lib/commerce/training-enrollment-store"),
-    import("@/lib/commerce/training-payment-email"),
-    import("@/lib/commerce/square-invoice-client"),
-  ]);
-  const client = squareInvoiceClient.createTrainingAfterpaySquareInvoiceClient();
+  const [orderStore, enrollmentStore, email, squareInvoiceClient] =
+    await Promise.all([
+      import("@/lib/commerce/order-store"),
+      import("@/lib/commerce/training-enrollment-store"),
+      import("@/lib/commerce/training-payment-email"),
+      import("@/lib/commerce/square-invoice-client"),
+    ]);
+  const client =
+    squareInvoiceClient.createTrainingAfterpaySquareInvoiceClient();
 
   return createTrainingSquareInvoiceFinalizer({
     createTrainingEnrollment: enrollmentStore.createTrainingEnrollment,
     findOrderBySquareInvoiceId: orderStore.findOrderBySquareInvoiceId,
     getInvoice: client.getInvoice,
     getOrder: client.getOrder,
-    getOrIssueTrainingSchedulingTokenForPaidOrder: enrollmentStore.getOrIssueTrainingSchedulingTokenForPaidOrder,
+    getOrIssueTrainingSchedulingTokenForPaidOrder:
+      enrollmentStore.getOrIssueTrainingSchedulingTokenForPaidOrder,
     getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId:
       enrollmentStore.getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId,
-    markSquareInvoiceFinalizationFailed: orderStore.markSquareInvoiceFinalizationFailed,
+    markSquareInvoiceFinalizationFailed:
+      orderStore.markSquareInvoiceFinalizationFailed,
     markSquareInvoicePaid: orderStore.markSquareInvoicePaid,
     claimTrainingPaymentEmails: enrollmentStore.claimTrainingPaymentEmails,
-    markTrainingEnrollmentStaffAlerted: enrollmentStore.markTrainingEnrollmentStaffAlerted,
-    markTrainingEnrollmentStudentPaymentEmailSent: enrollmentStore.markTrainingEnrollmentStudentPaymentEmailSent,
-    recordTrainingPaymentEmailFailure: enrollmentStore.recordTrainingPaymentEmailFailure,
+    markTrainingEnrollmentStaffAlerted:
+      enrollmentStore.markTrainingEnrollmentStaffAlerted,
+    markTrainingEnrollmentStudentPaymentEmailSent:
+      enrollmentStore.markTrainingEnrollmentStudentPaymentEmailSent,
+    recordTrainingPaymentEmailFailure:
+      enrollmentStore.recordTrainingPaymentEmailFailure,
     sendTrainingAdminPaymentEmail: email.sendTrainingAdminPaymentEmail,
     sendTrainingCustomerPaymentEmail: email.sendTrainingCustomerPaymentEmail,
   })(input);
@@ -236,10 +311,14 @@ async function ensureTrainingEnrollment(
   order: CheckoutOrderRow,
   dependencies: Pick<
     TrainingSquareInvoiceFinalizerDependencies,
-    "createTrainingEnrollment" | "getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId"
+    | "createTrainingEnrollment"
+    | "getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId"
   >,
 ): Promise<void> {
-  const existing = await dependencies.getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId(order.orderId);
+  const existing =
+    await dependencies.getPaidPendingTrainingEnrollmentConfirmationByPublicOrderId(
+      order.orderId,
+    );
 
   if (existing !== null) {
     return;
@@ -262,52 +341,101 @@ function verifySquareInvoice(input: {
 
   const invoiceId = getString(input.invoice.id);
 
-  if (invoiceId !== input.input.invoiceId || invoiceId !== input.order.providerCheckoutId) {
+  if (
+    invoiceId !== input.input.invoiceId ||
+    invoiceId !== input.order.providerCheckoutId
+  ) {
     return { ok: false, reason: "Square invoice ID did not match local order" };
   }
 
-  if (input.order.paymentProvider !== "square" || input.order.purpose !== "training") {
-    return { ok: false, reason: "Local order is not a Square training invoice order" };
+  if (
+    input.order.paymentProvider !== "square" ||
+    input.order.purpose !== "training"
+  ) {
+    return {
+      ok: false,
+      reason: "Local order is not a Square training invoice order",
+    };
   }
 
   if (metadata.flow !== "training_square_invoice") {
-    return { ok: false, reason: "Local order is not a training Square invoice flow" };
+    return {
+      ok: false,
+      reason: "Local order is not a training Square invoice flow",
+    };
   }
 
   const invoiceCustomerId = getInvoiceCustomerId(input.invoice);
   if (invoiceCustomerId !== metadata.squareCustomerId) {
-    return { ok: false, reason: "Square invoice customer did not match local order" };
+    return {
+      ok: false,
+      reason: "Square invoice customer did not match local order",
+    };
   }
 
   const invoiceOrderId = getString(input.invoice.order_id);
-  if (invoiceOrderId !== null && invoiceOrderId !== input.order.providerOrderId) {
-    return { ok: false, reason: "Square invoice order did not match local order" };
+  if (
+    invoiceOrderId !== null &&
+    invoiceOrderId !== input.order.providerOrderId
+  ) {
+    return {
+      ok: false,
+      reason: "Square invoice order did not match local order",
+    };
   }
 
-  const invoiceCorrelationId = getInvoiceCorrelationId(input.invoice, input.squareOrder);
+  const invoiceCorrelationId = getInvoiceCorrelationId(
+    input.invoice,
+    input.squareOrder,
+  );
   if (invoiceCorrelationId !== metadata.correlationId) {
-    return { ok: false, reason: "Square invoice correlation did not match local order" };
+    return {
+      ok: false,
+      reason: "Square invoice correlation did not match local order",
+    };
   }
 
-  if (input.input.correlationId !== undefined && input.input.correlationId !== metadata.correlationId) {
-    return { ok: false, reason: "Square invoice correlation did not match local order" };
+  if (
+    input.input.correlationId !== undefined &&
+    input.input.correlationId !== metadata.correlationId
+  ) {
+    return {
+      ok: false,
+      reason: "Square invoice correlation did not match local order",
+    };
   }
 
   const amountCents = getInvoiceAmountCents(input.invoice);
-  if (amountCents !== input.order.amountCents || amountCents !== metadata.amountCents) {
-    return { ok: false, reason: "Square invoice amount did not match local order" };
+  if (
+    amountCents !== input.order.amountCents ||
+    amountCents !== metadata.amountCents
+  ) {
+    return {
+      ok: false,
+      reason: "Square invoice amount did not match local order",
+    };
   }
 
   const currency = getInvoiceCurrency(input.invoice);
-  if (currency !== "CAD" || input.order.currency !== "CAD" || metadata.currency !== "CAD") {
-    return { ok: false, reason: "Square invoice currency did not match local order" };
+  if (
+    currency !== "CAD" ||
+    input.order.currency !== "CAD" ||
+    metadata.currency !== "CAD"
+  ) {
+    return {
+      ok: false,
+      reason: "Square invoice currency did not match local order",
+    };
   }
 
   if (!isPaidInvoiceStatus(input.invoice.status)) {
     return { ok: false, reason: "Square invoice is not paid" };
   }
 
-  const paymentId = input.input.paymentId ?? getInvoicePaymentId(input.invoice);
+  const paymentId =
+    input.input.paymentId ??
+    getInvoicePaymentId(input.invoice) ??
+    getInvoiceOrderPaymentId(input.squareOrder, input.order.amountCents);
   if (paymentId === undefined || paymentId.length === 0) {
     return { ok: false, reason: "Square invoice payment ID was missing" };
   }
@@ -315,16 +443,23 @@ function verifySquareInvoice(input: {
   return { ok: true, paymentId };
 }
 
-function isAlreadyFinalized(order: CheckoutOrderRow, paymentId: string): boolean {
+function isAlreadyFinalized(
+  order: CheckoutOrderRow,
+  paymentId: string,
+): boolean {
   const metadata = getSquareInvoiceProviderMetadata(order);
 
-  return order.status === "paid" &&
+  return (
+    order.status === "paid" &&
     order.providerStatus === "paid" &&
     order.providerPaymentId === paymentId &&
-    metadata.finalizationStatus === "paid";
+    metadata.finalizationStatus === "paid"
+  );
 }
 
-function toTrainingEnrollmentInput(order: CheckoutOrderRow): CreateTrainingEnrollmentInput {
+function toTrainingEnrollmentInput(
+  order: CheckoutOrderRow,
+): CreateTrainingEnrollmentInput {
   const metadata = getSquareInvoiceProviderMetadata(order);
   const lineItem = order.lineItems[0];
   const programSlug = metadata.programSlug;
@@ -336,7 +471,8 @@ function toTrainingEnrollmentInput(order: CheckoutOrderRow): CreateTrainingEnrol
     productSnapshot: {
       currency: "CAD",
       id: lineItem?.productId || programSlug,
-      priceCents: lineItem?.unitPriceCents ?? lineItem?.totalCents ?? order.amountCents,
+      priceCents:
+        lineItem?.unitPriceCents ?? lineItem?.totalCents ?? order.amountCents,
       sku: lineItem?.sku || `TRAINING-${programSlug.toUpperCase()}`,
       title,
     },
@@ -348,7 +484,9 @@ function toTrainingEnrollmentInput(order: CheckoutOrderRow): CreateTrainingEnrol
   };
 }
 
-function getSquareInvoiceProviderMetadata(order: CheckoutOrderRow): SquareInvoiceProviderMetadata {
+function getSquareInvoiceProviderMetadata(
+  order: CheckoutOrderRow,
+): SquareInvoiceProviderMetadata {
   const metadata = getValidSquareInvoiceProviderMetadata(order);
 
   if (metadata === null) {
@@ -358,15 +496,19 @@ function getSquareInvoiceProviderMetadata(order: CheckoutOrderRow): SquareInvoic
   return metadata;
 }
 
-function getValidSquareInvoiceProviderMetadata(order: CheckoutOrderRow): SquareInvoiceProviderMetadata | null {
+function getValidSquareInvoiceProviderMetadata(
+  order: CheckoutOrderRow,
+): SquareInvoiceProviderMetadata | null {
   const metadata = order.providerMetadata;
 
-  if (!isRecord(metadata) ||
+  if (
+    !isRecord(metadata) ||
     metadata.flow !== "training_square_invoice" ||
     typeof metadata.amountCents !== "number" ||
     metadata.currency !== "CAD" ||
     typeof metadata.correlationId !== "string" ||
-    typeof metadata.programSlug !== "string") {
+    typeof metadata.programSlug !== "string"
+  ) {
     return null;
   }
 
@@ -375,34 +517,57 @@ function getValidSquareInvoiceProviderMetadata(order: CheckoutOrderRow): SquareI
 
 function getInvoiceAmountCents(invoice: SquareInvoiceDetails): number | null {
   const payment = getRecord(invoice.payment);
-  const paymentAmount = getMoneyAmount(payment?.amount_money) ?? getMoneyAmount(payment?.total_money);
+  const paymentAmount =
+    getMoneyAmount(payment?.amount_money) ??
+    getMoneyAmount(payment?.total_money);
   if (paymentAmount !== null) {
     return paymentAmount;
   }
 
   const requestAmount = getInvoicePaymentRequests(invoice)
-    .map((request) => getMoneyAmount(request.computed_amount_money) ?? getMoneyAmount(request.total_completed_amount_money))
+    .map(
+      (request) =>
+        getMoneyAmount(request.computed_amount_money) ??
+        getMoneyAmount(request.total_completed_amount_money),
+    )
     .find((amount): amount is number => amount !== null);
 
-  return requestAmount ?? getMoneyAmount(invoice.total_money) ?? getMoneyAmount(invoice.amount_money);
+  return (
+    requestAmount ??
+    getMoneyAmount(invoice.total_money) ??
+    getMoneyAmount(invoice.amount_money)
+  );
 }
 
 function getInvoiceCurrency(invoice: SquareInvoiceDetails): string | null {
   const payment = getRecord(invoice.payment);
-  const paymentCurrency = getMoneyCurrency(payment?.amount_money) ?? getMoneyCurrency(payment?.total_money);
+  const paymentCurrency =
+    getMoneyCurrency(payment?.amount_money) ??
+    getMoneyCurrency(payment?.total_money);
   if (paymentCurrency !== null) {
     return paymentCurrency;
   }
 
   const requestCurrency = getInvoicePaymentRequests(invoice)
-    .map((request) => getMoneyCurrency(request.computed_amount_money) ?? getMoneyCurrency(request.total_completed_amount_money))
+    .map(
+      (request) =>
+        getMoneyCurrency(request.computed_amount_money) ??
+        getMoneyCurrency(request.total_completed_amount_money),
+    )
     .find((currency): currency is string => currency !== null);
 
-  return requestCurrency ?? getMoneyCurrency(invoice.total_money) ?? getMoneyCurrency(invoice.amount_money);
+  return (
+    requestCurrency ??
+    getMoneyCurrency(invoice.total_money) ??
+    getMoneyCurrency(invoice.amount_money)
+  );
 }
 
-function getInvoicePaymentId(invoice: SquareInvoiceDetails): string | undefined {
-  const directPaymentId = getString(invoice.payment_id) ?? getString(getRecord(invoice.payment)?.id);
+function getInvoicePaymentId(
+  invoice: SquareInvoiceDetails,
+): string | undefined {
+  const directPaymentId =
+    getString(invoice.payment_id) ?? getString(getRecord(invoice.payment)?.id);
   if (directPaymentId !== null) {
     return directPaymentId;
   }
@@ -417,22 +582,49 @@ function getInvoicePaymentId(invoice: SquareInvoiceDetails): string | undefined 
   return undefined;
 }
 
+// Square's invoice.payment_made payload contains the invoice, without a
+// payment ID. The associated completed order carries that ID in its tenders.
+function getInvoiceOrderPaymentId(
+  order: SquareInvoiceOrderDetails | null,
+  amountCents: number,
+): string | undefined {
+  if (order?.state !== "COMPLETED" || !Array.isArray(order.tenders))
+    return undefined;
+  const matchingTenders = order.tenders.filter(
+    (tender) =>
+      isRecord(tender) &&
+      (tender.type === "BUY_NOW_PAY_LATER" || tender.type === "CARD") &&
+      getMoneyAmount(tender.amount_money) === amountCents &&
+      getMoneyCurrency(tender.amount_money) === "CAD",
+  );
+  if (matchingTenders.length !== 1) return undefined;
+  return (
+    getString(matchingTenders[0].payment_id) ??
+    getString(matchingTenders[0].id) ??
+    undefined
+  );
+}
+
 function getInvoiceCorrelationId(
   invoice: SquareInvoiceDetails,
   squareOrder: SquareInvoiceOrderDetails | null,
 ): string | undefined {
-  return getString(invoice.reference_id) ??
+  return (
+    getString(invoice.reference_id) ??
     getString(invoice.order_reference_id) ??
     getString(getRecord(invoice.order)?.reference_id) ??
     getString(squareOrder?.reference_id) ??
-    undefined;
+    undefined
+  );
 }
 
 function getInvoiceCustomerId(invoice: SquareInvoiceDetails): string | null {
   return getString(getRecord(invoice.primary_recipient)?.customer_id);
 }
 
-function getInvoicePaymentRequests(invoice: SquareInvoiceDetails): Record<string, unknown>[] {
+function getInvoicePaymentRequests(
+  invoice: SquareInvoiceDetails,
+): Record<string, unknown>[] {
   if (!Array.isArray(invoice.payment_requests)) {
     return [];
   }
@@ -445,7 +637,9 @@ function isPaidInvoiceStatus(status: unknown): boolean {
     return false;
   }
 
-  return ["complete", "completed", "paid"].includes(status.trim().toLowerCase());
+  return ["complete", "completed", "paid"].includes(
+    status.trim().toLowerCase(),
+  );
 }
 
 function getMoneyAmount(value: unknown): number | null {
@@ -457,7 +651,9 @@ function getMoneyAmount(value: unknown): number | null {
 function getMoneyCurrency(value: unknown): string | null {
   const money = getRecord(value);
 
-  return typeof money?.currency === "string" ? money.currency.toUpperCase() : null;
+  return typeof money?.currency === "string"
+    ? money.currency.toUpperCase()
+    : null;
 }
 
 function getRecord(value: unknown): Record<string, unknown> | null {
@@ -487,7 +683,10 @@ function buildAbsoluteSchedulingUrl(input: {
 }
 
 function resolveSchedulingOrigin(origin: string | undefined): string {
-  const resolved = origin ?? process.env.NEXT_PUBLIC_SITE_URL ?? toVercelOrigin(process.env.VERCEL_URL);
+  const resolved =
+    origin ??
+    process.env.NEXT_PUBLIC_SITE_URL ??
+    toVercelOrigin(process.env.VERCEL_URL);
 
   if (resolved === undefined || resolved.length === 0) {
     throw new Error("Training scheduling origin is required");
@@ -513,5 +712,7 @@ function requireProgramSlug(programSlug: string | undefined): string {
 }
 
 function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Unknown training Square invoice finalization error";
+  return error instanceof Error
+    ? error.message
+    : "Unknown training Square invoice finalization error";
 }

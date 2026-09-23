@@ -58,6 +58,10 @@ export async function finalizeSquareTrainingCardPayment(
       return { transition: "not_found" as const };
     }
 
+    if (order.providerMetadata?.flow === "training_square_split") {
+      return { transition: "state_conflict" as const };
+    }
+
     // Server-authoritative amount/currency guard against the reserved order.
     if (
       input.amountCents !== order.amountCents ||

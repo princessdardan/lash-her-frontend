@@ -1,4 +1,10 @@
 import {
+  parseTrainingSplitPayment,
+  validateTrainingSplitPayment,
+  type TrainingSplitPayment,
+} from "@/lib/payments/square/training-split-policy";
+import type { TrainingSplitResult } from "@/lib/commerce/square-training-split";
+import {
   parseSquareCheckoutPayment,
   validateSquareAfterpayPayment,
   type SquareCheckoutPayment,
@@ -21,7 +27,9 @@ interface TrainingCheckoutErrorBody {
   retryWithNewReservation?: boolean;
 }
 
-type TrainingCheckoutPaymentInput = SquareCheckoutPayment;
+type TrainingCheckoutPaymentInput =
+  | SquareCheckoutPayment
+  | TrainingSplitPayment;
 
 interface TrainingCheckoutPostHandlerDependencies {
   getTrainingProgramBySlug: (slug: string) => Promise<TTrainingProgram | null>;
@@ -40,6 +48,7 @@ interface TrainingCheckoutPostHandlerDependencies {
     taxAmountCents: number;
     cart: ValidatedCart;
     reservationKey?: string;
+    afterpayAmountCents?: number;
   }) => Promise<{ orderId: string; databaseId: string }>;
   chargeSquareTrainingOrder?: (input: {
     orderReference: string;
@@ -54,6 +63,12 @@ interface TrainingCheckoutPostHandlerDependencies {
     | { ok: true; squarePaymentId: string; transition: string }
     | { ok: false; reason: string; retryWithNewReservation?: boolean }
   >;
+  chargeTrainingSplit?: (input: {
+    orderReference: string;
+    amountCents: number;
+    payment: TrainingSplitPayment;
+    origin?: string;
+  }) => Promise<TrainingSplitResult>;
   markTrainingOrderVerificationFailed?: (orderId: string) => Promise<void>;
 }
 
@@ -81,6 +96,7 @@ export function createTrainingCheckoutPostHandler({
   squareCommerceEnabled,
   reserveSquareTrainingOrder,
   chargeSquareTrainingOrder,
+  chargeTrainingSplit,
   markTrainingOrderVerificationFailed,
 }: TrainingCheckoutPostHandlerDependencies): (
   req: NextRequest,
@@ -137,11 +153,14 @@ export function createTrainingCheckoutPostHandler({
       // Both card and Afterpay use the same trusted quote and enrollment ledger.
       const payment = parseTrainingPayment(body);
       if (!payment) return invalidTrainingCheckoutRequest();
-      const paymentError = validateSquareAfterpayPayment(
-        payment,
-        toCents(quote.total),
-        quote.currency,
-      );
+      const split = payment.method === "afterpay_card";
+      const paymentError = split
+        ? validateTrainingSplitPayment(payment, toCents(quote.total))
+        : validateSquareAfterpayPayment(
+            payment,
+            toCents(quote.total),
+            quote.currency,
+          );
       if (paymentError)
         return NextResponse.json({ error: paymentError }, { status: 400 });
       // Client-supplied per-attempt idempotency token. When present, the reserve
@@ -149,9 +168,14 @@ export function createTrainingCheckoutPostHandler({
       // response → re-click) reuses the same order and Square dedupes the charge.
       const reservationKey = parseReservationKey(body);
       if (
+        split &&
+        (!reservationKey || !/^[a-zA-Z0-9_-]{16,64}$/.test(reservationKey))
+      )
+        return invalidTrainingCheckoutRequest();
+      if (
         squareCommerceEnabled &&
         reserveSquareTrainingOrder &&
-        chargeSquareTrainingOrder &&
+        (split ? chargeTrainingSplit : chargeSquareTrainingOrder) &&
         payment
       ) {
         const reserved = await reserveSquareTrainingOrder({
@@ -163,6 +187,9 @@ export function createTrainingCheckoutPostHandler({
           taxAmountCents: toCents(quote.tax),
           cart: toTrainingCart(quote),
           ...(reservationKey ? { reservationKey } : {}),
+          ...(split
+            ? { afterpayAmountCents: payment.afterpayAmountCents }
+            : {}),
         });
 
         await createTrainingEnrollment({
@@ -182,15 +209,22 @@ export function createTrainingCheckoutPostHandler({
           },
         });
 
-        const charge = await chargeSquareTrainingOrder({
-          orderReference: reserved.orderId,
-          amountCents: toCents(quote.total),
-          currency: "CAD",
-          ...payment,
-          // Server-derived origin (not the client Origin header) for the URL
-          // embedded in the scheduling email, matching the product checkout path.
-          origin: resolveTrainingRequestOrigin(req),
-        });
+        const charge = split
+          ? await chargeTrainingSplit!({
+              orderReference: reserved.orderId,
+              amountCents: toCents(quote.total),
+              payment,
+              origin: resolveTrainingRequestOrigin(req),
+            })
+          : await chargeSquareTrainingOrder!({
+              orderReference: reserved.orderId,
+              amountCents: toCents(quote.total),
+              currency: "CAD",
+              ...payment,
+              // Server-derived origin (not the client Origin header) for the URL
+              // embedded in the scheduling email, matching the product checkout path.
+              origin: resolveTrainingRequestOrigin(req),
+            });
 
         if (!charge.ok) {
           const retryWithNewReservation =
@@ -204,7 +238,9 @@ export function createTrainingCheckoutPostHandler({
             {
               error: retryWithNewReservation
                 ? "Payment could not be completed. Please try again or use another payment method."
-                : "Payment status could not be confirmed. Please retry to check your existing payment.",
+                : charge.reason === "split_payment_requires_review"
+                  ? "Your payment needs review. Please contact Lash Her before making another payment."
+                  : "Payment status could not be confirmed. Please retry to check your existing payment.",
               retryWithNewReservation,
             },
             { status: retryWithNewReservation ? 402 : 503 },
@@ -274,6 +310,11 @@ export async function POST(req: NextRequest): Promise<Response> {
             orderStore.createPendingSquareTrainingCardOrder,
           chargeSquareTrainingOrder:
             squareTraining.createLiveSquareTrainingCharger(),
+          chargeTrainingSplit: async (input) => {
+            const { chargeLiveTrainingSplit } =
+              await import("@/lib/commerce/square-training-split-live");
+            return chargeLiveTrainingSplit(input);
+          },
           markTrainingOrderVerificationFailed:
             orderStore.markOrderVerificationFailed,
         }
@@ -288,7 +329,10 @@ function resolveTrainingRequestOrigin(req: NextRequest): string {
 function parseTrainingPayment(
   body: unknown,
 ): TrainingCheckoutPaymentInput | null {
-  return isRecord(body) ? parseSquareCheckoutPayment(body.payment) : null;
+  return isRecord(body)
+    ? (parseTrainingSplitPayment(body.payment) ??
+        parseSquareCheckoutPayment(body.payment))
+    : null;
 }
 
 /**

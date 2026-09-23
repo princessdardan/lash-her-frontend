@@ -1,12 +1,12 @@
-# Legacy Training Afterpay Square Invoice Runbook
+# Training Afterpay Square Invoice Runbook
 
-Date: 2026-05-25
+Updated: 2026-09-23
 
 This runbook explains how to operate the training-only Afterpay buy now, pay later flow through Square Invoices. The feature is for paid training enrollments only. Product checkout and service booking keep their existing payment paths.
 
 The feature is intentionally disabled by default and must stay disabled in production until Square merchant eligibility is verified for live CAD invoices.
 
-> Public training checkout now uses embedded Square Afterpay alongside card payments. This runbook covers the retained invoice endpoint and outstanding invoices. See [the active BNPL integration](square-afterpay.md). Canadian invoice totals are also limited to C$1–C$2,000 including tax.
+> Public training checkout uses embedded Afterpay and Afterpay + card. This invoice endpoint remains available only behind its existing feature flag and accepts tax-inclusive totals from C$1 to C$2,000. It does not provide higher-limit Afterpay financing. See [the current BNPL integration](square-afterpay.md).
 
 ## Overview
 
@@ -55,7 +55,7 @@ Recommended rollout:
 1. Keep `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=false` locally unless you are testing this exact flow.
 2. Enable in local or preview only with Square sandbox credentials or approved mock payment mode.
 3. Complete route, webhook, private database, and finalization evidence in staging.
-4. Confirm Square merchant eligibility for production Afterpay/Clearpay on CAD invoices.
+4. Confirm Square merchant eligibility for production Afterpay/Clearpay on CAD invoices within the C$1–C$2,000 limit, including tax. Larger training purchases use the embedded Afterpay + card flow.
 5. Enable `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED=true` in production only after the launch gate is complete.
 
 If eligibility, webhook delivery, or finalization evidence is missing, leave the flag disabled.
@@ -104,7 +104,7 @@ Expected webhook behavior:
 
 ## BALANCE payment constraint
 
-Training Afterpay Square Invoice uses one Square invoice payment request with `request_type` set to `BALANCE`.
+Training Afterpay Square Invoice uses one Square invoice payment request with `request_type` set to `BALANCE`. Both `buy_now_pay_later` and `card` are enabled so the customer can pay the same invoice by card if Afterpay is unavailable or declined. Approval and repayment terms are determined on Square's hosted payment page.
 
 Deposits, installments, split invoice schedules, and partial training payments are out of scope for this feature. Do not configure or document training deposits or installment plans for this flow unless the code and operations process are changed first.
 

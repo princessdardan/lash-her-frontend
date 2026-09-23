@@ -6,6 +6,7 @@ const helperScript = String.raw`
 
   import {
     createSquarePaymentsClient,
+    createSquareSplitOrdersClient,
     createSquareCardOnFilePayment,
   } from "./src/lib/payments/square/payments-client.ts";
 
@@ -692,5 +693,25 @@ test("payment listing retains the default location when none is configured", () 
     };
     const client = createSquarePaymentsClient({ environment: "sandbox", accessToken: "test-token" });
     assert.deepEqual(await client.listPayments({}), { payments: [] });
+  `);
+});
+
+test("split orders bind both authorized payments to the trusted full total", () => {
+  runPaymentsClientScenario(`
+    const requests = [];
+    globalThis.fetch = async (url, init) => {
+      requests.push({ url, body: JSON.parse(init.body) });
+      return Response.json({ order: { id: "sq-order", reference_id: "lh-reference", state: "COMPLETED", tenders: [{ payment_id: "card-payment" }, { payment_id: "afterpay-payment" }], total_money: { amount: 395500, currency: "CAD" } } });
+    };
+    const client = createSquareSplitOrdersClient({ environment: "sandbox", accessToken: "test", locationId: "location" });
+    assert.equal(await client.create("lh-reference", 395500, "order-key"), "sq-order");
+    await client.pay("sq-order", ["card-payment", "afterpay-payment"], "pay-key");
+    assert.equal(requests[0].url, "https://connect.squareupsandbox.com/v2/orders");
+    assert.equal(requests[0].body.order.location_id, "location");
+    assert.equal(requests[0].body.order.line_items[0].base_price_money.amount, 395500);
+    assert.deepEqual(requests[1].body, { idempotency_key: "pay-key", payment_ids: ["card-payment", "afterpay-payment"] });
+    assert.equal(requests[1].url, "https://connect.squareupsandbox.com/v2/orders/sq-order/pay");
+    await assert.rejects(() => client.create("different-reference", 395500, "order-key"));
+    await assert.rejects(() => client.create("lh-reference", 200000, "order-key"));
   `);
 });

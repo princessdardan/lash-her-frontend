@@ -309,7 +309,7 @@ export interface SquareCardProviderMetadata extends CheckoutProviderMetadata {
   correlationId: string;
   currency: "CAD";
   finalizationStatus: SquareInvoiceFinalizationStatus;
-  flow: "training_square_card";
+  flow: "training_square_card" | "training_square_split";
   programSlug: string;
 }
 
@@ -327,6 +327,7 @@ export interface CreatePendingSquareTrainingCardOrderInput {
    * of the same attempt reuses the original order (no duplicate order/charge).
    */
   reservationKey?: string;
+  afterpayAmountCents?: number;
 }
 
 export interface PendingSquareTrainingCardOrderRecord {
@@ -1344,7 +1345,19 @@ export async function createPendingSquareTrainingCardOrder(
     correlationId: orderId,
     currency: "CAD",
     finalizationStatus: "pending",
-    flow: "training_square_card",
+    flow:
+      input.afterpayAmountCents === undefined
+        ? "training_square_card"
+        : "training_square_split",
+    ...(input.afterpayAmountCents === undefined
+      ? {}
+      : {
+          splitPayment: {
+            afterpayAmountCents: input.afterpayAmountCents,
+            cardAmountCents: input.amountCents - input.afterpayAmountCents,
+            stage: "reserved",
+          },
+        }),
     programSlug: input.programSlug,
   };
 
@@ -1396,6 +1409,9 @@ export async function createPendingSquareTrainingCardOrder(
       id: checkoutOrders.id,
       customerEmail: checkoutOrders.customerEmail,
       purpose: checkoutOrders.purpose,
+      amountCents: checkoutOrders.amountCents,
+      paymentProvider: checkoutOrders.paymentProvider,
+      providerMetadata: checkoutOrders.providerMetadata,
     })
     .from(checkoutOrders)
     .where(eq(checkoutOrders.orderId, orderId))
@@ -1408,6 +1424,20 @@ export async function createPendingSquareTrainingCardOrder(
     purpose: "training",
   });
 
+  const existingSplit = existing.providerMetadata?.splitPayment as
+    | { afterpayAmountCents?: number }
+    | undefined;
+  if (
+    existing.paymentProvider !== "square" ||
+    existing.amountCents !== input.amountCents ||
+    existing.providerMetadata?.programSlug !== input.programSlug ||
+    existing.providerMetadata?.flow !== providerMetadata.flow ||
+    existingSplit?.afterpayAmountCents !== input.afterpayAmountCents
+  ) {
+    throw new Error(
+      "Checkout changed. Resolve the existing payment before starting another purchase.",
+    );
+  }
   return { databaseId: existing.id, orderId };
 }
 
@@ -2158,6 +2188,8 @@ function createDrizzleCheckoutOrderRepository(): CheckoutOrderRepository {
           and(
             eq(checkoutOrders.orderId, orderId),
             eq(checkoutOrders.paymentProvider, "square"),
+            // Publication retries must not overwrite a verified paid status.
+            eq(checkoutOrders.status, "pending"),
           ),
         );
     },

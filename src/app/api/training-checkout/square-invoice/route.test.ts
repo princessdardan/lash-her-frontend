@@ -50,6 +50,7 @@ const helperScript = String.raw`
 
   function runScenario({
     createInvoice,
+    getPromotionCode,
     getTrainingProgramBySlug,
     isEnabled = () => true,
     publishInvoice,
@@ -76,7 +77,7 @@ const helperScript = String.raw`
       createSecretToken: () => "secret-token-123",
       getPromotionCode: async (code) => {
         fetchedPromotionCodes.push(code);
-        return null;
+        return getPromotionCode ? getPromotionCode(code) : null;
       },
       getTrainingProgramBySlug: async (slug) => {
         fetchedSlugs.push(slug);
@@ -303,12 +304,65 @@ function runRouteScenario(assertions: string): void {
   });
 }
 
-test("legacy Afterpay invoice cannot bypass the Canadian tax-inclusive limit", () => {
+test("training Afterpay invoice cannot exceed C$2,000 including HST", () => {
   runRouteScenario(`
-    const { handler, customers, pendingOrders } = runScenario({ getTrainingProgramBySlug: async () => ({ ...program, price: 1800 }) });
-    const response = await handler(createRequest(validBody({ clientPrice: 1800 })));
+    const { handler, customers, pendingOrders } = runScenario({ getTrainingProgramBySlug: async () => ({ ...program, price: 1770 }) });
+    const response = await handler(createRequest(validBody({ clientPrice: 1770 })));
     assert.equal(response.status, 422);
     assert.equal(customers.length, 0);
     assert.equal(pendingOrders.length, 0);
+  `);
+});
+
+test("training invoices reject C$2,500 and C$3,500 programs including HST", () => {
+  runRouteScenario(`
+    for (const [price, total] of [[2500, 282500], [3500, 395500], [3539.82, 400000]]) {
+      const { handler, pendingOrders, squareOrders } = runScenario({ getTrainingProgramBySlug: async () => ({ ...program, price }) });
+      const response = await handler(createRequest(validBody({ clientPrice: price, expectedAmountCents: total })));
+      assert.equal(response.status, 422);
+      assert.equal(pendingOrders.length, 0);
+      assert.equal(squareOrders.length, 0);
+    }
+  `);
+});
+
+test("training invoice rejects a stale displayed total before Square calls", () => {
+  runRouteScenario(`
+    const { handler, customers } = runScenario();
+    const response = await handler(createRequest(validBody({ expectedAmountCents: 149900 })));
+    assert.equal(response.status, 409);
+    assert.equal(customers.length, 0);
+  `);
+});
+
+test("training invoice eligibility applies promotions before calculating HST", () => {
+  runRouteScenario(`
+    const { handler, pendingOrders, squareOrders } = runScenario({
+      getTrainingProgramBySlug: async () => ({ ...program, price: 2000, discountPrice: 1800 }),
+      getPromotionCode: async () => ({
+        _id: "promo-save10", code: "SAVE10", isEnabled: true,
+        discountType: "percentage", amount: 10, appliesTo: "trainingPrograms",
+      }),
+    });
+    const response = await handler(createRequest(validBody({
+      clientPrice: 1800, promotionCode: "SAVE10", expectedAmountCents: 183060,
+    })));
+    assert.equal(response.status, 200);
+    assert.equal(pendingOrders[0].amountCents, 183060);
+    assert.equal(squareOrders[0].lineItems[0].base_price_money.amount, 183060);
+  `);
+});
+
+test("training invoice retries reuse provider keys bound to the buyer and quote", () => {
+  runRouteScenario(`
+    const { handler, customers, invoices, publishedInvoices } = runScenario();
+    const body = validBody({ reservationKey: "invoice-reservation-key-123" });
+    assert.equal((await handler(createRequest(body))).status, 200);
+    assert.equal((await handler(createRequest(body))).status, 200);
+    assert.equal(customers[0].idempotencyKey, customers[1].idempotencyKey);
+    assert.equal(invoices[0].paymentRequest.idempotencyKey, invoices[1].paymentRequest.idempotencyKey);
+    assert.equal(publishedInvoices[0].idempotencyKey, publishedInvoices[1].idempotencyKey);
+    assert.equal((await handler(createRequest({ ...body, customerEmail: "another@example.com" }))).status, 200);
+    assert.notEqual(customers[0].idempotencyKey, customers[2].idempotencyKey);
   `);
 });

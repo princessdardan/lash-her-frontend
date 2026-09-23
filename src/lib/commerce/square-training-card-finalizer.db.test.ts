@@ -127,6 +127,13 @@ const scenario = String.raw`
     });
     assert.equal(stateConflict.transition, "state_conflict");
 
+    const split = await seed("split", { providerMetadata: { flow: "training_square_split" } });
+    const splitResult = await finalizeSquareTrainingCardPayment({
+      orderReference: split.orderId, squarePaymentId: "one-portion", amountCents: 30000,
+      currency: "CAD", providerType: "BUY_NOW_PAY_LATER", providerStatus: "COMPLETED",
+    });
+    assert.equal(splitResult.transition, "state_conflict");
+
     // ---- not_found: an unknown order reference ----
     const notFound = await finalizeSquareTrainingCardPayment({
       orderReference: prefix + "-nonexistent",

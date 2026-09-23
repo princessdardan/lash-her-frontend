@@ -41,6 +41,7 @@ const helperScript = String.raw`
     getTrainingProgramBySlug,
     reserveSquareTrainingOrder,
     chargeSquareTrainingOrder,
+    chargeTrainingSplit,
     createTrainingEnrollment,
     squareCommerceEnabled = true,
   } = {}) {
@@ -71,6 +72,11 @@ const helperScript = String.raw`
         charges.push(input);
         if (chargeSquareTrainingOrder) return chargeSquareTrainingOrder(input);
         return { ok: true, squarePaymentId: "sq-train-1", transition: "applied" };
+      },
+      chargeTrainingSplit: async (input) => {
+        charges.push(input);
+        if (chargeTrainingSplit) return chargeTrainingSplit(input);
+        return { ok: true, squarePaymentId: "sq-split-1", transition: "applied" };
       },
       markTrainingOrderVerificationFailed: async (orderId) => { failedOrders.push(orderId); },
     });
@@ -270,6 +276,32 @@ test("training Afterpay rejects tax-inclusive totals above the limit and stale t
       assert.equal(reserved.length, 0);
       assert.equal(enrollments.length, 0);
       assert.equal(charges.length, 0);
+    }
+  `);
+});
+
+test("training split reserves the trusted HST-inclusive total with a capped Afterpay portion", () => {
+  runRouteScenario(`
+    const { handler, charges, reserved, enrollments } = runScenario({ getTrainingProgramBySlug: async () => ({ ...program, price: 3500 }) });
+    const payment = { method: "afterpay_card", expectedAmountCents: 395500, afterpayAmountCents: 200000,
+      afterpay: { method: "afterpay", sourceId: "ap", expectedAmountCents: 200000 }, card: { sourceId: "card" } };
+    const response = await handler(createRequest(validBody({ clientPrice: 3500, reservationKey: "split-reservation-123", payment })));
+    assert.equal(response.status, 200);
+    assert.equal(reserved[0].amountCents, 395500);
+    assert.equal(reserved[0].afterpayAmountCents, 200000);
+    assert.equal(charges[0].payment.method, "afterpay_card");
+    assert.equal(enrollments.length, 1);
+  `);
+});
+
+test("invalid split amounts, stale quotes and missing attempt keys fail before reservation", () => {
+  runRouteScenario(`
+    const payment = { method: "afterpay_card", expectedAmountCents: 395500, afterpayAmountCents: 200000,
+      afterpay: { method: "afterpay", sourceId: "ap", expectedAmountCents: 200000 }, card: { sourceId: "card" } };
+    for (const overrides of [{ reservationKey: undefined }, { payment: { ...payment, expectedAmountCents: 395499 } }, { payment: { ...payment, afterpayAmountCents: 200001 } }]) {
+      const { handler, reserved, charges } = runScenario({ getTrainingProgramBySlug: async () => ({ ...program, price: 3500 }) });
+      const response = await handler(createRequest(validBody({ clientPrice: 3500, reservationKey: "split-reservation-123", payment, ...overrides })));
+      assert.equal(response.status, 400); assert.equal(reserved.length, 0); assert.equal(charges.length, 0);
     }
   `);
 });

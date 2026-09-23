@@ -9,7 +9,10 @@ import type {
 
 const SQUARE_COMPLETED_STATUS = "COMPLETED";
 
-export type SquareCommerceOrderKind = "product" | "training_card";
+export type SquareCommerceOrderKind =
+  | "product"
+  | "training_card"
+  | "training_split";
 
 export interface RecoverSquareCommercePaymentInput {
   orderReference: string;
@@ -41,6 +44,9 @@ export interface SquareCommerceRecoveryResult {
 }
 
 export interface RecoverSquareCommercePaymentDependencies {
+  recoverTrainingSplit?: (
+    orderReference: string,
+  ) => Promise<SquareCommerceRecoveryResult>;
   finalizeProduct: (
     input: FinalizeSquareProductPaymentInput,
   ) => Promise<FinalizeSquareProductPaymentResult>;
@@ -66,6 +72,12 @@ export async function recoverSquareCommercePayment(
 ): Promise<SquareCommerceRecoveryResult> {
   if (input.status.toUpperCase() !== SQUARE_COMPLETED_STATUS) {
     return { status: "ignored", reason: "payment_not_completed" };
+  }
+
+  if (input.kind === "training_split") {
+    return dependencies.recoverTrainingSplit
+      ? dependencies.recoverTrainingSplit(input.orderReference)
+      : { status: "retryable", reason: "split_recovery_unavailable" };
   }
 
   const providerType = input.sourceType ?? "CARD";

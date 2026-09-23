@@ -386,6 +386,84 @@ test("finalizeTrainingSquareInvoice verifies a paid Square invoice before enroll
   assert.deepEqual(harness.calls.emailFailures, []);
 });
 
+for (const type of ["BUY_NOW_PAY_LATER", "CARD"]) {
+  test(`paid invoice resolves the ${type} payment from Square order tenders`, async () => {
+    const harness = createHarness({
+      getInvoice: async (id) => ({
+        id,
+        status: "PAID",
+        order_id: "mock-square-invoice-order-1",
+        primary_recipient: { customer_id: "square-customer-123" },
+        payment_requests: [
+          {
+            request_type: "BALANCE",
+            computed_amount_money: { amount: 249900, currency: "CAD" },
+            total_completed_amount_money: { amount: 249900, currency: "CAD" },
+          },
+        ],
+      }),
+      getOrder: async (id) => ({
+        id,
+        state: "COMPLETED",
+        reference_id: "training-correlation-123",
+        tenders: [
+          {
+            type,
+            payment_id: "square-payment-123",
+            amount_money: { amount: 249900, currency: "CAD" },
+          },
+        ],
+      }),
+    });
+    const input = {
+      invoiceId: "mock-square-invoice-1",
+      origin: "https://lashher.test",
+    };
+    assert.deepEqual(await harness.finalizer(input), {
+      duplicate: false,
+      finalized: true,
+    });
+    assert.deepEqual(await harness.finalizer(input), {
+      duplicate: true,
+      finalized: false,
+    });
+    assert.equal(harness.calls.createEnrollment, 1);
+    assert.equal(harness.order?.providerPaymentId, "square-payment-123");
+  });
+}
+
+test("invoice finalization rejects an order tender with a different amount", async () => {
+  const harness = createHarness({
+    getInvoice: async (id) => ({
+      id,
+      status: "PAID",
+      order_id: "mock-square-invoice-order-1",
+      primary_recipient: { customer_id: "square-customer-123" },
+      payment_requests: [
+        { computed_amount_money: { amount: 249900, currency: "CAD" } },
+      ],
+    }),
+    getOrder: async (id) => ({
+      id,
+      state: "COMPLETED",
+      reference_id: "training-correlation-123",
+      tenders: [
+        {
+          type: "BUY_NOW_PAY_LATER",
+          payment_id: "square-payment-123",
+          amount_money: { amount: 100, currency: "CAD" },
+        },
+      ],
+    }),
+  });
+  const result = await harness.finalizer({
+    invoiceId: "mock-square-invoice-1",
+  });
+  assert.equal(result.finalized, false);
+  assert.equal(harness.calls.markPaid, 0);
+  assert.equal(harness.calls.createEnrollment, 0);
+});
+
 test("finalizeTrainingSquareInvoice keeps paid finalization when notification emails fail", async () => {
   const harness = createHarness({ customerEmailFailure: true });
 

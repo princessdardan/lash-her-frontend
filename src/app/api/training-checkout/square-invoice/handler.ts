@@ -1,8 +1,8 @@
 import {
-  isSquareAfterpayAmountEligible,
-  SQUARE_AFTERPAY_LIMIT_MESSAGE,
-} from "@/lib/payments/square/afterpay-policy";
-import { randomUUID } from "node:crypto";
+  isTrainingInvoiceAfterpayAmountEligible,
+  TRAINING_INVOICE_AFTERPAY_LIMIT_MESSAGE,
+} from "@/lib/payments/square/training-invoice-policy";
+import { createHash, randomUUID } from "node:crypto";
 
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -138,6 +138,15 @@ export function createTrainingSquareInvoicePostHandler({
       return invalidTrainingSquareInvoiceRequest();
     }
 
+    if (
+      isRecord(body) &&
+      body.reservationKey !== undefined &&
+      (typeof body.reservationKey !== "string" ||
+        !/^[a-zA-Z0-9_-]{16,64}$/.test(body.reservationKey))
+    ) {
+      return invalidTrainingSquareInvoiceRequest();
+    }
+
     try {
       const requestedPromotionCode = parsePromotionCodeInput(
         isRecord(body) ? (body.promotionCode ?? body.discountCode) : undefined,
@@ -167,13 +176,36 @@ export function createTrainingSquareInvoicePostHandler({
 
       const { quote } = validation;
       const amountCents = toCents(quote.total);
-      if (!isSquareAfterpayAmountEligible(amountCents, quote.currency)) {
+      if (
+        !isTrainingInvoiceAfterpayAmountEligible(amountCents, quote.currency)
+      ) {
         return NextResponse.json(
-          { error: SQUARE_AFTERPAY_LIMIT_MESSAGE },
+          { error: TRAINING_INVOICE_AFTERPAY_LIMIT_MESSAGE },
           { status: 422 },
         );
       }
-      const correlationId = createCorrelationId();
+      if (
+        isRecord(body) &&
+        body.expectedAmountCents !== undefined &&
+        body.expectedAmountCents !== amountCents
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Your total changed. Review the total and try Afterpay again.",
+          },
+          { status: 409 },
+        );
+      }
+      // Reuse Square's idempotency keys after a lost response. Bind the key to
+      // trusted pricing and buyer details so an edited checkout starts anew.
+      const correlationId =
+        isRecord(body) && typeof body.reservationKey === "string"
+          ? createHash("sha256")
+              .update(JSON.stringify([body.reservationKey, quote]))
+              .digest("hex")
+              .slice(0, 32)
+          : createCorrelationId();
       const customerName = splitCustomerName(quote.customerName);
       const customerId = await squareInvoiceClient.createCustomer(
         quote.customerEmail,

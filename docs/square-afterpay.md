@@ -1,53 +1,54 @@
 # Square Afterpay
 
-Square is the only active payment provider. Afterpay is a payment method inside Square's Web Payments SDK and Payments API; it does not require separate Afterpay credentials or an additional gateway.
-
-## Canadian eligibility
-
-Square currently documents **C$1–C$2,000 inclusive** for Canadian Afterpay payments and invoices. The limit applies to the final total, including tax, shipping and discounts. C$4,000 is documented for certain US offerings, not Canadian API transactions. Merchant-specific limits and buyer approval can further restrict availability.
-
-Sources checked September 22, 2026:
-
-- [Payments API amount limits](https://developer.squareup.com/docs/payments-api/take-payments#afterpay-minimums-and-maximums)
-- [Afterpay Payments API requirements](https://developer.squareup.com/docs/payments-api/take-payments/afterpay-payments)
-- [Web Payments SDK eligibility and initialization](https://developer.squareup.com/docs/web-payments/add-afterpay)
-- [Invoice BNPL requirements](https://developer.squareup.com/docs/invoices-api/overview)
-
-`src/lib/payments/square/afterpay-policy.ts` is the shared policy and input contract. Do not raise the ceiling based on a generic marketing page or split a purchase to bypass eligibility. If Square changes its Canadian API limits, update this policy, boundary tests and customer copy together.
+Square is the active provider. Products, services and training use the Web Payments SDK and Payments API. **Every Afterpay payment is limited to C$1–C$2,000, subject to merchant eligibility and buyer approval.** No checkout promises full Afterpay financing above C$2,000. Training invoices use the same ceiling.
 
 ## Checkout behavior
 
-| Purchase              | Afterpay amount                                                      | Existing requirements                                                                         |
-| --------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Products              | Final reserved order total, including shipping/tax                   | Cart, stock, shipping quote and policy checks                                                 |
-| Training              | Discounted full program total plus HST                               | Customer details, enrollment terms, paid enrollment and scheduling token                      |
-| Services              | Full booked service and add-on total after discounts, plus HST       | Valid hold, policy consent, separate stored card, staff attribution and calendar finalization |
-| Future online courses | Reuse the shared UI and payment contract when course checkout exists | Course pricing and paid access must be implemented server-side                                |
+| Purchase                  | Afterpay amount                                                            | Other requirements                                                     |
+| ------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Products                  | Entire final total, including discounts, tax and shipping; maximum C$2,000 | Existing stock, shipping and policy checks                             |
+| Services                  | Entire service/add-on total after discounts and HST; maximum C$2,000       | Separate stored policy card; partial/deposit payments remain card-only |
+| Training, Afterpay only   | Entire discounted total including HST; maximum C$2,000                     | Customer details and enrollment terms                                  |
+| Training, Afterpay + card | Customer-selected portion from C$1 to C$2,000                              | Remaining balance paid by card today; minimum card portion C$1         |
 
-`SquareAfterpayButton` builds the CAD payment sheet and attempts `payments.afterpayClearpay` in a `try/catch`. Square's eligibility check controls whether its official button is attached. When unavailable, the checkout explains this and leaves card payment usable. Cancelled or declined tokenization never submits an order. Payment buttons share a synchronous submission lock that stays engaged after success until navigation.
+For example, a C$3,500 training program totals C$3,955 after Ontario HST. A customer may request **C$2,000 through Afterpay and pay C$1,955 by card today**. The buyer can select a smaller Afterpay portion. Afterpay may collect its first installment today. Approval and available spend remain Afterpay's decision.
 
-Product/training requests carry `payment.method = "afterpay"`, the payment token and `expectedAmountCents`. The server derives prices independently and requires exact agreement with the sheet before authorization. The authorization's `source_type` must match the selected method. A mismatched authorization is cancelled before capture. Both methods retain the existing order ledger, idempotency, capture reconciliation, refunds and `/api/webhooks/square` signature verification. Historical internal identifiers such as `training_square_card` are retained so reconciliation continues to find those orders.
+`SquareAfterpayButton` checks eligibility through Square before displaying its button. The amount sent to the SDK is exactly the amount requested from Afterpay, including the allocated share of tax. The server recalculates the full training quote and validates both the full displayed total and the selected portion before any payment authorization. There is no second Afterpay loan.
 
-Services use the existing booking confirmation operation with `paymentMethod = "afterpay"`, `sourceId`, and a separate `cardSourceId`/`cardVerificationToken`. The browser tokenizes that card with `intent: "STORE"`; today's charge uses only the Afterpay token. The server saves the card and no-show policy before capturing the Afterpay authorization. If card storage fails, the authorization is cancelled and the booking is not confirmed. Afterpay does not replace the no-show card or finance subsequent policy charges. Deposits/custom partial payments remain card-only; choose full payment for Afterpay installments.
+## Training split payment lifecycle
 
-The public training checkout no longer starts a separate BNPL invoice. Previously issued invoices and their webhook reconciliation remain supported. `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED` controls only the retained invoice creation endpoint, which also enforces the Canadian limit.
+1. Both payment sources are tokenized in the browser. Card verification uses only the card remainder. No server charge starts if either tokenization fails or is cancelled.
+2. Reserve one private training order and enrollment with the trusted full total. Persist the chosen portions and a deterministic reservation key. Reusing that key with a different program, amount or payment flow is rejected.
+3. Create one Square Order. Authorize the card remainder first, then the Afterpay portion, using separate deterministic payment keys and `autocomplete: false`. Afterpay authorization can start the installment plan and collect its first installment.
+4. Capture both authorized payments using Square `PayOrder`, verifying the completed order includes both expected tenders. If individual payment records remain approved, complete those same payment IDs explicitly. Persist that step so a retry can finish the remaining payment. Verify both payment IDs, amounts, currency, order/reference and source types through Square. Mark the enrollment paid only when both payments are `COMPLETED`.
+5. Send the existing scheduling notifications. Signed payment webhooks, the payment reconciliation cron, and `/api/training-checkout/split-status` recover interrupted requests using stored payment IDs, without new tokens or authorizations.
 
-## Activation and live verification
+A transaction-scoped PostgreSQL advisory lock serializes each split attempt and works through transaction poolers. Payment-state writes commit independently of the lock transaction so they survive interrupted requests. This operation uses two pool connections. The order's JSON provider metadata stores `flow: training_square_split` and `splitPayment` containing portions, provider IDs and stage. No new table or migration is needed; payment tokens are never persisted.
 
-No new environment variables or schema migration are required. Product/training still require `SQUARE_COMMERCE_ENABLED=true`; bookings still require `SERVICE_BOOKING_SQUARE_ENABLED=true` and `SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED=true`, with the existing Square credentials and location.
+Declines cancel both authorizations, including unknown outcomes by idempotency key. A new checkout attempt is permitted only after both cancellations are confirmed. An uncertain capture retains the original attempt and shows **Check payment status**. The browser stores the opaque reservation key and checkout email in session storage to recover after reload; it removes them after confirmed payment or cancellation. Unknown or missing reservations require review before another payment.
 
-Enable online Afterpay for the intended merchant/location in Square Dashboard and confirm that the merchant categories cover the actual services, training and any future digital courses. Application code cannot enable account eligibility. Production SDK initialization performs the seller/transaction check; Sandbox ignores seller eligibility and cannot certify production availability.
+### Operational recovery
 
-Before deploying to production, verify the SDK sheet with the intended Square Sandbox application/location, then confirm live account eligibility. Check eligible and over-limit totals, HST/shipping/promotions, cancellation, decline, duplicate submission, service card-storage failure, paid order/appointment state and webhook recovery. Follow the existing launch smoke matrix for live PostgreSQL and fulfillment behavior. Do not place a real charge merely to test without authorization.
+The existing authenticated `/api/admin/payment-reconciliation` job also reconciles pending split attempts older than one minute, up to 20 per run. Keep that scheduled job and the shared `/api/webhooks/square` payment subscriptions active.
 
-Square documents refunds for Afterpay up to 120 days from purchase. Keep the existing refund API and provider-error handling; do not promise a longer refund window for this method.
+If one payment is completed and the other is not, the app leaves enrollment pending, blocks a new attempt, and logs `split_payment_requires_review` with the local order reference. Review **both** payment IDs in `providerMetadata.splitPayment` and the Square order before taking action. If completion cannot be recovered, cancel any remaining authorization and refund the captured portion through Square according to the purchase terms. Do not mark the order paid from one receipt, or use `providerPaymentId` alone to calculate a full-order refund: that field is the Afterpay payment ID; the card payment is stored separately. Manual resolution must reconcile the private order state before allowing a new payment. No automatic partial-capture refund is issued.
 
-## Automated verification
+## Invoice compatibility
 
-Run `npm run test:bnpl` for browser checks of the actual React checkout components using mocked SDK and API boundaries. The suite needs Chromium but no database, dev server or Square credentials. The fixture is outside the application route tree.
+The public training checkout uses embedded Afterpay and Afterpay + card. It does not redirect to invoices. The existing `/api/training-checkout/square-invoice` endpoint remains gated by `TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED` and rejects totals above C$2,000. Existing invoice webhooks and card fallback remain supported. See [the invoice runbook](training-afterpay-square-invoice.md).
 
-Source tests cover amount boundaries, tax/shipping-inclusive totals, stale prices, malformed methods, provider source-type mismatches, cancellation on ledger/card-storage failure, service policy-card separation, staff attribution and commerce webhook recovery. These tests prove application behavior with fakes; they do not prove live merchant approval or live database reconciliation.
+## Configuration and verification
 
-## Future course checkout
+Embedded products/training require `SQUARE_COMMERCE_ENABLED=true` and existing Square credentials. Services retain their existing Square and card-on-file flags. Split checkout also uses the Orders API (`ORDERS_WRITE` for OAuth credentials) as well as payment permissions. Enable Afterpay for the intended Square merchant/location; the SDK performs the eligibility check. There are no new environment variables.
 
-Reuse `SquareAfterpayButton`, `SquareCheckoutPayment`, `validateSquareAfterpayPayment` and `authorizeCaptureSquarePayment`. Create the course order from trusted course pricing, bind an idempotency key, and grant access only through the course's verified payment finalizer/reconciliation. Preserve `BUY_NOW_PAY_LATER` provider evidence and the Square provider identity. The course catalog, enrollment/access model and delivery routes are not implemented by this change.
+Run `npm run test:bnpl` for actual React checkout components with mocked SDK/API boundaries. Unit tests cover quote validation, strict portion limits, authorization ordering, cancellations, unknown outcomes, partial captures, replay recovery and invoice rejection above C$2,000. A Square Sandbox integration check on 2026-09-23 also exercised the application payment coordinator with a C$3,955 order: C$2,000 Afterpay and C$1,955 card. Both tenders reached `COMPLETED`; retry recovery kept the payment count at two. Test-payment refunds were submitted. A separate Sandbox decline test confirmed that an Afterpay rejection cancels the card authorization and permits a fresh attempt only after cancellation. Sandbox returned a completed order from `PayOrder` while both payment records remained approved; explicit completion of those same IDs succeeded. The coordinator handles that state without granting enrollment early.
+
+The configured `TEST_DATABASE_URL` rejected authentication, so the added database test for reservation binding, advisory locking and durable receipt replay could not run to completion. Resolve those test credentials and run the database suite before release. Sandbox results do not establish production merchant eligibility; confirm that separately. No live charge was placed.
+
+## Sources
+
+- [Square Afterpay Payments API requirements](https://developer.squareup.com/docs/payments-api/take-payments/afterpay-payments)
+- [Square Canadian amount limits](https://developer.squareup.com/docs/payments-api/take-payments#afterpay-minimums-and-maximums)
+- [Pay for an order using multiple payments](https://developer.squareup.com/docs/orders-api/pay-for-orders)
+- [PayOrder reference and idempotency](https://developer.squareup.com/reference/square/orders-api/pay-order)
+- [Afterpay merchant vs customer limits](https://www.afterpay.com/en-NZ/business/resources/education-hub/afterpay-merchants-vs-customer-limits) describes combining Afterpay with another payment method; this is a New Zealand resource, not a Canadian Square integration guarantee.

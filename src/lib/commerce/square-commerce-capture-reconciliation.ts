@@ -152,6 +152,9 @@ export async function runSquareCommerceCaptureReconciliation(input: {
     return null;
   }
 
+  const { reconcileTrainingSplits } =
+    await import("./square-training-split-live");
+  await reconcileTrainingSplits(input.now);
   const client = createSquarePaymentsClient(env);
 
   return reconcileUncapturedSquareCommercePayments(

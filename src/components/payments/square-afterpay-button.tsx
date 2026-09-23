@@ -33,6 +33,8 @@ interface AfterpayPayments {
 interface SquareAfterpayButtonProps {
   amountCents: number;
   configUrl?: string;
+  title?: string;
+  description?: string;
   disabled: boolean;
   /** Synchronous lock shared with the card button. Keeps popup user activation. */
   onStart: () => boolean;
@@ -45,6 +47,8 @@ interface SquareAfterpayButtonProps {
 export function SquareAfterpayButton({
   amountCents,
   configUrl = "/api/checkout/square/config",
+  title = "Buy now, pay later with Afterpay",
+  description = SQUARE_AFTERPAY_LIMIT_MESSAGE,
   disabled,
   onStart,
   onEnd,
@@ -177,12 +181,8 @@ export function SquareAfterpayButton({
 
   return (
     <div className="space-y-3 border-t border-lh-line pt-4">
-      <p className="font-body text-sm font-medium text-lh-primary">
-        Buy now, pay later with Afterpay
-      </p>
-      <p className="text-xs leading-5 text-lh-muted">
-        {SQUARE_AFTERPAY_LIMIT_MESSAGE}
-      </p>
+      <p className="font-body text-sm font-medium text-lh-primary">{title}</p>
+      <p className="text-xs leading-5 text-lh-muted">{description}</p>
       {eligible ? (
         <>
           <fieldset

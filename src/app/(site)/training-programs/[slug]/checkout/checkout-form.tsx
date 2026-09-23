@@ -28,6 +28,7 @@ export function CheckoutForm({
   total,
   currency,
 }: CheckoutFormProps) {
+  const [paymentBusy, setPaymentBusy] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [acknowledged, setAcknowledged] = useState(false);
@@ -121,7 +122,7 @@ export function CheckoutForm({
   };
 
   return (
-    <div className="space-y-8">
+    <fieldset disabled={paymentBusy} className="min-w-0 space-y-8">
       <div className="border-t border-b border-lh-neutral/20 py-6">
         <div className="space-y-3 mb-4">
           <div className="flex justify-between items-center text-lh-shadow/80">
@@ -304,6 +305,7 @@ export function CheckoutForm({
         </div>
 
         <SquareTrainingPayButton
+          onBusyChange={setPaymentBusy}
           disabled={!isValid || isApplyingPromotionCode}
           programSlug={programSlug}
           clientPrice={clientPrice}
@@ -313,6 +315,6 @@ export function CheckoutForm({
           onPaid={() => {}}
         />
       </div>
-    </div>
+    </fieldset>
   );
 }

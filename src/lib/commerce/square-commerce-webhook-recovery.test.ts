@@ -180,3 +180,21 @@ test("Afterpay completed events recover product and training orders with their B
     );
   }
 });
+
+test("a completed split portion invokes two-payment recovery and never the single-payment finalizer", async () => {
+  const harness = createHarness({});
+  let calls = 0;
+  harness.deps.recoverTrainingSplit = async (reference) => {
+    calls++;
+    assert.equal(reference, "lh-split");
+    return { status: "retryable", reason: "second_payment_pending" };
+  };
+  const result = await recoverSquareCommercePayment(
+    { ...productPayment, kind: "training_split", orderReference: "lh-split" },
+    harness.deps,
+  );
+  assert.equal(result.status, "retryable");
+  assert.equal(calls, 1);
+  assert.equal(harness.trainingFinalizeCalls, 0);
+  assert.deepEqual(harness.trainingNotifies, []);
+});
