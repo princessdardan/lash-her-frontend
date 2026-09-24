@@ -80,6 +80,7 @@ const APPOINTMENT_CALENDAR_SYNC_STATUS_PRESENTATIONS = {
 const MARKETING_SOURCE_LABELS = {
   booking_marketing_choice: "Booking opt-in",
   contact_popup: "Website sign-up",
+  course_signup: "Course sign-up",
   general_inquiry: "General inquiry",
   sanity_backfill: "Imported contact",
   training_contact: "Training inquiry",

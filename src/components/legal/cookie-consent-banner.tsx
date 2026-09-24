@@ -25,7 +25,10 @@ export function CookieConsentBanner() {
   function saveChoice(analytics: boolean) {
     const choice = createCookieConsentChoice(analytics);
     try {
-      window.localStorage.setItem(COOKIE_CONSENT_STORAGE_KEY, serializeCookieConsent(choice));
+      window.localStorage.setItem(
+        COOKIE_CONSENT_STORAGE_KEY,
+        serializeCookieConsent(choice),
+      );
     } catch {
       // Storage can be unavailable in restricted browsing contexts; still honor the in-session choice.
     }
@@ -51,7 +54,10 @@ export function CookieConsentBanner() {
             We use required cookies and optional analytics.
           </h2>
           <p className="mt-3 font-body text-sm font-bold leading-6 text-lh-shadow/75">
-            Required storage keeps the site working for carts, bookings, checkout, and preferences. Analytics helps us understand site performance and will only load if you accept analytics cookies.
+            Required storage keeps the site working for carts, bookings,
+            checkout, course access and progress, and preferences. Analytics
+            helps us understand site performance and will only load if you
+            accept analytics cookies.
           </p>
           <div
             className="mt-4 grid gap-3 rounded-2xl bg-lh-neutral-2 p-4 font-body text-sm font-bold leading-6 text-lh-shadow/75 md:grid-cols-2"
@@ -60,11 +66,18 @@ export function CookieConsentBanner() {
           >
             <div>
               <h3 className="text-lh-shadow">Required</h3>
-              <p>Always on. Supports functional site behavior such as cart, booking, checkout, and saved preferences.</p>
+              <p>
+                Always on. Supports functional site behavior such as cart,
+                booking, checkout, remembered course access and progress, and
+                saved preferences.
+              </p>
             </div>
             <div>
               <h3 className="text-lh-shadow">Analytics</h3>
-              <p>Optional. Helps measure visits and improve the website. Analytics is off unless you accept it.</p>
+              <p>
+                Optional. Helps measure visits and improve the website.
+                Analytics is off unless you accept it.
+              </p>
             </div>
           </div>
         </div>
@@ -100,7 +113,9 @@ export function CookieConsentBanner() {
 
 function readStoredConsent() {
   try {
-    return parseCookieConsent(window.localStorage.getItem(COOKIE_CONSENT_STORAGE_KEY));
+    return parseCookieConsent(
+      window.localStorage.getItem(COOKIE_CONSENT_STORAGE_KEY),
+    );
   } catch {
     return null;
   }

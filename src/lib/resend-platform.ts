@@ -68,6 +68,7 @@ export type ResendEmailTemplateKey =
   | "training_payment_customer";
 
 export type ResendMarketingContactSource =
+  | "course_signup"
   | "booking"
   | "contact_popup"
   | "general_inquiry"
@@ -137,6 +138,7 @@ const SOURCE_SEGMENT_ENV_BY_SOURCE: Record<
   string
 > = {
   booking: "RESEND_SEGMENT_BOOKING_ID",
+  course_signup: "RESEND_SEGMENT_COURSE_SIGNUP_ID",
   contact_popup: "RESEND_SEGMENT_CONTACT_POPUP_ID",
   general_inquiry: "RESEND_SEGMENT_GENERAL_INQUIRY_ID",
   sanity_backfill: "RESEND_SEGMENT_SANITY_BACKFILL_ID",

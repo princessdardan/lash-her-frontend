@@ -63,6 +63,19 @@ test("Sanity revalidate route revalidates mapped tags for a valid signature", ()
   `);
 });
 
+test("Mux asset updates invalidate cached course playback metadata", () => {
+  runRouteScenario(`
+    const { handler, revalidatedTags, syncedStockIds } = runScenario({
+      body: { _type: "mux.videoAsset", _id: "mux-asset-123" },
+      isValidSignature: true,
+    });
+    const response = await handler(createRequest());
+    assert.equal(response.status, 200);
+    assert.deepEqual(revalidatedTags, [{ tag: "shortCourse", profile: { expire: 0 } }]);
+    assert.deepEqual(syncedStockIds, []);
+  `);
+});
+
 test("Sanity revalidate route reconciles product stock on a product publish", () => {
   runRouteScenario(`
     const { handler, revalidatedTags, syncedStockIds } = runScenario({

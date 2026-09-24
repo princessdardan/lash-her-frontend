@@ -15,6 +15,7 @@ import { promotionCode } from "./documents/promotion-code";
 import { service } from "./documents/service";
 import { trainingProgram } from "./documents/training-program";
 import { policyPage } from "./documents/policy-page";
+import { shortCourse } from "./documents/short-course";
 
 // Objects — Layout blocks
 import { heroSection } from "./objects/layout/hero-section";
@@ -62,6 +63,7 @@ export const schemaTypes = [
   service,
   trainingProgram,
   policyPage,
+  shortCourse,
   // Layout blocks
   heroSection,
   ctaFeaturesSection,

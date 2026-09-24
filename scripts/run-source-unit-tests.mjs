@@ -35,6 +35,7 @@ const SERVER_ONLY_TEST_FILES = new Set([
 ]);
 
 const DB_TEST_FILES = new Set([
+  "src/lib/courses/signup.db.test.ts",
   "src/data/commerce-e2e-catalog-fixture.test.ts",
   "src/lib/admin/step-up-proof.db.test.ts",
   "src/lib/admin/operations-workspaces.db.test.ts",

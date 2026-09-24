@@ -1,5 +1,45 @@
 // === Sanity Base Types ===
 
+export interface TCourseQuestion {
+  _key: string;
+  prompt: string;
+  options: Array<{ _key: string; text: string; isCorrect?: boolean }>;
+  explanation: string;
+}
+
+export interface TCourseModule {
+  _key: string;
+  title: string;
+  lesson: TPortableTextBlock[];
+  video:
+    | {
+        provider: "mux";
+        id: string;
+        playbackId: string | null;
+        status: string | null;
+        thumbTime: number | null;
+      }
+    | { provider: "sanity"; id: string; url: string | null };
+  posterUrl?: string;
+  captionsUrl?: string;
+  transcript?: string;
+  quiz: TCourseQuestion[];
+}
+
+export interface TShortCourseSummary {
+  _id: string;
+  title: string;
+  slug: string;
+  introduction: string;
+  coverImage?: TSanityImage;
+  seo?: { title?: string; description?: string; noIndex?: boolean };
+  modules: Array<Pick<TCourseModule, "_key" | "title">>;
+}
+
+export interface TShortCourse extends Omit<TShortCourseSummary, "modules"> {
+  modules: TCourseModule[];
+}
+
 export interface TSanityImage {
   asset: { _ref: string; _type: "reference" };
   hotspot?: { x: number; y: number; width: number; height: number };

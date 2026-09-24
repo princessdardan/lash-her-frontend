@@ -101,6 +101,7 @@ export const structure: StructureResolver = (S) =>
                 "Training Programs",
               ),
               S.documentTypeListItem("policyPage").title("Policy Pages"),
+              S.documentTypeListItem("shortCourse").title("Short Courses"),
             ]),
         ),
     ]);

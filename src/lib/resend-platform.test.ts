@@ -109,6 +109,23 @@ test("Resend marketing contact plan maps sources to configured segments and topi
   `);
 });
 
+test("course signups use the marketing audience and optional course segment", () => {
+  runResendPlatformScenario(`
+    process.env.RESEND_SEGMENT_MARKETING_ID = "segment-all";
+    process.env.RESEND_SEGMENT_COURSE_SIGNUP_ID = "segment-course";
+    const plan = buildResendMarketingContactSyncPlan({
+      consentedAt: new Date("2026-09-23T12:00:00Z"),
+      email: "course@example.invalid", source: "course_signup", sourcePath: "/courses/lash-care",
+    });
+    assert.deepEqual(plan.createContact.segments, [{ id: "segment-all" }, { id: "segment-course" }]);
+    delete process.env.RESEND_SEGMENT_COURSE_SIGNUP_ID;
+    const withoutOptional = buildResendMarketingContactSyncPlan({
+      consentedAt: new Date("2026-09-23T12:00:00Z"), email: "course@example.invalid", source: "course_signup",
+    });
+    assert.deepEqual(withoutOptional.createContact.segments, [{ id: "segment-all" }]);
+  `);
+});
+
 test("Resend marketing contact sync creates missing contacts and adds missing segments", () => {
   runResendPlatformScenario(`
     process.env.RESEND_API_KEY = "re_test";
@@ -326,6 +343,7 @@ function runResendPlatformScenario(assertions: string): void {
   delete env.RESEND_EVENT_MARKETING_CONTACT_OPTED_IN;
   delete env.RESEND_TEMPLATE_BOOKING_CONFIRMATION_ID;
   delete env.RESEND_SEGMENT_CONTACT_POPUP_ID;
+  delete env.RESEND_SEGMENT_COURSE_SIGNUP_ID;
   delete env.RESEND_SEGMENT_MARKETING_ID;
   delete env.RESEND_SEGMENT_TRAINING_CONTACT_ID;
   delete env.RESEND_TOPIC_MARKETING_ID;

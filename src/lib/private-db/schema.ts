@@ -265,6 +265,7 @@ export const appointmentHoldStatus = pgEnum("appointment_hold_status", [
 export const marketingContactSubmissionType = pgEnum(
   "marketing_contact_submission_type",
   [
+    "course_signup",
     "general_inquiry",
     "training_contact",
     "contact_popup",

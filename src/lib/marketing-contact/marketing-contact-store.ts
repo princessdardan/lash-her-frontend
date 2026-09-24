@@ -1,4 +1,5 @@
 import "server-only";
+import { COURSE_CONSENT_TEXT } from "@/lib/courses/contract";
 
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
@@ -34,6 +35,7 @@ export type MarketingConsentChoice =
   | "not_opted_in"
   | "unsubscribed";
 export type MarketingSubmissionSource =
+  | "course_signup"
   | "general_inquiry"
   | "training_contact"
   | "contact_popup"
@@ -65,6 +67,14 @@ export interface RecordGeneralInquiryInput extends MarketingContactIdentity {
   message: string;
   sourceDocument?: SourceDocumentReference;
   sourcePath?: string;
+  submittedAt?: Date;
+}
+
+export interface RecordCourseSignupInput {
+  email: string;
+  courseId: string;
+  courseTitle: string;
+  sourcePath: string;
   submittedAt?: Date;
 }
 
@@ -211,6 +221,9 @@ export interface MarketingContactStoreDependencies {
 }
 
 export interface MarketingContactStore {
+  recordCourseSignup(
+    input: RecordCourseSignupInput,
+  ): Promise<MarketingContactRecordResult>;
   recordBookingMarketingChoice(
     input: RecordBookingMarketingChoiceInput,
   ): Promise<{ submissionId: string; syncJobId?: string }>;
@@ -249,6 +262,20 @@ export function createMarketingContactStore(
   }
 
   return {
+    async recordCourseSignup(input) {
+      return recordContact(
+        buildPersistenceInput({
+          consentText: COURSE_CONSENT_TEXT,
+          identity: { email: input.email },
+          marketingConsent: true,
+          payload: { courseId: input.courseId, courseTitle: input.courseTitle },
+          source: "course_signup",
+          sourcePath: input.sourcePath,
+          submittedAt: input.submittedAt,
+          submissionType: "course_signup",
+        }),
+      );
+    },
     async recordGeneralInquiry(input) {
       return recordContact(
         buildPersistenceInput({
@@ -379,6 +406,12 @@ export function createMarketingContactStore(
 const defaultMarketingContactStore = createMarketingContactStore(
   createDrizzleMarketingContactRepository(),
 );
+
+export async function recordCourseSignupSubmission(
+  input: RecordCourseSignupInput,
+) {
+  return defaultMarketingContactStore.recordCourseSignup(input);
+}
 
 export async function recordGeneralInquirySubmission(
   input: RecordGeneralInquiryInput,

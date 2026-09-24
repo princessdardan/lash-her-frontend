@@ -1,0 +1,1 @@
+ALTER TYPE "public"."marketing_contact_submission_type" ADD VALUE 'course_signup' BEFORE 'general_inquiry';

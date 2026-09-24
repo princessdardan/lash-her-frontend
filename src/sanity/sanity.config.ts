@@ -4,6 +4,7 @@ import { defineConfig } from "sanity";
 import { vercelProtectionBypassTool } from "@sanity/vercel-protection-bypass";
 import { presentationTool } from "sanity/presentation";
 import { structureTool } from "sanity/structure";
+import { muxInput } from "sanity-plugin-mux-input";
 import { schemaTypes } from "./schemas";
 import { resolve } from "./presentation/resolve";
 import { structure } from "./structure";
@@ -30,6 +31,7 @@ export default defineConfig({
   dataset,
   apiVersion,
   plugins: [
+    muxInput({ acceptedMimeTypes: ["video/*"], defaultPublic: true }),
     presentationTool({
       resolve,
       previewUrl: {

@@ -540,6 +540,13 @@
       "when": 1788225229633,
       "tag": "0076_organic_kitty_pryde",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1790208354053,
+      "tag": "0077_course_signup",
+      "breakpoints": true
     }
   ]
 }

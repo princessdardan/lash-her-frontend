@@ -1,0 +1,82 @@
+{
+  "_id": "course-e2e",
+  "slug": "course-e2e",
+  "title": "Lash care essentials",
+  "introduction": "Learn everyday lash care in two short lessons.",
+  "modules": [
+    {
+      "_key": "cleaning",
+      "title": "Daily cleansing",
+      "lesson": [
+        {
+          "_type": "block",
+          "_key": "text1",
+          "children": [
+            {
+              "_type": "span",
+              "_key": "span1",
+              "text": "PRIVATE_LESSON: cleanse gently each day."
+            }
+          ],
+          "markDefs": []
+        }
+      ],
+      "video": {
+        "provider": "sanity",
+        "id": "file-course-one-mp4",
+        "url": "https://course-media.example.invalid/lesson.mp4"
+      },
+      "captionsUrl": "https://course-media.example.invalid/lesson.vtt",
+      "transcript": "Use a gentle cleanser each day.",
+      "quiz": [
+        {
+          "_key": "cleanser",
+          "prompt": "Which cleanser should you use?",
+          "explanation": "Use a gentle lash-safe cleanser.",
+          "options": [
+            {
+              "_key": "gentle",
+              "text": "A gentle lash cleanser",
+              "isCorrect": true
+            },
+            { "_key": "oil", "text": "An oil cleanser", "isCorrect": false }
+          ]
+        }
+      ]
+    },
+    {
+      "_key": "brushing",
+      "title": "Gentle brushing",
+      "lesson": [
+        {
+          "_type": "block",
+          "_key": "text2",
+          "children": [
+            {
+              "_type": "span",
+              "_key": "span2",
+              "text": "PRIVATE_LESSON: brush after drying."
+            }
+          ],
+          "markDefs": []
+        }
+      ],
+      "video": {
+        "provider": "sanity",
+        "id": "file-course-two-mp4",
+        "url": "https://course-media.example.invalid/lesson.mp4"
+      },
+      "quiz": [
+        {
+          "_key": "brush",
+          "prompt": "When should you brush?",
+          "explanation": "Brush your lashes when dry.",
+          "options": [
+            { "_key": "dry", "text": "When dry", "isCorrect": true },
+            { "_key": "wet", "text": "When wet", "isCorrect": false }
+          ]
+        }
+      ]
+    }
+  ]
+}

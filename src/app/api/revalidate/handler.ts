@@ -10,6 +10,8 @@ const TYPE_TAG_MAP: Record<string, string> = {
   trainingPage: "trainingPage",
   trainingProgramsPage: "trainingProgramsPage",
   trainingProgram: "trainingProgram",
+  shortCourse: "shortCourse",
+  "mux.videoAsset": "shortCourse",
   productsPage: "productsPage",
   productCollection: "productCollection",
   promotionCode: "promotionCode",

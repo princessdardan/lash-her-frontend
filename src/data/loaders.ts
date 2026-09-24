@@ -24,6 +24,8 @@ import type {
   TService,
   TServiceEditorial,
   TTrainingProgramCatalogItem,
+  TShortCourse,
+  TShortCourseSummary,
 } from "@/types";
 
 const isVercelPreview = process.env.VERCEL_ENV === "preview";
@@ -1050,7 +1052,68 @@ async function getAllServiceSlugs(): Promise<Array<{ slug: string }>> {
   return sanityStaticFetch<Array<{ slug: string }>>(query, {}, ["service"]);
 }
 
+const COURSE_SUMMARY_PROJECTION = groq`{
+  _id, title, "slug": slug.current, introduction,
+  coverImage{asset, hotspot, crop, alt}, seo{title, description, noIndex},
+  modules[]{_key, title}
+}`;
+const PUBLISHED_COURSE_FILTER = groq`_type == "shortCourse" && !(_id in path("drafts.**")) && !(_id in path("versions.**"))`;
+
+async function getShortCourseSummary(
+  slug: string,
+): Promise<TShortCourseSummary | null> {
+  return sanityFetch<TShortCourseSummary | null>(
+    groq`*[${PUBLISHED_COURSE_FILTER} && slug.current == $slug][0]${COURSE_SUMMARY_PROJECTION}`,
+    { slug },
+    ["shortCourse"],
+    { mode: "published" },
+  );
+}
+
+async function getShortCourseSignupDetails(
+  courseId: string,
+): Promise<TShortCourseSummary | null> {
+  return sanityFetch<TShortCourseSummary | null>(
+    groq`*[${PUBLISHED_COURSE_FILTER} && _id == $courseId][0]${COURSE_SUMMARY_PROJECTION}`,
+    { courseId },
+    ["shortCourse"],
+    { mode: "published" },
+  );
+}
+
+// Cache editorial data only. Call after checking the request's access cookie.
+async function getShortCourseContent(
+  courseId: string,
+): Promise<TShortCourse | null> {
+  return sanityFetch<TShortCourse | null>(
+    groq`*[${PUBLISHED_COURSE_FILTER} && _id == $courseId][0]{
+      _id, title, "slug": slug.current, introduction,
+      modules[]{_key, title, lesson[],
+        "video": select(defined(muxVideo.asset._ref) => {
+          "provider": "mux",
+          "id": muxVideo.asset._ref,
+          "playbackId": muxVideo.asset->data.playback_ids[policy == "public"][0].id,
+          "status": muxVideo.asset->status,
+          "thumbTime": muxVideo.asset->thumbTime
+        }, {
+          "provider": "sanity",
+          "id": coalesce(video.asset._ref, ""),
+          "url": video.asset->url
+        }),
+        "posterUrl": poster.asset->url, "captionsUrl": captions.asset->url, transcript,
+        quiz[]{_key, prompt, explanation, options[]{_key, text, isCorrect}}
+      }
+    }`,
+    { courseId },
+    ["shortCourse"],
+    { mode: "published" },
+  );
+}
+
 export const loaders = {
+  getShortCourseSummary,
+  getShortCourseSignupDetails,
+  getShortCourseContent,
   getHomePageData,
   getContactPageData,
   getGalleryPageData,

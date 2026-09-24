@@ -23,30 +23,37 @@ export function ContactPopup({ settings }: ContactPopupProps) {
   const [errors, setErrors] = React.useState<Record<string, string>>({});
   const [generalError, setGeneralError] = React.useState<string | null>(null);
   const pathname = usePathname();
+  const isCoursePage =
+    pathname === "/courses" || pathname.startsWith("/courses/");
 
   const enabled = settings?.enabled ?? false;
   const variant = settings?.variant ?? "fullContact";
   const heading = settings?.heading ?? "Join Our Community";
-  const description = settings?.description ?? "Subscribe to get the latest updates and offers.";
-  const privacyText = settings?.privacyText ?? "By subscribing, you agree to our";
+  const description =
+    settings?.description ?? "Subscribe to get the latest updates and offers.";
+  const privacyText =
+    settings?.privacyText ?? "By subscribing, you agree to our";
   const privacyLinkLabel = settings?.privacyLinkLabel ?? "Privacy Policy";
   const privacyLinkHref = settings?.privacyLinkHref ?? "";
   const submitLabel = settings?.submitLabel ?? "Subscribe";
-  const successMessage = settings?.successMessage ?? "Thank you for subscribing!";
+  const successMessage =
+    settings?.successMessage ?? "Thank you for subscribing!";
   const cookieExpiryDays = settings?.cookieExpiryDays ?? 30;
   const safePrivacyLinkHref = getSafePrivacyLinkHref(privacyLinkHref);
 
   React.useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || isCoursePage) return;
 
-    const hasDismissed = document.cookie.includes("lh_contact_popup_dismissed=true");
+    const hasDismissed = document.cookie.includes(
+      "lh_contact_popup_dismissed=true",
+    );
     if (!hasDismissed) {
       const timer = setTimeout(() => {
         setIsOpen(true);
       }, 3000);
       return () => clearTimeout(timer);
     }
-  }, [enabled]);
+  }, [enabled, isCoursePage]);
 
   const setDismissCookie = () => {
     const safeExpiryDays = Math.max(1, cookieExpiryDays);
@@ -79,7 +86,11 @@ export function ContactPopup({ settings }: ContactPopupProps) {
       email: typeof email === "string" ? email : "",
       instagram: typeof instagram === "string" ? instagram : "",
       sourcePath: pathname,
-      consentText: buildPopupConsentText(description, privacyText, privacyLinkLabel),
+      consentText: buildPopupConsentText(
+        description,
+        privacyText,
+        privacyLinkLabel,
+      ),
       company: typeof company === "string" ? company : "",
     };
 
@@ -99,7 +110,7 @@ export function ContactPopup({ settings }: ContactPopupProps) {
     setIsSubmitting(false);
   };
 
-  if (!enabled) return null;
+  if (!enabled || isCoursePage) return null;
 
   return (
     <Dialog.Root open={isOpen} onOpenChange={handleOpenChange}>
@@ -112,17 +123,15 @@ export function ContactPopup({ settings }: ContactPopupProps) {
           </VisuallyHidden.Root>
           <div className="flex flex-col items-center text-center space-y-4">
             <LashHerLogo className="h-12 w-auto text-lh-primary" />
-            <h2 className="text-2xl font-serif text-lh-primary">
-              {heading}
-            </h2>
-            <p className="text-sm text-gray-600">
-              {description}
-            </p>
+            <h2 className="text-2xl font-serif text-lh-primary">{heading}</h2>
+            <p className="text-sm text-gray-600">{description}</p>
           </div>
 
           {isSubmitted ? (
             <div className="py-8 text-center">
-              <p className="text-lg font-medium text-lh-primary">{successMessage}</p>
+              <p className="text-lg font-medium text-lh-primary">
+                {successMessage}
+              </p>
               <Button
                 className="mt-6 w-full"
                 onClick={() => handleOpenChange(false)}
@@ -157,9 +166,13 @@ export function ContactPopup({ settings }: ContactPopupProps) {
                     disabled={isSubmitting}
                     required
                     aria-invalid={!!errors.name}
-                    aria-describedby={errors.name ? "popup-name-error" : undefined}
+                    aria-describedby={
+                      errors.name ? "popup-name-error" : undefined
+                    }
                   />
-                  {errors.name && <FieldError id="popup-name-error">{errors.name}</FieldError>}
+                  {errors.name && (
+                    <FieldError id="popup-name-error">{errors.name}</FieldError>
+                  )}
                 </Field>
               )}
 
@@ -173,21 +186,29 @@ export function ContactPopup({ settings }: ContactPopupProps) {
                   disabled={isSubmitting}
                   required
                   aria-invalid={!!errors.email}
-                  aria-describedby={errors.email ? "popup-email-error" : undefined}
+                  aria-describedby={
+                    errors.email ? "popup-email-error" : undefined
+                  }
                 />
-                {errors.email && <FieldError id="popup-email-error">{errors.email}</FieldError>}
+                {errors.email && (
+                  <FieldError id="popup-email-error">{errors.email}</FieldError>
+                )}
               </Field>
 
               {variant === "fullContact" && (
                 <Field>
-                  <FieldLabel htmlFor="popup-instagram">Instagram (Optional)</FieldLabel>
+                  <FieldLabel htmlFor="popup-instagram">
+                    Instagram (Optional)
+                  </FieldLabel>
                   <Input
                     id="popup-instagram"
                     name="instagram"
                     placeholder="@username"
                     disabled={isSubmitting}
                   />
-                  {errors.instagram && <FieldError>{errors.instagram}</FieldError>}
+                  {errors.instagram && (
+                    <FieldError>{errors.instagram}</FieldError>
+                  )}
                 </Field>
               )}
 
@@ -205,11 +226,7 @@ export function ContactPopup({ settings }: ContactPopupProps) {
                 ) : null}
               </div>
 
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={isSubmitting}
-              >
+              <Button type="submit" className="w-full" disabled={isSubmitting}>
                 {isSubmitting ? "Submitting..." : submitLabel}
               </Button>
             </form>
@@ -228,17 +245,24 @@ export function ContactPopup({ settings }: ContactPopupProps) {
 function getSafePrivacyLinkHref(href: string): string | null {
   const trimmedHref = href.trim();
   if (!trimmedHref) return null;
-  if (trimmedHref.startsWith("/") && !trimmedHref.startsWith("//")) return trimmedHref;
+  if (trimmedHref.startsWith("/") && !trimmedHref.startsWith("//"))
+    return trimmedHref;
 
   try {
     const url = new URL(trimmedHref);
-    return url.protocol === "https:" || url.protocol === "mailto:" ? trimmedHref : null;
+    return url.protocol === "https:" || url.protocol === "mailto:"
+      ? trimmedHref
+      : null;
   } catch {
     return null;
   }
 }
 
-function buildPopupConsentText(description: string, privacyText: string, privacyLinkLabel: string): string {
+function buildPopupConsentText(
+  description: string,
+  privacyText: string,
+  privacyLinkLabel: string,
+): string {
   return [description, privacyText, privacyLinkLabel]
     .map((part) => part.trim())
     .filter(Boolean)
