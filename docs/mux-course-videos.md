@@ -1,6 +1,6 @@
 # Course videos with Mux
 
-Course modules use Sanity's Mux Input plugin (`sanity-plugin-mux-input` 3.x, compatible with this project's Sanity 4 / React 18). Editors upload or select videos in **Video (Mux)**. Mux stores and transcodes the media; Sanity stores `mux.videoAsset` metadata and references. The course player uses `@mux/mux-player-react` for adaptive HLS playback, with saved position, captions, poster images, and retry controls.
+Course modules use Sanity's Mux Input plugin (`sanity-plugin-mux-input` 3.x, compatible with this project's Sanity 4 / React 18). The lockfile resolves version 3.0.5, whose package metadata points to `sanity-io/plugins` under `plugins/sanity-plugin-mux-input`. The npm package name stayed the same when the repository moved. Editors upload or select videos in **Video (Mux)**. Mux stores and transcodes the media; Sanity stores `mux.videoAsset` metadata and references. The course player uses `@mux/mux-player-react` for adaptive HLS playback, with saved position, captions, poster images, and retry controls.
 
 ## Credentials: where to configure them
 
@@ -48,4 +48,4 @@ A selected Mux asset that is still processing, deleted, or lacks a public playba
 - Mux browser fixture: `npx playwright test --config tests/courses-mux.playwright.config.ts`. Exercises HLS playback, captions, resume, module changes, retries, and unavailable assets in desktop and mobile Chromium without a database or Mux credentials. All video traffic is intercepted locally.
 - Live Studio uploads, actual Mux delivery, credential permissions, and deployed webhook configuration still require the staging smoke check above.
 
-References: [Sanity Mux Input plugin](https://github.com/sanity-io/sanity-plugin-mux-input), [Mux's Sanity integration guide](https://www.mux.com/docs/integrations/sanity).
+References: [Sanity Mux Input plugin](https://github.com/sanity-io/plugins/tree/main/plugins/sanity-plugin-mux-input), [Mux's Sanity integration guide](https://www.mux.com/docs/integrations/sanity).
