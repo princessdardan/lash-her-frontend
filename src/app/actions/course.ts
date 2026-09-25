@@ -31,9 +31,10 @@ export async function submitCourseSignup(input: CourseSignupInput) {
       });
     },
     now: Date.now,
-    logError: () =>
+    logError: (details) =>
       console.error(
         "[course-signup] Signup failed before access could be confirmed",
+        details,
       ),
   });
 }

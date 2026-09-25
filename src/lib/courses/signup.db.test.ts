@@ -25,6 +25,8 @@ const skip = testDatabaseUrl ? undefined : "TEST_DATABASE_URL is required";
 const email = `course-${randomUUID()}@example.invalid`;
 const signup = {
   email,
+  phone: "+1 (416) 555-0123",
+  instagram: "@lash.learner",
   courseId: "course-test",
   courseTitle: "Test course",
   sourcePath: "/courses/test-course",
@@ -76,10 +78,14 @@ test(
       .from(marketingContactSyncJobs)
       .where(eq(marketingContactSyncJobs.emailNormalized, email));
     assert.equal(contacts.length, 1);
+    assert.equal(contacts[0].phone, signup.phone);
+    assert.equal(contacts[0].instagram, signup.instagram);
     assert.equal(submissions.length, 2);
     assert.equal(events.length, 2);
     assert.equal(jobs.length, 2);
     assert.equal(submissions[0].submissionType, "course_signup");
+    assert.equal(submissions[0].phone, signup.phone);
+    assert.equal(submissions[0].instagram, signup.instagram);
     assert.equal(submissions[0].consentText, COURSE_CONSENT_TEXT);
     assert.deepEqual(submissions[0].payload, {
       courseId: signup.courseId,
@@ -96,6 +102,8 @@ test(
         (job) => job.status === "queued" && job.source === "course_signup",
       ),
     );
+    assert.ok(jobs.every((job) => job.payload.phone === signup.phone));
+    assert.ok(jobs.every((job) => job.payload.instagram === signup.instagram));
 
     const secret = "test-course-secret-012345678901234567890123456789";
     const { token } = createCourseAccessToken(signup.courseId, secret);

@@ -11,6 +11,8 @@ const secret = "test-course-secret-012345678901234567890123456789";
 const input = {
   courseId: "course-one",
   email: " Learner@Example.COM ",
+  phone: " +1 (416) 555-0123 ",
+  instagram: " @lash.learner ",
   marketingConsent: true,
 };
 const now = Date.parse("2026-09-23T12:00:00Z");
@@ -56,6 +58,8 @@ test("signup saves server-derived course and consent context before setting acce
   assert.deepEqual(records, [
     {
       email: "Learner@Example.COM",
+      phone: "+1 (416) 555-0123",
+      instagram: "@lash.learner",
       courseId: "course-one",
       courseTitle: "Lash care",
       sourcePath: "/courses/lash-care",
@@ -64,10 +68,22 @@ test("signup saves server-derived course and consent context before setting acce
   ]);
 });
 
-test("invalid email, missing consent, honeypot and invalid course never write or grant", async () => {
+test("invalid contact details, missing consent, honeypot and invalid course never write or grant", async () => {
   for (const change of [
     { email: "invalid" },
     { email: "x".repeat(255) + "@example.com" },
+    { phone: "" },
+    { phone: "   " },
+    { phone: undefined },
+    { phone: 4165550123 },
+    { phone: "123" },
+    { phone: "1".repeat(16) },
+    { phone: "416-555-0123 ext invalid" },
+    { phone: "(".repeat(41) + "4165550123" },
+    { instagram: "https://instagram.com/learner" },
+    { instagram: "@" },
+    { instagram: "x".repeat(31) },
+    { instagram: {} },
     { marketingConsent: false },
     { marketingConsent: "true" },
     { company: "bot" },
@@ -83,17 +99,89 @@ test("invalid email, missing consent, honeypot and invalid course never write or
   }
 });
 
+test("Instagram is optional and common phone formats are accepted", async () => {
+  for (const phone of ["4165550123", "+1 (416) 555-0123", "+44 20 7946 0123"]) {
+    for (const instagram of [undefined, "", "  "]) {
+      const { dependencies, records } = fixture();
+      assert.equal(
+        (await signupForCourse({ ...input, phone, instagram }, dependencies))
+          .success,
+        true,
+      );
+      assert.equal(records[0].phone, phone);
+      assert.equal(records[0].instagram, undefined);
+    }
+  }
+});
+
+test("missing phone returns an actionable field error", async () => {
+  const { dependencies } = fixture();
+  assert.deepEqual(
+    await signupForCourse({ ...input, phone: "" }, dependencies),
+    {
+      success: false,
+      fieldErrors: { phone: "Enter a valid phone number." },
+    },
+  );
+});
+
 test("existing grants return without a new consent, rate-limit call or cookie renewal", async () => {
   const { dependencies, events } = fixture({
     getToken: async () =>
       createCourseAccessToken(input.courseId, secret, now).token,
   });
   assert.equal(
-    (await signupForCourse({ ...input, marketingConsent: false }, dependencies))
-      .success,
+    (
+      await signupForCourse(
+        { ...input, phone: "", marketingConsent: false },
+        dependencies,
+      )
+    ).success,
     true,
   );
   assert.deepEqual(events, []);
+});
+
+test("database failures report their stage and SQLSTATE without logging private data", async () => {
+  const logged: unknown[] = [];
+  const { dependencies, events } = fixture({
+    recordSignup: async () => {
+      throw new Error("Query contains private@example.com and a phone number", {
+        cause: Object.assign(new Error("invalid course_signup enum value"), {
+          code: "22P02",
+          detail: "Private contact details",
+        }),
+      });
+    },
+    logError: (details) => {
+      logged.push(details);
+    },
+  });
+  assert.equal((await signupForCourse(input, dependencies)).success, false);
+  assert.deepEqual(logged, [{ stage: "persistence", code: "22P02" }]);
+  assert.ok(!events.includes("cookie"));
+});
+
+test("configuration, limiter, course and cookie failures have distinct diagnostics", async () => {
+  for (const [method, stage] of [
+    ["getSecret", "configuration"],
+    ["getToken", "access"],
+    ["checkRateLimit", "rate_limit"],
+    ["getCourse", "course"],
+    ["setCookie", "cookie"],
+  ] as const) {
+    const logged: unknown[] = [];
+    const { dependencies } = fixture({
+      [method]: () => {
+        throw new Error("private failure details");
+      },
+      logError: (details) => {
+        logged.push(details);
+      },
+    });
+    assert.equal((await signupForCourse(input, dependencies)).success, false);
+    assert.deepEqual(logged, [{ stage, code: undefined }]);
+  }
 });
 
 test("persistence failure never grants access; limiter/configuration failures also fail closed", async () => {

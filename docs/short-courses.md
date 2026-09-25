@@ -16,7 +16,7 @@ Keep existing modules when editing/reordering; their Sanity array `_key` values 
 
 ## Access and consent
 
-- Signup requires an affirmative checkbox and stores the server-owned wording, timestamp, course reference, and source path in PostgreSQL. `course_signup` is visible as “Course sign-up” in marketing reporting.
+- Signup requires an email address, phone number, and affirmative checkbox; Instagram handle is optional. Contact details, server-owned consent wording, timestamp, course reference, and source path are stored in PostgreSQL. `course_signup` is visible as “Course sign-up” in marketing reporting.
 - The existing consent transaction queues Resend synchronization. There is no confirmation-email dependency or separate course email send. A database/Redis failure does not grant access; a delayed Resend job does not remove access.
 - Existing contacts are deduplicated by normalized email. A fresh explicit signup may re-subscribe an unsubscribed contact. Returning with a valid grant never changes subscription state.
 - A course-specific `lh_course_<hash>` cookie contains a signed version, course ID, random browser grant ID, and expiry. It contains no email. Cookies are HttpOnly, SameSite=Lax, host-only, and Secure in production. Their fixed lifetime is 365 days; ordinary visits do not renew them.
@@ -34,6 +34,8 @@ Keep existing modules when editing/reordering; their Sanity array `_key` values 
 6. Deploy the app with the matching dataset, database, and signing secret. No production content is seeded. Verify with an editor-provided course and an approved test address before adding a public navigation link.
 
 For rollback, roll back the application while retaining the additive enum value. Unpublishing a course removes its page through normal revalidation; deleting its Mux videos or legacy Sanity file assets is a separate operation. Monitor existing marketing sync failures in the admin app and `[course-signup]` server errors; neither logs submitted email or access tokens.
+
+If signup reports “We could not complete your signup,” run the read-only `npm run db:check -- --env-file <protected-env-file>` against the verified deployment database. A pending `0077_course_signup` causes PostgreSQL to reject the `course_signup` submission type (SQLSTATE `22P02`), rolling back the signup and preventing the access cookie. Apply the committed migration using the [private database migration runbook](private-database-migration-runbook.md), then retry. Server errors include a safe failure stage (`configuration`, `access`, `rate_limit`, `course`, `persistence`, or `cookie`) and a SQLSTATE code when available; raw exception messages and contact details are not logged.
 
 ## Verification
 

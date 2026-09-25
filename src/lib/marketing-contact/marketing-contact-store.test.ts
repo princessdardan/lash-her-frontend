@@ -61,6 +61,30 @@ const helperScript = String.raw`
   }
 `;
 
+test("course signup carries phone and Instagram into private contact persistence", () => {
+  runMarketingContactStoreScenario(`
+    const { repository, store } = createFakeStore();
+    await store.recordCourseSignup({
+      email: " Learner@Example.COM ",
+      phone: " +1 (416) 555-0123 ",
+      instagram: " @lash.learner ",
+      courseId: "course-one",
+      courseTitle: "Lash care",
+      sourcePath: "/courses/lash-care",
+    });
+    const record = repository.records[0];
+    for (const identity of [record.contact, record.submission, record.event]) {
+      assert.equal(identity.emailNormalized, "learner@example.com");
+      assert.equal(identity.phone, "+1 (416) 555-0123");
+      assert.equal(identity.instagram, "@lash.learner");
+    }
+    assert.equal(record.submission.submissionType, "course_signup");
+    assert.equal(record.submission.consentChoice, "opted_in");
+    assert.deepEqual(record.submission.payload, { courseId: "course-one", courseTitle: "Lash care" });
+    assert.equal(repository.syncJobs.length, 1);
+  `);
+});
+
 test("marketing contact store normalizes general inquiry submissions and records affirmative consent", () => {
   runMarketingContactStoreScenario(`
     const { repository, store } = createFakeStore();

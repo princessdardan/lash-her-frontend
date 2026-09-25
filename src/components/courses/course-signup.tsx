@@ -50,6 +50,8 @@ export function CourseSignup({
               const response = await submitCourseSignup({
                 courseId,
                 email: String(data.get("email") ?? ""),
+                phone: String(data.get("phone") ?? ""),
+                instagram: String(data.get("instagram") ?? ""),
                 marketingConsent: data.get("consent") === "on",
                 company: String(data.get("company") ?? ""),
               });
@@ -103,6 +105,55 @@ export function CourseSignup({
             </p>
           )}
         </div>
+        <div className="space-y-2">
+          <label htmlFor="course-phone" className="text-sm font-medium">
+            Phone number
+          </label>
+          <Input
+            id="course-phone"
+            name="phone"
+            type="tel"
+            autoComplete="tel"
+            required
+            maxLength={40}
+            disabled={pending}
+            aria-invalid={Boolean(result.fieldErrors?.phone)}
+            aria-describedby={
+              result.fieldErrors?.phone ? "course-phone-error" : undefined
+            }
+          />
+          {result.fieldErrors?.phone && (
+            <p id="course-phone-error" className="text-sm text-red-800">
+              {result.fieldErrors.phone}
+            </p>
+          )}
+        </div>
+        <div className="space-y-2">
+          <label htmlFor="course-instagram" className="text-sm font-medium">
+            Instagram handle (optional)
+          </label>
+          <Input
+            id="course-instagram"
+            name="instagram"
+            type="text"
+            placeholder="@yourhandle"
+            autoCapitalize="none"
+            spellCheck={false}
+            maxLength={31}
+            disabled={pending}
+            aria-invalid={Boolean(result.fieldErrors?.instagram)}
+            aria-describedby={
+              result.fieldErrors?.instagram
+                ? "course-instagram-error"
+                : undefined
+            }
+          />
+          {result.fieldErrors?.instagram && (
+            <p id="course-instagram-error" className="text-sm text-red-800">
+              {result.fieldErrors.instagram}
+            </p>
+          )}
+        </div>
         <label className="flex items-start gap-3 text-sm leading-relaxed">
           <input
             name="consent"
@@ -124,8 +175,9 @@ export function CourseSignup({
           </p>
         )}
         <p className="text-xs leading-relaxed">
-          Your email is used for marketing updates. Course access and learning
-          progress are remembered in this browser.{" "}
+          Your contact details are saved with your signup, and your email is
+          used for marketing updates. Course access and learning progress are
+          remembered in this browser.{" "}
           <Link
             className="underline underline-offset-4"
             href="/policies/privacy-policy"

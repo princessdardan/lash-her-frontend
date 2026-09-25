@@ -96,6 +96,7 @@ async function signup(page: Page) {
   emails.push(email);
   await page.goto(coursePath);
   await page.getByLabel("Email address").fill(email);
+  await page.getByLabel("Phone number").fill("+1 (416) 555-0123");
   await expect(
     page.getByRole("checkbox", { name: /I agree to receive/ }),
   ).not.toBeChecked();
@@ -135,9 +136,63 @@ test("unauthorized HTML and RSC contain only the teaser; popup is suppressed", a
   ).toBe(true);
   await page.getByLabel("Email address").focus();
   await page.keyboard.press("Tab");
+  await expect(page.getByLabel("Phone number")).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByLabel("Instagram handle (optional)")).toBeFocused();
+  await page.keyboard.press("Tab");
   await expect(
     page.getByRole("checkbox", { name: /I agree to receive/ }),
   ).toBeFocused();
+});
+
+test("signup requires a valid phone and saves the optional Instagram handle", async ({
+  page,
+}) => {
+  const email = `course-fields-${randomUUID()}@example.invalid`;
+  emails.push(email);
+  await page.goto(coursePath);
+  await page.getByLabel("Email address").fill(email);
+  const phone = page.getByLabel("Phone number");
+  const instagram = page.getByLabel("Instagram handle (optional)");
+  await expect(phone).toHaveAttribute("required", "");
+  await expect(instagram).not.toHaveAttribute("required");
+  await page.getByRole("checkbox", { name: /I agree to receive/ }).check();
+  const submit = page.getByRole("button", {
+    name: "Sign up and access course",
+  });
+  await submit.click();
+  await expect(phone).toBeFocused();
+  await phone.fill("123");
+  await submit.click();
+  await expect(page.getByText("Enter a valid phone number.")).toBeVisible();
+  await phone.fill("+1 (416) 555-0123");
+  await instagram.fill("invalid handle");
+  await submit.click();
+  await expect(
+    page.getByText("Enter a valid Instagram handle or leave it blank."),
+  ).toBeVisible();
+  expect(
+    (
+      await pool!.query(
+        "SELECT count(*)::int AS count FROM marketing_contact_submissions WHERE email_normalized=$1",
+        [email],
+      )
+    ).rows[0].count,
+  ).toBe(0);
+  await instagram.fill("@lash.learner");
+  await submit.click();
+  await expect(
+    page.getByRole("navigation", { name: "Course modules" }),
+  ).toBeVisible();
+  for (const table of ["marketing_contacts", "marketing_contact_submissions"]) {
+    const result = await pool!.query(
+      `SELECT phone, instagram FROM ${table} WHERE email_normalized=$1`,
+      [email],
+    );
+    expect(result.rows).toEqual([
+      { phone: "+1 (416) 555-0123", instagram: "@lash.learner" },
+    ]);
+  }
 });
 
 test("signup survives refresh and restart, and quiz/video progress resumes", async ({
@@ -214,6 +269,20 @@ test("signup survives refresh and restart, and quiz/video progress resumes", asy
   await expect(
     page.getByText("Course complete", { exact: true }),
   ).toBeVisible();
+  // The UI updates before the Web Locks persistence queue finishes. Capture
+  // restart state only after both completed modules have reached storage.
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const key = Object.keys(localStorage).find((key) =>
+          key.startsWith("lh_course_progress:"),
+        );
+        if (!key) return false;
+        const modules = JSON.parse(localStorage.getItem(key)!).modules;
+        return modules.cleaning.completed && modules.brushing.completed;
+      }),
+    )
+    .toBe(true);
   const state = await context.storageState();
   const restored = await browser.newContext({ storageState: state });
   try {
@@ -516,6 +585,7 @@ test("discarded access cookies show a persistence error without repeated signups
   emails.push(email);
   await page.goto(coursePath);
   await page.getByLabel("Email address").fill(email);
+  await page.getByLabel("Phone number").fill("4165550123");
   await page.getByRole("checkbox", { name: /I agree to receive/ }).check();
   await page.getByRole("button", { name: "Sign up and access course" }).click();
   await expect(

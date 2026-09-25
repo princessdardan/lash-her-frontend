@@ -70,8 +70,8 @@ export interface RecordGeneralInquiryInput extends MarketingContactIdentity {
   submittedAt?: Date;
 }
 
-export interface RecordCourseSignupInput {
-  email: string;
+export interface RecordCourseSignupInput extends MarketingContactIdentity {
+  phone: string;
   courseId: string;
   courseTitle: string;
   sourcePath: string;
@@ -266,7 +266,7 @@ export function createMarketingContactStore(
       return recordContact(
         buildPersistenceInput({
           consentText: COURSE_CONSENT_TEXT,
-          identity: { email: input.email },
+          identity: input,
           marketingConsent: true,
           payload: { courseId: input.courseId, courseTitle: input.courseTitle },
           source: "course_signup",
