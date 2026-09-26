@@ -61,10 +61,11 @@ const helperScript = String.raw`
   }
 `;
 
-test("course signup carries phone and Instagram into private contact persistence", () => {
+test("course signup carries full name, phone and Instagram into private contact persistence", () => {
   runMarketingContactStoreScenario(`
     const { repository, store } = createFakeStore();
     await store.recordCourseSignup({
+      name: " Alex Learner ",
       email: " Learner@Example.COM ",
       phone: " +1 (416) 555-0123 ",
       instagram: " @lash.learner ",
@@ -74,6 +75,7 @@ test("course signup carries phone and Instagram into private contact persistence
     });
     const record = repository.records[0];
     for (const identity of [record.contact, record.submission, record.event]) {
+      assert.equal(identity.name, "Alex Learner");
       assert.equal(identity.emailNormalized, "learner@example.com");
       assert.equal(identity.phone, "+1 (416) 555-0123");
       assert.equal(identity.instagram, "@lash.learner");

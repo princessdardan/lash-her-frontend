@@ -49,6 +49,7 @@ export function CourseSignup({
             try {
               const response = await submitCourseSignup({
                 courseId,
+                name: String(data.get("name") ?? ""),
                 email: String(data.get("email") ?? ""),
                 phone: String(data.get("phone") ?? ""),
                 instagram: String(data.get("instagram") ?? ""),
@@ -82,6 +83,33 @@ export function CourseSignup({
           aria-hidden="true"
           className="hidden"
         />
+        <div className="space-y-2">
+          <label htmlFor="course-name" className="text-sm font-medium">
+            Full name (first and last name)
+          </label>
+          <Input
+            id="course-name"
+            name="name"
+            type="text"
+            autoComplete="name"
+            required
+            maxLength={120}
+            disabled={pending}
+            aria-invalid={Boolean(result.fieldErrors?.name)}
+            aria-describedby={
+              result.fieldErrors?.name ? "course-name-error" : undefined
+            }
+          />
+          {result.fieldErrors?.name && (
+            <p
+              id="course-name-error"
+              role="alert"
+              className="text-sm text-red-800"
+            >
+              {result.fieldErrors.name}
+            </p>
+          )}
+        </div>
         <div className="space-y-2">
           <label htmlFor="course-email" className="text-sm font-medium">
             Email address

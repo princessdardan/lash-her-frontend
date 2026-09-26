@@ -24,6 +24,7 @@ if (testDatabaseUrl) process.env.DATABASE_URL = testDatabaseUrl;
 const skip = testDatabaseUrl ? undefined : "TEST_DATABASE_URL is required";
 const email = `course-${randomUUID()}@example.invalid`;
 const signup = {
+  name: "Alex Learner",
   email,
   phone: "+1 (416) 555-0123",
   instagram: "@lash.learner",
@@ -78,12 +79,14 @@ test(
       .from(marketingContactSyncJobs)
       .where(eq(marketingContactSyncJobs.emailNormalized, email));
     assert.equal(contacts.length, 1);
+    assert.equal(contacts[0].name, signup.name);
     assert.equal(contacts[0].phone, signup.phone);
     assert.equal(contacts[0].instagram, signup.instagram);
     assert.equal(submissions.length, 2);
     assert.equal(events.length, 2);
     assert.equal(jobs.length, 2);
     assert.equal(submissions[0].submissionType, "course_signup");
+    assert.equal(submissions[0].name, signup.name);
     assert.equal(submissions[0].phone, signup.phone);
     assert.equal(submissions[0].instagram, signup.instagram);
     assert.equal(submissions[0].consentText, COURSE_CONSENT_TEXT);
@@ -103,6 +106,7 @@ test(
       ),
     );
     assert.ok(jobs.every((job) => job.payload.phone === signup.phone));
+    assert.ok(jobs.every((job) => job.payload.name === signup.name));
     assert.ok(jobs.every((job) => job.payload.instagram === signup.instagram));
 
     const secret = "test-course-secret-012345678901234567890123456789";

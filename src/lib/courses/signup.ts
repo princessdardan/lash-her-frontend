@@ -52,10 +52,21 @@ export async function signupForCourse(
     );
     if (existing) return { success: true };
     const fieldErrors: Record<string, string> = {};
+    const name =
+      typeof input.name === "string"
+        ? input.name.trim().replace(/\s+/gu, " ")
+        : "";
     const email = typeof input.email === "string" ? input.email.trim() : "";
     const phone = typeof input.phone === "string" ? input.phone.trim() : "";
     const instagram =
       typeof input.instagram === "string" ? input.instagram.trim() : "";
+    const nameParts = name.split(" ");
+    if (
+      name.length > 120 ||
+      nameParts.length < 2 ||
+      nameParts.some((part) => !/\p{L}/u.test(part))
+    )
+      fieldErrors.name = "Enter your full name (first and last name).";
     if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
       fieldErrors.email = "Enter a valid email address.";
     if (
@@ -90,6 +101,7 @@ export async function signupForCourse(
     const { token, grant } = createCourseAccessToken(course._id, secret, now);
     stage = "persistence";
     await dependencies.recordSignup({
+      name,
       email,
       phone,
       instagram: instagram || undefined,

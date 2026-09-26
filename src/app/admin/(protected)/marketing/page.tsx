@@ -263,6 +263,14 @@ export default async function AdminMarketingPage({
                   </StatusPill>
                 </div>
                 <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                  <ContactDetail
+                    label="Phone number"
+                    value={contact.phone || "Not provided"}
+                  />
+                  <ContactDetail
+                    label="Instagram handle"
+                    value={contact.instagram || "Not provided"}
+                  />
                   <ContactDetail label="Source" value={contact.sourceLabel} />
                   <ContactDetail
                     label="First opted in"
@@ -283,6 +291,12 @@ export default async function AdminMarketingPage({
                 <tr>
                   <th className={cellClass} scope="col">
                     Contact
+                  </th>
+                  <th className={cellClass} scope="col">
+                    Phone number
+                  </th>
+                  <th className={cellClass} scope="col">
+                    Instagram handle
                   </th>
                   <th className={cellClass} scope="col">
                     Source
@@ -306,6 +320,12 @@ export default async function AdminMarketingPage({
                         {contact.name ?? "Unnamed contact"}
                       </p>
                       <p className="text-xs text-lh-muted">{contact.email}</p>
+                    </td>
+                    <td className={cellClass}>
+                      {contact.phone || "Not provided"}
+                    </td>
+                    <td className={`${cellClass} break-all`}>
+                      {contact.instagram || "Not provided"}
                     </td>
                     <td className={cellClass}>{contact.sourceLabel}</td>
                     <td className={cellClass}>
@@ -428,7 +448,7 @@ function ContactDetail({ label, value }: { label: string; value: string }) {
       <dt className="text-xs uppercase tracking-[0.12em] text-lh-muted">
         {label}
       </dt>
-      <dd className="mt-1 font-medium">{value}</dd>
+      <dd className="mt-1 break-words font-medium">{value}</dd>
     </div>
   );
 }

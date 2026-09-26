@@ -157,7 +157,7 @@ If you have access to the website's admin dashboard:
 1. Open the dashboard at `/admin` on the same website you used for the course.
 2. Choose **Marketing**, then **Contacts**. This area is separate from Sanity Studio.
 3. Search for the email address you used to test the course.
-4. Check that the contact is marked **Opted in** and **Course sign-up** appears as a source. The **Source** filter can help you find course signups.
+4. Check the saved full name, email address, phone number, and optional Instagram handle. Confirm that the contact is marked **Opted in** and **Course sign-up** appears as a source. The **Source** filter can help you find course signups.
 5. Check **Latest sync**, which shows whether the contact has been sent to your email service. Allow a few minutes for this to update to **Synced**.
 
 If the contact does not appear, or the status continues to show **Waiting to sync**, **Retry scheduled**, or **Needs manual review**, ask your website team to investigate. Give them the course link and the message shown on screen.

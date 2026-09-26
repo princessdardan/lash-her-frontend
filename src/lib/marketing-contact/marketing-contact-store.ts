@@ -71,6 +71,7 @@ export interface RecordGeneralInquiryInput extends MarketingContactIdentity {
 }
 
 export interface RecordCourseSignupInput extends MarketingContactIdentity {
+  name: string;
   phone: string;
   courseId: string;
   courseTitle: string;

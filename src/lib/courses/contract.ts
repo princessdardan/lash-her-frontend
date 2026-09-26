@@ -12,6 +12,7 @@ export interface CourseAccessGrant {
 
 export interface CourseSignupInput {
   courseId: string;
+  name: string;
   email: string;
   phone: string;
   instagram?: string;

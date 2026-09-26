@@ -38,6 +38,8 @@ export default defineConfig({
     env: {
       COURSE_E2E_FIXTURE: "1",
       DATABASE_URL: database,
+      AUTH_SECRET: "course-e2e-auth-secret-not-for-production-2026",
+      AUTH_TRUST_HOST: "true",
       COURSE_ACCESS_SIGNING_SECRET:
         "course-e2e-only-secret-012345678901234567890123456789",
       NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",

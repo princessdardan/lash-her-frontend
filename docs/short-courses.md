@@ -16,7 +16,7 @@ Keep existing modules when editing/reordering; their Sanity array `_key` values 
 
 ## Access and consent
 
-- Signup requires an email address, phone number, and affirmative checkbox; Instagram handle is optional. Contact details, server-owned consent wording, timestamp, course reference, and source path are stored in PostgreSQL. `course_signup` is visible as “Course sign-up” in marketing reporting.
+- Signup requires a full name (first and last name), email address, phone number, and affirmative checkbox; Instagram handle is optional. Contact details, server-owned consent wording, timestamp, course reference, and source path are stored in PostgreSQL. `course_signup` is visible as “Course sign-up” in marketing reporting. Full names, phone numbers, and Instagram handles are visible in Admin → Marketing → Contacts on desktop and mobile.
 - The existing consent transaction queues Resend synchronization. There is no confirmation-email dependency or separate course email send. A database/Redis failure does not grant access; a delayed Resend job does not remove access.
 - Existing contacts are deduplicated by normalized email. A fresh explicit signup may re-subscribe an unsubscribed contact. Returning with a valid grant never changes subscription state.
 - A course-specific `lh_course_<hash>` cookie contains a signed version, course ID, random browser grant ID, and expiry. It contains no email. Cookies are HttpOnly, SameSite=Lax, host-only, and Secure in production. Their fixed lifetime is 365 days; ordinary visits do not renew them.

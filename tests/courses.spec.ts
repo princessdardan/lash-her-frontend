@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { Pool } from "pg";
+import { encode } from "next-auth/jwt";
 import {
   createCourseAccessToken,
   courseCookieName,
@@ -91,12 +92,15 @@ test.afterAll(async () => {
   await pool?.end();
 });
 
-async function signup(page: Page) {
+async function signup(page: Page, instagram?: string) {
   const email = `course-browser-${randomUUID()}@example.invalid`;
   emails.push(email);
   await page.goto(coursePath);
+  await page.getByLabel("Full name (first and last name)").fill("Alex Learner");
   await page.getByLabel("Email address").fill(email);
   await page.getByLabel("Phone number").fill("+1 (416) 555-0123");
+  if (instagram)
+    await page.getByLabel("Instagram handle (optional)").fill(instagram);
   await expect(
     page.getByRole("checkbox", { name: /I agree to receive/ }),
   ).not.toBeChecked();
@@ -134,7 +138,9 @@ test("unauthorized HTML and RSC contain only the teaser; popup is suppressed", a
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
-  await page.getByLabel("Email address").focus();
+  await page.getByLabel("Full name (first and last name)").focus();
+  await page.keyboard.press("Tab");
+  await expect(page.getByLabel("Email address")).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByLabel("Phone number")).toBeFocused();
   await page.keyboard.press("Tab");
@@ -145,21 +151,34 @@ test("unauthorized HTML and RSC contain only the teaser; popup is suppressed", a
   ).toBeFocused();
 });
 
-test("signup requires a valid phone and saves the optional Instagram handle", async ({
+test("signup requires a full name and valid phone and saves all contact details", async ({
   page,
 }) => {
   const email = `course-fields-${randomUUID()}@example.invalid`;
   emails.push(email);
   await page.goto(coursePath);
   await page.getByLabel("Email address").fill(email);
+  const name = page.getByLabel("Full name (first and last name)");
   const phone = page.getByLabel("Phone number");
   const instagram = page.getByLabel("Instagram handle (optional)");
+  await expect(name).toHaveAttribute("required", "");
   await expect(phone).toHaveAttribute("required", "");
   await expect(instagram).not.toHaveAttribute("required");
   await page.getByRole("checkbox", { name: /I agree to receive/ }).check();
   const submit = page.getByRole("button", {
     name: "Sign up and access course",
   });
+  await submit.click();
+  await expect(name).toBeFocused();
+  await name.fill("Alex");
+  await phone.fill("+1 (416) 555-0123");
+  await submit.click();
+  await expect(
+    page.getByText("Enter your full name (first and last name)."),
+  ).toBeVisible();
+  await expect(name).toHaveAttribute("aria-invalid", "true");
+  await name.fill("  Alex   Learner  ");
+  await phone.fill("");
   await submit.click();
   await expect(phone).toBeFocused();
   await phone.fill("123");
@@ -186,12 +205,90 @@ test("signup requires a valid phone and saves the optional Instagram handle", as
   ).toBeVisible();
   for (const table of ["marketing_contacts", "marketing_contact_submissions"]) {
     const result = await pool!.query(
-      `SELECT phone, instagram FROM ${table} WHERE email_normalized=$1`,
+      `SELECT name, phone, instagram FROM ${table} WHERE email_normalized=$1`,
       [email],
     );
     expect(result.rows).toEqual([
-      { phone: "+1 (416) 555-0123", instagram: "@lash.learner" },
+      {
+        name: "Alex Learner",
+        phone: "+1 (416) 555-0123",
+        instagram: "@lash.learner",
+      },
     ]);
+  }
+});
+
+test("admins can see course signup contact details on desktop and mobile", async ({
+  page,
+  context,
+  isMobile,
+}) => {
+  const email = await signup(page, "@lash.learner");
+  const adminId = randomUUID();
+  const adminEmail = `course-admin-${adminId}@example.invalid`;
+  await pool!.query(
+    `INSERT INTO admin_users (id, provider_user_id, email, email_normalized, display_name, role, status)
+     VALUES ($1, $2, $3, $3, 'Course test owner', 'owner', 'active')`,
+    [adminId, `course-owner-${adminId}`, adminEmail],
+  );
+  try {
+    await context.addCookies([
+      {
+        name: "authjs.session-token",
+        value: await encode({
+          secret: "course-e2e-auth-secret-not-for-production-2026",
+          salt: "authjs.session-token",
+          maxAge: 3600,
+          token: {
+            email: adminEmail,
+            name: "Course test owner",
+            googleEmailVerified: true,
+            providerUserId: `course-owner-${adminId}`,
+            sub: `course-owner-${adminId}`,
+          },
+        }),
+        url: "http://127.0.0.1:3107",
+        httpOnly: true,
+        sameSite: "Lax",
+      },
+    ]);
+    await page.goto(
+      `/admin/marketing?tab=contacts&q=${encodeURIComponent(email)}`,
+    );
+    const contact = page
+      .getByRole(isMobile ? "article" : "row")
+      .filter({ hasText: email });
+    await expect(contact).toBeVisible();
+    for (const value of [
+      "Alex Learner",
+      "+1 (416) 555-0123",
+      "@lash.learner",
+      "Course sign-up",
+    ]) {
+      await expect(contact.getByText(value, { exact: true })).toBeVisible();
+    }
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+
+    // Older and non-course contacts may not have supplied these fields.
+    await pool!.query(
+      "UPDATE marketing_contacts SET name=NULL, phone=NULL, instagram=NULL WHERE email_normalized=$1",
+      [email],
+    );
+    await page.reload();
+    await expect(contact.getByText("Unnamed contact")).toBeVisible();
+    await expect(
+      contact.getByText("Not provided", { exact: true }),
+    ).toHaveCount(2);
+  } finally {
+    await pool!.query(
+      "DELETE FROM admin_audit_logs WHERE actor_admin_user_id=$1",
+      [adminId],
+    );
+    await pool!.query("DELETE FROM admin_users WHERE id=$1", [adminId]);
   }
 });
 
@@ -584,6 +681,7 @@ test("discarded access cookies show a persistence error without repeated signups
   const email = `course-blocked-${randomUUID()}@example.invalid`;
   emails.push(email);
   await page.goto(coursePath);
+  await page.getByLabel("Full name (first and last name)").fill("Alex Learner");
   await page.getByLabel("Email address").fill(email);
   await page.getByLabel("Phone number").fill("4165550123");
   await page.getByRole("checkbox", { name: /I agree to receive/ }).check();

@@ -10,6 +10,7 @@ import type { RecordCourseSignupInput } from "@/lib/marketing-contact/marketing-
 const secret = "test-course-secret-012345678901234567890123456789";
 const input = {
   courseId: "course-one",
+  name: "  Alex   Learner  ",
   email: " Learner@Example.COM ",
   phone: " +1 (416) 555-0123 ",
   instagram: " @lash.learner ",
@@ -57,6 +58,7 @@ test("signup saves server-derived course and consent context before setting acce
   assert.deepEqual(events, ["limit", "persist", "cookie"]);
   assert.deepEqual(records, [
     {
+      name: "Alex Learner",
       email: "Learner@Example.COM",
       phone: "+1 (416) 555-0123",
       instagram: "@lash.learner",
@@ -70,6 +72,16 @@ test("signup saves server-derived course and consent context before setting acce
 
 test("invalid contact details, missing consent, honeypot and invalid course never write or grant", async () => {
   for (const change of [
+    { name: "" },
+    { name: "   " },
+    { name: undefined },
+    { name: 123 },
+    { name: {} },
+    { name: "Alex" },
+    { name: "  Alex  " },
+    { name: "Alex -" },
+    { name: "123 456" },
+    { name: "A".repeat(119) + " B" },
     { email: "invalid" },
     { email: "x".repeat(255) + "@example.com" },
     { phone: "" },
@@ -96,6 +108,47 @@ test("invalid contact details, missing consent, honeypot and invalid course neve
     );
     assert.equal(result.success, false);
     assert.deepEqual(events, []);
+  }
+});
+
+test("full names support accents, apostrophes, hyphens and multiple parts", async () => {
+  for (const name of [
+    "Élodie O’Connor",
+    "Anne-Marie van der Berg",
+    "李 小龍",
+    "A B",
+    "A".repeat(118) + " B",
+  ]) {
+    const { dependencies, records } = fixture();
+    assert.equal(
+      (await signupForCourse({ ...input, name }, dependencies)).success,
+      true,
+    );
+    assert.equal(records[0].name, name);
+  }
+});
+
+test("full name whitespace is normalized before persistence", async () => {
+  const { dependencies, records } = fixture();
+  assert.equal(
+    (
+      await signupForCourse(
+        { ...input, name: " \tAlex\u00a0 Marie\nLearner " },
+        dependencies,
+      )
+    ).success,
+    true,
+  );
+  assert.equal(records[0].name, "Alex Marie Learner");
+});
+
+test("missing or incomplete full names return an actionable field error", async () => {
+  for (const name of ["", "Alex"]) {
+    const { dependencies } = fixture();
+    assert.deepEqual(await signupForCourse({ ...input, name }, dependencies), {
+      success: false,
+      fieldErrors: { name: "Enter your full name (first and last name)." },
+    });
   }
 });
 
@@ -133,7 +186,7 @@ test("existing grants return without a new consent, rate-limit call or cookie re
   assert.equal(
     (
       await signupForCourse(
-        { ...input, phone: "", marketingConsent: false },
+        { ...input, name: "", phone: "", marketingConsent: false },
         dependencies,
       )
     ).success,
