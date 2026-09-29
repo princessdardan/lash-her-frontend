@@ -1,14 +1,13 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { useIsHomepage } from "@/components/custom/layouts/use-is-homepage";
 
 interface MainWrapperProps {
   children: React.ReactNode;
 }
 
 export function MainWrapper({ children }: MainWrapperProps) {
-  const pathname = usePathname();
-  const isHome = pathname === "/";
+  const isHome = useIsHomepage();
 
   return (
     <main id="main-content" className={!isHome ? "pt-28" : ""}>

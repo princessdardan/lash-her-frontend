@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, createContext, useContext } from "react";
-import { usePathname } from "next/navigation";
+import { useSyncExternalStore, createContext, useContext } from "react";
+import { useIsHomepage } from "@/components/custom/layouts/use-is-homepage";
 
 interface HeaderWrapperProps {
   children: React.ReactNode;
@@ -11,20 +11,22 @@ const HeaderContext = createContext({ isActive: false });
 
 export const useHeaderContext = () => useContext(HeaderContext);
 
+function subscribeToScroll(onChange: () => void) {
+  window.addEventListener("scroll", onChange, { passive: true });
+  return () => window.removeEventListener("scroll", onChange);
+}
+
+const getScrollSnapshot = () => window.scrollY > 50;
+const getServerScrollSnapshot = () => false;
+
 export function HeaderWrapper({ children }: HeaderWrapperProps) {
-  const [isScrolled, setIsScrolled] = useState(false);
-  const pathname = usePathname();
-  const isHome = pathname === "/";
+  const isScrolled = useSyncExternalStore(
+    subscribeToScroll,
+    getScrollSnapshot,
+    getServerScrollSnapshot,
+  );
+  const isHome = useIsHomepage();
   const isActive = isScrolled || !isHome;
-
-  useEffect(() => {
-    const handleScroll = () => {
-      setIsScrolled(window.scrollY > 50);
-    };
-
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
 
   return (
     <HeaderContext.Provider value={{ isActive }}>
