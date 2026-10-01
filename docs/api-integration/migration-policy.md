@@ -38,3 +38,7 @@ Never rewrite applied SQL, snapshots, or migration journal rows, discard audit/b
 The P0-01 read-only inventory found Course dev/staging/prod through 0013 with 0014–0016 pending; this does not prove that 0014 has never been applied elsewhere. P0-04 must compare committed and working 0014 SQL/snapshot/journal bytes, identify every deployment target, and record applied hashes and provenance. If an earlier 0014 exists anywhere, preserve that applied version and carry the changes in a new forward migration. If it is demonstrably unapplied everywhere, record the reviewed candidate bytes and commit them before release. Unknown provenance blocks release. Community 0008 also needs provenance review and target lineage evidence; its database was not inspected in P0-01.
 
 Never weaken or bypass `assert-test-database.mjs`, Course `assert-seedable-database.mjs`, target validation, or round-trip refusal guards. Test and round-trip databases remain isolated and disposable on loopback PostgreSQL. Course seed is forbidden in staging and production. Community has no seed command; that does not permit ad hoc production seed SQL.
+
+## P0-04 provenance update — 2026-10-01
+
+The [P0-04 baseline](baselines/2026-10-01-p0-04.md) records owner confirmation of no additional targets or prior application elsewhere, reviewed SQL/snapshot hashes, committed revisions, and isolated migration/refusal results. This resolves the local provenance review above. It does not replace fresh target-lineage preflight or authorize staging/production application.
