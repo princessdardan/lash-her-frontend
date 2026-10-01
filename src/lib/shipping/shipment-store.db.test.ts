@@ -107,7 +107,9 @@ const scenario = String.raw`
       shippingAmountCents: 200,
       lineItems: [],
       paymentRiskStatus: "cleared",
-      piiRedactionDueAt: new Date("2026-09-01T12:00:00.000Z"),
+      // Provider updates enqueue email using the current clock. Keep this
+      // fixture active regardless of when the historical event tests run.
+      piiRedactionDueAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     }).returning();
     orderId = order.id;
 
