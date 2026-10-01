@@ -1,0 +1,3101 @@
+{
+  "schemaVersion": 1,
+  "observedDate": "2026-10-01",
+  "timezone": "America/Toronto",
+  "purpose": "P0-01 inventory; no implementation or release certification",
+  "repositories": {
+    "lash-her-frontend": {
+      "branch": "main",
+      "head": "4084a4b83259967661ef2013f1e8c49407df770c",
+      "commit": "2026-09-29T11:57:50-04:00 fix: synchronize homepage header and spacing during hydration",
+      "remotes": "origin\thttps://github.com/princessdardan/lash-her-frontend.git (fetch)\norigin\thttps://github.com/princessdardan/lash-her-frontend.git (push)",
+      "upstream": "origin/main",
+      "ahead_behind_cached": "0\t0",
+      "changes": [
+        {
+          "status": "??",
+          "path": "API-INTEGRATION-EXECUTION.md",
+          "sha256": "74b723d4d62db67ce45e23cb41b35e52c4b3a5017f34c6e8dc0d99f84c1dab1c"
+        },
+        {
+          "status": "??",
+          "path": "API-INTEGRATION-PLAN.md",
+          "sha256": "14d080b0249f62aca744ff5d853bbab6a4d43739ea9ac546c4155114479668d0"
+        }
+      ],
+      "diff_stat": "",
+      "engines": {
+        "node": "24.x"
+      },
+      "packageManager": null,
+      "scripts": {
+        "dev": "next dev",
+        "prebuild": "node scripts/validate-sanity-env.mjs",
+        "build": "next build --webpack",
+        "audit:ci": "npm audit --audit-level=moderate",
+        "start": "next start",
+        "lint": "eslint",
+        "resend:seed-templates": "tsx --conditions=react-server scripts/seed-resend-templates.ts",
+        "resend:update-contact-popup-template": "node --conditions=react-server --import tsx scripts/update-contact-popup-resend-template.ts",
+        "sanity:backfill-home-training": "node scripts/backfill-home-training-programs-block.mjs",
+        "check:square-card-on-file-env": "node scripts/check-square-card-on-file-env.mjs",
+        "test": "playwright test",
+        "test:unit": "npm run test:unit:src && npm run test:unit:scripts",
+        "test:unit:src": "node scripts/run-source-unit-tests.mjs --no-db",
+        "test:unit:db": "node scripts/run-source-unit-tests.mjs --db-only",
+        "test:unit:all": "npm run test:unit && npm run test:unit:db",
+        "test:coverage:critical": "c8 --config scripts/critical-coverage.config.json npm run test:unit:all && node scripts/verify-critical-source-coverage.mjs",
+        "test:unit:scripts": "node --test scripts/check-square-card-on-file-env.test.mjs",
+        "test:ui": "playwright test --ui",
+        "test:bnpl": "playwright test --config tests/square-afterpay.playwright.config.ts",
+        "test:headed": "playwright test --headed",
+        "test:debug": "playwright test --debug",
+        "test:report": "playwright show-report",
+        "test:browser:verify": "node scripts/verify-playwright-coverage.mjs",
+        "test:e2e:seed-commerce": "tsx --conditions=react-server scripts/seed-commerce-enabled-e2e.ts",
+        "db:generate": "drizzle-kit generate",
+        "db:migrate": "tsx scripts/migrate-private-db.ts",
+        "db:check": "tsx scripts/check-private-db-migrations.ts",
+        "booking:bootstrap-legacy": "tsx --conditions=react-server scripts/bootstrap-booking-operations.ts",
+        "booking:import-operational-cutover": "tsx --conditions=react-server scripts/import-booking-operational-cutover.ts",
+        "db:create-payment-reconciliation-indexes": "tsx scripts/create-payment-reconciliation-indexes.ts",
+        "shipping:provision-package-profiles": "tsx scripts/provision-shipping-package-profiles.ts",
+        "stock:backfill": "tsx --conditions=react-server scripts/backfill-product-stock.ts",
+        "marketing:backfill-sync": "tsx --conditions=react-server scripts/backfill-marketing-sync-jobs.ts",
+        "marketing:inspect-sync": "tsx --conditions=react-server scripts/inspect-marketing-sync-failures.ts",
+        "marketing:requeue-sync-failures": "tsx --conditions=react-server scripts/requeue-marketing-sync-failures.ts",
+        "git:verify-remote": "node scripts/verify-git-remote.mjs origin",
+        "git:push-staging": "npm run git:verify-remote && git push origin staging",
+        "prepare": "husky"
+      },
+      "key_dependencies": {
+        "@mux/mux-player-react": "^3.13.4",
+        "@sanity/client": "^7.20.0",
+        "@sanity/icons": "^3.7.4",
+        "@sanity/vercel-protection-bypass": "^3.1.0",
+        "class-variance-authority": "^0.7.1",
+        "drizzle-orm": "^0.45.2",
+        "next": "16.3.1",
+        "next-auth": "5.0.0-beta.32",
+        "next-sanity": "^11.6.12",
+        "pg": "^8.20.0",
+        "resend": "^6.9.4",
+        "sanity": "^4.22.0",
+        "sanity-plugin-mux-input": "^3.0.5",
+        "@types/pg": "^8.20.0",
+        "drizzle-kit": "^0.31.10",
+        "eslint-config-next": "16.3.1"
+      },
+      "migrations": [
+        {
+          "path": "drizzle/meta/_journal.json",
+          "count": 78,
+          "last": [
+            {
+              "idx": 75,
+              "version": "7",
+              "when": 1787892609388,
+              "tag": "0075_clammy_william_stryker",
+              "breakpoints": true
+            },
+            {
+              "idx": 76,
+              "version": "7",
+              "when": 1788225229633,
+              "tag": "0076_organic_kitty_pryde",
+              "breakpoints": true
+            },
+            {
+              "idx": 77,
+              "version": "7",
+              "when": 1790208354053,
+              "tag": "0077_course_signup",
+              "breakpoints": true
+            }
+          ]
+        }
+      ],
+      "workflows": [".github/workflows/ci.yml"],
+      "config": {
+        "vercel": {
+          "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+          "orgId": "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
+          "projectName": "lash-her-frontend"
+        }
+      },
+      "node_modules": true,
+      "local_branches": [
+        "admin-dashboard-app 50fce2f5716e9b6e8014ba9bb2f045892235c195",
+        "booking-schema-simplification ef01620831c3819d0d3e91aa7c20e78f05154953",
+        "claude/address-verification-shipping-fd3499 06f00200d5aa4e624b80f6eca4f1e3648ce0c7be",
+        "claude/checkout-availability-tax-drift a21d3a68b66b2fa804b84966de39727c40a8fdf8",
+        "claude/checkout-phone-and-quote-release 63d1d11800ca7c1bb2f5276c41bb9e2abffb0b85",
+        "claude/compassionate-haibt-2288ba 45c17c83240d83f74f51d60afadf6de3468a7854",
+        "claude/docs-audit-prune-remove e01ad6b6e6e319d63440f84b836f22594897b1d4",
+        "claude/email-sending-business-owner-5e4720 06e2145031c92eafaaff9fb896adf43e29e12b6e",
+        "claude/fix-database-ci-after-table-drop 669f2978722a431c3f11cd8f68f59dfde9fe3d76",
+        "claude/fix-react-server-db-tests 527abd7a9263dafe03a21ca65e065415753962f5",
+        "claude/flat-rate-lease-and-webhook-diagnosis 513ae912432fcc69170dac12ba50a1ca19bd1490",
+        "claude/flat-rate-refresh-fix d64b74a43cd61056ec0dd2bf4f616a5ed6c640bc",
+        "claude/floor-tiling-packer 614152805a09fb172d8fdd53204258a079cd54b2",
+        "claude/marketing-sync-pipeline 4188cbd4915365e39ecf178535f0f5ce211bcd23",
+        "claude/marketing-sync-resend-fix d028bb0bdf1626a50d83816c1d3b1ece9948dca4",
+        "claude/pensive-gates-d9c7c1 b931710410b31844958fb53d66299cedfd5e03d4",
+        "claude/playwright-e2e-ci-fix-9188b1 61a2f13527d62d9bdd9e3d633b831f50e39264c7",
+        "claude/policy-blocking-sales-bca9e0 9bbe279662496abf18b07dc99a738dbc89a7fbea",
+        "claude/product-stock-levels-f8a53a c8b91497a10fb057a9e8cf88c9f12c01f8b297fd",
+        "claude/product-variant-images b6cab29d06f9f7cf84df45aae1a55493fdf7e58f",
+        "claude/refund-drain-reaper e4040282b708d632bb4d45a45180905525b4da8a",
+        "claude/remove-recalculate-shipping-button-7dda5e 69d7b067c0ecc845531e5f5fc5a286b6cf11cf62",
+        "claude/remove-shipping-policy-subsystem 8a6bb5e7577297787b39b47efdf2c1b1df58e357",
+        "claude/remove-shipping-policy-tables 2eda0d9da93d8bfc8106658fa4aaf449a51de353",
+        "claude/sales-blocking-pathways-34ce9b 41b74f81c9a25e355a6768df81b7734dc38f202f",
+        "claude/sales-blocking-pathways-review-b9cdfd 606fb75cdd20bb6d5a17caf572c9f1fef31de8d5",
+        "claude/shipping-package-profiles-admin 74d7641d8c510ab6bb8a9b71c168245290db2cb9",
+        "claude/shipping-teardown-cleanup 73beea0db10099c3b45cff6fac5dcd9a31f12762",
+        "claude/sku-regulatory-certification-values-2b192e a3b4d6312a57a5e9dd45de4147394d0789ac5fe1",
+        "claude/square-webhook-bounded-body 06a24dc7add0e0d58e69205af78853effacb5317",
+        "claude/square-webhook-sql-errors-fa4d44 533c66260b3d864d3ef41fa4e78a0a38c0f0a133",
+        "claude/variant-overrides-consolidation-c8c90d f83ddba7b2d8cd0dc11d0d2b265c50739efdbbc4",
+        "claude/youthful-meitner-bdac99 b4df61be9f8e30d388020a6e7bdec7ede55a2a6e",
+        "codex/booking-operations-dashboard 0818297805d6d95a669b3f78c7859d5464d5e1cf",
+        "codex/booking-operations-dashboard-recovery 84000a84c0b0cb35957df385faea666ef0eaf455",
+        "codex/course-platform-integration b2293531bc78e554073eb2cc5f567f466967d75d",
+        "codex/square-afterpay-bnpl 188af7d78123be519a19bfe8505fc4d6060dda41",
+        "devops-remediation bf0d51247849a99e0b4780dc7c791a998aff419a",
+        "dimension-based-packing 979a964f65f55d43ba6bac5b2e7bc3d14a4a7636",
+        "main 4084a4b83259967661ef2013f1e8c49407df770c",
+        "product-detail-checkout-flow 77a8110a335320c91e4651d170b7356ca7a458d6",
+        "staging ea1772b20453a494dcd3ff635066ebd385906f6b",
+        "training-detail-refactor bd7512ac200bac37781c2ef8e7fb6654e966818f"
+      ],
+      "worktrees": "worktree /Users/dardan/workspace/lash-her-frontend\nHEAD 4084a4b83259967661ef2013f1e8c49407df770c\nbranch refs/heads/main\n\nworktree /Users/dardan/.config/superpowers/worktrees/lash-her-frontend/devops-remediation\nHEAD bf0d51247849a99e0b4780dc7c791a998aff419a\nbranch refs/heads/devops-remediation\n\nworktree /Users/dardan/workspace/lash-her-frontend-admin-dashboard\nHEAD 50fce2f5716e9b6e8014ba9bb2f045892235c195\nbranch refs/heads/admin-dashboard-app\n\nworktree /Users/dardan/workspace/lash-her-frontend/.claude/worktrees/address-verification-shipping-fd3499\nHEAD 06f00200d5aa4e624b80f6eca4f1e3648ce0c7be\nbranch refs/heads/claude/address-verification-shipping-fd3499\n\nworktree /Users/dardan/workspace/lash-her-frontend/.claude/worktrees/pensive-gates-d9c7c1\nHEAD 61a2f13527d62d9bdd9e3d633b831f50e39264c7\ndetached\n\nworktree /Users/dardan/workspace/lash-her-frontend/.claude/worktrees/sku-regulatory-certification-values-2b192e\nHEAD 06a24dc7add0e0d58e69205af78853effacb5317\ndetached\n\nworktree /Users/dardan/workspace/lash-her-frontend/.claude/worktrees/youthful-meitner-bdac99\nHEAD 513ae912432fcc69170dac12ba50a1ca19bd1490\ndetached\n\nworktree /Users/dardan/workspace/lash-her-frontend/.worktrees/booking-operations-dashboard-recovery\nHEAD 84000a84c0b0cb35957df385faea666ef0eaf455\nbranch refs/heads/codex/booking-operations-dashboard-recovery\n\nworktree /Users/dardan/workspace/lash-her-frontend/.worktrees/course-platform-integration\nHEAD b2293531bc78e554073eb2cc5f567f466967d75d\nbranch refs/heads/codex/course-platform-integration",
+      "committed_migration_count": 78,
+      "reviewed_file_hashes": {
+        "package.json": "072c0558ab48703bbd0ffc5df055b34dfe50e22e64f649c45bfbe540fc52e31b",
+        "package-lock.json": "5a3be44cd8bd1156f8ac0fbe43c405b731f7be4c3449316b4d949ff5c01f9f37",
+        "drizzle/meta/_journal.json": "9702edff3387723de3c33c718bb2142f2d327cb610822b7df0349542f501ead6",
+        "src/lib/private-db/schema.ts": "8aeae7c67614bb44a9f8285fe37e6aa6570b9607938c91a9fc978273b8138971",
+        "AGENTS.md": "70fdc3a624282df39f63491dcc97deb8e615d0e7a88f2656dda78f21ba90ce7a",
+        "API-INTEGRATION-PLAN.md": "14d080b0249f62aca744ff5d853bbab6a4d43739ea9ac546c4155114479668d0",
+        "vercel.json": "84835f765a567da05f6f1a7098487914546d1366f0cfafbcbf905ce8c537a2db",
+        ".github/workflows/ci.yml": "079f17d85e3e9cc27f99fe4c72d2c6482790e0973c278d7bfe3fae139039c281"
+      }
+    },
+    "lash-her-course-api": {
+      "branch": "main",
+      "head": "a0c10bd9ba2d36d5fc7c3060e252bb52ce049ba8",
+      "commit": "2026-08-15T16:00:17-04:00 Add comprehensive tests for community publisher, rate limiting, and authentication",
+      "remotes": "origin\thttps://github.com/princessdardan/lash-her-course-api.git (fetch)\norigin\thttps://github.com/princessdardan/lash-her-course-api.git (push)",
+      "upstream": "origin/main",
+      "ahead_behind_cached": "0\t0",
+      "changes": [
+        {
+          "status": " M",
+          "path": ".env.example",
+          "sha256": "58c4906476f15e04d15844282f23d003518e53e095b0184fca8b119226bc52be"
+        },
+        {
+          "status": " M",
+          "path": ".github/workflows/ci.yml",
+          "sha256": "6bf6788955ce47698315a22e263606a5a63cdc54f505a21e8623d07a096b350a"
+        },
+        {
+          "status": " M",
+          "path": ".github/workflows/community-contract-compatibility.yml",
+          "sha256": "15b936cd57d882dd909fb0f60ee6920e065cd14880ef34e6bb5bc3c4ad5e73f4"
+        },
+        {
+          "status": " M",
+          "path": "contracts/community/course-enrollment/v1/SHA256SUMS",
+          "sha256": "4b42c8d5605a9627d46233d1d6eaeee577b590802b88262a29f93922519c137b"
+        },
+        {
+          "status": " M",
+          "path": "contracts/community/course-enrollment/v1/contract-pin.json",
+          "sha256": "19b8623083e31d2037bcd55c651f9e77b1ca0434464b4860913b367d6a12f916"
+        },
+        {
+          "status": " M",
+          "path": "contracts/community/course-enrollment/v1/enrollment-event.schema.json",
+          "sha256": "a1635b7725a8331cf4885da6b2c596f07c7272ef1bbd5d66a855b10ece95b01e"
+        },
+        {
+          "status": " M",
+          "path": "contracts/community/course-enrollment/v1/fixtures/manifest.json",
+          "sha256": "253ffa5ca9f9f3d846d8e92ed58e3d3b275c71e591a54ad861874122d48b24c5"
+        },
+        {
+          "status": " M",
+          "path": "docs/adr/001-course-community-enrollment-integration.md",
+          "sha256": "9cd7bde063170d9703f694d74063cb68854dac476b2600c191dfb73904d24a1b"
+        },
+        {
+          "status": " M",
+          "path": "docs/course-community-enrollment-runbook.md",
+          "sha256": "d09024aa3f92b61662371882e62f2ec3e8390fc17a6e9c1bb54a39f0b3c810b0"
+        },
+        {
+          "status": " M",
+          "path": "drizzle/0014_course_community_enrollment_integration.sql",
+          "sha256": "3d25cf03adfaea40c87293c0329ade3ea275bd6e267b6e1db601887a987558e9"
+        },
+        {
+          "status": " M",
+          "path": "drizzle/meta/_journal.json",
+          "sha256": "9ecd6b60d9062f4fdc831de1a895f7840cf7c5d2cc602af91d47b2bf19be7f1c"
+        },
+        {
+          "status": " M",
+          "path": "ops/prometheus/course-community-alerts.test.yml",
+          "sha256": "d40deebf4054c7f44699899b60128224a4b6ee0dc377bf42a49b302138cdd1ca"
+        },
+        {
+          "status": " M",
+          "path": "ops/prometheus/course-community-alerts.yml",
+          "sha256": "6d64e59ef5196d24368aca18402f82f3b0b6aa6074a260bbd03beecf95c3e0d5"
+        },
+        {
+          "status": " M",
+          "path": "package-lock.json",
+          "sha256": "e89dea73ebf002094fa132ce5f6ed4c7f8e34beeaf7efa7e2a37aa1565febb27"
+        },
+        {
+          "status": " M",
+          "path": "package.json",
+          "sha256": "a528074cb0d1714e54f2a371ffd5233f37686d2dfe28f60f565f17809796a4af"
+        },
+        {
+          "status": " M",
+          "path": "scripts/assert-test-database.mjs",
+          "sha256": "5810a38b0ddf5267e8d30abd51003f66233f62cbf7fa49daeb819ce8b130d6ee"
+        },
+        {
+          "status": " M",
+          "path": "scripts/verify-community-contract.mjs",
+          "sha256": "53f3f366f2383bc799d04dd64e6a93c391509a0532c0188330d6b59d4e97707c"
+        },
+        {
+          "status": " M",
+          "path": "src/app.ts",
+          "sha256": "b7d85c7953c97227d602a776e44e92fd79dcf55955f6a8fa97ce597397195ed3"
+        },
+        {
+          "status": " M",
+          "path": "src/community-enrollment-ops.ts",
+          "sha256": "4bc8551c9c39d4c132e7f1a55409d4ed861df8d1cee67bf5e1a55a985a38d29f"
+        },
+        {
+          "status": " M",
+          "path": "src/community-enrollment-publisher.ts",
+          "sha256": "7d8be38cf9a84bf10f3bcb7f568b9ef6638e5749ddcc2ed3f296f182faf1632a"
+        },
+        {
+          "status": " M",
+          "path": "src/community-snapshot-worker.ts",
+          "sha256": "01795b2a54a58f10c5729990feb23a0c1d198f63cb26b8f38bd7eb60c7db5d11"
+        },
+        {
+          "status": " M",
+          "path": "src/config/database-url.ts",
+          "sha256": "a3f9c6e43e51f297c39081ef11775bf0bdc3c5ac4893049be17ea321fc4d7367"
+        },
+        {
+          "status": " M",
+          "path": "src/config/env.ts",
+          "sha256": "2ca2288633b4dd581ef055de8eb55f695a1417cd7698bbfdd9b9a394478f0920"
+        },
+        {
+          "status": " M",
+          "path": "src/db/schema.ts",
+          "sha256": "db5f793a39f1422261ee97c5f3649b5904477fd912823a5ec9a624fda69e544f"
+        },
+        {
+          "status": " M",
+          "path": "src/db/seed.ts",
+          "sha256": "8791f877fdf8bb8651d2832a67843a2235ba47a728954b0d0a63cf7d1e3a58fc"
+        },
+        {
+          "status": " M",
+          "path": "src/entitlements/admin-entitlement-command.repository.ts",
+          "sha256": "1358dea57e09692beec9e01dc53d9690cfff5862730d9ca73c3b1fe3e897f3a3"
+        },
+        {
+          "status": " M",
+          "path": "src/entitlements/entitlement.repository.ts",
+          "sha256": "18a25169653961ed78c9d2a84c8c6079ea5610042a4a5d998869ba3d3d54d0c1"
+        },
+        {
+          "status": " M",
+          "path": "src/entitlements/internal-network.ts",
+          "sha256": "fccd1418b54f1dba6fa0faae33e72080966055075355033bc44377a794b8d871"
+        },
+        {
+          "status": " M",
+          "path": "src/entitlements/internal-rate-limit.ts",
+          "sha256": "6f51f844d8a5c9a053974b9b4e1db8ed7bd9bc68bda1dbe4d5ec7392cd946cb7"
+        },
+        {
+          "status": " M",
+          "path": "src/entitlements/user-course-lock.ts",
+          "sha256": "a0ffd52b7d4677b4a2cad31185d20da1a5963596683441e1544ad6e9c8fd4eee"
+        },
+        {
+          "status": " M",
+          "path": "src/integrations/community/community-network.ts",
+          "sha256": "455d427186700678b0cc936b7be15daae82f3ebca20eb2a384280c1436d12b99"
+        },
+        {
+          "status": " M",
+          "path": "src/integrations/community/community-rate-limit.ts",
+          "sha256": "8b8594d6c6de22cb38ba4b8b8ae4e334bc1f2bc77e6e2071ed734e9cc5b9ea1a"
+        },
+        {
+          "status": " M",
+          "path": "src/integrations/community/community-read.repository.ts",
+          "sha256": "583b603f9045a07aea2ae7fb88f9df2da1dea039b7ac37db05563b9e479c7ccd"
+        },
+        {
+          "status": " M",
+          "path": "src/integrations/community/community-read.routes.ts",
+          "sha256": "bba1e4ca19df966731e2d1627d78405fe0c186a3a1c5b279c12ac0665f7783ab"
+        },
+        {
+          "status": " M",
+          "path": "src/integrations/community/contracts/enrollment-event.ts",
+          "sha256": "40f86796501e2eac0be36f3fbb1b4544ce8322c7a963ff4e16d28c5ff245e4dd"
+        },
+        {
+          "status": " M",
+          "path": "src/integrations/community/http-transport/community-http-transport.ts",
+          "sha256": "f02079d439ab57bddcd1bc37ddd05e687a284e0d90180a444635704f2ebf06de"
+        },
+        {
+          "status": " M",
+          "path": "src/integrations/community/persistence/drizzle-publisher.repository.ts",
+          "sha256": "f83a486cc84bd9de37adfe67826280bb19cb0d8b14e256bfd477ab790e887b16"
+        },
+        {
+          "status": " M",
+          "path": "src/integrations/community/persistence/enrollment-transition.repository.ts",
+          "sha256": "813eab03666ade6e5da0c58c8906bb8a045f256fa83fc67f47afc04117e717b2"
+        },
+        {
+          "status": " M",
+          "path": "src/integrations/community/persistence/publisher.repository.ts",
+          "sha256": "a53619f45439a8140d43d854ee9e4a8971016de658d935cdbdceaf32375e2b9e"
+        },
+        {
+          "status": " M",
+          "path": "src/integrations/community/publisher/community-publisher.ts",
+          "sha256": "f9030d58c3c7743f5944065c8abe71aa4cf7653450661f6371c1fca366a9a8e2"
+        },
+        {
+          "status": " M",
+          "path": "src/observability/metrics.ts",
+          "sha256": "16dff56162c843f97d38af236a2db3f65765214a998e89d50f5d66777bf3a740"
+        },
+        {
+          "status": " M",
+          "path": "src/observability/process-http-server.ts",
+          "sha256": "bfa44d16bb6a131253dc18d95fae6784cbe3a7e19f3998002fc59144c42470e9"
+        },
+        {
+          "status": " M",
+          "path": "src/server.ts",
+          "sha256": "6c65bfaf25f7a9dc3aa310446267e8b4e5de148d67b0590ea25444fb2792e73c"
+        },
+        {
+          "status": " M",
+          "path": "src/video/video.repository.ts",
+          "sha256": "a0b6002da9e89224fb843fab907928db758d798183fdb0023e138c594b8850df"
+        },
+        {
+          "status": " M",
+          "path": "tests/community-enrollment-contract.test.ts",
+          "sha256": "4a7974405a06555bbd114363001ef1d21e344cba73775f33069fa57912657796"
+        },
+        {
+          "status": " M",
+          "path": "tests/community-publisher.test.ts",
+          "sha256": "a52f8d705b7e8d93c43732c266ea3920ccfceb4497790cb64df89c020a8a27e8"
+        },
+        {
+          "status": " M",
+          "path": "tests/community-rate-limit.test.ts",
+          "sha256": "a811f88bc17bbce8e3d009d668fe793e4b1b92d84ddbcee04e4d395a3e7c30a4"
+        },
+        {
+          "status": " M",
+          "path": "tests/community-read-routes.test.ts",
+          "sha256": "fcc147752c47bc5ded7eb335f710204a30cf0532b4ae0f5bf6abac3be7086679"
+        },
+        {
+          "status": " M",
+          "path": "tests/database-url.test.ts",
+          "sha256": "32344ab8b927cfc681c6200c8261db3e36390eb63dbcfec9707eae48a6aa7c2a"
+        },
+        {
+          "status": " M",
+          "path": "tests/database.integration.test.ts",
+          "sha256": "53f07a17c7e67af167f41db03c5b5a103a4e29cdfdae7bc24203b2f6853fe42a"
+        },
+        {
+          "status": " M",
+          "path": "tests/env.test.ts",
+          "sha256": "af80ca5ddf243aaef31b1b43140ac5709e5223b1c3c368e6cf2e94e4c523fa4c"
+        },
+        {
+          "status": " M",
+          "path": "tests/operational-http-server.test.ts",
+          "sha256": "25d71f93cf85adfa5e5eb380e2173ab913c8350215370a815cebfcb49b0a71ce"
+        },
+        {
+          "status": " M",
+          "path": "tests/video.test.ts",
+          "sha256": "b622614970c8ef5e317a9273b9b007e9b20e526ad4855e13366bb7a1fbf10003"
+        },
+        {
+          "status": "??",
+          "path": ".github/workflows/contract-release-gate.yml",
+          "sha256": "2d4ff4a82fe83f174bca781437de0dccf844644736eb4c621eddcc56d771141a"
+        },
+        {
+          "status": "??",
+          "path": "API-INTEGRATION-PLAN.md",
+          "sha256": "14d080b0249f62aca744ff5d853bbab6a4d43739ea9ac546c4155114479668d0"
+        },
+        {
+          "status": "??",
+          "path": "contracts/community/course-enrollment/v1/fixtures/invalid/unsupported-event-type.json",
+          "sha256": "baa4e7f94eb764dc426b471d0dab1686d652ec6ccda240044b3dd9cbc4daf517"
+        },
+        {
+          "status": "??",
+          "path": "contracts/community/course-enrollment/v1/fixtures/invalid/uppercase-uuid.json",
+          "sha256": "166da27fecdfae5a93478a8a2db81098851dc1001ff8506d59965ffc15e7cebe"
+        },
+        {
+          "status": "??",
+          "path": "docs/adr/002-enrollment-integration-hardening.md",
+          "sha256": "f2052ab280f8ab507d409aa9dbb5095b71f827598917d71e35130094dada619b"
+        },
+        {
+          "status": "??",
+          "path": "drizzle/0015_shared_rate_limit_buckets.down.sql",
+          "sha256": "7087b5cff46f868fc632d68e81d5082170de2e233fdbe25d940168664f8cf4c9"
+        },
+        {
+          "status": "??",
+          "path": "drizzle/0015_shared_rate_limit_buckets.sql",
+          "sha256": "cf8212026106f66c84cb0ec3a4da8fd37bb5a30bd4670b7c40a665311f01c637"
+        },
+        {
+          "status": "??",
+          "path": "drizzle/0016_audit_read_only_enrollment_operations.down.sql",
+          "sha256": "b7bff12b5937f39296d8ac1a9a9b4bf7e82e4697260d3fa200e0531b26389866"
+        },
+        {
+          "status": "??",
+          "path": "drizzle/0016_audit_read_only_enrollment_operations.sql",
+          "sha256": "c5b65009a238f40dee8dc649c0b66ca0d69356928ed954fc10488f9f1aeeec68"
+        },
+        {
+          "status": "??",
+          "path": "drizzle/meta/0015_snapshot.json",
+          "sha256": "bf690068e68a6f834e32e524334a9389682ab2457ff822288b4689c3cdb4602d"
+        },
+        {
+          "status": "??",
+          "path": "drizzle/meta/0016_snapshot.json",
+          "sha256": "5dc862851b1667422ff39330490a6fdb976026243754031c2100ef65952dd9b6"
+        },
+        {
+          "status": "??",
+          "path": "scripts/assert-seedable-database.mjs",
+          "sha256": "7d8a57ca3e67b5b60ce027880f29d12b0abbe606ada99fdc40647e4b8d484b8f"
+        },
+        {
+          "status": "??",
+          "path": "src/entitlements/effective-access.ts",
+          "sha256": "18ff60babe6965a6c3bf1ae412cf9cf6c2a57298d661d79ee233d6fe2d13c95b"
+        },
+        {
+          "status": "??",
+          "path": "src/observability/log-redaction.ts",
+          "sha256": "e549dde57534c31860f9a359000500e0fc1f2c6723fa447c47973183dfad9411"
+        },
+        {
+          "status": "??",
+          "path": "src/rate-limit/drizzle-rate-limit-store.ts",
+          "sha256": "21a8520479c12bb3575fc4d1838c4e00cc82e64f6ef3b8bd64d68194dfd87a71"
+        },
+        {
+          "status": "??",
+          "path": "src/rate-limit/rate-limit-hook.ts",
+          "sha256": "200a23258770f8a9e4c9c59249757703e1ae8b1a2cfbd9c33e63d78bf0c3e797"
+        },
+        {
+          "status": "??",
+          "path": "src/rate-limit/rate-limit-store.ts",
+          "sha256": "681df14be65c22038c99662f0b5344f3799ec7fd33590187ecc330942c74405f"
+        }
+      ],
+      "diff_stat": ".env.example                                       |   5 +-\n .github/workflows/ci.yml                           |  30 ++\n .../workflows/community-contract-compatibility.yml |  36 ++-\n .../community/course-enrollment/v1/SHA256SUMS      |  14 +-\n .../course-enrollment/v1/contract-pin.json         |   5 +-\n .../v1/enrollment-event.schema.json                |  12 +-\n .../course-enrollment/v1/fixtures/manifest.json    |  14 +-\n .../001-course-community-enrollment-integration.md |   1 +\n docs/course-community-enrollment-runbook.md        |  28 +-\n ...014_course_community_enrollment_integration.sql |  49 ++-\n drizzle/meta/_journal.json                         |  14 +\n ops/prometheus/course-community-alerts.test.yml    |  17 +\n ops/prometheus/course-community-alerts.yml         |  12 +\n package-lock.json                                  |   2 +\n package.json                                       |   8 +-\n scripts/assert-test-database.mjs                   |  25 +-\n scripts/verify-community-contract.mjs              | 160 ++++++++-\n src/app.ts                                         |  13 +-\n src/community-enrollment-ops.ts                    |  63 ++--\n src/community-enrollment-publisher.ts              |   6 +-\n src/community-snapshot-worker.ts                   |   6 +-\n src/config/database-url.ts                         |  35 +-\n src/config/env.ts                                  |  36 ++-\n src/db/schema.ts                                   |  43 ++-\n src/db/seed.ts                                     |  22 +-\n .../admin-entitlement-command.repository.ts        |   9 +\n src/entitlements/entitlement.repository.ts         |   9 +\n src/entitlements/internal-network.ts               |  80 +++--\n src/entitlements/internal-rate-limit.ts            | 110 +++----\n src/entitlements/user-course-lock.ts               |   9 +-\n src/integrations/community/community-network.ts    |   4 +-\n src/integrations/community/community-rate-limit.ts | 109 +++----\n .../community/community-read.repository.ts         | 173 +++++++---\n .../community/community-read.routes.ts             |  18 +-\n .../community/contracts/enrollment-event.ts        |  30 +-\n .../http-transport/community-http-transport.ts     |  14 +-\n .../persistence/drizzle-publisher.repository.ts    | 115 ++++++-\n .../enrollment-transition.repository.ts            |   6 +-\n .../community/persistence/publisher.repository.ts  |  19 ++\n .../community/publisher/community-publisher.ts     |  45 ++-\n src/observability/metrics.ts                       |  23 ++\n src/observability/process-http-server.ts           |  48 ++-\n src/server.ts                                      |  11 +-\n src/video/video.repository.ts                      |  11 +-\n tests/community-enrollment-contract.test.ts        |  30 ++\n tests/community-publisher.test.ts                  |  48 ++-\n tests/community-rate-limit.test.ts                 |  58 +++-\n tests/community-read-routes.test.ts                |  53 +++\n tests/database-url.test.ts                         |  28 +-\n tests/database.integration.test.ts                 | 360 ++++++++++++++++++++-\n tests/env.test.ts                                  |  15 +-\n tests/operational-http-server.test.ts              |  29 ++\n tests/video.test.ts                                |   2 +-\n 53 files changed, 1736 insertions(+), 386 deletions(-)",
+      "engines": {
+        "node": ">=24"
+      },
+      "packageManager": null,
+      "scripts": {
+        "dev": "tsx watch src/server.ts",
+        "build": "tsc --noEmit",
+        "build:production": "tsc -p tsconfig.build.json",
+        "openapi:generate": "node --import tsx scripts/generate-openapi.mjs",
+        "openapi:check": "node --import tsx scripts/generate-openapi.mjs --check",
+        "contract:community:check": "node --import tsx scripts/verify-community-contract.mjs",
+        "contract:community:release-check": "node --import tsx scripts/verify-community-contract.mjs --release",
+        "start": "tsx src/server.ts",
+        "start:community-publisher": "tsx src/community-enrollment-publisher.ts",
+        "start:community-snapshot-worker": "tsx src/community-snapshot-worker.ts",
+        "community-enrollment:ops": "tsx src/community-enrollment-ops.ts",
+        "seed": "node scripts/assert-seedable-database.mjs && tsx src/db/seed.ts",
+        "test": "vitest run",
+        "test:unit": "vitest run --exclude tests/database.integration.test.ts",
+        "test:database": "node scripts/assert-test-database.mjs && vitest run tests/database.integration.test.ts --no-file-parallelism --maxWorkers=1 --testTimeout=30000",
+        "test:watch": "vitest",
+        "lint": "eslint .",
+        "db:migrate": "drizzle-kit migrate",
+        "db:migrations:check": "drizzle-kit check",
+        "db:schema-drift": "node scripts/check-schema-drift.mjs",
+        "db:migrations:roundtrip": "node scripts/verify-migration-roundtrip.mjs",
+        "verify": "npm run build && npm run lint && npm run test:unit && npm run contract:community:check && npm run db:migrations:check && npm run db:schema-drift && npm run openapi:check"
+      },
+      "key_dependencies": {
+        "@fastify/cors": "^11.2.0",
+        "@fastify/helmet": "^13.0.2",
+        "@fastify/rate-limit": "^10.3.0",
+        "@fastify/swagger": "^9.7.0",
+        "@fastify/swagger-ui": "^6.1.1",
+        "@mux/mux-node": "^14.0.1",
+        "drizzle-orm": "^0.45.2",
+        "fastify": "^5.8.5",
+        "fastify-raw-body": "^5.0.0",
+        "pg": "^8.20.0",
+        "@types/pg": "^8.20.0",
+        "drizzle-kit": "^0.31.10"
+      },
+      "migrations": [
+        {
+          "path": "drizzle/meta/_journal.json",
+          "count": 17,
+          "last": [
+            {
+              "idx": 14,
+              "version": "7",
+              "when": 1786573635639,
+              "tag": "0014_course_community_enrollment_integration",
+              "breakpoints": true
+            },
+            {
+              "idx": 15,
+              "version": "7",
+              "when": 1788980012656,
+              "tag": "0015_shared_rate_limit_buckets",
+              "breakpoints": true
+            },
+            {
+              "idx": 16,
+              "version": "7",
+              "when": 1788980370346,
+              "tag": "0016_audit_read_only_enrollment_operations",
+              "breakpoints": true
+            }
+          ]
+        }
+      ],
+      "workflows": [
+        ".github/workflows/contract-release-gate.yml",
+        ".github/workflows/community-contract-compatibility.yml",
+        ".github/workflows/ci.yml"
+      ],
+      "config": {},
+      "node_modules": true,
+      "local_branches": [
+        "codex/complete-course-api 0134f3f45bddf26a1296580b6b8f793d7ca4c344",
+        "main a0c10bd9ba2d36d5fc7c3060e252bb52ce049ba8"
+      ],
+      "worktrees": "worktree /Users/dardan/workspace/lash-her-course-api\nHEAD a0c10bd9ba2d36d5fc7c3060e252bb52ce049ba8\nbranch refs/heads/main",
+      "committed_migration_count": 15,
+      "reviewed_file_hashes": {
+        "package.json": "a528074cb0d1714e54f2a371ffd5233f37686d2dfe28f60f565f17809796a4af",
+        "package-lock.json": "e89dea73ebf002094fa132ce5f6ed4c7f8e34beeaf7efa7e2a37aa1565febb27",
+        "drizzle/meta/_journal.json": "9ecd6b60d9062f4fdc831de1a895f7840cf7c5d2cc602af91d47b2bf19be7f1c",
+        "src/db/schema.ts": "db5f793a39f1422261ee97c5f3649b5904477fd912823a5ec9a624fda69e544f",
+        "Dockerfile": "0dcbe72496e59e0a44300471bb793960cf68ddc95b886b8c60cf0dd916f2abac",
+        "AGENTS.md": "5afefc6646bf4ffcad13198a37a8b6b4b2b69523c51335e13ed0921c92c8c92d",
+        "API-INTEGRATION-PLAN.md": "14d080b0249f62aca744ff5d853bbab6a4d43739ea9ac546c4155114479668d0",
+        ".github/workflows/contract-release-gate.yml": "2d4ff4a82fe83f174bca781437de0dccf844644736eb4c621eddcc56d771141a",
+        ".github/workflows/community-contract-compatibility.yml": "15b936cd57d882dd909fb0f60ee6920e065cd14880ef34e6bb5bc3c4ad5e73f4",
+        ".github/workflows/ci.yml": "6bf6788955ce47698315a22e263606a5a63cdc54f505a21e8623d07a096b350a",
+        "openapi/course-api.json": "9d1982b5cea8d37fb83d2ed46a84deb24bc3dfd036cede2fd975d59e4fd385bd"
+      }
+    },
+    "lash-her-community-api": {
+      "branch": "main",
+      "head": "91e91738c0012299643c35a23450aec4818da8d0",
+      "commit": "2026-08-15T16:00:40-04:00 Add comprehensive tests for reconciliation, retention, and targeted repair processes",
+      "remotes": "origin\thttps://github.com/princessdardan/lash-her-community-api.git (fetch)\norigin\thttps://github.com/princessdardan/lash-her-community-api.git (push)",
+      "upstream": "origin/main",
+      "ahead_behind_cached": "0\t0",
+      "changes": [
+        {
+          "status": " M",
+          "path": ".env.example",
+          "sha256": "ed73f1269d8eb0de22a8f746033e43c973acd9322e7503c64c59d896f0b58284"
+        },
+        {
+          "status": " M",
+          "path": ".github/workflows/ci.yml",
+          "sha256": "9b2996d109632930a52f453d6b8c01fc57c7b547f059c405c6f1e44c6159db2f"
+        },
+        {
+          "status": " M",
+          "path": ".github/workflows/course-contract-compatibility.yml",
+          "sha256": "966e3317ac41a9b80bfb597f428379dad78af31719bfdf43baac5c52e27ea587"
+        },
+        {
+          "status": " M",
+          "path": "contracts/course-enrollment/v1/SHA256SUMS",
+          "sha256": "4b42c8d5605a9627d46233d1d6eaeee577b590802b88262a29f93922519c137b"
+        },
+        {
+          "status": " M",
+          "path": "contracts/course-enrollment/v1/enrollment-event.schema.json",
+          "sha256": "a1635b7725a8331cf4885da6b2c596f07c7272ef1bbd5d66a855b10ece95b01e"
+        },
+        {
+          "status": " M",
+          "path": "contracts/course-enrollment/v1/fixtures/manifest.json",
+          "sha256": "253ffa5ca9f9f3d846d8e92ed58e3d3b275c71e591a54ad861874122d48b24c5"
+        },
+        {
+          "status": " M",
+          "path": "docs/decision-register.md",
+          "sha256": "d726d19e4f16c5572135f0d6027a0f63a182e1aa35ee327d71e9fb25d3051311"
+        },
+        {
+          "status": " M",
+          "path": "docs/integrations/course-api.md",
+          "sha256": "eb3e95088949a6ab6de9d1dc27adf94b1e1691b3327eafcb8d04fedd2f2aa9ac"
+        },
+        {
+          "status": " M",
+          "path": "docs/runbooks/cutover-and-rollback.md",
+          "sha256": "2d7fa3ac8c4c007809918af10be418cb80aefa4e50aec223987e6c86666f0954"
+        },
+        {
+          "status": " M",
+          "path": "docs/runbooks/integration-incident.md",
+          "sha256": "8b8661c7d01581704c3a7e19925843bdcfb1746ce7ee9d407d973021faded43b"
+        },
+        {
+          "status": " M",
+          "path": "drizzle.config.ts",
+          "sha256": "cb5382a02979eef64b39e00b9b0c95dd3520eea021c852dfeeddf38b5d0a0e85"
+        },
+        {
+          "status": " M",
+          "path": "drizzle/meta/_journal.json",
+          "sha256": "d71fde368b7d389ec060f862f52bf44d95d485e22bb460533d7a824867723395"
+        },
+        {
+          "status": " M",
+          "path": "openapi/community-api.json",
+          "sha256": "6ab9b614e1d7befb5081fb9c5d3a060b1cf21d9f1db7370579fb932696094b89"
+        },
+        {
+          "status": " M",
+          "path": "ops/prometheus/community-api-alerts.test.yml",
+          "sha256": "92e506a8e2568063ce34386b7ac5c8674cb374aa443eef402c38e25e8c8b0736"
+        },
+        {
+          "status": " M",
+          "path": "ops/prometheus/community-api-alerts.yml",
+          "sha256": "9aaafb1d81d383f00f8b1a1852e09c75db73db5fa95390542b11c835cd924a17"
+        },
+        {
+          "status": " M",
+          "path": "package-lock.json",
+          "sha256": "01d3794205059fa15e119afef62ef7627663eae4581342077920b692ea11de65"
+        },
+        {
+          "status": " M",
+          "path": "package.json",
+          "sha256": "4d3b09b864bcc14071a1ef1a8da551d7d3d3f8b3cb78dfd65f1bad2e796bc58b"
+        },
+        {
+          "status": " M",
+          "path": "scripts/assert-test-database.mjs",
+          "sha256": "0d20eb2308316784e48892e2bd4da5006a7ac707575f117a3b5644b85b739eea"
+        },
+        {
+          "status": " M",
+          "path": "scripts/check-course-enrollment-contract.mjs",
+          "sha256": "895af225558fc166972683b704af270198bf2bd28640153ef62baf9b0cee0c4a"
+        },
+        {
+          "status": " M",
+          "path": "scripts/check-vendored-course-contract.mjs",
+          "sha256": "0e6b6f4940997d9d4c2d3c531a876d274fceb846bd6131a777960912f0d6523a"
+        },
+        {
+          "status": " M",
+          "path": "scripts/verify-migration-roundtrip.mjs",
+          "sha256": "1e7a9796467ca6619a67ab97fd927d2b70f3209767614a1ce54314cdd40565bb"
+        },
+        {
+          "status": " M",
+          "path": "src/app.ts",
+          "sha256": "8de732884d50d3e133494cb248ff702c1631613c2dc4fc0012270b9dffc80191"
+        },
+        {
+          "status": " M",
+          "path": "src/config/database-url.ts",
+          "sha256": "3cd9e0efb02400672032b58d77d4fc3bf9a6fbba1de2ca3fec453bf716d73a4f"
+        },
+        {
+          "status": " M",
+          "path": "src/config/env.ts",
+          "sha256": "fccada5fb6b0874bb605ed4cbe094b67db54bf2ed0fe51ae5c57511c8ed8c95f"
+        },
+        {
+          "status": " M",
+          "path": "src/config/runtime.ts",
+          "sha256": "4447d024a21e51506ac464c149741a3fb1a979b9d561d80c0559b30484b33ebb"
+        },
+        {
+          "status": " M",
+          "path": "src/db/schema.ts",
+          "sha256": "d3a18f96e8005db5244eff3a0dfbaa0595754a3a351c15fc0052c8111abc0adb"
+        },
+        {
+          "status": " M",
+          "path": "src/http/errors.ts",
+          "sha256": "4502e272da1636b7087e7ccbfb23514948b766187585bfbad9e674e7ffdd82da"
+        },
+        {
+          "status": " M",
+          "path": "src/integrations/course/contracts/enrollment-event.ts",
+          "sha256": "b0f43b8ae45272141ba4a0ca7bfa4ae1e82955208c1a16bcf61840bf5f7fb525"
+        },
+        {
+          "status": " M",
+          "path": "src/integrations/course/inbox/course-enrollment-receipt.repository.ts",
+          "sha256": "027032641e3c0df97287a1fd34f1ebc68224f3fd3883382dfbb4c8d4c6a8ef8a"
+        },
+        {
+          "status": " M",
+          "path": "src/integrations/course/projection/enrollment-event-ordering.ts",
+          "sha256": "ebff12c3e80c1afa4ce87571be88f8aa926cceebdae77e56d01f7ad185ac1849"
+        },
+        {
+          "status": " M",
+          "path": "src/integrations/course/receiver/course-enrollment-receiver.routes.ts",
+          "sha256": "8a024fc70bfa1839d9bb75ee52cc3832ddf6df3af783fbc4fa3ab6588bc7d9d9"
+        },
+        {
+          "status": " M",
+          "path": "src/integrations/course/receiver/course-publisher-network.ts",
+          "sha256": "e835eedbb2d03e30baf5266973841c09cba1a4924ff1b1fbd9b1a421ce2e1efe"
+        },
+        {
+          "status": " M",
+          "path": "src/integrations/course/reconciliation/drizzle-reconciliation-store.ts",
+          "sha256": "5b2169eb57b0ce3285d742e88241f50be56d54f77f9b47adc9ee4f6782e0f478"
+        },
+        {
+          "status": " M",
+          "path": "src/integrations/course/reconciliation/reconciliation.ts",
+          "sha256": "de13485bdeb2eca5c9682ebcb75d2549dddcc70e407f4dab42cbaf88860f3684"
+        },
+        {
+          "status": " M",
+          "path": "src/integrations/course/repair/drizzle-repair-store.ts",
+          "sha256": "2c22cb3f45a6ca3e3a33de654d86a4ee8afed20db97c1698276d27e265b00504"
+        },
+        {
+          "status": " M",
+          "path": "src/integrations/course/repair/targeted-repair.ts",
+          "sha256": "fcdd3b2350c20910d5b721573cead5a03589f64ed41aebdc0ab8bf3b57ad9ada"
+        },
+        {
+          "status": " M",
+          "path": "src/integrations/course/shared/course-read-error.ts",
+          "sha256": "0c04d8f410b178b85f45a3d20815d36a8b9e1694b885c97fcb3e9081d2f305c7"
+        },
+        {
+          "status": " M",
+          "path": "src/integrations/course/shared/http.ts",
+          "sha256": "ab4b3669ea45937b442530f68a3b6dfe64c4cb228cdfe1f0c602872d58583fd6"
+        },
+        {
+          "status": " M",
+          "path": "src/integrations/course/snapshot-client/course-snapshot-client.ts",
+          "sha256": "510c8b452da160fbc581aebc88ebb477eb330f28966015e28e0f5b5401b49093"
+        },
+        {
+          "status": " M",
+          "path": "src/observability/metrics.ts",
+          "sha256": "ae3d790f86c3f7f219d6efb53b48779b51961bd89bdb5060b0557c61c7a61618"
+        },
+        {
+          "status": " M",
+          "path": "src/ops/course-enrollment-ops.ts",
+          "sha256": "4ef648597217a23f6271fc25a84249761ea4c5d5b8b8dd4a19898707ade26874"
+        },
+        {
+          "status": " M",
+          "path": "src/ops/retention.ts",
+          "sha256": "63cfc8f989b02245d9f57823b43525a76180ec83535678c5879e46469a4aa5eb"
+        },
+        {
+          "status": " M",
+          "path": "src/server.ts",
+          "sha256": "300e898fc56ca40c62fbc44739b476b7cfd2e39743c40ec6222f270695dd6506"
+        },
+        {
+          "status": " M",
+          "path": "src/worker.ts",
+          "sha256": "cf08fdec9865be6ce904dd6d8353aa5269d979f0f0433e3f131f519b3d791623"
+        },
+        {
+          "status": " M",
+          "path": "tests/config-env.test.ts",
+          "sha256": "7b49251958b0595493be63c3411ab90be450a8e8dc4d8e18a55058ae4432a486"
+        },
+        {
+          "status": " M",
+          "path": "tests/course-enrollment-contract.test.ts",
+          "sha256": "18fa7b3eef0fbec31c254643d05c8e16539959650d72433f299e301ddbdbc58a"
+        },
+        {
+          "status": " M",
+          "path": "tests/course-enrollment-receiver.test.ts",
+          "sha256": "15a853daa6a698e4b2fdbd0c0e7dab31f2cb9c1f4250de0d9d7ac88e8c6dab34"
+        },
+        {
+          "status": " M",
+          "path": "tests/course-entitlement-policy.test.ts",
+          "sha256": "39a01b5dad67456fd0666423b03fb692bd9e55f8d286ab6f494204580dbbdec6"
+        },
+        {
+          "status": " M",
+          "path": "tests/course-publisher-network.test.ts",
+          "sha256": "4aeddda0db86ebfa73bb270539f0fd9714499705a41811acc0cd1cea0492c159"
+        },
+        {
+          "status": " M",
+          "path": "tests/course-read-client.test.ts",
+          "sha256": "5040c7281552f422781df8d5dece7c60b2a95d90760dc06be8bff1b913b510a8"
+        },
+        {
+          "status": " M",
+          "path": "tests/database.integration.test.ts",
+          "sha256": "fb483fa4bb614f5662c22cbb95b24473bc8865c6c8c586fbfafe6563bca0000e"
+        },
+        {
+          "status": " M",
+          "path": "tests/reconciliation.test.ts",
+          "sha256": "8546f312b10365c8bd926e64cb4885bbf96bd30076be0e8a3f07db5d2957f18a"
+        },
+        {
+          "status": " M",
+          "path": "tests/targeted-repair.test.ts",
+          "sha256": "20e0713bc00a282647f338982b73ca9b012de54c78bfb87097e31f9662318ae6"
+        },
+        {
+          "status": " M",
+          "path": "tests/worker-observability.test.ts",
+          "sha256": "191c4e1a01e398c49f09e8425c2ca6009e739b64f7af5a1eab9d064911b33618"
+        },
+        {
+          "status": "??",
+          "path": ".github/workflows/deployed-e2e.yml",
+          "sha256": "1a6e0e1439dd09221d51102edadb7c98170211110e60c7dd80f08d5a0f7a1dba"
+        },
+        {
+          "status": "??",
+          "path": ".github/workflows/load-certification.yml",
+          "sha256": "49456f06c5f0d4304363e808e9b016ba64ae6bfc4bd6427edae6dc3e2db5ef39"
+        },
+        {
+          "status": "??",
+          "path": "API-INTEGRATION-PLAN.md",
+          "sha256": "14d080b0249f62aca744ff5d853bbab6a4d43739ea9ac546c4155114479668d0"
+        },
+        {
+          "status": "??",
+          "path": "contracts/course-enrollment/v1/fixtures/invalid/unsupported-event-type.json",
+          "sha256": "baa4e7f94eb764dc426b471d0dab1686d652ec6ccda240044b3dd9cbc4daf517"
+        },
+        {
+          "status": "??",
+          "path": "contracts/course-enrollment/v1/fixtures/invalid/uppercase-uuid.json",
+          "sha256": "166da27fecdfae5a93478a8a2db81098851dc1001ff8506d59965ffc15e7cebe"
+        },
+        {
+          "status": "??",
+          "path": "drizzle/0008_integrity_staging_and_dedup.down.sql",
+          "sha256": "da45db2dac0ce9996790b3647b642a90cadfb40eaba7f91224ef644093e7597a"
+        },
+        {
+          "status": "??",
+          "path": "drizzle/0008_integrity_staging_and_dedup.sql",
+          "sha256": "533b3fd84845fcc6bd8e8f0991551354dbf8226bcdc6f023aa0759296850d261"
+        },
+        {
+          "status": "??",
+          "path": "drizzle/meta/0008_snapshot.json",
+          "sha256": "f1726a3e24155f7d5bea4ee1533e1eb38b50a30ea583b509bc0644663fdf8daa"
+        },
+        {
+          "status": "??",
+          "path": "scripts/e2e/config.mjs",
+          "sha256": "fb2c24b263f5dc294c25e70fdae8e9ffca6e655174d6baaa161060f646b8192d"
+        },
+        {
+          "status": "??",
+          "path": "scripts/e2e/http.mjs",
+          "sha256": "6fc23552309b8a798a5831ac36ce7be5c61b56e232a22b74efd5728bfd4e9019"
+        },
+        {
+          "status": "??",
+          "path": "scripts/e2e/run.mjs",
+          "sha256": "f1178780e1e6923952db531b469af74d46fdca962d0bd49ff8545d7a258e7bf3"
+        },
+        {
+          "status": "??",
+          "path": "scripts/write-course-enrollment-checksums.mjs",
+          "sha256": "f2accf102d67762a7463a85f3684a5f122a19e8ac626ebb58ade9f554b423e82"
+        },
+        {
+          "status": "??",
+          "path": "src/integrations/course/entitlement-policy/runtime-entitlement-policy.ts",
+          "sha256": "80a856c332973a76665d5d0d9ddd52b08fe405c55289084b1bb9d572be0e1e34"
+        },
+        {
+          "status": "??",
+          "path": "src/integrations/course/projection/held-event-supersession.ts",
+          "sha256": "64728f697ebea0bde05612a42a2712b780b8e0fc30de06e1dfc52be0dcd09a5c"
+        },
+        {
+          "status": "??",
+          "path": "src/integrations/course/projection/projection-locks.ts",
+          "sha256": "63672a37c63a40463c22879cdbe00b051a8d545341d5e4975a9f67d988549185"
+        },
+        {
+          "status": "??",
+          "path": "src/integrations/course/shared/concurrency.ts",
+          "sha256": "442680e7907d98fb71575f7c79748743b017629e74a54399b17a472e01280bb7"
+        },
+        {
+          "status": "??",
+          "path": "src/integrations/course/shared/token-bucket.ts",
+          "sha256": "eb1c2e3cb3eb6c8dd39e9905d36abbef04192c1eb2a38fe2ef94a92f2a43554d"
+        },
+        {
+          "status": "??",
+          "path": "src/observability/log-redaction.ts",
+          "sha256": "e549dde57534c31860f9a359000500e0fc1f2c6723fa447c47973183dfad9411"
+        },
+        {
+          "status": "??",
+          "path": "src/observability/worker-observers.ts",
+          "sha256": "8ce26801aceed88f41e50a775191c181d9fe8378e6aad98fa283dc675a200f84"
+        },
+        {
+          "status": "??",
+          "path": "tests/load/receiver-throughput.test.ts",
+          "sha256": "6e20fac737fec16e124c4eb2ef6590a1511d2586fdeb2d658ffdaa8cf758ebe4"
+        },
+        {
+          "status": "??",
+          "path": "tests/load/reconciliation-scale.test.ts",
+          "sha256": "2a2448348269a8bdc8f42563a7c0e7f48ecd1d3ebe9a71be8f21ee7279b28f2b"
+        }
+      ],
+      "diff_stat": ".env.example                                       |  14 +-\n .github/workflows/ci.yml                           |  29 +\n .../workflows/course-contract-compatibility.yml    |  12 +-\n contracts/course-enrollment/v1/SHA256SUMS          |  14 +-\n .../v1/enrollment-event.schema.json                |  12 +-\n .../course-enrollment/v1/fixtures/manifest.json    |  14 +-\n docs/decision-register.md                          | 114 ++++\n docs/integrations/course-api.md                    | 101 +++-\n docs/runbooks/cutover-and-rollback.md              |  18 +-\n docs/runbooks/integration-incident.md              |  37 ++\n drizzle.config.ts                                  |  40 +-\n drizzle/meta/_journal.json                         |   7 +\n openapi/community-api.json                         |  48 +-\n ops/prometheus/community-api-alerts.test.yml       |  99 +++-\n ops/prometheus/community-api-alerts.yml            |  62 ++-\n package-lock.json                                  | 154 ++----\n package.json                                       |  13 +-\n scripts/assert-test-database.mjs                   |  41 +-\n scripts/check-course-enrollment-contract.mjs       | 132 ++++-\n scripts/check-vendored-course-contract.mjs         | 167 ++++--\n scripts/verify-migration-roundtrip.mjs             |   2 +-\n src/app.ts                                         |  33 +-\n src/config/database-url.ts                         |  88 ++-\n src/config/env.ts                                  |  41 +-\n src/config/runtime.ts                              |  24 +\n src/db/schema.ts                                   |  71 ++-\n src/http/errors.ts                                 |  28 +-\n .../course/contracts/enrollment-event.ts           |  14 +-\n .../inbox/course-enrollment-receipt.repository.ts  |  76 ++-\n .../course/projection/enrollment-event-ordering.ts |   2 +-\n .../receiver/course-enrollment-receiver.routes.ts  |  33 +-\n .../course/receiver/course-publisher-network.ts    |  13 +-\n .../reconciliation/drizzle-reconciliation-store.ts | 410 ++++++++------\n .../course/reconciliation/reconciliation.ts        | 301 ++++++++---\n .../course/repair/drizzle-repair-store.ts          |  81 +--\n src/integrations/course/repair/targeted-repair.ts  |  69 ++-\n .../course/shared/course-read-error.ts             |  20 +-\n src/integrations/course/shared/http.ts             |  60 ++-\n .../snapshot-client/course-snapshot-client.ts      |   8 +\n src/observability/metrics.ts                       |  36 ++\n src/ops/course-enrollment-ops.ts                   | 118 +++--\n src/ops/retention.ts                               | 131 ++++-\n src/server.ts                                      |  17 +-\n src/worker.ts                                      | 104 ++--\n tests/config-env.test.ts                           |  91 +++-\n tests/course-enrollment-contract.test.ts           |  42 +-\n tests/course-enrollment-receiver.test.ts           |  17 +\n tests/course-entitlement-policy.test.ts            |  56 ++\n tests/course-publisher-network.test.ts             |  20 +\n tests/course-read-client.test.ts                   |  79 +++\n tests/database.integration.test.ts                 | 587 ++++++++++++++++++++-\n tests/reconciliation.test.ts                       | 489 ++++++++++++-----\n tests/targeted-repair.test.ts                      | 248 ++++++++-\n tests/worker-observability.test.ts                 | 322 +++++++++++\n 54 files changed, 3953 insertions(+), 906 deletions(-)",
+      "engines": {
+        "node": ">=24 <25",
+        "npm": ">=11 <12"
+      },
+      "packageManager": "npm@11.17.0",
+      "scripts": {
+        "dev": "tsx watch src/server.ts",
+        "dev:worker": "tsx watch src/worker.ts",
+        "ops": "tsx src/ops/cli.ts",
+        "build": "tsc --noEmit",
+        "build:production": "tsc -p tsconfig.build.json",
+        "start": "node dist/server.js",
+        "start:worker": "node dist/worker.js",
+        "lint": "eslint .",
+        "test": "vitest run --exclude \"tests/load/**\"",
+        "test:unit": "vitest run --exclude tests/database.integration.test.ts --exclude \"tests/load/**\"",
+        "test:database": "node scripts/assert-test-database.mjs && vitest run tests/database.integration.test.ts --no-file-parallelism --maxWorkers=1 --testTimeout=30000",
+        "test:watch": "vitest",
+        "db:migrate": "drizzle-kit migrate",
+        "db:migrations:check": "drizzle-kit check",
+        "db:schema-drift": "node scripts/check-schema-drift.mjs",
+        "db:migrations:roundtrip": "node scripts/verify-migration-roundtrip.mjs",
+        "openapi:generate": "node --import tsx scripts/generate-openapi.mjs",
+        "openapi:check": "node --import tsx scripts/generate-openapi.mjs --check",
+        "contracts:check": "node --import tsx scripts/check-course-enrollment-contract.mjs",
+        "contracts:checksums": "node --import tsx scripts/write-course-enrollment-checksums.mjs",
+        "contracts:cross-repo": "node scripts/check-vendored-course-contract.mjs ../lash-her-course-api",
+        "verify": "npm run build && npm run lint && npm run test:unit && npm run contracts:check && npm run db:migrations:check && npm run db:schema-drift && npm run openapi:check",
+        "test:load": "node scripts/assert-test-database.mjs && vitest run tests/load --no-file-parallelism --maxWorkers=1 --testTimeout=3600000",
+        "test:e2e": "node scripts/e2e/run.mjs"
+      },
+      "key_dependencies": {
+        "@fastify/helmet": "^13.0.2",
+        "@fastify/rate-limit": "^10.3.0",
+        "@fastify/swagger": "^9.7.0",
+        "@fastify/swagger-ui": "^6.1.1",
+        "drizzle-orm": "^0.45.2",
+        "fastify": "^5.8.5",
+        "pg": "^8.20.0",
+        "@types/pg": "^8.20.0",
+        "drizzle-kit": "^0.31.10"
+      },
+      "migrations": [
+        {
+          "path": "drizzle/meta/_journal.json",
+          "count": 9,
+          "last": [
+            {
+              "idx": 6,
+              "version": "7",
+              "when": 1786577338105,
+              "tag": "0006_enforce_reconciliation_baseline_immutability",
+              "breakpoints": true
+            },
+            {
+              "idx": 7,
+              "version": "7",
+              "when": 1786577550687,
+              "tag": "0007_require_reconciliation_baseline_cutoff",
+              "breakpoints": true
+            },
+            {
+              "idx": 8,
+              "version": "7",
+              "when": 1788977019497,
+              "tag": "0008_integrity_staging_and_dedup",
+              "breakpoints": true
+            }
+          ]
+        }
+      ],
+      "workflows": [
+        ".github/workflows/load-certification.yml",
+        ".github/workflows/deployed-e2e.yml",
+        ".github/workflows/course-contract-compatibility.yml",
+        ".github/workflows/ci.yml"
+      ],
+      "config": {},
+      "node_modules": true,
+      "local_branches": ["main 91e91738c0012299643c35a23450aec4818da8d0"],
+      "worktrees": "worktree /Users/dardan/workspace/lash-her-community-api\nHEAD 91e91738c0012299643c35a23450aec4818da8d0\nbranch refs/heads/main",
+      "committed_migration_count": 8,
+      "reviewed_file_hashes": {
+        "package.json": "4d3b09b864bcc14071a1ef1a8da551d7d3d3f8b3cb78dfd65f1bad2e796bc58b",
+        "package-lock.json": "01d3794205059fa15e119afef62ef7627663eae4581342077920b692ea11de65",
+        "drizzle/meta/_journal.json": "d71fde368b7d389ec060f862f52bf44d95d485e22bb460533d7a824867723395",
+        "src/db/schema.ts": "d3a18f96e8005db5244eff3a0dfbaa0595754a3a351c15fc0052c8111abc0adb",
+        "Dockerfile": "184c610069b2206ccfc317e732f8abd5a1ad654f30bc4344db8e999f4fc6f427",
+        "API-INTEGRATION-PLAN.md": "14d080b0249f62aca744ff5d853bbab6a4d43739ea9ac546c4155114479668d0",
+        ".github/workflows/load-certification.yml": "49456f06c5f0d4304363e808e9b016ba64ae6bfc4bd6427edae6dc3e2db5ef39",
+        ".github/workflows/deployed-e2e.yml": "1a6e0e1439dd09221d51102edadb7c98170211110e60c7dd80f08d5a0f7a1dba",
+        ".github/workflows/course-contract-compatibility.yml": "966e3317ac41a9b80bfb597f428379dad78af31719bfdf43baac5c52e27ea587",
+        ".github/workflows/ci.yml": "9b2996d109632930a52f453d6b8c01fc57c7b547f059c405c6f1e44c6159db2f",
+        "openapi/community-api.json": "6ab9b614e1d7befb5081fb9c5d3a060b1cf21d9f1db7370579fb932696094b89"
+      }
+    }
+  },
+  "github": {
+    "lash-her-frontend": {
+      "main": {
+        "protected": false,
+        "sha": "4084a4b83259967661ef2013f1e8c49407df770c"
+      },
+      "runs": [
+        {
+          "conclusion": "failure",
+          "created_at": "2026-09-29T15:58:08Z",
+          "event": "push",
+          "head_branch": "main",
+          "head_sha": "4084a4b83259967661ef2013f1e8c49407df770c",
+          "html_url": "https://github.com/princessdardan/lash-her-frontend/actions/runs/36594223315",
+          "id": 36594223315,
+          "name": "CI",
+          "status": "completed"
+        },
+        {
+          "conclusion": "failure",
+          "created_at": "2026-09-26T02:37:56Z",
+          "event": "push",
+          "head_branch": "main",
+          "head_sha": "5ba30c60cfe8e6b7edfb577cb9d9e2c6579a5cab",
+          "html_url": "https://github.com/princessdardan/lash-her-frontend/actions/runs/36212294858",
+          "id": 36212294858,
+          "name": "CI",
+          "status": "completed"
+        },
+        {
+          "conclusion": "failure",
+          "created_at": "2026-09-25T21:19:10Z",
+          "event": "push",
+          "head_branch": "main",
+          "head_sha": "038864503a835b916d430b3626efecdab04a0ecf",
+          "html_url": "https://github.com/princessdardan/lash-her-frontend/actions/runs/36190883826",
+          "id": 36190883826,
+          "name": "CI",
+          "status": "completed"
+        },
+        {
+          "conclusion": "failure",
+          "created_at": "2026-09-24T15:44:28Z",
+          "event": "push",
+          "head_branch": "main",
+          "head_sha": "9b1a822c97c2c3d07f52c41b5b43a51e4b86b9d4",
+          "html_url": "https://github.com/princessdardan/lash-her-frontend/actions/runs/36022384286",
+          "id": 36022384286,
+          "name": "CI",
+          "status": "completed"
+        },
+        {
+          "conclusion": "failure",
+          "created_at": "2026-09-23T23:39:03Z",
+          "event": "push",
+          "head_branch": "main",
+          "head_sha": "188af7d78123be519a19bfe8505fc4d6060dda41",
+          "html_url": "https://github.com/princessdardan/lash-her-frontend/actions/runs/35934639533",
+          "id": 35934639533,
+          "name": "CI",
+          "status": "completed"
+        }
+      ],
+      "deployments": [
+        {
+          "created_at": "2026-09-29T16:00:25Z",
+          "environment": "Production",
+          "id": 6739369641,
+          "ref": "4084a4b83259967661ef2013f1e8c49407df770c",
+          "sha": "4084a4b83259967661ef2013f1e8c49407df770c"
+        },
+        {
+          "created_at": "2026-09-26T02:40:19Z",
+          "environment": "Production",
+          "id": 6673742007,
+          "ref": "5ba30c60cfe8e6b7edfb577cb9d9e2c6579a5cab",
+          "sha": "5ba30c60cfe8e6b7edfb577cb9d9e2c6579a5cab"
+        },
+        {
+          "created_at": "2026-09-25T21:21:51Z",
+          "environment": "Production",
+          "id": 6670369963,
+          "ref": "038864503a835b916d430b3626efecdab04a0ecf",
+          "sha": "038864503a835b916d430b3626efecdab04a0ecf"
+        }
+      ],
+      "environments": [
+        {
+          "name": "Preview",
+          "protection_rule_types": []
+        },
+        {
+          "name": "Production",
+          "protection_rule_types": []
+        },
+        {
+          "name": "staging",
+          "protection_rule_types": []
+        }
+      ]
+    },
+    "lash-her-course-api": {
+      "main": {
+        "protected": false,
+        "sha": "a0c10bd9ba2d36d5fc7c3060e252bb52ce049ba8"
+      },
+      "runs": [
+        {
+          "conclusion": "failure",
+          "created_at": "2026-08-15T20:00:25Z",
+          "event": "push",
+          "head_branch": "main",
+          "head_sha": "a0c10bd9ba2d36d5fc7c3060e252bb52ce049ba8",
+          "html_url": "https://github.com/princessdardan/lash-her-course-api/actions/runs/31905503232",
+          "id": 31905503232,
+          "name": "CI",
+          "status": "completed"
+        },
+        {
+          "conclusion": "failure",
+          "created_at": "2026-08-12T15:43:26Z",
+          "event": "push",
+          "head_branch": "main",
+          "head_sha": "12d0d05b502b62e9f3d019d4c4f4df5747e140c2",
+          "html_url": "https://github.com/princessdardan/lash-her-course-api/actions/runs/31613850586",
+          "id": 31613850586,
+          "name": "CI",
+          "status": "completed"
+        },
+        {
+          "conclusion": "failure",
+          "created_at": "2026-08-06T17:00:17Z",
+          "event": "push",
+          "head_branch": "main",
+          "head_sha": "28a4636d0949d3823d1dd040b8f8f4f143ffcbe5",
+          "html_url": "https://github.com/princessdardan/lash-her-course-api/actions/runs/31121767955",
+          "id": 31121767955,
+          "name": "CI",
+          "status": "completed"
+        },
+        {
+          "conclusion": "failure",
+          "created_at": "2026-08-06T16:42:40Z",
+          "event": "push",
+          "head_branch": "main",
+          "head_sha": "9b9b5303c32d9647c666af29fad9aa2b70348b36",
+          "html_url": "https://github.com/princessdardan/lash-her-course-api/actions/runs/31120780028",
+          "id": 31120780028,
+          "name": "CI",
+          "status": "completed"
+        },
+        {
+          "conclusion": "failure",
+          "created_at": "2026-08-06T14:59:22Z",
+          "event": "push",
+          "head_branch": "main",
+          "head_sha": "ec6cfdc537152487b551ac580a19335b67d6bc55",
+          "html_url": "https://github.com/princessdardan/lash-her-course-api/actions/runs/31113621259",
+          "id": 31113621259,
+          "name": "CI",
+          "status": "completed"
+        }
+      ],
+      "deployments": [],
+      "environments": []
+    },
+    "lash-her-community-api": {
+      "main": {
+        "protected": false,
+        "sha": "91e91738c0012299643c35a23450aec4818da8d0"
+      },
+      "runs": [
+        {
+          "conclusion": "success",
+          "created_at": "2026-08-15T20:00:50Z",
+          "event": "push",
+          "head_branch": "main",
+          "head_sha": "91e91738c0012299643c35a23450aec4818da8d0",
+          "html_url": "https://github.com/princessdardan/lash-her-community-api/actions/runs/31905524208",
+          "id": 31905524208,
+          "name": "CI",
+          "status": "completed"
+        }
+      ],
+      "deployments": [],
+      "environments": []
+    }
+  },
+  "github_jobs_and_rulesets": {
+    "lash-her-frontend": [
+      {
+        "conclusion": "failure",
+        "failed_steps": [
+          {
+            "name": "Run private database tests",
+            "number": 28
+          }
+        ],
+        "html_url": "https://github.com/princessdardan/lash-her-frontend/actions/runs/36594223315/job/109494849205",
+        "name": "database"
+      },
+      {
+        "conclusion": "success",
+        "failed_steps": [],
+        "html_url": "https://github.com/princessdardan/lash-her-frontend/actions/runs/36594223315/job/109494849561",
+        "name": "build"
+      },
+      {
+        "conclusion": "success",
+        "failed_steps": [],
+        "html_url": "https://github.com/princessdardan/lash-her-frontend/actions/runs/36594223315/job/109494849599",
+        "name": "quality-and-unit"
+      },
+      {
+        "conclusion": "failure",
+        "failed_steps": [
+          {
+            "name": "Run npm run audit:ci",
+            "number": 5
+          }
+        ],
+        "html_url": "https://github.com/princessdardan/lash-her-frontend/actions/runs/36594223315/job/109494849604",
+        "name": "audit"
+      },
+      {
+        "conclusion": "skipped",
+        "failed_steps": [],
+        "html_url": "https://github.com/princessdardan/lash-her-frontend/actions/runs/36594223315/job/109496452966",
+        "name": "browser"
+      }
+    ],
+    "lash-her-frontend-rulesets": [],
+    "lash-her-course-api": [
+      {
+        "conclusion": "failure",
+        "failed_steps": [
+          {
+            "name": "Run guarded PostgreSQL integration tests",
+            "number": 7
+          }
+        ],
+        "html_url": "https://github.com/princessdardan/lash-her-course-api/actions/runs/31905503232/job/95062505147",
+        "name": "postgres"
+      },
+      {
+        "conclusion": "failure",
+        "failed_steps": [
+          {
+            "name": "Run npm run verify",
+            "number": 6
+          }
+        ],
+        "html_url": "https://github.com/princessdardan/lash-her-course-api/actions/runs/31905503232/job/95062505158",
+        "name": "quality"
+      }
+    ],
+    "lash-her-course-api-rulesets": {
+      "error": "ruleset metadata unavailable"
+    },
+    "lash-her-community-api": [
+      {
+        "conclusion": "success",
+        "failed_steps": [],
+        "html_url": "https://github.com/princessdardan/lash-her-community-api/actions/runs/31905524208/job/95062556024",
+        "name": "quality"
+      },
+      {
+        "conclusion": "success",
+        "failed_steps": [],
+        "html_url": "https://github.com/princessdardan/lash-her-community-api/actions/runs/31905524208/job/95062556037",
+        "name": "postgres"
+      }
+    ],
+    "lash-her-community-api-rulesets": {
+      "error": "ruleset metadata unavailable"
+    }
+  },
+  "vercel_deployments": {
+    "production": {
+      "id": "dpl_EpJRpoHMPEnvK6wEHSoPPCJKr7qW",
+      "name": "lash-her-frontend",
+      "url": "lash-her-frontend-3f7morbbq-dardan-demiris-projects.vercel.app",
+      "type": "LAMBDAS",
+      "state": "READY",
+      "createdAt": 1790697489129,
+      "project": {
+        "id": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+        "name": "lash-her-frontend",
+        "framework": "nextjs"
+      },
+      "meta": {
+        "githubCommitRef": "main",
+        "githubCommitSha": "4084a4b83259967661ef2013f1e8c49407df770c",
+        "githubCommitMessage": "fix: synchronize homepage header and spacing during hydration",
+        "githubRepo": "lash-her-frontend",
+        "githubOrg": "princessdardan"
+      },
+      "alias": [
+        "lashher.com",
+        "lash-her-frontend.vercel.app",
+        "lash-her-frontend-dardan-demiris-projects.vercel.app",
+        "lash-her-frontend-git-main-dardan-demiris-projects.vercel.app"
+      ],
+      "target": "production",
+      "regions": ["iad1"],
+      "buildingAt": 1790697492208,
+      "ready": 1790697624256,
+      "readyState": "READY",
+      "source": "git",
+      "aliasError": null
+    },
+    "recent_deployments": [
+      {
+        "id": "dpl_EpJRpoHMPEnvK6wEHSoPPCJKr7qW",
+        "state": "READY",
+        "target": "production",
+        "url": "lash-her-frontend-3f7morbbq-dardan-demiris-projects.vercel.app",
+        "created": 1790697489129,
+        "branch": "main",
+        "sha": "4084a4b83259967661ef2013f1e8c49407df770c"
+      },
+      {
+        "id": "dpl_4CeGejXDVfRWUvf4yBKvLMKkigh5",
+        "state": "READY",
+        "target": "production",
+        "url": "lash-her-frontend-no7v8az76-dardan-demiris-projects.vercel.app",
+        "created": 1790390276681,
+        "branch": "main",
+        "sha": "5ba30c60cfe8e6b7edfb577cb9d9e2c6579a5cab"
+      },
+      {
+        "id": "dpl_8hy8iShdnkhWByKq3yZpsS8w7QpM",
+        "state": "READY",
+        "target": "production",
+        "url": "lash-her-frontend-7vr5rsl1n-dardan-demiris-projects.vercel.app",
+        "created": 1790371151082,
+        "branch": "main",
+        "sha": "038864503a835b916d430b3626efecdab04a0ecf"
+      },
+      {
+        "id": "dpl_JE5fGnb6WtrkLHRDdfR5do9xod3Q",
+        "state": "READY",
+        "target": "production",
+        "url": "lash-her-frontend-f1sxkibpb-dardan-demiris-projects.vercel.app",
+        "created": 1790265763945,
+        "branch": "main",
+        "sha": "9b1a822c97c2c3d07f52c41b5b43a51e4b86b9d4"
+      },
+      {
+        "id": "dpl_D2YUBwd9iCYtzosasXZq6LQmkeDL",
+        "state": "READY",
+        "target": "production",
+        "url": "lash-her-frontend-ogsd6l6d8-dardan-demiris-projects.vercel.app",
+        "created": 1790264669177,
+        "branch": "main",
+        "sha": "9b1a822c97c2c3d07f52c41b5b43a51e4b86b9d4"
+      },
+      {
+        "id": "dpl_7p7h7NPvwH3WR5HqX6mVpb2mTCbD",
+        "state": "READY",
+        "target": "production",
+        "url": "lash-her-frontend-r7nneoga5-dardan-demiris-projects.vercel.app",
+        "created": 1790206744100,
+        "branch": "main",
+        "sha": "188af7d78123be519a19bfe8505fc4d6060dda41"
+      },
+      {
+        "id": "dpl_EtiE5qSDa9d9bgc8PPHzcBzZPoGw",
+        "state": "READY",
+        "target": null,
+        "url": "lash-her-frontend-d5t0k64ot-dardan-demiris-projects.vercel.app",
+        "created": 1790205905168,
+        "branch": "codex/square-afterpay-bnpl",
+        "sha": "188af7d78123be519a19bfe8505fc4d6060dda41"
+      },
+      {
+        "id": "dpl_8Ux4PoWCYEpCyFh8nDeCBmNgNpg7",
+        "state": "READY",
+        "target": null,
+        "url": "lash-her-frontend-cpnwrbd3x-dardan-demiris-projects.vercel.app",
+        "created": 1790199109243,
+        "branch": "staging",
+        "sha": "ea1772b20453a494dcd3ff635066ebd385906f6b"
+      },
+      {
+        "id": "dpl_2gueTVBa5hxGaSU4RazpuZWYZWH5",
+        "state": "READY",
+        "target": null,
+        "url": "lash-her-frontend-eu55xblse-dardan-demiris-projects.vercel.app",
+        "created": 1790199091574,
+        "branch": "codex/square-afterpay-bnpl",
+        "sha": "ea1772b20453a494dcd3ff635066ebd385906f6b"
+      },
+      {
+        "id": "dpl_GFxXf7XgZVbRvvwHxXb8BwqprEcY",
+        "state": "READY",
+        "target": null,
+        "url": "lash-her-frontend-nquga0z9w-dardan-demiris-projects.vercel.app",
+        "created": 1790108020781,
+        "branch": "codex/square-afterpay-bnpl",
+        "sha": "9b899e4e02afe787f25315a5ef1912d4d32d6080"
+      },
+      {
+        "id": "dpl_GsChbmjrANuzDtn1xGsyr8EMGsxr",
+        "state": "READY",
+        "target": "production",
+        "url": "lash-her-frontend-6b3knf5v9-dardan-demiris-projects.vercel.app",
+        "created": 1788231495618,
+        "branch": "main",
+        "sha": "5893173368941a7e0f35c932ba0b1798fc48873d"
+      },
+      {
+        "id": "dpl_5skGEe1yPZ1e7LajRt6XVUutPHqM",
+        "state": "READY",
+        "target": "production",
+        "url": "lash-her-frontend-2zv6wk2xx-dardan-demiris-projects.vercel.app",
+        "created": 1788230460919,
+        "branch": "main",
+        "sha": "cbf0bb5fd7806dfbd49adda4550478cf301160d8"
+      },
+      {
+        "id": "dpl_ALkdNeWt9U34B94N68BHyeEMkd3t",
+        "state": "READY",
+        "target": "production",
+        "url": "lash-her-frontend-clvtfvrm0-dardan-demiris-projects.vercel.app",
+        "created": 1788229634933,
+        "branch": "main",
+        "sha": "cbf0bb5fd7806dfbd49adda4550478cf301160d8"
+      },
+      {
+        "id": "dpl_nwdWbrdDWMv8mJQJvx5NqsvMj1ER",
+        "state": "READY",
+        "target": "production",
+        "url": "lash-her-frontend-dr4qzc7hz-dardan-demiris-projects.vercel.app",
+        "created": 1788205861866,
+        "branch": "main",
+        "sha": "451aff2b31e6864251f0f01749cacfafa83b260c"
+      },
+      {
+        "id": "dpl_CaHt5o99Kaz6mfVh3aibp5GQPULT",
+        "state": "READY",
+        "target": null,
+        "url": "lash-her-frontend-bri2421wr-dardan-demiris-projects.vercel.app",
+        "created": 1788205696610,
+        "branch": "claude/docs-audit-prune-remove",
+        "sha": "e01ad6b6e6e319d63440f84b836f22594897b1d4"
+      },
+      {
+        "id": "dpl_GDG5TYQASQui6NtHzuz7p1w9SMHR",
+        "state": "READY",
+        "target": "production",
+        "url": "lash-her-frontend-dwfso1olm-dardan-demiris-projects.vercel.app",
+        "created": 1787936421317,
+        "branch": "main",
+        "sha": "ee8c767807ac90f28e865a050cc18e2536846aaf"
+      },
+      {
+        "id": "dpl_4gbMMKfe7TJZraJKYZughjr4R12V",
+        "state": "READY",
+        "target": "production",
+        "url": "lash-her-frontend-nfd3c9icm-dardan-demiris-projects.vercel.app",
+        "created": 1787936174166,
+        "branch": "main",
+        "sha": "7c374159aed65a27ae0255624f1df029eb15be27"
+      },
+      {
+        "id": "dpl_A1iQUWQ5HC4TkSWrM59ZKzAsDvic",
+        "state": "READY",
+        "target": "production",
+        "url": "lash-her-frontend-lh07k5bk7-dardan-demiris-projects.vercel.app",
+        "created": 1787936163342,
+        "branch": "main",
+        "sha": "92b8637b70b14f67a043859007ddad72069e99de"
+      },
+      {
+        "id": "dpl_EvGmgV4szqE8aZTic6mS3rYMthUw",
+        "state": "READY",
+        "target": null,
+        "url": "lash-her-frontend-ilhw09pb5-dardan-demiris-projects.vercel.app",
+        "created": 1787936084480,
+        "branch": "claude/shipping-teardown-cleanup",
+        "sha": "73beea0db10099c3b45cff6fac5dcd9a31f12762"
+      },
+      {
+        "id": "dpl_9qg9xEinTeNWe3LZtGRt8cFWdoc3",
+        "state": "READY",
+        "target": null,
+        "url": "lash-her-frontend-dfk12kmhz-dardan-demiris-projects.vercel.app",
+        "created": 1787936038039,
+        "branch": "claude/refund-drain-reaper",
+        "sha": "e4040282b708d632bb4d45a45180905525b4da8a"
+      }
+    ],
+    "pagination": {
+      "count": 20,
+      "next": 1787936038039,
+      "prev": 1790697489129
+    }
+  },
+  "vercel_environment_metadata": {
+    "exit_code": 0,
+    "variable_metadata": [
+      {
+        "name": "COURSE_ACCESS_SIGNING_SECRET",
+        "environments": "Production"
+      },
+      {
+        "name": "MARKETING_UNSUBSCRIBE_CURRENT_KEY_ID",
+        "environments": "Preview, Production"
+      },
+      {
+        "name": "MARKETING_UNSUBSCRIBE_KEYS",
+        "environments": "Preview, Production"
+      },
+      {
+        "name": "FLAT_RATE_SHIPPING_ENABLED",
+        "environments": "Development, Preview, Production"
+      },
+      {
+        "name": "CHITCHATS_ENVIRONMENT",
+        "environments": "Development, Preview"
+      },
+      {
+        "name": "RESEND_MARKETING_SYNC_CRON_SECRET",
+        "environments": "Preview"
+      },
+      {
+        "name": "RESEND_MARKETING_SYNC_CRON_SECRET",
+        "environments": "Production"
+      },
+      {
+        "name": "CUSTOMER_REPLY_TO_EMAIL",
+        "environments": "Production"
+      },
+      {
+        "name": "SQUARE_COMMERCE_ENABLED",
+        "environments": "Production"
+      },
+      {
+        "name": "CHITCHATS_US_SHIPPING_ENABLED",
+        "environments": "Production"
+      },
+      {
+        "name": "SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED",
+        "environments": "Production"
+      },
+      {
+        "name": "MANUAL_PRODUCT_CHECKOUT_ENABLED",
+        "environments": "Production"
+      },
+      {
+        "name": "SHIPPING_POLICY_ENFORCEMENT_MODE",
+        "environments": "Production"
+      },
+      {
+        "name": "CHITCHATS_CHECKOUT_ENABLED",
+        "environments": "Production"
+      },
+      {
+        "name": "CHITCHATS_SHIPPING_ENABLED",
+        "environments": "Production"
+      },
+      {
+        "name": "SQUARE_COMMERCE_ENABLED",
+        "environments": "Preview"
+      },
+      {
+        "name": "SQUARE_ENVIRONMENT",
+        "environments": "Preview"
+      },
+      {
+        "name": "CHITCHATS_US_SHIPPING_ENABLED",
+        "environments": "Preview"
+      },
+      {
+        "name": "SUPPLEMENTAL_PRODUCT_PAYMENTS_ENABLED",
+        "environments": "Preview"
+      },
+      {
+        "name": "MANUAL_PRODUCT_CHECKOUT_ENABLED",
+        "environments": "Preview"
+      },
+      {
+        "name": "SHIPPING_POLICY_ENFORCEMENT_MODE",
+        "environments": "Preview"
+      },
+      {
+        "name": "CHITCHATS_CHECKOUT_ENABLED",
+        "environments": "Preview"
+      },
+      {
+        "name": "CHITCHATS_SHIPPING_ENABLED",
+        "environments": "Preview"
+      },
+      {
+        "name": "CHITCHATS_ENVIRONMENT",
+        "environments": "Production"
+      },
+      {
+        "name": "PAYMENT_GATEWAY_MODE",
+        "environments": "Production"
+      },
+      {
+        "name": "HELCIM_PRODUCT_PAYMENTS_CONTRACT_JSON",
+        "environments": "Preview, Production"
+      },
+      {
+        "name": "NEXT_PUBLIC_SITE_URL",
+        "environments": "Preview"
+      },
+      {
+        "name": "NEXT_PUBLIC_SITE_URL",
+        "environments": "Production"
+      },
+      {
+        "name": "CHITCHATS_REGION",
+        "environments": "Preview, Production"
+      },
+      {
+        "name": "CHECKOUT_PII_ENCRYPTION_KEY",
+        "environments": "Production"
+      },
+      {
+        "name": "SHIPPING_DECISION_TOKEN_SECRET",
+        "environments": "Production"
+      },
+      {
+        "name": "ADDRESS_CHANGE_TOKEN_SECRET",
+        "environments": "Production"
+      },
+      {
+        "name": "BACKUP_RETENTION_DAYS",
+        "environments": "Preview, Production"
+      },
+      {
+        "name": "CHECKOUT_PII_ENCRYPTION_KEY",
+        "environments": "Preview"
+      },
+      {
+        "name": "SHIPPING_DECISION_TOKEN_SECRET",
+        "environments": "Preview"
+      },
+      {
+        "name": "ADDRESS_CHANGE_TOKEN_SECRET",
+        "environments": "Preview"
+      },
+      {
+        "name": "CHITCHATS_CLIENT_ID",
+        "environments": "Production"
+      },
+      {
+        "name": "CHITCHATS_ACCESS_TOKEN",
+        "environments": "Production"
+      },
+      {
+        "name": "CHITCHATS_QUOTE_SIGNING_SECRET",
+        "environments": "Production"
+      },
+      {
+        "name": "CHITCHATS_WORKER_CRON_SECRET",
+        "environments": "Production"
+      },
+      {
+        "name": "CHITCHATS_CLIENT_ID",
+        "environments": "Preview"
+      },
+      {
+        "name": "CHITCHATS_ACCESS_TOKEN",
+        "environments": "Preview"
+      },
+      {
+        "name": "CHITCHATS_QUOTE_SIGNING_SECRET",
+        "environments": "Preview"
+      },
+      {
+        "name": "CHITCHATS_WORKER_CRON_SECRET",
+        "environments": "Preview"
+      },
+      {
+        "name": "ADMIN_DEVELOPER_ACCESS_KEY",
+        "environments": "Preview, Production"
+      },
+      {
+        "name": "ADMIN_DEVELOPER_MODE",
+        "environments": "Preview, Production"
+      },
+      {
+        "name": "SERVICE_BOOKING_MODEL_MODE",
+        "environments": "Production"
+      },
+      {
+        "name": "SERVICE_BOOKING_MODEL_MODE",
+        "environments": "Development, Preview"
+      },
+      {
+        "name": "AUTH_GOOGLE_ID",
+        "environments": "Production"
+      },
+      {
+        "name": "AUTH_GOOGLE_SECRET",
+        "environments": "Production"
+      },
+      {
+        "name": "AUTH_SECRET",
+        "environments": "Production"
+      },
+      {
+        "name": "AUTH_GOOGLE_ID",
+        "environments": "Preview"
+      },
+      {
+        "name": "AUTH_GOOGLE_SECRET",
+        "environments": "Preview"
+      },
+      {
+        "name": "AUTH_SECRET",
+        "environments": "Preview"
+      },
+      {
+        "name": "ADMIN_OWNER_EMAILS",
+        "environments": "Preview, Production"
+      },
+      {
+        "name": "BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY",
+        "environments": "Preview"
+      },
+      {
+        "name": "BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY",
+        "environments": "Production"
+      },
+      {
+        "name": "PAYMENT_RECONCILIATION_CRON_SECRET",
+        "environments": "Production"
+      },
+      {
+        "name": "PAYMENT_RECONCILIATION_CRON_SECRET",
+        "environments": "Preview"
+      },
+      {
+        "name": "SQUARE_APPLICATION_ID",
+        "environments": "Production"
+      },
+      {
+        "name": "BOOKING_ADMIN_PAYMENT_ACTION_SECRET",
+        "environments": "Production"
+      },
+      {
+        "name": "SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED",
+        "environments": "Preview, Production"
+      },
+      {
+        "name": "SQUARE_APPLICATION_ID",
+        "environments": "Preview"
+      },
+      {
+        "name": "BOOKING_ADMIN_PAYMENT_ACTION_SECRET",
+        "environments": "Preview"
+      },
+      {
+        "name": "GOOGLE_CLIENT_SECRET",
+        "environments": "Preview"
+      },
+      {
+        "name": "SERVICE_BOOKING_SQUARE_ENABLED",
+        "environments": "Production"
+      },
+      {
+        "name": "SQUARE_ENVIRONMENT",
+        "environments": "Production"
+      },
+      {
+        "name": "SQUARE_ACCESS_TOKEN",
+        "environments": "Production"
+      },
+      {
+        "name": "SQUARE_LOCATION_ID",
+        "environments": "Production"
+      },
+      {
+        "name": "SQUARE_WEBHOOK_SIGNATURE_KEY",
+        "environments": "Production"
+      },
+      {
+        "name": "SQUARE_SERVICE_BOOKING_RETURN_URL",
+        "environments": "Production"
+      },
+      {
+        "name": "SQUARE_SERVICE_BOOKING_WEBHOOK_URL",
+        "environments": "Production"
+      },
+      {
+        "name": "HELCIM_WEBHOOK_VERIFIER_TOKEN",
+        "environments": "Production"
+      },
+      {
+        "name": "HELCIM_GENERAL_API_TOKEN",
+        "environments": "Production"
+      },
+      {
+        "name": "HELCIM_TRANSACTION_API_TOKEN",
+        "environments": "Production"
+      },
+      {
+        "name": "GOOGLE_CLIENT_ID",
+        "environments": "Preview"
+      },
+      {
+        "name": "RESEND_TEMPLATE_BOOKING_CONFIRMATION_ID",
+        "environments": "Development, Preview, Production"
+      },
+      {
+        "name": "RESEND_TEMPLATE_CONTACT_POPUP_ADMIN_ID",
+        "environments": "Development, Preview, Production"
+      },
+      {
+        "name": "RESEND_TEMPLATE_CONTACT_POPUP_CUSTOMER_ID",
+        "environments": "Development, Preview, Production"
+      },
+      {
+        "name": "RESEND_TEMPLATE_GENERAL_INQUIRY_ADMIN_ID",
+        "environments": "Development, Preview, Production"
+      },
+      {
+        "name": "RESEND_TEMPLATE_GENERAL_INQUIRY_CUSTOMER_ID",
+        "environments": "Development, Preview, Production"
+      },
+      {
+        "name": "RESEND_TEMPLATE_PRODUCT_CONFIRMATION_ID",
+        "environments": "Development, Preview, Production"
+      },
+      {
+        "name": "RESEND_TEMPLATE_TRAINING_CONTACT_ADMIN_ID",
+        "environments": "Development, Preview, Production"
+      },
+      {
+        "name": "RESEND_TEMPLATE_TRAINING_CONTACT_CUSTOMER_ID",
+        "environments": "Development, Preview, Production"
+      },
+      {
+        "name": "RESEND_TEMPLATE_TRAINING_PAYMENT_ADMIN_ID",
+        "environments": "Development, Preview, Production"
+      },
+      {
+        "name": "RESEND_TEMPLATE_TRAINING_PAYMENT_CUSTOMER_ID",
+        "environments": "Development, Preview, Production"
+      },
+      {
+        "name": "RESEND_WEBHOOK_SECRET",
+        "environments": "Production"
+      },
+      {
+        "name": "RESEND_WEBHOOK_SECRET",
+        "environments": "Preview"
+      },
+      {
+        "name": "RESEND_SEGMENT_MARKETING_ID",
+        "environments": "Preview, Production"
+      },
+      {
+        "name": "RESEND_TOPIC_MARKETING_ID",
+        "environments": "Preview, Production"
+      },
+      {
+        "name": "RESEND_TOPIC_NEWSLETTER_ID",
+        "environments": "Preview, Production"
+      },
+      {
+        "name": "RESEND_TOPIC_TRAINING_ID",
+        "environments": "Preview, Production"
+      },
+      {
+        "name": "EMAIL_PROFILE_IMAGE_URL",
+        "environments": "Development, Preview, Production"
+      },
+      {
+        "name": "SERVICE_BOOKING_SQUARE_ENABLED",
+        "environments": "Preview"
+      },
+      {
+        "name": "PRIVATE_DB_MIGRATION_HOST",
+        "environments": "Preview, Production"
+      },
+      {
+        "name": "PRIVATE_DB_MIGRATION_TARGET",
+        "environments": "Preview, Production"
+      },
+      {
+        "name": "PRIVATE_DB_MIGRATION_CONFIRM",
+        "environments": "Preview, Production"
+      },
+      {
+        "name": "CRON_SECRET",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "EMAIL_RETRY_SECRET",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "HELCIM_GENERAL_API_TOKEN",
+        "environments": "Preview"
+      },
+      {
+        "name": "HELCIM_TRANSACTION_API_TOKEN",
+        "environments": "Preview"
+      },
+      {
+        "name": "CHECKOUT_SECRET_ENCRYPTION_KEY",
+        "environments": "Preview, Production"
+      },
+      {
+        "name": "HELCIM_WEBHOOK_VERIFIER_TOKEN",
+        "environments": "Preview"
+      },
+      {
+        "name": "SANITY_API_READ_TOKEN",
+        "environments": "Preview, Production"
+      },
+      {
+        "name": "SANITY_WEBHOOK_SECRET",
+        "environments": "Production"
+      },
+      {
+        "name": "TRAINING_AFTERPAY_SQUARE_INVOICE_ENABLED",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "SQUARE_LOCATION_ID",
+        "environments": "Preview"
+      },
+      {
+        "name": "SQUARE_WEBHOOK_SIGNATURE_KEY",
+        "environments": "Preview"
+      },
+      {
+        "name": "SQUARE_SERVICE_BOOKING_RETURN_URL",
+        "environments": "Preview"
+      },
+      {
+        "name": "SQUARE_SERVICE_BOOKING_WEBHOOK_URL",
+        "environments": "Preview"
+      },
+      {
+        "name": "SQUARE_ACCESS_TOKEN",
+        "environments": "Preview"
+      },
+      {
+        "name": "SANITY_WEBHOOK_SECRET",
+        "environments": "Preview"
+      },
+      {
+        "name": "NEXT_PUBLIC_SANITY_DATASET",
+        "environments": "Preview"
+      },
+      {
+        "name": "BOOKING_ADMIN_SETUP_SECRET",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "GOOGLE_REDIRECT_URI",
+        "environments": "Production"
+      },
+      {
+        "name": "GOOGLE_REDIRECT_URI",
+        "environments": "Preview"
+      },
+      {
+        "name": "GOOGLE_CLIENT_ID",
+        "environments": "Production"
+      },
+      {
+        "name": "GOOGLE_CLIENT_SECRET",
+        "environments": "Production"
+      },
+      {
+        "name": "DATABASE_URL",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "POSTGRES_PRISMA_URL",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "PGPASSWORD",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "NEON_PROJECT_ID",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "POSTGRES_URL_NO_SSL",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "POSTGRES_DATABASE",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "POSTGRES_USER",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "PGHOST",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "NEON_AUTH_BASE_URL",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "POSTGRES_URL_NON_POOLING",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "PGHOST_UNPOOLED",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "POSTGRES_URL",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "PGUSER",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "PGDATABASE",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "POSTGRES_PASSWORD",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "DATABASE_URL_UNPOOLED",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "POSTGRES_HOST",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "VITE_NEON_AUTH_URL",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "KV_REST_API_URL",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "KV_REST_API_READ_ONLY_TOKEN",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "KV_REST_API_TOKEN",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "REDIS_URL",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "KV_URL",
+        "environments": "Production, Preview"
+      },
+      {
+        "name": "NEXT_PUBLIC_SANITY_PROJECT_ID",
+        "environments": "Development, Preview, Production"
+      },
+      {
+        "name": "NEXT_PUBLIC_SANITY_DATASET",
+        "environments": "Production"
+      },
+      {
+        "name": "NEXT_PUBLIC_SANITY_API_VERSION",
+        "environments": "Development, Preview, Production"
+      },
+      {
+        "name": "SANITY_WRITE_TOKEN",
+        "environments": "Development, Preview, Production"
+      },
+      {
+        "name": "SANITY_FORM_TOKEN",
+        "environments": "Development, Preview, Production"
+      },
+      {
+        "name": "RESEND_API_KEY",
+        "environments": "Development, Preview, Production"
+      },
+      {
+        "name": "FROM_EMAIL",
+        "environments": "Production, Preview, Development"
+      },
+      {
+        "name": "ADMIN_EMAIL",
+        "environments": "Development, Preview, Production"
+      },
+      {
+        "name": "MOTION_DEV_TOKEN",
+        "environments": "Production, Preview, Development"
+      },
+      {
+        "name": "BLOB_READ_WRITE_TOKEN",
+        "environments": "Production, Preview, Development"
+      },
+      {
+        "name": "NEXT_PUBLIC_STRAPI_URL",
+        "environments": "Production"
+      }
+    ],
+    "metadata_rows": 152,
+    "stderr_summary": "success"
+  },
+  "local_configuration_metadata": {
+    "lash-her-frontend": {
+      ".env.local": {
+        "variables": {
+          "NEXT_PUBLIC_SANITY_PROJECT_ID": "set",
+          "NEXT_PUBLIC_SANITY_DATASET": "set",
+          "NEXT_PUBLIC_SANITY_API_VERSION": "set",
+          "SANITY_SCHEMA_DEPLOY_TARGET": "set",
+          "SANITY_WRITE_TOKEN": "set",
+          "SANITY_API_READ_TOKEN": "set",
+          "SANITY_WEBHOOK_SECRET": "set",
+          "AUTH_GOOGLE_ID": "set",
+          "AUTH_GOOGLE_SECRET": "set",
+          "AUTH_SECRET": "set",
+          "RESEND_API_KEY": "set",
+          "RESEND_WEBHOOK_SECRET": "set",
+          "RESEND_SEGMENT_MARKETING_ID": "set",
+          "RESEND_TOPIC_MARKETING_ID": "set",
+          "RESEND_TOPIC_NEWSLETTER_ID": "set",
+          "RESEND_TOPIC_TRAINING_ID": "set",
+          "RESEND_TEMPLATE_BOOKING_CONFIRMATION_ID": "set",
+          "RESEND_TEMPLATE_CONTACT_POPUP_ADMIN_ID": "set",
+          "RESEND_TEMPLATE_CONTACT_POPUP_CUSTOMER_ID": "set",
+          "RESEND_TEMPLATE_GENERAL_INQUIRY_ADMIN_ID": "set",
+          "RESEND_TEMPLATE_GENERAL_INQUIRY_CUSTOMER_ID": "set",
+          "RESEND_TEMPLATE_PRODUCT_CONFIRMATION_ID": "set",
+          "RESEND_TEMPLATE_TRAINING_CONTACT_ADMIN_ID": "set",
+          "RESEND_TEMPLATE_TRAINING_CONTACT_CUSTOMER_ID": "set",
+          "RESEND_TEMPLATE_TRAINING_PAYMENT_ADMIN_ID": "set",
+          "RESEND_TEMPLATE_TRAINING_PAYMENT_CUSTOMER_ID": "set",
+          "SERVICE_BOOKING_SQUARE_CARD_ON_FILE_LOCAL_INVOICE_FALLBACK_ENABLED": "set",
+          "SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED": "set",
+          "SQUARE_APPLICATION_ID": "set",
+          "GOOGLE_CLIENT_ID": "set",
+          "GOOGLE_CLIENT_SECRET": "set",
+          "GOOGLE_REDIRECT_URI": "set",
+          "VERCEL_OIDC_TOKEN": "set",
+          "REDIS_URL": "set",
+          "DATABASE_URL": "set",
+          "DATABASE_URL_UNPOOLED": "set",
+          "PGDATABASE": "set",
+          "POSTGRES_DATABASE": "set",
+          "PAYMENT_GATEWAY_MODE": "set",
+          "SERVICE_BOOKING_SQUARE_ENABLED": "set",
+          "SQUARE_ENVIRONMENT": "set",
+          "SQUARE_ACCESS_TOKEN": "set",
+          "SQUARE_LOCATION_ID": "set",
+          "SQUARE_WEBHOOK_SIGNATURE_KEY": "set",
+          "SQUARE_SERVICE_BOOKING_RETURN_URL": "set",
+          "SQUARE_SERVICE_BOOKING_WEBHOOK_URL": "set",
+          "TEST_DATABASE_URL": "set",
+          "COURSE_ACCESS_SIGNING_SECRET": "set",
+          "MUX_TOKEN_ID": "set",
+          "MUX_TOKEN_SECRET": "set",
+          "MUX_WEBHOOK_SECRET": "set",
+          "MUX_SIGNING_KEY_ID": "set",
+          "MUX_SIGNING_PRIVATE_KEY": "set",
+          "MUX_CORS_ORIGIN": "set",
+          "MUX_PLAYBACK_TOKEN_TTL_SECONDS": "set",
+          "MUX_ACCESS_TOKEN": "set",
+          "MUX_SECRET_KEY": "set"
+        },
+        "database_endpoints": {
+          "DATABASE_URL": {
+            "host": "ep-morning-shadow-aqyf179j-pooler.c-8.us-east-1.aws.neon.tech",
+            "database": "neondb",
+            "pooled": true,
+            "sslmode": "require"
+          },
+          "DATABASE_URL_UNPOOLED": {
+            "host": "ep-morning-shadow-aqyf179j.c-8.us-east-1.aws.neon.tech",
+            "database": "neondb",
+            "pooled": false,
+            "sslmode": "require"
+          },
+          "TEST_DATABASE_URL": {
+            "host": "ep-empty-moon-aqatna52-pooler.c-8.us-east-1.aws.neon.tech",
+            "database": "neondb",
+            "pooled": true,
+            "sslmode": "require"
+          }
+        },
+        "non_secret_settings": {
+          "NEXT_PUBLIC_SANITY_PROJECT_ID": "3auncj84",
+          "NEXT_PUBLIC_SANITY_DATASET": "production",
+          "SERVICE_BOOKING_SQUARE_CARD_ON_FILE_LOCAL_INVOICE_FALLBACK_ENABLED": "true",
+          "SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED": "true",
+          "PAYMENT_GATEWAY_MODE": "live",
+          "SERVICE_BOOKING_SQUARE_ENABLED": "true",
+          "SQUARE_ENVIRONMENT": "sandbox"
+        }
+      }
+    },
+    "lash-her-course-api": {
+      ".env": {
+        "variables": {
+          "DATABASE_TARGET": "set",
+          "DEV_DATABASE_URL": "set",
+          "STAGING_DATABASE_URL": "set",
+          "PROD_DATABASE_URL": "set",
+          "TEST_DATABASE_URL": "set",
+          "FIRST_PARTY_AUTH_SECRET": "set",
+          "FIRST_PARTY_AUTH_ISSUER": "set",
+          "FIRST_PARTY_AUTH_AUDIENCE": "set",
+          "MUX_TOKEN_ID": "set",
+          "MUX_TOKEN_SECRET": "set",
+          "MUX_WEBHOOK_SECRET": "set",
+          "MUX_SIGNING_KEY_ID": "set",
+          "MUX_SIGNING_PRIVATE_KEY": "set",
+          "MUX_CORS_ORIGIN": "set",
+          "MUX_PLAYBACK_TOKEN_TTL_SECONDS": "set"
+        },
+        "database_endpoints": {
+          "DEV_DATABASE_URL": {
+            "host": "ep-winter-poetry-axnvamb2.c-4.us-east-2.aws.neon.tech",
+            "database": "neondb",
+            "pooled": false,
+            "sslmode": "require"
+          },
+          "STAGING_DATABASE_URL": {
+            "host": "ep-ancient-shadow-axzksq4b.c-4.us-east-2.aws.neon.tech",
+            "database": "neondb",
+            "pooled": false,
+            "sslmode": "require"
+          },
+          "PROD_DATABASE_URL": {
+            "host": "ep-autumn-haze-ax3nk6qd.c-4.us-east-2.aws.neon.tech",
+            "database": "neondb",
+            "pooled": false,
+            "sslmode": "require"
+          },
+          "TEST_DATABASE_URL": {
+            "host": "127.0.0.1",
+            "database": "lash_her_course_api_integration",
+            "pooled": false,
+            "sslmode": null
+          }
+        },
+        "non_secret_settings": {
+          "DATABASE_TARGET": "dev"
+        }
+      }
+    },
+    "lash-her-community-api": {}
+  },
+  "databases": [
+    {
+      "repo": "lash-her-frontend",
+      "label": "frontend-runtime-local-config",
+      "variable": "DATABASE_URL_UNPOOLED",
+      "host": "ep-morning-shadow-aqyf179j.c-8.us-east-1.aws.neon.tech",
+      "status": "read-only-inspection-complete",
+      "settings": {
+        "server_version": "17.11 (32e7196)",
+        "transaction_read_only": "on",
+        "database": "neondb"
+      },
+      "tables": [
+        {
+          "schema": "drizzle",
+          "table": "__drizzle_migrations",
+          "estimated_live_rows": "80"
+        },
+        {
+          "schema": "neon_auth",
+          "table": "account",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "neon_auth",
+          "table": "invitation",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "neon_auth",
+          "table": "jwks",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "neon_auth",
+          "table": "member",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "neon_auth",
+          "table": "organization",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "neon_auth",
+          "table": "project_config",
+          "estimated_live_rows": "1"
+        },
+        {
+          "schema": "neon_auth",
+          "table": "session",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "neon_auth",
+          "table": "user",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "neon_auth",
+          "table": "verification",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "admin_audit_logs",
+          "estimated_live_rows": "410"
+        },
+        {
+          "schema": "public",
+          "table": "admin_step_up_proofs",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "admin_user_resources",
+          "estimated_live_rows": "5"
+        },
+        {
+          "schema": "public",
+          "table": "admin_users",
+          "estimated_live_rows": "5"
+        },
+        {
+          "schema": "public",
+          "table": "appointment_calendar_events",
+          "estimated_live_rows": "24"
+        },
+        {
+          "schema": "public",
+          "table": "appointment_events",
+          "estimated_live_rows": "49"
+        },
+        {
+          "schema": "public",
+          "table": "appointment_holds",
+          "estimated_live_rows": "73"
+        },
+        {
+          "schema": "public",
+          "table": "appointments",
+          "estimated_live_rows": "24"
+        },
+        {
+          "schema": "public",
+          "table": "booking_business_settings",
+          "estimated_live_rows": "1"
+        },
+        {
+          "schema": "public",
+          "table": "booking_calendar_connections",
+          "estimated_live_rows": "4"
+        },
+        {
+          "schema": "public",
+          "table": "booking_no_show_charge_attempts",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "booking_no_show_charge_records",
+          "estimated_live_rows": "41"
+        },
+        {
+          "schema": "public",
+          "table": "booking_payment_attempts",
+          "estimated_live_rows": "31"
+        },
+        {
+          "schema": "public",
+          "table": "booking_policy_acceptances",
+          "estimated_live_rows": "41"
+        },
+        {
+          "schema": "public",
+          "table": "booking_providers",
+          "estimated_live_rows": "6"
+        },
+        {
+          "schema": "public",
+          "table": "booking_resource_calendar_assignments",
+          "estimated_live_rows": "4"
+        },
+        {
+          "schema": "public",
+          "table": "booking_resource_reservations",
+          "estimated_live_rows": "48"
+        },
+        {
+          "schema": "public",
+          "table": "booking_resource_schedule_exceptions",
+          "estimated_live_rows": "2"
+        },
+        {
+          "schema": "public",
+          "table": "booking_resource_schedules",
+          "estimated_live_rows": "39"
+        },
+        {
+          "schema": "public",
+          "table": "booking_resources",
+          "estimated_live_rows": "6"
+        },
+        {
+          "schema": "public",
+          "table": "booking_saved_payment_methods",
+          "estimated_live_rows": "46"
+        },
+        {
+          "schema": "public",
+          "table": "booking_service_offering_add_ons",
+          "estimated_live_rows": "13"
+        },
+        {
+          "schema": "public",
+          "table": "booking_service_offering_resources",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "booking_service_offerings",
+          "estimated_live_rows": "22"
+        },
+        {
+          "schema": "public",
+          "table": "booking_service_promotion_codes",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "booking_service_promotion_offerings",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "booking_services",
+          "estimated_live_rows": "22"
+        },
+        {
+          "schema": "public",
+          "table": "booking_square_customers",
+          "estimated_live_rows": "23"
+        },
+        {
+          "schema": "public",
+          "table": "checkout_orders",
+          "estimated_live_rows": "12"
+        },
+        {
+          "schema": "public",
+          "table": "checkout_payment_events",
+          "estimated_live_rows": "565"
+        },
+        {
+          "schema": "public",
+          "table": "customer_email_outbox",
+          "estimated_live_rows": "19"
+        },
+        {
+          "schema": "public",
+          "table": "marketing_campaigns",
+          "estimated_live_rows": "3"
+        },
+        {
+          "schema": "public",
+          "table": "marketing_consent_events",
+          "estimated_live_rows": "182"
+        },
+        {
+          "schema": "public",
+          "table": "marketing_contact_submissions",
+          "estimated_live_rows": "157"
+        },
+        {
+          "schema": "public",
+          "table": "marketing_contact_sync_jobs",
+          "estimated_live_rows": "107"
+        },
+        {
+          "schema": "public",
+          "table": "marketing_contacts",
+          "estimated_live_rows": "92"
+        },
+        {
+          "schema": "public",
+          "table": "order_payment_obligations",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "order_payment_transactions",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "product_manual_fulfillment_events",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "product_order_adjustments",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "product_order_refunds",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "product_shipment_events",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "product_shipment_jobs",
+          "estimated_live_rows": "17"
+        },
+        {
+          "schema": "public",
+          "table": "product_shipments",
+          "estimated_live_rows": "14"
+        },
+        {
+          "schema": "public",
+          "table": "product_stock",
+          "estimated_live_rows": "55"
+        },
+        {
+          "schema": "public",
+          "table": "product_stock_movements",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "shipping_calendar_exceptions",
+          "estimated_live_rows": "22"
+        },
+        {
+          "schema": "public",
+          "table": "shipping_calendar_versions",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "shipping_package_profiles",
+          "estimated_live_rows": "5"
+        },
+        {
+          "schema": "public",
+          "table": "shipping_rate_cache",
+          "estimated_live_rows": "30"
+        },
+        {
+          "schema": "public",
+          "table": "square_payment_refund_events",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "training_enrollments",
+          "estimated_live_rows": "0"
+        }
+      ],
+      "migrations": {
+        "applied_count": 80,
+        "local_count": 78,
+        "latest_applied": {
+          "id": 80,
+          "hash": "b1949845f9408560606fb3ef72395496b7c55a01d59038a9cdecdc252552d651",
+          "created_at": "1790208354053"
+        },
+        "pending": [],
+        "hash_mismatches": [],
+        "unknown_applied": [
+          {
+            "id": 11,
+            "created_at": "1780454716621"
+          },
+          {
+            "id": 12,
+            "created_at": "1780520000000"
+          }
+        ]
+      },
+      "repository_lineage_check": {
+        "result": "PASS",
+        "command": "Node 24: node --import tsx scripts/check-private-db-migrations.ts --env-file .env.local --url-env DATABASE_URL_UNPOOLED",
+        "latest": "0077_course_signup",
+        "pending": 0,
+        "historical_rows": "Two extra timestamps/hashes accepted by src/lib/private-db/migration-lineage.ts; not schema drift."
+      }
+    },
+    {
+      "repo": "lash-her-frontend",
+      "label": "frontend-test-local-config",
+      "variable": "TEST_DATABASE_URL",
+      "host": "ep-empty-moon-aqatna52-pooler.c-8.us-east-1.aws.neon.tech",
+      "status": "unavailable",
+      "error_code": "28P01",
+      "error_category": "connection or query failed"
+    },
+    {
+      "repo": "lash-her-course-api",
+      "label": "course-dev",
+      "variable": "DEV_DATABASE_URL",
+      "host": "ep-winter-poetry-axnvamb2.c-4.us-east-2.aws.neon.tech",
+      "status": "read-only-inspection-complete",
+      "settings": {
+        "server_version": "16.15 (eb11870)",
+        "transaction_read_only": "on",
+        "database": "neondb"
+      },
+      "tables": [
+        {
+          "schema": "drizzle",
+          "table": "__drizzle_migrations",
+          "estimated_live_rows": "14"
+        },
+        {
+          "schema": "public",
+          "table": "admin_entitlement_command_effects",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "admin_entitlement_commands",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "courses",
+          "estimated_live_rows": "1"
+        },
+        {
+          "schema": "public",
+          "table": "enrollments",
+          "estimated_live_rows": "1"
+        },
+        {
+          "schema": "public",
+          "table": "entitlement_grants",
+          "estimated_live_rows": "1"
+        },
+        {
+          "schema": "public",
+          "table": "entitlement_idempotency_keys",
+          "estimated_live_rows": "1"
+        },
+        {
+          "schema": "public",
+          "table": "entitlement_revocations",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "lesson_progress",
+          "estimated_live_rows": "1"
+        },
+        {
+          "schema": "public",
+          "table": "lessons",
+          "estimated_live_rows": "1"
+        },
+        {
+          "schema": "public",
+          "table": "modules",
+          "estimated_live_rows": "1"
+        },
+        {
+          "schema": "public",
+          "table": "users",
+          "estimated_live_rows": "1"
+        },
+        {
+          "schema": "public",
+          "table": "video_assets",
+          "estimated_live_rows": "0"
+        }
+      ],
+      "migrations": {
+        "applied_count": 14,
+        "local_count": 17,
+        "latest_applied": {
+          "id": 14,
+          "hash": "5516f91c708740873040eed31d2a4c620f15fd6a3f5249f1ab6e84ecc9c3ce8e",
+          "created_at": "1783732757091"
+        },
+        "pending": [
+          "0014_course_community_enrollment_integration",
+          "0015_shared_rate_limit_buckets",
+          "0016_audit_read_only_enrollment_operations"
+        ],
+        "hash_mismatches": [],
+        "unknown_applied": []
+      },
+      "aggregate_counts": {
+        "courses": "1",
+        "modules": "1",
+        "lessons": "1",
+        "users": "1",
+        "enrollments": "1",
+        "grants": "1",
+        "progress": "1",
+        "video_assets": "0"
+      },
+      "aggregate_count_status": "read-only-inspection-complete"
+    },
+    {
+      "repo": "lash-her-course-api",
+      "label": "course-staging",
+      "variable": "STAGING_DATABASE_URL",
+      "host": "ep-ancient-shadow-axzksq4b.c-4.us-east-2.aws.neon.tech",
+      "status": "read-only-inspection-complete",
+      "settings": {
+        "server_version": "16.15 (eb11870)",
+        "transaction_read_only": "on",
+        "database": "neondb"
+      },
+      "tables": [
+        {
+          "schema": "drizzle",
+          "table": "__drizzle_migrations",
+          "estimated_live_rows": "14"
+        },
+        {
+          "schema": "public",
+          "table": "admin_entitlement_command_effects",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "admin_entitlement_commands",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "courses",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "enrollments",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "entitlement_grants",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "entitlement_idempotency_keys",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "entitlement_revocations",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "lesson_progress",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "lessons",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "modules",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "users",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "video_assets",
+          "estimated_live_rows": "0"
+        }
+      ],
+      "migrations": {
+        "applied_count": 14,
+        "local_count": 17,
+        "latest_applied": {
+          "id": 14,
+          "hash": "5516f91c708740873040eed31d2a4c620f15fd6a3f5249f1ab6e84ecc9c3ce8e",
+          "created_at": "1783732757091"
+        },
+        "pending": [
+          "0014_course_community_enrollment_integration",
+          "0015_shared_rate_limit_buckets",
+          "0016_audit_read_only_enrollment_operations"
+        ],
+        "hash_mismatches": [],
+        "unknown_applied": []
+      },
+      "aggregate_counts": {
+        "courses": "0",
+        "modules": "0",
+        "lessons": "0",
+        "users": "0",
+        "enrollments": "0",
+        "grants": "0",
+        "progress": "0",
+        "video_assets": "0"
+      },
+      "aggregate_count_status": "read-only-inspection-complete"
+    },
+    {
+      "repo": "lash-her-course-api",
+      "label": "course-prod",
+      "variable": "PROD_DATABASE_URL",
+      "host": "ep-autumn-haze-ax3nk6qd.c-4.us-east-2.aws.neon.tech",
+      "status": "read-only-inspection-complete",
+      "settings": {
+        "server_version": "16.15 (eb11870)",
+        "transaction_read_only": "on",
+        "database": "neondb"
+      },
+      "tables": [
+        {
+          "schema": "drizzle",
+          "table": "__drizzle_migrations",
+          "estimated_live_rows": "14"
+        },
+        {
+          "schema": "public",
+          "table": "admin_entitlement_command_effects",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "admin_entitlement_commands",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "courses",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "enrollments",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "entitlement_grants",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "entitlement_idempotency_keys",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "entitlement_revocations",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "lesson_progress",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "lessons",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "modules",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "users",
+          "estimated_live_rows": "0"
+        },
+        {
+          "schema": "public",
+          "table": "video_assets",
+          "estimated_live_rows": "0"
+        }
+      ],
+      "migrations": {
+        "applied_count": 14,
+        "local_count": 17,
+        "latest_applied": {
+          "id": 14,
+          "hash": "5516f91c708740873040eed31d2a4c620f15fd6a3f5249f1ab6e84ecc9c3ce8e",
+          "created_at": "1783732757091"
+        },
+        "pending": [
+          "0014_course_community_enrollment_integration",
+          "0015_shared_rate_limit_buckets",
+          "0016_audit_read_only_enrollment_operations"
+        ],
+        "hash_mismatches": [],
+        "unknown_applied": []
+      },
+      "aggregate_counts": {
+        "courses": "0",
+        "modules": "0",
+        "lessons": "0",
+        "users": "0",
+        "enrollments": "0",
+        "grants": "0",
+        "progress": "0",
+        "video_assets": "0"
+      },
+      "aggregate_count_status": "read-only-inspection-complete"
+    }
+  ],
+  "contract_checks": {
+    "node": "24.18.0",
+    "schema_sha256": "a1635b7725a8331cf4885da6b2c596f07c7272ef1bbd5d66a855b10ece95b01e",
+    "fixture_count": 11,
+    "released_files_matched": 14,
+    "course_external_check": "PASS",
+    "community_cross_repository_check": "PASS with working-tree pin warning",
+    "course_release_check": "FAIL: sourceRevision is working-tree"
+  },
+  "limitations": [
+    "Database environment labels come from local configuration; deployed DB target values were not retrieved.",
+    "PostgreSQL table statistics are estimates except the explicit Course aggregate_counts.",
+    "No Render API access, service inventory, or API deployed revision was available.",
+    "No Community runtime database URL was configured locally.",
+    "Full local verify, integration/browser/provider tests, restore/load checks, and remote CI reruns were not run."
+  ],
+  "preservation_verification": {
+    "lash-her-frontend": {
+      "preexisting_files_verified": 1,
+      "head_unchanged": true
+    },
+    "lash-her-course-api": {
+      "preexisting_files_verified": 70,
+      "head_unchanged": true
+    },
+    "lash-her-community-api": {
+      "preexisting_files_verified": 75,
+      "head_unchanged": true
+    }
+  },
+  "document_validation": {
+    "task_count": 59,
+    "only_completed_task": "P0-01",
+    "plan_copies_match": true,
+    "local_report_tracker_links_resolve": true
+  }
+}
