@@ -1,0 +1,297 @@
+{
+  "observed_date": "2026-10-01",
+  "timezone": "America/Toronto",
+  "scope": "Local uncommitted remediation; not publication or release approval",
+  "gate_G0": "BLOCKED",
+  "node": "24.18.0",
+  "npm": "11.17.0",
+  "repositories": {
+    "frontend": {
+      "base_revision": "cb5372c83a536840d3ffdc5442771af892305231",
+      "canonical_remote": "https://github.com/princessdardan/lash-her-frontend.git",
+      "publication": "NOT_PERFORMED",
+      "file_sha256": {
+        "package.json": "cc48e4f0e69a016c4ef842505013e9bb6d9b975ba4b0779e65a5ebf8fe5a8fa1",
+        "package-lock.json": "2d2e9171263faacb5de778e7a2153c1102cb90658ac9d56994a44e4de3b7f2f2"
+      },
+      "audit_before": {
+        "info": 0,
+        "low": 4,
+        "moderate": 9,
+        "high": 15,
+        "critical": 1,
+        "total": 29
+      },
+      "audit_after": {
+        "info": 0,
+        "low": 1,
+        "moderate": 0,
+        "high": 0,
+        "critical": 0,
+        "total": 1
+      },
+      "audit_gate": {
+        "command": "npm run audit:ci",
+        "threshold": "moderate",
+        "includes_dev": true,
+        "exit_code": 0
+      },
+      "selected_resolved_versions": {
+        "next": "16.3.8",
+        "eslint-config-next": "16.3.8",
+        "sharp": "0.35.5",
+        "adm-zip": "0.6.1",
+        "dompurify": "3.4.16",
+        "js-yaml": "4.3.2",
+        "markdown-it": "15.0.2",
+        "brace-expansion": "1.1.21",
+        "undici": "6.28.1",
+        "@grpc/grpc-js": "1.14.5",
+        "browserslist": "4.29.3",
+        "qs": "6.16.0",
+        "quill": "2.0.3",
+        "drizzle-kit": "0.31.10",
+        "tsx": "4.23.4",
+        "esbuild": "0.27.0"
+      },
+      "remaining_advisories": [
+        {
+          "source": 1116451,
+          "name": "quill",
+          "dependency": "quill",
+          "title": "Quill is vulnerable to XSS via HTML export feature",
+          "url": "https://github.com/advisories/GHSA-v3m3-f69x-jf25",
+          "severity": "low",
+          "cwe": ["CWE-74", "CWE-79"],
+          "cvss": {
+            "score": 6.1,
+            "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"
+          },
+          "range": "=2.0.3"
+        }
+      ],
+      "source_contract_migration_changes": [],
+      "checks": [
+        "npm ci",
+        "npm run audit:ci",
+        "npx tsc --noEmit",
+        "npm run lint",
+        "npm run test:unit",
+        "npx drizzle-kit check",
+        "npm run db:migrate (disposable loopback target)",
+        "npm run test:unit:db",
+        "npm run build"
+      ],
+      "check_result": "PASS",
+      "test_counts": {
+        "regular": 1836,
+        "server_only": 132,
+        "scripts": 19,
+        "database": 163
+      }
+    },
+    "course-api": {
+      "base_revision": "069f88323e3f40bc6a4137feab2baf97c1d3da62",
+      "canonical_remote": "https://github.com/princessdardan/lash-her-course-api.git",
+      "publication": "NOT_PERFORMED",
+      "file_sha256": {
+        "package.json": "50b638367999475b2fbbf1a837ff36fd7c3cea6150f14f7599c25b5dcf27a51c",
+        "package-lock.json": "a4ed112b7dee9f32f69e6a854cc2618e40a522718f0d77650f79e9a2dc052613",
+        ".github/workflows/ci.yml": "029a80987d45700cde2d0e53239cd3c491dc401dc250ec87e5de94445bcfe798"
+      },
+      "audit_before": {
+        "info": 0,
+        "low": 0,
+        "moderate": 6,
+        "high": 3,
+        "critical": 0,
+        "total": 9
+      },
+      "audit_after": {
+        "info": 0,
+        "low": 0,
+        "moderate": 0,
+        "high": 0,
+        "critical": 0,
+        "total": 0
+      },
+      "audit_gate": {
+        "command": "npm run audit:ci",
+        "threshold": "moderate",
+        "includes_dev": true,
+        "exit_code": 0
+      },
+      "selected_resolved_versions": {
+        "brace-expansion": "5.0.12",
+        "fastify": "5.12.5",
+        "fast-uri": "3.1.8",
+        "vitest": "4.1.11",
+        "drizzle-kit": "0.31.10",
+        "tsx": "4.23.15",
+        "esbuild": "0.28.2"
+      },
+      "remaining_advisories": [],
+      "source_contract_migration_changes": [],
+      "checks": [
+        "npm ci",
+        "npm run audit:ci",
+        "npm ls esbuild --all",
+        "npm run verify",
+        "npm run build:production",
+        "npm run db:migrate (disposable loopback target)",
+        "npm run test:database",
+        "npm run db:migrations:roundtrip"
+      ],
+      "check_result": "PASS",
+      "test_counts": {
+        "unit": 365,
+        "database": 17,
+        "migration_roundtrips": 17
+      }
+    },
+    "community-api": {
+      "base_revision": "97361f173f6a42de238f374317b8f49f79e48876",
+      "canonical_remote": "https://github.com/princessdardan/lash-her-community-api.git",
+      "publication": "NOT_PERFORMED",
+      "file_sha256": {
+        "package.json": "60b9800cd208c69f1b961e45343bb32f12869e8651116dbfde2b18459652be4b",
+        "package-lock.json": "d76409f11edef83fc40fa13cdec1809613a951d70bc6ca178687649298449577",
+        ".github/workflows/ci.yml": "5f997cd62bf2c9466e2cd747a22e00dbcf646807ef133e34d0af4f89188fbc7f"
+      },
+      "audit_before": {
+        "info": 0,
+        "low": 0,
+        "moderate": 6,
+        "high": 3,
+        "critical": 0,
+        "total": 9
+      },
+      "audit_after": {
+        "info": 0,
+        "low": 0,
+        "moderate": 0,
+        "high": 0,
+        "critical": 0,
+        "total": 0
+      },
+      "audit_gate": {
+        "command": "npm run audit:ci",
+        "threshold": "moderate",
+        "includes_dev": true,
+        "exit_code": 0
+      },
+      "selected_resolved_versions": {
+        "brace-expansion": "5.0.12",
+        "fastify": "5.12.5",
+        "fast-uri": "4.2.1",
+        "vitest": "4.1.11",
+        "drizzle-kit": "0.31.11",
+        "tsx": "4.23.12",
+        "esbuild": "0.28.2"
+      },
+      "remaining_advisories": [],
+      "source_contract_migration_changes": [],
+      "checks": [
+        "npm ci",
+        "npm run audit:ci",
+        "npm ls esbuild --all",
+        "npm run verify",
+        "npm run build:production",
+        "npm run db:migrate (disposable loopback target)",
+        "npm run test:database",
+        "npm run db:migrations:roundtrip"
+      ],
+      "check_result": "PASS",
+      "test_counts": {
+        "unit": 143,
+        "database": 21,
+        "migration_roundtrips": 9
+      }
+    }
+  },
+  "remote_observation": [
+    {
+      "repository": "lash-her-frontend",
+      "main_revision": "4084a4b83259967661ef2013f1e8c49407df770c",
+      "main_protected": false,
+      "latest_ci_url": "https://github.com/princessdardan/lash-her-frontend/actions/runs/36594223315",
+      "conclusion": "failure",
+      "certifies_remediation": false
+    },
+    {
+      "repository": "lash-her-course-api",
+      "main_revision": "a0c10bd9ba2d36d5fc7c3060e252bb52ce049ba8",
+      "main_protected": false,
+      "latest_ci_url": "https://github.com/princessdardan/lash-her-course-api/actions/runs/31905503232",
+      "conclusion": "failure",
+      "certifies_remediation": false
+    },
+    {
+      "repository": "lash-her-community-api",
+      "main_revision": "91e91738c0012299643c35a23450aec4818da8d0",
+      "main_protected": false,
+      "latest_ci_url": "https://github.com/princessdardan/lash-her-community-api/actions/runs/31905524208",
+      "conclusion": "success",
+      "certifies_remediation": false
+    }
+  ],
+  "database": {
+    "postgres_version": "postgres (PostgreSQL) 16.13 (Homebrew)",
+    "host": "127.0.0.1",
+    "port": 55466,
+    "databases": [
+      "lash_frontend_g0_test",
+      "lash_course_g0_test",
+      "lash_community_g0_test"
+    ],
+    "isolation": "new disposable cluster; no remote database tests or migrations"
+  },
+  "browser_smoke": {
+    "runtime": "compiled Next.js 16.3.8, Chromium, localhost:3100",
+    "routes": [
+      {
+        "route": "/",
+        "http_status": 200,
+        "rendered": "homepage",
+        "uncaught_page_errors": []
+      },
+      {
+        "route": "/training-programs",
+        "http_status": 200,
+        "rendered": "training catalog",
+        "uncaught_page_errors": []
+      },
+      {
+        "route": "/policies/this-policy-does-not-exist",
+        "http_status": 200,
+        "rendered": "404 UI",
+        "uncaught_page_errors": []
+      },
+      {
+        "route": "/studio",
+        "http_status": 200,
+        "rendered": "host-registration screen after loading",
+        "uncaught_page_errors": []
+      }
+    ],
+    "limitation": "Read-only smoke only; no authenticated Studio editing and no full browser suite."
+  },
+  "contract": {
+    "source_revision": "97361f173f6a42de238f374317b8f49f79e48876",
+    "schema_sha256": "a1635b7725a8331cf4885da6b2c596f07c7272ef1bbd5d66a855b10ece95b01e",
+    "files": 14,
+    "fixtures": 11,
+    "course_release_pin_check": "PASS",
+    "local_cross_repo_check": "PASS with COMMUNITY_RELEASE_REF=HEAD",
+    "default_release_check": "EXPECTED FAIL: pin not reachable from origin/main"
+  },
+  "remaining": [
+    "Review and commit remediation changes",
+    "Publish Community retaining the pinned baseline SHA in released history; then publish dependent Course",
+    "Pass default published-history contract release check without local reference override",
+    "Collect fresh full remote CI results for all selected revisions, including browser/container/Prometheus jobs",
+    "Record approved starting revisions and review G0",
+    "Low Quill advisory remains visible; no upstream patched version recorded",
+    "Protected CI/release controls remain D-05 / P1-05; no production migration approval"
+  ]
+}
