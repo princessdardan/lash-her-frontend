@@ -9,6 +9,8 @@ The important architectural split is deliberate:
 
 This README explains what the codebase does, where the major pieces live, how to run and change it, and why the boundaries exist.
 
+The [integration plan](API-INTEGRATION-PLAN.md) and [execution tracker](API-INTEGRATION-EXECUTION.md) describe the future Course/Community platform. Current short courses remain Sanity-backed; customer accounts, Academy, online-course Square checkout, Stripe Tax, and the frontend entitlement outbox are planned. See the [P0-02 decision](docs/api-integration/decisions/2026-10-01-p0-02.md) and [protected migration policy](docs/api-integration/migration-policy.md) before cross-repository work.
+
 ## Table of contents
 
 - [What this codebase contains](#what-this-codebase-contains)

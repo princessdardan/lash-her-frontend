@@ -1,0 +1,96 @@
+{
+  "date": "2026-10-01",
+  "task": "P0-02",
+  "repository_heads": {
+    "/Users/dardan/workspace/lash-her-frontend": "4084a4b83259967661ef2013f1e8c49407df770c",
+    "/Users/dardan/workspace/lash-her-course-api": "a0c10bd9ba2d36d5fc7c3060e252bb52ce049ba8",
+    "/Users/dardan/workspace/lash-her-community-api": "91e91738c0012299643c35a23450aec4818da8d0"
+  },
+  "changed_markdown": {
+    "/Users/dardan/workspace/lash-her-frontend": [
+      "API-INTEGRATION-EXECUTION.md",
+      "API-INTEGRATION-PLAN.md",
+      "README.md",
+      "docs/api-integration/decisions/2026-10-01-p0-02.md",
+      "docs/api-integration/migration-policy.md",
+      "docs/private-database-migration-runbook.md"
+    ],
+    "/Users/dardan/workspace/lash-her-course-api": [
+      "AGENTS.md",
+      "API-INTEGRATION-PLAN.md",
+      "README.md",
+      "docs/course-community-enrollment-runbook.md",
+      "docs/course-platform-cross-repo-context.md",
+      "docs/friday-aug2-checkpoint.md",
+      "docs/payment-course-access/00-implementation-order.md",
+      "docs/payment-course-access/01-decision-register.md",
+      "docs/payment-course-access/02-domain-boundaries-and-ownership.md",
+      "docs/payment-course-access/03-course-api-target-schema.md",
+      "docs/payment-course-access/04-auth-and-service-to-service-security.md",
+      "docs/payment-course-access/05-internal-entitlement-api-contract.md",
+      "docs/payment-course-access/06-frontend-orders-webhooks-and-outbox.md",
+      "docs/payment-course-access/07-playback-authorization-and-progress.md",
+      "docs/payment-course-access/08-reconciliation-observability-and-alerting.md",
+      "docs/payment-course-access/09-guest-checkout-and-account-linking.md",
+      "docs/payment-course-access/10-admin-operations-and-runbooks.md",
+      "docs/payment-course-access/11-cutover-validation-and-hardening.md",
+      "docs/payment-course-access/implementation-assessment-2026-07-10.md"
+    ],
+    "/Users/dardan/workspace/lash-her-community-api": [
+      "API-INTEGRATION-PLAN.md",
+      "README.md",
+      "docs/decision-register.md",
+      "docs/runbooks/cutover-and-rollback.md"
+    ]
+  },
+  "checks": {
+    "documentation_only": true,
+    "preexisting_non_document_files_unchanged": true,
+    "heads_unchanged": true,
+    "git_diff_check_all_repositories": "PASS",
+    "plan_copies_identical": true,
+    "plan_sha256": "88e2fc9d7a00a9510a068bfd0bd8bac0fab26bcfa740982e719486b4fe431983",
+    "unique_task_gate_count": 59,
+    "dependencies_valid_and_acyclic": true,
+    "missing_local_links": []
+  },
+  "not_run": [
+    "Application test suites",
+    "Database connections or migrations",
+    "Provider or deployment operations"
+  ],
+  "document_sha256": {
+    "/Users/dardan/workspace/lash-her-frontend/API-INTEGRATION-EXECUTION.md": "5b607675c4ccc2d5e2eb7bef58cd85ea43dd6f4e9e57a4077fbe822ad9a9221a",
+    "/Users/dardan/workspace/lash-her-frontend/API-INTEGRATION-PLAN.md": "88e2fc9d7a00a9510a068bfd0bd8bac0fab26bcfa740982e719486b4fe431983",
+    "/Users/dardan/workspace/lash-her-frontend/README.md": "90662312d0d2b3b87a1f277e96741ca391624fe10737066a69803ab5fb86c138",
+    "/Users/dardan/workspace/lash-her-frontend/docs/api-integration/decisions/2026-10-01-p0-02.md": "2b5ea67d5fc1b0a3f4258115a06df3929f6b670b7f8ae73b6b63485c26d26ce4",
+    "/Users/dardan/workspace/lash-her-frontend/docs/api-integration/migration-policy.md": "96eb5dc0ce5a738110a7a7662c801bdca1469962507d96261066203d84d6c3fa",
+    "/Users/dardan/workspace/lash-her-frontend/docs/private-database-migration-runbook.md": "e91509413120e1706ce9a336e31f1e0d2234a8e6e3fd158f996d6797b5b7b986",
+    "/Users/dardan/workspace/lash-her-course-api/AGENTS.md": "ffa82697c7b34099f5e45c0706867d247f167c891d4666ef9c7b095a7f9d8e9f",
+    "/Users/dardan/workspace/lash-her-course-api/API-INTEGRATION-PLAN.md": "88e2fc9d7a00a9510a068bfd0bd8bac0fab26bcfa740982e719486b4fe431983",
+    "/Users/dardan/workspace/lash-her-course-api/README.md": "924750587a18910f7d48a06a9e8276c48d70d8d70c8f5fd1f47af702cfb7537b",
+    "/Users/dardan/workspace/lash-her-course-api/docs/course-community-enrollment-runbook.md": "fc7c5a9e8615f92bc74ee1f0b0025cb20f777dd53e8dbb1a1daa818b021b6045",
+    "/Users/dardan/workspace/lash-her-course-api/docs/course-platform-cross-repo-context.md": "f22d006d395326a626ee5d296df4c3b45dd655044c29d448483cb7f35fa02704",
+    "/Users/dardan/workspace/lash-her-course-api/docs/friday-aug2-checkpoint.md": "03bcf8beda1497d1a9fc23d90495c43cd248980b01e1194222c972e60c8a6d6e",
+    "/Users/dardan/workspace/lash-her-course-api/docs/payment-course-access/00-implementation-order.md": "d2ffc7b64d0213516645000eaca6342fc79f8aa8dadeee1137ee614dc2256e32",
+    "/Users/dardan/workspace/lash-her-course-api/docs/payment-course-access/01-decision-register.md": "bb758a44c65dbdcecc5cbb78f888b5bc71dd368c578c56c5ae21d231f88e46ee",
+    "/Users/dardan/workspace/lash-her-course-api/docs/payment-course-access/02-domain-boundaries-and-ownership.md": "cd36f9ea7da8011d8c9943cafdc1950880eaee943a2dc562c446fe01d36871ef",
+    "/Users/dardan/workspace/lash-her-course-api/docs/payment-course-access/03-course-api-target-schema.md": "2dfa5c2311560a8be26a5e5ad58034c414744f50b0d0cc712a870b57a4a704c3",
+    "/Users/dardan/workspace/lash-her-course-api/docs/payment-course-access/04-auth-and-service-to-service-security.md": "15d73601f5ac6be38060a2f9d99e90dc172d761ecf0a892c46b0f6b866e55f62",
+    "/Users/dardan/workspace/lash-her-course-api/docs/payment-course-access/05-internal-entitlement-api-contract.md": "16f00a2ec1a653490d4055936aff556bc1ca26b9509b7eea115e53fa29f68bbe",
+    "/Users/dardan/workspace/lash-her-course-api/docs/payment-course-access/06-frontend-orders-webhooks-and-outbox.md": "d7f5e8329e32f868aa16801775dcfe50fdd02ab1da2d0e33b59b58cf2f10befd",
+    "/Users/dardan/workspace/lash-her-course-api/docs/payment-course-access/07-playback-authorization-and-progress.md": "2e19acf81d1215ccd140a0a7b75a45542d12e3b905dddb786ccc1bb743beca65",
+    "/Users/dardan/workspace/lash-her-course-api/docs/payment-course-access/08-reconciliation-observability-and-alerting.md": "037cd097a54335d494fb6ec60b9c330824c792fcc34a1446293fed4f4c7a6ef7",
+    "/Users/dardan/workspace/lash-her-course-api/docs/payment-course-access/09-guest-checkout-and-account-linking.md": "36fa036044bc40e9e9322853c021457de576b939d40365f4bfeba8016f92f553",
+    "/Users/dardan/workspace/lash-her-course-api/docs/payment-course-access/10-admin-operations-and-runbooks.md": "6c6bf834cb2ef29f8d1ff0d0145b48364ba9dc64b60889acf07495f41319db55",
+    "/Users/dardan/workspace/lash-her-course-api/docs/payment-course-access/11-cutover-validation-and-hardening.md": "48f436698d7f54e41e68dfbe4cea0b1ee20b8069308c069123675a78846aaa96",
+    "/Users/dardan/workspace/lash-her-course-api/docs/payment-course-access/implementation-assessment-2026-07-10.md": "b2912617b70d8279afdc288003d8da72ffda111badcbd87b8d75d322e8e239f2",
+    "/Users/dardan/workspace/lash-her-community-api/API-INTEGRATION-PLAN.md": "88e2fc9d7a00a9510a068bfd0bd8bac0fab26bcfa740982e719486b4fe431983",
+    "/Users/dardan/workspace/lash-her-community-api/README.md": "2d38ee8c5c6620eff8be9514f572ca018697032320428b25efa7cf6215c2efc6",
+    "/Users/dardan/workspace/lash-her-community-api/docs/decision-register.md": "a6638a198a22ea1716ed7cca18e66cc474d24a35d1ee32d0a9eb8e9779840888",
+    "/Users/dardan/workspace/lash-her-community-api/docs/runbooks/cutover-and-rollback.md": "d10d471a76e4a69c761a3d00285ac8e15f48b73a56f940c3a6cfe3d158489fc7"
+  },
+  "preserved_non_document_file_count": 1448,
+  "verification_method": "Pre/post SHA-256 comparison of git-listed tracked and non-ignored untracked files; git diff --check in all repositories; byte comparison of three plan copies; local Markdown file-link existence (including angle-bracket and line-number targets); unique IDs and dependency graph traversal. Source/guard semantics reviewed directly. Ignored files and provider state were not audited.",
+  "limitations": "Working-tree documentation only. HEAD revisions unchanged; commits/release pins and migration provenance remain P0-04. No deployed release-control certification."
+}

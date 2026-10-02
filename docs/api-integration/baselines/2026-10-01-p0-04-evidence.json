@@ -1,0 +1,1340 @@
+{
+  "date": "2026-10-01",
+  "task": "P0-04",
+  "status": "DONE",
+  "scope": "Committed local development baseline; no release approval",
+  "repositories": {
+    "frontend": {
+      "revision": "8da5def953ee477409ef3f6953be1d9fa6f9cfba",
+      "branch": "main",
+      "remote": "https://github.com/princessdardan/lash-her-frontend.git",
+      "lockfile_sha256": "5a3be44cd8bd1156f8ac0fbe43c405b731f7be4c3449316b4d949ff5c01f9f37",
+      "migration_journal_sha256": "9702edff3387723de3c33c718bb2142f2d327cb610822b7df0349542f501ead6",
+      "migrations": [
+        {
+          "tag": "0000_old_moonstone",
+          "when": 1778450844121,
+          "sha256": "c31011d49046e22438409ccf3a9993607aae00db43f1a782e131b75516f2de9e"
+        },
+        {
+          "tag": "0001_private_training_enrollments",
+          "when": 1778784000000,
+          "sha256": "391ada2d7014c0d6183f9ddd5fb022e3cb9feb29f50e5cbd9a2cf2cf1f2da6c6"
+        },
+        {
+          "tag": "0002_rapid_fat_cobra",
+          "when": 1779049037217,
+          "sha256": "c938ba2ab9a31d6b1b78c92d398f23e6b28415dd991187a6af7118a30848a30b"
+        },
+        {
+          "tag": "0003_tired_vertigo",
+          "when": 1779148298733,
+          "sha256": "b544df117671eec2817c7a92b2f06d9ce69eff49d411c8b8387e79d0105c8471"
+        },
+        {
+          "tag": "0004_parched_carnage",
+          "when": 1779310411063,
+          "sha256": "c5da298c1e32dd62a6e45e4a9a7a7335a6539ebaba4df7526b09d009a7c525bc"
+        },
+        {
+          "tag": "0005_yummy_captain_britain",
+          "when": 1779490120253,
+          "sha256": "195bc6727e89b7b5736d7639533b40eadbbd6dcda47315950487ddafeacf1e79"
+        },
+        {
+          "tag": "0007_product_shipping_address",
+          "when": 1779661753148,
+          "sha256": "b3437f7ba447b4fbba358d6f37454986fe67f8f9add5c345dfb02fe684e5f6e8"
+        },
+        {
+          "tag": "0008_hot_path_private_indexes",
+          "when": 1779753600000,
+          "sha256": "79646ade59578ae85eb2a310c2f279ebc670424d507ae13dddeaddf11be8adfb"
+        },
+        {
+          "tag": "0009_dashing_rocket_raccoon",
+          "when": 1779901448734,
+          "sha256": "1b67741b45d9ba542a33d67cb884c77b4d28cab3e634e020778a3a7807a8990b"
+        },
+        {
+          "tag": "0010_familiar_jazinda",
+          "when": 1780019995593,
+          "sha256": "0e1475032661ebbfd33f00dd0ba8ebfef03f347566df8d9c29e62bae89c6c0a0"
+        },
+        {
+          "tag": "0010_dry_magneto",
+          "when": 1781909205634,
+          "sha256": "b256f5d2b3bb0f2c3fd8d461a1023e88ca35dc01681684ca29618eb614d46a08"
+        },
+        {
+          "tag": "0011_opposite_vulcan",
+          "when": 1781918939267,
+          "sha256": "147ea5ad837cecc3aef4ded30594928bf567ace285de5a36024e5134441657ad"
+        },
+        {
+          "tag": "0012_secret_chimera",
+          "when": 1781938950079,
+          "sha256": "9c782876f2223e790bca6bafae6411a0ef75a632a40198f63e1583e61e539415"
+        },
+        {
+          "tag": "0013_superb_mongoose",
+          "when": 1782029654089,
+          "sha256": "73cd12a6481082745d570d30e63fdd75e0c11f64404fba71b4202aa01422585c"
+        },
+        {
+          "tag": "0014_even_madame_web",
+          "when": 1782038392974,
+          "sha256": "988fc00aabf523f948e44a96045be8d58b747acddb76e16eb5c2d6e7566d716a"
+        },
+        {
+          "tag": "0015_service_booking_payment_session",
+          "when": 1782882175099,
+          "sha256": "6dc565fbb257efdaa6d533dc65cb59740c6ce708c2d026b4c8dd1e3a8abd2fec"
+        },
+        {
+          "tag": "0016_bitter_yellow_claw",
+          "when": 1783023767006,
+          "sha256": "7698d4d5cedf4205a3484575be6f01db8ebc4a3f3e4dc434b1a58010d7a26d2c"
+        },
+        {
+          "tag": "0017_big_hulk",
+          "when": 1783115272208,
+          "sha256": "02127e955cb51761d6a86a0b3fccfbcda2f5f2810128c7d7ec8b288f78853ff2"
+        },
+        {
+          "tag": "0018_grey_xorn",
+          "when": 1783723634797,
+          "sha256": "2e23b9e1861d763ed31ba6b540bfefd42d6d7a7955fefaf291288f88c42bb490"
+        },
+        {
+          "tag": "0019_rainy_lorna_dane",
+          "when": 1783727563549,
+          "sha256": "fe2f4d5f38421d02ed8e0b71309ef378ae1bd3b51662102c49b95fb92ee7399d"
+        },
+        {
+          "tag": "0020_eager_stark_industries",
+          "when": 1783728714883,
+          "sha256": "5c251835bc8e7f7652178cdf24c0ba1d9b3ab1a2e930eb5dcab1a3c30e44c984"
+        },
+        {
+          "tag": "0021_grey_professor_monster",
+          "when": 1784075126626,
+          "sha256": "5b06e89f076095658a43f7f9c36b66f0e96eddb3d7e5a6e425d2ab70460c9270"
+        },
+        {
+          "tag": "0022_cold_mikhail_rasputin",
+          "when": 1784159435391,
+          "sha256": "7e50ee7e7b61214b8d9514f24e5776e6e43031591c3c4e4f34e645b3c590a62f"
+        },
+        {
+          "tag": "0023_striped_marvel_apes",
+          "when": 1785035959565,
+          "sha256": "4157449d50936e715b1e64849702f52530a391477d2655e1cb87c0e9be38ac4d"
+        },
+        {
+          "tag": "0024_private_db_lineage_reconciliation",
+          "when": 1785262464947,
+          "sha256": "c01098ee405c9d527f58607cf849cd6940672ca111e43067281d3e40a9be9ff8"
+        },
+        {
+          "tag": "0025_smart_praxagora",
+          "when": 1785361832872,
+          "sha256": "f3a18453232f7164136f9350d2670cecf059266fbb03f91781f1dbb6e539003d"
+        },
+        {
+          "tag": "0026_nice_mattie_franklin",
+          "when": 1785362561424,
+          "sha256": "92d389625305df02bae950a80968fff362d356300458d610b267c4fc70169cea"
+        },
+        {
+          "tag": "0027_curly_leader",
+          "when": 1785364009534,
+          "sha256": "9a48fcd53dde993c37420e45decbae241bf5a30b8f3d397305eb9400fa78b4ad"
+        },
+        {
+          "tag": "0028_lucky_lady_ursula",
+          "when": 1785366937857,
+          "sha256": "c82dec2759216875531f996807e270b594f80255ef6dff201a90912b7a63e1f7"
+        },
+        {
+          "tag": "0029_chemical_virginia_dare",
+          "when": 1785380919421,
+          "sha256": "05976fe90bb4b6a1ba3465fab0cf4cf1659236e1abe51376a5269e0ba0ce7d12"
+        },
+        {
+          "tag": "0030_implicit_staff_providers",
+          "when": 1785531975406,
+          "sha256": "bb2e5f3b1e6e65e4c743232bf9af6849f69fee2dd576f32722dc122965f0f9d1"
+        },
+        {
+          "tag": "0031_bored_loa",
+          "when": 1785597956449,
+          "sha256": "29ec810d68d8da0e6a3f975b856a7685eeed975a74f8a8f1f3f443cc114211f2"
+        },
+        {
+          "tag": "0032_fat_roulette",
+          "when": 1786571702405,
+          "sha256": "af324d3334bf84216e0e50982c1143b0e0ba4d39b5c979ea80d987a72234fd29"
+        },
+        {
+          "tag": "0033_bored_dexter_bennett",
+          "when": 1786655863673,
+          "sha256": "bcadce56cab5bd413238fc08e70c26dd3443d3d029a138cd3d1b6ba9f868727d"
+        },
+        {
+          "tag": "0034_lying_amphibian",
+          "when": 1786729604962,
+          "sha256": "3bb9fb07456053df16c71767b221b7753c45b512d350786ba78306a680710e4f"
+        },
+        {
+          "tag": "0035_tricky_photon",
+          "when": 1786729648324,
+          "sha256": "82977311d356c8d6527e53201fd5ea7d826d280747b726ccd19e81c81278ebcf"
+        },
+        {
+          "tag": "0036_chubby_captain_flint",
+          "when": 1786746690655,
+          "sha256": "776659694e7d363176b7f5d8416f901a07dffca5840b5f1a7c5e5668f41b8514"
+        },
+        {
+          "tag": "0037_noisy_bedlam",
+          "when": 1786747147860,
+          "sha256": "58d2a3a49018f491c9dba9dcc1a7c47c122088c37bb086939cd45f4cd18cf1cb"
+        },
+        {
+          "tag": "0038_dashing_blue_blade",
+          "when": 1786747946750,
+          "sha256": "49b8005913091f8c8da6d20eb8720501d4dec00a3c5f84ee64a207e75bfb456f"
+        },
+        {
+          "tag": "0039_chunky_stingray",
+          "when": 1786748317968,
+          "sha256": "e5252e89d2b40345b34353d17811d2ab7148595be2c7f3c7bc3d0a039306d569"
+        },
+        {
+          "tag": "0040_yummy_living_lightning",
+          "when": 1786748337233,
+          "sha256": "46cfb8975483528a0dabe8bd186545641278204c749cef346643daef7bcc3826"
+        },
+        {
+          "tag": "0041_illegal_pestilence",
+          "when": 1786811823415,
+          "sha256": "b80a6fbcba902c1bf35bdd3286f4b9612b0de142892486bb8c6d4b60985c7a90"
+        },
+        {
+          "tag": "0042_typical_ultimatum",
+          "when": 1786811883587,
+          "sha256": "fcb960ddc72e01eb546d392c14d69f8c4d41307609faa50fb49af1efa34a78db"
+        },
+        {
+          "tag": "0043_loose_richard_fisk",
+          "when": 1786811967466,
+          "sha256": "9389c26fef12e949e174d128d0a96ba7b13ce1325d1736559465e34b66d8de77"
+        },
+        {
+          "tag": "0044_wakeful_leper_queen",
+          "when": 1786812215923,
+          "sha256": "bfb62f5210284763f928a3220843cb3c7018945db224544750bc1e1b5207a985"
+        },
+        {
+          "tag": "0045_complete_purple_man",
+          "when": 1786812257202,
+          "sha256": "e42b0c624dad9b6d1b3b9a927febc996c7e1a87a30201765f2344ad3db5148e8"
+        },
+        {
+          "tag": "0046_equal_meltdown",
+          "when": 1786812542688,
+          "sha256": "092870344cd8ff47d02a4133051875e5dda3753aab27b6122e26ba7065313796"
+        },
+        {
+          "tag": "0047_plain_wither",
+          "when": 1786812853302,
+          "sha256": "dc67dab3e41c0e91f4e1ea11eeff969218cca1f9ab3c249072bc3de731c1c8f0"
+        },
+        {
+          "tag": "0048_immutable_chitchats_intake_attestations",
+          "when": 1786814731710,
+          "sha256": "f7e09fd19c140d2cd33b9e762fda44c2bba5f5b2755cd38df3008c9478eb25f4"
+        },
+        {
+          "tag": "0049_eminent_arachne",
+          "when": 1786815019516,
+          "sha256": "5db61574f608d72536b4cc7a5fcea16479bce9546f61f29cc4402b893170dd25"
+        },
+        {
+          "tag": "0050_long_scrambler",
+          "when": 1786815649061,
+          "sha256": "32b52e4ed25b59d18cc706eeea213206380e43e68b58612827698f293a5aeba7"
+        },
+        {
+          "tag": "0051_square_blazing_skull",
+          "when": 1786815890782,
+          "sha256": "65e0af586f59e11ce56fb688f3d22014912baaff1c1ef8c89021c0c68e94d34c"
+        },
+        {
+          "tag": "0052_bouncy_callisto",
+          "when": 1786816106846,
+          "sha256": "6fa82bc85a3b2571d72b7f6870bf8e39a171f3457fa052ffc43ec0b3b385af0a"
+        },
+        {
+          "tag": "0053_yielding_ultimo",
+          "when": 1786816656184,
+          "sha256": "1ee47ec0e2fdc07f8210ac638a432496a097ac0b256ad30885bd4b83086e04b1"
+        },
+        {
+          "tag": "0054_living_blindfold",
+          "when": 1786817398162,
+          "sha256": "f013e86b0fcb0fa7a8e26a92f6c86d205b44f8f81dcd2f9e76e53702825caead"
+        },
+        {
+          "tag": "0055_good_dormammu",
+          "when": 1786817601199,
+          "sha256": "8474e3f4382f92fa78dfa0fb3035a7533bc713bcf1deaf58a00fd7da5aa4563a"
+        },
+        {
+          "tag": "0056_remarkable_sage",
+          "when": 1786818110447,
+          "sha256": "4381a7a4710a8d82eca07908034c4b7060a6811edb022765cd5ec5e8a2c792ff"
+        },
+        {
+          "tag": "0057_daily_agent_brand",
+          "when": 1786820075701,
+          "sha256": "63b2eaff39b4b778bf82d070ee8e779acf0f65236f01777d706e67f79eae0cf0"
+        },
+        {
+          "tag": "0058_worthless_shriek",
+          "when": 1786822456932,
+          "sha256": "cf125fe3707d148d6acf5feaa95b1e71560d76fc0df50b9b438d583c2ae72475"
+        },
+        {
+          "tag": "0059_eminent_praxagora",
+          "when": 1786823647075,
+          "sha256": "e52b688aa09533cbbfd503e0ee9ab11ec38219a12cbb1cc767f71d1a888fb0ed"
+        },
+        {
+          "tag": "0060_clever_magma",
+          "when": 1786824274642,
+          "sha256": "564d8d79607aefc7eba7051a6be561ee0200d95757490d2f8280c3d2561e94e9"
+        },
+        {
+          "tag": "0061_helcim_reconciliation_retention",
+          "when": 1786829940203,
+          "sha256": "ded92faf1a166a1139e8fcae9e7f1723d40f8113445a65d9785b60d46a12cb33"
+        },
+        {
+          "tag": "0062_youthful_slayback",
+          "when": 1787092826887,
+          "sha256": "451ecd48fc34149115fd81ba0838f13d5bc5297b07922cb4b693e53349e52297"
+        },
+        {
+          "tag": "0063_good_forge",
+          "when": 1787092847053,
+          "sha256": "fbd2cf1478daf19854dc469d9bebc2d8ebe969b8f75a318d9237f2b9dd3380f4"
+        },
+        {
+          "tag": "0064_modern_old_lace",
+          "when": 1787094132224,
+          "sha256": "e93f8b4050ded43a786f960fb680f6f5e9735edbd04c3f7b67e0c0ce95260a47"
+        },
+        {
+          "tag": "0065_dark_kabuki",
+          "when": 1787094836764,
+          "sha256": "7593b3d2075408551968811ec9bbfd0465aa53ad340e60932d7d11a4f7ab7739"
+        },
+        {
+          "tag": "0066_foamy_excalibur",
+          "when": 1787097681783,
+          "sha256": "5eafb751f592cd5b22f4efb26c183eeb9a64a42a9226c8da25c18a6c03633d47"
+        },
+        {
+          "tag": "0067_tranquil_iron_patriot",
+          "when": 1787160103859,
+          "sha256": "30a8d5d5d0e5b9a7b9649ca32508537623a484ea949523957f66b40d9bb0f32d"
+        },
+        {
+          "tag": "0068_familiar_dreaming_celestial",
+          "when": 1787262097936,
+          "sha256": "d1c6b1e6424154c7e36a5b12ab008b6acf6d97a2872e240d8196d49e90dfb5d8"
+        },
+        {
+          "tag": "0069_dizzy_carnage",
+          "when": 1787336787058,
+          "sha256": "225c87e17cca2684355abbaa1885896d729778929e816db7f389063d2a54fe37"
+        },
+        {
+          "tag": "0070_giant_hitman",
+          "when": 1787339761512,
+          "sha256": "d3c45f0c26beba2df84f4bbe1c3075335ef3b8d2938f8c5eea2d83a5c7b0e9f8"
+        },
+        {
+          "tag": "0071_pink_grim_reaper",
+          "when": 1787346471464,
+          "sha256": "2516f094e7fd74126a17aab7d5a464620527d568f60af95361923f1df3fee653"
+        },
+        {
+          "tag": "0072_round_warbound",
+          "when": 1787505810290,
+          "sha256": "180e02ad8c7f8e7c2287315b0c7521d8704aee1ca45029ecad2e0266b7ba5f55"
+        },
+        {
+          "tag": "0073_panoramic_abomination",
+          "when": 1787717618408,
+          "sha256": "3c14639036aaf96c42a5c308fc9a5981dce34f02a3c555a2cf5d72730881723d"
+        },
+        {
+          "tag": "0074_amused_hydra",
+          "when": 1787892578091,
+          "sha256": "5bfa59bd3c3afcf19260f47adb5e7d0bb6954bbb8f0f57c4f6b71a63db96bdf9"
+        },
+        {
+          "tag": "0075_clammy_william_stryker",
+          "when": 1787892609388,
+          "sha256": "d74e52f3f1255ae893a657d4f15da99937bd0dc8b2998d3e0afd716829904923"
+        },
+        {
+          "tag": "0076_organic_kitty_pryde",
+          "when": 1788225229633,
+          "sha256": "2cd123ddeb304814f83f51e80642df392a198bef07df4a596f17721bab3e5ca7"
+        },
+        {
+          "tag": "0077_course_signup",
+          "when": 1790208354053,
+          "sha256": "b1949845f9408560606fb3ef72395496b7c55a01d59038a9cdecdc252552d651"
+        }
+      ],
+      "preserved_preexisting_non_document_files": [],
+      "reviewed_changed_preexisting_files": [],
+      "npm_audit": {
+        "result": "FAIL",
+        "counts": {
+          "info": 0,
+          "low": 4,
+          "moderate": 9,
+          "high": 15,
+          "critical": 1,
+          "total": 29
+        },
+        "affected_packages": [
+          "@actions/github",
+          "@actions/http-client",
+          "@eslint/config-array",
+          "@eslint/eslintrc",
+          "@grpc/grpc-js",
+          "@mdit/plugin-alert",
+          "@portabletext/markdown",
+          "@sanity/cli",
+          "@sanity/runtime-cli",
+          "adm-zip",
+          "baseline-browser-mapping",
+          "brace-expansion",
+          "browserslist",
+          "dompurify",
+          "eslint",
+          "isomorphic-dompurify",
+          "js-yaml",
+          "load-yaml-file",
+          "markdown-it",
+          "minimatch",
+          "next",
+          "next-sanity",
+          "preferred-pm",
+          "qs",
+          "quill",
+          "sanity",
+          "sharp",
+          "undici",
+          "which-pm"
+        ]
+      }
+    },
+    "course-api": {
+      "revision": "069f88323e3f40bc6a4137feab2baf97c1d3da62",
+      "branch": "main",
+      "remote": "https://github.com/princessdardan/lash-her-course-api.git",
+      "lockfile_sha256": "e89dea73ebf002094fa132ce5f6ed4c7f8e34beeaf7efa7e2a37aa1565febb27",
+      "migration_journal_sha256": "9ecd6b60d9062f4fdc831de1a895f7840cf7c5d2cc602af91d47b2bf19be7f1c",
+      "migrations": [
+        {
+          "tag": "0000_eminent_thunderbolt_ross",
+          "when": 1777940379922,
+          "sha256": "66a51f78abf3bd10fc93a808f4553777dca59513e3ca31de4370c4722376d76a"
+        },
+        {
+          "tag": "0001_tough_sentinels",
+          "when": 1777940913491,
+          "sha256": "d1fc292e26aa876a74b96211011266b9da05c885a5800936b1ee375523da0a6e"
+        },
+        {
+          "tag": "0002_polite_maggott",
+          "when": 1777941047662,
+          "sha256": "a012479823f012748e7298915a760b79453d48b95ae3ead5ccb0c782f2d0e5ae"
+        },
+        {
+          "tag": "0003_amused_human_cannonball",
+          "when": 1777959299014,
+          "sha256": "54f32241434282e165f5f38093e7fc177e694d3b23dc9203c01a8050e414dd0d"
+        },
+        {
+          "tag": "0004_course_api_target_schema",
+          "when": 1783469261259,
+          "sha256": "280ec32b1c6a7ead2683a7c0ce3b9192ea56a32cbe8cb15987666368d6df4aa9"
+        },
+        {
+          "tag": "0005_add_lesson_preview",
+          "when": 1783658988472,
+          "sha256": "f0eb99fa087f9b1376d44a43a4df44715da7716e0b912ddfb0e5cceeebae958a"
+        },
+        {
+          "tag": "0006_add_entitlement_revocation_ledger",
+          "when": 1783716290959,
+          "sha256": "03190485b73c2a32ced3a8d5c765f7c3ff4659fef4bab8716b78cb52dd7496e6"
+        },
+        {
+          "tag": "0007_optional_entitlement_provider",
+          "when": 1783720752877,
+          "sha256": "79d6ba1dd7d140a2be1d67fed7d7d081913e20b46af2e73cd8cd8bb4d67922f1"
+        },
+        {
+          "tag": "0008_add_admin_inspection_indexes",
+          "when": 1783726009116,
+          "sha256": "8bd3d0a039f302a16676c3ca398fb0414fb5594418aa888e0f78954cd9c1a8ae"
+        },
+        {
+          "tag": "0009_add_admin_entitlement_audit",
+          "when": 1783727847499,
+          "sha256": "b67b0675ebac12a8e404a505e86a56bf86a1ec31654b67ac0e0521e9877170eb"
+        },
+        {
+          "tag": "0010_harden_entitlement_audit",
+          "when": 1783730528524,
+          "sha256": "af5e984da68de2b27679cb957c1a5ecd93f1b47f9282fc47a31be7d44e312b9d"
+        },
+        {
+          "tag": "0011_enforce_global_idempotency_references",
+          "when": 1783730706323,
+          "sha256": "02b37449a0bcc0dad47f95a6887f025ec2fa54d9f752bd9dd0ab184521d99cc9"
+        },
+        {
+          "tag": "0012_seal_admin_entitlement_effects",
+          "when": 1783731783285,
+          "sha256": "e846e15f42af6c1d9a288c4914206503493fe7b45e6bc6aa7f9034d42ce966e1"
+        },
+        {
+          "tag": "0013_retain_entitlement_grants",
+          "when": 1783732757091,
+          "sha256": "5516f91c708740873040eed31d2a4c620f15fd6a3f5249f1ab6e84ecc9c3ce8e"
+        },
+        {
+          "tag": "0014_course_community_enrollment_integration",
+          "when": 1786573635639,
+          "sha256": "3d25cf03adfaea40c87293c0329ade3ea275bd6e267b6e1db601887a987558e9"
+        },
+        {
+          "tag": "0015_shared_rate_limit_buckets",
+          "when": 1788980012656,
+          "sha256": "cf8212026106f66c84cb0ec3a4da8fd37bb5a30bd4670b7c40a665311f01c637"
+        },
+        {
+          "tag": "0016_audit_read_only_enrollment_operations",
+          "when": 1788980370346,
+          "sha256": "c5b65009a238f40dee8dc649c0b66ca0d69356928ed954fc10488f9f1aeeec68"
+        }
+      ],
+      "preserved_preexisting_non_document_files": [
+        {
+          "path": ".env.example",
+          "sha256": "58c4906476f15e04d15844282f23d003518e53e095b0184fca8b119226bc52be"
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "sha256": "6bf6788955ce47698315a22e263606a5a63cdc54f505a21e8623d07a096b350a"
+        },
+        {
+          "path": ".github/workflows/community-contract-compatibility.yml",
+          "sha256": "15b936cd57d882dd909fb0f60ee6920e065cd14880ef34e6bb5bc3c4ad5e73f4"
+        },
+        {
+          "path": "contracts/community/course-enrollment/v1/SHA256SUMS",
+          "sha256": "4b42c8d5605a9627d46233d1d6eaeee577b590802b88262a29f93922519c137b"
+        },
+        {
+          "path": "contracts/community/course-enrollment/v1/enrollment-event.schema.json",
+          "sha256": "a1635b7725a8331cf4885da6b2c596f07c7272ef1bbd5d66a855b10ece95b01e"
+        },
+        {
+          "path": "contracts/community/course-enrollment/v1/fixtures/manifest.json",
+          "sha256": "253ffa5ca9f9f3d846d8e92ed58e3d3b275c71e591a54ad861874122d48b24c5"
+        },
+        {
+          "path": "drizzle/0014_course_community_enrollment_integration.sql",
+          "sha256": "3d25cf03adfaea40c87293c0329ade3ea275bd6e267b6e1db601887a987558e9"
+        },
+        {
+          "path": "drizzle/meta/_journal.json",
+          "sha256": "9ecd6b60d9062f4fdc831de1a895f7840cf7c5d2cc602af91d47b2bf19be7f1c"
+        },
+        {
+          "path": "ops/prometheus/course-community-alerts.test.yml",
+          "sha256": "d40deebf4054c7f44699899b60128224a4b6ee0dc377bf42a49b302138cdd1ca"
+        },
+        {
+          "path": "ops/prometheus/course-community-alerts.yml",
+          "sha256": "6d64e59ef5196d24368aca18402f82f3b0b6aa6074a260bbd03beecf95c3e0d5"
+        },
+        {
+          "path": "package-lock.json",
+          "sha256": "e89dea73ebf002094fa132ce5f6ed4c7f8e34beeaf7efa7e2a37aa1565febb27"
+        },
+        {
+          "path": "package.json",
+          "sha256": "a528074cb0d1714e54f2a371ffd5233f37686d2dfe28f60f565f17809796a4af"
+        },
+        {
+          "path": "scripts/assert-test-database.mjs",
+          "sha256": "5810a38b0ddf5267e8d30abd51003f66233f62cbf7fa49daeb819ce8b130d6ee"
+        },
+        {
+          "path": "src/app.ts",
+          "sha256": "b7d85c7953c97227d602a776e44e92fd79dcf55955f6a8fa97ce597397195ed3"
+        },
+        {
+          "path": "src/community-enrollment-ops.ts",
+          "sha256": "4bc8551c9c39d4c132e7f1a55409d4ed861df8d1cee67bf5e1a55a985a38d29f"
+        },
+        {
+          "path": "src/community-enrollment-publisher.ts",
+          "sha256": "7d8be38cf9a84bf10f3bcb7f568b9ef6638e5749ddcc2ed3f296f182faf1632a"
+        },
+        {
+          "path": "src/community-snapshot-worker.ts",
+          "sha256": "01795b2a54a58f10c5729990feb23a0c1d198f63cb26b8f38bd7eb60c7db5d11"
+        },
+        {
+          "path": "src/config/database-url.ts",
+          "sha256": "a3f9c6e43e51f297c39081ef11775bf0bdc3c5ac4893049be17ea321fc4d7367"
+        },
+        {
+          "path": "src/config/env.ts",
+          "sha256": "2ca2288633b4dd581ef055de8eb55f695a1417cd7698bbfdd9b9a394478f0920"
+        },
+        {
+          "path": "src/db/schema.ts",
+          "sha256": "db5f793a39f1422261ee97c5f3649b5904477fd912823a5ec9a624fda69e544f"
+        },
+        {
+          "path": "src/db/seed.ts",
+          "sha256": "8791f877fdf8bb8651d2832a67843a2235ba47a728954b0d0a63cf7d1e3a58fc"
+        },
+        {
+          "path": "src/entitlements/admin-entitlement-command.repository.ts",
+          "sha256": "1358dea57e09692beec9e01dc53d9690cfff5862730d9ca73c3b1fe3e897f3a3"
+        },
+        {
+          "path": "src/entitlements/entitlement.repository.ts",
+          "sha256": "18a25169653961ed78c9d2a84c8c6079ea5610042a4a5d998869ba3d3d54d0c1"
+        },
+        {
+          "path": "src/entitlements/internal-network.ts",
+          "sha256": "fccd1418b54f1dba6fa0faae33e72080966055075355033bc44377a794b8d871"
+        },
+        {
+          "path": "src/entitlements/internal-rate-limit.ts",
+          "sha256": "6f51f844d8a5c9a053974b9b4e1db8ed7bd9bc68bda1dbe4d5ec7392cd946cb7"
+        },
+        {
+          "path": "src/entitlements/user-course-lock.ts",
+          "sha256": "a0ffd52b7d4677b4a2cad31185d20da1a5963596683441e1544ad6e9c8fd4eee"
+        },
+        {
+          "path": "src/integrations/community/community-network.ts",
+          "sha256": "455d427186700678b0cc936b7be15daae82f3ebca20eb2a384280c1436d12b99"
+        },
+        {
+          "path": "src/integrations/community/community-rate-limit.ts",
+          "sha256": "8b8594d6c6de22cb38ba4b8b8ae4e334bc1f2bc77e6e2071ed734e9cc5b9ea1a"
+        },
+        {
+          "path": "src/integrations/community/community-read.repository.ts",
+          "sha256": "583b603f9045a07aea2ae7fb88f9df2da1dea039b7ac37db05563b9e479c7ccd"
+        },
+        {
+          "path": "src/integrations/community/community-read.routes.ts",
+          "sha256": "bba1e4ca19df966731e2d1627d78405fe0c186a3a1c5b279c12ac0665f7783ab"
+        },
+        {
+          "path": "src/integrations/community/contracts/enrollment-event.ts",
+          "sha256": "40f86796501e2eac0be36f3fbb1b4544ce8322c7a963ff4e16d28c5ff245e4dd"
+        },
+        {
+          "path": "src/integrations/community/http-transport/community-http-transport.ts",
+          "sha256": "f02079d439ab57bddcd1bc37ddd05e687a284e0d90180a444635704f2ebf06de"
+        },
+        {
+          "path": "src/integrations/community/persistence/drizzle-publisher.repository.ts",
+          "sha256": "f83a486cc84bd9de37adfe67826280bb19cb0d8b14e256bfd477ab790e887b16"
+        },
+        {
+          "path": "src/integrations/community/persistence/enrollment-transition.repository.ts",
+          "sha256": "813eab03666ade6e5da0c58c8906bb8a045f256fa83fc67f47afc04117e717b2"
+        },
+        {
+          "path": "src/integrations/community/persistence/publisher.repository.ts",
+          "sha256": "a53619f45439a8140d43d854ee9e4a8971016de658d935cdbdceaf32375e2b9e"
+        },
+        {
+          "path": "src/integrations/community/publisher/community-publisher.ts",
+          "sha256": "f9030d58c3c7743f5944065c8abe71aa4cf7653450661f6371c1fca366a9a8e2"
+        },
+        {
+          "path": "src/observability/metrics.ts",
+          "sha256": "16dff56162c843f97d38af236a2db3f65765214a998e89d50f5d66777bf3a740"
+        },
+        {
+          "path": "src/observability/process-http-server.ts",
+          "sha256": "bfa44d16bb6a131253dc18d95fae6784cbe3a7e19f3998002fc59144c42470e9"
+        },
+        {
+          "path": "src/server.ts",
+          "sha256": "6c65bfaf25f7a9dc3aa310446267e8b4e5de148d67b0590ea25444fb2792e73c"
+        },
+        {
+          "path": "src/video/video.repository.ts",
+          "sha256": "a0b6002da9e89224fb843fab907928db758d798183fdb0023e138c594b8850df"
+        },
+        {
+          "path": "tests/community-enrollment-contract.test.ts",
+          "sha256": "4a7974405a06555bbd114363001ef1d21e344cba73775f33069fa57912657796"
+        },
+        {
+          "path": "tests/community-publisher.test.ts",
+          "sha256": "a52f8d705b7e8d93c43732c266ea3920ccfceb4497790cb64df89c020a8a27e8"
+        },
+        {
+          "path": "tests/community-rate-limit.test.ts",
+          "sha256": "a811f88bc17bbce8e3d009d668fe793e4b1b92d84ddbcee04e4d395a3e7c30a4"
+        },
+        {
+          "path": "tests/community-read-routes.test.ts",
+          "sha256": "fcc147752c47bc5ded7eb335f710204a30cf0532b4ae0f5bf6abac3be7086679"
+        },
+        {
+          "path": "tests/database-url.test.ts",
+          "sha256": "32344ab8b927cfc681c6200c8261db3e36390eb63dbcfec9707eae48a6aa7c2a"
+        },
+        {
+          "path": "tests/database.integration.test.ts",
+          "sha256": "53f07a17c7e67af167f41db03c5b5a103a4e29cdfdae7bc24203b2f6853fe42a"
+        },
+        {
+          "path": "tests/env.test.ts",
+          "sha256": "af80ca5ddf243aaef31b1b43140ac5709e5223b1c3c368e6cf2e94e4c523fa4c"
+        },
+        {
+          "path": "tests/operational-http-server.test.ts",
+          "sha256": "25d71f93cf85adfa5e5eb380e2173ab913c8350215370a815cebfcb49b0a71ce"
+        },
+        {
+          "path": "tests/video.test.ts",
+          "sha256": "b622614970c8ef5e317a9273b9b007e9b20e526ad4855e13366bb7a1fbf10003"
+        },
+        {
+          "path": ".github/workflows/contract-release-gate.yml",
+          "sha256": "2d4ff4a82fe83f174bca781437de0dccf844644736eb4c621eddcc56d771141a"
+        },
+        {
+          "path": "contracts/community/course-enrollment/v1/fixtures/invalid/unsupported-event-type.json",
+          "sha256": "baa4e7f94eb764dc426b471d0dab1686d652ec6ccda240044b3dd9cbc4daf517"
+        },
+        {
+          "path": "contracts/community/course-enrollment/v1/fixtures/invalid/uppercase-uuid.json",
+          "sha256": "166da27fecdfae5a93478a8a2db81098851dc1001ff8506d59965ffc15e7cebe"
+        },
+        {
+          "path": "drizzle/0015_shared_rate_limit_buckets.down.sql",
+          "sha256": "7087b5cff46f868fc632d68e81d5082170de2e233fdbe25d940168664f8cf4c9"
+        },
+        {
+          "path": "drizzle/0015_shared_rate_limit_buckets.sql",
+          "sha256": "cf8212026106f66c84cb0ec3a4da8fd37bb5a30bd4670b7c40a665311f01c637"
+        },
+        {
+          "path": "drizzle/0016_audit_read_only_enrollment_operations.sql",
+          "sha256": "c5b65009a238f40dee8dc649c0b66ca0d69356928ed954fc10488f9f1aeeec68"
+        },
+        {
+          "path": "drizzle/meta/0015_snapshot.json",
+          "sha256": "bf690068e68a6f834e32e524334a9389682ab2457ff822288b4689c3cdb4602d"
+        },
+        {
+          "path": "drizzle/meta/0016_snapshot.json",
+          "sha256": "5dc862851b1667422ff39330490a6fdb976026243754031c2100ef65952dd9b6"
+        },
+        {
+          "path": "scripts/assert-seedable-database.mjs",
+          "sha256": "7d8a57ca3e67b5b60ce027880f29d12b0abbe606ada99fdc40647e4b8d484b8f"
+        },
+        {
+          "path": "src/entitlements/effective-access.ts",
+          "sha256": "18ff60babe6965a6c3bf1ae412cf9cf6c2a57298d661d79ee233d6fe2d13c95b"
+        },
+        {
+          "path": "src/observability/log-redaction.ts",
+          "sha256": "e549dde57534c31860f9a359000500e0fc1f2c6723fa447c47973183dfad9411"
+        },
+        {
+          "path": "src/rate-limit/drizzle-rate-limit-store.ts",
+          "sha256": "21a8520479c12bb3575fc4d1838c4e00cc82e64f6ef3b8bd64d68194dfd87a71"
+        },
+        {
+          "path": "src/rate-limit/rate-limit-hook.ts",
+          "sha256": "200a23258770f8a9e4c9c59249757703e1ae8b1a2cfbd9c33e63d78bf0c3e797"
+        },
+        {
+          "path": "src/rate-limit/rate-limit-store.ts",
+          "sha256": "681df14be65c22038c99662f0b5344f3799ec7fd33590187ecc330942c74405f"
+        }
+      ],
+      "reviewed_changed_preexisting_files": [
+        {
+          "path": "contracts/community/course-enrollment/v1/contract-pin.json",
+          "sha256": "aca5296e5b2b9ed6903cf9041ce45b85c43f8b705dd570c3774de3c7b7e1b18a"
+        },
+        {
+          "path": "scripts/verify-community-contract.mjs",
+          "sha256": "939f8890eface446c92d23b9b39ba5815b61bc95f8120b7510e3a5d1e45a4a13"
+        },
+        {
+          "path": "drizzle/0016_audit_read_only_enrollment_operations.down.sql",
+          "sha256": "3d74b3500850f61e08c7f1a659eaf1ddb7b3b07b5fc6016017cbc10fc91c41a4"
+        }
+      ],
+      "npm_audit": {
+        "result": "FAIL",
+        "counts": {
+          "info": 0,
+          "low": 0,
+          "moderate": 6,
+          "high": 3,
+          "critical": 0,
+          "total": 9
+        },
+        "affected_packages": [
+          "@esbuild-kit/core-utils",
+          "@esbuild-kit/esm-loader",
+          "@vitest/mocker",
+          "brace-expansion",
+          "drizzle-kit",
+          "esbuild",
+          "fast-uri",
+          "fastify",
+          "vitest"
+        ]
+      }
+    },
+    "community-api": {
+      "revision": "97361f173f6a42de238f374317b8f49f79e48876",
+      "branch": "main",
+      "remote": "https://github.com/princessdardan/lash-her-community-api.git",
+      "lockfile_sha256": "01d3794205059fa15e119afef62ef7627663eae4581342077920b692ea11de65",
+      "migration_journal_sha256": "d71fde368b7d389ec060f862f52bf44d95d485e22bb460533d7a824867723395",
+      "migrations": [
+        {
+          "tag": "0000_initial_community_enrollment_projection",
+          "when": 1786573656183,
+          "sha256": "06dad3175c4a6c87083783e5768ee06e587255d35338de3f2e62f25bcfcf791e"
+        },
+        {
+          "tag": "0001_add_operator_audit",
+          "when": 1786574122428,
+          "sha256": "ede96bfcfe7fa889126093332cedee4d0a40abfc135d8b326d29eb39c9b696bb"
+        },
+        {
+          "tag": "0002_add_reconciliation_baseline_and_inspection_audit",
+          "when": 1786575373433,
+          "sha256": "51eca3ccb286d559595d1545bf754d17c47174ee69c1a230478f2fe1a8bacfec"
+        },
+        {
+          "tag": "0003_add_reconciliation_resume_cursor",
+          "when": 1786575623331,
+          "sha256": "0b2375b01a474bd400eb7a8941e4afd6dfcdde97c754454a005547c217a7d4a9"
+        },
+        {
+          "tag": "0004_add_reconciliation_baseline_cutoff",
+          "when": 1786576426291,
+          "sha256": "a0b7f75b35da4f904a1b0f559ace06c74d12a625752bcac90541dfe2052a92b1"
+        },
+        {
+          "tag": "0005_add_reconciliation_baseline_materialized_marker",
+          "when": 1786576927941,
+          "sha256": "354f8acec33b5de1e4ac50042999eae39dbc284e9be8bd1d16e8dcce5895410f"
+        },
+        {
+          "tag": "0006_enforce_reconciliation_baseline_immutability",
+          "when": 1786577338105,
+          "sha256": "c40914bd56fb3df47ef352f693d7d066b34c01614d7384d039de1a8ca56b7a3d"
+        },
+        {
+          "tag": "0007_require_reconciliation_baseline_cutoff",
+          "when": 1786577550687,
+          "sha256": "98d590ca4506301923885fb6ab96ad27ccb375c7d3ff362b1f0f25a58bad04bf"
+        },
+        {
+          "tag": "0008_integrity_staging_and_dedup",
+          "when": 1788977019497,
+          "sha256": "533b3fd84845fcc6bd8e8f0991551354dbf8226bcdc6f023aa0759296850d261"
+        }
+      ],
+      "preserved_preexisting_non_document_files": [
+        {
+          "path": ".env.example",
+          "sha256": "ed73f1269d8eb0de22a8f746033e43c973acd9322e7503c64c59d896f0b58284"
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "sha256": "9b2996d109632930a52f453d6b8c01fc57c7b547f059c405c6f1e44c6159db2f"
+        },
+        {
+          "path": ".github/workflows/course-contract-compatibility.yml",
+          "sha256": "966e3317ac41a9b80bfb597f428379dad78af31719bfdf43baac5c52e27ea587"
+        },
+        {
+          "path": "contracts/course-enrollment/v1/SHA256SUMS",
+          "sha256": "4b42c8d5605a9627d46233d1d6eaeee577b590802b88262a29f93922519c137b"
+        },
+        {
+          "path": "contracts/course-enrollment/v1/enrollment-event.schema.json",
+          "sha256": "a1635b7725a8331cf4885da6b2c596f07c7272ef1bbd5d66a855b10ece95b01e"
+        },
+        {
+          "path": "contracts/course-enrollment/v1/fixtures/manifest.json",
+          "sha256": "253ffa5ca9f9f3d846d8e92ed58e3d3b275c71e591a54ad861874122d48b24c5"
+        },
+        {
+          "path": "drizzle.config.ts",
+          "sha256": "cb5382a02979eef64b39e00b9b0c95dd3520eea021c852dfeeddf38b5d0a0e85"
+        },
+        {
+          "path": "drizzle/meta/_journal.json",
+          "sha256": "d71fde368b7d389ec060f862f52bf44d95d485e22bb460533d7a824867723395"
+        },
+        {
+          "path": "openapi/community-api.json",
+          "sha256": "6ab9b614e1d7befb5081fb9c5d3a060b1cf21d9f1db7370579fb932696094b89"
+        },
+        {
+          "path": "ops/prometheus/community-api-alerts.test.yml",
+          "sha256": "92e506a8e2568063ce34386b7ac5c8674cb374aa443eef402c38e25e8c8b0736"
+        },
+        {
+          "path": "ops/prometheus/community-api-alerts.yml",
+          "sha256": "9aaafb1d81d383f00f8b1a1852e09c75db73db5fa95390542b11c835cd924a17"
+        },
+        {
+          "path": "package-lock.json",
+          "sha256": "01d3794205059fa15e119afef62ef7627663eae4581342077920b692ea11de65"
+        },
+        {
+          "path": "package.json",
+          "sha256": "4d3b09b864bcc14071a1ef1a8da551d7d3d3f8b3cb78dfd65f1bad2e796bc58b"
+        },
+        {
+          "path": "scripts/assert-test-database.mjs",
+          "sha256": "0d20eb2308316784e48892e2bd4da5006a7ac707575f117a3b5644b85b739eea"
+        },
+        {
+          "path": "scripts/check-course-enrollment-contract.mjs",
+          "sha256": "895af225558fc166972683b704af270198bf2bd28640153ef62baf9b0cee0c4a"
+        },
+        {
+          "path": "src/app.ts",
+          "sha256": "8de732884d50d3e133494cb248ff702c1631613c2dc4fc0012270b9dffc80191"
+        },
+        {
+          "path": "src/config/database-url.ts",
+          "sha256": "3cd9e0efb02400672032b58d77d4fc3bf9a6fbba1de2ca3fec453bf716d73a4f"
+        },
+        {
+          "path": "src/config/env.ts",
+          "sha256": "fccada5fb6b0874bb605ed4cbe094b67db54bf2ed0fe51ae5c57511c8ed8c95f"
+        },
+        {
+          "path": "src/config/runtime.ts",
+          "sha256": "4447d024a21e51506ac464c149741a3fb1a979b9d561d80c0559b30484b33ebb"
+        },
+        {
+          "path": "src/db/schema.ts",
+          "sha256": "d3a18f96e8005db5244eff3a0dfbaa0595754a3a351c15fc0052c8111abc0adb"
+        },
+        {
+          "path": "src/http/errors.ts",
+          "sha256": "4502e272da1636b7087e7ccbfb23514948b766187585bfbad9e674e7ffdd82da"
+        },
+        {
+          "path": "src/integrations/course/contracts/enrollment-event.ts",
+          "sha256": "b0f43b8ae45272141ba4a0ca7bfa4ae1e82955208c1a16bcf61840bf5f7fb525"
+        },
+        {
+          "path": "src/integrations/course/inbox/course-enrollment-receipt.repository.ts",
+          "sha256": "027032641e3c0df97287a1fd34f1ebc68224f3fd3883382dfbb4c8d4c6a8ef8a"
+        },
+        {
+          "path": "src/integrations/course/projection/enrollment-event-ordering.ts",
+          "sha256": "ebff12c3e80c1afa4ce87571be88f8aa926cceebdae77e56d01f7ad185ac1849"
+        },
+        {
+          "path": "src/integrations/course/receiver/course-enrollment-receiver.routes.ts",
+          "sha256": "8a024fc70bfa1839d9bb75ee52cc3832ddf6df3af783fbc4fa3ab6588bc7d9d9"
+        },
+        {
+          "path": "src/integrations/course/receiver/course-publisher-network.ts",
+          "sha256": "e835eedbb2d03e30baf5266973841c09cba1a4924ff1b1fbd9b1a421ce2e1efe"
+        },
+        {
+          "path": "src/integrations/course/reconciliation/drizzle-reconciliation-store.ts",
+          "sha256": "5b2169eb57b0ce3285d742e88241f50be56d54f77f9b47adc9ee4f6782e0f478"
+        },
+        {
+          "path": "src/integrations/course/reconciliation/reconciliation.ts",
+          "sha256": "de13485bdeb2eca5c9682ebcb75d2549dddcc70e407f4dab42cbaf88860f3684"
+        },
+        {
+          "path": "src/integrations/course/repair/drizzle-repair-store.ts",
+          "sha256": "2c22cb3f45a6ca3e3a33de654d86a4ee8afed20db97c1698276d27e265b00504"
+        },
+        {
+          "path": "src/integrations/course/repair/targeted-repair.ts",
+          "sha256": "fcdd3b2350c20910d5b721573cead5a03589f64ed41aebdc0ab8bf3b57ad9ada"
+        },
+        {
+          "path": "src/integrations/course/shared/course-read-error.ts",
+          "sha256": "0c04d8f410b178b85f45a3d20815d36a8b9e1694b885c97fcb3e9081d2f305c7"
+        },
+        {
+          "path": "src/integrations/course/shared/http.ts",
+          "sha256": "ab4b3669ea45937b442530f68a3b6dfe64c4cb228cdfe1f0c602872d58583fd6"
+        },
+        {
+          "path": "src/integrations/course/snapshot-client/course-snapshot-client.ts",
+          "sha256": "510c8b452da160fbc581aebc88ebb477eb330f28966015e28e0f5b5401b49093"
+        },
+        {
+          "path": "src/observability/metrics.ts",
+          "sha256": "ae3d790f86c3f7f219d6efb53b48779b51961bd89bdb5060b0557c61c7a61618"
+        },
+        {
+          "path": "src/ops/course-enrollment-ops.ts",
+          "sha256": "4ef648597217a23f6271fc25a84249761ea4c5d5b8b8dd4a19898707ade26874"
+        },
+        {
+          "path": "src/ops/retention.ts",
+          "sha256": "63cfc8f989b02245d9f57823b43525a76180ec83535678c5879e46469a4aa5eb"
+        },
+        {
+          "path": "src/server.ts",
+          "sha256": "300e898fc56ca40c62fbc44739b476b7cfd2e39743c40ec6222f270695dd6506"
+        },
+        {
+          "path": "src/worker.ts",
+          "sha256": "cf08fdec9865be6ce904dd6d8353aa5269d979f0f0433e3f131f519b3d791623"
+        },
+        {
+          "path": "tests/config-env.test.ts",
+          "sha256": "7b49251958b0595493be63c3411ab90be450a8e8dc4d8e18a55058ae4432a486"
+        },
+        {
+          "path": "tests/course-enrollment-contract.test.ts",
+          "sha256": "18fa7b3eef0fbec31c254643d05c8e16539959650d72433f299e301ddbdbc58a"
+        },
+        {
+          "path": "tests/course-enrollment-receiver.test.ts",
+          "sha256": "15a853daa6a698e4b2fdbd0c0e7dab31f2cb9c1f4250de0d9d7ac88e8c6dab34"
+        },
+        {
+          "path": "tests/course-entitlement-policy.test.ts",
+          "sha256": "39a01b5dad67456fd0666423b03fb692bd9e55f8d286ab6f494204580dbbdec6"
+        },
+        {
+          "path": "tests/course-publisher-network.test.ts",
+          "sha256": "4aeddda0db86ebfa73bb270539f0fd9714499705a41811acc0cd1cea0492c159"
+        },
+        {
+          "path": "tests/course-read-client.test.ts",
+          "sha256": "5040c7281552f422781df8d5dece7c60b2a95d90760dc06be8bff1b913b510a8"
+        },
+        {
+          "path": "tests/database.integration.test.ts",
+          "sha256": "fb483fa4bb614f5662c22cbb95b24473bc8865c6c8c586fbfafe6563bca0000e"
+        },
+        {
+          "path": "tests/reconciliation.test.ts",
+          "sha256": "8546f312b10365c8bd926e64cb4885bbf96bd30076be0e8a3f07db5d2957f18a"
+        },
+        {
+          "path": "tests/targeted-repair.test.ts",
+          "sha256": "20e0713bc00a282647f338982b73ca9b012de54c78bfb87097e31f9662318ae6"
+        },
+        {
+          "path": "tests/worker-observability.test.ts",
+          "sha256": "191c4e1a01e398c49f09e8425c2ca6009e739b64f7af5a1eab9d064911b33618"
+        },
+        {
+          "path": ".github/workflows/deployed-e2e.yml",
+          "sha256": "1a6e0e1439dd09221d51102edadb7c98170211110e60c7dd80f08d5a0f7a1dba"
+        },
+        {
+          "path": ".github/workflows/load-certification.yml",
+          "sha256": "49456f06c5f0d4304363e808e9b016ba64ae6bfc4bd6427edae6dc3e2db5ef39"
+        },
+        {
+          "path": "contracts/course-enrollment/v1/fixtures/invalid/unsupported-event-type.json",
+          "sha256": "baa4e7f94eb764dc426b471d0dab1686d652ec6ccda240044b3dd9cbc4daf517"
+        },
+        {
+          "path": "contracts/course-enrollment/v1/fixtures/invalid/uppercase-uuid.json",
+          "sha256": "166da27fecdfae5a93478a8a2db81098851dc1001ff8506d59965ffc15e7cebe"
+        },
+        {
+          "path": "drizzle/0008_integrity_staging_and_dedup.sql",
+          "sha256": "533b3fd84845fcc6bd8e8f0991551354dbf8226bcdc6f023aa0759296850d261"
+        },
+        {
+          "path": "drizzle/meta/0008_snapshot.json",
+          "sha256": "f1726a3e24155f7d5bea4ee1533e1eb38b50a30ea583b509bc0644663fdf8daa"
+        },
+        {
+          "path": "scripts/e2e/config.mjs",
+          "sha256": "fb2c24b263f5dc294c25e70fdae8e9ffca6e655174d6baaa161060f646b8192d"
+        },
+        {
+          "path": "scripts/e2e/http.mjs",
+          "sha256": "6fc23552309b8a798a5831ac36ce7be5c61b56e232a22b74efd5728bfd4e9019"
+        },
+        {
+          "path": "scripts/e2e/run.mjs",
+          "sha256": "f1178780e1e6923952db531b469af74d46fdca962d0bd49ff8545d7a258e7bf3"
+        },
+        {
+          "path": "scripts/write-course-enrollment-checksums.mjs",
+          "sha256": "f2accf102d67762a7463a85f3684a5f122a19e8ac626ebb58ade9f554b423e82"
+        },
+        {
+          "path": "src/integrations/course/entitlement-policy/runtime-entitlement-policy.ts",
+          "sha256": "80a856c332973a76665d5d0d9ddd52b08fe405c55289084b1bb9d572be0e1e34"
+        },
+        {
+          "path": "src/integrations/course/projection/held-event-supersession.ts",
+          "sha256": "64728f697ebea0bde05612a42a2712b780b8e0fc30de06e1dfc52be0dcd09a5c"
+        },
+        {
+          "path": "src/integrations/course/projection/projection-locks.ts",
+          "sha256": "63672a37c63a40463c22879cdbe00b051a8d545341d5e4975a9f67d988549185"
+        },
+        {
+          "path": "src/integrations/course/shared/concurrency.ts",
+          "sha256": "442680e7907d98fb71575f7c79748743b017629e74a54399b17a472e01280bb7"
+        },
+        {
+          "path": "src/integrations/course/shared/token-bucket.ts",
+          "sha256": "eb1c2e3cb3eb6c8dd39e9905d36abbef04192c1eb2a38fe2ef94a92f2a43554d"
+        },
+        {
+          "path": "src/observability/log-redaction.ts",
+          "sha256": "e549dde57534c31860f9a359000500e0fc1f2c6723fa447c47973183dfad9411"
+        },
+        {
+          "path": "src/observability/worker-observers.ts",
+          "sha256": "8ce26801aceed88f41e50a775191c181d9fe8378e6aad98fa283dc675a200f84"
+        },
+        {
+          "path": "tests/load/receiver-throughput.test.ts",
+          "sha256": "6e20fac737fec16e124c4eb2ef6590a1511d2586fdeb2d658ffdaa8cf758ebe4"
+        },
+        {
+          "path": "tests/load/reconciliation-scale.test.ts",
+          "sha256": "2a2448348269a8bdc8f42563a7c0e7f48ecd1d3ebe9a71be8f21ee7279b28f2b"
+        }
+      ],
+      "reviewed_changed_preexisting_files": [
+        {
+          "path": "scripts/check-vendored-course-contract.mjs",
+          "sha256": "99c0893706c0c3991f1c296866f98665fda9c0f9dc366d556245dea740fe2dd4"
+        },
+        {
+          "path": "scripts/verify-migration-roundtrip.mjs",
+          "sha256": "91b9e0920a357bb67fb4d7f1db9fb38648742d74ffd886444298ba0ad9281e43"
+        },
+        {
+          "path": "drizzle/0008_integrity_staging_and_dedup.down.sql",
+          "sha256": "96cba77e3f559381d6130c20fc6b3fe8239e688840b7677671eb4d5475f15ec3"
+        }
+      ],
+      "npm_audit": {
+        "result": "FAIL",
+        "counts": {
+          "info": 0,
+          "low": 0,
+          "moderate": 6,
+          "high": 3,
+          "critical": 0,
+          "total": 9
+        },
+        "affected_packages": [
+          "@esbuild-kit/core-utils",
+          "@esbuild-kit/esm-loader",
+          "@vitest/mocker",
+          "brace-expansion",
+          "drizzle-kit",
+          "esbuild",
+          "fast-uri",
+          "fastify",
+          "vitest"
+        ]
+      }
+    }
+  },
+  "contract_pin": {
+    "ownerRepository": "lash-her-community-api",
+    "sourcePath": "contracts/course-enrollment/v1/enrollment-event.schema.json",
+    "sourceRevision": "97361f173f6a42de238f374317b8f49f79e48876",
+    "sha256": "a1635b7725a8331cf4885da6b2c596f07c7272ef1bbd5d66a855b10ece95b01e",
+    "releaseRequirement": "Verify this full Community commit and all released contract bytes against the approved release reference before publishing.",
+    "releasedFiles": "contracts/course-enrollment/v1 (schema, SHA256SUMS, and every fixture)"
+  },
+  "checks": [
+    {
+      "repository": "all",
+      "command": "npm ci",
+      "result": "PASS",
+      "runtime": "Node 24.18.0 / npm 11.17.0"
+    },
+    {
+      "repository": "course-api",
+      "command": "npm run verify",
+      "result": "PASS",
+      "unit_tests": 365
+    },
+    {
+      "repository": "community-api",
+      "command": "npm run verify",
+      "result": "PASS",
+      "unit_tests": 143
+    },
+    {
+      "repository": "frontend",
+      "command": "npx tsc --noEmit; npm run lint; npx drizzle-kit check",
+      "result": "PASS",
+      "lint_warnings": 11
+    },
+    {
+      "repository": "frontend",
+      "command": "npm run test:unit",
+      "result": "PASS",
+      "regular_tests": 1836,
+      "server_only_tests": 132,
+      "script_tests": 19
+    },
+    {
+      "repository": "course-api",
+      "command": "npm run db:migrate; npm run test:database",
+      "result": "PASS",
+      "tests": 17,
+      "database": "isolated loopback PostgreSQL 16.13"
+    },
+    {
+      "repository": "community-api",
+      "command": "npm run db:migrate; npm run test:database",
+      "result": "PASS",
+      "tests": 21,
+      "database": "isolated loopback PostgreSQL 16.13"
+    },
+    {
+      "repository": "frontend",
+      "command": "npm run db:migrate; npm run test:unit:db",
+      "result": "PASS",
+      "tests_per_version": 163,
+      "database_versions": [
+        "isolated loopback PostgreSQL 16.13",
+        "isolated loopback PostgreSQL 17.7"
+      ]
+    },
+    {
+      "repository": "course-api",
+      "command": "npm run db:migrations:roundtrip",
+      "result": "PASS",
+      "migrations": 17,
+      "additional_refusals": [
+        "0014 case collision",
+        "0016 status inspection audit",
+        "0016 event inspection audit"
+      ]
+    },
+    {
+      "repository": "community-api",
+      "command": "npm run db:migrations:roundtrip",
+      "result": "PASS",
+      "migrations": 9,
+      "additional_refusals": [
+        "0008 tombstones",
+        "0008 staged source rows",
+        "0008 apply phase/staged count",
+        "0008 gap placeholder"
+      ]
+    },
+    {
+      "repository": "course-api",
+      "command": "npm run contract:community:release-check",
+      "result": "PASS",
+      "fixtures": 11
+    },
+    {
+      "repository": "course-api",
+      "command": "node --import tsx scripts/verify-community-contract.mjs --external ../lash-her-community-api/contracts/course-enrollment/v1",
+      "result": "PASS"
+    },
+    {
+      "repository": "community-api",
+      "command": "COMMUNITY_RELEASE_REF=HEAD node scripts/check-vendored-course-contract.mjs ../lash-her-course-api --release",
+      "result": "PASS",
+      "files": 14,
+      "scope": "Local committed baseline only; not proof of publication"
+    },
+    {
+      "repository": "community-api",
+      "command": "node scripts/check-vendored-course-contract.mjs ../lash-her-course-api --release",
+      "result": "EXPECTED_FAIL",
+      "reason": "Pinned commit is not reachable from origin/main; local commits not pushed"
+    },
+    {
+      "repository": "course-api",
+      "command": "npm run build:production",
+      "result": "PASS"
+    },
+    {
+      "repository": "community-api",
+      "command": "npm run build:production",
+      "result": "PASS"
+    }
+  ],
+  "migration_provenance": {
+    "owner_confirmation": "Dardan confirmed no additional database/deployment targets and no application of these migrations elsewhere in the P0-04 chat.",
+    "existing_inventory": "P0-01 read-only Course dev/staging/prod inspection: through 0013, 0014-0016 pending. Community had no configured live database.",
+    "course_0014_committed_before": "90fe2b22939c39d49047420401cd7fd642201da4493eb87018b47e2c384a0c50",
+    "course_0014_reviewed": "3d25cf03adfaea40c87293c0329ade3ea275bd6e267b6e1db601887a987558e9",
+    "live_databases_modified": false
+  },
+  "remaining": [
+    "Dependency audits fail in all repositories; D-06 / G0 remains open",
+    "Commits and pinned contract not published; fresh remote CI required",
+    "Next.js build/browser tests, containers, Prometheus, deployed E2E and load certification not run",
+    "No fresh provider or shared database lineage checks; repeat preflight at staging release",
+    "Protected migration controls and environment/provider prerequisites remain downstream work"
+  ],
+  "local_initial_failures": [
+    "Sandbox IPC/socket/shared-memory restrictions; rerun with local access",
+    "Community test invocation lacked NODE_ENV=test; rerun with guard satisfied",
+    "Frontend local migration lacked sslmode=disable; corrected local URL",
+    "Frontend lint included ignored .tmp files; fixed lint configuration",
+    "Frontend DB tests failed two stale-clock fixtures; fixed and passed 163/163 on PG16 and PG17"
+  ],
+  "plan_copies_identical": true
+}

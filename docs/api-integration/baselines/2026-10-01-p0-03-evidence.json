@@ -1,0 +1,242 @@
+{
+  "date": "2026-10-01",
+  "task": "P0-03",
+  "scope": "Documentation registration; no live readiness certification",
+  "owner_confirmation": "User confirmed Dardan, with specialists consulted as needed, in this chat.",
+  "base_documentation_commits": {
+    "lash-her-frontend": "90eca099c1e3670cdef49ce4576aed756fbafa96",
+    "lash-her-course-api": "276eea0647917ea02d5465fb2bad9d9dae254537",
+    "lash-her-community-api": "352c77e4cf4e72b1cb47f43d33a24d787951e908"
+  },
+  "checks": {
+    "git_diff_check_all_repositories": "PASS",
+    "local_links_resolve": true,
+    "unique_task_gate_count": 59,
+    "dependencies_valid_and_acyclic": true,
+    "input_count": 30,
+    "all_inputs_have_accountable_owner_and_required_by_tasks": true,
+    "plan_copies_identical": true,
+    "plan_sha256": "f8c066a67ee7d03f16d64e4aaace3f322f51befd0e70e59e6e575e3e7a6fba83",
+    "preexisting_non_document_files": {
+      "lash-her-frontend": {
+        "verified_non_document_hashes": 6,
+        "unchanged": true
+      },
+      "lash-her-course-api": {
+        "verified_non_document_hashes": 68,
+        "unchanged": true
+      },
+      "lash-her-community-api": {
+        "verified_non_document_hashes": 71,
+        "unchanged": true
+      }
+    }
+  },
+  "inputs": {
+    "EXT-01": {
+      "parent": "D-05",
+      "decision_owner": "Dardan",
+      "required_by": ["P1-02"],
+      "state": "OPEN"
+    },
+    "EXT-02": {
+      "parent": "D-05",
+      "decision_owner": "Dardan",
+      "required_by": ["P1-02", "P6-05"],
+      "state": "OPEN"
+    },
+    "EXT-03": {
+      "parent": "D-05",
+      "decision_owner": "Dardan",
+      "required_by": ["P1-02", "P0-04", "P1-07"],
+      "state": "OPEN"
+    },
+    "EXT-04": {
+      "parent": "D-08",
+      "decision_owner": "Dardan",
+      "required_by": ["P0-04", "P1-05"],
+      "state": "OPEN"
+    },
+    "EXT-05": {
+      "parent": "D-05",
+      "decision_owner": "Dardan",
+      "required_by": ["P1-02", "P1-03"],
+      "state": "OPEN"
+    },
+    "EXT-06": {
+      "parent": "D-05",
+      "decision_owner": "Dardan",
+      "required_by": ["P1-04", "P1-05", "P1-07"],
+      "state": "OPEN"
+    },
+    "EXT-07": {
+      "parent": "D-05",
+      "decision_owner": "Dardan",
+      "required_by": ["P1-02", "P1-07", "P2-12"],
+      "state": "OPEN"
+    },
+    "EXT-08": {
+      "parent": "D-05",
+      "decision_owner": "Dardan",
+      "required_by": ["P1-08", "P6-03", "P6-05"],
+      "state": "OPEN"
+    },
+    "EXT-09": {
+      "parent": "D-05",
+      "decision_owner": "Dardan",
+      "required_by": ["P1-02", "P2-01", "P6-02"],
+      "state": "OPEN"
+    },
+    "EXT-10": {
+      "parent": "D-05",
+      "decision_owner": "Dardan",
+      "required_by": ["P1-02", "P2-01", "P4-03", "P6-02"],
+      "state": "OPEN"
+    },
+    "EXT-11": {
+      "parent": "D-05",
+      "decision_owner": "Dardan",
+      "required_by": ["P1-02", "P2-06", "P3-02", "P6-02"],
+      "state": "OPEN"
+    },
+    "EXT-12": {
+      "parent": "D-05",
+      "decision_owner": "Dardan",
+      "required_by": ["P3-01", "P3-02", "P3-05"],
+      "state": "OPEN"
+    },
+    "EXT-13": {
+      "parent": "D-05",
+      "decision_owner": "Dardan",
+      "required_by": ["P1-02", "P5-03"],
+      "state": "OPEN"
+    },
+    "EXT-14": {
+      "parent": "D-04",
+      "decision_owner": "Dardan",
+      "required_by": ["P1-02", "P4-02", "P4-07", "P4-08"],
+      "state": "OPEN"
+    },
+    "EXT-15": {
+      "parent": "D-03",
+      "decision_owner": "Dardan",
+      "required_by": ["P1-02", "P4-01", "P4-02", "P4-08"],
+      "state": "OPEN"
+    },
+    "EXT-16": {
+      "parent": "D-04",
+      "decision_owner": "Dardan",
+      "required_by": ["P4-08", "P6-02"],
+      "state": "OPEN"
+    },
+    "TAX-01": {
+      "parent": "D-03",
+      "decision_owner": "Dardan",
+      "required_by": ["P4-01", "P4-08"],
+      "state": "OPEN"
+    },
+    "TAX-02": {
+      "parent": "D-03",
+      "decision_owner": "Dardan",
+      "required_by": ["P4-01"],
+      "state": "OPEN"
+    },
+    "TAX-03": {
+      "parent": "D-03",
+      "decision_owner": "Dardan",
+      "required_by": ["P4-01"],
+      "state": "OPEN"
+    },
+    "TAX-04": {
+      "parent": "D-03",
+      "decision_owner": "Dardan",
+      "required_by": ["P4-01", "P4-06"],
+      "state": "OPEN"
+    },
+    "TAX-05": {
+      "parent": "D-03",
+      "decision_owner": "Dardan",
+      "required_by": ["P4-01", "P4-02"],
+      "state": "OPEN"
+    },
+    "TAX-06": {
+      "parent": "D-03",
+      "decision_owner": "Dardan",
+      "required_by": ["P4-01", "P4-03", "P4-06", "P4-08"],
+      "state": "OPEN"
+    },
+    "COST-01": {
+      "parent": "D-05",
+      "decision_owner": "Dardan",
+      "required_by": ["P1-02", "P6-05"],
+      "state": "OPEN"
+    },
+    "COST-02": {
+      "parent": "D-05",
+      "decision_owner": "Dardan",
+      "required_by": ["P1-02", "P6-05"],
+      "state": "OPEN"
+    },
+    "COST-03": {
+      "parent": "D-05",
+      "decision_owner": "Dardan",
+      "required_by": ["P1-02", "P6-05"],
+      "state": "OPEN"
+    },
+    "COST-04": {
+      "parent": "D-05",
+      "decision_owner": "Dardan",
+      "required_by": ["P1-02", "P6-05"],
+      "state": "OPEN"
+    },
+    "COST-05": {
+      "parent": "D-05",
+      "decision_owner": "Dardan",
+      "required_by": ["P1-02", "P6-05"],
+      "state": "OPEN"
+    },
+    "COST-06": {
+      "parent": "D-05",
+      "decision_owner": "Dardan",
+      "required_by": ["P1-02", "P6-05"],
+      "state": "OPEN"
+    },
+    "COST-07": {
+      "parent": "D-05",
+      "decision_owner": "Dardan",
+      "required_by": ["P1-02", "P6-05"],
+      "state": "OPEN"
+    },
+    "COST-08": {
+      "parent": "D-05",
+      "decision_owner": "Dardan",
+      "required_by": ["P1-02", "P6-05"],
+      "state": "OPEN"
+    }
+  },
+  "document_sha256": {
+    "API-INTEGRATION-EXECUTION.md": "43a6e355d518f6fa1d6a470a7e39aacf83d4c4b656f796d3ca20f58f0933dcf8",
+    "docs/api-integration/external-prerequisites.md": "a25e0bd1bfb7394f8f1af89c9ad6374789cde465e9dc383125a97e62a19a2866",
+    "API-INTEGRATION-PLAN.md": "f8c066a67ee7d03f16d64e4aaace3f322f51befd0e70e59e6e575e3e7a6fba83",
+    "/Users/dardan/workspace/lash-her-course-api/API-INTEGRATION-PLAN.md": "f8c066a67ee7d03f16d64e4aaace3f322f51befd0e70e59e6e575e3e7a6fba83",
+    "/Users/dardan/workspace/lash-her-community-api/API-INTEGRATION-PLAN.md": "f8c066a67ee7d03f16d64e4aaace3f322f51befd0e70e59e6e575e3e7a6fba83"
+  },
+  "validation_command": "python3 /tmp/validate-p0-03.py",
+  "not_run": [
+    "Application tests",
+    "Live provider/account queries",
+    "Database connections, tests or migrations",
+    "Deployment, push, provider configuration or purchasing"
+  ],
+  "remaining_blockers": [
+    "D-01",
+    "D-03",
+    "D-04",
+    "D-05",
+    "D-06",
+    "D-07",
+    "D-08"
+  ],
+  "next_task": "P0-04",
+  "gate_G0": "NOT_STARTED"
+}

@@ -77,6 +77,7 @@ const scenario = String.raw`
       payload: queued,
       providerIdempotencyKey: "product-confirmation:" + order.orderId,
       recipient: order.customerEmail,
+      now: new Date("2026-08-15T12:00:00.000Z"),
     }), false, "the provider idempotency key prevents duplicate enqueue");
     await assert.rejects(
       enqueueCustomerEmail({

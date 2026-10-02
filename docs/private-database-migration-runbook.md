@@ -4,6 +4,8 @@ This runbook describes how to safely verify, run, and record private PostgreSQL 
 
 Use this runbook for generated Drizzle migrations in `drizzle/`.
 
+For coordinated Course/Community integration releases, the [cross-repository migration policy](api-integration/migration-policy.md) additionally requires protected release jobs, pinned artifacts, environment locking, and staging evidence. The production command below is the job payload after those gates pass, not authorization for a local production run. These release controls remain to be implemented and verified in the integration tracker.
+
 ## Scope
 
 Private database migrations cover tables defined in `src/lib/private-db/schema.ts` and applied by `scripts/migrate-private-db.ts`.
@@ -125,7 +127,7 @@ Complete this before every staging or production migration:
 - [ ] Staging migration has completed successfully before production.
 - [ ] Post-migration smoke checks are ready.
 
-For migrations that touch operational data, verify the changed SQL creates or alters only the intended tables, indexes, constraints, and enum values. The committed journal currently continues through `0075_clammy_william_stryker`; never infer a target's state from that filename alone. `npm run db:check` is authoritative for whether that database matches the selected checkout.
+For migrations that touch operational data, verify the changed SQL creates or alters only the intended tables, indexes, constraints, and enum values. Read the selected checkout's `drizzle/meta/_journal.json` for its current chain; never infer a target's state from a filename alone. `npm run db:check` is authoritative for whether that database matches the selected checkout.
 
 ## Staging Procedure
 
