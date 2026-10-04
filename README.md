@@ -1,5 +1,7 @@
 # Lash Her by Nataliea
 
+> Service-booking cutover: new reservations now use Fresha. Existing bookings and payment recovery remain in this app. Follow the [Fresha cutover runbook](docs/fresha-cutover.md); historical new-booking instructions below no longer describe public entry points.
+
 Lash Her is a production Next.js app for a beauty and lash artistry business. It combines the public marketing site, product and training checkout, paid service booking, webhook handling, an operational PostgreSQL database, and an embedded Sanity Studio in one repository.
 
 The important architectural split is deliberate:

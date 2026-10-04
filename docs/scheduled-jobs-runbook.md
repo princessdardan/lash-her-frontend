@@ -1,5 +1,7 @@
 # Scheduled Jobs Runbook
 
+> Service-booking cutover: new reservations now use Fresha. Existing bookings and payment recovery remain in this app. Follow the [Fresha cutover runbook](fresha-cutover.md); historical new-booking instructions below no longer describe public entry points.
+
 `vercel.json` is the source of truth for scheduled routes and cadence. All eight jobs are `GET` handlers running on the Node.js runtime. Vercel invokes them with `Authorization: Bearer <CRON_SECRET>`; keep every secret server-only and record only sanitized counts/statuses. The repository does not declare a scheduler timezone, so use the cron expressions below rather than translating them to a local launch time.
 
 ## Required Authentication

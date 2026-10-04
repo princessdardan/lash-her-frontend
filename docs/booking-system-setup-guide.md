@@ -1,5 +1,7 @@
 # Booking System Setup Guide
 
+> Service-booking cutover: new reservations now use Fresha. Existing bookings and payment recovery remain in this app. Follow the [Fresha cutover runbook](fresha-cutover.md); historical new-booking instructions below no longer describe public entry points.
+
 Last verified: 2026-08-31
 
 This is the setup index for the current PostgreSQL-backed booking system. Public service catalog data, booking settings, offerings, schedules, resources, Calendar assignments, holds, appointments, and payment state are operational records in private PostgreSQL. Sanity is optional editorial content for public service detail pages and remains the content source for training programs; it is not the service-booking control plane.

@@ -29,7 +29,7 @@
 
 ## Code paths that matter
 
-- Public routes: `src/app/(site)`. Global shell/metadata: `src/app/layout.tsx` and `src/app/(site)/layout.tsx`. `/booking` is a legacy redirect shim; canonical booking pages are `/services/[slug]/booking`.
+- Public routes: `src/app/(site)`. Global shell/metadata: `src/app/layout.tsx` and `src/app/(site)/layout.tsx`. `/booking` and `/services/[slug]/booking` now redirect to Fresha. New availability/hold/direct-create HTTP routes return 410; existing payment/confirmation routes and historical reconciliation remain active. See `docs/fresha-cutover.md`.
 - All Sanity reads should go through `src/data/loaders.ts`; do not add a parallel data access layer.
 - Sanity clients are purpose-specific: read client in `src/sanity/lib/client.ts`, write client in `src/sanity/lib/write-client.ts`; private form/contact writes belong in PostgreSQL, not Sanity.
 - CMS block additions must be wired across schema, TypeScript shape/union (`src/types/index.ts`), GROQ projection (`src/data/loaders.ts`), React component, and `COMPONENT_REGISTRY` in `src/components/custom/layouts/block-renderer.tsx`.
@@ -40,7 +40,7 @@
 ## Project-specific constraints
 
 - Never store new PII, transaction history, payment tokens, or live form submissions in Sanity; write private records first, then send email as a non-blocking side effect.
-- Direct booking creation is intentionally disabled; appointment confirmation happens after secure payment reconciliation.
+- New public service reservations are unconditionally closed in route exports. Existing eligible holds may still finish payment and reconcile; keep Square/Calendar dependencies operational. Do not restore legacy availability/hold handlers as route exports.
 - Tailwind v4 is CSS-first in `src/app/globals.css` with `@theme`; there is no `tailwind.config.*`.
 - React Compiler is enabled in `next.config.ts`; avoid patterns that depend on mutation during render.
 - Redirects in `next.config.ts`: `/homepage` -> `/`, `/training` -> `/training-programs`.

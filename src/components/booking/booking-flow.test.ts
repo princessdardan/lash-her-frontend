@@ -32,10 +32,6 @@ const bookingPageSource = readFileSync(
   new URL("../../app/(site)/booking/page.tsx", import.meta.url),
   "utf8",
 );
-const bookingShimSource = readFileSync(
-  new URL("../../app/(site)/booking/booking-shim.ts", import.meta.url),
-  "utf8",
-);
 const productCardSource = readFileSync(
   new URL("../commerce/product-card.tsx", import.meta.url),
   "utf8",
@@ -69,17 +65,6 @@ describe("booking service flow contract", () => {
       loadersSource,
       /addOns\[\]\{ _key, name, description, price, image\{ asset, hotspot, crop, alt \} \}/,
     );
-  });
-
-  it("initializes service offering redirects through the booking shim helper", () => {
-    assert.match(bookingPageSource, /resolveBookingShim\(await searchParams/);
-    assert.match(
-      bookingPageSource,
-      /if \(resolution\.kind === "notFound"\) \{[\s\S]*?notFound\(\)/,
-    );
-    assert.match(bookingPageSource, /permanentRedirect\(resolution\.href\)/);
-    assert.match(bookingShimSource, /hasBookableServiceSlug/);
-    assert.match(bookingShimSource, /buildServiceBookingUrl/);
   });
 
   it("skips the service selection step for explicit service links", () => {
@@ -429,7 +414,7 @@ describe("booking service flow contract", () => {
   it("service listing booking links use the catalog booking href", () => {
     assert.match(
       providerServiceTabsSource,
-      /<Link href=\{service\.bookingHref\}>Book<\/Link>/,
+      /<a href=\{service\.bookingHref\}>Book on Fresha<\/a>/,
     );
   });
 
@@ -667,22 +652,6 @@ describe("booking service flow contract", () => {
       error.fieldErrors.selectedAddOnKey,
       "That add-on is no longer available. Please review your selection.",
     );
-  });
-
-  it("booking page copy sends customers to payment after service details", () => {
-    const serviceBookingPageSource = readFileSync(
-      new URL(
-        "../../app/(site)/services/[slug]/booking/page.tsx",
-        import.meta.url,
-      ),
-      "utf8",
-    );
-
-    assert.match(
-      serviceBookingPageSource,
-      /Select your appointment time, then choose add-ons and enter your\s*service details before payment\./,
-    );
-    assert.doesNotMatch(serviceBookingPageSource, /confirm your details/i);
   });
 
   it("payment page owns contact, marketing, payment, consent, and Square card entry", () => {

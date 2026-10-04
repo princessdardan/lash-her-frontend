@@ -1,5 +1,7 @@
 "use client";
 
+import { FRESHA_BOOKING_URL } from "@/lib/booking/fresha";
+
 import Link from "next/link";
 import { AlertTriangle, Home, RefreshCw } from "lucide-react";
 
@@ -7,14 +9,14 @@ import { FallbackHeader } from "@/components/custom/layouts/fallback-header";
 import { Button } from "@/components/ui/button";
 
 const styles = {
-  container:
-    "min-h-screen bg-background flex items-center justify-center p-4",
+  container: "min-h-screen bg-background flex items-center justify-center p-4",
   content: "max-w-2xl mx-auto text-center space-y-8",
   textSection: "space-y-4",
   headingError: "text-8xl font-heading text-lh-accent select-none",
   headingContainer: "relative",
   pageTitle: "text-4xl font-heading text-foreground mb-4",
-  description: "text-lg text-lh-muted max-w-md mx-auto leading-relaxed font-body",
+  description:
+    "text-lg text-lh-muted max-w-md mx-auto leading-relaxed font-body",
   illustrationContainer: "flex justify-center py-8",
   illustration: "relative animate-pulse",
   errorCircle:
@@ -51,8 +53,8 @@ export default function GlobalError({ error, reset }: GlobalErrorProps) {
             },
             ctaButton: [
               {
-                label: "Book Now",
-                href: "https://www.fresha.com/a/lash-her-by-nataliea-toronto-646-oakwood-avenue-tvrir5sx",
+                label: "Book on Fresha",
+                href: FRESHA_BOOKING_URL,
                 isExternal: true,
               },
             ],
@@ -95,7 +97,12 @@ export default function GlobalError({ error, reset }: GlobalErrorProps) {
                 </span>
               </Button>
 
-              <Button asChild variant="ghost" size="lg" className={styles.outlineButton}>
+              <Button
+                asChild
+                variant="ghost"
+                size="lg"
+                className={styles.outlineButton}
+              >
                 <Link href="/">
                   <span className={styles.buttonContent}>
                     <Home className={styles.buttonIcon} />

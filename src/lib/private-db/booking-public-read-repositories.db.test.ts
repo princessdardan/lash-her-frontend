@@ -9,6 +9,7 @@ import { Pool } from "pg";
 import { createDrizzleBookingAvailabilityRepository } from "./booking-availability-repository";
 import { createDrizzleOperationalBookingConfigurationRepository } from "./booking-configuration-repository";
 import { createPrivateDbPoolConfig } from "./pool-config";
+import { loadPublicServiceCatalogOfferings } from "./public-service-catalog-repository";
 import {
   bookingBusinessSettings,
   bookingCalendarConnections,
@@ -41,6 +42,82 @@ afterEach(async () => {
 after(async () => {
   await pool?.end();
 });
+
+test(
+  "Fresha catalog retains listings without Calendar, resource, or Square readiness",
+  { skip: skipReason },
+  async () => {
+    const fixture = await seedConfigurationFixture();
+    const database = requireDb();
+    await database
+      .update(bookingResources)
+      .set({ status: "disabled" })
+      .where(eq(bookingResources.id, fixture.primaryResourceId));
+    await database
+      .update(bookingCalendarConnections)
+      .set({ status: "disabled" })
+      .where(eq(bookingCalendarConnections.id, fixture.writeConnectionId));
+    await database
+      .update(bookingProviders)
+      .set({
+        squareTeamMemberId: null,
+        squareTeamMemberStatus: null,
+        squareTeamMemberVerifiedAt: null,
+      })
+      .where(eq(bookingProviders.primaryResourceId, fixture.primaryResourceId));
+
+    const read = async () =>
+      (
+        await loadPublicServiceCatalogOfferings({
+          db: database,
+          now: fixture.now,
+        })
+      ).filter((row) => row.serviceSlug === fixture.servicePublicSlug);
+    const rows = await read();
+    assert.deepEqual(
+      rows.map((row) => row.id),
+      [fixture.activeOfferingId],
+    );
+    assert.equal(rows[0].publicTitle, "Provider-specific public title");
+    assert.equal(rows[0].hasEditorialDetail, true);
+    assert.equal("calendar" in rows[0], false);
+    assert.equal("resourceId" in rows[0], false);
+    assert.equal("squareTeamMemberId" in rows[0].provider, false);
+    const historical =
+      createDrizzleOperationalBookingConfigurationRepository(database);
+    assert.deepEqual(
+      await historical.listActiveOfferingsBySanityServiceId({
+        now: fixture.now,
+        sanityServiceId: fixture.sanityServiceId,
+      }),
+      [],
+    );
+
+    await database
+      .update(bookingServiceOfferings)
+      .set({ effectiveUntil: fixture.now })
+      .where(eq(bookingServiceOfferings.id, fixture.activeOfferingId));
+    assert.deepEqual(await read(), []);
+    await database
+      .update(bookingServiceOfferings)
+      .set({ effectiveUntil: null })
+      .where(eq(bookingServiceOfferings.id, fixture.activeOfferingId));
+    await database
+      .update(bookingServices)
+      .set({ status: "disabled" })
+      .where(eq(bookingServices.publicSlug, fixture.servicePublicSlug));
+    assert.deepEqual(await read(), []);
+    await database
+      .update(bookingServices)
+      .set({ status: "active" })
+      .where(eq(bookingServices.publicSlug, fixture.servicePublicSlug));
+    await database
+      .update(bookingProviders)
+      .set({ status: "disabled" })
+      .where(eq(bookingProviders.primaryResourceId, fixture.primaryResourceId));
+    assert.deepEqual(await read(), []);
+  },
+);
 
 test(
   "configuration repository filters active/effective offerings and hydrates defaults, add-ons, and write calendar",

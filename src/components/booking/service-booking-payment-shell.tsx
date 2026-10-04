@@ -1,5 +1,7 @@
 "use client";
 
+import { FRESHA_BOOKING_URL } from "@/lib/booking/fresha";
+
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -73,7 +75,9 @@ export function ServiceBookingPaymentShell({
   const handleExpired = useCallback(() => {
     if (!isMountedRef.current) return;
     setIsExpired(true);
-    setErrorMessage("Hold expired, choose another time.");
+    setErrorMessage(
+      "Your reservation has expired. Book a new appointment on Fresha.",
+    );
   }, []);
 
   const handleSessionUpdate = useCallback(
@@ -111,10 +115,10 @@ export function ServiceBookingPaymentShell({
     <section className="flex flex-col gap-8 lg:flex-row">
       <section className="min-w-0 flex-1 rounded-xl border border-lh-line bg-white p-6">
         <Link
-          href={`/services/${session.serviceSlug}/booking`}
+          href={FRESHA_BOOKING_URL}
           className="mb-6 inline-flex text-lh-muted hover:text-black"
         >
-          ← Back to details
+          New appointments on Fresha
         </Link>
         <p className="eyebrow-label mb-2">Secure payment</p>
         <h1 className="section-heading mb-4">Pay and confirm your booking</h1>
@@ -126,12 +130,10 @@ export function ServiceBookingPaymentShell({
         {isExpired ? (
           <div className="rounded-[18px] border border-lh-line bg-lh-neutral-2 p-5 text-center">
             <p className="mb-4 font-heading text-lg uppercase tracking-[0.12em] text-lh-accent">
-              Hold expired, choose another time
+              Your reservation has expired
             </p>
             <Button asChild variant="outline">
-              <Link href={`/services/${session.serviceSlug}/booking`}>
-                Choose another time
-              </Link>
+              <Link href={FRESHA_BOOKING_URL}>Book on Fresha</Link>
             </Button>
           </div>
         ) : (

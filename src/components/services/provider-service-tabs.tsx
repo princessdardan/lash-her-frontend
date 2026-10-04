@@ -172,7 +172,7 @@ export function ProviderServiceTabs({
                         className="w-full rounded-full px-5 text-sm sm:min-w-28 sm:px-7"
                         size="lg"
                       >
-                        <Link href={service.bookingHref}>Book</Link>
+                        <a href={service.bookingHref}>Book on Fresha</a>
                       </Button>
                       {service.detailHref ? (
                         <Button

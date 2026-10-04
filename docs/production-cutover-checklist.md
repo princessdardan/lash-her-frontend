@@ -1,5 +1,7 @@
 # Production Cutover Checklist
 
+> Service-booking cutover: new reservations now use Fresha. Existing bookings and payment recovery remain in this app. Follow the [Fresha cutover runbook](fresha-cutover.md); historical new-booking instructions below no longer describe public entry points.
+
 Purpose: guide launch-day cutover from approved staging to production for the Lash Her Next.js app, Sanity content lake, private PostgreSQL database, and connected providers.
 
 This runbook assumes option A is approved: the frozen `staging-2026-05-10` Sanity dataset is the complete source of truth and will fully replace the `production` dataset in Sanity project `3auncj84`.

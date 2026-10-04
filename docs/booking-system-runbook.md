@@ -1,5 +1,7 @@
 # Booking System Runbook
 
+> Service-booking cutover: new reservations now use Fresha. Existing bookings and payment recovery remain in this app. Follow the [Fresha cutover runbook](fresha-cutover.md); historical new-booking instructions below no longer describe public entry points.
+
 Last verified: 2026-08-31
 
 Use this runbook to operate and troubleshoot the current PostgreSQL-backed booking, payment, and Calendar flows. The canonical customer journey is operational service selection, a private resource hold, an opaque payment handoff, Square direct `CHARGE_AND_STORE`, captured-payment persistence, authoritative appointment creation, and Google Calendar projection through the provider primary resource.

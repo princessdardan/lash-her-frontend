@@ -1,17 +1,16 @@
 import type { ReactElement } from "react";
 
 import { ProviderServiceTabs } from "@/components/services/provider-service-tabs";
-import { loadPublicOperationalOfferings } from "@/lib/booking/operations/public-offerings";
+import { loadPublicServiceCatalogOfferings } from "@/lib/private-db/public-service-catalog-repository";
+import { FRESHA_BOOKING_URL } from "@/lib/booking/fresha";
 import { buildPublicProviderServiceCatalog } from "@/lib/booking/operations/public-service-catalog";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function ServicesPage(): Promise<ReactElement> {
-  const offerings = await loadPublicOperationalOfferings({
-    mode: "operational",
-  });
-  const catalog = buildPublicProviderServiceCatalog(offerings ?? []);
+  const offerings = await loadPublicServiceCatalogOfferings();
+  const catalog = buildPublicProviderServiceCatalog(offerings);
   const initialProviderSlug = catalog.defaultProviderSlug;
 
   return (
@@ -22,7 +21,9 @@ export default async function ServicesPage(): Promise<ReactElement> {
             Services
           </h1>
           <p className="section-description text-center text-lg">
-            Select a provider, then choose a service to book your appointment.
+            Explore our providers and services. Appointment availability and
+            final booking details are confirmed on Fresha. Existing bookings
+            remain valid.
           </p>
         </header>
 
@@ -31,6 +32,12 @@ export default async function ServicesPage(): Promise<ReactElement> {
             <p className="mx-auto max-w-md text-lh-muted">
               We are currently updating our services. Please check back later.
             </p>
+            <a
+              href={FRESHA_BOOKING_URL}
+              className="mt-6 inline-flex text-lh-primary underline"
+            >
+              Book on Fresha
+            </a>
           </section>
         ) : (
           <section className="mx-auto max-w-4xl">

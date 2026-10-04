@@ -52,40 +52,13 @@ const helperScript = String.raw`
     };
   }
 
-  function runScenario(overrides = {}) {
-    const releasedHolds = [];
-    const squareCheckouts = [];
-    const fetchedReferences = [];
-    const fetchedPaymentSessionReferences = [];
+  function runScenario(hold = createHold()) {
+    const reads = [];
     const handler = createBookingCheckoutPostHandler({
-      createSquareServiceBookingCheckout: async (input) => {
-        squareCheckouts.push(input);
-        assert.ok(!("validateHelcimPayment" in input));
-        return {
-          checkoutUrl: "https://square.link/u/service-checkout",
-          holdReference: input.hold.publicReference,
-          orderId: "lh-sq-order-1",
-          reused: false,
-          squareOrderId: "square-order-1",
-          squarePaymentLinkId: "square-payment-link-1",
-        };
-      },
-      getAppointmentHoldByPaymentSessionReference: async (reference) => {
-        fetchedPaymentSessionReferences.push(reference);
-        return null;
-      },
-      getAppointmentHoldByPublicReference: async (reference) => {
-        fetchedReferences.push(reference);
-        return createHold();
-      },
-      releaseHeldAppointmentHold: async (input) => {
-        releasedHolds.push(input);
-        return createHold({ id: input.holdId, state: "released", releasedAt: input.now });
-      },
-      ...overrides,
+      getAppointmentHoldByPaymentSessionReference: async (reference) => { reads.push(reference); return hold; },
+      getAppointmentHoldByPublicReference: async (reference) => { reads.push(reference); return hold; },
     });
-
-    return { fetchedPaymentSessionReferences, fetchedReferences, handler, releasedHolds, squareCheckouts };
+    return { handler, reads };
   }
 
   async function parseJson(response) {
@@ -93,249 +66,57 @@ const helperScript = String.raw`
   }
 `;
 
-test("booking checkout starts from payment session reference", () => {
+test("legacy checkout refuses new payment links without modifying the hold", () => {
   runRouteScenario(`
-    const fetchedPaymentSessionReferences = [];
-    const { fetchedReferences, handler, squareCheckouts } = runScenario({
-      getAppointmentHoldByPaymentSessionReference: async (reference) => {
-        fetchedPaymentSessionReferences.push(reference);
-        return createHold({ paymentSessionReference: "pay_sess_1" });
-      },
-      getAppointmentHoldByPublicReference: async () => null,
-    });
-
-    const response = await handler(createRequest({ paymentSessionReference: "pay_sess_1" }));
-    const body = await parseJson(response);
-
-    assert.equal(response.status, 200);
-    assert.equal(body.checkoutUrl, "https://square.link/u/service-checkout");
-    assert.deepEqual(fetchedPaymentSessionReferences, ["pay_sess_1"]);
-    assert.deepEqual(fetchedReferences, []);
-    assert.equal(squareCheckouts.length, 1);
-    assert.equal(squareCheckouts[0].hold.paymentSessionReference, "pay_sess_1");
+    const hold = createHold();
+    const before = structuredClone(hold);
+    const { handler } = runScenario(hold);
+    const response = await handler(createRequest({ paymentSessionReference: "existing-session" }));
+    assert.equal(response.status, 410);
+    assert.equal((await response.json()).code, "SERVICE_BOOKING_MOVED");
+    assert.deepEqual(hold, before);
   `);
 });
 
-test("booking checkout returns a Square hosted checkout URL for a held deposit appointment", () => {
+test("legacy checkout retrieves an existing eligible link without provider calls or writes", () => {
   runRouteScenario(`
-    const { fetchedReferences, handler, squareCheckouts } = runScenario();
-
-    const response = await handler(createRequest({ holdReference: " hold_public_1 " }));
-    const body = await parseJson(response);
-
-    assert.equal(response.status, 200);
-    assert.deepEqual(body, {
-      checkoutUrl: "https://square.link/u/service-checkout",
-      holdReference: "hold_public_1",
-      orderId: "lh-sq-order-1",
-      paymentProvider: "square",
-      reused: false,
-      squareOrderId: "square-order-1",
-      squarePaymentLinkId: "square-payment-link-1",
-    });
-    assert.deepEqual(fetchedReferences, ["hold_public_1"]);
-    assert.equal(squareCheckouts.length, 1);
-    assert.equal(squareCheckouts[0].hold.id, "hold-internal-1");
-    assert.equal(squareCheckouts[0].hold.publicReference, "hold_public_1");
-    assert.ok(squareCheckouts[0].now instanceof Date);
+    const hold = createHold({ state: "payment_pending", paymentProvider: "square", squarePaymentLinkUrl: "https://square.link/u/existing", squarePaymentLinkId: "link-1", checkoutOrderPublicId: "order-1", squareOrderId: "square-1" });
+    const before = structuredClone(hold);
+    globalThis.fetch = async () => { throw new Error("Provider calls forbidden"); };
+    const { handler, reads } = runScenario(hold);
+    for (const body of [{ holdReference: "public-reference" }, { paymentSessionReference: "private-session" }]) {
+      const response = await handler(createRequest(body));
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("cache-control"), "no-store");
+      assert.deepEqual(await response.json(), { checkoutUrl: "https://square.link/u/existing", holdReference: hold.publicReference, orderId: "order-1", paymentProvider: "square", reused: true, squareOrderId: "square-1", squarePaymentLinkId: "link-1" });
+    }
+    assert.deepEqual(reads, ["public-reference", "private-session"]);
+    assert.deepEqual(hold, before);
   `);
 });
 
-test("booking checkout forwards the request for Square mock-mode controls", () => {
+test("legacy checkout rejects missing, expired, and terminal holds", () => {
   runRouteScenario(`
-    const { handler, squareCheckouts } = runScenario({
-      createSquareServiceBookingCheckout: async (input) => {
-        squareCheckouts.push(input);
-        return {
-          checkoutUrl: "http://localhost:3000/api/booking/square/return?orderId=lh-sq-order-1&paymentId=mock-square-payment-1",
-          holdReference: input.hold.publicReference,
-          orderId: "lh-sq-order-1",
-          reused: false,
-          squareOrderId: "mock-square-order-1",
-          squarePaymentLinkId: "mock-square-payment-link-1",
-        };
-      },
-    });
-
-    const request = createRequest({ holdReference: "hold_public_1" });
-    const response = await handler(request);
-    const body = await parseJson(response);
-
-    assert.equal(response.status, 200);
-    assert.equal(body.checkoutUrl, "http://localhost:3000/api/booking/square/return?orderId=lh-sq-order-1&paymentId=mock-square-payment-1");
-    assert.equal(squareCheckouts[0].request, request);
-    assert.equal("validateHelcimPayment" in squareCheckouts[0], false);
+    for (const hold of [null, createHold({ expiresAt: new Date(0) }), createHold({ state: "payment_pending", expiresAt: new Date(0) }), createHold({ state: "booked" }), createHold({ state: "released" })]) {
+      const { handler } = runScenario(hold);
+      assert.equal((await handler(createRequest({ holdReference: "old" }))).status, 409);
+    }
+    for (const hold of [createHold({ state: "payment_pending" }), createHold({ offeringSnapshot: {} })]) {
+      const { handler } = runScenario(hold);
+      const before = structuredClone(hold);
+      assert.equal((await handler(createRequest({ holdReference: "old" }))).status, 410);
+      assert.deepEqual(hold, before);
+    }
   `);
 });
 
-test("booking checkout uses the immutable full-payment hold snapshot for Square checkout", () => {
+test("legacy checkout validates reference shape before reading the database", () => {
   runRouteScenario(`
-    const { handler, squareCheckouts } = runScenario({
-      getAppointmentHoldByPublicReference: async () => createHold({
-        offeringSnapshot: {
-          title: "Classic Fill",
-          fullPrice: 150,
-          currency: "CAD",
-          selectedPayment: {
-            amount: 150,
-            description: "Classic Fill full payment",
-            purpose: "appointment_full",
-            sku: "BOOKING-FULL",
-          },
-        },
-      }),
-    });
-
-    const response = await handler(createRequest({
-      holdReference: "hold_public_1",
-      paymentOption: "deposit",
-    }));
-
-    assert.equal(response.status, 200);
-    assert.equal(squareCheckouts.length, 1);
-    assert.equal(squareCheckouts[0].hold.offeringSnapshot.selectedPayment.amount, 150);
-    assert.equal(squareCheckouts[0].hold.offeringSnapshot.selectedPayment.purpose, "appointment_full");
-  `);
-});
-
-test("booking checkout supports custom partial hold snapshots for Square checkout", () => {
-  runRouteScenario(`
-    const { handler, squareCheckouts } = runScenario({
-      getAppointmentHoldByPublicReference: async () => createHold({
-        offeringSnapshot: {
-          title: "Classic Fill",
-          fullPrice: 150,
-          currency: "CAD",
-          selectedPayment: {
-            amount: 100,
-            description: "Classic Fill custom partial payment",
-            purpose: "appointment_custom_partial",
-            sku: "BOOKING-CUSTOM-PARTIAL",
-          },
-        },
-      }),
-    });
-
-    const response = await handler(createRequest({
-      holdReference: "hold_public_1",
-      paymentOption: "full",
-      customAmount: 1,
-    }));
-
-    assert.equal(response.status, 200);
-    assert.equal(squareCheckouts.length, 1);
-    assert.equal(squareCheckouts[0].hold.offeringSnapshot.selectedPayment.amount, 100);
-    assert.equal(squareCheckouts[0].hold.offeringSnapshot.selectedPayment.purpose, "appointment_custom_partial");
-  `);
-});
-
-test("booking checkout rejects holds without an immutable payment selection before Square checkout", () => {
-  runRouteScenario(`
-    const { handler, releasedHolds, squareCheckouts } = runScenario({
-      getAppointmentHoldByPublicReference: async () => createHold({
-        offeringSnapshot: {
-          title: "Classic Fill",
-          fullPrice: 150,
-          currency: "CAD",
-        },
-      }),
-    });
-
-    const response = await handler(createRequest({ holdReference: "hold_public_1" }));
-    const responseBody = await parseJson(response);
-
-    assert.equal(response.status, 400);
-    assert.deepEqual(responseBody, { error: "Booking payment is not configured" });
-    assert.equal(squareCheckouts.length, 0);
-    assert.equal(releasedHolds.length, 1);
-    assert.equal(releasedHolds[0].holdId, "hold-internal-1");
-    assert.ok(releasedHolds[0].now instanceof Date);
-  `);
-});
-
-test("booking checkout reuses active pending Square checkouts for quick retry", () => {
-  runRouteScenario(`
-    const { handler, squareCheckouts } = runScenario({
-      createSquareServiceBookingCheckout: async (input) => {
-        squareCheckouts.push(input);
-        return {
-          checkoutUrl: "https://square.link/u/retry-checkout",
-          holdReference: input.hold.publicReference,
-          orderId: "lh-sq-order-retry",
-          reused: true,
-          squareOrderId: "square-order-retry",
-          squarePaymentLinkId: "square-payment-link-retry",
-        };
-      },
-      getAppointmentHoldByPublicReference: async () => createHold({
-        state: "payment_pending",
-      }),
-    });
-
-    const response = await handler(createRequest({ holdReference: "hold_public_1" }));
-    const body = await parseJson(response);
-
-    assert.equal(response.status, 200);
-    assert.equal(body.checkoutUrl, "https://square.link/u/retry-checkout");
-    assert.equal(body.reused, true);
-    assert.equal(squareCheckouts.length, 1);
-    assert.equal(squareCheckouts[0].hold.state, "payment_pending");
-  `);
-});
-
-test("booking checkout rejects expired or already-used holds before Square checkout", () => {
-  runRouteScenario(`
-    const { handler, squareCheckouts } = runScenario({
-      getAppointmentHoldByPublicReference: async () => createHold({
-        expiresAt: new Date(Date.now() - 1000),
-      }),
-    });
-
-    const response = await handler(createRequest({ holdReference: "hold_public_1" }));
-    const body = await parseJson(response);
-
-    assert.equal(response.status, 409);
-    assert.deepEqual(body, { error: "Booking hold is no longer available" });
-    assert.equal(squareCheckouts.length, 0);
-  `);
-});
-
-test("booking checkout returns conflict if Square persistence loses the hold race", () => {
-  runRouteScenario(`
-    const { handler, squareCheckouts } = runScenario({
-      createSquareServiceBookingCheckout: async (input) => {
-        squareCheckouts.push(input);
-        throw new Error("Booking hold is no longer available");
-      },
-    });
-
-    const response = await handler(createRequest({ holdReference: "hold_public_1" }));
-    const body = await parseJson(response);
-
-    assert.equal(response.status, 409);
-    assert.equal(squareCheckouts.length, 1);
-    assert.deepEqual(body, { error: "Booking hold is no longer available" });
-  `);
-});
-
-test("booking checkout returns generic failure when Square checkout setup fails", () => {
-  runRouteScenario(`
-    const { handler, releasedHolds, squareCheckouts } = runScenario({
-      createSquareServiceBookingCheckout: async (input) => {
-        squareCheckouts.push(input);
-        throw new Error("Square unavailable");
-      },
-    });
-
-    const response = await handler(createRequest({ holdReference: "hold_public_1" }));
-    const body = await parseJson(response);
-
-    assert.equal(response.status, 400);
-    assert.equal(squareCheckouts.length, 1);
-    assert.deepEqual(body, { error: "Unable to start booking checkout" });
-    assert.equal(releasedHolds.length, 1);
-    assert.equal(releasedHolds[0].holdId, "hold-internal-1");
-    assert.ok(releasedHolds[0].now instanceof Date);
+    const { handler, reads } = runScenario();
+    for (const body of ["{", {}, { holdReference: "one", paymentSessionReference: "two" }]) {
+      assert.equal((await handler(createRequest(body))).status, 400);
+    }
+    assert.deepEqual(reads, []);
   `);
 });
 

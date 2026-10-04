@@ -1,29 +1,11 @@
-import { notFound, permanentRedirect } from "next/navigation";
-import { loadPublicOperationalOfferings } from "@/lib/booking/operations/public-offerings";
-import { resolveBookingShim } from "./booking-shim";
+import { redirect } from "next/navigation";
+import { FRESHA_BOOKING_URL } from "@/lib/booking/fresha";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export default async function BookingPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const resolution = await resolveBookingShim(await searchParams, {
-    hasBookableServiceSlug: async (slug) => {
-      const offerings = await loadPublicOperationalOfferings({
-        mode: "operational",
-        servicePublicSlug: slug,
-      });
-
-      return Boolean(offerings?.length);
-    },
-  });
-
-  if (resolution.kind === "notFound") {
-    notFound();
-  }
-
-  permanentRedirect(resolution.href);
+// Deliberately ignore all query parameters, including private session references.
+// This page-level redirect leaves payment and confirmation child routes intact.
+export default function ServiceBookingEntryPage() {
+  redirect(FRESHA_BOOKING_URL);
 }

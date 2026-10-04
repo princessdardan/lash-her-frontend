@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import type { OperationalBookingConfigurationRepository } from "@/lib/private-db/booking-configuration-repository";
@@ -166,35 +165,6 @@ test("dual-mode global catalog keeps ready V2 and true V1 paths but hides unheal
     catalog.offerings?.map((offering) => offering.offeringKey),
     ["classic-fill-nataliea"],
   );
-});
-
-test("canonical booking pages resolve operational offerings without a Sanity catalog read", () => {
-  const bookingPage = readFileSync(
-    new URL("../../../app/(site)/booking/page.tsx", import.meta.url),
-    "utf8",
-  );
-  const serviceBookingPage = readFileSync(
-    new URL(
-      "../../../app/(site)/services/[slug]/booking/page.tsx",
-      import.meta.url,
-    ),
-    "utf8",
-  );
-
-  assert.match(bookingPage, /loadPublicOperationalOfferings\(\{/);
-  assert.match(bookingPage, /mode: "operational"/);
-  assert.match(bookingPage, /servicePublicSlug: slug/);
-  assert.match(bookingPage, /permanentRedirect\(resolution\.href\)/);
-  assert.doesNotMatch(bookingPage, /getBookableServiceBySlug|loaders\./);
-  assert.match(
-    serviceBookingPage,
-    /loadPublicOperationalOfferings\(\{\s*mode: "operational",\s*servicePublicSlug: slug,\s*\}\)/,
-  );
-  assert.match(serviceBookingPage, /offerings=\{offerings\}/);
-  assert.match(serviceBookingPage, /loadOperationalBookingUiSettings\(\)/);
-  assert.doesNotMatch(serviceBookingPage, /getBookingSettings|loaders\./);
-  assert.match(serviceBookingPage, /export const dynamic = "force-dynamic"/);
-  assert.match(serviceBookingPage, /export const revalidate = 0/);
 });
 
 function createRepository(

@@ -1,10 +1,10 @@
+import { FRESHA_BOOKING_URL } from "../src/lib/booking/fresha";
 import { test, expect, type TestInfo } from "@playwright/test";
-import { config } from "dotenv";
 import { Pool } from "pg";
 
 import { createPrivateDbPoolConfig } from "../src/lib/private-db/pool-config";
 
-config({ path: [".env.local", ".env"] });
+import { getAdminCalendarE2EDatabaseUrl } from "./support/admin-calendar-e2e-config";
 
 declare global {
   interface Window {
@@ -27,7 +27,7 @@ function createTestReferences(testInfo: TestInfo) {
   return { paymentSessionReference, publicReference, paymentPageUrl };
 }
 
-test("service booking redirects to dedicated payment page and mounts Square container", async ({
+test("preexisting service payment session remains usable after the Fresha cutover", async ({
   page,
 }, testInfo) => {
   const { paymentSessionReference, publicReference, paymentPageUrl } =
@@ -41,10 +41,10 @@ test("service booking redirects to dedicated payment page and mounts Square cont
     return;
   }
 
-  const databaseUrl = process.env.DATABASE_URL;
+  const databaseUrl = getAdminCalendarE2EDatabaseUrl();
 
   if (!databaseUrl || databaseUrl.length === 0) {
-    test.skip(true, "DATABASE_URL is not configured");
+    test.skip(true, "Isolated TEST_DATABASE_URL is not configured");
     return;
   }
 
@@ -55,7 +55,7 @@ test("service booking redirects to dedicated payment page and mounts Square cont
     await pool.query("SELECT 1");
   } catch {
     await pool.end();
-    test.skip(true, "DATABASE_URL is not reachable");
+    test.skip(true, "Isolated TEST_DATABASE_URL is not reachable");
     return;
   }
 
@@ -140,38 +140,6 @@ test("service booking redirects to dedicated payment page and mounts Square cont
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => {
     pageErrors.push(error.message);
-  });
-
-  await page.route("**/api/booking/availability?**", async (route) => {
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        slots: [{ start: SLOT_START, end: SLOT_END }],
-      }),
-    });
-  });
-
-  await page.route("**/api/booking/holds", async (route) => {
-    const body = await route.request().postDataJSON();
-    expect(body.name).toBeUndefined();
-    expect(body.email).toBeUndefined();
-    expect(body.phone).toBeUndefined();
-    expect(body.paymentOption).toBeUndefined();
-
-    await route.fulfill({
-      status: 201,
-      contentType: "application/json",
-      body: JSON.stringify({
-        hold: {
-          paymentSessionReference,
-          paymentPageUrl: paymentPageUrl,
-          expiresAt: "2030-07-01T23:10:00.000Z",
-          start: SLOT_START,
-          end: SLOT_END,
-          service: { slug: SERVICE_SLUG, title: "Lash Fill" },
-        },
-      }),
-    });
   });
 
   await page.route("**/api/booking/square/config", async (route) => {
@@ -267,20 +235,7 @@ test("service booking redirects to dedicated payment page and mounts Square cont
         }),
       );
     });
-    await page.goto(`/services/${SERVICE_SLUG}/booking`);
-
-    const timeStr = new Intl.DateTimeFormat("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-      timeZone: "America/Toronto",
-    }).format(new Date(SLOT_START));
-    await page.getByRole("button", { name: timeStr }).click();
-
-    await page.getByRole("button", { name: /continue$/i }).click();
-    await expect(
-      page.getByRole("heading", { name: /appointment details/i }),
-    ).toBeVisible();
-    await page.getByRole("button", { name: /continue to payment/i }).click();
+    await page.goto(paymentPageUrl);
 
     await expect(page).toHaveURL(
       new RegExp(
@@ -351,6 +306,23 @@ test("service booking redirects to dedicated payment page and mounts Square cont
       page.getByText(/Missing #square-charge-card-container|was not found/i),
     ).toHaveCount(0);
     await expect(page).toHaveURL(/\/booking\/confirmation/);
+
+    // The mocked browser confirmation does not mutate this isolated hold.
+    // Expire it to exercise the actual server-rendered recovery screen as well.
+    await pool.query(
+      "UPDATE appointment_holds SET expires_at = $1 WHERE payment_session_reference = $2",
+      [new Date(0), paymentSessionReference],
+    );
+    await page.goto(paymentPageUrl);
+    await expect(
+      page.getByRole("heading", { name: "Payment Session Expired" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Book on Fresha", exact: true }).last(),
+    ).toHaveAttribute("href", FRESHA_BOOKING_URL);
+    await expect(
+      page.locator("[id^='square-charge-card-container']"),
+    ).toHaveCount(0);
   } finally {
     try {
       await pool.query(

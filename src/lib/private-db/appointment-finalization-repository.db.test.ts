@@ -1,3 +1,9 @@
+import {
+  GET as closedAvailability,
+  POST as closedAvailabilityPost,
+} from "@/app/api/booking/availability/route";
+import { POST as closedHolds } from "@/app/api/booking/holds/route";
+import { POST as closedCreate } from "@/app/api/booking/create/route";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test, { after, afterEach } from "node:test";
@@ -295,6 +301,58 @@ test(
       .select({ eventType: appointmentEvents.eventType })
       .from(appointmentEvents)
       .where(eq(appointmentEvents.appointmentId, captured.appointment.id));
+
+    // Stale booking requests at cutover cannot touch an existing appointment,
+    // its paid hold, resource reservations, payment associations, or Calendar projection.
+    const snapshot = async () => ({
+      appointments: await requireDb()
+        .select()
+        .from(appointments)
+        .where(eq(appointments.id, captured.appointment.id)),
+      holds: await requireDb()
+        .select()
+        .from(appointmentHolds)
+        .where(eq(appointmentHolds.id, seeded.holdId)),
+      payments: await requireDb()
+        .select()
+        .from(bookingPaymentAttempts)
+        .where(eq(bookingPaymentAttempts.holdId, seeded.holdId)),
+      reservations: await requireDb()
+        .select()
+        .from(bookingResourceReservations)
+        .where(
+          eq(
+            bookingResourceReservations.appointmentId,
+            captured.appointment.id,
+          ),
+        ),
+      calendars: await requireDb()
+        .select()
+        .from(appointmentCalendarEvents)
+        .where(
+          eq(appointmentCalendarEvents.appointmentId, captured.appointment.id),
+        ),
+    });
+    const beforeClosureRequests = await snapshot();
+    for (const handler of [
+      closedAvailability,
+      closedAvailabilityPost,
+      closedHolds,
+      closedCreate,
+    ]) {
+      assert.equal(
+        (
+          await handler(
+            new Request("https://lashher.com/api/booking/holds", {
+              method: "POST",
+              body: JSON.stringify({ holdReference: hold.publicReference }),
+            }),
+          )
+        ).status,
+        410,
+      );
+    }
+    assert.deepEqual(await snapshot(), beforeClosureRequests);
 
     assert.equal(appointment.calendarSyncStatus, "synced");
     assert.equal(hold.status, "booked");
