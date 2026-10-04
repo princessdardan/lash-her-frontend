@@ -1,97 +1,20 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { test } from "node:test";
+import test from "node:test";
+import BookingPage from "./page";
+import ServiceBookingPage from "../services/[slug]/booking/page";
+import { FRESHA_BOOKING_URL } from "@/lib/booking/fresha";
 
-import { resolveBookingShim } from "./booking-shim";
-
-const bookingPageSource = readFileSync(
-  new URL("./page.tsx", import.meta.url),
-  "utf8",
-);
-
-test("booking shim sends generic service booking links to the provider catalog", async () => {
-  assert.deepEqual(await resolveBookingShim({}, createDependencies()), {
-    kind: "redirect",
-    href: "/services",
-    redirectMode: "permanent",
-  });
-  assert.deepEqual(
-    await resolveBookingShim(
-      { type: "in-person-appointment" },
-      createDependencies(),
-    ),
-    {
-      kind: "redirect",
-      href: "/services",
-      redirectMode: "permanent",
-    },
-  );
-});
-
-test("booking shim rejects malformed, private, training, and unknown legacy URLs", async () => {
-  for (const searchParams of [
-    { offering: ["lash-fill"] as unknown as string },
-    { email: "client@example.com" },
-    { token: "legacy-token-123" },
-    { order: "lh-order-123" },
-    { paidSchedulingToken: "legacy-token-123" },
-    { type: "training-call" },
-    { type: "not-a-booking-type" },
-  ]) {
-    assert.deepEqual(
-      await resolveBookingShim(searchParams, createDependencies()),
-      { kind: "notFound" },
-    );
-  }
-});
-
-test("booking shim rejects conflicting service aliases", async () => {
-  assert.deepEqual(
-    await resolveBookingShim(
-      { offering: "lash-fill", offeringSlug: "classic-fill" },
-      createDependencies({ service: { slug: "lash-fill" } }),
-    ),
-    { kind: "notFound" },
-  );
-});
-
-test("booking shim permanently redirects accepted service legacy links", async () => {
-  for (const searchParams of [
-    { offeringSlug: "lash-fill" },
-    { offering: "lash-fill" },
-    { serviceSlug: "lash-fill" },
-    { service: "lash-fill" },
-  ]) {
-    assert.deepEqual(
-      await resolveBookingShim(
-        searchParams,
-        createDependencies({ service: { slug: "lash-fill" } }),
-      ),
-      {
-        kind: "redirect",
-        href: "/services/lash-fill/booking",
-        redirectMode: "permanent",
+test("both booking entry pages throw only a temporary redirect to the fixed Fresha URL", () => {
+  for (const page of [BookingPage, ServiceBookingPage]) {
+    assert.throws(
+      () => page(),
+      (error: unknown) => {
+        assert.equal(
+          (error as { digest: string }).digest,
+          `NEXT_REDIRECT;replace;${FRESHA_BOOKING_URL};307;`,
+        );
+        return true;
       },
     );
   }
 });
-
-test("booking page disables static caching and only uses permanent service redirects", () => {
-  assert.match(bookingPageSource, /export const dynamic = "force-dynamic";/);
-  assert.match(bookingPageSource, /export const revalidate = 0;/);
-  assert.match(bookingPageSource, /permanentRedirect\(resolution\.href\)/);
-  assert.doesNotMatch(bookingPageSource, /redirect\(resolution\.href\)/);
-  assert.doesNotMatch(
-    bookingPageSource,
-    /findPendingTrainingEnrollmentByToken|getOrIssueTrainingSchedulingTokenForPaidOrder/,
-  );
-});
-
-function createDependencies(
-  overrides: { service?: { slug: string } | null } = {},
-) {
-  return {
-    hasBookableServiceSlug: async (slug: string) =>
-      overrides.service?.slug === slug,
-  };
-}

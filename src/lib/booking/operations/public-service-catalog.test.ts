@@ -1,3 +1,4 @@
+import { FRESHA_BOOKING_URL } from "@/lib/booking/fresha";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
@@ -152,10 +153,7 @@ describe("public provider service catalog", () => {
       services.map((service) => service.offeringId),
       ["offering-set", "offering-fill"],
     );
-    assert.equal(
-      services[0]?.bookingHref,
-      "/services/classic-set/booking?provider=nataliea",
-    );
+    assert.equal(services[0]?.bookingHref, FRESHA_BOOKING_URL);
     assert.equal(services[0]?.detailHref, undefined);
     assert.equal(
       services[1]?.detailHref,
@@ -218,10 +216,7 @@ describe("public provider service catalog", () => {
       "utf8",
     );
 
-    assert.match(
-      servicesPageSource,
-      /loadPublicOperationalOfferings\(\{\s*mode: "operational",?\s*\}\)/,
-    );
+    assert.match(servicesPageSource, /loadPublicServiceCatalogOfferings\(\)/);
     assert.doesNotMatch(servicesPageSource, /loaders\.|sanity/i);
     assert.match(tabsSource, /role="tablist"/);
     assert.match(tabsSource, /role="tab"/);

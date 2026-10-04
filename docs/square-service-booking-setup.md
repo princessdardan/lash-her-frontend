@@ -1,5 +1,7 @@
 # Square Service Booking Setup
 
+> Service-booking cutover: new reservations now use Fresha. Existing bookings and payment recovery remain in this app. Follow the [Fresha cutover runbook](fresha-cutover.md); historical new-booking instructions below no longer describe public entry points.
+
 Last verified: 2026-08-31
 
 The current public service-booking payment path is Square direct charge-and-store. The customer stays in the Lash Her app, Square Web Payments tokenizes the card with `intent: "CHARGE_AND_STORE"`, and the server authorizes then captures payment through `POST /api/booking/payment/confirm`. A successful response reports `paymentStatus: "captured"`.

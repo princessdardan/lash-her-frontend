@@ -1,5 +1,7 @@
 # Launch Readiness Checklist
 
+> Service-booking cutover: new reservations now use Fresha. Existing bookings and payment recovery remain in this app. Follow the [Fresha cutover runbook](fresha-cutover.md); historical new-booking instructions below no longer describe public entry points.
+
 This checklist must be completed and recorded for both Staging and Production environments before declaring a release "Ready".
 
 ## Environment Validation

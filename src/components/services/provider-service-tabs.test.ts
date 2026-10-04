@@ -1,3 +1,4 @@
+import { FRESHA_BOOKING_URL } from "@/lib/booking/fresha";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
@@ -23,7 +24,7 @@ describe("provider service tabs", () => {
     assert.match(tabsSource, /getProviderTabLabel\(provider\.displayName\)/);
   });
 
-  it("keeps provider-specific copy, prices, and booking links isolated", () => {
+  it("keeps provider-specific copy and prices with Fresha booking links", () => {
     const catalog = buildPublicProviderServiceCatalog([
       createOffering({
         fullPriceCents: 12_000,
@@ -52,7 +53,7 @@ describe("provider service tabs", () => {
 
     assert.deepEqual(alex?.services, [
       {
-        bookingHref: "/services/classic-set/booking?provider=alex",
+        bookingHref: FRESHA_BOOKING_URL,
         depositAmountCents: 5_000,
         detailHref: "/services/classic-set?provider=alex",
         displayOrder: 0,
@@ -64,10 +65,7 @@ describe("provider service tabs", () => {
         title: "Classic Set with Alex",
       },
     ]);
-    assert.equal(
-      nataliea?.services[0]?.bookingHref,
-      "/services/classic-set/booking?provider=nataliea",
-    );
+    assert.equal(nataliea?.services[0]?.bookingHref, FRESHA_BOOKING_URL);
     assert.equal(nataliea?.services[0]?.fullPriceCents, 15_000);
     assert.equal(nataliea?.services[0]?.title, "Nataliea Signature Classic");
   });
@@ -184,11 +182,8 @@ describe("provider service tabs", () => {
     );
   });
 
-  it("loads the operational catalog and always starts with its default provider", () => {
-    assert.match(
-      servicesPageSource,
-      /loadPublicOperationalOfferings\(\{\s*mode: "operational",?\s*\}\)/,
-    );
+  it("loads the display catalog and always starts with its default provider", () => {
+    assert.match(servicesPageSource, /loadPublicServiceCatalogOfferings\(\)/);
     assert.match(
       servicesPageSource,
       /const initialProviderSlug = catalog\.defaultProviderSlug/,

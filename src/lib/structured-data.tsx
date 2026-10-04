@@ -1,3 +1,4 @@
+import { FRESHA_BOOKING_URL } from "@/lib/booking/fresha";
 import { createImageUrlBuilder } from "@sanity/image-url";
 import { resolveEffectivePrice } from "@/lib/commerce/cart";
 import { getProductCheckoutEligibility } from "@/lib/commerce/product-checkout-eligibility";
@@ -78,10 +79,7 @@ export function buildOrganizationJsonLd(
         }
       : undefined,
     openingHours: hours,
-    sameAs: [
-      "https://www.instagram.com/lav_lashher/",
-      "https://www.fresha.com/a/lash-her-by-nataliea-toronto-646-oakwood-avenue-tvrir5sx/all-offer?menu=true&share=true&pId=1106337",
-    ],
+    sameAs: ["https://www.instagram.com/lav_lashher/", FRESHA_BOOKING_URL],
   };
 }
 

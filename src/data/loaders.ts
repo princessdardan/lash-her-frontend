@@ -1,3 +1,4 @@
+import { withFreshaBookingLinks } from "@/lib/booking/fresha";
 import { client } from "@/sanity/lib/client";
 import { stegaClean } from "@sanity/client/stega";
 import { draftMode } from "next/headers";
@@ -193,7 +194,9 @@ async function sanityFetch<T>(
   options: SanityFetchOptions = {},
 ): Promise<T> {
   if (options.mode === "published") {
-    return client.fetch<T>(query, params, sanityFetchOptions(tags));
+    return client
+      .fetch<T>(query, params, sanityFetchOptions(tags))
+      .then(withFreshaBookingLinks);
   }
 
   const { isEnabled } = await draftMode();
@@ -211,10 +214,14 @@ async function sanityFetch<T>(
       })
       .fetch<T>(query, params, { cache: "no-store" as const });
 
-    return stegaEnabled ? cleanStegaControlStrings(data) : data;
+    return withFreshaBookingLinks(
+      stegaEnabled ? cleanStegaControlStrings(data) : data,
+    );
   }
 
-  return client.fetch<T>(query, params, sanityFetchOptions(tags));
+  return client
+    .fetch<T>(query, params, sanityFetchOptions(tags))
+    .then(withFreshaBookingLinks);
 }
 
 function cleanStegaControlStrings<T>(value: T): T {
@@ -262,7 +269,9 @@ function sanityStaticFetch<T>(
   params: QueryParams,
   tags: string[],
 ): Promise<T> {
-  return client.fetch<T>(query, params, sanityFetchOptions(tags));
+  return client
+    .fetch<T>(query, params, sanityFetchOptions(tags))
+    .then(withFreshaBookingLinks);
 }
 
 async function getHomePageData(): Promise<THomePage | null> {

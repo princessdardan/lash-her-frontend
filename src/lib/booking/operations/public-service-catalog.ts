@@ -1,3 +1,4 @@
+import { FRESHA_BOOKING_URL } from "@/lib/booking/fresha";
 import type { PublicBookingOffering } from "./offering";
 
 export interface PublicProviderServiceCatalogItem {
@@ -25,7 +26,15 @@ export interface PublicProviderServiceCatalog {
   providers: PublicProviderServiceCatalogGroup[];
 }
 
-type CatalogOffering = PublicBookingOffering & {
+export type CatalogOffering = Pick<
+  PublicBookingOffering,
+  | "id"
+  | "serviceSlug"
+  | "serviceTitle"
+  | "depositAmountCents"
+  | "fullPriceCents"
+  | "durationMinutes"
+> & {
   displayOrder?: number;
   hasEditorialDetail?: boolean;
   provider: PublicBookingOffering["provider"] & {
@@ -71,7 +80,7 @@ export function buildPublicProviderServiceCatalog(
     const providerQuery = new URLSearchParams({ provider: providerSlug });
 
     group.services.push({
-      bookingHref: `/services/${encodeURIComponent(serviceSlug)}/booking?${providerQuery.toString()}`,
+      bookingHref: FRESHA_BOOKING_URL,
       depositAmountCents: offering.depositAmountCents,
       ...(offering.hasEditorialDetail
         ? {

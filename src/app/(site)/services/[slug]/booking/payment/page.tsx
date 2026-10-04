@@ -1,3 +1,4 @@
+import { FRESHA_BOOKING_URL } from "@/lib/booking/fresha";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
@@ -59,14 +60,14 @@ export default async function ServiceBookingPaymentPage({
         <div className="content-container max-w-2xl mx-auto text-center">
           <h1 className="section-heading mb-6">Payment Session Expired</h1>
           <p className="text-lh-shadow/80 text-lg mb-8">
-            Your reservation time has been released. Please start your booking
-            again to select a new available time.
+            Your reservation has expired. New appointments are now booked on
+            Fresha.
           </p>
           <Link
-            href={`/services/${result.serviceSlug}/booking`}
+            href={FRESHA_BOOKING_URL}
             className="inline-flex items-center justify-center rounded-full bg-lh-primary px-7 py-4 font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-white transition-colors hover:bg-lh-accent"
           >
-            Return to Booking
+            Book on Fresha
           </Link>
         </div>
       </section>

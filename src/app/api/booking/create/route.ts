@@ -1,1 +1,1 @@
-export { POST } from "./handler";
+export { serviceBookingMovedResponse as POST } from "@/lib/booking/fresha";
