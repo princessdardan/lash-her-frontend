@@ -88,7 +88,8 @@ For each document type, verify the publish flow: Update content in Studio -> Pub
 |             |         | `promotionCode`        |           |                | `promotionCode` | Product/training promotion validation |        |
 |             |         | `policyPage`           |           |                | `policyPage` | `/policies/[slug]` and checkout policy reads |        |
 |             |         | `product`              |           |                | `product` | `/products`, `/products/[slug]`, checkout, stock synchronization |        |
-|             |         | `service`              |           |                | `service` | `/services/[slug]` editorial/media/SEO only |        |
+|             |         | `service`              |           |                | `service` | `/services` listing and `/services/[slug]` editorial/media/SEO |        |
+|             |         | `servicesPage`         |           |                | `servicesPage` | `/services` listing/Fresha redirect setting |        |
 |             |         | `globalSettings`       |           |                | `global` | Header, footer, popup, metadata |        |
 |             |         | `mainMenu`             |           |                | `menu` | Navigation |        |
 
@@ -98,6 +99,8 @@ The `/api/revalidate` webhook filter and `{ _id, _type }` projection must match 
 
 ## Service Integration Checks
 
+- [ ] **Services listing:** Verify published Sanity services appear without provider tabs or structured prices/durations, including services with only a title and slug. Verify optional ordering, hiding, empty-list Fresha access, and detail-page Fresha links. Review existing descriptions for outdated price/provider copy.
+- [ ] **Services redirect:** Publish the Services Page redirect setting on and off; confirm `/services` opens the fixed Fresha URL without forwarding query parameters, then restores the listing. Include `servicesPage` in any webhook type filter. Follow `docs/fresha-cutover.md` for current booking closure and retained-session checks; historical new-booking checks below must not reopen reservations.
 - [ ] **Admin operational readiness:** In `/admin/setup`, confirm booking health is ready. Verify PostgreSQL-backed settings and active records in `/admin/booking-settings`, `/admin/staff`, `/admin/offerings`, `/admin/schedules`, and `/admin/calendar-connections`.
 - [ ] **Calendar OAuth:** Follow `docs/google-calendar-oauth-env-setup.md`. From `/admin/calendar-connections`, connect the staging Google account and assign one active booking destination plus any intended busy calendars. Confirm the callback returns to Admin, the one-time OAuth state cannot be reused, and `/admin/setup` reports the provider ready.
 - [ ] **Booking:** Visit `/services/[slug]/booking` for an active operational offering and confirm slots load from its assigned Google Calendar resources. Confirm `/booking` only redirects to an active operational offering and does not act as a Sanity settings page.

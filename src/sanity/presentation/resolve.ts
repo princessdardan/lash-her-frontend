@@ -48,6 +48,7 @@ export const resolve: PresentationPluginOptions["resolve"] = {
       "/training-programs",
     ),
     productsPage: singletonLocation("Products", "/products"),
+    servicesPage: singletonLocation("Services", "/services"),
     globalSettings: singletonLocation("Site settings", "/"),
     mainMenu: singletonLocation("Navigation", "/"),
     product: routableDocumentLocation("Products", "/products", "/products"),

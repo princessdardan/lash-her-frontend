@@ -2,7 +2,7 @@ import { withFreshaBookingLinks } from "@/lib/booking/fresha";
 import { client } from "@/sanity/lib/client";
 import { stegaClean } from "@sanity/client/stega";
 import { draftMode } from "next/headers";
-import { groq, type QueryParams } from "next-sanity";
+import { groq, type QueryParams, type SanityClient } from "next-sanity";
 import { getSanityApiReadToken } from "@/sanity/env";
 import type { BookingSettings } from "@/lib/booking/types";
 import { normalizeProductVariantModel } from "@/lib/commerce/product-variant-model";
@@ -24,6 +24,7 @@ import type {
   TPromotionCode,
   TService,
   TServiceEditorial,
+  TServicesPage,
   TTrainingProgramCatalogItem,
   TShortCourse,
   TShortCourseSummary,
@@ -979,11 +980,47 @@ async function getPromotionCode(code: string): Promise<TPromotionCode | null> {
   );
 }
 
+async function getServicesPageData(): Promise<TServicesPage | null> {
+  const query = groq`*[_type == "servicesPage" && _id == "servicesPage"][0]{
+    redirectToFresha
+  }`;
+  return sanityFetch<TServicesPage | null>(query, {}, ["servicesPage"]);
+}
+
+/** Administrative copy migration: include drafts/releases so the script can refuse conflicts. */
+export async function getServiceDescriptionMaintenanceDocuments(
+  maintenanceClient: SanityClient,
+): Promise<
+  Array<{
+    _id: string;
+    _rev: string;
+    title: string;
+    slug: string | null;
+    description: string | null;
+    shortDescription: string | null;
+  }>
+> {
+  return maintenanceClient
+    .withConfig({ useCdn: false, perspective: "raw", stega: false })
+    .fetch(
+      groq`*[_type == "service"]{
+        _id, _rev, title, "slug": slug.current, description, shortDescription
+      }`,
+      {},
+      { cache: "no-store" },
+    );
+}
+
 async function getServices(
   options: SanityFetchOptions = {},
 ): Promise<TServiceEditorial[]> {
   const query = groq`*[_type == "service"] | order(title asc) ${SERVICE_PROJECTION}`;
   return sanityFetch<TServiceEditorial[]>(query, {}, ["service"], options);
+}
+
+async function getServiceListings(): Promise<TServiceEditorial[]> {
+  const query = groq`*[_type == "service" && hideFromListing != true && defined(slug.current)] | order(coalesce(displayOrder, 2147483647) asc, title asc, _id asc) ${SERVICE_PROJECTION}`;
+  return sanityFetch<TServiceEditorial[]>(query, {}, ["service"]);
 }
 
 async function getTrainingProgramCatalogItems(): Promise<
@@ -1145,6 +1182,8 @@ export const loaders = {
   getProductsByIds,
   getPromotionCode,
   getServices,
+  getServiceListings,
+  getServicesPageData,
   getTrainingProgramCatalogItems,
   getProductsGroupedCatalog,
   getProductBySlug,

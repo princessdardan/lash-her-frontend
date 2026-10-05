@@ -34,7 +34,7 @@ cd /Users/dardan/workspace/lash-her-frontend
   - `NEXT_PUBLIC_SANITY_API_VERSION`
 - The Sanity project ID found in `sanity.cli.ts` is `3auncj84`.
 - `sanity.cli.ts` targets `NEXT_PUBLIC_SANITY_DATASET` and refuses production schema operations unless `SANITY_SCHEMA_DEPLOY_TARGET=production` is set.
-- The active source schema contains eight singletons: `homePage`, `contactPage`, `galleryPage`, `trainingPage`, `trainingProgramsPage`, `productsPage`, `globalSettings`, and `mainMenu`.
+- The active source schema contains nine singletons: `homePage`, `contactPage`, `galleryPage`, `trainingPage`, `trainingProgramsPage`, `productsPage`, `servicesPage`, `globalSettings`, and `mainMenu`.
 - Active collection document types are `product`, `productCollection`, `promotionCode`, `service`, `trainingProgram`, and `policyPage`.
 - `bookingSettings` is not registered in the active schema, Studio structure, or Presentation configuration. Its remaining schema/loader code is legacy V1 migration and payment-reconciliation compatibility only. Current service-booking settings, catalog copy, intake configuration, availability, and booking state are PostgreSQL-owned and managed through `/admin`.
 
@@ -540,7 +540,7 @@ Verify the Studio environment and structure before declaring production readines
 
 ### Structure and Security
 
-- [ ] **Singleton Integrity:** Verify `homePage`, `contactPage`, `galleryPage`, `trainingPage`, `trainingProgramsPage`, `productsPage`, `globalSettings`, and `mainMenu` appear as singletons in the Studio sidebar.
+- [ ] **Singleton Integrity:** Verify `homePage`, `contactPage`, `galleryPage`, `trainingPage`, `trainingProgramsPage`, `productsPage`, `servicesPage`, `globalSettings`, and `mainMenu` appear as singletons in the Studio sidebar.
 - [ ] **Legacy Booking Isolation:** Verify `bookingSettings` does not appear in the Studio sidebar and that service-booking operations use PostgreSQL-backed Admin pages.
 - [ ] **PII Isolation:** Confirm that checkout orders, payment events, provider transaction references, operational appointments, and customer PII are NOT visible in the Studio. These must remain in PostgreSQL.
 - [ ] **Token Scoping:** Verify that the Studio does not expose any private tokens in the browser console or network tab.
@@ -559,7 +559,7 @@ Configure separate webhooks for staging and production in the Sanity project man
 | Project    | `3auncj84`                                                                                                                                                                                                                               | `3auncj84`                                           |
 | Dataset    | `staging-2026-05-10`                                                                                                                                                                                                                     | `production`                                         |
 | Trigger    | Published document create, update, and delete events                                                                                                                                                                                     | Published document create, update, and delete events |
-| Filter     | `_type in ["homePage", "contactPage", "galleryPage", "trainingPage", "trainingProgramsPage", "trainingProgram", "productsPage", "productCollection", "promotionCode", "policyPage", "product", "service", "globalSettings", "mainMenu"]` | Same as staging                                      |
+| Filter     | `_type in ["homePage", "contactPage", "galleryPage", "trainingPage", "trainingProgramsPage", "trainingProgram", "productsPage", "servicesPage", "productCollection", "promotionCode", "policyPage", "product", "service", "globalSettings", "mainMenu"]` | Same as staging                                      |
 | Projection | `{ _id, _type }`                                                                                                                                                                                                                         | `{ _id, _type }`                                     |
 | Method     | `POST`                                                                                                                                                                                                                                   | `POST`                                               |
 | Secret     | Staging `SANITY_WEBHOOK_SECRET`                                                                                                                                                                                                          | Production `SANITY_WEBHOOK_SECRET`                   |
@@ -585,7 +585,8 @@ The revalidation route maps Sanity `_type` values to Next.js cache tags. Loader 
 | `promotionCode`        | `promotionCode`        | Product and training promotion validation reads                                      |
 | `policyPage`           | `policyPage`           | `/policies/[slug]` and checkout policy reads                                         |
 | `product`              | `product`              | `/products`, `/products/[slug]`, checkout reads, and stock set-point synchronization |
-| `service`              | `service`              | `/services/[slug]` editorial/media/SEO; not operational booking configuration        |
+| `service`              | `service`              | `/services` listing and `/services/[slug]` editorial/media/SEO; not operational booking configuration |
+| `servicesPage`         | `servicesPage`         | `/services` listing/Fresha redirect setting |
 | `globalSettings`       | `global`               | Header, footer, popup, and metadata                                                  |
 | `mainMenu`             | `menu`                 | Navigation                                                                           |
 

@@ -40,10 +40,6 @@ const servicesPageSource = readFileSync(
   new URL("../../app/(site)/services/page.tsx", import.meta.url),
   "utf8",
 );
-const providerServiceTabsSource = readFileSync(
-  new URL("../services/provider-service-tabs.tsx", import.meta.url),
-  "utf8",
-);
 const bookingConfirmationSource = readFileSync(
   new URL("../../app/(site)/booking/confirmation/page.tsx", import.meta.url),
   "utf8",
@@ -403,19 +399,15 @@ describe("booking service flow contract", () => {
     );
   });
 
-  it("keeps linked service details discoverable in provider service results", () => {
-    assert.match(providerServiceTabsSource, /service\.detailHref \?/);
+  it("keeps editorial service details discoverable from the listing", () => {
     assert.match(
-      providerServiceTabsSource,
-      /<Link href=\{service\.detailHref\}>View details<\/Link>/,
+      servicesPageSource,
+      /href=\{`\/services\/\$\{service\.slug\}`\}/,
     );
   });
 
-  it("service listing booking links use the catalog booking href", () => {
-    assert.match(
-      providerServiceTabsSource,
-      /<a href=\{service\.bookingHref\}>Book on Fresha<\/a>/,
-    );
+  it("service listing booking links go directly to Fresha", () => {
+    assert.match(servicesPageSource, /href=\{FRESHA_BOOKING_URL\}/);
   });
 
   it("keeps provider context and provider-owned copy throughout booking", () => {
@@ -431,14 +423,14 @@ describe("booking service flow contract", () => {
     assert.match(bookingFlowSource, /aria-pressed=\{isSelected\}/);
   });
 
-  it("service detail pages return customers to provider services and pricing", () => {
+  it("service detail pages send booking customers directly to Fresha", () => {
     const serviceDetailPageSource = readFileSync(
       new URL("../../app/(site)/services/[slug]/page.tsx", import.meta.url),
       "utf8",
     );
     assert.match(
       serviceDetailPageSource,
-      /<Link\s+href=\{servicesHref\}[\s\S]*?View Provider Services &amp; Pricing/,
+      /<a\s+href=\{FRESHA_BOOKING_URL\}[\s\S]*?Book on Fresha/,
     );
   });
 

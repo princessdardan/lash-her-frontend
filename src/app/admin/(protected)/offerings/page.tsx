@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { AdminTable } from "@/components/admin/admin-table";
 import { AdminActionFeedback } from "@/components/admin/admin-action-feedback";
 import { AdminSubmitButton } from "@/components/admin/admin-submit-button";
@@ -74,8 +75,14 @@ export default async function AdminOfferingsPage({
           Services &amp; pricing
         </h1>
         <p className="mt-3 max-w-3xl text-lh-muted">
-          Manage what clients can book, who provides each service, how long it
-          takes, and what the client pays.
+          These provider and pricing records support existing website bookings.
+          Manage the current booking menu and prices on Fresha. Edit the public
+          website listing in{" "}
+          <Link href="/studio" className="underline underline-offset-4">
+            Sanity Studio → Content → Services
+          </Link>
+          . Use Pages → Services Page in Studio to send visitors directly to
+          Fresha.
         </p>
       </header>
 

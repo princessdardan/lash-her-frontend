@@ -30,6 +30,7 @@ export const service = defineType({
       title: "Title",
       type: "string",
       group: "overview",
+      description: "Use the service name customers recognize on Fresha.",
       validation: (Rule) => Rule.required(),
     }),
     defineField({
@@ -60,13 +61,34 @@ export const service = defineType({
       type: "text",
       group: "overview",
       rows: 3,
-      validation: (Rule) => Rule.required(),
+      description:
+        "Optional, general description. Keep prices, durations, provider names, and availability on Fresha so they only need to be updated there.",
     }),
     defineField({
       name: "shortDescription",
       title: "Short Description",
       type: "text",
       group: "overview",
+      description:
+        "Optional summary for the services listing. Falls back to Description when blank.",
+    }),
+    defineField({
+      name: "hideFromListing",
+      title: "Hide from services listing",
+      type: "boolean",
+      group: "overview",
+      initialValue: false,
+      description:
+        "Remove this service from the website listing. Its existing detail URL remains accessible. This does not change Fresha or existing bookings.",
+    }),
+    defineField({
+      name: "displayOrder",
+      title: "Listing order",
+      type: "number",
+      group: "overview",
+      description:
+        "Optional. Lower numbers appear first; services with no number appear alphabetically after numbered services.",
+      validation: (Rule) => Rule.integer().min(0),
     }),
     defineField({
       name: "image",

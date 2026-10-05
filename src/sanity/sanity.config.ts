@@ -17,6 +17,7 @@ const singletonTypes = new Set([
   "trainingPage",
   "trainingProgramsPage",
   "productsPage",
+  "servicesPage",
   "globalSettings",
   "mainMenu",
 ]);

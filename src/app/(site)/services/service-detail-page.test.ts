@@ -12,12 +12,8 @@ test("service detail page renders editorial content without Sanity commerce stat
     pageSource,
     /formatCad|fullPrice|isAvailable|showDetailPage/,
   );
-  assert.doesNotMatch(pageSource, /\/booking/);
-  assert.match(pageSource, /searchParams:/);
-  assert.match(
-    pageSource,
-    /new URLSearchParams\(\{ provider: providerSlug \}\)/,
-  );
-  assert.match(pageSource, /href=\{servicesHref\}/);
-  assert.match(pageSource, /View Provider Services &amp; Pricing/);
+  assert.doesNotMatch(pageSource, /providerSlug|searchParams|View Provider/);
+  assert.match(pageSource, /href="\/services"/);
+  assert.match(pageSource, /href=\{FRESHA_BOOKING_URL\}/);
+  assert.match(pageSource, /Book on Fresha/);
 });

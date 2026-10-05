@@ -1,0 +1,69 @@
+[
+  {
+    "slug": "tooth-gem",
+    "title": "Tooth Gem",
+    "before": {
+      "description": "Tooth Gem, this is the price of one gem. Each additional gem is $10",
+      "shortDescription": null
+    },
+    "set": {
+      "description": "A single tooth gem adds a clean flash of shine to your smile. Wear it as a subtle accent or let it be the detail people notice."
+    }
+  },
+  {
+    "slug": "lash-fill",
+    "title": "Lash Fill",
+    "before": {
+      "description": "Lash fill, any lash fill bookings after 2 weeks are subject to full set cost if less than 40% of lashes are remaining. - 1 hour and 30 minutes - This is a time slot you are booking based on the remainder of lashes - Anything after 4+ weeks is not considered a fill.  No foreign fills, zero exceptions",
+      "shortDescription": "Lash fill, any lash fill bookings after 2 weeks are subject to full set cost if less than 40% of lashes are remaining."
+    },
+    "set": {
+      "description": "Bring your existing set back to its intended shape and fullness. A lash fill replenishes your extensions and refines the lash line, keeping the texture, balance, and finish of your original design looking fresh.",
+      "shortDescription": "Bring your existing set back to its intended shape and fullness. A lash fill replenishes your extensions and refines the lash line, keeping the texture, balance, and finish of your original design looking fresh."
+    }
+  },
+  {
+    "slug": "mini-fill",
+    "title": "Mini Lash Fill",
+    "before": {
+      "description": "Must be booked within 7 days of your full set.\nIf you book a mini fill past 7 days since your full set it will be charged as a lash fill.\n\nNo foreign fills, no exceptions",
+      "shortDescription": null
+    },
+    "set": {
+      "description": "A lighter refresh for an existing set that needs a little attention. We focus on small gaps and subtle adjustments to bring back a clean, balanced finish while keeping the look you already love."
+    }
+  },
+  {
+    "slug": "brow-waxing",
+    "title": "Brow Waxing",
+    "before": {
+      "description": "Book a signature brow appointment 1:1 with Nataliea, receive tailored brow mapping with your choice of add-on",
+      "shortDescription": null
+    },
+    "set": {
+      "description": "Good brows bring the whole face into focus. Tailored mapping and precise waxing work with your natural shape to refine the arch, clean up the edges, and create definition that feels right on you."
+    }
+  },
+  {
+    "slug": "mobile-appointment",
+    "title": "Mobile Lash Appointment",
+    "before": {
+      "description": "Book a mobile appointment with Nataliea. Before selecting this booking option, please message me on Instagram or through my phone number to ensure your booking is made correctly according to your location. ",
+      "shortDescription": null
+    },
+    "set": {
+      "description": "A private lash appointment in your own space, with a look tailored to your features and personal style. Settle in for personalized lash artistry and a fresh set, with the ease of staying in."
+    }
+  },
+  {
+    "slug": "full-set",
+    "title": "Tailored To Her Full Lash Set",
+    "before": {
+      "description": "Experience a 1:1 appointment with Nataliea\n- Leave feeling with enhanced beauty \n- Tailored lash set with consultation of your wants and needs\n- Lash health knowledge for any concerns\n\nIf you have any questions or concerns please direct message me on instagram @lav_lashher or email me lashher@outlook.com ",
+      "shortDescription": null
+    },
+    "set": {
+      "description": "Your eye shape, facial proportions, and natural lashes set the direction. Beginning with a detailed consultation, we design a bespoke set with the length, curl, and fullness that complement your features. Intentional shape, beautiful texture, and lash health at the centre of every decision."
+    }
+  }
+]

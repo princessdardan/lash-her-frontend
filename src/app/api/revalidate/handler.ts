@@ -13,6 +13,7 @@ const TYPE_TAG_MAP: Record<string, string> = {
   shortCourse: "shortCourse",
   "mux.videoAsset": "shortCourse",
   productsPage: "productsPage",
+  servicesPage: "servicesPage",
   productCollection: "productCollection",
   promotionCode: "promotionCode",
   policyPage: "policyPage",

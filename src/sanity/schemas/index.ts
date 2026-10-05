@@ -5,6 +5,7 @@ import { galleryPage } from "./documents/gallery-page";
 import { trainingPage } from "./documents/training-page";
 import { trainingProgramsPage } from "./documents/training-programs-page";
 import { productsPage } from "./documents/products-page";
+import { servicesPage } from "./documents/services-page";
 import { globalSettings } from "./documents/global-settings";
 import { mainMenu } from "./documents/main-menu";
 
@@ -55,6 +56,7 @@ export const schemaTypes = [
   trainingPage,
   trainingProgramsPage,
   productsPage,
+  servicesPage,
   globalSettings,
   mainMenu,
   product,

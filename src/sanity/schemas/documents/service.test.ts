@@ -38,7 +38,7 @@ describe("service schema editorial contract", () => {
     assert.equal(canonicalizeServiceSlug("Brow---Waxing"), "brow-waxing");
   });
 
-  it("contains only service detail-page editorial fields", () => {
+  it("contains service editorial content and optional listing controls", () => {
     const fieldNames = getFields().map((field) => field.name);
 
     assert.deepEqual(fieldNames, [
@@ -46,6 +46,8 @@ describe("service schema editorial contract", () => {
       "slug",
       "description",
       "shortDescription",
+      "hideFromListing",
+      "displayOrder",
       "image",
       "gallery",
       "detailSections",
@@ -53,23 +55,30 @@ describe("service schema editorial contract", () => {
     ]);
   });
 
-  it("does not expose commerce, availability, ordering, or booking controls", () => {
+  it("does not expose commerce, availability, or provider controls", () => {
     const fieldNames = getFields().map((field) => field.name);
 
     for (const fieldName of [
       "addOns",
       "currency",
       "depositAmount",
-      "displayOrder",
       "durationMinutes",
       "fullPrice",
       "isAvailable",
       "showDetailPage",
+      "provider",
     ]) {
       assert.ok(
         !fieldNames.includes(fieldName),
         `${fieldName} should not be configured`,
       );
+    }
+  });
+
+  it("allows services with only a title and slug", () => {
+    for (const name of ["description", "shortDescription"]) {
+      const field = service.fields.find((field) => field.name === name);
+      assert.equal(field?.validation, undefined);
     }
   });
 });

@@ -2,9 +2,33 @@
 
 New service reservations are closed in application code. New customers book at
 [Lash Her by Nataliea on Fresha](https://www.fresha.com/a/lash-her-by-nataliea-toronto-646-oakwood-avenue-tvrir5sx).
-The website retains its PostgreSQL service/provider catalog and Sanity editorial content.
-Prices shown on the site require normal staff maintenance; availability and final
-booking details are confirmed on Fresha. There is no Fresha API integration or sync.
+The public `/services` page uses Sanity service descriptions, without provider tabs,
+prices, durations, or deposits. Fresha owns the current booking menu, prices,
+providers, and availability. There is no Fresha API integration or sync.
+
+## Editing the website listing
+
+- In Studio, use **Content → Services** for service names and optional descriptions.
+  Only a title and generated URL slug are required. Keep copy general; avoid copying
+  prices, durations, provider names, or availability from Fresha into descriptions.
+- Existing published Sanity services with a slug appear automatically. Use **Hide
+  from services listing** to remove a listing without deleting its detail page;
+  use **Listing order** to put numbered services first, followed by alphabetical
+  services. Review existing descriptions once when releasing this change.
+- In **Pages → Services Page**, enable **Send visitors directly to Fresha** and
+  publish to make `/services` redirect to the fixed Lash Her Fresha URL. Disable
+  and publish to restore the listing. No service content is deleted, and existing
+  detail URLs continue to work with a Fresha booking link. Redirect mode also
+  applies in Studio preview. An absent setting defaults to the listing.
+- Listing names and descriptions still need occasional review against Fresha.
+  Direct redirect mode removes that duplicate listing maintenance entirely.
+- Deploy the app and the updated Sanity schema to the matching dataset. If the
+  Sanity revalidation webhook filters document types, include `servicesPage` as
+  well as `service`; both have matching cache tags in the application.
+
+PostgreSQL provider/service records remain available for historical bookings and
+payments. Editing them no longer changes the public listing; no database migration
+or deletion is needed for this change.
 
 ## Retired entry points
 
@@ -39,7 +63,8 @@ Product checkout and training checkout/scheduling retain their current behavior.
 ## Release checks
 
 1. Verify the release against an isolated test database: new entry points closed;
-   catalog usable without booking-integration readiness; existing card/Afterpay
+   Sanity listing usable without providers, prices, or booking integrations; the
+   published redirect setting works in both directions; existing card/Afterpay
    sessions, confirmations, duplicate reconciliation, and staff record access intact.
 2. Before promotion, record sanitized counts/status totals of existing appointments
    and unresolved payments, and confirm the normal database backup is available.

@@ -49,7 +49,7 @@ At runtime, the app has three main data planes.
 
 ### 1. Public content plane
 
-Sanity contains content editors should manage: page content, menus, product and training copy, global settings, reusable blocks, and service-detail editorial copy, media, and SEO. Operational service titles, summaries, intake content, prices, schedules, and booking settings live in PostgreSQL. The legacy Sanity `bookingSettings` document remains runtime-readable for V1 compatibility and recovery, as well as one-time imports, but is excluded from the active Studio schema and structure.
+Sanity contains content editors should manage: page content, menus, product and training copy, global settings, reusable blocks, and service listing/detail copy, media, and SEO. The Services Page singleton lets editors redirect `/services` directly to Fresha. The website listing needs no providers or prices; Fresha owns the current booking menu and availability. PostgreSQL retains operational records for existing bookings and payments. The legacy Sanity `bookingSettings` document remains runtime-readable for V1 compatibility and recovery, as well as one-time imports, but is excluded from the active Studio schema and structure.
 
 The public site reads Sanity through `src/data/loaders.ts`. Those loaders centralize GROQ queries, projections, and Next cache tags so routes do not create ad hoc CMS clients or divergent query behavior.
 
@@ -297,12 +297,12 @@ The route maps changed document types to cache tags and uses `revalidateTag(tag,
 
 ### Service booking
 
-Service booking is intentionally payment-reconciled. Direct booking creation is disabled; confirmed appointments are created only after the direct Square `CHARGE_AND_STORE` operation is securely reconciled. If direct-payment configuration is unavailable, the public payment form fails closed and does not offer hosted checkout.
+New service bookings go to Fresha. The website lists Sanity services without provider tabs or structured prices, or redirects `/services` to Fresha when enabled in Studio. Existing eligible payment sessions remain payment-reconciled through Square. See `docs/fresha-cutover.md` for editor instructions and retained booking dependencies.
 
 Important areas:
 
 - Public service catalog and booking UI: `src/app/(site)/services`, `src/components/booking`
-- Legacy entry shim: `/booking` permanently redirects valid legacy links to `/services/[slug]/booking`; bare `/booking` redirects to `/services`
+- Retired entry points: `/booking` and `/services/[slug]/booking` temporarily redirect to Fresha without forwarding query parameters
 - Booking API routes: `src/app/api/booking`
 - Booking domain logic: `src/lib/booking`
 - Google OAuth: `src/app/api/booking/oauth`, with operational credentials encrypted in PostgreSQL
@@ -375,13 +375,12 @@ Sanity-backed editorial content:
 - `trainingProgramsPage` -> `/training-programs`
 - `trainingProgram` -> `/training-programs/[slug]`
 - `product` -> `/products/[slug]`
-- `service` -> `/services/[slug]` for linked editorial copy, media, and SEO
+- `service` -> `/services` listing and `/services/[slug]` editorial copy, media, and SEO
+- `servicesPage` -> `/services` listing/Fresha redirect setting
 
 PostgreSQL-backed operational booking:
 
-- active public offerings -> `/services`
-- offering catalog/intake/settings/schedule -> `/services/[slug]/booking`
-- legacy entry compatibility -> `/booking` redirects to `/services`, and valid legacy offering links redirect to the canonical service booking route
+- retained offerings/settings/schedules -> existing payment, confirmation, and reconciliation flows; no new public reservations
 - admin configuration -> `/admin/booking-settings`, `/admin/offerings`, `/admin/schedules`, and `/admin/calendar-connections`
 
 See `docs/launch-readiness-checklist.md` for full smoke evidence requirements.

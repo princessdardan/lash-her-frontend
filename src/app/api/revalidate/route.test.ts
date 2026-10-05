@@ -76,6 +76,18 @@ test("Mux asset updates invalidate cached course playback metadata", () => {
   `);
 });
 
+test("services page setting publishes invalidate the services page tag", () => {
+  runRouteScenario(`
+    const { handler, revalidatedTags } = runScenario({
+      body: { _type: "servicesPage", _id: "servicesPage" },
+      isValidSignature: true,
+    });
+    const response = await handler(createRequest());
+    assert.equal(response.status, 200);
+    assert.deepEqual(revalidatedTags, [{ tag: "servicesPage", profile: { expire: 0 } }]);
+  `);
+});
+
 test("Sanity revalidate route reconciles product stock on a product publish", () => {
   runRouteScenario(`
     const { handler, revalidatedTags, syncedStockIds } = runScenario({

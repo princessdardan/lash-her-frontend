@@ -611,10 +611,14 @@ export interface TServiceAddOn {
   image?: TSanityImage;
 }
 
+export interface TServicesPage {
+  redirectToFresha?: boolean;
+}
+
 export interface TServiceEditorial {
   _id: string;
   title: string;
-  description: string;
+  description?: string;
   shortDescription?: string;
   slug: string;
   image?: TSanityImage;
@@ -628,6 +632,7 @@ export interface TServiceEditorial {
  * New service commerce data belongs to the operational database.
  */
 export interface TService extends TServiceEditorial {
+  description: string;
   showDetailPage: boolean;
   durationMinutes: number;
   fullPrice: number;

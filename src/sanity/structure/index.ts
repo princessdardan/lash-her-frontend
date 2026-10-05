@@ -58,6 +58,14 @@ export const structure: StructureResolver = (S) =>
                     .documentId("productsPage"),
                 ),
               S.listItem()
+                .title("Services Page")
+                .id("servicesPage")
+                .child(
+                  S.document()
+                    .schemaType("servicesPage")
+                    .documentId("servicesPage"),
+                ),
+              S.listItem()
                 .title("Global Settings")
                 .id("globalSettings")
                 .child(

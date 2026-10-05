@@ -203,27 +203,16 @@ describe("public provider service catalog", () => {
     );
   });
 
-  it("keeps the public catalog operational and exposes an accessible tab UI", () => {
+  it("keeps the public listing independent of the legacy provider catalog", () => {
     const servicesPageSource = readFileSync(
       new URL("../../../app/(site)/services/page.tsx", import.meta.url),
       "utf8",
     );
-    const tabsSource = readFileSync(
-      new URL(
-        "../../../components/services/provider-service-tabs.tsx",
-        import.meta.url,
-      ),
-      "utf8",
+    assert.match(servicesPageSource, /loaders\.getServiceListings\(\)/);
+    assert.doesNotMatch(
+      servicesPageSource,
+      /loadPublicServiceCatalogOfferings|ProviderServiceTabs|private-db/,
     );
-
-    assert.match(servicesPageSource, /loadPublicServiceCatalogOfferings\(\)/);
-    assert.doesNotMatch(servicesPageSource, /loaders\.|sanity/i);
-    assert.match(tabsSource, /role="tablist"/);
-    assert.match(tabsSource, /role="tab"/);
-    assert.match(tabsSource, /role="tabpanel"/);
-    assert.match(tabsSource, /aria-selected=/);
-    assert.match(tabsSource, /ArrowRight|ArrowLeft/);
-    assert.match(tabsSource, /router\.replace/);
   });
 });
 

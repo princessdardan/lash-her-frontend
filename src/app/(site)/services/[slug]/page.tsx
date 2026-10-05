@@ -4,6 +4,7 @@ import { loaders } from "@/data/loaders";
 import { SanityImage } from "@/components/ui/sanity-image";
 import { JsonLd, buildServiceJsonLd } from "@/lib/structured-data";
 import Link from "next/link";
+import { FRESHA_BOOKING_URL } from "@/lib/booking/fresha";
 
 export const revalidate = 300;
 
@@ -37,23 +38,13 @@ export async function generateStaticParams() {
 
 export default async function ServiceDetailPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ provider?: string | string[] }>;
 }) {
-  const [{ slug }, query] = await Promise.all([params, searchParams]);
+  const { slug } = await params;
   const service = await loaders.getServiceBySlug(slug);
 
   if (!service) notFound();
-
-  const providerSlug =
-    typeof query.provider === "string" && query.provider.trim()
-      ? query.provider.trim()
-      : undefined;
-  const servicesHref = providerSlug
-    ? `/services?${new URLSearchParams({ provider: providerSlug }).toString()}`
-    : "/services";
 
   return (
     <section className="min-h-screen bg-lh-neutral-2 py-12 lg:py-24">
@@ -64,7 +55,7 @@ export default async function ServiceDetailPage({
       <div className="content-container">
         <div className="mb-8 pt-8">
           <Link
-            href={servicesHref}
+            href="/services"
             className="text-lh-primary hover:underline font-medium flex items-center gap-2"
           >
             <span>←</span> Back to Services
@@ -137,12 +128,16 @@ export default async function ServiceDetailPage({
             )}
 
             <div className="mt-auto pt-6 border-t border-lh-line/30">
-              <Link
-                href={servicesHref}
+              <p className="mb-4 font-body text-sm leading-6 text-lh-muted">
+                Current prices, treatment options, and appointment availability
+                are on Fresha.
+              </p>
+              <a
+                href={FRESHA_BOOKING_URL}
                 className="inline-flex w-full items-center justify-center rounded-full bg-lh-primary px-7 py-4 text-center font-body text-sm font-bold uppercase tracking-[0.12em] text-lh-white transition-colors hover:bg-lh-accent"
               >
-                View Provider Services &amp; Pricing
-              </Link>
+                Book on Fresha
+              </a>
             </div>
           </div>
         </article>
