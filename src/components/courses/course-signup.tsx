@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { confirmCourseAccess, submitCourseSignup } from "@/app/actions/course";
 import type { FormActionResult } from "@/app/actions/form";
-import { COURSE_CONSENT_TEXT } from "@/lib/courses/contract";
+import { currentCampaignAttribution } from "@/lib/highlevel/attribution";
+import { MarketingConsent } from "@/components/custom/marketing-consent";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -31,8 +32,8 @@ export function CourseSignup({
         Start your free course
       </h2>
       <p className="mt-3 text-sm leading-relaxed">
-        Sign up for Lash Her emails to unlock every lesson. We’ll remember your
-        access in this browser for up to one year.
+        Create your course access to unlock every lesson. Marketing is optional.
+        We’ll remember your access in this browser for up to one year.
       </p>
       {cookiesBlocked && (
         <p role="alert" className="mt-4 text-sm text-red-800">
@@ -53,7 +54,9 @@ export function CourseSignup({
                 email: String(data.get("email") ?? ""),
                 phone: String(data.get("phone") ?? ""),
                 instagram: String(data.get("instagram") ?? ""),
-                marketingConsent: data.get("consent") === "on",
+                marketingConsent: data.get("marketingConsent") === "on",
+                smsMarketingConsent: data.get("smsMarketingConsent") === "on",
+                attribution: currentCampaignAttribution(),
                 company: String(data.get("company") ?? ""),
               });
               setResult(response);
@@ -182,30 +185,11 @@ export function CourseSignup({
             </p>
           )}
         </div>
-        <label className="flex items-start gap-3 text-sm leading-relaxed">
-          <input
-            name="consent"
-            type="checkbox"
-            required
-            disabled={pending}
-            className="mt-1 size-4 shrink-0 accent-lh-primary"
-            aria-describedby={
-              result.fieldErrors?.marketingConsent
-                ? "course-consent-error"
-                : undefined
-            }
-          />
-          <span>{COURSE_CONSENT_TEXT}</span>
-        </label>
-        {result.fieldErrors?.marketingConsent && (
-          <p id="course-consent-error" className="text-sm text-red-800">
-            {result.fieldErrors.marketingConsent}
-          </p>
-        )}
+        <MarketingConsent id="course" disabled={pending} />
         <p className="text-xs leading-relaxed">
-          Your contact details are saved with your signup, and your email is
-          used for marketing updates. Course access and learning progress are
-          remembered in this browser.{" "}
+          Your contact details are saved with your signup. Marketing preferences
+          do not affect your course access. Course access and learning progress
+          are remembered in this browser.{" "}
           <Link
             className="underline underline-offset-4"
             href="/policies/privacy-policy"

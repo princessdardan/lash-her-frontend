@@ -1,5 +1,6 @@
-export const COURSE_CONSENT_TEXT =
-  "I agree to receive lash care tips, service updates, and offers from Lash Her by Nataliea. I can unsubscribe at any time and keep access to this course.";
+import { EMAIL_CONSENT_TEXT } from "@/lib/highlevel/contract";
+import type { CampaignAttribution } from "@/lib/highlevel/attribution";
+export const COURSE_CONSENT_TEXT = EMAIL_CONSENT_TEXT;
 
 export const COURSE_ACCESS_SECONDS = 365 * 24 * 60 * 60;
 
@@ -17,5 +18,7 @@ export interface CourseSignupInput {
   phone: string;
   instagram?: string;
   marketingConsent: boolean;
+  smsMarketingConsent?: boolean;
+  attribution?: CampaignAttribution;
   company?: string;
 }

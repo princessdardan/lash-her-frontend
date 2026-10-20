@@ -1,4 +1,6 @@
 "use client";
+import { currentCampaignAttribution } from "@/lib/highlevel/attribution";
+import { MarketingConsent } from "@/components/custom/marketing-consent";
 
 import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -82,6 +84,10 @@ export function ContactPopup({ settings }: ContactPopupProps) {
     const company = formData.get("company");
     const data = {
       variant,
+      marketingConsent: formData.get("marketingConsent") === "on",
+      smsMarketingConsent: formData.get("smsMarketingConsent") === "on",
+      attribution: currentCampaignAttribution(),
+      phone: String(formData.get("marketingPhone") ?? ""),
       name: typeof name === "string" ? name : "",
       email: typeof email === "string" ? email : "",
       instagram: typeof instagram === "string" ? instagram : "",
@@ -212,6 +218,16 @@ export function ContactPopup({ settings }: ContactPopupProps) {
                 </Field>
               )}
 
+              <MarketingConsent
+                id="popup"
+                disabled={isSubmitting}
+                includePhone
+              />
+              {errors.phone && (
+                <p role="alert" className="text-sm text-red-800">
+                  {errors.phone}
+                </p>
+              )}
               <div className="text-xs text-gray-500 text-center mt-4">
                 {privacyText}{" "}
                 {safePrivacyLinkHref ? (

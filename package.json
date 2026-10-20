@@ -43,7 +43,9 @@
     "marketing:requeue-sync-failures": "tsx --conditions=react-server scripts/requeue-marketing-sync-failures.ts",
     "git:verify-remote": "node scripts/verify-git-remote.mjs origin",
     "git:push-staging": "npm run git:verify-remote && git push origin staging",
-    "prepare": "husky"
+    "prepare": "husky",
+    "crm:backfill": "node --import ./scripts/register-server-only-test.mjs --import tsx scripts/highlevel-backfill.ts",
+    "crm:check": "node --import ./scripts/register-server-only-test.mjs --import tsx scripts/highlevel-config-check.ts"
   },
   "dependencies": {
     "@icons-pack/react-simple-icons": "13.11.1",

@@ -65,6 +65,7 @@ test("course signup carries full name, phone and Instagram into private contact 
   runMarketingContactStoreScenario(`
     const { repository, store } = createFakeStore();
     await store.recordCourseSignup({
+      marketingConsent: true,
       name: " Alex Learner ",
       email: " Learner@Example.COM ",
       phone: " +1 (416) 555-0123 ",
@@ -82,7 +83,8 @@ test("course signup carries full name, phone and Instagram into private contact 
     }
     assert.equal(record.submission.submissionType, "course_signup");
     assert.equal(record.submission.consentChoice, "opted_in");
-    assert.deepEqual(record.submission.payload, { courseId: "course-one", courseTitle: "Lash care" });
+    assert.deepEqual(record.submission.payload, {
+      marketingProvider: "resend", courseId: "course-one", courseTitle: "Lash care" });
     assert.equal(repository.syncJobs.length, 1);
   `);
 });
@@ -115,6 +117,7 @@ test("marketing contact store normalizes general inquiry submissions and records
     assert.equal(record.submission.sourcePath, "/contact");
     assert.equal(record.submission.consentText, GENERAL_INQUIRY_CONSENT_TEXT);
     assert.deepEqual(record.submission.payload, {
+      marketingProvider: "resend",
       instagram: "@client",
       message: "I would like a refill appointment.",
       phone: "555-0100",
@@ -145,11 +148,12 @@ test("marketing contact store audits no-opt-in inquiry without adding audience c
   `);
 });
 
-test("marketing contact store treats popup submissions as affirmative marketing consent", () => {
+test("marketing contact store records explicit popup marketing consent", () => {
   runMarketingContactStoreScenario(`
     const { repository, store } = createFakeStore();
 
     await store.recordContactPopup({
+      marketingConsent: true,
       email: "subscriber@example.com",
       instagram: "lavlash",
       name: "Subscriber",
@@ -185,6 +189,7 @@ test("marketing contact store passes an immutable popup offer snapshot to persis
     };
 
     await store.recordContactPopup({
+      marketingConsent: true,
       email: "subscriber@example.com",
       signupOffer,
       variant: "emailOnly",

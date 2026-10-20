@@ -1,4 +1,5 @@
 import "server-only";
+import { highLevelOwnsMarketing } from "@/lib/highlevel/config";
 
 import { and, asc, eq, gt, inArray, isNull, lt, lte, or } from "drizzle-orm";
 
@@ -137,6 +138,10 @@ export async function enqueueCustomerEmailWithResult<TPayload extends object>(
           ? {}
           : { orderId: input.orderDatabaseId }),
       kind: input.kind,
+      deliveryProvider:
+        input.kind === "contact_popup_offer" && highLevelOwnsMarketing()
+          ? "highlevel"
+          : "resend",
       recipientCiphertext: encryptCustomerEmailOutboxValue(
         recipient,
         "recipient",
@@ -252,6 +257,7 @@ export async function claimCustomerEmails(input: {
       .from(customerEmailOutbox)
       .where(
         and(
+          eq(customerEmailOutbox.deliveryProvider, "resend"),
           lte(customerEmailOutbox.availableAt, now),
           gt(customerEmailOutbox.redactionDueAt, now),
           isNull(customerEmailOutbox.redactedAt),
@@ -308,6 +314,7 @@ export async function claimCustomerEmailById(input: {
       .where(
         and(
           eq(customerEmailOutbox.id, input.id),
+          eq(customerEmailOutbox.deliveryProvider, "resend"),
           lte(customerEmailOutbox.availableAt, now),
           gt(customerEmailOutbox.redactionDueAt, now),
           isNull(customerEmailOutbox.redactedAt),

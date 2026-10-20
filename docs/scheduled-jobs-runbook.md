@@ -2,7 +2,7 @@
 
 > Service-booking cutover: new reservations now use Fresha. Existing bookings and payment recovery remain in this app. Follow the [Fresha cutover runbook](fresha-cutover.md); historical new-booking instructions below no longer describe public entry points.
 
-`vercel.json` is the source of truth for scheduled routes and cadence. All eight jobs are `GET` handlers running on the Node.js runtime. Vercel invokes them with `Authorization: Bearer <CRON_SECRET>`; keep every secret server-only and record only sanitized counts/statuses. The repository does not declare a scheduler timezone, so use the cron expressions below rather than translating them to a local launch time.
+`vercel.json` is the source of truth for scheduled routes and cadence. All nine jobs are `GET` handlers running on the Node.js runtime. Vercel invokes them with `Authorization: Bearer <CRON_SECRET>`; keep every secret server-only and record only sanitized counts/statuses. The repository does not declare a scheduler timezone, so use the cron expressions below rather than translating them to a local launch time.
 
 ## Required Authentication
 
@@ -11,7 +11,7 @@
 - Set `RESEND_MARKETING_SYNC_CRON_SECRET` as well. Its presence enables `/api/admin/marketing-contact-sync`; after that route is enabled, either its route-specific bearer or `CRON_SECRET` is accepted. `CRON_SECRET` alone produces `404`.
 - `CHITCHATS_WORKER_CRON_SECRET` is an additional accepted bearer for the two shipping cron routes. It does not replace the production `CRON_SECRET` used by Vercel's scheduler.
 
-Missing `CRON_SECRET` returns `404` on retention, backup validation, customer-email outbox, and stock reservation routes. The two shipping routes return `401` when neither accepted secret is configured. Never put a bearer value in a URL, evidence, ticket, or chat.
+Missing `CRON_SECRET` returns `404` on retention, backup validation, customer-email outbox, stock reservation, and HighLevel synchronization routes. The two shipping routes return `401` when neither accepted secret is configured. Never put a bearer value in a URL, evidence, ticket, or chat.
 
 ## Job Matrix
 
@@ -25,6 +25,14 @@ Missing `CRON_SECRET` returns `404` on retention, backup validation, customer-em
 | `/api/cron/product-stock-reservations`  | Every 15 minutes, `*/15 * * * *` | No feature flag. Requires `CRON_SECRET` and the private DB. It runs even when Square commerce is off; when `SQUARE_COMMERCE_ENABLED=true`, Square credentials add provider re-verification before release.                                                                            | Returns `200 {scanned,released,skipped,failed}` even when individual orders failed. Alert whenever `failed > 0`; HTTP status alone is insufficient. The sweep releases old unpaid reservations and cancels the corresponding abandoned orders.                                                     |
 | `/api/admin/marketing-contact-sync`     | Every 5 minutes, `*/5 * * * *`   | Disabled (`404`) unless `RESEND_MARKETING_SYNC_CRON_SECRET` exists. Requires the private DB. Missing `RESEND_API_KEY` is a logged `200` no-op that does not claim jobs.                                                                                                               | Returns `200` with `processed`, `succeeded`, `retryableFailed`, `deadLettered`, `failedToClaim`, `skippedUnconfigured`, and `runAt`. Alert on any failure/dead-letter/claim counter or an unexpected all-zero run with queued work. Only an exception escaping the worker produces `503`.          |
 | `/api/cron/shipping-rate-cache-refresh` | Weekly Monday, `30 7 * * 1`      | Accepts `CRON_SECRET` or `CHITCHATS_WORKER_CRON_SECRET`. Both `CHITCHATS_SHIPPING_ENABLED=true` and `FLAT_RATE_SHIPPING_ENABLED=true` are required for work; otherwise it returns a `200` no-op. Function budget is 300 seconds.                                                      | Disabled returns `200 {enabled:false,updated:0}`. Enabled returns attempted/updated/skipped/failed cell counts. Any failed cell or top-level failure returns `503`; skipped cells alone remain `200`.                                                                                              |
+
+## HighLevel CRM synchronization
+
+`GET /api/cron/highlevel-sync` runs every minute (`* * * * *`) with `CRON_SECRET` and a 300-second function limit. CRM jobs require both `HIGHLEVEL_SYNC_ENABLED=true` and `HIGHLEVEL_ACCOUNT_AUDITED=true`. Marketing additionally requires reviewed workflows, `HIGHLEVEL_MARKETING_ENABLED=true`, and HighLevel delivery ownership. Missing cron authentication configuration returns `404`; incorrect bearer credentials return `401`.
+
+A marketing pause keeps incoming records and webhooks active, leaves pending welcome/offer jobs queued, and cancels known website workflow admissions for up to ten contacts per run. Cancellation still runs when CRM synchronization is paused. It does not reactivate Resend campaigns. Pause native HighLevel workflows/campaigns directly for an immediate account-wide stop.
+
+The worker returns processed/succeeded/skipped/retry/review/dead-letter counts. Retry, review, or dead-letter work produces `503`. Inspect queue age, identity conflicts, and last successful synchronization at `/admin/marketing/highlevel`. Use the [HighLevel runbook](highlevel-integration.md) for OAuth setup, reviewed replay, backfill, and cutover. Verify this ninth route alongside the eight rows above.
 
 ## Backup Validation Requires An External Runner
 
@@ -44,7 +52,7 @@ Until that runner exists, leave the scaffold disabled or treat every response as
 
 Before production cutover:
 
-1. Verify the deployed `vercel.json` contains exactly the eight routes and schedules above.
+1. Verify the deployed `vercel.json` contains exactly the nine routes and schedules above.
 2. Verify `CRON_SECRET`, both mandatory route-enabling secrets, and each enabled feature's provider/database variables in the Production scope.
 3. Confirm `customer_email_outbox` and `marketing_contact_sync_jobs` have no unexplained retryable or dead-letter backlog.
 4. Review response bodies, not only HTTP status. Payment reconciliation, stock sweeping, and marketing sync can report actionable failures with `200`.

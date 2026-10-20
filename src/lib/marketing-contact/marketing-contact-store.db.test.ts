@@ -194,12 +194,14 @@ test(
     };
     const firstWave = await Promise.all([
       recordContactPopupSubmission({
+        marketingConsent: true,
         email: offerEmailNormalized,
         signupOffer,
         submittedAt: new Date("2026-08-31T12:00:00.000Z"),
         variant: "emailOnly",
       }),
       recordContactPopupSubmission({
+        marketingConsent: true,
         email: offerEmailNormalized.toUpperCase(),
         signupOffer,
         submittedAt: new Date("2026-08-31T12:00:30.000Z"),
@@ -220,12 +222,14 @@ test(
     process.env.CONTACT_POPUP_OFFER_DEDUPE_PREVIOUS_KEYS = `v1:${firstKey}`;
     const replays = await Promise.all([
       recordContactPopupSubmission({
+        marketingConsent: true,
         email: offerEmailNormalized.toUpperCase(),
         signupOffer,
         submittedAt: new Date("2026-08-31T12:01:00.000Z"),
         variant: "emailOnly",
       }),
       recordContactPopupSubmission({
+        marketingConsent: true,
         email: ` ${offerEmailNormalized} `,
         signupOffer,
         submittedAt: new Date("2026-08-31T12:02:00.000Z"),
@@ -276,12 +280,14 @@ test(
       resolvedAt: "2026-08-31T13:00:00.000Z",
     });
     const queued = await recordContactPopupSubmission({
+      marketingConsent: true,
       email: suppressionEmailNormalized,
       signupOffer: buildOffer("10"),
       submittedAt: new Date("2026-08-31T13:00:00.000Z"),
       variant: "emailOnly",
     });
     const sending = await recordContactPopupSubmission({
+      marketingConsent: true,
       email: suppressionEmailNormalized,
       signupOffer: buildOffer("20"),
       submittedAt: new Date("2026-08-31T13:01:00.000Z"),

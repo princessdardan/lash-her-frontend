@@ -1,4 +1,5 @@
 import "server-only";
+import { highLevelOwnsMarketing } from "@/lib/highlevel/config";
 
 import {
   createResendBroadcast,
@@ -25,6 +26,7 @@ import {
 const MARKETING_SEGMENT_ENV = "RESEND_SEGMENT_MARKETING_ID";
 
 export type CampaignSendErrorCode =
+  | "provider_changed"
   | "not_found"
   | "invalid_status"
   | "segment_not_configured"
@@ -68,6 +70,11 @@ export async function sendCampaignTestEmail(input: {
   campaign: MarketingCampaign;
   to: string;
 }): Promise<void> {
+  if (highLevelOwnsMarketing())
+    throw new CampaignSendError(
+      "provider_changed",
+      "Marketing campaigns are managed in HighLevel.",
+    );
   await sendTransactionalEmail({
     to: input.to,
     replyTo: CUSTOMER_REPLY_TO_EMAIL,
@@ -88,6 +95,11 @@ export async function sendCampaign(input: {
   campaignId: string;
   scheduledAt?: Date;
 }): Promise<SendCampaignResult> {
+  if (highLevelOwnsMarketing())
+    throw new CampaignSendError(
+      "provider_changed",
+      "Marketing campaigns are managed in HighLevel.",
+    );
   const segmentId = getMarketingSegmentId();
 
   if (segmentId === undefined) {

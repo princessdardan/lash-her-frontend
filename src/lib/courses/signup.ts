@@ -1,3 +1,4 @@
+import { validateMarketingChoices } from "@/lib/highlevel/contract";
 import type { FormActionResult } from "@/app/actions/form";
 import type { TShortCourseSummary } from "@/types";
 import type { RecordCourseSignupInput } from "@/lib/marketing-contact/marketing-contact-store";
@@ -81,9 +82,7 @@ export async function signupForCourse(
     )
       fieldErrors.instagram =
         "Enter a valid Instagram handle or leave it blank.";
-    if (input.marketingConsent !== true)
-      fieldErrors.marketingConsent =
-        "Agree to marketing emails to access the course.";
+    Object.assign(fieldErrors, validateMarketingChoices(input));
     if (Object.keys(fieldErrors).length) return { success: false, fieldErrors };
     stage = "rate_limit";
     if (!(await dependencies.checkRateLimit(email.toLowerCase())))
@@ -105,6 +104,9 @@ export async function signupForCourse(
       email,
       phone,
       instagram: instagram || undefined,
+      marketingConsent: input.marketingConsent === true,
+      smsMarketingConsent: input.smsMarketingConsent === true,
+      ...(input.attribution ? { attribution: input.attribution } : {}),
       courseId: course._id,
       courseTitle: course.title,
       sourcePath: `/courses/${course.slug}`,

@@ -24,6 +24,7 @@ if (testDatabaseUrl) process.env.DATABASE_URL = testDatabaseUrl;
 const skip = testDatabaseUrl ? undefined : "TEST_DATABASE_URL is required";
 const email = `course-${randomUUID()}@example.invalid`;
 const signup = {
+  marketingConsent: true,
   name: "Alex Learner",
   email,
   phone: "+1 (416) 555-0123",
@@ -91,6 +92,7 @@ test(
     assert.equal(submissions[0].instagram, signup.instagram);
     assert.equal(submissions[0].consentText, COURSE_CONSENT_TEXT);
     assert.deepEqual(submissions[0].payload, {
+      marketingProvider: "resend",
       courseId: signup.courseId,
       courseTitle: signup.courseTitle,
     });

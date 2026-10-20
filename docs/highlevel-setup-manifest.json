@@ -1,0 +1,382 @@
+{
+  "status": "partially-applied-marketing-disabled",
+  "locationId": "vd09FLBpPLXuHb5Tnhn4",
+  "contactFields": [
+    {
+      "mappingKey": "website_id",
+      "name": "LH Website Website Id",
+      "fieldKey": "contact.lh_website_website_id",
+      "dataType": "TEXT",
+      "id": "Vu7NKNJQ7W06HWtRBBnq"
+    },
+    {
+      "mappingKey": "email_eligible",
+      "name": "LH Website Email Eligible",
+      "fieldKey": "contact.lh_website_email_eligible",
+      "dataType": "TEXT",
+      "id": "oL4WgFk2YVVEBkXAzojj"
+    },
+    {
+      "mappingKey": "sms_eligible",
+      "name": "LH Website Sms Eligible",
+      "fieldKey": "contact.lh_website_sms_eligible",
+      "dataType": "TEXT",
+      "id": "U0jdEKItSVCQs0Gfkh2d"
+    },
+    {
+      "mappingKey": "email_destination",
+      "name": "LH Website Email Destination",
+      "fieldKey": "contact.lh_website_email_destination",
+      "dataType": "TEXT",
+      "id": "5eVtI1qooBzK6UJugAmS"
+    },
+    {
+      "mappingKey": "sms_destination",
+      "name": "LH Website Sms Destination",
+      "fieldKey": "contact.lh_website_sms_destination",
+      "dataType": "TEXT",
+      "id": "YSxitcGP0XxDFKsrorGy"
+    },
+    {
+      "mappingKey": "source",
+      "name": "LH Website Source",
+      "fieldKey": "contact.lh_website_source",
+      "dataType": "TEXT",
+      "id": "pvbcXpabFRxCzhUoXW2E"
+    },
+    {
+      "mappingKey": "source_path",
+      "name": "LH Website Source Path",
+      "fieldKey": "contact.lh_website_source_path",
+      "dataType": "TEXT",
+      "id": "FvBrypUWwMM9N7QVRxtG"
+    },
+    {
+      "mappingKey": "original_source",
+      "name": "LH Website Original Source",
+      "fieldKey": "contact.lh_website_original_source",
+      "dataType": "TEXT",
+      "id": "RQr9JLiEP33KXyfwSDt0"
+    },
+    {
+      "mappingKey": "original_path",
+      "name": "LH Website Original Path",
+      "fieldKey": "contact.lh_website_original_path",
+      "dataType": "TEXT",
+      "id": "4bJHYby5clLBi8vPRW90"
+    },
+    {
+      "mappingKey": "attribution",
+      "name": "LH Website Attribution",
+      "fieldKey": "contact.lh_website_attribution",
+      "dataType": "LARGE_TEXT",
+      "id": "vV427ZPD48Tup9GxgvSM"
+    },
+    {
+      "mappingKey": "historical",
+      "name": "LH Website Historical",
+      "fieldKey": "contact.lh_website_historical",
+      "dataType": "TEXT",
+      "id": "KG9TLFx3FGzPpKaILQrD"
+    },
+    {
+      "mappingKey": "lifecycle",
+      "name": "LH Website Lifecycle",
+      "fieldKey": "contact.lh_website_lifecycle",
+      "dataType": "LARGE_TEXT",
+      "id": "wLYnyLCdwAvN052F43xk"
+    },
+    {
+      "mappingKey": "interest",
+      "name": "LH Website Interest",
+      "fieldKey": "contact.lh_website_interest",
+      "dataType": "TEXT",
+      "id": "TAlBuy64mIiBV1t4VQOC"
+    },
+    {
+      "mappingKey": "last_activity",
+      "name": "LH Website Last Activity",
+      "fieldKey": "contact.lh_website_last_activity",
+      "dataType": "TEXT",
+      "id": "dJb0EZdSWi3HLsLdDuA4"
+    },
+    {
+      "mappingKey": "offer",
+      "name": "LH Website Offer",
+      "fieldKey": "contact.lh_website_offer",
+      "dataType": "TEXT",
+      "id": "8DbzQr2D7UcCjkmakhMt"
+    },
+    {
+      "mappingKey": "offer_code",
+      "name": "LH Website Offer Code",
+      "fieldKey": "contact.lh_website_offer_code",
+      "dataType": "TEXT",
+      "id": "Eu4fcflDEYx2b9Idlufy"
+    },
+    {
+      "mappingKey": "offer_label",
+      "name": "LH Website Offer Label",
+      "fieldKey": "contact.lh_website_offer_label",
+      "dataType": "TEXT",
+      "id": "CRlJnsqQdwu1rvslDIaD"
+    },
+    {
+      "mappingKey": "offer_terms",
+      "name": "LH Website Offer Terms",
+      "fieldKey": "contact.lh_website_offer_terms",
+      "dataType": "LARGE_TEXT",
+      "id": "wK0GYV8eKNhZ2TerNBaW"
+    },
+    {
+      "mappingKey": "offer_url",
+      "name": "LH Website Offer Url",
+      "fieldKey": "contact.lh_website_offer_url",
+      "dataType": "TEXT",
+      "id": "UOykYAeZprbNWtQGb1Hp"
+    },
+    {
+      "mappingKey": "journey_key",
+      "name": "LH Website Journey Key",
+      "fieldKey": "contact.lh_website_journey_key",
+      "dataType": "TEXT",
+      "id": "BW0L2cI7VyTqdcis2vpJ"
+    }
+  ],
+  "tags": [
+    "lh:website",
+    "lh:source:general_inquiry",
+    "lh:source:training_contact",
+    "lh:source:contact_popup",
+    "lh:source:course_signup",
+    "lh:source:booking",
+    "lh:source:product",
+    "lh:source:training",
+    "lh:source:consent",
+    "lh:source:contact"
+  ],
+  "pipelines": {
+    "marketing": {
+      "id": "fnkX6R0ZcSqTu69kZxHp",
+      "newLeadStageId": "d7f4b08f-b168-41cf-8d37-93e68c8d4e3b"
+    },
+    "training": {
+      "id": "ssptAK5C3WybOMDA8sfK",
+      "newLeadStageId": "6364c514-1745-4563-ae33-c3acdbc99afd"
+    },
+    "reactivation": {
+      "id": "kvbFcQqIox4xsMmJeuqi",
+      "mode": "deliberate native workflow admission only"
+    },
+    "lda": {
+      "mode": "preserve"
+    }
+  },
+  "workflows": [
+    {
+      "journey": "welcome",
+      "name": "LH Website — Welcome and offer",
+      "status": "native-draft-review-required",
+      "trigger": "API only",
+      "id": "6406b243-d442-4657-914f-f5cf291ad01a",
+      "published": false,
+      "enrolledContacts": 0,
+      "nativeEntryTriggers": [],
+      "configuredChecks": [
+        "historical exclusion",
+        "nonempty journey key",
+        "explicit channel eligibility",
+        "channel DND exclusion",
+        "current destination matches consent evidence"
+      ],
+      "executionTested": false
+    },
+    {
+      "journey": "inquiry",
+      "name": "LH Website — General inquiry",
+      "status": "native-draft-review-required",
+      "trigger": "API only",
+      "id": "27d4c567-9384-4ee0-8a3d-11d8cc69bddb",
+      "published": false,
+      "enrolledContacts": 0,
+      "nativeEntryTriggers": [],
+      "configuredChecks": [
+        "historical exclusion",
+        "nonempty journey key",
+        "explicit channel eligibility",
+        "channel DND exclusion",
+        "current destination matches consent evidence"
+      ],
+      "executionTested": false
+    },
+    {
+      "journey": "training",
+      "name": "LH Website — Training inquiry",
+      "status": "native-draft-review-required",
+      "trigger": "API only",
+      "id": "2ada3b48-8b16-49a3-9330-045e7972d811",
+      "published": false,
+      "enrolledContacts": 0,
+      "nativeEntryTriggers": [],
+      "configuredChecks": [
+        "historical exclusion",
+        "nonempty journey key",
+        "explicit channel eligibility",
+        "channel DND exclusion",
+        "current destination matches consent evidence"
+      ],
+      "executionTested": false
+    },
+    {
+      "journey": "course",
+      "name": "LH Website — Course interest",
+      "status": "native-draft-review-required",
+      "trigger": "API only",
+      "id": "7fa8d0fa-f7eb-4e6a-a23d-3117cab504fa",
+      "published": false,
+      "enrolledContacts": 0,
+      "nativeEntryTriggers": [],
+      "configuredChecks": [
+        "historical exclusion",
+        "nonempty journey key",
+        "explicit channel eligibility",
+        "channel DND exclusion",
+        "current destination matches consent evidence"
+      ],
+      "executionTested": false
+    },
+    {
+      "journey": "purchase",
+      "name": "LH Website — Post-purchase",
+      "status": "native-draft-review-required",
+      "trigger": "API only",
+      "id": "6f0af866-99a4-493c-b684-ed1f366b39d1",
+      "published": false,
+      "enrolledContacts": 0,
+      "nativeEntryTriggers": [],
+      "configuredChecks": [
+        "historical exclusion",
+        "nonempty journey key",
+        "explicit channel eligibility",
+        "channel DND exclusion",
+        "current destination matches consent evidence"
+      ],
+      "executionTested": false
+    },
+    {
+      "journey": "reactivation",
+      "name": "LH Website — Reactivation",
+      "status": "native-draft-review-required",
+      "trigger": "deliberate reviewed admission",
+      "id": "05c1ac83-6469-43ce-b431-e2dee248a51b",
+      "published": false,
+      "enrolledContacts": 0,
+      "nativeEntryTriggers": [],
+      "configuredChecks": [
+        "historical exclusion",
+        "nonempty journey key",
+        "explicit channel eligibility",
+        "channel DND exclusion",
+        "current destination matches consent evidence"
+      ],
+      "executionTested": false
+    }
+  ],
+  "sendingPolicy": {
+    "rollingWindowDays": 7,
+    "emailLimit": 2,
+    "smsLimit": 1,
+    "countWelcome": true,
+    "historicalAdmission": false,
+    "settingsOwner": "HighLevel"
+  },
+  "segments": [
+    "Website email eligible: email_eligible=yes AND destination=email AND email DND inactive",
+    "Website SMS eligible: sms_eligible=yes AND destination=phone AND SMS/global DND inactive",
+    "General inquiries: source general_inquiry",
+    "Training inquiries: source training_contact, grouped by interest",
+    "Course interest: source course_signup",
+    "Customers: lifecycle includes paid; refund state reviewed",
+    "Privacy/identity review: managed in website admin diagnostics"
+  ],
+  "contactFieldFolder": "LH Website",
+  "configuredAt": "2026-10-20",
+  "productionFieldIds": {
+    "website_id": "Vu7NKNJQ7W06HWtRBBnq",
+    "email_eligible": "oL4WgFk2YVVEBkXAzojj",
+    "sms_eligible": "U0jdEKItSVCQs0Gfkh2d",
+    "email_destination": "5eVtI1qooBzK6UJugAmS",
+    "sms_destination": "YSxitcGP0XxDFKsrorGy",
+    "source": "pvbcXpabFRxCzhUoXW2E",
+    "source_path": "FvBrypUWwMM9N7QVRxtG",
+    "original_source": "RQr9JLiEP33KXyfwSDt0",
+    "original_path": "4bJHYby5clLBi8vPRW90",
+    "attribution": "vV427ZPD48Tup9GxgvSM",
+    "historical": "KG9TLFx3FGzPpKaILQrD",
+    "lifecycle": "wLYnyLCdwAvN052F43xk",
+    "interest": "TAlBuy64mIiBV1t4VQOC",
+    "last_activity": "dJb0EZdSWi3HLsLdDuA4",
+    "offer": "8DbzQr2D7UcCjkmakhMt",
+    "offer_code": "Eu4fcflDEYx2b9Idlufy",
+    "offer_label": "CRlJnsqQdwu1rvslDIaD",
+    "offer_terms": "wK0GYV8eKNhZ2TerNBaW",
+    "offer_url": "UOykYAeZprbNWtQGb1Hp",
+    "journey_key": "BW0L2cI7VyTqdcis2vpJ"
+  },
+  "tagsApplied": true,
+  "contactFieldFolderId": "C5mD5LMBbIHhlsTxXp6I",
+  "workflowFolder": {
+    "name": "LH Website — Drafts",
+    "id": "f9904f77-47a0-4a4b-808d-03e4f1fbd48e"
+  },
+  "configuredSmartLists": [
+    {
+      "name": "LH Website — General inquiries",
+      "id": "FKasAh8h9CCyKleSNQFr",
+      "source": "general_inquiry"
+    },
+    {
+      "name": "LH Website — Training inquiries",
+      "id": "hMLGRV1DOjWMdPyp5UXL",
+      "source": "training_contact"
+    },
+    {
+      "name": "LH Website — Course interest",
+      "id": "wqZlgfNpdxBzfqDOz6wq",
+      "source": "course_signup"
+    },
+    {
+      "name": "LH Website — Newsletter signups",
+      "id": "hfEZ8E609fX9LZVm38UV",
+      "source": "contact_popup"
+    }
+  ],
+  "releaseBlockers": [
+    "Separate production OAuth application and installation",
+    "Isolated test location and designated-contact validation",
+    "Authenticated email sender and monitored replies",
+    "Usable SMS sender",
+    "Shared aggregate rolling seven-day sending gate across journeys and campaigns",
+    "Verified reply/conversion/withdrawal/staff-takeover stop behavior",
+    "Deployment, database migration and reconciled backfill"
+  ],
+  "observedAccountSettings": {
+    "allowDuplicateContact": false,
+    "identityMatchOrder": ["email", "phone"],
+    "nativeEmailUnsubscribeFooter": true,
+    "timezone": "America/Toronto",
+    "dedicatedEmailDomain": false,
+    "usableSendingPhoneNumber": false
+  },
+  "draftWorkflowSettings": {
+    "allowReentry": false,
+    "allowMultipleOpportunities": false,
+    "stopOnResponse": true,
+    "timezone": "account",
+    "days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+    "start": "10:00",
+    "end": "18:00",
+    "senderConfigured": false,
+    "aggregateCadenceVerified": false
+  }
+}

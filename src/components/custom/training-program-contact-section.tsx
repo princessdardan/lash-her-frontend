@@ -1,14 +1,29 @@
 "use client";
+import { currentCampaignAttribution } from "@/lib/highlevel/attribution";
+import { MarketingConsent } from "@/components/custom/marketing-consent";
 
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 
-import { submitTrainingContact, type FormActionResult } from "@/app/actions/form";
+import {
+  submitTrainingContact,
+  type FormActionResult,
+} from "@/app/actions/form";
 import { Button } from "@/components/ui/button";
-import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { PortableTextRenderer } from "@/components/ui/portable-text-renderer";
-import { validateField, validateForm, type FieldValidationConfig, type ValidationErrors } from "@/lib/form-validation";
+import {
+  validateField,
+  validateForm,
+  type FieldValidationConfig,
+  type ValidationErrors,
+} from "@/lib/form-validation";
 import type { TTrainingContactSection } from "@/types";
 
 interface TrainingProgramContactSectionProps {
@@ -27,7 +42,8 @@ type TrainingContactFormData = {
   privacyPolicyConsent: boolean;
 };
 
-const TRAINING_CONTACT_CONSENT_TEXT = "I agree to receive training updates, program news, and offers from Lash Her by Nataliea.";
+const TRAINING_CONTACT_CONSENT_TEXT =
+  "I agree to receive training updates, program news, and offers from Lash Her by Nataliea.";
 
 const TRAINING_CONTACT_VALIDATION: FieldValidationConfig = {
   name: [{ type: "required", message: "Name is required" }],
@@ -39,12 +55,18 @@ const TRAINING_CONTACT_VALIDATION: FieldValidationConfig = {
     { type: "required", message: "Phone number is required" },
     { type: "phone", message: "Please enter a valid phone number" },
   ],
-  privacyPolicyConsent: [{ type: "required", message: "You must agree to the privacy policy to continue" }],
+  privacyPolicyConsent: [
+    {
+      type: "required",
+      message: "You must agree to the privacy policy to continue",
+    },
+  ],
 };
 
 const DEFAULT_LABELS = {
   heading: "Begin Your Training Conversation",
-  subHeading: "Share your details and we will follow up with next steps for this training program.",
+  subHeading:
+    "Share your details and we will follow up with next steps for this training program.",
   name: "Name",
   email: "Email",
   phone: "Phone Number",
@@ -73,7 +95,10 @@ export function TrainingProgramContactSection({
   const [fieldErrors, setFieldErrors] = useState<ValidationErrors>({});
   const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set());
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitStatus, setSubmitStatus] = useState<{ type: "success" | "error" | null; message: string }>({
+  const [submitStatus, setSubmitStatus] = useState<{
+    type: "success" | "error" | null;
+    message: string;
+  }>({
     type: null,
     message: "",
   });
@@ -88,7 +113,10 @@ export function TrainingProgramContactSection({
     if (touchedFields.has(name) && TRAINING_CONTACT_VALIDATION[name]) {
       setFieldErrors((current) => ({
         ...current,
-        [name]: validateField(String(fieldValue), TRAINING_CONTACT_VALIDATION[name]),
+        [name]: validateField(
+          String(fieldValue),
+          TRAINING_CONTACT_VALIDATION[name],
+        ),
       }));
     }
   };
@@ -107,6 +135,7 @@ export function TrainingProgramContactSection({
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
+    const marketing = new FormData(event.currentTarget);
     const { errors, isValid } = validateForm(
       {
         name: formData.name,
@@ -133,7 +162,9 @@ export function TrainingProgramContactSection({
       instagram: formData.instagram || undefined,
       programSlug,
       programTitle,
-      marketingConsent: false,
+      marketingConsent: marketing.get("marketingConsent") === "on",
+      smsMarketingConsent: marketing.get("smsMarketingConsent") === "on",
+      attribution: currentCampaignAttribution(),
       consentText: TRAINING_CONTACT_CONSENT_TEXT,
       privacyPolicyConsent: formData.privacyPolicyConsent,
       sourcePath: pathname,
@@ -141,7 +172,14 @@ export function TrainingProgramContactSection({
 
     if (result.success) {
       setSubmitStatus({ type: "success", message: labels.successMessage });
-      setFormData({ name: "", email: "", phone: "", location: "", instagram: "", privacyPolicyConsent: false });
+      setFormData({
+        name: "",
+        email: "",
+        phone: "",
+        location: "",
+        instagram: "",
+        privacyPolicyConsent: false,
+      });
       setFieldErrors({});
       setTouchedFields(new Set());
     } else {
@@ -149,30 +187,49 @@ export function TrainingProgramContactSection({
         setFieldErrors(result.fieldErrors);
         setTouchedFields(new Set(Object.keys(result.fieldErrors)));
       }
-      setSubmitStatus({ type: "error", message: result.error ?? "Something went wrong, please try again." });
+      setSubmitStatus({
+        type: "error",
+        message: result.error ?? "Something went wrong, please try again.",
+      });
     }
 
     setIsSubmitting(false);
   };
 
   return (
-    <section id="contact" className="scroll-mt-32 py-8 md:py-12 lg:py-16" data-training-contact-section="true">
+    <section
+      id="contact"
+      className="scroll-mt-32 py-8 md:py-12 lg:py-16"
+      data-training-contact-section="true"
+    >
       <div className={hasPurchaseUi ? "" : undefined}>
         <article className="overflow-hidden rounded-[28px] border border-lh-line bg-lh-white shadow-[0_24px_70px_rgba(28,19,24,0.08)]">
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
             <div className="relative overflow-hidden bg-lh-shadow p-8 text-lh-neutral-2 md:p-10 lg:p-12">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,var(--lh-light-soft),transparent_30%),linear-gradient(145deg,var(--lh-shadow),var(--lh-accent)_58%,var(--lh-primary))]" aria-hidden="true" />
-              <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-lh-shadow to-transparent" aria-hidden="true" />
+              <div
+                className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,var(--lh-light-soft),transparent_30%),linear-gradient(145deg,var(--lh-shadow),var(--lh-accent)_58%,var(--lh-primary))]"
+                aria-hidden="true"
+              />
+              <div
+                className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-lh-shadow to-transparent"
+                aria-hidden="true"
+              />
               <header className="relative z-10">
-                <p className="eyebrow-label mb-4 text-lh-light">Training Contact</p>
-                <h2 className="section-heading text-balance text-lh-neutral-2">{labels.heading}</h2>
+                <p className="eyebrow-label mb-4 text-lh-light">
+                  Training Contact
+                </p>
+                <h2 className="section-heading text-balance text-lh-neutral-2">
+                  {labels.heading}
+                </h2>
                 {labels.subHeading && (
                   <p className="mt-5 font-body text-base font-bold leading-8 text-lh-neutral-2/78 md:text-lg">
                     {labels.subHeading}
                   </p>
                 )}
                 <div className="mt-10 border-t border-lh-neutral-2/20 pt-6">
-                  <p className="font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-light">Program</p>
+                  <p className="font-heading text-xs font-normal uppercase tracking-[0.28em] text-lh-light">
+                    Program
+                  </p>
                   <p className="mt-2 font-heading text-3xl font-normal leading-none text-lh-neutral-2 md:text-4xl">
                     {programTitle}
                   </p>
@@ -183,7 +240,9 @@ export function TrainingProgramContactSection({
             <form onSubmit={handleSubmit} className="p-8 md:p-10 lg:p-12">
               <FieldGroup className="grid grid-cols-1 gap-5 md:grid-cols-2">
                 <Field>
-                  <FieldLabel htmlFor="training-contact-name">{labels.name}*</FieldLabel>
+                  <FieldLabel htmlFor="training-contact-name">
+                    {labels.name}*
+                  </FieldLabel>
                   <Input
                     id="training-contact-name"
                     name="name"
@@ -192,17 +251,27 @@ export function TrainingProgramContactSection({
                     value={formData.name}
                     onChange={handleChange}
                     onBlur={handleBlur}
-                    aria-invalid={touchedFields.has("name") && !!fieldErrors.name}
-                    aria-describedby={fieldErrors.name ? "training-contact-name-error" : undefined}
+                    aria-invalid={
+                      touchedFields.has("name") && !!fieldErrors.name
+                    }
+                    aria-describedby={
+                      fieldErrors.name
+                        ? "training-contact-name-error"
+                        : undefined
+                    }
                     placeholder="Enter your full name"
                   />
                   {touchedFields.has("name") && fieldErrors.name && (
-                    <FieldError id="training-contact-name-error">{fieldErrors.name}</FieldError>
+                    <FieldError id="training-contact-name-error">
+                      {fieldErrors.name}
+                    </FieldError>
                   )}
                 </Field>
 
                 <Field>
-                  <FieldLabel htmlFor="training-contact-email">{labels.email}*</FieldLabel>
+                  <FieldLabel htmlFor="training-contact-email">
+                    {labels.email}*
+                  </FieldLabel>
                   <Input
                     id="training-contact-email"
                     name="email"
@@ -211,17 +280,27 @@ export function TrainingProgramContactSection({
                     value={formData.email}
                     onChange={handleChange}
                     onBlur={handleBlur}
-                    aria-invalid={touchedFields.has("email") && !!fieldErrors.email}
-                    aria-describedby={fieldErrors.email ? "training-contact-email-error" : undefined}
+                    aria-invalid={
+                      touchedFields.has("email") && !!fieldErrors.email
+                    }
+                    aria-describedby={
+                      fieldErrors.email
+                        ? "training-contact-email-error"
+                        : undefined
+                    }
                     placeholder="you@example.com"
                   />
                   {touchedFields.has("email") && fieldErrors.email && (
-                    <FieldError id="training-contact-email-error">{fieldErrors.email}</FieldError>
+                    <FieldError id="training-contact-email-error">
+                      {fieldErrors.email}
+                    </FieldError>
                   )}
                 </Field>
 
                 <Field>
-                  <FieldLabel htmlFor="training-contact-phone">{labels.phone}*</FieldLabel>
+                  <FieldLabel htmlFor="training-contact-phone">
+                    {labels.phone}*
+                  </FieldLabel>
                   <Input
                     id="training-contact-phone"
                     name="phone"
@@ -230,17 +309,27 @@ export function TrainingProgramContactSection({
                     value={formData.phone}
                     onChange={handleChange}
                     onBlur={handleBlur}
-                    aria-invalid={touchedFields.has("phone") && !!fieldErrors.phone}
-                    aria-describedby={fieldErrors.phone ? "training-contact-phone-error" : undefined}
+                    aria-invalid={
+                      touchedFields.has("phone") && !!fieldErrors.phone
+                    }
+                    aria-describedby={
+                      fieldErrors.phone
+                        ? "training-contact-phone-error"
+                        : undefined
+                    }
                     placeholder="(123) 456-7890"
                   />
                   {touchedFields.has("phone") && fieldErrors.phone && (
-                    <FieldError id="training-contact-phone-error">{fieldErrors.phone}</FieldError>
+                    <FieldError id="training-contact-phone-error">
+                      {fieldErrors.phone}
+                    </FieldError>
                   )}
                 </Field>
 
                 <Field>
-                  <FieldLabel htmlFor="training-contact-location">{labels.location}</FieldLabel>
+                  <FieldLabel htmlFor="training-contact-location">
+                    {labels.location}
+                  </FieldLabel>
                   <Input
                     id="training-contact-location"
                     name="location"
@@ -252,7 +341,9 @@ export function TrainingProgramContactSection({
                 </Field>
 
                 <Field className="md:col-span-2">
-                  <FieldLabel htmlFor="training-contact-instagram">{labels.instagram}</FieldLabel>
+                  <FieldLabel htmlFor="training-contact-instagram">
+                    {labels.instagram}
+                  </FieldLabel>
                   <Input
                     id="training-contact-instagram"
                     name="instagram"
@@ -264,32 +355,44 @@ export function TrainingProgramContactSection({
                 </Field>
               </FieldGroup>
 
-              {labels.privacyPolicyText && labels.privacyPolicyText.length > 0 && (
-                <div className="mt-6">
-                  <label className="flex items-start gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      name="privacyPolicyConsent"
-                      checked={formData.privacyPolicyConsent}
-                      onChange={handleChange}
-                      onBlur={handleBlur}
-                      className="mt-1 h-4 w-4 rounded border-lh-line text-lh-primary focus:ring-lh-primary"
-                      aria-invalid={touchedFields.has("privacyPolicyConsent") && !!fieldErrors.privacyPolicyConsent}
-                      aria-describedby={
-                        fieldErrors.privacyPolicyConsent ? "training-contact-privacy-error" : undefined
-                      }
-                    />
-                    <div className="text-sm text-lh-shadow/80">
-                      <PortableTextRenderer content={labels.privacyPolicyText} />
-                    </div>
-                  </label>
-                  {touchedFields.has("privacyPolicyConsent") && fieldErrors.privacyPolicyConsent && (
-                    <FieldError id="training-contact-privacy-error" className="mt-2">
-                      {fieldErrors.privacyPolicyConsent}
-                    </FieldError>
-                  )}
-                </div>
-              )}
+              {labels.privacyPolicyText &&
+                labels.privacyPolicyText.length > 0 && (
+                  <div className="mt-6">
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        name="privacyPolicyConsent"
+                        checked={formData.privacyPolicyConsent}
+                        onChange={handleChange}
+                        onBlur={handleBlur}
+                        className="mt-1 h-4 w-4 rounded border-lh-line text-lh-primary focus:ring-lh-primary"
+                        aria-invalid={
+                          touchedFields.has("privacyPolicyConsent") &&
+                          !!fieldErrors.privacyPolicyConsent
+                        }
+                        aria-describedby={
+                          fieldErrors.privacyPolicyConsent
+                            ? "training-contact-privacy-error"
+                            : undefined
+                        }
+                      />
+                      <div className="text-sm text-lh-shadow/80">
+                        <PortableTextRenderer
+                          content={labels.privacyPolicyText}
+                        />
+                      </div>
+                    </label>
+                    {touchedFields.has("privacyPolicyConsent") &&
+                      fieldErrors.privacyPolicyConsent && (
+                        <FieldError
+                          id="training-contact-privacy-error"
+                          className="mt-2"
+                        >
+                          {fieldErrors.privacyPolicyConsent}
+                        </FieldError>
+                      )}
+                  </div>
+                )}
 
               <div aria-live="polite" role="status">
                 {submitStatus.type && (
@@ -305,7 +408,14 @@ export function TrainingProgramContactSection({
                 )}
               </div>
 
-              <Button type="submit" variant="dark" size="lg" className="mt-8 w-full rounded-full py-6" disabled={isSubmitting}>
+              <MarketingConsent id="training" disabled={isSubmitting} />
+              <Button
+                type="submit"
+                variant="dark"
+                size="lg"
+                className="mt-8 w-full rounded-full py-6"
+                disabled={isSubmitting}
+              >
                 {isSubmitting ? "Submitting..." : labels.submitLabel}
               </Button>
             </form>

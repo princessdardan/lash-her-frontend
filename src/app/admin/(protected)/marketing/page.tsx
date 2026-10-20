@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { highLevelOwnsMarketing, crmUrl } from "@/lib/highlevel/config";
 
 import { CampaignComposer } from "@/components/admin/marketing/campaign-composer";
 import { AdminCard } from "@/components/admin/admin-card";
@@ -55,19 +56,31 @@ export default async function AdminMarketingPage({
     return (
       <div className="space-y-8">
         <MarketingHeader />
+        <Link href="/admin/marketing/highlevel" className="underline">
+          HighLevel connection and synchronization
+        </Link>
         <MarketingTabsNav canSend={canSend} tab={tab} />
         <section className="space-y-6" aria-labelledby="campaigns-heading">
           <div>
             <h2 className="font-heading text-2xl uppercase tracking-[0.08em]">
-              Send a marketing email
+              {highLevelOwnsMarketing()
+                ? "Marketing campaigns"
+                : "Send a marketing email"}
             </h2>
             <p className="mt-2 max-w-3xl text-sm text-lh-muted">
-              Write your email, send a test to yourself, then send it to your
-              opted-in audience. Recipients who unsubscribe are removed
-              automatically — you never need to manage the list by hand.
+              {highLevelOwnsMarketing()
+                ? "Create and manage campaigns in HighLevel. Previous website campaigns remain available below."
+                : "Write your email, send a test to yourself, then send it to your opted-in audience. Recipients who unsubscribe are removed automatically."}
             </p>
           </div>
-          <CampaignComposer optedInCount={optedInCount} />
+          {highLevelOwnsMarketing() ? (
+            <p>
+              Campaign creation is managed in <a href={crmUrl()}>HighLevel</a>.
+              Website campaign history remains available below.
+            </p>
+          ) : (
+            <CampaignComposer optedInCount={optedInCount} />
+          )}
           <CampaignHistory campaigns={campaigns} />
         </section>
       </div>
@@ -98,6 +111,9 @@ export default async function AdminMarketingPage({
   return (
     <div className="space-y-8">
       <MarketingHeader />
+      <Link href="/admin/marketing/highlevel" className="underline">
+        HighLevel connection and synchronization
+      </Link>
       <MarketingTabsNav canSend={canSend} tab={tab} />
 
       {tab === "overview" ? (

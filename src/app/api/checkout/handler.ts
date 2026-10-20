@@ -1,4 +1,8 @@
 import {
+  parseCheckoutMarketing,
+  type CheckoutMarketing,
+} from "@/lib/highlevel/contract";
+import {
   parseSquareCheckoutPayment,
   validateSquareAfterpayPayment,
   type SquareCheckoutPayment,
@@ -129,6 +133,7 @@ interface CheckoutPostHandlerDependencies {
   createInitializingOrder?: (input: {
     customerName: string;
     customerEmail: string;
+    marketing?: CheckoutMarketing;
     provider?: "square";
     cart: ValidatedCart;
     shippingAddress: CheckoutShippingAddressInput;
@@ -155,6 +160,7 @@ interface CheckoutPostHandlerDependencies {
   createInitializingManualOrder?: (input: {
     customerName: string;
     customerEmail: string;
+    marketing?: CheckoutMarketing;
     customerPhone?: string;
     reservationKey?: string;
     cart: ValidatedCart;
@@ -262,6 +268,16 @@ export function createCheckoutPostHandler({
         : invalidCheckoutRequest();
     }
     const body = parsedBody.value;
+    const marketing = parseCheckoutMarketing(
+      typeof body === "object" && body !== null
+        ? (body as Record<string, unknown>).marketing
+        : undefined,
+    );
+    if (!marketing)
+      return NextResponse.json(
+        { error: "Invalid marketing preferences or SMS phone number" },
+        { status: 400 },
+      );
 
     const checkoutRequest = parseCheckoutRequest(body);
 
@@ -505,6 +521,7 @@ export function createCheckoutPostHandler({
         const manualOrder = await createInitializingManualOrder({
           customerName: checkoutRequest.customer.name,
           customerEmail: checkoutRequest.customer.email,
+          marketing,
           ...(checkoutRequest.customer.phone
             ? { customerPhone: checkoutRequest.customer.phone }
             : {}),
@@ -574,6 +591,7 @@ export function createCheckoutPostHandler({
         initializingOrder = await createInitializingOrder({
           customerName: checkoutRequest.customer.name,
           customerEmail: checkoutRequest.customer.email,
+          marketing,
           ...(useSquareCommerce ? { provider: "square" as const } : {}),
           cart,
           shippingAddress: normalizeShippingAddress(
