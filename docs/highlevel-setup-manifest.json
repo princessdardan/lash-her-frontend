@@ -175,7 +175,7 @@
   "workflows": [
     {
       "journey": "welcome",
-      "name": "LH Website — Welcome and offer",
+      "name": "LH Website \u2014 Welcome and offer",
       "status": "native-draft-review-required",
       "trigger": "API only",
       "id": "6406b243-d442-4657-914f-f5cf291ad01a",
@@ -193,7 +193,7 @@
     },
     {
       "journey": "inquiry",
-      "name": "LH Website — General inquiry",
+      "name": "LH Website \u2014 General inquiry",
       "status": "native-draft-review-required",
       "trigger": "API only",
       "id": "27d4c567-9384-4ee0-8a3d-11d8cc69bddb",
@@ -211,7 +211,7 @@
     },
     {
       "journey": "training",
-      "name": "LH Website — Training inquiry",
+      "name": "LH Website \u2014 Training inquiry",
       "status": "native-draft-review-required",
       "trigger": "API only",
       "id": "2ada3b48-8b16-49a3-9330-045e7972d811",
@@ -229,7 +229,7 @@
     },
     {
       "journey": "course",
-      "name": "LH Website — Course interest",
+      "name": "LH Website \u2014 Course interest",
       "status": "native-draft-review-required",
       "trigger": "API only",
       "id": "7fa8d0fa-f7eb-4e6a-a23d-3117cab504fa",
@@ -247,7 +247,7 @@
     },
     {
       "journey": "purchase",
-      "name": "LH Website — Post-purchase",
+      "name": "LH Website \u2014 Post-purchase",
       "status": "native-draft-review-required",
       "trigger": "API only",
       "id": "6f0af866-99a4-493c-b684-ed1f366b39d1",
@@ -265,7 +265,7 @@
     },
     {
       "journey": "reactivation",
-      "name": "LH Website — Reactivation",
+      "name": "LH Website \u2014 Reactivation",
       "status": "native-draft-review-required",
       "trigger": "deliberate reviewed admission",
       "id": "05c1ac83-6469-43ce-b431-e2dee248a51b",
@@ -326,27 +326,27 @@
   "tagsApplied": true,
   "contactFieldFolderId": "C5mD5LMBbIHhlsTxXp6I",
   "workflowFolder": {
-    "name": "LH Website — Drafts",
+    "name": "LH Website \u2014 Drafts",
     "id": "f9904f77-47a0-4a4b-808d-03e4f1fbd48e"
   },
   "configuredSmartLists": [
     {
-      "name": "LH Website — General inquiries",
+      "name": "LH Website \u2014 General inquiries",
       "id": "FKasAh8h9CCyKleSNQFr",
       "source": "general_inquiry"
     },
     {
-      "name": "LH Website — Training inquiries",
+      "name": "LH Website \u2014 Training inquiries",
       "id": "hMLGRV1DOjWMdPyp5UXL",
       "source": "training_contact"
     },
     {
-      "name": "LH Website — Course interest",
+      "name": "LH Website \u2014 Course interest",
       "id": "wqZlgfNpdxBzfqDOz6wq",
       "source": "course_signup"
     },
     {
-      "name": "LH Website — Newsletter signups",
+      "name": "LH Website \u2014 Newsletter signups",
       "id": "hfEZ8E609fX9LZVm38UV",
       "source": "contact_popup"
     }
@@ -362,7 +362,10 @@
   ],
   "observedAccountSettings": {
     "allowDuplicateContact": false,
-    "identityMatchOrder": ["email", "phone"],
+    "identityMatchOrder": [
+      "email",
+      "phone"
+    ],
     "nativeEmailUnsubscribeFooter": true,
     "timezone": "America/Toronto",
     "dedicatedEmailDomain": false,
@@ -373,10 +376,37 @@
     "allowMultipleOpportunities": false,
     "stopOnResponse": true,
     "timezone": "account",
-    "days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+    "days": [
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday"
+    ],
     "start": "10:00",
     "end": "18:00",
     "senderConfigured": false,
     "aggregateCadenceVerified": false
+  },
+  "externalTracking": {
+    "status": "blocked-no-embed-installed",
+    "observedAt": "2026-10-20",
+    "locationId": "vd09FLBpPLXuHb5Tnhn4",
+    "publicScriptUrl": "https://link.msgsndr.com/js/external-tracking.js",
+    "publicTrackingId": "tk_6cc832e4dc314d03a1f0e169446d108c",
+    "observedSettings": {
+      "pageViewAnalytics": true,
+      "formAnalytics": true,
+      "formSubmissions": true
+    },
+    "productionSettingsChanged": false,
+    "isolatedLocationAvailable": false,
+    "identityAssociationVerified": false,
+    "safeWithdrawalVerified": false,
+    "clientFormCaptureExclusionVerified": false,
+    "featureFlag": "HIGHLEVEL_TRACKING_ENABLED",
+    "featureFlagDefault": false,
+    "codeActivationBlocked": true,
+    "evidence": "docs/highlevel-website-tracking.md"
   }
 }

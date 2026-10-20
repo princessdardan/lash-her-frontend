@@ -8,6 +8,8 @@ import { ProductCartProvider } from "@/components/commerce/product-cart-provider
 import { CookieConsentBanner } from "@/components/legal/cookie-consent-banner";
 import { ConsentedAnalytics } from "@/components/analytics/consented-analytics";
 
+import { highLevelTrackingStatus } from "@/lib/highlevel/tracking-policy";
+
 export default async function SiteLayout({
   children,
 }: Readonly<{
@@ -28,13 +30,16 @@ export default async function SiteLayout({
       </a>
       <ProductCartProvider>
         <Header data={globalData?.header} menuItems={mainMenuData?.items} />
-        <MainWrapper>
-          {children}
-        </MainWrapper>
+        <MainWrapper>{children}</MainWrapper>
         <Footer data={globalData?.footer} />
         <ContactPopup settings={globalData?.contactPopup} />
         <CartSheet />
-        <CookieConsentBanner />
+        <CookieConsentBanner
+          crmTrackingAvailable={
+            highLevelTrackingStatus(process.env.HIGHLEVEL_TRACKING_ENABLED)
+              .enabled
+          }
+        />
         <ConsentedAnalytics />
       </ProductCartProvider>
     </>

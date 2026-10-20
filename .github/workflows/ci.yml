@@ -652,3 +652,5 @@ jobs:
       # (scripts/verify-playwright-coverage.mjs).
       - name: Verify required browser coverage executed
         run: npm run test:browser:verify
+      - name: Run isolated tracking consent coverage
+        run: npx playwright test --config tests/tracking-consent.playwright.config.ts

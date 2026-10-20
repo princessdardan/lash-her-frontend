@@ -40,14 +40,14 @@ Authenticated browser access was provided by the user. The developer MCP remains
 
 Review the saved drafts in the [website workflow folder](https://app.gohighlevel.com/v2/location/vd09FLBpPLXuHb5Tnhn4/automation/workflows?folder=f9904f77-47a0-4a4b-808d-03e4f1fbd48e&tab=list&listTab=all).
 
-| Draft             | Native workflow ID                     | Relative schedule                                             |
-| ----------------- | -------------------------------------- | ------------------------------------------------------------- |
+| Draft | Native workflow ID | Relative schedule |
+| --- | --- | --- |
 | Welcome and offer | `6406b243-d442-4657-914f-f5cf291ad01a` | Email day 0 or offer variant; email day 4; optional SMS day 7 |
-| General inquiry   | `27d4c567-9384-4ee0-8a3d-11d8cc69bddb` | Email day 2; optional SMS day 4; email day 6                  |
-| Training inquiry  | `2ada3b48-8b16-49a3-9330-045e7972d811` | Email day 2; optional SMS day 4; email day 6                  |
-| Course interest   | `7fa8d0fa-f7eb-4e6a-a23d-3117cab504fa` | Email days 2 and 6; optional SMS day 9                        |
-| Post-purchase     | `6f0af866-99a4-493c-b684-ed1f366b39d1` | Email days 2 and 6; optional SMS day 9                        |
-| Reactivation      | `05c1ac83-6469-43ce-b431-e2dee248a51b` | Email days 0 and 4; optional SMS day 7                        |
+| General inquiry | `27d4c567-9384-4ee0-8a3d-11d8cc69bddb` | Email day 2; optional SMS day 4; email day 6 |
+| Training inquiry | `2ada3b48-8b16-49a3-9330-045e7972d811` | Email day 2; optional SMS day 4; email day 6 |
+| Course interest | `7fa8d0fa-f7eb-4e6a-a23d-3117cab504fa` | Email days 2 and 6; optional SMS day 9 |
+| Post-purchase | `6f0af866-99a4-493c-b684-ed1f366b39d1` | Email days 2 and 6; optional SMS day 9 |
+| Reactivation | `05c1ac83-6469-43ce-b431-e2dee248a51b` | Email days 0 and 4; optional SMS day 7 |
 
 The weekday window may defer a send past its nominal day. No message has been sent.
 
@@ -77,3 +77,16 @@ and STOP during waits remain in the live verification matrix.
 ## Release status
 
 CRM synchronization and marketing remain disabled. Separate production OAuth installation, isolated test-location verification, dedicated email authentication, SMS sender setup, shared sending gate, reviewed workflow definitions, and live designated-contact tests remain required.
+
+
+## External website tracking audit
+
+Inspected Settings → External Tracking in the authenticated production location.
+The public script URL is `https://link.msgsndr.com/js/external-tracking.js` and its
+public ID is `tk_6cc832e4dc314d03a1f0e169446d108c`. Page View Analytics, Form Analytics,
+and Form Submissions were all on. No setting was changed and no production embed
+was executed. The user confirmed there is no isolated test location or designated
+contact. Real-script browser testing used only synthetic inputs with outbound events
+intercepted and aborted. Unsafe form-field collection, full-URL capture and unload
+traffic were observed. Website tracking remains blocked independently of CRM and
+marketing release flags. See [capabilities, evidence and activation requirements](highlevel-website-tracking.md).

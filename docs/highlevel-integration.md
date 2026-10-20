@@ -223,3 +223,13 @@ not invent that contract or become the course entitlement authority.
 - [Webhook verification](https://marketplace.gohighlevel.com/docs/webhook/WebhookIntegrationGuide/)
 - [Contact DND](https://marketplace.gohighlevel.com/docs/webhook/ContactDndUpdate/)
 - [Workflow admission](https://marketplace.gohighlevel.com/docs/ghl/contacts/add-contact-to-workflow/)
+
+
+## Independent website tracking
+
+The [website tracking audit and release gate](highlevel-website-tracking.md) covers
+separate version-2 browser consent. Legacy analytics choices do not authorize CRM
+tracking. `HIGHLEVEL_TRACKING_ENABLED=false` is independent of synchronization,
+marketing, workflows and delivery ownership; unresolved vendor safety requirements
+also block activation in code even if that flag is set true. No embed, browser
+identity bridge, duplicate submission path, or channel-consent mutation is installed.
