@@ -84,6 +84,11 @@ suppression. Equal timestamps retain the stricter state; undated events can supp
 but cannot clear a known block. Clearing DND does not insert an opt-in. Website DND
 acknowledgements are not treated as a second withdrawal.
 
+Suppression updates contain only the channels being blocked; they never replay
+unrelated DND settings from an earlier contact read. A changed CRM phone still
+requires identity review, but an email withdrawal is applied when the mapped
+provider ID, location, and email destination are unchanged.
+
 The application deliberately does **not** clear provider DND. A new website opt-in
 is saved, but an existing provider block remains effective until its origin is
 resolved in HighLevel. In particular, carrier-level SMS STOP requires the provider's
@@ -176,9 +181,12 @@ withdrawals continue to persist. Pausing never reactivates Resend campaigns.
 Private-data retention now expires OAuth states, 90-day webhook receipts, 395-day
 completed queue records, and seven-year channel evidence. It queues eligibility
 refresh before evidence expiry. Source deletion/redaction queues CRM cleanup:
-website-owned notes and fields are removed, journeys stopped, and contact-wide
-deletion is exposed for administrator review because a CRM contact may contain
-staff-owned records. The reviewed deletion action deletes the provider contact and
+the expired source's website-owned note is removed. When another submission,
+order, enrollment, or current channel grant remains, shared fields and eligibility
+are recomputed from retained data without replaying admissions. Only journeys tied
+to the removed entity are cancelled. Without a retained purpose, website fields
+are cleared, journeys stopped, and contact-wide deletion is exposed for administrator
+review because a CRM contact may contain staff-owned records. The reviewed deletion action deletes the provider contact and
 channel evidence and replaces the local email with a keyed tombstone so queued
 source events cannot recreate it. Complete source-system erasure separately.
 Review/dead-letter jobs and deduplication ledgers are retained until reconciled.

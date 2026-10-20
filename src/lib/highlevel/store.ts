@@ -256,6 +256,48 @@ export async function channelConsent(
   return result.rows[0]?.choice ?? "unknown";
 }
 
+/** A remaining source or current grant can still justify the shared CRM projection. */
+export async function loadRetainedSource(
+  contact: CrmContact,
+  db: CrmDb = getPrivateDb(),
+): Promise<CrmSource | null> {
+  const email = contact.email_normalized;
+  const candidate = (
+    await db.execute<{ entity_type: CrmEntityType; entity_id: string }>(sql`
+      select entity_type, entity_id from (
+        select 'submission' as entity_type, id::text as entity_id, submitted_at as activity_at
+          from marketing_contact_submissions where email_normalized = ${email} and email <> '[redacted]'
+        union all
+        select 'order', id::text, updated_at from checkout_orders
+          where lower(trim(customer_email)) = ${email} and redacted_at is null
+        union all
+        select 'enrollment', e.id::text, e.updated_at from training_enrollments e
+          join checkout_orders o on o.id = e.checkout_order_id
+          where lower(trim(e.checkout_email)) = ${email} and o.redacted_at is null
+      ) retained order by activity_at desc, entity_id limit 1`)
+  ).rows[0];
+  if (candidate) return loadSource(candidate, db);
+  const [emailConsent, smsConsent] = await Promise.all([
+    channelConsent(email, "email", email, db),
+    channelConsent(email, "sms", contact.phone, db),
+  ]);
+  const grant = (
+    await db.execute<{ occurred_at: Date }>(sql`
+      select occurred_at from highlevel_consent_events where email_normalized = ${email}
+        and choice = 'opted_in' and (
+          (${emailConsent === "opted_in"} and channel = 'email' and destination = ${email})
+          or (${smsConsent === "opted_in"} and channel = 'sms' and destination = ${contact.phone})
+        ) order by occurred_at desc limit 1`)
+  ).rows[0];
+  return grant
+    ? {
+        email,
+        source: "consent",
+        activityAt: new Date(grant.occurred_at).toISOString(),
+      }
+    : null;
+}
+
 export async function getContact(
   email: string,
   location: string,

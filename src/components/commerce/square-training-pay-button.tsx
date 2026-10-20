@@ -141,6 +141,8 @@ export function SquareTrainingPayButton({
   const submitPayment = async (
     payment: SquareCheckoutPayment | TrainingSplitPayment,
   ) => {
+    const consentError = Object.values(validateMarketingChoices(marketing))[0];
+    if (consentError) throw new Error(consentError);
     reservationKeyRef.current ??= crypto.randomUUID();
     const isSplit = payment.method === "afterpay_card";
     // Keep uncertain attempts across retries and reloads; recovery needs no new
@@ -150,8 +152,6 @@ export function SquareTrainingPayButton({
         reservationKey: reservationKeyRef.current,
         customerEmail: customer.email,
       });
-    const consentError = Object.values(validateMarketingChoices(marketing))[0];
-    if (consentError) throw new Error(consentError);
     const response = await fetch("/api/training-checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

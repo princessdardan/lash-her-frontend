@@ -29,6 +29,7 @@ import {
   channelConsent,
   getContact,
   loadSource,
+  loadRetainedSource,
   type CrmContact,
   type CrmJob,
   type CrmSource,
@@ -43,6 +44,15 @@ export async function syncJob(
   const source = await loadSource(job);
   if (!source || !validIdentity(source.email))
     return reconcileRemovedSource(job, api);
+  return syncSource(job, source, api);
+}
+
+async function syncSource(
+  job: CrmJob,
+  source: CrmSource,
+  api: CrmRequest,
+  retainedStateOnly = false,
+): Promise<"succeeded"> {
   const email = normalizeEmail(source.email);
   const location = locationId();
   // Serialize all effects for an identity. No consent writer takes this lock:
@@ -117,7 +127,40 @@ export async function syncJob(
         );
         local.provider_id = remote.id;
       }
-      assertMappedIdentity(remote, location, email, phone);
+      try {
+        assertMappedIdentity(remote, location, email, phone);
+      } catch (error) {
+        // A phone conflict still requires review, but cannot strand an email
+        // withdrawal for the unchanged, tenant-bound mapped destination.
+        if (
+          error instanceof HighLevelError &&
+          error.code === "phone_changed_in_crm" &&
+          remote.id === local.provider_id &&
+          remote.email &&
+          normalizeEmail(remote.email) === email &&
+          (await channelConsent(email, "email", email, tx)) === "unsubscribed"
+        ) {
+          await api(`/contacts/${pathId(remote.id)}`, {
+            method: "PUT",
+            body: {
+              customFields: [
+                { id: fieldIds().email_eligible, fieldValue: "no" },
+              ],
+              ...(!providerBlocked(remote, "email")
+                ? {
+                    dndSettings: {
+                      email: {
+                        status: "active",
+                        message: "lh:website-withdrawal",
+                      },
+                    },
+                  }
+                : {}),
+            },
+          });
+        }
+        throw error;
+      }
       if (phone && phone !== local.phone) {
         await tx.execute(
           sql`update highlevel_contacts set phone = ${phone} where id = ${local.id}::uuid`,
@@ -183,14 +226,16 @@ export async function syncJob(
         sms_eligible: smsEligible ? "yes" : "no",
         source: recent?.source ?? source.source,
         original_source: String(
-          remote.customFields?.find((f) => f.id === fields.original_source)
-            ?.value ||
+          (!retainedStateOnly &&
+            remote.customFields?.find((f) => f.id === fields.original_source)
+              ?.value) ||
             original?.source ||
             source.source,
         ),
         original_path: String(
-          remote.customFields?.find((f) => f.id === fields.original_path)
-            ?.value ||
+          (!retainedStateOnly &&
+            remote.customFields?.find((f) => f.id === fields.original_path)
+              ?.value) ||
             original?.source_path ||
             source.sourcePath ||
             "",
@@ -242,18 +287,7 @@ export async function syncJob(
             ? { name: source.name }
             : {}),
           ...(phone && !remote.phone ? { phone } : {}),
-          ...(Object.keys(dndSettings).length
-            ? {
-                dndSettings: {
-                  ...Object.fromEntries(
-                    Object.entries(remote.dndSettings ?? {}).map(
-                      ([key, value]) => [key.toLowerCase(), value],
-                    ),
-                  ),
-                  ...dndSettings,
-                },
-              }
-            : {}),
+          ...(Object.keys(dndSettings).length ? { dndSettings } : {}),
         },
       });
       await api(`/contacts/${pathId(id)}/tags`, {
@@ -275,6 +309,9 @@ export async function syncJob(
       return "succeeded" as const;
     })
     .then(async (result) => {
+      // Retention refreshes the current projection without replaying notes,
+      // opportunities, conversions, or marketing admissions.
+      if (retainedStateOnly) return result;
       const contact = (
         await getPrivateDb().execute<CrmContact>(
           sql`select * from highlevel_contacts where location_id = ${location} and email_normalized = ${email}`,
@@ -632,6 +669,7 @@ export async function stopJourneys(
   api: CrmRequest = highlevel,
   salesOnly = false,
   excludeKey: string | null = null,
+  onlyKeys?: string[],
 ): Promise<void> {
   const db = getPrivateDb();
   const effects = await db.execute<{
@@ -641,6 +679,7 @@ export async function stopJourneys(
     sql`select key, data from highlevel_effects where contact_id = ${contact.id}::uuid and kind = 'workflow' and state <> 'cancelled' and (${!salesOnly} or data->>'journey' <> 'purchase') and (${excludeKey}::text is null or key <> ${excludeKey})`,
   );
   for (const effect of effects.rows) {
+    if (onlyKeys && !onlyKeys.includes(effect.key)) continue;
     if (!effect.data.workflow || !contact.provider_id) continue;
     try {
       const result = await api<{ succeeded?: boolean; succeded?: boolean }>(
@@ -680,11 +719,10 @@ async function reconcileRemovedSource(
     )
   ).rows[0];
   if (!contact?.provider_id) return "skipped";
-  await stopJourneys(contact, api);
   // Remove source notes as soon as their authoritative submission is redacted.
   const note = (
     await db.execute<{ provider_id: string }>(
-      sql`select provider_id from highlevel_effects where key = ${`note:${job.entity_id}`} and state = 'succeeded'`,
+      sql`select provider_id from highlevel_effects where ${job.entity_type === "submission"} and key = ${`note:${job.entity_id}`} and state = 'succeeded'`,
     )
   ).rows[0];
   if (note?.provider_id) {
@@ -705,6 +743,23 @@ async function reconcileRemovedSource(
       sql`update highlevel_effects set state = 'cancelled', provider_id = null where key = ${`note:${job.entity_id}`}`,
     );
   }
+  const retained = await loadRetainedSource(contact);
+  if (retained) {
+    // Entity-specific admissions can stop without cancelling another retained
+    // source's journey. Generic welcomes are shared across the contact.
+    await stopJourneys(contact, api, false, null, [
+      `journey:inquiry:${job.entity_type}:${job.entity_id}`,
+      `journey:training:${job.entity_type}:${job.entity_id}`,
+      `journey:course:${job.entity_type}:${job.entity_id}`,
+      `journey:welcome:${job.entity_type}:${job.entity_id}`,
+      ...(job.entity_type === "order"
+        ? [`journey:purchase:${job.entity_id}`]
+        : []),
+    ]);
+    await syncSource(job, retained, api, true);
+    return "skipped";
+  }
+  await stopJourneys(contact, api);
   const fields = fieldIds();
   await api(`/contacts/${pathId(contact.provider_id)}`, {
     method: "PUT",

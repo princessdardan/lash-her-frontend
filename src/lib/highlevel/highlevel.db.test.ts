@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import test, { after } from "node:test";
 import { sql } from "drizzle-orm";
 import { getPrivateDb, closePrivateDbPool } from "@/lib/private-db/client";
@@ -25,6 +26,7 @@ import { HIGHLEVEL_SCOPES } from "./config";
 import { HighLevelError } from "./contract";
 import { backfillHighLevel } from "./backfill";
 import type { CrmRequest } from "./client";
+import type { ProviderContact } from "./identity";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (databaseUrl) process.env.DATABASE_URL = databaseUrl;
@@ -101,6 +103,9 @@ after(async () => {
     await db.execute(
       sql`delete from highlevel_consent_events where email_normalized like ${`hl-${runId}-%`}`,
     );
+    await db.execute(
+      sql`delete from checkout_orders where customer_email like ${`hl-${runId}-%`}`,
+    );
   }
   await closePrivateDbPool();
 });
@@ -122,6 +127,341 @@ async function contactFor(
     )
   ).rows[0];
 }
+
+async function consentJob(
+  address: string,
+  channel: "email" | "sms",
+  choice: "opted_in" | "unsubscribed",
+): Promise<CrmJob> {
+  const db = getPrivateDb();
+  const event = (
+    await db.execute<{ id: string }>(sql`
+    insert into highlevel_consent_events (origin_key,email_normalized,channel,destination,choice,source,occurred_at)
+    values (${randomUUID()},${address},${channel},${channel === "email" ? address : "+14165550123"},${choice},'test',now())
+    returning id`)
+  ).rows[0];
+  return (
+    await db.execute<CrmJob>(
+      sql`select * from highlevel_outbox where entity_type = 'consent' and entity_id = ${event.id}`,
+    )
+  ).rows[0];
+}
+
+test(
+  "email withdrawal survives a phone conflict without relaxing identity review",
+  { skip },
+  async () => {
+    for (const mismatch of [
+      "phone",
+      "email",
+      "location",
+      "missing-email",
+      "provider-id",
+    ] as const) {
+      const address = email(`withdrawal-${mismatch}`);
+      const contact = await contactFor(address);
+      const job = await consentJob(address, "email", "unsubscribed");
+      const remote: ProviderContact = {
+        id: mismatch === "provider-id" ? randomUUID() : contact.provider_id!,
+        locationId: mismatch === "location" ? "wrong-location" : location,
+        email:
+          mismatch === "missing-email"
+            ? undefined
+            : mismatch === "email"
+              ? email("other")
+              : address,
+        phone: "+16475550124",
+      };
+      const writes: unknown[] = [];
+      const api: CrmRequest = async <T>(
+        _path: string,
+        options?: Parameters<CrmRequest>[1],
+      ) => {
+        if (options?.method) writes.push(options.body);
+        return { contact: remote } as T;
+      };
+      await assert.rejects(
+        syncJob(job, api),
+        /phone_changed_in_crm|identity_changed_in_crm|provider_tenant_mismatch/,
+      );
+      assert.deepEqual(
+        writes,
+        mismatch === "phone"
+          ? [
+              {
+                customFields: [{ id: "email_eligible", fieldValue: "no" }],
+                dndSettings: {
+                  email: { status: "active", message: "lh:website-withdrawal" },
+                },
+              },
+            ]
+          : [],
+      );
+      assert.equal(
+        (
+          await getPrivateDb().execute<{ phone: string }>(
+            sql`select phone from highlevel_contacts where id = ${contact.id}::uuid`,
+          )
+        ).rows[0].phone,
+        contact.phone,
+      );
+    }
+  },
+);
+
+test(
+  "a failed conflict-path suppression remains retryable",
+  { skip },
+  async () => {
+    const address = email("withdrawal-retry");
+    const contact = await contactFor(address);
+    const job = await consentJob(address, "email", "unsubscribed");
+    const api: CrmRequest = async <T>(
+      _path: string,
+      options?: Parameters<CrmRequest>[1],
+    ) => {
+      if (options?.method) throw new HighLevelError("highlevel_http_429", true);
+      return {
+        contact: {
+          id: contact.provider_id,
+          locationId: location,
+          email: address,
+          phone: "+16475550124",
+        },
+      } as T;
+    };
+    await assert.rejects(
+      syncJob(job, api),
+      (error: unknown) => error instanceof HighLevelError && error.retryable,
+    );
+  },
+);
+
+for (const channel of ["email", "sms"] as const) {
+  test(
+    `${channel} withdrawal preserves a concurrent block on another channel`,
+    { skip },
+    async () => {
+      const address = email(`channel-race-${channel}`);
+      const contact = await contactFor(address);
+      const other = channel === "email" ? "sms" : "email";
+      await consentJob(address, other, "opted_in");
+      const job = await consentJob(address, channel, "unsubscribed");
+      const providerState: Record<string, { status: string }> = {};
+      let patch: unknown;
+      const api: CrmRequest = async <T>(
+        _path: string,
+        options?: Parameters<CrmRequest>[1],
+      ) => {
+        if (!options?.method) {
+          const snapshot = {
+            id: contact.provider_id,
+            locationId: location,
+            email: address,
+            phone: contact.phone,
+            dndSettings: {
+              email: { status: "inactive" },
+              sms: { status: "inactive" },
+              call: { status: "inactive" },
+            },
+          };
+          providerState[other] = { status: "permanent" }; // STOP after GET, before PUT.
+          return { contact: snapshot } as T;
+        }
+        if (options.method === "PUT") {
+          patch = (options.body as { dndSettings?: unknown }).dndSettings;
+          Object.assign(providerState, patch);
+        }
+        return { succeeded: true } as T;
+      };
+      await syncJob(job, api);
+      assert.deepEqual(patch, {
+        [channel]: { status: "active", message: "lh:website-withdrawal" },
+      });
+      assert.equal(providerState[other].status, "permanent");
+    },
+  );
+}
+
+for (const retainedPurpose of [
+  "submission",
+  "consent",
+  "order",
+  "enrollment",
+  "none",
+] as const) {
+  test(
+    `source retention preserves the remaining ${retainedPurpose} purpose`,
+    { skip },
+    async () => {
+      const db = getPrivateDb();
+      const address = email(`retention-${retainedPurpose}`);
+      const contact = await contactFor(address);
+      const old = await recordGeneralInquirySubmission({
+        email: address,
+        name: "Old Person",
+        message: "Expired",
+        sourcePath: "/expired",
+        marketingConsent: false,
+      });
+      await db.execute(
+        sql`update marketing_contact_submissions set submitted_at = now() - interval '400 days' where id = ${old.submissionId}::uuid`,
+      );
+      let currentId: string | undefined;
+      if (retainedPurpose === "submission") {
+        const current = await recordGeneralInquirySubmission({
+          email: address,
+          name: "Current Person",
+          message: "Retained",
+          sourcePath: "/current",
+          marketingConsent: true,
+        });
+        currentId = current.submissionId;
+      } else if (retainedPurpose !== "none")
+        await consentJob(address, "email", "opted_in");
+      if (retainedPurpose === "order" || retainedPurpose === "enrollment") {
+        const purpose = retainedPurpose === "order" ? "product" : "training";
+        const order = (
+          await db.execute<{ id: string }>(sql`
+          insert into checkout_orders (order_id,purpose,status,customer_name,customer_email,amount_cents,line_items,manual_fulfillment_status)
+          values (${randomUUID()},${purpose},'paid','Retained Buyer',${address},1000,${JSON.stringify([{ description: "Retained product" }])}::jsonb,${retainedPurpose === "order" ? "dispatched" : null})
+          returning id`)
+        ).rows[0];
+        if (retainedPurpose === "enrollment")
+          await db.execute(sql`insert into training_enrollments (checkout_order_id,program_snapshot,product_snapshot,checkout_email)
+            values (${order.id}::uuid,'{"slug":"retained-program"}'::jsonb,'{}'::jsonb,${address})`);
+      }
+      await db.execute(sql`insert into highlevel_effects (key,contact_id,kind,state,provider_id) values
+      (${`entity:submission:${old.submissionId}`},${contact.id}::uuid,'entity','recorded',null),
+      (${`note:${old.submissionId}`},${contact.id}::uuid,'note','succeeded','expired-note')`);
+      const oldJourney = `journey:inquiry:submission:${old.submissionId}`;
+      const currentJourney = `journey:course:submission:${currentId ?? randomUUID()}`;
+      await durableEffect(
+        oldJourney,
+        contact,
+        "workflow",
+        async () => "expired-workflow",
+        { journey: "inquiry", workflow: "expired-workflow" },
+      );
+      await durableEffect(
+        currentJourney,
+        contact,
+        "workflow",
+        async () => "current-workflow",
+        { journey: "course", workflow: "current-workflow" },
+      );
+      await db.execute(
+        sql`update marketing_contact_submissions set email = '[redacted]', name = null, phone = null, source_path = null, payload = '{}'::jsonb where id = ${old.submissionId}::uuid`,
+      );
+      const job = await submissionJob(old.submissionId);
+      const fields: Record<string, unknown> = {
+        original_source: "expired-source",
+        original_path: "/expired",
+        journey_key: currentJourney,
+      };
+      const deleted: string[] = [];
+      const api: CrmRequest = async <T>(
+        path: string,
+        options?: Parameters<CrmRequest>[1],
+      ) => {
+        if (!options?.method)
+          return {
+            contact: {
+              id: contact.provider_id,
+              locationId: location,
+              email: address,
+              phone: contact.phone,
+              customFields: Object.entries(fields).map(([id, value]) => ({
+                id,
+                value,
+              })),
+            },
+          } as T;
+        if (options.method === "DELETE") deleted.push(path);
+        if (options.method === "PUT")
+          for (const field of (
+            options.body as {
+              customFields: { id: string; fieldValue: unknown }[];
+            }
+          ).customFields)
+            fields[field.id] = field.fieldValue;
+        assert.ok(
+          !(
+            options.method === "POST" && /\/(notes|tasks|workflow)\b/.test(path)
+          ),
+          "retention must not replay admissions or notes",
+        );
+        return { succeeded: true } as T;
+      };
+      if (retainedPurpose === "none")
+        await assert.rejects(
+          syncJob(job, api),
+          /crm_retention_review_required/,
+        );
+      else assert.equal(await syncJob(job, api), "skipped");
+      assert.ok(
+        deleted.includes(`/contacts/${contact.provider_id}/notes/expired-note`),
+      );
+      assert.ok(
+        deleted.includes(
+          `/contacts/${contact.provider_id}/workflow/expired-workflow`,
+        ),
+      );
+      assert.equal(
+        deleted.includes(
+          `/contacts/${contact.provider_id}/workflow/current-workflow`,
+        ),
+        retainedPurpose === "none",
+      );
+      assert.equal(
+        fields.email_eligible,
+        retainedPurpose === "none" ? "no" : "yes",
+      );
+      assert.equal(
+        fields.original_path,
+        retainedPurpose === "submission" ? "/current" : "",
+      );
+      assert.equal(
+        fields.source_path,
+        retainedPurpose === "submission" ? "/current" : "",
+      );
+      assert.equal(
+        fields.source,
+        retainedPurpose === "submission"
+          ? "general_inquiry"
+          : retainedPurpose === "order"
+            ? "product"
+            : retainedPurpose === "enrollment"
+              ? "training"
+              : retainedPurpose === "consent"
+                ? "consent"
+                : "",
+      );
+      if (retainedPurpose === "order" || retainedPurpose === "enrollment")
+        assert.match(String(fields.lifecycle), /:paid/);
+      if (retainedPurpose !== "none")
+        assert.equal(fields.journey_key, currentJourney);
+    },
+  );
+}
+
+test("the historical backfill CLI runs a read-only inventory", { skip }, () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "./scripts/register-server-only-test.mjs",
+      "--import",
+      "tsx",
+      "scripts/highlevel-backfill.ts",
+      "--dry-run",
+    ],
+    { encoding: "utf8", env: { ...process.env, DATABASE_URL: databaseUrl! } },
+  );
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).mode, "dry-run");
+});
 
 test(
   "checkout consent and CRM jobs roll back with the order transaction; retries preserve one evidence record",

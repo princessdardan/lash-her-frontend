@@ -294,6 +294,54 @@ test("training split respects lower portions and rejects invalid amounts before 
   });
 });
 
+test("invalid SMS preferences do not strand a split attempt and can be corrected", async ({
+  page,
+}) => {
+  await openCheckout(page, "kind=training&amount=282500");
+  await fillTrainingDetails(page);
+  await page.getByLabel("Use Afterpay + card").check();
+  await page
+    .getByRole("checkbox", { name: /recurring marketing text/ })
+    .check();
+  const phone = page.getByLabel("Phone number for text messages");
+  await phone.fill("invalid");
+  const pay = page.getByRole("button", {
+    name: "Pay with Afterpay",
+    exact: true,
+  });
+  await pay.click();
+  await expect(page.getByRole("alert")).toContainText("valid phone number");
+  await expect(pay).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Check payment status" }),
+  ).toHaveCount(0);
+  expect((await fixture(page)).requests).toHaveLength(0);
+  expect(
+    await page.evaluate(() =>
+      sessionStorage.getItem("lash-training-split/classic-lashes"),
+    ),
+  ).toBeNull();
+
+  await page.reload();
+  await expect(page.getByText("Secure Square card fields")).toBeVisible();
+  await fillTrainingDetails(page);
+  await page.getByLabel("Use Afterpay + card").check();
+  await page
+    .getByRole("checkbox", { name: /recurring marketing text/ })
+    .check();
+  await phone.fill("+1 416 555 0123");
+  await pay.click();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-destination",
+    /confirmation/,
+  );
+  expect((await fixture(page)).requests).toHaveLength(1);
+  expect((await fixture(page)).requests[0]).toMatchObject({
+    marketing: { smsMarketingConsent: true, phone: "+1 416 555 0123" },
+    payment: { method: "afterpay_card" },
+  });
+});
+
 test("cancelled Afterpay or failed card tokenization submits no split charge", async ({
   page,
 }) => {
