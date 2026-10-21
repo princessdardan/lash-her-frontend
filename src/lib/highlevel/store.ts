@@ -236,11 +236,29 @@ export async function loadSource(
           row.status === "paid" &&
           (row.purpose === "training" ||
             ["dispatched", "delivered"].includes(row.fulfillment) ||
-            row.shipment_status === "delivered"),
+            ["accepted", "in_transit", "delivered"].includes(
+              row.shipment_status,
+            )),
         lifecycle: `${row.purpose}:${row.status}:${row.fulfillment ?? row.shipment_status ?? "pending"}`,
         activityAt: new Date(row.updated_at).toISOString(),
       }
     : null;
+}
+
+/** Compare the originating activity with payment time, not later fulfillment updates. */
+export async function hasConversionSince(
+  email: string,
+  activityAt: string,
+  db: CrmDb = getPrivateDb(),
+): Promise<boolean> {
+  const result = await db.execute<{ converted: boolean }>(sql`
+    select exists(
+      select 1 from checkout_orders
+      where lower(trim(customer_email)) = ${normalizeEmail(email)}
+        and redacted_at is null and status in ('paid', 'refunded')
+        and coalesce(paid_at, created_at) >= ${new Date(activityAt)}
+    ) as converted`);
+  return result.rows[0]?.converted ?? false;
 }
 
 export async function channelConsent(

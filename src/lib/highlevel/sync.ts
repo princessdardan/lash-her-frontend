@@ -28,6 +28,7 @@ import {
   enqueueCrmEvent,
   channelConsent,
   getContact,
+  hasConversionSince,
   loadSource,
   loadRetainedSource,
   type CrmContact,
@@ -397,15 +398,20 @@ export async function syncEffects(
     channelConsent(email, "email", email),
     channelConsent(email, "sms", contact.phone),
   ]);
+  // Historical commerce describes past activity; only current consent can stop
+  // a newer journey while importing it. Live conversions retain their effects.
   const converted = /:paid:/.test(source.lifecycle ?? "");
-  if (converted) {
+  if (!job.historical && converted) {
     await stopJourneys(contact, api, true);
     await closeMatchingOpportunity(source, contact, api);
   }
   if (
     (emailConsent !== "opted_in" && smsConsent !== "opted_in") ||
-    source.refunded ||
-    /:(refunded|cancelled|verification_failed):/.test(source.lifecycle ?? "")
+    (!job.historical &&
+      (source.refunded ||
+        /:(refunded|cancelled|verification_failed):/.test(
+          source.lifecycle ?? "",
+        )))
   ) {
     await stopJourneys(contact, api);
     return;
@@ -465,6 +471,13 @@ export async function syncEffects(
               ? "purchase"
               : null;
   if (!journey) return;
+  // A retry can outlive a later purchase. Preserve staff follow-up, but never
+  // restart the earlier sales journey after conversion. New inquiries still qualify.
+  if (
+    journey !== "purchase" &&
+    (await hasConversionSince(email, source.activityAt))
+  )
+    return;
   const workflow = workflowId(journey);
   if (!workflow) throw new HighLevelError(`missing_workflow_${journey}`);
   const key =

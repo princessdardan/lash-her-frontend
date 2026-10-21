@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import test, { after } from "node:test";
+import test, { after, type TestContext } from "node:test";
 import { sql } from "drizzle-orm";
 import { getPrivateDb, closePrivateDbPool } from "@/lib/private-db/client";
 import {
@@ -15,6 +15,7 @@ import {
   claimJobs,
   enqueueCrmEvent,
   finishJob,
+  loadSource,
   type CrmJob,
   type CrmContact,
 } from "./store";
@@ -104,7 +105,10 @@ after(async () => {
       sql`delete from highlevel_consent_events where email_normalized like ${`hl-${runId}-%`}`,
     );
     await db.execute(
-      sql`delete from checkout_orders where customer_email like ${`hl-${runId}-%`}`,
+      sql`delete from product_shipments where order_id in (select id from checkout_orders where lower(customer_email) like ${`hl-${runId}-%`})`,
+    );
+    await db.execute(
+      sql`delete from checkout_orders where lower(customer_email) like ${`hl-${runId}-%`}`,
     );
   }
   await closePrivateDbPool();
@@ -958,5 +962,367 @@ test(
     const confirmed: CrmRequest = async <T>() => ({ succeeded: true }) as T;
     await stopJourneys(contact, confirmed);
     assert.equal((await result()).rows[0].state, "cancelled");
+  },
+);
+
+function enableLifecycleMarketing(t: TestContext) {
+  const values = {
+    MARKETING_DELIVERY_PROVIDER: "highlevel",
+    HIGHLEVEL_SYNC_ENABLED: "true",
+    HIGHLEVEL_MARKETING_ENABLED: "true",
+    HIGHLEVEL_WORKFLOWS_REVIEWED: "true",
+    HIGHLEVEL_WORKFLOW_PURCHASE_ID: "purchase-workflow",
+    HIGHLEVEL_TRAINING_PIPELINE_ID: "training-pipeline",
+    HIGHLEVEL_TRAINING_STAGE_ID: "new",
+  };
+  const previous = Object.fromEntries(
+    Object.keys(values).map((key) => [key, process.env[key]]),
+  );
+  Object.assign(process.env, values);
+  t.after(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+}
+
+function lifecycleApi(contact: CrmContact) {
+  const calls: { path: string; options: Parameters<CrmRequest>[1] }[] = [];
+  const api: CrmRequest = async <T>(
+    path: string,
+    options: Parameters<CrmRequest>[1],
+  ) => {
+    calls.push({ path, options });
+    let response: unknown = { succeeded: true };
+    if (path.startsWith("/opportunities/search"))
+      response = { opportunities: [] };
+    else if (path === "/opportunities/")
+      response = { opportunity: { id: "new-opportunity" } };
+    else if (path.startsWith("/opportunities/"))
+      response = {
+        opportunity: {
+          status: "open",
+          contactId: contact.provider_id,
+          pipelineId: "training-pipeline",
+          pipelineStageId: "new",
+        },
+      };
+    else if (path.endsWith("/notes")) response = { note: { id: "note" } };
+    else if (path.endsWith("/tasks")) response = { task: { id: "task" } };
+    else if (!options?.method)
+      response = {
+        contact: {
+          id: contact.provider_id,
+          locationId: location,
+          email: contact.email_normalized,
+          phone: contact.phone,
+          customFields: [],
+        },
+      };
+    return response as T;
+  };
+  return { api, calls };
+}
+
+test(
+  "delayed sales admissions respect payment time and allow genuinely new inquiries",
+  { skip },
+  async (t) => {
+    enableLifecycleMarketing(t);
+    const db = getPrivateDb();
+    const now = Date.now();
+    const hoursAgo = (hours: number) => new Date(now - hours * 3_600_000);
+    for (const scenario of [
+      {
+        label: "later-payment",
+        status: "paid",
+        inquiryHours: 48,
+        paidAt: hoursAgo(24),
+        createdAt: hoursAgo(72),
+        admit: false,
+      },
+      {
+        label: "same-time-payment",
+        status: "paid",
+        inquiryHours: 24,
+        paidAt: hoursAgo(24),
+        createdAt: hoursAgo(72),
+        admit: false,
+      },
+      {
+        label: "new-inquiry",
+        status: "paid",
+        inquiryHours: 12,
+        paidAt: hoursAgo(24),
+        createdAt: hoursAgo(72),
+        admit: true,
+      },
+      {
+        label: "pending",
+        status: "pending",
+        inquiryHours: 48,
+        paidAt: null,
+        createdAt: hoursAgo(24),
+        admit: true,
+      },
+      {
+        label: "failed",
+        status: "verification_failed",
+        inquiryHours: 48,
+        paidAt: null,
+        createdAt: hoursAgo(24),
+        admit: true,
+      },
+      {
+        label: "refunded",
+        status: "refunded",
+        inquiryHours: 48,
+        paidAt: hoursAgo(24),
+        createdAt: hoursAgo(72),
+        admit: false,
+      },
+      {
+        label: "legacy-paid",
+        status: "paid",
+        inquiryHours: 48,
+        paidAt: null,
+        createdAt: hoursAgo(24),
+        admit: false,
+      },
+    ]) {
+      const address = email(scenario.label);
+      const record = await recordGeneralInquirySubmission({
+        email: address,
+        name: "Test Person",
+        message: "Question",
+        marketingConsent: true,
+        submittedAt: hoursAgo(scenario.inquiryHours),
+      });
+      const contact = await contactFor(address);
+      const { api, calls } = lifecycleApi(contact);
+      const order = (
+        await db.execute<{ id: string }>(sql`
+      insert into checkout_orders (order_id,purpose,status,customer_name,customer_email,amount_cents,line_items,manual_fulfillment_status,paid_at,created_at,updated_at,pii_redaction_due_at)
+      values (${randomUUID()},'product',${scenario.status},'Buyer',${address.toUpperCase()},1000,'[]'::jsonb,'paid_pending_dispatch',${scenario.paidAt},${scenario.createdAt},now(),${new Date(scenario.createdAt.getTime() + 364 * 86_400_000)}) returning id
+    `)
+      ).rows[0];
+      const orderJob = (
+        await db.execute<CrmJob>(
+          sql`select * from highlevel_outbox where entity_type = 'order' and entity_id = ${order.id}`,
+        )
+      ).rows[0];
+      await syncJob(orderJob, api);
+      calls.length = 0;
+      const job = await submissionJob(record.submissionId);
+      await syncJob(job, api);
+      await syncJob(job, api);
+      assert.equal(
+        calls.filter(
+          (call) =>
+            call.path.includes("/workflow/") && call.options?.method === "POST",
+        ).length,
+        scenario.admit ? 1 : 0,
+        scenario.label,
+      );
+      assert.equal(
+        calls.filter(
+          (call) =>
+            call.path.endsWith("/notes") && call.options?.method === "POST",
+        ).length,
+        1,
+        "inquiry history is preserved",
+      );
+      assert.equal(
+        calls.filter(
+          (call) =>
+            call.path.endsWith("/tasks") && call.options?.method === "POST",
+        ).length,
+        1,
+        "staff follow-up remains independent of nurture",
+      );
+    }
+  },
+);
+
+test(
+  "historical commerce cannot stop newer journeys or close opportunities but still applies current withdrawal",
+  { skip },
+  async (t) => {
+    enableLifecycleMarketing(t);
+    const db = getPrivateDb();
+    for (const scenario of [
+      { status: "paid", withdrawal: false },
+      { status: "refunded", withdrawal: false },
+      { status: "cancelled", withdrawal: false },
+      { status: "paid", withdrawal: true },
+    ]) {
+      const address = email(
+        `historical-${scenario.status}-${scenario.withdrawal}`,
+      );
+      const contact = await contactFor(address);
+      await consentJob(
+        address,
+        "email",
+        scenario.withdrawal ? "unsubscribed" : "opted_in",
+      );
+      const key = `journey:inquiry:${contact.id}:current`;
+      await durableEffect(
+        key,
+        contact,
+        "workflow",
+        async () => "inquiry-workflow",
+        { journey: "inquiry", workflow: "inquiry-workflow" },
+      );
+      await durableEffect(
+        `opportunity:${contact.id}:current`,
+        contact,
+        "opportunity",
+        async () => "current-opportunity",
+        { interest: "test-program", pipeline: "training-pipeline" },
+      );
+      const order = (
+        await db.execute<{ id: string }>(sql`
+      insert into checkout_orders (order_id,purpose,status,customer_name,customer_email,amount_cents,line_items,paid_at,created_at,updated_at,pii_redaction_due_at)
+      values (${randomUUID()},'training',${scenario.status},'Buyer',${address},1000,'[{"description":"test-program"}]'::jsonb,now()-interval '20 days',now()-interval '20 days',now()-interval '20 days',now()+interval '344 days') returning id
+    `)
+      ).rows[0];
+      const job = (
+        await db.execute<CrmJob>(
+          sql`select * from highlevel_outbox where entity_type = 'order' and entity_id = ${order.id}`,
+        )
+      ).rows[0];
+      const { api, calls } = lifecycleApi(contact);
+      await syncJob({ ...job, historical: true }, api);
+      assert.equal(
+        calls.some(
+          (call) =>
+            call.path.includes("/workflow/") &&
+            call.options?.method === "DELETE",
+        ),
+        scenario.withdrawal,
+        scenario.status,
+      );
+      assert.equal(
+        calls.some((call) => call.path.startsWith("/opportunities/")),
+        false,
+        "historical purchases cannot close current deals",
+      );
+      assert.equal(
+        calls.some(
+          (call) =>
+            call.path.includes("/workflow/") && call.options?.method === "POST",
+        ),
+        false,
+      );
+      const fields = calls.flatMap(
+        (call) =>
+          (
+            call.options?.body as
+              | { customFields?: { id: string; fieldValue: string }[] }
+              | undefined
+          )?.customFields ?? [],
+      );
+      assert.equal(
+        fields.find((field) => field.id === "email_eligible")?.fieldValue,
+        scenario.withdrawal ? "no" : "yes",
+      );
+      if (!scenario.withdrawal) {
+        calls.length = 0;
+        await syncJob({ ...job, historical: false }, api);
+        assert.ok(
+          calls.some(
+            (call) =>
+              call.path.includes("/workflow/") &&
+              call.options?.method === "DELETE",
+          ),
+          "live lifecycle stops remain operational",
+        );
+        assert.equal(
+          calls.some(
+            (call) =>
+              call.path === "/opportunities/current-opportunity" &&
+              call.options?.method === "PUT",
+          ),
+          scenario.status === "paid",
+          "live matching training conversion still closes the deal",
+        );
+      }
+    }
+  },
+);
+
+test(
+  "carrier handoff starts post-purchase once while labels and unpaid orders remain ineligible",
+  { skip },
+  async (t) => {
+    enableLifecycleMarketing(t);
+    const db = getPrivateDb();
+    const address = email("carrier-handoff");
+    const contact = await contactFor(address);
+    await consentJob(address, "email", "opted_in");
+    const order = (
+      await db.execute<{ id: string }>(sql`
+    insert into checkout_orders (order_id,purpose,status,customer_name,customer_email,amount_cents,line_items)
+    values (${randomUUID()},'product','paid','Buyer',${address},1000,'[]'::jsonb) returning id
+  `)
+    ).rows[0];
+    const shipment = (
+      await db.execute<{ id: string }>(sql`
+    insert into product_shipments (order_id,public_reference,quote_token_hash,quote_fingerprint,status,destination,package_snapshot,customs_lines,rates,quote_expires_at)
+    values (${order.id}::uuid,${randomUUID()},${randomUUID()},${randomUUID()},'label_ready','{}'::jsonb,'{}'::jsonb,'[]'::jsonb,'[]'::jsonb,now()+interval '1 day') returning id
+  `)
+    ).rows[0];
+    await db.execute(
+      sql`update checkout_orders set active_fulfillment_shipment_id = ${shipment.id}::uuid where id = ${order.id}::uuid`,
+    );
+    const { api, calls } = lifecycleApi(contact);
+    for (const status of [
+      "label_ready",
+      "accepted",
+      "in_transit",
+      "delivered",
+    ]) {
+      await db.execute(
+        sql`update product_shipments set status = ${status}, accepted_at = ${status === "label_ready" ? null : new Date()} where id = ${shipment.id}::uuid`,
+      );
+      const job = (
+        await db.execute<CrmJob>(
+          sql`select * from highlevel_outbox where entity_type = 'order' and entity_id = ${order.id} order by created_at limit 1`,
+        )
+      ).rows[0];
+      assert.equal(
+        (await loadSource(job))?.fulfilled,
+        status !== "label_ready",
+        status,
+      );
+      await syncJob(job, api);
+      assert.equal(
+        calls.filter(
+          (call) =>
+            call.path.includes("/workflow/") && call.options?.method === "POST",
+        ).length,
+        status === "label_ready" ? 0 : 1,
+        "shipment progression must not duplicate purchase admission",
+      );
+    }
+    await db.execute(
+      sql`update checkout_orders set status = 'pending' where id = ${order.id}::uuid`,
+    );
+    assert.equal(
+      (await loadSource({ entity_type: "order", entity_id: order.id }))
+        ?.fulfilled,
+      false,
+      "carrier status cannot substitute for payment",
+    );
+    await db.execute(
+      sql`update checkout_orders set status = 'paid', active_fulfillment_shipment_id = null, manual_fulfillment_status = 'dispatched' where id = ${order.id}::uuid`,
+    );
+    assert.equal(
+      (await loadSource({ entity_type: "order", entity_id: order.id }))
+        ?.fulfilled,
+      true,
+      "manual dispatch remains eligible",
+    );
   },
 );

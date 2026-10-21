@@ -55,6 +55,12 @@ a paid enrollment. Refunds stop journeys. Only an exactly matching website-creat
 training opportunity still in its configured initial stage can be closed as won.
 Staff-moved deals and the LDA pipeline remain untouched. Historical inquiries create
 contact history notes without opening new follow-up tasks or opportunities.
+Historical commerce cannot stop newer journeys or close current opportunities;
+current consent suppression still applies. Retried sales journeys are skipped when
+a paid/refunded order's payment time is at or after the originating submission.
+Legacy orders without a payment timestamp use their creation time. New inquiries
+after a purchase remain eligible. Carrier-accepted and in-transit shipments qualify
+as confirmed dispatch; creating a shipping label alone does not.
 
 Contact identity uses normalized email and a separate phone lookup. Conflicts are
 held for review instead of merged. Only missing profile fields are filled; unrelated
@@ -223,7 +229,6 @@ not invent that contract or become the course entitlement authority.
 - [Webhook verification](https://marketplace.gohighlevel.com/docs/webhook/WebhookIntegrationGuide/)
 - [Contact DND](https://marketplace.gohighlevel.com/docs/webhook/ContactDndUpdate/)
 - [Workflow admission](https://marketplace.gohighlevel.com/docs/ghl/contacts/add-contact-to-workflow/)
-
 
 ## Independent website tracking
 
