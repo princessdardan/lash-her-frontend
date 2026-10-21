@@ -1,4 +1,6 @@
 import "server-only";
+import { recordCheckoutConsent } from "@/lib/highlevel/checkout-consent";
+import type { CheckoutMarketing } from "@/lib/highlevel/contract";
 
 import { ShippingQuoteConflictError } from "@/lib/shipping/errors";
 
@@ -200,6 +202,7 @@ export function assertReusedReservationMatches(
 }
 
 export interface CreateInitializingProductOrderInput {
+  marketing?: CheckoutMarketing;
   customerName: string;
   customerEmail: string;
   /**
@@ -245,6 +248,7 @@ export interface InitializingProductOrderRecord {
 }
 
 export interface CreateInitializingManualProductOrderInput {
+  marketing?: CheckoutMarketing;
   customerName: string;
   customerEmail: string;
   customerPhone?: string;
@@ -314,6 +318,7 @@ export interface SquareCardProviderMetadata extends CheckoutProviderMetadata {
 }
 
 export interface CreatePendingSquareTrainingCardOrderInput {
+  marketing?: CheckoutMarketing;
   customerName: string;
   customerEmail: string;
   programSlug: string;
@@ -822,6 +827,12 @@ export async function createInitializingProductOrder(
       .returning({ id: checkoutOrders.id });
     // Hold inventory before wiring up the shipment/obligation. A shortfall
     // throws InsufficientStockError, rolling back the whole order creation.
+    await recordCheckoutConsent(tx, {
+      orderId: order.id,
+      email: input.customerEmail,
+      marketing: input.marketing,
+      source: "product_checkout",
+    });
     await reserveProductStockInTransaction(tx, orderId, input.cart.lineItems);
     const [attached] = await tx
       .update(productShipments)
@@ -1102,6 +1113,12 @@ export async function createInitializingManualProductOrder(
     }
     // Fresh insert only — the retry-reuse branch above returns before here, so a
     // repeated reservationKey never double-reserves inventory.
+    await recordCheckoutConsent(tx, {
+      orderId: order.id,
+      email: input.customerEmail,
+      marketing: input.marketing,
+      source: "product_checkout",
+    });
     await reserveProductStockInTransaction(tx, orderId, input.cart.lineItems);
     const [obligation] = await tx
       .insert(orderPaymentObligations)
@@ -1336,109 +1353,116 @@ export async function createPendingSquareInvoiceOrder(
 export async function createPendingSquareTrainingCardOrder(
   input: CreatePendingSquareTrainingCardOrderInput,
 ): Promise<PendingSquareTrainingCardOrderRecord> {
-  const db = getPrivateDb();
-  const orderId = input.reservationKey
-    ? deriveDeterministicOrderId(input.reservationKey)
-    : `lh-${nanoid(12)}`;
-  const providerMetadata: SquareCardProviderMetadata = {
-    amountCents: input.amountCents,
-    correlationId: orderId,
-    currency: "CAD",
-    finalizationStatus: "pending",
-    flow:
-      input.afterpayAmountCents === undefined
-        ? "training_square_card"
-        : "training_square_split",
-    ...(input.afterpayAmountCents === undefined
-      ? {}
-      : {
-          splitPayment: {
-            afterpayAmountCents: input.afterpayAmountCents,
-            cardAmountCents: input.amountCents - input.afterpayAmountCents,
-            stage: "reserved",
-          },
-        }),
-    programSlug: input.programSlug,
-  };
+  return getPrivateDb().transaction(async (db) => {
+    const orderId = input.reservationKey
+      ? deriveDeterministicOrderId(input.reservationKey)
+      : `lh-${nanoid(12)}`;
+    const providerMetadata: SquareCardProviderMetadata = {
+      amountCents: input.amountCents,
+      correlationId: orderId,
+      currency: "CAD",
+      finalizationStatus: "pending",
+      flow:
+        input.afterpayAmountCents === undefined
+          ? "training_square_card"
+          : "training_square_split",
+      ...(input.afterpayAmountCents === undefined
+        ? {}
+        : {
+            splitPayment: {
+              afterpayAmountCents: input.afterpayAmountCents,
+              cardAmountCents: input.amountCents - input.afterpayAmountCents,
+              stage: "reserved",
+            },
+          }),
+      programSlug: input.programSlug,
+    };
 
-  const insertTrainingOrder = db.insert(checkoutOrders).values({
-    orderId,
-    status: "pending",
-    checkoutTokenHash: null,
-    secretTokenCiphertext: null,
-    customerName: input.customerName,
-    customerEmail: input.customerEmail,
-    purpose: "training",
-    amountCents: input.amountCents,
-    merchandiseAmountCents: input.merchandiseAmountCents,
-    shippingAmountCents: 0,
-    taxAmountCents: input.taxAmountCents,
-    promotionCode: input.cart.promotionCode ?? null,
-    promotionDiscountCents: toCents(input.cart.promotionDiscountAmount ?? 0),
-    manualDiscountCents: toCents(input.cart.manualDiscountAmount ?? 0),
-    currency: "CAD",
-    lineItems: toOrderLineItemSnapshots(input.cart),
-    paymentProvider: "square",
-    providerStatus: "pending",
-    providerMetadata,
+    const insertTrainingOrder = db.insert(checkoutOrders).values({
+      orderId,
+      status: "pending",
+      checkoutTokenHash: null,
+      secretTokenCiphertext: null,
+      customerName: input.customerName,
+      customerEmail: input.customerEmail,
+      purpose: "training",
+      amountCents: input.amountCents,
+      merchandiseAmountCents: input.merchandiseAmountCents,
+      shippingAmountCents: 0,
+      taxAmountCents: input.taxAmountCents,
+      promotionCode: input.cart.promotionCode ?? null,
+      promotionDiscountCents: toCents(input.cart.promotionDiscountAmount ?? 0),
+      manualDiscountCents: toCents(input.cart.manualDiscountAmount ?? 0),
+      currency: "CAD",
+      lineItems: toOrderLineItemSnapshots(input.cart),
+      paymentProvider: "square",
+      providerStatus: "pending",
+      providerMetadata,
+    });
+
+    // Idempotent reservation: with a client-supplied reservationKey the orderId is
+    // deterministic, so a retry of the same attempt conflicts on the unique
+    // orderId and is reused — one order, one Square idempotency key → Square
+    // dedupes the charge. Without a key, keep the random-orderId insert.
+    const [order] = await (
+      input.reservationKey
+        ? insertTrainingOrder.onConflictDoNothing({
+            target: checkoutOrders.orderId,
+          })
+        : insertTrainingOrder
+    ).returning({ id: checkoutOrders.id });
+    if (order) {
+      await recordCheckoutConsent(db, {
+        orderId: order.id,
+        email: input.customerEmail,
+        marketing: input.marketing,
+        source: "training_checkout",
+      });
+      return { databaseId: order.id, orderId };
+    }
+
+    // No row: the deterministic orderId already existed (a retry with the same
+    // reservationKey). Reuse the original order after verifying it belongs to the
+    // same customer + purpose.
+    if (!input.reservationKey) {
+      throw new Error("Square training order could not be created");
+    }
+    const [existing] = await db
+      .select({
+        id: checkoutOrders.id,
+        customerEmail: checkoutOrders.customerEmail,
+        purpose: checkoutOrders.purpose,
+        amountCents: checkoutOrders.amountCents,
+        paymentProvider: checkoutOrders.paymentProvider,
+        providerMetadata: checkoutOrders.providerMetadata,
+      })
+      .from(checkoutOrders)
+      .where(eq(checkoutOrders.orderId, orderId))
+      .limit(1);
+    if (!existing) {
+      throw new Error("Square training order could not be created");
+    }
+    assertReusedReservationMatches(existing, {
+      customerEmail: input.customerEmail,
+      purpose: "training",
+    });
+
+    const existingSplit = existing.providerMetadata?.splitPayment as
+      | { afterpayAmountCents?: number }
+      | undefined;
+    if (
+      existing.paymentProvider !== "square" ||
+      existing.amountCents !== input.amountCents ||
+      existing.providerMetadata?.programSlug !== input.programSlug ||
+      existing.providerMetadata?.flow !== providerMetadata.flow ||
+      existingSplit?.afterpayAmountCents !== input.afterpayAmountCents
+    ) {
+      throw new Error(
+        "Checkout changed. Resolve the existing payment before starting another purchase.",
+      );
+    }
+    return { databaseId: existing.id, orderId };
   });
-
-  // Idempotent reservation: with a client-supplied reservationKey the orderId is
-  // deterministic, so a retry of the same attempt conflicts on the unique
-  // orderId and is reused — one order, one Square idempotency key → Square
-  // dedupes the charge. Without a key, keep the random-orderId insert.
-  const [order] = await (
-    input.reservationKey
-      ? insertTrainingOrder.onConflictDoNothing({
-          target: checkoutOrders.orderId,
-        })
-      : insertTrainingOrder
-  ).returning({ id: checkoutOrders.id });
-  if (order) {
-    return { databaseId: order.id, orderId };
-  }
-
-  // No row: the deterministic orderId already existed (a retry with the same
-  // reservationKey). Reuse the original order after verifying it belongs to the
-  // same customer + purpose.
-  if (!input.reservationKey) {
-    throw new Error("Square training order could not be created");
-  }
-  const [existing] = await db
-    .select({
-      id: checkoutOrders.id,
-      customerEmail: checkoutOrders.customerEmail,
-      purpose: checkoutOrders.purpose,
-      amountCents: checkoutOrders.amountCents,
-      paymentProvider: checkoutOrders.paymentProvider,
-      providerMetadata: checkoutOrders.providerMetadata,
-    })
-    .from(checkoutOrders)
-    .where(eq(checkoutOrders.orderId, orderId))
-    .limit(1);
-  if (!existing) {
-    throw new Error("Square training order could not be created");
-  }
-  assertReusedReservationMatches(existing, {
-    customerEmail: input.customerEmail,
-    purpose: "training",
-  });
-
-  const existingSplit = existing.providerMetadata?.splitPayment as
-    | { afterpayAmountCents?: number }
-    | undefined;
-  if (
-    existing.paymentProvider !== "square" ||
-    existing.amountCents !== input.amountCents ||
-    existing.providerMetadata?.programSlug !== input.programSlug ||
-    existing.providerMetadata?.flow !== providerMetadata.flow ||
-    existingSplit?.afterpayAmountCents !== input.afterpayAmountCents
-  ) {
-    throw new Error(
-      "Checkout changed. Resolve the existing payment before starting another purchase.",
-    );
-  }
-  return { databaseId: existing.id, orderId };
 }
 
 export async function markOrderVerificationFailed(

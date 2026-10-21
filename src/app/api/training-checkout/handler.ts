@@ -1,4 +1,8 @@
 import {
+  parseCheckoutMarketing,
+  type CheckoutMarketing,
+} from "@/lib/highlevel/contract";
+import {
   parseTrainingSplitPayment,
   validateTrainingSplitPayment,
   type TrainingSplitPayment,
@@ -42,6 +46,7 @@ interface TrainingCheckoutPostHandlerDependencies {
   reserveSquareTrainingOrder?: (input: {
     customerName: string;
     customerEmail: string;
+    marketing?: CheckoutMarketing;
     programSlug: string;
     amountCents: number;
     merchandiseAmountCents: number;
@@ -113,6 +118,16 @@ export function createTrainingCheckoutPostHandler({
     }
 
     const programSlug = parseProgramSlug(body);
+    const marketing = parseCheckoutMarketing(
+      typeof body === "object" && body !== null
+        ? (body as Record<string, unknown>).marketing
+        : undefined,
+    );
+    if (!marketing)
+      return NextResponse.json(
+        { error: "Invalid marketing preferences or SMS phone number" },
+        { status: 400 },
+      );
 
     if (programSlug === null) {
       return invalidTrainingCheckoutRequest();
@@ -181,6 +196,7 @@ export function createTrainingCheckoutPostHandler({
         const reserved = await reserveSquareTrainingOrder({
           customerName: quote.customerName,
           customerEmail: quote.customerEmail,
+          marketing,
           programSlug: quote.programSlug,
           amountCents: toCents(quote.total),
           merchandiseAmountCents: toCents(quote.subtotal),

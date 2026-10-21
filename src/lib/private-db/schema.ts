@@ -2594,6 +2594,7 @@ export const customerEmailOutbox = pgTable(
       { onDelete: "set null" },
     ),
     kind: text("kind").notNull(),
+    deliveryProvider: text("delivery_provider").notNull().default("resend"),
     recipientCiphertext: text("recipient_ciphertext").notNull(),
     recipientEmailNormalized: text("recipient_email_normalized"),
     templateDataCiphertext: text("template_data_ciphertext").notNull(),
@@ -3713,3 +3714,4 @@ export const bookingNoShowChargeAttempts = pgTable(
     ),
   ],
 );
+export * from "@/lib/highlevel/schema";

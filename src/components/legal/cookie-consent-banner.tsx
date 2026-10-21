@@ -2,145 +2,180 @@
 
 import * as React from "react";
 import {
-  COOKIE_CONSENT_STORAGE_KEY,
   createCookieConsentChoice,
   parseCookieConsent,
-  serializeCookieConsent,
+  type CookieConsentChoice,
 } from "@/lib/cookie-consent";
+import {
+  getCookieConsentSnapshot,
+  getServerCookieConsentSnapshot,
+  migrateLegacyCookieConsent,
+  saveCookieConsent,
+  subscribeToCookieConsent,
+} from "@/lib/cookie-consent-store";
 
-const CONSENT_UPDATED_EVENT = "lh-cookie-consent-updated";
-
-type ConsentSnapshot = "pending" | "missing" | "stored";
-
-export function CookieConsentBanner() {
-  const consentSnapshot = React.useSyncExternalStore(
-    subscribeToConsentUpdates,
-    getStoredConsentSnapshot,
-    getServerConsentSnapshot,
+export function CookieConsentBanner({
+  crmTrackingAvailable = false,
+}: {
+  crmTrackingAvailable?: boolean;
+}) {
+  const snapshot = React.useSyncExternalStore(
+    subscribeToCookieConsent,
+    getCookieConsentSnapshot,
+    getServerCookieConsentSnapshot,
   );
-  const detailsId = React.useId();
-  const [hasHandledChoice, setHasHandledChoice] = React.useState(false);
-  const [showDetails, setShowDetails] = React.useState(false);
+  const choice = parseCookieConsent(snapshot);
+  const [managing, setManaging] = React.useState(false);
+  const [storageWarning, setStorageWarning] = React.useState(false);
+  const manageButton = React.useRef<HTMLButtonElement>(null);
 
-  function saveChoice(analytics: boolean) {
-    const choice = createCookieConsentChoice(analytics);
-    try {
-      window.localStorage.setItem(
-        COOKIE_CONSENT_STORAGE_KEY,
-        serializeCookieConsent(choice),
-      );
-    } catch {
-      // Storage can be unavailable in restricted browsing contexts; still honor the in-session choice.
-    }
+  React.useEffect(() => {
+    migrateLegacyCookieConsent();
+  }, []);
 
-    window.dispatchEvent(new Event(CONSENT_UPDATED_EVENT));
-    setHasHandledChoice(true);
+  function save(analytics: boolean, crmTracking: boolean) {
+    setStorageWarning(
+      !saveCookieConsent(createCookieConsentChoice({ analytics, crmTracking })),
+    );
+    setManaging(false);
+    manageButton.current?.focus({ preventScroll: true });
   }
 
-  const isReady = consentSnapshot !== "pending";
-  const isVisible = !hasHandledChoice && consentSnapshot === "missing";
+  return (
+    <>
+      <div className="bg-lh-shadow px-4 pb-6 text-center text-sm text-lh-neutral">
+        <button
+          ref={manageButton}
+          type="button"
+          className="underline underline-offset-4"
+          onClick={() => setManaging(true)}
+        >
+          Manage cookie preferences
+        </button>
+        {storageWarning ? (
+          <p role="status" className="mt-2">
+            Preferences apply to this tab only because browser storage is
+            unavailable. You may be asked again after reloading.
+          </p>
+        ) : null}
+      </div>
+      {snapshot !== null && (managing || !choice) ? (
+        <ConsentChoices
+          key={snapshot}
+          choice={choice}
+          crmTrackingAvailable={crmTrackingAvailable}
+          onSave={save}
+        />
+      ) : null}
+    </>
+  );
+}
 
-  if (!isReady || !isVisible) return null;
+function ConsentChoices({
+  choice,
+  crmTrackingAvailable,
+  onSave,
+}: {
+  choice: CookieConsentChoice | null;
+  crmTrackingAvailable: boolean;
+  onSave: (analytics: boolean, crmTracking: boolean) => void;
+}) {
+  const [analytics, setAnalytics] = React.useState(choice?.analytics ?? false);
+  const [crmTracking, setCrmTracking] = React.useState(
+    choice?.crmTracking ?? false,
+  );
+  const headingId = React.useId();
+  const analyticsId = React.useId();
+  const crmId = React.useId();
+  const heading = React.useRef<HTMLHeadingElement>(null);
+  React.useEffect(() => {
+    heading.current?.focus({ preventScroll: true });
+  }, []);
 
   return (
     <section
       aria-label="Cookie consent"
-      className="fixed inset-x-4 bottom-4 z-50 mx-auto max-w-4xl rounded-[24px] border border-lh-line bg-lh-white p-5 text-lh-shadow shadow-[0_24px_70px_rgba(28,19,24,0.18)] md:p-6"
+      className="fixed inset-x-4 bottom-4 z-50 mx-auto max-h-[85dvh] max-w-4xl overflow-y-auto rounded-[24px] border border-lh-line bg-lh-white p-5 text-lh-shadow shadow-[0_24px_70px_rgba(28,19,24,0.18)] md:p-6"
     >
-      <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-start">
-        <div>
-          <p className="eyebrow-label mb-2">Privacy Preferences</p>
-          <h2 className="font-heading text-2xl font-normal tracking-[-0.01em] text-lh-shadow">
-            We use required cookies and optional analytics.
-          </h2>
-          <p className="mt-3 font-body text-sm font-bold leading-6 text-lh-shadow/75">
-            Required storage keeps the site working for carts, bookings,
-            checkout, course access and progress, and preferences. Analytics
-            helps us understand site performance and will only load if you
-            accept analytics cookies.
-          </p>
-          <div
-            className="mt-4 grid gap-3 rounded-2xl bg-lh-neutral-2 p-4 font-body text-sm font-bold leading-6 text-lh-shadow/75 md:grid-cols-2"
-            hidden={!showDetails}
-            id={detailsId}
-          >
-            <div>
-              <h3 className="text-lh-shadow">Required</h3>
-              <p>
-                Always on. Supports functional site behavior such as cart,
-                booking, checkout, remembered course access and progress, and
-                saved preferences.
-              </p>
-            </div>
-            <div>
-              <h3 className="text-lh-shadow">Analytics</h3>
-              <p>
-                Optional. Helps measure visits and improve the website.
-                Analytics is off unless you accept it.
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="flex flex-col gap-3 sm:flex-row md:min-w-56 md:flex-col">
-          <button
-            className="rounded-full bg-lh-primary px-5 py-3 font-body text-xs font-bold uppercase tracking-[0.14em] text-lh-white transition-colors hover:bg-lh-accent"
-            type="button"
-            onClick={() => saveChoice(true)}
-          >
-            Accept analytics
-          </button>
-          <button
-            className="rounded-full border border-lh-primary px-5 py-3 font-body text-xs font-bold uppercase tracking-[0.14em] text-lh-primary transition-colors hover:bg-lh-primary-soft"
-            type="button"
-            onClick={() => saveChoice(false)}
-          >
-            Reject analytics
-          </button>
-          <button
-            className="font-body text-xs font-bold uppercase tracking-[0.14em] text-lh-muted underline underline-offset-4 transition-colors hover:text-lh-shadow"
-            type="button"
-            aria-controls={detailsId}
-            aria-expanded={showDetails}
-            onClick={() => setShowDetails((current) => !current)}
-          >
-            Manage choices
-          </button>
-        </div>
+      <p className="eyebrow-label mb-2">Privacy Preferences</p>
+      <h2
+        id={headingId}
+        ref={heading}
+        tabIndex={-1}
+        className="font-heading text-2xl font-normal"
+      >
+        Choose optional website tracking
+      </h2>
+      <p className="mt-3 font-body text-sm font-bold leading-6 text-lh-shadow/75">
+        Required storage is always on for carts, checkout, course access and
+        progress, and saved preferences. Optional choices are off by default and
+        do not affect site access.
+      </p>
+      <div className="mt-4 grid gap-4 rounded-2xl bg-lh-neutral-2 p-4 font-body text-sm font-bold leading-6 md:grid-cols-2">
+        <label className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            className="mt-1 size-4 accent-lh-primary"
+            aria-label="Analytics"
+            checked={analytics}
+            onChange={(event) => setAnalytics(event.target.checked)}
+            aria-describedby={analyticsId}
+          />
+          <span>
+            Analytics
+            <span id={analyticsId} className="block font-normal">
+              Measure visits and improve website performance.
+            </span>
+          </span>
+        </label>
+        <label className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            className="mt-1 size-4 accent-lh-primary"
+            aria-label="CRM/marketing tracking"
+            checked={crmTracking}
+            onChange={(event) => setCrmTracking(event.target.checked)}
+            aria-describedby={crmId}
+          />
+          <span>
+            CRM/marketing tracking
+            <span id={crmId} className="block font-normal">
+              Allow HighLevel to link public-page browsing and campaign
+              attribution with a contact when tracking is available. This does
+              not grant email or SMS marketing permission.
+            </span>
+          </span>
+        </label>
+      </div>
+      {!crmTrackingAvailable ? (
+        <p className="mt-3 font-body text-sm leading-6">
+          HighLevel tracking is currently disabled. Your preference can be
+          saved, but no HighLevel tracker loads or sends browsing data.
+        </p>
+      ) : null}
+      <div className="mt-5 flex flex-wrap gap-3">
+        <button
+          type="button"
+          className="rounded-full bg-lh-primary px-5 py-3 font-body text-xs font-bold uppercase tracking-[0.14em] text-lh-white"
+          onClick={() => onSave(analytics, crmTracking)}
+        >
+          Save choices
+        </button>
+        <button
+          type="button"
+          className="rounded-full border border-lh-primary px-5 py-3 font-body text-xs font-bold uppercase tracking-[0.14em] text-lh-primary"
+          onClick={() => onSave(true, false)}
+        >
+          Accept analytics only
+        </button>
+        <button
+          type="button"
+          className="rounded-full border border-lh-primary px-5 py-3 font-body text-xs font-bold uppercase tracking-[0.14em] text-lh-primary"
+          onClick={() => onSave(false, false)}
+        >
+          Reject optional cookies
+        </button>
       </div>
     </section>
   );
-}
-
-function readStoredConsent() {
-  try {
-    return parseCookieConsent(
-      window.localStorage.getItem(COOKIE_CONSENT_STORAGE_KEY),
-    );
-  } catch {
-    return null;
-  }
-}
-
-function getStoredConsentSnapshot(): ConsentSnapshot {
-  return readStoredConsent() === null ? "missing" : "stored";
-}
-
-function subscribeToConsentUpdates(onStoreChange: () => void) {
-  function handleStorageEvent(event: StorageEvent) {
-    if (event.key === COOKIE_CONSENT_STORAGE_KEY || event.key === null) {
-      onStoreChange();
-    }
-  }
-
-  window.addEventListener(CONSENT_UPDATED_EVENT, onStoreChange);
-  window.addEventListener("storage", handleStorageEvent);
-
-  return () => {
-    window.removeEventListener(CONSENT_UPDATED_EVENT, onStoreChange);
-    window.removeEventListener("storage", handleStorageEvent);
-  };
-}
-
-function getServerConsentSnapshot(): ConsentSnapshot {
-  return "pending";
 }

@@ -102,9 +102,11 @@ async function signup(page: Page, instagram?: string) {
   if (instagram)
     await page.getByLabel("Instagram handle (optional)").fill(instagram);
   await expect(
-    page.getByRole("checkbox", { name: /I agree to receive/ }),
+    page.getByRole("checkbox", { name: /I agree to receive marketing emails/ }),
   ).not.toBeChecked();
-  await page.getByRole("checkbox", { name: /I agree to receive/ }).check();
+  await page
+    .getByRole("checkbox", { name: /I agree to receive marketing emails/ })
+    .check();
   await page.getByRole("button", { name: "Sign up and access course" }).click();
   await expect(
     page.getByRole("navigation", { name: "Course modules" }),
@@ -147,7 +149,7 @@ test("unauthorized HTML and RSC contain only the teaser; popup is suppressed", a
   await expect(page.getByLabel("Instagram handle (optional)")).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(
-    page.getByRole("checkbox", { name: /I agree to receive/ }),
+    page.getByRole("checkbox", { name: /I agree to receive marketing emails/ }),
   ).toBeFocused();
 });
 
@@ -164,7 +166,9 @@ test("signup requires a full name and valid phone and saves all contact details"
   await expect(name).toHaveAttribute("required", "");
   await expect(phone).toHaveAttribute("required", "");
   await expect(instagram).not.toHaveAttribute("required");
-  await page.getByRole("checkbox", { name: /I agree to receive/ }).check();
+  await page
+    .getByRole("checkbox", { name: /I agree to receive marketing emails/ })
+    .check();
   const submit = page.getByRole("button", {
     name: "Sign up and access course",
   });
@@ -684,7 +688,9 @@ test("discarded access cookies show a persistence error without repeated signups
   await page.getByLabel("Full name (first and last name)").fill("Alex Learner");
   await page.getByLabel("Email address").fill(email);
   await page.getByLabel("Phone number").fill("4165550123");
-  await page.getByRole("checkbox", { name: /I agree to receive/ }).check();
+  await page
+    .getByRole("checkbox", { name: /I agree to receive marketing emails/ })
+    .check();
   await page.getByRole("button", { name: "Sign up and access course" }).click();
   await expect(
     page
@@ -701,4 +707,81 @@ test("discarded access cookies show a persistence error without repeated signups
       )
     ).rows[0].count,
   ).toBe(1);
+});
+
+test("marketing choices are optional and email and SMS consent are independent", async ({
+  page,
+}) => {
+  const email = `course-optional-${randomUUID()}@example.invalid`;
+  emails.push(email);
+  await page.goto(coursePath);
+  const emailChoice = page.getByRole("checkbox", {
+    name: /I agree to receive marketing emails/,
+  });
+  const smsChoice = page.getByRole("checkbox", {
+    name: /I agree to receive recurring marketing text/,
+  });
+  await expect(emailChoice).not.toBeChecked();
+  await expect(smsChoice).not.toBeChecked();
+  await expect(emailChoice).not.toHaveAttribute("required");
+  await expect(smsChoice).not.toHaveAttribute("required");
+  await smsChoice.check();
+  await expect(emailChoice).not.toBeChecked();
+  await smsChoice.uncheck();
+  await page
+    .getByLabel("Full name (first and last name)")
+    .fill("Optional Learner");
+  await page.getByLabel("Email address").fill(email);
+  await page.getByLabel("Phone number").fill("+1 (416) 555-0123");
+  await page.getByRole("button", { name: "Sign up and access course" }).click();
+  await expect(
+    page.getByRole("navigation", { name: "Course modules" }),
+  ).toBeVisible();
+  expect(
+    (
+      await pool!.query(
+        "SELECT count(*)::int AS count FROM marketing_contacts WHERE email_normalized=$1",
+        [email],
+      )
+    ).rows[0].count,
+  ).toBe(0);
+  const evidence = await pool!.query(
+    "SELECT channel, choice FROM highlevel_consent_events WHERE email_normalized=$1 ORDER BY channel",
+    [email],
+  );
+  expect(evidence.rows).toEqual([
+    { channel: "email", choice: "not_opted_in" },
+    { channel: "sms", choice: "not_opted_in" },
+  ]);
+});
+
+test("popup consent keeps phone optional until SMS is selected", async ({
+  page,
+}) => {
+  await page.goto("/contact");
+  const popup = page.getByRole("dialog");
+  await expect(popup).toBeVisible({ timeout: 15_000 });
+  const emailChoice = popup.getByRole("checkbox", {
+    name: /I agree to receive marketing emails/,
+  });
+  const smsChoice = popup.getByRole("checkbox", {
+    name: /I agree to receive recurring marketing text/,
+  });
+  await expect(emailChoice).not.toBeChecked();
+  await expect(smsChoice).not.toBeChecked();
+  await expect(popup.getByLabel("Phone number for text messages")).toHaveCount(
+    0,
+  );
+  await smsChoice.check();
+  await expect(
+    popup.getByLabel("Phone number for text messages"),
+  ).toBeVisible();
+  await expect(
+    popup.getByLabel("Phone number for text messages"),
+  ).toHaveAttribute("required", "");
+  await expect(emailChoice).not.toBeChecked();
+  await smsChoice.uncheck();
+  await expect(popup.getByLabel("Phone number for text messages")).toHaveCount(
+    0,
+  );
 });

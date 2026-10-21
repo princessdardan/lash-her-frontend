@@ -53,6 +53,7 @@ const helperScript = String.raw`
   }
 
   const data = {
+    marketingConsent: true,
     variant: "fullContact",
     name: " Subscriber ",
     email: "subscriber@example.com",

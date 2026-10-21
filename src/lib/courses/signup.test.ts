@@ -64,13 +64,15 @@ test("signup saves server-derived course and consent context before setting acce
       instagram: "@lash.learner",
       courseId: "course-one",
       courseTitle: "Lash care",
+      marketingConsent: true,
+      smsMarketingConsent: false,
       sourcePath: "/courses/lash-care",
       submittedAt: new Date(now),
     },
   ]);
 });
 
-test("invalid contact details, missing consent, honeypot and invalid course never write or grant", async () => {
+test("invalid contact details, malformed consent, honeypot and invalid course never write or grant", async () => {
   for (const change of [
     { name: "" },
     { name: "   " },
@@ -96,7 +98,6 @@ test("invalid contact details, missing consent, honeypot and invalid course neve
     { instagram: "@" },
     { instagram: "x".repeat(31) },
     { instagram: {} },
-    { marketingConsent: false },
     { marketingConsent: "true" },
     { company: "bot" },
     { courseId: "" },
@@ -261,4 +262,20 @@ test("persistence failure never grants access; limiter/configuration failures al
     assert.equal((await signupForCourse(input, dependencies)).success, false);
     assert.ok(!events.includes("cookie"));
   }
+});
+
+test("course access is granted when both marketing choices are unchecked", async () => {
+  const { dependencies, events, records } = fixture();
+  assert.equal(
+    (
+      await signupForCourse(
+        { ...input, marketingConsent: false, smsMarketingConsent: false },
+        dependencies,
+      )
+    ).success,
+    true,
+  );
+  assert.deepEqual(events, ["limit", "persist", "cookie"]);
+  assert.equal(records[0].marketingConsent, false);
+  assert.equal(records[0].smsMarketingConsent, false);
 });

@@ -1,5 +1,10 @@
 "use server";
 
+import {
+  validateMarketingChoices,
+  EMAIL_CONSENT_TEXT,
+} from "@/lib/highlevel/contract";
+
 import { sendFormEmails } from "@/lib/email";
 import type {
   GeneralInquiryData,
@@ -19,11 +24,8 @@ import {
   type FieldValidationConfig,
 } from "@/lib/form-validation";
 import {
-  CONTACT_POPUP_CONSENT_TEXT,
-  GENERAL_INQUIRY_CONSENT_TEXT,
   recordGeneralInquirySubmission,
   recordTrainingContactSubmission,
-  TRAINING_CONTACT_CONSENT_TEXT,
 } from "@/lib/marketing-contact/marketing-contact-store";
 
 export interface FormActionResult {
@@ -117,6 +119,9 @@ function isContactPopupRateLimited(email: string) {
 export async function submitContactPopup(
   data: ContactPopupData,
 ): Promise<FormActionResult> {
+  const choiceErrors = validateMarketingChoices(data);
+  if (Object.keys(choiceErrors).length)
+    return { success: false, fieldErrors: choiceErrors };
   if (data.company) {
     return { success: true };
   }
@@ -150,7 +155,7 @@ export async function submitContactPopup(
     await processContactPopupSubmission({
       ...data,
       variant,
-      consentText: data.consentText ?? CONTACT_POPUP_CONSENT_TEXT,
+      consentText: EMAIL_CONSENT_TEXT,
     });
 
     return { success: true };
@@ -169,6 +174,9 @@ export async function submitContactPopup(
 export async function submitGeneralInquiry(
   data: GeneralInquiryData,
 ): Promise<FormActionResult> {
+  const choiceErrors = validateMarketingChoices(data);
+  if (Object.keys(choiceErrors).length)
+    return { success: false, fieldErrors: choiceErrors };
   // D-03: Server-side re-validation with field-level errors
   const { errors, isValid } = validateForm(
     {
@@ -196,7 +204,9 @@ export async function submitGeneralInquiry(
       instagram: data.instagram || undefined,
       message: data.message,
       marketingConsent: data.marketingConsent === true,
-      consentText: data.consentText ?? GENERAL_INQUIRY_CONSENT_TEXT,
+      smsMarketingConsent: data.smsMarketingConsent === true,
+      attribution: data.attribution,
+      consentText: EMAIL_CONSENT_TEXT,
       sourcePath: data.sourcePath || undefined,
     });
   } catch (err) {
@@ -223,6 +233,9 @@ export async function submitGeneralInquiry(
 export async function submitTrainingContact(
   data: TrainingContactData,
 ): Promise<FormActionResult> {
+  const choiceErrors = validateMarketingChoices(data);
+  if (Object.keys(choiceErrors).length)
+    return { success: false, fieldErrors: choiceErrors };
   // D-03: Server-side re-validation with field-level errors
   const { errors, isValid } = validateForm(
     {
@@ -253,7 +266,9 @@ export async function submitTrainingContact(
       programSlug: data.programSlug,
       programTitle: data.programTitle,
       marketingConsent: data.marketingConsent === true,
-      consentText: data.consentText ?? TRAINING_CONTACT_CONSENT_TEXT,
+      smsMarketingConsent: data.smsMarketingConsent === true,
+      attribution: data.attribution,
+      consentText: EMAIL_CONSENT_TEXT,
       privacyPolicyConsent: data.privacyPolicyConsent === true,
       sourcePath: data.sourcePath || undefined,
     });

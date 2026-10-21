@@ -1,4 +1,5 @@
 import "server-only";
+import { retainHighLevelRecords } from "@/lib/highlevel/retention";
 
 import {
   and,
@@ -338,6 +339,7 @@ export type PrivateDataRetentionOperation =
   | "checkoutOrdersPurged"
   | "checkoutOrdersRedacted"
   | "expiredAdminStepUpProofsDeleted"
+  | "highlevelRecordsExpired"
   | "shippingPolicyPiiRedacted"
   | "checkoutOrdersSoftDeleted"
   | "checkoutPaymentEventsDeleted"
@@ -652,6 +654,7 @@ export async function runPrivateDataRetentionCleanup(
     .where(lte(adminStepUpProofs.expiresAt, now))
     .returning({ id: adminStepUpProofs.id });
   const shippingCount = await redactShippingPolicyPii(now);
+  const crmCount = await retainHighLevelRecords(now);
   const summary = await createPrivateDataRetentionCleanup(
     createDrizzlePrivateDataRetentionRepository(),
   )({ now });
@@ -669,9 +672,22 @@ export async function runPrivateDataRetentionCleanup(
   };
   return {
     ...summary,
-    operations: [...summary.operations, shippingOperation, stepUpOperation],
+    operations: [
+      ...summary.operations,
+      shippingOperation,
+      stepUpOperation,
+      {
+        operation: "highlevelRecordsExpired",
+        count: crmCount,
+        cutoff: now.toISOString(),
+        table: "highlevel_integration_records",
+      },
+    ],
     totalAffected:
-      summary.totalAffected + shippingCount + deletedStepUpProofs.length,
+      summary.totalAffected +
+      shippingCount +
+      crmCount +
+      deletedStepUpProofs.length,
   };
 }
 

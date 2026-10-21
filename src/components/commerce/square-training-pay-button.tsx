@@ -1,4 +1,9 @@
 "use client";
+import { MarketingConsent } from "@/components/custom/marketing-consent";
+import {
+  validateMarketingChoices,
+  type CheckoutMarketing,
+} from "@/lib/highlevel/contract";
 
 import {
   useCallback,
@@ -60,6 +65,7 @@ export function SquareTrainingPayButton({
   const afterpayTokenRef = useRef<SquareCheckoutPayment | null>(null);
   const reservationKeyRef = useRef<string | undefined>(undefined);
   const submissionInFlightRef = useRef(false);
+  const [marketing, setMarketing] = useState<CheckoutMarketing>({});
   const [isLoading, setIsLoading] = useState(false);
   const [isCardReady, setIsCardReady] = useState(false);
   const [isUnavailable, setIsUnavailable] = useState(false);
@@ -135,6 +141,8 @@ export function SquareTrainingPayButton({
   const submitPayment = async (
     payment: SquareCheckoutPayment | TrainingSplitPayment,
   ) => {
+    const consentError = Object.values(validateMarketingChoices(marketing))[0];
+    if (consentError) throw new Error(consentError);
     reservationKeyRef.current ??= crypto.randomUUID();
     const isSplit = payment.method === "afterpay_card";
     // Keep uncertain attempts across retries and reloads; recovery needs no new
@@ -149,6 +157,7 @@ export function SquareTrainingPayButton({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         programSlug,
+        marketing,
         customerName: customer.name,
         customerEmail: customer.email,
         clientPrice,
@@ -223,6 +232,12 @@ export function SquareTrainingPayButton({
 
   return (
     <div className="flex flex-col gap-3">
+      <MarketingConsent
+        id="checkout-marketing"
+        includePhone
+        disabled={isLoading}
+        onChange={setMarketing}
+      />
       {error && (
         <div
           className="rounded-[18px] border border-lh-accent/20 bg-lh-accent-soft p-3 text-sm font-bold leading-6 text-lh-accent"

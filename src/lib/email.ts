@@ -1,3 +1,4 @@
+import type { CampaignAttribution } from "@/lib/highlevel/attribution";
 import "server-only";
 
 import {
@@ -25,6 +26,8 @@ export interface GeneralInquiryData {
   instagram?: string;
   message: string;
   marketingConsent?: boolean;
+  smsMarketingConsent?: boolean;
+  attribution?: CampaignAttribution;
   consentText?: string;
   sourcePath?: string;
 }
@@ -38,12 +41,18 @@ export interface TrainingContactData {
   programSlug: string;
   programTitle: string;
   marketingConsent?: boolean;
+  smsMarketingConsent?: boolean;
+  attribution?: CampaignAttribution;
   consentText?: string;
   privacyPolicyConsent?: boolean;
   sourcePath?: string;
 }
 
 export interface ContactPopupData {
+  marketingConsent?: boolean;
+  smsMarketingConsent?: boolean;
+  attribution?: CampaignAttribution;
+  phone?: string;
   variant?: "fullContact" | "emailOnly";
   name?: string;
   email: string;

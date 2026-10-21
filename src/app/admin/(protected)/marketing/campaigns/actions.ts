@@ -1,5 +1,6 @@
 "use server";
 
+import { highLevelOwnsMarketing } from "@/lib/highlevel/config";
 import { revalidatePath } from "next/cache";
 
 import { requirePermission } from "@/lib/admin/auth";
@@ -62,6 +63,11 @@ export async function saveCampaignDraftAction(
     return { ok: false, error: permissionError(error) };
   }
 
+  if (highLevelOwnsMarketing())
+    return {
+      ok: false,
+      error: "Marketing campaigns are managed in HighLevel.",
+    };
   const subject = input.subject?.trim() ?? "";
 
   if (subject.length === 0) {

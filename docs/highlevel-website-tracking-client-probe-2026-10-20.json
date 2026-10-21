@@ -1,0 +1,38 @@
+{
+  "sourceSha256": "efe60b58f9f60b0a78a3b080523350a64db4b9c506b3849b6bcad4aa29331115",
+  "isolation": "Synthetic tracking ID; all outbound requests intercepted and aborted; no vendor ingestion/contact writes tested",
+  "before": {
+    "cookies": "",
+    "local": [],
+    "session": []
+  },
+  "after": {
+    "cookies": "lc_session_tk_lashher_isolated_probe=dd995686-2bea-40cc-8506-29b4000d4281",
+    "local": [],
+    "session": [],
+    "trackerMethods": [
+      "constructor",
+      "init",
+      "sendEvent"
+    ]
+  },
+  "initialViews": 1,
+  "afterNavigationViews": 1,
+  "formCaptureAfterScriptRemoval": true,
+  "formFieldNames": [
+    "email",
+    "intakeNotes",
+    "Timezone"
+  ],
+  "fullQueryAndFragmentInPageView": true,
+  "unloadEventsAfterScriptRemoval": 1,
+  "attemptedDestinations": [
+    "https://backend.leadconnectorhq.com/external-tracking/events"
+  ],
+  "observedEventTypes": [
+    "external_script_page_view",
+    "external_form_submission",
+    "external_page_time_spent"
+  ],
+  "identityAssociation": "Not tested; no designated contact or isolated location supplied"
+}

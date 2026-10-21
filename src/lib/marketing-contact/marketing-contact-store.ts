@@ -1,4 +1,14 @@
 import "server-only";
+import {
+  sanitizeAttribution,
+  type CampaignAttribution,
+} from "@/lib/highlevel/attribution";
+import { highLevelOwnsMarketing } from "@/lib/highlevel/config";
+import { recordSmsChoice } from "@/lib/highlevel/store";
+import {
+  CONSENT_VERSION,
+  type MarketingChoices,
+} from "@/lib/highlevel/contract";
 import { COURSE_CONSENT_TEXT } from "@/lib/courses/contract";
 
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
@@ -54,7 +64,8 @@ export interface SourceDocumentReference {
   sourceDocumentId: string;
 }
 
-export interface MarketingContactIdentity {
+export interface MarketingContactIdentity extends MarketingChoices {
+  attribution?: CampaignAttribution;
   email: string;
   instagram?: string;
   name?: string;
@@ -190,6 +201,7 @@ export interface MarketingContactUnsubscribeValues {
 }
 
 export interface MarketingContactPersistenceInput {
+  smsConsent?: boolean;
   contact: MarketingContactUpsertValues | null;
   contactPopupOffer?: {
     snapshot: ContactPopupSignupOfferSnapshot;
@@ -268,7 +280,7 @@ export function createMarketingContactStore(
         buildPersistenceInput({
           consentText: COURSE_CONSENT_TEXT,
           identity: input,
-          marketingConsent: true,
+          marketingConsent: input.marketingConsent === true,
           payload: { courseId: input.courseId, courseTitle: input.courseTitle },
           source: "course_signup",
           sourcePath: input.sourcePath,
@@ -325,8 +337,9 @@ export function createMarketingContactStore(
       const persistenceInput = buildPersistenceInput({
         consentText: input.consentText ?? CONTACT_POPUP_CONSENT_TEXT,
         identity: input,
-        marketingConsent: true,
+        marketingConsent: input.marketingConsent === true,
         payload: {
+          offerPromotionId: input.signupOffer?.promotionId,
           instagram: cleanOptionalText(input.instagram),
           sourcePath: cleanOptionalText(input.sourcePath),
           variant: input.variant,
@@ -340,7 +353,7 @@ export function createMarketingContactStore(
 
       return recordContact({
         ...persistenceInput,
-        ...(input.signupOffer
+        ...(input.signupOffer && input.marketingConsent === true
           ? {
               contactPopupOffer: {
                 snapshot: input.signupOffer,
@@ -540,6 +553,16 @@ function createDrizzleMarketingContactRepository(): MarketingContactRepository {
             submissionId: submission.id,
           })
           .returning({ id: marketingConsentEvents.id });
+
+        if (input.smsConsent !== undefined)
+          await recordSmsChoice(tx, {
+            email: input.submission.email,
+            phone: input.submission.phone,
+            optedIn: input.smsConsent,
+            source: input.submission.source,
+            originKey: `sms:${submission.id}`,
+            occurredAt: input.submission.submittedAt,
+          });
 
         let offerEmailResult:
           | Awaited<ReturnType<typeof enqueueCustomerEmailWithResult>>
@@ -861,7 +884,13 @@ function buildPersistenceInput(
     ...identity,
     consentChoice,
     consentText,
-    payload: cleanPayload(options.payload),
+    payload: cleanPayload({
+      ...options.payload,
+      ...(Object.keys(sanitizeAttribution(options.identity.attribution)).length
+        ? { attribution: sanitizeAttribution(options.identity.attribution) }
+        : {}),
+      marketingProvider: highLevelOwnsMarketing() ? "highlevel" : "resend",
+    }),
     source: options.source,
     sourceDocument: options.sourceDocument,
     sourcePath: cleanOptionalText(options.sourcePath),
@@ -875,6 +904,7 @@ function buildPersistenceInput(
     eventType,
     metadata: {
       consentChoice,
+      consentVersion: options.sourceDocument ? "legacy-email" : CONSENT_VERSION,
       sourceDocumentType: options.sourceDocument?.sourceDocumentType,
     },
     occurredAt: now,
@@ -882,6 +912,9 @@ function buildPersistenceInput(
   };
 
   return {
+    ...(options.identity.smsMarketingConsent === undefined
+      ? {}
+      : { smsConsent: options.identity.smsMarketingConsent }),
     contact: options.marketingConsent
       ? {
           ...identity,

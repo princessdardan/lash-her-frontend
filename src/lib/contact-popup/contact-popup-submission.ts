@@ -1,4 +1,5 @@
 import "server-only";
+import { highLevelOwnsMarketing } from "@/lib/highlevel/config";
 
 import {
   sendAdminNotification,
@@ -20,6 +21,7 @@ import {
 export type ContactPopupImmediateOfferDelivery = "deferred" | "failed" | "sent";
 
 export type ContactPopupSubmissionOutcome =
+  | { status: "preferences_saved"; submissionId: string }
   | {
       status: "generic_welcome_sent";
       submissionId: string;
@@ -86,12 +88,24 @@ export async function processContactPopupSubmission(
     instagram: data.instagram || undefined,
     sourcePath: data.sourcePath || undefined,
     consentText: data.consentText,
-    ...(offerResolution.status === "available"
+    phone: data.phone,
+    marketingConsent: data.marketingConsent,
+    smsMarketingConsent: data.smsMarketingConsent,
+    attribution: data.attribution,
+    ...(offerResolution.status === "available" && data.marketingConsent === true
       ? { signupOffer: offerResolution.offer }
       : {}),
   });
 
   const adminEmailPromise = sendAdminEmailNonBlocking(data, dependencies);
+
+  if (data.marketingConsent !== true || highLevelOwnsMarketing()) {
+    await adminEmailPromise;
+    return {
+      status: "preferences_saved",
+      submissionId: recordResult.submissionId,
+    };
+  }
 
   if (offerResolution.status !== "available") {
     if (offerResolution.status === "invalid") {

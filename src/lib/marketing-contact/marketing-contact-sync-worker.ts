@@ -1,4 +1,5 @@
 import "server-only";
+import { highLevelOwnsMarketing } from "@/lib/highlevel/config";
 
 import { and, asc, eq, inArray, lte, or, sql } from "drizzle-orm";
 
@@ -140,7 +141,7 @@ export function createMarketingContactSyncWorker(
         try {
           if (job.kind === "unsubscribe_sync") {
             await unsubscribeContact({ email: job.payload.email });
-          } else {
+          } else if (!highLevelOwnsMarketing()) {
             await dependencies.syncContact(
               toResendMarketingContactInput(job.payload),
             );
