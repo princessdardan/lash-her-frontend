@@ -1,3 +1,4 @@
+import { setRequiredOnlyCookieConsent } from "./support/required-only-cookie-consent";
 import path from "node:path";
 import { readFileSync } from "node:fs";
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
@@ -32,17 +33,7 @@ async function unlock(context: BrowserContext) {
 }
 
 test.beforeEach(async ({ context }) => {
-  await context.addInitScript(() =>
-    localStorage.setItem(
-      "lh_cookie_consent",
-      JSON.stringify({
-        required: true,
-        analytics: false,
-        decidedAt: new Date().toISOString(),
-        version: 1,
-      }),
-    ),
-  );
+  await setRequiredOnlyCookieConsent(context);
   await context.route("https://stream.mux.com/**", async (route) => {
     const name = path.basename(new URL(route.request().url()).pathname);
     if (name.endsWith(".m3u8"))

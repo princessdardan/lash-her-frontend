@@ -40,6 +40,50 @@ test("sanitize returns empty string for empty input", () => {
   assert.equal(sanitizeCampaignBodyHtml(""), "");
 });
 
+test("sanitize discards malformed noscript regions and their hidden images", () => {
+  for (const payload of [
+    '<div><noscript></div><img src="https://evil.test/beacon.gif"></noscript>',
+    '<p>Hi</p><![CDATA[ x > <noscript>]]><img src="https://evil.test/beacon.gif"></noscript>',
+  ]) {
+    const clean = sanitizeCampaignBodyHtml(payload);
+    assert.doesNotMatch(clean, /beacon|noscript|<img/i);
+  }
+});
+
+test("HTML normalization rejects excessive element and template nesting safely", () => {
+  for (const tag of ["div", "template"]) {
+    const input = `<${tag}>`.repeat(5000) + "body" + `</${tag}>`.repeat(5000);
+    assert.equal(sanitizeCampaignBodyHtml(input), "");
+  }
+  assert.match(
+    sanitizeCampaignBodyHtml("<div>".repeat(32) + "body" + "</div>".repeat(32)),
+    /body/,
+  );
+});
+
+test("sanitize rejects namespaced SVG, refresh metadata, and encoded unsafe URLs", () => {
+  const clean = sanitizeCampaignBodyHtml(
+    '<svg><a href="#safe"><svg:animate attributeName="href" values="#safe;javascript:alert(1)" /></a></svg>' +
+      '<meta http-equiv="refresh" content="0;url=data:text/html,evil">' +
+      '<a href="jav&#x61;script:alert(1)">encoded</a>' +
+      '<img src="&#0000106;avascript:alert(1)" onerror="alert(1)">',
+  );
+  assert.doesNotMatch(clean, /javascript:|data:|onerror|<svg|animate|<meta/i);
+});
+
+test("sanitization remains idempotent and preserves email styles and placeholders", () => {
+  const raw =
+    '<h2 style="text-align:center">Title</h2><p><strong>Bold</strong> <em>italic</em></p>' +
+    '<a href="https://lashher.com">Visit</a>' +
+    RESEND_UNSUBSCRIBE_MERGE_TAG;
+  const clean = sanitizeCampaignBodyHtml(raw);
+  assert.equal(sanitizeCampaignBodyHtml(clean), clean);
+  assert.match(clean, /text-align:center/);
+  assert.match(clean, /<strong>Bold<\/strong>/);
+  assert.match(clean, /<em>italic<\/em>/);
+  assert.ok(clean.includes(RESEND_UNSUBSCRIBE_MERGE_TAG));
+});
+
 test("wrap includes the escaped subject, body, and unsubscribe merge tag", () => {
   const html = wrapCampaignEmailHtml({
     subject: 'Spring "sale" <now>',
@@ -56,6 +100,19 @@ test("wrap includes the escaped subject, body, and unsubscribe merge tag", () =>
     "subject escaped in title",
   );
   assert.ok(!html.includes("<now>"), "raw subject not injected");
+});
+
+test("send-time rendering refuses empty or unusable historical content", () => {
+  for (const bodyHtml of [
+    "",
+    "<script>alert(1)</script>",
+    "<div>".repeat(5000) + "body" + "</div>".repeat(5000),
+  ]) {
+    assert.throws(
+      () => wrapCampaignEmailHtml({ subject: "Historical draft", bodyHtml }),
+      /Email content is empty or cannot be sanitized safely/,
+    );
+  }
 });
 
 test("wrap renders a hidden preheader only when preview text is provided", () => {

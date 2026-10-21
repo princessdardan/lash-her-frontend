@@ -1,0 +1,2 @@
+# Preserve upstream formatting and the reviewed bytes packed into security forks.
+vendor/security/**

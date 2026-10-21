@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { setRequiredOnlyCookieConsent } from "./support/required-only-cookie-consent";
 
 const LEGACY_PRODUCT_CART_STORAGE_KEY = "lash-her:product-cart:v1";
 const PRODUCT_CART_STORAGE_KEY = "lash-her:product-cart:v2";
@@ -83,6 +84,10 @@ async function selectRequiredProductOptions(page: Page): Promise<void> {
 }
 
 test.describe("Product Detail Page", () => {
+  test.beforeEach(async ({ context }) => {
+    await setRequiredOnlyCookieConsent(context);
+  });
+
   test("should display product details, gallery, purchase controls, and link back to catalog", async ({
     page,
   }) => {
@@ -365,17 +370,6 @@ test.describe("Product Detail Page", () => {
         value: "true",
       },
     ]);
-    await page.addInitScript(() => {
-      window.localStorage.setItem(
-        "lh_cookie_consent",
-        JSON.stringify({
-          analytics: false,
-          decidedAt: "2030-01-01T00:00:00.000Z",
-          required: true,
-          version: 1,
-        }),
-      );
-    });
 
     // Seed a distinct saved cart that Buy Now must neither send nor overwrite.
     await page.addInitScript((key) => {

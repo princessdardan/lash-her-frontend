@@ -4,16 +4,14 @@ import { FRESHA_BOOKING_URL } from "../src/lib/booking/fresha";
 test("services offers the editorial listing or the editor's direct Fresha redirect", async ({
   page,
 }) => {
-  await page
-    .context()
-    .addCookies([
-      {
-        domain: "localhost",
-        path: "/",
-        name: "lh_contact_popup_dismissed",
-        value: "true",
-      },
-    ]);
+  await page.context().addCookies([
+    {
+      domain: "localhost",
+      path: "/",
+      name: "lh_contact_popup_dismissed",
+      value: "true",
+    },
+  ]);
   // Stop at the handoff, without making requests to Fresha.
   await page.route("https://www.fresha.com/**", (route) =>
     route.fulfill({
@@ -33,6 +31,10 @@ test("services offers the editorial listing or the editor's direct Fresha redire
   if (page.url().startsWith("https://www.fresha.com/")) {
     await expect(page).toHaveURL(FRESHA_BOOKING_URL);
   } else {
+    // Complete the first-visit consent interaction before the mobile handoff.
+    await page
+      .getByRole("button", { name: "Reject optional cookies", exact: true })
+      .click();
     const main = page.getByRole("main");
     await expect(main.getByRole("tablist")).toHaveCount(0);
     const bookingLink = main.getByRole("link", {
