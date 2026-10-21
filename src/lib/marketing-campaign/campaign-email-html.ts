@@ -1,6 +1,7 @@
 import "server-only";
 
 import sanitizeHtml from "sanitize-html";
+import { parseFragment, serialize, type DefaultTreeAdapterMap } from "parse5";
 
 import {
   escapeHtml,
@@ -19,6 +20,7 @@ const BRAND_NAME = "Lash Her by Nataliea";
 // a marketing email needs. Applied server-side so it cannot be bypassed by the
 // client editor.
 const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
+  nonTextTags: ["script", "style", "textarea", "option", "noscript"],
   allowedTags: [
     "p",
     "br",
@@ -77,10 +79,31 @@ const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
 
 /**
  * Sanitizes owner-composed rich-text HTML down to an email-safe subset. Returns
- * the cleaned HTML; throws nothing (empty input yields an empty string).
+ * the cleaned HTML; empty or excessively nested input yields an empty string.
  */
 export function sanitizeCampaignBodyHtml(rawHtml: string): string {
-  return sanitizeHtml(rawHtml, SANITIZE_OPTIONS).trim();
+  // htmlparser2 and browsers disagree on malformed CDATA/noscript boundaries.
+  // Normalize with HTML5 parsing first so hidden content cannot become active
+  // when the sanitized fragment is rendered by a browser or email client.
+  const fragment = parseFragment(rawHtml, { scriptingEnabled: true });
+  // parse5's serializer recurses. Reject excessive trees before serializing,
+  // including template contents, so normalization cannot exhaust the stack.
+  const pending: { node: DefaultTreeAdapterMap["node"]; depth: number }[] = [
+    { node: fragment, depth: 0 },
+  ];
+  while (pending.length) {
+    const { node, depth } = pending.pop()!;
+    if (!("childNodes" in node)) continue;
+    if (depth > 128) return "";
+    const children =
+      "content" in node
+        ? (node.content as DefaultTreeAdapterMap["documentFragment"]).childNodes
+        : node.childNodes;
+    for (const child of children)
+      pending.push({ node: child, depth: depth + 1 });
+  }
+  const normalizedHtml = serialize(fragment);
+  return sanitizeHtml(normalizedHtml, SANITIZE_OPTIONS).trim();
 }
 
 export interface WrapCampaignEmailHtmlInput {
@@ -101,6 +124,9 @@ export function wrapCampaignEmailHtml(
   // through a future path is still cleaned before it goes out. Idempotent for
   // already-sanitized content.
   const safeBody = sanitizeCampaignBodyHtml(input.bodyHtml);
+  if (!safeBody) {
+    throw new Error("Email content is empty or cannot be sanitized safely.");
+  }
   const preheader = input.previewText?.trim();
   const preheaderBlock = preheader
     ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${escapeHtml(

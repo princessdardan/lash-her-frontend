@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { setRequiredOnlyCookieConsent } from "./support/required-only-cookie-consent";
 
 const LEGACY_PRODUCT_CART_STORAGE_KEY = "lash-her:product-cart:v1";
 const PRODUCT_CART_STORAGE_KEY = "lash-her:product-cart:v2";
@@ -84,6 +85,7 @@ async function selectRequiredProductOptions(page: Page): Promise<void> {
 
 test.describe("Product Detail Page", () => {
   test.beforeEach(async ({ context }) => {
+    await setRequiredOnlyCookieConsent(context);
     // The marketing popup opens after three seconds and can interrupt cart flows.
     await context.addCookies([
       {
@@ -365,19 +367,6 @@ test.describe("Product Detail Page", () => {
         contentType: "application/json",
         body: JSON.stringify({ orderId: "e2e-buy-now-order", status: "paid" }),
       });
-    });
-
-    // Record cookie consent so the banner does not intercept checkout clicks.
-    await page.addInitScript(() => {
-      window.localStorage.setItem(
-        "lh_cookie_consent",
-        JSON.stringify({
-          analytics: false,
-          decidedAt: "2030-01-01T00:00:00.000Z",
-          required: true,
-          version: 1,
-        }),
-      );
     });
 
     // Seed a distinct saved cart that Buy Now must neither send nor overwrite.

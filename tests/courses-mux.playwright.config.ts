@@ -3,6 +3,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: ".",
+  outputDir: "../test-results/courses-mux",
   testMatch: "courses-mux.spec.ts",
   workers: 1,
   timeout: 60_000,

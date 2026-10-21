@@ -22,7 +22,7 @@
     "test:unit:db": "node scripts/run-source-unit-tests.mjs --db-only",
     "test:unit:all": "npm run test:unit && npm run test:unit:db",
     "test:coverage:critical": "c8 --config scripts/critical-coverage.config.json npm run test:unit:all && node scripts/verify-critical-source-coverage.mjs",
-    "test:unit:scripts": "node --test scripts/check-square-card-on-file-env.test.mjs",
+    "test:unit:scripts": "node --test scripts/check-square-card-on-file-env.test.mjs && npm run test:security-deps",
     "test:ui": "playwright test --ui",
     "test:bnpl": "playwright test --config tests/square-afterpay.playwright.config.ts",
     "test:headed": "playwright test --headed",
@@ -45,7 +45,10 @@
     "git:push-staging": "npm run git:verify-remote && git push origin staging",
     "prepare": "husky",
     "crm:backfill": "node --import ./scripts/register-server-only-test.mjs --import tsx scripts/highlevel-backfill.ts",
-    "crm:check": "node --import ./scripts/register-server-only-test.mjs --import tsx scripts/highlevel-config-check.ts"
+    "crm:check": "node --import ./scripts/register-server-only-test.mjs --import tsx scripts/highlevel-config-check.ts",
+    "verify:security-forks": "node scripts/verify-security-forks.mjs",
+    "test:security-deps": "node --test scripts/security-dependencies.test.mjs",
+    "pack:security-forks": "node scripts/pack-security-forks.mjs"
   },
   "dependencies": {
     "@icons-pack/react-simple-icons": "13.11.1",
@@ -70,22 +73,25 @@
     "@upstash/redis": "^1.35.8",
     "@vercel/analytics": "^1.6.1",
     "@vercel/speed-insights": "^2.0.0",
+    "braces": "file:vendor/security/lash-her-braces-3.0.3-lash-her.1.tgz",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
     "googleapis": "^152.0.0",
+    "load-yaml-file": "file:vendor/security/lash-her-load-yaml-file-0.2.0-lash-her.1.tgz",
     "lucide-react": "^0.577.0",
     "motion": "^12.36.0",
     "nanoid": "^3.3.11",
     "next": "16.3.8",
     "next-auth": "5.0.0-beta.32",
     "next-sanity": "^11.6.12",
+    "parse5": "7.3.0",
     "pg": "^8.20.0",
     "quill": "^2.0.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "resend": "^6.9.4",
-    "sanitize-html": "^2.17.7",
+    "sanitize-html": "^2.18.1",
     "sanity": "^4.22.0",
     "sanity-plugin-mux-input": "^3.0.5",
     "server-only": "^0.0.1",
@@ -143,10 +149,8 @@
     "@sanity/uuid": "3.0.3",
     "dompurify": "3.4.16",
     "form-data": "4.0.6",
-    "load-yaml-file": {
-      "js-yaml": "3.15.2"
-    },
-    "markdown-it": "15.0.2",
+    "load-yaml-file": "$load-yaml-file",
+    "markdown-it": "15.0.3",
     "minimatch@3": {
       "brace-expansion": "1.1.21"
     },
@@ -159,13 +163,18 @@
     "minimatch@10": {
       "brace-expansion": "5.0.12"
     },
-    "postcss": "8.5.26",
+    "postcss": "8.5.31",
     "protobufjs": "7.6.5",
     "sharp": "0.35.5",
     "tar": "7.5.21",
     "undici": "6.28.1",
     "valibot": "1.4.2",
-    "vite": "7.3.5"
+    "vite": "7.3.7",
+    "source-map-js": "1.2.2",
+    "@tailwindcss/typography": {
+      "postcss-selector-parser": "7.1.7"
+    },
+    "braces": "$braces"
   },
   "allowScripts": {
     "esbuild@0.25.12": true,
