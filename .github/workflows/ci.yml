@@ -590,9 +590,16 @@ jobs:
           NEXT_PUBLIC_SANITY_DATASET: staging-2026-05-10
           NEXT_PUBLIC_SANITY_API_VERSION: 2026-03-24
           SANITY_API_READ_TOKEN: ${{ secrets.SANITY_API_READ_TOKEN }}
-  browser:
+  browser-tests:
+    name: browser (${{ matrix.browser }})
     runs-on: ubuntu-latest
-    needs: [quality-and-unit, database, build]
+    timeout-minutes: 30
+    # Each browser owns its server and database. Keep one worker per job because
+    # the calendar and commerce scenarios mutate shared fixtures.
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
     services:
       postgres:
         image: postgres:16
@@ -626,9 +633,9 @@ jobs:
       - run: npm run db:migrate
       - name: Seed enabled commerce readiness fixtures
         run: npm run test:e2e:seed-commerce
-      - run: npx playwright install --with-deps
-      - name: Run complete Playwright suite
-        run: npm test
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Run Playwright suite for ${{ matrix.browser }}
+        run: npm test -- --project=${{ matrix.browser }} --workers=1 --reporter=line,blob
         env:
           CHITCHATS_CHECKOUT_ENABLED: "true"
           CHITCHATS_SHIPPING_ENABLED: "true"
@@ -645,7 +652,42 @@ jobs:
           NEXT_PUBLIC_SANITY_DATASET: staging-2026-05-10
           NEXT_PUBLIC_SANITY_API_VERSION: 2026-03-24
           SANITY_API_READ_TOKEN: ${{ secrets.SANITY_API_READ_TOKEN }}
-      # The commerce-enabled seed above is intentionally retained: it backs the
+      - name: Upload browser report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-blob-${{ matrix.browser }}
+          path: blob-report/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Run isolated tracking consent coverage
+        if: ${{ matrix.browser == 'chromium' }}
+        run: npx playwright test --config tests/tracking-consent.playwright.config.ts
+  # Preserve the existing browser check name and verify coverage across every
+  # project after merging reports. Browser tests do not consume build artifacts
+  # or the database job's service, so they can run alongside those jobs.
+  browser:
+    runs-on: ubuntu-latest
+    needs: [quality-and-unit, database, build, browser-tests]
+    if: ${{ !cancelled() }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: playwright-blob-*
+          path: blob-report/
+          merge-multiple: true
+      - name: Merge browser reports
+        run: npx playwright merge-reports --reporter=json,html blob-report/
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_FILE: test-results/playwright-results.json
+          PLAYWRIGHT_HTML_OPEN: never
+      # The commerce-enabled seed in each browser job is intentionally retained: it backs the
       # still-valid admin-calendar, Square commerce (product storefront + checkout)
       # and Square service-booking E2E suites (owner + package profiles + shipping
       # calendar + booking offering). The Helcim->Square migration pruned the retired
@@ -654,5 +696,18 @@ jobs:
       # (scripts/verify-playwright-coverage.mjs).
       - name: Verify required browser coverage executed
         run: npm run test:browser:verify
-      - name: Run isolated tracking consent coverage
-        run: npx playwright test --config tests/tracking-consent.playwright.config.ts
+      - name: Upload merged browser report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/playwright-results.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Require all CI dependencies to pass
+        if: ${{ !cancelled() }}
+        run: test "$DEPENDENCIES_PASSED" = "true"
+        env:
+          DEPENDENCIES_PASSED: ${{ needs.quality-and-unit.result == 'success' && needs.database.result == 'success' && needs.build.result == 'success' && needs.browser-tests.result == 'success' }}
