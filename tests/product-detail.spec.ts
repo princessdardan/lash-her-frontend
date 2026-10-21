@@ -83,6 +83,18 @@ async function selectRequiredProductOptions(page: Page): Promise<void> {
 }
 
 test.describe("Product Detail Page", () => {
+  test.beforeEach(async ({ context }) => {
+    // The marketing popup opens after three seconds and can interrupt cart flows.
+    await context.addCookies([
+      {
+        domain: "localhost",
+        name: "lh_contact_popup_dismissed",
+        path: "/",
+        value: "true",
+      },
+    ]);
+  });
+
   test("should display product details, gallery, purchase controls, and link back to catalog", async ({
     page,
   }) => {
@@ -355,16 +367,7 @@ test.describe("Product Detail Page", () => {
       });
     });
 
-    // Dismiss the marketing popup and record cookie consent so neither overlay
-    // intercepts clicks during the flow.
-    await page.context().addCookies([
-      {
-        domain: "localhost",
-        name: "lh_contact_popup_dismissed",
-        path: "/",
-        value: "true",
-      },
-    ]);
+    // Record cookie consent so the banner does not intercept checkout clicks.
     await page.addInitScript(() => {
       window.localStorage.setItem(
         "lh_cookie_consent",
