@@ -86,6 +86,15 @@ async function selectRequiredProductOptions(page: Page): Promise<void> {
 test.describe("Product Detail Page", () => {
   test.beforeEach(async ({ context }) => {
     await setRequiredOnlyCookieConsent(context);
+    // The marketing popup opens after three seconds and can interrupt cart flows.
+    await context.addCookies([
+      {
+        domain: "localhost",
+        name: "lh_contact_popup_dismissed",
+        path: "/",
+        value: "true",
+      },
+    ]);
   });
 
   test("should display product details, gallery, purchase controls, and link back to catalog", async ({
@@ -359,17 +368,6 @@ test.describe("Product Detail Page", () => {
         body: JSON.stringify({ orderId: "e2e-buy-now-order", status: "paid" }),
       });
     });
-
-    // Dismiss the marketing popup and record cookie consent so neither overlay
-    // intercepts clicks during the flow.
-    await page.context().addCookies([
-      {
-        domain: "localhost",
-        name: "lh_contact_popup_dismissed",
-        path: "/",
-        value: "true",
-      },
-    ]);
 
     // Seed a distinct saved cart that Buy Now must neither send nor overwrite.
     await page.addInitScript((key) => {
