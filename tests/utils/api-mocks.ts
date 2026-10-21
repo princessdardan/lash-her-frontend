@@ -1,7 +1,8 @@
-import { Page } from '@playwright/test';
-import menuData from '../fixtures/menu-data.json';
-import globalData from '../fixtures/global-data.json';
-import trainingPageData from '../fixtures/training-page-data.json';
+import { Page } from "@playwright/test";
+import { setRequiredOnlyCookieConsent } from "../support/required-only-cookie-consent";
+import menuData from "../fixtures/menu-data.json";
+import globalData from "../fixtures/global-data.json";
+import trainingPageData from "../fixtures/training-page-data.json";
 
 /**
  * Set up legacy client-side CMS endpoint fixtures for mocked UX tests.
@@ -11,13 +12,15 @@ import trainingPageData from '../fixtures/training-page-data.json';
  * navigation/responsive UI behavior without depending on a historical API server.
  */
 export async function setupApiMocks(page: Page) {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:1337';
+  // These navigation/layout fixtures do not exercise consent collection.
+  await setRequiredOnlyCookieConsent(page.context());
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:1337";
 
   // Legacy main menu fixture
   await page.route(`${apiUrl}/api/main-menu*`, async (route) => {
     await route.fulfill({
       status: 200,
-      contentType: 'application/json',
+      contentType: "application/json",
       body: JSON.stringify(menuData),
     });
   });
@@ -26,7 +29,7 @@ export async function setupApiMocks(page: Page) {
   await page.route(`${apiUrl}/api/global*`, async (route) => {
     await route.fulfill({
       status: 200,
-      contentType: 'application/json',
+      contentType: "application/json",
       body: JSON.stringify(globalData),
     });
   });
@@ -35,7 +38,7 @@ export async function setupApiMocks(page: Page) {
   await page.route(`${apiUrl}/api/training*`, async (route) => {
     await route.fulfill({
       status: 200,
-      contentType: 'application/json',
+      contentType: "application/json",
       body: JSON.stringify(trainingPageData),
     });
   });
@@ -44,15 +47,15 @@ export async function setupApiMocks(page: Page) {
   await page.route(`${apiUrl}/api/home-page*`, async (route) => {
     await route.fulfill({
       status: 200,
-      contentType: 'application/json',
+      contentType: "application/json",
       body: JSON.stringify({
         data: {
           id: 1,
-          documentId: 'home-1',
-          title: 'Welcome to Lash Her',
-          blocks: []
+          documentId: "home-1",
+          title: "Welcome to Lash Her",
+          blocks: [],
         },
-        meta: {}
+        meta: {},
       }),
     });
   });
@@ -61,14 +64,14 @@ export async function setupApiMocks(page: Page) {
   await page.route(`${apiUrl}/api/contact*`, async (route) => {
     await route.fulfill({
       status: 200,
-      contentType: 'application/json',
+      contentType: "application/json",
       body: JSON.stringify({
         data: {
           id: 1,
-          documentId: 'contact-1',
-          blocks: []
+          documentId: "contact-1",
+          blocks: [],
         },
-        meta: {}
+        meta: {},
       }),
     });
   });
@@ -77,10 +80,10 @@ export async function setupApiMocks(page: Page) {
   await page.route(`${apiUrl}/api/gallery*`, async (route) => {
     await route.fulfill({
       status: 200,
-      contentType: 'application/json',
+      contentType: "application/json",
       body: JSON.stringify({
         data: [],
-        meta: {}
+        meta: {},
       }),
     });
   });
@@ -90,13 +93,16 @@ export async function setupApiMocks(page: Page) {
  * Set up legacy endpoint fixtures with custom menu data.
  * Useful for testing specific mocked menu configurations.
  */
-export async function setupApiMocksWithCustomMenu(page: Page, customMenuData: typeof menuData) {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:1337';
+export async function setupApiMocksWithCustomMenu(
+  page: Page,
+  customMenuData: typeof menuData,
+) {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:1337";
 
   await page.route(`${apiUrl}/api/main-menu*`, async (route) => {
     await route.fulfill({
       status: 200,
-      contentType: 'application/json',
+      contentType: "application/json",
       body: JSON.stringify(customMenuData),
     });
   });

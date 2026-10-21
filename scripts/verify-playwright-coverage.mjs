@@ -10,7 +10,8 @@ const REQUIRED_PROJECTS = ["chromium", "firefox", "webkit"];
 // E2E harness has since landed (SQUARE_COMMERCE_ENABLED / SERVICE_BOOKING_SQUARE_ENABLED
 // are supplied to the E2E dev server), so the critical Square storefront and
 // checkout scenarios are required below alongside the admin self-service and
-// Square service-booking payment scenarios. (The admin-operations.spec.ts
+// retained Square service-payment and Fresha cutover scenarios. New public
+// service reservations stay closed. (The admin-operations.spec.ts
 // scenarios were removed with the shipping-policy operations workspace teardown.)
 const REQUIRED_SCENARIOS = [
   [
@@ -23,7 +24,15 @@ const REQUIRED_SCENARIOS = [
   ],
   [
     "service-booking-payment-page.spec.ts",
-    "service booking redirects to dedicated payment page and mounts Square container",
+    "preexisting service payment session remains usable after the Fresha cutover",
+  ],
+  [
+    "fresha-catalog.spec.ts",
+    "services offers the editorial listing or the editor's direct Fresha redirect",
+  ],
+  [
+    "fresha-existing-booking.spec.ts",
+    "existing booking confirmation and authorized staff views survive closure",
   ],
   // Square commerce (product) storefront + checkout coverage.
   [

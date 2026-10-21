@@ -1,0 +1,301 @@
+{
+  "date": "2026-10-20",
+  "timezone": "America/Toronto",
+  "recordedAt": "2026-10-21T01:22:32.430Z",
+  "baseCommit": "122ea515aba5042ac3f4b7fa63090963bade899d",
+  "runtime": {
+    "node": "v24.18.0",
+    "npm": "11.16.0",
+    "postgresql": "16 (separate isolated localhost test databases)"
+  },
+  "audit": {
+    "command": "npm audit --audit-level=moderate",
+    "exitCode": 0,
+    "capturedAt": "2026-10-21T01:22:32.381Z",
+    "report": {
+      "auditReportVersion": 2,
+      "vulnerabilities": {
+        "quill": {
+          "name": "quill",
+          "severity": "low",
+          "isDirect": true,
+          "via": [
+            {
+              "source": 1116451,
+              "name": "quill",
+              "dependency": "quill",
+              "title": "Quill is vulnerable to XSS via HTML export feature",
+              "url": "https://github.com/advisories/GHSA-v3m3-f69x-jf25",
+              "severity": "low",
+              "cwe": ["CWE-74", "CWE-79"],
+              "cvss": {
+                "score": 6.1,
+                "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"
+              },
+              "range": "=2.0.3"
+            }
+          ],
+          "effects": [],
+          "range": "=2.0.3",
+          "nodes": ["node_modules/quill"],
+          "fixAvailable": {
+            "name": "quill",
+            "version": "2.0.2",
+            "isSemVerMajor": true
+          }
+        }
+      },
+      "metadata": {
+        "vulnerabilities": {
+          "info": 0,
+          "low": 1,
+          "moderate": 0,
+          "high": 0,
+          "critical": 0,
+          "total": 1
+        },
+        "dependencies": {
+          "prod": 1335,
+          "dev": 353,
+          "optional": 224,
+          "peer": 0,
+          "peerOptional": 0,
+          "total": 1818
+        }
+      }
+    }
+  },
+  "forks": {
+    "manifestSha256": "63ea985ba6a49c69e098da463cc435902687c7da8dcf8e8ff47a02bc5033ca30",
+    "verified": [
+      {
+        "dependency": "braces",
+        "name": "@lash-her/braces",
+        "version": "3.0.3-lash-her.1",
+        "integrity": "sha512-bdjKHjZaa341GWnq1O2n6/KlkJBsFIA/64FvRelnMOM/oV70D8VrXm5wx3b7J+N237Sz9Bm9p9TGAyTrkAWVDA==",
+        "upstream": {
+          "name": "braces",
+          "version": "3.0.3",
+          "url": "https://registry.npmjs.org/braces/-/braces-3.0.3.tgz",
+          "integrity": "sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA==",
+          "license": "MIT"
+        },
+        "advisories": ["GHSA-vfj7-8cjw-p6xm"]
+      },
+      {
+        "dependency": "load-yaml-file",
+        "name": "@lash-her/load-yaml-file",
+        "version": "0.2.0-lash-her.1",
+        "integrity": "sha512-4odoyrzx+aD5bRrmJDaJFbKonNJ8XvxEyQ4pQBRkSDO7XLBg848Lk8YiCA0wTCMlgj1baFPOMZAccMqAsFVjTg==",
+        "upstream": {
+          "name": "load-yaml-file",
+          "version": "0.2.0",
+          "url": "https://registry.npmjs.org/load-yaml-file/-/load-yaml-file-0.2.0.tgz",
+          "integrity": "sha512-OfCBkGEw4nN6JLtgRidPX6QxjBQGQf72q3si2uvqyFEMbycSFFHwAZeXx6cJgFM9wmLrf9zBwCP3Ivqa+LLZPw==",
+          "license": "MIT",
+          "licenseSource": "https://github.com/LinusU/load-yaml-file/blob/master/LICENSE"
+        },
+        "advisories": ["GHSA-hp3w-g68c-fv3c"]
+      }
+    ]
+  },
+  "checks": {
+    "freshNpmCi": "passed",
+    "forkSourceArchiveInstalledIntegrity": "passed",
+    "deterministicRepacking": "passed",
+    "securityRegressions": 12,
+    "typescript": "passed",
+    "eslint": {
+      "errors": 0,
+      "existingWarnings": 11
+    },
+    "drizzleConsistency": "passed",
+    "unit": {
+      "regularSource": 1831,
+      "serverSource": 142,
+      "scripts": 19,
+      "security": 12,
+      "database": 187,
+      "total": 2191,
+      "failures": 0
+    },
+    "criticalCoverage": {
+      "result": "passed",
+      "modules": 6
+    },
+    "nextProductionBuild": "passed (staging dataset; no production database credentials)",
+    "sanitySchemaExtraction": "passed (local output only)",
+    "standaloneStudioBuild": "passed (React 18 deprecation warning retained)",
+    "browser": {
+      "source": "Embedded report.json and per-file JSON in the original full-suite Playwright HTML report",
+      "htmlSha256": "1dc20eee12a16a7ab019b987c90a58dc432cceb52bbb87c71a36fe21d7c5e9bc",
+      "startTime": 1792544426725,
+      "duration": 679444.576,
+      "stats": {
+        "total": 675,
+        "expected": 582,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 93,
+        "ok": true
+      },
+      "skipReasons": {
+        "Requires the explicitly enabled, isolated live Google Calendar fixture.": 3,
+        "Run with tests/tracking-consent.playwright.config.ts for isolated consent coverage": 27,
+        "Use courses-mux.playwright.config.ts": 12,
+        "Run with tests/courses.playwright.config.ts and an isolated local PostgreSQL database": 42,
+        "skip": 6,
+        "No product detail purchase controls were available to validate": 3
+      },
+      "requiredScenarios": 7,
+      "requiredProjects": 3,
+      "requiredExecutions": [
+        {
+          "file": "admin-calendar-self-service.spec.ts",
+          "project": "chromium",
+          "title": "employee completes OAuth and assigns the persisted calendar as busy-only",
+          "status": "passed"
+        },
+        {
+          "file": "admin-calendar-self-service.spec.ts",
+          "project": "chromium",
+          "title": "owner cannot disable a calendar assignment that receives bookings",
+          "status": "passed"
+        },
+        {
+          "file": "admin-calendar-self-service.spec.ts",
+          "project": "firefox",
+          "title": "employee completes OAuth and assigns the persisted calendar as busy-only",
+          "status": "passed"
+        },
+        {
+          "file": "admin-calendar-self-service.spec.ts",
+          "project": "firefox",
+          "title": "owner cannot disable a calendar assignment that receives bookings",
+          "status": "passed"
+        },
+        {
+          "file": "admin-calendar-self-service.spec.ts",
+          "project": "webkit",
+          "title": "employee completes OAuth and assigns the persisted calendar as busy-only",
+          "status": "passed"
+        },
+        {
+          "file": "admin-calendar-self-service.spec.ts",
+          "project": "webkit",
+          "title": "owner cannot disable a calendar assignment that receives bookings",
+          "status": "passed"
+        },
+        {
+          "file": "fresha-catalog.spec.ts",
+          "project": "chromium",
+          "title": "services offers the editorial listing or the editor's direct Fresha redirect",
+          "status": "passed"
+        },
+        {
+          "file": "fresha-catalog.spec.ts",
+          "project": "firefox",
+          "title": "services offers the editorial listing or the editor's direct Fresha redirect",
+          "status": "passed"
+        },
+        {
+          "file": "fresha-catalog.spec.ts",
+          "project": "webkit",
+          "title": "services offers the editorial listing or the editor's direct Fresha redirect",
+          "status": "passed"
+        },
+        {
+          "file": "fresha-existing-booking.spec.ts",
+          "project": "chromium",
+          "title": "existing booking confirmation and authorized staff views survive closure",
+          "status": "passed"
+        },
+        {
+          "file": "fresha-existing-booking.spec.ts",
+          "project": "firefox",
+          "title": "existing booking confirmation and authorized staff views survive closure",
+          "status": "passed"
+        },
+        {
+          "file": "fresha-existing-booking.spec.ts",
+          "project": "webkit",
+          "title": "existing booking confirmation and authorized staff views survive closure",
+          "status": "passed"
+        },
+        {
+          "file": "product-catalog.spec.ts",
+          "project": "chromium",
+          "title": "should display products with manual availability and fulfillment notes",
+          "status": "passed"
+        },
+        {
+          "file": "product-catalog.spec.ts",
+          "project": "firefox",
+          "title": "should display products with manual availability and fulfillment notes",
+          "status": "passed"
+        },
+        {
+          "file": "product-catalog.spec.ts",
+          "project": "webkit",
+          "title": "should display products with manual availability and fulfillment notes",
+          "status": "passed"
+        },
+        {
+          "file": "product-detail.spec.ts",
+          "project": "chromium",
+          "title": "should send only the Buy Now selection in the checkout request",
+          "status": "passed"
+        },
+        {
+          "file": "product-detail.spec.ts",
+          "project": "firefox",
+          "title": "should send only the Buy Now selection in the checkout request",
+          "status": "passed"
+        },
+        {
+          "file": "product-detail.spec.ts",
+          "project": "webkit",
+          "title": "should send only the Buy Now selection in the checkout request",
+          "status": "passed"
+        },
+        {
+          "file": "service-booking-payment-page.spec.ts",
+          "project": "chromium",
+          "title": "preexisting service payment session remains usable after the Fresha cutover",
+          "status": "passed"
+        },
+        {
+          "file": "service-booking-payment-page.spec.ts",
+          "project": "firefox",
+          "title": "preexisting service payment session remains usable after the Fresha cutover",
+          "status": "passed"
+        },
+        {
+          "file": "service-booking-payment-page.spec.ts",
+          "project": "webkit",
+          "title": "preexisting service payment session remains usable after the Fresha cutover",
+          "status": "passed"
+        }
+      ],
+      "reportRetention": "The later isolated Mux run cleared the shared JSON output; full-suite results were recovered from the preserved HTML ZIP. Mux now has a separate output directory."
+    },
+    "isolatedTrackingConsent": {
+      "passed": 18,
+      "failed": 0
+    },
+    "isolatedMux": {
+      "passed": 8,
+      "failed": 0
+    }
+  },
+  "externalChecks": {
+    "authenticatedStagingStudioEditingPublishingPreview": "not verified; requires staging editor session",
+    "liveWebhookRevalidation": "not verified; requires staging editor session",
+    "liveGoogleCalendarFixture": "not enabled; synthetic browser fixture coverage used",
+    "realPaymentAndEmailOperations": "not performed; synthetic fixtures used"
+  },
+  "delivery": {
+    "branch": "main",
+    "productionDeployment": false
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@lash-her/load-yaml-file",
+  "version": "0.2.0-lash-her.1",
+  "license": "MIT",
+  "repository": "LinusU/load-yaml-file",
+  "engines": {
+    "node": ">=6"
+  },
+  "dependencies": {
+    "graceful-fs": "^4.1.5",
+    "js-yaml": "4.3.2",
+    "pify": "^4.0.1",
+    "strip-bom": "^3.0.0"
+  },
+  "private": true,
+  "files": [
+    "index.js",
+    "LICENSE",
+    "readme.md"
+  ]
+}

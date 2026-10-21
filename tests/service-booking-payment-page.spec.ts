@@ -1,3 +1,4 @@
+import { setRequiredOnlyCookieConsent } from "./support/required-only-cookie-consent";
 import { FRESHA_BOOKING_URL } from "../src/lib/booking/fresha";
 import { test, expect, type TestInfo } from "@playwright/test";
 import { Pool } from "pg";
@@ -224,17 +225,7 @@ test("preexisting service payment session remains usable after the Fresha cutove
         value: "true",
       },
     ]);
-    await page.addInitScript(() => {
-      window.localStorage.setItem(
-        "lh_cookie_consent",
-        JSON.stringify({
-          analytics: false,
-          decidedAt: "2030-01-01T00:00:00.000Z",
-          required: true,
-          version: 1,
-        }),
-      );
-    });
+    await setRequiredOnlyCookieConsent(page.context());
     await page.goto(paymentPageUrl);
 
     await expect(page).toHaveURL(

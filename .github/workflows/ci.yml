@@ -568,6 +568,8 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - run: npm run verify:security-forks
+      - run: npm run test:security-deps
       - run: npm run audit:ci
   build:
     runs-on: ubuntu-latest

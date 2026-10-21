@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "forks": [
+    {
+      "dependency": "braces",
+      "directory": "braces",
+      "upstream": {
+        "name": "braces",
+        "version": "3.0.3",
+        "url": "https://registry.npmjs.org/braces/-/braces-3.0.3.tgz",
+        "integrity": "sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA==",
+        "license": "MIT"
+      },
+      "advisories": [
+        "GHSA-vfj7-8cjw-p6xm"
+      ],
+      "name": "@lash-her/braces",
+      "version": "3.0.3-lash-her.1",
+      "archive": "lash-her-braces-3.0.3-lash-her.1.tgz",
+      "integrity": "sha512-bdjKHjZaa341GWnq1O2n6/KlkJBsFIA/64FvRelnMOM/oV70D8VrXm5wx3b7J+N237Sz9Bm9p9TGAyTrkAWVDA==",
+      "files": {
+        "index.js": "332ea07c7b006361aad12aa994ca75dc1db8e8382b884909e2f38f10b85c88a4",
+        "lib/compile.js": "03b72e5ad6c8d0b96827f9b87a39889870ba8541aa22d1d8b4088d2f829ce7ae",
+        "lib/constants.js": "c18ac5adb57308f1ce42a28552da3a31f5d83709743ebd9a636336813a744d4b",
+        "lib/expand.js": "b180da44bdc8ce424833e1b6b8e784bdbcd114149bcbd0661eade9f82e4c32b9",
+        "lib/parse.js": "34421c390740ce420bd9dfa5ff77d52a3b2206136dd5200d68eb574c73d406ca",
+        "lib/security.js": "d9b61c20bed1939d58a6ea552c48ca7f4a361b70f45d62c0203c85789356f727",
+        "lib/stringify.js": "425c155eb752b2e3a19abdd07d870c5dcb445e3e35c3a2a8feae8a2a82729269",
+        "lib/utils.js": "b5a7596aa67730412b3c029ef09e84e6b67b8e445cffd35d1d295549c89066c7",
+        "LICENSE": "35bdd8a44339719441900fb50fbefc5e2dca1ca662cbaed7a687de842c8b70f2",
+        "package.json": "99005e84222eac4c9a0957dc4f5cbb8aed086dac44d22374c290a39ae7f9686d",
+        "README.md": "947b0fc3cc12eaaa070207126213fbdf9ab2bf8cd13dcc6e4007b36b79309866"
+      }
+    },
+    {
+      "dependency": "load-yaml-file",
+      "directory": "load-yaml-file",
+      "upstream": {
+        "name": "load-yaml-file",
+        "version": "0.2.0",
+        "url": "https://registry.npmjs.org/load-yaml-file/-/load-yaml-file-0.2.0.tgz",
+        "integrity": "sha512-OfCBkGEw4nN6JLtgRidPX6QxjBQGQf72q3si2uvqyFEMbycSFFHwAZeXx6cJgFM9wmLrf9zBwCP3Ivqa+LLZPw==",
+        "license": "MIT",
+        "licenseSource": "https://github.com/LinusU/load-yaml-file/blob/master/LICENSE"
+      },
+      "advisories": [
+        "GHSA-hp3w-g68c-fv3c"
+      ],
+      "name": "@lash-her/load-yaml-file",
+      "version": "0.2.0-lash-her.1",
+      "archive": "lash-her-load-yaml-file-0.2.0-lash-her.1.tgz",
+      "integrity": "sha512-4odoyrzx+aD5bRrmJDaJFbKonNJ8XvxEyQ4pQBRkSDO7XLBg848Lk8YiCA0wTCMlgj1baFPOMZAccMqAsFVjTg==",
+      "files": {
+        "index.js": "ee01a3dcf56a727ccfa27bccfa7b377d3b7bdcca0a9043026748c06537a97f30",
+        "LICENSE": "94f7217bc2eb2207d5098444591991526ccbbca9f16beb59d4cfd6b75117a15a",
+        "package.json": "bb5ffcf4ec30a64a2b7b56f3ea48a71699962ec8efc10022bb22fac0b76a190a",
+        "readme.md": "155f1aa0bd13f9b6449cfb79855e92cdb5bfe2b3c5e525c68ba6bc52d28170dd"
+      }
+    }
+  ]
+}

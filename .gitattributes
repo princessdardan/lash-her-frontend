@@ -1,0 +1,2 @@
+# Preserve the reviewed upstream bytes and literal unified-patch context.
+vendor/security/** -text -whitespace
