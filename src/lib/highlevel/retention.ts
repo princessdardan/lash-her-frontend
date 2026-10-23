@@ -16,18 +16,18 @@ export async function retainHighLevelRecords(
       sql`delete from highlevel_oauth_states where expires_at < ${now} returning hash`,
     );
     const receipts = await tx.execute(
-      sql`delete from highlevel_webhook_receipts where received_at < ${now} - interval '90 days' returning key`,
+      sql`delete from highlevel_webhook_receipts where received_at < ${now}::timestamptz - interval '90 days' returning key`,
     );
     const jobs = await tx.execute(
-      sql`delete from highlevel_outbox where status in ('succeeded','skipped') and completed_at < ${now} - interval '395 days' returning id`,
+      sql`delete from highlevel_outbox where status in ('succeeded','skipped') and completed_at < ${now}::timestamptz - interval '395 days' returning id`,
     );
     // Keep consent evidence for the existing seven-year policy. Queue affected
     // contacts before deleting so an expired grant cannot remain eligible in CRM.
     await tx.execute(sql`insert into highlevel_outbox (event_key,entity_type,entity_id,event_type)
       select 'consent-expiry:' || c.id::text || ':' || ${now.toISOString().slice(0, 10)}, 'contact', c.id::text, 'consent_retention_expired'
-      from highlevel_contacts c where c.deleted_at is null and exists(select 1 from highlevel_consent_events e where e.email_normalized = c.email_normalized and e.occurred_at < ${now} - interval '2555 days') on conflict do nothing`);
+      from highlevel_contacts c where c.deleted_at is null and exists(select 1 from highlevel_consent_events e where e.email_normalized = c.email_normalized and e.occurred_at < ${now}::timestamptz - interval '2555 days') on conflict do nothing`);
     const consent = await tx.execute(
-      sql`delete from highlevel_consent_events where occurred_at < ${now} - interval '2555 days' returning id`,
+      sql`delete from highlevel_consent_events where occurred_at < ${now}::timestamptz - interval '2555 days' returning id`,
     );
     return (
       expired.rows.length +

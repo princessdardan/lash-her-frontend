@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [main, staging, codex/p1-02-staging-release]
+    branches: [main, staging, codex/p1-02-staging-release, codex/p1-02-retention-admin-fix]
   pull_request:
     branches: [main]
 jobs:

@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "recordedDate": "2026-10-22",
+  "clientTimezone": "America/Toronto",
+  "status": "REPLACEMENT_CANDIDATE_PREPARED",
+  "p1_02Status": "BLOCKED",
+  "candidate": {
+    "tag": "staging-rc-p1-02-2026-10-22.3",
+    "branch": "codex/p1-02-retention-admin-fix",
+    "baseCommit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
+    "sourceShaLocation": "Immutable Git tag and GitHub release; never insert a circular commit pin into source",
+    "review": "docs/api-integration/reviews/2026-10-22-p1-02-retention-admin-fix.md",
+    "reviewType": "sole-developer source review; no independent reviewer approval claimed"
+  },
+  "validation": {
+    "nodeVersion": "24.18.0",
+    "nonDatabaseTestsPassed": 2051,
+    "databaseTestsPassed": 188,
+    "databaseVersionMajor": 18,
+    "frontendMigrationsPassed": 80,
+    "lastMigration": "0079_highlevel_marketing_ownership",
+    "releaseGuardTestsPassed": 17,
+    "typecheck": "PASS",
+    "lint": {
+      "errors": 0,
+      "existingWarnings": 11
+    },
+    "compile": "PASS: npm run build -- --experimental-build-mode=compile with public local CMS identifiers, no credentials; not prerender/deployed certification",
+    "contractIntegrity": "PASS",
+    "drizzleCheck": "PASS",
+    "regressionBeforeFix": {
+      "retentionSqlstate": "42883",
+      "adminAuthDeniedCasesFailing": 6
+    },
+    "regressionAfterFix": {
+      "adminLabelTestsPassed": 9,
+      "retentionDbTestsPassed": 1,
+      "testSchemaIsolated": true,
+      "timezone": "America/Toronto"
+    },
+    "hostedCi": "Must pass on the exact tagged revision; link in GitHub release notes"
+  },
+  "releasePreparation": {
+    "sourceBranchQualityCiEnabled": true,
+    "sourceBranchProtectedMigrationExcluded": true,
+    "sqlAndJournalChanged": false,
+    "migrationPinsChanged": false,
+    "protectedCloudPinsChanged": false,
+    "stagingBranchAdvanced": false,
+    "replacementCloudMigrationRun": false,
+    "replacementDeployed": false,
+    "cloudCleanupRetried": false,
+    "providerDeliveriesActivated": false,
+    "shippingAndHighLevelEnabled": false,
+    "originalWorkingTreesPreserved": true
+  },
+  "promotionGates": [
+    "Successful full CI at exact candidate SHA",
+    "Owner release approval, updated protected migration expected revision and reviewed recovery reference on allowed release ref",
+    "Successful frontend protected lineage/grant verification receipt at replacement SHA; SQL unchanged",
+    "Set source and verified-migration release pins to replacement SHA only after their respective evidence succeeds",
+    "Promote staging and verify deployed A01/A07 acceptance; separately authorize retention execution"
+  ],
+  "remainingGates": [
+    {
+      "id": "P1-02-A01",
+      "status": "PARTIAL",
+      "requirement": "Deploy the replacement and verify anonymous label API 401 and non-admin 403; confirm authorized label behavior. Historical d915619 response remains 500.",
+      "path": "src/app/api/admin/orders/[orderId]/shipping/label/route.ts",
+      "observedStatus": 500,
+      "sourceFix": "Typed AdminAuthError handling returns 401/403 before shipment, config or provider access. Nine label-handler regressions pass."
+    },
+    {
+      "id": "P1-02-A02",
+      "status": "PARTIAL",
+      "requirement": "Staging owner Google sign-in and DB-backed dashboard passed. Complete non-admin authorization and dedicated Calendar OAuth/session-expiry checks."
+    },
+    {
+      "id": "P1-02-A03",
+      "status": "OPEN",
+      "requirement": "Exercise deployed transactional-recipient refusal, isolated allowed test delivery, contact flow and staging bulk-delivery block. Source/tests and release preflight alone do not certify live delivery."
+    },
+    {
+      "id": "P1-02-A04",
+      "status": "PARTIAL",
+      "requirement": "Signed ingress and body tamper rejection passed for Square, Resend and Sanity. Provider-issued business event persistence/deduplication and activation remain open; review enabled legacy Square preview callback before sandbox payment events."
+    },
+    {
+      "id": "P1-02-A05",
+      "status": "PARTIAL",
+      "requirement": "Nine native schedules match source; unauthorized requests fail closed. User-approved one-time authenticated manual runs completed: seven HTTP 200, retention 503 and marketing sync disabled 404. No email sends, refunds or stock releases were reported. Backup remains a manual-action scaffold. Platform-origin invocation, marketing enabling configuration and restored-data recovery evidence remain open; retention is tracked separately in A07."
+    },
+    {
+      "id": "P1-02-A06",
+      "status": "OPEN",
+      "requirement": "Rotate existing staging ingress bypass credentials after a diagnostic printed private ingress metadata in chat tool output. No public repository publication is established; retain all-deployment authentication and disabled provider deliveries."
+    },
+    {
+      "id": "P1-02-A07",
+      "status": "PARTIAL",
+      "requirement": "Deploy replacement, then separately authorize and record one authenticated retention run and its affected counts/logs. Previous 503 is not completed cleanup and earlier independent steps may have committed.",
+      "path": "src/lib/highlevel/retention.ts",
+      "sqlState": "42883",
+      "sourceFix": "All four interval cutoff parameters explicitly cast to timestamptz; PostgreSQL 18 regression reproduces 42883 before the fix and passes afterward."
+    },
+    {
+      "id": "P1-02-R01",
+      "status": "OPEN",
+      "requirement": "Course/Community exact-target lineage, protected migration jobs, runtime/migration artifacts and release pins; frontend-only migration is complete."
+    },
+    {
+      "id": "P1-02-R02",
+      "status": "OPEN",
+      "requirement": "Lightsail host/operator/provisioning, gateway/private TLS/network and measured capacity; no API host created by this frontend release."
+    },
+    {
+      "id": "P1-02-R03",
+      "status": "OPEN",
+      "requirement": "P1-01 contract release, P1-03 signed outbound OIDC/gateway verification, P1-04 container readiness and P1-07/P1-08 deployed operations/monitoring evidence remain separate gates."
+    },
+    {
+      "id": "P1-02-R04",
+      "status": "OPEN",
+      "requirement": "Complete provider ownership/isolation, Mux environment and itemized paid-resource costs/retention/rotation/audit evidence; shipping and HighLevel remain disabled."
+    }
+  ],
+  "historicalDeployedEvidence": "docs/api-integration/baselines/2026-10-23-p1-02-first-deployment.json"
+}

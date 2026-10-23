@@ -13,7 +13,7 @@ test("protected job identity, branch and exact approved revision are mandatory",
   const revision = "a".repeat(40);
   const env = { GITHUB_ACTIONS: "true", GITHUB_REPOSITORY: "princessdardan/lash-her-frontend", GITHUB_REF: "refs/heads/staging", GITHUB_SHA: revision, STAGING_MIGRATION_EXPECTED_COMMIT: revision, STAGING_MIGRATION_RECOVERY_REFERENCE: "https://example.test/reviewed-recovery-evidence" };
   assert.doesNotThrow(() => assertReleaseContext(env, revision));
-  for (const change of [{ STAGING_MIGRATION_RECOVERY_REFERENCE: "" }, { GITHUB_ACTIONS: "false" }, { GITHUB_REPOSITORY: "other/repo" }, { GITHUB_REF: "refs/heads/main" }, { GITHUB_SHA: "b".repeat(40) }, { STAGING_MIGRATION_EXPECTED_COMMIT: "b".repeat(40) }]) {
+  for (const change of [{ STAGING_MIGRATION_RECOVERY_REFERENCE: "" }, { GITHUB_ACTIONS: "false" }, { GITHUB_REPOSITORY: "other/repo" }, { GITHUB_REF: "refs/heads/main" }, { GITHUB_REF: "refs/heads/codex/p1-02-retention-admin-fix" }, { GITHUB_SHA: "b".repeat(40) }, { STAGING_MIGRATION_EXPECTED_COMMIT: "b".repeat(40) }]) {
     assert.throws(() => assertReleaseContext({ ...env, ...change }, revision));
   }
 });

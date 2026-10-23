@@ -1,0 +1,778 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-23T02:55:55.421196+00:00",
+  "status": "DEPLOYED_ACCEPTANCE_PARTIAL",
+  "p1_02Status": "BLOCKED",
+  "deployment": {
+    "checkedAt": "2026-10-23T02:53:48.950Z",
+    "deploymentId": "dpl_BCyvMh81J8KyGFuas3pJgNCKUkys",
+    "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+    "teamId": "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
+    "readyState": "READY",
+    "target": "production",
+    "sourceCommit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
+    "sourceBranch": "staging",
+    "alias": [
+      "staging.lashher.com",
+      "lash-her-frontend-staging.vercel.app",
+      "lash-her-frontend-staging-dardan-demiris-projects.vercel.app",
+      "lash-her-frontend-staging-git-staging-dardan-demiris-projects.vercel.app"
+    ],
+    "buildingAt": 1792723288327,
+    "readyAt": 1792723488541,
+    "buildDurationSeconds": 200,
+    "oidcTokenClaims": {
+      "sub": "owner:dardan-demiris-projects:project:lash-her-frontend-staging:environment:production",
+      "iss": "https://oidc.vercel.com/dardan-demiris-projects",
+      "scope": "owner:dardan-demiris-projects:project:lash-her-frontend-staging:environment:production",
+      "aud": "https://vercel.com/dardan-demiris-projects",
+      "owner": "dardan-demiris-projects",
+      "owner_id": "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
+      "project": "lash-her-frontend-staging",
+      "project_id": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "environment": "production",
+      "plan": "pro"
+    },
+    "oidcScope": "Provider deployment metadata only; outbound signed token verification at the API gateway remains P1-03",
+    "nativeCronConfiguration": {
+      "enabledAt": 1792723489505,
+      "disabledAt": null,
+      "updatedAt": 1792723489505,
+      "deploymentId": "dpl_BCyvMh81J8KyGFuas3pJgNCKUkys",
+      "definitions": [
+        {
+          "host": "lash-her-frontend-staging-hgo6c7vq2-dardan-demiris-projects.vercel.app",
+          "path": "/api/admin/marketing-contact-sync",
+          "schedule": "*/5 * * * *"
+        },
+        {
+          "host": "lash-her-frontend-staging-hgo6c7vq2-dardan-demiris-projects.vercel.app",
+          "path": "/api/admin/payment-reconciliation",
+          "schedule": "*/30 * * * *"
+        },
+        {
+          "host": "lash-her-frontend-staging-hgo6c7vq2-dardan-demiris-projects.vercel.app",
+          "path": "/api/admin/private-data-retention",
+          "schedule": "17 8 * * *"
+        },
+        {
+          "host": "lash-her-frontend-staging-hgo6c7vq2-dardan-demiris-projects.vercel.app",
+          "path": "/api/cron/backup-validation",
+          "schedule": "0 6 * * 1"
+        },
+        {
+          "host": "lash-her-frontend-staging-hgo6c7vq2-dardan-demiris-projects.vercel.app",
+          "path": "/api/cron/chitchats-shipping",
+          "schedule": "* * * * *"
+        },
+        {
+          "host": "lash-her-frontend-staging-hgo6c7vq2-dardan-demiris-projects.vercel.app",
+          "path": "/api/cron/customer-email-outbox",
+          "schedule": "*/5 * * * *"
+        },
+        {
+          "host": "lash-her-frontend-staging-hgo6c7vq2-dardan-demiris-projects.vercel.app",
+          "path": "/api/cron/highlevel-sync",
+          "schedule": "* * * * *"
+        },
+        {
+          "host": "lash-her-frontend-staging-hgo6c7vq2-dardan-demiris-projects.vercel.app",
+          "path": "/api/cron/product-stock-reservations",
+          "schedule": "*/15 * * * *"
+        },
+        {
+          "host": "lash-her-frontend-staging-hgo6c7vq2-dardan-demiris-projects.vercel.app",
+          "path": "/api/cron/shipping-rate-cache-refresh",
+          "schedule": "30 7 * * 1"
+        }
+      ]
+    },
+    "expectedCronDefinitions": [
+      {
+        "path": "/api/admin/private-data-retention",
+        "schedule": "17 8 * * *"
+      },
+      {
+        "path": "/api/cron/backup-validation",
+        "schedule": "0 6 * * 1"
+      },
+      {
+        "path": "/api/admin/payment-reconciliation",
+        "schedule": "*/30 * * * *"
+      },
+      {
+        "path": "/api/cron/chitchats-shipping",
+        "schedule": "* * * * *"
+      },
+      {
+        "path": "/api/cron/customer-email-outbox",
+        "schedule": "*/5 * * * *"
+      },
+      {
+        "path": "/api/cron/product-stock-reservations",
+        "schedule": "*/15 * * * *"
+      },
+      {
+        "path": "/api/admin/marketing-contact-sync",
+        "schedule": "*/5 * * * *"
+      },
+      {
+        "path": "/api/cron/shipping-rate-cache-refresh",
+        "schedule": "30 7 * * 1"
+      },
+      {
+        "path": "/api/cron/highlevel-sync",
+        "schedule": "* * * * *"
+      }
+    ],
+    "cronMetadataPresent": true,
+    "nineNativeCronDefinitionsMatchSource": true
+  },
+  "sourceTag": "staging-rc-p1-02-2026-10-22.2",
+  "ciRunUrl": "https://github.com/princessdardan/lash-her-frontend/actions/runs/39878997124",
+  "frontendMigration": {
+    "appliedMigrations": 80,
+    "lastMigration": "0079_highlevel_marketing_ownership",
+    "scope": "frontend only"
+  },
+  "baselineAcceptance": {
+    "checkedAt": "2026-10-23T02:49:20.682Z",
+    "origin": "https://staging.lashher.com",
+    "commit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
+    "deploymentId": "dpl_BCyvMh81J8KyGFuas3pJgNCKUkys",
+    "authentication": "existing-approved-staging-bypass-header; no-token-created",
+    "results": [
+      {
+        "name": "home",
+        "path": "/",
+        "status": 200,
+        "expected": 200,
+        "passed": true,
+        "durationMs": 286,
+        "html": true,
+        "isolatedSanityProjectReferenced": true,
+        "originalSanityProjectReferenced": false
+      },
+      {
+        "name": "page /contact",
+        "path": "/contact",
+        "status": 200,
+        "expected": 200,
+        "passed": true,
+        "durationMs": 112
+      },
+      {
+        "name": "page /training-programs",
+        "path": "/training-programs",
+        "status": 200,
+        "expected": 200,
+        "passed": true,
+        "durationMs": 125
+      },
+      {
+        "name": "booking redirects to Fresha",
+        "path": "/booking",
+        "status": 307,
+        "expected": [
+          307,
+          308
+        ],
+        "passed": true,
+        "durationMs": 138,
+        "redirectToFresha": true
+      },
+      {
+        "name": "admin protected",
+        "path": "/admin",
+        "status": 307,
+        "expected": [
+          307,
+          303
+        ],
+        "passed": true,
+        "durationMs": 231,
+        "redirectToAdminSignin": true
+      },
+      {
+        "name": "retired booking POST /api/booking/availability",
+        "path": "/api/booking/availability",
+        "status": 410,
+        "expected": 410,
+        "passed": true,
+        "durationMs": 231,
+        "code": "SERVICE_BOOKING_MOVED"
+      },
+      {
+        "name": "identity provider callback",
+        "path": "/api/auth/providers",
+        "status": 200,
+        "expected": 200,
+        "passed": true,
+        "durationMs": 234,
+        "googleOnly": true,
+        "stagingCallback": true
+      },
+      {
+        "name": "unauthorized cron /api/cron/highlevel-sync",
+        "path": "/api/cron/highlevel-sync",
+        "status": 401,
+        "expected": [
+          401,
+          404
+        ],
+        "passed": true,
+        "durationMs": 228
+      },
+      {
+        "name": "unsigned webhook rejected /api/revalidate",
+        "path": "/api/revalidate",
+        "status": 401,
+        "expected": 401,
+        "passed": true,
+        "durationMs": 231
+      },
+      {
+        "name": "unauthorized cron /api/cron/backup-validation",
+        "path": "/api/cron/backup-validation",
+        "status": 401,
+        "expected": [
+          401,
+          404
+        ],
+        "passed": true,
+        "durationMs": 231
+      },
+      {
+        "name": "retired booking POST /api/booking/holds",
+        "path": "/api/booking/holds",
+        "status": 410,
+        "expected": 410,
+        "passed": true,
+        "durationMs": 234,
+        "code": "SERVICE_BOOKING_MOVED"
+      },
+      {
+        "name": "retired booking GET /api/booking/availability",
+        "path": "/api/booking/availability",
+        "status": 410,
+        "expected": 410,
+        "passed": true,
+        "durationMs": 234,
+        "code": "SERVICE_BOOKING_MOVED"
+      },
+      {
+        "name": "retired booking POST /api/booking/create",
+        "path": "/api/booking/create",
+        "status": 410,
+        "expected": 410,
+        "passed": true,
+        "durationMs": 233,
+        "code": "SERVICE_BOOKING_MOVED"
+      },
+      {
+        "name": "unauthorized cron /api/cron/chitchats-shipping",
+        "path": "/api/cron/chitchats-shipping",
+        "status": 401,
+        "expected": [
+          401,
+          404
+        ],
+        "passed": true,
+        "durationMs": 231
+      },
+      {
+        "name": "Square public sandbox config",
+        "path": "/api/checkout/square/config",
+        "status": 200,
+        "expected": 200,
+        "passed": true,
+        "durationMs": 236,
+        "sandbox": true,
+        "sandboxSdk": true
+      },
+      {
+        "name": "unsigned webhook rejected /api/webhooks/resend",
+        "path": "/api/webhooks/resend",
+        "status": 401,
+        "expected": 401,
+        "passed": true,
+        "durationMs": 234
+      },
+      {
+        "name": "private admin API protected",
+        "path": "/api/admin/orders/00000000-0000-4000-8000-000000000000/shipping/label",
+        "status": 500,
+        "expected": 401,
+        "passed": false,
+        "durationMs": 236
+      },
+      {
+        "name": "unsigned webhook rejected /api/webhooks/square",
+        "path": "/api/webhooks/square",
+        "status": 401,
+        "expected": 401,
+        "passed": true,
+        "durationMs": 236
+      },
+      {
+        "name": "anonymous session",
+        "path": "/api/auth/session",
+        "status": 200,
+        "expected": 200,
+        "passed": true,
+        "durationMs": 258,
+        "noAuthenticatedSession": true
+      },
+      {
+        "name": "unauthorized cron /api/cron/product-stock-reservations",
+        "path": "/api/cron/product-stock-reservations",
+        "status": 401,
+        "expected": [
+          401,
+          404
+        ],
+        "passed": true,
+        "durationMs": 250
+      },
+      {
+        "name": "unauthorized cron /api/admin/marketing-contact-sync",
+        "path": "/api/admin/marketing-contact-sync",
+        "status": 404,
+        "expected": [
+          401,
+          404
+        ],
+        "passed": true,
+        "durationMs": 259
+      },
+      {
+        "name": "unauthorized cron /api/cron/customer-email-outbox",
+        "path": "/api/cron/customer-email-outbox",
+        "status": 401,
+        "expected": [
+          401,
+          404
+        ],
+        "passed": true,
+        "durationMs": 272
+      },
+      {
+        "name": "unauthorized cron /api/admin/private-data-retention",
+        "path": "/api/admin/private-data-retention",
+        "status": 401,
+        "expected": [
+          401,
+          404
+        ],
+        "passed": true,
+        "durationMs": 355
+      },
+      {
+        "name": "page /services",
+        "path": "/services",
+        "status": 200,
+        "expected": 200,
+        "passed": true,
+        "durationMs": 381
+      },
+      {
+        "name": "unauthorized cron /api/cron/shipping-rate-cache-refresh",
+        "path": "/api/cron/shipping-rate-cache-refresh",
+        "status": 401,
+        "expected": [
+          401,
+          404
+        ],
+        "passed": true,
+        "durationMs": 386
+      },
+      {
+        "name": "unauthorized cron /api/admin/payment-reconciliation",
+        "path": "/api/admin/payment-reconciliation",
+        "status": 401,
+        "expected": [
+          401,
+          404
+        ],
+        "passed": true,
+        "durationMs": 396
+      },
+      {
+        "name": "page /products",
+        "path": "/products",
+        "status": 200,
+        "expected": 200,
+        "passed": true,
+        "durationMs": 546
+      },
+      {
+        "name": "page /admin/sign-in",
+        "path": "/admin/sign-in",
+        "status": 200,
+        "expected": 200,
+        "passed": true,
+        "durationMs": 1378
+      }
+    ],
+    "passed": 27,
+    "failed": 1
+  },
+  "signedWebhookAcceptance": {
+    "checkedAt": "2026-10-23T02:51:43.256Z",
+    "commit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
+    "deploymentId": "dpl_BCyvMh81J8KyGFuas3pJgNCKUkys",
+    "results": [
+      {
+        "name": "valid signature reaches disabled service-booking path",
+        "provider": "square",
+        "status": 404,
+        "expected": 404,
+        "passed": true
+      },
+      {
+        "name": "same signed no-op repeated with service booking disabled",
+        "provider": "square",
+        "status": 404,
+        "expected": 404,
+        "passed": true
+      },
+      {
+        "name": "valid signature passes to payload validation",
+        "provider": "square",
+        "status": 400,
+        "expected": 400,
+        "passed": true
+      },
+      {
+        "name": "body tampering rejected",
+        "provider": "square",
+        "status": 401,
+        "expected": 401,
+        "passed": true
+      },
+      {
+        "name": "signed no-op",
+        "provider": "resend",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "same signed no-op repeated",
+        "provider": "resend",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "body tampering rejected",
+        "provider": "resend",
+        "status": 401,
+        "expected": 401,
+        "passed": true
+      },
+      {
+        "name": "signed cache revalidation",
+        "provider": "sanity",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "same signed cache revalidation repeated",
+        "provider": "sanity",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "body tampering rejected",
+        "provider": "sanity",
+        "status": 401,
+        "expected": 401,
+        "passed": true
+      }
+    ],
+    "syntheticRequestsOnly": true,
+    "providerSubscriptionsActivated": false,
+    "paymentOrContactStateCreated": false,
+    "duplicateScope": "Same signed no-op payload safely repeated; business-event persistence and deduplication remain untested",
+    "squareServiceBookingEnabled": false,
+    "squareSignatureVerificationProof": "Signed malformed payload reaches 400 validation; tampered payload is rejected with 401; valid unsupported event reaches 404 disabled service-booking path",
+    "credentialsPrinted": false
+  },
+  "cookieAndProtectionAcceptance": {
+    "checkedAt": "2026-10-23T02:53:45.061Z",
+    "csrfStatus": 200,
+    "csrfCookieHttpOnly": true,
+    "csrfCookieSecure": true,
+    "csrfCookieSameSiteLax": true,
+    "csrfCookieHostPrefix": true,
+    "platformUnauthenticatedStatus": 302,
+    "platformRedirectsToVercelSso": true,
+    "cookieValuesLogged": false
+  },
+  "administratorAcceptance": {
+    "approvedExistingGoogleSession": true,
+    "reviewedOwnerIdentityMatched": true,
+    "stagingCallbackCompleted": true,
+    "dbBackedDashboardLoaded": true,
+    "screenshotRetainedPrivately": true,
+    "sessionValuesExported": false
+  },
+  "providerDeliveriesActivated": false,
+  "shippingAndHighLevelEnabled": false,
+  "remainingGates": [
+    {
+      "id": "P1-02-A01",
+      "status": "OPEN",
+      "requirement": "Fix uncaught unauthenticated AdminAuthError on admin label API in a separately reviewed candidate; expect 401/403, not 500. Access remains denied.",
+      "path": "src/app/api/admin/orders/[orderId]/shipping/label/route.ts",
+      "observedStatus": 500
+    },
+    {
+      "id": "P1-02-A02",
+      "status": "PARTIAL",
+      "requirement": "Staging owner Google sign-in and DB-backed dashboard passed. Complete non-admin authorization and dedicated Calendar OAuth/session-expiry checks."
+    },
+    {
+      "id": "P1-02-A03",
+      "status": "OPEN",
+      "requirement": "Exercise deployed transactional-recipient refusal, isolated allowed test delivery, contact flow and staging bulk-delivery block. Source/tests and release preflight alone do not certify live delivery."
+    },
+    {
+      "id": "P1-02-A04",
+      "status": "PARTIAL",
+      "requirement": "Signed ingress and body tamper rejection passed for Square, Resend and Sanity. Provider-issued business event persistence/deduplication and activation remain open; review enabled legacy Square preview callback before sandbox payment events."
+    },
+    {
+      "id": "P1-02-A05",
+      "status": "PARTIAL",
+      "requirement": "Nine native schedules match source; unauthorized requests fail closed. User-approved one-time authenticated manual runs completed: seven HTTP 200, retention 503 and marketing sync disabled 404. No email sends, refunds or stock releases were reported. Backup remains a manual-action scaffold. Platform-origin invocation, marketing enabling configuration and restored-data recovery evidence remain open; retention is tracked separately in A07."
+    },
+    {
+      "id": "P1-02-A06",
+      "status": "OPEN",
+      "requirement": "Rotate existing staging ingress bypass credentials after a diagnostic printed private ingress metadata in chat tool output. No public repository publication is established; retain all-deployment authentication and disabled provider deliveries."
+    },
+    {
+      "id": "P1-02-A07",
+      "status": "OPEN",
+      "requirement": "Fix HighLevel retention timestamp/interval parameter inference in a separately reviewed candidate and add a database regression test. Deployed cleanup returns 503; plain read-only EXPLAIN reproduced SQLSTATE 42883, and explicit timestamptz cast plans successfully. Do not count the failed run as completed retention or assume earlier cleanup steps rolled back.",
+      "path": "src/lib/highlevel/retention.ts",
+      "sqlState": "42883"
+    },
+    {
+      "id": "P1-02-R01",
+      "status": "OPEN",
+      "requirement": "Course/Community exact-target lineage, protected migration jobs, runtime/migration artifacts and release pins; frontend-only migration is complete."
+    },
+    {
+      "id": "P1-02-R02",
+      "status": "OPEN",
+      "requirement": "Lightsail host/operator/provisioning, gateway/private TLS/network and measured capacity; no API host created by this frontend release."
+    },
+    {
+      "id": "P1-02-R03",
+      "status": "OPEN",
+      "requirement": "P1-01 contract release, P1-03 signed outbound OIDC/gateway verification, P1-04 container readiness and P1-07/P1-08 deployed operations/monitoring evidence remain separate gates."
+    },
+    {
+      "id": "P1-02-R04",
+      "status": "OPEN",
+      "requirement": "Complete provider ownership/isolation, Mux environment and itemized paid-resource costs/retention/rotation/audit evidence; shipping and HighLevel remain disabled."
+    }
+  ],
+  "sourceChangedAfterPinning": false,
+  "originalWorkingTreesPreserved": true,
+  "authenticatedCronAcceptance": {
+    "schemaVersion": 1,
+    "startedAt": "2026-10-23T02:59:19.584Z",
+    "clientTimezone": "America/Toronto",
+    "deploymentId": "dpl_BCyvMh81J8KyGFuas3pJgNCKUkys",
+    "commit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
+    "origin": "https://staging.lashher.com",
+    "approval": "User explicitly approved one bounded manual staging run of all nine named handlers",
+    "scope": "Authenticated manual handler execution; not proof of platform-origin invocation or restored-data recovery",
+    "preflight": {
+      "exactStagingDeployment": true,
+      "bothPinsMatch": true,
+      "shippingAndHighLevelDisabled": true,
+      "allDeploymentProtectionRetained": true,
+      "nativeSchedulesMatchSource": true
+    },
+    "results": [
+      {
+        "path": "/api/admin/private-data-retention",
+        "schedule": "17 8 * * *",
+        "attemptedAt": "2026-10-23T02:59:19.587Z",
+        "attemptCount": 1,
+        "status": 503,
+        "body": {
+          "error": "[text withheld]"
+        },
+        "requestId": "yul1::iad1::hpv44-1792724359792-b52fab6d78ba",
+        "completedAt": "2026-10-23T02:59:19.983Z"
+      },
+      {
+        "path": "/api/cron/backup-validation",
+        "schedule": "0 6 * * 1",
+        "attemptedAt": "2026-10-23T02:59:19.984Z",
+        "attemptCount": 1,
+        "status": 200,
+        "body": {
+          "validationPerformed": false,
+          "manualActionRequired": true,
+          "checkoutOrders": "[text withheld]"
+        },
+        "requestId": "yul1::iad1::l88xs-1792724360129-ed18430af43c",
+        "completedAt": "2026-10-23T02:59:20.067Z"
+      },
+      {
+        "path": "/api/admin/payment-reconciliation",
+        "schedule": "*/30 * * * *",
+        "attemptedAt": "2026-10-23T02:59:20.067Z",
+        "attemptCount": 1,
+        "status": 200,
+        "body": {
+          "findings": {
+            "itemCount": 0
+          },
+          "ok": true,
+          "checkedAt": "[text withheld]"
+        },
+        "requestId": "yul1::iad1::n5l7q-1792724360213-a5596dbe692b",
+        "completedAt": "2026-10-23T02:59:20.211Z"
+      },
+      {
+        "path": "/api/cron/chitchats-shipping",
+        "schedule": "* * * * *",
+        "attemptedAt": "2026-10-23T02:59:20.212Z",
+        "attemptCount": 1,
+        "status": 200,
+        "body": {
+          "enabled": false,
+          "queued": 0,
+          "refunds": {
+            "processed": 0,
+            "succeeded": 0,
+            "needsReview": 0
+          }
+        },
+        "requestId": "yul1::iad1::bz9th-1792724360358-61216c32a625",
+        "completedAt": "2026-10-23T02:59:20.360Z"
+      },
+      {
+        "path": "/api/cron/customer-email-outbox",
+        "schedule": "*/5 * * * *",
+        "attemptedAt": "2026-10-23T02:59:20.362Z",
+        "attemptCount": 1,
+        "status": 200,
+        "body": {
+          "claimed": 0,
+          "enqueued": 0,
+          "failed": 0,
+          "sent": 0,
+          "suppressed": 0
+        },
+        "requestId": "yul1::iad1::cp4xp-1792724360505-f490ed49dae0",
+        "completedAt": "2026-10-23T02:59:20.444Z"
+      },
+      {
+        "path": "/api/cron/product-stock-reservations",
+        "schedule": "*/15 * * * *",
+        "attemptedAt": "2026-10-23T02:59:20.445Z",
+        "attemptCount": 1,
+        "status": 200,
+        "body": {
+          "scanned": 0,
+          "released": 0,
+          "skipped": 0,
+          "failed": 0
+        },
+        "requestId": "yul1::iad1::bz9th-1792724360587-5cd654cce8b2",
+        "completedAt": "2026-10-23T02:59:20.528Z"
+      },
+      {
+        "path": "/api/admin/marketing-contact-sync",
+        "schedule": "*/5 * * * *",
+        "attemptedAt": "2026-10-23T02:59:20.529Z",
+        "attemptCount": 1,
+        "status": 404,
+        "body": null,
+        "requestId": "yul1::iad1::hpv44-1792724360674-4991a79c31cf",
+        "completedAt": "2026-10-23T02:59:20.609Z"
+      },
+      {
+        "path": "/api/cron/shipping-rate-cache-refresh",
+        "schedule": "30 7 * * 1",
+        "attemptedAt": "2026-10-23T02:59:20.610Z",
+        "attemptCount": 1,
+        "status": 200,
+        "body": {
+          "enabled": false,
+          "updated": 0
+        },
+        "requestId": "yul1::iad1::bz9th-1792724360753-62b0187a95cf",
+        "completedAt": "2026-10-23T02:59:20.692Z"
+      },
+      {
+        "path": "/api/cron/highlevel-sync",
+        "schedule": "* * * * *",
+        "attemptedAt": "2026-10-23T02:59:20.693Z",
+        "attemptCount": 1,
+        "status": 200,
+        "body": {
+          "enabled": false,
+          "processed": 0,
+          "succeeded": 0,
+          "skipped": 0,
+          "retry": 0,
+          "review": 0,
+          "dead_letter": 0
+        },
+        "requestId": "yul1::iad1::9hf4n-1792724360829-c4aca56b63b4",
+        "completedAt": "2026-10-23T02:59:20.785Z"
+      }
+    ],
+    "providerSubscriptionsChanged": false,
+    "credentialsLogged": false,
+    "completedAt": "2026-10-23T02:59:20.786Z",
+    "localStartedAt": "2026-10-22T22:59:19.584000-04:00",
+    "httpSummary": {
+      "http200": 7,
+      "http404Disabled": 1,
+      "http503Failure": 1,
+      "attemptedOnce": 9
+    },
+    "retentionDiagnosis": {
+      "checkedAt": "2026-10-23T03:00:32.762Z",
+      "scope": "EXPLAIN without ANALYZE in read-only transactions; no cleanup rerun or data mutation",
+      "queries": [
+        {
+          "name": "deployed-query",
+          "planned": false,
+          "sqlState": "42883",
+          "primaryMessage": "operator does not exist: timestamp with time zone < interval"
+        },
+        {
+          "name": "explicit-timestamp-cast",
+          "planned": true
+        }
+      ]
+    },
+    "retentionFailureScope": "HighLevel subtransaction failed; earlier step-up-proof/shipping-retention steps may have committed. No total-affected count returned; no cleanup retry performed.",
+    "logReview": {
+      "fromUtc": "2026-10-23T02:59:19Z",
+      "throughUtc": "2026-10-23T02:59:54.792Z",
+      "retentionFailureObserved": true,
+      "otherWarningErrorFatalEntriesObserved": 0,
+      "paymentReconciliationSubtaskErrorsObserved": false,
+      "scope": "Bounded review window, not continuous monitoring"
+    },
+    "outcome": "PARTIAL_FAILURE",
+    "sourceChanged": false
+  },
+  "lastUpdatedAt": "2026-10-23T03:01:44.285524+00:00",
+  "clientTimezone": "America/Toronto"
+}

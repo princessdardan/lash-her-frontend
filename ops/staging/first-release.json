@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "status": "source-candidate-reviewed-protected-migration-pending",
+  "status": "replacement-source-candidate-prepared-deployed-acceptance-pending",
   "teamId": "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
   "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
   "target": "production",
@@ -10,7 +10,7 @@
     "repository": "princessdardan/lash-her-frontend",
     "repositoryId": 1114139712,
     "branch": "staging",
-    "observedRemoteCommit": "ea1772b20453a494dcd3ff635066ebd385906f6b",
+    "observedRemoteCommit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
     "approvedCommit": null,
     "approvalPinEnvironmentVariable": "STAGING_RELEASE_COMMIT"
   },
@@ -26,8 +26,8 @@
     "migrationVerifiedCommit": null,
     "postgres18CompatibilityVerified": true,
     "ownerEnvironmentBindingRemoved": true,
-    "compatibilityEvidence": "docs/api-integration/baselines/2026-10-22-p1-02-deployment-preparation.json",
-    "compatibilityScope": "Isolated candidate rebased onto f955824; all 80 migrations through 0079 and 187 database tests passed on disposable PostgreSQL 18.",
+    "compatibilityEvidence": "docs/api-integration/baselines/2026-10-22-p1-02-retention-admin-fix.json",
+    "compatibilityScope": "Replacement based on d915619; unchanged 80 migrations through 0079 and 188 DB tests passed on disposable PostgreSQL 18. No replacement cloud verification yet.",
     "migrationPinEnvironmentVariable": "STAGING_MIGRATION_VERIFIED_COMMIT",
     "protectedMigrationStore": "ops/staging/release-store.json"
   },
@@ -203,5 +203,21 @@
     "credential": "protected environment STAGING_MIGRATION_DATABASE_URL; never delivered to runtime",
     "scope": "frontend only; API migration jobs and target lineage remain separate gates",
     "credentialHandoffStatus": "blocked-by-automatic-review-pending-specific-transfer-approval"
+  },
+  "replacementCandidate": {
+    "tag": "staging-rc-p1-02-2026-10-22.3",
+    "baseCommit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
+    "review": "docs/api-integration/reviews/2026-10-22-p1-02-retention-admin-fix.md",
+    "gates": "docs/api-integration/baselines/2026-10-22-p1-02-retention-admin-fix.json",
+    "cloudMigrationVerified": false,
+    "promotedToStaging": false
+  },
+  "historicalBaselineNote": "Provider/credential-handoff/deployment proposal fields below are historical preparation snapshots. See deployedBaseline and replacementCandidate for later state; remaining gates are authoritative in replacementCandidate.gates.",
+  "deployedBaseline": {
+    "commit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
+    "deploymentId": "dpl_BCyvMh81J8KyGFuas3pJgNCKUkys",
+    "evidence": "docs/api-integration/baselines/2026-10-23-p1-02-first-deployment.json",
+    "frontendProtectedMigrationVerified": true,
+    "replacementCertification": false
   }
 }

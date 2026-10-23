@@ -1,27 +1,33 @@
 # First staging release
 
-Current candidate: [release review](../../docs/api-integration/reviews/2026-10-22-p1-02-release-candidate.md).
-Candidate tag: `staging-rc-p1-02-2026-10-22.2`. The protected frontend migration job
-and exact SQL/journal inventory are prepared. Cloud migrations, migration pin and
-first deployment remain gated on the approvals/evidence described in that review.
-The operator confirmed a sole-developer workflow; no separate reviewer is available.
+Replacement candidate: [retention/admin fix review](../../docs/api-integration/reviews/2026-10-22-p1-02-retention-admin-fix.md).
+Candidate tag: `staging-rc-p1-02-2026-10-22.3`, based on deployed `d915619`.
+The [first deployment evidence](../../docs/api-integration/baselines/2026-10-23-p1-02-first-deployment.md)
+records the current staging application and its successful frontend migration.
+The [replacement gate register](../../docs/api-integration/baselines/2026-10-22-p1-02-retention-admin-fix.json)
+tracks the remaining work. P1-02 remains BLOCKED.
 
+This replacement fixes retention timestamp parameter inference and the admin
+label API's uncaught authorization errors. Its branch runs the full CI checks,
+but is excluded from the protected migration job. Publishing the candidate does
+not advance `staging`, change protected pins or certify deployed acceptance.
+The sole-developer source review is recorded separately from owner release approval.
 
-Configuration is applied; deployment remains blocked. Resource identities,
-observed state and open gates are in [first-release.json](first-release.json).
-[Preparation evidence](../../docs/api-integration/baselines/2026-10-22-p1-02-deployment-preparation.md)
-records live verification, approvals, billing, and source/test limitations.
+The staging Vercel project follows `staging`. Its build command runs
+`scripts/validate-staging-release.mjs` before the normal prebuild and Next build.
+Both protected release pins currently identify `d915619`; keep them there until
+the replacement's release and migration evidence has been verified.
 
-The staging Vercel project is linked to repository branch `staging`. Its build
-command runs `scripts/validate-staging-release.mjs` before the normal prebuild and
-Next build. The current remote branch lacks these uncommitted changes and cannot
-pass this gate. Review/publish a candidate before requesting deployment.
-
-After source review, set `STAGING_RELEASE_COMMIT` to its full Git SHA in protected
-staging configuration. After protected one-shot migrations, set
-`STAGING_MIGRATION_VERIFIED_COMMIT` to the same reviewed SHA with matching release
-evidence. Leave both unset while the corresponding work is incomplete. They live
-outside the source commit to avoid a circular self-referencing Git hash.
+For promotion, require successful CI at the exact candidate SHA and reviewed
+recovery evidence. Reuse the protected migration job on an allowed release ref
+with its expected-revision approval updated to that SHA. All SQL/journal bytes
+are unchanged, so the job should verify existing lineage and runtime grants
+without applying new DDL. Retain its new receipt before changing
+`STAGING_MIGRATION_VERIFIED_COMMIT`. Source and migration pins must both match
+the replacement before deployment. Then verify anonymous label API 401 and
+non-admin 403, and separately authorize and record one authenticated retention
+run. The prior failed retention run remains a failure; earlier independent steps
+may have committed. Do not claim a completed cleanup from local tests.
 
 Inspect an explicitly supplied staging configuration snapshot locally with:
 
@@ -46,7 +52,7 @@ operator-only AWS Secrets Manager records, alongside the frontend migration reco
 All three stored records passed protected-resolver read-only TLS checks. See the
 [release-store handoff](release-store.md), [public metadata](release-store.json)
 and [current evidence](../../docs/api-integration/baselines/2026-10-22-p1-02-release-handoff.md).
-No CI/host access or cloud application migration is configured by this handoff.
+The original handoff did not configure CI/host access. The subsequent frontend protected migration is documented in the first-deployment evidence.
 Community remains empty, with no migration journal or certified application lineage.
 
 The [provider configuration](providers.md) records the dedicated Google Identity
@@ -58,8 +64,7 @@ remains enabled. Only Square supplies Vercel's required private bypass system
 variable. See [ingress scope](webhook-ingress.md) and
 [current provider evidence](../../docs/api-integration/baselines/2026-10-22-p1-02-provider-configuration.md).
 
-Source review, protected migration pins and deployed OAuth/signature/email smoke
-checks remain outstanding. Review the legacy enabled Square preview callback
+The replacement needs exact-revision CI, protected migration verification and deployed acceptance. First-deployment OAuth/signature evidence remains scoped to d915619; email business-flow checks remain outstanding. Review the legacy enabled Square preview callback
 before generating sandbox events. Mux still needs its isolated environment and
 Course gateway origin. Keep shipping and CRM disabled until their isolation
 evidence exists.

@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import process from "node:process";
 
 const SERVER_ONLY_TEST_FILES = new Set([
+  "src/app/api/admin/shipping/label-handler.test.ts",
   "src/lib/api-integration/response-validation.test.ts",
   "src/lib/env/application-environment.test.ts",
   "src/lib/env/staging-email-policy.test.ts",
@@ -39,6 +40,7 @@ const SERVER_ONLY_TEST_FILES = new Set([
 ]);
 
 const DB_TEST_FILES = new Set([
+  "src/lib/highlevel/retention.db.test.ts",
   "src/lib/highlevel/highlevel.db.test.ts",
   "src/lib/courses/signup.db.test.ts",
   "src/data/commerce-e2e-catalog-fixture.test.ts",
