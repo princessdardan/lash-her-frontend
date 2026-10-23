@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, cp, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, cp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { resolve } from "node:path";
-import { spawnSync } from "node:child_process";
+import { dirname, resolve } from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   assertCompatible,
   readContractBundle,
@@ -43,6 +43,24 @@ test("released checks require source verification and an explicit baseline", asy
     const file = resolve(directory, "manifest.json");
     const manifest = JSON.parse(await readFile(file, "utf8"));
     manifest.status = "released"; // Test-only initial approved-baseline fixture.
+    // Unit tests own their source repositories; CI has no private sibling clones.
+    const sources = resolve(directory, "sources");
+    const repositories = new Set(Object.values(manifest.artifacts).map(pin => pin.repository));
+    for (const repository of repositories) {
+      const root = resolve(sources, repository);
+      await mkdir(root, { recursive: true });
+      const git = (...args) => execFileSync("git", ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "-c", "user.name=Contract fixture", "-c", "user.email=contract@example.test", ...args], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+      git("init", "--quiet");
+      for (const pin of Object.values(manifest.artifacts).filter(pin => pin.repository === repository)) {
+        const target = resolve(root, pin.sourcePath);
+        await mkdir(dirname(target), { recursive: true });
+        await cp(resolve(directory, pin.file), target);
+      }
+      git("add", ".");
+      git("commit", "--quiet", "-m", "Create isolated contract source fixture");
+      const revision = git("rev-parse", "HEAD").trim();
+      for (const pin of Object.values(manifest.artifacts).filter(pin => pin.repository === repository)) pin.revision = revision;
+    }
     await writeFile(file, JSON.stringify(manifest));
     const check = (...args) =>
       spawnSync(
@@ -59,10 +77,10 @@ test("released checks require source verification and an explicit baseline", asy
     const missingSources = check();
     assert.notEqual(missingSources.status, 0);
     assert.match(missingSources.stderr, /requires --sources/);
-    const missingBaseline = check("--sources", "..");
+    const missingBaseline = check("--sources", sources);
     assert.notEqual(missingBaseline.status, 0);
     assert.match(missingBaseline.stderr, /requires an explicit --baseline/);
-    const initialBaseline = check("--sources", "..", "--baseline", directory);
+    const initialBaseline = check("--sources", sources, "--baseline", directory);
     assert.equal(initialBaseline.status, 0, initialBaseline.stderr);
   } finally {
     await rm(directory, { recursive: true, force: true });

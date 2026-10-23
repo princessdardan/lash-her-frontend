@@ -3,7 +3,7 @@
 The candidate is prepared from frontend `f955824` (current published main), in an
 isolated checkout. The existing working trees in all three repositories are
 preserved. Candidate publication is separate from deployment. The immutable
-candidate tag is `staging-rc-p1-02-2026-10-22`; the full source SHA is supplied
+candidate tag is `staging-rc-p1-02-2026-10-22.2`; the full source SHA is supplied
 through protected release variables after publication.
 
 ## Review and fixes
@@ -90,3 +90,13 @@ same source SHA. Keep that pin absent until verification succeeds. Fast-forwardi
 `staging` and the first actual deployment are subsequent steps; this request
 prepares them. Course/Community migration execution, API images/host/gateway,
 provider activation and deployed OIDC/native-scheduler acceptance remain open.
+
+## Replacement candidate
+
+The first published candidate `2390ff3` passed the full CI build and audit but
+failed unit and coverage jobs because the release-check unit test depended on
+sibling API clones. The replacement creates its own temporary Git source
+repositories from the pinned bundle, commits those fixture bytes and uses their
+exact revisions. All four contract-tool tests pass without sibling checkouts.
+Runtime/migration code and SQL bytes are unchanged by this correction. The earlier
+tag and CI failure remain available; the `.2` tag identifies the replacement.

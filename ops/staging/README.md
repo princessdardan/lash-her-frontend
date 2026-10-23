@@ -1,7 +1,7 @@
 # First staging release
 
 Current candidate: [release review](../../docs/api-integration/reviews/2026-10-22-p1-02-release-candidate.md).
-Candidate tag: `staging-rc-p1-02-2026-10-22`. The protected frontend migration job
+Candidate tag: `staging-rc-p1-02-2026-10-22.2`. The protected frontend migration job
 and exact SQL/journal inventory are prepared. Cloud migrations, migration pin and
 first deployment remain gated on the approvals/evidence described in that review.
 The operator confirmed a sole-developer workflow; no separate reviewer is available.
