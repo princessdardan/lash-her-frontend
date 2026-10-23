@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "accountId": "691588646557",
+  "region": "us-east-1",
+  "stackName": "lash-her-staging-release-store",
+  "stackId": "arn:aws:cloudformation:us-east-1:691588646557:stack/lash-her-staging-release-store/1d9af8b0-ce5a-11f1-8590-12fffe6163ff",
+  "stackStatus": "UPDATE_COMPLETE",
+  "keyArn": "arn:aws:kms:us-east-1:691588646557:key/2383c0dd-f558-4d01-bb3c-45c89e0338a7",
+  "keyRotationEnabled": true,
+  "terminationProtection": true,
+  "statefulResourceReplacementAndDeletionDenied": true,
+  "operatorArn": "arn:aws:iam::691588646557:user/Dardan",
+  "ciAccessConfigured": false,
+  "hostAccessConfigured": false,
+  "deploymentRoleChanged": false,
+  "automaticCredentialRotationConfigured": false,
+  "persistentCloudTrailTrailConfigured": false,
+  "records": {
+    "CommunityRuntime": {
+      "name": "lash-her/staging/community/runtime",
+      "arn": "arn:aws:secretsmanager:us-east-1:691588646557:secret:lash-her/staging/community/runtime-HsTrfM",
+      "initialized": true,
+      "initialVersionId": "ea666ecf-8a12-3568-9787-d026853e7288",
+      "currentVersionId": "21ffd49f-d7da-4425-b229-e1eae2067b35",
+      "protectedResolverReadOnlyTlsVerified": true,
+      "clientTlsProtocol": "TLSv1.3",
+      "clientCertificateAuthorized": true
+    },
+    "CommunityMigration": {
+      "name": "lash-her/staging/community/migration",
+      "arn": "arn:aws:secretsmanager:us-east-1:691588646557:secret:lash-her/staging/community/migration-CqAA1M",
+      "initialized": true,
+      "initialVersionId": "abcc5981-eae6-3413-c6f5-3d57f8bd8926",
+      "currentVersionId": "78119266-b535-4376-98d5-750dfec47fb0",
+      "protectedResolverReadOnlyTlsVerified": true,
+      "clientTlsProtocol": "TLSv1.3",
+      "clientCertificateAuthorized": true
+    },
+    "FrontendMigration": {
+      "name": "lash-her/staging/frontend/migration",
+      "arn": "arn:aws:secretsmanager:us-east-1:691588646557:secret:lash-her/staging/frontend/migration-qnAr8d",
+      "initialized": true,
+      "initialVersionId": "7707f18d-d40d-897d-4a6a-d4f25241b88b",
+      "currentVersionId": "edc6b621-a82d-4a4b-8408-1357589b1a35",
+      "protectedResolverReadOnlyTlsVerified": true,
+      "clientTlsProtocol": "TLSv1.3",
+      "clientCertificateAuthorized": true
+    }
+  },
+  "privateImportCompletedAt": "2026-10-22T20:56:55.998Z",
+  "accessPoliciesRetained": true,
+  "lastMetadataVerifiedAt": "2026-10-22T21:01:00.308Z",
+  "cloudTrailPutEventsObserved": [
+    {
+      "eventName": "PutSecretValue",
+      "eventTime": "2026-10-22T20:56:56.000Z",
+      "eventId": "c9749583-590a-4d39-b878-afea654a47fe"
+    },
+    {
+      "eventName": "PutSecretValue",
+      "eventTime": "2026-10-22T20:56:55.000Z",
+      "eventId": "21d1a3b4-fd86-46cd-a41c-a0d4fcdd61dc"
+    },
+    {
+      "eventName": "PutSecretValue",
+      "eventTime": "2026-10-22T20:56:55.000Z",
+      "eventId": "a50ea2fd-e1b1-4cd2-b894-bec103208ee7"
+    },
+    {
+      "eventName": "PutSecretValue",
+      "eventTime": "2026-10-22T20:56:39.000Z",
+      "eventId": "1ca70653-9b9e-45b5-bf5b-816e2db053d7"
+    },
+    {
+      "eventName": "PutSecretValue",
+      "eventTime": "2026-10-22T20:56:39.000Z",
+      "eventId": "d277cb0a-9dea-4a46-aff3-be3c44c6d373"
+    }
+  ],
+  "costEstimate": {
+    "checkedDate": "2026-10-22",
+    "currency": "USD",
+    "initialMonthlyStorageBeforeRequestsAndTax": 2.2,
+    "secrets": {
+      "count": 3,
+      "unitPerMonth": 0.4,
+      "subtotalPerMonth": 1.2
+    },
+    "key": {
+      "count": 1,
+      "initialPerMonth": 1,
+      "rotationSurcharge": "First two rotations each add USD 1/month; capped thereafter."
+    },
+    "secretManagerRequestsPer10000": 0.05,
+    "limitations": "Prorated storage; request usage, shared KMS free-tier eligibility, tax/FX and future rotations change total. Not a full application budget.",
+    "sources": [
+      "https://aws.amazon.com/secrets-manager/pricing/",
+      "https://aws.amazon.com/kms/pricing/"
+    ]
+  }
+}

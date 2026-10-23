@@ -1,2 +1,8 @@
 # Preserve upstream formatting and the reviewed bytes packed into security forks.
 vendor/security/**
+
+# Preserve exact upstream contract bytes, generated types and release evidence.
+contracts/api-integration/**
+src/lib/api-integration/generated/**
+ops/**
+docs/api-integration/baselines/**

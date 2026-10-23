@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { VERCEL_PROJECT_BINDINGS, SANITY_PROJECT_BINDINGS } from "./application-environment.mjs";
 
 const scriptPath = join(process.cwd(), "scripts/validate-sanity-env.mjs");
 const checkoutKey = Buffer.alloc(32, 7).toString("base64");
@@ -84,6 +85,7 @@ test("validates preview launch environment", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
   });
 
@@ -91,10 +93,94 @@ test("validates preview launch environment", () => {
   assert.match(result.stdout, /Vercel preview environment validated/);
 });
 
+test("staging rejects the shared production Sanity project", () => {
+  const result = runValidator({
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.productionProjectId,
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.combinedOutput, /NEXT_PUBLIC_SANITY_PROJECT_ID/);
+});
+
+test("dedicated staging Production target validates its recorded project and canonical origin", () => {
+  const stagingEnv = {
+    ...launchEnv,
+    VERCEL_ENV: "production",
+    APP_ENV: "staging",
+    VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.stagingProjectId,
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+    NEXT_PUBLIC_SITE_URL: "https://staging.lashher.com",
+  };
+  const valid = runValidator(stagingEnv);
+  assert.equal(valid.status, 0, valid.combinedOutput);
+  const invalidOrigin = runValidator({
+    ...stagingEnv,
+    NEXT_PUBLIC_SITE_URL: "https://lashher.com",
+  });
+  assert.notEqual(invalidOrigin.status, 0);
+  assert.match(invalidOrigin.combinedOutput, /staging Production target requires/);
+});
+
+test("hosted prebuild rejects absent business environment and swapped project config", () => {
+  const invalidBindings: Record<string, string>[] = [
+    { APP_ENV: "" },
+    { APP_ENV: "staging" },
+    { VERCEL_PROJECT_ID: "prj_unreviewed" },
+    { APP_VERCEL_TEAM_ID: "team_unreviewed" },
+  ];
+  for (const overrides of invalidBindings) {
+    const result = runValidator({
+      ...launchEnv,
+      VERCEL_ENV: "production",
+      NEXT_PUBLIC_SANITY_DATASET: "production",
+      ...overrides,
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(
+      result.combinedOutput,
+      /APP_ENV|reviewed|has not been recorded/,
+    );
+  }
+});
+
+test("preview prebuild rejects live Square settings", () => {
+  const result = runValidator({
+    ...launchEnv,
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+    SQUARE_COMMERCE_ENABLED: "true",
+    SQUARE_ENVIRONMENT: "production",
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.combinedOutput,
+    /staging deployment requires SQUARE_ENVIRONMENT=sandbox/,
+  );
+});
+
+test("production project prebuild requires the canonical production origin", () => {
+  const result = runValidator({
+    ...launchEnv,
+    VERCEL_ENV: "production",
+    NEXT_PUBLIC_SANITY_DATASET: "production",
+    NEXT_PUBLIC_SITE_URL: "https://staging.lashher.com",
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.combinedOutput,
+    /Production target requires NEXT_PUBLIC_SITE_URL=https:\/\/lashher.com/,
+  );
+});
+
 test("validates preview Chit Chats shipping configuration", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     CHITCHATS_SHIPPING_ENABLED: "true",
     CHITCHATS_CHECKOUT_ENABLED: "true",
@@ -129,7 +215,8 @@ test("accepts every canonical Chit Chats region", () => {
     const result = runValidator({
       ...launchEnv,
       VERCEL_ENV: "preview",
-      NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
+      NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
+    NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
       CHITCHATS_SHIPPING_ENABLED: "true",
       CHITCHATS_CHECKOUT_ENABLED: "false",
       CHITCHATS_US_SHIPPING_ENABLED: "false",
@@ -157,6 +244,7 @@ test("normalizes surrounding whitespace in the configured Chit Chats region", ()
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     CHITCHATS_SHIPPING_ENABLED: "true",
     CHITCHATS_CHECKOUT_ENABLED: "false",
@@ -184,6 +272,7 @@ test("rejects a Chit Chats region outside the canonical allowlist", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     CHITCHATS_SHIPPING_ENABLED: "true",
     CHITCHATS_CHECKOUT_ENABLED: "false",
@@ -215,6 +304,7 @@ test("does not accept the obsolete branch ID in place of a region", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     CHITCHATS_SHIPPING_ENABLED: "true",
     CHITCHATS_CHECKOUT_ENABLED: "false",
@@ -243,6 +333,7 @@ test("fails when Chit Chats checkout is enabled without the shipping worker", ()
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     CHITCHATS_SHIPPING_ENABLED: "false",
     CHITCHATS_CHECKOUT_ENABLED: "true",
@@ -259,6 +350,7 @@ test("rejects a malformed independent product checkout admission flag", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     MANUAL_PRODUCT_CHECKOUT_ENABLED: "yes",
   });
@@ -298,6 +390,7 @@ test("fails launch environment when Square service booking flag is blank", () =>
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     SERVICE_BOOKING_SQUARE_ENABLED: "",
   });
@@ -313,6 +406,7 @@ test("validates preview mock payment environment without live payment credential
   const env: Record<string, string> = {
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     PAYMENT_GATEWAY_MODE: "mock",
     PAYMENT_MOCK_DEFAULT_SCENARIO: "success",
@@ -349,6 +443,7 @@ test("fails production launch environment with wrong dataset", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "production",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
   });
 
@@ -362,6 +457,7 @@ test("fails launch environment missing a critical variable", () => {
   const env: Record<string, string> = {
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
   };
 
@@ -377,6 +473,7 @@ test("fails launch environment missing the Sanity API read token", () => {
   const env: Record<string, string> = {
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
   };
 
@@ -392,6 +489,7 @@ test("fails launch environment missing the payment reconciliation cron secret", 
   const env: Record<string, string> = {
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
   };
 
@@ -410,6 +508,7 @@ test("fails launch environment missing the Vercel cron secret", () => {
   const env: Record<string, string> = {
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
   };
 
@@ -425,6 +524,7 @@ test("fails launch environment when Square service booking URL does not use HTTP
   const env: Record<string, string> = {
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     SERVICE_BOOKING_SQUARE_ENABLED: "true",
     SQUARE_ENVIRONMENT: "sandbox",
@@ -450,6 +550,7 @@ test("fails launch environment when Square service booking webhook URL does not 
   const env: Record<string, string> = {
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     SERVICE_BOOKING_SQUARE_ENABLED: "true",
     SQUARE_ENVIRONMENT: "sandbox",
@@ -475,6 +576,7 @@ test("treats whitespace-only launch variables as missing", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     SANITY_WEBHOOK_SECRET: "   ",
   });
@@ -487,6 +589,7 @@ test("fails malformed checkout encryption key", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     CHECKOUT_SECRET_ENCRYPTION_KEY: "not-base64",
   });
@@ -499,6 +602,7 @@ test("fails launch environment without Auth.js identity configuration", () => {
   const env: Record<string, string> = {
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
   };
 
@@ -514,6 +618,7 @@ test("fails launch environment with a weak Auth.js secret", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     AUTH_SECRET: "too-short",
   });
@@ -529,6 +634,7 @@ test("fails launch environment with a repeated 32-byte Auth.js secret", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     AUTH_SECRET: "a".repeat(32),
   });
@@ -541,6 +647,7 @@ test("fails launch environment with a low-diversity Auth.js secret", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     AUTH_SECRET: "abcd".repeat(8),
   });
@@ -553,6 +660,7 @@ test("fails an unknown service booking model rollout mode", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     SERVICE_BOOKING_MODEL_MODE: "automatic",
   });
@@ -565,6 +673,7 @@ test("fails malformed booking calendar credential encryption key", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     BOOKING_CALENDAR_CREDENTIAL_ENCRYPTION_KEY: "not-base64",
   });
@@ -580,6 +689,7 @@ test("does not print secret values on failure", () => {
   const result = runValidator({
     ...launchEnv,
     VERCEL_ENV: "preview",
+    NEXT_PUBLIC_SANITY_PROJECT_ID: SANITY_PROJECT_BINDINGS.stagingProjectId,
     NEXT_PUBLIC_SANITY_DATASET: "staging-2026-05-10",
     SANITY_WRITE_TOKEN: secretValue,
     GOOGLE_REDIRECT_URI: secretValue,
@@ -600,6 +710,14 @@ function runValidator(
     env: {
       NODE_ENV: "test",
       PATH: process.env.PATH ?? "",
+      ...(env.VERCEL_ENV === "production" || env.VERCEL_ENV === "preview"
+        ? {
+            APP_ENV: env.VERCEL_ENV === "production" ? "production" : "staging",
+            APP_VERCEL_TEAM_ID: VERCEL_PROJECT_BINDINGS.teamId,
+            VERCEL_TARGET_ENV: env.VERCEL_ENV,
+            VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.productionProjectId,
+          }
+        : {}),
       ...env,
     },
     encoding: "utf8",

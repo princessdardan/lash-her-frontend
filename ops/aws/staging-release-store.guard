@@ -1,0 +1,37 @@
+let keys = Resources.*[ Type == 'AWS::KMS::Key' ]
+let secrets = Resources.*[ Type == 'AWS::SecretsManager::Secret' ]
+let policies = Resources.*[ Type == 'AWS::SecretsManager::ResourcePolicy' ]
+
+rule only_release_store_resources {
+  Resources.*.Type IN ['AWS::KMS::Key', 'AWS::SecretsManager::Secret', 'AWS::SecretsManager::ResourcePolicy']
+  Parameters.SecretNamespace.AllowedValues == ['lash-her/staging']
+  Parameters.OperatorArn.AllowedValues == ['arn:aws:iam::691588646557:user/Dardan']
+}
+
+rule retain_encryption_and_credentials {
+  %keys !empty
+  %secrets !empty
+  %keys { DeletionPolicy == 'Retain' UpdateReplacePolicy == 'Retain' }
+  %secrets { DeletionPolicy == 'Retain' UpdateReplacePolicy == 'Retain' }
+  %policies { DeletionPolicy == 'Retain' UpdateReplacePolicy == 'Retain' }
+}
+
+rule dedicated_rotating_key {
+  %keys.Properties { EnableKeyRotation == true PendingWindowInDays == 30 }
+  %secrets.Properties { KmsKeyId == { 'Fn::GetAtt': ['ReleaseKey', 'Arn'] } SecretString not exists }
+}
+
+rule scoped_operator_and_transport_policies {
+  %policies !empty
+  %policies.Properties {
+    BlockPublicPolicy == true
+    some ResourcePolicy.Statement[*] {
+      Sid == 'OperatorRead'
+      Effect == 'Allow'
+      Principal.AWS.Ref == 'OperatorArn'
+      Resource.Ref exists
+    }
+    some ResourcePolicy.Statement[*] { Sid == 'DenyUnreviewedValueReaders' Effect == 'Deny' }
+    some ResourcePolicy.Statement[*] { Sid == 'DenyInsecureTransport' Effect == 'Deny' }
+  }
+}

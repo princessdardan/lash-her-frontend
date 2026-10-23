@@ -1,0 +1,236 @@
+{
+  "schemaVersion": 1,
+  "verifiedDate": "2026-10-22",
+  "timezone": "America/Toronto",
+  "task": "P1-02",
+  "status": "staging-project-and-requested-variables-configured-host-iac-prepared",
+  "vercel": {
+    "teamId": "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
+    "stagingProject": {
+      "id": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+      "name": "lash-her-frontend-staging",
+      "createdAt": 1792694982563,
+      "framework": "nextjs",
+      "nodeVersion": "24.x",
+      "ssoProtection": {
+        "deploymentType": "all"
+      },
+      "latestDeployment": null,
+      "domains": [
+        "staging.lashher.com"
+      ],
+      "gitConnection": "not-configured",
+      "configuredVariables": [
+        {
+          "key": "APP_ENV",
+          "value": "staging",
+          "targets": [
+            "production",
+            "preview"
+          ],
+          "type": "plain"
+        },
+        {
+          "key": "APP_VERCEL_TEAM_ID",
+          "value": "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
+          "targets": [
+            "production",
+            "preview"
+          ],
+          "type": "plain"
+        }
+      ],
+      "verification": "MCP create/get identity and protection metadata; CLI explicit-project inspect and env list from a temporary staging-only project link.",
+      "domainBinding": {
+        "name": "staging.lashher.com",
+        "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+        "gitBranch": null,
+        "customEnvironmentId": null,
+        "redirect": null,
+        "verified": true,
+        "createdAt": 1792695838931,
+        "verification": "Dedicated get_project_domain returned the binding with no branch/custom-environment override, selecting Production."
+      },
+      "dnsConfiguration": {
+        "misconfigured": false,
+        "configuredBy": "A",
+        "nameservers": [
+          "ns1.vercel-dns.com",
+          "ns2.vercel-dns.com"
+        ],
+        "aValues": [
+          "216.150.16.129",
+          "216.150.1.193"
+        ],
+        "conflicts": [],
+        "dnsWrittenByThisTask": false
+      },
+      "approvedProjectSettings": {
+        "autoExposeSystemEnvs": true,
+        "oidcTokenConfig": {
+          "enabled": true,
+          "issuerMode": "team"
+        },
+        "result": "MCP update_project completed successfully after explicit user approval; response projection omits these settings, so independent field readback is unavailable. No token was requested or inspected."
+      }
+    },
+    "productionProject": {
+      "id": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+      "name": "lash-her-frontend",
+      "configuredVariables": [
+        {
+          "key": "APP_ENV",
+          "configuredValue": "production",
+          "targets": [
+            "production"
+          ],
+          "type": "encrypted"
+        },
+        {
+          "key": "APP_ENV",
+          "configuredValue": "staging",
+          "targets": [
+            "preview"
+          ],
+          "type": "encrypted"
+        },
+        {
+          "key": "APP_VERCEL_TEAM_ID",
+          "configuredValue": "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
+          "targets": [
+            "production",
+            "preview"
+          ],
+          "type": "encrypted",
+          "separateEntriesPerTarget": true
+        }
+      ],
+      "verification": "CLI confirmed production link/team, four env-add operations succeeded, and env list confirmed names and target scopes. Existing encrypted values were not decrypted."
+    },
+    "connectorLimitations": [
+      "Create-project request cannot set nodeVersion or autoExposeSystemEnvs; successful create omitted those properties and returned Node 24.x.",
+      "MCP create_project_env returned 403; authenticated CLI fallback completed only the same explicitly requested APP_ENV and APP_VERCEL_TEAM_ID changes.",
+      "CLI 50.0.0 lacks --non-interactive on project inspect, --project on env commands and the newer api command. Explicit project inspection plus verified per-directory links were used."
+    ],
+    "oidcClaimsVerified": false,
+    "repositoryLocalLinkChanged": false,
+    "deployed": false,
+    "approvedActions": [
+      {
+        "operation": "attach-domain",
+        "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+        "name": "staging.lashher.com",
+        "target": "production",
+        "initialRejectionReason": "Automatic approval review classified external domain routing as outside the explicit authorization.",
+        "authorization": "User explicitly answered: Approve these staging changes.",
+        "status": "applied"
+      },
+      {
+        "operation": "update-project",
+        "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+        "requestBody": {
+          "autoExposeSystemEnvs": true,
+          "oidcTokenConfig": {
+            "enabled": true,
+            "issuerMode": "team"
+          }
+        },
+        "initialRejectionReason": "Automatic approval review classified system-variable and workload-token settings as additional security-sensitive changes.",
+        "authorization": "User explicitly answered: Approve these staging changes.",
+        "status": "applied"
+      }
+    ],
+    "independentProjectSettingsReadback": "Connector get/update project responses omit the two requested fields. Browser verification reached an unauthenticated login page; no login or further mutation was attempted."
+  },
+  "aws": {
+    "accountId": "691588646557",
+    "principalArn": "arn:aws:sts::691588646557:assumed-role/LashHerDeploymentRole/lash-her-deploy",
+    "region": "us-east-1",
+    "verifiedReadOperations": [
+      "GetCallerIdentity",
+      "GetBlueprints",
+      "GetBundles",
+      "GetRegions"
+    ],
+    "activeBlueprintId": "ubuntu_24_04",
+    "availableZones": [
+      "us-east-1a",
+      "us-east-1b",
+      "us-east-1c",
+      "us-east-1d",
+      "us-east-1e",
+      "us-east-1f"
+    ],
+    "bundleCandidates": [
+      {
+        "id": "medium_3_0",
+        "ramGb": 4,
+        "vcpus": 2,
+        "diskGb": 80,
+        "monthlyComputeCapUsd": 24
+      },
+      {
+        "id": "large_3_0",
+        "ramGb": 8,
+        "vcpus": 2,
+        "diskGb": 160,
+        "monthlyComputeCapUsd": 44
+      }
+    ],
+    "provisioningManifest": "ops/aws/provisioning.json",
+    "templateSha256": "cddefeb51ba26ad4bf13f5ff8f695f39500cc556caa80691265fbe53f11992db",
+    "guardRulesSha256": "f15e00e147b8a23e71a12f97d1bc2783dd3a5410c2786e70652ba2b31b1ae645",
+    "provisioned": false,
+    "iamChanged": false,
+    "requiredInputs": [
+      "host operator",
+      "approved operator public IPv4 /32",
+      "existing regional SSH key-pair name",
+      "gateway DNS and certificate policy",
+      "approved test window and budget"
+    ]
+  },
+  "validation": {
+    "nodeVersion": "24.18.0",
+    "focusedTests": {
+      "passed": 45,
+      "failed": 0,
+      "files": [
+        "src/lib/env/application-environment.test.ts",
+        "src/lib/env/validate-sanity-env.test.ts",
+        "src/lib/shipping/config.test.ts"
+      ],
+      "serverOnlyHook": "scripts/register-server-only-test.mjs"
+    },
+    "typescriptNoEmit": "passed",
+    "changedSourceEslint": "passed",
+    "cfnLint": {
+      "version": "1.58.0",
+      "result": "passed"
+    },
+    "cfnGuard": {
+      "version": "3.2.1",
+      "result": "passed",
+      "rulesPassed": 3,
+      "negativeFixturesRejected": [
+        "public-ssh",
+        "ipv6-ssh",
+        "published-api",
+        "cross-environment-address"
+      ]
+    },
+    "operatorCidrPatternBoundaries": "passed",
+    "renderedUserDataBashSyntax": "passed; host commands not executed",
+    "cloudFormationServicePreDeployment": "not-run; no change set or provisioning requested",
+    "liveHostOrGatewayTests": "not-run"
+  },
+  "remainingP1_02Gaps": [
+    "deployed system-variable availability and exact OIDC claim verification",
+    "source and protected release configuration",
+    "isolated provider/database credentials and mappings",
+    "host provisioning and effective network evidence",
+    "operator assignment",
+    "complete cost review"
+  ],
+  "scope": "Existing unrelated working-tree changes preserved; no deployment, VM, DNS record, credential copy, migration or IAM change."
+}

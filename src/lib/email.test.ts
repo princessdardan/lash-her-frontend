@@ -228,6 +228,11 @@ function runEmailScenario(assertions: string): void {
   env.NEXT_PUBLIC_SITE_URL = "https://lashher.test";
   env.CHECKOUT_SECRET_ENCRYPTION_KEY = Buffer.alloc(32, 19).toString("base64");
   env.VERCEL_ENV = "preview";
+  env.VERCEL_TARGET_ENV = "preview";
+  env.APP_ENV = "staging";
+  env.VERCEL_PROJECT_ID = "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM";
+  env.APP_VERCEL_TEAM_ID = "team_2Hrn5eMZyZxfAWdmYvyKi9t3";
+  env.STAGING_EMAIL_RECIPIENT_ALLOWLIST = "subscriber@example.com,generic@example.com";
   delete env.EMAIL_PROFILE_IMAGE_URL;
   delete env.RESEND_TEMPLATE_CONTACT_POPUP_CUSTOMER_ID;
 

@@ -1,0 +1,122 @@
+{
+  "observed_date": "2026-10-01",
+  "timezone": "America/Toronto",
+  "gate_G0": "BLOCKED",
+  "scope": "Published review branches and exact-revision remote CI; no main merge or production migration",
+  "repositories": {
+    "community-api": {
+      "head_revision": "ac88eb9840c8ec1ad85cc414d31c6f70831d1e3f",
+      "branch": "codex/g0-baseline",
+      "pull_request": "https://github.com/princessdardan/lash-her-community-api/pull/1",
+      "state": "OPEN_DRAFT",
+      "merged": false,
+      "ci": {
+        "url": "https://github.com/princessdardan/lash-her-community-api/actions/runs/36914046328",
+        "head_revision": "ac88eb9840c8ec1ad85cc414d31c6f70831d1e3f",
+        "conclusion": "success",
+        "jobs": [
+          {
+            "name": "postgres",
+            "conclusion": "success",
+            "url": "https://github.com/princessdardan/lash-her-community-api/actions/runs/36914046328/job/110543520680"
+          },
+          {
+            "name": "quality",
+            "conclusion": "success",
+            "url": "https://github.com/princessdardan/lash-her-community-api/actions/runs/36914046328/job/110543520997"
+          },
+          {
+            "name": "containers",
+            "conclusion": "success",
+            "url": "https://github.com/princessdardan/lash-her-community-api/actions/runs/36914046328/job/110543521138"
+          }
+        ]
+      }
+    },
+    "course-api": {
+      "head_revision": "a809b1e61051d8908892830bbeb80762448c879d",
+      "branch": "codex/g0-baseline",
+      "pull_request": "https://github.com/princessdardan/lash-her-course-api/pull/2",
+      "state": "OPEN_DRAFT",
+      "merged": false,
+      "ci": {
+        "url": "https://github.com/princessdardan/lash-her-course-api/actions/runs/36914736475",
+        "head_revision": "a809b1e61051d8908892830bbeb80762448c879d",
+        "conclusion": "success",
+        "jobs": [
+          {
+            "name": "quality",
+            "conclusion": "success",
+            "url": "https://github.com/princessdardan/lash-her-course-api/actions/runs/36914736475/job/110545816714"
+          },
+          {
+            "name": "containers",
+            "conclusion": "success",
+            "url": "https://github.com/princessdardan/lash-her-course-api/actions/runs/36914736475/job/110545817094"
+          },
+          {
+            "name": "postgres",
+            "conclusion": "success",
+            "url": "https://github.com/princessdardan/lash-her-course-api/actions/runs/36914736475/job/110545817204"
+          }
+        ]
+      }
+    },
+    "frontend": {
+      "head_revision": "273a9821a097a7a0beeb918e8b1c4c51932f73ab",
+      "branch": "codex/g0-baseline",
+      "pull_request": "https://github.com/princessdardan/lash-her-frontend/pull/48",
+      "state": "OPEN_DRAFT",
+      "merged": false,
+      "ci": {
+        "url": "https://github.com/princessdardan/lash-her-frontend/actions/runs/36914136266",
+        "head_revision": "273a9821a097a7a0beeb918e8b1c4c51932f73ab",
+        "conclusion": "IN_PROGRESS",
+        "passed": [
+          "quality-and-unit",
+          "audit",
+          "build",
+          "database"
+        ],
+        "pending": [
+          "browser"
+        ]
+      }
+    }
+  },
+  "course_regressions": {
+    "failed_run": "https://github.com/princessdardan/lash-her-course-api/actions/runs/36914127495",
+    "fix_revision": "a809b1e61051d8908892830bbeb80762448c879d",
+    "openapi": "Select test mode before dynamic app import; subprocess regression without deployment variables or developer dotenv. Failed before and passed after fix.",
+    "database": "Prime activity snapshot before competing publisher query; clear statistics snapshot before each poll. Failed before and passed after fix. Still requires an observed lock wait and empty post-pause claim.",
+    "local_verification": {
+      "verify_unit_tests": 366,
+      "database_tests": 17,
+      "result": "PASS"
+    },
+    "runtime_source_and_migrations_changed": false
+  },
+  "cross_repo_credential": {
+    "name": "CROSS_REPO_READ_TOKEN",
+    "required_repositories": [
+      "princessdardan/lash-her-community-api",
+      "princessdardan/lash-her-course-api"
+    ],
+    "permissions": "Fine-grained token: selected two API repositories, Contents read-only; metadata read implicit",
+    "observation": "No repository secrets configured at inspection; private checkout failed. User requested to configure the scoped secret.",
+    "wired_workflows": [
+      "community:.github/workflows/course-contract-compatibility.yml",
+      "course:.github/workflows/community-contract-compatibility.yml",
+      "course:.github/workflows/contract-release-gate.yml"
+    ],
+    "persist_credentials": false,
+    "checks_skipped_or_waived": false
+  },
+  "remaining": [
+    "Configure scoped private cross-repository checkout credential",
+    "Finish frontend browser CI and required-scenario verification",
+    "Complete cross-repository compatibility and published-history release checks",
+    "Merge Community preserving 97361f173f6a42de238f374317b8f49f79e48876 before dependent Course; no squash/rebase that discards pin",
+    "Collect required final main/selected-revision CI evidence and record approved G0 starting revisions"
+  ]
+}

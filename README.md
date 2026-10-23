@@ -425,6 +425,7 @@ Do not promote if:
 
 ## Further documentation
 
+- [HighLevel / LeadConnector MCP](docs/highlevel-leadconnector-mcp.md) - workspace CRM connection, OAuth authorization, and verification.
 - [Mux course videos](docs/mux-course-videos.md) - Studio credentials, playback, and migration from Sanity files.
 - [Short-course runbook](docs/short-courses.md) - course access, consent, deployment configuration, and verification.
 - `docs/booking-system-setup-guide.md` - current booking, database, authentication, Calendar, Square, email, and rollout setup.

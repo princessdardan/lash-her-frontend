@@ -1,8 +1,12 @@
 import { spawnSync } from "node:child_process";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { VERCEL_PROJECT_BINDINGS } from "../src/lib/env/application-environment.mjs";
 
-const scriptPath = new URL("./check-square-card-on-file-env.mjs", import.meta.url).pathname;
+const scriptPath = new URL(
+  "./check-square-card-on-file-env.mjs",
+  import.meta.url,
+).pathname;
 const node = process.execPath;
 
 const requiredVariables = [
@@ -30,7 +34,8 @@ const validEnv = {
   SQUARE_LOCATION_ID: "test-location-id",
   SQUARE_WEBHOOK_SIGNATURE_KEY: "test-webhook-signature-key",
   SQUARE_SERVICE_BOOKING_WEBHOOK_URL: "https://example.com/api/webhooks/square",
-  SQUARE_SERVICE_BOOKING_RETURN_URL: "https://example.com/booking/card-on-file/callback",
+  SQUARE_SERVICE_BOOKING_RETURN_URL:
+    "https://example.com/booking/card-on-file/callback",
   BOOKING_ADMIN_PAYMENT_ACTION_SECRET: "test-admin-secret",
   CRON_SECRET: "test-cron-secret",
   PAYMENT_RECONCILIATION_CRON_SECRET: "test-reconciliation-cron-secret",
@@ -41,7 +46,17 @@ const validEnv = {
 function run(env) {
   return spawnSync(node, [scriptPath], {
     cwd: new URL("..", import.meta.url).pathname,
-    env,
+    env: {
+      ...(env.VERCEL_ENV === "production" || env.VERCEL_ENV === "preview"
+        ? {
+            APP_ENV: env.VERCEL_ENV === "production" ? "production" : "staging",
+            APP_VERCEL_TEAM_ID: VERCEL_PROJECT_BINDINGS.teamId,
+            VERCEL_TARGET_ENV: env.VERCEL_ENV,
+            VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.productionProjectId,
+          }
+        : {}),
+      ...env,
+    },
     encoding: "utf8",
   });
 }
@@ -54,7 +69,11 @@ describe("check-square-card-on-file-env", () => {
     const output = result.stderr + result.stdout;
 
     for (const name of requiredVariables) {
-      assert.match(output, new RegExp(`\\b${name}\\b`), `missing variable ${name} should be listed`);
+      assert.match(
+        output,
+        new RegExp(`\\b${name}\\b`),
+        `missing variable ${name} should be listed`,
+      );
     }
   });
 
@@ -73,16 +92,23 @@ describe("check-square-card-on-file-env", () => {
     const result = run({ ...validEnv, SQUARE_ENVIRONMENT: "staging" });
 
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr + result.stdout, /SQUARE_ENVIRONMENT must be sandbox or production/);
+    assert.match(
+      result.stderr + result.stdout,
+      /SQUARE_ENVIRONMENT must be sandbox or production/,
+    );
   });
 
   it("fails when production Vercel environment is paired with sandbox Square credentials", () => {
-    const result = run({ ...validEnv, VERCEL_ENV: "production", SQUARE_ENVIRONMENT: "sandbox" });
+    const result = run({
+      ...validEnv,
+      VERCEL_ENV: "production",
+      SQUARE_ENVIRONMENT: "sandbox",
+    });
 
     assert.notEqual(result.status, 0);
     assert.match(
       result.stderr + result.stdout,
-      /Production Vercel environment must use Square production credentials/
+      /production deployment requires SQUARE_ENVIRONMENT=production/,
     );
   });
 
@@ -90,7 +116,10 @@ describe("check-square-card-on-file-env", () => {
     const result = run(validEnv);
 
     assert.equal(result.status, 0);
-    assert.match(result.stdout + result.stderr, /Required environment variables are present/);
+    assert.match(
+      result.stdout + result.stderr,
+      /Required environment variables are present/,
+    );
   });
 
   it("does not echo secret values on success", () => {
@@ -108,42 +137,77 @@ describe("check-square-card-on-file-env", () => {
     const result = run({ ...validEnv, SERVICE_BOOKING_SQUARE_ENABLED: "yes" });
 
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr + result.stdout, /SERVICE_BOOKING_SQUARE_ENABLED must be exactly "true"/);
+    assert.match(
+      result.stderr + result.stdout,
+      /SERVICE_BOOKING_SQUARE_ENABLED must be exactly "true"/,
+    );
   });
 
   it("fails when SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED is not exactly true", () => {
-    const result = run({ ...validEnv, SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED: "1" });
+    const result = run({
+      ...validEnv,
+      SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED: "1",
+    });
 
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr + result.stdout, /SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED must be exactly "true"/);
+    assert.match(
+      result.stderr + result.stdout,
+      /SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED must be exactly "true"/,
+    );
   });
 
   it("fails when PAYMENT_GATEWAY_MODE is mock in a production Vercel environment", () => {
-    const result = run({ ...validEnv, VERCEL_ENV: "production", PAYMENT_GATEWAY_MODE: "mock" });
+    const result = run({
+      ...validEnv,
+      VERCEL_ENV: "production",
+      PAYMENT_GATEWAY_MODE: "mock",
+    });
 
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr + result.stdout, /PAYMENT_GATEWAY_MODE=mock is not allowed in production/);
+    assert.match(
+      result.stderr + result.stdout,
+      /PAYMENT_GATEWAY_MODE=mock is not allowed in production/,
+    );
   });
 
   it("fails when preview Vercel environment uses Square production credentials", () => {
-    const result = run({ ...validEnv, VERCEL_ENV: "preview", SQUARE_ENVIRONMENT: "production" });
+    const result = run({
+      ...validEnv,
+      VERCEL_ENV: "preview",
+      SQUARE_ENVIRONMENT: "production",
+    });
 
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr + result.stdout, /preview.*must use Square sandbox credentials/i);
+    assert.match(
+      result.stderr + result.stdout,
+      /staging deployment requires SQUARE_ENVIRONMENT=sandbox/,
+    );
   });
 
   it("fails when SQUARE_SERVICE_BOOKING_WEBHOOK_URL is malformed", () => {
-    const result = run({ ...validEnv, SQUARE_SERVICE_BOOKING_WEBHOOK_URL: "not-a-url" });
+    const result = run({
+      ...validEnv,
+      SQUARE_SERVICE_BOOKING_WEBHOOK_URL: "not-a-url",
+    });
 
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr + result.stdout, /SQUARE_SERVICE_BOOKING_WEBHOOK_URL must be a valid URL/);
+    assert.match(
+      result.stderr + result.stdout,
+      /SQUARE_SERVICE_BOOKING_WEBHOOK_URL must be a valid URL/,
+    );
   });
 
   it("fails when SQUARE_SERVICE_BOOKING_RETURN_URL is malformed", () => {
-    const result = run({ ...validEnv, SQUARE_SERVICE_BOOKING_RETURN_URL: "///bad" });
+    const result = run({
+      ...validEnv,
+      SQUARE_SERVICE_BOOKING_RETURN_URL: "///bad",
+    });
 
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr + result.stdout, /SQUARE_SERVICE_BOOKING_RETURN_URL must be a valid URL/);
+    assert.match(
+      result.stderr + result.stdout,
+      /SQUARE_SERVICE_BOOKING_RETURN_URL must be a valid URL/,
+    );
   });
 
   it("does not leak secret URL values when reporting malformed URLs", () => {
@@ -158,17 +222,30 @@ describe("check-square-card-on-file-env", () => {
   });
 
   it("fails when SQUARE_SERVICE_BOOKING_WEBHOOK_URL does not use https", () => {
-    const result = run({ ...validEnv, SQUARE_SERVICE_BOOKING_WEBHOOK_URL: "http://example.com/api/webhooks/square" });
+    const result = run({
+      ...validEnv,
+      SQUARE_SERVICE_BOOKING_WEBHOOK_URL:
+        "http://example.com/api/webhooks/square",
+    });
 
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr + result.stdout, /SQUARE_SERVICE_BOOKING_WEBHOOK_URL must use https/);
+    assert.match(
+      result.stderr + result.stdout,
+      /SQUARE_SERVICE_BOOKING_WEBHOOK_URL must use https/,
+    );
   });
 
   it("fails when SQUARE_SERVICE_BOOKING_RETURN_URL does not use https", () => {
-    const result = run({ ...validEnv, SQUARE_SERVICE_BOOKING_RETURN_URL: "javascript:alert(1)" });
+    const result = run({
+      ...validEnv,
+      SQUARE_SERVICE_BOOKING_RETURN_URL: "javascript:alert(1)",
+    });
 
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr + result.stdout, /SQUARE_SERVICE_BOOKING_RETURN_URL must use https/);
+    assert.match(
+      result.stderr + result.stdout,
+      /SQUARE_SERVICE_BOOKING_RETURN_URL must use https/,
+    );
   });
 
   it("fails when PAYMENT_RECONCILIATION_CRON_SECRET is missing", () => {
@@ -177,7 +254,10 @@ describe("check-square-card-on-file-env", () => {
     const result = run(env);
 
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr + result.stdout, /\bPAYMENT_RECONCILIATION_CRON_SECRET\b/);
+    assert.match(
+      result.stderr + result.stdout,
+      /\bPAYMENT_RECONCILIATION_CRON_SECRET\b/,
+    );
   });
 
   it("fails when CRON_SECRET is missing", () => {
@@ -195,14 +275,23 @@ describe("check-square-card-on-file-env", () => {
     const result = run(env);
 
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr + result.stdout, /\bPAYMENT_RECONCILIATION_CRON_SECRET\b/);
+    assert.match(
+      result.stderr + result.stdout,
+      /\bPAYMENT_RECONCILIATION_CRON_SECRET\b/,
+    );
   });
 
   it("succeeds with PAYMENT_RECONCILIATION_CRON_SECRET and does not echo it", () => {
     const result = run(validEnv);
 
     assert.equal(result.status, 0);
-    assert.match(result.stdout + result.stderr, /Required environment variables are present/);
-    assert.doesNotMatch(result.stdout + result.stderr, /test-reconciliation-cron-secret/);
+    assert.match(
+      result.stdout + result.stderr,
+      /Required environment variables are present/,
+    );
+    assert.doesNotMatch(
+      result.stdout + result.stderr,
+      /test-reconciliation-cron-secret/,
+    );
   });
 });

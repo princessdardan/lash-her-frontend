@@ -1,0 +1,36 @@
+{
+  "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+  "teamId": "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
+  "providers": [
+    "square",
+    "sanity",
+    "resend"
+  ],
+  "allDeploymentAuthenticationRetained": true,
+  "platformCredentialScope": "all-deployments-in-this-staging-project; not-path-scoped",
+  "providerSignatureVerificationRequired": true,
+  "mandatorySystemEnvironmentVariable": "VERCEL_AUTOMATION_BYPASS_SECRET",
+  "selectedEnvironmentProvider": "square",
+  "registrationEnabled": false,
+  "applicationDeploymentCreated": false,
+  "delivery": {
+    "square": "private exact notification URL with x-vercel-protection-bypass query",
+    "sanity": "private x-vercel-protection-bypass header",
+    "resend": "private exact endpoint URL with x-vercel-protection-bypass query"
+  },
+  "risk": "Each provider token can bypass platform authentication and some firewall/bot checks throughout the staging project. Treat URLs, provider settings and keys as secrets.",
+  "status": "three-provider-tokens-and-disabled-registrations-bound; deployed-verification-pending",
+  "tokensConfigured": true,
+  "tokensInjectedIntoDeploymentEnvironment": true,
+  "lastVerifiedAt": "2026-10-22T21:53:44.019Z",
+  "schemaVersion": 1,
+  "initialScopeAndRequiredSystemVariableExplicitlyApproved": true,
+  "earlierIncompleteTokenRevoked": true,
+  "registrations": "ops/staging/webhook-registrations.json",
+  "providerBindingsVerified": true,
+  "providerBindingsConfigured": [
+    "square",
+    "sanity",
+    "resend"
+  ]
+}

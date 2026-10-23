@@ -1,0 +1,184 @@
+{
+  "date": "2026-10-22",
+  "timezone": "America/Toronto",
+  "status": "configured-and-verified",
+  "hook": {
+    "configFile": "/Users/dardan/.codex/config.toml",
+    "command": "/usr/bin/python3 -I /Users/dardan/.codex/hooks/aws-secret-safety/secret-safety-hook.py",
+    "enabled": true,
+    "trustStatus": "trusted",
+    "definitionHash": "sha256:1d082d929e5128ed2b6b196a0063217d3f707c9dca02d9a172b011c5c732a547",
+    "scriptSha256": "81f83450c3498868ee91d91a442f005c2d662b58d51ea63d7f5b64ebdea340d8",
+    "securityCasesPassed": 38,
+    "testMethodsPassed": 6,
+    "installedCopyTested": true,
+    "liveAgentInterceptionTested": true,
+    "activation": "Local Codex sessions must load the updated user configuration; restart or resume an existing session if it retains older hooks.",
+    "scope": "Best-effort AWS Secrets Manager guard; not an IAM or sandbox boundary.",
+    "activeInThisSession": true,
+    "liveCanaries": {
+      "shell": "Denied by PreToolUse hook before execution",
+      "awsMcpScript": "Denied by PreToolUse hook before execution",
+      "realSecretFetchesAttempted": 0
+    }
+  },
+  "role": {
+    "status": "created",
+    "arn": "arn:aws:iam::691588646557:role/lash-her/LashHerDeploymentRole",
+    "trustPrincipal": "arn:aws:iam::691588646557:user/Dardan",
+    "maxSessionDuration": 3600,
+    "template": "ops/aws/deployment-role.cfn.json",
+    "scope": "ops/aws/deployment-scope.json",
+    "templateSha256": "c6b9f7525241df512b55bd513d0d103ee11278d72c067ecad6cc3380a708b22e",
+    "stackName": "lash-her-deployment-access",
+    "stackId": "arn:aws:cloudformation:us-east-1:691588646557:stack/lash-her-deployment-access/a893c0c0-ce35-11f1-8adc-12fff8c64b2b",
+    "stackStatus": "CREATE_COMPLETE",
+    "permissionsMatchValidatedSource": true,
+    "managedPolicyAttachments": [],
+    "inlinePolicyNames": [
+      "LashHerDeploymentOperations"
+    ],
+    "cloudResourcesCreated": [
+      "CloudFormation stack",
+      "IAM deployment role"
+    ],
+    "applicationInfrastructureCreated": false
+  },
+  "validation": {
+    "cfnLint": {
+      "version": "1.58.0",
+      "errors": 0,
+      "warnings": 0,
+      "info": 0
+    },
+    "cfnGuard": {
+      "version": "3.2.1",
+      "binarySha256": "4c1eb10c061731159eaaf0e7dbd465db9fa4b767b82186a4ab489671cc00b7d0",
+      "registryRevision": "7f7340c26ae5d5e8874651dbffeb12e0e9f505b6",
+      "rulesPassed": 9
+    },
+    "accessAnalyzer": {
+      "permissionsFindings": 0,
+      "trustFindings": 0
+    },
+    "cloudFormation": {
+      "validateTemplate": "passed",
+      "changeSet": "CREATE_COMPLETE; exactly one IAM role added",
+      "stack": "CREATE_COMPLETE"
+    },
+    "iamSimulation": {
+      "scenarioCount": 11,
+      "decisionCount": 47,
+      "allPassed": true,
+      "scenarios": [
+        {
+          "name": "owned_staging",
+          "expected": "allowed",
+          "decisionCount": 4,
+          "passed": true
+        },
+        {
+          "name": "owned_production",
+          "expected": "allowed",
+          "decisionCount": 4,
+          "passed": true
+        },
+        {
+          "name": "other_project",
+          "expected": "implicitDeny",
+          "decisionCount": 4,
+          "passed": true
+        },
+        {
+          "name": "missing_tags",
+          "expected": "implicitDeny",
+          "decisionCount": 4,
+          "passed": true
+        },
+        {
+          "name": "other_environment",
+          "expected": "implicitDeny",
+          "decisionCount": 4,
+          "passed": true
+        },
+        {
+          "name": "other_endpoint_region",
+          "expected": "implicitDeny",
+          "decisionCount": 4,
+          "passed": true
+        },
+        {
+          "name": "other_resource_region",
+          "expected": "implicitDeny",
+          "decisionCount": 4,
+          "passed": true
+        },
+        {
+          "name": "other_account",
+          "expected": "implicitDeny",
+          "decisionCount": 4,
+          "passed": true
+        },
+        {
+          "name": "regional_inventory",
+          "expected": "allowed",
+          "decisionCount": 3,
+          "passed": true
+        },
+        {
+          "name": "inventory_other_region",
+          "expected": "implicitDeny",
+          "decisionCount": 1,
+          "passed": true
+        },
+        {
+          "name": "no_bootstrap_or_other_privileges",
+          "expected": "implicitDeny",
+          "decisionCount": 11,
+          "passed": true
+        }
+      ]
+    }
+  },
+  "cli": {
+    "profile": "lash-her-deploy",
+    "sourceProfile": "Dardan (Lash Her)",
+    "identity": "arn:aws:sts::691588646557:assumed-role/LashHerDeploymentRole/lash-her-deploy",
+    "liveChecks": {
+      "roleAssumption": "passed",
+      "regionalLightsailInventory": "passed; zero instances",
+      "iamAdministration": "AccessDenied as expected",
+      "outsideRegion": "AccessDenied as expected"
+    },
+    "administratorProfileRetained": true
+  },
+  "awsMcp": {
+    "status": "recovered-after-login-renewal",
+    "profile": "lash-her-deploy",
+    "configurationChanged": true,
+    "existingConnections": "A fresh/reloaded connection uses the new role; existing MCP connections can retain their original profile until reloaded.",
+    "freshConnectionVerification": {
+      "passed": true,
+      "identity": "arn:aws:sts::691588646557:assumed-role/LashHerDeploymentRole/lash-her-deploy",
+      "transport": "Configured uvx proxy; STS GetCallerIdentity via AWS MCP"
+    },
+    "currentSessionVerification": {
+      "passed": true,
+      "identity": "arn:aws:sts::691588646557:assumed-role/LashHerDeploymentRole/lash-her-deploy",
+      "api": "sts:GetCallerIdentity",
+      "verifiedDate": "2026-10-22"
+    }
+  },
+  "auditLogging": {
+    "durableCloudTrailVerified": false,
+    "checkedRegion": "us-east-1",
+    "trailsReturned": 0,
+    "note": "No trails were returned in the checked region. Durable audit retention was not established by this setup; the default event history is not durable retention. Audit logging configuration was not changed."
+  },
+  "references": [
+    "https://learn.chatgpt.com/docs/hooks",
+    "https://github.com/aws/agent-toolkit-for-aws/tree/8abb89d6d4e52017eda516748b97dbbea7dffcb6",
+    "https://servicereference.us-east-1.amazonaws.com/v1/lightsail/lightsail.json",
+    "https://github.com/aws-cloudformation/aws-guard-rules-registry/tree/7f7340c26ae5d5e8874651dbffeb12e0e9f505b6"
+  ]
+}

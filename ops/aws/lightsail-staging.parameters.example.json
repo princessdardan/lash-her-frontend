@@ -1,0 +1,8 @@
+[
+  { "ParameterKey": "Environment", "ParameterValue": "staging" },
+  { "ParameterKey": "AvailabilityZone", "ParameterValue": "us-east-1a" },
+  { "ParameterKey": "BundleId", "ParameterValue": "medium_3_0" },
+  { "ParameterKey": "OperatorIpv4Cidr", "ParameterValue": "REQUIRED_APPROVED_PUBLIC_IPV4/32" },
+  { "ParameterKey": "KeyPairName", "ParameterValue": "REQUIRED_EXISTING_LIGHTSAIL_KEY_PAIR" },
+  { "ParameterKey": "HostOperator", "ParameterValue": "REQUIRED_OPERATIONS_OWNER_ID" }
+]

@@ -1,0 +1,207 @@
+{
+  "schemaVersion": 1,
+  "status": "source-candidate-reviewed-protected-migration-pending",
+  "teamId": "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
+  "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+  "target": "production",
+  "appEnv": "staging",
+  "origin": "https://staging.lashher.com",
+  "source": {
+    "repository": "princessdardan/lash-her-frontend",
+    "repositoryId": 1114139712,
+    "branch": "staging",
+    "observedRemoteCommit": "ea1772b20453a494dcd3ff635066ebd385906f6b",
+    "approvedCommit": null,
+    "approvalPinEnvironmentVariable": "STAGING_RELEASE_COMMIT"
+  },
+  "frontendDatabase": {
+    "storeId": "store_eo2hKOR243vTF0fw",
+    "projectId": "morning-tree-37564896",
+    "pooledHost": "ep-plain-field-b7yma047-pooler.c-13.us-east-1.aws.neon.tech",
+    "directHost": "ep-plain-field-b7yma047.c-13.us-east-1.aws.neon.tech",
+    "database": "neondb",
+    "observedVersion": "18.6 (fd34222)",
+    "runtimeRole": "lash_her_frontend_staging_runtime",
+    "runtimeRoleConfigured": true,
+    "migrationVerifiedCommit": null,
+    "postgres18CompatibilityVerified": true,
+    "ownerEnvironmentBindingRemoved": true,
+    "compatibilityEvidence": "docs/api-integration/baselines/2026-10-22-p1-02-deployment-preparation.json",
+    "compatibilityScope": "Isolated candidate rebased onto f955824; all 80 migrations through 0079 and 187 database tests passed on disposable PostgreSQL 18.",
+    "migrationPinEnvironmentVariable": "STAGING_MIGRATION_VERIFIED_COMMIT",
+    "protectedMigrationStore": "ops/staging/release-store.json"
+  },
+  "courseDatabase": {
+    "directHost": "ep-ancient-shadow-axzksq4b.c-4.us-east-2.aws.neon.tech",
+    "database": "neondb",
+    "observedVersion": "16.15 (f37ae9a)",
+    "observedPublicTables": 12,
+    "journalPresent": true,
+    "lineageVerified": false
+  },
+  "communityDatabase": {
+    "storeId": "store_7ijIotasCFVQEKfl",
+    "projectId": "still-darkness-27201043",
+    "connectedToFrontend": false,
+    "runtimeAndMigrationCredentialsDelivered": true,
+    "lineageVerified": false,
+    "credentialHandoffStatus": "operator-only-aws-secrets-manager-imported-and-protected-resolver-tls-verified; no-ci-or-host-access",
+    "branchId": "br-plain-hall-b8lmm4z8",
+    "pooledHost": "ep-fancy-glitter-b81a2g6r-pooler.c-14.us-east-1.aws.neon.tech",
+    "directHost": "ep-fancy-glitter-b81a2g6r.c-14.us-east-1.aws.neon.tech",
+    "database": "neondb",
+    "observedVersion": "18.6 (fd34222)",
+    "observedPublicTables": 0,
+    "journalPresent": false,
+    "ownerCredentialsExported": true,
+    "privateCredentialFileMode": "0600",
+    "clientTlsVerified": true,
+    "runtimeRoleConfigured": true,
+    "runtimeRole": "lash_her_community_staging_runtime",
+    "protectedReleaseStore": "ops/staging/release-store.json",
+    "runtimeRoleVerificationEvidence": "docs/api-integration/baselines/2026-10-22-p1-02-release-handoff.json"
+  },
+  "redis": {
+    "storeId": "store_9ROJsD2RHvSMBe5d",
+    "providerDatabaseId": "a404310a-a11e-4d9c-8464-2e311dc84efb",
+    "hostname": "tidy-monarch-236694.upstash.io",
+    "plan": "paid",
+    "automaticUpgradeRequested": false,
+    "readOnlyPingVerified": true
+  },
+  "sanity": {
+    "projectId": "7o23yrvk",
+    "dataset": "staging-2026-05-10",
+    "existingProjectId": "3auncj84",
+    "datasetScopedRoles": "blocked-by-missing-advancedRolesManagement",
+    "separateProjectApproval": "approved-and-created",
+    "publishedEditorialDocumentsCopied": 44,
+    "referencedAssetsCopied": 54,
+    "draftsCopied": 0,
+    "unresolvedReferences": 0,
+    "originalProjectAssetUrls": 0,
+    "schemaDeployed": true,
+    "isolatedTokensCreated": true,
+    "stagingCorsConfigured": true,
+    "webhookId": "5a1KWQjkVBYLeAU3",
+    "webhookDisabled": true
+  },
+  "providers": {
+    "square": {
+      "environment": "sandbox",
+      "locationId": "LE2H76M5V90AM",
+      "sandboxReadVerified": true,
+      "stagingCredentialsConfigured": true,
+      "webhookRegistered": true,
+      "webhookId": "wbhk_b8cf77ce0a5142b38b93715c05ede7d5",
+      "webhookEnabled": false,
+      "legacySandboxCallbackReviewPending": true,
+      "webhookSigningKeyConfigured": true
+    },
+    "resend": {
+      "dedicatedKeyConfigured": true,
+      "allowedRecipients": [
+        "delivered@resend.dev"
+      ],
+      "keyId": "c133ba26-4f99-4450-beab-49912e586d3a",
+      "permission": "full_access",
+      "domainId": "d7371c9b-b16d-41d8-b9e8-3286b58eb432",
+      "domain": "mail.staging.lashher.com",
+      "emailSent": false,
+      "apiKeyAdministrationDenied": false,
+      "contactAndSegmentWorkflowsSupported": true,
+      "remainingIsolation": "Deployed email allowlist, isolated contact flow and signature verification remain required.",
+      "requestedAccountAlias": "dardanlashher",
+      "isolationSelection": "verified-separate-dardanlashher-account",
+      "newTeamPurchased": false,
+      "separateAccountVerified": true,
+      "domainStatus": "verified",
+      "segmentId": "fc9449f7-ac42-443c-9811-813524e9572d",
+      "templatesPublished": 11,
+      "fromEmail": "Lash Her Staging <staging@mail.staging.lashher.com>",
+      "adminEmail": "delivered@resend.dev",
+      "webhookId": "333dea10-e8c3-44a5-bb93-bf2d4c604811",
+      "webhookStatus": "disabled",
+      "webhookSigningKeyConfigured": true
+    },
+    "googleOAuth": {
+      "dedicatedClientConfigured": true,
+      "callback": "https://staging.lashher.com/api/auth/callback/google",
+      "projectNumber": "185770842371",
+      "clientId": "185770842371-d3thak0b2btgb77pngj968nvhpjkqmgf.apps.googleusercontent.com",
+      "configurationStatus": "dedicated-client-installed; testing-only; deployed-verification-pending",
+      "projectId": "lash-her-staging-20261022",
+      "testUsersSaved": true,
+      "testUserCount": 4,
+      "adminOwnerEmailsSha256": "9fad4b0131ae1c778735cad947bd605466343131d0ca704bddc31977f75b23ed",
+      "adminOwnerCount": 1
+    },
+    "chitchats": {
+      "enabled": false,
+      "environment": "staging"
+    },
+    "highlevel": {
+      "syncEnabled": false,
+      "marketingEnabled": false
+    },
+    "mux": {
+      "isolatedEnvironmentConfigured": false
+    },
+    "configurationPlan": "ops/staging/providers.json",
+    "ingress": {
+      "platformAuthentication": "all-deployments",
+      "providerAccessMethodReviewed": true,
+      "bypassTokenCreated": true,
+      "projectWideTokenScopeApproved": true,
+      "systemEnvironmentSelectionApprovalPending": false,
+      "incompleteTokenRevoked": true,
+      "requiredSystemEnvironmentVariableApproved": true,
+      "configuredProviders": [
+        "square",
+        "sanity",
+        "resend"
+      ],
+      "deployedVerificationComplete": false
+    },
+    "googleCalendar": {
+      "dedicatedClientConfigured": true,
+      "callback": "https://staging.lashher.com/api/booking/oauth/callback",
+      "projectNumber": "185770842371",
+      "clientId": "185770842371-lg0fktlf96u88pnqjnoom83st75btv4d.apps.googleusercontent.com",
+      "configurationStatus": "dedicated-client-installed; testing-only; deployed-verification-pending",
+      "projectId": "lash-her-staging-20261022",
+      "calendarApiEnabled": true,
+      "testUserCount": 4,
+      "testCalendarOwnerIsSoleStagingAdministrator": true
+    }
+  },
+  "deployment": {
+    "buildCommandProposal": "node scripts/validate-staging-release.mjs && npm run build",
+    "buildCommandActivated": true,
+    "buildCommandApproval": "explicitly-approved-and-applied",
+    "deploymentId": null,
+    "providerConfigurationApproval": "explicitly-approved-and-applied-for-documented-payload",
+    "preparedOnly": true
+  },
+  "releaseStore": {
+    "provider": "aws-secrets-manager",
+    "accountId": "691588646557",
+    "region": "us-east-1",
+    "metadata": "ops/staging/release-store.json",
+    "initialized": true,
+    "operatorOnly": true,
+    "ciAccessConfigured": false,
+    "hostAccessConfigured": false
+  },
+  "migrationJob": {
+    "workflow": ".github/workflows/ci.yml",
+    "job": "staging-migration",
+    "environment": "staging-migrations",
+    "exactCommitVariable": "STAGING_MIGRATION_EXPECTED_COMMIT",
+    "approval": "sole-developer approval proposed following owner confirmation; self-review setting change awaits explicit approval",
+    "receiptArtifact": "staging-migration-<source-sha>",
+    "credential": "protected environment STAGING_MIGRATION_DATABASE_URL; never delivered to runtime",
+    "scope": "frontend only; API migration jobs and target lineage remain separate gates",
+    "credentialHandoffStatus": "blocked-by-automatic-review-pending-specific-transfer-approval"
+  }
+}

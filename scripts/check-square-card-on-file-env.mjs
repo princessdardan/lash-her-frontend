@@ -1,3 +1,5 @@
+import { assertProviderEnvironment } from "../src/lib/env/application-environment.mjs";
+
 const required = [
   "SERVICE_BOOKING_SQUARE_ENABLED",
   "SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED",
@@ -20,7 +22,9 @@ const missing = required.filter((name) => {
 });
 
 if (missing.length > 0) {
-  console.error(`[square-card-on-file-env] Missing required variables: ${missing.join(", ")}`);
+  console.error(
+    `[square-card-on-file-env] Missing required variables: ${missing.join(", ")}`,
+  );
   process.exit(1);
 }
 
@@ -36,27 +40,38 @@ for (const name of trueFlags) {
   }
 }
 
-if (process.env.SQUARE_ENVIRONMENT !== "sandbox" && process.env.SQUARE_ENVIRONMENT !== "production") {
-  console.error("[square-card-on-file-env] SQUARE_ENVIRONMENT must be sandbox or production");
-  process.exit(1);
-}
-
-if (process.env.VERCEL_ENV === "production" && process.env.PAYMENT_GATEWAY_MODE === "mock") {
-  console.error("[square-card-on-file-env] PAYMENT_GATEWAY_MODE=mock is not allowed in production");
-  process.exit(1);
-}
-
-if (process.env.VERCEL_ENV === "production" && process.env.SQUARE_ENVIRONMENT !== "production") {
-  console.error("[square-card-on-file-env] Production Vercel environment must use Square production credentials");
+if (
+  process.env.SQUARE_ENVIRONMENT !== "sandbox" &&
+  process.env.SQUARE_ENVIRONMENT !== "production"
+) {
+  console.error(
+    "[square-card-on-file-env] SQUARE_ENVIRONMENT must be sandbox or production",
+  );
   process.exit(1);
 }
 
 if (
-  process.env.VERCEL_ENV !== undefined &&
-  process.env.VERCEL_ENV !== "production" &&
-  process.env.SQUARE_ENVIRONMENT === "production"
+  process.env.VERCEL_ENV === "production" &&
+  process.env.PAYMENT_GATEWAY_MODE === "mock"
 ) {
-  console.error("[square-card-on-file-env] Preview/staging Vercel environments must use Square sandbox credentials");
+  console.error(
+    "[square-card-on-file-env] PAYMENT_GATEWAY_MODE=mock is not allowed in production",
+  );
+  process.exit(1);
+}
+
+try {
+  assertProviderEnvironment(
+    "SQUARE_ENVIRONMENT",
+    process.env.SQUARE_ENVIRONMENT,
+    {
+      production: "production",
+      staging: "sandbox",
+    },
+    process.env,
+  );
+} catch (error) {
+  console.error(`[square-card-on-file-env] ${error.message}`);
   process.exit(1);
 }
 
@@ -79,4 +94,6 @@ function validateUrl(name) {
 validateUrl("SQUARE_SERVICE_BOOKING_WEBHOOK_URL");
 validateUrl("SQUARE_SERVICE_BOOKING_RETURN_URL");
 
-console.log("[square-card-on-file-env] Required environment variables are present");
+console.log(
+  "[square-card-on-file-env] Required environment variables are present",
+);

@@ -1,0 +1,132 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Lash Her stateless API host and attached static IPv4 - separate environment stacks with administrator-controlled provisioning.",
+  "Metadata": {
+    "AWSToolsMetrics": { "AWSAgentToolkit": "aws-cloudformation@3" },
+    "com.aws.cloudformation.Context": {
+      "arch": "One host per environment; external PostgreSQL; gateway, API and worker containers are installed by the separate application release workflow.",
+      "must": [
+        "Provision only through administrator-controlled access; do not widen LashHerDeploymentRole.",
+        "Use separate stacks and hosts for staging and production.",
+        "No authoritative application data, credentials or database backups belong in this template or on the root disk.",
+        "Check the account and region against provisioning.json before creating a change set."
+      ],
+      "ref": [{ "at": "ops/aws/README.md", "has": "Provisioning inputs, lifecycle, validation and release boundaries" }]
+    }
+  },
+  "Parameters": {
+    "Environment": {
+      "Type": "String", "Default": "staging", "AllowedValues": ["staging", "production"],
+      "Description": "One environment per stack. Never place staging workloads on the production host."
+    },
+    "AvailabilityZone": {
+      "Type": "String", "Default": "us-east-1a",
+      "AllowedValues": ["us-east-1a", "us-east-1b", "us-east-1c", "us-east-1d", "us-east-1e", "us-east-1f"],
+      "Description": "Verified available in the deployment region; recheck before provisioning."
+    },
+    "BundleId": {
+      "Type": "String", "Default": "medium_3_0", "AllowedValues": ["medium_3_0", "large_3_0"],
+      "Description": "4 GB capacity-test candidate; 8 GB requires a deliberate size/cost choice. Neither is certified capacity."
+    },
+    "OperatorIpv4Cidr": {
+      "Type": "String",
+      "AllowedPattern": "^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])/32$",
+      "ConstraintDescription": "Supply the approved operator's single public IPv4 address with /32.",
+      "Description": "Required SSH source; no broad network, browser-SSH alias or IPv6 SSH access."
+    },
+    "KeyPairName": {
+      "Type": "String", "MinLength": 1, "MaxLength": 255,
+      "AllowedPattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+      "Description": "Existing region-specific Lightsail key pair. Supply its name, never its private key."
+    },
+    "HostOperator": {
+      "Type": "String", "MinLength": 1, "MaxLength": 64,
+      "AllowedPattern": "^[a-z][a-z0-9-]*$",
+      "Description": "Assigned operations owner identifier for patching, certificates and host recovery; no personal contact details."
+    }
+  },
+  "Resources": {
+    "ApiHost": {
+      "Type": "AWS::Lightsail::Instance",
+      "DeletionPolicy": "Delete",
+      "UpdateReplacePolicy": "Delete",
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "why": "Stateless compute is reproducible; 4 GB starts capacity testing. Explicit ports replace default public SSH. Ubuntu LTS prepares the host without deploying applications.",
+          "must": [
+            "Keep Project and Environment tags aligned with the scoped deployment role.",
+            "Only IPv4 gateway HTTPS and operator /32 SSH are publicly permitted; IPv6 ingress is closed.",
+            "Do not publish API, database, worker, metrics or internal TLS ports.",
+            "P1-04 must enforce Docker forwarding rules; UFW alone does not restrict Docker port publishing.",
+            "Deletion destroys the root disk. Keep recoverable release configuration and secrets off-host."
+          ],
+          "mutable": "review-required"
+        }
+      },
+      "Properties": {
+        "InstanceName": { "Fn::Sub": "${AWS::StackName}-host" },
+        "AvailabilityZone": { "Ref": "AvailabilityZone" },
+        "BlueprintId": "ubuntu_24_04",
+        "BundleId": { "Ref": "BundleId" },
+        "KeyPairName": { "Ref": "KeyPairName" },
+        "Networking": {
+          "Ports": [
+            { "Protocol": "tcp", "FromPort": 22, "ToPort": 22, "Cidrs": [{ "Ref": "OperatorIpv4Cidr" }], "Ipv6Cidrs": [] },
+            { "Protocol": "tcp", "FromPort": 443, "ToPort": 443, "Cidrs": ["0.0.0.0/0"], "Ipv6Cidrs": [] }
+          ]
+        },
+        "Tags": [
+          { "Key": "Project", "Value": "lash-her" },
+          { "Key": "Environment", "Value": { "Ref": "Environment" } },
+          { "Key": "HostOperator", "Value": { "Ref": "HostOperator" } },
+          { "Key": "ManagedBy", "Value": "cloudformation" }
+        ],
+        "UserData": { "Fn::Join": ["\n", [
+          "#!/bin/bash",
+          "set -euo pipefail",
+          "export DEBIAN_FRONTEND=noninteractive",
+          "apt-get update",
+          "apt-get install -y ufw unattended-upgrades ca-certificates curl",
+          "install -d -m 0700 /opt/lash-her /etc/lash-her /etc/lash-her/secrets",
+          "install -d -m 0755 /etc/ssh/sshd_config.d",
+          "printf '%s\\n' 'PasswordAuthentication no' 'KbdInteractiveAuthentication no' 'PermitRootLogin no' > /etc/ssh/sshd_config.d/00-lash-her.conf",
+          "/usr/sbin/sshd -t",
+          "systemctl reload ssh",
+          "ufw --force reset",
+          "ufw default deny incoming",
+          "ufw default allow outgoing",
+          { "Fn::Sub": "ufw allow from ${OperatorIpv4Cidr} to any port 22 proto tcp" },
+          "ufw allow from 0.0.0.0/0 to any port 443 proto tcp",
+          "ufw --force enable",
+          "printf '%s\\n' 'Host preparation complete; application release and Docker forwarding controls are still required.' > /opt/lash-her/host-prepared",
+          ""
+        ]] }
+      }
+    },
+    "GatewayAddress": {
+      "Type": "AWS::Lightsail::StaticIp",
+      "DeletionPolicy": "Delete",
+      "UpdateReplacePolicy": "Delete",
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "why": "A stable public IPv4 supports gateway DNS across host stop/start and planned replacement. Delete with temporary staging to avoid unattached-address charges.",
+          "must": [
+            "Attach only to this environment's host; no shared staging/production address.",
+            "Record DNS separately after verifying the allocated address; this template does not alter DNS."
+          ],
+          "mutable": "review-required"
+        }
+      },
+      "Properties": {
+        "StaticIpName": { "Fn::Sub": "${AWS::StackName}-gateway" },
+        "AttachedTo": { "Ref": "ApiHost" }
+      }
+    }
+  },
+  "Outputs": {
+    "InstanceName": { "Description": "Environment-specific host name for scoped deployment operations.", "Value": { "Ref": "ApiHost" } },
+    "InstanceArn": { "Description": "Provisioned host ARN.", "Value": { "Fn::GetAtt": ["ApiHost", "InstanceArn"] } },
+    "GatewayIpv4": { "Description": "Allocated IPv4; verify before assigning gateway DNS.", "Value": { "Fn::GetAtt": ["GatewayAddress", "IpAddress"] } },
+    "ApplicationEnvironment": { "Description": "Business environment assigned to this host.", "Value": { "Ref": "Environment" } }
+  }
+}

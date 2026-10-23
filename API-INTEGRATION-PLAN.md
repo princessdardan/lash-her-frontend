@@ -12,7 +12,7 @@ The agreed launch scope is:
 - Practice and graded quizzes.
 - Course communities with profiles, posts, comments, reactions, images, reporting, moderation, and in-app notifications.
 - Course authoring and operational tools within the existing frontend `/admin` area.
-- Vercel frontend hosting and Render API hosting, with a documented migration path to AWS.
+- Vercel frontend hosting with OIDC-authenticated HTTPS ingress to one AWS Lightsail VPS running the APIs and required workers as separate containers; no Vercel Static IP requirement.
 
 Work is grouped by implementation owner below. The category order is not the delivery order; the shared delivery sequence and release gates are in category 4. Frontend work includes its Next.js server routes, private database, commerce, and background delivery logic.
 
@@ -246,34 +246,103 @@ flowchart LR
 - Sanity continues serving unrelated public/editorial content. It ceases to be the authoritative course store after migration.
 - Browser application requests use same-origin Next.js endpoints. Explicit exceptions are Square tokenization, authorized Mux uploads/playback, and short-lived object-storage upload/download URLs.
 
-### Render deployment topology
+### Lightsail deployment topology and authenticated ingress
 
-Deploy paid, isolated staging and production environments:
+**Selected 2026-10-17:** replace the Render topology and Vercel Static IP
+requirement with one production AWS Lightsail Linux VPS running separate Docker
+Compose containers. Keep the frontend on Vercel and the three existing database
+providers. The [Lightsail ingress decision](/Users/dardan/workspace/lash-her-frontend/docs/api-integration/decisions/2026-10-17-lightsail-ingress.md)
+defines the security boundary, staging lifecycle, capacity assumptions and
+acceptance tests. This is a planning change; provisioning and verification remain
+P1 work.
 
-| Process                                | Deployment                                     |
+| Process                                | Deployment on the Lightsail VPS                |
 | -------------------------------------- | ---------------------------------------------- |
-| Course API                             | Render private service                         |
-| Course enrollment publisher            | Separate private service                       |
-| Course snapshot worker                 | Separate private service                       |
-| Community API                          | Render private service                         |
-| Community repair/reconciliation worker | Separate private service                       |
-| Community media worker                 | Separate private service                       |
-| API ingress                            | Public gateway with restricted routes          |
-| Metrics collector                      | Private service                                |
-| Periodic maintenance                   | Scheduled, bounded jobs with recorded outcomes |
+| Course API                             | Separate private API container                 |
+| Course enrollment publisher            | Separate private worker container              |
+| Course snapshot worker                 | Separate private worker container              |
+| Community API                          | Separate private API container                 |
+| Community repair/reconciliation worker | Separate private worker container              |
+| Community media worker                 | Separate private worker container when P5-03 lands |
+| API ingress                            | HTTPS gateway container with OIDC verification |
+| Metrics collector                      | Private collector container; off-host alerts   |
+| Periodic maintenance and migrations     | Bounded one-shot containers with recorded outcomes |
 
-Use private services for long-running workers whose health and metrics endpoints need inbound scraping. Render background workers cannot receive private-network requests. [Render service networking](https://render.com/docs/private-services)
-
-- Keep existing PostgreSQL providers initially, with separate service credentials and isolated environment databases. Avoid combining infrastructure integration with an unnecessary database-provider migration.
-- Use Render infrastructure configuration managed from the frontend repository’s operations area. Keep application images and database migrations in their owning repositories.
-- Run private API connections over HTTPS with validated internal certificates and CA trust; add TLS runtime configuration rather than disabling existing HTTPS requirements.
-- Use a small containerized ingress gateway. Permit frontend API traffic from configured Vercel Static IPs, expose only the Mux webhook publicly, and keep metrics and Course–Community internal routes private.
-- Validate the Render proxy chain before trusting forwarded addresses. Test spoofed forwarding headers and alternate-origin access.
-- Configure Vercel Static IPs for backend access. They provide stable egress, but application authentication remains required. [Vercel Static IPs](https://vercel.com/docs/networking/static-ips)
-- Implement gateway restrictions directly; do not assume Render Pro includes platform web-service IP allowlists, which require higher plans. [Render inbound IP rules](https://render.com/docs/inbound-ip-rules)
-- Isolate environment secrets, OAuth callbacks, Mux environments, Square credentials, Stripe Tax configuration, storage buckets, and notifications.
-- Size database pools against the combined API/worker connection budget. Handle graceful shutdown, lease expiry, and rolling-deployment overlap.
-- Produce an operating-cost estimate covering both environments, gateway/worker compute, databases, static egress, monitoring, tax calls, media storage, and video delivery.
+- Use one production VM for the API stack. Use a separate staging VM on demand,
+  recreated from the same configuration with isolated databases, secrets and
+  provider settings. Never co-host staging with production. Staging can precede
+  production activation; do not require two continuously running VM stacks.
+- Keep frontend-owned scheduled delivery and financial recovery on Vercel, using
+  the same authenticated gateway path as its server handlers. Preserve ownership,
+  database boundaries and existing provider integrations.
+- Manage Compose, host bootstrap, gateway policy and release orchestration in the
+  frontend operations area. Keep runtime/migration images in their owning repos,
+  built in CI and deployed by immutable digest.
+- Publish only gateway HTTPS, optional ACME/redirect HTTP, and restricted operator
+  SSH. API, worker, internal TLS and metrics ports remain private. Check effective
+  Docker/host/Lightsail firewall rules on IPv4 and IPv6.
+- Replace Vercel source-IP allowlisting with verified Vercel OIDC workload tokens
+  on every frontend-to-gateway call. Validate pinned issuer/JWKS, audience, subject,
+  team/project IDs, environment and token times. Use a dedicated workload header
+  alongside existing application authorization. Restrict staging to a controlled
+  Vercel staging project; never trust arbitrary previews or development tokens.
+  OIDC supports custom API verification on all plans. [Vercel OIDC](https://vercel.com/docs/oidc/api)
+- Require existing learner/admin/service authorization inside the APIs. Workload
+  identity does not establish learner identity, enrollment or administrator rights.
+  Allow only explicit methods/routes, including individually listed frontend
+  entitlement/reconciliation/lifecycle commands. Keep Course–Community routes and
+  metrics absent from public routing; never proxy all internal routes.
+- Exempt only the exact Mux webhook POST route from OIDC, preserving raw-body
+  signature/timestamp verification and deduplication. Keep Square webhooks at
+  the frontend. Deny other hosts/paths and spoofed forwarding/identity headers.
+- Preserve private HTTPS with validated CA trust and existing source restrictions
+  for actual gateway/private container peers. Verify the receiver's effective
+  source and trusted proxy hops; do not allow all addresses or depend on Vercel's
+  public egress IPs. Implement TLS/certificate lifecycle in P1-03/P1-04 and budget
+  any required TLS proxy containers.
+- Bound unauthenticated requests, connections, bodies and JWKS refresh; retain
+  per-principal application quotas and separate webhook limits. The gateway is
+  internet-reachable and needs abuse monitoring and fail-closed negative tests.
+- Replace the shared 120/minute source-IP application quota with explicit aggregate
+  and verified-principal limits. Initial local defaults are 1,200 ordinary requests
+  per minute per API process, 120 per verified Course learner/admin profile and
+  subject, and a separate 600/minute Mux webhook budget. Keep existing internal
+  service quotas independent and health/readiness/metrics outside ordinary traffic
+  quotas. Never derive principal keys from unverified JWTs or forwarded headers.
+  These defaults require load tuning; local counters do not complete the planned
+  distributed quotas. Shared enforcement or reviewed budget division is required
+  before API process overlap/scaling. Community member quotas accompany its future
+  authentication implementation.
+- Require Community framework throttling to return HTTP 429 with its safe error
+  envelope and applicable Retry-After headers; unexpected errors remain sanitized
+  500s. P1-03 must test the real limiter/error handler and deployed gateway
+  propagation; clients must honor retry timing and idempotency.
+- **ENV-02-01 accepted 2026-10-17:** use the dedicated staging Vercel project's
+  Production target with server-only `APP_ENV=staging` and `staging.lashher.com`;
+  retain the production project's Production target with `APP_ENV=production`
+  and `lashher.com`. Keep a separate staging VM and exact project/team/OIDC claim
+  bindings. Both targets have OIDC `environment=production`; that claim alone
+  cannot distinguish the environments. P1-02 must inventory actual IDs, provider
+  resources and domain assignments. Implement a validated project/business-
+  environment mapping and update Sanity/shipping guards before deployment. The
+  [audit follow-up](/Users/dardan/workspace/lash-her-frontend/docs/api-integration/decisions/2026-10-17-audit-remediation.md)
+  records the accepted arrangement and outstanding implementation. P1-07 requires
+  deterministic scheduled-handler tests, native scheduler evidence,
+  and safe suspension/recovery when staging compute is deleted/recreated.
+- Isolate OAuth callbacks, Mux, Square, Stripe Tax, storage, notifications and all
+  credentials by environment/service. Retain external PostgreSQL with combined
+  API/worker pool budgets and separate migration credentials.
+- Set per-container resource limits, restart/readiness/heartbeat behavior, log
+  rotation and bounded media concurrency. Monitor host capacity and burst balance.
+  A single VM is a shared outage/compromise boundary; require off-host alerts,
+  patch ownership and a rehearsed replacement-host recovery procedure.
+- Start sizing tests at the Lightsail 2-vCPU/4-GB Linux public-IPv4 bundle
+  (US$24/month listed 2026-10-17); evaluate 8 GB (US$44/month) if measured load,
+  media processing or deployment overlap requires it. These are compute-only
+  candidates, not a certified size or approved total. Include temporary staging,
+  snapshots, transfer, databases/PITR, monitoring, Vercel and provider usage in
+  the budget. No paid static-egress, load-balancer or NAT-gateway dependency is
+  introduced. [Lightsail pricing](https://aws.amazon.com/lightsail/pricing/)
 
 ### CI requirements
 
@@ -284,7 +353,7 @@ Retain existing checks and add:
 - Type checking, lint, unit tests, dependency scanning, OpenAPI drift checks, and generated-client drift checks.
 - PostgreSQL 16 integration tests, clean-install migrations, data-bearing upgrade tests, schema drift, and safe migration rollback tests.
 - Container startup/readiness tests for every process, not just image builds or entrypoint existence.
-- A cross-repository integration suite that starts all three applications and required workers against isolated databases.
+- A cross-repository integration suite that starts all three applications, the gateway and required workers against isolated databases, exercising the selected TLS and authentication boundaries.
 - A release manifest containing the three commit SHAs, image digests, contract hashes, and migration versions.
 - Candidate-versus-released contract compatibility tests. Use explicitly pinned revisions rather than assuming another repository’s moving `main` is compatible.
 - Short-lived GitHub App credentials for cross-repository access where needed, narrowly scoped deployment credentials, immutable image tags, image scanning, SBOMs, and provenance.
@@ -293,47 +362,48 @@ Retain existing checks and add:
 
 1. Publish verified API images to GHCR by immutable digest.
 2. Build separate migration images containing migration files and tooling; current runtime images do not contain the complete migration toolchain.
-3. Deploy a pinned release manifest to staging.
-4. Run each database’s migration job once, under an environment lock, before dependent application code.
+3. Recreate the isolated Lightsail staging stack from Compose/bootstrap configuration and a pinned release manifest.
+4. Run each database’s migration image as a protected one-shot container once, under an environment lock, before dependent application code.
 5. Deploy compatible receiver/read APIs, workers, frontend, and feature flags in dependency order.
 6. Execute deployed browser, provider, network-boundary, and recovery tests.
-7. Promote the same API image digests to production through a protected release workflow.
+7. Deploy the same API/worker/gateway image digests to the production Lightsail Compose stack through a protected release workflow; reserve measured update headroom or use a documented maintenance window.
 8. Build the frontend with production configuration as a staged production deployment; test it before assigning production domains. Do not promote a staging-configured build as though its configuration were interchangeable. [Vercel deployment promotion](https://vercel.com/docs/deployments/promoting-a-deployment)
 
-Render supports digest-addressed images; retain previous release images so rollback remains possible. [Render image deployments](https://render.com/docs/deploying-an-image)
+Retain previous image digests, Compose configuration and release manifests off-host for compatible rollback and VM recreation. Protect host deployment credentials and verify readiness before routing traffic; a single VM does not guarantee zero-downtime updates.
 
 Follow the [protected release-job migration policy](/Users/dardan/workspace/lash-her-frontend/docs/api-integration/migration-policy.md), resolved by [P0-02 / D-02](/Users/dardan/workspace/lash-her-frontend/docs/api-integration/decisions/2026-10-01-p0-02.md). Implement and verify its approval, artifact, target, lineage, locking, staging, and recovery gates before production CD. Production forward migrations are release-job-only; test, seed, and destructive round-trip guards remain mandatory. Documentation resolution is not production migration authorization.
 
 ### Monitoring and recovery
 
-- Scrape each API and worker separately. Track availability, latency, connection saturation, worker heartbeats, queue age, retries, dead letters, reconciliation drift, playback denial, media failures, and tax-recording backlog.
+- Scrape each API and worker separately over private listeners. Track availability, latency, connection saturation, worker heartbeats, queue age, retries, dead letters, reconciliation drift, playback denial, media failures, and tax-recording backlog. Add host memory/CPU/burst capacity, disk/log growth and certificate expiry; use off-host alerts and an external heartbeat to detect complete VM loss.
 - Preserve safe correlation IDs across frontend, APIs, jobs, and provider events. Exclude tokens, raw identities, payment details, and private content from logs and metric labels.
 - Use these launch objectives: payment-to-course access P95 under 60 seconds and P99 under five minutes; Course-to-Community propagation at the existing equivalent targets.
 - Alert immediately on authorization-boundary failures and dead letters; alert on sustained queue age, reconciliation drift, missing workers, and provider failures.
 - Complete a real backup/restore runner. The frontend’s current backup-validation endpoint is only a scaffold.
 - Require point-in-time recovery, encrypted backups, and a successful isolated restore of all three databases. Initial recovery targets: RPO at most 15 minutes and RTO at most four hours.
-- Document secret rotation, payment-without-access recovery, disputed/refunded orders, Mux failures, moderation incidents, worker restart, restore, and application rollback.
+- Document secret rotation, payment-without-access recovery, disputed/refunded orders, Mux failures, moderation incidents, worker restart, host patching/recreation, certificate renewal, restore, and application rollback. Rehearse total VM loss and lease/job resumption; host snapshots do not replace database PITR.
 
-### AWS migration path
+### Growth beyond one Lightsail VPS
 
-Keep platform integration at deployment boundaries:
+Lightsail is the selected launch compute platform. If measured capacity or
+availability needs exceed one VM, retain this separately scoped expansion path:
 
 - OCI images and explicit process commands → ECS/Fargate services and tasks.
 - GHCR artifacts → ECR without rebuilding application logic.
 - PostgreSQL → RDS through a separately rehearsed data migration.
-- Render secrets → Secrets Manager; deployment authentication → GitHub OIDC.
+- Per-service protected secret delivery → Secrets Manager integration; deployment authentication → GitHub OIDC where supported.
 - Scheduled jobs → EventBridge-triggered tasks.
 - Gateway/private networking → AWS load balancers, security groups, and private subnets.
 - S3 media remains in place.
 
-Migrate compute first and databases separately. Avoid introducing Kubernetes, service-specific queues, or AWS-only application dependencies for the initial release.
+Scale compute first and migrate databases only through a separately rehearsed decision. ECS/Fargate, RDS, managed load balancers and NAT gateways are not launch prerequisites. Avoid introducing Kubernetes or new service-specific queues for the initial release.
 
 ### Cross-repository delivery sequence
 
 | Phase                             | Deliverable                                                                                                                    | Exit gate                                                              |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
 | 0. Establish baseline             | Inventory deployed versions/data, preserve ongoing changes, reconcile stale documentation, commit and pin enrollment contracts | Reproducible three-repository baseline                                 |
-| 1. Platform and contracts         | Staging services, databases, secrets, gateway, CI/CD, generated clients, observability                                         | Authenticated cross-service smoke tests and blocked unauthorized paths |
+| 1. Platform and contracts         | Lightsail staging containers, databases, secrets, OIDC gateway, CI/CD, generated clients, observability                                         | Authenticated cross-service smoke tests and blocked unauthorized paths |
 | 2. Identity and Course completion | Customer accounts, free enrollment, authoring, quizzes, media lifecycle, learner UI                                            | Complete account-to-learning flow                                      |
 | 3. Free-course migration          | Content import, media transition, legacy progress import, URL preservation                                                     | Reconciled content and learner acceptance                              |
 | 4. Paid courses                   | Square checkout, Stripe Tax, financial jobs, entitlement delivery, support tools                                               | Purchase/refund/dispute/recovery certification                         |
@@ -360,7 +430,7 @@ On rollback, stop new affected writes or sales first. Keep verified-payment reco
 | Financial recovery  | Frontend; Course API for grant/revocation outcomes   | Duplicate/reordered webhooks, payment timeouts, capture followed by crash, refund-before-grant delivery, disputes, tax-job failure, replay conflicts                       |
 | Community           | Community API; frontend community UI                 | Course isolation, delayed enrollment projection, authoritative denial, Course outages, moderation bans, image authorization, upload validation, notification deduplication |
 | Distributed systems | All application owners; infrastructure certification | Worker termination, lease recovery, concurrent consumers, dead letters, snapshot expiry, missed events, drift repair, key rotation                                         |
-| Deployment          | Infrastructure/CI/CD/DevOps; each database owner     | Migration from current data, process readiness, ingress restrictions, environment isolation, compatible rollback, backup restoration                                       |
+| Deployment          | Infrastructure/CI/CD/DevOps; each database owner     | Migration from current data, Compose readiness, OIDC/route restrictions, environment isolation, compatible rollback, host recreation and database restore                                       |
 | Regression          | Frontend                                             | Existing product checkout, bookings, in-person training, admin permissions, marketing consent, and unrelated Sanity content                                                |
 
 Add a 30-minute interactive-load certification starting at 100 concurrent learners and 25 concurrent community writers. Retain the existing enrollment-integration capacity certification of 600 events per minute and one million reconciled streams. Tune rate limits against measured traffic without weakening authorization.

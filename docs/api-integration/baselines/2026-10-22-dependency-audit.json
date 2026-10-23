@@ -1,0 +1,477 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-22",
+  "timezone": "America/Toronto",
+  "command": "npm audit --json",
+  "nodeVersion": "v24.18.0",
+  "status": "release-blocked",
+  "packageLockSha256": "3352ff5b42be979d8afcbd10cca65a9f43cd6b6f796aaaf44fabe0c8f7fcb5de",
+  "metadata": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 3,
+      "moderate": 8,
+      "high": 16,
+      "critical": 2,
+      "total": 29
+    },
+    "dependencies": {
+      "prod": 1342,
+      "dev": 375,
+      "optional": 224,
+      "peer": 0,
+      "peerOptional": 0,
+      "total": 1847
+    }
+  },
+  "vulnerabilities": {
+    "@mdit/plugin-alert": {
+      "severity": "low",
+      "isDirect": false,
+      "range": "",
+      "fixAvailable": true,
+      "advisories": []
+    },
+    "@next/eslint-plugin-next": {
+      "severity": "high",
+      "isDirect": false,
+      "range": ">=14.3.0-canary.0",
+      "fixAvailable": {
+        "name": "eslint-config-next",
+        "version": "14.2.35",
+        "isSemVerMajor": true
+      },
+      "advisories": []
+    },
+    "@portabletext/markdown": {
+      "severity": "low",
+      "isDirect": false,
+      "range": "",
+      "fixAvailable": true,
+      "advisories": []
+    },
+    "@sanity/cli": {
+      "severity": "high",
+      "isDirect": false,
+      "range": "<=0.0.0-20260612111702 || >=3.36.0",
+      "fixAvailable": {
+        "name": "sanity",
+        "version": "6.20.0",
+        "isSemVerMajor": true
+      },
+      "advisories": []
+    },
+    "@sanity/codegen": {
+      "severity": "high",
+      "isDirect": false,
+      "range": "*",
+      "fixAvailable": {
+        "name": "sanity",
+        "version": "6.20.0",
+        "isSemVerMajor": true
+      },
+      "advisories": []
+    },
+    "@sanity/vercel-protection-bypass": {
+      "severity": "high",
+      "isDirect": true,
+      "range": "<=4.0.4",
+      "fixAvailable": {
+        "name": "@sanity/vercel-protection-bypass",
+        "version": "5.0.27",
+        "isSemVerMajor": true
+      },
+      "advisories": []
+    },
+    "@tailwindcss/typography": {
+      "severity": "moderate",
+      "isDirect": true,
+      "range": "<=0.0.0-insiders.fda8ce5 || >=0.5.5",
+      "fixAvailable": {
+        "name": "@tailwindcss/typography",
+        "version": "0.5.4",
+        "isSemVerMajor": true
+      },
+      "advisories": []
+    },
+    "argparse": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "1.0.0 - 1.0.10",
+      "fixAvailable": {
+        "name": "sanity",
+        "version": "6.20.0",
+        "isSemVerMajor": true
+      },
+      "advisories": []
+    },
+    "braces": {
+      "severity": "high",
+      "isDirect": false,
+      "range": "*",
+      "fixAvailable": {
+        "name": "sanity",
+        "version": "6.20.0",
+        "isSemVerMajor": true
+      },
+      "advisories": [
+        {
+          "source": 1240992,
+          "title": "braces vulnerable to stack-exhaustion denial of service through deeply nested patterns",
+          "url": "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
+          "severity": "high",
+          "range": "<=3.0.3"
+        }
+      ]
+    },
+    "chokidar": {
+      "severity": "high",
+      "isDirect": false,
+      "range": "2.0.0 - 3.6.0",
+      "fixAvailable": {
+        "name": "sanity",
+        "version": "6.20.0",
+        "isSemVerMajor": true
+      },
+      "advisories": []
+    },
+    "dompurify": {
+      "severity": "critical",
+      "isDirect": false,
+      "range": "<=3.4.16",
+      "fixAvailable": true,
+      "advisories": [
+        {
+          "source": 1242880,
+          "title": "DOMPurify SAFE_FOR_TEMPLATES bypass: split template expressions survive in attached shadow root content on DOM output modes",
+          "url": "https://github.com/advisories/GHSA-cg2g-xh64-v4q7",
+          "severity": "critical",
+          "range": ">=3.4.4 <=3.4.16"
+        },
+        {
+          "source": 1242881,
+          "title": "DOMPurify IN_PLACE: hook that removes a parent or sibling leaves the detached subtree's event handlers armed (incomplete fix for GHSA-p98j-92pf-mc4p)",
+          "url": "https://github.com/advisories/GHSA-mrv2-3pqr-j5jr",
+          "severity": "high",
+          "range": "<=3.4.16"
+        },
+        {
+          "source": 1242882,
+          "title": "DOMPurify: SMIL attributeName=href guard is skipped when PARSER_MEDIA_TYPE is application/xhtml+xml",
+          "url": "https://github.com/advisories/GHSA-c6gr-qvv4-5v3f",
+          "severity": "low",
+          "range": "<=3.4.16"
+        }
+      ]
+    },
+    "eslint-config-next": {
+      "severity": "high",
+      "isDirect": true,
+      "range": ">=14.3.0-canary.0",
+      "fixAvailable": {
+        "name": "eslint-config-next",
+        "version": "14.2.35",
+        "isSemVerMajor": true
+      },
+      "advisories": []
+    },
+    "fast-glob": {
+      "severity": "high",
+      "isDirect": false,
+      "range": "*",
+      "fixAvailable": {
+        "name": "eslint-config-next",
+        "version": "14.2.35",
+        "isSemVerMajor": true
+      },
+      "advisories": []
+    },
+    "find-yarn-workspace-root2": {
+      "severity": "high",
+      "isDirect": false,
+      "range": "*",
+      "fixAvailable": {
+        "name": "sanity",
+        "version": "6.20.0",
+        "isSemVerMajor": true
+      },
+      "advisories": []
+    },
+    "globby": {
+      "severity": "high",
+      "isDirect": false,
+      "range": ">=8.0.0",
+      "fixAvailable": {
+        "name": "sanity",
+        "version": "6.20.0",
+        "isSemVerMajor": true
+      },
+      "advisories": []
+    },
+    "js-yaml": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "3.2.7 - 3.15.2",
+      "fixAvailable": {
+        "name": "sanity",
+        "version": "6.20.0",
+        "isSemVerMajor": true
+      },
+      "advisories": []
+    },
+    "load-yaml-file": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "<=0.2.0",
+      "fixAvailable": {
+        "name": "sanity",
+        "version": "6.20.0",
+        "isSemVerMajor": true
+      },
+      "advisories": []
+    },
+    "markdown-it": {
+      "severity": "high",
+      "isDirect": false,
+      "range": "15.0.0 - 15.0.2",
+      "fixAvailable": true,
+      "advisories": [
+        {
+          "source": 1242645,
+          "title": "markdown-it: Quadratic-time denial of service in inline HTML parsing with html enabled",
+          "url": "https://github.com/advisories/GHSA-vfgh-jcmw-g37q",
+          "severity": "low",
+          "range": ">=15.0.0 <15.0.3"
+        },
+        {
+          "source": 1242671,
+          "title": "markdown-it: Quadratic-time rendering of a single multi-line link reference definition with default options (regression since 14.0)",
+          "url": "https://github.com/advisories/GHSA-gfr2-rv44-r23c",
+          "severity": "high",
+          "range": ">=15.0.0 <15.0.3"
+        }
+      ]
+    },
+    "micromatch": {
+      "severity": "high",
+      "isDirect": false,
+      "range": ">=0.2.0",
+      "fixAvailable": {
+        "name": "eslint-config-next",
+        "version": "14.2.35",
+        "isSemVerMajor": true
+      },
+      "advisories": []
+    },
+    "next": {
+      "severity": "critical",
+      "isDirect": true,
+      "range": "16.0.0 - 16.4.0",
+      "fixAvailable": {
+        "name": "next",
+        "version": "16.4.2",
+        "isSemVerMajor": false
+      },
+      "advisories": [
+        {
+          "source": 1242816,
+          "title": "Next.js: Unauthenticated Remote Code Execution in Image Optimization API when SVG files are used",
+          "url": "https://github.com/advisories/GHSA-2464-fhr4-w9xw",
+          "severity": "critical",
+          "range": ">=16.0.0 <=16.4.0"
+        },
+        {
+          "source": 1242818,
+          "title": "Next.js: Denial of Service in App Router using Server Actions",
+          "url": "https://github.com/advisories/GHSA-p3m5-59mp-jv5r",
+          "severity": "high",
+          "range": ">=16.0.0 <=16.4.0"
+        },
+        {
+          "source": 1242859,
+          "title": "Next.js: Unauthenticated Remote Code Execution in `use cache` functions returning typed arrays",
+          "url": "https://github.com/advisories/GHSA-673q-mjm6-r5xr",
+          "severity": "critical",
+          "range": ">=16.0.0 <=16.4.0"
+        }
+      ]
+    },
+    "postcss-selector-parser": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "<7.1.6",
+      "fixAvailable": {
+        "name": "@tailwindcss/typography",
+        "version": "0.5.4",
+        "isSemVerMajor": true
+      },
+      "advisories": [
+        {
+          "source": 1241232,
+          "title": "PostCSS: Quadratic complexity in flat selector parsing allows CPU exhaustion",
+          "url": "https://github.com/advisories/GHSA-rj75-hqrm-r3gf",
+          "severity": "moderate",
+          "range": "<7.1.6"
+        }
+      ]
+    },
+    "preferred-pm": {
+      "severity": "high",
+      "isDirect": false,
+      "range": "*",
+      "fixAvailable": {
+        "name": "sanity",
+        "version": "6.20.0",
+        "isSemVerMajor": true
+      },
+      "advisories": []
+    },
+    "quill": {
+      "severity": "low",
+      "isDirect": true,
+      "range": "=2.0.3",
+      "fixAvailable": {
+        "name": "quill",
+        "version": "2.0.2",
+        "isSemVerMajor": true
+      },
+      "advisories": [
+        {
+          "source": 1116451,
+          "title": "Quill is vulnerable to XSS via HTML export feature",
+          "url": "https://github.com/advisories/GHSA-v3m3-f69x-jf25",
+          "severity": "low",
+          "range": "=2.0.3"
+        }
+      ]
+    },
+    "sanitize-html": {
+      "severity": "moderate",
+      "isDirect": true,
+      "range": "<=2.17.7",
+      "fixAvailable": true,
+      "advisories": [
+        {
+          "source": 1242620,
+          "title": "ApostropheCMS sanitize-html: nonTextTags discard region ends early on an implied close, letting <noscript> content render",
+          "url": "https://github.com/advisories/GHSA-x3q4-9hxx-gx8m",
+          "severity": "moderate",
+          "range": "<2.18.0"
+        },
+        {
+          "source": 1242635,
+          "title": "ApostropheCMS sanitize-html: SMIL animation namespace-prefix bypass allows javascript: URI injection (XSS)",
+          "url": "https://github.com/advisories/GHSA-374f-7chj-9948",
+          "severity": "low",
+          "range": ">=2.17.7 <2.18.0"
+        },
+        {
+          "source": 1242641,
+          "title": "ApostropheCMS: Incomplete CVE-2026-53606: `meta http-equiv=refresh` `content` still ships `javascript:` / `data:` URLs",
+          "url": "https://github.com/advisories/GHSA-cv27-6wvh-8x7j",
+          "severity": "moderate",
+          "range": "<2.18.0"
+        }
+      ]
+    },
+    "sanity": {
+      "severity": "high",
+      "isDirect": true,
+      "range": "2.29.4-purple-unicorn.509 - 2.30.1-dev-preview.1013 || >=3.0.0-definetype.62",
+      "fixAvailable": {
+        "name": "sanity",
+        "version": "6.20.0",
+        "isSemVerMajor": true
+      },
+      "advisories": []
+    },
+    "source-map-js": {
+      "severity": "high",
+      "isDirect": false,
+      "range": "1.0.0 - 1.2.1",
+      "fixAvailable": true,
+      "advisories": [
+        {
+          "source": 1241209,
+          "title": "source-map-js allows event-loop denial of service through indexed source-map section offsets",
+          "url": "https://github.com/advisories/GHSA-68fv-2mgg-jv7q",
+          "severity": "high",
+          "range": ">=1.0.0 <1.2.2"
+        }
+      ]
+    },
+    "sprintf-js": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "*",
+      "fixAvailable": {
+        "name": "sanity",
+        "version": "6.20.0",
+        "isSemVerMajor": true
+      },
+      "advisories": [
+        {
+          "source": 1241202,
+          "title": "sprintf-js vulnerable to denial of service through unbounded precision specifiers",
+          "url": "https://github.com/advisories/GHSA-hp3w-g68c-fv3c",
+          "severity": "moderate",
+          "range": "<=1.1.3"
+        }
+      ]
+    },
+    "vite": {
+      "severity": "high",
+      "isDirect": false,
+      "range": "7.0.0 - 7.3.6",
+      "fixAvailable": true,
+      "advisories": [
+        {
+          "source": 1242623,
+          "title": "launch-editor: escapeCmdArgs() omits % escaping on Windows",
+          "url": "https://github.com/advisories/GHSA-698v-4r3x-3vcv",
+          "severity": "moderate",
+          "range": ">=7.0.0 <=7.3.6"
+        },
+        {
+          "source": 1242652,
+          "title": "launch-editor: Editor CLI flag misinterpretation causing arbitrary command execution for some editors",
+          "url": "https://github.com/advisories/GHSA-r825-w8mm-5pxw",
+          "severity": "moderate",
+          "range": ">=7.0.0 <=7.3.6"
+        },
+        {
+          "source": 1242659,
+          "title": "launch-editor: `fs.existsSync()` existence check can be bypassed on Windows",
+          "url": "https://github.com/advisories/GHSA-587h-7wmj-h5pm",
+          "severity": "high",
+          "range": ">=7.0.0 <=7.3.6"
+        },
+        {
+          "source": 1242725,
+          "title": "Vite: Cross origin script execution through Vite custom middleware",
+          "url": "https://github.com/advisories/GHSA-9jrq-w75r-8gcw",
+          "severity": "low",
+          "range": ">=7.0.0 <=7.3.6"
+        },
+        {
+          "source": 1242731,
+          "title": "Vite: Files outside `server.fs.allow` could be served when project paths match system paths on non-Windows machine",
+          "url": "https://github.com/advisories/GHSA-rq7h-c2jc-7f22",
+          "severity": "moderate",
+          "range": ">=7.0.0 <=7.3.6"
+        }
+      ]
+    },
+    "which-pm": {
+      "severity": "moderate",
+      "isDirect": false,
+      "range": "<=3.0.1",
+      "fixAvailable": {
+        "name": "sanity",
+        "version": "6.20.0",
+        "isSemVerMajor": true
+      },
+      "advisories": []
+    }
+  }
+}

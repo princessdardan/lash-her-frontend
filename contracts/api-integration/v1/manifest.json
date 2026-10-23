@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "status": "candidate",
+  "frontendBaseRevision": "f9558242893a4054df5c5ca5d39981977a929e1d",
+  "artifacts": {
+    "course": {
+      "repository": "lash-her-course-api",
+      "revision": "4a45e68518e8244a1ce61cd6975ac8b6db5552f7",
+      "sourcePath": "openapi/course-api.json",
+      "file": "course-api.json",
+      "sha256": "9d1982b5cea8d37fb83d2ed46a84deb24bc3dfd036cede2fd975d59e4fd385bd"
+    },
+    "community": {
+      "repository": "lash-her-community-api",
+      "revision": "eb855b1fd0eeca823ba9cec6a401a823a4cfd3eb",
+      "sourcePath": "openapi/community-api.json",
+      "file": "community-api.json",
+      "sha256": "6ab9b614e1d7befb5081fb9c5d3a060b1cf21d9f1db7370579fb932696094b89"
+    },
+    "enrollmentEvent": {
+      "repository": "lash-her-community-api",
+      "revision": "eb855b1fd0eeca823ba9cec6a401a823a4cfd3eb",
+      "sourcePath": "contracts/course-enrollment/v1/enrollment-event.schema.json",
+      "file": "enrollment-event.schema.json",
+      "sha256": "a1635b7725a8331cf4885da6b2c596f07c7272ef1bbd5d66a855b10ece95b01e"
+    }
+  },
+  "boundarySha256": "3a2c75cafceb92f48bb3a2aaaa69edc687d341d9a5bb015e3b11a17e2013ae8d"
+}

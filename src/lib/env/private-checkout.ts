@@ -1,4 +1,5 @@
 import "server-only";
+import { assertApplicationProviderEnvironment } from "@/lib/env/application-environment.server";
 
 import {
   resolvePaymentGatewayMode,
@@ -247,16 +248,7 @@ export function getSquareServiceBookingEnv(): SquareServiceBookingEnv | null {
     return null;
   }
 
-  const environment = assertValue(
-    process.env.SQUARE_ENVIRONMENT,
-    "Missing env var: SQUARE_ENVIRONMENT",
-  );
-
-  if (environment !== "sandbox" && environment !== "production") {
-    throw new Error(
-      "Malformed env var: SQUARE_ENVIRONMENT must be sandbox or production",
-    );
-  }
+  const environment = assertSquareEnvironment();
 
   return {
     environment,
@@ -332,6 +324,10 @@ function assertSquareEnvironment(): "sandbox" | "production" {
     );
   }
 
+  assertApplicationProviderEnvironment("SQUARE_ENVIRONMENT", environment, {
+    production: "production",
+    staging: "sandbox",
+  });
   return environment;
 }
 

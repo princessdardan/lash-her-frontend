@@ -1,0 +1,28 @@
+{
+  "accountId": "691588646557",
+  "region": "us-east-1",
+  "stackName": "lash-her-deployment-access",
+  "roleName": "LashHerDeploymentRole",
+  "rolePath": "/lash-her/",
+  "roleArn": "arn:aws:iam::691588646557:role/lash-her/LashHerDeploymentRole",
+  "sourceProfile": "Dardan (Lash Her)",
+  "deploymentProfile": "lash-her-deploy",
+  "sessionDurationSeconds": 3600,
+  "trust": "Only arn:aws:iam::691588646557:user/Dardan; no third-party or CI principals.",
+  "requiredHostTags": {
+    "Project": "lash-her",
+    "Environment": ["staging", "production"]
+  },
+  "policyStatements": {
+    "InspectDeploymentHosts": "Read Lightsail inventory, plans, host networking state and operation results in us-east-1. The AWS service authorization reference requires Resource=* for these metadata APIs; metadata for other hosts in the region is also visible.",
+    "OperateOwnedDeploymentHosts": "Start, stop, reboot, or obtain temporary SSH access for hosts in this account and region only when both ownership tags match. Temporary SSH responses must remain inside the deployment process.",
+    "VerifyDeploymentIdentity": "Confirm the assumed role using STS without exposing credentials."
+  },
+  "bootstrapSeparation": "Administrator-controlled provisioning must create and tag the hosts. No create/delete/retag/firewall permissions are granted, so this role cannot claim unrelated hosts or change their network boundary.",
+  "storageAndRuntime": "No S3 data, Secrets Manager retrieval, database, IAM, PassRole, or unrelated compute permissions are granted. Runtime media access and provisioning authority require separate scopes once exact resources and workflows are defined.",
+  "ci": "CI trust is intentionally absent until the protected release workflow, repository and environment claims are concrete.",
+  "commands": {
+    "verifyRole": "aws sts get-caller-identity --profile lash-her-deploy",
+    "inspectHosts": "aws lightsail get-instances --profile lash-her-deploy --region us-east-1"
+  }
+}

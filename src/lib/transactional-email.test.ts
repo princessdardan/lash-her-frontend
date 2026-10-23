@@ -5,7 +5,25 @@ const helperScript = String.raw`
   import assert from "node:assert/strict";
 
   import { getEmailProfileImageHtml, sendTransactionalEmail } from "./src/lib/transactional-email.ts";
+  import { VERCEL_PROJECT_BINDINGS } from "./src/lib/env/application-environment.mjs";
 `;
+
+test("staging rejects unapproved recipients before contacting Resend", () => {
+  runTransactionalEmailScenario(`
+    Object.assign(process.env, {
+      VERCEL_ENV: "production", VERCEL_TARGET_ENV: "production", APP_ENV: "staging",
+      VERCEL_PROJECT_ID: VERCEL_PROJECT_BINDINGS.stagingProjectId,
+      APP_VERCEL_TEAM_ID: VERCEL_PROJECT_BINDINGS.teamId,
+      STAGING_EMAIL_RECIPIENT_ALLOWLIST: "delivered@resend.dev",
+    });
+    let requests = 0;
+    globalThis.fetch = async () => { requests++; throw new Error("Unexpected provider request"); };
+    await assert.rejects(sendTransactionalEmail({
+      html: "<p>Test</p>", subject: "Test", to: "customer@example.com",
+    }), /allowlist/);
+    assert.equal(requests, 0);
+  `);
+});
 
 test("email profile image helper is empty without a configured URL", () => {
   runTransactionalEmailScenario(`

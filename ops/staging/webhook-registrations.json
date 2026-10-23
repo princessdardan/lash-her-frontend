@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "square": {
+    "id": "wbhk_b8cf77ce0a5142b38b93715c05ede7d5",
+    "environment": "sandbox",
+    "name": "Lash Her Staging",
+    "enabled": false,
+    "originAndPath": "https://staging.lashher.com/api/webhooks/square",
+    "eventTypes": [
+      "payment.created",
+      "payment.updated",
+      "order.updated",
+      "invoice.payment_made",
+      "refund.created",
+      "refund.updated"
+    ],
+    "signatureKeySavedPrivately": true,
+    "protectedIngressBound": true,
+    "queryParameterName": "x-vercel-protection-bypass",
+    "notificationUrlInstalledAsSensitive": true,
+    "signingKeyInstalledAsSensitive": true
+  },
+  "sanity": {
+    "id": "5a1KWQjkVBYLeAU3",
+    "projectId": "7o23yrvk",
+    "dataset": "staging-2026-05-10",
+    "name": "Lash Her Staging editorial revalidation",
+    "isDisabledByUser": true,
+    "url": "https://staging.lashher.com/api/revalidate",
+    "signatureSecretIndependent": true,
+    "protectedIngressBound": true,
+    "headerName": "x-vercel-protection-bypass"
+  },
+  "legacySquareSandbox": {
+    "id": "wbhk_0185e717faf34f3d8acd1d7e3e521748",
+    "enabled": true,
+    "url": "https://preview.lashher.com/api/webhooks/square",
+    "eventCount": 153,
+    "changed": false,
+    "activationGate": "Review legacy callback isolation before sending sandbox events; new staging subscription does not stop legacy deliveries."
+  },
+  "deliveriesEnabled": false,
+  "testEventsSent": false,
+  "applicationDeploymentCreated": false,
+  "lastVerifiedAt": "2026-10-22T22:12:44.747Z",
+  "resend": {
+    "id": "333dea10-e8c3-44a5-bb93-bf2d4c604811",
+    "accountAlias": "dardanlashher",
+    "status": "disabled",
+    "originAndPath": "https://staging.lashher.com/api/webhooks/resend",
+    "events": [
+      "contact.updated"
+    ],
+    "protectedIngressBound": true,
+    "queryParameterName": "x-vercel-protection-bypass",
+    "signingKeyInstalledAsSensitive": true,
+    "bypassAvailableInDeploymentEnvironment": false
+  }
+}

@@ -314,7 +314,8 @@ export const POST = createSquareWebhookPostHandler(defaultDependencies);
 
 /**
  * Reconstruct the URLs a Square webhook could have been posted to, normalized to
- * `origin + pathname` (Square's notification URL carries no query). Used only to
+ * `origin + pathname + search`. The search can carry a staging protection
+ * credential and must stay out of logs. Used only to
  * classify a signature failure (see diagnoseSquareWebhookSignatureFailure); the
  * Host / X-Forwarded-* headers are attacker-controllable and never gate
  * acceptance.
@@ -324,7 +325,7 @@ function buildSquareWebhookRequestUrlCandidates(req: Request): string[] {
   const addCandidate = (value: string) => {
     try {
       const url = new URL(value);
-      candidates.add(`${url.origin}${url.pathname}`);
+      candidates.add(`${url.origin}${url.pathname}${url.search}`);
     } catch {
       // Ignore a malformed host/proto header combination.
     }
@@ -333,8 +334,8 @@ function buildSquareWebhookRequestUrlCandidates(req: Request): string[] {
   let pathname = "/api/webhooks/square";
   try {
     const parsed = new URL(req.url);
-    pathname = parsed.pathname;
-    addCandidate(`${parsed.origin}${parsed.pathname}`);
+    pathname = `${parsed.pathname}${parsed.search}`;
+    addCandidate(`${parsed.origin}${pathname}`);
   } catch {
     // req.url should always parse; fall back to the known route pathname.
   }
@@ -350,6 +351,15 @@ function buildSquareWebhookRequestUrlCandidates(req: Request): string[] {
   if (host) addCandidate(`${proto}://${host}${pathname}`);
 
   return [...candidates];
+}
+
+function redactSquareWebhookUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return "[invalid webhook URL]";
+  }
 }
 
 export function createSquareWebhookPostHandler(
@@ -412,8 +422,8 @@ export function createSquareWebhookPostHandler(
         console.error(
           "[square-webhook] Signature rejected because the configured notificationUrl does not match the request URL — the signing key is correct, so every Square event is being dropped. Update the Square webhook URL env to match the subscription.",
           {
-            configuredNotificationUrl: env.notificationUrl,
-            requestUrlCandidates,
+            configuredNotificationUrl: redactSquareWebhookUrl(env.notificationUrl),
+            requestUrlCandidates: requestUrlCandidates.map(redactSquareWebhookUrl),
           },
         );
       } else {

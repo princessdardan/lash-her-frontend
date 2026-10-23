@@ -1,0 +1,615 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Isolated staging release secrets with a dedicated rotating KMS key and operator-only value access; runtime and migration credentials remain separate.",
+  "Metadata": {
+    "AWSToolsMetrics": {
+      "AWSAgentToolkit": "aws-cloudformation@3"
+    },
+    "com.aws.cloudformation.Context": {
+      "ref": [
+        {
+          "at": "ops/staging/release-store.md",
+          "has": "Operator-controlled staging secret handoff and release boundaries",
+          "scope": "shared"
+        }
+      ],
+      "must": [
+        "Never embed credential values or grant the deployment role secret access.",
+        "Do not deploy production resources or attach CI/host permissions."
+      ]
+    }
+  },
+  "Parameters": {
+    "SecretNamespace": {
+      "Type": "String",
+      "Default": "lash-her/staging",
+      "AllowedValues": [
+        "lash-her/staging"
+      ]
+    },
+    "OperatorArn": {
+      "Type": "String",
+      "Default": "arn:aws:iam::691588646557:user/Dardan",
+      "AllowedValues": [
+        "arn:aws:iam::691588646557:user/Dardan"
+      ],
+      "Description": "Existing administrator-controlled operator; no new IAM identity or trust policy is created."
+    }
+  },
+  "Resources": {
+    "ReleaseKey": {
+      "Type": "AWS::KMS::Key",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "why": "Keep staging credential encryption separate and reject cryptographic use outside these Secrets Manager records.",
+          "must": [
+            "Retain key and secrets on stack deletion.",
+            "Key rotation stays enabled.",
+            "No CI or host key grants are created."
+          ]
+        }
+      },
+      "Properties": {
+        "Description": "Lash Her staging release credential encryption",
+        "EnableKeyRotation": true,
+        "PendingWindowInDays": 30,
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "lash-her"
+          },
+          {
+            "Key": "Environment",
+            "Value": "staging"
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CloudFormation"
+          },
+          {
+            "Key": "Purpose",
+            "Value": "protected-release-handoff"
+          }
+        ],
+        "KeyPolicy": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AccountKeyAdministration",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+                }
+              },
+              "Action": "kms:*",
+              "Resource": "*"
+            },
+            {
+              "Sid": "OperatorUsageThroughSecretsManager",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Ref": "OperatorArn"
+                }
+              },
+              "Action": [
+                "kms:Decrypt",
+                "kms:GenerateDataKey",
+                "kms:DescribeKey"
+              ],
+              "Resource": "*",
+              "Condition": {
+                "StringEquals": {
+                  "kms:ViaService": {
+                    "Fn::Sub": "secretsmanager.${AWS::Region}.${AWS::URLSuffix}"
+                  }
+                },
+                "StringLike": {
+                  "kms:EncryptionContext:SecretARN": [
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretNamespace}/community/runtime-??????"
+                    },
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretNamespace}/community/migration-??????"
+                    },
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretNamespace}/frontend/migration-??????"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "Sid": "DenyCryptographyOutsideSecretsManager",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": [
+                "kms:Encrypt",
+                "kms:Decrypt",
+                "kms:GenerateDataKey*",
+                "kms:ReEncrypt*"
+              ],
+              "Resource": "*",
+              "Condition": {
+                "StringNotEqualsIfExists": {
+                  "kms:ViaService": {
+                    "Fn::Sub": "secretsmanager.${AWS::Region}.${AWS::URLSuffix}"
+                  }
+                }
+              }
+            },
+            {
+              "Sid": "DenyOtherSecretContexts",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": [
+                "kms:Encrypt",
+                "kms:Decrypt",
+                "kms:GenerateDataKey*",
+                "kms:ReEncrypt*"
+              ],
+              "Resource": "*",
+              "Condition": {
+                "StringNotLikeIfExists": {
+                  "kms:EncryptionContext:SecretARN": [
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretNamespace}/community/runtime-??????"
+                    },
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretNamespace}/community/migration-??????"
+                    },
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretNamespace}/frontend/migration-??????"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "CommunityRuntime": {
+      "Type": "AWS::SecretsManager::Secret",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "why": "Community staging pooled runtime database credentials",
+          "must": [
+            "Actual credential JSON is imported separately from a private local file.",
+            "Runtime record contains only the least-privilege pooled Community URL."
+          ]
+        }
+      },
+      "Properties": {
+        "Name": {
+          "Fn::Sub": "${SecretNamespace}/community/runtime"
+        },
+        "Description": "Community staging pooled runtime database credentials",
+        "KmsKeyId": {
+          "Fn::GetAtt": [
+            "ReleaseKey",
+            "Arn"
+          ]
+        },
+        "GenerateSecretString": {
+          "SecretStringTemplate": "{\"handoffState\":\"awaiting-private-import\"}",
+          "GenerateStringKey": "initializationNonce",
+          "PasswordLength": 32,
+          "ExcludePunctuation": true
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "lash-her"
+          },
+          {
+            "Key": "Environment",
+            "Value": "staging"
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CloudFormation"
+          },
+          {
+            "Key": "Purpose",
+            "Value": "protected-release-handoff"
+          },
+          {
+            "Key": "CredentialScope",
+            "Value": "runtime"
+          }
+        ]
+      }
+    },
+    "CommunityRuntimePolicy": {
+      "Type": "AWS::SecretsManager::ResourcePolicy",
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "why": "Constrain value reads to the existing release operator and root break-glass administration.",
+          "must": [
+            "Block public policies.",
+            "Deployment role, CI and hosts receive no value access.",
+            "Non-TLS secret access is denied."
+          ]
+        }
+      },
+      "Properties": {
+        "SecretId": {
+          "Ref": "CommunityRuntime"
+        },
+        "BlockPublicPolicy": true,
+        "ResourcePolicy": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "OperatorRead",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Ref": "OperatorArn"
+                }
+              },
+              "Action": [
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret"
+              ],
+              "Resource": {
+                "Ref": "CommunityRuntime"
+              },
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "true"
+                }
+              }
+            },
+            {
+              "Sid": "DenyUnreviewedValueReaders",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "secretsmanager:GetSecretValue",
+              "Resource": {
+                "Ref": "CommunityRuntime"
+              },
+              "Condition": {
+                "ArnNotEquals": {
+                  "aws:PrincipalArn": [
+                    {
+                      "Ref": "OperatorArn"
+                    },
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "Sid": "DenyInsecureTransport",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "secretsmanager:*",
+              "Resource": {
+                "Ref": "CommunityRuntime"
+              },
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "CommunityMigration": {
+      "Type": "AWS::SecretsManager::Secret",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "why": "Community staging direct owner credentials for protected migration jobs only",
+          "must": [
+            "Actual credential JSON is imported separately from a private local file.",
+            "Initialization nonce is not an application credential.",
+            "Owner secrets must never enter application runtimes."
+          ]
+        }
+      },
+      "Properties": {
+        "Name": {
+          "Fn::Sub": "${SecretNamespace}/community/migration"
+        },
+        "Description": "Community staging direct owner credentials for protected migration jobs only",
+        "KmsKeyId": {
+          "Fn::GetAtt": [
+            "ReleaseKey",
+            "Arn"
+          ]
+        },
+        "GenerateSecretString": {
+          "SecretStringTemplate": "{\"handoffState\":\"awaiting-private-import\"}",
+          "GenerateStringKey": "initializationNonce",
+          "PasswordLength": 32,
+          "ExcludePunctuation": true
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "lash-her"
+          },
+          {
+            "Key": "Environment",
+            "Value": "staging"
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CloudFormation"
+          },
+          {
+            "Key": "Purpose",
+            "Value": "protected-release-handoff"
+          },
+          {
+            "Key": "CredentialScope",
+            "Value": "migration"
+          }
+        ]
+      }
+    },
+    "CommunityMigrationPolicy": {
+      "Type": "AWS::SecretsManager::ResourcePolicy",
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "why": "Constrain value reads to the existing release operator and root break-glass administration.",
+          "must": [
+            "Block public policies.",
+            "Deployment role, CI and hosts receive no value access.",
+            "Non-TLS secret access is denied."
+          ]
+        }
+      },
+      "Properties": {
+        "SecretId": {
+          "Ref": "CommunityMigration"
+        },
+        "BlockPublicPolicy": true,
+        "ResourcePolicy": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "OperatorRead",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Ref": "OperatorArn"
+                }
+              },
+              "Action": [
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret"
+              ],
+              "Resource": {
+                "Ref": "CommunityMigration"
+              },
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "true"
+                }
+              }
+            },
+            {
+              "Sid": "DenyUnreviewedValueReaders",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "secretsmanager:GetSecretValue",
+              "Resource": {
+                "Ref": "CommunityMigration"
+              },
+              "Condition": {
+                "ArnNotEquals": {
+                  "aws:PrincipalArn": [
+                    {
+                      "Ref": "OperatorArn"
+                    },
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "Sid": "DenyInsecureTransport",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "secretsmanager:*",
+              "Resource": {
+                "Ref": "CommunityMigration"
+              },
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain"
+    },
+    "FrontendMigration": {
+      "Type": "AWS::SecretsManager::Secret",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "why": "Frontend staging direct owner credentials for protected migration jobs only",
+          "must": [
+            "Actual credential JSON is imported separately from a private local file.",
+            "Initialization nonce is not an application credential.",
+            "Owner secrets must never enter application runtimes."
+          ]
+        }
+      },
+      "Properties": {
+        "Name": {
+          "Fn::Sub": "${SecretNamespace}/frontend/migration"
+        },
+        "Description": "Frontend staging direct owner credentials for protected migration jobs only",
+        "KmsKeyId": {
+          "Fn::GetAtt": [
+            "ReleaseKey",
+            "Arn"
+          ]
+        },
+        "GenerateSecretString": {
+          "SecretStringTemplate": "{\"handoffState\":\"awaiting-private-import\"}",
+          "GenerateStringKey": "initializationNonce",
+          "PasswordLength": 32,
+          "ExcludePunctuation": true
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "lash-her"
+          },
+          {
+            "Key": "Environment",
+            "Value": "staging"
+          },
+          {
+            "Key": "ManagedBy",
+            "Value": "CloudFormation"
+          },
+          {
+            "Key": "Purpose",
+            "Value": "protected-release-handoff"
+          },
+          {
+            "Key": "CredentialScope",
+            "Value": "migration"
+          }
+        ]
+      }
+    },
+    "FrontendMigrationPolicy": {
+      "Type": "AWS::SecretsManager::ResourcePolicy",
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "why": "Constrain value reads to the existing release operator and root break-glass administration.",
+          "must": [
+            "Block public policies.",
+            "Deployment role, CI and hosts receive no value access.",
+            "Non-TLS secret access is denied."
+          ]
+        }
+      },
+      "Properties": {
+        "SecretId": {
+          "Ref": "FrontendMigration"
+        },
+        "BlockPublicPolicy": true,
+        "ResourcePolicy": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "OperatorRead",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Ref": "OperatorArn"
+                }
+              },
+              "Action": [
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret"
+              ],
+              "Resource": {
+                "Ref": "FrontendMigration"
+              },
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "true"
+                }
+              }
+            },
+            {
+              "Sid": "DenyUnreviewedValueReaders",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "secretsmanager:GetSecretValue",
+              "Resource": {
+                "Ref": "FrontendMigration"
+              },
+              "Condition": {
+                "ArnNotEquals": {
+                  "aws:PrincipalArn": [
+                    {
+                      "Ref": "OperatorArn"
+                    },
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "Sid": "DenyInsecureTransport",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "secretsmanager:*",
+              "Resource": {
+                "Ref": "FrontendMigration"
+              },
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain"
+    }
+  },
+  "Outputs": {
+    "ReleaseKeyArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "ReleaseKey",
+          "Arn"
+        ]
+      },
+      "Description": "KMS key ARN for staging secret encryption; contains no credential value."
+    },
+    "CommunityRuntimeArn": {
+      "Value": {
+        "Ref": "CommunityRuntime"
+      },
+      "Description": "Community staging pooled runtime database credentials ARN; no credential value."
+    },
+    "CommunityMigrationArn": {
+      "Value": {
+        "Ref": "CommunityMigration"
+      },
+      "Description": "Community staging direct owner credentials for protected migration jobs only ARN; no credential value."
+    },
+    "FrontendMigrationArn": {
+      "Value": {
+        "Ref": "FrontendMigration"
+      },
+      "Description": "Frontend staging direct owner credentials for protected migration jobs only ARN; no credential value."
+    }
+  }
+}

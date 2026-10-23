@@ -1,0 +1,552 @@
+{
+  "schemaVersion": 1,
+  "scope": "reviewed-staging-source-candidate; no cloud migration evidence",
+  "frontend": {
+    "commitEnvironmentVariable": "STAGING_RELEASE_COMMIT",
+    "journalSha256": "8033ab3c955f751c1daa437659169ac68214b16ac88a202f1929eef5a1ceeee9",
+    "migrations": [
+      {
+        "tag": "0000_old_moonstone",
+        "when": 1778450844121,
+        "sha256": "c31011d49046e22438409ccf3a9993607aae00db43f1a782e131b75516f2de9e"
+      },
+      {
+        "tag": "0001_private_training_enrollments",
+        "when": 1778784000000,
+        "sha256": "391ada2d7014c0d6183f9ddd5fb022e3cb9feb29f50e5cbd9a2cf2cf1f2da6c6"
+      },
+      {
+        "tag": "0002_rapid_fat_cobra",
+        "when": 1779049037217,
+        "sha256": "c938ba2ab9a31d6b1b78c92d398f23e6b28415dd991187a6af7118a30848a30b"
+      },
+      {
+        "tag": "0003_tired_vertigo",
+        "when": 1779148298733,
+        "sha256": "b544df117671eec2817c7a92b2f06d9ce69eff49d411c8b8387e79d0105c8471"
+      },
+      {
+        "tag": "0004_parched_carnage",
+        "when": 1779310411063,
+        "sha256": "c5da298c1e32dd62a6e45e4a9a7a7335a6539ebaba4df7526b09d009a7c525bc"
+      },
+      {
+        "tag": "0005_yummy_captain_britain",
+        "when": 1779490120253,
+        "sha256": "195bc6727e89b7b5736d7639533b40eadbbd6dcda47315950487ddafeacf1e79"
+      },
+      {
+        "tag": "0007_product_shipping_address",
+        "when": 1779661753148,
+        "sha256": "b3437f7ba447b4fbba358d6f37454986fe67f8f9add5c345dfb02fe684e5f6e8"
+      },
+      {
+        "tag": "0008_hot_path_private_indexes",
+        "when": 1779753600000,
+        "sha256": "79646ade59578ae85eb2a310c2f279ebc670424d507ae13dddeaddf11be8adfb"
+      },
+      {
+        "tag": "0009_dashing_rocket_raccoon",
+        "when": 1779901448734,
+        "sha256": "1b67741b45d9ba542a33d67cb884c77b4d28cab3e634e020778a3a7807a8990b"
+      },
+      {
+        "tag": "0010_familiar_jazinda",
+        "when": 1780019995593,
+        "sha256": "0e1475032661ebbfd33f00dd0ba8ebfef03f347566df8d9c29e62bae89c6c0a0"
+      },
+      {
+        "tag": "0010_dry_magneto",
+        "when": 1781909205634,
+        "sha256": "b256f5d2b3bb0f2c3fd8d461a1023e88ca35dc01681684ca29618eb614d46a08"
+      },
+      {
+        "tag": "0011_opposite_vulcan",
+        "when": 1781918939267,
+        "sha256": "147ea5ad837cecc3aef4ded30594928bf567ace285de5a36024e5134441657ad"
+      },
+      {
+        "tag": "0012_secret_chimera",
+        "when": 1781938950079,
+        "sha256": "9c782876f2223e790bca6bafae6411a0ef75a632a40198f63e1583e61e539415"
+      },
+      {
+        "tag": "0013_superb_mongoose",
+        "when": 1782029654089,
+        "sha256": "73cd12a6481082745d570d30e63fdd75e0c11f64404fba71b4202aa01422585c"
+      },
+      {
+        "tag": "0014_even_madame_web",
+        "when": 1782038392974,
+        "sha256": "988fc00aabf523f948e44a96045be8d58b747acddb76e16eb5c2d6e7566d716a"
+      },
+      {
+        "tag": "0015_service_booking_payment_session",
+        "when": 1782882175099,
+        "sha256": "6dc565fbb257efdaa6d533dc65cb59740c6ce708c2d026b4c8dd1e3a8abd2fec"
+      },
+      {
+        "tag": "0016_bitter_yellow_claw",
+        "when": 1783023767006,
+        "sha256": "7698d4d5cedf4205a3484575be6f01db8ebc4a3f3e4dc434b1a58010d7a26d2c"
+      },
+      {
+        "tag": "0017_big_hulk",
+        "when": 1783115272208,
+        "sha256": "02127e955cb51761d6a86a0b3fccfbcda2f5f2810128c7d7ec8b288f78853ff2"
+      },
+      {
+        "tag": "0018_grey_xorn",
+        "when": 1783723634797,
+        "sha256": "2e23b9e1861d763ed31ba6b540bfefd42d6d7a7955fefaf291288f88c42bb490"
+      },
+      {
+        "tag": "0019_rainy_lorna_dane",
+        "when": 1783727563549,
+        "sha256": "fe2f4d5f38421d02ed8e0b71309ef378ae1bd3b51662102c49b95fb92ee7399d"
+      },
+      {
+        "tag": "0020_eager_stark_industries",
+        "when": 1783728714883,
+        "sha256": "5c251835bc8e7f7652178cdf24c0ba1d9b3ab1a2e930eb5dcab1a3c30e44c984"
+      },
+      {
+        "tag": "0021_grey_professor_monster",
+        "when": 1784075126626,
+        "sha256": "5b06e89f076095658a43f7f9c36b66f0e96eddb3d7e5a6e425d2ab70460c9270"
+      },
+      {
+        "tag": "0022_cold_mikhail_rasputin",
+        "when": 1784159435391,
+        "sha256": "7e50ee7e7b61214b8d9514f24e5776e6e43031591c3c4e4f34e645b3c590a62f"
+      },
+      {
+        "tag": "0023_striped_marvel_apes",
+        "when": 1785035959565,
+        "sha256": "4157449d50936e715b1e64849702f52530a391477d2655e1cb87c0e9be38ac4d"
+      },
+      {
+        "tag": "0024_private_db_lineage_reconciliation",
+        "when": 1785262464947,
+        "sha256": "c01098ee405c9d527f58607cf849cd6940672ca111e43067281d3e40a9be9ff8"
+      },
+      {
+        "tag": "0025_smart_praxagora",
+        "when": 1785361832872,
+        "sha256": "f3a18453232f7164136f9350d2670cecf059266fbb03f91781f1dbb6e539003d"
+      },
+      {
+        "tag": "0026_nice_mattie_franklin",
+        "when": 1785362561424,
+        "sha256": "92d389625305df02bae950a80968fff362d356300458d610b267c4fc70169cea"
+      },
+      {
+        "tag": "0027_curly_leader",
+        "when": 1785364009534,
+        "sha256": "9a48fcd53dde993c37420e45decbae241bf5a30b8f3d397305eb9400fa78b4ad"
+      },
+      {
+        "tag": "0028_lucky_lady_ursula",
+        "when": 1785366937857,
+        "sha256": "c82dec2759216875531f996807e270b594f80255ef6dff201a90912b7a63e1f7"
+      },
+      {
+        "tag": "0029_chemical_virginia_dare",
+        "when": 1785380919421,
+        "sha256": "05976fe90bb4b6a1ba3465fab0cf4cf1659236e1abe51376a5269e0ba0ce7d12"
+      },
+      {
+        "tag": "0030_implicit_staff_providers",
+        "when": 1785531975406,
+        "sha256": "bb2e5f3b1e6e65e4c743232bf9af6849f69fee2dd576f32722dc122965f0f9d1"
+      },
+      {
+        "tag": "0031_bored_loa",
+        "when": 1785597956449,
+        "sha256": "29ec810d68d8da0e6a3f975b856a7685eeed975a74f8a8f1f3f443cc114211f2"
+      },
+      {
+        "tag": "0032_fat_roulette",
+        "when": 1786571702405,
+        "sha256": "af324d3334bf84216e0e50982c1143b0e0ba4d39b5c979ea80d987a72234fd29"
+      },
+      {
+        "tag": "0033_bored_dexter_bennett",
+        "when": 1786655863673,
+        "sha256": "bcadce56cab5bd413238fc08e70c26dd3443d3d029a138cd3d1b6ba9f868727d"
+      },
+      {
+        "tag": "0034_lying_amphibian",
+        "when": 1786729604962,
+        "sha256": "3bb9fb07456053df16c71767b221b7753c45b512d350786ba78306a680710e4f"
+      },
+      {
+        "tag": "0035_tricky_photon",
+        "when": 1786729648324,
+        "sha256": "82977311d356c8d6527e53201fd5ea7d826d280747b726ccd19e81c81278ebcf"
+      },
+      {
+        "tag": "0036_chubby_captain_flint",
+        "when": 1786746690655,
+        "sha256": "776659694e7d363176b7f5d8416f901a07dffca5840b5f1a7c5e5668f41b8514"
+      },
+      {
+        "tag": "0037_noisy_bedlam",
+        "when": 1786747147860,
+        "sha256": "58d2a3a49018f491c9dba9dcc1a7c47c122088c37bb086939cd45f4cd18cf1cb"
+      },
+      {
+        "tag": "0038_dashing_blue_blade",
+        "when": 1786747946750,
+        "sha256": "49b8005913091f8c8da6d20eb8720501d4dec00a3c5f84ee64a207e75bfb456f"
+      },
+      {
+        "tag": "0039_chunky_stingray",
+        "when": 1786748317968,
+        "sha256": "e5252e89d2b40345b34353d17811d2ab7148595be2c7f3c7bc3d0a039306d569"
+      },
+      {
+        "tag": "0040_yummy_living_lightning",
+        "when": 1786748337233,
+        "sha256": "46cfb8975483528a0dabe8bd186545641278204c749cef346643daef7bcc3826"
+      },
+      {
+        "tag": "0041_illegal_pestilence",
+        "when": 1786811823415,
+        "sha256": "b80a6fbcba902c1bf35bdd3286f4b9612b0de142892486bb8c6d4b60985c7a90"
+      },
+      {
+        "tag": "0042_typical_ultimatum",
+        "when": 1786811883587,
+        "sha256": "fcb960ddc72e01eb546d392c14d69f8c4d41307609faa50fb49af1efa34a78db"
+      },
+      {
+        "tag": "0043_loose_richard_fisk",
+        "when": 1786811967466,
+        "sha256": "9389c26fef12e949e174d128d0a96ba7b13ce1325d1736559465e34b66d8de77"
+      },
+      {
+        "tag": "0044_wakeful_leper_queen",
+        "when": 1786812215923,
+        "sha256": "bfb62f5210284763f928a3220843cb3c7018945db224544750bc1e1b5207a985"
+      },
+      {
+        "tag": "0045_complete_purple_man",
+        "when": 1786812257202,
+        "sha256": "e42b0c624dad9b6d1b3b9a927febc996c7e1a87a30201765f2344ad3db5148e8"
+      },
+      {
+        "tag": "0046_equal_meltdown",
+        "when": 1786812542688,
+        "sha256": "092870344cd8ff47d02a4133051875e5dda3753aab27b6122e26ba7065313796"
+      },
+      {
+        "tag": "0047_plain_wither",
+        "when": 1786812853302,
+        "sha256": "dc67dab3e41c0e91f4e1ea11eeff969218cca1f9ab3c249072bc3de731c1c8f0"
+      },
+      {
+        "tag": "0048_immutable_chitchats_intake_attestations",
+        "when": 1786814731710,
+        "sha256": "f7e09fd19c140d2cd33b9e762fda44c2bba5f5b2755cd38df3008c9478eb25f4"
+      },
+      {
+        "tag": "0049_eminent_arachne",
+        "when": 1786815019516,
+        "sha256": "5db61574f608d72536b4cc7a5fcea16479bce9546f61f29cc4402b893170dd25"
+      },
+      {
+        "tag": "0050_long_scrambler",
+        "when": 1786815649061,
+        "sha256": "32b52e4ed25b59d18cc706eeea213206380e43e68b58612827698f293a5aeba7"
+      },
+      {
+        "tag": "0051_square_blazing_skull",
+        "when": 1786815890782,
+        "sha256": "65e0af586f59e11ce56fb688f3d22014912baaff1c1ef8c89021c0c68e94d34c"
+      },
+      {
+        "tag": "0052_bouncy_callisto",
+        "when": 1786816106846,
+        "sha256": "6fa82bc85a3b2571d72b7f6870bf8e39a171f3457fa052ffc43ec0b3b385af0a"
+      },
+      {
+        "tag": "0053_yielding_ultimo",
+        "when": 1786816656184,
+        "sha256": "1ee47ec0e2fdc07f8210ac638a432496a097ac0b256ad30885bd4b83086e04b1"
+      },
+      {
+        "tag": "0054_living_blindfold",
+        "when": 1786817398162,
+        "sha256": "f013e86b0fcb0fa7a8e26a92f6c86d205b44f8f81dcd2f9e76e53702825caead"
+      },
+      {
+        "tag": "0055_good_dormammu",
+        "when": 1786817601199,
+        "sha256": "8474e3f4382f92fa78dfa0fb3035a7533bc713bcf1deaf58a00fd7da5aa4563a"
+      },
+      {
+        "tag": "0056_remarkable_sage",
+        "when": 1786818110447,
+        "sha256": "4381a7a4710a8d82eca07908034c4b7060a6811edb022765cd5ec5e8a2c792ff"
+      },
+      {
+        "tag": "0057_daily_agent_brand",
+        "when": 1786820075701,
+        "sha256": "63b2eaff39b4b778bf82d070ee8e779acf0f65236f01777d706e67f79eae0cf0"
+      },
+      {
+        "tag": "0058_worthless_shriek",
+        "when": 1786822456932,
+        "sha256": "cf125fe3707d148d6acf5feaa95b1e71560d76fc0df50b9b438d583c2ae72475"
+      },
+      {
+        "tag": "0059_eminent_praxagora",
+        "when": 1786823647075,
+        "sha256": "e52b688aa09533cbbfd503e0ee9ab11ec38219a12cbb1cc767f71d1a888fb0ed"
+      },
+      {
+        "tag": "0060_clever_magma",
+        "when": 1786824274642,
+        "sha256": "564d8d79607aefc7eba7051a6be561ee0200d95757490d2f8280c3d2561e94e9"
+      },
+      {
+        "tag": "0061_helcim_reconciliation_retention",
+        "when": 1786829940203,
+        "sha256": "ded92faf1a166a1139e8fcae9e7f1723d40f8113445a65d9785b60d46a12cb33"
+      },
+      {
+        "tag": "0062_youthful_slayback",
+        "when": 1787092826887,
+        "sha256": "451ecd48fc34149115fd81ba0838f13d5bc5297b07922cb4b693e53349e52297"
+      },
+      {
+        "tag": "0063_good_forge",
+        "when": 1787092847053,
+        "sha256": "fbd2cf1478daf19854dc469d9bebc2d8ebe969b8f75a318d9237f2b9dd3380f4"
+      },
+      {
+        "tag": "0064_modern_old_lace",
+        "when": 1787094132224,
+        "sha256": "e93f8b4050ded43a786f960fb680f6f5e9735edbd04c3f7b67e0c0ce95260a47"
+      },
+      {
+        "tag": "0065_dark_kabuki",
+        "when": 1787094836764,
+        "sha256": "7593b3d2075408551968811ec9bbfd0465aa53ad340e60932d7d11a4f7ab7739"
+      },
+      {
+        "tag": "0066_foamy_excalibur",
+        "when": 1787097681783,
+        "sha256": "5eafb751f592cd5b22f4efb26c183eeb9a64a42a9226c8da25c18a6c03633d47"
+      },
+      {
+        "tag": "0067_tranquil_iron_patriot",
+        "when": 1787160103859,
+        "sha256": "30a8d5d5d0e5b9a7b9649ca32508537623a484ea949523957f66b40d9bb0f32d"
+      },
+      {
+        "tag": "0068_familiar_dreaming_celestial",
+        "when": 1787262097936,
+        "sha256": "d1c6b1e6424154c7e36a5b12ab008b6acf6d97a2872e240d8196d49e90dfb5d8"
+      },
+      {
+        "tag": "0069_dizzy_carnage",
+        "when": 1787336787058,
+        "sha256": "225c87e17cca2684355abbaa1885896d729778929e816db7f389063d2a54fe37"
+      },
+      {
+        "tag": "0070_giant_hitman",
+        "when": 1787339761512,
+        "sha256": "d3c45f0c26beba2df84f4bbe1c3075335ef3b8d2938f8c5eea2d83a5c7b0e9f8"
+      },
+      {
+        "tag": "0071_pink_grim_reaper",
+        "when": 1787346471464,
+        "sha256": "2516f094e7fd74126a17aab7d5a464620527d568f60af95361923f1df3fee653"
+      },
+      {
+        "tag": "0072_round_warbound",
+        "when": 1787505810290,
+        "sha256": "180e02ad8c7f8e7c2287315b0c7521d8704aee1ca45029ecad2e0266b7ba5f55"
+      },
+      {
+        "tag": "0073_panoramic_abomination",
+        "when": 1787717618408,
+        "sha256": "3c14639036aaf96c42a5c308fc9a5981dce34f02a3c555a2cf5d72730881723d"
+      },
+      {
+        "tag": "0074_amused_hydra",
+        "when": 1787892578091,
+        "sha256": "5bfa59bd3c3afcf19260f47adb5e7d0bb6954bbb8f0f57c4f6b71a63db96bdf9"
+      },
+      {
+        "tag": "0075_clammy_william_stryker",
+        "when": 1787892609388,
+        "sha256": "d74e52f3f1255ae893a657d4f15da99937bd0dc8b2998d3e0afd716829904923"
+      },
+      {
+        "tag": "0076_organic_kitty_pryde",
+        "when": 1788225229633,
+        "sha256": "2cd123ddeb304814f83f51e80642df392a198bef07df4a596f17721bab3e5ca7"
+      },
+      {
+        "tag": "0077_course_signup",
+        "when": 1790208354053,
+        "sha256": "b1949845f9408560606fb3ef72395496b7c55a01d59038a9cdecdc252552d651"
+      },
+      {
+        "tag": "0078_highlevel_crm",
+        "when": 1792530258475,
+        "sha256": "bfaa61e07f7227f31874016a3bf35e67877820a50a0838680659ea58e07153c3"
+      },
+      {
+        "tag": "0079_highlevel_marketing_ownership",
+        "when": 1792530952883,
+        "sha256": "e0ac5e3dfece876f694ed6ad3a50e65e49a6c5523a872d96794ea1c898f09d73"
+      }
+    ]
+  },
+  "course": {
+    "revision": "4a45e68518e8244a1ce61cd6975ac8b6db5552f7",
+    "journalSha256": "9ecd6b60d9062f4fdc831de1a895f7840cf7c5d2cc602af91d47b2bf19be7f1c",
+    "migrations": [
+      {
+        "tag": "0000_eminent_thunderbolt_ross",
+        "when": 1777940379922,
+        "sha256": "66a51f78abf3bd10fc93a808f4553777dca59513e3ca31de4370c4722376d76a"
+      },
+      {
+        "tag": "0001_tough_sentinels",
+        "when": 1777940913491,
+        "sha256": "d1fc292e26aa876a74b96211011266b9da05c885a5800936b1ee375523da0a6e"
+      },
+      {
+        "tag": "0002_polite_maggott",
+        "when": 1777941047662,
+        "sha256": "a012479823f012748e7298915a760b79453d48b95ae3ead5ccb0c782f2d0e5ae"
+      },
+      {
+        "tag": "0003_amused_human_cannonball",
+        "when": 1777959299014,
+        "sha256": "54f32241434282e165f5f38093e7fc177e694d3b23dc9203c01a8050e414dd0d"
+      },
+      {
+        "tag": "0004_course_api_target_schema",
+        "when": 1783469261259,
+        "sha256": "280ec32b1c6a7ead2683a7c0ce3b9192ea56a32cbe8cb15987666368d6df4aa9"
+      },
+      {
+        "tag": "0005_add_lesson_preview",
+        "when": 1783658988472,
+        "sha256": "f0eb99fa087f9b1376d44a43a4df44715da7716e0b912ddfb0e5cceeebae958a"
+      },
+      {
+        "tag": "0006_add_entitlement_revocation_ledger",
+        "when": 1783716290959,
+        "sha256": "03190485b73c2a32ced3a8d5c765f7c3ff4659fef4bab8716b78cb52dd7496e6"
+      },
+      {
+        "tag": "0007_optional_entitlement_provider",
+        "when": 1783720752877,
+        "sha256": "79d6ba1dd7d140a2be1d67fed7d7d081913e20b46af2e73cd8cd8bb4d67922f1"
+      },
+      {
+        "tag": "0008_add_admin_inspection_indexes",
+        "when": 1783726009116,
+        "sha256": "8bd3d0a039f302a16676c3ca398fb0414fb5594418aa888e0f78954cd9c1a8ae"
+      },
+      {
+        "tag": "0009_add_admin_entitlement_audit",
+        "when": 1783727847499,
+        "sha256": "b67b0675ebac12a8e404a505e86a56bf86a1ec31654b67ac0e0521e9877170eb"
+      },
+      {
+        "tag": "0010_harden_entitlement_audit",
+        "when": 1783730528524,
+        "sha256": "af5e984da68de2b27679cb957c1a5ecd93f1b47f9282fc47a31be7d44e312b9d"
+      },
+      {
+        "tag": "0011_enforce_global_idempotency_references",
+        "when": 1783730706323,
+        "sha256": "02b37449a0bcc0dad47f95a6887f025ec2fa54d9f752bd9dd0ab184521d99cc9"
+      },
+      {
+        "tag": "0012_seal_admin_entitlement_effects",
+        "when": 1783731783285,
+        "sha256": "e846e15f42af6c1d9a288c4914206503493fe7b45e6bc6aa7f9034d42ce966e1"
+      },
+      {
+        "tag": "0013_retain_entitlement_grants",
+        "when": 1783732757091,
+        "sha256": "5516f91c708740873040eed31d2a4c620f15fd6a3f5249f1ab6e84ecc9c3ce8e"
+      },
+      {
+        "tag": "0014_course_community_enrollment_integration",
+        "when": 1786573635639,
+        "sha256": "3d25cf03adfaea40c87293c0329ade3ea275bd6e267b6e1db601887a987558e9"
+      },
+      {
+        "tag": "0015_shared_rate_limit_buckets",
+        "when": 1788980012656,
+        "sha256": "cf8212026106f66c84cb0ec3a4da8fd37bb5a30bd4670b7c40a665311f01c637"
+      },
+      {
+        "tag": "0016_audit_read_only_enrollment_operations",
+        "when": 1788980370346,
+        "sha256": "c5b65009a238f40dee8dc649c0b66ca0d69356928ed954fc10488f9f1aeeec68"
+      }
+    ]
+  },
+  "community": {
+    "revision": "eb855b1fd0eeca823ba9cec6a401a823a4cfd3eb",
+    "journalSha256": "d71fde368b7d389ec060f862f52bf44d95d485e22bb460533d7a824867723395",
+    "migrations": [
+      {
+        "tag": "0000_initial_community_enrollment_projection",
+        "when": 1786573656183,
+        "sha256": "06dad3175c4a6c87083783e5768ee06e587255d35338de3f2e62f25bcfcf791e"
+      },
+      {
+        "tag": "0001_add_operator_audit",
+        "when": 1786574122428,
+        "sha256": "ede96bfcfe7fa889126093332cedee4d0a40abfc135d8b326d29eb39c9b696bb"
+      },
+      {
+        "tag": "0002_add_reconciliation_baseline_and_inspection_audit",
+        "when": 1786575373433,
+        "sha256": "51eca3ccb286d559595d1545bf754d17c47174ee69c1a230478f2fe1a8bacfec"
+      },
+      {
+        "tag": "0003_add_reconciliation_resume_cursor",
+        "when": 1786575623331,
+        "sha256": "0b2375b01a474bd400eb7a8941e4afd6dfcdde97c754454a005547c217a7d4a9"
+      },
+      {
+        "tag": "0004_add_reconciliation_baseline_cutoff",
+        "when": 1786576426291,
+        "sha256": "a0b7f75b35da4f904a1b0f559ace06c74d12a625752bcac90541dfe2052a92b1"
+      },
+      {
+        "tag": "0005_add_reconciliation_baseline_materialized_marker",
+        "when": 1786576927941,
+        "sha256": "354f8acec33b5de1e4ac50042999eae39dbc284e9be8bd1d16e8dcce5895410f"
+      },
+      {
+        "tag": "0006_enforce_reconciliation_baseline_immutability",
+        "when": 1786577338105,
+        "sha256": "c40914bd56fb3df47ef352f693d7d066b34c01614d7384d039de1a8ca56b7a3d"
+      },
+      {
+        "tag": "0007_require_reconciliation_baseline_cutoff",
+        "when": 1786577550687,
+        "sha256": "98d590ca4506301923885fb6ab96ad27ccb375c7d3ff362b1f0f25a58bad04bf"
+      },
+      {
+        "tag": "0008_integrity_staging_and_dedup",
+        "when": 1788977019497,
+        "sha256": "533b3fd84845fcc6bd8e8f0991551354dbf8226bcdc6f023aa0759296850d261"
+      }
+    ]
+  }
+}

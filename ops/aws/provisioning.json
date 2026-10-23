@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "status": "prepared-not-provisioned",
+  "expectedAccountId": "691588646557",
+  "region": "us-east-1",
+  "template": "ops/aws/lightsail-host.cfn.json",
+  "staging": {
+    "stackName": "lash-her-api-staging",
+    "parametersExample": "ops/aws/lightsail-staging.parameters.example.json",
+    "availabilityZone": "us-east-1a",
+    "blueprintId": "ubuntu_24_04",
+    "bundleId": "medium_3_0",
+    "verifiedMonthlyComputeCapUsd": 24,
+    "hostOperator": null,
+    "operatorIpv4Cidr": null,
+    "keyPairName": null,
+    "gatewayDomain": null,
+    "lifecycle": "Create for a test window; preserve evidence and off-host recovery configuration; explicitly delete stack and verify no retained resources. Stopping remains billable."
+  },
+  "production": {
+    "stackName": "lash-her-api-production",
+    "bundleId": null,
+    "hostOperator": null,
+    "operatorIpv4Cidr": null,
+    "keyPairName": null,
+    "gatewayDomain": null,
+    "status": "requires-separate-reviewed-parameters-and-capacity-evidence"
+  },
+  "vercel": {
+    "teamId": "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
+    "productionProjectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+    "stagingProjectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+    "deploymentTarget": "production",
+    "stagingAppEnv": "staging",
+    "productionAppEnv": "production",
+    "stagingFrontendDomain": "staging.lashher.com",
+    "domainBindingStatus": "bound-production-target-verified-dns-configured",
+    "oidcAndSystemEnvironmentSettingsStatus": "approved-and-independent-cli-api-readback-verified",
+    "gitRepository": "princessdardan/lash-her-frontend",
+    "productionBranch": "staging",
+    "firstReleaseManifest": "ops/staging/first-release.json"
+  },
+  "provisioningAuthority": "Administrator-controlled CloudFormation; LashHerDeploymentRole is application-operations-only.",
+  "excludedResources": [
+    "databases",
+    "load-balancer",
+    "NAT-gateway",
+    "Vercel-Static-IPs",
+    "DNS-records",
+    "IAM-roles",
+    "stored-secrets"
+  ],
+  "remainingReleaseControls": [
+    "P1-03 gateway/TLS/OIDC",
+    "P1-04 Docker/Compose/private networking",
+    "P1-07 protected release and schedules",
+    "P1-08 off-host monitoring and recovery"
+  ]
+}

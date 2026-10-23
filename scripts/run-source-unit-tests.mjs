@@ -5,6 +5,9 @@ import { pathToFileURL } from "node:url";
 import process from "node:process";
 
 const SERVER_ONLY_TEST_FILES = new Set([
+  "src/lib/api-integration/response-validation.test.ts",
+  "src/lib/env/application-environment.test.ts",
+  "src/lib/env/staging-email-policy.test.ts",
   "src/lib/highlevel/highlevel.test.ts",
   "src/app/actions/form.test.ts",
   "src/app/api/marketing/unsubscribe/handler.test.ts",

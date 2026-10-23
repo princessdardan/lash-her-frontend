@@ -1,0 +1,244 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-22",
+  "requestScope": "Community staging runtime role, operator-only protected DB handoff, remaining provider configuration preparation",
+  "p1_02Status": "BLOCKED",
+  "requestedHandoffStatus": "complete",
+  "communityRuntimeRole": {
+    "projectId": "still-darkness-27201043",
+    "role": "lash_her_community_staging_runtime",
+    "pooledHost": "ep-fancy-glitter-b81a2g6r-pooler.c-14.us-east-1.aws.neon.tech",
+    "current_user": "lash_her_community_staging_runtime",
+    "rolsuper": false,
+    "rolcreatedb": false,
+    "rolcreaterole": false,
+    "rolreplication": false,
+    "rolbypassrls": false,
+    "rolinherit": false,
+    "public_usage": true,
+    "public_create": false,
+    "role_memberships": 0,
+    "visible_public_tables": 0,
+    "migration_journal_present": false,
+    "clientTlsEncrypted": true,
+    "clientCertificateAuthorized": true,
+    "clientTlsProtocol": "TLSv1.3",
+    "defaultPrivileges": [
+      {
+        "object_type": "S",
+        "privileges": [
+          "SELECT",
+          "USAGE"
+        ]
+      },
+      {
+        "object_type": "r",
+        "privileges": [
+          "DELETE",
+          "INSERT",
+          "SELECT",
+          "UPDATE"
+        ]
+      }
+    ],
+    "runtimeCredentialFileMode": "0600",
+    "ownerCredentialsIncludedInRuntimeFile": false,
+    "frontendBindingCreated": false,
+    "applicationMigrationsRun": false
+  },
+  "releaseStore": {
+    "schemaVersion": 1,
+    "accountId": "691588646557",
+    "region": "us-east-1",
+    "stackName": "lash-her-staging-release-store",
+    "stackId": "arn:aws:cloudformation:us-east-1:691588646557:stack/lash-her-staging-release-store/1d9af8b0-ce5a-11f1-8590-12fffe6163ff",
+    "stackStatus": "UPDATE_COMPLETE",
+    "keyArn": "arn:aws:kms:us-east-1:691588646557:key/2383c0dd-f558-4d01-bb3c-45c89e0338a7",
+    "keyRotationEnabled": true,
+    "terminationProtection": true,
+    "statefulResourceReplacementAndDeletionDenied": true,
+    "operatorArn": "arn:aws:iam::691588646557:user/Dardan",
+    "ciAccessConfigured": false,
+    "hostAccessConfigured": false,
+    "deploymentRoleChanged": false,
+    "automaticCredentialRotationConfigured": false,
+    "persistentCloudTrailTrailConfigured": false,
+    "records": {
+      "CommunityRuntime": {
+        "name": "lash-her/staging/community/runtime",
+        "arn": "arn:aws:secretsmanager:us-east-1:691588646557:secret:lash-her/staging/community/runtime-HsTrfM",
+        "initialized": true,
+        "initialVersionId": "ea666ecf-8a12-3568-9787-d026853e7288",
+        "currentVersionId": "21ffd49f-d7da-4425-b229-e1eae2067b35",
+        "protectedResolverReadOnlyTlsVerified": true,
+        "clientTlsProtocol": "TLSv1.3",
+        "clientCertificateAuthorized": true
+      },
+      "CommunityMigration": {
+        "name": "lash-her/staging/community/migration",
+        "arn": "arn:aws:secretsmanager:us-east-1:691588646557:secret:lash-her/staging/community/migration-CqAA1M",
+        "initialized": true,
+        "initialVersionId": "abcc5981-eae6-3413-c6f5-3d57f8bd8926",
+        "currentVersionId": "78119266-b535-4376-98d5-750dfec47fb0",
+        "protectedResolverReadOnlyTlsVerified": true,
+        "clientTlsProtocol": "TLSv1.3",
+        "clientCertificateAuthorized": true
+      },
+      "FrontendMigration": {
+        "name": "lash-her/staging/frontend/migration",
+        "arn": "arn:aws:secretsmanager:us-east-1:691588646557:secret:lash-her/staging/frontend/migration-qnAr8d",
+        "initialized": true,
+        "initialVersionId": "7707f18d-d40d-897d-4a6a-d4f25241b88b",
+        "currentVersionId": "edc6b621-a82d-4a4b-8408-1357589b1a35",
+        "protectedResolverReadOnlyTlsVerified": true,
+        "clientTlsProtocol": "TLSv1.3",
+        "clientCertificateAuthorized": true
+      }
+    },
+    "privateImportCompletedAt": "2026-10-22T20:56:55.998Z",
+    "accessPoliciesRetained": true,
+    "lastMetadataVerifiedAt": "2026-10-22T21:01:00.308Z",
+    "cloudTrailPutEventsObserved": [
+      {
+        "eventName": "PutSecretValue",
+        "eventTime": "2026-10-22T20:56:56.000Z",
+        "eventId": "c9749583-590a-4d39-b878-afea654a47fe"
+      },
+      {
+        "eventName": "PutSecretValue",
+        "eventTime": "2026-10-22T20:56:55.000Z",
+        "eventId": "21d1a3b4-fd86-46cd-a41c-a0d4fcdd61dc"
+      },
+      {
+        "eventName": "PutSecretValue",
+        "eventTime": "2026-10-22T20:56:55.000Z",
+        "eventId": "a50ea2fd-e1b1-4cd2-b894-bec103208ee7"
+      },
+      {
+        "eventName": "PutSecretValue",
+        "eventTime": "2026-10-22T20:56:39.000Z",
+        "eventId": "1ca70653-9b9e-45b5-bf5b-816e2db053d7"
+      },
+      {
+        "eventName": "PutSecretValue",
+        "eventTime": "2026-10-22T20:56:39.000Z",
+        "eventId": "d277cb0a-9dea-4a46-aff3-be3c44c6d373"
+      }
+    ],
+    "costEstimate": {
+      "checkedDate": "2026-10-22",
+      "currency": "USD",
+      "initialMonthlyStorageBeforeRequestsAndTax": 2.2,
+      "secrets": {
+        "count": 3,
+        "unitPerMonth": 0.4,
+        "subtotalPerMonth": 1.2
+      },
+      "key": {
+        "count": 1,
+        "initialPerMonth": 1,
+        "rotationSurcharge": "First two rotations each add USD 1/month; capped thereafter."
+      },
+      "secretManagerRequestsPer10000": 0.05,
+      "limitations": "Prorated storage; request usage, shared KMS free-tier eligibility, tax/FX and future rotations change total. Not a full application budget.",
+      "sources": [
+        "https://aws.amazon.com/secrets-manager/pricing/",
+        "https://aws.amazon.com/kms/pricing/"
+      ]
+    }
+  },
+  "providerConfiguration": {
+    "path": "ops/staging/providers.json",
+    "status": "prepared-not-activated",
+    "allDeploymentAuthenticationRequiresIngressDecision": true,
+    "remainingOperatorInputs": [
+      "Google Identity and Calendar client/account/test identities",
+      "admin/sender/recipient identities",
+      "isolated Resend contact account or reviewed disabled workflows",
+      "provider webhook registration/signatures and ingress decision",
+      "Mux environment and Course gateway origin"
+    ]
+  },
+  "verification": {
+    "runtimeLivePrivilegeAndClientTlsChecks": "passed",
+    "protectedResolverReadOnlyDatabaseConnections": [
+      "CommunityRuntime",
+      "CommunityMigration",
+      "FrontendMigration"
+    ],
+    "importerUnitTests": 15,
+    "releasePreflightUnitTests": 4,
+    "localPostgres18RuntimeIntegration": {
+      "postOwnerMigrationDefaultGrants": true,
+      "dmlAndSequenceOperations": [
+        "insert",
+        "select",
+        "update",
+        "delete",
+        "identity-sequence"
+      ],
+      "rejectedOperations": [
+        "create-table",
+        "alter-table",
+        "drop-table",
+        "truncate-table",
+        "create-schema",
+        "create-role",
+        "assume-owner"
+      ],
+      "temporaryContainerRemoved": true
+    },
+    "cloudFormation": {
+      "cfnLint": "1.58.0 passed",
+      "serverValidateTemplate": "passed",
+      "guardVersion": "3.2.1",
+      "guardRulesPassed": 4,
+      "negativeFixturesRejected": [
+        "rotation-disabled",
+        "unencrypted-secret",
+        "public-policy-unblocked",
+        "production-namespace",
+        "public-reader",
+        "access-policy-not-retained"
+      ],
+      "liveMetadataAndCurrentVersions": "passed"
+    },
+    "changedMjsLint": "passed",
+    "applicationBuildRunInThisContinuation": false,
+    "fullApplicationSuiteRepeatedInThisContinuation": false,
+    "publicArtifactChecks": {
+      "filesChecked": 21,
+      "privateValueMatches": 0,
+      "localLinksValid": true,
+      "jsonParsed": true,
+      "changedWhitespaceCheck": "passed",
+      "existingMarkdownHardBreakPreserved": true
+    }
+  },
+  "boundaries": {
+    "frontendBindingCreated": false,
+    "ciOrHostAccessGranted": false,
+    "deploymentRolePermissionsExpanded": false,
+    "cloudApplicationMigrationRun": false,
+    "providerRegistrationCreated": false,
+    "emailSent": false,
+    "applicationDeploymentCreated": false,
+    "commitOrPushCreated": false,
+    "productionCredentialsChanged": false
+  },
+  "remainingReleaseGates": [
+    "approved source and immutable artifacts",
+    "reviewed target/lineage/lock controls and protected migrations",
+    "provider identities/accounts/ingress/signatures",
+    "CI/host release handoff trust and permissions",
+    "Lightsail host/operator/private TLS/recovery configuration",
+    "complete paid-resource cost budget",
+    "deployed OIDC/provider/scheduler/smoke evidence"
+  ],
+  "operationalLimits": [
+    "No persistent CloudTrail trail or long-term access alerting configured",
+    "Neon credential rotation is not automated; KMS key rotation is enabled",
+    "Private local import sources/receipt remain mode 0600 temporary operator working material",
+    "Prepared per-record read policies are unattached and cannot override the live unreviewed-reader deny"
+  ]
+}

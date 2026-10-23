@@ -1,6 +1,7 @@
 import "server-only";
 
 import { isSquareCommerceCheckoutEnabled } from "@/lib/env/private-checkout";
+import { assertApplicationProviderEnvironment } from "@/lib/env/application-environment.server";
 
 export const CHITCHATS_REGIONS = [
   "british_columbia",
@@ -133,9 +134,10 @@ export function getChitChatsOperationalIdentity(): ChitChatsOperationalIdentity 
   if (environment !== "staging" && environment !== "production") {
     throw new Error("CHITCHATS_ENVIRONMENT must be staging or production");
   }
-  if (process.env.VERCEL_ENV === "production" && environment !== "production") {
-    throw new Error("Production deployment cannot use Chit Chats staging");
-  }
+  assertApplicationProviderEnvironment("CHITCHATS_ENVIRONMENT", environment, {
+    production: "production",
+    staging: "staging",
+  });
   return {
     clientId: required("CHITCHATS_CLIENT_ID"),
     environment,

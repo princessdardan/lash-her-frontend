@@ -1458,3 +1458,36 @@ test("Square webhook ignores a payment whose reference is not a commerce order",
   assert.equal(response.status, 200);
   assert.deepEqual(recoveries, []);
 });
+
+
+test("Square webhook accepts signatures over the exact protected query URL", async () => {
+  const protectedUrl = `${webhookUrl}?x-vercel-protection-bypass=synthetic-ingress-token`;
+  const rawBody = JSON.stringify({ event_id: "evt_protected", type: "unsupported.test" });
+  const signature = createHmac("sha256", signatureKey).update(`${protectedUrl}${rawBody}`).digest("base64");
+  const calls: unknown[] = [];
+  const handler = createHandler(calls, { getEnv: () => ({ notificationUrl: protectedUrl, webhookSignatureKey: signatureKey }) });
+  const response = await handler(new Request(protectedUrl, { method: "POST", body: rawBody, headers: { "x-square-hmacsha256-signature": signature } }));
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 0);
+});
+
+test("Square mismatch diagnostics retain query matching but never log ingress credentials", async (t) => {
+  const protectedUrl = `${webhookUrl}?x-vercel-protection-bypass=synthetic-ingress-token`;
+  const wrongUrl = "https://wrong.example/api/webhooks/square?x-vercel-protection-bypass=synthetic-old-token";
+  const rawBody = JSON.stringify({ event_id: "evt_protected_mismatch", type: "unsupported.test" });
+  const signature = createHmac("sha256", signatureKey).update(`${protectedUrl}${rawBody}`).digest("base64");
+  const logged: unknown[][] = [];
+  t.mock.method(console, "error", (...args: unknown[]) => logged.push(args));
+  const calls: unknown[] = [];
+  const handler = createHandler(calls, { getEnv: () => ({ notificationUrl: wrongUrl, webhookSignatureKey: signatureKey }) });
+  const response = await handler(new Request(protectedUrl, { method: "POST", body: rawBody, headers: { "x-square-hmacsha256-signature": signature } }));
+  assert.equal(response.status, 401);
+  assert.equal(calls.length, 0);
+  assert.equal(logged.length, 1);
+  const text = JSON.stringify(logged);
+  assert(text.includes("configured notificationUrl"));
+  assert(text.includes("https://wrong.example/api/webhooks/square"));
+  assert(!text.includes("synthetic-ingress-token"));
+  assert(!text.includes("synthetic-old-token"));
+  assert(!text.includes("x-vercel-protection-bypass"));
+});

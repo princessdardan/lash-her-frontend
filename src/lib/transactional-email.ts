@@ -1,6 +1,7 @@
 import "server-only";
 
 import { Resend } from "resend";
+import { assertStagingEmailRecipients } from "@/lib/env/staging-email-policy.mjs";
 
 export interface TransactionalEmailTag {
   name: string;
@@ -73,6 +74,7 @@ export function getResendClient(): Resend {
 export async function sendTransactionalEmail(
   input: SendTransactionalEmailInput,
 ): Promise<SendTransactionalEmailResult> {
+  assertStagingEmailRecipients(input.to);
   const config = getEmailConfig();
   if (input.template === undefined && input.html === undefined) {
     throw new Error("Transactional email requires html or a Resend template");
@@ -175,7 +177,7 @@ export function telHref(phone: string): string {
 }
 
 export function getTransactionalEmailEnvironment(): string {
-  return process.env.VERCEL_ENV ?? process.env.NODE_ENV ?? "development";
+  return process.env.APP_ENV ?? process.env.VERCEL_ENV ?? process.env.NODE_ENV ?? "development";
 }
 
 function getRequiredEnv(name: string): string {

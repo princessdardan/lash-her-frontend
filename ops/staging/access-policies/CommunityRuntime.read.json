@@ -1,0 +1,32 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadOneStagingRecord",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret"
+      ],
+      "Resource": "arn:aws:secretsmanager:us-east-1:691588646557:secret:lash-her/staging/community/runtime-HsTrfM"
+    },
+    {
+      "Sid": "DecryptOneStagingRecordThroughSecretsManager",
+      "Effect": "Allow",
+      "Action": "kms:Decrypt",
+      "Resource": "arn:aws:kms:us-east-1:691588646557:key/2383c0dd-f558-4d01-bb3c-45c89e0338a7",
+      "Condition": {
+        "StringEquals": {
+          "kms:ViaService": "secretsmanager.us-east-1.amazonaws.com",
+          "kms:EncryptionContext:SecretARN": "arn:aws:secretsmanager:us-east-1:691588646557:secret:lash-her/staging/community/runtime-HsTrfM"
+        }
+      }
+    },
+    {
+      "Sid": "DescribeStagingKey",
+      "Effect": "Allow",
+      "Action": "kms:DescribeKey",
+      "Resource": "arn:aws:kms:us-east-1:691588646557:key/2383c0dd-f558-4d01-bb3c-45c89e0338a7"
+    }
+  ]
+}

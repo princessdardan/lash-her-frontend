@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [main, staging]
+    branches: [main, staging, codex/p1-02-staging-release]
   pull_request:
     branches: [main]
 jobs:
@@ -14,6 +14,8 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - run: npm run contracts:check
+      - run: npm run test:staging-release
       - run: npx tsc --noEmit
       - run: npm run lint
       - run: npm run test:unit
@@ -711,3 +713,49 @@ jobs:
         run: test "$DEPENDENCIES_PASSED" = "true"
         env:
           DEPENDENCIES_PASSED: ${{ needs.quality-and-unit.result == 'success' && needs.database.result == 'success' && needs.build.result == 'success' && needs.browser-tests.result == 'success' }}
+
+  staging-migration:
+    name: protected staging frontend migration
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/codex/p1-02-staging-release')
+    needs: [quality-and-unit, database, audit, build, browser]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    environment: staging-migrations
+    concurrency:
+      group: frontend-staging-database-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Verify migration job refusal cases
+        run: node --import tsx --test ops/staging/tests/migrate-frontend.test.ts
+      - name: Record immutable migration source artifact
+        run: |
+          git archive --format=tar HEAD drizzle scripts/migrate-private-db.ts src/lib/private-db/migration-lineage.ts ops/staging/migrate-frontend.ts package.json package-lock.json > staging-migration-source.tar
+          sha256sum staging-migration-source.tar > staging-migration-source.sha256
+      - name: Apply and verify the approved staging migration chain
+        run: node --import tsx ops/staging/migrate-frontend.ts
+        env:
+          STAGING_MIGRATION_EXPECTED_COMMIT: ${{ vars.STAGING_MIGRATION_EXPECTED_COMMIT }}
+          STAGING_MIGRATION_RECOVERY_REFERENCE: ${{ vars.STAGING_MIGRATION_RECOVERY_REFERENCE }}
+          STAGING_MIGRATION_DATABASE_URL: ${{ secrets.STAGING_MIGRATION_DATABASE_URL }}
+      - name: Preserve sanitized release evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: staging-migration-${{ github.sha }}
+          path: |
+            staging-migration-source.tar
+            staging-migration-source.sha256
+            staging-migration-receipt.json
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,273 @@
+{
+  "schemaVersion": 1,
+  "status": "isolated-google-and-resend-configured; deployment-and-deliveries-held",
+  "origin": "https://staging.lashher.com",
+  "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+  "activationAllowed": false,
+  "ingress": {
+    "allDeploymentsRequireVercelAuthentication": true,
+    "reviewedProviderAccessMethod": "provider-specific Vercel automation bypass plus application signatures",
+    "bypassTokenCreated": true,
+    "callbackUrlsContainSecrets": true,
+    "requiredDecision": null,
+    "configurationPlan": "ops/staging/webhook-ingress.json",
+    "approvalStatus": "explicitly-approved-including-required-system-environment-variable",
+    "providerBindingsConfigured": [
+      "square",
+      "sanity",
+      "resend"
+    ],
+    "selectedSystemEnvironmentProvider": "square",
+    "deployedVerificationComplete": false
+  },
+  "googleIdentity": {
+    "status": "dedicated-client-and-staging-environment-configured",
+    "clientName": "Lash Her Staging Identity",
+    "clientType": "web",
+    "javascriptOrigins": [
+      "https://staging.lashher.com"
+    ],
+    "redirectUris": [
+      "https://staging.lashher.com/api/auth/callback/google"
+    ],
+    "scopes": [
+      "openid",
+      "profile",
+      "email"
+    ],
+    "environmentVariables": {
+      "AUTH_GOOGLE_ID": "185770842371-d3thak0b2btgb77pngj968nvhpjkqmgf.apps.googleusercontent.com",
+      "AUTH_GOOGLE_SECRET": "sensitive; configured",
+      "ADMIN_OWNER_EMAILS": "configured privately; one reviewed administrator"
+    },
+    "productionClientReuseAllowed": false,
+    "googleProjectNumber": "185770842371",
+    "projectSelection": "user-authorized-new-project-under-designated-staging-account; supersedes-existing-project-selection",
+    "googleProjectId": "lash-her-staging-20261022",
+    "supportEmail": "designated staging account",
+    "publishingStatus": "testing",
+    "billingAccountAttached": false,
+    "clientId": "185770842371-d3thak0b2btgb77pngj968nvhpjkqmgf.apps.googleusercontent.com",
+    "credentialsInstalledAsSensitive": true,
+    "userType": "external",
+    "initialSecretDisabled": true,
+    "testUsersSaved": true,
+    "consentScopesSaved": true,
+    "testUserCount": 4,
+    "adminOwnerEmailsSha256": "9fad4b0131ae1c778735cad947bd605466343131d0ca704bddc31977f75b23ed"
+  },
+  "googleCalendar": {
+    "status": "dedicated-client-and-staging-environment-configured",
+    "clientName": "Lash Her Staging Calendar",
+    "clientType": "web",
+    "redirectUris": [
+      "https://staging.lashher.com/api/booking/oauth/callback"
+    ],
+    "scopes": [
+      "openid",
+      "email",
+      "https://www.googleapis.com/auth/calendar.events",
+      "https://www.googleapis.com/auth/calendar.calendarlist.readonly"
+    ],
+    "environmentVariables": {
+      "GOOGLE_CLIENT_ID": "185770842371-lg0fktlf96u88pnqjnoom83st75btv4d.apps.googleusercontent.com",
+      "GOOGLE_CLIENT_SECRET": "sensitive; configured",
+      "GOOGLE_REDIRECT_URI": "https://staging.lashher.com/api/booking/oauth/callback"
+    },
+    "testCalendars": [],
+    "productionTokenReuseAllowed": false,
+    "googleProjectNumber": "185770842371",
+    "googleProjectId": "lash-her-staging-20261022",
+    "clientId": "185770842371-lg0fktlf96u88pnqjnoom83st75btv4d.apps.googleusercontent.com",
+    "credentialsInstalledAsSensitive": true,
+    "testCalendarOwner": "sole reviewed staging administrator; private handoff",
+    "calendarConnectionCreated": false,
+    "calendarApiEnabled": true,
+    "testUserCount": 4
+  },
+  "square": {
+    "status": "disabled-registration-and-protected-ingress-configured",
+    "environment": "sandbox",
+    "locationId": "LE2H76M5V90AM",
+    "signatureEnvironmentVariable": "SQUARE_WEBHOOK_SIGNATURE_KEY",
+    "request": {
+      "method": "POST",
+      "url": "https://connect.squareupsandbox.com/v2/webhooks/subscriptions",
+      "headersWithoutAuthorization": {
+        "Square-Version": "2026-05-20",
+        "Content-Type": "application/json"
+      },
+      "generateIdempotencyKeyAtExecution": true,
+      "body": {
+        "subscription": {
+          "name": "Lash Her Staging",
+          "enabled": false,
+          "event_types": [
+            "payment.created",
+            "payment.updated",
+            "order.updated",
+            "invoice.payment_made",
+            "refund.created",
+            "refund.updated"
+          ],
+          "notification_url": "https://staging.lashher.com/api/webhooks/square",
+          "api_version": "2026-05-20"
+        }
+      }
+    },
+    "executionGates": [
+      "reviewed-source-plan",
+      "reviewed-provider-ingress",
+      "subscription-disabled-at-registration"
+    ],
+    "signatureUrlMustMatchRegisteredUrlExactly": true,
+    "activationGates": [
+      "deployed-signature-handler",
+      "protected-migrations-complete",
+      "sandbox-signature-and-reconciliation-checks"
+    ],
+    "webhookId": "wbhk_b8cf77ce0a5142b38b93715c05ede7d5",
+    "webhookEnabled": false,
+    "legacySandboxCallbackReviewPending": true,
+    "signingKeyInstalledAsSensitive": true
+  },
+  "sanity": {
+    "status": "disabled-registration-and-protected-ingress-configured",
+    "projectId": "7o23yrvk",
+    "dataset": "staging-2026-05-10",
+    "request": {
+      "method": "POST",
+      "url": "https://7o23yrvk.api.sanity.io/v2026-03-24/hooks/projects/7o23yrvk",
+      "bodyWithoutSecrets": {
+        "type": "document",
+        "name": "Lash Her Staging editorial revalidation",
+        "url": "https://staging.lashher.com/api/revalidate",
+        "dataset": "staging-2026-05-10",
+        "rule": {
+          "on": [
+            "create",
+            "update",
+            "delete"
+          ],
+          "filter": "coalesce(after()._type, before()._type) in [\"homePage\", \"contactPage\", \"galleryPage\", \"trainingPage\", \"trainingProgramsPage\", \"trainingProgram\", \"shortCourse\", \"mux.videoAsset\", \"productsPage\", \"productCollection\", \"promotionCode\", \"policyPage\", \"product\", \"service\", \"globalSettings\", \"mainMenu\"] && !(coalesce(after()._id, before()._id) in path(\"drafts.**\")) && !(coalesce(after()._id, before()._id) in path(\"versions.**\"))",
+          "projection": "{\"_id\": coalesce(after()._id, before()._id), \"_type\": coalesce(after()._type, before()._type)}"
+        },
+        "apiVersion": "v2026-03-24",
+        "httpMethod": "POST",
+        "includeDrafts": false,
+        "includeAllVersions": false,
+        "isDisabledByUser": true
+      },
+      "requiredPrivateInjection": {
+        "secret": "SANITY_WEBHOOK_SECRET"
+      },
+      "authorizationRequiresProjectWebhooksCreateGrant": true
+    },
+    "executionGates": [
+      "signature-secret-injection",
+      "reviewed-provider-ingress",
+      "subscription-disabled-at-registration"
+    ],
+    "activationGates": [
+      "deployed-handler-and-create-update-delete-checks"
+    ],
+    "webhookId": "5a1KWQjkVBYLeAU3",
+    "webhookDisabled": true
+  },
+  "resend": {
+    "status": "isolated-account-domain-segment-templates-and-disabled-protected-webhook-configured",
+    "sendingPermission": "full_access",
+    "sendingDomain": "mail.staging.lashher.com",
+    "allowedRecipients": [
+      "delivered@resend.dev"
+    ],
+    "environmentVariables": {
+      "FROM_EMAIL": "Lash Her Staging <staging@mail.staging.lashher.com>",
+      "ADMIN_EMAIL": "delivered@resend.dev",
+      "RESEND_WEBHOOK_SECRET": "sensitive; configured",
+      "RESEND_SEGMENT_MARKETING_ID": "fc9449f7-ac42-443c-9811-813524e9572d"
+    },
+    "requestPlanOnly": {
+      "method": "POST",
+      "url": "https://api.resend.com/webhooks",
+      "body": {
+        "endpoint": "https://staging.lashher.com/api/webhooks/resend",
+        "events": [
+          "contact.updated"
+        ]
+      },
+      "createStatus": "applied-and-immediately-disabled-in-empty-isolated-account"
+    },
+    "executionGates": [],
+    "productionContactsMayBeImported": false,
+    "emailSent": false,
+    "disableRequestPlanOnly": {
+      "method": "PATCH",
+      "urlTemplate": "https://api.resend.com/webhooks/{new-staging-webhook-id}",
+      "body": {
+        "status": "disabled"
+      }
+    },
+    "activationGates": [
+      "deployed-handler",
+      "staging-only-segment-and-contact-workflow-verification"
+    ],
+    "dashboardLoginVerified": true,
+    "additionalTeamRequiresPaidPlan": true,
+    "minimumQuotedTransactionalTeamPricePerMonth": 20,
+    "minimumQuotedMarketingTeamPricePerMonth": 40,
+    "quoteCurrencyDisplay": "$; no currency label in console",
+    "isolationChoice": "user-selected-existing-separate-account",
+    "newTeamCreated": false,
+    "subscriptionPurchased": false,
+    "requestedAccountAlias": "dardanlashher",
+    "dashboardTeamVerified": true,
+    "domainId": "d7371c9b-b16d-41d8-b9e8-3286b58eb432",
+    "keyId": "c133ba26-4f99-4450-beab-49912e586d3a",
+    "fullAccessKeyApproved": true,
+    "stagingKeyInstalled": true,
+    "productionAccountCredentialsInstalled": false,
+    "domainStatus": "verified",
+    "contactCountAtIsolationVerification": 0,
+    "isolationEvidence": "ops/staging/resend-isolation.json",
+    "templatesPublished": 11,
+    "webhookId": "333dea10-e8c3-44a5-bb93-bf2d4c604811",
+    "webhookStatus": "disabled",
+    "protectedIngressBound": true
+  },
+  "mux": {
+    "status": "isolated-environment-and-gateway-origin-required",
+    "environmentName": "Lash Her Staging",
+    "courseWebhookPath": "/v1/webhooks/mux",
+    "courseGatewayOrigin": null,
+    "frontendOrigin": "https://staging.lashher.com",
+    "events": [
+      "video.upload.asset_created",
+      "video.asset.ready",
+      "video.asset.errored"
+    ],
+    "environmentVariables": {
+      "MUX_TOKEN_ID": null,
+      "MUX_TOKEN_SECRET": null,
+      "MUX_WEBHOOK_SECRET": null,
+      "MUX_SIGNING_KEY_ID": null,
+      "MUX_SIGNING_PRIVATE_KEY": null,
+      "MUX_CORS_ORIGIN": "https://staging.lashher.com"
+    },
+    "productionCredentialsMayBeReused": false
+  },
+  "disabledProviders": {
+    "HIGHLEVEL_SYNC_ENABLED": "false",
+    "HIGHLEVEL_MARKETING_ENABLED": "false",
+    "CHITCHATS_SHIPPING_ENABLED": "false",
+    "CHITCHATS_CHECKOUT_ENABLED": "false",
+    "SERVICE_BOOKING_SQUARE_ENABLED": "false",
+    "SERVICE_BOOKING_SQUARE_CARD_ON_FILE_ENABLED": "false"
+  },
+  "appliedInThisPreparation": {
+    "providerRegistrations": 3,
+    "emailsSent": 0,
+    "deployments": 0,
+    "applicationMigrations": 0
+  }
+}

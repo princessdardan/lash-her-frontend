@@ -1,4 +1,5 @@
 import nextEnv from "@next/env";
+import { resolveApplicationEnvironment, SANITY_PROJECT_BINDINGS } from "../src/lib/env/application-environment.mjs";
 
 const { loadEnvConfig } = nextEnv;
 
@@ -6,7 +7,7 @@ loadEnvConfig(process.cwd());
 
 const expectedDatasets = {
   production: "production",
-  preview: "staging-2026-05-10",
+  staging: "staging-2026-05-10",
 };
 
 const publicSanityEnvVars = [
@@ -98,8 +99,18 @@ const urlEnvVars = [
 const emailEnvVars = ["FROM_EMAIL", "ADMIN_EMAIL"];
 
 const vercelEnv = process.env.VERCEL_ENV;
-const expectedDataset = expectedDatasets[vercelEnv];
-const isLaunchEnvironment = expectedDataset !== undefined;
+const errors = [];
+let appEnv;
+try {
+  appEnv = resolveApplicationEnvironment(process.env);
+} catch (error) {
+  errors.push(error.message);
+}
+const expectedDataset = expectedDatasets[appEnv];
+const isLaunchEnvironment =
+  vercelEnv === "production" ||
+  vercelEnv === "preview" ||
+  process.env.VERCEL === "1";
 const paymentGatewayMode = process.env.PAYMENT_GATEWAY_MODE ?? "live";
 const isPaymentMockMode = paymentGatewayMode === "mock";
 const serviceBookingSquareEnabled = process.env.SERVICE_BOOKING_SQUARE_ENABLED;
@@ -127,8 +138,6 @@ const requiredEnvVars = isLaunchEnvironment
       ...(isChitchatsShippingEnabled ? chitchatsLaunchEnvVars : []),
     ]
   : publicSanityEnvVars;
-
-const errors = [];
 
 for (const name of new Set(requiredEnvVars)) {
   if (!hasValue(process.env[name])) {
@@ -203,6 +212,20 @@ if (
 }
 
 if (isLaunchEnvironment) {
+  if (
+    vercelEnv === "production" &&
+    (appEnv === "staging" || appEnv === "production")
+  ) {
+    const expectedOrigin =
+      appEnv === "production"
+        ? "https://lashher.com"
+        : "https://staging.lashher.com";
+    if (process.env.NEXT_PUBLIC_SITE_URL !== expectedOrigin) {
+      errors.push(
+        `Invalid env var: ${appEnv} Production target requires NEXT_PUBLIC_SITE_URL=${expectedOrigin}`,
+      );
+    }
+  }
   for (const name of urlEnvVars) {
     if (hasValue(process.env[name])) {
       validateUrl(name, process.env[name]);
@@ -266,11 +289,13 @@ if (isLaunchEnvironment) {
     // Square sandbox. Preview/staging may still use sandbox.
     if (
       !isPaymentMockMode &&
-      vercelEnv === "production" &&
-      process.env.SQUARE_ENVIRONMENT !== "production"
+      appEnv &&
+      appEnv !== "local" &&
+      process.env.SQUARE_ENVIRONMENT !==
+        (appEnv === "production" ? "production" : "sandbox")
     ) {
       errors.push(
-        "Invalid env var: production deployment requires SQUARE_ENVIRONMENT=production",
+        `Invalid env var: ${appEnv} deployment requires SQUARE_ENVIRONMENT=${appEnv === "production" ? "production" : "sandbox"}`,
       );
     }
   }
@@ -286,7 +311,10 @@ if (isLaunchEnvironment) {
     }
   }
 
-  if (isSquareCommerceEnabled && hasValue(process.env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL)) {
+  if (
+    isSquareCommerceEnabled &&
+    hasValue(process.env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL)
+  ) {
     validateHttpsUrl(
       "SQUARE_SERVICE_BOOKING_WEBHOOK_URL",
       process.env.SQUARE_SERVICE_BOOKING_WEBHOOK_URL,
@@ -303,11 +331,12 @@ if (isLaunchEnvironment) {
       );
     }
     if (
-      vercelEnv === "production" &&
-      process.env.CHITCHATS_ENVIRONMENT !== "production"
+      appEnv &&
+      appEnv !== "local" &&
+      process.env.CHITCHATS_ENVIRONMENT !== appEnv
     ) {
       errors.push(
-        "Invalid env var: production deployment requires CHITCHATS_ENVIRONMENT=production",
+        `Invalid env var: ${appEnv} deployment requires CHITCHATS_ENVIRONMENT=${appEnv}`,
       );
     }
     if (
@@ -377,7 +406,10 @@ function hasValue(value) {
 }
 
 function validateProjectId(value) {
-  if (value !== "3auncj84") {
+  const expectedProject = appEnv === "staging"
+    ? SANITY_PROJECT_BINDINGS.stagingProjectId
+    : SANITY_PROJECT_BINDINGS.productionProjectId;
+  if (value !== expectedProject) {
     errors.push(
       "Malformed env var: NEXT_PUBLIC_SANITY_PROJECT_ID must match launch project ID",
     );
@@ -476,4 +508,3 @@ function validateHttpsUrl(name, value) {
     // validateUrl already records the error.
   }
 }
-

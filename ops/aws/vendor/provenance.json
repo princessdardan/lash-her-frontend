@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/aws/agent-toolkit-for-aws",
+  "revision": "8abb89d6d4e52017eda516748b97dbbea7dffcb6",
+  "path": "plugins/aws-core/com.anthropic.claude-code/hooks/secret-safety.py",
+  "sha256": "d79ed82f6acd05e3c665c5a4ee8c28a09b875b01710293388b4abedaebdd8ffd",
+  "license": "Apache-2.0"
+}

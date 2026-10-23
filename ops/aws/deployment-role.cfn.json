@@ -1,0 +1,145 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Lash Her application deployment access - operate tagged Lightsail hosts without infrastructure bootstrap or IAM administration.",
+  "Metadata": {
+    "AWSToolsMetrics": {
+      "AWSAgentToolkit": "aws-cloudformation@3"
+    },
+    "com.aws.cloudformation.Context": {
+      "arch": "Operator assumes a short-lived role for SSH application releases to administrator-provisioned Lightsail hosts.",
+      "must": [
+        "Trust only the named operator in this account; no CI federation until exact protected workflow claims exist.",
+        "Host writes and temporary SSH access require Project=lash-her and Environment=staging or production.",
+        "The operator role cannot create, delete, retag, or reconfigure host firewalls, manage IAM, or read stored secrets.",
+        "Cloud workloads are not provisioned by this stack."
+      ],
+      "ref": [
+        { "at": "docs/api-integration/decisions/2026-10-17-lightsail-ingress.md", "has": "Lightsail and GHCR deployment baseline" }
+      ]
+    }
+  },
+  "Parameters": {
+    "OperatorUserName": {
+      "Type": "String",
+      "Default": "Dardan",
+      "AllowedValues": ["Dardan"],
+      "Description": "Existing IAM user permitted to assume the deployment role."
+    },
+    "DeploymentRoleName": {
+      "Type": "String",
+      "Default": "LashHerDeploymentRole",
+      "AllowedValues": ["LashHerDeploymentRole"],
+      "Description": "Stable role name referenced by the local deployment profile."
+    }
+  },
+  "Resources": {
+    "DeploymentRole": {
+      "Type": "AWS::IAM::Role",
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "why": "A stable named role supports the local role profile. Separate bootstrap authority prevents deployment automation from claiming unrelated hosts through tags.",
+          "must": [
+            "No resource creation or ownership-tag mutation permissions.",
+            "The four resource-level actions require both ownership and environment tags.",
+            "All permitted Lightsail operations use the stack region; metadata reads require wildcard resources because Lightsail does not support resource-level scoping for these APIs.",
+            "Keep the temporary SSH-access response inside a deployment process; it contains private credentials."
+          ],
+          "mutable": "review-required"
+        }
+      },
+      "Properties": {
+        "RoleName": { "Ref": "DeploymentRoleName" },
+        "Path": "/lash-her/",
+        "Description": "Application releases to owned Lash Her Lightsail hosts; infrastructure bootstrap remains separate.",
+        "MaxSessionDuration": 3600,
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "ExistingOperatorOnly",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": { "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:user/${OperatorUserName}" }
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "LashHerDeploymentOperations",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "InspectDeploymentHosts",
+                  "Effect": "Allow",
+                  "Action": [
+                    "lightsail:GetBlueprints",
+                    "lightsail:GetBundles",
+                    "lightsail:GetInstance",
+                    "lightsail:GetInstancePortStates",
+                    "lightsail:GetInstanceState",
+                    "lightsail:GetInstances",
+                    "lightsail:GetOperation",
+                    "lightsail:GetOperations",
+                    "lightsail:GetOperationsForResource",
+                    "lightsail:GetRegions",
+                    "lightsail:GetStaticIp",
+                    "lightsail:GetStaticIps"
+                  ],
+                  "Resource": "*",
+                  "Condition": {
+                    "StringEquals": { "aws:RequestedRegion": { "Ref": "AWS::Region" } }
+                  }
+                },
+                {
+                  "Sid": "OperateOwnedDeploymentHosts",
+                  "Effect": "Allow",
+                  "Action": [
+                    "lightsail:GetInstanceAccessDetails",
+                    "lightsail:RebootInstance",
+                    "lightsail:StartInstance",
+                    "lightsail:StopInstance"
+                  ],
+                  "Resource": { "Fn::Sub": "arn:${AWS::Partition}:lightsail:${AWS::Region}:${AWS::AccountId}:Instance/*" },
+                  "Condition": {
+                    "StringEquals": {
+                      "aws:RequestedRegion": { "Ref": "AWS::Region" },
+                      "aws:ResourceTag/Project": "lash-her",
+                      "aws:ResourceTag/Environment": ["staging", "production"]
+                    }
+                  }
+                },
+                {
+                  "Sid": "VerifyDeploymentIdentity",
+                  "Effect": "Allow",
+                  "Action": "sts:GetCallerIdentity",
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          { "Key": "Project", "Value": "lash-her" },
+          { "Key": "Purpose", "Value": "application-deployment" }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "DeploymentRoleArn": {
+      "Description": "Role assumed by the lash-her-deploy CLI profile.",
+      "Value": { "Fn::GetAtt": ["DeploymentRole", "Arn"] }
+    },
+    "DeploymentRegion": {
+      "Description": "Only this region is allowed for Lightsail operations.",
+      "Value": { "Ref": "AWS::Region" }
+    },
+    "RequiredHostTags": {
+      "Description": "A bootstrap administrator must set these tags before role-based host deployment is possible.",
+      "Value": "Project=lash-her; Environment=staging or production"
+    }
+  }
+}

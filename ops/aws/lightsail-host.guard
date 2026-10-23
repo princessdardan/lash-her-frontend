@@ -1,0 +1,41 @@
+# Project policy for the prepared host template, not a general AWS certification.
+let hosts = Resources.*[ Type == 'AWS::Lightsail::Instance' ]
+let addresses = Resources.*[ Type == 'AWS::Lightsail::StaticIp' ]
+
+rule dedicated_stateless_host {
+  %hosts !empty
+  %addresses !empty
+  Resources.*.Type IN ['AWS::Lightsail::Instance', 'AWS::Lightsail::StaticIp']
+  %hosts.Properties {
+    BlueprintId == 'ubuntu_24_04'
+    KeyPairName.Ref == 'KeyPairName'
+    some Tags[*] { Key == 'Project' Value == 'lash-her' }
+    some Tags[*] { Key == 'Environment' Value.Ref == 'Environment' }
+    some Tags[*] { Key == 'HostOperator' Value.Ref == 'HostOperator' }
+  }
+  Parameters.OperatorIpv4Cidr.Default not exists
+  Parameters.KeyPairName.Default not exists
+  Parameters.HostOperator.Default not exists
+}
+
+rule only_gateway_https_and_restricted_ssh {
+  %hosts.Properties.Networking.Ports[*] {
+    Protocol == 'tcp'
+    FromPort IN [22, 443]
+    ToPort IN [22, 443]
+    Ipv6Cidrs empty
+    CidrListAliases not exists
+    when FromPort == 22 {
+      ToPort == 22
+      Cidrs == [{ 'Ref': 'OperatorIpv4Cidr' }]
+    }
+    when FromPort == 443 {
+      ToPort == 443
+      Cidrs == ['0.0.0.0/0']
+    }
+  }
+}
+
+rule address_belongs_to_this_host {
+  %addresses.Properties.AttachedTo.Ref == 'ApiHost'
+}

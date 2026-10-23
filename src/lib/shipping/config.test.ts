@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { VERCEL_PROJECT_BINDINGS } from "@/lib/env/application-environment.mjs";
 
 import {
   CHITCHATS_REGIONS,
@@ -25,12 +26,20 @@ test("operational identity keeps region out of provider credentials", () => {
     environment: process.env.CHITCHATS_ENVIRONMENT,
     region: process.env.CHITCHATS_REGION,
     vercelEnvironment: process.env.VERCEL_ENV,
+    appEnv: process.env.APP_ENV,
+    teamId: process.env.APP_VERCEL_TEAM_ID,
+    targetEnv: process.env.VERCEL_TARGET_ENV,
+    projectId: process.env.VERCEL_PROJECT_ID,
   };
   try {
     process.env.CHITCHATS_CLIENT_ID = "123456";
     process.env.CHITCHATS_ENVIRONMENT = "staging";
     process.env.CHITCHATS_REGION = "ontario_manitoba";
     process.env.VERCEL_ENV = "preview";
+    process.env.APP_ENV = "staging";
+    process.env.APP_VERCEL_TEAM_ID = VERCEL_PROJECT_BINDINGS.teamId;
+    process.env.VERCEL_TARGET_ENV = "preview";
+    process.env.VERCEL_PROJECT_ID = VERCEL_PROJECT_BINDINGS.productionProjectId;
     assert.deepEqual(getChitChatsOperationalIdentity(), {
       clientId: "123456",
       environment: "staging",
@@ -41,6 +50,10 @@ test("operational identity keeps region out of provider credentials", () => {
     restore("CHITCHATS_ENVIRONMENT", previous.environment);
     restore("CHITCHATS_REGION", previous.region);
     restore("VERCEL_ENV", previous.vercelEnvironment);
+    restore("APP_ENV", previous.appEnv);
+    restore("APP_VERCEL_TEAM_ID", previous.teamId);
+    restore("VERCEL_TARGET_ENV", previous.targetEnv);
+    restore("VERCEL_PROJECT_ID", previous.projectId);
   }
 });
 

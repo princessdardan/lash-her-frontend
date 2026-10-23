@@ -1,0 +1,171 @@
+{
+  "accountAlias": "dardanlashher",
+  "keyId": "c133ba26-4f99-4450-beab-49912e586d3a",
+  "permission": "full_access",
+  "stagingKeyInstalled": true,
+  "targets": [
+    "production",
+    "preview"
+  ],
+  "domain": {
+    "object": "domain",
+    "id": "d7371c9b-b16d-41d8-b9e8-3286b58eb432",
+    "name": "mail.staging.lashher.com",
+    "created_at": "2026-10-22 22:05:40.008265+00",
+    "status": "verified",
+    "capabilities": {
+      "sending": "enabled",
+      "receiving": "disabled"
+    },
+    "records": [
+      {
+        "record": "DKIM",
+        "name": "resend._domainkey.mail.staging",
+        "value": "p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCcjpdas9QlSXQd1Dt/rFdvcmfcjemeVa/q5yFaN3BRRARKUSYI1ByPYU2FV1E+YWdLpSFwd2aYdwJwfnvH/YUcE0Xr5i4sADcI5DseVb7l7CUfWAN12U4+p7DKTJeAuSjn76O+AghUSl1nGxZEHQORabTVBbmdqR//TkOOgT7Z4wIDAQAB",
+        "type": "TXT",
+        "status": "verified",
+        "ttl": "Auto"
+      },
+      {
+        "record": "SPF",
+        "name": "send.mail.staging",
+        "type": "MX",
+        "ttl": "60",
+        "status": "verified",
+        "value": "feedback-smtp.us-east-1.amazonses.com",
+        "priority": 10
+      },
+      {
+        "record": "SPF",
+        "name": "send.mail.staging",
+        "value": "v=spf1 include:amazonses.com ~all",
+        "type": "TXT",
+        "ttl": "60",
+        "status": "verified"
+      },
+      {
+        "record": "SPF",
+        "name": "rsend.mail.staging",
+        "value": "send.forge.rmta.net",
+        "type": "CNAME",
+        "status": "verified",
+        "ttl": "60"
+      }
+    ],
+    "region": "us-east-1",
+    "open_tracking": false,
+    "click_tracking": false
+  },
+  "segment": {
+    "object": "segment",
+    "id": "fc9449f7-ac42-443c-9811-813524e9572d",
+    "name": "Lash Her Staging marketing"
+  },
+  "contactsImported": 0,
+  "emailsSent": 0,
+  "deploymentCreated": false,
+  "dns": {
+    "recordsAdded": [
+      {
+        "id": "rec_bb016df2e26d0dacaafbd304",
+        "name": "rsend.mail.staging",
+        "type": "CNAME"
+      },
+      {
+        "id": "rec_5866b1f8327aebdc26b72722",
+        "name": "send.mail.staging",
+        "type": "TXT"
+      },
+      {
+        "id": "rec_2288dc0b3a2654cb22bee196",
+        "name": "send.mail.staging",
+        "type": "MX"
+      },
+      {
+        "id": "rec_30b51c9c4afb9dcf7c7abbb2",
+        "name": "resend._domainkey.mail.staging",
+        "type": "TXT"
+      }
+    ],
+    "existingRecordsRetained": true,
+    "verificationRequested": true,
+    "recordCount": 4
+  },
+  "templates": [
+    {
+      "envVar": "RESEND_TEMPLATE_BOOKING_CONFIRMATION_ID",
+      "id": "a90c6882-2981-40cd-bfab-4dcdfcd665cb",
+      "name": "Staging - Lash Her booking confirmation",
+      "published": true
+    },
+    {
+      "envVar": "RESEND_TEMPLATE_PROVIDER_BOOKING_CONFIRMATION_ID",
+      "id": "889efd29-fe1d-4399-88c9-d40a5229b5aa",
+      "name": "Staging - Lash Her provider booking confirmation",
+      "published": true
+    },
+    {
+      "envVar": "RESEND_TEMPLATE_CONTACT_POPUP_ADMIN_ID",
+      "id": "c293c758-a6c6-40b8-acc7-ea5056947650",
+      "name": "Staging - contact popup admin",
+      "published": true
+    },
+    {
+      "envVar": "RESEND_TEMPLATE_CONTACT_POPUP_CUSTOMER_ID",
+      "id": "671a8fd8-efdb-4b4f-921e-42e181011cac",
+      "name": "Staging - contact popup customer",
+      "published": true
+    },
+    {
+      "envVar": "RESEND_TEMPLATE_GENERAL_INQUIRY_ADMIN_ID",
+      "id": "65ffd18a-07f4-4321-a5a3-87a585664966",
+      "name": "Staging - general inquiry admin",
+      "published": true
+    },
+    {
+      "envVar": "RESEND_TEMPLATE_GENERAL_INQUIRY_CUSTOMER_ID",
+      "id": "7f39cd9a-ec19-47ba-b683-da6b6df320c7",
+      "name": "Staging - general inquiry customer",
+      "published": true
+    },
+    {
+      "envVar": "RESEND_TEMPLATE_PRODUCT_CONFIRMATION_ID",
+      "id": "845a284c-4304-4013-8c82-330595569967",
+      "name": "Staging - product confirmation",
+      "published": true
+    },
+    {
+      "envVar": "RESEND_TEMPLATE_TRAINING_CONTACT_ADMIN_ID",
+      "id": "11c21231-d9b9-4131-bceb-3a76adfa53a8",
+      "name": "Staging - training contact admin",
+      "published": true
+    },
+    {
+      "envVar": "RESEND_TEMPLATE_TRAINING_CONTACT_CUSTOMER_ID",
+      "id": "5d0fbd39-6391-4cfb-bbd2-4220e80c895e",
+      "name": "Staging - training contact customer",
+      "published": true
+    },
+    {
+      "envVar": "RESEND_TEMPLATE_TRAINING_PAYMENT_ADMIN_ID",
+      "id": "55b47c3c-fd28-48ac-bf7d-1094fa97448f",
+      "name": "Staging - training payment admin",
+      "published": true
+    },
+    {
+      "envVar": "RESEND_TEMPLATE_TRAINING_PAYMENT_CUSTOMER_ID",
+      "id": "bef92a32-abc3-4c1e-a26e-48aae4a8bb4a",
+      "name": "Staging - training payment customer",
+      "published": true
+    }
+  ],
+  "templatesInstalled": true,
+  "contactsCountVerifiedZero": true,
+  "contactCountVerifiedAt": "2026-10-22T22:14:16.498Z",
+  "webhook": {
+    "id": "333dea10-e8c3-44a5-bb93-bf2d4c604811",
+    "status": "disabled",
+    "protectedIngressBound": true
+  },
+  "templatesReadBackVerified": true
+}

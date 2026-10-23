@@ -1,3 +1,4 @@
+import { assertStagingBulkEmailDisabled } from "@/lib/env/staging-email-policy.mjs";
 import "server-only";
 
 import type {
@@ -480,6 +481,7 @@ export async function stopResendAutomation(id: string) {
 }
 
 export async function createResendBroadcast(input: CreateBroadcastOptions) {
+  assertStagingBulkEmailDisabled();
   return assertResendData(
     await getResendClient().broadcasts.create(input),
     "Resend broadcast create failed",
@@ -500,6 +502,7 @@ export async function sendResendBroadcast(
   id: string,
   input?: SendBroadcastOptions,
 ) {
+  assertStagingBulkEmailDisabled();
   return assertResendData(
     await getResendClient().broadcasts.send(id, input),
     "Resend broadcast send failed",

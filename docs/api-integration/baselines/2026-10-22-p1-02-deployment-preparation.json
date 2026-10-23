@@ -1,0 +1,334 @@
+{
+  "recordedDate": "2026-10-22",
+  "status": "configuration-applied; first-deployment-blocked; P1-02-open",
+  "source": {
+    "localHead": "1d8342ab93b6713bebbb3a9caabaa54a246f9957",
+    "branch": "codex/fresha-service-booking-cutover",
+    "changesCommittedOrPushed": false,
+    "remoteStagingCommit": "ea1772b20453a494dcd3ff635066ebd385906f6b",
+    "approvedReleaseCommit": null
+  },
+  "resources": {
+    "schemaVersion": 1,
+    "status": "configuration-applied-first-release-blocked",
+    "teamId": "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
+    "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+    "target": "production",
+    "appEnv": "staging",
+    "origin": "https://staging.lashher.com",
+    "source": {
+      "repository": "princessdardan/lash-her-frontend",
+      "repositoryId": 1114139712,
+      "branch": "staging",
+      "observedRemoteCommit": "ea1772b20453a494dcd3ff635066ebd385906f6b",
+      "approvedCommit": null,
+      "approvalPinEnvironmentVariable": "STAGING_RELEASE_COMMIT"
+    },
+    "frontendDatabase": {
+      "storeId": "store_eo2hKOR243vTF0fw",
+      "projectId": "morning-tree-37564896",
+      "pooledHost": "ep-plain-field-b7yma047-pooler.c-13.us-east-1.aws.neon.tech",
+      "directHost": "ep-plain-field-b7yma047.c-13.us-east-1.aws.neon.tech",
+      "database": "neondb",
+      "observedVersion": "18.6 (fd34222)",
+      "runtimeRole": "lash_her_frontend_staging_runtime",
+      "runtimeRoleConfigured": true,
+      "migrationVerifiedCommit": null,
+      "postgres18CompatibilityVerified": true,
+      "ownerEnvironmentBindingRemoved": true,
+      "compatibilityEvidence": "docs/api-integration/baselines/2026-10-22-p1-02-deployment-preparation.json",
+      "compatibilityScope": "Uncommitted frontend candidate; local PostgreSQL 18.6 clean migrations 0000-0079 and 174 DB tests. Revalidate if schema or database code changes.",
+      "migrationPinEnvironmentVariable": "STAGING_MIGRATION_VERIFIED_COMMIT"
+    },
+    "courseDatabase": {
+      "directHost": "ep-ancient-shadow-axzksq4b.c-4.us-east-2.aws.neon.tech",
+      "database": "neondb",
+      "observedVersion": "16.15 (f37ae9a)",
+      "observedPublicTables": 12,
+      "journalPresent": true,
+      "lineageVerified": false
+    },
+    "communityDatabase": {
+      "storeId": "store_7ijIotasCFVQEKfl",
+      "projectId": "still-darkness-27201043",
+      "connectedToFrontend": false,
+      "runtimeAndMigrationCredentialsDelivered": false,
+      "lineageVerified": false,
+      "credentialHandoffStatus": "owner-credentials-exported-to-private-local-configuration; protected-store-import-and-runtime-role-pending",
+      "branchId": "br-plain-hall-b8lmm4z8",
+      "pooledHost": "ep-fancy-glitter-b81a2g6r-pooler.c-14.us-east-1.aws.neon.tech",
+      "directHost": "ep-fancy-glitter-b81a2g6r.c-14.us-east-1.aws.neon.tech",
+      "database": "neondb",
+      "observedVersion": "18.6 (fd34222)",
+      "observedPublicTables": 0,
+      "journalPresent": false,
+      "ownerCredentialsExported": true,
+      "privateCredentialFileMode": "0600",
+      "clientTlsVerified": true,
+      "runtimeRoleConfigured": false
+    },
+    "redis": {
+      "storeId": "store_9ROJsD2RHvSMBe5d",
+      "providerDatabaseId": "a404310a-a11e-4d9c-8464-2e311dc84efb",
+      "hostname": "tidy-monarch-236694.upstash.io",
+      "plan": "paid",
+      "automaticUpgradeRequested": false,
+      "readOnlyPingVerified": true
+    },
+    "sanity": {
+      "projectId": "7o23yrvk",
+      "dataset": "staging-2026-05-10",
+      "existingProjectId": "3auncj84",
+      "datasetScopedRoles": "blocked-by-missing-advancedRolesManagement",
+      "separateProjectApproval": "approved-and-created",
+      "publishedEditorialDocumentsCopied": 44,
+      "referencedAssetsCopied": 54,
+      "draftsCopied": 0,
+      "unresolvedReferences": 0,
+      "originalProjectAssetUrls": 0,
+      "schemaDeployed": true,
+      "isolatedTokensCreated": true,
+      "stagingCorsConfigured": true
+    },
+    "providers": {
+      "square": {
+        "environment": "sandbox",
+        "locationId": "LE2H76M5V90AM",
+        "sandboxReadVerified": true,
+        "stagingCredentialsConfigured": true
+      },
+      "resend": {
+        "dedicatedKeyConfigured": true,
+        "allowedRecipients": [
+          "delivered@resend.dev"
+        ],
+        "keyId": "cdf9ac18-c904-4680-be6c-884be584cdda",
+        "permission": "sending_access",
+        "domainId": "729d4f8c-e290-4112-92ef-15a24ff8684d",
+        "domain": "lashher.com",
+        "emailSent": false,
+        "apiKeyAdministrationDenied": true,
+        "contactAndSegmentWorkflowsSupported": false,
+        "remainingIsolation": "Sending-only key cannot manage contacts, segments or campaigns. Require separately isolated account/credentials or reviewed disabled workflows before enabling them."
+      },
+      "googleOAuth": {
+        "dedicatedClientConfigured": false,
+        "callback": "https://staging.lashher.com/api/auth/callback/google"
+      },
+      "chitchats": {
+        "enabled": false,
+        "environment": "staging"
+      },
+      "highlevel": {
+        "syncEnabled": false,
+        "marketingEnabled": false
+      },
+      "mux": {
+        "isolatedEnvironmentConfigured": false
+      }
+    },
+    "deployment": {
+      "buildCommandProposal": "node scripts/validate-staging-release.mjs && npm run build",
+      "buildCommandActivated": true,
+      "buildCommandApproval": "explicitly-approved-and-applied",
+      "deploymentId": null,
+      "providerConfigurationApproval": "explicitly-approved-and-applied-for-documented-payload"
+    }
+  },
+  "sanityVerification": {
+    "projectId": "7o23yrvk",
+    "dataset": "staging-2026-05-10",
+    "readTokenVerified": true,
+    "documentTypes": {
+      "contactPage": 1,
+      "galleryPage": 1,
+      "globalSettings": 1,
+      "homePage": 1,
+      "mainMenu": 1,
+      "policyPage": 6,
+      "product": 13,
+      "productsPage": 1,
+      "promotionCode": 4,
+      "sanity.imageAsset": 54,
+      "service": 9,
+      "system.group": 11,
+      "system.retention": 1,
+      "system.schema": 1,
+      "trainingPage": 1,
+      "trainingProgram": 4,
+      "trainingProgramsPage": 1
+    },
+    "drafts": 0,
+    "versions": 0,
+    "unresolvedReferenceCount": 0,
+    "sourceProjectAssetUrls": 0
+  },
+  "environmentVerification": {
+    "projectId": "prj_rkTbzWmgdbTGNH2oeajhpc0ysbeM",
+    "scope": "live-variable-metadata-and-known-installed-values; system fields from CLI snapshot; no deployment",
+    "variableCount": 51,
+    "allTargetsProductionAndPreview": true,
+    "ownerAliasesRemaining": [],
+    "runtimeUrlIsSensitive": true,
+    "providerTokensAreSensitive": true,
+    "preflightPassed": false,
+    "preflightErrors": [
+      "The Vercel project, target, APP_ENV and team binding must be verified",
+      "VERCEL_PROJECT_ID does not match the staging release manifest",
+      "An approved source commit must be pinned",
+      "The reviewed staging Git branch is required",
+      "Frontend migration evidence must match the approved source commit",
+      "AUTH_GOOGLE_ID is missing or a placeholder",
+      "AUTH_GOOGLE_SECRET is missing or a placeholder",
+      "ADMIN_OWNER_EMAILS is missing or a placeholder",
+      "GOOGLE_CLIENT_ID is missing or a placeholder",
+      "GOOGLE_CLIENT_SECRET is missing or a placeholder",
+      "GOOGLE_REDIRECT_URI is missing or a placeholder",
+      "RESEND_WEBHOOK_SECRET is missing or a placeholder",
+      "RESEND_SEGMENT_MARKETING_ID is missing or a placeholder",
+      "FROM_EMAIL is missing or a placeholder",
+      "ADMIN_EMAIL is missing or a placeholder",
+      "SQUARE_WEBHOOK_SIGNATURE_KEY is missing or a placeholder"
+    ]
+  },
+  "vercelReadback": {
+    "repository": "princessdardan/lash-her-frontend",
+    "repositoryId": 1114139712,
+    "productionBranch": "staging",
+    "buildCommand": "node scripts/validate-staging-release.mjs && npm run build",
+    "autoExposeSystemEnvs": true,
+    "oidcTokenConfig": {
+      "enabled": true,
+      "issuerMode": "team"
+    },
+    "latestDeploymentId": null
+  },
+  "databaseVerification": {
+    "frontendCloud": {
+      "version": "18.6 (fd34222)",
+      "publicTablesBeforeSetup": 0,
+      "migrationJournalPresent": false,
+      "applicationMigrationsRun": false,
+      "runtimeRole": "lash_her_frontend_staging_runtime",
+      "superuser": false,
+      "createDatabase": false,
+      "createRole": false,
+      "publicSchemaCreate": false,
+      "managedOwnerBindingRemoved": true
+    },
+    "courseCloud": {
+      "version": "16.15 (f37ae9a)",
+      "publicTables": 12,
+      "migrationJournalPresent": true,
+      "lineageCertified": false
+    },
+    "communityCloud": {
+      "projectId": "still-darkness-27201043",
+      "connectedProjects": 0,
+      "credentialValuesRetrieved": true,
+      "applicationMigrationsRun": false,
+      "credentialReadHttpStatus": 403,
+      "browserStateObtained": true,
+      "branchId": "br-plain-hall-b8lmm4z8",
+      "version": "18.6 (fd34222)",
+      "publicTables": 0,
+      "migrationJournalPresent": false,
+      "ownerCredentialsExported": true,
+      "runtimeRoleConfigured": false,
+      "credentialFileMode": "0600",
+      "clientTlsEncrypted": true,
+      "clientCertificateAuthorized": true,
+      "clientTlsProtocol": "TLSv1.3"
+    }
+  },
+  "verification": {
+    "nodeVersion": "24.18.0",
+    "nonDatabaseSourceTests": 1990,
+    "scriptTests": 27,
+    "nonDatabaseTestsTotal": 2017,
+    "typecheck": "passed",
+    "changedFileLint": "passed",
+    "gitDiffCheck": "passed",
+    "localPostgres18": {
+      "version": "18.6",
+      "image": "postgres:18-alpine",
+      "imageDigest": "sha256:898c60cb390d1085bc97bdd6a1ae968757421df394b071848b52b1c09c89d6a5",
+      "migrationsApplied": 80,
+      "lastMigration": "0079_highlevel_marketing_ownership",
+      "databaseTestsPassed": 174,
+      "schemaAndPrivateDbInputSha256": "f4eb3040ac1cd06f63e2c2ea5f93a0e208981007717068881287a99216c62a9a",
+      "containerRemoved": true
+    },
+    "redisPing": "PONG",
+    "applicationBuildRun": false,
+    "deployedSmokeTestsRun": false,
+    "privateSecretFilesMode": "0600"
+  },
+  "billing": {
+    "neonInstallation": "icfg_mT8CToeeYGQqiyPkza3Sq1ZA",
+    "neonPlan": "launch_v3",
+    "newNeonProjectsOnSharedLaunchBilling": true,
+    "incident": "Provisioning with free_v3 temporarily changed the shared installation plan. Detected and restored to the original launch_v3; subsequent installation read verified restoration. No production database data was changed.",
+    "upstashPlan": "paid-pay-as-you-go",
+    "upstashAutomaticUpgradeRequested": false,
+    "completeIncrementalEstimateAvailable": false
+  },
+  "approvals": {
+    "domainOidc": "explicitly-approved-and-applied",
+    "sanityDatasetRoles": "approved-but-unavailable-without-advancedRolesManagement; none-created",
+    "separateSanityProject": "explicitly-approved-and-created",
+    "documentedStagingPayloadRuntimeRoleResendBuildCommand": "explicitly-approved-and-applied",
+    "communityCredentials": "explicitly-approved; pooled/direct owner credentials privately exported; read-only TLS verified",
+    "browserSessionInventory": "automatic-review-rejected; no browser state obtained",
+    "neonConsoleOrigin": "explicitly-approved-and-used-only-for-Community-project"
+  },
+  "limits": {
+    "awsProvisioned": false,
+    "cloudApplicationMigrationsRun": false,
+    "applicationDeployed": false,
+    "productionRedeployed": false,
+    "emailSent": false,
+    "productionProviderCredentialsCopied": false,
+    "squareCredentialsSource": "existing authenticated sandbox application only",
+    "communityCredentialsInstalledInFrontend": false,
+    "secretsPrintedOrCommitted": false
+  },
+  "communityCredentialVerification": {
+    "projectId": "still-darkness-27201043",
+    "branchId": "br-plain-hall-b8lmm4z8",
+    "ownerCredentialsExported": true,
+    "fileMode": "600",
+    "checks": [
+      {
+        "endpoint": "directOwnerUrl",
+        "hostname": "ep-fancy-glitter-b81a2g6r.c-14.us-east-1.aws.neon.tech",
+        "database": "neondb",
+        "role": "neondb_owner",
+        "version": "18.6 (fd34222)",
+        "backend_reports_tls": false,
+        "public_tables": 0,
+        "migration_journal_present": false,
+        "clientTlsEncrypted": true,
+        "clientCertificateAuthorized": true,
+        "clientTlsProtocol": "TLSv1.3"
+      },
+      {
+        "endpoint": "pooledOwnerUrl",
+        "hostname": "ep-fancy-glitter-b81a2g6r-pooler.c-14.us-east-1.aws.neon.tech",
+        "database": "neondb",
+        "role": "neondb_owner",
+        "version": "18.6 (fd34222)",
+        "backend_reports_tls": false,
+        "public_tables": 0,
+        "migration_journal_present": false,
+        "clientTlsEncrypted": true,
+        "clientCertificateAuthorized": true,
+        "clientTlsProtocol": "TLSv1.3"
+      }
+    ],
+    "frontendBindingCreated": false,
+    "applicationMigrationsRun": false,
+    "runtimeRoleConfigured": false,
+    "secretValuesPrinted": false
+  }
+}

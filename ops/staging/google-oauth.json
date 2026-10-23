@@ -1,0 +1,54 @@
+{
+  "projectId": "lash-her-staging-20261022",
+  "projectNumber": "185770842371",
+  "identity": {
+    "clientId": "185770842371-d3thak0b2btgb77pngj968nvhpjkqmgf.apps.googleusercontent.com",
+    "redirectUris": [
+      "https://staging.lashher.com/api/auth/callback/google"
+    ],
+    "javascriptOrigins": [
+      "https://staging.lashher.com"
+    ],
+    "initialSecretReplaced": true,
+    "initialSecretDisabled": true,
+    "scopes": [
+      "openid",
+      "profile",
+      "email"
+    ]
+  },
+  "calendar": {
+    "clientId": "185770842371-lg0fktlf96u88pnqjnoom83st75btv4d.apps.googleusercontent.com",
+    "redirectUris": [
+      "https://staging.lashher.com/api/booking/oauth/callback"
+    ],
+    "javascriptOrigins": [],
+    "scopes": [
+      "openid",
+      "email",
+      "https://www.googleapis.com/auth/calendar.events",
+      "https://www.googleapis.com/auth/calendar.calendarlist.readonly"
+    ]
+  },
+  "installedOnlyInStaging": true,
+  "targets": [
+    "production",
+    "preview"
+  ],
+  "secretsType": "sensitive",
+  "adminIdentitiesPending": false,
+  "calendarTestAccountPending": false,
+  "deployedOAuthVerified": false,
+  "publishingStatus": "testing",
+  "userType": "external",
+  "calendarApiEnabled": true,
+  "consentScopesSaved": true,
+  "testUsersSaved": true,
+  "calendarConnectionCreated": false,
+  "billingAccountAttachedByThisWork": false,
+  "testUserCount": 4,
+  "adminOwnerCount": 1,
+  "adminOwnerEmailsSha256": "9fad4b0131ae1c778735cad947bd605466343131d0ca704bddc31977f75b23ed",
+  "calendarOwnerIsSoleStagingAdministrator": true,
+  "identityEvidence": "private operator handoff and saved console audience"
+}

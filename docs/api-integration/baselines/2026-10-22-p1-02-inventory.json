@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "verifiedDate": "2026-10-22",
+  "timezone": "America/Toronto",
+  "task": "P1-02",
+  "status": "partial-inventory",
+  "aws": {
+    "accountId": "691588646557",
+    "principalArn": "arn:aws:sts::691588646557:assumed-role/LashHerDeploymentRole/lash-her-deploy",
+    "region": "us-east-1",
+    "regionScope": "Only the deployment role's authorized region was inspected; other regions remain unverified.",
+    "instances": [],
+    "staticIps": [],
+    "bundleCandidates": [
+      {
+        "price": 24,
+        "cpuCount": 2,
+        "diskSizeInGb": 80,
+        "bundleId": "medium_3_0",
+        "instanceType": "medium",
+        "isActive": true,
+        "name": "Medium",
+        "power": 2000,
+        "ramSizeInGb": 4,
+        "transferPerMonthInGb": 4096,
+        "supportedPlatforms": [
+          "LINUX_UNIX"
+        ],
+        "publicIpv4AddressCount": 1
+      },
+      {
+        "price": 44,
+        "cpuCount": 2,
+        "diskSizeInGb": 160,
+        "bundleId": "large_3_0",
+        "instanceType": "large",
+        "isActive": true,
+        "name": "Large",
+        "power": 3000,
+        "ramSizeInGb": 8,
+        "transferPerMonthInGb": 5120,
+        "supportedPlatforms": [
+          "LINUX_UNIX"
+        ],
+        "publicIpv4AddressCount": 1
+      }
+    ],
+    "apiCalls": [
+      {
+        "service": "lightsail",
+        "operation": "GetInstances",
+        "status": "success",
+        "n_items": {
+          "instances": 0
+        }
+      },
+      {
+        "service": "lightsail",
+        "operation": "GetStaticIps",
+        "status": "success",
+        "n_items": {
+          "staticIps": 0
+        }
+      },
+      {
+        "service": "lightsail",
+        "operation": "GetInstanceSnapshots",
+        "status": "error",
+        "error": "AccessDeniedException: An error occurred (AccessDeniedException) when calling the GetInstanceSnapshots operation: User: arn:aws:sts::691588646557:assumed-role/LashHerDeploymentRole/lash-her-deploy is not authorized to perform: lightsail:GetInstanceSnapshots on resource: arn:aws:lightsail:us-east-1:691588646557:* because no identity-based policy allows the lightsail:GetInstanceSnapshots action"
+      },
+      {
+        "service": "lightsail",
+        "operation": "GetDisks",
+        "status": "error",
+        "error": "AccessDeniedException: An error occurred (AccessDeniedException) when calling the GetDisks operation: User: arn:aws:sts::691588646557:assumed-role/LashHerDeploymentRole/lash-her-deploy is not authorized to perform: lightsail:GetDisks on resource: arn:aws:lightsail:us-east-1:691588646557:* because no identity-based policy allows the lightsail:GetDisks action"
+      },
+      {
+        "service": "lightsail",
+        "operation": "GetLoadBalancers",
+        "status": "error",
+        "error": "AccessDeniedException: An error occurred (AccessDeniedException) when calling the GetLoadBalancers operation: User: arn:aws:sts::691588646557:assumed-role/LashHerDeploymentRole/lash-her-deploy is not authorized to perform: lightsail:GetLoadBalancers on resource: arn:aws:lightsail:us-east-1:691588646557:* because no identity-based policy allows the lightsail:GetLoadBalancers action"
+      },
+      {
+        "service": "lightsail",
+        "operation": "GetDistributions",
+        "status": "error",
+        "error": "AccessDeniedException: An error occurred (AccessDeniedException) when calling the GetDistributions operation: User: arn:aws:sts::691588646557:assumed-role/LashHerDeploymentRole/lash-her-deploy is not authorized to perform: lightsail:GetDistributions on resource: arn:aws:lightsail:us-east-1:691588646557:* because no identity-based policy allows the lightsail:GetDistributions action"
+      },
+      {
+        "service": "lightsail",
+        "operation": "GetBundles",
+        "status": "success",
+        "n_items": {
+          "bundles": 100
+        }
+      }
+    ],
+    "provisioningAuthority": "Deployment role cannot create/delete/tag hosts or modify firewalls. Administrator-controlled IaC provisioning is required; no privileges changed."
+  },
+  "vercel": {
+    "teamId": "team_2Hrn5eMZyZxfAWdmYvyKi9t3",
+    "projectId": "prj_wvBLVsXzC1XMZ11hSIfBi2bHXsyy",
+    "projectName": "lash-her-frontend",
+    "domains": [
+      "lashher.com",
+      "lash-her-frontend.vercel.app",
+      "lash-her-frontend-dardan-demiris-projects.vercel.app",
+      "lash-her-frontend-git-main-dardan-demiris-projects.vercel.app"
+    ],
+    "latestDeployment": {
+      "id": "dpl_9W7YyhTTm5V3mZ1EVgeoLTrgR9E3",
+      "url": "lash-her-frontend-596baoewt-dardan-demiris-projects.vercel.app",
+      "target": "production",
+      "createdAt": 1792556283197
+    },
+    "stagingProject": null,
+    "discovery": "ListProjects search=lash returned only lash-her-frontend; no dedicated staging project was present in these results.",
+    "oidcClaimsVerified": false,
+    "environmentMetadata": {
+      "mcpStatus": "403 forbidden",
+      "cliStatus": "success",
+      "cliVersion": "50.0.0",
+      "command": "vercel --scope team_2Hrn5eMZyZxfAWdmYvyKi9t3 env list",
+      "linkedProjectVerified": true,
+      "valuesDecrypted": false,
+      "appEnvPresent": false,
+      "appVercelTeamIdPresent": false,
+      "observations": [
+        "DATABASE_URL is listed as a single Production, Preview binding; separate database isolation is not established.",
+        "SANITY_WRITE_TOKEN and RESEND_API_KEY have shared Development, Preview, Production target bindings.",
+        "Metadata confirms variable names/targets only, not credential values, database lineage or provider sandbox mode."
+      ]
+    }
+  },
+  "limitations": [
+    "No provisioned staging/production API VM or host operator assignment.",
+    "Snapshots, disks, load balancers and distributions were denied; absence is not established.",
+    "Existing PostgreSQL targets, runtime/migration isolation and provider sandboxes not freshly verified.",
+    "Vercel exact OIDC claims, scheduled test configuration and protected release controls unverified.",
+    "No infrastructure, deployments, migrations, provider settings or credentials changed."
+  ]
+}
