@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-24",
+  "clientTimezone": "America/Los_Angeles",
+  "status": "BLOCKED_BY_CURRENT_DEPENDENCY_AUDIT",
+  "p1_02Status": "BLOCKED",
+  "candidate": {
+    "tag": "staging-rc-p1-02-2026-10-22.3",
+    "commit": "6cce23a6e28a6b43ac5043986b421db7a2e80827"
+  },
+  "releaseAttempt": {
+    "runUrl": "https://github.com/princessdardan/lash-her-frontend/actions/runs/40130648351",
+    "expectedRevisionSet": true,
+    "allowedReleaseBranchAdvanced": true,
+    "currentAuditJobId": 120981444584,
+    "currentAuditResult": "FAIL",
+    "vulnerabilityCountsAtCiRun": {
+      "low": 1,
+      "moderate": 2,
+      "high": 6,
+      "critical": 0
+    },
+    "previousSuccessfulCi": "https://github.com/princessdardan/lash-her-frontend/actions/runs/39895200832",
+    "previousSuccessfulCiSupersedesCurrentAudit": false,
+    "protectedMigrationExecuted": false,
+    "replacementReceiptVerified": false,
+    "stagingPromoted": false,
+    "retentionManualAttempts": 0,
+    "a01DeployedVerification": "not performed",
+    "a07DeployedVerification": "not performed",
+    "protectedVercelPinsChanged": false,
+    "credentialsChanged": false,
+    "providerSubscriptionsChanged": false
+  },
+  "deployedBaseline": {
+    "commit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
+    "deploymentId": "dpl_BCyvMh81J8KyGFuas3pJgNCKUkys",
+    "origin": "https://staging.lashher.com",
+    "protection": "all",
+    "shippingAndHighLevelEnabled": false
+  },
+  "blockingAdvisories": [
+    "https://github.com/advisories/GHSA-4qv8-2p9j-2685",
+    "https://github.com/advisories/GHSA-xjj6-f33q-929c",
+    "https://github.com/advisories/GHSA-mrhx-c7xc-m3w5"
+  ],
+  "remainingGates": [
+    {
+      "id": "P1-02-A01",
+      "status": "PARTIAL",
+      "requirement": "Deploy the replacement and verify anonymous label API 401 and non-admin 403; confirm authorized label behavior. Historical d915619 response remains 500.",
+      "path": "src/app/api/admin/orders/[orderId]/shipping/label/route.ts",
+      "observedStatus": 500,
+      "sourceFix": "Typed AdminAuthError handling returns 401/403 before shipment, config or provider access. Nine label-handler regressions pass."
+    },
+    {
+      "id": "P1-02-A02",
+      "status": "PARTIAL",
+      "requirement": "Staging owner Google sign-in and DB-backed dashboard passed. Complete non-admin authorization and dedicated Calendar OAuth/session-expiry checks."
+    },
+    {
+      "id": "P1-02-A03",
+      "status": "OPEN",
+      "requirement": "Exercise deployed transactional-recipient refusal, isolated allowed test delivery, contact flow and staging bulk-delivery block. Source/tests and release preflight alone do not certify live delivery."
+    },
+    {
+      "id": "P1-02-A04",
+      "status": "PARTIAL",
+      "requirement": "Signed ingress and body tamper rejection passed for Square, Resend and Sanity. Provider-issued business event persistence/deduplication and activation remain open; review enabled legacy Square preview callback before sandbox payment events."
+    },
+    {
+      "id": "P1-02-A05",
+      "status": "PARTIAL",
+      "requirement": "Nine native schedules match source; unauthorized requests fail closed. User-approved one-time authenticated manual runs completed: seven HTTP 200, retention 503 and marketing sync disabled 404. No email sends, refunds or stock releases were reported. Backup remains a manual-action scaffold. Platform-origin invocation, marketing enabling configuration and restored-data recovery evidence remain open; retention is tracked separately in A07."
+    },
+    {
+      "id": "P1-02-A06",
+      "status": "OPEN",
+      "requirement": "Rotate existing staging ingress bypass credentials after a diagnostic printed private ingress metadata in chat tool output. No public repository publication is established; retain all-deployment authentication and disabled provider deliveries."
+    },
+    {
+      "id": "P1-02-A07",
+      "status": "PARTIAL",
+      "requirement": "Deploy replacement, then separately authorize and record one authenticated retention run and its affected counts/logs. Previous 503 is not completed cleanup and earlier independent steps may have committed.",
+      "path": "src/lib/highlevel/retention.ts",
+      "sqlState": "42883",
+      "sourceFix": "All four interval cutoff parameters explicitly cast to timestamptz; PostgreSQL 18 regression reproduces 42883 before the fix and passes afterward."
+    },
+    {
+      "id": "P1-02-R01",
+      "status": "OPEN",
+      "requirement": "Course/Community exact-target lineage, protected migration jobs, runtime/migration artifacts and release pins; frontend-only migration is complete."
+    },
+    {
+      "id": "P1-02-R02",
+      "status": "OPEN",
+      "requirement": "Lightsail host/operator/provisioning, gateway/private TLS/network and measured capacity; no API host created by this frontend release."
+    },
+    {
+      "id": "P1-02-R03",
+      "status": "OPEN",
+      "requirement": "P1-01 contract release, P1-03 signed outbound OIDC/gateway verification, P1-04 container readiness and P1-07/P1-08 deployed operations/monitoring evidence remain separate gates."
+    },
+    {
+      "id": "P1-02-R04",
+      "status": "OPEN",
+      "requirement": "Complete provider ownership/isolation, Mux environment and itemized paid-resource costs/retention/rotation/audit evidence; shipping and HighLevel remain disabled."
+    },
+    {
+      "id": "P1-02-R05",
+      "status": "OPEN",
+      "requirement": "Replacement candidate must pass the current mandatory dependency audit before protected migration verification or promotion. Candidate .3 fails on Undici/Zod; do not weaken the audit or mutate its immutable tag."
+    }
+  ],
+  "nextAction": "Prepare a new immutable dependency-fix candidate after user selects the replacement scope; retain every other P1-02 gate."
+}

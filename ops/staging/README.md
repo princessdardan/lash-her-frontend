@@ -1,17 +1,17 @@
 # First staging release
 
-Replacement candidate: [retention/admin fix review](../../docs/api-integration/reviews/2026-10-22-p1-02-retention-admin-fix.md).
-Candidate tag: `staging-rc-p1-02-2026-10-22.3`, based on deployed `d915619`.
-The [first deployment evidence](../../docs/api-integration/baselines/2026-10-23-p1-02-first-deployment.md)
-records the current staging application and its successful frontend migration.
-The [replacement gate register](../../docs/api-integration/baselines/2026-10-22-p1-02-retention-admin-fix.json)
-tracks the remaining work. P1-02 remains BLOCKED.
+Replacement candidate: [candidate .4 review](../../docs/api-integration/reviews/2026-10-24-p1-02-candidate-4.md).
+Tag: `staging-rc-p1-02-2026-10-24.4`, based on .3 at `6cce23a`.
+The [.3 release attempt](../../docs/api-integration/baselines/2026-10-24-p1-02-candidate-3-release-attempt.md)
+failed the current mandatory audit. Candidate .4 pins patched dependencies and
+preserves the retention/admin fixes. The owner authorized continued protected
+verification, staging promotion and one retention invocation on .4.
 
-This replacement fixes retention timestamp parameter inference and the admin
-label API's uncaught authorization errors. Its branch runs the full CI checks,
-but is excluded from the protected migration job. Publishing the candidate does
-not advance `staging`, change protected pins or certify deployed acceptance.
-The sole-developer source review is recorded separately from owner release approval.
+[Current gate register](../../docs/api-integration/baselines/2026-10-24-p1-02-candidate-4.json)
+retains A01-A07/R01-R04 and the R05 audit gate. P1-02 remains BLOCKED.
+The allowed release branch runs the protected migration job after quality, DB,
+audit, build and browser checks. Owner review and exact protected revision remain
+required. Record the final receipt/deployment/acceptance evidence with the release.
 
 The staging Vercel project follows `staging`. Its build command runs
 `scripts/validate-staging-release.mjs` before the normal prebuild and Next build.

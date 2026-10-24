@@ -225,6 +225,8 @@ test("selected fixed dependencies are installed at the reviewed versions", async
     postcss: "8.5.31",
     "source-map-js": "1.2.2",
     "postcss-selector-parser": "7.1.7",
+    undici: "6.29.1",
+    zod: "4.6.6",
   };
   for (const [name, version] of Object.entries(versions)) {
     const entries = Object.entries(lock.packages).filter(
@@ -235,6 +237,58 @@ test("selected fixed dependencies are installed at the reviewed versions", async
     assert(entries.length, `${name} installed`);
     for (const [, entry] of entries) assert.equal(entry.version, version, name);
   }
+});
+
+test("Sanity codegen retains config defaults and validation with patched Zod", async (t) => {
+  const { readConfig } = await import("@sanity/codegen");
+  const directory = await fixture(t);
+  const configPath = path.join(directory, "sanity-typegen.json");
+  const defaults = await readConfig(configPath);
+  assert.equal(defaults.schema, "./schema.json");
+  assert.equal(defaults.generates, "./sanity.types.ts");
+  assert.equal(defaults.formatGeneratedCode, true);
+  await writeFile(
+    configPath,
+    JSON.stringify({
+      path: ["src/**/*.ts"],
+      generates: "generated.ts",
+      overloadClientMethods: false,
+    }),
+  );
+  const configured = await readConfig(configPath);
+  assert.deepEqual(configured.path, ["src/**/*.ts"]);
+  assert.equal(configured.generates, "generated.ts");
+  assert.equal(configured.overloadClientMethods, false);
+  await writeFile(configPath, JSON.stringify({ path: 123 }));
+  await assert.rejects(
+    readConfig(configPath),
+    (error) => error.name === "ZodError" && error.issues.length > 0,
+  );
+});
+
+test("patched Zod rejects oversized constrained collections before parsing their elements", () => {
+  execFileSync(
+    process.execPath,
+    [
+      "--max-old-space-size=96",
+      "--input-type=module",
+      "-e",
+      `
+    import assert from 'node:assert/strict';
+    import { z } from 'zod';
+    let parsed = 0;
+    const element = z.preprocess(value => { parsed++; return value; }, z.string());
+    const schema = z.array(element).max(8);
+    assert.deepEqual(schema.parse(['valid']), ['valid']);
+    parsed = 0;
+    const result = schema.safeParse(new Array(500_000).fill(null));
+    assert.equal(result.success, false);
+    assert.equal(result.error.issues[0].code, 'too_big');
+    assert.equal(parsed, 0);
+  `,
+    ],
+    { cwd: root, timeout: 8000, maxBuffer: 1024 * 1024 },
+  );
 });
 
 test("flat selector parsing and hostile source-map offsets stay bounded", () => {

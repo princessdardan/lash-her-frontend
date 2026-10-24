@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "recordedDate": "2026-10-24",
+  "clientTimezone": "America/Los_Angeles",
+  "status": "DEPENDENCY_FIX_CANDIDATE_PREPARED",
+  "p1_02Status": "BLOCKED",
+  "candidate": {
+    "tag": "staging-rc-p1-02-2026-10-24.4",
+    "baseCommit": "6cce23a6e28a6b43ac5043986b421db7a2e80827",
+    "releaseBranch": "codex/p1-02-staging-release",
+    "reviewType": "sole-developer source review; no independent reviewer approval claimed"
+  },
+  "changes": {
+    "undici": "6.28.1 -> 6.29.1",
+    "zod": "4.4.3 and nested 3.25.76 -> 4.6.6",
+    "sanityMajorUnchanged": true,
+    "applicationFixesUnchanged": true,
+    "sqlJournalAndMigrationPinsUnchanged": true,
+    "migrationRunnerUnchanged": true
+  },
+  "localValidation": {
+    "node": "24.18.0",
+    "nonDatabaseTestsPassed": 2053,
+    "databaseTestsPassed": 188,
+    "postgresMajor": 18,
+    "migrationsApplied": 80,
+    "securityTestsIncluded": 14,
+    "releaseGuardTests": 17,
+    "audit": {
+      "critical": 0,
+      "high": 0,
+      "moderate": 0,
+      "low": 1
+    },
+    "typecheck": "PASS",
+    "lint": {
+      "errors": 0,
+      "existingWarnings": 11
+    },
+    "compile": "PASS with public local CMS identifiers and no credentials",
+    "newRegressionCoverage": [
+      "Actual Sanity codegen default/valid/invalid configuration parsing with patched Zod",
+      "Oversized constrained Zod collection rejected before element parsing in a memory-limited timed subprocess"
+    ]
+  },
+  "releaseApproval": "User explicitly selected Prepare .4 and continue protected verification, staging promotion, A01/A07 and one authenticated retention invocation",
+  "cloudEvidence": "Pending protected exact-revision receipt and deployment; attach final evidence to immutable release",
+  "remainingGates": [
+    {
+      "id": "P1-02-A01",
+      "status": "PARTIAL",
+      "requirement": "Deploy the replacement and verify anonymous label API 401 and non-admin 403; confirm authorized label behavior. Historical d915619 response remains 500.",
+      "path": "src/app/api/admin/orders/[orderId]/shipping/label/route.ts",
+      "observedStatus": 500,
+      "sourceFix": "Typed AdminAuthError handling returns 401/403 before shipment, config or provider access. Nine label-handler regressions pass."
+    },
+    {
+      "id": "P1-02-A02",
+      "status": "PARTIAL",
+      "requirement": "Staging owner Google sign-in and DB-backed dashboard passed. Complete non-admin authorization and dedicated Calendar OAuth/session-expiry checks."
+    },
+    {
+      "id": "P1-02-A03",
+      "status": "OPEN",
+      "requirement": "Exercise deployed transactional-recipient refusal, isolated allowed test delivery, contact flow and staging bulk-delivery block. Source/tests and release preflight alone do not certify live delivery."
+    },
+    {
+      "id": "P1-02-A04",
+      "status": "PARTIAL",
+      "requirement": "Signed ingress and body tamper rejection passed for Square, Resend and Sanity. Provider-issued business event persistence/deduplication and activation remain open; review enabled legacy Square preview callback before sandbox payment events."
+    },
+    {
+      "id": "P1-02-A05",
+      "status": "PARTIAL",
+      "requirement": "Nine native schedules match source; unauthorized requests fail closed. User-approved one-time authenticated manual runs completed: seven HTTP 200, retention 503 and marketing sync disabled 404. No email sends, refunds or stock releases were reported. Backup remains a manual-action scaffold. Platform-origin invocation, marketing enabling configuration and restored-data recovery evidence remain open; retention is tracked separately in A07."
+    },
+    {
+      "id": "P1-02-A06",
+      "status": "OPEN",
+      "requirement": "Rotate existing staging ingress bypass credentials after a diagnostic printed private ingress metadata in chat tool output. No public repository publication is established; retain all-deployment authentication and disabled provider deliveries."
+    },
+    {
+      "id": "P1-02-A07",
+      "status": "PARTIAL",
+      "requirement": "Deploy replacement, then separately authorize and record one authenticated retention run and its affected counts/logs. Previous 503 is not completed cleanup and earlier independent steps may have committed.",
+      "path": "src/lib/highlevel/retention.ts",
+      "sqlState": "42883",
+      "sourceFix": "All four interval cutoff parameters explicitly cast to timestamptz; PostgreSQL 18 regression reproduces 42883 before the fix and passes afterward."
+    },
+    {
+      "id": "P1-02-R01",
+      "status": "OPEN",
+      "requirement": "Course/Community exact-target lineage, protected migration jobs, runtime/migration artifacts and release pins; frontend-only migration is complete."
+    },
+    {
+      "id": "P1-02-R02",
+      "status": "OPEN",
+      "requirement": "Lightsail host/operator/provisioning, gateway/private TLS/network and measured capacity; no API host created by this frontend release."
+    },
+    {
+      "id": "P1-02-R03",
+      "status": "OPEN",
+      "requirement": "P1-01 contract release, P1-03 signed outbound OIDC/gateway verification, P1-04 container readiness and P1-07/P1-08 deployed operations/monitoring evidence remain separate gates."
+    },
+    {
+      "id": "P1-02-R04",
+      "status": "OPEN",
+      "requirement": "Complete provider ownership/isolation, Mux environment and itemized paid-resource costs/retention/rotation/audit evidence; shipping and HighLevel remain disabled."
+    },
+    {
+      "id": "P1-02-R05",
+      "status": "PARTIAL",
+      "requirement": "Local mandatory audit passes after exact Undici 6.29.1/Zod 4.6.6 overrides. Require current full hosted CI including audit on candidate .4 before protected migration and staging promotion."
+    }
+  ]
+}

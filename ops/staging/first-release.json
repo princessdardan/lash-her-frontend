@@ -26,8 +26,8 @@
     "migrationVerifiedCommit": null,
     "postgres18CompatibilityVerified": true,
     "ownerEnvironmentBindingRemoved": true,
-    "compatibilityEvidence": "docs/api-integration/baselines/2026-10-22-p1-02-retention-admin-fix.json",
-    "compatibilityScope": "Replacement based on d915619; unchanged 80 migrations through 0079 and 188 DB tests passed on disposable PostgreSQL 18. No replacement cloud verification yet.",
+    "compatibilityEvidence": "docs/api-integration/baselines/2026-10-24-p1-02-candidate-4.json",
+    "compatibilityScope": "Candidate .4 dependency remediation; unchanged 80 migrations through 0079 and 188 DB tests pass on disposable PostgreSQL 18. Exact replacement cloud verification pending.",
     "migrationPinEnvironmentVariable": "STAGING_MIGRATION_VERIFIED_COMMIT",
     "protectedMigrationStore": "ops/staging/release-store.json"
   },
@@ -205,10 +205,10 @@
     "credentialHandoffStatus": "blocked-by-automatic-review-pending-specific-transfer-approval"
   },
   "replacementCandidate": {
-    "tag": "staging-rc-p1-02-2026-10-22.3",
-    "baseCommit": "d915619f11e198e6e1ef7cc1d4e9a2d644eb615a",
-    "review": "docs/api-integration/reviews/2026-10-22-p1-02-retention-admin-fix.md",
-    "gates": "docs/api-integration/baselines/2026-10-22-p1-02-retention-admin-fix.json",
+    "tag": "staging-rc-p1-02-2026-10-24.4",
+    "baseCommit": "6cce23a6e28a6b43ac5043986b421db7a2e80827",
+    "review": "docs/api-integration/reviews/2026-10-24-p1-02-candidate-4.md",
+    "gates": "docs/api-integration/baselines/2026-10-24-p1-02-candidate-4.json",
     "cloudMigrationVerified": false,
     "promotedToStaging": false
   },
