@@ -33,7 +33,7 @@ test("services offers the editorial listing or the editor's direct Fresha redire
   } else {
     // Complete the first-visit consent interaction before the mobile handoff.
     await page
-      .getByRole("button", { name: "Reject optional cookies", exact: true })
+      .getByRole("button", { name: "Reject", exact: true })
       .click();
     const main = page.getByRole("main");
     await expect(main.getByRole("tablist")).toHaveCount(0);

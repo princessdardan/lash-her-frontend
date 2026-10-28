@@ -75,6 +75,27 @@ test("no consent defaults both optional choices off and sends no tracker request
   page,
 }) => {
   await expect(banner(page)).toBeVisible();
+  await expect(banner(page).getByRole("checkbox")).toHaveCount(0);
+  for (const name of ["Accept", "Customize", "Reject"]) {
+    await expect(
+      banner(page).getByRole("button", { name, exact: true }),
+    ).toBeVisible();
+  }
+  expect(await choice(page)).toBeNull();
+  const bounds = await banner(page).boundingBox();
+  expect(bounds).not.toBeNull();
+  if (page.viewportSize()!.width >= 768) {
+    expect(bounds!.height).toBeLessThan(220);
+  }
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.getByRole("button", { name: "Customize", exact: true }).click();
+  await expect(
+    banner(page).getByRole("heading", { name: "Choose optional website tracking" }),
+  ).toBeFocused();
   await expect(
     page.getByRole("checkbox", { name: "Analytics", exact: true }),
   ).not.toBeChecked();
@@ -100,7 +121,7 @@ test("rejection persists across reload with required functionality retained", as
     localStorage.setItem("commerce-test-cart", "keep");
     sessionStorage.setItem("auth-test-state", "keep");
   });
-  await page.getByRole("button", { name: "Reject optional cookies" }).click();
+  await page.getByRole("button", { name: "Reject", exact: true }).click();
   expect(await choice(page)).toMatchObject({
     required: true,
     analytics: false,
@@ -125,6 +146,7 @@ test("rejection persists across reload with required functionality retained", as
 test("analytics acceptance does not authorize CRM tracking", async ({
   page,
 }) => {
+  await page.getByRole("button", { name: "Customize", exact: true }).click();
   await page.getByRole("button", { name: "Accept analytics only" }).click();
   expect(await choice(page)).toMatchObject({
     analytics: true,
@@ -136,9 +158,32 @@ test("analytics acceptance does not authorize CRM tracking", async ({
   ).toHaveCount(1);
 });
 
+test("Accept saves both optional categories and preferences can be reopened", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "Accept", exact: true }).click();
+  await expect(banner(page)).toBeHidden();
+  expect(await choice(page)).toMatchObject({
+    required: true,
+    analytics: true,
+    crmTracking: true,
+    version: 2,
+  });
+  await page.reload();
+  await expect(banner(page)).toBeHidden();
+  await page.getByRole("button", { name: "Manage cookie preferences" }).click();
+  await expect(
+    page.getByRole("checkbox", { name: "Analytics", exact: true }),
+  ).toBeChecked();
+  await expect(
+    page.getByRole("checkbox", { name: "CRM/marketing tracking", exact: true }),
+  ).toBeChecked();
+});
+
 test("CRM grant and withdrawal preserve the independent analytics choice", async ({
   page,
 }) => {
+  await page.getByRole("button", { name: "Customize", exact: true }).click();
   await page
     .getByRole("checkbox", { name: "CRM/marketing tracking", exact: true })
     .check();
@@ -203,7 +248,7 @@ test("cross-tab grant, withdrawal, and storage clearing update an open preferenc
   page,
   context,
 }) => {
-  await page.getByRole("button", { name: "Reject optional cookies" }).click();
+  await page.getByRole("button", { name: "Reject", exact: true }).click();
   await page.getByRole("button", { name: "Manage cookie preferences" }).click();
   const other = await context.newPage();
   await other.goto("/gallery");
@@ -237,6 +282,7 @@ test("cross-tab grant, withdrawal, and storage clearing update an open preferenc
 test("initial, Next.js, Back/Forward and sensitive-query navigation never starts the blocked tracker", async ({
   page,
 }) => {
+  await page.getByRole("button", { name: "Customize", exact: true }).click();
   await page
     .getByRole("checkbox", { name: "CRM/marketing tracking", exact: true })
     .check();
@@ -278,7 +324,7 @@ test("initial, Next.js, Back/Forward and sensitive-query navigation never starts
 test("tracking choices and blocked vendors leave email/SMS permissions and form inputs unchanged", async ({
   page,
 }) => {
-  await page.getByRole("button", { name: "Reject optional cookies" }).click();
+  await page.getByRole("button", { name: "Reject", exact: true }).click();
   await page.goto("/contact");
   const email = page.getByRole("checkbox", {
     name: /I agree to receive marketing emails/,
@@ -323,6 +369,7 @@ test("tracking choices and blocked vendors leave email/SMS permissions and form 
 test("storage failures honor in-session choices without disrupting the page", async ({
   page,
 }) => {
+  await page.getByRole("button", { name: "Customize", exact: true }).click();
   await page.evaluate(() => {
     Storage.prototype.setItem = () => {
       throw new DOMException("Blocked", "SecurityError");
