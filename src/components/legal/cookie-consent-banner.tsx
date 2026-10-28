@@ -64,6 +64,8 @@ export function CookieConsentBanner({
           key={snapshot}
           choice={choice}
           crmTrackingAvailable={crmTrackingAvailable}
+          expanded={managing}
+          onCustomize={() => setManaging(true)}
           onSave={save}
         />
       ) : null}
@@ -74,10 +76,14 @@ export function CookieConsentBanner({
 function ConsentChoices({
   choice,
   crmTrackingAvailable,
+  expanded,
+  onCustomize,
   onSave,
 }: {
   choice: CookieConsentChoice | null;
   crmTrackingAvailable: boolean;
+  expanded: boolean;
+  onCustomize: () => void;
   onSave: (analytics: boolean, crmTracking: boolean) => void;
 }) {
   const [analytics, setAnalytics] = React.useState(choice?.analytics ?? false);
@@ -90,7 +96,53 @@ function ConsentChoices({
   const heading = React.useRef<HTMLHeadingElement>(null);
   React.useEffect(() => {
     heading.current?.focus({ preventScroll: true });
-  }, []);
+  }, [expanded]);
+
+  if (!expanded) {
+    return (
+      <section
+        aria-label="Cookie consent"
+        className="fixed inset-x-4 bottom-4 z-50 mx-auto max-h-[85dvh] max-w-4xl overflow-y-auto rounded-2xl border border-lh-line bg-lh-white p-4 text-lh-shadow shadow-[0_24px_70px_rgba(28,19,24,0.18)] md:flex md:items-center md:gap-6 md:p-5"
+      >
+        <div className="flex-1">
+          <h2
+            ref={heading}
+            tabIndex={-1}
+            className="font-heading text-xl font-normal"
+          >
+            Cookie preferences
+          </h2>
+          <p className="mt-1 font-body text-sm leading-6 text-lh-shadow/75">
+            We use required storage to keep the site working. With your
+            permission, we also use analytics and CRM/marketing tracking.
+          </p>
+        </div>
+        <div className="mt-4 grid grid-cols-3 gap-2 md:mt-0 md:shrink-0">
+          <button
+            type="button"
+            className="rounded-full bg-lh-primary px-4 py-3 font-body text-xs font-bold text-lh-white"
+            onClick={() => onSave(true, true)}
+          >
+            Accept
+          </button>
+          <button
+            type="button"
+            className="rounded-full border border-lh-primary px-4 py-3 font-body text-xs font-bold text-lh-primary"
+            onClick={onCustomize}
+          >
+            Customize
+          </button>
+          <button
+            type="button"
+            className="rounded-full border border-lh-primary px-4 py-3 font-body text-xs font-bold text-lh-primary"
+            onClick={() => onSave(false, false)}
+          >
+            Reject
+          </button>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section
