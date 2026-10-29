@@ -4,10 +4,13 @@ import { sql } from "drizzle-orm";
 import { getPrivateDb } from "@/lib/private-db/client";
 import {
   callbackUrl,
+  authorizationUrl,
   HIGHLEVEL_ORIGIN,
   HIGHLEVEL_SCOPES,
   locationId,
   required,
+  agencyInstallationEnabled,
+  agencyCompanyId,
 } from "./config";
 import { decryptCredential, encryptCredential } from "./crypto";
 import { HighLevelError } from "./contract";
@@ -21,6 +24,7 @@ export interface TokenResponse extends Credentials {
   locationId: string;
   userType: string;
   scope: string;
+  companyId?: string;
 }
 export const stateHash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
@@ -30,26 +34,18 @@ export async function createInstallation(
 ): Promise<{ url: string; state: string }> {
   locationId();
   const state = randomBytes(32).toString("base64url");
+  const url = authorizationUrl(state);
   await getPrivateDb().execute(
     sql`insert into highlevel_oauth_states (hash, actor_id, expires_at) values (${stateHash(state)}, ${actorId}::uuid, now() + interval '10 minutes')`,
   );
-  const url = new URL(
-    "https://marketplace.gohighlevel.com/oauth/chooselocation",
-  );
-  url.search = new URLSearchParams({
-    response_type: "code",
-    client_id: required("HIGHLEVEL_CLIENT_ID"),
-    redirect_uri: callbackUrl(),
-    scope: HIGHLEVEL_SCOPES.join(" "),
-    state,
-  }).toString();
   return { url: url.href, state };
 }
 
-async function exchange(
+export async function exchange(
   values: Record<string, string>,
+  request: typeof fetch = fetch,
 ): Promise<TokenResponse> {
-  const response = await fetch(`${HIGHLEVEL_ORIGIN}/oauth/token`, {
+  const response = await request(`${HIGHLEVEL_ORIGIN}/oauth/token`, {
     method: "POST",
     cache: "no-store",
     redirect: "error",
@@ -57,6 +53,7 @@ async function exchange(
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
       Accept: "application/json",
+      Version: "v3",
     },
     body: new URLSearchParams({
       client_id: required("HIGHLEVEL_CLIENT_ID"),
@@ -67,7 +64,47 @@ async function exchange(
     }),
   });
   if (!response.ok) throw new HighLevelError(`oauth_http_${response.status}`);
-  const token = (await response.json()) as TokenResponse;
+  let token = (await response.json()) as TokenResponse;
+  if (token.userType === "Company") {
+    // Agency installers receive a Company token under mandatory bulk install.
+    // Use it only for this one configured location; never store agency credentials.
+    if (
+      values.grant_type !== "authorization_code" ||
+      !agencyInstallationEnabled()
+    )
+      throw new HighLevelError("oauth_location_installation_required");
+    if (token.companyId !== agencyCompanyId() || !token.access_token)
+      throw new HighLevelError("oauth_invalid_company_or_token");
+    if (!token.scope?.split(/[ ,]+/).includes("oauth.write"))
+      throw new HighLevelError("oauth_missing_agency_exchange_scope");
+    const locationResponse = await request(
+      `${HIGHLEVEL_ORIGIN}/oauth/location-token`,
+      {
+        method: "POST",
+        cache: "no-store",
+        redirect: "error",
+        signal: AbortSignal.timeout(15_000),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+          Version: "v3",
+          Authorization: `Bearer ${token.access_token}`,
+        },
+        body: new URLSearchParams({
+          companyId: agencyCompanyId(),
+          locationId: locationId(),
+        }),
+      },
+    );
+    if (!locationResponse.ok)
+      throw new HighLevelError(
+        `oauth_location_token_http_${locationResponse.status}`,
+      );
+    token = (await locationResponse.json()) as TokenResponse;
+    // This endpoint's documented response omits userType. Only its exact,
+    // validated location response may be normalized to a Location token.
+    token = { ...token, userType: token.userType ?? "Location" };
+  }
   if (
     token.locationId !== locationId() ||
     token.userType !== "Location" ||
