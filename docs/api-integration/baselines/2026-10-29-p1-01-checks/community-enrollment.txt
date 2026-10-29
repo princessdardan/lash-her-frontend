@@ -1,0 +1,5 @@
+
+> lash-her-community-api@1.0.0 contracts:check
+> node --import tsx scripts/check-course-enrollment-contract.mjs
+
+Course enrollment schema SHA-256 a1635b7725a8331cf4885da6b2c596f07c7272ef1bbd5d66a855b10ece95b01e (11 fixtures verified)

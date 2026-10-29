@@ -1,0 +1,34 @@
+
+> frontend@0.1.0 contracts:test
+> node --test scripts/api-contract-tools.test.mjs && node --import ./scripts/register-server-only-test.mjs --import tsx --test src/lib/api-integration/boundary-validation.test.ts src/lib/api-integration/response-validation.test.ts
+
+✔ the bundle has immutable revision/hash pins; candidate release checks fail closed (45.945625ms)
+✔ changed vendored bytes fail integrity checking (5.316875ms)
+✔ released checks require source verification and an explicit baseline (548.982292ms)
+✔ generation is deterministic and rejects edited generated files (1377.059292ms)
+✔ compatibility allows additions and docs, rejects changed wire fields and security (22.122916ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2052.0755
+✔ learner/member/admin claims bind audience, canonical identity and capabilities (1.344875ms)
+✔ all four profiles accept only their audience and explicit nonduplicate capabilities (0.411584ms)
+✔ JWT lifetime rejects missing, unbounded, fractional, expired and future claims (0.116583ms)
+✔ durable lifecycle commands reject private data and invalid sequence numbers (0.33575ms)
+✔ lifecycle receipts accept only explicit acceptance/replay wire statuses (0.160375ms)
+✔ generated response types are guarded by non-coercing runtime validation (2.539042ms)
+✔ error validation preserves existing Course and Community wire shapes (1.849041ms)
+✔ unexpected routes/statuses fail closed without disclosing the upstream body (0.552375ms)
+✔ every documented JSON response schema compiles, including local references (165.362208ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 341.312667

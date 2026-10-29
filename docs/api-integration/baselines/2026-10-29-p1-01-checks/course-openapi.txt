@@ -1,0 +1,6 @@
+
+> lash-her-course-api@1.0.0 openapi:check
+> node --import tsx scripts/generate-openapi.mjs --check
+
+(node:18740) [FSTDEP023] FastifyDeprecation: disableRequestLogging option is deprecated. Use the logController option with disableRequestLogging or isLogDisabled override instead. The disableRequestLogging top-level option will be removed in `fastify@6`.
+(Use `node --trace-warnings ...` to show where the warning was created)

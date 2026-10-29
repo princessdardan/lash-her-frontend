@@ -1,0 +1,29 @@
+
+> frontend@0.1.0 lint
+> eslint
+
+
+/private/tmp/lash-her-p1-01-fyagzm3s/frontend/src/components/booking/service-booking-payment-shell.tsx
+  70:7  warning  Do not use `window.location.assign()` to navigate to internal Next.js pages. Use `redirect()` in the render phase, or `useRouter().push()` in Client Components' event handlers instead. See: https://nextjs.org/docs/messages/no-location-assign-relative-destination  @next/next/no-location-assign-relative-destination
+
+/private/tmp/lash-her-p1-01-fyagzm3s/frontend/src/components/custom/layouts/cta-section-image.tsx
+  14:11  warning  'heading' is assigned a value but never used      @typescript-eslint/no-unused-vars
+  14:20  warning  'description' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  14:33  warning  'image' is assigned a value but never used        @typescript-eslint/no-unused-vars
+  14:40  warning  'link' is assigned a value but never used         @typescript-eslint/no-unused-vars
+
+/private/tmp/lash-her-p1-01-fyagzm3s/frontend/src/lib/commerce/training-enrollment-store.ts
+  782:10  warning  'isTrainingPaymentNotificationComplete' is defined but never used  @typescript-eslint/no-unused-vars
+
+/private/tmp/lash-her-p1-01-fyagzm3s/frontend/src/lib/shipping/readiness.ts
+  211:3  warning  '_tx' is defined but never used            @typescript-eslint/no-unused-vars
+  217:3  warning  '_now' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/private/tmp/lash-her-p1-01-fyagzm3s/frontend/src/lib/shipping/shipment-store.ts
+  1455:58  warning  '_input' is defined but never used  @typescript-eslint/no-unused-vars
+
+/private/tmp/lash-her-p1-01-fyagzm3s/frontend/tests/gallery.spec.ts
+   56:13  warning  'loading' is assigned a value but never used            @typescript-eslint/no-unused-vars
+  104:13  warning  'initialImageCount' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+✖ 11 problems (0 errors, 11 warnings)

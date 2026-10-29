@@ -1,0 +1,6 @@
+
+> frontend@0.1.0 contracts:check
+> node scripts/check-api-contracts.mjs && node scripts/generate-api-contracts.mjs --check
+
+Integration contract integrity verified (released)
+Pinned API types verified

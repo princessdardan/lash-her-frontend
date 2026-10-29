@@ -1,0 +1,142 @@
+[
+  {
+    "name": "integrity-generation",
+    "command": ["npm", "run", "contracts:check"],
+    "cwd": "/private/tmp/lash-her-p1-01-fyagzm3s/frontend",
+    "frontendRevision": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+    "startedAt": "2026-10-29T22:46:06.329614+00:00",
+    "completedAt": "2026-10-29T22:46:06.927134+00:00",
+    "exitCode": 0,
+    "log": "integrity-generation.txt",
+    "sha256": "2f7ec43c46dc01cba4fa3b22aceafb9b44272e40dbc17a9abf57c846a58e8dae"
+  },
+  {
+    "name": "sources",
+    "command": ["npm", "run", "contracts:sources"],
+    "cwd": "/private/tmp/lash-her-p1-01-fyagzm3s/frontend",
+    "frontendRevision": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+    "startedAt": "2026-10-29T22:46:06.330092+00:00",
+    "completedAt": "2026-10-29T22:46:06.633921+00:00",
+    "exitCode": 0,
+    "log": "sources.txt",
+    "sha256": "94cd4dfebb77d86b4869aa1826f6790c5b2da4863b7f16ca86e13c7824228831"
+  },
+  {
+    "name": "contract-tests",
+    "command": ["npm", "run", "contracts:test"],
+    "cwd": "/private/tmp/lash-her-p1-01-fyagzm3s/frontend",
+    "frontendRevision": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+    "startedAt": "2026-10-29T22:46:06.330306+00:00",
+    "completedAt": "2026-10-29T22:46:09.037836+00:00",
+    "exitCode": 0,
+    "log": "contract-tests.txt",
+    "sha256": "76bd889f3ce3f5ea1823f34244b8e2d7c8632d5311e8ce84bc1ce5e73ab2ffe7"
+  },
+  {
+    "name": "release-baseline",
+    "command": [
+      "npm",
+      "run",
+      "contracts:release-check",
+      "--",
+      "--sources",
+      "..",
+      "--release-revision",
+      "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+      "--baseline",
+      "/private/tmp/lash-her-p1-01-fyagzm3s/baseline/contracts/api-integration/v1",
+      "--baseline-revision",
+      "a08e4659ab37cd989f7d87dab0116f87eac965ec"
+    ],
+    "cwd": "/private/tmp/lash-her-p1-01-fyagzm3s/frontend",
+    "frontendRevision": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+    "startedAt": "2026-10-29T22:46:06.634030+00:00",
+    "completedAt": "2026-10-29T22:46:06.888751+00:00",
+    "exitCode": 0,
+    "log": "release-baseline.txt",
+    "sha256": "29bf4f4da2dce8a665db42b025015ab5ea2d019fc70816477b4e26c466bdffc8"
+  },
+  {
+    "name": "typecheck",
+    "command": [
+      "npx",
+      "--no-install",
+      "tsc",
+      "--noEmit",
+      "--incremental",
+      "false"
+    ],
+    "cwd": "/private/tmp/lash-her-p1-01-fyagzm3s/frontend",
+    "frontendRevision": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+    "startedAt": "2026-10-29T22:46:06.888836+00:00",
+    "completedAt": "2026-10-29T22:46:41.970345+00:00",
+    "exitCode": 0,
+    "log": "typecheck.txt",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "lint",
+    "command": ["npm", "run", "lint"],
+    "cwd": "/private/tmp/lash-her-p1-01-fyagzm3s/frontend",
+    "frontendRevision": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+    "startedAt": "2026-10-29T22:46:06.927292+00:00",
+    "completedAt": "2026-10-29T22:46:40.234423+00:00",
+    "exitCode": 0,
+    "log": "lint.txt",
+    "sha256": "04276a7e1da2bfee17b1027d529f25935ca7822fb293c97c9a53a8782576ad9f",
+    "rawSha256": "c684fb39df98b1a67999c347abeb5a924cee454f2a7e75b6dd02cdee5903032a",
+    "normalization": "trailing blank lines removed"
+  },
+  {
+    "name": "unit",
+    "command": ["npm", "run", "test:unit"],
+    "frontendRevision": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+    "exitCode": 0,
+    "log": "unit.txt",
+    "sha256": "d32312b13a184b204e1c7b5fa6b3e67702f49916e2e4535072ee1a7211110c65",
+    "tests": 1992,
+    "passed": 1992,
+    "failed": 0,
+    "execution": "local IPC allowed; no shared database target"
+  },
+  {
+    "name": "course-openapi",
+    "command": ["npm", "run", "openapi:check"],
+    "repository": "lash-her-course-api",
+    "revision": "a809b1e61051d8908892830bbeb80762448c879d",
+    "exitCode": 0,
+    "log": "course-openapi.txt",
+    "sha256": "ae55e14ec95a6fe4b9b2b091a6bed09a6c058d45556b2620a2a48f1600a7776f",
+    "dependencies": "existing API node_modules; source checkout pinned; no clean API install claimed"
+  },
+  {
+    "name": "community-openapi",
+    "command": ["npm", "run", "openapi:check"],
+    "repository": "lash-her-community-api",
+    "revision": "ac88eb9840c8ec1ad85cc414d31c6f70831d1e3f",
+    "exitCode": 0,
+    "log": "community-openapi.txt",
+    "sha256": "202e4c4b32ce95170d9e699cf8d8966da73f596591c29b07f48b00a6084a6d62",
+    "dependencies": "existing API node_modules; source checkout pinned; no clean API install claimed"
+  },
+  {
+    "name": "course-enrollment",
+    "command": ["npm", "run", "contract:community:check"],
+    "repository": "lash-her-course-api",
+    "revision": "a809b1e61051d8908892830bbeb80762448c879d",
+    "exitCode": 0,
+    "log": "course-enrollment.txt",
+    "sha256": "a3fbd78e7ed72dded82e2dbf4c9506e3ad00d246ee4646ab4911795b9f622b16",
+    "dependencies": "existing API node_modules; source checkout pinned; no clean API install claimed"
+  },
+  {
+    "name": "community-enrollment",
+    "command": ["npm", "run", "contracts:check"],
+    "repository": "lash-her-community-api",
+    "revision": "ac88eb9840c8ec1ad85cc414d31c6f70831d1e3f",
+    "exitCode": 0,
+    "log": "community-enrollment.txt",
+    "sha256": "eada94622017f0bc16f74c03237d1a09c7782fc7b8945f721a165c63cccec097",
+    "dependencies": "existing API node_modules; source checkout pinned; no clean API install claimed"
+  }
+]

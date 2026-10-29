@@ -1,0 +1,274 @@
+{
+  "task": "P1-01",
+  "status": "DONE",
+  "releaseId": "api-integration-v1.0.0",
+  "dateLocal": "2026-10-29",
+  "timezone": "America/Toronto",
+  "recordedAt": "2026-10-29T22:49:45.571482+00:00",
+  "approval": {
+    "owner": "Dardan",
+    "decision": "Confirm: approve this initial v1 baseline and publish the contract branch/tag.",
+    "review": "docs/api-integration/reviews/2026-10-29-p1-01-v1-review.md"
+  },
+  "revisions": {
+    "frontend": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+    "course": "a809b1e61051d8908892830bbeb80762448c879d",
+    "community": "ac88eb9840c8ec1ad85cc414d31c6f70831d1e3f"
+  },
+  "baseline": {
+    "kind": "initial",
+    "frontendRevision": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+    "tag": "api-integration-v1.0.0",
+    "tagObject": "79d99e26fb3f46853526bd4fe7075f9e347ccc68",
+    "selfComparison": "reproducibility-only",
+    "compatibilityWithEarlierIntegrationRelease": "not-applicable; no earlier integration release exists"
+  },
+  "bundle": {
+    "path": "contracts/api-integration/v1",
+    "manifestSha256": "da0288b3897d36fbffd7b1557bf2d5d68a0130a3de27147d29b84c481dcb8488",
+    "manifestGitBlob": "7d8a06325c2eb5f52fa4fffcfd4e6c9e229a2e6b",
+    "normativeReadmeSha256": "11e8306b56742a72d04c08aa2e840aef0d78aeae0e50b8a72b829293b1714b0b",
+    "boundarySha256": "aac517ca2612d5610c2ec26772c547305f23bc488bcbe9e5adaa748c7c85c480",
+    "artifacts": {
+      "course": {
+        "repository": "lash-her-course-api",
+        "revision": "a809b1e61051d8908892830bbeb80762448c879d",
+        "sourcePath": "openapi/course-api.json",
+        "file": "course-api.json",
+        "sha256": "9d1982b5cea8d37fb83d2ed46a84deb24bc3dfd036cede2fd975d59e4fd385bd"
+      },
+      "community": {
+        "repository": "lash-her-community-api",
+        "revision": "ac88eb9840c8ec1ad85cc414d31c6f70831d1e3f",
+        "sourcePath": "openapi/community-api.json",
+        "file": "community-api.json",
+        "sha256": "6ab9b614e1d7befb5081fb9c5d3a060b1cf21d9f1db7370579fb932696094b89"
+      },
+      "enrollmentEvent": {
+        "repository": "lash-her-community-api",
+        "revision": "ac88eb9840c8ec1ad85cc414d31c6f70831d1e3f",
+        "sourcePath": "contracts/course-enrollment/v1/enrollment-event.schema.json",
+        "file": "enrollment-event.schema.json",
+        "sha256": "a1635b7725a8331cf4885da6b2c596f07c7272ef1bbd5d66a855b10ece95b01e"
+      }
+    }
+  },
+  "tooling": {
+    "node": "24.18.0",
+    "npm": "11.17.0",
+    "packageLockSha256": "18af24f6596fc8a07e2671ebeb754f8442edf168ba1d1bfa80df7c3a20fda71b",
+    "cleanInstall": {
+      "command": "npm ci --ignore-scripts --no-audit --no-fund --cache /private/tmp/lash-her-p1-01-fyagzm3s/npm-cache",
+      "exitCode": 0,
+      "installedPackages": 1642,
+      "lifecycleScripts": "disabled for install; npm run prepare executed separately before commit"
+    },
+    "generatedSha256": {
+      "boundaries.d.ts": "5fa41a8e79067399d908a8a0499cead20b86f2da50624af5abfa85647ef6b32d",
+      "community.d.ts": "a04de47025918d63e904703b47e261af19a462187e344b65f88d694214ea08b5",
+      "course.d.ts": "c17b5e3db641d31097d67b5d0e3d0ab3e7fca6e0e03814413dbc743451d19af5"
+    }
+  },
+  "verification": {
+    "exactFrontendCheckout": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+    "baselineCheckout": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+    "contractTests": 14,
+    "unitTests": 1992,
+    "unitFailures": 0,
+    "lintErrors": 0,
+    "existingLintWarnings": 11,
+    "logDirectory": "docs/api-integration/baselines/2026-10-29-p1-01-checks",
+    "checks": [
+      {
+        "name": "integrity-generation",
+        "command": ["npm", "run", "contracts:check"],
+        "cwd": "/private/tmp/lash-her-p1-01-fyagzm3s/frontend",
+        "frontendRevision": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+        "startedAt": "2026-10-29T22:46:06.329614+00:00",
+        "completedAt": "2026-10-29T22:46:06.927134+00:00",
+        "exitCode": 0,
+        "log": "integrity-generation.txt",
+        "sha256": "2f7ec43c46dc01cba4fa3b22aceafb9b44272e40dbc17a9abf57c846a58e8dae"
+      },
+      {
+        "name": "sources",
+        "command": ["npm", "run", "contracts:sources"],
+        "cwd": "/private/tmp/lash-her-p1-01-fyagzm3s/frontend",
+        "frontendRevision": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+        "startedAt": "2026-10-29T22:46:06.330092+00:00",
+        "completedAt": "2026-10-29T22:46:06.633921+00:00",
+        "exitCode": 0,
+        "log": "sources.txt",
+        "sha256": "94cd4dfebb77d86b4869aa1826f6790c5b2da4863b7f16ca86e13c7824228831"
+      },
+      {
+        "name": "contract-tests",
+        "command": ["npm", "run", "contracts:test"],
+        "cwd": "/private/tmp/lash-her-p1-01-fyagzm3s/frontend",
+        "frontendRevision": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+        "startedAt": "2026-10-29T22:46:06.330306+00:00",
+        "completedAt": "2026-10-29T22:46:09.037836+00:00",
+        "exitCode": 0,
+        "log": "contract-tests.txt",
+        "sha256": "76bd889f3ce3f5ea1823f34244b8e2d7c8632d5311e8ce84bc1ce5e73ab2ffe7"
+      },
+      {
+        "name": "release-baseline",
+        "command": [
+          "npm",
+          "run",
+          "contracts:release-check",
+          "--",
+          "--sources",
+          "..",
+          "--release-revision",
+          "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+          "--baseline",
+          "/private/tmp/lash-her-p1-01-fyagzm3s/baseline/contracts/api-integration/v1",
+          "--baseline-revision",
+          "a08e4659ab37cd989f7d87dab0116f87eac965ec"
+        ],
+        "cwd": "/private/tmp/lash-her-p1-01-fyagzm3s/frontend",
+        "frontendRevision": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+        "startedAt": "2026-10-29T22:46:06.634030+00:00",
+        "completedAt": "2026-10-29T22:46:06.888751+00:00",
+        "exitCode": 0,
+        "log": "release-baseline.txt",
+        "sha256": "29bf4f4da2dce8a665db42b025015ab5ea2d019fc70816477b4e26c466bdffc8"
+      },
+      {
+        "name": "typecheck",
+        "command": [
+          "npx",
+          "--no-install",
+          "tsc",
+          "--noEmit",
+          "--incremental",
+          "false"
+        ],
+        "cwd": "/private/tmp/lash-her-p1-01-fyagzm3s/frontend",
+        "frontendRevision": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+        "startedAt": "2026-10-29T22:46:06.888836+00:00",
+        "completedAt": "2026-10-29T22:46:41.970345+00:00",
+        "exitCode": 0,
+        "log": "typecheck.txt",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "lint",
+        "command": ["npm", "run", "lint"],
+        "cwd": "/private/tmp/lash-her-p1-01-fyagzm3s/frontend",
+        "frontendRevision": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+        "startedAt": "2026-10-29T22:46:06.927292+00:00",
+        "completedAt": "2026-10-29T22:46:40.234423+00:00",
+        "exitCode": 0,
+        "log": "lint.txt",
+        "sha256": "04276a7e1da2bfee17b1027d529f25935ca7822fb293c97c9a53a8782576ad9f",
+        "rawSha256": "c684fb39df98b1a67999c347abeb5a924cee454f2a7e75b6dd02cdee5903032a",
+        "normalization": "trailing blank lines removed"
+      },
+      {
+        "name": "unit",
+        "command": ["npm", "run", "test:unit"],
+        "frontendRevision": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+        "exitCode": 0,
+        "log": "unit.txt",
+        "sha256": "d32312b13a184b204e1c7b5fa6b3e67702f49916e2e4535072ee1a7211110c65",
+        "tests": 1992,
+        "passed": 1992,
+        "failed": 0,
+        "execution": "local IPC allowed; no shared database target"
+      },
+      {
+        "name": "course-openapi",
+        "command": ["npm", "run", "openapi:check"],
+        "repository": "lash-her-course-api",
+        "revision": "a809b1e61051d8908892830bbeb80762448c879d",
+        "exitCode": 0,
+        "log": "course-openapi.txt",
+        "sha256": "ae55e14ec95a6fe4b9b2b091a6bed09a6c058d45556b2620a2a48f1600a7776f",
+        "dependencies": "existing API node_modules; source checkout pinned; no clean API install claimed"
+      },
+      {
+        "name": "community-openapi",
+        "command": ["npm", "run", "openapi:check"],
+        "repository": "lash-her-community-api",
+        "revision": "ac88eb9840c8ec1ad85cc414d31c6f70831d1e3f",
+        "exitCode": 0,
+        "log": "community-openapi.txt",
+        "sha256": "202e4c4b32ce95170d9e699cf8d8966da73f596591c29b07f48b00a6084a6d62",
+        "dependencies": "existing API node_modules; source checkout pinned; no clean API install claimed"
+      },
+      {
+        "name": "course-enrollment",
+        "command": ["npm", "run", "contract:community:check"],
+        "repository": "lash-her-course-api",
+        "revision": "a809b1e61051d8908892830bbeb80762448c879d",
+        "exitCode": 0,
+        "log": "course-enrollment.txt",
+        "sha256": "a3fbd78e7ed72dded82e2dbf4c9506e3ad00d246ee4646ab4911795b9f622b16",
+        "dependencies": "existing API node_modules; source checkout pinned; no clean API install claimed"
+      },
+      {
+        "name": "community-enrollment",
+        "command": ["npm", "run", "contracts:check"],
+        "repository": "lash-her-community-api",
+        "revision": "ac88eb9840c8ec1ad85cc414d31c6f70831d1e3f",
+        "exitCode": 0,
+        "log": "community-enrollment.txt",
+        "sha256": "eada94622017f0bc16f74c03237d1a09c7782fc7b8945f721a165c63cccec097",
+        "dependencies": "existing API node_modules; source checkout pinned; no clean API install claimed"
+      }
+    ],
+    "currentArtifactComparison": [
+      {
+        "artifact": "course",
+        "sourcePath": "openapi/course-api.json",
+        "workingTreeSha256": "9d1982b5cea8d37fb83d2ed46a84deb24bc3dfd036cede2fd975d59e4fd385bd",
+        "pinnedSha256": "9d1982b5cea8d37fb83d2ed46a84deb24bc3dfd036cede2fd975d59e4fd385bd",
+        "equal": true
+      },
+      {
+        "artifact": "community",
+        "sourcePath": "openapi/community-api.json",
+        "workingTreeSha256": "6ab9b614e1d7befb5081fb9c5d3a060b1cf21d9f1db7370579fb932696094b89",
+        "pinnedSha256": "6ab9b614e1d7befb5081fb9c5d3a060b1cf21d9f1db7370579fb932696094b89",
+        "equal": true
+      },
+      {
+        "artifact": "enrollmentEvent",
+        "sourcePath": "contracts/course-enrollment/v1/enrollment-event.schema.json",
+        "workingTreeSha256": "a1635b7725a8331cf4885da6b2c596f07c7272ef1bbd5d66a855b10ece95b01e",
+        "pinnedSha256": "a1635b7725a8331cf4885da6b2c596f07c7272ef1bbd5d66a855b10ece95b01e",
+        "equal": true
+      }
+    ],
+    "sourcePublication": "Exact Course and Community SHAs retrieved using the GitHub connector; frontend manifest read back at exact release SHA.",
+    "workingTreeAfterChecks": "clean before evidence records were added",
+    "logNormalization": "Trailing blank lines removed where needed; raw output digest retained alongside normalized log digest."
+  },
+  "publication": {
+    "repository": "https://github.com/princessdardan/lash-her-frontend.git",
+    "branch": "codex/p1-01-contract-v1",
+    "branchRevisionAtInitialReadback": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+    "tagTargetVerified": "a08e4659ab37cd989f7d87dab0116f87eac965ec",
+    "manifestStatusReadBack": "released",
+    "method": "atomic Git push of new branch and annotated tag; no force update",
+    "vercelDeploymentDisabledForBranch": true
+  },
+  "scope": {
+    "certified": "reviewed wire specification, exact source/artifact bindings, deterministic generated declarations, validation and conservative compatibility checks, approved/published initial baseline",
+    "notCertified": [
+      "deployed customer authentication or JWT signature verification",
+      "deployed administrator capability enforcement",
+      "gateway/OIDC/private network or distributed rate enforcement",
+      "account lifecycle execution, persistence, race/replay/deletion effects",
+      "provider calls, database integration, migrations, production feature activation",
+      "clean dependency installs or full verification of API repositories",
+      "GitHub CI, deployment/container/SBOM/provenance or later phase gates"
+    ],
+    "upstreamOpenapiGeneration": "Pinned API source with existing installed API dependencies; both checks pass.",
+    "earlierSandboxUnitAttempt": "Failed due to local tsx IPC EPERM; rerun with local IPC permission and final exact-commit suite both passed.",
+    "trackerHandling": "Attach the published task-specific receipt to the existing canonical working-tree tracker; do not commit unrelated accumulated tracker/P1-02 edits."
+  }
+}

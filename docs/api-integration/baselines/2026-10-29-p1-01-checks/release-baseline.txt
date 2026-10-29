@@ -1,0 +1,5 @@
+
+> frontend@0.1.0 contracts:release-check
+> node scripts/check-api-contracts.mjs --release --sources .. --release-revision a08e4659ab37cd989f7d87dab0116f87eac965ec --baseline /private/tmp/lash-her-p1-01-fyagzm3s/baseline/contracts/api-integration/v1 --baseline-revision a08e4659ab37cd989f7d87dab0116f87eac965ec
+
+Integration contract integrity verified (released)

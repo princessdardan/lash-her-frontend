@@ -1,0 +1,5 @@
+
+> frontend@0.1.0 contracts:sources
+> node scripts/check-api-contracts.mjs --sources ..
+
+Integration contract integrity verified (released)
