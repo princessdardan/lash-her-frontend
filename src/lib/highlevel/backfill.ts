@@ -10,17 +10,21 @@ import {
 import { enqueueCrmEvent } from "./store";
 
 /** Inventory is read-only by default; output contains aggregate counts only. */
-export async function backfillHighLevel(apply = false) {
+export async function backfillHighLevel(
+  apply = false,
+  source?: "course_signup",
+) {
   const db = getPrivateDb();
   const rows = await db.execute<{
     id: string;
     entity: CrmEntityType;
     email: string;
     phone: string | null;
+    source: string | null;
   }>(sql`
-    select id::text, 'submission' as entity, email, phone from marketing_contact_submissions where email <> '[redacted]'
-    union all select id::text, 'order', customer_email, null from checkout_orders where redacted_at is null
-    union all select id::text, 'enrollment', checkout_email, null from training_enrollments where checkout_email <> '[redacted]'`);
+    select id::text, 'submission' as entity, email, phone, source from marketing_contact_submissions where email <> '[redacted]'
+    union all select id::text, 'order', customer_email, null, null from checkout_orders where redacted_at is null
+    union all select id::text, 'enrollment', checkout_email, null, null from training_enrollments where checkout_email <> '[redacted]'`);
   const phones = new Map<string, Set<string>>();
   for (const row of rows.rows) {
     const phone = normalizePhone(row.phone);
@@ -34,17 +38,25 @@ export async function backfillHighLevel(apply = false) {
       .filter((emails) => emails.size > 1)
       .flatMap((emails) => [...emails]),
   );
-  const eligible = rows.rows.filter(
+  // Keep conflict detection across all retained sources, even for a scoped run.
+  const retained = rows.rows.filter(
+    (row) => source === undefined || row.source === source,
+  );
+  const eligible = retained.filter(
     (row) =>
       validIdentity(row.email) && !conflicted.has(normalizeEmail(row.email)),
   );
   const summary = {
     mode: apply ? "enqueue" : "dry-run",
-    retained: rows.rows.length,
+    retained: retained.length,
     eligible: eligible.length,
     identities: new Set(eligible.map((row) => normalizeEmail(row.email))).size,
-    conflictingIdentities: conflicted.size,
-    skipped: rows.rows.length - eligible.length,
+    conflictingIdentities: new Set(
+      retained
+        .filter((row) => conflicted.has(normalizeEmail(row.email)))
+        .map((row) => normalizeEmail(row.email)),
+    ).size,
+    skipped: retained.length - eligible.length,
     byEntity: Object.fromEntries(
       ["submission", "order", "enrollment"].map((type) => [
         type,
@@ -53,6 +65,12 @@ export async function backfillHighLevel(apply = false) {
     ),
   };
   if (!apply) return summary;
+  // Scope consent recovery to the same retained identities as the requested
+  // source. Read all their channel history so a later withdrawal is preserved.
+  const consentScope = (table: string) =>
+    source === undefined
+      ? sql`true`
+      : sql`exists (select 1 from marketing_contact_submissions s where s.source = ${source} and s.email <> '[redacted]' and s.email_normalized = ${sql.identifier(table)}.email_normalized)`;
   // Consent evidence is imported first. No phone number is treated as SMS consent.
   // Preserve current legacy suppression even when its original evidence has expired.
   await db.transaction(async (tx) => {
@@ -63,9 +81,9 @@ export async function backfillHighLevel(apply = false) {
       select 'email:' || id::text, email_normalized, 'email', email_normalized,
       case when event_type = 'unsubscribe' then 'unsubscribed' else 'opted_in' end,
       consent_text, 'legacy-email', source, occurred_at from marketing_consent_events
-      where email <> '[redacted]' and email_normalized not like 'redacted:%' and (event_type = 'unsubscribe' or (event_type in ('opt_in','backfill_consent') and nullif(trim(consent_text),'') is not null)) on conflict do nothing`);
+      where email <> '[redacted]' and email_normalized not like 'redacted:%' and ${consentScope("marketing_consent_events")} and (event_type = 'unsubscribe' or (event_type in ('opt_in','backfill_consent') and nullif(trim(consent_text),'') is not null)) on conflict do nothing`);
     await tx.execute(sql`insert into highlevel_consent_events (origin_key, email_normalized, channel, destination, choice, source, occurred_at)
-      select 'legacy-suppression:' || id::text || ':' || unsubscribed_at::text, email_normalized, 'email', email_normalized, 'unsubscribed', 'legacy-suppression', unsubscribed_at from marketing_contacts where unsubscribed_at is not null and email_normalized not like 'redacted:%' on conflict do nothing`);
+      select 'legacy-suppression:' || id::text || ':' || unsubscribed_at::text, email_normalized, 'email', email_normalized, 'unsubscribed', 'legacy-suppression', unsubscribed_at from marketing_contacts where unsubscribed_at is not null and email_normalized not like 'redacted:%' and ${consentScope("marketing_contacts")} on conflict do nothing`);
   });
   for (let offset = 0; offset < eligible.length; offset += 200) {
     await db.transaction(async (tx) => {
