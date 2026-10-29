@@ -1,0 +1,5 @@
+# Preserve exact upstream bytes and deterministic generator output.
+contracts/api-integration/v1/course-api.json
+contracts/api-integration/v1/community-api.json
+contracts/api-integration/v1/enrollment-event.schema.json
+src/lib/api-integration/generated/

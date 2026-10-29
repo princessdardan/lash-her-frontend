@@ -32,5 +32,10 @@
       "path": "/api/cron/shipping-rate-cache-refresh",
       "schedule": "30 7 * * 1"
     }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "codex/p1-01-contract-v1": false
+    }
+  }
 }
