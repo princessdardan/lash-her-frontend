@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, cp, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, cp, readFile, writeFile, mkdir, copyFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { resolve, dirname } from "node:path";
 import { spawnSync, execFileSync } from "node:child_process";
 import {
   assertCompatible,
@@ -10,6 +10,7 @@ import {
   contractDirectory,
   sha256,
   verifyBundleRevision,
+  verifySources,
 } from "./api-contract-tools.mjs";
 
 test("the bundle has immutable revision/hash pins; candidate release checks fail closed", async () => {
@@ -50,9 +51,11 @@ test("changed vendored bytes fail integrity checking", async () => {
 });
 
 test("released checks require source verification and an explicit baseline", async () => {
-  const directory = await mkdtemp(
+  const fixtureDirectory = await mkdtemp(
     resolve(tmpdir(), "lash-her-release-contract-"),
   );
+  const directory = resolve(fixtureDirectory, "bundle");
+  const sources = resolve(fixtureDirectory, "sources");
   try {
     await cp(contractDirectory, directory, { recursive: true });
     const file = resolve(directory, "manifest.json");
@@ -61,9 +64,31 @@ test("released checks require source verification and an explicit baseline", asy
     manifest.readmeSha256 = sha256(
       await readFile(resolve(directory, "README.md")),
     );
+    // Unit tests own their immutable source repositories. They must not depend
+    // on a developer's sibling checkouts or private repository credentials.
+    const sourceGit = (cwd, ...args) => execFileSync("git", [
+      "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false",
+      "-c", "user.name=Contract Tests", "-c", "user.email=contracts@example.test",
+      ...args,
+    ], { cwd, encoding: "utf8" });
+    for (const pin of Object.values(manifest.artifacts)) {
+      const target = resolve(sources, pin.repository, pin.sourcePath);
+      await mkdir(dirname(target), { recursive: true });
+      await copyFile(resolve(directory, pin.file), target);
+    }
+    for (const repository of new Set(Object.values(manifest.artifacts).map((pin) => pin.repository))) {
+      const cwd = resolve(sources, repository);
+      sourceGit(cwd, "init", "--quiet"); sourceGit(cwd, "add", ".");
+      sourceGit(cwd, "commit", "--quiet", "-m", "Owned contract source fixture");
+      const revision = sourceGit(cwd, "rev-parse", "HEAD").trim();
+      for (const pin of Object.values(manifest.artifacts)) if (pin.repository === repository) pin.revision = revision;
+    }
+    const changedSource = structuredClone(manifest);
+    Object.values(changedSource.artifacts)[0].sha256 = "0".repeat(64);
+    assert.throws(() => verifySources(changedSource, sources), /Pinned source mismatch/);
     await writeFile(file, JSON.stringify(manifest));
     const git = (...args) =>
-      execFileSync("git", ["-c", "core.hooksPath=/dev/null", ...args], {
+      execFileSync("git", ["-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", ...args], {
         cwd: directory,
         encoding: "utf8",
       });
@@ -99,7 +124,6 @@ test("released checks require source verification and an explicit baseline", asy
     const missingSources = pinned();
     assert.notEqual(missingSources.status, 0);
     assert.match(missingSources.stderr, /requires --sources/);
-    const sources = resolve(import.meta.dirname, "../..");
     const missingBaseline = pinned("--sources", sources);
     assert.notEqual(missingBaseline.status, 0);
     assert.match(missingBaseline.stderr, /requires an explicit --baseline/);
@@ -137,7 +161,7 @@ test("released checks require source verification and an explicit baseline", asy
     );
     await assert.rejects(readContractBundle(directory), /README hash mismatch/);
   } finally {
-    await rm(directory, { recursive: true, force: true });
+    await rm(fixtureDirectory, { recursive: true, force: true });
   }
 });
 

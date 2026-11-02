@@ -92,8 +92,14 @@ jobs:
           repository: princessdardan/lash-her-community-api
           ref: ${{ inputs.community_revision }}
           path: sources/lash-her-community-api
+          fetch-depth: 0
           token: ${{ secrets.PLATFORM_SOURCE_READ_TOKEN }}
           persist-credentials: false
+      - name: Verify the released Course-Community contract before building
+        run: >-
+          node sources/lash-her-community-api/scripts/check-vendored-course-contract.mjs
+          "$GITHUB_WORKSPACE/sources/lash-her-course-api" --release
+          > "$RUNNER_TEMP/platform-evidence/course-community-contract.txt"
       - name: Install isolated harness dependencies
         run: |-
           npm ci --prefix sources/lash-her-frontend

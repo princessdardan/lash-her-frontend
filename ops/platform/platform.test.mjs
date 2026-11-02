@@ -156,6 +156,10 @@ test("candidate publication uses sole-operator dispatch, a scoped read token and
   assert.ok(!JSON.stringify(workflow).includes("create-github-app-token"));
   for (const step of steps.filter((step) => step.uses)) assert.match(step.uses, /@[0-9a-f]{40}$/u);
   const builds = steps.filter((step) => step.id?.startsWith("build-"));
+  const crossContractIndex = steps.findIndex((step) => step.run?.includes("check-vendored-course-contract.mjs"));
+  assert.ok(crossContractIndex > verifyIndex && crossContractIndex < steps.indexOf(builds[0]));
+  assert.match(steps[crossContractIndex].run, /--release/u);
+  assert.equal(steps.find((step) => step.with?.path === "sources/lash-her-community-api").with["fetch-depth"], 0);
   assert.equal(builds.length, 5);
   for (const build of builds) {
     assert.ok(steps.indexOf(build) > verifyIndex);
