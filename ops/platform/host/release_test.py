@@ -203,7 +203,9 @@ class RuntimeReleaseTests(unittest.TestCase):
                 with self.assertRaises(BlockingIOError):
                     fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             self.assertEqual(self.running, set(release.SERVICES))
-            self.assertEqual(json.loads((attempt / "runtime-outcome.json").read_text())["status"], "API_RUNTIME_READY")
+            retained = json.loads((attempt / "runtime-outcome.json").read_text())
+            self.assertEqual(retained["status"], "API_RUNTIME_READY")
+            self.assertEqual(runtime, retained)
             self.assertEqual(json.loads((migration_attempt / "migration-outcome.json").read_text())["status"], "DATABASES_VERIFIED")
             self.assertTrue(json.loads((migration_attempt / "frontend/job-outcome.json").read_text())["readOnlyVerified"])
             self.assertTrue(json.loads((snapshot / "gateway.json").read_text())["maintenance"])

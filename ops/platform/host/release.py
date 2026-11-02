@@ -285,9 +285,10 @@ def execute(bundle, configuration, results, compose_file, apply=False, confirmat
                 # verification and its separate release outcome. Stay inside
                 # migrate.execute's flock for that entire continuation. The API
                 # receipt remains an API-only result, never release acceptance.
+                ready = copy.deepcopy(outcome)
                 outcome["phase"] = "frontend-coordination"
                 after_runtime_ready(attempt, migration_attempt, snapshot,
-                                    copy.deepcopy(verified_release), copy.deepcopy(outcome))
+                                    copy.deepcopy(verified_release), ready)
                 outcome["phase"] = "completed"
             return outcome
         except BaseException:
