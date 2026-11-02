@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
 import test from "node:test";
 import { createHighLevelClient } from "./client";
+import { exchange } from "./oauth";
 import { encryptCredential, decryptCredential } from "./crypto";
 import {
   normalizePhone,
@@ -18,7 +19,216 @@ import {
   verifyHighLevelSignature,
 } from "./webhook";
 import { createCrmCronHandler } from "./worker";
-import { crmMarketingEnabled, highLevelOwnsMarketing } from "./config";
+import {
+  authorizationUrl,
+  HIGHLEVEL_SCOPES,
+  crmMarketingEnabled,
+  highLevelOwnsMarketing,
+} from "./config";
+
+test("OAuth exchange pins v3 and rejects agency and wrong-location tokens", async (t) => {
+  const values = {
+    HIGHLEVEL_CLIENT_ID: "test-client",
+    HIGHLEVEL_CLIENT_SECRET: "test-secret",
+    HIGHLEVEL_REDIRECT_URI: "https://website.test/api/admin/highlevel/callback",
+    HIGHLEVEL_LOCATION_ID: "test-location",
+    VERCEL_ENV: "preview",
+    HIGHLEVEL_AGENCY_INSTALLATION_ENABLED: "false",
+  };
+  const previous = Object.fromEntries(
+    Object.keys(values).map((key) => [key, process.env[key]]),
+  );
+  Object.assign(process.env, values);
+  t.after(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  const token = {
+    access_token: "test-access",
+    refresh_token: "test-refresh",
+    expires_in: 86400,
+    userType: "Location",
+    locationId: "test-location",
+    scope: HIGHLEVEL_SCOPES.join(" "),
+  };
+  const request: typeof fetch = async (_input, init) => {
+    assert.equal(new Headers(init?.headers).get("Version"), "v3");
+    assert.equal(
+      new URLSearchParams(init?.body as URLSearchParams).get("user_type"),
+      "Location",
+    );
+    return Response.json(token);
+  };
+  assert.deepEqual(
+    await exchange(
+      { grant_type: "authorization_code", code: "test-code" },
+      request,
+    ),
+    token,
+  );
+  token.userType = "Company";
+  await assert.rejects(
+    exchange({ grant_type: "authorization_code" }, request),
+    /oauth_location_installation_required/,
+  );
+  token.userType = "Location";
+  token.locationId = "wrong-location";
+  await assert.rejects(
+    exchange({ grant_type: "authorization_code" }, request),
+    /oauth_invalid_location_or_token/,
+  );
+});
+
+test("agency installation exchanges only the configured company and location and returns only location credentials", async (t) => {
+  const values = {
+    HIGHLEVEL_CLIENT_ID: "test-client",
+    HIGHLEVEL_CLIENT_SECRET: "test-secret",
+    HIGHLEVEL_REDIRECT_URI: "https://website.test/api/admin/highlevel/callback",
+    HIGHLEVEL_LOCATION_ID: "test-location",
+    HIGHLEVEL_COMPANY_ID: "test-company",
+    HIGHLEVEL_AGENCY_INSTALLATION_ENABLED: "true",
+    VERCEL_ENV: "preview",
+  };
+  const previous = Object.fromEntries(
+    Object.keys(values).map((key) => [key, process.env[key]]),
+  );
+  Object.assign(process.env, values);
+  t.after(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  const agencyToken = {
+    access_token: "agency-access",
+    refresh_token: "agency-refresh",
+    expires_in: 86400,
+    userType: "Company",
+    companyId: "test-company",
+    scope: [...HIGHLEVEL_SCOPES, "oauth.write"].join(" "),
+  };
+  const locationToken = {
+    access_token: "location-access",
+    refresh_token: "location-refresh",
+    expires_in: 86400,
+    locationId: "test-location",
+    scope: HIGHLEVEL_SCOPES.join(" "),
+  };
+  let locationRequests = 0;
+  const request: typeof fetch = async (input, init) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/oauth/token") return Response.json(agencyToken);
+    assert.equal(path, "/oauth/location-token");
+    const headers = new Headers(init?.headers);
+    assert.equal(headers.get("Version"), "v3");
+    assert.equal(headers.get("Authorization"), "Bearer agency-access");
+    assert.equal(init?.redirect, "error");
+    assert.deepEqual(Object.fromEntries(init?.body as URLSearchParams), {
+      companyId: "test-company",
+      locationId: "test-location",
+    });
+    locationRequests++;
+    return Response.json(locationToken);
+  };
+  const authorization = { grant_type: "authorization_code", code: "test-code" };
+  assert.deepEqual(await exchange(authorization, request), {
+    ...locationToken,
+    userType: "Location",
+  });
+  assert.equal(locationRequests, 1);
+  agencyToken.companyId = "different-company";
+  await assert.rejects(
+    exchange(authorization, request),
+    /oauth_invalid_company_or_token/,
+  );
+  agencyToken.companyId = "test-company";
+  agencyToken.scope = HIGHLEVEL_SCOPES.join(" ");
+  await assert.rejects(
+    exchange(authorization, request),
+    /oauth_missing_agency_exchange_scope/,
+  );
+  agencyToken.scope += " oauth.write";
+  await assert.rejects(
+    exchange({ grant_type: "refresh_token" }, request),
+    /oauth_location_installation_required/,
+  );
+  assert.equal(locationRequests, 1);
+  locationToken.locationId = "different-location";
+  await assert.rejects(
+    exchange(authorization, request),
+    /oauth_invalid_location_or_token/,
+  );
+  locationToken.locationId = "test-location";
+  locationToken.refresh_token = "";
+  await assert.rejects(
+    exchange(authorization, request),
+    /oauth_invalid_location_or_token/,
+  );
+  locationToken.refresh_token = "location-refresh";
+  locationToken.scope = "contacts.readonly";
+  await assert.rejects(
+    exchange(authorization, request),
+    /oauth_missing_scopes/,
+  );
+});
+
+test("OAuth installation uses the versioned authorization endpoint and app version with bound state", (t) => {
+  const values = {
+    HIGHLEVEL_CLIENT_ID: "test-client",
+    HIGHLEVEL_APP_VERSION_ID: "test-version",
+    HIGHLEVEL_REDIRECT_URI: "https://website.test/api/admin/highlevel/callback",
+    HIGHLEVEL_AGENCY_INSTALLATION_ENABLED: "false",
+    HIGHLEVEL_COMPANY_ID: "test-company",
+  };
+  const previous = Object.fromEntries(
+    Object.keys(values).map((key) => [key, process.env[key]]),
+  );
+  Object.assign(process.env, values);
+  t.after(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  const url = authorizationUrl("bound-state");
+  assert.equal(url.origin, "https://marketplace.gohighlevel.com");
+  assert.equal(url.pathname, "/v2/oauth/chooselocation");
+  assert.equal(url.searchParams.get("version_id"), "test-version");
+  assert.equal(url.searchParams.get("state"), "bound-state");
+  assert.equal(
+    url.searchParams.get("redirect_uri"),
+    values.HIGHLEVEL_REDIRECT_URI,
+  );
+  assert.equal(url.searchParams.get("scope"), HIGHLEVEL_SCOPES.join(" "));
+  process.env.HIGHLEVEL_AGENCY_INSTALLATION_ENABLED = "true";
+  assert.equal(
+    authorizationUrl("bound-state").searchParams.get("scope"),
+    [...HIGHLEVEL_SCOPES, "oauth.write"].join(" "),
+  );
+  delete process.env.HIGHLEVEL_COMPANY_ID;
+  assert.throws(
+    () => authorizationUrl("bound-state"),
+    /missing_highlevel_company_id/,
+  );
+  process.env.HIGHLEVEL_COMPANY_ID = "invalid&company";
+  assert.throws(
+    () => authorizationUrl("bound-state"),
+    /invalid_highlevel_company_id/,
+  );
+  process.env.HIGHLEVEL_COMPANY_ID = "test-company";
+  delete process.env.HIGHLEVEL_APP_VERSION_ID;
+  assert.throws(
+    () => authorizationUrl("bound-state"),
+    /missing_highlevel_app_version_id/,
+  );
+  process.env.HIGHLEVEL_APP_VERSION_ID = "bad&version=wrong";
+  assert.throws(
+    () => authorizationUrl("bound-state"),
+    /invalid_highlevel_app_version_id/,
+  );
+});
 
 test("marketing consent requires explicit booleans and a usable SMS destination", () => {
   assert.deepEqual(parseCheckoutMarketing(undefined), {});

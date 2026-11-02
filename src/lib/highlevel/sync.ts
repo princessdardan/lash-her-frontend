@@ -69,6 +69,17 @@ async function syncSource(
         throw new HighLevelError("contact_deleted_review_required");
       const phone = normalizePhone(source.phone) ?? local.phone;
       let remote: ProviderContact;
+      const lookup = async (field: "email" | "phone", value: string) => {
+        const result = await api<{
+          contacts: ProviderContact[];
+          nextCursor?: string;
+        }>(
+          `/contacts/lookup?${new URLSearchParams({ locationId: location, [field]: value, limit: "2" })}`,
+        );
+        if (!Array.isArray(result.contacts) || result.nextCursor)
+          throw new HighLevelError("identity_conflict");
+        return result.contacts;
+      };
       if (local.provider_id) {
         remote = (
           await api<{ contact: ProviderContact }>(
@@ -76,17 +87,6 @@ async function syncSource(
           )
         ).contact;
       } else {
-        const lookup = async (field: "email" | "phone", value: string) => {
-          const result = await api<{
-            contacts: ProviderContact[];
-            nextCursor?: string;
-          }>(
-            `/contacts/lookup?${new URLSearchParams({ locationId: location, [field]: value, limit: "2" })}`,
-          );
-          if (!Array.isArray(result.contacts) || result.nextCursor)
-            throw new HighLevelError("identity_conflict");
-          return result.contacts;
-        };
         const emailMatches = await lookup("email", email);
         const phoneMatches = phone ? await lookup("phone", phone) : [];
         const existing = selectContact(email, emailMatches, phoneMatches);
@@ -130,12 +130,16 @@ async function syncSource(
       }
       try {
         assertMappedIdentity(remote, location, email, phone);
+        // Consent can create an email-only mapping before its submission arrives.
+        // Recheck ownership before adding a phone to that already mapped contact.
+        if (phone && !remote.phone)
+          selectContact(email, [remote], await lookup("phone", phone));
       } catch (error) {
         // A phone conflict still requires review, but cannot strand an email
         // withdrawal for the unchanged, tenant-bound mapped destination.
         if (
           error instanceof HighLevelError &&
-          error.code === "phone_changed_in_crm" &&
+          ["phone_changed_in_crm", "identity_conflict"].includes(error.code) &&
           remote.id === local.provider_id &&
           remote.email &&
           normalizeEmail(remote.email) === email &&
@@ -374,7 +378,9 @@ export async function syncEffects(
   const id = pathId(contact.provider_id!);
   if (
     job.entity_type === "submission" &&
-    ["general_inquiry", "training_contact"].includes(source.source)
+    ["general_inquiry", "training_contact", "course_signup"].includes(
+      source.source,
+    )
   ) {
     await durableEffect(`note:${job.entity_id}`, contact, "note", async () => {
       const result = await api<{ note: { id: string } }>(
@@ -383,7 +389,7 @@ export async function syncEffects(
           method: "POST",
           nonIdempotent: true,
           body: {
-            body: `[LH submission ${job.entity_id}]\n${source.source}\n${source.interest ?? ""}\n${source.sourcePath ?? ""}\n${source.message ?? ""}`,
+            body: `[LH submission ${job.entity_id}]\n${source.source}\n${source.interest ?? ""}\n${source.sourcePath ?? ""}\n${source.message ?? ""}${source.source === "course_signup" && source.instagram ? `\nInstagram: ${source.instagram}` : ""}`,
           },
         },
       );
@@ -391,7 +397,8 @@ export async function syncEffects(
         throw new HighLevelError("ambiguous_note_response", false, 60, true);
       return result.note.id;
     });
-    if (!job.historical) await syncOpportunity(job, source, contact, api);
+    if (!job.historical && source.source !== "course_signup")
+      await syncOpportunity(job, source, contact, api);
   }
   const email = contact.email_normalized;
   const [emailConsent, smsConsent] = await Promise.all([
