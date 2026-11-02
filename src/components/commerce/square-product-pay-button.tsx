@@ -7,6 +7,7 @@ import {
 
 import { useCallback, useRef, useState, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 import { SquareAfterpayButton } from "@/components/payments/square-afterpay-button";
 import type { SquareCheckoutPayment } from "@/lib/payments/square/afterpay-policy";
@@ -208,9 +209,9 @@ export function SquareProductPayButton({
         role="alert"
       >
         Card checkout is temporarily unavailable. Please refresh or{" "}
-        <a href="/contact" className="underline">
+        <Link href="/contact" className="underline">
           contact us
-        </a>
+        </Link>
         .
       </div>
     );

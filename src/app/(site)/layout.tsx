@@ -15,9 +15,10 @@ export default async function SiteLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const [globalData, mainMenuData] = await Promise.all([
+  const [globalData, mainMenuData, landingPages] = await Promise.all([
     loaders.getGlobalData(),
     loaders.getMainMenuData(),
+    loaders.getAllLandingPageSlugs(),
   ]);
 
   return (
@@ -32,7 +33,10 @@ export default async function SiteLayout({
         <Header data={globalData?.header} menuItems={mainMenuData?.items} />
         <MainWrapper>{children}</MainWrapper>
         <Footer data={globalData?.footer} />
-        <ContactPopup settings={globalData?.contactPopup} />
+        <ContactPopup
+          settings={globalData?.contactPopup}
+          excludedPaths={landingPages.map(({ slug }) => `/${slug}`)}
+        />
         <CartSheet />
         <CookieConsentBanner
           crmTrackingAvailable={

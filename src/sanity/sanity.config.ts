@@ -48,8 +48,30 @@ export default defineConfig({
   ],
   schema: {
     types: schemaTypes,
-    templates: (templates) =>
-      templates.filter(({ schemaType }) => !singletonTypes.has(schemaType)),
+    templates: (templates) => [
+      ...templates.filter(({ schemaType }) => !singletonTypes.has(schemaType)),
+      {
+        id: "landing-page-founding-membership",
+        title: "Founding Membership Landing Page",
+        schemaType: "landingPage",
+        value: {
+          title: "Founding Membership",
+          slug: { _type: "slug", current: "founding-membership" },
+          eyebrow: "A new chapter for Lash Her",
+          heading: "Become a founding member",
+          description:
+            "Our new salon is coming. Join the founding membership interest list to hear about opening updates and membership details.",
+          signup: {
+            heading: "Join the founding list",
+            description:
+              "Leave your email to receive founding membership and salon opening updates.",
+            submitLabel: "Join the founding list",
+            successMessage:
+              "You're on the founding list. We'll email you with membership details and salon opening updates.",
+          },
+        },
+      },
+    ],
   },
   document: {
     actions: (input, context) =>

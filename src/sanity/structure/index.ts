@@ -11,6 +11,7 @@ export const structure: StructureResolver = (S) =>
           S.list()
             .title("Pages")
             .items([
+              S.documentTypeListItem("landingPage").title("Landing Pages"),
               S.listItem()
                 .title("Homepage")
                 .id("homePage")

@@ -508,6 +508,28 @@ test("marketing contact store does not skip already-succeeded sync jobs on unsub
   `);
 });
 
+test("landing page identity is retained per submission without legacy document deduplication", () => {
+  runMarketingContactStoreScenario(`
+    const repository = new FakeMarketingContactRepository();
+    const store = createMarketingContactStore(repository);
+    for (const email of ["one@example.com", "two@example.com"]) {
+      await store.recordContactPopup({
+        email, variant: "emailOnly", marketingConsent: true,
+        sourcePath: "/founding-membership",
+        landingPage: { id: "landing.founding", title: "Founding Membership" },
+      });
+    }
+    assert.equal(repository.records.length, 2);
+    assert.equal(repository.syncJobs.length, 2);
+    for (const record of repository.records) {
+      assert.deepEqual(record.submission.payload.landingPage, { id: "landing.founding", title: "Founding Membership" });
+      assert.equal(record.submission.sourcePath, "/founding-membership");
+      assert.equal(record.submission.sourceDocument, undefined);
+      assert.equal(record.contactPopupOffer, undefined);
+    }
+  `);
+});
+
 function runMarketingContactStoreScenario(assertions: string): void {
   const scenario = `${helperScript}\nvoid (async () => {\n${assertions}\n})()`;
   const env = { ...process.env };

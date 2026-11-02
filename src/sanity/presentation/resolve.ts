@@ -39,6 +39,15 @@ function routableDocumentLocation(
 
 export const resolve: PresentationPluginOptions["resolve"] = {
   locations: {
+    landingPage: defineLocations({
+      select: { title: "title", slug: "slug.current" },
+      resolve: (doc) => ({
+        locations:
+          typeof doc?.slug === "string"
+            ? [{ title: doc.title || "Landing page", href: `/${doc.slug}` }]
+            : [],
+      }),
+    }),
     homePage: singletonLocation("Home", "/"),
     contactPage: singletonLocation("Contact", "/contact"),
     galleryPage: singletonLocation("Gallery", "/gallery"),

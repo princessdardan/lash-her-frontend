@@ -17,6 +17,7 @@ import { service } from "./documents/service";
 import { trainingProgram } from "./documents/training-program";
 import { policyPage } from "./documents/policy-page";
 import { shortCourse } from "./documents/short-course";
+import { landingPage } from "./documents/landing-page";
 
 // Objects — Layout blocks
 import { heroSection } from "./objects/layout/hero-section";
@@ -66,6 +67,7 @@ export const schemaTypes = [
   trainingProgram,
   policyPage,
   shortCourse,
+  landingPage,
   // Layout blocks
   heroSection,
   ctaFeaturesSection,

@@ -14,6 +14,7 @@ import {
   type ReactElement,
 } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { SquareAfterpayButton } from "@/components/payments/square-afterpay-button";
 import {
   SQUARE_AFTERPAY_MAX_CENTS,
@@ -259,9 +260,9 @@ export function SquareTrainingPayButton({
       ) : isUnavailable ? (
         <div role="alert" className="text-sm text-lh-muted">
           Card checkout is temporarily unavailable. Please refresh or{" "}
-          <a href="/contact" className="underline">
+          <Link href="/contact" className="underline">
             contact us
-          </a>
+          </Link>
           .
         </div>
       ) : (
