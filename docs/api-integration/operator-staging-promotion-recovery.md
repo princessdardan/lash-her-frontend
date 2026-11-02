@@ -13,7 +13,7 @@ These match the [official promotion API](https://vercel.com/docs/rest-api/projec
 
 ## Reviewed recovery action
 
-The [recovery component](../../../ops/platform/host/staging_recovery.py) restores only the eight existing stopped containers from this release. Its [tests](../../../ops/platform/host/staging_recovery_test.py) cover receipt tampering, confirmation, lock contention, changed aliases/schedules, missing containers, startup failure handling, expired probes and repeat refusal.
+The [recovery component](../../ops/platform/host/staging_recovery.py) restores only the eight existing stopped containers from this release. Its [tests](../../ops/platform/host/staging_recovery_test.py) cover receipt tampering, confirmation, lock contention, changed aliases/schedules, missing containers, startup failure handling, expired probes and repeat refusal.
 
 1. Recheck the exact host machine identity, successful database receipts and their hashes, original runtime/frontend failure and successful server proof.
 2. Under the shared release/watchdog lock, verify the completed promotion and staging alias, disabled schedules, all eight original container IDs, pinned images, labels and stopped state.
