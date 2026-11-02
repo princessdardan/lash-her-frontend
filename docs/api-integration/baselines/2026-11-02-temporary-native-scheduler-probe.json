@@ -1,0 +1,28 @@
+{
+  "date": "2026-11-02",
+  "status": "IMPLEMENTED_LOCALLY_VERIFIED_NOT_DEPLOYED",
+  "configuration": "vercel.mjs",
+  "qualificationMode": "LASH_RELEASE_SCHEDULER_QUALIFICATION=true",
+  "qualificationEnvironment": "exact dedicated staging project, Production target, reviewed team and Git source",
+  "qualificationDefinition": {"path": "/api/internal/release-scheduler-probe", "schedule": "* * * * *"},
+  "businessCronsInQualificationBuild": 0,
+  "ordinaryConfigurationMatchesPredecessorExactly": true,
+  "expiryMaximumMs": 3600000,
+  "handlerMaximumDurationSeconds": 15,
+  "cronSecretReadByOperatorTool": false,
+  "nativeSchedulesEnabledByPreparation": false,
+  "permanentMonitoringAdded": false,
+  "tests": {
+    "platformNodeTests": 53,
+    "hostPythonTests": 95,
+    "serverAndSchedulerHandlerTests": 8,
+    "typescript": "passed",
+    "focusedLint": "passed"
+  },
+  "predecessorCi": {"commit": "2245a2f56b054f6330d9be95faae901410cf6f48", "runId": "41507736315", "allTenJobs": "passed"},
+  "exactNewSourceCi": "pending publication",
+  "nativeSchedulerVerified": false,
+  "releaseAccepted": false,
+  "remaining": ["inspect actual deployed cron configuration", "native invocation and successful receipt correlation", "disable and strict cancellation/drain qualification", "normal-definition restoration", "writer quiescence and final admission"],
+  "sources": ["https://vercel.com/docs/project-configuration/vercel-ts", "https://vercel.com/docs/cron-jobs/manage-cron-jobs"]
+}

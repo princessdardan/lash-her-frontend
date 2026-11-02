@@ -24,7 +24,7 @@ Inject the existing `VERCEL_TOKEN` and the three named staging migration variabl
 
 Before database work, the command verifies provider project/protection access and refuses active alias jobs or unsupported rolling release state. It then calls the API coordinator. Inside the locked continuation, after durable database/API readiness:
 
-1. Recheck provider state and disable native schedules with readback; retain their previous enablement state.
+1. Recheck provider state and disable native schedules with readback; retain their previous enablement state. Probe preparation selects the expiring staging qualification configuration: that frontend build contains only the dedicated native smoke definition, with business cron definitions excluded. It does not enable the scheduler.
 2. Configure the [automatic expiring probe](operator-frontend-workload-probe.md) in the existing staging project.
 3. Build the exact frontend Git revision as a Production-target deployment without assigning domains.
 4. Verify the deployed server-to-gateway path through the real HTTP callback, then promote that retained deployment and verify native promotion completion.

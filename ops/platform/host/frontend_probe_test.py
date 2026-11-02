@@ -107,7 +107,8 @@ class FrontendProbeTests(unittest.TestCase):
 
     def prepared_responses(self):
         self.fixture.enqueue(self.project())
-        for key, kind in (("LASH_RELEASE_PROBE_SECRET", "sensitive"), ("LASH_RELEASE_PROBE_EXPIRES_AT", "plain"), ("API_GATEWAY_STAGING_ORIGIN", "plain")):
+        for key, kind in (("LASH_RELEASE_PROBE_SECRET", "sensitive"), ("LASH_RELEASE_PROBE_EXPIRES_AT", "plain"),
+                          ("LASH_RELEASE_SCHEDULER_QUALIFICATION", "plain"), ("API_GATEWAY_STAGING_ORIGIN", "plain")):
             self.fixture.enqueue({"created": {"key": key, "type": kind, "target": ["production"]}, "failed": []})
         self.fixture.enqueue(self.project())
 
@@ -127,13 +128,27 @@ class FrontendProbeTests(unittest.TestCase):
         self.assertRegex(private["secret"], r"^[a-f0-9]{64}$")
         self.assertEqual((self.private / frontend_probe.PRIVATE_FILE).stat().st_mode & 0o777, 0o600)
         posts = [call for call in self.fixture.calls if call["method"] == "POST"]
-        self.assertEqual(len(posts), 3)
+        self.assertEqual(len(posts), 4)
         self.assertEqual(posts[0]["body"]["type"], "sensitive")
+        self.assertEqual(posts[2]["body"]["value"], "false")
         self.assertTrue(all(call["body"]["target"] == ["production"] for call in posts))
         self.assertTrue(all("CRON_SECRET" not in call["body"]["key"] for call in posts))
         records = "".join(path.read_text() for path in attempt.iterdir())
         for secret in (private["secret"], "fixture-private-token", "fixture-protection-bypass", "provider-secret-must-not-escape"):
             self.assertNotIn(secret, records)
+
+    def test_staging_qualification_is_explicit_and_production_cannot_select_it(self):
+        self.prepared_responses()
+        frontend_probe.prepare(self.client, self.release, self.private, self.attempt(), "gateway.example.invalid", scheduler_qualification=True)
+        posts = [call for call in self.fixture.calls if call["method"] == "POST"]
+        self.assertEqual(posts[2]["body"]["key"], "LASH_RELEASE_SCHEDULER_QUALIFICATION")
+        self.assertEqual(posts[2]["body"]["value"], "true")
+        self.fixture.calls.clear()
+        self.release["environment"] = "production"
+        self.release["workload"]["projectId"] = vercel.PROJECTS["production"]
+        with self.assertRaisesRegex(ValueError, "SCHEDULER_QUALIFICATION_REQUIRES_STAGING"):
+            frontend_probe.prepare(self.client, self.release, self.private, self.fixture.attempt, "gateway.example.invalid", scheduler_qualification=True)
+        self.assertEqual(self.fixture.calls, [])
 
     def test_invalid_gateway_or_cross_environment_refuses_before_network_or_private_input(self):
         for host in ("https://gateway.example.invalid", "gateway.example.invalid/path", "localhost"):
@@ -175,7 +190,8 @@ class FrontendProbeTests(unittest.TestCase):
         self.release["workload"]["projectId"] = vercel.PROJECTS["production"]
         project = {**self.project(), "id": vercel.PROJECTS["production"]}
         self.fixture.enqueue(project)
-        for key, kind in (("LASH_RELEASE_PROBE_SECRET", "sensitive"), ("LASH_RELEASE_PROBE_EXPIRES_AT", "plain"), ("API_GATEWAY_PRODUCTION_ORIGIN", "plain")):
+        for key, kind in (("LASH_RELEASE_PROBE_SECRET", "sensitive"), ("LASH_RELEASE_PROBE_EXPIRES_AT", "plain"),
+                          ("LASH_RELEASE_SCHEDULER_QUALIFICATION", "plain"), ("API_GATEWAY_PRODUCTION_ORIGIN", "plain")):
             self.fixture.enqueue({"created": {"key": key, "type": kind, "target": ["production"]}, "failed": []})
         self.fixture.enqueue(project)
         result = frontend_probe.prepare(self.client, self.release, self.private, self.fixture.attempt, "gateway.example.invalid")

@@ -11,6 +11,7 @@ The component uses the existing scoped Vercel token to configure three variables
 - `LASH_RELEASE_PROBE_SECRET`: sensitive, generated automatically.
 - `LASH_RELEASE_PROBE_EXPIRES_AT`: automatic expiry in Unix milliseconds.
 - `API_GATEWAY_STAGING_ORIGIN` or `API_GATEWAY_PRODUCTION_ORIGIN`: the reviewed gateway host from runtime configuration.
+- `LASH_RELEASE_SCHEDULER_QUALIFICATION`: `true` only for the initial staging coordinator; ordinary preparation explicitly writes `false`.
 
 Business staging uses the dedicated staging project; production uses the separate production project. Each provider mutation has retained private input and a sanitized intent before it runs. Partial failures are not retried automatically. The component verifies each returned key/type/target and checks that the production deployment and disabled-cron state have not changed. It neither reads nor replaces `CRON_SECRET`. Existing deployed environments are immutable; configuring a new probe does not change their credentials.
 
@@ -23,6 +24,16 @@ The generated credential remains sensitive in the existing project and is replac
 `frontend_probe.verify` rechecks the retained deployment's source/project/release identity and READY state. It consumes the existing project automation bypass privately for deployment protection, without forwarding the Vercel API token. Its HTTPS client fixes the deployment URL/path, verifies certificates, rejects proxies/redirects, bounds the response and requires JSON with `no-store`. A successful response must match the fresh challenge, selected environment/project/source and exact gateway origin; the credential must still be unexpired. Provider bodies, credentials and challenges are not retained in the common outcome.
 
 This function can supply `promote_frontend`'s real verification callback. `FRONTEND_VERIFIED` covers the server-to-gateway catalog path only. It keeps `trafficAuthorized=false` and `nativeSchedulerVerified=false`. Native scheduled execution/cancellation, producer restoration, final admission and the other initial P1 checks remain independent requirements.
+
+## Temporary native scheduler definition
+
+The root configuration is now `vercel.mjs`, using Vercel's supported programmatic configuration. Ordinary mode preserves all nine existing business schedules and the publication branch's Git deployment suppression. An explicit qualification mode requires the exact staging Production target, reviewed team/project, Git source identity and an unexpired window of at most one hour. It replaces the entire cron list with `/api/internal/release-scheduler-probe` every minute. No business cron is present in that build; no project scheduler is enabled by configuration generation or preparation.
+
+The dedicated GET handler requires the existing `CRON_SECRET`, the intended native schedule headers and the live staging qualification configuration before using the ordinary gateway SDK transport. It performs a read-only Course catalog smoke, then emits a selected source/project-bound receipt with a fresh invocation ID. Headers alone are not proof of native origin. Provider invocation evidence and the corresponding successful receipt must be correlated to the exact deployed build. Errors, expiry and wrong authentication cannot produce a success response; HEAD does no outbound work. Runtime duration is explicitly bounded to 15 seconds, with the transport's existing shorter deadline. Expiry closes the handler but does not remove the provider schedule.
+
+The locked staging coordinator selects this definition while retaining native schedule suspension. Live qualification must inspect the actual deployed cron definitions, deliberately enable only that qualified build, collect native invocation evidence, disable with readback and prove the required cancellation/drain behavior. Schedule disabling does not interrupt already-running jobs. The next ordinary build selects `false` and removes the temporary definition. There is no permanent monitoring job, cron-secret retrieval, or alerting service. This implementation does not yet perform the live enable/observe/disable sequence or establish full writer quiescence.
+
+See [programmatic configuration](https://vercel.com/docs/project-configuration/vercel-ts) and [native cron authentication, scheduling and deployment behavior](https://vercel.com/docs/cron-jobs/manage-cron-jobs). The provider supports `vercel.mjs`; a legacy local CLI that only understands `vercel.json` is not a qualification tool for this configuration.
 
 ## Evidence and integration boundary
 

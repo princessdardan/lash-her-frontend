@@ -1,10 +1,9 @@
 // Initial login activation only. Existing roles/privileges are not recreated.
-import { createHmac, createHash, pbkdf2Sync, randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import { isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const { Client } = createRequire(new URL("../../package.json", import.meta.url))("pg");
+const { Client, escapeLiteral } = createRequire(new URL("../../package.json", import.meta.url))("pg");
 const HOST = "ep-sparkling-moon-b4htlczb.c-6.us-east-2.aws.neon.tech";
 const ROLES = ["lash_her_course_staging_migration", "lash_her_course_staging_runtime"];
 const VARIABLES = ["COURSE_STAGING_ADMIN_DATABASE_URL", "COURSE_STAGING_DATABASE_URL", "COURSE_STAGING_RUNTIME_DATABASE_URL"];
@@ -28,20 +27,9 @@ function connection(value, role, admin = false) {
     lock_timeout: 5000, options: "", application_name: "lash-her-course-initial-login" };
 }
 
-// Send SCRAM verifiers, not plaintext passwords, in the role DDL. Neither form
-// may be printed, added to command arguments, retained in receipts or logged.
-function verifier(password) {
-  const salt = randomBytes(16), iterations = 4096;
-  const salted = pbkdf2Sync(password, salt, iterations, 32, "sha256");
-  const client = createHmac("sha256", salted).update("Client Key").digest();
-  const stored = createHash("sha256").update(client).digest("base64");
-  const server = createHmac("sha256", salted).update("Server Key").digest("base64");
-  return `SCRAM-SHA-256$${iterations}:${salt.toString("base64")}$${stored}:${server}`;
-}
-
 export async function activateCourseLogins(values, dependencies = {}) {
   const clients = [];
-  let transaction = false, committed = false;
+  let transaction = false, committed = false, commitAttempted = false, phase = "input";
   const createClient = dependencies.createClient ?? ((options) => new Client(options));
   const connect = async (options) => {
     const client = createClient(options); clients.push(client); await client.connect();
@@ -51,7 +39,9 @@ export async function activateCourseLogins(values, dependencies = {}) {
   try {
     const configs = [connection(values[VARIABLES[0]], "neondb_owner", true), ...ROLES.map((role, index) => connection(values[VARIABLES[index + 1]], role))];
     demand(new Set(configs.map((config) => config.password)).size === 3);
+    phase = "admin-connect";
     const owner = await connect(configs[0]);
+    phase = "preflight";
     await owner.query("BEGIN"); transaction = true;
     const identity = (await owner.query("select current_user,current_database() as database,current_setting('server_version_num')::int/10000 as major")).rows[0];
     demand(identity.current_user === "neondb_owner" && identity.database === "neondb" && identity.major === 18);
@@ -69,16 +59,22 @@ export async function activateCourseLogins(values, dependencies = {}) {
       pg_has_role($2,$1,'MEMBER') as runtime_migration_member`, ROLES)).rows[0];
     demand(privileges.migration_db_create === true && privileges.migration_schema_create === true &&
       privileges.runtime_schema_create === false && privileges.runtime_db_create === false && privileges.runtime_migration_member === false);
+    // Neon rejects client-generated password hashes at transaction commit.
+    // Supply the private value only over the verified TLS connection and let
+    // PostgreSQL encrypt it. ALTER ROLE cannot use a bind parameter here;
+    // escapeLiteral handles SQL quotes/backslashes. Never log this statement.
+    phase = "password-encryption";
+    await owner.query("SET LOCAL password_encryption = 'scram-sha-256'");
     for (let index = 0; index < ROLES.length; index++) {
-      const scram = verifier(configs[index + 1].password);
-      // Both identifiers are fixed constants; generated SCRAM has no SQL quote.
-      demand(/^SCRAM-SHA-256\$4096:[A-Za-z0-9+/=]+\$[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+$/u.test(scram));
-      await owner.query(`ALTER ROLE "${ROLES[index]}" LOGIN PASSWORD '${scram}'`);
+      phase = index === 0 ? "migration-role" : "runtime-role";
+      await owner.query(`ALTER ROLE "${ROLES[index]}" LOGIN PASSWORD ${escapeLiteral(configs[index + 1].password)}`);
     }
+    phase = "commit"; commitAttempted = true;
     await owner.query("COMMIT"); transaction = false; committed = true;
     // A lost COMMIT response is uncertain. Never retry role activation or
     // replace either password automatically; inspect login state deliberately.
     for (let index = 0; index < ROLES.length; index++) {
+      phase = index === 0 ? "migration-login-verification" : "runtime-login-verification";
       const client = await connect(configs[index + 1]);
       await client.query("BEGIN READ ONLY");
       const current = (await client.query("select current_user,current_database() as database,current_setting('transaction_read_only') as read_only")).rows[0];
@@ -88,9 +84,12 @@ export async function activateCourseLogins(values, dependencies = {}) {
     return { status: "COURSE_INITIAL_LOGINS_VERIFIED", environment: "staging", roles: ROLES,
       distinctCredentials: true, newLoginConnectionsVerified: true, databaseSchemaChanged: false, databaseOrSchemaGrantsChanged: false,
       migrationPerformed: false, credentialsDisplayed: false };
-  } catch {
+  } catch (error) {
     if (transaction && clients[0]) { try { await clients[0].query("ROLLBACK"); } catch { /* retain uncertain outcome */ } }
-    throw new Error(committed ? "COURSE_LOGIN_POSTFLIGHT_FAILED_REVIEW_ACTUAL_STATE" : "COURSE_LOGIN_ACTIVATION_FAILED_REVIEW_ACTUAL_STATE");
+    throw Object.assign(new Error(committed ? "COURSE_LOGIN_POSTFLIGHT_FAILED_REVIEW_ACTUAL_STATE" : "COURSE_LOGIN_ACTIVATION_FAILED_REVIEW_ACTUAL_STATE"), {
+      phase, sqlState: /^[A-Z0-9]{5}$/u.test(error?.code ?? "") ? error.code : null,
+      commitState: committed ? "acknowledged" : commitAttempted ? "unknown" : "not-attempted",
+    });
   } finally {
     let cleanupFailed = false;
     for (const client of clients) { try { await client.end(); } catch { cleanupFailed = true; } }
@@ -110,7 +109,12 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       process.loadEnvFile(args[4]);
       console.log(JSON.stringify(await activateCourseLogins(Object.fromEntries(VARIABLES.map((name) => [name, process.env[name]])))));
     }
-  } catch {
-    console.error("COURSE_INITIAL_LOGIN_SETUP_FAILED_REVIEW_ACTUAL_STATE_NO_AUTOMATIC_RETRY"); process.exitCode = 1;
+  } catch (error) {
+    const phases = new Set(["input", "admin-connect", "preflight", "password-encryption", "migration-role", "runtime-role", "commit",
+      "migration-login-verification", "runtime-login-verification"]);
+    console.error(JSON.stringify({ status: "COURSE_INITIAL_LOGIN_SETUP_FAILED_REVIEW_ACTUAL_STATE_NO_AUTOMATIC_RETRY",
+      phase: phases.has(error?.phase) ? error.phase : "setup-or-cleanup", sqlState: /^[A-Z0-9]{5}$/u.test(error?.sqlState ?? "") ? error.sqlState : null,
+      commitState: ["acknowledged", "unknown", "not-attempted"].includes(error?.commitState) ? error.commitState : "unknown",
+      credentialsDisplayed: false })); process.exitCode = 1;
   }
 }

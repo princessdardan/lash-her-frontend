@@ -13,9 +13,9 @@ const { Client } = createRequire(new URL("../../../package.json", import.meta.ur
 const directory = mkdtempSync(join(tmpdir(), "lash-course-login-owned-"));
 const data = join(directory, "data");
 const roles = ["lash_her_course_staging_migration", "lash_her_course_staging_runtime"];
-const ownerPassword = `owned-owner-${randomUUID()}`, migrationPassword = `owned-migration-${randomUUID()}`, runtimePassword = `owned-runtime-${randomUUID()}`;
+const ownerPassword = `owned-owner-${randomUUID()}`, migrationPassword = `owned-migration-${randomUUID()}`, runtimePassword = `owned-runtime-quote'backslash\\-${randomUUID()}`;
 const host = "ep-sparkling-moon-b4htlczb.c-6.us-east-2.aws.neon.tech";
-const url = (role, password) => `postgresql://${role}:${password}@${host}/neondb?sslmode=verify-full`;
+const url = (role, password) => `postgresql://${role}:${encodeURIComponent(password)}@${host}/neondb?sslmode=verify-full`;
 const values = { COURSE_STAGING_ADMIN_DATABASE_URL: url("neondb_owner", ownerPassword),
   COURSE_STAGING_DATABASE_URL: url(roles[0], migrationPassword), COURSE_STAGING_RUNTIME_DATABASE_URL: url(roles[1], runtimePassword) };
 const run = (command, args) => execFileSync(command, args, { stdio: ["ignore", "pipe", "pipe"], encoding: "utf8", timeout: 180000 });
@@ -86,10 +86,22 @@ try {
     return client;
   } }));
   assert.deepEqual(await loginFlags(), [false, false]); checks.push("second-role-failure-rolls-back-both");
+  phase = "commit-failure-diagnostic";
+  await assert.rejects(activateCourseLogins(values, { createClient: (config) => {
+    const client = local(config), query = client.query.bind(client);
+    if (config.user === "neondb_owner") client.query = (sql, ...args) => {
+      if (sql === "COMMIT") return Promise.reject(Object.assign(new Error(runtimePassword), { code: "XX000" }));
+      return query(sql, ...args);
+    };
+    return client;
+  } }), (error) => error.phase === "commit" && error.sqlState === "XX000" && error.commitState === "unknown" &&
+    !JSON.stringify(error).includes(runtimePassword) && !String(error).includes(runtimePassword));
+  assert.deepEqual(await loginFlags(), [false, false]); checks.push("commit-error-sanitized-and-both-roles-rolled-back");
   phase = "initial-activation";
   const result = await activateCourseLogins(values, { createClient: local });
   assert.equal(result.status, "COURSE_INITIAL_LOGINS_VERIFIED"); assert.deepEqual(await loginFlags(), [true, true]);
   assert.equal(result.migrationPerformed, false); checks.push("both-distinct-scram-logins-verified-over-tls");
+  checks.push("neon-compatible-password-literals-escape-quotes-and-backslashes");
   phase = "existing-login-refusal";
   await assert.rejects(activateCourseLogins(values, { createClient: local }));
   checks.push("second-activation-refused-without-password-rotation");

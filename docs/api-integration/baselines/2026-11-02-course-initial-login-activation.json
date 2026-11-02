@@ -1,0 +1,42 @@
+{
+  "date": "2026-11-02",
+  "status": "COURSE_INITIAL_LOGINS_VERIFIED",
+  "environment": "staging",
+  "projectId": "damp-mouse-63038480",
+  "host": "ep-sparkling-moon-b4htlczb.c-6.us-east-2.aws.neon.tech",
+  "database": "neondb",
+  "commandSourceSha256": "18e66c4312b41e1cd8b4952ac88466931df7f780249a0f00edc132c00232c5f2",
+  "operator": "Dardan",
+  "operatorBindingStepsCompleted": [1, 2, 3],
+  "roles": ["lash_her_course_staging_migration", "lash_her_course_staging_runtime"],
+  "newLoginConnectionsVerified": true,
+  "distinctCredentials": true,
+  "verifiedTls": true,
+  "independentReadOnlyPostflight": {
+    "status": "COURSE_LOGIN_POSTFLIGHT_PRIVILEGES_VERIFIED",
+    "bothLoginEnabled": true,
+    "bothRolesRemainRestricted": true,
+    "migrationSchemaCreate": true,
+    "runtimeSchemaCreate": false,
+    "runtimeDatabaseCreate": false,
+    "runtimeMigrationRoleMember": false,
+    "publicApplicationObjectCount": 0
+  },
+  "predecessorFailure": {
+    "phase": "commit",
+    "sqlState": "XX000",
+    "freshReadOnlyObservation": "both roles remained NOLOGIN; both dedicated credential checks failed",
+    "diagnosis": "client-generated password hashes are unsupported by Neon; SQL DDL passed in a forced-rollback rehearsal but the prehashed commit failed",
+    "correction": "driver-escaped private password literals over verified TLS with transaction-local SCRAM encryption",
+    "automaticRetry": false,
+    "rawErrorsOrVerifierValuesRetained": false
+  },
+  "ownedPostgres18Rehearsal": {"status": "passed", "checks": 13, "providerTouched": false},
+  "databaseSchemaChanged": false,
+  "databaseOrSchemaGrantsChanged": false,
+  "migrationPerformed": false,
+  "deploymentPerformed": false,
+  "credentialsDisplayed": false,
+  "remaining": "consumer configuration, migration/artifact qualification, runtime deployment and live P1 checks remain separate",
+  "sources": ["https://neon.com/docs/manage/roles", "https://node-postgres.com/apis/utilities"]
+}

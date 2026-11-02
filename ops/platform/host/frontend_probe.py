@@ -23,7 +23,7 @@ def _private_configuration(directory):
            "PRIVATE_PROBE_OUTSIDE_CHECKOUT_REQUIRED")
 
 
-def prepare(client, release, private_configuration, attempt, gateway_host):
+def prepare(client, release, private_configuration, attempt, gateway_host, scheduler_qualification=False):
     """Called by the locked parent before its pinned frontend build.
 
     Use the existing project, not an additional secret service or operator
@@ -31,6 +31,8 @@ def prepare(client, release, private_configuration, attempt, gateway_host):
     provider and common outcome contain separate scoped metadata.
     """
     environment, project_id, commit = vercel.release_identity(release)
+    demand(type(scheduler_qualification) is bool and (not scheduler_qualification or environment == "staging"),
+           "SCHEDULER_QUALIFICATION_REQUIRES_STAGING")
     demand(isinstance(gateway_host, str) and re.fullmatch(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+", gateway_host), "FRONTEND_PROBE_GATEWAY_REFUSED")
     _private_configuration(private_configuration)
     migrate.private_directory(attempt)
@@ -41,7 +43,8 @@ def prepare(client, release, private_configuration, attempt, gateway_host):
     expires = int(time.time() * 1000) + LIFETIME_MS
     private = {**identity, "secret": secrets.token_hex(32), "expiresAt": expires, "gatewayOrigin": "https://" + gateway_host}
     outcome = {**identity, "status": "FRONTEND_PROBE_PREPARATION_REQUIRES_REVIEW", "phase": "private-input",
-               "expiresAt": expires, "trafficAuthorized": False, "cronSecretRead": False}
+               "expiresAt": expires, "trafficAuthorized": False, "cronSecretRead": False,
+               "schedulerQualification": scheduler_qualification}
     # Durable private input precedes every provider mutation. Never include it
     # in the common receipts or print the returned provider environment data.
     migrate.write_json(private_configuration, PRIVATE_FILE, private)
@@ -50,6 +53,7 @@ def prepare(client, release, private_configuration, attempt, gateway_host):
         origin_name = "API_GATEWAY_PRODUCTION_ORIGIN" if environment == "production" else "API_GATEWAY_STAGING_ORIGIN"
         variables = [("LASH_RELEASE_PROBE_SECRET", private["secret"], "sensitive"),
                      ("LASH_RELEASE_PROBE_EXPIRES_AT", str(expires), "plain"),
+                     ("LASH_RELEASE_SCHEDULER_QUALIFICATION", "true" if scheduler_qualification else "false", "plain"),
                      (origin_name, private["gatewayOrigin"], "plain")]
         for key, value, kind in variables:
             outcome["phase"] = "configure-probe"

@@ -1,9 +1,16 @@
 # Initial Course staging database logins
 
-Read-only verification on November 2 confirmed that the recorded Course staging
+**Current status, November 2:** Dardan completed all three 1Password bindings.
+Both dedicated staging roles are now activated and verified through fresh TLS
+connections. A separate read-only postflight confirmed restricted role attributes,
+no runtime CREATE privileges or migration-role membership, and zero public
+application objects. No schema migration or deployment ran. The initial setup
+must not be repeated; the command below remains documented for its original scope.
+
+Before activation, read-only verification on November 2 confirmed that the recorded Course staging
 database is PostgreSQL 18 with no public application tables. Its dedicated roles
 exist, and the runtime role has login disabled. Dardan confirmed their credentials
-are not provisioned. The supplied `COURSE_STAGING_DATABASE_URL` currently contains
+were not provisioned. The supplied `COURSE_STAGING_DATABASE_URL` then contained
 the owner credential. Do not place that owner credential in an API or worker.
 
 The initial activation command reuses the existing roles and grants. It does not
@@ -65,8 +72,11 @@ node ops/staging/provision-course-logins.mjs \
 The command loads values inside its process, verifies the exact recorded
 host/database/admin identity and PostgreSQL major, takes the existing role-setup
 advisory lock, and rechecks both roles and the empty database. Passwords must be
-distinct from each other and the owner password. It sends generated SCRAM
-verifiers in the role DDL, commits the two login changes together, then tests new
+distinct from each other and the owner password. Neon does not support assigning
+client-generated password hashes. The command sets transaction-local SCRAM
+password encryption and sends SQL-escaped private password literals only over
+the verified TLS connection, without displaying or retaining the statements or
+raw errors. It commits the two login changes together, then tests new
 TLS-authenticated connections for each role in read-only transactions. Output
 contains selected success flags and role names only.
 
@@ -76,6 +86,15 @@ role/login state and test those same credentials privately. Do not generate new
 passwords or rerun activation to resolve an observation failure. Existing login
 roles are deliberately refused by this initial-setup tool; ordinary credential
 rotation is outside its scope.
+
+Failures report only a fixed phase, SQLSTATE and commit acknowledgement state.
+A commit failure remains uncertain until fresh independent observation; no
+automatic retry is allowed. The November 2 live prehashed attempt returned
+`XX000` at commit while the subsequent read-only check found both roles still
+`NOLOGIN`. Local stock PostgreSQL had accepted that earlier path, demonstrating
+why its rehearsal did not establish Neon compatibility. The corrected SQL path
+follows [Neon's password requirements](https://neon.com/docs/manage/roles) and
+uses the driver's [SQL literal escaping](https://node-postgres.com/apis/utilities).
 
 The owned integration test creates a new loopback-only PostgreSQL 18 cluster
 inside the existing owned compatibility image with external networking disabled.

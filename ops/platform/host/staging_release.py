@@ -73,7 +73,7 @@ def execute(bundle, configuration, results, compose_file, apply=False, confirmat
             migrate.write_json(attempt, "native-schedules.json", schedules)
             demand(vercel.project_state(client, plan["frontendProjectId"]) == {**expected, "cronsEnabled": False}, "VERCEL_PROJECT_CHANGED_BEFORE_STAGING")
             outcome["phase"] = "probe-configuration"
-            frontend_probe.prepare(client, selected, snapshot, attempt, plan["publicHost"])
+            frontend_probe.prepare(client, selected, snapshot, attempt, plan["publicHost"], scheduler_qualification=True)
             outcome["phase"] = "frontend-build"
             vercel.stage_frontend(client, selected, attempt)
             outcome["phase"] = "frontend-verification-and-promotion"
