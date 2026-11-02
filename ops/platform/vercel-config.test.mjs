@@ -22,7 +22,7 @@ test("ordinary builds preserve business schedules and require explicit releases 
     { path: "/api/cron/shipping-rate-cache-refresh", schedule: "30 7 * * 1" },
     { path: "/api/cron/highlevel-sync", schedule: "* * * * *" },
   ]);
-  assert.deepEqual(config.git, { deploymentEnabled: { main: false, staging: false, "codex/p1-platform-foundation-20261101": false } });
+  assert.deepEqual(config.git, { deploymentEnabled: false });
   assert.deepEqual(createVercelConfiguration({ LASH_RELEASE_SCHEDULER_QUALIFICATION: "false" }), config);
   config.crons.pop();
   assert.equal(createVercelConfiguration({}).crons.length, 9);
