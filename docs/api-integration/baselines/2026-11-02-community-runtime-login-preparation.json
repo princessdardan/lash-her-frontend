@@ -1,0 +1,30 @@
+{
+  "date": "2026-11-02",
+  "status": "COMMUNITY_RUNTIME_CREDENTIAL_COMMAND_PREPARED_NOT_APPLIED",
+  "role": "lash_her_community_staging_runtime",
+  "endpoint": "ep-fancy-glitter-b81a2g6r.c-14.us-east-1.aws.neon.tech",
+  "database": "neondb",
+  "command": "ops/staging/provision-community-runtime-login.mjs",
+  "commandSha256": "98a22299e2fa1238691acfe76fec5b9c461ef75de53e4ccb3f4021e0501835c3",
+  "localVerification": {
+    "ownedPostgresqlMajor": 18,
+    "externalNetwork": "none",
+    "checksPassed": 13,
+    "eslint": "passed",
+    "ciYamlParse": "passed",
+    "diffCheck": "passed",
+    "planOnlyCommand": "passed; no credentials read"
+  },
+  "boundaries": {
+    "livePasswordChanged": false,
+    "liveRolesOrGrantsChanged": false,
+    "liveMigrationPerformed": false,
+    "roleCreated": false,
+    "credentialValuesDisplayed": false,
+    "p1Complete": false
+  },
+  "operatorStep": "1Password binding preparation instructions given; waiting for confirmation and existing-versus-new password choice",
+  "applyScope": "explicit initial credential handoff for exact unused empty staging role; does not support populated/active runtime rotation",
+  "failureHandling": "fixed phase/SQLSTATE/commit state only; no automatic retry; lost commit acknowledgement reconciled by read-only login",
+  "ciIntegration": "owned network-disabled fixture added to existing frontend migration job; exact new-source CI still required"
+}
